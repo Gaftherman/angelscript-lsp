@@ -1679,3 +1679,56 @@ TEST_CASE("Semantic Tokens - Multiline heredoc bounds within line length")
 
     ts_tree_delete(tree);
 }
+
+TEST_CASE("Semantic Tokens - Scoped identifier in base class list does not produce single monolithic token and "
+          "suppresses non-existent leaf")
+{
+    const std::string hostName = test::GenerateRandomSymbolName("weapon_hcasm249");
+    const std::string mixinName = test::GenerateRandomSymbolName("WeaponBase");
+    const std::string missingLeaf = test::GenerateRandomSymbolName("NoExistedClass");
+    const std::string code = "class " + mixinName +
+                             " {}\n"
+                             "class " +
+                             hostName + " : " + mixinName + "::" + missingLeaf + " {}\n";
+
+    AngelScriptParser parser;
+    TSTree* tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    SymbolCollector collector{nullptr};
+    SymbolTable table;
+    collector.CollectSymbols("file:///test_scoped_base.as", code, parser, table);
+
+    SemanticTokensRequest request{"file:///test_scoped_base.as", code, tree, table};
+    const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
+
+    bool foundMonolithicToken = false;
+    bool foundQualifierToken = false;
+    bool foundLeafToken = false;
+
+    const std::string monolithicText = mixinName + "::" + missingLeaf;
+
+    for (const auto& tok : tokens)
+    {
+        const std::string tokText = TextAt(code, tok.line, tok.character, tok.length);
+        if (tokText == monolithicText)
+        {
+            foundMonolithicToken = true;
+        }
+        else if (tokText == mixinName && tok.line == 1)
+        {
+            foundQualifierToken = true;
+            CHECK(tok.type == "class");
+        }
+        else if (tokText == missingLeaf)
+        {
+            foundLeafToken = true;
+        }
+    }
+
+    CHECK_FALSE(foundMonolithicToken);
+    CHECK(foundQualifierToken);
+    CHECK_FALSE(foundLeafToken);
+
+    ts_tree_delete(tree);
+}

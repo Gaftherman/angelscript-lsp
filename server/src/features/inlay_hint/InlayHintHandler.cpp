@@ -1375,9 +1375,22 @@ lsp::InlayHint BuildParameterHint(const ParamHintContext& ctx, const analysis::P
     }
     const bool enableTooltip = !ctx.request.config || ctx.request.config->features.inlayHintsEnableTooltip;
     const bool enableLocation = !ctx.request.config || ctx.request.config->features.inlayHintsEnableLocation;
+    const bool showRefMods = !ctx.request.config || ctx.request.config->features.inlayHintsParameterReferenceModifiers;
+    std::string prefix;
+    if (showRefMods)
+    {
+        if (param.modifier == analysis::ParameterModifier::Out)
+        {
+            prefix = "&out ";
+        }
+        else if (param.modifier == analysis::ParameterModifier::InOut)
+        {
+            prefix = "&inout ";
+        }
+    }
 
     lsp::InlayHintLabelPart part;
-    part.value = label + ":";
+    part.value = prefix + label + ":";
     if (enableLocation)
     {
         part.location = ResolveParameterLocation(ctx.request.uri, ctx.callee.fileUri, param);
@@ -1398,6 +1411,36 @@ lsp::InlayHint BuildParameterHint(const ParamHintContext& ctx, const analysis::P
 }
 
 /**
+ * @brief Checks whether the argument expression matches the parameter name.
+ */
+static bool ArgumentMatchesParameterName(std::string_view argText, std::string_view paramName)
+{
+    if (paramName.empty())
+    {
+        return false;
+    }
+    if (argText.starts_with('@'))
+    {
+        argText.remove_prefix(1);
+    }
+    if (argText.starts_with("this."))
+    {
+        argText.remove_prefix(5);
+    }
+    if (argText == paramName)
+    {
+        return true;
+    }
+    if (argText.size() == paramName.size())
+    {
+        return std::equal(
+            argText.begin(), argText.end(), paramName.begin(), [](char a, char b)
+            { return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b)); });
+    }
+    return false;
+}
+
+/**
  * @brief Adds parameter inlay hints for matched parameters and arguments.
  * @param[in] callee Callee resolution result.
  * @param[in] args Parsed call arguments.
@@ -1407,6 +1450,10 @@ lsp::InlayHint BuildParameterHint(const ParamHintContext& ctx, const analysis::P
 void AddParameterHints(const CalleeResolutionResult& callee, const std::vector<ArgInfo>& args,
                        const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
 {
+    if (request.config && !request.config->features.inlayHintsParameters)
+    {
+        return;
+    }
     const auto& parameters = callee.parameters;
     const ParamHintContext ctx{callee, request};
     for (size_t i = 0; i < args.size() && i < parameters.size(); ++i)
@@ -1425,7 +1472,11 @@ void AddParameterHints(const CalleeResolutionResult& callee, const std::vector<A
         }
 
         std::string label = ResolveParameterLabel(param);
-        if (label.empty() || (request.suppressWhenArgumentMatchesName && arg.text == label))
+        const bool suppress =
+            (request.suppressWhenArgumentMatchesName ||
+             (request.config && request.config->features.inlayHintsSuppressWhenArgumentMatchesName)) &&
+            ArgumentMatchesParameterName(arg.text, label);
+        if (label.empty() || suppress)
         {
             continue;
         }
@@ -1905,6 +1956,173 @@ void ProcessVariableDeclaration(TSNode node, const InlayHintRequest& request, st
 }
 
 /**
+ * @brief Helper to deduce the return type of a lambda body from return statements or funcdef target.
+ */
+static std::string DeduceLambdaReturnType(TSNode node, const InlayHintRequest& request)
+{
+    if (auto target = analysis::FuncdefTargetOfLambda(node, request.symbolTable, request.sourceCode))
+    {
+        return target->GetFuncdef().returnType;
+    }
+    TSNode body = parser::GetChildByField(node, parser::fields::Body);
+    if (ts_node_is_null(body))
+    {
+        for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
+        {
+            TSNode ch = ts_node_named_child(node, i);
+            if (std::string_view(ts_node_type(ch)) == "statement_block")
+            {
+                body = ch;
+                break;
+            }
+        }
+    }
+    if (!ts_node_is_null(body))
+    {
+        for (uint32_t i = 0; i < ts_node_named_child_count(body); ++i)
+        {
+            TSNode stmt = ts_node_named_child(body, i);
+            if (std::string_view(ts_node_type(stmt)) == "return_statement")
+            {
+                TSNode retVal = parser::GetChildByField(stmt, parser::fields::Value);
+                if (ts_node_is_null(retVal) && ts_node_named_child_count(stmt) > 0)
+                {
+                    retVal = ts_node_named_child(stmt, 0);
+                }
+                if (!ts_node_is_null(retVal))
+                {
+                    TSPoint retPt = ts_node_start_point(retVal);
+                    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+                    const analysis::Scope* scope =
+                        rootScope ? analysis::FindInnermostScope(rootScope.get(), retPt.row, retPt.column) : nullptr;
+                    analysis::ExpressionTypeContext exprCtx(scope, request.symbolTable, request.sourceCode, request.uri,
+                                                            request.tree ? ts_tree_root_node(request.tree) : TSNode{});
+                    return analysis::ResolveExpressionType(retVal, exprCtx);
+                }
+                return "void";
+            }
+        }
+    }
+    return {};
+}
+
+/**
+ * @brief Processes lambda expressions to emit return type inlay hints.
+ */
+static void ProcessLambdaExpression(TSNode node, const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
+{
+    if (request.config && !request.config->features.inlayHintsFunctionReturnTypes)
+    {
+        return;
+    }
+    TSNode params = parser::GetChildByField(node, parser::fields::Parameters);
+    if (ts_node_is_null(params))
+    {
+        for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
+        {
+            TSNode ch = ts_node_named_child(node, i);
+            if (std::string_view(ts_node_type(ch)) == "lambda_parameter_list")
+            {
+                params = ch;
+                break;
+            }
+        }
+    }
+    if (ts_node_is_null(params))
+    {
+        return;
+    }
+    TSPoint endPt = ts_node_end_point(params);
+    lsp::Position pos{endPt.row, endPt.column};
+    if (!IsPositionInRange(pos, request.range))
+    {
+        return;
+    }
+    TSNode retNode = parser::GetChildByField(node, parser::fields::Type);
+    if (!ts_node_is_null(retNode))
+    {
+        return;
+    }
+    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+    const analysis::Scope* scope =
+        rootScope ? analysis::FindInnermostScope(rootScope.get(), endPt.row, endPt.column) : nullptr;
+    analysis::ExpressionTypeContext exprCtx(scope, request.symbolTable, request.sourceCode, request.uri,
+                                            request.tree ? ts_tree_root_node(request.tree) : TSNode{});
+    std::string deduced = analysis::ResolveExpressionType(node, exprCtx);
+    if (deduced.empty())
+    {
+        deduced = DeduceLambdaReturnType(node, request);
+    }
+    if (!deduced.empty() && deduced != "void" && analysis::CleanBaseTypeView(deduced) != "auto")
+    {
+        lsp::InlayHint hint;
+        hint.position = pos;
+        lsp::InlayHintLabelPart part;
+        part.value = ": " + deduced;
+        hint.label = std::vector<lsp::InlayHintLabelPart>{std::move(part)};
+        hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Type);
+        hint.paddingLeft = true;
+        hint.paddingRight = true;
+        hints.push_back(std::move(hint));
+    }
+}
+
+/**
+ * @brief Processes enum declarations to emit implicit member value inlay hints.
+ */
+static void ProcessEnumDeclaration(TSNode node, const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
+{
+    if (request.config && !request.config->features.inlayHintsEnumMemberValues)
+    {
+        return;
+    }
+    int64_t nextValue = 0;
+    for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
+    {
+        TSNode child = ts_node_named_child(node, i);
+        if (std::string_view(ts_node_type(child)) != "enum_member")
+        {
+            continue;
+        }
+        TSNode valNode = parser::GetChildByField(child, parser::fields::Value);
+        TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
+        if (ts_node_is_null(nameNode) && ts_node_named_child_count(child) > 0)
+        {
+            nameNode = ts_node_named_child(child, 0);
+        }
+        if (!ts_node_is_null(valNode))
+        {
+            std::string valText = GetNodeText(valNode, request.sourceCode);
+            try
+            {
+                nextValue = std::stoll(valText, nullptr, 0) + 1;
+            }
+            catch (...)
+            {
+                nextValue++;
+            }
+        }
+        else if (!ts_node_is_null(nameNode))
+        {
+            TSPoint endPt = ts_node_end_point(nameNode);
+            lsp::Position pos{endPt.row, endPt.column};
+            if (IsPositionInRange(pos, request.range))
+            {
+                lsp::InlayHint hint;
+                hint.position = pos;
+                lsp::InlayHintLabelPart part;
+                part.value = fmt::format(" = {}", nextValue);
+                hint.label = std::vector<lsp::InlayHintLabelPart>{std::move(part)};
+                hint.paddingLeft = false;
+                hint.paddingRight = false;
+                hints.push_back(std::move(hint));
+            }
+            nextValue++;
+        }
+    }
+}
+
+/**
  * @brief Iteratively traverses the AST using a flat Tree-Sitter cursor to collect inlay hints.
  * @param[in] rootNode Root AST node of the document.
  * @param[in] request Inlay hint request context.
@@ -1939,6 +2157,14 @@ void CollectInlayHints(TSNode rootNode, const InlayHintRequest& request, std::ve
             else if (nodeType == "variable_declaration")
             {
                 ProcessVariableDeclaration(currentNode, request, hints);
+            }
+            else if (nodeType == "lambda_expression")
+            {
+                ProcessLambdaExpression(currentNode, request, hints);
+            }
+            else if (nodeType == "enum_declaration")
+            {
+                ProcessEnumDeclaration(currentNode, request, hints);
             }
 
             if (ts_tree_cursor_goto_first_child(&cursor))

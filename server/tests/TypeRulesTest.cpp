@@ -3004,3 +3004,83 @@ TEST_CASE("TypeRules - Type Rules Corpus Audit" * doctest::skip(true))
     CHECK(result.hits[0].fileName == "angel-lsp_diagnostics.as");
     CHECK(result.hits[0].code == "as-err-duplicate-symbol");
 }
+
+TEST_CASE("TypeRules - Duplicate symbol between script and .as.predefined emits as-err-duplicate-symbol")
+{
+    const std::string globalVar = test::GenerateRandomSymbolName("g_GlobalPredefined");
+    const std::string predefinedCode = "int " + globalVar + ";\n";
+    const std::string scriptCode = "int " + globalVar + ";\n";
+
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    LocalScopeCollector scopes(nullptr);
+    SymbolTable table;
+    static angel_lsp::i18n::I18n i18n;
+
+    collector.CollectSymbols({"file:///workspace/as.predefined", predefinedCode, &i18n}, parser, table);
+    collector.CollectSymbols({"file:///workspace/main.as", scriptCode, &i18n}, parser, table);
+
+    SemanticAnalysisRequest request{table, "file:///workspace/main.as", ".as.predefined", &i18n};
+    request.scopeRoot = scopes.CollectScopes(scriptCode, parser);
+    request.sourceCode = scriptCode;
+    request.tree = parser.Parse(scriptCode);
+
+    SemanticAnalyzer analyzer(nullptr);
+    auto diags = analyzer.Analyze(request);
+
+    CHECK(HasCode(diags, "as-err-duplicate-symbol"));
+
+    if (request.tree)
+    {
+        ts_tree_delete(const_cast<TSTree*>(request.tree));
+    }
+}
+
+TEST_CASE("TypeRules - Reopening namespace declared in .as.predefined is allowed without duplicate errors")
+{
+    const std::string nsName = test::GenerateRandomSymbolName("PredefinedNs");
+    const std::string predefinedCode = "namespace " + nsName + " { void PredefinedFunc(); }\n";
+    const std::string scriptCode = "namespace " + nsName + " { void ScriptFunc() {} }\n";
+
+    AngelScriptParser parser;
+    SymbolCollector collector(nullptr);
+    LocalScopeCollector scopes(nullptr);
+    SymbolTable table;
+    static angel_lsp::i18n::I18n i18n;
+
+    collector.CollectSymbols({"file:///workspace/as.predefined", predefinedCode, &i18n}, parser, table);
+    collector.CollectSymbols({"file:///workspace/main.as", scriptCode, &i18n}, parser, table);
+
+    SemanticAnalysisRequest request{table, "file:///workspace/main.as", ".as.predefined", &i18n};
+    request.scopeRoot = scopes.CollectScopes(scriptCode, parser);
+    request.sourceCode = scriptCode;
+    request.tree = parser.Parse(scriptCode);
+
+    SemanticAnalyzer analyzer(nullptr);
+    auto diags = analyzer.Analyze(request);
+
+    CHECK_FALSE(HasCode(diags, "as-err-duplicate-symbol"));
+
+    if (request.tree)
+    {
+        ts_tree_delete(const_cast<TSTree*>(request.tree));
+    }
+}
+
+TEST_CASE("TypeRules - Invariant: Homonymous class and namespace can coexist without duplicate error")
+{
+    const std::string name = test::GenerateRandomSymbolName("HomonymContainer");
+    const std::string code = "namespace " + name +
+                             " {\n"
+                             "    void Helper() {}\n"
+                             "}\n"
+                             "class " +
+                             name +
+                             " {\n"
+                             "    void Method() {}\n"
+                             "}\n";
+
+    auto diags = AnalyzeTypeSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-duplicate-symbol"));
+    CHECK_FALSE(HasCode(diags, "as-err-name-conflict"));
+}

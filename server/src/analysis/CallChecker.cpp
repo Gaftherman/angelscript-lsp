@@ -1133,6 +1133,76 @@ std::string FindEnclosingClassOrInterface(TSNode node, std::string_view sourceCo
     return "";
 }
 
+/**
+ * @brief Extracts the qualifier prefix of a scoped name.
+ * @param[in] name Scoped identifier text.
+ * @return Prefix string_view before the last `::`, or empty if unqualified.
+ */
+static std::string_view GetScopeQualifierPrefix(std::string_view name) noexcept
+{
+    const size_t pos = name.rfind("::");
+    if (pos == std::string_view::npos)
+    {
+        return {};
+    }
+    return name.substr(0, pos);
+}
+
+/**
+ * @brief Checks if call node is within target class or its derived classes.
+ * @param[in] callNode AST call expression node.
+ * @param[in] targetClass Target class name.
+ * @param[in] sourceCode Document source text.
+ * @param[in] table Symbol table.
+ * @return True if call is within target class or derived class.
+ */
+static bool IsInsideTargetClassOrSubclass(TSNode callNode, std::string_view targetClass, std::string_view sourceCode,
+                                          const SymbolTable& table)
+{
+    if (targetClass.empty())
+    {
+        return false;
+    }
+    const std::string enclosing = FindEnclosingClassOrInterface(callNode, sourceCode);
+    if (enclosing.empty())
+    {
+        return false;
+    }
+    if (enclosing == targetClass || LastScopeSegment(enclosing) == targetClass)
+    {
+        return true;
+    }
+    const auto hierarchy = GetInheritedTypeHierarchy(enclosing, table);
+    return std::any_of(hierarchy.begin(), hierarchy.end(), [targetClass](const std::string& ancestor)
+                       { return ancestor == targetClass || LastScopeSegment(ancestor) == targetClass; });
+}
+
+/**
+ * @brief Filters candidates of a scoped call based on caller context and container kinds.
+ *
+ * Outside a target class, non-static class methods cannot be called via Class::Method;
+ * only namespace functions are callable.
+ *
+ * @param[in,out] candidates Candidate symbols to filter.
+ * @param[in] insideTarget True if caller is within the target class or a subclass.
+ */
+static void FilterScopedCandidatesByCallerContext(std::vector<Symbol>& candidates, bool insideTarget)
+{
+    if (insideTarget || candidates.empty())
+    {
+        return;
+    }
+    const bool hasNamespaceCandidates = std::any_of(candidates.begin(), candidates.end(), [](const Symbol& s)
+                                                    { return s.containerKind == ContainerKind::Namespace; });
+
+    if (hasNamespaceCandidates)
+    {
+        std::erase_if(
+            candidates, [](const Symbol& s)
+            { return s.containerKind == ContainerKind::Class || s.containerKind == ContainerKind::Interface; });
+    }
+}
+
 static bool ResolveScopedCallee(std::string_view written, const std::string& shortName,
                                 const CallValidationContext& valCtx, CalleeResolution& res)
 {
@@ -1142,6 +1212,12 @@ static bool ResolveScopedCallee(std::string_view written, const std::string& sho
         return true;
     }
     res.candidates = CollectScopedFunctionCandidates(written, valCtx.ctx.request.symbolTable);
+
+    const std::string_view qualifier = GetScopeQualifierPrefix(written);
+    const bool insideTarget = IsInsideTargetClassOrSubclass(valCtx.callNode, qualifier, valCtx.request.sourceCode,
+                                                            valCtx.ctx.request.symbolTable);
+    FilterScopedCandidatesByCallerContext(res.candidates, insideTarget);
+
     res.candidatesAreFreeFunctions = true;
     if (!res.candidates.empty() || CheckScopedNonCallableVariable(written, shortName, valCtx, res))
     {

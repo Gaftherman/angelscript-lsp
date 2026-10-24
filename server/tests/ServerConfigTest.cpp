@@ -1413,3 +1413,36 @@ TEST_CASE("ServerConfig - Empty --predefined-active value is ignored")
 
     CHECK(config.activePredefined.empty());
 }
+
+TEST_CASE("ServerConfig - Modular Inlay Hints and CodeLens CLI Flags")
+{
+    SUBCASE("Inlay Hints modular flags")
+    {
+        ArgvHelper args{
+            "angel_lsp", "--disable-inlay-hints-function-return-types", "--disable-inlay-hints-enum-member-values",
+            "--disable-inlay-hints-parameter-reference-modifiers", "--inlay-hints-suppress-when-argument-matches-name"};
+        const ServerConfig config = FromArgs(args.argc(), args.data());
+
+        CHECK_FALSE(config.features.inlayHintsFunctionReturnTypes);
+        CHECK_FALSE(config.features.inlayHintsEnumMemberValues);
+        CHECK_FALSE(config.features.inlayHintsParameterReferenceModifiers);
+        CHECK(config.features.inlayHintsSuppressWhenArgumentMatchesName);
+    }
+
+    SUBCASE("CodeLens granular flags")
+    {
+        ArgvHelper args{"angel_lsp",
+                        "--disable-codelens-functions",
+                        "--disable-codelens-classes-and-interfaces",
+                        "--disable-codelens-properties-and-variables",
+                        "--disable-codelens-enums",
+                        "--disable-codelens-zero-references"};
+        const ServerConfig config = FromArgs(args.argc(), args.data());
+
+        CHECK_FALSE(config.features.codeLensShowOnFunctions);
+        CHECK_FALSE(config.features.codeLensShowOnClassesAndInterfaces);
+        CHECK_FALSE(config.features.codeLensShowOnPropertiesAndVariables);
+        CHECK_FALSE(config.features.codeLensShowOnEnums);
+        CHECK_FALSE(config.features.codeLensShowZeroReferences);
+    }
+}

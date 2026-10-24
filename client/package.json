@@ -560,6 +560,24 @@
             "scope": "resource",
             "markdownDescription": "%config.inlayHints.variableTypes.description%"
           },
+          "angelscript.inlayHints.functionReturnTypes": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "%config.inlayHints.functionReturnTypes.description%"
+          },
+          "angelscript.inlayHints.enumMemberValues": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "%config.inlayHints.enumMemberValues.description%"
+          },
+          "angelscript.inlayHints.parameterReferenceModifiers": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "%config.inlayHints.parameterReferenceModifiers.description%"
+          },
           "angelscript.inlayHints.maxParameters": {
             "type": "integer",
             "scope": "resource",
@@ -576,7 +594,7 @@
           },
           "angelscript.inlayHints.suppressWhenArgumentMatchesName": {
             "type": "boolean",
-            "default": false,
+            "default": true,
             "scope": "resource",
             "markdownDescription": "%angelscript.inlayHints.suppressWhenArgumentMatchesName.description%"
           },
@@ -837,6 +855,42 @@
       },
       {
         "order": 6,
+        "title": "%config.category.codeLens%",
+        "properties": {
+          "angelscript.codeLens.showOnFunctions": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "%config.codeLens.showOnFunctions.description%"
+          },
+          "angelscript.codeLens.showOnClassesAndInterfaces": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "%config.codeLens.showOnClassesAndInterfaces.description%"
+          },
+          "angelscript.codeLens.showOnPropertiesAndVariables": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "%config.codeLens.showOnPropertiesAndVariables.description%"
+          },
+          "angelscript.codeLens.showOnEnums": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "%config.codeLens.showOnEnums.description%"
+          },
+          "angelscript.codeLens.showZeroReferences": {
+            "type": "boolean",
+            "default": true,
+            "scope": "resource",
+            "markdownDescription": "%config.codeLens.showZeroReferences.description%"
+          }
+        }
+      },
+      {
+        "order": 7,
         "title": "%config.category.diagnostics%",
         "properties": {
           "angelscript.diagnosticSeverity": {
@@ -965,7 +1019,7 @@
         }
       },
       {
-        "order": 7,
+        "order": 8,
         "title": "%config.category.engine%",
         "properties": {
           "angelscript.engine.allowUnsafeReferences": {

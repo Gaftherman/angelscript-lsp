@@ -1934,3 +1934,49 @@ TEST_CASE("CallChecker - Invariant: Direct initialization with syntax error supp
     auto diags = AnalyzeCallSnippet(code);
     CHECK_FALSE(HasCode(diags, "as-err-no-matching-constructor"));
 }
+
+TEST_CASE("CallChecker - Invariant: Homonymous class and namespace default parameter resolution inside and outside")
+{
+    const std::string name = angel_lsp::test::GenerateRandomSymbolName("MySystem");
+    const std::string helperName = angel_lsp::test::GenerateRandomSymbolName("Helper");
+    const std::string execName = angel_lsp::test::GenerateRandomSymbolName("Execute");
+
+    const std::string code = "namespace " + name +
+                             " {\n"
+                             "    void Activate(int id, float duration = 5.0f) {}\n"
+                             "    void " +
+                             helperName +
+                             "(int x, float duration = 2.0f) {}\n"
+                             "}\n"
+                             "class " +
+                             name +
+                             " {\n"
+                             "    void " +
+                             execName +
+                             "(int id, float duration) {\n"
+                             "        " +
+                             name +
+                             "::Activate(id);\n"
+                             "        " +
+                             name + "::" + helperName +
+                             "(id);\n"
+                             "    }\n"
+                             "}\n"
+                             "void TestOutside() {\n"
+                             "    " +
+                             name +
+                             "::Activate(10);\n"
+                             "    " +
+                             name +
+                             " inst;\n"
+                             "    inst." +
+                             execName +
+                             "(10, 2.5f);\n"
+                             "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-call-argument-count"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-ambiguous"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+    CHECK_FALSE(HasCode(diags, "as-err-member-not-found"));
+}

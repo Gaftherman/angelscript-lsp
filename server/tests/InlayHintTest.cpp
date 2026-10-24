@@ -1715,3 +1715,197 @@ TEST_CASE("InlayHintHandler - Independent configuration flags for parameters and
         CHECK_FALSE(foundVar);
     }
 }
+
+TEST_CASE("InlayHint - suppressWhenArgumentMatchesName suppresses matching argument names")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("Buy");
+    const std::string paramName = "pPlayer";
+    const std::string code = "class Player {};\n"
+                             "void " +
+                             funcName + "(Player@ " + paramName +
+                             ") {}\n"
+                             "void main() {\n"
+                             "    Player@ " +
+                             paramName +
+                             " = Player();\n"
+                             "    " +
+                             funcName + "(" + paramName +
+                             ");\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+
+    {
+        config::ServerConfig cfg;
+        cfg.features.inlayHintsSuppressWhenArgumentMatchesName = true;
+        auto hints = env.InlayHintsWithConfig(cfg);
+        REQUIRE(hints.has_value());
+        bool foundParamHint = false;
+        for (const auto& h : *hints)
+        {
+            if (GetHintLabel(h).find(paramName) != std::string::npos)
+            {
+                foundParamHint = true;
+            }
+        }
+        CHECK_FALSE(foundParamHint);
+    }
+
+    {
+        config::ServerConfig cfg;
+        cfg.features.inlayHintsSuppressWhenArgumentMatchesName = false;
+        auto hints = env.InlayHintsWithConfig(cfg);
+        REQUIRE(hints.has_value());
+        bool foundParamHint = false;
+        for (const auto& h : *hints)
+        {
+            if (GetHintLabel(h).find(paramName) != std::string::npos)
+            {
+                foundParamHint = true;
+            }
+        }
+        CHECK(foundParamHint);
+    }
+}
+
+TEST_CASE("InlayHint - Lambda inferred return type hint")
+{
+    const std::string code = "void main() {\n"
+                             "    auto f = function(int a, int b) { return a + b; };\n"
+                             "}\n";
+    TestEnvironment env(code);
+    {
+        config::ServerConfig cfg;
+        cfg.features.inlayHintsFunctionReturnTypes = true;
+        auto hints = env.InlayHintsWithConfig(cfg);
+        REQUIRE(hints.has_value());
+        bool foundReturnType = false;
+        for (const auto& h : *hints)
+        {
+            if (GetHintLabel(h).find("int") != std::string::npos)
+            {
+                foundReturnType = true;
+            }
+        }
+        CHECK(foundReturnType);
+    }
+    {
+        config::ServerConfig cfg;
+        cfg.features.inlayHintsFunctionReturnTypes = false;
+        auto hints = env.InlayHintsWithConfig(cfg);
+        REQUIRE(hints.has_value());
+        bool foundReturnType = false;
+        for (const auto& h : *hints)
+        {
+            if (GetHintLabel(h).find(": int") != std::string::npos)
+            {
+                foundReturnType = true;
+            }
+        }
+        CHECK_FALSE(foundReturnType);
+    }
+}
+
+TEST_CASE("InlayHint - Enum implicit member value hint")
+{
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("State");
+    const std::string code = "enum " + enumName +
+                             " {\n"
+                             "    First = 10,\n"
+                             "    Second,\n"
+                             "    Third\n"
+                             "}\n";
+    TestEnvironment env(code);
+    {
+        config::ServerConfig cfg;
+        cfg.features.inlayHintsEnumMemberValues = true;
+        auto hints = env.InlayHintsWithConfig(cfg);
+        REQUIRE(hints.has_value());
+        bool foundSecond = false;
+        bool foundThird = false;
+        for (const auto& h : *hints)
+        {
+            std::string label = GetHintLabel(h);
+            if (label.find("= 11") != std::string::npos)
+            {
+                foundSecond = true;
+            }
+            if (label.find("= 12") != std::string::npos)
+            {
+                foundThird = true;
+            }
+        }
+        CHECK(foundSecond);
+        CHECK(foundThird);
+    }
+    {
+        config::ServerConfig cfg;
+        cfg.features.inlayHintsEnumMemberValues = false;
+        auto hints = env.InlayHintsWithConfig(cfg);
+        REQUIRE(hints.has_value());
+        bool foundImplicit = false;
+        for (const auto& h : *hints)
+        {
+            std::string label = GetHintLabel(h);
+            if (label.find("= 11") != std::string::npos || label.find("= 12") != std::string::npos)
+            {
+                foundImplicit = true;
+            }
+        }
+        CHECK_FALSE(foundImplicit);
+    }
+}
+
+TEST_CASE("InlayHint - Reference modifier hints for out and inout parameters")
+{
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("Modify");
+    const std::string code = "void " + funcName +
+                             "(int &out a, int &inout b) {}\n"
+                             "void main() {\n"
+                             "    int x = 1, y = 2;\n"
+                             "    " +
+                             funcName +
+                             "(x, y);\n"
+                             "}\n";
+    TestEnvironment env(code);
+    {
+        config::ServerConfig cfg;
+        cfg.features.inlayHintsParameterReferenceModifiers = true;
+        cfg.features.inlayHintsSuppressWhenArgumentMatchesName = false;
+        auto hints = env.InlayHintsWithConfig(cfg);
+        REQUIRE(hints.has_value());
+        bool foundOut = false;
+        bool foundInOut = false;
+        for (const auto& h : *hints)
+        {
+            std::string label = GetHintLabel(h);
+            if (label.find("&out") != std::string::npos)
+            {
+                foundOut = true;
+            }
+            if (label.find("&inout") != std::string::npos)
+            {
+                foundInOut = true;
+            }
+        }
+        CHECK(foundOut);
+        CHECK(foundInOut);
+    }
+    {
+        config::ServerConfig cfg;
+        cfg.features.inlayHintsParameterReferenceModifiers = false;
+        cfg.features.inlayHintsSuppressWhenArgumentMatchesName = false;
+        auto hints = env.InlayHintsWithConfig(cfg);
+        REQUIRE(hints.has_value());
+        bool foundModifier = false;
+        for (const auto& h : *hints)
+        {
+            std::string label = GetHintLabel(h);
+            if (label.find("&out") != std::string::npos || label.find("&inout") != std::string::npos)
+            {
+                foundModifier = true;
+            }
+        }
+        CHECK_FALSE(foundModifier);
+    }
+}

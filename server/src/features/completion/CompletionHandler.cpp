@@ -1273,6 +1273,207 @@ bool TryCompleteTemplateArguments(const std::string& prefix, CompletionCollector
 }
 
 /**
+ * @brief Retrieves backward declaration text before cursor up to opening brace or semicolon.
+ */
+std::string GetBackwardDeclarationText(std::string_view sourceCode, uint32_t line, uint32_t character)
+{
+    uint32_t curLine = 0;
+    size_t offset = 0;
+    for (size_t i = 0; i < sourceCode.size() && curLine < line; ++i)
+    {
+        if (sourceCode[i] == '\n')
+        {
+            ++curLine;
+            offset = i + 1;
+        }
+    }
+    offset += character;
+    if (offset > sourceCode.size())
+    {
+        offset = sourceCode.size();
+    }
+
+    size_t start = offset;
+    size_t count = 0;
+    while (start > 0 && count < 500)
+    {
+        const char ch = sourceCode[start - 1];
+        if (ch == '{' || ch == '}' || ch == ';')
+        {
+            break;
+        }
+        --start;
+        ++count;
+    }
+    return std::string(sourceCode.substr(start, offset - start));
+}
+
+struct InheritanceContext
+{
+    analysis::SymbolType declKind = analysis::SymbolType::Class;
+    std::string declaringClassName;
+    std::string qualifier;
+};
+
+/**
+ * @brief Detects if completion was invoked inside a class or interface base inheritance list.
+ */
+std::optional<InheritanceContext> DetectInheritanceContext(const CompletionRequest& request, const std::string& prefix)
+{
+    const std::string text =
+        GetBackwardDeclarationText(request.sourceCode, request.position.line, request.position.character);
+    static const std::regex inheritanceRegex(R"(\b(class|interface)\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*:[^{;]*$)");
+    std::smatch m;
+    if (!std::regex_search(text, m, inheritanceRegex))
+    {
+        return std::nullopt;
+    }
+
+    InheritanceContext ctx;
+    ctx.declKind = (m[1].str() == "interface") ? analysis::SymbolType::Interface : analysis::SymbolType::Class;
+    ctx.declaringClassName = m[2].str();
+
+    static const std::regex scopeRegex(R"(((?:[a-zA-Z_][a-zA-Z0-9_]*::)+)([a-zA-Z_][a-zA-Z0-9_]*)?$)");
+    std::smatch scopeMatch;
+    if (std::regex_search(prefix, scopeMatch, scopeRegex))
+    {
+        ctx.qualifier = scopeMatch[1].str();
+        if (ctx.qualifier.ends_with("::"))
+        {
+            ctx.qualifier.resize(ctx.qualifier.size() - 2);
+        }
+    }
+    return ctx;
+}
+
+/**
+ * @brief Completes container members matching class/interface inheritance rules under a scope qualifier.
+ */
+void CompleteInheritanceUnderQualifier(const InheritanceContext& ctx, CompletionCollector& collector)
+{
+    const auto ruleIndex = collector.request.symbolTable.GetRuleIndex();
+    if (!ruleIndex)
+    {
+        return;
+    }
+    const std::string_view predefinedExt = GetPredefinedExtension(collector.request);
+    const auto& cm = ruleIndex->Members(ctx.qualifier);
+    for (const auto& key : cm.memberKeys)
+    {
+        const auto symList = collector.request.symbolTable.FindSymbolsPtr(key);
+        if (!symList)
+        {
+            continue;
+        }
+        for (const auto& sym : *symList)
+        {
+            if (sym.type == analysis::SymbolType::Namespace)
+            {
+                SymbolProximity prox = DetermineSymbolProximity(sym, collector.request.uri, predefinedExt);
+                std::string sortText = FormatProximitySortText(prox, sym.name);
+                AddItemIfNew(collector, {sym.name, lsp::CompletionItemKind::Module, "", "", sym.qualifiedName, "",
+                                         std::move(sortText)});
+            }
+            else if (sym.type == analysis::SymbolType::Interface && sym.name != ctx.declaringClassName)
+            {
+                SymbolProximity prox = DetermineSymbolProximity(sym, collector.request.uri, predefinedExt);
+                std::string sortText = FormatProximitySortText(prox, sym.name);
+                AddItemIfNew(collector, {sym.name, lsp::CompletionItemKind::Interface, "", "", sym.qualifiedName, "",
+                                         std::move(sortText)});
+            }
+            else if (ctx.declKind == analysis::SymbolType::Class && sym.type == analysis::SymbolType::Class &&
+                     sym.name != ctx.declaringClassName)
+            {
+                if (!sym.GetClass().modifiers.isFinal)
+                {
+                    SymbolProximity prox = DetermineSymbolProximity(sym, collector.request.uri, predefinedExt);
+                    std::string sortText = FormatProximitySortText(prox, sym.name);
+                    AddItemIfNew(collector, {sym.name, lsp::CompletionItemKind::Class, "", "", sym.qualifiedName, "",
+                                             std::move(sortText)});
+                }
+            }
+        }
+    }
+}
+
+void CompleteGlobalInheritanceTypes(const InheritanceContext& ctx, CompletionCollector& collector,
+                                    std::string_view predefinedExt)
+{
+    collector.request.symbolTable.ForEachGlobalTypeSymbol(
+        [&](const analysis::Symbol& sym)
+        {
+            if (sym.type == analysis::SymbolType::Interface && sym.name != ctx.declaringClassName)
+            {
+                SymbolProximity prox = DetermineSymbolProximity(sym, collector.request.uri, predefinedExt);
+                std::string sortText = FormatProximitySortText(prox, sym.name);
+                AddItemIfNew(collector, {sym.name, lsp::CompletionItemKind::Interface, "", "", sym.qualifiedName, "",
+                                         std::move(sortText)});
+            }
+            else if (ctx.declKind == analysis::SymbolType::Class && sym.type == analysis::SymbolType::Class &&
+                     sym.name != ctx.declaringClassName && !sym.GetClass().modifiers.isFinal)
+            {
+                SymbolProximity prox = DetermineSymbolProximity(sym, collector.request.uri, predefinedExt);
+                std::string sortText = FormatProximitySortText(prox, sym.name);
+                AddItemIfNew(collector, {sym.name, lsp::CompletionItemKind::Class, "", "", sym.qualifiedName, "",
+                                         std::move(sortText)});
+            }
+        });
+}
+
+void CompleteInheritanceNamespaces(CompletionCollector& collector)
+{
+    for (const auto& ns : CollectVisibleNamespaces(collector.request, nullptr))
+    {
+        const size_t colon = ns.find("::");
+        const std::string rootNs = (colon == std::string::npos) ? ns : ns.substr(0, colon);
+        std::string sortText = FormatProximitySortText(SymbolProximity::ExternalFile, rootNs);
+        AddItemIfNew(collector, {rootNs, lsp::CompletionItemKind::Module, "", "", rootNs, "", std::move(sortText)});
+    }
+
+    if (const auto ruleIndex = collector.request.symbolTable.GetRuleIndex())
+    {
+        for (const auto& [container, _] : ruleIndex->byContainer)
+        {
+            if (container.find("::") == std::string::npos && !container.empty())
+            {
+                auto syms = collector.request.symbolTable.FindSymbolsPtr(container);
+                if (syms && std::any_of(syms->begin(), syms->end(), [](const analysis::Symbol& s)
+                                        { return s.type == analysis::SymbolType::Namespace; }))
+                {
+                    std::string sortText = FormatProximitySortText(SymbolProximity::ExternalFile, container);
+                    AddItemIfNew(collector, {container, lsp::CompletionItemKind::Module, "", "", container, "",
+                                             std::move(sortText)});
+                }
+            }
+        }
+    }
+}
+
+/**
+ * @brief Attempts to complete strictly allowed inheritance base classes, interfaces, and namespaces.
+ */
+bool TryCompleteInheritance(const std::string& prefix, CompletionCollector& collector)
+{
+    auto ctxOpt = DetectInheritanceContext(collector.request, prefix);
+    if (!ctxOpt.has_value())
+    {
+        return false;
+    }
+
+    const auto& ctx = *ctxOpt;
+    if (!ctx.qualifier.empty())
+    {
+        CompleteInheritanceUnderQualifier(ctx, collector);
+        return true;
+    }
+
+    const std::string_view predefinedExt = GetPredefinedExtension(collector.request);
+    CompleteGlobalInheritanceTypes(ctx, collector, predefinedExt);
+    CompleteInheritanceNamespaces(collector);
+    return true;
+}
+
+/**
  * @brief Resolves base container type name, handling unqualified template class lookups.
  * @param[in] canonicalType Canonical type name.
  * @param[in] symbolTable Global symbol table.
@@ -1617,6 +1818,22 @@ TSNode FindReceiverNodeAtDot(TSNode rootNode, std::string_view sourceCode, size_
  * @param[in] memberName Target member name.
  * @return Resolved raw type name of variable or return type of function, or empty string.
  */
+static std::string ExtractMemberTypeFromSymbols(const std::vector<analysis::Symbol>& syms)
+{
+    for (const auto& sym : syms)
+    {
+        if (sym.type == analysis::SymbolType::Variable && !sym.GetVariable().typeName.empty())
+        {
+            return sym.GetVariable().typeName;
+        }
+        if (sym.type == analysis::SymbolType::Function && !sym.GetFunction().returnType.empty())
+        {
+            return sym.GetFunction().returnType;
+        }
+    }
+    return "";
+}
+
 static std::string FindMemberInTypeHierarchy(const analysis::SymbolTable& table, const std::string& parentType,
                                              std::string_view memberName)
 {
@@ -1624,30 +1841,32 @@ static std::string FindMemberInTypeHierarchy(const analysis::SymbolTable& table,
     {
         return "";
     }
+    char getterBuf[128];
+    std::string_view getterView;
+    if (memberName.size() + 4 < sizeof(getterBuf))
+    {
+        std::memcpy(getterBuf, "get_", 4);
+        std::memcpy(getterBuf + 4, memberName.data(), memberName.size());
+        getterView = std::string_view(getterBuf, 4 + memberName.size());
+    }
+
     auto hierarchy = GetInheritedTypeHierarchy(table, parentType);
     for (const auto& cls : hierarchy)
     {
-        if (auto syms = table.FindSymbolsPtr(cls + "::" + std::string(memberName)))
+        if (auto syms = table.FindMemberSymbolPtr(cls, memberName))
         {
-            for (const auto& sym : *syms)
+            if (std::string type = ExtractMemberTypeFromSymbols(*syms); !type.empty())
             {
-                if (sym.type == analysis::SymbolType::Variable && !sym.GetVariable().typeName.empty())
-                {
-                    return sym.GetVariable().typeName;
-                }
-                if (sym.type == analysis::SymbolType::Function && !sym.GetFunction().returnType.empty())
-                {
-                    return sym.GetFunction().returnType;
-                }
+                return type;
             }
         }
-        if (auto syms = table.FindSymbolsPtr(cls + "::get_" + std::string(memberName)))
+        if (!getterView.empty())
         {
-            for (const auto& sym : *syms)
+            if (auto syms = table.FindMemberSymbolPtr(cls, getterView))
             {
-                if (sym.type == analysis::SymbolType::Function && !sym.GetFunction().returnType.empty())
+                if (std::string type = ExtractMemberTypeFromSymbols(*syms); !type.empty())
                 {
-                    return sym.GetFunction().returnType;
+                    return type;
                 }
             }
         }
@@ -1718,10 +1937,22 @@ static std::string ResolveNamedReceiverType(std::string_view nodeText, const Com
     {
         return memberHit;
     }
-    auto globalProps = analysis::FindGlobalPropertyAccessors(std::string(nodeText), request.symbolTable, false);
-    if (!globalProps.empty())
+    char getterBuf[128];
+    if (nodeText.size() + 4 < sizeof(getterBuf))
     {
-        return analysis::PropertyTypeFromAccessors(globalProps);
+        std::memcpy(getterBuf, "get_", 4);
+        std::memcpy(getterBuf + 4, nodeText.data(), nodeText.size());
+        std::string_view getterView(getterBuf, 4 + nodeText.size());
+        if (auto globalSyms = request.symbolTable.FindSymbolsPtr(getterView))
+        {
+            for (const auto& sym : *globalSyms)
+            {
+                if (sym.type == analysis::SymbolType::Function && !sym.GetFunction().returnType.empty())
+                {
+                    return sym.GetFunction().returnType;
+                }
+            }
+        }
     }
     return "";
 }
@@ -1832,6 +2063,37 @@ static size_t ExtractIdentifierBackward(const std::string& text, size_t end)
     return s;
 }
 
+static bool IsNumericStart(std::string_view expr)
+{
+    if (expr.empty())
+    {
+        return false;
+    }
+    if (std::isdigit(static_cast<unsigned char>(expr.front())))
+    {
+        return true;
+    }
+    return (expr.front() == '-' || expr.front() == '+') && expr.size() > 1 &&
+           std::isdigit(static_cast<unsigned char>(expr[1]));
+}
+
+static std::string_view DeduceNumericLiteralType(std::string_view expr)
+{
+    if (expr.ends_with('f') || expr.ends_with('F'))
+    {
+        return "float";
+    }
+    if (expr.find_first_of(".eE") != std::string_view::npos)
+    {
+        return "double";
+    }
+    if (expr.ends_with('u') || expr.ends_with('U'))
+    {
+        return "uint";
+    }
+    return "int";
+}
+
 /**
  * @brief Deduces basic literal or identifier type from an index expression string.
  * @param[in] expr Raw trimmed expression inside index brackets.
@@ -1846,7 +2108,7 @@ static std::string DeduceLiteralOrNamedType(std::string_view expr, const Complet
     {
         return "";
     }
-    if (expr.front() == '"' && expr.back() == '"')
+    if (expr.size() >= 2 && expr.front() == '"' && expr.back() == '"')
     {
         return ConfiguredStringTypeName(request);
     }
@@ -1854,15 +2116,9 @@ static std::string DeduceLiteralOrNamedType(std::string_view expr, const Complet
     {
         return "bool";
     }
-    if (std::isdigit(static_cast<unsigned char>(expr.front())) ||
-        ((expr.front() == '-' || expr.front() == '+') && expr.size() > 1 &&
-         std::isdigit(static_cast<unsigned char>(expr[1]))))
+    if (IsNumericStart(expr))
     {
-        if (expr.find('.') != std::string_view::npos || expr.ends_with('f') || expr.ends_with('F'))
-        {
-            return "float";
-        }
-        return "int";
+        return std::string(DeduceNumericLiteralType(expr));
     }
     return ResolveNamedReceiverType(expr, request, scope);
 }
@@ -1872,6 +2128,7 @@ static std::string DeduceLiteralOrNamedType(std::string_view expr, const Complet
  * @param[in] table Symbol table.
  * @param[in] parentType Enclosing class/type name, or empty for global.
  * @param[in] name Property name without prefix.
+ * @param[in] enclosingClass Enclosing class name in current scope, if any.
  * @return True if an indexed getter accessor exists.
  */
 static bool IsIndexedPropertyAccessor(const analysis::SymbolTable& table, const std::string& parentType,
@@ -1881,14 +2138,22 @@ static bool IsIndexedPropertyAccessor(const analysis::SymbolTable& table, const 
     {
         return false;
     }
-    const std::string getterName = "get_" + std::string(name);
+    char getterBuf[128];
+    if (name.size() + 4 >= sizeof(getterBuf))
+    {
+        return false;
+    }
+    std::memcpy(getterBuf, "get_", 4);
+    std::memcpy(getterBuf + 4, name.data(), name.size());
+    std::string_view getterView(getterBuf, 4 + name.size());
+
     std::string searchType = parentType.empty() ? std::string(enclosingClass) : parentType;
     if (!searchType.empty())
     {
         auto hierarchy = GetInheritedTypeHierarchy(table, searchType);
         for (const auto& cls : hierarchy)
         {
-            if (auto syms = table.FindSymbolsPtr(cls + "::" + getterName))
+            if (auto syms = table.FindMemberSymbolPtr(cls, getterView))
             {
                 for (const auto& sym : *syms)
                 {
@@ -1900,7 +2165,7 @@ static bool IsIndexedPropertyAccessor(const analysis::SymbolTable& table, const 
             }
         }
     }
-    if (auto syms = table.FindSymbolsPtr(getterName))
+    if (auto syms = table.FindSymbolsPtr(getterView))
     {
         for (const auto& sym : *syms)
         {
@@ -3021,6 +3286,22 @@ inline void SortCompletionItemsByProximity(std::vector<lsp::CompletionItem>& ite
 
 } // namespace
 
+void CollectUnscopedSymbols(const CompletionRequest& request, const analysis::Scope* innermostScope,
+                            std::string_view prefix, CompletionCollector& collector)
+{
+    const int accessorMode = request.config ? request.config->engine.propertyAccessorMode : 2;
+    const bool accessorsAreProperties = accessorMode >= 2;
+    const bool accessorKeywordRequired = accessorMode == 3;
+
+    CollectScopeDefinitions(innermostScope, collector);
+    CollectEnclosingClassMembers(collector);
+    const std::string_view queryPrefix = ExtractQueryPrefix(prefix);
+    CollectVisibleNamespaceSymbols(innermostScope, queryPrefix, collector);
+    CollectGlobalSymbols(accessorsAreProperties, accessorKeywordRequired, queryPrefix, collector);
+    CollectDeclarationSnippets(collector);
+    CollectKeywords(collector);
+}
+
 std::vector<lsp::CompletionItem> GetCompletion(const CompletionRequest& request)
 {
     std::string prefix = GetLinePrefix(request.sourceCode, request.position.line, request.position.character);
@@ -3042,6 +3323,12 @@ std::vector<lsp::CompletionItem> GetCompletion(const CompletionRequest& request)
     std::vector<lsp::CompletionItem> items;
     std::unordered_set<std::string> seenLabels;
     CompletionCollector collector{items, seenLabels, request};
+
+    if (TryCompleteInheritance(prefix, collector))
+    {
+        SortCompletionItemsByProximity(items);
+        return items;
+    }
 
     if (TryCompleteScopeResolution(prefix, collector))
     {
@@ -3065,17 +3352,7 @@ std::vector<lsp::CompletionItem> GetCompletion(const CompletionRequest& request)
         return items;
     }
 
-    const int accessorMode = request.config ? request.config->engine.propertyAccessorMode : 2;
-    const bool accessorsAreProperties = accessorMode >= 2;
-    const bool accessorKeywordRequired = accessorMode == 3;
-
-    CollectScopeDefinitions(innermostScope, collector);
-    CollectEnclosingClassMembers(collector);
-    const std::string_view queryPrefix = ExtractQueryPrefix(prefix);
-    CollectVisibleNamespaceSymbols(innermostScope, queryPrefix, collector);
-    CollectGlobalSymbols(accessorsAreProperties, accessorKeywordRequired, queryPrefix, collector);
-    CollectDeclarationSnippets(collector);
-    CollectKeywords(collector);
+    CollectUnscopedSymbols(request, innermostScope, prefix, collector);
 
     const bool enableSmartRanking = !request.config || request.config->features.completionSmartTypeRanking;
     if (enableSmartRanking)

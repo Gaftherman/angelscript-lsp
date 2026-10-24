@@ -449,40 +449,219 @@ bool CheckBaseClassSymbol(const BaseCheckRequest& req, const Symbol& base, const
     return !base.GetClass().modifiers.isMixin;
 }
 
+[[nodiscard]] inline std::string_view ScopeQualifier(std::string_view name) noexcept
+{
+    const size_t pos = name.rfind("::");
+    if (pos == std::string_view::npos)
+    {
+        return {};
+    }
+    return name.substr(0, pos);
+}
+
+/** @brief Retrieves the base_class_list AST node for a class or interface symbol. */
+TSNode FindBaseListNode(const Symbol& sym, const DiagnosticContext& ctx)
+{
+    if (!ctx.request.tree)
+    {
+        return TSNode{};
+    }
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode root = ts_tree_root_node(ctx.request.tree);
+    TSPoint pt{sym.selectionRange.startLine, sym.selectionRange.startCharacter};
+    TSNode node = ts_node_descendant_for_point_range(root, pt, pt);
+    for (int depth = 0; depth < 4 && !ts_node_is_null(node); ++depth)
+    {
+        const TSSymbol s = ts_node_symbol(node);
+        if (s == gs.symClassDeclaration || s == gs.symInterfaceDeclaration)
+        {
+            break;
+        }
+        node = ts_node_parent(node);
+    }
+    if (ts_node_is_null(node))
+    {
+        return TSNode{};
+    }
+    TSNode baseList = TSNode{};
+    parser::ForEachNamedChildNodeUntil(node,
+                                       [&](TSNode child)
+                                       {
+                                           if (ts_node_symbol(child) == gs.symBaseClassList)
+                                           {
+                                               baseList = child;
+                                               return true;
+                                           }
+                                           return false;
+                                       });
+    return baseList;
+}
+
+/** @brief Obtains the exact AST range of the base at index in base_class_list. */
+SourceRange GetBaseRange(TSNode baseList, size_t index, const SourceRange& fallbackRange)
+{
+    if (ts_node_is_null(baseList))
+    {
+        return fallbackRange;
+    }
+    size_t curIdx = 0;
+    SourceRange result = fallbackRange;
+    parser::ForEachNamedChildNodeUntil(baseList,
+                                       [&](TSNode child)
+                                       {
+                                           if (curIdx == index)
+                                           {
+                                               TSPoint s = ts_node_start_point(child);
+                                               TSPoint e = ts_node_end_point(child);
+                                               result = SourceRange{s.row, s.column, e.row, e.column};
+                                               return true;
+                                           }
+                                           ++curIdx;
+                                           return false;
+                                       });
+    return result;
+}
+
+/** @brief Checks if base class is synthetic or ignored by engine rules. */
+bool IsIgnoredOrProxyBase(const std::string& cleanBase, const DiagnosticContext& ctx)
+{
+    if (!ctx.request.engineRules)
+    {
+        return false;
+    }
+    const auto& ignored = ctx.request.engineRules->unusedRules.ignoredBaseClasses;
+    if (std::find(ignored.begin(), ignored.end(), cleanBase) != ignored.end())
+    {
+        return true;
+    }
+    return ctx.request.engineRules->unusedRules.baseClassProxyMap.contains(cleanBase);
+}
+
+/** @brief Finds candidate base symbols in qualified, container, using-namespace or global scopes. */
+std::shared_ptr<const std::vector<Symbol>> FindBaseCandidateSymbols(const std::string& cleanBase, const Symbol& sym,
+                                                                    const DiagnosticContext& ctx)
+{
+    const auto& table = ctx.request.symbolTable;
+
+    std::string_view curContainer = sym.containerName;
+    while (!curContainer.empty())
+    {
+        const std::string candidate = std::string(curContainer) + "::" + cleanBase;
+        if (auto syms = table.FindSymbolsPtr(candidate))
+        {
+            if (!syms->empty())
+            {
+                return syms;
+            }
+        }
+        curContainer = ScopeQualifier(curContainer);
+    }
+
+    for (const auto& uNs : analysis::GetUsingNamespaces(ctx.request))
+    {
+        const std::string candidate = uNs + "::" + cleanBase;
+        if (auto syms = table.FindSymbolsPtr(candidate))
+        {
+            if (!syms->empty())
+            {
+                return syms;
+            }
+        }
+    }
+
+    return table.FindSymbolsPtr(cleanBase);
+}
+
+/** @brief Checks if a qualified base's prefix is an invalid non-namespace type like a class. */
+bool IsInvalidClassScopeQualifier(std::string_view cleanBase, const Symbol& sym, const DiagnosticContext& ctx)
+{
+    if (!HasScopeQualifier(cleanBase))
+    {
+        return false;
+    }
+    const std::string_view qual = ScopeQualifier(cleanBase);
+    const auto qualSyms = FindBaseCandidateSymbols(std::string(qual), sym, ctx);
+    if (!qualSyms || qualSyms->empty())
+    {
+        return false;
+    }
+    return std::none_of(qualSyms->begin(), qualSyms->end(),
+                        [](const Symbol& s) { return s.type == SymbolType::Namespace; });
+}
+
+/** @brief Validates an individual base class entry and returns true if it resolved to a concrete class base. */
+bool ValidateOneBase(const BaseCheckRequest& req, const std::string& cleanBase, const SourceRange& baseRange)
+{
+    if (IsIgnoredOrProxyBase(cleanBase, req.ctx))
+    {
+        return false;
+    }
+
+    if (IsInvalidClassScopeQualifier(cleanBase, req.sym, req.ctx))
+    {
+        req.ctx.LogRule("CheckBases", "as-err-unresolved-type", req.sym);
+        req.ctx.EmitAtRange(baseRange, "as-err-unresolved-type", cleanBase);
+        return false;
+    }
+
+    const auto baseSymbols = FindBaseCandidateSymbols(cleanBase, req.sym, req.ctx);
+    if (!baseSymbols || baseSymbols->empty())
+    {
+        req.ctx.LogRule("CheckBases", "as-err-unresolved-type", req.sym);
+        req.ctx.EmitAtRange(baseRange, "as-err-unresolved-type", cleanBase);
+        return false;
+    }
+
+    bool hasClassOrIface = false;
+    bool sawClassBase = false;
+    for (const auto& base : *baseSymbols)
+    {
+        if (base.type == SymbolType::Class)
+        {
+            hasClassOrIface = true;
+            sawClassBase = CheckBaseClassSymbol(req, base, cleanBase);
+            break;
+        }
+        if (base.type == SymbolType::Interface)
+        {
+            hasClassOrIface = true;
+            break;
+        }
+    }
+
+    if (!hasClassOrIface)
+    {
+        req.ctx.LogRule("CheckBases", "as-err-unresolved-type", req.sym);
+        req.ctx.EmitAtRange(baseRange, "as-err-unresolved-type", cleanBase);
+        return false;
+    }
+
+    return sawClassBase;
+}
+
 /** @brief Rules about the base list: existence, kind, count and finality. */
 void CheckBases(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
 {
     uint32_t classBaseCount = 0;
     const BaseCheckRequest req{sym, sig, ctx};
+    const TSNode baseListNode = FindBaseListNode(sym, ctx);
 
-    for (const auto& baseName : sig.bases)
+    for (size_t i = 0; i < sig.bases.size(); ++i)
     {
-        const std::string cleanBase = CleanBaseType(baseName);
+        const std::string cleanBase = CleanBaseType(sig.bases[i]);
         if (cleanBase.empty())
         {
             continue;
         }
 
-        const auto baseSymbols = ctx.request.symbolTable.FindSymbolsPtr(cleanBase);
-        if (!baseSymbols || baseSymbols->empty())
+        const SourceRange baseRange = GetBaseRange(baseListNode, i, sym.selectionRange);
+        if (ValidateOneBase(req, cleanBase, baseRange))
         {
-            continue;
-        }
-
-        bool sawClassBase = false;
-        for (const auto& base : *baseSymbols)
-        {
-            if (base.type == SymbolType::Class)
+            if (!sig.modifiers.isMixin && ++classBaseCount > 1)
             {
-                sawClassBase = CheckBaseClassSymbol(req, base, cleanBase);
-                break;
+                ctx.LogRule("CheckBases", "as-err-multi-class-inherit", sym);
+                ctx.Emit(sym, "as-err-multi-class-inherit", sym.name);
             }
-        }
-
-        if (sawClassBase && !sig.modifiers.isMixin && ++classBaseCount > 1)
-        {
-            ctx.LogRule("CheckBases", "as-err-multi-class-inherit", sym);
-            ctx.Emit(sym, "as-err-multi-class-inherit", sym.name);
         }
     }
 
@@ -490,6 +669,58 @@ void CheckBases(const Symbol& sym, const ClassSignature& sig, const DiagnosticCo
     {
         ctx.LogRule("CheckBases", "as-err-circular-inherit", sym);
         ctx.Emit(sym, "as-err-circular-inherit", sym.name);
+    }
+}
+
+/** @brief Validates bases declared on an interface. */
+void CheckInterfaceBases(const Symbol& sym, const InterfaceSignature& sig, const DiagnosticContext& ctx)
+{
+    const TSNode baseListNode = FindBaseListNode(sym, ctx);
+
+    for (size_t i = 0; i < sig.inheritedInterfaces.size(); ++i)
+    {
+        const std::string cleanBase = CleanBaseType(sig.inheritedInterfaces[i]);
+        if (cleanBase.empty())
+        {
+            continue;
+        }
+
+        const SourceRange baseRange = GetBaseRange(baseListNode, i, sym.selectionRange);
+        if (IsIgnoredOrProxyBase(cleanBase, ctx))
+        {
+            continue;
+        }
+
+        if (IsInvalidClassScopeQualifier(cleanBase, sym, ctx))
+        {
+            ctx.LogRule("CheckInterfaceBases", "as-err-unresolved-type", sym);
+            ctx.EmitAtRange(baseRange, "as-err-unresolved-type", cleanBase);
+            continue;
+        }
+
+        const auto baseSymbols = FindBaseCandidateSymbols(cleanBase, sym, ctx);
+        if (!baseSymbols || baseSymbols->empty())
+        {
+            ctx.LogRule("CheckInterfaceBases", "as-err-unresolved-type", sym);
+            ctx.EmitAtRange(baseRange, "as-err-unresolved-type", cleanBase);
+            continue;
+        }
+
+        bool hasInterfaceCandidate = false;
+        for (const auto& b : *baseSymbols)
+        {
+            if (b.type == SymbolType::Interface)
+            {
+                hasInterfaceCandidate = true;
+                break;
+            }
+        }
+
+        if (!hasInterfaceCandidate)
+        {
+            ctx.LogRule("CheckInterfaceBases", "as-err-unresolved-type", sym);
+            ctx.EmitAtRange(baseRange, "as-err-unresolved-type", cleanBase);
+        }
     }
 }
 
@@ -796,33 +1027,6 @@ void CheckThisMember(TSNode cur, std::string_view mixinSource, MixinCheckContext
     }
 }
 
-/** @brief Checks bare function calls without qualifiers. */
-void CheckCallMember(TSNode cur, std::string_view mixinSource, FunctionCheckState& state, const DiagnosticContext& ctx)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode fnNode = parser::GetChildByField(cur, gs.fieldFunction);
-    if (ts_node_is_null(fnNode))
-    {
-        return;
-    }
-
-    const TSSymbol fnSym = ts_node_symbol(fnNode);
-    if (fnSym != gs.symIdentifier && fnSym != gs.symScopedIdentifier)
-    {
-        return;
-    }
-
-    std::string fnName = GetNodeText(fnNode, mixinSource);
-    if (fnName.find("::") == std::string::npos && !fnName.empty() && !state.localNames.contains(fnName) &&
-        !state.mctx.mixinSelfMembers.contains(fnName) && !state.mctx.hostMembers.contains(fnName) &&
-        !ctx.request.GetRuleIndex().allNames.contains(fnName) && !IsKeyword(fnName) && !IsPrimitiveTypeName(fnName) &&
-        !state.mctx.reported.contains(fnName))
-    {
-        state.mctx.reported.insert(fnName);
-        EmitMixinMemberNotFound(state.mctx, fnName, fnNode, ctx);
-    }
-}
-
 /** @brief Checks if a child node matches a named field of the parent by byte offset. */
 bool IsNamedChildMatch(TSNode parent, TSFieldId fieldId, TSNode cur)
 {
@@ -889,13 +1093,135 @@ bool IsBuiltinOrKeyword(std::string_view name, std::string_view effectiveStringT
     return IsKeyword(name) || IsPrimitiveTypeName(name);
 }
 
-/** @brief Checks if a name matches getter/setter property accessors in mixin or host. */
-bool HasPropertyAccessorMatch(const std::string& name, const FunctionCheckState& state)
+struct AccessorLookupContext
 {
-    const std::string getProp = "get_" + name;
-    const std::string setProp = "set_" + name;
-    return state.mctx.mixinSelfMembers.contains(getProp) || state.mctx.mixinSelfMembers.contains(setProp) ||
-           state.mctx.hostMembers.contains(getProp) || state.mctx.hostMembers.contains(setProp);
+    const std::string& name;
+    std::string_view getView;
+    std::string_view setView;
+};
+
+bool HasSelfOrHostPropertyAccessor(std::string_view getView, std::string_view setView, const FunctionCheckState& state)
+{
+    return state.mctx.mixinSelfMembers.contains(std::string(getView)) ||
+           state.mctx.mixinSelfMembers.contains(std::string(setView)) ||
+           state.mctx.hostMembers.contains(std::string(getView)) ||
+           state.mctx.hostMembers.contains(std::string(setView));
+}
+
+bool HasGlobalPropertyAccessor(const std::string& name, std::string_view getView, std::string_view setView,
+                               const DiagnosticContext& ctx)
+{
+    const auto& ruleIndex = ctx.request.GetRuleIndex();
+    if (ruleIndex.globalAccessorPropertyNames.contains(name) ||
+        ruleIndex.keywordGlobalAccessorPropertyNames.contains(name))
+    {
+        return true;
+    }
+    const auto& table = ctx.request.symbolTable;
+    return table.FindSymbolsPtr(getView) != nullptr || table.FindSymbolsPtr(setView) != nullptr;
+}
+
+bool HasNamespacePropertyAccessor(const AccessorLookupContext& actx, std::string_view ns, const DiagnosticContext& ctx)
+{
+    if (ns.empty())
+    {
+        return false;
+    }
+    if (ctx.request.GetRuleIndex().Members(ns).accessorPropertyNames.contains(actx.name))
+    {
+        return true;
+    }
+    const auto& table = ctx.request.symbolTable;
+    return table.FindMemberSymbolPtr(ns, actx.getView) != nullptr ||
+           table.FindMemberSymbolPtr(ns, actx.setView) != nullptr;
+}
+
+/** @brief Checks if a name matches getter/setter property accessors in mixin, host, global, or namespaces. */
+bool HasPropertyAccessorMatch(const std::string& name, const FunctionCheckState& state, const DiagnosticContext& ctx)
+{
+    if (name.size() > 120)
+    {
+        return false;
+    }
+    char buf[128];
+    std::memcpy(buf, "get_", 4);
+    std::memcpy(buf + 4, name.data(), name.size());
+    const std::string_view getView(buf, 4 + name.size());
+
+    std::memcpy(buf, "set_", 4);
+    const std::string_view setView(buf, 4 + name.size());
+
+    if (HasSelfOrHostPropertyAccessor(getView, setView, state) ||
+        HasGlobalPropertyAccessor(name, getView, setView, ctx))
+    {
+        return true;
+    }
+
+    const AccessorLookupContext actx{name, getView, setView};
+    if (state.mctx.mixinSym && HasNamespacePropertyAccessor(actx, state.mctx.mixinSym->containerName, ctx))
+    {
+        return true;
+    }
+    if (HasScopeQualifier(state.mctx.hostClassName) &&
+        HasNamespacePropertyAccessor(actx, ScopeQualifier(state.mctx.hostClassName), ctx))
+    {
+        return true;
+    }
+    for (const auto& uNs : analysis::GetUsingNamespaces(ctx.request))
+    {
+        if (HasNamespacePropertyAccessor(actx, uNs, ctx))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool HasNamespaceMember(const std::string& name, std::string_view ns, const DiagnosticContext& ctx)
+{
+    if (ns.empty())
+    {
+        return false;
+    }
+    return ctx.request.symbolTable.FindMemberSymbolPtr(ns, name) != nullptr ||
+           ctx.request.GetRuleIndex().Members(ns).allMemberNames.contains(name);
+}
+
+bool IsEngineOrGlobalIdentifier(const std::string& name, const DiagnosticContext& ctx)
+{
+    if (ctx.request.engineRules)
+    {
+        const auto& delProps = ctx.request.engineRules->unusedRules.baseClassDelegateProperties;
+        if (std::find(delProps.begin(), delProps.end(), name) != delProps.end())
+        {
+            return true;
+        }
+    }
+    const auto& ruleIndex = ctx.request.GetRuleIndex();
+    return ruleIndex.globalNames.contains(name) || ruleIndex.allNames.contains(name) ||
+           ctx.request.symbolTable.HasSymbolAnywhere(name);
+}
+
+bool IsValidInEnclosingOrUsingNamespaces(const std::string& name, const FunctionCheckState& state,
+                                         const DiagnosticContext& ctx)
+{
+    if (state.mctx.mixinSym && HasNamespaceMember(name, state.mctx.mixinSym->containerName, ctx))
+    {
+        return true;
+    }
+    if (HasScopeQualifier(state.mctx.hostClassName) &&
+        HasNamespaceMember(name, ScopeQualifier(state.mctx.hostClassName), ctx))
+    {
+        return true;
+    }
+    for (const auto& uNs : analysis::GetUsingNamespaces(ctx.request))
+    {
+        if (HasNamespaceMember(name, uNs, ctx))
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 /** @brief Checks if an identifier resolves in local, mixin, host, or global scopes. */
@@ -905,15 +1231,41 @@ bool IsValidMixinIdentifier(const std::string& name, const FunctionCheckState& s
     {
         return true;
     }
-
     if (state.localNames.contains(name) || state.mctx.mixinSelfMembers.contains(name) ||
-        state.mctx.hostMembers.contains(name) || HasPropertyAccessorMatch(name, state))
+        state.mctx.hostMembers.contains(name) || HasPropertyAccessorMatch(name, state, ctx))
     {
         return true;
     }
+    if (IsEngineOrGlobalIdentifier(name, ctx))
+    {
+        return true;
+    }
+    return IsValidInEnclosingOrUsingNamespaces(name, state, ctx);
+}
 
-    const auto& ruleIndex = ctx.request.GetRuleIndex();
-    return ruleIndex.allNames.contains(name) || ctx.request.symbolTable.HasSymbolAnywhere(name);
+/** @brief Checks bare function calls without qualifiers. */
+void CheckCallMember(TSNode cur, std::string_view mixinSource, FunctionCheckState& state, const DiagnosticContext& ctx)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode fnNode = parser::GetChildByField(cur, gs.fieldFunction);
+    if (ts_node_is_null(fnNode))
+    {
+        return;
+    }
+
+    const TSSymbol fnSym = ts_node_symbol(fnNode);
+    if (fnSym != gs.symIdentifier && fnSym != gs.symScopedIdentifier)
+    {
+        return;
+    }
+
+    std::string fnName = GetNodeText(fnNode, mixinSource);
+    if (fnName.find("::") == std::string::npos && !fnName.empty() && !IsValidMixinIdentifier(fnName, state, ctx) &&
+        !state.mctx.reported.contains(fnName))
+    {
+        state.mctx.reported.insert(fnName);
+        EmitMixinMemberNotFound(state.mctx, fnName, fnNode, ctx);
+    }
 }
 
 /** @brief Checks bare identifier references inside mixin function bodies. */
@@ -970,20 +1322,21 @@ void CollectLocalNames(TSNode memNode, TSNode funcBody, std::string_view mixinSo
 void CheckFuncBodyStatements(TSNode funcBody, std::string_view mixinSource, FunctionCheckState& state,
                              const DiagnosticContext& ctx)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     parser::ForEachDescendantNode(funcBody,
                                   [&](TSNode cur)
                                   {
-                                      std::string_view curType = NodeType(cur);
+                                      const TSSymbol curSym = ts_node_symbol(cur);
 
-                                      if (curType == "member_expression")
+                                      if (curSym == gs.symMemberExpression)
                                       {
                                           CheckThisMember(cur, mixinSource, state.mctx, ctx);
                                       }
-                                      else if (curType == "call_expression")
+                                      else if (curSym == gs.symCallExpression)
                                       {
                                           CheckCallMember(cur, mixinSource, state, ctx);
                                       }
-                                      else if (curType == "identifier")
+                                      else if (curSym == gs.symIdentifier)
                                       {
                                           CheckIdentifierMember(cur, mixinSource, state, ctx);
                                       }
@@ -1223,6 +1576,7 @@ void ValidateClass(const Symbol& sym, const DiagnosticContext& ctx)
             ctx.LogRule("ValidateClass", "as-err-circular-inherit", sym);
             ctx.Emit(sym, "as-err-circular-inherit", sym.name);
         }
+        CheckInterfaceBases(sym, sym.GetInterface(), ctx);
         return;
     }
 

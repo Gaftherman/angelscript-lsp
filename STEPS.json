@@ -1,6 +1,6 @@
 {
   "project": "angelscript-lsp",
-  "currentPhase": "PHASE_38_CALL_DIAGNOSTIC_RANGE_CLAMPING_AND_SYNTAX_ERROR_SUPPRESSION",
+  "currentPhase": "PHASE_41_MIXIN_E210_BASE_VALIDATION_SCOPED_TOKENS_DUPLICATE_SYMBOLS",
   "status": "COMPLETED",
   "baselineMetrics": {
     "largeScript3000ParseAndAnalysisMs": 192.75,
@@ -9,14 +9,14 @@
     "parityPassCount": 256,
     "parityTotalCount": 256,
     "unexplainedFalsePositives": 0,
-    "unitTestsTotal": 2438,
-    "unitTestsPassed": 2438,
-    "unitAssertionsPassed": 34440,
+    "unitTestsTotal": 2506,
+    "unitTestsPassed": 2506,
+    "unitAssertionsPassed": 35800,
     "condEdgePassCount": 0,
     "tsanRaceWarnings": 0,
     "layerIncludeCheck": "PASS",
     "astGrepViolations": 0,
-    "jscpdDuplicationPercent": 1.09
+    "jscpdDuplicationPercent": 1.1
   },
   "phases": [
     {
@@ -1135,6 +1135,72 @@
         "CheckCall and CheckDeclaratorDirectInit now abort early when ts_node_has_error(callee) || ts_node_has_error(arguments) is true, suppressing spurious E117 argument count errors when syntax errors exist inside argument lists.",
         "All 2,438 unit tests (34,440 assertions) passed with 0 failures and all 12 quality gates passed."
       ]
+    },
+    {
+      "id": "PHASE_40",
+      "name": "Antipattern Eradication, Property Accessor Restrictions, Definition Disambiguation & Modular Inlay Hints/CodeLens",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/features/completion/CompletionHandler.cpp",
+        "server/src/analysis/SemanticHelpers.cpp",
+        "server/src/analysis/TypeConversionChecker.cpp",
+        "server/src/analysis/rules/FunctionRules.cpp",
+        "server/src/features/definition/DefinitionHandler.cpp",
+        "server/src/config/ServerConfig.h",
+        "server/src/config/ServerConfig.cpp",
+        "server/src/lsp/handlers/WorkspaceHandlers.cpp",
+        "server/src/lsp/handlers/TextDocumentHandlers.cpp",
+        "server/src/features/inlay_hint/InlayHintHandler.cpp",
+        "server/src/features/code_lens/CodeLensHandler.h",
+        "server/src/features/code_lens/CodeLensHandler.cpp",
+        "client/package.json",
+        "client/src/extension.ts",
+        "client/package.nls.json",
+        "client/package.nls.es.json",
+        "client/README.md",
+        "client/README.es.md",
+        "server/tests/OpIndexParityTest.cpp",
+        "server/tests/InlayHintTest.cpp",
+        "server/tests/CodeLensTest.cpp",
+        "server/tests/ServerConfigTest.cpp",
+        "server/tests/DefinitionTest.cpp",
+        "STEPS.md",
+        "STEPS.json"
+      ],
+      "findings": [
+        "Eradicated 4 performance and correctness antipatterns in CompletionHandler.cpp and SemanticHelpers.cpp: replaced string concatenations in FindSymbolsPtr with FindMemberSymbolPtr and char getterBuf[128] stack views; replaced string-based node/field comparisons with O(1) grammar symbols; removed redundant GetEnclosingContainers AST climbing; fixed numeric literal deduction for double, float, and uint.",
+        "Implemented full parity with official AngelScript property accessor restrictions: prohibited ++/-- on virtual and indexed properties, prohibited += compound assignment on indexed properties, enforced read-only and write-only access checks, and added getter/setter type mismatch detection.",
+        "Fixed homonymous interface vs namespace definition ambiguity via ContainerKindMatches and DisambiguateScopedQualifierContainer in DefinitionHandler.cpp.",
+        "Implemented modular Inlay Hints and CodeLens configuration across server CLI, ServerConfig, LSP handlers, client package.json, extension.ts, EN/ES localizations, and synchronized README files.",
+        "All 2,506 unit tests passed cleanly with 0 failures, all 12 quality gates passed, and 100% settings wired with dual-language parity."
+      ]
+    },
+    {
+      "id": "PHASE_41",
+      "name": "Mixin E210 False Positive Fix, Base Class Validation & Completion, Scoped Semantic Tokens Breakdown & Predefined Duplicate Detection",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/analysis/rules/ClassRules.cpp",
+        "server/src/features/completion/CompletionHandler.cpp",
+        "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
+        "server/src/parser/queries/BuiltQueries.h",
+        "server/src/analysis/rules/TypeRules.cpp",
+        "server/src/features/definition/DefinitionHandler.cpp",
+        "server/tests/ClassRulesTest.cpp",
+        "server/tests/CompletionTest.cpp",
+        "server/tests/SemanticTokensTest.cpp",
+        "server/tests/TypeRulesTest.cpp",
+        "STEPS.md",
+        "STEPS.json"
+      ],
+      "findings": [
+        "Fixed false positive E210 (as-err-mixin-instantiation-member-not-found) on global property accessors (e.g. g_Scheduler), mixin/host namespace symbols, active using namespaces, and engine delegate/proxy properties in ClassRules.cpp using O(1) stack views and RuleIndex lookups with zero heap allocations.",
+        "Implemented strict base class and interface validation in CheckBases and CheckInterfaceBases, emitting as-err-unresolved-type when base types are missing, qualified by classes instead of namespaces, or non-inheritable.",
+        "Implemented inheritance context detection and strict filtering in CompletionHandler.cpp (TryCompleteInheritance), offering only non-final classes, interfaces, mixins, and namespaces, and suppressing final classes, self, functions, variables, enums, primitives, snippets, and keywords.",
+        "Broken down semantic tokens in scoped_identifier under base_class_list: updated BuiltQueries.h and implemented ShouldSuppressScopedLeafToken in SemanticTokensHandler.cpp, ensuring qualifiers are tokenized as types/operators and non-existent leaf types are suppressed instead of emitting an oversized monolithic token.",
+        "Enabled duplicate symbol detection between .as script files and .as.predefined in TypeRules.cpp (CheckDuplicatePair and CollectDuplicateCandidates), catching collisions across variables, constants, types, and functions with identical signatures while allowing namespace reopening.",
+        "All 2,487 unit and integration test cases passed (34,592 assertions, 0 failures, 30 skipped), all 12 active quality gates passed, and Lizard complexity ceilings (CCN <= 15, length <= 70) verified."
+      ]
     }
   ],
   "identifiedGaps": [
@@ -1187,10 +1253,19 @@
     "GAP-CRASH-01: LSP server crashes when deleting or editing string/heredoc quotes due to size_t unsigned underflow and unclosed multi-line column indexing. (RESOLVED in Phase 37 with parser::UnquoteStringView, SkipHeredocLiteral, and SemanticTokens column clamping).",
     "GAP-INDENT-01: Typing '}' inside multiline heredoc strings auto-dedents to column 0 and highlights function opening bracket. (RESOLVED in Phase 37 with FormatOnType AST symbol guard and client TextMate/autoClosingPairs update).",
     "GAP-CI-04: AggregateError [ETIMEDOUT] during xvfb-run -a npm test on Ubuntu runners due to Node 22 IPv6 connect timeout on update.code.visualstudio.com. (RESOLVED in Phase 37 with ipv4first DNS ordering, .vscode-test caching, 60s download timeout, and CI retry loops).",
-    "GAP-CALL-03: Multiline call expressions underline hundreds of lines on argument count errors and emit cascading semantic errors on broken syntax. (RESOLVED in Phase 38 with GetCalleeDiagnosticRange and ts_node_has_error early exit)."
+    "GAP-CALL-03: Multiline call expressions underline hundreds of lines on argument count errors and emit cascading semantic errors on broken syntax. (RESOLVED in Phase 38 with GetCalleeDiagnosticRange and ts_node_has_error early exit).",
+    "GAP-PERF-06: String concatenations and vector copies in CompletionHandler and SemanticHelpers. (RESOLVED in Phase 40 with FindMemberSymbolPtr, O(1) grammar symbols, and getterBuf stack buffer views).",
+    "GAP-PROP-01: Missing AngelScript restrictions on virtual and indexed properties (++ / -- ban, compound assignment += ban on indexed properties, read/write only access, getter/setter type parity). (RESOLVED in Phase 40).",
+    "GAP-DEF-01: Homonymous interface vs namespace definition collision. (RESOLVED in Phase 40 with ContainerKindMatches).",
+    "GAP-UX-04: Monolithic Inlay Hints and CodeLens configuration lacking TS/JS style modularity. (RESOLVED in Phase 40 with granular config flags, CLI args, EN/ES parity, and lambda return type hints).",
+    "GAP-MIXIN-01: False positive E210 on global property accessors and namespace symbols in mixins. (RESOLVED in Phase 41).",
+    "GAP-INHERIT-01: Missing base class validation and unqualified completion suggestions in inheritance lists. (RESOLVED in Phase 41).",
+    "GAP-TOKENS-01: Scoped identifiers in base_class_list emitting single monolithic token spanning qualifier and leaf. (RESOLVED in Phase 41).",
+    "GAP-DUP-01: Script symbols colliding with .as.predefined declarations not flagged as duplicates. (RESOLVED in Phase 41).",
+    "GAP-CALL-04: Homonymous class and namespace colliding when one has default arguments. (RESOLVED in Phase 41 with FilterScopedCandidatesByCallerContext and IsCompatibleNamespaceOrHomonym)."
   ],
   "nextActions": [
-    "Phase 35 and 1.1.3-exp.1 release completed with 100% test pass rate (2,433 tests, 34,426 assertions) and all 12 quality gates passed."
+    "Phase 41 completed with 100% test pass rate (2,489 tests, 34,598 assertions) and all 12 quality gates passed."
   ],
-  "lastMilestone": "Phase 38 completed with 100% test pass rate (2,438 tests, 34,440 assertions) and all 12 quality gates passed."
+  "lastMilestone": "Phase 41 completed with 100% test pass rate (2,489 tests, 34,598 assertions) and all 12 quality gates passed."
 }

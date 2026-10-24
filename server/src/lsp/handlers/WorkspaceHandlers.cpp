@@ -477,13 +477,9 @@ bool Server::UpdateDiagnosticsConfiguration(const lsp::LSPObject& section)
     return diagnosticsChanged;
 }
 
-static void UpdateInlayHintFeatureConfig(const lsp::LSPObject& section, config::ServerConfig& cfg)
+static void UpdateInlayHintDisplayConfig(const lsp::LSPObject& section, const lsp::LSPObject* ihObj,
+                                         config::ServerConfig& cfg)
 {
-    const lsp::LSPObject* ihObj = nullptr;
-    if (const auto* ihVal = section.find("inlayHints"); ihVal && ihVal->isObject())
-    {
-        ihObj = &ihVal->object();
-    }
     if (auto maxParam = FindSectionInt(section, ihObj, "maxParameters", "inlayHints"); maxParam.has_value())
     {
         cfg.features.inlayHintsMaxParameters = static_cast<size_t>(std::max(0, *maxParam));
@@ -505,18 +501,6 @@ static void UpdateInlayHintFeatureConfig(const lsp::LSPObject& section, config::
     {
         cfg.features.inlayHintsEnableLocation = *loc;
     }
-    if (auto params = FindSectionBool(section, ihObj, "parameters", "inlayHints"); params.has_value())
-    {
-        cfg.features.inlayHintsParameters = *params;
-    }
-    else if (auto paramNames = FindSectionBool(section, ihObj, "parameterNames", "inlayHints"); paramNames.has_value())
-    {
-        cfg.features.inlayHintsParameters = *paramNames;
-    }
-    if (auto varTypes = FindSectionBool(section, ihObj, "variableTypes", "inlayHints"); varTypes.has_value())
-    {
-        cfg.features.inlayHintsVariableTypes = *varTypes;
-    }
     if (auto omitted = FindSectionString(section, ihObj, "omittedDefaultArguments", "inlayHints"); omitted.has_value())
     {
         if (*omitted == "off" || *omitted == "false")
@@ -532,6 +516,47 @@ static void UpdateInlayHintFeatureConfig(const lsp::LSPObject& section, config::
             cfg.features.inlayHintsOmittedDefaultArguments = config::OmittedDefaultArgumentsMode::NameAndValue;
         }
     }
+}
+
+static void UpdateInlayHintKindConfig(const lsp::LSPObject& section, const lsp::LSPObject* ihObj,
+                                      config::ServerConfig& cfg)
+{
+    if (auto params = FindSectionBool(section, ihObj, "parameters", "inlayHints"); params.has_value())
+    {
+        cfg.features.inlayHintsParameters = *params;
+    }
+    else if (auto paramNames = FindSectionBool(section, ihObj, "parameterNames", "inlayHints"); paramNames.has_value())
+    {
+        cfg.features.inlayHintsParameters = *paramNames;
+    }
+    if (auto varTypes = FindSectionBool(section, ihObj, "variableTypes", "inlayHints"); varTypes.has_value())
+    {
+        cfg.features.inlayHintsVariableTypes = *varTypes;
+    }
+    if (auto fnRetTypes = FindSectionBool(section, ihObj, "functionReturnTypes", "inlayHints"); fnRetTypes.has_value())
+    {
+        cfg.features.inlayHintsFunctionReturnTypes = *fnRetTypes;
+    }
+    if (auto enumVals = FindSectionBool(section, ihObj, "enumMemberValues", "inlayHints"); enumVals.has_value())
+    {
+        cfg.features.inlayHintsEnumMemberValues = *enumVals;
+    }
+    if (auto refMods = FindSectionBool(section, ihObj, "parameterReferenceModifiers", "inlayHints");
+        refMods.has_value())
+    {
+        cfg.features.inlayHintsParameterReferenceModifiers = *refMods;
+    }
+}
+
+static void UpdateInlayHintFeatureConfig(const lsp::LSPObject& section, config::ServerConfig& cfg)
+{
+    const lsp::LSPObject* ihObj = nullptr;
+    if (const auto* ihVal = section.find("inlayHints"); ihVal && ihVal->isObject())
+    {
+        ihObj = &ihVal->object();
+    }
+    UpdateInlayHintDisplayConfig(section, ihObj, cfg);
+    UpdateInlayHintKindConfig(section, ihObj, cfg);
 }
 
 static void UpdateHoverFeatureConfig(const lsp::LSPObject& section, config::ServerConfig& cfg)
@@ -566,6 +591,40 @@ static void UpdateHoverFeatureConfig(const lsp::LSPObject& section, config::Serv
                 }
             }
         }
+    }
+}
+
+static void UpdateCodeLensFeatureConfig(const lsp::LSPObject& section, config::ServerConfig& cfg)
+{
+    const lsp::LSPObject* clObj = nullptr;
+    if (const auto* clVal = section.find("codeLens"); clVal && clVal->isObject())
+    {
+        clObj = &clVal->object();
+    }
+    if (auto enabled = FindSectionBool(section, clObj, "enabled", "codeLens"); enabled.has_value())
+    {
+        cfg.features.enableCodeLens = *enabled;
+    }
+    if (auto showFn = FindSectionBool(section, clObj, "showOnFunctions", "codeLens"); showFn.has_value())
+    {
+        cfg.features.codeLensShowOnFunctions = *showFn;
+    }
+    if (auto showCls = FindSectionBool(section, clObj, "showOnClassesAndInterfaces", "codeLens"); showCls.has_value())
+    {
+        cfg.features.codeLensShowOnClassesAndInterfaces = *showCls;
+    }
+    if (auto showProps = FindSectionBool(section, clObj, "showOnPropertiesAndVariables", "codeLens");
+        showProps.has_value())
+    {
+        cfg.features.codeLensShowOnPropertiesAndVariables = *showProps;
+    }
+    if (auto showEnums = FindSectionBool(section, clObj, "showOnEnums", "codeLens"); showEnums.has_value())
+    {
+        cfg.features.codeLensShowOnEnums = *showEnums;
+    }
+    if (auto showZero = FindSectionBool(section, clObj, "showZeroReferences", "codeLens"); showZero.has_value())
+    {
+        cfg.features.codeLensShowZeroReferences = *showZero;
     }
 }
 
@@ -636,6 +695,7 @@ void Server::UpdateFeatureConfiguration(const lsp::LSPObject& section)
     UpdateCompletionFeatureConfig(section, m_config);
     UpdateInlayHintFeatureConfig(section, m_config);
     UpdateHoverFeatureConfig(section, m_config);
+    UpdateCodeLensFeatureConfig(section, m_config);
 }
 
 static std::vector<config::ServerConfig::ModuleDefinition> ParseModuleDefinitions(const lsp::LSPArray& items)

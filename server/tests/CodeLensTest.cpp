@@ -1281,3 +1281,94 @@ TEST_CASE("CodeLens - Separate reference counts for identical enum member names 
         ts_tree_delete(tree);
     }
 }
+
+TEST_CASE("CodeLens - Granular configuration and showZeroReferences")
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{nullptr};
+    LocalScopeCollector scopeCollector{nullptr};
+    SymbolTable symbolTable;
+    ScopeIndex scopeIndex;
+
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("Weapon");
+    const std::string funcName = angel_lsp::test::GenerateRandomSymbolName("Fire");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("ammoCount");
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("WeaponState");
+
+    const std::string code = "class " + className +
+                             " {\n"
+                             "    int " +
+                             varName +
+                             ";\n"
+                             "    void " +
+                             funcName +
+                             "() {}\n"
+                             "}\n"
+                             "enum " +
+                             enumName + " { Idle }\n";
+
+    const std::string uri = "file:///granular_test.as";
+    TSTree* tree = parser.Parse(code);
+    symbolCollector.CollectSymbols(uri, code, parser, symbolTable);
+    auto scope = scopeCollector.CollectScopes(code, parser);
+    if (scope)
+    {
+        scopeIndex.SetScopeTree(uri, std::move(scope));
+    }
+
+    {
+        config::ServerConfig cfg;
+        cfg.features.codeLensShowZeroReferences = true;
+        CodeLensRequest req{
+            .uri = uri,
+            .sourceCode = code,
+            .tree = tree,
+            .symbolTable = symbolTable,
+            .scopeIndex = scopeIndex,
+            .config = &cfg,
+        };
+        auto lenses = GetCodeLenses(req);
+        REQUIRE(lenses.has_value());
+        CHECK_FALSE(lenses->empty());
+    }
+
+    {
+        config::ServerConfig cfg;
+        cfg.features.codeLensShowZeroReferences = false;
+        CodeLensRequest req{
+            .uri = uri,
+            .sourceCode = code,
+            .tree = tree,
+            .symbolTable = symbolTable,
+            .scopeIndex = scopeIndex,
+            .config = &cfg,
+        };
+        auto lenses = GetCodeLenses(req);
+        CHECK((!lenses.has_value() || lenses->empty()));
+    }
+
+    {
+        config::ServerConfig cfg;
+        cfg.features.codeLensShowZeroReferences = true;
+        cfg.features.codeLensShowOnEnums = false;
+        CodeLensRequest req{
+            .uri = uri,
+            .sourceCode = code,
+            .tree = tree,
+            .symbolTable = symbolTable,
+            .scopeIndex = scopeIndex,
+            .config = &cfg,
+        };
+        auto lenses = GetCodeLenses(req);
+        REQUIRE(lenses.has_value());
+        for (const auto& lens : *lenses)
+        {
+            CHECK(lens.range.start.line != 4);
+        }
+    }
+
+    if (tree)
+    {
+        ts_tree_delete(tree);
+    }
+}

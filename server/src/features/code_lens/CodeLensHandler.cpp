@@ -2,6 +2,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/rules/UnusedSymbolChecker.h"
 #include "config/EngineRuleConfig.h"
+#include "config/ServerConfig.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 #include "parser/GrammarNames.h"
@@ -1096,6 +1097,43 @@ struct SymbolGroups
  * @param[in] request Active CodeLens request.
  * @return Structured SymbolGroups.
  */
+/**
+ * @brief Evaluates whether a symbol's type is enabled for CodeLens under active configuration.
+ */
+static bool IsSymbolTypeEnabledForCodeLens(const analysis::Symbol& sym, const config::ServerConfig* config)
+{
+    if (!config)
+    {
+        return true;
+    }
+    if (sym.type == analysis::SymbolType::Function)
+    {
+        return config->features.codeLensShowOnFunctions;
+    }
+    if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface ||
+        sym.type == analysis::SymbolType::Funcdef)
+    {
+        return config->features.codeLensShowOnClassesAndInterfaces;
+    }
+    if (sym.type == analysis::SymbolType::Enum)
+    {
+        return config->features.codeLensShowOnEnums;
+    }
+    if (sym.type == analysis::SymbolType::Variable)
+    {
+        if (std::holds_alternative<analysis::VariableSignature>(sym.signature) && sym.GetVariable().isEnumConstant)
+        {
+            return config->features.codeLensShowOnEnums;
+        }
+        return config->features.codeLensShowOnPropertiesAndVariables;
+    }
+    if (sym.type == analysis::SymbolType::Property)
+    {
+        return config->features.codeLensShowOnPropertiesAndVariables;
+    }
+    return true;
+}
+
 SymbolGroups CollectSymbolGroups(const CodeLensRequest& request)
 {
     SymbolGroups result;
@@ -1105,7 +1143,8 @@ SymbolGroups CollectSymbolGroups(const CodeLensRequest& request)
         {
             for (const auto& sym : symbols)
             {
-                if (sym.fileUri != request.uri || sym.isSynthesized)
+                if (sym.fileUri != request.uri || sym.isSynthesized ||
+                    !IsSymbolTypeEnabledForCodeLens(sym, request.config))
                 {
                     continue;
                 }
@@ -1736,6 +1775,10 @@ void AppendReferenceLens(const RangeKey& key, const analysis::Symbol& sym, const
         analysis::rules::IsEngineManagedFunction(sym, ctx.request.symbolTable, *ctx.request.unusedRules))
     {
         refCount += 1;
+    }
+    if (refCount == 0 && ctx.request.config && !ctx.request.config->features.codeLensShowZeroReferences)
+    {
+        return;
     }
     if (refCount == 0 && sym.name.starts_with("op") && sym.name.size() > 2)
     {

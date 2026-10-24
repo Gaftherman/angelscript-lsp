@@ -1079,3 +1079,66 @@ TEST_CASE(
     const auto diags = AnalyzeClassSnippet(code);
     CHECK_FALSE(HasCode(diags, "as-err-mixin-instantiation-member-not-found"));
 }
+
+TEST_CASE("ClassRules - Missing base class emits as-err-unresolved-type")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("DerivedClass");
+    const std::string missingBase = angel_lsp::test::GenerateRandomSymbolName("MissingBase");
+    const std::string code = "class " + clsName + " : " + missingBase + " {}\n";
+
+    const auto diags = AnalyzeClassSnippet(code);
+    CHECK(HasCode(diags, "as-err-unresolved-type"));
+}
+
+TEST_CASE("ClassRules - Base class qualified by non-namespace class emits as-err-unresolved-type")
+{
+    const std::string clsBase = angel_lsp::test::GenerateRandomSymbolName("WeaponBase");
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("DerivedClass");
+    const std::string missingChild = angel_lsp::test::GenerateRandomSymbolName("NoExistedClass");
+    const std::string code = "class " + clsBase +
+                             " {}\n"
+                             "class " +
+                             clsName + " : " + clsBase + "::" + missingChild + " {}\n";
+
+    const auto diags = AnalyzeClassSnippet(code);
+    CHECK(HasCode(diags, "as-err-unresolved-type"));
+}
+
+TEST_CASE("ClassRules - Non-class non-interface type as base emits as-err-unresolved-type")
+{
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("MyEnum");
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("DerivedClass");
+    const std::string code = "enum " + enumName +
+                             " { Value = 0 }\n"
+                             "class " +
+                             clsName + " : " + enumName + " {}\n";
+
+    const auto diags = AnalyzeClassSnippet(code);
+    CHECK(HasCode(diags, "as-err-unresolved-type"));
+}
+
+TEST_CASE("ClassRules - Interface inheriting from concrete class emits as-err-unresolved-type")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("BaseClass");
+    const std::string ifaceName = angel_lsp::test::GenerateRandomSymbolName("IMyInterface");
+    const std::string code = "class " + clsName +
+                             " {}\n"
+                             "interface " +
+                             ifaceName + " : " + clsName + " {}\n";
+
+    const auto diags = AnalyzeClassSnippet(code);
+    CHECK(HasCode(diags, "as-err-unresolved-type"));
+}
+
+TEST_CASE("ClassRules - Interface inheriting from interface succeeds without errors")
+{
+    const std::string ifaceBase = angel_lsp::test::GenerateRandomSymbolName("IBaseInterface");
+    const std::string ifaceDerived = angel_lsp::test::GenerateRandomSymbolName("IDerivedInterface");
+    const std::string code = "interface " + ifaceBase +
+                             " { void DoWork(); }\n"
+                             "interface " +
+                             ifaceDerived + " : " + ifaceBase + " {}\n";
+
+    const auto diags = AnalyzeClassSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-unresolved-type"));
+}

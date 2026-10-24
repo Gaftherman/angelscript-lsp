@@ -1332,9 +1332,23 @@ export function buildServerArgs(): string[] {
         args.push('--disable-inlay-hints-variable-types');
     }
 
-    const suppressWhenMatches = config.get<boolean>('inlayHints.suppressWhenArgumentMatchesName', false);
+    if (config.get<boolean>('inlayHints.functionReturnTypes', true) === false) {
+        args.push('--disable-inlay-hints-function-return-types');
+    }
+
+    if (config.get<boolean>('inlayHints.enumMemberValues', true) === false) {
+        args.push('--disable-inlay-hints-enum-member-values');
+    }
+
+    if (config.get<boolean>('inlayHints.parameterReferenceModifiers', true) === false) {
+        args.push('--disable-inlay-hints-parameter-reference-modifiers');
+    }
+
+    const suppressWhenMatches = config.get<boolean>('inlayHints.suppressWhenArgumentMatchesName', true);
     if (suppressWhenMatches) {
         args.push('--inlay-hints-suppress-when-argument-matches-name');
+    } else {
+        args.push('--disable-inlay-hints-suppress-when-argument-matches-name');
     }
 
     const maxParameters = config.get<number>('inlayHints.maxParameters', 0);
@@ -1350,6 +1364,26 @@ export function buildServerArgs(): string[] {
     const omittedDefaults = config.get<string>('inlayHints.omittedDefaultArguments', 'off');
     if (omittedDefaults) {
         args.push(`--inlay-hints-omitted-defaults=${omittedDefaults}`);
+    }
+
+    if (config.get<boolean>('codeLens.showOnFunctions', true) === false) {
+        args.push('--disable-codelens-functions');
+    }
+
+    if (config.get<boolean>('codeLens.showOnClassesAndInterfaces', true) === false) {
+        args.push('--disable-codelens-classes-and-interfaces');
+    }
+
+    if (config.get<boolean>('codeLens.showOnPropertiesAndVariables', true) === false) {
+        args.push('--disable-codelens-properties-and-variables');
+    }
+
+    if (config.get<boolean>('codeLens.showOnEnums', true) === false) {
+        args.push('--disable-codelens-enums');
+    }
+
+    if (config.get<boolean>('codeLens.showZeroReferences', true) === false) {
+        args.push('--disable-codelens-zero-references');
     }
 
     if (config.get<boolean>('hover.stringLiteralLength', true) === false) {

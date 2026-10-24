@@ -646,7 +646,8 @@ Server::HandleRequestsTextDocument_CodeLens(lsp::requests::TextDocument_CodeLens
                                   m_logger.get(),
                                   m_config.info.predefinedFileExtension,
                                   &m_config.engineRules.unusedRules,
-                                  m_i18n.get()};
+                                  m_i18n.get(),
+                                  &m_config};
     auto lenses = features::GetCodeLenses(clr);
     if (lenses.has_value())
     {

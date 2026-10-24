@@ -136,7 +136,7 @@
   "config.inactiveRegionOpacity.description": "How visible the dimmed code inside a dropped `#if` block stays. 1 is no dimming at all. Matches `#angelscript.dimInactiveRegions#`, which has to be on for this to do anything.",
   "command.formatPredefinedStub.title": "Format Predefined Stub",
   "angelscript.enableVirtualMixinDocuments.description": "Enables experimental virtual text documents for mixin classes (angelscript-virtual://). When disabled, high-performance symbol synthesis is used.",
-  "angelscript.inlayHints.suppressWhenArgumentMatchesName.description": "Suppress parameter name hints when the argument expression text matches the parameter name exactly. Default is false.",
+  "angelscript.inlayHints.suppressWhenArgumentMatchesName.description": "Suppress parameter name hints when the argument expression text matches the parameter name exactly. Default is true.",
   "command.viewMixinExpansion.title": "View Mixin Expansion",
   "command.peekMixinInline.title": "Peek Mixin Inline",
   "command.openPhysicalSource.title": "Open Physical Source",
@@ -166,5 +166,14 @@
   "command.clearLocalState.title": "Clear Local Session Overrides",
   "config.rulesFile.description": "Path to a custom *.angelscript.rules.json engine rules file. When empty, the workspace root and predefined stub directories are automatically scanned for *.angelscript.rules.json.",
   "command.ignoreUnusedSymbol.title": "Ignore Unused Symbol (Mark as Entry Point / Callback)",
-  "command.configureHostEnvironment.title": "Configure Host Rules & Predefined API..."
+  "command.configureHostEnvironment.title": "Configure Host Rules & Predefined API...",
+  "config.category.codeLens": "AngelScript: CodeLens",
+  "config.inlayHints.functionReturnTypes.description": "Show inlay hints for inferred return types on lambda expressions.",
+  "config.inlayHints.enumMemberValues.description": "Show inlay hints for implicit numeric values on enum members.",
+  "config.inlayHints.parameterReferenceModifiers.description": "Prefix parameter inlay hints with reference direction modifiers (&out, &inout).",
+  "config.codeLens.showOnFunctions.description": "Show reference CodeLens above function and method declarations.",
+  "config.codeLens.showOnClassesAndInterfaces.description": "Show reference CodeLens above class and interface declarations.",
+  "config.codeLens.showOnPropertiesAndVariables.description": "Show reference CodeLens above global and member variable declarations.",
+  "config.codeLens.showOnEnums.description": "Show reference CodeLens above enum declarations.",
+  "config.codeLens.showZeroReferences.description": "Show reference CodeLens even when a symbol has 0 references."
 }

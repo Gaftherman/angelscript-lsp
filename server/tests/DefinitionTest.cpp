@@ -984,3 +984,35 @@ TEST_CASE("Definition - Global ::Deploy inside namespace and mixin does not navi
     auto def = env.DefAt(pos.line, pos.character);
     CHECK((!def.has_value() || def->empty()));
 }
+
+TEST_CASE("Definition - Disambiguates homonymous interface and namespace by qualified member")
+{
+    const std::string homonymName = angel_lsp::test::GenerateRandomSymbolName("IWeaponBase");
+    const std::string regFunc = angel_lsp::test::GenerateRandomSymbolName("RegisterWeaponInfo");
+
+    const std::string code = "interface " + homonymName +
+                             " {\n"
+                             "    void Shoot();\n"
+                             "}\n"
+                             "namespace " +
+                             homonymName +
+                             " {\n"
+                             "    void " +
+                             regFunc +
+                             "() {}\n"
+                             "}\n"
+                             "void main() {\n"
+                             "    " +
+                             homonymName + "::" + regFunc +
+                             "();\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const size_t callPos = code.find(homonymName + "::" + regFunc);
+    auto pos = FindPos(code, homonymName, callPos);
+
+    auto def = env.DefAt(pos.line, pos.character);
+    REQUIRE(def.has_value());
+    REQUIRE(def->size() == 1);
+    CHECK((*def)[0].range.start.line == 3);
+}

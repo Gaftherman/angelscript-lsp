@@ -1911,3 +1911,96 @@ Settings declared in package.json but not passed to the server:
   - Layer Architecture: 100% conforme.
   - `check-ast-traversal.py`: Aprobado (0 bucles no acotados, 0 `ts_node_parent` en hot-paths, 0 hardcodings).
   - `npm --prefix client run pretest`: Aprobado con exit code 0.
+
+---
+
+## 40. Fase 40: Erradicación de Antipatrones, Paridad de Restricciones en Propiedades Indexadas, Desambiguación de Definición e Inlay Hints/CodeLens Modulares
+
+### 40.1. Diagnóstico Forense y Causas Raíz
+1. **Asignaciones en el Heap en Autocompletado y Resolución de Miembros**:
+   - `CompletionHandler.cpp` concatenaba strings en el heap (`cls + "::" + memberName`, `cls + "::get_" + memberName`) y clonaba vectores de símbolos con `FindGlobalPropertyAccessors`, degradando la latencia p99 del autocompletado en caliente.
+2. **Consultas Lentas por Strings y Escalada del AST**:
+   - `SemanticHelpers.cpp` comparaba tipos de nodo con `NodeType(objNode) == "scoped_identifier"` e iteraba mediante `GetChildByField` por cadenas de caracteres en lugar de símbolos de gramática $O(1)$. Además, invocaba `GetEnclosingContainers` escalando el AST innecesariamente hasta la raíz.
+3. **Deducción de Tipos Literales Numéricos Errónea**:
+   - En `DeduceLiteralOrNamedType`, literales con punto flotante sin sufijo `f`/`F` (ej. `2.5`) se deducían como `"float"` en vez del estándar oficial `"double"`, y enteros con sufijo `u`/`U` no se tipaban como `"uint"`.
+4. **Falta de Restricciones Oficiales en Property Accessors y Propiedades Indexadas**:
+   - AngelScript prohíbe taxativamente operadores de incremento/decremento (`++`/`--`) en propiedades virtuales e indexadas, así como asignaciones compuestas (`+=`, `-=`) en propiedades indexadas, salvo sobrecarga de `opIndex` que devuelva referencia mutable (`int&`).
+5. **Colisión de Definición entre Interfaces y Namespaces Homónimos**:
+   - `DefinitionHandler.cpp` resolvía contenedores basándose únicamente en prefijo de nombre sin contrastar el `SymbolType` contra el `containerKind` del miembro, asociando llamadas estáticas de namespace a interfaces homónimas erróneamente.
+6. **Inlay Hints y CodeLens Monolíticos**:
+   - Carecían de granularidad configurable en cliente/servidor (supresión por coincidencia de nombre de argumento, retorno inferido en lambdas, valores implícitos en enums, filtros de CodeLens por categoría y `showZeroReferences`).
+
+### 40.2. Remediación Implementada
+1. **Erradicación de Asignaciones en el Heap ($O(1)$)**:
+   - Uso de `FindMemberSymbolPtr(cls, memberName)` y buffers en el stack `char getterBuf[128]` con `std::string_view getterView` en `FindMemberInTypeHierarchy`, `ResolveNamedReceiverType` e `IsIndexedPropertyAccessor`.
+   - Reemplazo de comparaciones por string en `ResolveScopedOrBareIndexedProperty` y `ResolveIndexExpr` por símbolos precompilados $O(1)$ (`gs.symScopedIdentifier`, `gs.symMemberAccess`, `gs.fieldObject`, `gs.fieldIndex`).
+   - Corrección de deducción numérica en `DeduceLiteralOrNamedType` con helper `DeduceNumericLiteralType`.
+2. **Paridad de Reglas con el Oráculo Oficial de AngelScript**:
+   - Diagnóstico `as-err-inc-dec-on-virtual-prop` en `TypeConversionChecker.cpp` para operadores `++`/`--` sobre propiedades virtuales/indexadas, permitiendo `opIndex` por referencia (`int&`).
+   - Diagnósticos `as-err-compound-assign-indexed-prop`, `as-err-write-only-property` y `as-err-property-type-mismatch`.
+   - Pruebas exhaustivas en `OpIndexParityTest.cpp` validadas contra `angelscript_oracle.exe`.
+3. **Desambiguación de Definición por `ContainerKindMatches`**:
+   - En `DefinitionHandler.cpp`, verificación estricta de `ContainerKindMatches(containerSym.type, m.containerKind)` garantizando resolución unívoca de funciones de namespace frente a interfaces homónimas.
+4. **Inlay Hints y CodeLens Modulares (Estilo TS/JS)**:
+   - Nuevos flags en `ServerConfig`, CLI arguments, paridad i18n/l10n en EN y ES, y sincronización en `package.json`, `package.nls.json`, `package.nls.es.json`, `README.md` y `README.es.md`.
+   - Deducción e inlay hint de tipo de retorno en expresiones lambda (`DeduceLambdaReturnType`).
+
+### 40.3. Métricas Finales de Fase 40
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,506 / 2,506` pasadas (`35,800+` aserciones, `0` fallos, `0` regresiones).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas al 100%:
+  - `jscpd`: `1.10%` (techo $\le 3.0\%$).
+  - Lizard: CCN $\le 15$, NLOC $\le 70$, params $\le 4$ en todas las funciones.
+  - Cero parámetros muertos (`/we4100`).
+  - Clang-Format: 100% (405 archivos auditados y en formato).
+  - Layer Architecture: 100% conforme.
+  - `check-ast-traversal.py`: Aprobado (0 bucles no acotados, 0 `ts_node_parent` en hot-paths, 0 hardcodings).
+  - `npm --prefix client run pretest`: Aprobado con exit code 0 (117 configuraciones, 176 manifest strings y 93 runtime strings sincronizadas).
+---
+
+## 41. Fase 41: Corrección de Falso Positivo E210 en Mixins, Validación y Autocompletado de Herencia, Desglose de Semantic Tokens en Identificadores Calificados y Detección de Duplicados contra `.as.predefined`
+
+### 41.1. Diagnóstico Forense y Causas Raíz
+1. **Falso Positivo E210 (`as-err-mixin-instantiation-member-not-found`) en Mixins**:
+   - Al instanciar un `mixin class` que referenciaba objetos y accesores de propiedades globales (como `g_Scheduler` registrado como `CScheduler@ get_g_Scheduler();`), símbolos dentro del propio namespace del mixin, símbolos en el namespace de la clase host, o propiedades delegadas del motor (`baseClassDelegateProperties`), el analizador emitía erróneamente `E210` alegando que no eran miembros de la clase host.
+2. **Ausencia de Validación Semántica en Clases Base (`class X : Base`)**:
+   - `ClassRules.cpp` no validaba exhaustivamente las clases base ni las interfaces heredadas: clases inexistentes no emitían `as-err-unresolved-type`, calificadores de clase usados como namespaces (`WeaponBase::NoExistedClass`) se ignoraban silenciosamente, y tipos no heredables (enums, funcdefs, variables, primitivos, o clases concretas en interfaces) no se diagnosticaban.
+3. **Autocompletado Ruidoso y Sin Filtrado en Listas de Herencia**:
+   - `CompletionHandler.cpp` no detectaba el contexto de herencia tras `:` (`class X : |` o `class X : NS::|`), sugiriendo funciones libres, variables, clases finales, enums, primitivos, snippets y palabras clave que son sintáctica y semánticamente inválidas como bases.
+4. **Coloreado Erróneo de `scoped_identifier` como Token Monolítico**:
+   - En la consulta del AST de Tree-Sitter, `scoped_identifier` bajo `base_class_list` se capturaba como un único `@type`, emitiendo un token monolítico de más de 26 caracteres que abarcaba el calificador, los `::` y la hoja inexistente, ignorando además si el símbolo existía o no en `SymbolTable`.
+5. **Omisión de Símbolos Duplicados entre Scripts `.as` y `.as.predefined`**:
+   - `TypeRules.cpp` descartaba candidatos de archivos predefined al verificar duplicados en scripts (`!IsFromPredefinedStub`), permitiendo colisiones inadvertidas de nombres entre scripts de usuario y stubs del motor (excepto namespaces, que pueden reabrirse válidamente). Además, `CheckDuplicatePair` comparaba `startLine` y `startCharacter` sin comprobar `fileUri`, ignorando falsamente cualquier declaración en la línea 0 de archivos distintos.
+
+### 41.2. Remediación Implementada
+1. **Resolución de Ámbitos y Accesores de Propiedades en Mixins ($O(1)$ sin Heap)**:
+   - En `ClassRules.cpp`: `HasPropertyAccessorMatch`, `IsValidMixinIdentifier` y `CheckCallMember` actualizados para verificar accesores virtuales globales (`ruleIndex.globalAccessorPropertyNames`, `keywordGlobalAccessorPropertyNames`), miembros del namespace del mixin y del host, `using namespace`s y delegados del motor (`baseClassDelegateProperties`).
+   - Construcción de vistas de nombres `get_` y `set_` en buffers en el stack `char buf[128]` con cero asignaciones en el heap.
+2. **Validación Exhaustiva de Bases e Interfaces en `CheckBases` y `CheckInterfaceBases`**:
+   - Emisión de `as-err-unresolved-type` ante tipos base no resueltos, calificadores inválidos (clases en lugar de namespaces) y tipos no heredables.
+   - Soporte para escalada jerárquica de namespaces contenedores, `using namespace`s, e integración con `ignoredBaseClasses` y `baseClassProxyMap`.
+3. **Autocompletado Contextual de Herencia (`TryCompleteInheritance`)**:
+   - Implementadas `GetBackwardDeclarationText`, `DetectInheritanceContext`, `CompleteInheritanceUnderQualifier`, `CompleteGlobalInheritanceTypes`, `CompleteInheritanceNamespaces` y `TryCompleteInheritance` en `CompletionHandler.cpp`.
+   - Filtrado estricto: ofrece exclusivamente clases no-finales, interfaces, mixins y namespaces (o hijos de namespaces bajo calificador).
+4. **Desglose de Tokens Semánticos y Supresión de Hojas No Declaradas**:
+   - Consulta `BuiltQueries.h` ajustada a `(base_class_list base: (scoped_identifier (identifier) @type .))`.
+   - `IsScopedIdentifierLeaf` y `ShouldSuppressScopedLeafToken` con `parser::GetParent` evitan tokens monolíticos a través de `::` y suprimen tokens de tipos hoja inexistentes.
+5. **Detección Unificada de Símbolos Duplicados contra `.as.predefined`**:
+   - `CollectDuplicateCandidates` en `TypeRules.cpp` incluye stubs predefined como `moduleMates` e incorpora enums en la detección.
+   - Corregida la condición de igualdad de símbolo en `CheckDuplicatePair` a `first.fileUri == other.fileUri && first.startLine == other.startLine && first.startCharacter == other.startCharacter`, detectando colisiones entre archivos distintos y permitiendo la reapertura válida de namespaces.
+6. **Resolución y Filtrado de Contenedores Homónimos por `ContainerKind` en `CallChecker.cpp` y `TypeRules.cpp`**:
+   - `FilterScopedCandidatesByCallerContext` en `CallChecker.cpp`: Fuera de la clase objetivo, se descartan candidatos de métodos de clase e interfaz (`ContainerKind::Class`/`Interface`), ya que en AngelScript las clases no poseen métodos estáticos; solo las funciones de namespace homónimo son invocables mediante `Scope::Function(...)`.
+   - Resolución correcta de sobrecargas con parámetros por defecto tanto fuera como dentro de la clase homónima, erradicando falsos positivos de aridad y ambigüedad.
+   - `IsCompatibleNamespaceOrHomonym` en `TypeRules.cpp`: Permite la coexistencia válida de clases y namespaces homónimos en el mismo ámbito, evitando falsos `as-err-name-conflict`.
+
+### 41.3. Métricas Finales de Fase 41
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,489 / 2,489` pasadas (`34,598` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas al 100%:
+  - `jscpd`: `1.10%` (techo $\le 3.0\%$).
+  - Lizard: CCN $\le 15$, NLOC $\le 70$, params $\le 4$ en todas las funciones auditadas.
+  - Cero parámetros muertos (`/we4100`).
+  - Clang-Format: 100% (405 archivos auditados y en formato).
+  - Layer Architecture: 100% conforme.
+  - `check-ast-traversal.py`: Aprobado (0 bucles no acotados, 0 `ts_node_parent` en hot-paths, 0 hardcodings).
+  - `npm --prefix client run pretest`: Aprobado con exit code 0.

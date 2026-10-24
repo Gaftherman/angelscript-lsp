@@ -40,7 +40,7 @@ struct FeatureFlags
     bool enableDocumentHighlight = true;
     bool enableFoldingRange = true;
     bool enableInlayHints = true;
-    bool inlayHintsSuppressWhenArgumentMatchesName = false;
+    bool inlayHintsSuppressWhenArgumentMatchesName = true;
     size_t inlayHintsMaxParameters = 0;
     size_t inlayHintsMaxLength = 0;
     OmittedDefaultArgumentsMode inlayHintsOmittedDefaultArguments = OmittedDefaultArgumentsMode::Off;
@@ -54,6 +54,11 @@ struct FeatureFlags
     bool enableTypeHierarchy = true;
     bool enableLinkedEditing = true;
     bool enableCodeLens = true;
+    bool codeLensShowOnFunctions = true;
+    bool codeLensShowOnClassesAndInterfaces = true;
+    bool codeLensShowOnPropertiesAndVariables = true;
+    bool codeLensShowOnEnums = true;
+    bool codeLensShowZeroReferences = true;
     bool enableOnTypeFormatting = false;
     bool enablePullDiagnostics = true;
     bool enableVirtualMixinDocuments = false;
@@ -61,6 +66,9 @@ struct FeatureFlags
     bool inlayHintsEnableLocation = true;
     bool inlayHintsParameters = true;
     bool inlayHintsVariableTypes = true;
+    bool inlayHintsFunctionReturnTypes = true;
+    bool inlayHintsEnumMemberValues = true;
+    bool inlayHintsParameterReferenceModifiers = true;
     bool completionCompleteFunctionParens = true;
     /** @brief Automatically prefix enum name when completing enum values (e.g. 'Enum::Value'). */
     bool completionQualifyEnumValues = true;

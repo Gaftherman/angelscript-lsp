@@ -221,7 +221,7 @@ void CollectClassHierarchyOverloads(TSNode node, const DefinitionRequest& reques
         auto hierarchy = analysis::GetInheritedTypeHierarchy(classKey, request.symbolTable);
         for (const auto& cls : hierarchy)
         {
-            if (auto found = request.symbolTable.FindSymbolsPtr(cls + "::" + targetMethodName))
+            if (auto found = request.symbolTable.FindMemberSymbolPtr(cls, targetMethodName))
             {
                 AppendUniqueFunctionCandidates(*found, funcCandidates);
             }
@@ -235,7 +235,7 @@ void CollectClassHierarchyOverloads(TSNode node, const DefinitionRequest& reques
                 {
                     for (const auto& mixinName : hs.GetClass().includedMixins)
                     {
-                        if (auto mixinMethods = request.symbolTable.FindSymbolsPtr(mixinName + "::" + targetMethodName))
+                        if (auto mixinMethods = request.symbolTable.FindMemberSymbolPtr(mixinName, targetMethodName))
                         {
                             AppendUniqueFunctionCandidates(*mixinMethods, funcCandidates);
                         }
@@ -1356,6 +1356,139 @@ void FilterAndPrioritizeLocalSymbols(std::vector<analysis::Symbol>& symbols, TSN
     }
 }
 
+static bool ContainerKindMatches(analysis::SymbolType containerType, analysis::ContainerKind memberContainerKind)
+{
+    switch (containerType)
+    {
+    case analysis::SymbolType::Class:
+        return memberContainerKind == analysis::ContainerKind::Class;
+    case analysis::SymbolType::Interface:
+        return memberContainerKind == analysis::ContainerKind::Interface;
+    case analysis::SymbolType::Namespace:
+        return memberContainerKind == analysis::ContainerKind::Namespace;
+    default:
+        return false;
+    }
+}
+
+/**
+ * @brief Checks if a container symbol declares a given member.
+ */
+bool ContainerDeclaresMember(const analysis::SymbolTable& table, const analysis::Symbol& containerSym,
+                             std::string_view memberName)
+{
+    const std::string& containerName =
+        containerSym.qualifiedName.empty() ? containerSym.name : containerSym.qualifiedName;
+
+    if (auto found = table.FindMemberSymbolPtr(containerName, memberName))
+    {
+        for (const auto& m : *found)
+        {
+            if (ContainerKindMatches(containerSym.type, m.containerKind))
+            {
+                return true;
+            }
+        }
+    }
+    if (containerSym.name != containerName)
+    {
+        if (auto found = table.FindMemberSymbolPtr(containerSym.name, memberName))
+        {
+            for (const auto& m : *found)
+            {
+                if (ContainerKindMatches(containerSym.type, m.containerKind))
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Locates the member node following a qualifier in a scoped identifier.
+ */
+TSNode FindScopedIdentifierMember(TSNode node)
+{
+    if (ts_node_is_null(node))
+    {
+        return TSNode{};
+    }
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode curr = node;
+    TSNode scopedNode{};
+    for (int i = 0; i < 3; ++i)
+    {
+        TSNode p = ts_node_parent(curr);
+        if (ts_node_is_null(p))
+        {
+            break;
+        }
+        if (ts_node_symbol(p) == gs.symScopedIdentifier)
+        {
+            scopedNode = p;
+            break;
+        }
+        curr = p;
+    }
+    if (ts_node_is_null(scopedNode))
+    {
+        return TSNode{};
+    }
+
+    uint32_t count = ts_node_named_child_count(scopedNode);
+    if (count < 2)
+    {
+        return TSNode{};
+    }
+    TSNode lastChild = ts_node_named_child(scopedNode, count - 1);
+    if (ts_node_start_byte(node) < ts_node_start_byte(lastChild))
+    {
+        return lastChild;
+    }
+    return TSNode{};
+}
+
+/**
+ * @brief Disambiguates qualifier candidates in a scoped identifier if only one candidate declares the member.
+ */
+void DisambiguateScopedQualifierContainer(std::vector<analysis::Symbol>& symbols, TSNode node,
+                                          const DefinitionRequest& request)
+{
+    if (symbols.size() <= 1)
+    {
+        return;
+    }
+    TSNode memberNode = FindScopedIdentifierMember(node);
+    if (ts_node_is_null(memberNode))
+    {
+        return;
+    }
+    std::string_view memberName = analysis::GetNodeTextView(memberNode, request.sourceCode);
+    if (memberName.empty())
+    {
+        return;
+    }
+
+    std::vector<analysis::Symbol> matched;
+    for (const auto& sym : symbols)
+    {
+        if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface ||
+            sym.type == analysis::SymbolType::Namespace)
+        {
+            if (ContainerDeclaresMember(request.symbolTable, sym, memberName))
+            {
+                matched.push_back(sym);
+            }
+        }
+    }
+    if (matched.size() == 1)
+    {
+        symbols = std::move(matched);
+    }
+}
+
 } // namespace
 
 std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest& request)
@@ -1410,6 +1543,8 @@ std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest&
     {
         FilterAndPrioritizeLocalSymbols(symbols, node, nodeText, request);
     }
+
+    DisambiguateScopedQualifierContainer(symbols, node, request);
 
     auto locations = ConvertSymbolsToLocations(symbols, request);
     if (!locations.empty())

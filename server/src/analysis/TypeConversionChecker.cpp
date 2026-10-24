@@ -3585,10 +3585,29 @@ void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& re
 
     if (!ts_node_is_null(operand))
     {
-        PropertyAccessInfo pInfo = InspectPropertyAccess(operand, scope, ctx);
-        if (pInfo.isProperty)
+        TSNode unwrapped = UnwrapParentheses(operand);
+        if (NodeType(unwrapped) == "index_expression")
         {
-            EmitAtNode(node, ctx, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
+            TSNode arrayNode = parser::GetChildByField(unwrapped, parser::fields::Object);
+            if (ts_node_is_null(arrayNode) && ts_node_named_child_count(unwrapped) > 0)
+            {
+                arrayNode = ts_node_named_child(unwrapped, 0);
+            }
+            PropertyAccessInfo pInfo = InspectPropertyAccess(arrayNode, scope, ctx);
+            if (pInfo.isProperty && pInfo.isIndexed)
+            {
+                EmitAtNode(node, ctx, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
+                return;
+            }
+        }
+        else
+        {
+            PropertyAccessInfo pInfo = InspectPropertyAccess(unwrapped, scope, ctx);
+            if (pInfo.isProperty)
+            {
+                EmitAtNode(node, ctx, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
+                return;
+            }
         }
     }
 }
@@ -3626,6 +3645,50 @@ void ProcessMemberExpressionNode(TSNode node, const TypeConversionCheckRequest& 
         const Scope* scope = ResolveNodeScope(node, request);
         PropertyAccessInfo pInfo = InspectPropertyAccess(node, scope, ctx);
         if (pInfo.isProperty && !pInfo.hasGet && pInfo.hasSet)
+        {
+            EmitAtNode(node, ctx, "as-err-write-only-property", pInfo.propName);
+        }
+    }
+}
+
+/**
+ * @brief Validates index expressions against write-only indexed properties.
+ * @param[in] node Index expression syntax node.
+ * @param[in] request Analysis request details.
+ * @param[in,out] ctx Diagnostic collection context.
+ */
+void ProcessIndexExpressionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+{
+    TSNode parent = ts_node_parent(node);
+    bool isLhsAssignment = false;
+    bool isUnaryArg = false;
+    if (!ts_node_is_null(parent))
+    {
+        std::string_view pType = ts_node_type(parent);
+        if (pType == "assignment_expression")
+        {
+            TSNode leftChild = parser::GetChildByField(parent, parser::fields::Left);
+            if (ts_node_eq(leftChild, node))
+            {
+                isLhsAssignment = true;
+            }
+        }
+        else if (pType == "unary_expression" || pType == "postfix_expression")
+        {
+            isUnaryArg = true;
+        }
+    }
+
+    if (!isLhsAssignment && !isUnaryArg)
+    {
+        const Scope* scope = ResolveNodeScope(node, request);
+        TSNode arrayNode = parser::GetChildByField(node, parser::fields::Object);
+        if (ts_node_is_null(arrayNode) && ts_node_named_child_count(node) > 0)
+        {
+            arrayNode = ts_node_named_child(node, 0);
+        }
+        PropertyAccessInfo pInfo = InspectPropertyAccess(arrayNode, scope, ctx);
+        if (pInfo.isProperty && pInfo.isIndexed && !pInfo.hasGet && pInfo.hasSet)
         {
             EmitAtNode(node, ctx, "as-err-write-only-property", pInfo.propName);
         }
@@ -3977,6 +4040,10 @@ void ProcessExpressionNode(std::string_view nodeType, TSNode node, const TypeCon
     {
         ProcessMemberExpressionNode(node, request, ctx);
     }
+    else if (nodeType == "index_expression")
+    {
+        ProcessIndexExpressionNode(node, request, ctx);
+    }
     else if (nodeType == "cast_expression")
     {
         ProcessCastNode(node, request, ctx);
@@ -3996,11 +4063,11 @@ void ProcessExpressionNode(std::string_view nodeType, TSNode node, const TypeCon
 bool IsConversionRelevantNodeType(std::string_view type)
 {
     static const ankerl::unordered_dense::set<std::string_view> kRelevantTypes = {
-        "if_statement",       "while_statement",          "do_while_statement",    "for_statement",
-        "ternary_expression", "expression_statement",     "foreach_statement",     "variable_declaration",
-        "return_statement",   "func_declaration",         "assignment_expression", "binary_expression",
-        "unary_expression",   "postfix_expression",       "member_expression",     "cast_expression",
-        "call_expression",    "construct_call_expression"};
+        "if_statement",       "while_statement",      "do_while_statement",       "for_statement",
+        "ternary_expression", "expression_statement", "foreach_statement",        "variable_declaration",
+        "return_statement",   "func_declaration",     "assignment_expression",    "binary_expression",
+        "unary_expression",   "postfix_expression",   "member_expression",        "index_expression",
+        "cast_expression",    "call_expression",      "construct_call_expression"};
     return kRelevantTypes.contains(type);
 }
 
@@ -4112,12 +4179,12 @@ void CheckTypeConversions(const TypeConversionCheckRequest& request, DiagnosticC
 
     if (request.nodeIndex)
     {
-        static constexpr std::array<std::string_view, 18> kConversionTypes = {
-            "if_statement",       "while_statement",          "do_while_statement",    "for_statement",
-            "ternary_expression", "expression_statement",     "foreach_statement",     "variable_declaration",
-            "return_statement",   "func_declaration",         "assignment_expression", "binary_expression",
-            "unary_expression",   "postfix_expression",       "member_expression",     "cast_expression",
-            "call_expression",    "construct_call_expression"};
+        static constexpr std::array<std::string_view, 19> kConversionTypes = {
+            "if_statement",       "while_statement",      "do_while_statement",       "for_statement",
+            "ternary_expression", "expression_statement", "foreach_statement",        "variable_declaration",
+            "return_statement",   "func_declaration",     "assignment_expression",    "binary_expression",
+            "unary_expression",   "postfix_expression",   "member_expression",        "index_expression",
+            "cast_expression",    "call_expression",      "construct_call_expression"};
 
         request.nodeIndex->ForEachNodeOrdered(kConversionTypes, [&](TSNode node) { ProcessNode(node, request, ctx); });
     }

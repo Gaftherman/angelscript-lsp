@@ -14,7 +14,8 @@
 namespace angel_lsp::config
 {
 struct UnusedSymbolRules;
-}
+struct ServerConfig;
+} // namespace angel_lsp::config
 
 namespace angel_lsp::utils
 {
@@ -42,6 +43,7 @@ struct CodeLensRequest
     std::string predefinedExtension = ".as.predefined";
     const config::UnusedSymbolRules* unusedRules = nullptr;
     const i18n::I18n* i18n = nullptr;
+    const config::ServerConfig* config = nullptr;
 };
 
 /**

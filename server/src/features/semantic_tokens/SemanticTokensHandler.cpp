@@ -1130,6 +1130,64 @@ uint32_t RefineSyntaxContext(std::string_view tokenText, uint32_t startByte, uin
  * @param[in] ctx Refinement context.
  * @return Final refined token type index.
  */
+/** @brief Checks if an AST node is the trailing leaf identifier of a scoped_identifier. */
+bool IsScopedIdentifierLeaf(TSNode node, const GrammarSymbols& syms)
+{
+    TSNode parent = parser::GetParent(node);
+    if (ts_node_is_null(parent) || ts_node_symbol(parent) != syms.symScopedIdentifier)
+    {
+        return false;
+    }
+    const uint32_t count = ts_node_named_child_count(parent);
+    if (count <= 1)
+    {
+        return false;
+    }
+    TSNode lastChild = ts_node_named_child(parent, count - 1);
+    return ts_node_start_byte(lastChild) == ts_node_start_byte(node);
+}
+
+/** @brief Suppresses semantic token emission if a scoped_identifier leaf does not exist or has invalid qualifier. */
+bool ShouldSuppressScopedLeafToken(TSNode node, std::string_view tokenText, const TokenRefinementContext& ctx,
+                                   const GrammarSymbols& syms)
+{
+    if (!IsScopedIdentifierLeaf(node, syms))
+    {
+        return false;
+    }
+    TSNode parent = parser::GetParent(node);
+    TSNode grandParent = parser::GetParent(parent);
+    if (ts_node_is_null(grandParent) || ts_node_symbol(grandParent) != syms.symBaseClassList)
+    {
+        return false;
+    }
+    TSNode firstChild = ts_node_named_child(parent, 0);
+    const std::string_view qualText = analysis::GetNodeTextView(firstChild, ctx.request.sourceCode);
+    if (qualText.empty())
+    {
+        return false;
+    }
+
+    const auto qualSyms = ctx.request.symbolTable.FindSymbolsPtr(qualText);
+    if (qualSyms && !qualSyms->empty())
+    {
+        const bool isNamespace = std::any_of(qualSyms->begin(), qualSyms->end(), [](const analysis::Symbol& s)
+                                             { return s.type == analysis::SymbolType::Namespace; });
+        if (!isNamespace)
+        {
+            return true;
+        }
+    }
+
+    if (ctx.request.symbolTable.FindMemberSymbolPtr(qualText, tokenText))
+    {
+        return false;
+    }
+
+    const std::string qName = std::string(qualText) + "::" + std::string(tokenText);
+    return !ctx.request.symbolTable.FindSymbolsPtr(qName);
+}
+
 uint32_t RefineCapturedTokenType(TSNode node, uint32_t tokenType, const TokenRefinementContext& ctx)
 {
     TSPoint startPoint = ts_node_start_point(node);
@@ -1148,6 +1206,10 @@ uint32_t RefineCapturedTokenType(TSNode node, uint32_t tokenType, const TokenRef
             std::string_view tokenText(ctx.request.sourceCode.data() + startByte, endByte - startByte);
             if (!tokenText.empty())
             {
+                if (ShouldSuppressScopedLeafToken(node, tokenText, ctx, GetGrammarSymbols()))
+                {
+                    return UINT32_MAX;
+                }
                 tokenType = RefineSyntaxContext(tokenText, startByte, tokenType, ctx);
             }
         }
@@ -1282,6 +1344,10 @@ void CollectHighlightsTokens(const HighlightsQueryData& highlights, const TokenR
         }
 
         tokenType = RefineCapturedTokenType(node, tokenType, ctx);
+        if (tokenType == UINT32_MAX)
+        {
+            continue;
+        }
         if (tokenType == Type_Operator && IsTemplatePunctuationNode(node))
         {
             tokenType = Type_TemplatePunctuation;

@@ -721,6 +721,48 @@ void ValidateParameters(const Symbol& sym, const std::vector<ParameterInformatio
     }
 }
 
+static void ValidateNonMemberPropertyAccessors(const Symbol& sym, const FunctionSignature& sig,
+                                               const DiagnosticContext& ctx)
+{
+    if (!sym.name.starts_with("set_") || sig.parameters.empty())
+    {
+        return;
+    }
+    const std::string propName = sym.name.substr(4);
+    if (propName.empty())
+    {
+        return;
+    }
+    const std::string getterName = "get_" + propName;
+    std::shared_ptr<const std::vector<Symbol>> getSyms;
+    if (sym.containerName.empty() || sym.containerKind == ContainerKind::None)
+    {
+        getSyms = ctx.request.symbolTable.FindSymbolsPtr(getterName);
+    }
+    else
+    {
+        getSyms = ctx.request.symbolTable.FindMemberSymbolPtr(sym.containerName, getterName);
+    }
+    if (!getSyms || getSyms->empty())
+    {
+        return;
+    }
+    const std::string setParam = CleanBaseType(sig.parameters.back().typeName);
+    for (const auto& gs : *getSyms)
+    {
+        if (gs.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(gs.signature))
+        {
+            const std::string getRet = CleanBaseType(gs.GetFunction().returnType);
+            if (!getRet.empty() && !setParam.empty() && getRet != setParam)
+            {
+                ctx.LogRule("CheckPropertyAccessors", "as-err-property-type-mismatch", sym);
+                ctx.Emit(sym, "as-err-property-type-mismatch", {propName, getRet, setParam});
+                break;
+            }
+        }
+    }
+}
+
 void ValidateFunction(const Symbol& sym, const DiagnosticContext& ctx)
 {
     if (sym.type != SymbolType::Function)
@@ -767,6 +809,11 @@ void ValidateFunction(const Symbol& sym, const DiagnosticContext& ctx)
                 ctx.Emit(sym, "as-hint-accessor-portability", accessor, DiagnosticSeverity::Hint);
             }
         }
+    }
+
+    if (!fctx.isMember)
+    {
+        ValidateNonMemberPropertyAccessors(sym, sig, ctx);
     }
 }
 

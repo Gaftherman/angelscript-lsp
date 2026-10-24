@@ -218,9 +218,12 @@ Las configuraciones de rutas admiten expansión dinámica de variables según el
 | `angelscript.features.inlayHints` | `true` | Mostrar sugerencias en línea de nombres de parámetros y tipos deducidos. |
 | `angelscript.inlayHints.parameters` | `true` | Muestra sugerencias de nombres de parámetros para llamadas a funciones y constructores. |
 | `angelscript.inlayHints.variableTypes` | `true` | Muestra sugerencias de tipo deducido para variables declaradas con 'auto' o 'auto@'. |
+| `angelscript.inlayHints.functionReturnTypes` | `true` | Muestra pistas de texto insertado (inlay hints) para tipos de retorno inferidos en expresiones lambda. |
+| `angelscript.inlayHints.enumMemberValues` | `true` | Muestra pistas de texto insertado (inlay hints) para valores numéricos implícitos en miembros de enumeraciones. |
+| `angelscript.inlayHints.parameterReferenceModifiers` | `true` | Prefija las pistas de texto de parámetros con modificadores de dirección de referencia (&out, &inout). |
 | `angelscript.inlayHints.maxParameters` | `0` | Número máximo de sugerencias en línea de parámetros a mostrar para una llamada. 0 significa ilimitado (muestra todos los parámetros). |
 | `angelscript.inlayHints.maxLength` | `0` | Longitud máxima de caracteres para las etiquetas de sugerencias en línea de parámetros antes de truncar con '...'. 0 significa ilimitado (nunca truncar). |
-| `angelscript.inlayHints.suppressWhenArgumentMatchesName` | `false` | Suprime las sugerencias de nombres de parámetros cuando el texto del argumento coincide exactamente con el nombre del parámetro. El valor predeterminado es false. |
+| `angelscript.inlayHints.suppressWhenArgumentMatchesName` | `true` | Suprime las sugerencias de nombres de parámetros cuando el texto del argumento coincide exactamente con el nombre del parámetro. El valor predeterminado es true. |
 | `angelscript.inlayHints.enableTooltip` | `true` | Muestra informacion detallada en formato Markdown con el tipo y la firma del parametro al pasar el cursor sobre las sugerencias incrustadas (inlay hints). |
 | `angelscript.inlayHints.enableLocation` | `true` | Habilita la navegacion con Ctrl+Clic a la declaracion del parametro desde las sugerencias incrustadas (inlay hints). |
 | `angelscript.inlayHints.omittedDefaultArguments` | `"off"` | Muestra pistas de inserción (inlay hints) para argumentos opcionales omitidos con valores por defecto en llamadas a funciones. |
@@ -271,6 +274,16 @@ Las configuraciones de rutas admiten expansión dinámica de variables según el
 | `angelscript.features.typeConversionChecks` | `true` | Reportar conversiones que no cuenten con un constructor, `opConv`/`opImplConv` o `opCast`/`opImplCast` que las respalde. |
 | `angelscript.features.predefinedLoader` | `true` | Cargar archivos de stubs predefinidos que describen la API de la aplicación host. |
 | `angelscript.features.enableCommentSuppressions` | `true` | Habilitar la supresión de diagnósticos mediante comentarios usando '// disable <CÓDIGO>' y '// enable <CÓDIGO>' (ej. '// disable W156'). |
+
+#### AngelScript: CodeLens
+
+| Configuración | Valor por defecto | Descripción |
+| :--- | :--- | :--- |
+| `angelscript.codeLens.showOnFunctions` | `true` | Muestra CodeLens de referencias sobre declaraciones de funciones y métodos. |
+| `angelscript.codeLens.showOnClassesAndInterfaces` | `true` | Muestra CodeLens de referencias sobre declaraciones de clases e interfaces. |
+| `angelscript.codeLens.showOnPropertiesAndVariables` | `true` | Muestra CodeLens de referencias sobre declaraciones de variables globales y miembros. |
+| `angelscript.codeLens.showOnEnums` | `true` | Muestra CodeLens de referencias sobre declaraciones de enumeraciones. |
+| `angelscript.codeLens.showZeroReferences` | `true` | Muestra CodeLens de referencias incluso cuando un símbolo tiene 0 referencias. |
 
 #### 6. Configuración de diagnósticos semánticos y análisis
 

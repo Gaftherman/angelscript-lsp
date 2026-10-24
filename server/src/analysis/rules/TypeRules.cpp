@@ -458,9 +458,11 @@ namespace
 void CollectDuplicateCandidates(const std::vector<Symbol>& symbols, const DiagnosticContext& ctx,
                                 std::vector<const Symbol*>& local, std::vector<const Symbol*>& moduleMates)
 {
+    const bool currentIsPredefined = utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
+
     for (const auto& sym : symbols)
     {
-        if (sym.type == SymbolType::CallReference || sym.type == SymbolType::Namespace || sym.type == SymbolType::Enum)
+        if (sym.type == SymbolType::CallReference || sym.type == SymbolType::Namespace)
         {
             continue;
         }
@@ -475,9 +477,18 @@ void CollectDuplicateCandidates(const std::vector<Symbol>& symbols, const Diagno
             continue;
         }
 
+        if (!currentIsPredefined)
+        {
+            if (IsFromPredefinedStub(sym, ctx) ||
+                utils::IsPredefinedFile(sym.fileUri, ctx.request.predefinedFileExtension))
+            {
+                moduleMates.push_back(&sym);
+                continue;
+            }
+        }
+
         if (!ctx.request.moduleFileUris.empty() && ctx.request.moduleFileUris.contains(sym.fileUri) &&
-            !IsFromPredefinedStub(sym, ctx) &&
-            !utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
+            !currentIsPredefined)
         {
             moduleMates.push_back(&sym);
         }
@@ -631,9 +642,35 @@ bool IsAllowedDuplicate(const Symbol& first, const Symbol& other, const Diagnost
            IsSharedInterfaceDuplicateMethod(first, other, ctx);
 }
 
+/**
+ * @brief Checks if duplicate pair consists of compatible namespaces or homonymous containers.
+ * @param[in] first First symbol.
+ * @param[in] other Other symbol.
+ * @return True if symbols are allowed to coexist.
+ */
+bool IsCompatibleNamespaceOrHomonym(const Symbol& first, const Symbol& other) noexcept
+{
+    if (first.type == SymbolType::Namespace && other.type == SymbolType::Namespace)
+    {
+        return true;
+    }
+    if ((first.type == SymbolType::Namespace && other.type == SymbolType::Class) ||
+        (first.type == SymbolType::Class && other.type == SymbolType::Namespace))
+    {
+        return true;
+    }
+    return first.containerName == other.containerName && first.containerKind != other.containerKind;
+}
+
 bool CheckDuplicatePair(const Symbol& first, const Symbol& other, const DiagnosticContext& ctx)
 {
-    if (first.startLine == other.startLine && first.startCharacter == other.startCharacter)
+    if (first.fileUri == other.fileUri && first.startLine == other.startLine &&
+        first.startCharacter == other.startCharacter)
+    {
+        return false;
+    }
+
+    if (IsCompatibleNamespaceOrHomonym(first, other))
     {
         return false;
     }

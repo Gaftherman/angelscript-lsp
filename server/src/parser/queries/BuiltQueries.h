@@ -30,7 +30,7 @@ namespace angel_lsp::parser::queries
 (typedef_declaration name: (identifier) @type)
 (funcdef_declaration name: (identifier) @type)
 (mixin_declaration name: (identifier) @type)
-(base_class_list base: (scoped_identifier) @type)
+(base_class_list base: (scoped_identifier (identifier) @type .))
 
 ; Enum members
 (enum_member name: (identifier) @constant)

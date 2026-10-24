@@ -363,4 +363,163 @@ TEST_SUITE("OpIndexParity")
         CHECK(HasItemLabel(items, memberField));
         CHECK(HasItemLabel(items, computeMethod));
     }
+
+    TEST_CASE("OpIndexParity - Rejection of increment/decrement operators on virtual properties matches native oracle")
+    {
+        LspSemanticHarnessFixture fixture;
+        const std::string className = GenerateRandomSymbolName("PropHolder");
+        const std::string script = fmt::format("class {0} {{\n"
+                                               "    int get_prop() const property {{ return 10; }}\n"
+                                               "    void set_prop(int val) property {{}}\n"
+                                               "}}\n"
+                                               "void main() {{\n"
+                                               "    {0} obj;\n"
+                                               "    obj.prop++;\n"
+                                               "}}\n",
+                                               className);
+
+        if (fixture.HasOracleBinary())
+        {
+            std::string oracleError;
+            const bool accepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK_FALSE(accepted);
+            CHECK(oracleError.find("Property accessors cannot be used in combined read/write operations") !=
+                  std::string::npos);
+        }
+
+        const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
+        fixture.AddVirtualDocument(docUri, script);
+        const auto& diags = fixture.GetDiagnostics(docUri);
+        CHECK(std::any_of(diags.begin(), diags.end(),
+                          [](const auto& d) { return d.code == "as-err-inc-dec-on-virtual-prop"; }));
+    }
+
+    TEST_CASE("OpIndexParity - Rejection of compound assignment on indexed property accessors matches native oracle")
+    {
+        LspSemanticHarnessFixture fixture;
+        const std::string strArrName = GenerateRandomSymbolName("strArr");
+        const std::string script = fmt::format("string get_{0}(int idx) property {{ return \"test\"; }}\n"
+                                               "void set_{0}(int idx, string val) property {{}}\n"
+                                               "void main() {{\n"
+                                               "    {0}[0] += \"_appended\";\n"
+                                               "}}\n",
+                                               strArrName);
+
+        if (fixture.HasOracleBinary())
+        {
+            std::string oracleError;
+            const bool accepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK_FALSE(accepted);
+            CHECK(oracleError.find("Compound assignments with indexed property accessors are not supported") !=
+                  std::string::npos);
+        }
+
+        const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
+        fixture.AddVirtualDocument(docUri, script);
+        const auto& diags = fixture.GetDiagnostics(docUri);
+        CHECK(std::any_of(diags.begin(), diags.end(),
+                          [](const auto& d) { return d.code == "as-err-compound-assign-on-indexed-prop"; }));
+    }
+
+    TEST_CASE("OpIndexParity - Custom class opIndex returning reference permits inc/dec and compound assignment in "
+              "oracle and LSP")
+    {
+        LspSemanticHarnessFixture fixture;
+        const std::string bufClass = GenerateRandomSymbolName("IntBuffer");
+        const std::string script = fmt::format("class {0} {{\n"
+                                               "    int val;\n"
+                                               "    int& opIndex(int idx) {{ return val; }}\n"
+                                               "}}\n"
+                                               "void main() {{\n"
+                                               "    {0} buf;\n"
+                                               "    buf[0]++;\n"
+                                               "    ++buf[0];\n"
+                                               "    buf[0] += 5;\n"
+                                               "}}\n",
+                                               bufClass);
+
+        if (fixture.HasOracleBinary())
+        {
+            std::string oracleError;
+            const bool accepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK(accepted);
+        }
+
+        const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
+        fixture.AddVirtualDocument(docUri, script);
+        fixture.AssertNoDiagnostics(docUri);
+    }
+
+    TEST_CASE("OpIndexParity - Write-only indexed property access read emits diagnostic")
+    {
+        LspSemanticHarnessFixture fixture;
+        const std::string writeProp = GenerateRandomSymbolName("writeOnly");
+        const std::string script = fmt::format("void set_{0}(int idx, int val) property {{}}\n"
+                                               "void main() {{\n"
+                                               "    int x = {0}[0];\n"
+                                               "}}\n",
+                                               writeProp);
+
+        if (fixture.HasOracleBinary())
+        {
+            std::string oracleError;
+            const bool accepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK_FALSE(accepted);
+            CHECK(oracleError.find("The property has no get accessor") != std::string::npos);
+        }
+
+        const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
+        fixture.AddVirtualDocument(docUri, script);
+        const auto& diags = fixture.GetDiagnostics(docUri);
+        CHECK(std::any_of(diags.begin(), diags.end(),
+                          [](const auto& d) { return d.code == "as-err-write-only-property"; }));
+    }
+
+    TEST_CASE("OpIndexParity - Read-only property accessor write emits diagnostic")
+    {
+        LspSemanticHarnessFixture fixture;
+        const std::string readProp = GenerateRandomSymbolName("readOnly");
+        const std::string script = fmt::format("int get_{0}() property {{ return 42; }}\n"
+                                               "void main() {{\n"
+                                               "    {0} = 100;\n"
+                                               "}}\n",
+                                               readProp);
+
+        if (fixture.HasOracleBinary())
+        {
+            std::string oracleError;
+            const bool accepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK_FALSE(accepted);
+            CHECK(oracleError.find("The property has no set accessor") != std::string::npos);
+        }
+
+        const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
+        fixture.AddVirtualDocument(docUri, script);
+        const auto& diags = fixture.GetDiagnostics(docUri);
+        CHECK(std::any_of(diags.begin(), diags.end(),
+                          [](const auto& d) { return d.code == "as-err-read-only-property"; }));
+    }
+
+    TEST_CASE("OpIndexParity - Mismatching getter and setter types for property accessors emits diagnostic")
+    {
+        LspSemanticHarnessFixture fixture;
+        const std::string mismatchProp = GenerateRandomSymbolName("badProp");
+        const std::string script = fmt::format("int get_{0}() property {{ return 42; }}\n"
+                                               "void set_{0}(string val) property {{}}\n",
+                                               mismatchProp);
+
+        if (fixture.HasOracleBinary())
+        {
+            std::string oracleError;
+            const bool accepted = fixture.VerifyWithNativeOracle(script, oracleError);
+            CHECK_FALSE(accepted);
+            CHECK(oracleError.find("mismatching types for the get and set accessors") != std::string::npos);
+        }
+
+        const std::string docUri = fixture.SandboxUri(fmt::format("scripts/{0}.as", GenerateRandomSymbolName("doc")));
+        fixture.AddVirtualDocument(docUri, script);
+        const auto& diags = fixture.GetDiagnostics(docUri);
+        CHECK(std::any_of(diags.begin(), diags.end(),
+                          [](const auto& d) { return d.code == "as-err-property-type-mismatch"; }));
+    }
 }

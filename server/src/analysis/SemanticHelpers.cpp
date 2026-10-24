@@ -4405,49 +4405,42 @@ static std::string ResolveMemberIndexedProperty(TSNode objNode, const Expression
 static std::string ResolveScopedOrBareIndexedProperty(TSNode objNode, const ExpressionTypeContext& ctx,
                                                       std::string_view indexArgType = "")
 {
-    std::string_view nodeType = NodeType(objNode);
-    if (nodeType == "scoped_identifier")
+    const auto& gs = parser::GetGrammarSymbols();
+    TSSymbol objSym = ts_node_symbol(objNode);
+    if (objSym == gs.symScopedIdentifier)
     {
-        std::string text = GetTrimmedNodeText(objNode, ctx.sourceCode);
+        std::string_view text = GetNodeTextView(objNode, ctx.sourceCode);
         const auto colonPos = text.rfind("::");
-        if (colonPos != std::string::npos)
+        if (colonPos != std::string_view::npos)
         {
-            std::string scopeName = text.substr(0, colonPos);
-            std::string name = text.substr(colonPos + 2);
-            return FindIndexedGetterType(FindPropertyAccessors(scopeName, name, ctx.symbolTable, false),
-                                         &ctx.symbolTable, indexArgType);
+            std::string_view scopeName = text.substr(0, colonPos);
+            std::string_view name = text.substr(colonPos + 2);
+            return FindIndexedGetterType(
+                FindPropertyAccessors(std::string(scopeName), std::string(name), ctx.symbolTable, false),
+                &ctx.symbolTable, indexArgType);
         }
         return "";
     }
 
-    std::string name = GetTrimmedNodeText(objNode, ctx.sourceCode);
+    std::string_view name = GetNodeTextView(objNode, ctx.sourceCode);
     if (name.empty())
     {
         return "";
     }
-    if (std::string hit = FindIndexedGetterType(FindGlobalPropertyAccessors(name, ctx.symbolTable, false),
+    if (std::string hit = FindIndexedGetterType(FindGlobalPropertyAccessors(std::string(name), ctx.symbolTable, false),
                                                 &ctx.symbolTable, indexArgType);
         !hit.empty())
     {
         return hit;
-    }
-    for (const auto& cont : GetEnclosingContainers(objNode, ctx.sourceCode))
-    {
-        const std::string cName = cont.qualifiedName.empty() ? cont.name : cont.qualifiedName;
-        if (std::string hit = FindIndexedGetterType(FindPropertyAccessors(cName, name, ctx.symbolTable, false),
-                                                    &ctx.symbolTable, indexArgType);
-            !hit.empty())
-        {
-            return hit;
-        }
     }
     if (!ctx.uri.empty())
     {
         std::string enclosing = ctx.symbolTable.FindEnclosingClassName(ctx.uri, ts_node_start_point(objNode).row);
         if (!enclosing.empty())
         {
-            if (std::string hit = FindIndexedGetterType(FindPropertyAccessors(enclosing, name, ctx.symbolTable, false),
-                                                        &ctx.symbolTable, indexArgType);
+            if (std::string hit =
+                    FindIndexedGetterType(FindPropertyAccessors(enclosing, std::string(name), ctx.symbolTable, false),
+                                          &ctx.symbolTable, indexArgType);
                 !hit.empty())
             {
                 return hit;
@@ -4466,21 +4459,21 @@ static std::string ResolveScopedOrBareIndexedProperty(TSNode objNode, const Expr
  */
 static std::string ResolveIndexExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
 {
-    TSNode objNode = parser::GetChildByField(exprNode, parser::fields::Object);
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode objNode = ts_node_child_by_field_id(exprNode, gs.fieldObject);
     if (ts_node_is_null(objNode))
     {
         return "";
     }
 
-    TSNode indexNode = parser::GetChildByField(exprNode, parser::fields::Index);
+    TSNode indexNode = ts_node_child_by_field_id(exprNode, gs.fieldIndex);
     std::string indexArgType;
     if (!ts_node_is_null(indexNode))
     {
         indexArgType = ResolveExpressionType(indexNode, ctx, depth + 1);
     }
 
-    std::string_view objNodeType = NodeType(objNode);
-    if (objNodeType == "member_expression")
+    if (ts_node_symbol(objNode) == gs.symMemberAccess)
     {
         if (std::string propType = ResolveMemberIndexedProperty(objNode, ctx, depth, indexArgType); !propType.empty())
         {

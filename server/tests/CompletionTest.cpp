@@ -2609,3 +2609,76 @@ TEST_CASE("Completion - Member array indexed element access completes element me
     const auto items = env.CompleteAt(line, dotCol);
     CHECK(HasItem(items, elemMethod));
 }
+
+TEST_CASE("Completion - Class inheritance list offers only non-final classes, interfaces, mixins, and namespaces")
+{
+    const std::string baseClass = test::GenerateRandomSymbolName("BaseClass");
+    const std::string finalClass = test::GenerateRandomSymbolName("FinalClass");
+    const std::string ifaceName = test::GenerateRandomSymbolName("IBase");
+    const std::string mixinName = test::GenerateRandomSymbolName("MixinBase");
+    const std::string enumName = test::GenerateRandomSymbolName("SomeEnum");
+    const std::string funcName = test::GenerateRandomSymbolName("SomeFunc");
+    const std::string varName = test::GenerateRandomSymbolName("someVar");
+    const std::string derivedClass = test::GenerateRandomSymbolName("MyClass");
+
+    const std::string code = "class " + baseClass + " {}\n" + "final class " + finalClass + " {}\n" + "interface " +
+                             ifaceName + " {}\n" + "mixin class " + mixinName + " {}\n" + "enum " + enumName +
+                             " { Value = 0 }\n" + "void " + funcName + "() {}\n" + "int " + varName + " = 0;\n" +
+                             "class " + derivedClass + " : ";
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(7, static_cast<uint32_t>(std::string("class " + derivedClass + " : ").length()));
+
+    CHECK(HasItem(items, baseClass));
+    CHECK(HasItem(items, ifaceName));
+    CHECK(HasItem(items, mixinName));
+
+    CHECK_FALSE(HasItem(items, finalClass));
+    CHECK_FALSE(HasItem(items, derivedClass));
+    CHECK_FALSE(HasItem(items, enumName));
+    CHECK_FALSE(HasItem(items, funcName));
+    CHECK_FALSE(HasItem(items, varName));
+    CHECK_FALSE(HasItem(items, "int"));
+    CHECK_FALSE(HasItem(items, "class"));
+}
+
+TEST_CASE("Completion - Interface inheritance list offers only interfaces and namespaces")
+{
+    const std::string baseClass = test::GenerateRandomSymbolName("BaseClass");
+    const std::string ifaceBase = test::GenerateRandomSymbolName("IBase");
+    const std::string mixinName = test::GenerateRandomSymbolName("MixinBase");
+    const std::string ifaceDerived = test::GenerateRandomSymbolName("IMyIface");
+
+    const std::string code = "class " + baseClass + " {}\n" + "interface " + ifaceBase + " {}\n" + "mixin class " +
+                             mixinName + " {}\n" + "interface " + ifaceDerived + " : ";
+
+    TestEnvironment env(code);
+    const auto items =
+        env.CompleteAt(3, static_cast<uint32_t>(std::string("interface " + ifaceDerived + " : ").length()));
+
+    CHECK(HasItem(items, ifaceBase));
+    CHECK_FALSE(HasItem(items, baseClass));
+    CHECK_FALSE(HasItem(items, mixinName));
+    CHECK_FALSE(HasItem(items, ifaceDerived));
+}
+
+TEST_CASE("Completion - Qualified inheritance offers only types and child namespaces under qualifier")
+{
+    const std::string nsName = test::GenerateRandomSymbolName("MyNs");
+    const std::string inNsClass = test::GenerateRandomSymbolName("InNsClass");
+    const std::string inNsIface = test::GenerateRandomSymbolName("InNsIface");
+    const std::string inNsFunc = test::GenerateRandomSymbolName("InNsFunc");
+    const std::string derivedClass = test::GenerateRandomSymbolName("MyClass");
+
+    const std::string code = "namespace " + nsName + " {\n" + "    class " + inNsClass + " {}\n" + "    interface " +
+                             inNsIface + " {}\n" + "    void " + inNsFunc + "() {}\n" + "}\n" + "class " +
+                             derivedClass + " : " + nsName + "::";
+
+    TestEnvironment env(code);
+    const auto items =
+        env.CompleteAt(5, static_cast<uint32_t>(std::string("class " + derivedClass + " : " + nsName + "::").length()));
+
+    CHECK(HasItem(items, inNsClass));
+    CHECK(HasItem(items, inNsIface));
+    CHECK_FALSE(HasItem(items, inNsFunc));
+}
