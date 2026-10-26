@@ -4,6 +4,30 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.5-exp.2] - 2026-10-26
+
+### Experimental Release 1.1.5-exp.2: Strict Class vs Namespace Scope Isolation, Difficulty:: Enum/Namespace Completion Merge, Comment Symbol Eradication, Precise Inheritance Error Ranges & 100% i18n Hover Parity
+
+- Strict Scope Isolation for Homonymous `class X` and `namespace X` (`RuleIndex`, `SemanticAnalyzer`, `SemanticHelpers`):
+  - Decoupled `byContainer` in `RuleIndex` into specialized `byClass` and `byNamespace` index tables.
+  - Strictly enforce that unqualified member accesses inside `class X` cannot access members of external homonymous `namespace X` unless explicitly qualified or inside the namespace block.
+  - Eliminated heap concatenations and brittle line-range heuristics in `MemberBelongsToClass` and `MemberBelongsToNamespace` in favor of zero-allocation stack buffer `FindMemberSymbolPtr` and `ContainerKind` checks.
+- Autocompletion Merging for Homonymous Enum and Namespace (`CompletionHandler`):
+  - Autocompletion on `Difficulty::` now seamlessly merges enum members (`Easy`, `Hard`) and namespace functions (`Configure`) without premature return.
+- Eradication of False Symbols & Errors Inside Comments (`NodeIndex`, `DeclarationRecovery`):
+  - Implemented binary-search byte range comment indexing (`NodeIndex::IsInsideComment`) and coordinate checks (`IsInsideCommentLineCol`), preventing syntax error tokens inside license and doc comments (`/** ... **/`) from producing false symbols, 0-reference CodeLens, or spurious diagnostics.
+- Inheritance List Error Range Precision & Mixin Instantiation Safety (`ClassRules`, `BuiltQueries`):
+  - Fixed child node iteration in `ClassRules::GetBaseRange`, ensuring unresolved base class diagnostics underline the exact base identifier token rather than highlighting the entire class body.
+  - Eradicated false positive `E210` errors in mixins referencing global objects or namespace entities (`g_Scheduler`).
+  - Added `MixinFileCacheEntry` to prevent redundant file I/O and re-parsing during mixin instantiation checks.
+- Sven Co-op `CustomKeyvalues::SetKeyvalue` Engine Rule Checker (`EngineRuleChecker`, `RuleIndex`):
+  - Added method call safety rule detecting unsafe `CustomKeyvalues::SetKeyvalue` invocations and recommending `g_EntityFuncs.DispatchKeyValue` (`as-warn-engine-call-safety` / `W121`).
+- Semantic Tokens & Tree-Sitter Integration (`SemanticTokensHandler`, `BuiltQueries.h`, `TreeSitter.cmake`):
+  - Breakdown of `scoped_identifier` in `namespace A::B` declarations into distinct individual namespace tokens.
+  - Pinned and synchronized `tree-sitter-angelscript` to clean commit `37544e47e1977bbdb507a204b876f73817f74123` with exclusive authoring under `Gaftherman <fano.solis.campos@gmail.com>`.
+- 100% Internationalization (`i18n`) Parity (`i18n.cpp`, `HoverHandler`):
+  - Externalized all user-facing hover documentation and tooltip strings (unresolved includes, primitive types values/range/descriptions, typedef underlying types, named argument labels) with 1:1 English/Spanish parity.
+
 ## [1.1.5-exp.1] - 2026-10-23
 
 ### Experimental Release 1.1.5-exp.1: opIndex Overload Resolution Across Multiple Types, Native Oracle Parity & Indexed Property Member Completion

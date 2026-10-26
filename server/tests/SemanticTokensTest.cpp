@@ -1732,3 +1732,51 @@ TEST_CASE("Semantic Tokens - Scoped identifier in base class list does not produ
 
     ts_tree_delete(tree);
 }
+
+TEST_CASE("Semantic Tokens - Scoped identifier in namespace declaration breaks down into individual namespace tokens")
+{
+    const std::string nsA = test::GenerateRandomSymbolName("OuterNs");
+    const std::string nsB = test::GenerateRandomSymbolName("InnerNs");
+    const std::string code = "namespace " + nsA + "::" + nsB + " {\n}\n";
+
+    AngelScriptParser parser;
+    TSTree* tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    SymbolCollector collector{nullptr};
+    SymbolTable table;
+    collector.CollectSymbols("file:///test_ns_tokens.as", code, parser, table);
+
+    SemanticTokensRequest request{"file:///test_ns_tokens.as", code, tree, table};
+    const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
+
+    bool foundA = false;
+    bool foundB = false;
+    bool foundMonolithic = false;
+    const std::string monolithic = nsA + "::" + nsB;
+
+    for (const auto& tok : tokens)
+    {
+        const std::string tokText = TextAt(code, tok.line, tok.character, tok.length);
+        if (tokText == monolithic)
+        {
+            foundMonolithic = true;
+        }
+        else if (tokText == nsA)
+        {
+            foundA = true;
+            CHECK(tok.type == "namespace");
+        }
+        else if (tokText == nsB)
+        {
+            foundB = true;
+            CHECK(tok.type == "namespace");
+        }
+    }
+
+    CHECK_FALSE(foundMonolithic);
+    CHECK(foundA);
+    CHECK(foundB);
+
+    ts_tree_delete(tree);
+}

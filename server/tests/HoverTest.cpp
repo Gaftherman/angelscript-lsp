@@ -7,6 +7,7 @@
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
 #include "features/hover/HoverHandler.h"
+#include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/Utils.h"
 
@@ -1763,4 +1764,270 @@ TEST_CASE("Hover - auto and auto@ tokens show deduced type card")
         CHECK(val.find("auto: int") != std::string::npos);
         CHECK(val.find("(primitive type)") == std::string::npos);
     }
+}
+
+TEST_CASE("Hover - Invariant: Base class inheritance shows class signature not constructor")
+{
+    const std::string baseName = angel_lsp::test::GenerateRandomSymbolName("ScriptBasePlayerWeaponEntity");
+    const std::string derivedName = angel_lsp::test::GenerateRandomSymbolName("weapon_ithaca");
+
+    const std::string code = "abstract class " + baseName +
+                             " : ScriptClassInterface\n"
+                             "{\n"
+                             "    " +
+                             baseName +
+                             "() {}\n"
+                             "}\n"
+                             "class " +
+                             derivedName + " : " + baseName +
+                             "\n"
+                             "{\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const size_t pos = code.rfind(baseName);
+    uint32_t line = 0;
+    size_t lineStart = 0;
+    for (size_t i = 0; i < pos; ++i)
+    {
+        if (code[i] == '\n')
+        {
+            ++line;
+            lineStart = i + 1;
+        }
+    }
+
+    auto hover = env.HoverAt(line, static_cast<uint32_t>(pos - lineStart));
+    REQUIRE(hover.has_value());
+    const std::string val = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(val.find("abstract class " + baseName) != std::string::npos);
+    CHECK(val.find(baseName + "::" + baseName + "()") == std::string::npos);
+}
+
+TEST_CASE("Hover - Invariant: Scoped inheritance shows namespace on qualifier and mixin on class")
+{
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("INS2BASE");
+    const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("WeaponBase");
+    const std::string derivedName = angel_lsp::test::GenerateRandomSymbolName("weapon_ithaca");
+
+    const std::string code = "namespace " + nsName +
+                             "\n"
+                             "{\n"
+                             "    mixin class " +
+                             mixinName +
+                             " {}\n"
+                             "}\n"
+                             "class " +
+                             derivedName + " : " + nsName + "::" + mixinName +
+                             "\n"
+                             "{\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+
+    // 1. Hover on nsName in inheritance
+    {
+        const size_t pos = code.rfind(nsName);
+        uint32_t line = 0;
+        size_t lineStart = 0;
+        for (size_t i = 0; i < pos; ++i)
+        {
+            if (code[i] == '\n')
+            {
+                ++line;
+                lineStart = i + 1;
+            }
+        }
+        auto hover = env.HoverAt(line, static_cast<uint32_t>(pos - lineStart));
+        REQUIRE(hover.has_value());
+        const std::string val = std::get<lsp::MarkupContent>(hover->contents).value;
+        CHECK(val.find("namespace " + nsName) != std::string::npos);
+    }
+
+    // 2. Hover on mixinName in inheritance
+    {
+        const size_t pos = code.rfind(mixinName);
+        uint32_t line = 0;
+        size_t lineStart = 0;
+        for (size_t i = 0; i < pos; ++i)
+        {
+            if (code[i] == '\n')
+            {
+                ++line;
+                lineStart = i + 1;
+            }
+        }
+        auto hover = env.HoverAt(line, static_cast<uint32_t>(pos - lineStart));
+        REQUIRE(hover.has_value());
+        const std::string val = std::get<lsp::MarkupContent>(hover->contents).value;
+        CHECK(val.find("mixin class " + mixinName) != std::string::npos);
+    }
+}
+
+TEST_CASE("Hover - Base class hover in inheritance list resolves to class definition, not constructor")
+{
+    const std::string baseName = test::GenerateRandomSymbolName("BaseWeapon");
+    const std::string derivedName = test::GenerateRandomSymbolName("DerivedWeapon");
+
+    const std::string code = "/** Doc for base */\n"
+                             "class " +
+                             baseName +
+                             " {\n"
+                             "    " +
+                             baseName +
+                             "() {}\n"
+                             "}\n"
+                             "class " +
+                             derivedName + " : " + baseName +
+                             " {\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+
+    const size_t pos = code.rfind(baseName);
+    uint32_t line = 0;
+    size_t lineStart = 0;
+    for (size_t i = 0; i < pos; ++i)
+    {
+        if (code[i] == '\n')
+        {
+            ++line;
+            lineStart = i + 1;
+        }
+    }
+    auto hover = env.HoverAt(line, static_cast<uint32_t>(pos - lineStart));
+    REQUIRE(hover.has_value());
+    const std::string val = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(val.find("class " + baseName) != std::string::npos);
+    CHECK(val.find("Doc for base") != std::string::npos);
+    CHECK(val.find(baseName + "()") == std::string::npos);
+}
+
+TEST_CASE("Hover - Primitive types and typedefs respect English and Spanish i18n localization")
+{
+    const std::string typeAlias = test::GenerateRandomSymbolName("CustomScore");
+    const std::string code = "typedef int " + typeAlias +
+                             ";\n"
+                             "void Test() {\n"
+                             "    int a = 1;\n"
+                             "    bool b = true;\n"
+                             "    " +
+                             typeAlias +
+                             " c = 2;\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    i18n::I18n i18nEn("en");
+    i18n::I18n i18nEs("es");
+
+    // Line 2: int a
+    {
+        auto hoverEn = env.HoverAt(2, 5, nullptr, &i18nEn);
+        REQUIRE(hoverEn.has_value());
+        const std::string valEn = std::get<lsp::MarkupContent>(hoverEn->contents).value;
+        CHECK(valEn.find("32-bit signed integer") != std::string::npos);
+        CHECK(valEn.find("Range:") != std::string::npos);
+
+        auto hoverEs = env.HoverAt(2, 5, nullptr, &i18nEs);
+        REQUIRE(hoverEs.has_value());
+        const std::string valEs = std::get<lsp::MarkupContent>(hoverEs->contents).value;
+        CHECK(valEs.find("Entero con signo de 32 bits") != std::string::npos);
+        CHECK(valEs.find("Rango:") != std::string::npos);
+    }
+
+    // Line 3: bool b
+    {
+        auto hoverEn = env.HoverAt(3, 5, nullptr, &i18nEn);
+        REQUIRE(hoverEn.has_value());
+        const std::string valEn = std::get<lsp::MarkupContent>(hoverEn->contents).value;
+        CHECK(valEn.find("Boolean type") != std::string::npos);
+        CHECK(valEn.find("Values: `true or false`") != std::string::npos);
+
+        auto hoverEs = env.HoverAt(3, 5, nullptr, &i18nEs);
+        REQUIRE(hoverEs.has_value());
+        const std::string valEs = std::get<lsp::MarkupContent>(hoverEs->contents).value;
+        CHECK(valEs.find("Tipo booleano") != std::string::npos);
+        CHECK(valEs.find("Valores: `true or false`") != std::string::npos);
+    }
+
+    // Line 4: typedef
+    {
+        auto hoverEn = env.HoverAt(4, 5, nullptr, &i18nEn);
+        REQUIRE(hoverEn.has_value());
+        const std::string valEn = std::get<lsp::MarkupContent>(hoverEn->contents).value;
+        CHECK(valEn.find("(underlying type: `int`)") != std::string::npos);
+        CHECK(valEn.find("Range:") != std::string::npos);
+
+        auto hoverEs = env.HoverAt(4, 5, nullptr, &i18nEs);
+        REQUIRE(hoverEs.has_value());
+        const std::string valEs = std::get<lsp::MarkupContent>(hoverEs->contents).value;
+        CHECK(valEs.find("(tipo subyacente: `int`)") != std::string::npos);
+        CHECK(valEs.find("Rango:") != std::string::npos);
+    }
+}
+
+TEST_CASE("Hover - Named argument hover respects English and Spanish i18n")
+{
+    const std::string funcName = test::GenerateRandomSymbolName("FireLaser");
+    const std::string paramName = test::GenerateRandomSymbolName("intensity");
+    const std::string code = "void " + funcName + "(float " + paramName +
+                             ") {}\n"
+                             "void Main() {\n"
+                             "    " +
+                             funcName + "(" + paramName +
+                             ": 1.5f);\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    i18n::I18n i18nEn("en");
+    i18n::I18n i18nEs("es");
+
+    const size_t pos = code.rfind(paramName);
+    uint32_t line = 0;
+    size_t lineStart = 0;
+    for (size_t i = 0; i < pos; ++i)
+    {
+        if (code[i] == '\n')
+        {
+            ++line;
+            lineStart = i + 1;
+        }
+    }
+    const uint32_t charPos = static_cast<uint32_t>(pos - lineStart);
+
+    auto hoverEn = env.HoverAt(line, charPos, nullptr, &i18nEn);
+    REQUIRE(hoverEn.has_value());
+    const std::string valEn = std::get<lsp::MarkupContent>(hoverEn->contents).value;
+    CHECK(valEn.find("Parameter of `" + funcName + "`") != std::string::npos);
+
+    auto hoverEs = env.HoverAt(line, charPos, nullptr, &i18nEs);
+    REQUIRE(hoverEs.has_value());
+    const std::string valEs = std::get<lsp::MarkupContent>(hoverEs->contents).value;
+    CHECK(valEs.find("Parámetro de `" + funcName + "`") != std::string::npos);
+}
+
+TEST_CASE("Hover - Unresolved include directive respects English and Spanish i18n")
+{
+    const std::string missingFile = test::GenerateRandomSymbolName("missing_header") + ".as";
+    const std::string code = "#include \"" + missingFile + "\"\n";
+
+    TestEnvironment env(code);
+    i18n::I18n i18nEn("en");
+    i18n::I18n i18nEs("es");
+
+    HoverRequest reqEn{env.uri, env.sourceCode, env.tree, env.symbolTable, env.scopeIndex, lsp::Position{0, 2}};
+    reqEn.i18n = &i18nEn;
+    reqEn.resolveInclude = [](const std::string&) -> std::string { return ""; };
+    auto hoverEn = GetHover(reqEn);
+    REQUIRE(hoverEn.has_value());
+    const std::string valEn = std::get<lsp::MarkupContent>(hoverEn->contents).value;
+    CHECK(valEn.find("Does not resolve to a file") != std::string::npos);
+
+    HoverRequest reqEs{env.uri, env.sourceCode, env.tree, env.symbolTable, env.scopeIndex, lsp::Position{0, 2}};
+    reqEs.i18n = &i18nEs;
+    reqEs.resolveInclude = [](const std::string&) -> std::string { return ""; };
+    auto hoverEs = GetHover(reqEs);
+    REQUIRE(hoverEs.has_value());
+    const std::string valEs = std::get<lsp::MarkupContent>(hoverEs->contents).value;
+    CHECK(valEs.find("No se resuelve a ningún archivo") != std::string::npos);
 }

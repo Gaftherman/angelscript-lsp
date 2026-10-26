@@ -1,6 +1,6 @@
 {
   "project": "angelscript-lsp",
-  "currentPhase": "PHASE_41_MIXIN_E210_BASE_VALIDATION_SCOPED_TOKENS_DUPLICATE_SYMBOLS",
+  "currentPhase": "PHASE_44_TREESITTER_AUTHOR_ANTIPATTERN_AND_I18N_AUDIT",
   "status": "COMPLETED",
   "baselineMetrics": {
     "largeScript3000ParseAndAnalysisMs": 192.75,
@@ -11,12 +11,12 @@
     "unexplainedFalsePositives": 0,
     "unitTestsTotal": 2506,
     "unitTestsPassed": 2506,
-    "unitAssertionsPassed": 35800,
+    "unitAssertionsPassed": 34666,
     "condEdgePassCount": 0,
     "tsanRaceWarnings": 0,
     "layerIncludeCheck": "PASS",
     "astGrepViolations": 0,
-    "jscpdDuplicationPercent": 1.1
+    "jscpdDuplicationPercent": 1.09
   },
   "phases": [
     {
@@ -1039,7 +1039,7 @@
     },
     {
       "id": "PHASE_36",
-      "name": "Fase 36: Auditoría Forense y Remediación de Arquitectura: Erradicación Total de Recorridos Completos del AST, Usos Incorrectos de Tree-sitter, Copias en el Heap y Hardcoding en C++",
+      "name": "Fase 36: Auditor\u00eda Forense y Remediaci\u00f3n de Arquitectura: Erradicaci\u00f3n Total de Recorridos Completos del AST, Usos Incorrectos de Tree-sitter, Copias en el Heap y Hardcoding en C++",
       "status": "COMPLETED",
       "modifiedFiles": [
         "server/src/parser/GrammarSymbols.h",
@@ -1201,6 +1201,110 @@
         "Enabled duplicate symbol detection between .as script files and .as.predefined in TypeRules.cpp (CheckDuplicatePair and CollectDuplicateCandidates), catching collisions across variables, constants, types, and functions with identical signatures while allowing namespace reopening.",
         "All 2,487 unit and integration test cases passed (34,592 assertions, 0 failures, 30 skipped), all 12 active quality gates passed, and Lizard complexity ceilings (CCN <= 15, length <= 70) verified."
       ]
+    },
+    {
+      "id": "PHASE_42",
+      "name": "Comment False Symbols Eradication, Base Class vs Constructor Hover Disambiguation, Class/Namespace Homonym Coexistence & CustomKeyvalues Call Safety Rule",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "client/schemas/angelscript.rules.schema.json",
+        "predefined/sven.angelscript.rules.json",
+        "predefined/sven.as.predefined",
+        "schemas/angelscript.rules.schema.json",
+        "server/src/analysis/DeclarationRecovery.cpp",
+        "server/src/analysis/DiagnosticCodes.h",
+        "server/src/analysis/DiagnosticContext.cpp",
+        "server/src/analysis/DiagnosticSuppression.cpp",
+        "server/src/analysis/LocalScopeCollector.cpp",
+        "server/src/analysis/NodeIndex.cpp",
+        "server/src/analysis/NodeIndex.h",
+        "server/src/analysis/SemanticHelpers.cpp",
+        "server/src/analysis/SymbolCollector.cpp",
+        "server/src/analysis/rules/EngineRuleChecker.cpp",
+        "server/src/config/EngineRuleConfig.h",
+        "server/src/config/EngineRuleParser.cpp",
+        "server/src/features/hover/HoverHandler.cpp",
+        "server/src/i18n/i18n.cpp",
+        "server/src/utils/Utils.cpp",
+        "server/src/utils/Utils.h",
+        "server/tests/CallCheckerTest.cpp",
+        "server/tests/CodeLensTest.cpp",
+        "server/tests/EngineRuleCheckerTest.cpp",
+        "server/tests/HoverTest.cpp",
+        "server/tests/SemanticAnalyzerTest.cpp",
+        "server/tests/TypeRulesTest.cpp",
+        "STEPS.md",
+        "STEPS.json"
+      ],
+      "findings": [
+        "Eradicated false symbols, CodeLens markers (0 references), and false diagnostics inside comments when syntax errors exist (item_tracker.as license block) by recording comment ranges in NodeIndex, skipping comments/strings in DeclarationRecovery, and checking IsInsideComment in DiagnosticContext.",
+        "Disambiguated base class inheritance hover: hovering on a base class (e.g. ScriptBasePlayerWeaponEntity) displays the class/interface declaration instead of constructor, and hovering on scoped inheritance (INS2BASE::WeaponBase) shows namespace on qualifier and mixin class on leaf by adjusting container climb in AdjustStartNodeIfDeclarationName and type context promotion in HoverHandler.",
+        "Harmonized class and namespace homonym coexistence: classes and namespaces sharing the same identifier with different default parameter signatures (e.g. env_flame::Ignite) coexist cleanly without E104 duplicate symbol errors or arity mismatch diagnostics.",
+        "Implemented Sven Co-op CustomKeyvalues call safety rule (<= 5.26 legacy defect) via callRules with disallowMethod and suggestReplacement (g_EntityFuncs.DispatchKeyValue), W121 diagnostic code as-warn-engine-call-safety with dual English/Spanish localization, schema synchronization, and @warning documentation in sven.as.predefined.",
+        "All 2,496 unit tests passed (34,613 assertions, 0 failures, 30 skipped), all 12 active quality gates passed, and 100% settings wired with dual-language parity."
+      ]
+    },
+    {
+      "id": "PHASE_43",
+      "name": "Strict Scope Isolation (class X vs namespace X), Enum + Namespace Completion Merging, Base Range Precision, and Comment Cleanup",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "STEPS.json",
+        "STEPS.md",
+        "server/src/analysis/rules/RuleIndex.h",
+        "server/src/analysis/rules/RuleIndex.cpp",
+        "server/src/analysis/rules/ClassRules.cpp",
+        "server/src/analysis/rules/EngineRuleChecker.cpp",
+        "server/src/analysis/SemanticAnalyzer.cpp",
+        "server/src/analysis/SemanticHelpers.cpp",
+        "server/src/analysis/NodeIndex.h",
+        "server/src/analysis/NodeIndex.cpp",
+        "server/src/analysis/DiagnosticContext.cpp",
+        "server/src/analysis/DiagnosticCodes.h",
+        "server/src/analysis/DeclarationRecovery.cpp",
+        "server/src/features/completion/CompletionHandler.cpp",
+        "server/src/features/hover/HoverHandler.cpp",
+        "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
+        "server/src/i18n/i18n.cpp",
+        "server/src/parser/queries/BuiltQueries.h",
+        "server/cmake/TreeSitter.cmake",
+        "client/syntaxes/angelscript.tmLanguage.json",
+        "server/tests/SemanticAnalyzerTest.cpp",
+        "server/tests/CompletionTest.cpp",
+        "server/tests/ClassRulesTest.cpp",
+        "server/tests/HoverTest.cpp",
+        "server/tests/SemanticTokensTest.cpp"
+      ],
+      "findings": [
+        "Unqualified accesses inside class X referencing symbols from an external homonymous namespace X are rejected by AngelScript compiler and now strictly flagged as undeclared identifier via decoupled byClass and byNamespace tracking in RuleIndex.",
+        "Autocompletion on Difficulty:: now seamlessly merges enum members (Easy, Hard) and namespace symbols without premature return.",
+        "Fixed ForEachNamedChildNodeUntil in ClassRules.cpp to correctly locate base_class_list nodes, highlighting the exact base token range instead of the entire class body.",
+        "Eliminated mixin instantiation false positives on global objects (g_Scheduler) and added MixinFileCacheEntry to prevent repeated disk reads and re-parses during mixin audits.",
+        "Hover on base class in inheritance list now reliably presents class documentation and signature rather than falling back to constructors.",
+        "Semantic tokens for scoped identifiers in namespace declarations (A::B) correctly break down into individual namespace tokens."
+      ]
+    },
+    {
+      "id": "PHASE_44",
+      "name": "Tree-Sitter Author Cleanup, Antipattern Eradication & 100% i18n Localization Audit",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "STEPS.json",
+        "STEPS.md",
+        "server/cmake/TreeSitter.cmake",
+        "server/src/analysis/SemanticHelpers.cpp",
+        "server/src/features/hover/HoverHandler.cpp",
+        "server/src/i18n/i18n.cpp",
+        "server/tests/HoverTest.cpp"
+      ],
+      "findings": [
+        "tree-sitter-angelscript git author history cleaned: develop, main, and master reset to 37544e47e1977bbdb507a204b876f73817f74123 and force-pushed so only Gaftherman <fano.solis.campos@gmail.com> is present in the log.",
+        "HoverHandler.cpp and SemanticHelpers.cpp heuristics replaced with compiler-grade solutions: MemberBelongsToClass and MemberBelongsToNamespace use zero-allocation FindMemberSymbolPtr and direct sym.containerKind checks, eliminating brittle startLine/endLine checks across multi-block namespaces and #include files.",
+        "Remaining ts_node_type string comparisons in HoverHandler.cpp replaced with O(1) GrammarSymbols (symEnumMember, symEnumDeclaration, symScopedIdentifier, symScope).",
+        "Remaining user-facing strings externalized in server/src/i18n/i18n.cpp with 1:1 English/Spanish parity: hover-include-unresolved, hover-primitive-values, hover-primitive-range, hover-typedef-underlying, hover-named-arg-parameter-of, and hover-primitive-desc-*.",
+        "Lizard NLOC compliance ensured by cleanly splitting PopulateEnglishHoverMessages and PopulateSpanishHoverMessages.",
+        "All 2,506 unit tests passed (34,666 assertions). All 12 static quality gates passed."
+      ]
     }
   ],
   "identifiedGaps": [
@@ -1262,10 +1366,22 @@
     "GAP-INHERIT-01: Missing base class validation and unqualified completion suggestions in inheritance lists. (RESOLVED in Phase 41).",
     "GAP-TOKENS-01: Scoped identifiers in base_class_list emitting single monolithic token spanning qualifier and leaf. (RESOLVED in Phase 41).",
     "GAP-DUP-01: Script symbols colliding with .as.predefined declarations not flagged as duplicates. (RESOLVED in Phase 41).",
-    "GAP-CALL-04: Homonymous class and namespace colliding when one has default arguments. (RESOLVED in Phase 41 with FilterScopedCandidatesByCallerContext and IsCompatibleNamespaceOrHomonym)."
+    "GAP-CALL-04: Homonymous class and namespace colliding when one has default arguments. (RESOLVED in Phase 41 with FilterScopedCandidatesByCallerContext and IsCompatibleNamespaceOrHomonym).",
+    "GAP-COMMENT-01: False symbols, 0 references CodeLens, and false diagnostics emitted inside comments when file has syntax errors. (RESOLVED in Phase 42 with NodeIndex::IsInsideComment and DeclarationRecovery comment skipping).",
+    "GAP-HOVER-01: Base class inheritance hover showing constructor signature instead of class/interface, and scoped base qualifier not showing namespace. (RESOLVED in Phase 42 with AdjustStartNodeIfDeclarationName and DisambiguateTypeContextSymbols).",
+    "GAP-HOMONYM-01: Homonymous class and namespace sharing method name with differing default parameters emitting duplicate symbol or arity errors. (RESOLVED in Phase 42).",
+    "GAP-ENGINE-01: Sven Co-op CustomKeyvalues::SetKeyvalue crash defect unflagged. (RESOLVED in Phase 42 with disallowMethod, suggestReplacement, and W121 as-warn-engine-call-safety).",
+    "GAP-SCOPE-01: Unqualified access inside class X resolving to members of homonymous namespace X. (RESOLVED in Phase 43 with dual RuleIndex container tracking: byClass vs byNamespace).",
+    "GAP-COMPL-02: Completion on Difficulty:: halting after enum members without offering namespace functions. (RESOLVED in Phase 43 by merging enum members and namespace symbols).",
+    "GAP-RANGE-01: Base class inheritance validation errors underlining entire class body instead of base token. (RESOLVED in Phase 43 with GetBaseRange and ForEachNamedChildNodeUntil fix).",
+    "GAP-PERF-07: Redundant re-parsing and re-reading of mixin files during host class instantiation audits. (RESOLVED in Phase 43 with MixinFileCacheEntry fileCache).",
+    "GAP-TOKENS-02: scoped_identifier in namespace A::B emitting monolithic token instead of distinct namespace tokens. (RESOLVED in Phase 43).",
+    "GAP-AUTHOR-01: tree-sitter-angelscript commit history containing non-user account commits. (RESOLVED in Phase 44 with git reset --hard to 37544e4, force push to develop/main/master, and author config Gaftherman).",
+    "GAP-ANTIPATTERN-01: Line-range heuristics and string concatenations in MemberBelongsToClass / MemberBelongsToNamespace. (RESOLVED in Phase 44 with FindMemberSymbolPtr and sym.containerKind).",
+    "GAP-I18N-01: Hardcoded English text in HoverHandler.cpp for unresolved includes, primitive types, typedefs, and named arguments. (RESOLVED in Phase 44 with i18n::FormatMessage and 100% EN/ES dictionary parity)."
   ],
   "nextActions": [
-    "Phase 41 completed with 100% test pass rate (2,489 tests, 34,598 assertions) and all 12 quality gates passed."
+    "Phase 44 completed with 100% test pass rate (2,506 tests, 34,666 assertions) and all 12 quality gates passed."
   ],
-  "lastMilestone": "Phase 41 completed with 100% test pass rate (2,489 tests, 34,598 assertions) and all 12 quality gates passed."
+  "lastMilestone": "Phase 44 completed with 100% test pass rate (2,506 tests, 34,666 assertions) and all 12 quality gates passed."
 }

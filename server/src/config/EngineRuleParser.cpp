@@ -211,6 +211,8 @@ void ParseSingleSchedulerRule(const nlohmann::json& item, SchedulerRule& rule)
     rule.disallowArgHandleOnly = item.value("disallowArgHandleOnly", true);
     rule.argSuggestReplacement = item.value("argSuggestReplacement", "");
     rule.requireExplicitEnumConstruct = item.value("requireExplicitEnumConstruct", false);
+    rule.disallowMethod = item.value("disallowMethod", false);
+    rule.suggestReplacement = item.value("suggestReplacement", "");
     rule.message = item.value("message", "");
     rule.severity = item.value("severity", "warning");
 

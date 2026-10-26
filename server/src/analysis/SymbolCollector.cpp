@@ -118,6 +118,10 @@ ScannedClassHeader FindClassHeaderInError(TSNode node, const parser::GrammarSymb
     {
         TSNode child = ts_tree_cursor_current_node(&inner);
         TSSymbol sym = ts_node_symbol(child);
+        if (sym == gs.symComment)
+        {
+            continue;
+        }
 
         if (sym == gs.tokClass)
         {
@@ -2164,6 +2168,10 @@ void SymbolCollector::HandleParseErrorNode(TSNode node, ParseErrorReportContext&
     }
 
     TSNode target = ts_node_is_missing(node) ? node : PinpointOffendingNode(node, m_gs);
+    if (ts_node_symbol(target) == m_gs.symComment || ts_node_symbol(node) == m_gs.symComment)
+    {
+        return;
+    }
     const uint32_t line = ts_node_start_point(target).row;
     if (errCtx.missingOpenBrace && errCtx.firstErrorLine != UINT32_MAX && line > errCtx.firstErrorLine)
     {

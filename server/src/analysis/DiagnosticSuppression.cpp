@@ -39,6 +39,7 @@ inline constexpr CodeAliasEntry k_codeAliases[] = {
     {"W118", diagnostics::codes::UnusedFunction},
     {"W119", diagnostics::codes::UnusedMethod},
     {"W120", diagnostics::codes::UnusedClass},
+    {"W121", diagnostics::codes::EngineCallSafety},
     // Hints
     {"W151", diagnostics::codes::AccessorDisabled},
     {"W152", diagnostics::codes::AccessorPortability},

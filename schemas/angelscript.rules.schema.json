@@ -226,6 +226,15 @@
             "type": "string",
             "description": "Safe replacement to suggest for callee arguments (e.g. 'EHandle')."
           },
+          "disallowMethod": {
+            "type": "boolean",
+            "default": false,
+            "description": "If true, completely prohibits calling this method for engine safety or stability reasons."
+          },
+          "suggestReplacement": {
+            "type": "string",
+            "description": "Recommended safe replacement API (e.g. 'g_EntityFuncs.DispatchKeyValue')."
+          },
           "requireExplicitEnumConstruct": {
             "type": "boolean",
             "default": false,

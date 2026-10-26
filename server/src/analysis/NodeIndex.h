@@ -156,11 +156,39 @@ class NodeIndex
     };
 
     /**
+     * @brief Represents a half-open byte range [startByte, endByte) containing a comment node.
+     */
+    struct CommentRange
+    {
+        uint32_t startByte = 0;
+        uint32_t endByte = 0;
+        uint32_t startLine = 0;
+        uint32_t startColumn = 0;
+        uint32_t endLine = 0;
+        uint32_t endColumn = 0;
+    };
+
+    /**
      * @brief Checks in O(log E) whether the given byte offset falls inside any syntax error node.
      * @param[in] byteOffset Byte offset to test.
      * @return True if offset is inside a syntax error range; false otherwise (O(1) if no errors).
      */
     [[nodiscard]] bool IsInsideError(uint32_t byteOffset) const noexcept;
+
+    /**
+     * @brief Checks in O(log C) whether the given byte offset falls inside any comment node.
+     * @param[in] byteOffset Byte offset to test.
+     * @return True if offset is inside a comment range; false otherwise (O(1) if no comments).
+     */
+    [[nodiscard]] bool IsInsideComment(uint32_t byteOffset) const noexcept;
+
+    /**
+     * @brief Checks in O(log C) whether the given line and column fall inside any comment node.
+     * @param[in] line 0-based line index.
+     * @param[in] col 0-based column index.
+     * @return True if position is inside a comment range; false otherwise.
+     */
+    [[nodiscard]] bool IsInsideCommentLineCol(uint32_t line, uint32_t col) const noexcept;
 
     /**
      * @brief Checks whether the given node is an error, has errors, or is enclosed in a syntax error.
@@ -176,6 +204,12 @@ class NodeIndex
     [[nodiscard]] std::span<const ErrorRange> ErrorRanges() const noexcept;
 
     /**
+     * @brief Returns all tracked disjoint comment byte ranges.
+     * @return Span of comment ranges.
+     */
+    [[nodiscard]] std::span<const CommentRange> CommentRanges() const noexcept;
+
+    /**
      * @brief Clears all indexed nodes and symbol maps.
      */
     void Clear() noexcept;
@@ -185,6 +219,7 @@ class NodeIndex
     void IndexNode(TSNode node, TraversalBudget* budget = nullptr);
     void TraverseTree(TSNode root, TraversalBudget* budget = nullptr);
     void PostProcessErrorRanges();
+    void PostProcessCommentRanges();
 
     TSNode m_root{};
     const TSLanguage* m_language = nullptr;
@@ -192,6 +227,8 @@ class NodeIndex
     std::vector<TSNode> m_errorNodes;
     std::vector<std::vector<TSNode>> m_nodesBySymbol;
     std::vector<ErrorRange> m_errorRanges;
+    std::vector<CommentRange> m_commentRanges;
     ankerl::unordered_dense::map<std::string_view, TSSymbol> m_symbolByName;
+    TSSymbol m_symComment = 0;
 };
 } // namespace angel_lsp::analysis

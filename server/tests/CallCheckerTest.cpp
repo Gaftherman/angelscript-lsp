@@ -1980,3 +1980,45 @@ TEST_CASE("CallChecker - Invariant: Homonymous class and namespace default param
     CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
     CHECK_FALSE(HasCode(diags, "as-err-member-not-found"));
 }
+
+TEST_CASE("CallChecker - Invariant: Calls to homonymous namespace and class functions with same name and default "
+          "arguments resolve cleanly")
+{
+    const std::string name = angel_lsp::test::GenerateRandomSymbolName("EnvFlame");
+    const std::string fn = angel_lsp::test::GenerateRandomSymbolName("Ignite");
+
+    const std::string code = "namespace " + name +
+                             " {\n"
+                             "    void " +
+                             fn +
+                             "(int target, int attacker, float damage, float duration = 4.0f) {}\n"
+                             "}\n"
+                             "class " +
+                             name +
+                             " {\n"
+                             "    void " +
+                             fn +
+                             "(int target, int attacker, float damage, float duration) {}\n"
+                             "    void Run() {\n"
+                             "        this." +
+                             fn +
+                             "(1, 2, 10.0f, 5.0f);\n"
+                             "        " +
+                             name + "::" + fn +
+                             "(1, 2, 10.0f);\n"
+                             "    }\n"
+                             "}\n"
+                             "void TestOutside() {\n"
+                             "    " +
+                             name + "::" + fn +
+                             "(1, 2, 10.0f);\n"
+                             "    " +
+                             name + "::" + fn +
+                             "(1, 2, 10.0f, 3.0f);\n"
+                             "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-call-argument-count"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-ambiguous"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+}

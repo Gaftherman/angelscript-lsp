@@ -2857,3 +2857,147 @@ TEST_CASE("SemanticAnalyzer - Inactive preprocessor block variable declaration i
 
     CHECK(HasUndefinedIdentifierDiagnostic(diags, varName));
 }
+
+TEST_CASE("SemanticAnalyzer - Multiline license comment with syntax error produces zero false symbols or diagnostics "
+          "in comments")
+{
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    const std::string code = "/**\n"
+                             " * Copyright (c) 2026 Mikk155 and contributors of bts_rc\n"
+                             " *\n"
+                             " * Permission is hereby granted, free of charge, to any person obtaining a copy\n"
+                             " * of this software to use, copy, modify, merge, publish, distribute, sublicense,\n"
+                             " * and/or sell copies of the Software under the following conditions:\n"
+                             " *\n"
+                             " * The above copyright notice and this permission notice shall be included in all\n"
+                             " * copies or substantial portions of the Software.\n"
+                             " *\n"
+                             " * THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n"
+                             " * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n"
+                             " * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n"
+                             " * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n"
+                             " * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n"
+                             " * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\n"
+                             " * SOFTWARE.\n"
+                             " **/\n"
+                             "\n"
+                             "namespace item_tracker\n"
+                             "{\n"
+                             "    void BrokenFunction(\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n);
+
+    for (const auto& sym : table.GetAllSymbols())
+    {
+        CHECK_MESSAGE(sym.startLine > 17, "Found false symbol inside comment: " << sym.name);
+    }
+
+    for (const auto& d : diags)
+    {
+        CHECK_MESSAGE(d.range.start.line > 17, "Found diagnostic inside comment: " << d.code);
+    }
+}
+
+TEST_CASE("SemanticAnalyzer - Strict scope isolation between class X and homonymous namespace X")
+{
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    const std::string name = angel_lsp::test::GenerateRandomSymbolName("Homonym");
+    const std::string nsVar = angel_lsp::test::GenerateRandomSymbolName("nsVar");
+    const std::string nsFunc = angel_lsp::test::GenerateRandomSymbolName("nsFunc");
+    const std::string classMethod = angel_lsp::test::GenerateRandomSymbolName("method");
+
+    // Outside namespace: class X declared at file scope. Unqualified references to nsVar or nsFunc() inside class X
+    // must be flagged as undeclared identifier!
+    const std::string codeUnqualified = "namespace " + name +
+                                        " {\n"
+                                        "    int " +
+                                        nsVar +
+                                        " = 10;\n"
+                                        "    void " +
+                                        nsFunc +
+                                        "() {}\n"
+                                        "}\n"
+                                        "class " +
+                                        name +
+                                        " {\n"
+                                        "    void " +
+                                        classMethod +
+                                        "() {\n"
+                                        "        int a = " +
+                                        nsVar +
+                                        ";\n"
+                                        "        " +
+                                        nsFunc +
+                                        "();\n"
+                                        "    }\n"
+                                        "}\n";
+
+    const auto diagsUnqualified = AnalyzeSource(codeUnqualified, table, i18n);
+    CHECK(HasUndefinedIdentifierDiagnostic(diagsUnqualified, nsVar));
+    CHECK(HasUndefinedIdentifierDiagnostic(diagsUnqualified, nsFunc));
+
+    // Qualified references name::nsVar and name::nsFunc() inside class X resolve cleanly!
+    SymbolTable table2;
+    const std::string codeQualified = "namespace " + name +
+                                      " {\n"
+                                      "    int " +
+                                      nsVar +
+                                      " = 10;\n"
+                                      "    void " +
+                                      nsFunc +
+                                      "() {}\n"
+                                      "}\n"
+                                      "class " +
+                                      name +
+                                      " {\n"
+                                      "    void " +
+                                      classMethod +
+                                      "() {\n"
+                                      "        int a = " +
+                                      name + "::" + nsVar +
+                                      ";\n"
+                                      "        " +
+                                      name + "::" + nsFunc +
+                                      "();\n"
+                                      "    }\n"
+                                      "}\n";
+
+    const auto diagsQualified = AnalyzeSource(codeQualified, table2, i18n);
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diagsQualified, nsVar));
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diagsQualified, nsFunc));
+
+    // If class X is inside namespace X { class X { ... } }, unqualified references resolve cleanly!
+    SymbolTable table3;
+    const std::string codeInsideNs = "namespace " + name +
+                                     " {\n"
+                                     "    int " +
+                                     nsVar +
+                                     " = 10;\n"
+                                     "    void " +
+                                     nsFunc +
+                                     "() {}\n"
+                                     "    class " +
+                                     name +
+                                     " {\n"
+                                     "        void " +
+                                     classMethod +
+                                     "() {\n"
+                                     "            int a = " +
+                                     nsVar +
+                                     ";\n"
+                                     "            " +
+                                     nsFunc +
+                                     "();\n"
+                                     "        }\n"
+                                     "    }\n"
+                                     "}\n";
+
+    const auto diagsInsideNs = AnalyzeSource(codeInsideNs, table3, i18n);
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diagsInsideNs, nsVar));
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diagsInsideNs, nsFunc));
+}

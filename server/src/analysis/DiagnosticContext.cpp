@@ -1,6 +1,8 @@
 #include "analysis/DiagnosticContext.h"
 #include "analysis/ExpressionTypeCache.h"
+#include "analysis/NodeIndex.h"
 #include "utils/LspLogger.h"
+#include "utils/Utils.h"
 #include <cstdint>
 #include <span>
 #include <spdlog/fmt/fmt.h>
@@ -166,6 +168,14 @@ void DiagnosticContext::Append(Diagnostic&& diag) const
     if (diag.message.find("<poison>") != std::string::npos || diag.code.find("<poison>") != std::string::npos)
     {
         return;
+    }
+
+    if (request.nodeIndex && !request.nodeIndex->CommentRanges().empty())
+    {
+        if (request.nodeIndex->IsInsideCommentLineCol(diag.range.start.line, diag.range.start.character))
+        {
+            return;
+        }
     }
 
     // Only warnings move. An error stays an error at every mode - asEP_COMPILER_WARNINGS

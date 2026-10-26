@@ -1372,3 +1372,41 @@ TEST_CASE("CodeLens - Granular configuration and showZeroReferences")
         ts_tree_delete(tree);
     }
 }
+
+TEST_CASE("CodeLens - Zero CodeLenses emitted inside multiline license comment when file has syntax error")
+{
+    const std::string code = "/**\n"
+                             " * Copyright (c) 2026 Mikk155 and contributors of bts_rc\n"
+                             " *\n"
+                             " * Permission is hereby granted, free of charge, to any person obtaining a copy\n"
+                             " * of this software to use, copy, modify, merge, publish, distribute, sublicense,\n"
+                             " * and/or sell copies of the Software under the following conditions:\n"
+                             " *\n"
+                             " * The above copyright notice and this permission notice shall be included in all\n"
+                             " * copies or substantial portions of the Software.\n"
+                             " *\n"
+                             " * THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n"
+                             " * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n"
+                             " * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n"
+                             " * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n"
+                             " * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n"
+                             " * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\n"
+                             " * SOFTWARE.\n"
+                             " **/\n"
+                             "\n"
+                             "namespace item_tracker\n"
+                             "{\n"
+                             "    void BrokenFunction(\n"
+                             "}\n";
+
+    CodeLensFixture fixture(code);
+    const auto lenses = fixture.GetLenses();
+    if (lenses.has_value())
+    {
+        for (const auto& lens : *lenses)
+        {
+            CHECK_MESSAGE(lens.range.start.line > 17,
+                          "Found CodeLens inside license comment at line " << lens.range.start.line);
+        }
+    }
+}

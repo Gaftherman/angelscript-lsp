@@ -117,7 +117,7 @@ std::string PathToUri(const std::string& filePath)
     return "file:///" + normalized;
 }
 
-size_t PositionToOffset(const std::string& text, uint32_t line, uint32_t character, PositionEncoding enc)
+size_t PositionToOffset(std::string_view text, uint32_t line, uint32_t character, PositionEncoding enc)
 {
     // character is in the negotiated encoding (UTF-16 code units unless the client agreed to
     // UTF-8), while every offset the rest of the server deals in is a byte offset. Resolving it

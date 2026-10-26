@@ -3084,3 +3084,27 @@ TEST_CASE("TypeRules - Invariant: Homonymous class and namespace can coexist wit
     CHECK_FALSE(HasCode(diags, "as-err-duplicate-symbol"));
     CHECK_FALSE(HasCode(diags, "as-err-name-conflict"));
 }
+
+TEST_CASE("TypeRules - Invariant: Homonymous class and namespace methods sharing name with default parameters coexist "
+          "without error")
+{
+    const std::string name = test::GenerateRandomSymbolName("EnvFlame");
+    const std::string fn = test::GenerateRandomSymbolName("Ignite");
+    const std::string code = "namespace " + name +
+                             " {\n"
+                             "    void " +
+                             fn +
+                             "(int target, int attacker, float damage, float duration = 4.0f) {}\n"
+                             "}\n"
+                             "class " +
+                             name +
+                             " {\n"
+                             "    void " +
+                             fn +
+                             "(int target, int attacker, float damage, float duration) {}\n"
+                             "}\n";
+
+    auto diags = AnalyzeTypeSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-duplicate-symbol"));
+    CHECK_FALSE(HasCode(diags, "as-err-name-conflict"));
+}

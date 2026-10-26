@@ -490,9 +490,9 @@ TSNode FindBaseListNode(const Symbol& sym, const DiagnosticContext& ctx)
                                            if (ts_node_symbol(child) == gs.symBaseClassList)
                                            {
                                                baseList = child;
-                                               return true;
+                                               return false;
                                            }
-                                           return false;
+                                           return true;
                                        });
     return baseList;
 }
@@ -514,10 +514,10 @@ SourceRange GetBaseRange(TSNode baseList, size_t index, const SourceRange& fallb
                                                TSPoint s = ts_node_start_point(child);
                                                TSPoint e = ts_node_end_point(child);
                                                result = SourceRange{s.row, s.column, e.row, e.column};
-                                               return true;
+                                               return false;
                                            }
                                            ++curIdx;
-                                           return false;
+                                           return true;
                                        });
     return result;
 }
@@ -953,7 +953,23 @@ TSNode FindMixinAstNode(const TSTree* mixinTree, const Symbol& mixinSym)
 InstantiationRange FindHostMixinRange(const Symbol& sym, const Symbol& mixinSym, const std::string& mixinName,
                                       const DiagnosticContext& ctx)
 {
-    InstantiationRange range{sym.startLine, sym.startCharacter, sym.endLine, sym.endCharacter};
+    const uint32_t startL = sym.selectionRange.endLine > sym.selectionRange.startLine ||
+                                    sym.selectionRange.endCharacter > sym.selectionRange.startCharacter
+                                ? sym.selectionRange.startLine
+                                : sym.startLine;
+    const uint32_t startC = sym.selectionRange.endLine > sym.selectionRange.startLine ||
+                                    sym.selectionRange.endCharacter > sym.selectionRange.startCharacter
+                                ? sym.selectionRange.startCharacter
+                                : sym.startCharacter;
+    const uint32_t endL = sym.selectionRange.endLine > sym.selectionRange.startLine ||
+                                  sym.selectionRange.endCharacter > sym.selectionRange.startCharacter
+                              ? sym.selectionRange.endLine
+                              : sym.endLine;
+    const uint32_t endC = sym.selectionRange.endLine > sym.selectionRange.startLine ||
+                                  sym.selectionRange.endCharacter > sym.selectionRange.startCharacter
+                              ? sym.selectionRange.endCharacter
+                              : sym.endCharacter;
+    InstantiationRange range{startL, startC, endL, endC};
     if (!ctx.request.tree || ctx.request.sourceCode.empty())
     {
         return range;
@@ -962,7 +978,9 @@ InstantiationRange FindHostMixinRange(const Symbol& sym, const Symbol& mixinSym,
     TSNode hostRoot = ts_tree_root_node(ctx.request.tree);
     TSPoint hostPt = {sym.startLine, sym.startCharacter};
     TSNode hostNode = ts_node_descendant_for_point_range(hostRoot, hostPt, hostPt);
-    while (!ts_node_is_null(hostNode) && NodeType(hostNode) != "class_declaration")
+    const auto& gs = parser::GetGrammarSymbols();
+    int depth = 0;
+    while (!ts_node_is_null(hostNode) && depth++ < 16 && ts_node_symbol(hostNode) != gs.symClassDeclaration)
     {
         hostNode = ts_node_parent(hostNode);
     }
@@ -1198,8 +1216,8 @@ bool IsEngineOrGlobalIdentifier(const std::string& name, const DiagnosticContext
         }
     }
     const auto& ruleIndex = ctx.request.GetRuleIndex();
-    return ruleIndex.globalNames.contains(name) || ruleIndex.allNames.contains(name) ||
-           ctx.request.symbolTable.HasSymbolAnywhere(name);
+    return ruleIndex.globalNames.contains(name) || ruleIndex.enumMemberNames.contains(name) ||
+           ctx.request.symbolTable.FindSymbolsPtr(name) != nullptr;
 }
 
 bool IsValidInEnclosingOrUsingNamespaces(const std::string& name, const FunctionCheckState& state,
@@ -1410,46 +1428,84 @@ MixinAstScope AcquireMixinTree(const Symbol& mixinSym, const std::string& mixinS
     return scope;
 }
 
+struct MixinFileCacheEntry
+{
+    std::string source;
+    std::unique_ptr<parser::AngelScriptParser> parser;
+    document::TreePtr tree;
+};
+
+struct MixinInstantiationCheckRequest
+{
+    const std::string& mixinName;
+    const Symbol& hostSym;
+    const MixinHierarchyMembers& baseMembers;
+    const DiagnosticContext& ctx;
+    ankerl::unordered_dense::map<std::string, MixinFileCacheEntry>& fileCache;
+};
+
 /** @brief Validates a single mixin instantiation against host class. */
-void CheckSingleMixinInstantiation(const std::string& mixinName, const Symbol& sym,
-                                   const MixinHierarchyMembers& baseMembers, const DiagnosticContext& ctx)
+void CheckSingleMixinInstantiation(MixinInstantiationCheckRequest& req)
 {
     std::optional<Symbol> fallbackMixin;
-    const Symbol* mixinSym = FindMixinSymbol(mixinName, ctx.request.symbolTable, fallbackMixin);
+    const Symbol* mixinSym = FindMixinSymbol(req.mixinName, req.ctx.request.symbolTable, fallbackMixin);
     if (!mixinSym)
     {
         return;
     }
 
     ankerl::unordered_dense::set<std::string> mixinSelfMembers;
-    CollectMixinSelfMembers(*mixinSym, ctx.request.GetRuleIndex(), mixinSelfMembers);
+    CollectMixinSelfMembers(*mixinSym, req.ctx.request.GetRuleIndex(), mixinSelfMembers);
 
-    std::string mixinSource = ReadMixinSource(*mixinSym, ctx);
-    if (mixinSource.empty())
+    const bool isCurrentDoc = mixinSym->fileUri == req.ctx.request.fileUri && req.ctx.request.tree;
+    std::string_view mixinSource;
+    const TSTree* tree = nullptr;
+
+    if (isCurrentDoc)
+    {
+        mixinSource = req.ctx.request.sourceCode;
+        tree = req.ctx.request.tree;
+    }
+    else
+    {
+        auto it = req.fileCache.find(mixinSym->fileUri);
+        if (it == req.fileCache.end())
+        {
+            std::string src = ReadMixinSource(*mixinSym, req.ctx);
+            if (src.empty())
+            {
+                return;
+            }
+            auto parser = std::make_unique<parser::AngelScriptParser>();
+            auto allocatedTree = document::MakeTreePtr(parser->Parse(src));
+            it = req.fileCache
+                     .emplace(mixinSym->fileUri,
+                              MixinFileCacheEntry{std::move(src), std::move(parser), std::move(allocatedTree)})
+                     .first;
+        }
+        mixinSource = it->second.source;
+        tree = it->second.tree.get();
+    }
+
+    if (!tree || mixinSource.empty())
     {
         return;
     }
 
-    MixinAstScope astScope = AcquireMixinTree(*mixinSym, mixinSource, ctx);
-    if (!astScope.tree)
-    {
-        return;
-    }
-
-    TSNode mixinNode = FindMixinAstNode(astScope.tree, *mixinSym);
+    TSNode mixinNode = FindMixinAstNode(tree, *mixinSym);
     if (ts_node_is_null(mixinNode))
     {
         return;
     }
 
-    InstantiationRange hostRange = FindHostMixinRange(sym, *mixinSym, mixinName, ctx);
+    InstantiationRange hostRange = FindHostMixinRange(req.hostSym, *mixinSym, req.mixinName, req.ctx);
     TSNode bodyNode = parser::GetChildByField(mixinNode, parser::GetGrammarSymbols().fieldBody);
     if (!ts_node_is_null(bodyNode))
     {
         ankerl::unordered_dense::set<std::string> reportedMissingMembers;
-        MixinCheckContext mctx{baseMembers.hostClassName, mixinSym,         hostRange,
-                               baseMembers.hostMembers,   mixinSelfMembers, reportedMissingMembers};
-        CheckMixinBody(bodyNode, mixinSource, mctx, ctx);
+        MixinCheckContext mctx{req.baseMembers.hostClassName, mixinSym,         hostRange,
+                               req.baseMembers.hostMembers,   mixinSelfMembers, reportedMissingMembers};
+        CheckMixinBody(bodyNode, mixinSource, mctx, req.ctx);
     }
 }
 
@@ -1475,9 +1531,11 @@ void CheckMixinInstantiations(const Symbol& sym, const ClassSignature& sig, cons
     MixinHierarchyMembers baseMembers{hostClassName, {}};
     CollectHierarchyMembers(hostHierarchy, ctx.request.GetRuleIndex(), baseMembers.hostMembers);
 
+    ankerl::unordered_dense::map<std::string, MixinFileCacheEntry> fileCache;
     for (const auto& mixinName : includedMixins)
     {
-        CheckSingleMixinInstantiation(mixinName, sym, baseMembers, ctx);
+        MixinInstantiationCheckRequest req{mixinName, sym, baseMembers, ctx, fileCache};
+        CheckSingleMixinInstantiation(req);
     }
 }
 } // namespace

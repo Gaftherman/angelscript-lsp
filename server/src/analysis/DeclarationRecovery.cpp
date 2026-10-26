@@ -328,25 +328,40 @@ std::vector<RecoveredDeclarationSnippet>
 FindSwallowedDeclarations(std::string_view sourceCode, const ankerl::unordered_dense::set<std::string>& knownSymbols)
 {
     std::vector<RecoveredDeclarationSnippet> results;
-    size_t lineStart = 0;
+    size_t pos = 0;
+    const size_t n = sourceCode.size();
 
-    while (lineStart < sourceCode.size())
+    while (pos < n)
     {
-        size_t lineEnd = sourceCode.find('\n', lineStart);
-        if (lineEnd == std::string_view::npos)
-            lineEnd = sourceCode.size();
+        while (pos < n && (sourceCode[pos] == ' ' || sourceCode[pos] == '\t' || sourceCode[pos] == '\r'))
+        {
+            ++pos;
+        }
+        if (pos >= n)
+        {
+            break;
+        }
+        if (sourceCode[pos] == '\n')
+        {
+            ++pos;
+            continue;
+        }
+        if (SkipCommentsAndStrings(sourceCode, pos))
+        {
+            continue;
+        }
 
-        const std::string_view line = sourceCode.substr(lineStart, lineEnd - lineStart);
+        size_t lineEnd = sourceCode.find('\n', pos);
+        if (lineEnd == std::string_view::npos)
+            lineEnd = n;
+
+        const std::string_view line = sourceCode.substr(pos, lineEnd - pos);
         std::string_view kw;
         std::string_view name;
 
         if (ParseCandidateHeader(line, kw, name) && !knownSymbols.contains(std::string(name)))
         {
-            size_t lead = 0;
-            while (lead < line.size() && (line[lead] == ' ' || line[lead] == '\t'))
-                ++lead;
-
-            const size_t declStart = lineStart + lead;
+            const size_t declStart = pos;
             const size_t declEnd = FindBalancedDeclarationEnd(sourceCode, declStart, kw);
             if (declEnd != std::string_view::npos && declEnd > declStart)
             {
@@ -363,12 +378,12 @@ FindSwallowedDeclarations(std::string_view sourceCode, const ankerl::unordered_d
                     .startCol = startCol,
                 });
 
-                lineStart = declEnd;
+                pos = declEnd;
                 continue;
             }
         }
 
-        lineStart = (lineEnd < sourceCode.size()) ? (lineEnd + 1) : sourceCode.size();
+        pos = (lineEnd < n) ? (lineEnd + 1) : n;
     }
 
     return results;

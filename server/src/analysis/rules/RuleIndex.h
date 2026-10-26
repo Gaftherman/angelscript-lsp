@@ -66,6 +66,8 @@ struct RuleIndexPartial
     };
 
     ankerl::unordered_dense::map<std::string, ContainerContribution> byContainer;
+    ankerl::unordered_dense::map<std::string, ContainerContribution> byClass;
+    ankerl::unordered_dense::map<std::string, ContainerContribution> byNamespace;
     std::vector<std::pair<std::string, Symbol>> enumMembers;
     std::vector<std::pair<std::string, std::string>> qualifiedTypes;
     std::vector<std::string> globalAccessorProperties;
@@ -87,6 +89,8 @@ struct RuleIndex
     using DerivedType = angel_lsp::analysis::rules::DerivedType;
 
     ankerl::unordered_dense::map<std::string, ContainerMembers, TransparentStringHash, std::equal_to<>> byContainer;
+    ankerl::unordered_dense::map<std::string, ContainerMembers, TransparentStringHash, std::equal_to<>> byClass;
+    ankerl::unordered_dense::map<std::string, ContainerMembers, TransparentStringHash, std::equal_to<>> byNamespace;
     ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> enumMemberNames;
     ankerl::unordered_dense::map<std::string, uint32_t> enumMemberCounts;
 
@@ -136,6 +140,22 @@ struct RuleIndex
     const ContainerMembers& Members(const char* containerName) const
     {
         return Members(std::string_view(containerName));
+    }
+
+    /** @brief Members declared within a class or interface container. */
+    const ContainerMembers& ClassMembers(std::string_view className) const;
+    const ContainerMembers& ClassMembers(const std::string& className) const;
+    const ContainerMembers& ClassMembers(const char* className) const
+    {
+        return ClassMembers(std::string_view(className));
+    }
+
+    /** @brief Members declared within a namespace container. */
+    const ContainerMembers& NamespaceMembers(std::string_view nsName) const;
+    const ContainerMembers& NamespaceMembers(const std::string& nsName) const;
+    const ContainerMembers& NamespaceMembers(const char* nsName) const
+    {
+        return NamespaceMembers(std::string_view(nsName));
     }
 
     /** @brief Applies the contributions of a partial index to this index. */

@@ -58,6 +58,13 @@ void NodeIndex::IndexNode(TSNode node, TraversalBudget* budget)
     }
 
     const TSSymbol sym = ts_node_symbol(node);
+    if (m_symComment != 0 && sym == m_symComment)
+    {
+        TSPoint sp = ts_node_start_point(node);
+        TSPoint ep = ts_node_end_point(node);
+        m_commentRanges.push_back(
+            CommentRange{ts_node_start_byte(node), ts_node_end_byte(node), sp.row, sp.column, ep.row, ep.column});
+    }
     if (sym != static_cast<TSSymbol>(-1) && !ts_node_is_error(node) && sym < 4096)
     {
         if (sym < m_nodesBySymbol.size())
@@ -125,9 +132,11 @@ void NodeIndex::Build(TSNode root, const TSLanguage* lang, TraversalBudget* budg
 
     m_language = lang ? lang : tree_sitter_angelscript();
     PopulatePredefinedSymbols(m_language);
+    m_symComment = SymbolForName("comment");
     m_allNodes.reserve(4096);
     TraverseTree(root, budget);
     PostProcessErrorRanges();
+    PostProcessCommentRanges();
 }
 
 std::span<const TSNode> NodeIndex::Nodes(TSSymbol symbol) const noexcept
@@ -183,49 +192,107 @@ bool NodeIndex::Empty() const noexcept
     return m_allNodes.empty();
 }
 
-void NodeIndex::PostProcessErrorRanges()
+template <typename RangeType> void MergeSortedRanges(std::vector<RangeType>& ranges)
 {
-    if (m_errorRanges.size() <= 1)
+    if (ranges.size() <= 1)
     {
         return;
     }
-    std::sort(m_errorRanges.begin(), m_errorRanges.end(),
-              [](const ErrorRange& a, const ErrorRange& b) { return a.startByte < b.startByte; });
-    std::vector<ErrorRange> merged;
-    merged.reserve(m_errorRanges.size());
-    merged.push_back(m_errorRanges.front());
-    for (size_t i = 1; i < m_errorRanges.size(); ++i)
+    std::sort(ranges.begin(), ranges.end(),
+              [](const RangeType& a, const RangeType& b) { return a.startByte < b.startByte; });
+    std::vector<RangeType> merged;
+    merged.reserve(ranges.size());
+    merged.push_back(ranges.front());
+    for (size_t i = 1; i < ranges.size(); ++i)
     {
         auto& last = merged.back();
-        if (m_errorRanges[i].startByte <= last.endByte)
+        if (ranges[i].startByte <= last.endByte)
         {
-            if (m_errorRanges[i].endByte > last.endByte)
+            if (ranges[i].endByte > last.endByte)
             {
-                last.endByte = m_errorRanges[i].endByte;
+                last.endByte = ranges[i].endByte;
+                if constexpr (requires { last.endLine; })
+                {
+                    last.endLine = ranges[i].endLine;
+                    last.endColumn = ranges[i].endColumn;
+                }
             }
         }
         else
         {
-            merged.push_back(m_errorRanges[i]);
+            merged.push_back(ranges[i]);
         }
     }
-    m_errorRanges = std::move(merged);
+    ranges = std::move(merged);
 }
 
-bool NodeIndex::IsInsideError(uint32_t byteOffset) const noexcept
+template <typename RangeType> bool IsByteInRanges(std::span<const RangeType> ranges, uint32_t byteOffset) noexcept
 {
-    if (m_errorRanges.empty())
+    if (ranges.empty())
     {
         return false;
     }
-    auto it = std::upper_bound(m_errorRanges.begin(), m_errorRanges.end(), byteOffset,
-                               [](uint32_t val, const ErrorRange& r) { return val < r.startByte; });
-    if (it == m_errorRanges.begin())
+    auto it = std::upper_bound(ranges.begin(), ranges.end(), byteOffset,
+                               [](uint32_t val, const RangeType& r) { return val < r.startByte; });
+    if (it == ranges.begin())
     {
         return false;
     }
     --it;
     return byteOffset >= it->startByte && byteOffset < it->endByte;
+}
+
+void NodeIndex::PostProcessErrorRanges()
+{
+    MergeSortedRanges(m_errorRanges);
+}
+
+void NodeIndex::PostProcessCommentRanges()
+{
+    MergeSortedRanges(m_commentRanges);
+}
+
+bool NodeIndex::IsInsideError(uint32_t byteOffset) const noexcept
+{
+    return IsByteInRanges(std::span<const ErrorRange>(m_errorRanges), byteOffset);
+}
+
+bool NodeIndex::IsInsideComment(uint32_t byteOffset) const noexcept
+{
+    return IsByteInRanges(std::span<const CommentRange>(m_commentRanges), byteOffset);
+}
+
+bool NodeIndex::IsInsideCommentLineCol(uint32_t line, uint32_t col) const noexcept
+{
+    if (m_commentRanges.empty())
+    {
+        return false;
+    }
+    auto it = std::upper_bound(m_commentRanges.begin(), m_commentRanges.end(), line,
+                               [](uint32_t val, const CommentRange& r) { return val < r.startLine; });
+    if (it == m_commentRanges.begin())
+    {
+        return false;
+    }
+    --it;
+    if (line < it->startLine || line > it->endLine)
+    {
+        return false;
+    }
+    if (line == it->startLine && col < it->startColumn)
+    {
+        return false;
+    }
+    if (line == it->endLine && col >= it->endColumn)
+    {
+        return false;
+    }
+    return true;
+}
+
+std::span<const NodeIndex::CommentRange> NodeIndex::CommentRanges() const noexcept
+{
+    return m_commentRanges;
 }
 
 bool NodeIndex::NodeHasSyntaxError(TSNode node) const noexcept
@@ -250,6 +317,8 @@ void NodeIndex::Clear() noexcept
     m_errorNodes.clear();
     m_nodesBySymbol.clear();
     m_errorRanges.clear();
+    m_commentRanges.clear();
     m_symbolByName.clear();
+    m_symComment = 0;
 }
 } // namespace angel_lsp::analysis

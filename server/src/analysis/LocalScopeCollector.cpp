@@ -1267,7 +1267,7 @@ void LocalScopeCollector::RecoverDeclarationsFromErrorNodes(TSNode rootNode, Sco
             TryRecoverUnbracedIfDeclaration(current, rootScope, sourceCode, m_gs);
         }
 
-        if (ts_node_has_error(current) && ts_tree_cursor_goto_first_child(&cursor))
+        if (sym != m_gs.symComment && ts_node_has_error(current) && ts_tree_cursor_goto_first_child(&cursor))
         {
             continue;
         }

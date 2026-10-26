@@ -1218,10 +1218,6 @@ bool TryCompleteScopeResolution(const std::string& prefix, CompletionCollector& 
     {
         CollectEnumMembersUnderQualifier(ns + "::" + qualifier, collector);
     }
-    if (IsEnumQualifier(qualifier, collector.request.symbolTable))
-    {
-        return true;
-    }
     CollectContainerMembersUnderQualifier(qualifier, collector);
     return true;
 }
@@ -2561,7 +2557,7 @@ void CollectEnclosingClassMembers(CompletionCollector& collector)
     auto hierarchy = analysis::GetInheritedTypeHierarchy(enclosingClassName, collector.request.symbolTable);
     for (const auto& clsName : hierarchy)
     {
-        const auto& cm = ruleIndex->Members(clsName);
+        const auto& cm = ruleIndex->ClassMembers(clsName);
         for (const auto& key : cm.memberKeys)
         {
             const auto symList = collector.request.symbolTable.FindSymbolsPtr(key);

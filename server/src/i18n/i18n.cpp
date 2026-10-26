@@ -435,6 +435,9 @@ void PopulateEnglishMessages7(MessageMap& m_messages)
     m_messages["as-hint-engine-type-suggestion"] = "{}";
     m_messages["as-warn-engine-scheduler-safety"] = "{}";
     m_messages["as-warn-engine-scheduled-enum-discriminant"] = "{}";
+    m_messages["as-warn-engine-call-safety"] = "{}";
+    m_messages["as-warn-engine-call-safety-disallowed"] =
+        "Calling '{}' is disallowed for safety reasons. Use '{}' instead.";
     m_messages["engine-rule-storage-default"] = "Variable '{}' violates storage rule '{}'. Consider using '{}'.";
     m_messages["engine-rule-scheduler-safety-default"] = "Passing raw handle '{}' to '{}' is unsafe.";
     m_messages["engine-rule-scheduler-enum-discriminant"] =
@@ -476,10 +479,24 @@ void PopulateEnglishActionMessages(MessageMap& m_messages)
     m_messages["note-expected-colon-after-case"] = "Expected ':' after case expression";
     m_messages["note-expected-colon-after-default"] = "Expected ':' after 'default'";
     m_messages["note-in-mixin-member"] = "In mixin '{}': Member '{}'";
+    m_messages["inlay-go-to-definition"] = "Go to Definition";
+    m_messages["codelens.references"] = "{} references";
+    m_messages["codelens.reference"] = "1 reference";
+    m_messages["codelens.implementations"] = "{} implementations";
+    m_messages["codelens.implementation"] = "1 implementation";
+    m_messages["codelens.view-mixin-expansion"] = "View Mixin Expansion: {}";
+    m_messages["codelens.jump-to-physical-source"] = "Jump to physical source in {}";
+}
+
+/**
+ * @brief Populates English hover and documentation messages.
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateEnglishHoverMessages(MessageMap& m_messages)
+{
     m_messages["hover-more-overloads-singular"] = "1 more overload";
     m_messages["hover-more-overloads-plural"] = "{} more overloads";
     m_messages["hover-peek-overloads"] = "Peek overloads";
-    m_messages["inlay-go-to-definition"] = "Go to Definition";
     m_messages["hover-wildcard-type-desc"] =
         "The variable type `?` represents any type. It is used in parameter declarations "
         "to accept arguments of any type by reference (`?& in`, `?& out`, `?& inout`).";
@@ -488,12 +505,27 @@ void PopulateEnglishActionMessages(MessageMap& m_messages)
     m_messages["hover-asset-status-exists"] = "- **Status**: Exists";
     m_messages["hover-asset-size"] = "- **Size**: {}";
     m_messages["hover-asset-path"] = "- **Path**: `{}`";
-    m_messages["codelens.references"] = "{} references";
-    m_messages["codelens.reference"] = "1 reference";
-    m_messages["codelens.implementations"] = "{} implementations";
-    m_messages["codelens.implementation"] = "1 implementation";
-    m_messages["codelens.view-mixin-expansion"] = "View Mixin Expansion: {}";
-    m_messages["codelens.jump-to-physical-source"] = "Jump to physical source in {}";
+    m_messages["hover-include-unresolved"] =
+        "Does not resolve to a file. Checked this file's own directory, then each `angelscript.searchDirectories` "
+        "entry in order.";
+    m_messages["hover-primitive-values"] = "Values: `{}`";
+    m_messages["hover-primitive-range"] = "Range: `{}`";
+    m_messages["hover-typedef-underlying"] = " (underlying type: `{}`)";
+    m_messages["hover-named-arg-parameter-of"] = "Parameter of `{}`";
+    m_messages["hover-primitive-desc-void"] = "Absence of type / value";
+    m_messages["hover-primitive-desc-bool"] = "Boolean type";
+    m_messages["hover-primitive-desc-int8"] = "8-bit signed integer";
+    m_messages["hover-primitive-desc-int16"] = "16-bit signed integer";
+    m_messages["hover-primitive-desc-int"] = "32-bit signed integer";
+    m_messages["hover-primitive-desc-int32"] = "32-bit signed integer";
+    m_messages["hover-primitive-desc-int64"] = "64-bit signed integer";
+    m_messages["hover-primitive-desc-uint8"] = "8-bit unsigned integer";
+    m_messages["hover-primitive-desc-uint16"] = "16-bit unsigned integer";
+    m_messages["hover-primitive-desc-uint"] = "32-bit unsigned integer";
+    m_messages["hover-primitive-desc-uint32"] = "32-bit unsigned integer";
+    m_messages["hover-primitive-desc-uint64"] = "64-bit unsigned integer";
+    m_messages["hover-primitive-desc-float"] = "32-bit single-precision floating-point (IEEE 754)";
+    m_messages["hover-primitive-desc-double"] = "64-bit double-precision floating-point (IEEE 754)";
 }
 
 /**
@@ -510,6 +542,7 @@ void PopulateEnglishMessages(MessageMap& m_messages)
     PopulateEnglishMessages6(m_messages);
     PopulateEnglishMessages7(m_messages);
     PopulateEnglishActionMessages(m_messages);
+    PopulateEnglishHoverMessages(m_messages);
 }
 
 /**
@@ -859,6 +892,9 @@ void PopulateSpanishMessages7(MessageMap& m_messages)
     m_messages["as-hint-engine-type-suggestion"] = "{}";
     m_messages["as-warn-engine-scheduler-safety"] = "{}";
     m_messages["as-warn-engine-scheduled-enum-discriminant"] = "{}";
+    m_messages["as-warn-engine-call-safety"] = "{}";
+    m_messages["as-warn-engine-call-safety-disallowed"] =
+        "Llamar a '{}' no está permitido por motivos de seguridad. Utilice '{}' en su lugar.";
     m_messages["engine-rule-storage-default"] =
         "La variable '{}' infringe la regla de almacenamiento '{}'. Considere usar '{}'.";
     m_messages["engine-rule-scheduler-safety-default"] = "Pasar el handle directo '{}' a '{}' no es seguro.";
@@ -903,10 +939,24 @@ void PopulateSpanishActionMessages(MessageMap& m_messages)
     m_messages["note-expected-colon-after-case"] = "Se esperaba ':' después de la expresión del 'case'";
     m_messages["note-expected-colon-after-default"] = "Se esperaba ':' después de 'default'";
     m_messages["note-in-mixin-member"] = "En el mixin '{}': Miembro '{}'";
+    m_messages["inlay-go-to-definition"] = "Ir a Definición";
+    m_messages["codelens.references"] = "{} referencias";
+    m_messages["codelens.reference"] = "1 referencia";
+    m_messages["codelens.implementations"] = "{} implementaciones";
+    m_messages["codelens.implementation"] = "1 implementación";
+    m_messages["codelens.view-mixin-expansion"] = "Ver expansión del mixin: {}";
+    m_messages["codelens.jump-to-physical-source"] = "Ir a la fuente física en {}";
+}
+
+/**
+ * @brief Populates Spanish hover and documentation messages.
+ * @param[out] m_messages Target message map to populate.
+ */
+void PopulateSpanishHoverMessages(MessageMap& m_messages)
+{
     m_messages["hover-more-overloads-singular"] = "1 sobrecarga más";
     m_messages["hover-more-overloads-plural"] = "{} sobrecargas más";
     m_messages["hover-peek-overloads"] = "Ver sobrecargas";
-    m_messages["inlay-go-to-definition"] = "Ir a Definición";
     m_messages["hover-wildcard-type-desc"] =
         "El tipo variable `?` representa cualquier tipo. Se utiliza en declaraciones de parámetros "
         "para aceptar argumentos de cualquier tipo por referencia (`?& in`, `?& out`, `?& inout`).";
@@ -915,12 +965,27 @@ void PopulateSpanishActionMessages(MessageMap& m_messages)
     m_messages["hover-asset-status-exists"] = "- **Estado**: Existe";
     m_messages["hover-asset-size"] = "- **Tamaño**: {}";
     m_messages["hover-asset-path"] = "- **Ruta**: `{}`";
-    m_messages["codelens.references"] = "{} referencias";
-    m_messages["codelens.reference"] = "1 referencia";
-    m_messages["codelens.implementations"] = "{} implementaciones";
-    m_messages["codelens.implementation"] = "1 implementación";
-    m_messages["codelens.view-mixin-expansion"] = "Ver expansión del mixin: {}";
-    m_messages["codelens.jump-to-physical-source"] = "Ir a la fuente física en {}";
+    m_messages["hover-include-unresolved"] =
+        "No se resuelve a ningún archivo. Se comprobó el directorio de este archivo y luego cada entrada de "
+        "`angelscript.searchDirectories` en orden.";
+    m_messages["hover-primitive-values"] = "Valores: `{}`";
+    m_messages["hover-primitive-range"] = "Rango: `{}`";
+    m_messages["hover-typedef-underlying"] = " (tipo subyacente: `{}`)";
+    m_messages["hover-named-arg-parameter-of"] = "Parámetro de `{}`";
+    m_messages["hover-primitive-desc-void"] = "Ausencia de tipo / valor";
+    m_messages["hover-primitive-desc-bool"] = "Tipo booleano";
+    m_messages["hover-primitive-desc-int8"] = "Entero con signo de 8 bits";
+    m_messages["hover-primitive-desc-int16"] = "Entero con signo de 16 bits";
+    m_messages["hover-primitive-desc-int"] = "Entero con signo de 32 bits";
+    m_messages["hover-primitive-desc-int32"] = "Entero con signo de 32 bits";
+    m_messages["hover-primitive-desc-int64"] = "Entero con signo de 64 bits";
+    m_messages["hover-primitive-desc-uint8"] = "Entero sin signo de 8 bits";
+    m_messages["hover-primitive-desc-uint16"] = "Entero sin signo de 16 bits";
+    m_messages["hover-primitive-desc-uint"] = "Entero sin signo de 32 bits";
+    m_messages["hover-primitive-desc-uint32"] = "Entero sin signo de 32 bits";
+    m_messages["hover-primitive-desc-uint64"] = "Entero sin signo de 64 bits";
+    m_messages["hover-primitive-desc-float"] = "Punto flotante de precisión simple de 32 bits (IEEE 754)";
+    m_messages["hover-primitive-desc-double"] = "Punto flotante de doble precisión de 64 bits (IEEE 754)";
 }
 
 /**
@@ -937,6 +1002,7 @@ void PopulateSpanishMessages(MessageMap& m_messages)
     PopulateSpanishMessages6(m_messages);
     PopulateSpanishMessages7(m_messages);
     PopulateSpanishActionMessages(m_messages);
+    PopulateSpanishHoverMessages(m_messages);
 }
 
 /**

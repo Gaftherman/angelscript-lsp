@@ -314,6 +314,66 @@ void CheckEngineLocalTypeSuggestions(const LocalDefinition& def, DiagnosticConte
     }
 }
 
+static std::string_view ExtractReceiverText(TSNode callNode, std::string_view sourceCode) noexcept
+{
+    if (ts_node_is_null(callNode))
+    {
+        return {};
+    }
+    TSNode callee = parser::GetChildByField(callNode, parser::fields::Function);
+    if (ts_node_is_null(callee) && ts_node_child_count(callNode) > 0)
+    {
+        callee = ts_node_child(callNode, 0);
+    }
+    if (ts_node_is_null(callee))
+    {
+        return {};
+    }
+    TSNode objectNode = parser::GetChildByField(callee, parser::fields::Object);
+    if (!ts_node_is_null(objectNode))
+    {
+        return parser::GetNodeTextView(objectNode, sourceCode);
+    }
+    return {};
+}
+
+static bool RuleMatchesReceiver(const SchedulerCallRequest& req, const config::SchedulerRule& rule,
+                                const DiagnosticContext& ctx)
+{
+    if (rule.receiverTypes.empty())
+    {
+        return true;
+    }
+
+    const std::string_view receiverText = ExtractReceiverText(req.callNode, ctx.request.sourceCode);
+    if (!receiverText.empty())
+    {
+        for (const auto& rcv : rule.receiverTypes)
+        {
+            if (rcv == receiverText)
+            {
+                return true;
+            }
+        }
+    }
+
+    for (const auto* cand : req.candidates)
+    {
+        if (cand)
+        {
+            for (const auto& rcv : rule.receiverTypes)
+            {
+                if (rcv == cand->containerName)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return false;
+}
+
 void CheckEngineSchedulerCall(const SchedulerCallRequest& req, const DiagnosticContext& ctx)
 {
     if (!ctx.request.engineRules || ctx.request.engineRules->schedulerRules.empty())
@@ -326,6 +386,31 @@ void CheckEngineSchedulerCall(const SchedulerCallRequest& req, const DiagnosticC
         if (std::find(rule.methodNames.begin(), rule.methodNames.end(), req.methodName) == rule.methodNames.end())
         {
             continue;
+        }
+
+        if (!RuleMatchesReceiver(req, rule, ctx))
+        {
+            continue;
+        }
+
+        if (rule.disallowMethod)
+        {
+            std::string msg = rule.message;
+            if (msg.empty())
+            {
+                msg = i18n::FormatMessage(ctx.request.i18n, diagnostics::codes::EngineCallSafetyDisallowed,
+                                          "Calling '{0}' is disallowed for safety reasons. Use '{1}' instead.",
+                                          req.methodName, rule.suggestReplacement);
+            }
+            else if (msg.find("{}") != std::string::npos)
+            {
+                msg = fmt::format(fmt::runtime(msg), req.methodName, rule.suggestReplacement);
+            }
+            TSPoint start = ts_node_start_point(req.callNode);
+            TSPoint end = ts_node_end_point(req.callNode);
+            ctx.EmitAtRange(SourceRange{start.row, start.column, end.row, end.column},
+                            diagnostics::codes::EngineCallSafety, msg, ResolveSeverity(rule.severity));
+            return;
         }
 
         const size_t count = std::min(req.argNodes.size(), req.argTypes.size());

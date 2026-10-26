@@ -35,7 +35,8 @@ bool TextContentMatchesIgnoringLineEndings(std::string_view a, std::string_view 
  * @param enc The position encoding negotiated with the client.
  * @return Byte offset, clamped to the end of the line and then to the end of the text.
  */
-size_t PositionToOffset(const std::string& text, uint32_t line, uint32_t character, PositionEncoding enc);
+size_t PositionToOffset(std::string_view text, uint32_t line, uint32_t character,
+                        PositionEncoding enc = PositionEncoding::Utf16);
 
 /**
  * @brief Represents a zero-indexed text range for an incremental LSP edit.

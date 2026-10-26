@@ -56,8 +56,10 @@ struct SchedulerRule
     bool disallowArgHandleOnly = true;         ///< Disallow only handle arguments passed to scheduler.
     std::string argSuggestReplacement;         ///< Replacement to suggest for scheduler argument.
     bool requireExplicitEnumConstruct = false; ///< Disallow passing raw int to enum callback param.
-    std::string message;                       ///< Custom diagnostic message template.
-    std::string severity = "warning";          ///< Diagnostic severity: "warning", "error".
+    bool disallowMethod = false;               ///< If true, disallow calling this method entirely.
+    std::string suggestReplacement;   ///< Suggested safe replacement call (e.g. "g_EntityFuncs.DispatchKeyValue").
+    std::string message;              ///< Custom diagnostic message template.
+    std::string severity = "warning"; ///< Diagnostic severity: "warning", "error".
 };
 
 /**

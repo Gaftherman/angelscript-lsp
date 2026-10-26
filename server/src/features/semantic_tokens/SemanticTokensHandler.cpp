@@ -898,7 +898,7 @@ uint32_t RefineEnclosingClassMember(std::string_view tokenText, uint32_t startBy
 
     for (const auto& owner : hit->second)
     {
-        const auto& ownerMembers = ctx.ruleIndex->Members(owner);
+        const auto& ownerMembers = ctx.ruleIndex->ClassMembers(owner);
         if (tokenType == Type_Function && ownerMembers.methodNames.contains(tokenText))
         {
             return Type_Method;
@@ -1043,6 +1043,30 @@ uint32_t RefineSymbolTableMatch(std::string_view tokenText, uint32_t tokenType, 
     if (!symbols || symbols->empty())
     {
         return RefineRuleIndexFallback(tokenText, tokenType, ctx);
+    }
+    if (tokenType == Type_Type)
+    {
+        auto typeIt =
+            std::find_if(symbols->begin(), symbols->end(),
+                         [](const analysis::Symbol& s)
+                         {
+                             return s.type == analysis::SymbolType::Class ||
+                                    s.type == analysis::SymbolType::Interface || s.type == analysis::SymbolType::Enum ||
+                                    s.type == analysis::SymbolType::Typedef || s.type == analysis::SymbolType::Funcdef;
+                         });
+        if (typeIt != symbols->end())
+        {
+            return MatchAgreedSymbolType(typeIt->type, tokenType, !typeIt->containerName.empty(), false);
+        }
+    }
+    else if (tokenType == Type_Namespace)
+    {
+        auto nsIt = std::find_if(symbols->begin(), symbols->end(),
+                                 [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::Namespace; });
+        if (nsIt != symbols->end())
+        {
+            return Type_Namespace;
+        }
     }
     const analysis::SymbolType agreedType = symbols->front().type;
     bool allSymbolsMatch = std::all_of(symbols->begin(), symbols->end(),

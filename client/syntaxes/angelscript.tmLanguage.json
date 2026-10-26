@@ -16,6 +16,12 @@
       "include": "#numbers"
     },
     {
+      "include": "#namespaces"
+    },
+    {
+      "include": "#functions"
+    },
+    {
       "include": "#constants"
     },
     {
@@ -26,12 +32,6 @@
     },
     {
       "include": "#modifiers"
-    },
-    {
-      "include": "#namespaces"
-    },
-    {
-      "include": "#functions"
     },
     {
       "include": "#types"
@@ -211,7 +211,7 @@
         },
         {
           "name": "variable.other.enummember.angelscript constant.other.enum.angelscript",
-          "match": "\\b[A-Z_][A-Z0-9_]{2,}\\b"
+          "match": "\\b[A-Z_][A-Z0-9_]{2,}\\b(?!\\s*(?:::|\\())"
         }
       ]
     },
@@ -332,6 +332,17 @@
     },
     "types": {
       "patterns": [
+        {
+          "match": "\\b(class|interface|enum|mixin)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "storage.type.class.angelscript"
+            },
+            "2": {
+              "name": "entity.name.type.class.angelscript"
+            }
+          }
+        },
         {
           "name": "entity.name.type.class.angelscript",
           "match": "\\b[A-Za-z_][A-Za-z0-9_]*_t\\b"

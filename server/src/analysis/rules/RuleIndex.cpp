@@ -16,6 +16,30 @@ const ContainerMembers& RuleIndex::Members(const std::string& containerName) con
     return Members(std::string_view(containerName));
 }
 
+const ContainerMembers& RuleIndex::ClassMembers(std::string_view className) const
+{
+    static const ContainerMembers empty;
+    const auto it = byClass.find(className);
+    return it == byClass.end() ? empty : it->second;
+}
+
+const ContainerMembers& RuleIndex::ClassMembers(const std::string& className) const
+{
+    return ClassMembers(std::string_view(className));
+}
+
+const ContainerMembers& RuleIndex::NamespaceMembers(std::string_view nsName) const
+{
+    static const ContainerMembers empty;
+    const auto it = byNamespace.find(nsName);
+    return it == byNamespace.end() ? empty : it->second;
+}
+
+const ContainerMembers& RuleIndex::NamespaceMembers(const std::string& nsName) const
+{
+    return NamespaceMembers(std::string_view(nsName));
+}
+
 void RuleIndexPartial::Merge(RuleIndexPartial&& other)
 {
     allNames.insert(allNames.end(), std::make_move_iterator(other.allNames.begin()),
@@ -47,27 +71,33 @@ void RuleIndexPartial::Merge(RuleIndexPartial&& other)
     sharedDeclarations.insert(sharedDeclarations.end(), std::make_move_iterator(other.sharedDeclarations.begin()),
                               std::make_move_iterator(other.sharedDeclarations.end()));
 
-    for (auto& [containerName, contrib] : other.byContainer)
+    auto mergeContribMap = [](auto& targetMap, auto& sourceMap)
     {
-        auto& target = byContainer[containerName];
-        target.methodNames.insert(target.methodNames.end(), std::make_move_iterator(contrib.methodNames.begin()),
-                                  std::make_move_iterator(contrib.methodNames.end()));
-        target.finalMethodNames.insert(target.finalMethodNames.end(),
-                                       std::make_move_iterator(contrib.finalMethodNames.begin()),
-                                       std::make_move_iterator(contrib.finalMethodNames.end()));
-        target.allMemberNames.insert(target.allMemberNames.end(),
-                                     std::make_move_iterator(contrib.allMemberNames.begin()),
-                                     std::make_move_iterator(contrib.allMemberNames.end()));
-        target.memberKeys.insert(target.memberKeys.end(), std::make_move_iterator(contrib.memberKeys.begin()),
-                                 std::make_move_iterator(contrib.memberKeys.end()));
-        target.accessorProperties.insert(target.accessorProperties.end(),
-                                         std::make_move_iterator(contrib.accessorProperties.begin()),
-                                         std::make_move_iterator(contrib.accessorProperties.end()));
-        target.keywordAccessorProperties.insert(target.keywordAccessorProperties.end(),
-                                                std::make_move_iterator(contrib.keywordAccessorProperties.begin()),
-                                                std::make_move_iterator(contrib.keywordAccessorProperties.end()));
-        target.nestedTypeCount += contrib.nestedTypeCount;
-    }
+        for (auto& [containerName, contrib] : sourceMap)
+        {
+            auto& target = targetMap[containerName];
+            target.methodNames.insert(target.methodNames.end(), std::make_move_iterator(contrib.methodNames.begin()),
+                                      std::make_move_iterator(contrib.methodNames.end()));
+            target.finalMethodNames.insert(target.finalMethodNames.end(),
+                                           std::make_move_iterator(contrib.finalMethodNames.begin()),
+                                           std::make_move_iterator(contrib.finalMethodNames.end()));
+            target.allMemberNames.insert(target.allMemberNames.end(),
+                                         std::make_move_iterator(contrib.allMemberNames.begin()),
+                                         std::make_move_iterator(contrib.allMemberNames.end()));
+            target.memberKeys.insert(target.memberKeys.end(), std::make_move_iterator(contrib.memberKeys.begin()),
+                                     std::make_move_iterator(contrib.memberKeys.end()));
+            target.accessorProperties.insert(target.accessorProperties.end(),
+                                             std::make_move_iterator(contrib.accessorProperties.begin()),
+                                             std::make_move_iterator(contrib.accessorProperties.end()));
+            target.keywordAccessorProperties.insert(target.keywordAccessorProperties.end(),
+                                                    std::make_move_iterator(contrib.keywordAccessorProperties.begin()),
+                                                    std::make_move_iterator(contrib.keywordAccessorProperties.end()));
+            target.nestedTypeCount += contrib.nestedTypeCount;
+        }
+    };
+    mergeContribMap(byContainer, other.byContainer);
+    mergeContribMap(byClass, other.byClass);
+    mergeContribMap(byNamespace, other.byNamespace);
 }
 
 namespace
@@ -116,6 +146,7 @@ void ProcessGlobalNames(RuleIndexPartial& partial, const Symbol& sym)
     {
     case SymbolType::Function:
     case SymbolType::Variable:
+    case SymbolType::Property:
     case SymbolType::Class:
     case SymbolType::Interface:
     case SymbolType::Enum:
@@ -242,26 +273,31 @@ void RecordAccessorProperty(RuleIndexPartial& partial, const Symbol& sym)
             }
             else
             {
-                auto& target = partial.byContainer[sym.containerName];
-                target.accessorProperties.emplace_back(accessor);
-                if (isProp)
+                auto recordAccessorIn = [&](RuleIndexPartial::ContainerContribution& target)
                 {
-                    target.keywordAccessorProperties.emplace_back(accessor);
+                    target.accessorProperties.emplace_back(accessor);
+                    if (isProp)
+                    {
+                        target.keywordAccessorProperties.emplace_back(accessor);
+                    }
+                };
+                recordAccessorIn(partial.byContainer[sym.containerName]);
+                if (sym.containerKind == ContainerKind::Class || sym.containerKind == ContainerKind::Interface)
+                {
+                    recordAccessorIn(partial.byClass[sym.containerName]);
+                }
+                else if (sym.containerKind == ContainerKind::Namespace)
+                {
+                    recordAccessorIn(partial.byNamespace[sym.containerName]);
                 }
             }
         }
     }
 }
 
-/** @brief Records container members and their nested types. */
-void ProcessContainerMember(RuleIndexPartial& partial, const Symbol& sym)
+/** @brief Populates member contribution details according to symbol type. */
+void PopulateContainerContribution(RuleIndexPartial::ContainerContribution& members, const Symbol& sym)
 {
-    if (sym.containerName.empty())
-    {
-        return;
-    }
-
-    auto& members = partial.byContainer[sym.containerName];
     members.allMemberNames.push_back(sym.name);
     members.memberKeys.push_back(sym.qualifiedName.empty() ? sym.name : sym.qualifiedName);
 
@@ -273,7 +309,6 @@ void ProcessContainerMember(RuleIndexPartial& partial, const Symbol& sym)
         {
             members.finalMethodNames.push_back(sym.name);
         }
-        RecordAccessorProperty(partial, sym);
         break;
     case SymbolType::Property:
         if (std::holds_alternative<VariableSignature>(sym.signature))
@@ -301,6 +336,30 @@ void ProcessContainerMember(RuleIndexPartial& partial, const Symbol& sym)
     }
 }
 
+/** @brief Records container members and their nested types. */
+void ProcessContainerMember(RuleIndexPartial& partial, const Symbol& sym)
+{
+    if (sym.containerName.empty())
+    {
+        return;
+    }
+
+    PopulateContainerContribution(partial.byContainer[sym.containerName], sym);
+    if (sym.containerKind == ContainerKind::Class || sym.containerKind == ContainerKind::Interface)
+    {
+        PopulateContainerContribution(partial.byClass[sym.containerName], sym);
+    }
+    else if (sym.containerKind == ContainerKind::Namespace)
+    {
+        PopulateContainerContribution(partial.byNamespace[sym.containerName], sym);
+    }
+
+    if (sym.type == SymbolType::Function)
+    {
+        RecordAccessorProperty(partial, sym);
+    }
+}
+
 /** @brief Records template parameters of a class as members of that class container. */
 void ProcessClassTemplateParams(RuleIndexPartial& partial, const Symbol& sym)
 {
@@ -309,18 +368,19 @@ void ProcessClassTemplateParams(RuleIndexPartial& partial, const Symbol& sym)
         const auto& classSig = sym.GetClass();
         if (!classSig.templateParams.empty())
         {
-            auto& byName = partial.byContainer[sym.name];
-            for (const auto& param : classSig.templateParams)
+            auto addParams = [&](RuleIndexPartial::ContainerContribution& contrib)
             {
-                byName.allMemberNames.push_back(param);
-            }
-            if (!sym.qualifiedName.empty() && sym.qualifiedName != sym.name)
-            {
-                auto& byQual = partial.byContainer[sym.qualifiedName];
                 for (const auto& param : classSig.templateParams)
                 {
-                    byQual.allMemberNames.push_back(param);
+                    contrib.allMemberNames.push_back(param);
                 }
+            };
+            addParams(partial.byContainer[sym.name]);
+            addParams(partial.byClass[sym.name]);
+            if (!sym.qualifiedName.empty() && sym.qualifiedName != sym.name)
+            {
+                addParams(partial.byContainer[sym.qualifiedName]);
+                addParams(partial.byClass[sym.qualifiedName]);
             }
         }
     }
@@ -524,6 +584,14 @@ void ApplyContainers(RuleIndex& index, const RuleIndexPartial& partial)
     for (const auto& [containerName, contrib] : partial.byContainer)
     {
         ApplyContainerContribution(index.byContainer[containerName], contrib);
+    }
+    for (const auto& [containerName, contrib] : partial.byClass)
+    {
+        ApplyContainerContribution(index.byClass[containerName], contrib);
+    }
+    for (const auto& [containerName, contrib] : partial.byNamespace)
+    {
+        ApplyContainerContribution(index.byNamespace[containerName], contrib);
     }
 }
 
@@ -729,20 +797,27 @@ void RemoveContainerContribution(ContainerMembers& cm, const RuleIndexPartial::C
 /** @brief Removes container contributions of a partial index. */
 void RemoveContainers(RuleIndex& index, const RuleIndexPartial& partial)
 {
-    for (const auto& [containerName, contrib] : partial.byContainer)
+    auto removeContainerMap = [](auto& map, const auto& contribMap)
     {
-        auto cIt = index.byContainer.find(containerName);
-        if (cIt == index.byContainer.end())
+        for (const auto& [containerName, contrib] : contribMap)
         {
-            continue;
-        }
+            auto cIt = map.find(containerName);
+            if (cIt == map.end())
+            {
+                continue;
+            }
 
-        RemoveContainerContribution(cIt->second, contrib);
-        if (cIt->second.allMemberNames.empty() && cIt->second.nestedTypeCount == 0 && cIt->second.memberKeys.empty())
-        {
-            index.byContainer.erase(cIt);
+            RemoveContainerContribution(cIt->second, contrib);
+            if (cIt->second.allMemberNames.empty() && cIt->second.nestedTypeCount == 0 &&
+                cIt->second.memberKeys.empty())
+            {
+                map.erase(cIt);
+            }
         }
-    }
+    };
+    removeContainerMap(index.byContainer, partial.byContainer);
+    removeContainerMap(index.byClass, partial.byClass);
+    removeContainerMap(index.byNamespace, partial.byNamespace);
 }
 } // namespace
 

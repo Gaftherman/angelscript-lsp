@@ -1011,7 +1011,7 @@ bool IsContainerAccessorProperty(const TSNode node, std::string_view refName, co
         if (container.kind == ContainerKind::Namespace)
         {
             const std::string nsName = container.qualifiedName.empty() ? container.name : container.qualifiedName;
-            const auto& members = index.Members(nsName);
+            const auto& members = index.NamespaceMembers(nsName);
             const auto& accSet = reqKeyword ? members.keywordAccessorPropertyNames : members.accessorPropertyNames;
             if (accSet.contains(refName))
             {
@@ -1027,7 +1027,7 @@ bool IsContainerAccessorProperty(const TSNode node, std::string_view refName, co
             container.qualifiedName.empty() ? container.name : container.qualifiedName, ctx.request.symbolTable);
         for (const auto& typeName : hierarchy)
         {
-            const auto& members = index.Members(typeName);
+            const auto& members = index.ClassMembers(typeName);
             const auto& accSet = reqKeyword ? members.keywordAccessorPropertyNames : members.accessorPropertyNames;
             if (accSet.contains(refName))
             {
@@ -1060,7 +1060,7 @@ bool IsEnclosingScopeMember(TSNode node, const std::string& refName, const std::
         if (container.kind == ContainerKind::Namespace)
         {
             const std::string nsName = container.qualifiedName.empty() ? container.name : container.qualifiedName;
-            if (index.Members(nsName).allMemberNames.contains(refName))
+            if (index.NamespaceMembers(nsName).allMemberNames.contains(refName))
             {
                 return true;
             }
@@ -1074,7 +1074,7 @@ bool IsEnclosingScopeMember(TSNode node, const std::string& refName, const std::
             container.qualifiedName.empty() ? container.name : container.qualifiedName, ctx.request.symbolTable);
         for (const auto& typeName : hierarchy)
         {
-            if (index.Members(typeName).allMemberNames.contains(refName))
+            if (index.ClassMembers(typeName).allMemberNames.contains(refName))
             {
                 return true;
             }
@@ -1083,7 +1083,7 @@ bool IsEnclosingScopeMember(TSNode node, const std::string& refName, const std::
 
     for (const auto& uNs : usingNamespaces)
     {
-        if (index.Members(uNs).allMemberNames.contains(refName))
+        if (index.NamespaceMembers(uNs).allMemberNames.contains(refName))
         {
             return true;
         }

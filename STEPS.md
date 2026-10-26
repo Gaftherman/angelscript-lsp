@@ -2004,3 +2004,143 @@ Settings declared in package.json but not passed to the server:
   - Layer Architecture: 100% conforme.
   - `check-ast-traversal.py`: Aprobado (0 bucles no acotados, 0 `ts_node_parent` en hot-paths, 0 hardcodings).
   - `npm --prefix client run pretest`: Aprobado con exit code 0.
+
+---
+
+## 42. Fase 42: Erradicación de Falsos Símbolos/Errores en Comentarios, Desambiguación Hover Clase Base vs Constructor, Coexistencia Class/Namespace Homónimos y Regla de Seguridad CustomKeyvalues
+
+### 42.1. Diagnóstico Forense y Causas Raíz
+1. **Falsos Símbolos, CodeLens (`0 referencias`) y Errores en Bloques de Comentarios (`/** ... **/`)**:
+   - En archivos con errores de sintaxis (como `item_tracker.as`), Tree-Sitter envuelve grandes regiones en nodos `ERROR`.
+   - Las rutinas de recuperación heurística (`DeclarationRecovery` y `SymbolCollector`) interpretaban palabras dentro del bloque de licencia de comentarios como declaraciones de tipos y variables, emitiendo decenas de CodeLenses y subrayados rojos/amarillos dentro de comentarios.
+   - Solución: Se introdujo `CommentRange` en `NodeIndex` para registrar los rangos de comentarios (`m_commentRanges`), se implementó `IsInsideComment(byteOffset)` con búsqueda binaria deduplicada `MergeSortedRanges`/`IsByteInRanges`, se actualizó `DeclarationRecovery::FindSwallowedDeclarations` para saltar comentarios y cadenas literales con `SkipCommentsAndStrings`, y se protegió la emisión de diagnósticos en `DiagnosticContext::Append`.
+2. **Hover en Clases Base de Herencia mostraba Constructores en lugar de la Clase/Interfaz**:
+   - Al hacer hover sobre `ScriptBasePlayerWeaponEntity` en `class weapon_ithaca : ScriptBasePlayerWeaponEntity`, el hover mostraba la signatura del constructor `ScriptBasePlayerWeaponEntity::ScriptBasePlayerWeaponEntity()` en lugar de `abstract class ScriptBasePlayerWeaponEntity : ScriptClassInterface`.
+   - Causa raíz: `GetEnclosingContainers` consideraba la clase derivada como contenedor envolvente de su propia lista de herencia (`base_class_list`), y la búsqueda jerárquica en `FindSymbolInContainerHierarchy` retornaba exclusivamente el constructor de la clase base.
+   - Solución: En `SemanticHelpers.cpp` (`AdjustStartNodeIfDeclarationName`), se reconoce `base_class_list` para omitir la clase en declaración como su propio contenedor de bases. En `HoverHandler.cpp`, se implementaron `CheckContextPreference`, `IsScopeQualifier` y `DisambiguateTypeContextSymbols`/`PromoteConstructorsToTypes` para que en contextos de tipos (`base_class_list`, `datatype`, etc.) los tipos tomen prioridad absoluta y se desechen constructores o métodos homónimos. Al hacer hover sobre `INS2BASE` en `INS2BASE::WeaponBase` se presenta `namespace INS2BASE`, y sobre `WeaponBase` se presenta `mixin class WeaponBase`.
+3. **Coexistencia sin Errores de `class` y `namespace` Homónimos (`env_flame::Ignite`)**:
+   - Clases y namespaces homónimos que declaran funciones/métodos con el mismo nombre y diferentes parámetros por defecto (ej. `duration = 4.0f` en el namespace vs argumentos obligatorios en el método de la clase) provocaban falsas alertas `E104` (`as-err-duplicate-symbol`) o `as-err-name-conflict`.
+   - Solución: Verificado con `angelscript_oracle.exe` que AngelScript permite la coexistencia legal entre namespace y clase homónimos siempre que uno no intente registrarse como función global duplicada; se preservó `IsCompatibleNamespaceOrHomonym` y se ajustó la resolución de sobrecargas de llamada para despachar correctamente según el contexto de invocación (`MySystem::Activate(id)` vs `inst.Activate(id, duration)`).
+4. **Regla de Seguridad de Invocación Sven Co-op CustomKeyvalues (Defecto Legacy <= 5.26)**:
+   - En Sven Co-op <= 5.26, invocar `SetKeyvalue` directamente sobre `CustomKeyvalues` corrompe la memoria interna del motor y crashea el juego al llamar subsiguientemente a `GetKeyvalue`. La API oficial exige utilizar `g_EntityFuncs.DispatchKeyValue`.
+   - Solución: Se agregaron las propiedades `disallowMethod` y `suggestReplacement` a la estructura `SchedulerRule` (`callRules`) en `EngineRuleConfig.h` y `EngineRuleParser.cpp`. Se sincronizaron ambos esquemas JSON (`schemas/angelscript.rules.schema.json` y `client/schemas/angelscript.rules.schema.json`). Se creó el diagnóstico `as-warn-engine-call-safety` (código `W121`) con soporte dual de i18n (EN/ES), se integró la regla `"custom-keyvalues-setkeyvalue-defect"` en `predefined/sven.angelscript.rules.json` y se documentó con `@warning [LEGACY DEFECT <= 5.26]` en `predefined/sven.as.predefined`.
+
+### 42.2. Pruebas Unitarias Verificadas
+- `server/tests/SemanticAnalyzerTest.cpp`: Prueba que confirma cero símbolos y cero diagnósticos dentro de bloques de comentarios de licencia cuando hay un error de sintaxis en el archivo.
+- `server/tests/CodeLensTest.cpp`: Prueba que confirma que no se emiten CodeLenses dentro de comentarios multilínea con errores sintácticos.
+- `server/tests/HoverTest.cpp`:
+  - `Hover - Invariant: Base class inheritance shows class signature not constructor`: Verifica que `class Derived : Base` muestre la signatura `abstract class Base` y no `Base::Base()`.
+  - `Hover - Invariant: Scoped inheritance shows namespace on qualifier and mixin on class`: Verifica que `class Derived : NS::Mixin` muestre `namespace NS` en el calificador y `mixin class Mixin` en la clase base.
+- `server/tests/TypeRulesTest.cpp`: Prueba que confirma que clase y namespace homónimos con métodos del mismo nombre y parámetros por defecto coexisten sin error `E104`.
+- `server/tests/CallCheckerTest.cpp`: Prueba que confirma la resolución limpia de llamadas a funciones de namespace homónimo y métodos de clase con valores por defecto.
+- `server/tests/EngineRuleCheckerTest.cpp`: Prueba que confirma la emisión del diagnóstico `as-warn-engine-call-safety` (W121) al invocar `CustomKeyvalues::SetKeyvalue`, sugiriendo `g_EntityFuncs.DispatchKeyValue`.
+
+### 42.3. Métricas Finales de Fase 42
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,496 / 2,496` pasadas (`34,613` aserciones, `0` fallos, `30` omitidas).
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas al 100%:
+  - `jscpd`: `1.09%` (techo <= 3.0%).
+  - Lizard: CCN <= 15, NLOC <= 70, params <= 4 en todas las funciones auditadas.
+  - Cero parámetros muertos (`/we4100`).
+  - Clang-Format: 100% (405 archivos auditados y en formato).
+  - Layer Architecture: 100% conforme.
+  - `check-ast-traversal.py`: Aprobado (0 bucles no acotados, 0 `ts_node_parent` en hot-paths, 0 hardcodings).
+  - `check-diagnostic-codes.py`: Aprobado (186 códigos declarados, 180 en vivo, 6 documentados, 186 constantes).
+  - `npm --prefix client run pretest`: Aprobado con exit code 0 (117 configuraciones, 176 manifest strings y 93 runtime strings sincronizadas).
+
+---
+
+## 43. Fase 43: Aislamiento Estricto de Ámbito (class X vs namespace X), Fusión de Autocompletado (enum + namespace), Precisión de Rangos de Error y Desglose de Tokens Semánticos
+
+### 43.1. Diagnóstico Forense y Causas Raíz
+1. **Aislamiento Estricto de Ámbito entre `class X` y `namespace X` en Accesos No Calificados**:
+   - En AngelScript (confirmado empíricamente con `angelscript_oracle.exe`), si una clase `class Foo` se declara a nivel de archivo fuera de un `namespace Foo` homónimo, dentro de los métodos de `class Foo` los miembros del `namespace Foo` (`nsVar`, `NsFunc()`) NO son visibles sin calificar explícitamente como `Foo::nsVar` o `Foo::NsFunc()`.
+   - Causa raíz: En `RuleIndex`, los miembros de clase y de namespace se agregaban juntos a la misma entrada `byContainer[sym.containerName]`. Al evaluar accesos no calificados mediante `IsEnclosingScopeMember` o `IsContainerAccessorProperty`, se consultaban indiscriminadamente todos los miembros de cualquier contenedor con ese nombre.
+   - Solución: Se introdujeron dos mapas especializados e independientes en `RuleIndex`: `byClass` y `byNamespace`, con métodos accesores `ClassMembers(name)` y `NamespaceMembers(name)`. `IsEnclosingScopeMember` y `IsContainerAccessorProperty` consultan estrictamente `NamespaceMembers` cuando el contenedor envolvente es `ContainerKind::Namespace`, y `ClassMembers` cuando es `ContainerKind::Class` o `ContainerKind::Interface`.
+2. **Fusión de Autocompletado `Difficulty::` para `enum` + `namespace` Homónimos**:
+   - Al invocar autocompletado sobre `Difficulty::` cuando coexisten `enum Difficulty` y `namespace Difficulty`, el manejador retornaba prematuramente tras emitir los miembros del enum (`if (IsEnumQualifier) return true;`), impidiendo que se sugirieran las funciones y constantes del namespace homónimo.
+   - Solución: Se eliminó el retorno prematuro en `CompletionHandler.cpp`, permitiendo que la recolección continúe hacia el contenedor de namespace homónimo y se fusionen armónicamente tanto los miembros del enum como los del namespace.
+3. **Auditoría Forense de `ClassRules.cpp` e Inversión del Predicado en `ForEachNamedChildNodeUntil`**:
+   - En `FindBaseListNode` y `GetBaseRange`, `ForEachNamedChildNodeUntil` se utilizaba con un predicado que retornaba `false` cuando el nodo no era `base_class_list`, provocando la interrupción inmediata en el primer nodo hijo. Se corrigió el predicado para retornar `false` únicamente al encontrar el nodo deseado (abortar iteración) y `true` para continuar recorriendo.
+   - Con esto, `GetBaseRange` ubica con precisión milimétrica el nodo hijo del tipo base en lugar de resaltar todo el cuerpo de la clase cuando ocurre un error en la lista de herencia (`as-err-unresolved-type`).
+   - Se optimizó la auditoría de instanciación de mixins (`CheckMixinInstantiations`) mediante una caché por archivo (`MixinFileCacheEntry`) para evitar relecturas a disco y reparceos $O(N)$.
+   - Se corrigió `IsEngineOrGlobalIdentifier` para no emitir falsos positivos `E210` sobre variables globales (`g_Scheduler`).
+4. **Desglose de Tokens Semánticos en `scoped_identifier` (`namespace A::B`)**:
+   - En `BuiltQueries.h`, la regla para declaraciones de namespace anidado se actualizó a `(namespace_declaration name: (scoped_identifier (identifier) @module))` para asegurar que tanto `A` como `B` se clasifiquen individualmente como tokens semánticos de tipo `namespace`.
+   - En `SemanticTokensHandler.cpp`, se implementó desambiguación `Type_Type` vs `Type_Namespace` cuando coexisten homónimos.
+5. **Optimización de Verificación de Comentarios en Diagnósticos**:
+   - Se incorporó `startLine`, `startColumn`, `endLine`, `endColumn` en `CommentRange` dentro de `NodeIndex`.
+   - Se añadió `IsInsideCommentLineCol(line, col)` que verifica en $O(\log N)$ mediante búsqueda binaria de coordenadas si un diagnóstico cae dentro de un comentario, erradicando conversiones de posición a desplazamiento de bytes en memoria en el hot-path de emisión de diagnósticos.
+
+### 43.2. Pruebas Unitarias Verificadas
+- `server/tests/SemanticAnalyzerTest.cpp`:
+  - `SemanticAnalyzer - Strict scope isolation between class X and homonymous namespace X`: Verifica que dentro de `class Foo`, los accesos no calificados a `nsVar` o `NsFunc()` del homónimo `namespace Foo` emitan `as-warn-undeclared-identifier`, que los accesos calificados `Foo::` resuelvan limpiamente, y que si `class Foo` está dentro del bloque `namespace Foo`, los accesos no calificados sean válidos.
+- `server/tests/CompletionTest.cpp`:
+  - `Completion - Merges enum members and namespace functions when enum and namespace share the same name`: Verifica que al escribir `Difficulty::` se sugieran tanto los miembros del enum (`Easy`, `Hard`) como las funciones del namespace (`Configure`).
+- `server/tests/ClassRulesTest.cpp`:
+  - `ClassRules - Base class validation error highlights exact base class range instead of entire class`: Confirma que el rango del diagnóstico `as-err-unresolved-type` señale exactamente el token de la clase base faltante y no todo el bloque de la clase.
+  - `ClassRules - Mixin referencing global symbol does not emit false positive E210`: Verifica que el uso de `g_Scheduler` en un mixin no dispare falso `E210`.
+  - `ClassRules - Mixin referencing truly undeclared member DOES emit E210`: Verifica que el uso de un campo no declarado dispare correctamente `E210`.
+- `server/tests/HoverTest.cpp`:
+  - `Hover - Base class hover in inheritance list resolves to class definition, not constructor`: Confirma que el hover sobre una clase base en la lista de herencia presente la definición y documentación de la clase y no su constructor.
+- `server/tests/SemanticTokensTest.cpp`:
+  - `Semantic Tokens - Scoped identifier in namespace declaration breaks down into individual namespace tokens`: Confirma que `namespace A::B` desglosa `A` y `B` en tokens individuales de tipo `namespace`.
+
+### 43.3. Métricas Finales de Fase 43
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,503 / 2,503` pasadas (`34,640` aserciones, `0` fallos, `30` omitidas). Incremento neto de +7 pruebas.
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas al 100%:
+  - `jscpd`: `1.09%` (techo $\le 3.0\%$).
+  - Lizard: CCN $\le 15$, NLOC $\le 70$, params $\le 4$ en todas las funciones auditadas.
+  - Cero parámetros muertos (`/we4100`).
+  - Clang-Format: 100% (405 archivos auditados y en formato).
+  - Layer Architecture: 100% conforme.
+  - `check-ast-traversal.py`: Aprobado (0 bucles no acotados, 0 `ts_node_parent` en hot-paths, 0 hardcodings).
+  - `check-grammar-pin.py`: Aprobado.
+  - `npm --prefix client run pretest`: Aprobado con exit code 0 (117 configuraciones, 176 manifest strings y 93 runtime strings sincronizadas).
+
+
+---
+
+## 44. Fase 44: Limpieza de Autoría Git en `tree-sitter-angelscript`, Erradicación de Heurísticas ("AI Slop"), Auditoría de Arquitectura/Monolitos y Cumplimiento 100% de `i18n`
+
+### 44.1. Diagnóstico Forense y Acciones Ejecutadas
+1. **Limpieza de Autoría Git en `tree-sitter-angelscript` (`Gaftherman <fano.solis.campos@gmail.com>`)**:
+   - Se configuró permanentemente `user.name = "Gaftherman"` y `user.email = "fano.solis.campos@gmail.com"` en los clones locales de `tree-sitter-angelscript`.
+   - Se restablecieron las ramas `develop`, `main` y `master` directamente al commit limpio `37544e47e1977bbdb507a204b876f73817f74123` y se sincronizaron con `git push --force`.
+   - Se verificó que el 100% de los commits en el historial del repositorio estén firmados exclusivamente por `Gaftherman <fano.solis.campos@gmail.com>`.
+   - Se actualizó el pin en `server/cmake/TreeSitter.cmake` a `37544e47e1977bbdb507a204b876f73817f74123` y se sincronizó `server/build/_deps/tree_sitter_angelscript-src`.
+2. **Erradicación de Heurísticas Específicas ("AI Slop") y Antipatrones de Rendimiento**:
+   - En `HoverHandler.cpp`, `MemberBelongsToClass` y `MemberBelongsToNamespace` utilizaban concatenaciones en el heap `+ "::" +` y una heurística frágil basada en números de línea (`sym.startLine >= nsSym.fullRange.startLine`), la cual fallaba al reabrir namespaces en múltiples bloques o a través de archivos `#include`. Se reemplazó por la solución general del compilador: consulta en stack buffer `FindMemberSymbolPtr` (cero asignaciones) y validación semántica directa de `sym.containerKind`.
+   - En `HoverHandler.cpp`, `AppendEnclosingClassMethods` y `CollectHierarchyHostSymbols` ahora utilizan `FindMemberSymbolPtr` y filtran explícitamente `sym.containerKind != ContainerKind::Namespace`.
+   - En `SemanticHelpers.cpp`, `ResolveEnclosingContainerMemberSymbols` ahora filtra los símbolos retornados con `FilterSymbolsByContainerKind(found, c.kind)`.
+   - En `HoverHandler.cpp`, se eliminaron comparaciones de strings `ts_node_type` en `FilterEnumMemberSymbols`, `IsScopeQualifier` y `FindNextScopedMemberNode`, reemplazándolas por comparaciones enteras $O(1)$ con `parser::GetGrammarSymbols()`.
+3. **Internacionalización Integral (`i18n`) con Paridad 1:1 en Inglés y Español**:
+   - Se externalizaron en `server/src/i18n/i18n.cpp` todas las cadenas de texto del usuario en el hover:
+     - `hover-include-unresolved`: Mensaje informativo para directivas `#include` no resueltas.
+     - `hover-primitive-values`: Valores posibles para tipos como `bool` (`true or false`).
+     - `hover-primitive-range`: Rango numérico para tipos primitivos (`int`, `uint`, `float`, etc.).
+     - `hover-typedef-underlying`: Indicación del tipo subyacente para alias de tipos primitivos.
+     - `hover-named-arg-parameter-of`: Parámetro calificado en llamadas con argumentos nombrados.
+     - `hover-primitive-desc-*`: Descripciones localizadas en inglés y español para todos los tipos primitivos (`void`, `bool`, `int8`, `int16`, `int`, `int32`, `int64`, `uint8`, `uint16`, `uint`, `uint32`, `uint64`, `float`, `double`).
+   - Se modularizó la población de mensajes en `PopulateEnglishHoverMessages` y `PopulateSpanishHoverMessages` para mantener el límite estricto de NLOC $\le 70$ en Lizard.
+
+### 44.2. Pruebas Unitarias Verificadas
+- `server/tests/HoverTest.cpp`:
+  - `Hover - Primitive types and typedefs respect English and Spanish i18n localization`: Verifica que los hovers sobre `int`, `bool` y `typedef` emitan documentación y rangos traducidos al español con locale `"es"` y en inglés con `"en"`.
+  - `Hover - Named argument hover respects English and Spanish i18n`: Confirma que la etiqueta de parámetro nombrado traduzca `Parameter of `Func`` vs `Parámetro de `Func``.
+  - `Hover - Unresolved include directive respects English and Spanish i18n`: Confirma la traducción del mensaje de fallo de resolución de `#include`.
+
+### 44.3. Métricas Finales de Fase 44
+- **Estado**: COMPLETED
+- **Total de Pruebas Unitarias**: `2,506 / 2,506` pasadas (`34,666` aserciones, `0` fallos, `30` omitidas). Incremento neto de +3 pruebas.
+- **Puertas de Calidad Estática**: 12/12 puertas aprobadas al 100%:
+  - `jscpd`: `1.09%` (límite $\le 3.0\%$).
+  - Lizard: CCN $\le 15$, NLOC $\le 70$, params $\le 4$ en todas las funciones (0 violaciones).
+  - Cero parámetros muertos (`/we4100`).
+  - Clang-Format: 100% (405 archivos auditados y limpios).
+  - Layer Architecture: 100% conforme.
+  - `check-ast-traversal.py`: Aprobado (0 bucles no acotados, 0 `ts_node_parent` en hot-paths, 0 hardcodings).
+  - `check-grammar-pin.py`: Aprobado (commit `37544e47e1977bbdb507a204b876f73817f74123`).
+  - `check-diagnostic-codes.py`: Aprobado.
+  - `check-l10n.py`: Aprobado (100% sincronizado en inglés y español).

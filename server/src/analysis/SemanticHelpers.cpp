@@ -2023,12 +2023,26 @@ bool IsBaseConstructorCall(TSNode node, std::string_view sourceCode)
 
 TSNode AdjustStartNodeIfDeclarationName(TSNode node)
 {
-    const TSNode parent = ts_node_parent(node);
-    if (!ts_node_is_null(parent))
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode cur = node;
+    for (int depth = 0; depth < 5 && !ts_node_is_null(cur); ++depth)
     {
-        const std::string_view parentType = ts_node_type(parent);
-        if (parentType == "class_declaration" || parentType == "interface_declaration" ||
-            parentType == "namespace_declaration" || parentType == "mixin_declaration")
+        const TSNode parent = ts_node_parent(cur);
+        if (ts_node_is_null(parent))
+        {
+            break;
+        }
+        const TSSymbol parentSym = ts_node_symbol(parent);
+        if (parentSym == gs.symBaseClassList)
+        {
+            TSNode decl = ts_node_parent(parent);
+            if (!ts_node_is_null(decl))
+            {
+                return decl;
+            }
+        }
+        if (parentSym == gs.symClassDeclaration || parentSym == gs.symInterfaceDeclaration ||
+            parentSym == gs.symNamespaceDeclaration || parentSym == gs.symMixinDeclaration)
         {
             const TSNode nameChild = parser::GetChildByField(parent, parser::fields::Name);
             if (!ts_node_is_null(nameChild) && ts_node_start_byte(nameChild) == ts_node_start_byte(node) &&
@@ -2037,6 +2051,7 @@ TSNode AdjustStartNodeIfDeclarationName(TSNode node)
                 return parent;
             }
         }
+        cur = parent;
     }
     return node;
 }
@@ -2789,7 +2804,7 @@ static std::vector<Symbol> ResolveEnclosingContainerMemberSymbols(const std::str
         auto hierarchy = GetInheritedTypeHierarchy(typeName, ctx.symbolTable);
         for (const auto& cls : hierarchy)
         {
-            auto found = ctx.symbolTable.FindMemberSymbols(cls, name);
+            auto found = FilterSymbolsByContainerKind(ctx.symbolTable.FindMemberSymbols(cls, name), c.kind);
             if (!found.empty())
             {
                 return found;

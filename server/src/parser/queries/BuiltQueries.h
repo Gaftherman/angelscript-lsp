@@ -70,7 +70,8 @@ namespace angel_lsp::parser::queries
 ; unanchored "(scoped_identifier (identifier)) @module" therefore matched every variable read,
 ; parameter read and unqualified call in the language, and at priority 6 it outranked all of
 ; them - which is why plain identifiers were being painted as namespaces.
-(namespace_declaration name: (scoped_identifier) @module)
+(namespace_declaration name: (scoped_identifier (identifier) @module))
+(using_declaration (scoped_identifier (identifier) @module))
 (scoped_identifier (identifier) @module . "::")
 
 ; Qualifiers of a qualified TYPE take a different shape: "Weapons::Rifle r;" parses the

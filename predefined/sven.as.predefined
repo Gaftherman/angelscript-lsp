@@ -26809,21 +26809,25 @@ class CustomKeyvalues {
 // Sets a custom keyvalue to the given string value.
 // Returns true if the key existed and was overwritten.
 //
+// @warning [LEGACY DEFECT <= 5.26] Calling SetKeyvalue causes memory corruption and crashes upon calling GetKeyvalue. Use g_EntityFuncs.DispatchKeyValue instead.
 // @link https://r4to0.github.io/asautodocs/docs/CustomKeyvalues.htm
 bool SetKeyvalue(const string& in szKey, const string& in szValue);
 // Sets a custom keyvalue to the given vector value.
 // Returns true if the key existed and was overwritten.
 //
+// @warning [LEGACY DEFECT <= 5.26] Calling SetKeyvalue causes memory corruption and crashes upon calling GetKeyvalue. Use g_EntityFuncs.DispatchKeyValue instead.
 // @link https://r4to0.github.io/asautodocs/docs/CustomKeyvalues.htm
 bool SetKeyvalue(const string& in szKey, const Vector& in vecValue);
 // Sets a custom keyvalue to the given float value.
 // Returns true if the key existed and was overwritten.
 //
+// @warning [LEGACY DEFECT <= 5.26] Calling SetKeyvalue causes memory corruption and crashes upon calling GetKeyvalue. Use g_EntityFuncs.DispatchKeyValue instead.
 // @link https://r4to0.github.io/asautodocs/docs/CustomKeyvalues.htm
 bool SetKeyvalue(const string& in szKey, float flValue);
 // Sets a custom keyvalue to the given integer value.
 // Returns true if the key existed and was overwritten.
 //
+// @warning [LEGACY DEFECT <= 5.26] Calling SetKeyvalue causes memory corruption and crashes upon calling GetKeyvalue. Use g_EntityFuncs.DispatchKeyValue instead.
 // @link https://r4to0.github.io/asautodocs/docs/CustomKeyvalues.htm
 bool SetKeyvalue(const string& in szKey, int iValue);
 // Initializes a keyvalue with the default value for its type.

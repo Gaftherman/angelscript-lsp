@@ -381,3 +381,38 @@ TEST_CASE("EngineRuleChecker - Custom array-like template and Spanish i18n fallb
                                             { return d.message.find("infringe la regla") != std::string::npos; });
     CHECK(hasSpanishText);
 }
+
+TEST_CASE("EngineRuleChecker - Enforces disallowMethod on CustomKeyvalues::SetKeyvalue")
+{
+    angel_lsp::config::EngineRuleConfig config;
+    angel_lsp::config::SchedulerRule rule;
+    rule.id = "custom-keyvalues-setkeyvalue-defect";
+    rule.receiverTypes = {"CustomKeyvalues"};
+    rule.methodNames = {"SetKeyvalue"};
+    rule.disallowMethod = true;
+    rule.suggestReplacement = "g_EntityFuncs.DispatchKeyValue";
+    rule.message = "Calling 'CustomKeyvalues::SetKeyvalue' causes memory corruption and crashes on GetKeyvalue in Sven "
+                   "Co-op <= 5.26. Use 'g_EntityFuncs.DispatchKeyValue' instead.";
+    config.schedulerRules.push_back(rule);
+
+    const std::string code = "class CustomKeyvalues {\n"
+                             "    bool SetKeyvalue(const string& in k, const string& in v) { return true; }\n"
+                             "}\n"
+                             "void Test(CustomKeyvalues@ pCustom) {\n"
+                             "    pCustom.SetKeyvalue(\"$i_test\", \"1\");\n"
+                             "}\n";
+
+    auto diags = AnalyzeWithRules(code, &config);
+    CHECK(HasCode(diags, angel_lsp::diagnostics::codes::EngineCallSafety));
+    bool foundMsg = false;
+    for (const auto& d : diags)
+    {
+        if (d.code == angel_lsp::diagnostics::codes::EngineCallSafety &&
+            d.message.find("g_EntityFuncs.DispatchKeyValue") != std::string::npos)
+        {
+            foundMsg = true;
+            break;
+        }
+    }
+    CHECK(foundMsg);
+}

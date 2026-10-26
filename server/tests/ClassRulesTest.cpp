@@ -1142,3 +1142,75 @@ TEST_CASE("ClassRules - Interface inheriting from interface succeeds without err
     const auto diags = AnalyzeClassSnippet(code);
     CHECK_FALSE(HasCode(diags, "as-err-unresolved-type"));
 }
+
+TEST_CASE("ClassRules - Base class validation error highlights exact base class range instead of entire class")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Derived");
+    const std::string missingBase = angel_lsp::test::GenerateRandomSymbolName("MissingBase");
+    const std::string prefix = "class " + clsName + " : ";
+    const std::string code = prefix + missingBase + "\n{\n    void Foo() {}\n}\n";
+
+    const auto diags = AnalyzeClassSnippet(code);
+    REQUIRE(HasCode(diags, "as-err-unresolved-type"));
+
+    auto it = std::find_if(diags.begin(), diags.end(),
+                           [](const Diagnostic& d) { return d.code == "as-err-unresolved-type"; });
+    REQUIRE(it != diags.end());
+    CHECK(it->range.start.line == 0);
+    CHECK(it->range.start.character == prefix.length());
+    CHECK(it->range.end.line == 0);
+    CHECK(it->range.end.character == prefix.length() + missingBase.length());
+}
+
+TEST_CASE("ClassRules - Mixin referencing global symbol does not emit false positive E210")
+{
+    const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("WeaponBase");
+    const std::string hostClass = angel_lsp::test::GenerateRandomSymbolName("WeaponHost");
+    const std::string globalScheduler = angel_lsp::test::GenerateRandomSymbolName("g_Scheduler");
+
+    const std::string code = "class SchedulerType { void SetTimeout(string a, float b) {} }\n"
+                             "SchedulerType " +
+                             globalScheduler +
+                             ";\n"
+                             "mixin class " +
+                             mixinName +
+                             " {\n"
+                             "    void PrimaryAttack() {\n"
+                             "        " +
+                             globalScheduler +
+                             ".SetTimeout(\"ReloadCallback\", 1.5f);\n"
+                             "    }\n"
+                             "}\n"
+                             "class " +
+                             hostClass + " : " + mixinName +
+                             " {\n"
+                             "    void Spawn() { this.PrimaryAttack(); }\n"
+                             "}\n";
+
+    const auto diags = AnalyzeClassSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-mixin-instantiation-member-not-found"));
+}
+
+TEST_CASE("ClassRules - Mixin referencing truly undeclared member DOES emit E210")
+{
+    const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("WeaponBase");
+    const std::string hostClass = angel_lsp::test::GenerateRandomSymbolName("WeaponHost");
+    const std::string invalidMember = angel_lsp::test::GenerateRandomSymbolName("m_missingField");
+
+    const std::string code = "mixin class " + mixinName +
+                             " {\n"
+                             "    void PrimaryAttack() {\n"
+                             "        " +
+                             invalidMember +
+                             " = 10;\n"
+                             "    }\n"
+                             "}\n"
+                             "class " +
+                             hostClass + " : " + mixinName +
+                             " {\n"
+                             "    void Spawn() { this.PrimaryAttack(); }\n"
+                             "}\n";
+
+    const auto diags = AnalyzeClassSnippet(code);
+    CHECK(HasCode(diags, "as-err-mixin-instantiation-member-not-found"));
+}

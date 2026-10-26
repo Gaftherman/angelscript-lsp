@@ -50,6 +50,15 @@
       "requireExplicitEnumConstruct": true,
       "message": "Passing raw entity handle to scheduled callback is unsafe. Use 'EHandle'.",
       "severity": "warning"
+    },
+    {
+      "id": "custom-keyvalues-setkeyvalue-defect",
+      "callee": "CustomKeyvalues",
+      "methods": ["SetKeyvalue"],
+      "disallowMethod": true,
+      "suggestReplacement": "g_EntityFuncs.DispatchKeyValue",
+      "message": "Calling 'CustomKeyvalues::SetKeyvalue' causes memory corruption and crashes on GetKeyvalue in Sven Co-op <= 5.26. Use 'g_EntityFuncs.DispatchKeyValue' instead.",
+      "severity": "warning"
     }
   ],
   "unusedSymbolRules": {

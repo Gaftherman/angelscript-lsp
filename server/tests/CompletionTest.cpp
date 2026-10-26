@@ -2682,3 +2682,38 @@ TEST_CASE("Completion - Qualified inheritance offers only types and child namesp
     CHECK(HasItem(items, inNsIface));
     CHECK_FALSE(HasItem(items, inNsFunc));
 }
+
+TEST_CASE("Completion - Merges enum members and namespace functions when enum and namespace share the same name")
+{
+    const std::string name = test::GenerateRandomSymbolName("Difficulty");
+    const std::string enumMember1 = test::GenerateRandomSymbolName("Easy");
+    const std::string enumMember2 = test::GenerateRandomSymbolName("Hard");
+    const std::string nsFunc = test::GenerateRandomSymbolName("Configure");
+
+    const std::string code = "enum " + name +
+                             " {\n"
+                             "    " +
+                             enumMember1 +
+                             ",\n"
+                             "    " +
+                             enumMember2 +
+                             "\n"
+                             "}\n"
+                             "namespace " +
+                             name +
+                             " {\n"
+                             "    void " +
+                             nsFunc +
+                             "() {}\n"
+                             "}\n"
+                             "void Test() {\n"
+                             "    " +
+                             name + "::";
+
+    TestEnvironment env(code);
+    const auto items = env.CompleteAt(8, static_cast<uint32_t>(std::string("    " + name + "::").length()));
+
+    CHECK(HasItem(items, enumMember1));
+    CHECK(HasItem(items, enumMember2));
+    CHECK(HasItem(items, nsFunc));
+}
