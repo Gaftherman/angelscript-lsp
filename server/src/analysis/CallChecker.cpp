@@ -1186,6 +1186,11 @@ static bool IsInsideTargetClassOrSubclass(TSNode callNode, std::string_view targ
  * @param[in,out] candidates Candidate symbols to filter.
  * @param[in] insideTarget True if caller is within the target class or a subclass.
  */
+static bool IsClassOrInterfaceSymbol(const Symbol& s) noexcept
+{
+    return s.containerKind == ContainerKind::Class || s.containerKind == ContainerKind::Interface;
+}
+
 static void FilterScopedCandidatesByCallerContext(std::vector<Symbol>& candidates, bool insideTarget)
 {
     if (insideTarget || candidates.empty())
@@ -1197,9 +1202,7 @@ static void FilterScopedCandidatesByCallerContext(std::vector<Symbol>& candidate
 
     if (hasNamespaceCandidates)
     {
-        std::erase_if(
-            candidates, [](const Symbol& s)
-            { return s.containerKind == ContainerKind::Class || s.containerKind == ContainerKind::Interface; });
+        std::erase_if(candidates, IsClassOrInterfaceSymbol);
     }
 }
 
