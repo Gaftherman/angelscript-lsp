@@ -1344,10 +1344,7 @@ export function buildServerArgs(): string[] {
         args.push('--disable-inlay-hints-parameter-reference-modifiers');
     }
 
-    const suppressWhenMatches = config.get<boolean>('inlayHints.suppressWhenArgumentMatchesName', true);
-    if (suppressWhenMatches) {
-        args.push('--inlay-hints-suppress-when-argument-matches-name');
-    } else {
+    if (config.get<boolean>('inlayHints.suppressWhenArgumentMatchesName', true) === false) {
         args.push('--disable-inlay-hints-suppress-when-argument-matches-name');
     }
 
@@ -2223,7 +2220,8 @@ async function applyLocalStateChanges(): Promise<void> {
                            !arg.startsWith('--module=') &&
                            !arg.startsWith('--module-folder=') &&
                            !arg.startsWith('--rules-file=') &&
-                           !arg.startsWith('--inlay-hints-'));
+                           !arg.startsWith('--inlay-hints-') &&
+                           !arg.startsWith('--disable-inlay-hints-'));
 
     const unchanged =
         withoutHotReloadable(next).join('\u0000') === withoutHotReloadable(runningServerArgs).join('\u0000');

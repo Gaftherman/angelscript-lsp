@@ -179,16 +179,16 @@ suite('buildServerArgs', () => {
                   `unexpected virtual-mixin flag in ${args.join(' ')}`);
     });
 
-    test('inlayHints.suppressWhenArgumentMatchesName forwards flag when enabled', async () => {
-        const args = await withSetting('inlayHints.suppressWhenArgumentMatchesName', true, buildServerArgs);
-        assert.ok(args.includes('--inlay-hints-suppress-when-argument-matches-name'),
-                  `expected --inlay-hints-suppress-when-argument-matches-name in ${args.join(' ')}`);
+    test('inlayHints.suppressWhenArgumentMatchesName forwards disable flag when disabled', async () => {
+        const args = await withSetting('inlayHints.suppressWhenArgumentMatchesName', false, buildServerArgs);
+        assert.ok(args.includes('--disable-inlay-hints-suppress-when-argument-matches-name'),
+                  `expected --disable-inlay-hints-suppress-when-argument-matches-name in ${args.join(' ')}`);
     });
 
-    test('inlayHints.suppressWhenArgumentMatchesName does not forward flag when disabled', async () => {
-        const args = await withSetting('inlayHints.suppressWhenArgumentMatchesName', false, buildServerArgs);
-        assert.ok(!args.some(arg => arg.includes('suppress-when-argument-matches-name')),
-                  `unexpected suppress flag in ${args.join(' ')}`);
+    test('inlayHints.suppressWhenArgumentMatchesName does not forward disable flag when enabled', async () => {
+        const args = await withSetting('inlayHints.suppressWhenArgumentMatchesName', true, buildServerArgs);
+        assert.ok(!args.includes('--disable-inlay-hints-suppress-when-argument-matches-name'),
+                  `unexpected --disable-inlay-hints-suppress-when-argument-matches-name in ${args.join(' ')}`);
     });
 
     test('diagnostics.reportHandleComparisonEquality forwards flag when disabled or error', async () => {
