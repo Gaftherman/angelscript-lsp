@@ -2,6 +2,43 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.5] - 2026-10-26
+
+### Official 1.1.5 Release: Multi-Type opIndex Overload Resolution, Strict Class vs Namespace Scope Isolation, Difficulty:: Completion Merge, Comment Symbol Eradication, Mixin E210 Scoped Resolution & 100% i18n Hover Parity
+
+- Multi-Type `opIndex` Overload Resolution & Native Oracle Parity (`SemanticHelpers`, `CompletionHandler`, `OpIndexParityTest`):
+  - Added `ResolveIndexedTypeWithArg` evaluating argument expressions against candidate `opIndex` overloads (`int`, `uint`, `float`, `double`, `bool`, `string`, handles `@`, and const reference `&in`) using formal overload conversion ranking (`ResolveBestOverload`).
+  - Added AST-based index argument literal type deduction (`int`, `uint` with suffix `u`/`U`, `float` with `f`/`F`, `double`, `bool`, string) and variable reference type lookup from scope.
+  - Verified compiler acceptance and exact runtime semantics against the official AngelScript compiler (`angelscript_oracle.exe`) across multiple `opIndex` overload signatures and chained member access expressions (`container[key].field`).
+- Indexed Property Accessor Member Completion (`CompletionHandler`):
+  - Enabled full member completion on indexed property accessors (`stringArray[0].|`, `inv.items[0].|`, and bare `items[0].|` inside class methods).
+  - Fixed primitive fallback indexing recovery in `CompletionHandler::GetTargetTypeAt` so resolved indexed accessor return types (such as `string`) are not inadvertently treated as sub-arrays or stripped of their members.
+- Strict Scope Isolation for Homonymous `class X` and `namespace X` (`RuleIndex`, `SemanticAnalyzer`, `SemanticHelpers`):
+  - Decoupled `byContainer` in `RuleIndex` into specialized `byClass` and `byNamespace` index tables.
+  - Strictly enforce that unqualified member accesses inside `class X` cannot access members of external homonymous `namespace X` unless explicitly qualified or inside the namespace block.
+  - Eliminated heap concatenations and brittle line-range heuristics in `MemberBelongsToClass` and `MemberBelongsToNamespace` in favor of zero-allocation stack buffer `FindMemberSymbolPtr` and `ContainerKind` checks.
+- Autocompletion Merging for Homonymous Enum and Namespace (`CompletionHandler`):
+  - Autocompletion on `Difficulty::` now seamlessly merges enum members (`Easy`, `Hard`) and namespace functions (`Configure`) without premature return.
+- Eradication of False Symbols & Errors Inside Comments (`NodeIndex`, `DeclarationRecovery`):
+  - Implemented binary-search byte range comment indexing (`NodeIndex::IsInsideComment`) and coordinate checks (`IsInsideCommentLineCol`), preventing syntax error tokens inside license and doc comments (`/** ... **/`) from producing false symbols, 0-reference CodeLens, or spurious diagnostics.
+- Mixin Member Resolution & Scoped Identifier Safety (`ClassRules`, `BuiltQueries`, `GrammarSymbols`):
+  - Fixed child node iteration in `ClassRules::GetBaseRange`, ensuring unresolved base class diagnostics underline the exact base identifier token rather than highlighting the entire class body.
+  - Eradicated false positive `E210` errors in mixins referencing global objects, namespace entities (`g_Scheduler`), or scope-qualified members (e.g. `models::laserbeam` in `ASMFlareConfig`).
+  - Added `IsScopedIdentifierIgnored` to ensure right-hand side identifiers of `scoped_identifier` constructs are not validated as member variables of the host class.
+  - Filtered non-reference AST nodes in `IsDeclarationOrFieldChild`: `datatype`, `nested_type_name`, `arg_name`, `index_name`, `foreach_variable`, and `lambda_parameter_list`.
+  - Added `MixinFileCacheEntry` to prevent redundant file I/O and re-parsing during mixin instantiation checks.
+- Inlay Hints CLI Flag Opt-Out Standardization & Hot-Reload Alignment (`extension.ts`, `extension.test.ts`):
+  - Aligned `inlayHints.suppressWhenArgumentMatchesName` (default `true`) with AngelLSP's clean default CLI flag convention: only forward `--disable-inlay-hints-suppress-when-argument-matches-name` when explicitly set to `false`.
+  - Updated `extension.test.ts` unit test suite to assert the opt-out convention when enabled and disabled.
+  - Added `--disable-inlay-hints-` pattern to `withoutHotReloadable` in `applyLocalStateChanges`, preventing unnecessary server process restarts when toggling inlay hint preferences.
+- Sven Co-op `CustomKeyvalues::SetKeyvalue` Engine Rule Checker (`EngineRuleChecker`, `RuleIndex`):
+  - Added method call safety rule detecting unsafe `CustomKeyvalues::SetKeyvalue` invocations and recommending `g_EntityFuncs.DispatchKeyValue` (`as-warn-engine-call-safety` / `W121`).
+- Semantic Tokens & Tree-Sitter Integration (`SemanticTokensHandler`, `BuiltQueries.h`, `TreeSitter.cmake`):
+  - Breakdown of `scoped_identifier` in `namespace A::B` declarations into distinct individual namespace tokens.
+  - Pinned and synchronized `tree-sitter-angelscript` to clean commit `37544e47e1977bbdb507a204b876f73817f74123` with exclusive authoring under `Gaftherman <fano.solis.campos@gmail.com>`.
+- 100% Internationalization (`i18n`) Parity (`i18n.cpp`, `HoverHandler`):
+  - Externalized all user-facing hover documentation and tooltip strings (unresolved includes, primitive types values/range/descriptions, typedef underlying types, named argument labels) with 1:1 English/Spanish parity.
+
 ## [1.1.5-exp.3] - 2026-10-26
 
 ### Experimental Release 1.1.5-exp.3: Mixin Scoped Identifier E210 Eradication & Inlay Hints CLI Opt-Out Standardization
