@@ -4,6 +4,21 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.5-exp.3] - 2026-10-26
+
+### Experimental Release 1.1.5-exp.3: Mixin Scoped Identifier E210 Eradication & Inlay Hints CLI Opt-Out Standardization
+
+- Mixin Scoped Identifier & Non-Reference AST Node False Positive Eradication (`ClassRules`, `GrammarSymbols`):
+  - Fixed false positive `E210` errors ("Member 'X' is not declared in 'Y' or its base classes") when mixins access members through explicit namespace or scope qualification (e.g. `models::laserbeam` in `ASMFlareConfig`).
+  - Added `IsScopedIdentifierIgnored` to ensure right-hand side identifiers of `scoped_identifier` constructs are not validated as member variables of the host class.
+  - Expanded `IsDeclarationOrFieldChild` and `CollectLocalNames` to filter non-reference AST nodes: `datatype`, `nested_type_name`, `arg_name`, `index_name`, `foreach_variable`, and `lambda_parameter_list`.
+  - Harmonized `CollectContainerMembers` and `HasNamespace*` to query class and namespace member tables directly.
+  - Added `symNestedTypeName` and `fieldIndexName` to `GrammarSymbols`.
+- Inlay Hints CLI Flag Opt-Out Standardization & Hot-Reload Alignment (`extension.ts`, `extension.test.ts`):
+  - Aligned `inlayHints.suppressWhenArgumentMatchesName` (default `true`) with AngelLSP's clean default CLI flag convention: only forward `--disable-inlay-hints-suppress-when-argument-matches-name` when explicitly set to `false`.
+  - Updated `extension.test.ts` unit test suite to assert the opt-out convention when enabled and disabled.
+  - Added `--disable-inlay-hints-` pattern to `withoutHotReloadable` in `applyLocalStateChanges`, preventing unnecessary server process restarts when toggling inlay hint preferences.
+
 ## [1.1.5-exp.2] - 2026-10-26
 
 ### Experimental Release 1.1.5-exp.2: Strict Class vs Namespace Scope Isolation, Difficulty:: Enum/Namespace Completion Merge, Comment Symbol Eradication, Precise Inheritance Error Ranges & 100% i18n Hover Parity
