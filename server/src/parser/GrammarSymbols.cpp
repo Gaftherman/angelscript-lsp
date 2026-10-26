@@ -66,6 +66,7 @@ void PopulateExpressionsAndLiterals(const TSLanguage* lang, GrammarSymbols& gs) 
     gs.symType = SymNamed(lang, parser::nodes::Type);
     gs.symDatatype = SymNamed(lang, parser::nodes::Datatype);
     gs.symPrimitiveType = SymNamed(lang, parser::nodes::PrimitiveType);
+    gs.symNestedTypeName = SymNamed(lang, parser::nodes::NestedTypeName);
     gs.symTemplateTypeList = SymNamed(lang, parser::nodes::TemplateTypeList);
     gs.symTemplateParameterList = SymNamed(lang, parser::nodes::TemplateParameterList);
 
@@ -156,6 +157,7 @@ void PopulateTokensAndFields(const TSLanguage* lang, GrammarSymbols& gs) noexcep
     gs.fieldCondition = FieldId(lang, parser::fields::Condition);
     gs.fieldValue = FieldId(lang, parser::fields::Value);
     gs.fieldIndex = FieldId(lang, parser::fields::Index);
+    gs.fieldIndexName = FieldId(lang, parser::fields::IndexName);
     gs.fieldArgName = FieldId(lang, parser::fields::ArgName);
     gs.fieldHandler = FieldId(lang, parser::fields::Handler);
     gs.fieldVarType = FieldId(lang, parser::fields::VarType);

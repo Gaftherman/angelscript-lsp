@@ -857,11 +857,11 @@ void CollectContainerMembers(const std::string& containerName, const RuleIndex& 
         outMembers.insert(members.accessorPropertyNames.begin(), members.accessorPropertyNames.end());
     };
 
-    insertMembers(ruleIndex.Members(containerName));
+    insertMembers(ruleIndex.ClassMembers(containerName));
 
     if (HasScopeQualifier(containerName))
     {
-        insertMembers(ruleIndex.Members(LastScopeSegment(containerName)));
+        insertMembers(ruleIndex.ClassMembers(LastScopeSegment(containerName)));
     }
 
     auto it = ruleIndex.qualifiedTypesByShortName.find(containerName);
@@ -869,7 +869,7 @@ void CollectContainerMembers(const std::string& containerName, const RuleIndex& 
     {
         for (const auto& qName : it->second)
         {
-            insertMembers(ruleIndex.Members(qName));
+            insertMembers(ruleIndex.ClassMembers(qName));
         }
     }
 }
@@ -1052,6 +1052,26 @@ bool IsNamedChildMatch(TSNode parent, TSFieldId fieldId, TSNode cur)
     return !ts_node_is_null(child) && ts_node_start_byte(child) == ts_node_start_byte(cur);
 }
 
+/** @brief Checks if a scoped_identifier context represents an external or qualified lookup. */
+bool IsScopedIdentifierIgnored(TSNode parent, const parser::GrammarSymbols& gs)
+{
+    if (ts_node_child_count(parent) > 1)
+    {
+        return true;
+    }
+    TSNode grandparent = ts_node_parent(parent);
+    if (ts_node_is_null(grandparent))
+    {
+        return false;
+    }
+    const TSSymbol gpSym = ts_node_symbol(grandparent);
+    if (gpSym == gs.symScope || gpSym == gs.symUsingDeclaration)
+    {
+        return true;
+    }
+    return gpSym == gs.symCallExpression && IsNamedChildMatch(grandparent, gs.fieldFunction, parent);
+}
+
 /** @brief Checks if an identifier is a declaration name or member field name. */
 bool IsDeclarationOrFieldChild(TSNode cur, TSNode parent, TSSymbol pSym, const parser::GrammarSymbols& gs)
 {
@@ -1063,10 +1083,18 @@ bool IsDeclarationOrFieldChild(TSNode cur, TSNode parent, TSSymbol pSym, const p
     {
         return IsNamedChildMatch(parent, gs.fieldFunction, cur);
     }
-    if (pSym == gs.symScopedIdentifier || pSym == gs.symVariableDeclarator || pSym == gs.symParameter ||
-        pSym == gs.symFuncDeclaration)
+    if (pSym == gs.symVariableDeclarator || pSym == gs.symParameter || pSym == gs.symFuncDeclaration ||
+        pSym == gs.symForeachVariable || pSym == gs.symLambdaParameterList)
     {
         return IsNamedChildMatch(parent, gs.fieldName, cur);
+    }
+    if (pSym == gs.symArgumentList)
+    {
+        return IsNamedChildMatch(parent, gs.fieldArgName, cur);
+    }
+    if (pSym == gs.symIndexExpression)
+    {
+        return IsNamedChildMatch(parent, gs.fieldIndexName, cur);
     }
     return false;
 }
@@ -1082,6 +1110,11 @@ bool ShouldIgnoreMixinIdentifier(TSNode cur)
 
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol pSym = ts_node_symbol(parent);
+    if (pSym == gs.symScopedIdentifier)
+    {
+        return IsScopedIdentifierIgnored(parent, gs);
+    }
+
     if (IsDeclarationOrFieldChild(cur, parent, pSym, gs))
     {
         return true;
@@ -1094,10 +1127,11 @@ bool ShouldIgnoreMixinIdentifier(TSNode cur)
 
     if (pSym == gs.symParameter)
     {
-        return IsNamedChildMatch(parent, gs.fieldType, cur);
+        return IsNamedChildMatch(parent, gs.fieldType, cur) || IsNamedChildMatch(parent, gs.fieldParamType, cur);
     }
 
-    return pSym == gs.symType || pSym == gs.symPrimitiveType || pSym == gs.symCastExpression;
+    return pSym == gs.symType || pSym == gs.symPrimitiveType || pSym == gs.symCastExpression ||
+           pSym == gs.symDatatype || pSym == gs.symNestedTypeName;
 }
 
 /** @brief Checks if a name is a built-in symbol, keyword, or primitive type. */
@@ -1145,13 +1179,26 @@ bool HasNamespacePropertyAccessor(const AccessorLookupContext& actx, std::string
     {
         return false;
     }
-    if (ctx.request.GetRuleIndex().Members(ns).accessorPropertyNames.contains(actx.name))
+    if (ctx.request.GetRuleIndex().NamespaceMembers(ns).accessorPropertyNames.contains(actx.name))
     {
         return true;
     }
     const auto& table = ctx.request.symbolTable;
-    return table.FindMemberSymbolPtr(ns, actx.getView) != nullptr ||
-           table.FindMemberSymbolPtr(ns, actx.setView) != nullptr;
+    const auto hasAccessor = [&](std::string_view view)
+    {
+        if (auto ptr = table.FindMemberSymbolPtr(ns, view))
+        {
+            for (const auto& sym : *ptr)
+            {
+                if (sym.containerKind == ContainerKind::Namespace)
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    return hasAccessor(actx.getView) || hasAccessor(actx.setView);
 }
 
 /** @brief Checks if a name matches getter/setter property accessors in mixin, host, global, or namespaces. */
@@ -1201,8 +1248,21 @@ bool HasNamespaceMember(const std::string& name, std::string_view ns, const Diag
     {
         return false;
     }
-    return ctx.request.symbolTable.FindMemberSymbolPtr(ns, name) != nullptr ||
-           ctx.request.GetRuleIndex().Members(ns).allMemberNames.contains(name);
+    if (ctx.request.GetRuleIndex().NamespaceMembers(ns).allMemberNames.contains(name))
+    {
+        return true;
+    }
+    if (auto ptr = ctx.request.symbolTable.FindMemberSymbolPtr(ns, name))
+    {
+        for (const auto& sym : *ptr)
+        {
+            if (sym.containerKind == ContainerKind::Namespace)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 bool IsEngineOrGlobalIdentifier(const std::string& name, const DiagnosticContext& ctx)
@@ -1325,7 +1385,8 @@ void CollectLocalNames(TSNode memNode, TSNode funcBody, std::string_view mixinSo
     parser::ForEachDescendantNode(funcBody,
                                   [&](TSNode cur)
                                   {
-                                      if (ts_node_symbol(cur) == gs.symVariableDeclarator)
+                                      const TSSymbol curSym = ts_node_symbol(cur);
+                                      if (curSym == gs.symVariableDeclarator || curSym == gs.symForeachVariable)
                                       {
                                           TSNode vdName = parser::GetChildByField(cur, gs.fieldName);
                                           if (!ts_node_is_null(vdName))

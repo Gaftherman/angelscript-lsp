@@ -53,6 +53,7 @@ struct GrammarSymbols
     TSSymbol symType = 0;                  ///< type
     TSSymbol symDatatype = 0;              ///< datatype
     TSSymbol symPrimitiveType = 0;         ///< primitive_type
+    TSSymbol symNestedTypeName = 0;        ///< nested_type_name
     TSSymbol symTemplateTypeList = 0;      ///< template_type_list
     TSSymbol symTemplateParameterList = 0; ///< template_parameter_list
 
@@ -151,6 +152,7 @@ struct GrammarSymbols
     TSFieldId fieldCondition = 0;      ///< "condition"
     TSFieldId fieldValue = 0;          ///< "value"
     TSFieldId fieldIndex = 0;          ///< "index"
+    TSFieldId fieldIndexName = 0;      ///< "index_name"
     TSFieldId fieldArgName = 0;        ///< "arg_name"
     TSFieldId fieldHandler = 0;        ///< "handler"
     TSFieldId fieldVarType = 0;        ///< "var_type"

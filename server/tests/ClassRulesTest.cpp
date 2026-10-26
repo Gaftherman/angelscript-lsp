@@ -1214,3 +1214,68 @@ TEST_CASE("ClassRules - Mixin referencing truly undeclared member DOES emit E210
     const auto diags = AnalyzeClassSnippet(code);
     CHECK(HasCode(diags, "as-err-mixin-instantiation-member-not-found"));
 }
+
+TEST_CASE("ClassRules - Mixin referencing scoped namespace member across files does not emit E210")
+{
+    const std::string nsName = angel_lsp::test::GenerateRandomSymbolName("models");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("laserbeam");
+    const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("ASMFlareConfig");
+    const std::string hostClass = angel_lsp::test::GenerateRandomSymbolName("ASWeaponFlareConfig");
+
+    const std::string file1Uri = "file:///env_flare.as";
+    const std::string file1Code = "namespace " + nsName +
+                                  " {\n"
+                                  "    uint " +
+                                  varName +
+                                  ";\n"
+                                  "}\n"
+                                  "mixin class " +
+                                  mixinName +
+                                  " {\n"
+                                  "    void flare_create() const {\n"
+                                  "        WriteShort(" +
+                                  nsName + "::" + varName +
+                                  ");\n"
+                                  "    }\n"
+                                  "    void WriteShort(uint val) const {}\n"
+                                  "}\n";
+
+    const std::string file2Uri = "file:///flare.as";
+    const std::string file2Code = "final class " + hostClass + " : " + mixinName +
+                                  " {\n"
+                                  "}\n";
+
+    const auto diags = AnalyzeTwoFiles(file1Uri, file1Code, file2Uri, file2Code);
+    CHECK_FALSE(HasCode(diags, "as-err-mixin-instantiation-member-not-found"));
+}
+
+TEST_CASE("ClassRules - Mixin with foreach variable and local datatype does not emit false positive E210")
+{
+    const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("IterMixin");
+    const std::string hostClass = angel_lsp::test::GenerateRandomSymbolName("IterHost");
+    const std::string loopVar = angel_lsp::test::GenerateRandomSymbolName("entry");
+
+    const std::string code = "class SomeLocalPayload { int value; }\n"
+                             "mixin class " +
+                             mixinName +
+                             " {\n"
+                             "    void ProcessList() {\n"
+                             "        SomeLocalPayload payload;\n"
+                             "        array<int> items = { 1, 2, 3 };\n"
+                             "        foreach (auto " +
+                             loopVar +
+                             " : items) {\n"
+                             "            payload.value = " +
+                             loopVar +
+                             ";\n"
+                             "        }\n"
+                             "    }\n"
+                             "}\n"
+                             "class " +
+                             hostClass + " : " + mixinName +
+                             " {\n"
+                             "}\n";
+
+    const auto diags = AnalyzeClassSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-mixin-instantiation-member-not-found"));
+}
