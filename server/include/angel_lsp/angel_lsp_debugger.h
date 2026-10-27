@@ -721,9 +721,11 @@ class Debugger
         }
         else if (command == "scopes")
         {
-            ss << ",\"body\":{\"scopes\":["
-               << "{\"name\":\"Locals\",\"variablesReference\":1000,\"expensive\":false},"
-               << "{\"name\":\"Globals\",\"variablesReference\":2000,\"expensive\":true}]}";
+            constexpr std::string_view k_scopesBody =
+                ",\"body\":{\"scopes\":["
+                "{\"name\":\"Locals\",\"variablesReference\":1000,\"expensive\":false},"
+                "{\"name\":\"Globals\",\"variablesReference\":2000,\"expensive\":true}]}";
+            ss << k_scopesBody;
         }
         else if (command == "variables")
         {
