@@ -130,15 +130,22 @@ class AngelScriptDebugAdapterSession implements vscode.DebugAdapter {
         const enableVerification = workspaceConfig.get<boolean>('debug.enableBreakpointLocations', true);
         const client = this.getClient();
 
-        const req = message as { arguments?: { source?: { path?: string }; lines?: number[] } };
+        const req = message as {
+            arguments?: {
+                source?: { path?: string };
+                lines?: number[];
+                breakpoints?: Array<{ line: number; column?: number }>;
+            };
+        };
         const filePath = req.arguments?.source?.path;
-        const requestedLines = req.arguments?.lines;
+        const rawBreakpoints = req.arguments?.breakpoints;
+        const requestedLines = req.arguments?.lines ?? rawBreakpoints?.map(b => b.line) ?? [];
 
-        if (enableVerification && client && filePath && requestedLines && requestedLines.length > 0) {
+        if (enableVerification && client && filePath && requestedLines.length > 0) {
             try {
                 const uri = vscode.Uri.file(filePath).toString();
                 const minLine = Math.max(0, Math.min(...requestedLines) - 1);
-                const maxLine = Math.max(0, Math.max(...requestedLines) - 1);
+                const maxLine = Math.max(0, Math.max(...requestedLines));
 
                 const locations = await client.sendRequest<{ range: vscode.Range }[]>(
                     'textDocument/breakpointLocations',
@@ -155,7 +162,12 @@ class AngelScriptDebugAdapterSession implements vscode.DebugAdapter {
                     const validLines = new Set<number>(locations.map(loc => loc.range.start.line + 1));
                     const verifiedLines = requestedLines.filter(line => validLines.has(line));
                     if (verifiedLines.length > 0 && req.arguments) {
-                        req.arguments.lines = verifiedLines;
+                        if (req.arguments.lines) {
+                            req.arguments.lines = verifiedLines;
+                        }
+                        if (rawBreakpoints) {
+                            req.arguments.breakpoints = rawBreakpoints.filter(b => validLines.has(b.line));
+                        }
                     }
                 }
             } catch {

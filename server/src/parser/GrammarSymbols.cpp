@@ -143,6 +143,8 @@ void PopulateTokensAndFields(const TSLanguage* lang, GrammarSymbols& gs) noexcep
     gs.tokComma = SymAnon(lang, ",");
     gs.tokCloseParen = SymAnon(lang, ")");
     gs.tokColon = SymAnon(lang, ":");
+    gs.tokOpenBracket = SymAnon(lang, "[");
+    gs.tokCloseBracket = SymAnon(lang, "]");
 
     gs.fieldName = FieldId(lang, parser::fields::Name);
     gs.fieldType = FieldId(lang, parser::fields::Type);
@@ -173,6 +175,7 @@ void PopulateTokensAndFields(const TSLanguage* lang, GrammarSymbols& gs) noexcep
     gs.fieldUpdate = FieldId(lang, parser::fields::Update);
     gs.fieldInit = FieldId(lang, parser::fields::Init);
     gs.fieldConsequence = FieldId(lang, parser::fields::Consequence);
+    gs.fieldOperand = FieldId(lang, parser::fields::Operand);
 }
 
 } // namespace

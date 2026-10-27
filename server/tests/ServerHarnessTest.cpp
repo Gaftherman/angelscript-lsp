@@ -351,6 +351,46 @@ TEST_CASE("Server - Answers a selection range request over the wire")
     CHECK(stream.OutputContains("\"parent\""));
 }
 
+TEST_CASE("Server - Answers breakpoint locations requests over the wire")
+{
+    const std::string source = "void main()\n"
+                               "{\n"
+                               "    int a = 1;\n"
+                               "    int b = 2;\n"
+                               "    return;\n"
+                               "}\n";
+
+    WorkspaceFixture fixture;
+    fixture.Write("main.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
+
+    // 1. Standard LSP textDocument/breakpointLocations
+    stream.Push(
+        R"({"jsonrpc":"2.0","id":2,"method":"textDocument/breakpointLocations","params":{"textDocument":{"uri":")" +
+        fixture.Uri("main.as") + R"("},"range":{"start":{"line":2,"character":0},"end":{"line":4,"character":0}}}})");
+
+    // 2. Custom angelscript/breakpointLocations endpoint
+    stream.Push(
+        R"({"jsonrpc":"2.0","id":3,"method":"angelscript/breakpointLocations","params":{"textDocument":{"uri":")" +
+        fixture.Uri("main.as") + R"("},"range":{"start":{"line":2,"character":0},"end":{"line":4,"character":0}}}})");
+
+    stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    RunScript(serverConfig, stream);
+
+    const std::string r2 = stream.ResponseFor(2);
+    CHECK(r2.find("\"result\":[") != std::string::npos);
+    CHECK(r2.find("\"line\":2") != std::string::npos);
+
+    const std::string r3 = stream.ResponseFor(3);
+    CHECK(r3.find("\"result\":[") != std::string::npos);
+    CHECK(r3.find("\"line\":2") != std::string::npos);
+}
+
 TEST_CASE("Server - Announces the hierarchy capabilities")
 {
     WorkspaceFixture fixture;

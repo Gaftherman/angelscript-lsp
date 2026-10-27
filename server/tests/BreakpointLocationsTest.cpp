@@ -487,6 +487,124 @@ TEST_CASE("Breakpoint Locations - Syntax Errors and Incomplete Code Resilience")
     CHECK(foundGoodVar);
 }
 
+TEST_CASE("Breakpoint Locations - Single-Line Range Query on Do-While Condition")
+{
+    const std::string fnName = test::GenerateRandomSymbolName("TestDoWhile");
+    const std::string varName = test::GenerateRandomSymbolName("counter");
+
+    // Line 0: void TestDoWhile()
+    // Line 1: {
+    // Line 2:     int counter = 0;
+    // Line 3:     do
+    // Line 4:     {
+    // Line 5:         counter = counter + 1;
+    // Line 6:     }
+    // Line 7:     while (counter < 5);
+    // Line 8: }
+    const std::string code = "void " + fnName + "()\n{\n    int " + varName + " = 0;\n    do\n    {\n        " +
+                             varName + " = " + varName + " + 1;\n    }\n    while (" + varName + " < 5);\n}\n";
+
+    BreakpointTestFixture fixture(code);
+
+    // Query SOLELY line 7 (the while condition line)
+    const auto locsLine7 = fixture.Query(7, 7);
+    REQUIRE_FALSE(locsLine7.empty());
+    bool foundLine7 = false;
+    for (const auto& loc : locsLine7)
+    {
+        if (loc.line == 7)
+        {
+            foundLine7 = true;
+        }
+    }
+    CHECK(foundLine7);
+
+    // Query SOLELY line 3 (the do line)
+    const auto locsLine3 = fixture.Query(3, 3);
+    REQUIRE_FALSE(locsLine3.empty());
+    bool foundLine3 = false;
+    for (const auto& loc : locsLine3)
+    {
+        if (loc.line == 3)
+        {
+            foundLine3 = true;
+        }
+    }
+    CHECK(foundLine3);
+}
+
+TEST_CASE("Breakpoint Locations - Multi-Line For Header and Multiple Update Expressions")
+{
+    const std::string fnName = test::GenerateRandomSymbolName("TestMultiFor");
+    const std::string varI = test::GenerateRandomSymbolName("idx");
+    const std::string varJ = test::GenerateRandomSymbolName("jdx");
+
+    // Line 0: void TestMultiFor()
+    // Line 1: {
+    // Line 2:     for (int idx = 0, jdx = 0;
+    // Line 3:          idx < 10;
+    // Line 4:          ++idx, ++jdx)
+    // Line 5:     {
+    // Line 6:     }
+    // Line 7: }
+    const std::string code = "void " + fnName + "()\n{\n    for (int " + varI + " = 0, " + varJ + " = 0;\n         " +
+                             varI + " < 10;\n         ++" + varI + ", ++" + varJ + ")\n    {\n    }\n}\n";
+
+    BreakpointTestFixture fixture(code);
+
+    // Single-line query on line 3 (condition)
+    const auto locsLine3 = fixture.Query(3, 3);
+    REQUIRE_FALSE(locsLine3.empty());
+    CHECK(locsLine3[0].line == 3);
+
+    // Single-line query on line 4 (multiple updates: ++idx, ++jdx)
+    const auto locsLine4 = fixture.Query(4, 4);
+    REQUIRE_FALSE(locsLine4.empty());
+    CHECK(locsLine4.size() >= 2);
+    for (const auto& loc : locsLine4)
+    {
+        CHECK(loc.line == 4);
+    }
+}
+
+TEST_CASE("Breakpoint Locations - Object Arrays vs Pure Constants vs Runtime Initializers")
+{
+    const std::string fnName = test::GenerateRandomSymbolName("TestDeclSemantics");
+    const std::string arrVar = test::GenerateRandomSymbolName("items");
+    const std::string constPure = test::GenerateRandomSymbolName("MAX_COUNT");
+    const std::string constRuntime = test::GenerateRandomSymbolName("seed");
+    const std::string helperFn = test::GenerateRandomSymbolName("GetSeed");
+
+    // Line 0: int GetSeed() { return 123; }
+    // Line 1: void TestDeclSemantics()
+    // Line 2: {
+    // Line 3:     int[] items;
+    // Line 4:     const int MAX_COUNT = 42;
+    // Line 5:     const int seed = GetSeed();
+    // Line 6: }
+    const std::string code = "int " + helperFn + "() { return 123; }\n" + "void " + fnName + "()\n" + "{\n" +
+                             "    int[] " + arrVar + ";\n" + "    const int " + constPure + " = 42;\n" +
+                             "    const int " + constRuntime + " = " + helperFn + "();\n" + "}\n";
+
+    BreakpointTestFixture fixture(code);
+    const auto locs = fixture.Query();
+
+    std::vector<uint32_t> lines;
+    for (const auto& loc : locs)
+    {
+        lines.push_back(loc.line);
+    }
+
+    // Line 3: int[] items; (Object array default constructor is called -> executable!)
+    CHECK(std::find(lines.begin(), lines.end(), 3) != lines.end());
+
+    // Line 4: const int MAX_COUNT = 42; (Folded at compile-time as pure constant -> NO runtime bytecode!)
+    CHECK(std::find(lines.begin(), lines.end(), 4) == lines.end());
+
+    // Line 5: const int seed = GetSeed(); (Initialized via function call -> executable!)
+    CHECK(std::find(lines.begin(), lines.end(), 5) != lines.end());
+}
+
 TEST_CASE("Debugger Runtime - Attach, Breakpoints, and Lifecycle")
 {
     angel_lsp::debug::Debugger debugger;

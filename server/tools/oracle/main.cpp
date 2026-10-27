@@ -61,8 +61,19 @@ namespace
         std::string text;
     };
 
+    struct OracleLineEntry
+    {
+        std::string section;
+        int line = 0;
+        int character = 0;
+        int funcId = 0;
+        std::string functionName;
+    };
+
     std::vector<Message> g_messages;
+    std::vector<OracleLineEntry> g_lineEntries;
     bool g_sawError = false;
+    bool g_dumpLines = false;
 
     void MessageCallback(const asSMessageInfo *info, void *)
     {
@@ -274,7 +285,20 @@ namespace
                         m.type.c_str(), m.row, m.col, JsonEscape(m.text).c_str(),
                         i + 1 < g_messages.size() ? "," : "");
         }
-        std::printf("  ]\n}\n");
+        std::printf("  ]");
+        if (g_dumpLines)
+        {
+            std::printf(",\n  \"lineEntries\": [\n");
+            for (size_t i = 0; i < g_lineEntries.size(); ++i)
+            {
+                const OracleLineEntry &e = g_lineEntries[i];
+                std::printf("    { \"section\": \"%s\", \"line\": %d, \"character\": %d, \"function\": \"%s\" }%s\n",
+                            JsonEscape(e.section).c_str(), e.line, e.character, JsonEscape(e.functionName).c_str(),
+                            i + 1 < g_lineEntries.size() ? "," : "");
+            }
+            std::printf("  ]");
+        }
+        std::printf("\n}\n");
     }
 }
 
@@ -362,6 +386,10 @@ int main(int argc, char **argv)
             if (std::strcmp(argv[i], "--dump-registry") == 0)
             {
                 dumpRegistry = true;
+            }
+            else if (std::strcmp(argv[i], "--dump-lines") == 0)
+            {
+                g_dumpLines = true;
             }
             else if (std::strcmp(argv[i], "--json") == 0)
             {
@@ -785,6 +813,42 @@ int main(int argc, char **argv)
 
     result = builder.BuildModule();
 
+    if (result >= 0 && !g_sawError && g_dumpLines)
+    {
+        asIScriptModule *module = builder.GetModule();
+        const int lastId = engine->GetLastFunctionId();
+        for (int id = 0; id <= lastId; ++id)
+        {
+            asIScriptFunction *func = engine->GetFunctionById(id);
+            if (func == nullptr || func->GetModule() != module)
+            {
+                continue;
+            }
+            const char *decl = func->GetDeclaration(true, true, true);
+            const std::string funcDecl = decl ? decl : (func->GetName() ? func->GetName() : "");
+            if (funcDecl.find("_OracleMixinProbe_") != std::string::npos ||
+                funcDecl.find("&inout other)") != std::string::npos)
+            {
+                continue;
+            }
+            const int count = func->GetLineEntryCount();
+            for (int e = 0; e < count; ++e)
+            {
+                int row = 0;
+                int col = 0;
+                const char *sectionName = nullptr;
+                func->GetLineEntry(static_cast<asUINT>(e), &row, &col, &sectionName, nullptr);
+                OracleLineEntry entry;
+                entry.section = sectionName ? sectionName : "";
+                entry.line = row > 0 ? row - 1 : 0;
+                entry.character = col > 0 ? col - 1 : 0;
+                entry.funcId = id;
+                entry.functionName = funcDecl;
+                g_lineEntries.push_back(std::move(entry));
+            }
+        }
+    }
+
     if (asJson)
     {
         PrintJson();
@@ -794,6 +858,13 @@ int main(int argc, char **argv)
         for (const Message &m : g_messages)
         {
             std::fprintf(stderr, "%s (%d, %d): %s\n", m.type.c_str(), m.row, m.col, m.text.c_str());
+        }
+        if (g_dumpLines)
+        {
+            for (const OracleLineEntry &e : g_lineEntries)
+            {
+                std::printf("LINE: %s:%d:%d (%s)\n", e.section.c_str(), e.line, e.character, e.functionName.c_str());
+            }
         }
     }
 
