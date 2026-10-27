@@ -1,8 +1,10 @@
 #include "features/breakpoints/BreakpointLocationsHandler.h"
 #include "lsp/PositionCodec.h"
 #include "lsp/Server.h"
+#include "utils/PositionEncoding.h"
 
 #include <limits>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -40,7 +42,7 @@ std::string ExtractDocumentUri(const lsp::json::Object& obj)
 }
 
 /**
- * @brief Parses line numbers from the optional range parameter.
+ * @brief Parses line numbers safely from the optional range parameter.
  * @param[in] obj Parameter object.
  * @param[out] startLine Starting line number.
  * @param[out] endLine Ending line number.
@@ -58,14 +60,22 @@ void ExtractRangeLines(const lsp::json::Object& obj, uint32_t& startLine, uint32
     {
         if (const auto* lineVal = startVal->object().find("line"); lineVal && lineVal->isNumber())
         {
-            startLine = static_cast<uint32_t>(lineVal->integer());
+            const double num = lineVal->number();
+            if (num >= 0.0)
+            {
+                startLine = static_cast<uint32_t>(num);
+            }
         }
     }
     if (const auto* endVal = rangeObj.find("end"); endVal && endVal->isObject())
     {
         if (const auto* lineVal = endVal->object().find("line"); lineVal && lineVal->isNumber())
         {
-            endLine = static_cast<uint32_t>(lineVal->integer());
+            const double num = lineVal->number();
+            if (num >= 0.0)
+            {
+                endLine = static_cast<uint32_t>(num);
+            }
         }
     }
 }
@@ -93,18 +103,27 @@ BreakpointLocationsParams ParseBreakpointParams(const lsp::json::Value& params)
  * @brief Formats a single breakpoint location into an LSP JSON object.
  * @param[in] item Breakpoint location item with byte-based columns.
  * @param[in] text Document source text.
+ * @param[in] lineIndex Precomputed line index for O(1) multi-line UTF-16 conversions.
  * @param[in] enc Client position encoding.
  * @return LSP-compliant BreakpointLocation JSON object.
  */
 lsp::json::Object FormatBreakpointLocation(const features::BreakpointLocationItem& item, std::string_view text,
-                                           utils::PositionEncoding enc)
+                                           const utils::LineIndex* lineIndex, utils::PositionEncoding enc)
 {
     lsp::Range range;
     range.start.line = item.line;
     range.start.character = item.column;
     range.end.line = item.endLine;
     range.end.character = item.endColumn;
-    codec::Encode(text, enc, range);
+
+    if (lineIndex != nullptr)
+    {
+        codec::Encode(*lineIndex, text, enc, range);
+    }
+    else
+    {
+        codec::Encode(text, enc, range);
+    }
 
     lsp::json::Object startObj;
     startObj["line"] = lsp::json::Value(static_cast<lsp::json::Integer>(range.start.line));
@@ -128,7 +147,7 @@ lsp::json::Object FormatBreakpointLocation(const features::BreakpointLocationIte
 lsp::json::Value Server::HandleRequestsTextDocument_BreakpointLocations(lsp::json::Value&& params)
 {
     const auto parsed = ParseBreakpointParams(params);
-    if (parsed.uri.empty())
+    if (parsed.uri.empty() || parsed.startLine > parsed.endLine)
     {
         return lsp::json::Value(lsp::json::Array{});
     }
@@ -140,15 +159,23 @@ lsp::json::Value Server::HandleRequestsTextDocument_BreakpointLocations(lsp::jso
     }
 
     const auto excluded = ExcludedLineRanges(*doc->text);
-    const features::BreakpointLocationsRequest req{ts_tree_root_node(doc->tree), *doc->text, parsed.startLine,
-                                                   parsed.endLine, &excluded};
+    const features::BreakpointLocationsRequest req{ts_tree_root_node(doc->tree), parsed.startLine, parsed.endLine,
+                                                   &excluded};
 
     const auto items = features::BreakpointLocationsHandler::Collect(req);
     lsp::json::Array result;
     result.reserve(items.size());
+
+    std::optional<utils::LineIndex> lineIndex;
+    if (m_positionEncoding != utils::PositionEncoding::Utf8 && !items.empty())
+    {
+        lineIndex = utils::LineIndex::Build(*doc->text);
+    }
+    const utils::LineIndex* pLineIndex = lineIndex.has_value() ? &*lineIndex : nullptr;
+
     for (const auto& item : items)
     {
-        result.push_back(lsp::json::Value(FormatBreakpointLocation(item, *doc->text, m_positionEncoding)));
+        result.push_back(lsp::json::Value(FormatBreakpointLocation(item, *doc->text, pLineIndex, m_positionEncoding)));
     }
 
     return lsp::json::Value(std::move(result));

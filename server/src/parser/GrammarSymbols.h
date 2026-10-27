@@ -167,6 +167,7 @@ struct GrammarSymbols
     TSFieldId fieldTemplateParams = 0; ///< "template_params"
     TSFieldId fieldUpdate = 0;         ///< "update"
     TSFieldId fieldInit = 0;           ///< "init"
+    TSFieldId fieldConsequence = 0;    ///< "consequence"
 };
 
 /**

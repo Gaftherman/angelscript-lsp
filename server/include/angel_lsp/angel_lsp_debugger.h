@@ -5,14 +5,25 @@
  * @brief Embeddable C++20 Debug Adapter Protocol (DAP) server and runtime debugger for AngelScript.
  *
  * AngelLSP Debugger Engine - Provides full runtime inspection, line-by-line stepping,
- * variable inspection, and expression evaluation for AngelScript hosts and game engines.
+ * variable inspection, exception interception, and expression evaluation for AngelScript hosts and game engines.
  *
  * Compatible with AngelScript 2.20 through 2.38+.
  *
  * Zero external dependencies beyond standard C++20 and the AngelScript C++ API.
  */
 
+#if __has_include(<angelscript.h>)
 #include <angelscript.h>
+#define ANGEL_LSP_HAS_ANGELSCRIPT 1
+#else
+#define ANGEL_LSP_HAS_ANGELSCRIPT 0
+class asIScriptEngine;
+class asIScriptContext;
+class asIScriptFunction;
+class asIScriptModule;
+class asITypeInfo;
+using asUINT = unsigned int;
+#endif
 
 #include <atomic>
 #include <cstdint>
@@ -95,7 +106,7 @@ class Debugger
     /**
      * @brief Destructs the debugger, ensuring clean socket and state teardown.
      */
-    ~Debugger()
+    virtual ~Debugger()
     {
         Detach();
     }
@@ -239,6 +250,84 @@ class Debugger
     }
 
     /**
+     * @brief Exception callback invoked by AngelScript when a runtime script exception occurs.
+     *
+     * Wire into your context via:
+     * `ctx->SetExceptionCallback(asMETHOD(Debugger, ExceptionCallback), debuggerInstance, asCALL_THISCALL);`
+     *
+     * @param[in] ctx Script context where the exception occurred.
+     */
+    void ExceptionCallback(asIScriptContext* ctx)
+    {
+        if (!ctx)
+        {
+            return;
+        }
+
+        int col = 0;
+        const char* sec = nullptr;
+        int line = ctx->GetExceptionLineNumber(&col, &sec);
+        std::string section = sec ? sec : "";
+        const char* desc = ctx->GetExceptionString();
+        std::string exceptionDesc = desc ? desc : "";
+
+        m_state.store(ExecutionState::Suspended, std::memory_order_release);
+        OnException(ctx, section, line, col, exceptionDesc);
+
+        while (m_state.load(std::memory_order_acquire) == ExecutionState::Suspended)
+        {
+#if defined(_WIN32)
+            Sleep(10);
+#else
+            usleep(10000);
+#endif
+        }
+    }
+
+    /**
+     * @brief Validates or snaps a requested line to the nearest executable line in a section.
+     * @param[in] section Name of the script section.
+     * @param[in] requestedLine 1-based source line.
+     * @return Validated or snapped line number.
+     */
+    int ValidateBreakpointLine([[maybe_unused]] const std::string& section, int requestedLine) const
+    {
+#if defined(ANGELSCRIPT_VERSION) && ANGELSCRIPT_VERSION >= 23800
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (!m_engine)
+        {
+            return requestedLine;
+        }
+        const asUINT modCount = m_engine->GetModuleCount();
+        for (asUINT m = 0; m < modCount; ++m)
+        {
+            asIScriptModule* mod = m_engine->GetModuleByIndex(m);
+            if (!mod)
+                continue;
+            const asUINT funcCount = mod->GetFunctionCount();
+            for (asUINT f = 0; f < funcCount; ++f)
+            {
+                asIScriptFunction* func = mod->GetFunctionByIndex(f);
+                if (!func)
+                    continue;
+                const int entryCount = func->GetLineEntryCount();
+                for (int e = 0; e < entryCount; ++e)
+                {
+                    const char* sec = nullptr;
+                    int row = 0;
+                    func->GetLineEntry(static_cast<asUINT>(e), &row, nullptr, &sec, nullptr);
+                    if (sec && NormalizeSection(sec) == NormalizeSection(section) && row >= requestedLine)
+                    {
+                        return row;
+                    }
+                }
+            }
+        }
+#endif
+        return requestedLine;
+    }
+
+    /**
      * @brief Collects the full call stack from an active script context.
      * @param[in] ctx Active script context.
      * @return Ordered list of stack frames, innermost frame first.
@@ -292,9 +381,10 @@ class Debugger
 
         for (int i = 0; i < varCount; ++i)
         {
-            const char* name = ctx->GetVarName(i, stackLevel);
-            const int typeId = ctx->GetVarTypeId(i, stackLevel);
-            void* address = ctx->GetAddressOfVar(i, stackLevel);
+            const char* name = nullptr;
+            int typeId = 0;
+            ctx->GetVar(static_cast<asUINT>(i), stackLevel, &name, &typeId);
+            void* address = ctx->GetAddressOfVar(static_cast<asUINT>(i), stackLevel);
 
             VariableInfo info;
             info.name = name ? name : "";
@@ -328,14 +418,96 @@ class Debugger
             return props;
         }
 
+        return GetChildProperties(ctx->GetEngine(), thisPtr, thisTypeId);
+    }
+
+    /**
+     * @brief Collects global variables from the active module.
+     * @param[in] ctx Active script context.
+     * @return Formatted variable descriptions for globals in the active module.
+     */
+    std::vector<VariableInfo> GetGlobalVariables(asIScriptContext* ctx) const
+    {
+        std::vector<VariableInfo> globals;
+        if (!ctx || ctx->GetCallstackSize() == 0)
+        {
+            return globals;
+        }
+
+        asIScriptFunction* func = ctx->GetFunction(0);
+        if (!func)
+        {
+            return globals;
+        }
+
+        asIScriptModule* module = func->GetModule();
+        if (!module)
+        {
+            return globals;
+        }
+
         asIScriptEngine* engine = ctx->GetEngine();
-        asITypeInfo* typeInfo = engine ? engine->GetTypeInfoById(thisTypeId) : nullptr;
+        const asUINT varCount = module->GetGlobalVarCount();
+        globals.reserve(varCount);
+
+        for (asUINT i = 0; i < varCount; ++i)
+        {
+            const char* name = nullptr;
+            const char* ns = nullptr;
+            int typeId = 0;
+            module->GetGlobalVar(i, &name, &ns, &typeId, nullptr);
+            void* address = module->GetAddressOfGlobalVar(i);
+
+            VariableInfo info;
+            std::string fullName;
+            if (ns && ns[0] != '\0')
+            {
+                fullName = std::string(ns) + "::";
+            }
+            fullName += (name ? name : "");
+            info.name = std::move(fullName);
+            info.typeId = typeId;
+            info.typeName = engine ? FormatTypeName(engine, typeId) : "";
+            info.value = FormatValue(engine, address, typeId);
+            globals.push_back(std::move(info));
+        }
+
+        return globals;
+    }
+
+    /**
+     * @brief Collects child properties of an object instance or handle.
+     * @param[in] engine Script engine instance.
+     * @param[in] ptr Pointer to the object or handle.
+     * @param[in] typeId Type ID of the object.
+     * @return List of child properties.
+     */
+    std::vector<VariableInfo> GetChildProperties(asIScriptEngine* engine, void* ptr, int typeId) const
+    {
+        std::vector<VariableInfo> props;
+        if (!engine || !ptr || typeId == 0)
+        {
+            return props;
+        }
+
+        void* objPtr = ptr;
+        if ((typeId & asTYPEID_MASK_OBJECT) != 0 && (typeId & asTYPEID_OBJHANDLE) != 0)
+        {
+            objPtr = *reinterpret_cast<void**>(ptr);
+            if (!objPtr)
+            {
+                return props;
+            }
+        }
+
+        asITypeInfo* typeInfo = engine->GetTypeInfoById(typeId);
         if (!typeInfo)
         {
             return props;
         }
 
         const asUINT propCount = typeInfo->GetPropertyCount();
+        props.reserve(propCount);
         for (asUINT p = 0; p < propCount; ++p)
         {
             const char* propName = nullptr;
@@ -343,12 +515,11 @@ class Debugger
             int offset = 0;
             typeInfo->GetProperty(p, &propName, &propTypeId, nullptr, nullptr, &offset);
 
-            void* propPtr = reinterpret_cast<uint8_t*>(thisPtr) + offset;
-
+            void* propPtr = reinterpret_cast<uint8_t*>(objPtr) + offset;
             VariableInfo info;
             info.name = propName ? propName : "";
             info.typeId = propTypeId;
-            info.typeName = engine ? FormatTypeName(engine, propTypeId) : "";
+            info.typeName = FormatTypeName(engine, propTypeId);
             info.value = FormatValue(engine, propPtr, propTypeId);
             props.push_back(std::move(info));
         }
@@ -366,6 +537,20 @@ class Debugger
      */
     virtual void OnSuspend([[maybe_unused]] asIScriptContext* ctx, [[maybe_unused]] const std::string& section,
                            [[maybe_unused]] int line, [[maybe_unused]] int col)
+    {
+    }
+
+    /**
+     * @brief Custom hook called when execution pauses on a script exception.
+     * @param[in] ctx Suspended script context.
+     * @param[in] section Current script section name.
+     * @param[in] line Current line number.
+     * @param[in] col Current column number.
+     * @param[in] exceptionDesc Human-readable description of the exception.
+     */
+    virtual void OnException([[maybe_unused]] asIScriptContext* ctx, [[maybe_unused]] const std::string& section,
+                             [[maybe_unused]] int line, [[maybe_unused]] int col,
+                             [[maybe_unused]] const std::string& exceptionDesc)
     {
     }
 

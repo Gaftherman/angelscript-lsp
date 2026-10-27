@@ -124,9 +124,25 @@ for (const entry of readdirSync(clientDir)) {
 // The same rule for strings the extension shows at runtime. VS Code keys those on the English
 // source string itself, so a translation whose key does not match the source character for
 // character silently shows English - and nothing anywhere says which of the two drifted.
+function findTsFiles(dir) {
+    const results = [];
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+            results.push(...findTsFiles(full));
+        } else if (entry.isFile() && entry.name.endsWith('.ts')) {
+            results.push(full);
+        }
+    }
+    return results;
+}
+
 const runtimeStrings = new Set();
-for (const match of extensionSource.matchAll(/l10n\.t\(\s*'((?:[^'\\]|\\.)*)'/g)) {
-    runtimeStrings.add(match[1].replace(/\\'/g, "'"));
+for (const file of findTsFiles(join(clientDir, 'src'))) {
+    const src = readFileSync(file, 'utf8');
+    for (const match of src.matchAll(/l10n\.t\(\s*'((?:[^'\\]|\\.)*)'/g)) {
+        runtimeStrings.add(match[1].replace(/\\'/g, "'"));
+    }
 }
 
 if (runtimeStrings.size > 0) {

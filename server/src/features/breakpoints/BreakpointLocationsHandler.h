@@ -27,7 +27,6 @@ struct BreakpointLocationItem
 struct BreakpointLocationsRequest
 {
     TSNode rootNode{};
-    std::string_view sourceText;
     uint32_t startLine = 0;
     uint32_t endLine = 0;
     const std::vector<angel_lsp::utils::ExcludedLineRange>* excludedRanges = nullptr;

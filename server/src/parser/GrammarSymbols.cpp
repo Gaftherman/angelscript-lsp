@@ -172,6 +172,7 @@ void PopulateTokensAndFields(const TSLanguage* lang, GrammarSymbols& gs) noexcep
     gs.fieldTemplateParams = FieldId(lang, parser::fields::TemplateParams);
     gs.fieldUpdate = FieldId(lang, parser::fields::Update);
     gs.fieldInit = FieldId(lang, parser::fields::Init);
+    gs.fieldConsequence = FieldId(lang, parser::fields::Consequence);
 }
 
 } // namespace

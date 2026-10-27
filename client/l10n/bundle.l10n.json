@@ -91,5 +91,6 @@
   "Opens the currently active *.angelscript.rules.json file.": "Opens the currently active *.angelscript.rules.json file.",
   "Added \"{0}\" to predefined files.": "Added \"{0}\" to predefined files.",
   "Created starter \"{0}\".": "Created starter \"{0}\".",
-  "No engine rules file found in workspace.": "No engine rules file found in workspace."
-}
+  "No engine rules file found in workspace.": "No engine rules file found in workspace.",
+  "AngelScript Debugger connection error: {0}": "AngelScript Debugger connection error: {0}"
+}

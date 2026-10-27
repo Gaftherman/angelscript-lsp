@@ -64,7 +64,9 @@ class AngelScriptDebugAdapterSession implements vscode.DebugAdapter {
     readonly onDidSendMessage: vscode.Event<vscode.DebugProtocolMessage> = this._sendMessage.event;
 
     private socket?: net.Socket;
-    private rawBuffer = '';
+    private rawBuffer: Buffer = Buffer.alloc(0);
+    private outboundQueue: Buffer[] = [];
+    private isConnected = false;
 
     constructor(
         private readonly host: string,
@@ -76,11 +78,17 @@ class AngelScriptDebugAdapterSession implements vscode.DebugAdapter {
 
     private connect(): void {
         this.socket = net.createConnection({ host: this.host, port: this.port }, () => {
-            // Connected successfully to AngelScript debug host
+            this.isConnected = true;
+            if (this.socket && !this.socket.destroyed) {
+                for (const packet of this.outboundQueue) {
+                    this.socket.write(packet);
+                }
+            }
+            this.outboundQueue = [];
         });
 
         this.socket.on('data', (chunk: Buffer) => {
-            this.handleIncomingData(chunk.toString('utf8'));
+            this.handleIncomingData(chunk);
         });
 
         this.socket.on('error', (err: Error) => {
@@ -90,12 +98,13 @@ class AngelScriptDebugAdapterSession implements vscode.DebugAdapter {
                 event: 'output',
                 body: {
                     category: 'stderr',
-                    output: `AngelScript Debugger connection error: ${err.message}\n`
+                    output: `${vscode.l10n.t('AngelScript Debugger connection error: {0}', err.message)}\n`
                 }
             } as vscode.DebugProtocolMessage);
         });
 
         this.socket.on('close', () => {
+            this.isConnected = false;
             this._sendMessage.fire({
                 seq: 0,
                 type: 'event',
@@ -109,7 +118,7 @@ class AngelScriptDebugAdapterSession implements vscode.DebugAdapter {
 
         // Verify breakpoint locations with LSP server when configured
         if (msg.type === 'request' && msg.command === 'setBreakpoints') {
-            this.verifyBreakpointsAndForward(message);
+            void this.verifyBreakpointsAndForward(message);
             return;
         }
 
@@ -121,18 +130,36 @@ class AngelScriptDebugAdapterSession implements vscode.DebugAdapter {
         const enableVerification = workspaceConfig.get<boolean>('debug.enableBreakpointLocations', true);
         const client = this.getClient();
 
-        if (enableVerification && client) {
-            const req = message as { arguments?: { source?: { path?: string }; lines?: number[] } };
-            const filePath = req.arguments?.source?.path;
-            if (filePath) {
-                try {
-                    const uri = vscode.Uri.file(filePath).toString();
-                    await client.sendRequest('textDocument/breakpointLocations', {
-                        textDocument: { uri }
-                    });
-                } catch {
-                    // Fall back to direct transmission if LSP request fails
+        const req = message as { arguments?: { source?: { path?: string }; lines?: number[] } };
+        const filePath = req.arguments?.source?.path;
+        const requestedLines = req.arguments?.lines;
+
+        if (enableVerification && client && filePath && requestedLines && requestedLines.length > 0) {
+            try {
+                const uri = vscode.Uri.file(filePath).toString();
+                const minLine = Math.max(0, Math.min(...requestedLines) - 1);
+                const maxLine = Math.max(0, Math.max(...requestedLines) - 1);
+
+                const locations = await client.sendRequest<{ range: vscode.Range }[]>(
+                    'textDocument/breakpointLocations',
+                    {
+                        textDocument: { uri },
+                        range: {
+                            start: { line: minLine, character: 0 },
+                            end: { line: maxLine, character: 0 }
+                        }
+                    }
+                );
+
+                if (Array.isArray(locations) && locations.length > 0) {
+                    const validLines = new Set<number>(locations.map(loc => loc.range.start.line + 1));
+                    const verifiedLines = requestedLines.filter(line => validLines.has(line));
+                    if (verifiedLines.length > 0 && req.arguments) {
+                        req.arguments.lines = verifiedLines;
+                    }
                 }
+            } catch {
+                // Fall back to direct transmission if LSP request fails
             }
         }
 
@@ -140,26 +167,32 @@ class AngelScriptDebugAdapterSession implements vscode.DebugAdapter {
     }
 
     private sendToSocket(message: vscode.DebugProtocolMessage): void {
-        if (!this.socket || this.socket.destroyed) {
-            return;
-        }
         const json = JSON.stringify(message);
-        const payload = `Content-Length: ${Buffer.byteLength(json, 'utf8')}\r\n\r\n${json}`;
-        this.socket.write(payload, 'utf8');
+        const bodyBuffer = Buffer.from(json, 'utf8');
+        const header = `Content-Length: ${bodyBuffer.length}\r\n\r\n`;
+        const payload = Buffer.concat([Buffer.from(header, 'utf8'), bodyBuffer]);
+
+        if (this.isConnected && this.socket && !this.socket.destroyed) {
+            this.socket.write(payload);
+        } else {
+            this.outboundQueue.push(payload);
+        }
     }
 
-    private handleIncomingData(data: string): void {
-        this.rawBuffer += data;
+    private handleIncomingData(chunk: Buffer): void {
+        this.rawBuffer = Buffer.concat([this.rawBuffer, chunk]);
+        const delimiter = Buffer.from('\r\n\r\n', 'utf8');
+
         while (true) {
-            const headerEnd = this.rawBuffer.indexOf('\r\n\r\n');
+            const headerEnd = this.rawBuffer.indexOf(delimiter);
             if (headerEnd === -1) {
                 break;
             }
 
-            const header = this.rawBuffer.substring(0, headerEnd);
+            const header = this.rawBuffer.subarray(0, headerEnd).toString('utf8');
             const match = /Content-Length:\s*(\d+)/i.exec(header);
             if (!match) {
-                this.rawBuffer = this.rawBuffer.substring(headerEnd + 4);
+                this.rawBuffer = this.rawBuffer.subarray(headerEnd + 4);
                 continue;
             }
 
@@ -169,11 +202,11 @@ class AngelScriptDebugAdapterSession implements vscode.DebugAdapter {
                 break;
             }
 
-            const bodyStr = this.rawBuffer.substr(bodyStart, contentLength);
-            this.rawBuffer = this.rawBuffer.substring(bodyStart + contentLength);
+            const bodyBuf = this.rawBuffer.subarray(bodyStart, bodyStart + contentLength);
+            this.rawBuffer = this.rawBuffer.subarray(bodyStart + contentLength);
 
             try {
-                const parsed = JSON.parse(bodyStr) as vscode.DebugProtocolMessage;
+                const parsed = JSON.parse(bodyBuf.toString('utf8')) as vscode.DebugProtocolMessage;
                 this._sendMessage.fire(parsed);
             } catch {
                 // Ignore malformed protocol packets
@@ -182,6 +215,8 @@ class AngelScriptDebugAdapterSession implements vscode.DebugAdapter {
     }
 
     dispose(): void {
+        this.isConnected = false;
+        this.outboundQueue = [];
         if (this.socket && !this.socket.destroyed) {
             this.socket.destroy();
         }

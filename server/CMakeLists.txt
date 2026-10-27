@@ -270,6 +270,9 @@ file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS "tests/*.cpp")
 if(TEST_SOURCES)
     add_executable(angel_lsp_tests ${TEST_SOURCES})
     target_include_directories(angel_lsp_tests PRIVATE tests src)
+    if(DEFINED ANGELSCRIPT_SDK_DIR AND EXISTS ${ANGELSCRIPT_SDK_DIR}/angelscript/include)
+        target_include_directories(angel_lsp_tests PRIVATE ${ANGELSCRIPT_SDK_DIR}/angelscript/include)
+    endif()
     target_link_libraries(angel_lsp_tests PRIVATE angel_lsp_core doctest::doctest)
     target_compile_definitions(angel_lsp_tests PRIVATE
         ANGELSCRIPT_CORPUS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../angelscript"
