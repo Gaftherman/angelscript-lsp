@@ -207,6 +207,11 @@ class SymbolCollector
     /** @brief Bundles mutable collectors and immutable request state during AST walks. */
     struct SymbolCollectContext
     {
+        SymbolCollectContext(const SymbolCollectRequest& req, SymbolTable& table, std::vector<Diagnostic>& diags)
+            : request(req), symbolTable(table), diagnostics(diags)
+        {
+        }
+
         const SymbolCollectRequest& request;
         SymbolTable& symbolTable;
         std::vector<Diagnostic>& diagnostics;

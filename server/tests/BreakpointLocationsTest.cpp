@@ -5,9 +5,6 @@
 #include "parser/AngelScriptParser.h"
 #include "utils/PreprocessorRegions.h"
 
-#include <angel_lsp/angel_lsp_debugger.h>
-#include <angelscript.h>
-
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -603,18 +600,4 @@ TEST_CASE("Breakpoint Locations - Object Arrays vs Pure Constants vs Runtime Ini
 
     // Line 5: const int seed = GetSeed(); (Initialized via function call -> executable!)
     CHECK(std::find(lines.begin(), lines.end(), 5) != lines.end());
-}
-
-TEST_CASE("Debugger Runtime - Attach, Breakpoints, and Lifecycle")
-{
-    angel_lsp::debug::Debugger debugger;
-    const std::string section = "test_script.as";
-    debugger.SetBreakpoint(section, 10);
-    debugger.SetBreakpoint(section, 20);
-
-    debugger.ClearBreakpoint(section, 10);
-    debugger.ClearAllBreakpoints();
-    debugger.Continue();
-    debugger.StepIn();
-    debugger.Detach();
 }

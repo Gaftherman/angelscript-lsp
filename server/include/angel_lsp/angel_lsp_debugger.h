@@ -17,12 +17,143 @@
 #define ANGEL_LSP_HAS_ANGELSCRIPT 1
 #else
 #define ANGEL_LSP_HAS_ANGELSCRIPT 0
-class asIScriptEngine;
-class asIScriptContext;
-class asIScriptFunction;
-class asIScriptModule;
-class asITypeInfo;
+
 using asUINT = unsigned int;
+
+constexpr int asTYPEID_VOID = 0;
+constexpr int asTYPEID_BOOL = 1;
+constexpr int asTYPEID_INT8 = 2;
+constexpr int asTYPEID_INT16 = 3;
+constexpr int asTYPEID_INT32 = 4;
+constexpr int asTYPEID_INT64 = 5;
+constexpr int asTYPEID_UINT8 = 6;
+constexpr int asTYPEID_UINT16 = 7;
+constexpr int asTYPEID_UINT32 = 8;
+constexpr int asTYPEID_UINT64 = 9;
+constexpr int asTYPEID_FLOAT = 10;
+constexpr int asTYPEID_DOUBLE = 11;
+constexpr int asTYPEID_MASK_OBJECT = 0x10000000;
+constexpr int asTYPEID_OBJHANDLE = 0x40000000;
+
+class asITypeInfo
+{
+  public:
+    virtual ~asITypeInfo() = default;
+    virtual const char* GetName() const
+    {
+        return "";
+    }
+};
+
+class asIScriptFunction
+{
+  public:
+    virtual ~asIScriptFunction() = default;
+    virtual const char* GetName() const
+    {
+        return "";
+    }
+    virtual class asIScriptModule* GetModule() const
+    {
+        return nullptr;
+    }
+    virtual asUINT GetLineEntryCount() const
+    {
+        return 0;
+    }
+    virtual int GetLineEntry([[maybe_unused]] asUINT index, [[maybe_unused]] int* line = nullptr,
+                             [[maybe_unused]] const char** section = nullptr) const
+    {
+        return 0;
+    }
+};
+
+class asIScriptModule
+{
+  public:
+    virtual ~asIScriptModule() = default;
+    virtual asUINT GetFunctionCount() const
+    {
+        return 0;
+    }
+    virtual asIScriptFunction* GetFunctionByIndex([[maybe_unused]] asUINT index) const
+    {
+        return nullptr;
+    }
+};
+
+class asIScriptEngine
+{
+  public:
+    virtual ~asIScriptEngine() = default;
+    virtual asUINT GetModuleCount() const
+    {
+        return 0;
+    }
+    virtual asIScriptModule* GetModuleByIndex([[maybe_unused]] asUINT index) const
+    {
+        return nullptr;
+    }
+    virtual asITypeInfo* GetTypeInfoById([[maybe_unused]] int typeId) const
+    {
+        return nullptr;
+    }
+};
+
+class asIScriptContext
+{
+  public:
+    virtual ~asIScriptContext() = default;
+    virtual asIScriptEngine* GetEngine() const
+    {
+        return nullptr;
+    }
+    virtual asUINT GetCallstackSize() const
+    {
+        return 0;
+    }
+    virtual asIScriptFunction* GetFunction([[maybe_unused]] asUINT stackLevel = 0) const
+    {
+        return nullptr;
+    }
+    virtual int GetLineNumber([[maybe_unused]] asUINT stackLevel = 0, [[maybe_unused]] int* col = nullptr,
+                              [[maybe_unused]] const char** section = nullptr)
+    {
+        return 0;
+    }
+    virtual int GetVarCount([[maybe_unused]] asUINT stackLevel = 0) const
+    {
+        return 0;
+    }
+    virtual const char* GetVar([[maybe_unused]] asUINT varIndex, [[maybe_unused]] asUINT stackLevel = 0,
+                               [[maybe_unused]] int* typeId = nullptr, [[maybe_unused]] int* isConst = nullptr,
+                               [[maybe_unused]] int* isReference = nullptr,
+                               [[maybe_unused]] int* onHeap = nullptr) const
+    {
+        return "";
+    }
+    virtual void* GetAddressOfVar([[maybe_unused]] asUINT varIndex, [[maybe_unused]] asUINT stackLevel = 0)
+    {
+        return nullptr;
+    }
+    virtual void* GetThisPointer([[maybe_unused]] asUINT stackLevel = 0)
+    {
+        return nullptr;
+    }
+    virtual int GetThisTypeId([[maybe_unused]] asUINT stackLevel = 0) const
+    {
+        return 0;
+    }
+    virtual int GetExceptionLineNumber([[maybe_unused]] int* col = nullptr,
+                                       [[maybe_unused]] const char** section = nullptr)
+    {
+        return 0;
+    }
+    virtual const char* GetExceptionString()
+    {
+        return "";
+    }
+};
 #endif
 
 #include <atomic>
@@ -644,11 +775,12 @@ class Debugger
 
         if (command == "initialize")
         {
-            ss << ",\"body\":{\"supportsConfigurationDoneRequest\":true,"
-               << "\"supportsEvaluateForHovers\":true,"
-               << "\"supportsExceptionInfoRequest\":true,"
-               << "\"supportsConditionalBreakpoints\":false,"
-               << "\"supportsHitConditionalBreakpoints\":false}";
+            constexpr std::string_view k_initCapabilities = ",\"body\":{\"supportsConfigurationDoneRequest\":true,"
+                                                            "\"supportsEvaluateForHovers\":true,"
+                                                            "\"supportsExceptionInfoRequest\":true,"
+                                                            "\"supportsConditionalBreakpoints\":false,"
+                                                            "\"supportsHitConditionalBreakpoints\":false}";
+            ss << k_initCapabilities;
         }
         else if (command == "attach" || command == "launch")
         {

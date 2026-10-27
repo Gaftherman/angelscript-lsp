@@ -1447,20 +1447,6 @@ void CheckMixinBody(TSNode bodyNode, std::string_view mixinSource, MixinCheckCon
                              });
 }
 
-/** @brief RAII holder for parsed mixin tree. */
-struct MixinAstScope
-{
-    const TSTree* tree = nullptr;
-    document::TreePtr allocatedTree{nullptr, &ts_tree_delete};
-    std::unique_ptr<parser::AngelScriptParser> ownedParser;
-
-    MixinAstScope() = default;
-    MixinAstScope(const MixinAstScope&) = delete;
-    MixinAstScope& operator=(const MixinAstScope&) = delete;
-    MixinAstScope(MixinAstScope&&) noexcept = default;
-    MixinAstScope& operator=(MixinAstScope&&) noexcept = default;
-};
-
 /** @brief Collects direct members of a mixin symbol. */
 void CollectMixinSelfMembers(const Symbol& mixinSym, const RuleIndex& ruleIndex,
                              ankerl::unordered_dense::set<std::string>& outMembers)
@@ -1470,23 +1456,6 @@ void CollectMixinSelfMembers(const Symbol& mixinSym, const RuleIndex& ruleIndex,
     {
         CollectContainerMembers(mixinSym.name, ruleIndex, outMembers);
     }
-}
-
-/** @brief Obtains the AST tree for a mixin symbol. */
-MixinAstScope AcquireMixinTree(const Symbol& mixinSym, const std::string& mixinSource, const DiagnosticContext& ctx)
-{
-    MixinAstScope scope;
-    if (mixinSym.fileUri == ctx.request.fileUri && ctx.request.tree)
-    {
-        scope.tree = ctx.request.tree;
-    }
-    else
-    {
-        scope.ownedParser = std::make_unique<parser::AngelScriptParser>();
-        scope.allocatedTree = document::MakeTreePtr(scope.ownedParser->Parse(mixinSource));
-        scope.tree = scope.allocatedTree.get();
-    }
-    return scope;
 }
 
 struct MixinFileCacheEntry

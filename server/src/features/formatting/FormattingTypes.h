@@ -156,6 +156,15 @@ struct ClangFormatStyle
  */
 struct FormatCodeOptions
 {
+    FormatCodeOptions() = default;
+
+    FormatCodeOptions(lsp::FormattingOptions opt, BraceStyle brace, bool spacesParens, bool keepEmptyBlocks = false,
+                      PointerAlignment ptrAlign = PointerAlignment::Left)
+        : options(std::move(opt)), braceStyle(brace), spacesInsideParentheses(spacesParens),
+          keepEmptyBlocksOnSingleLine(keepEmptyBlocks), pointerAlignment(ptrAlign)
+    {
+    }
+
     lsp::FormattingOptions options;
     BraceStyle braceStyle = BraceStyle::Allman;
     bool spacesInsideParentheses = false;

@@ -1883,17 +1883,6 @@ class Server
     };
 
     /**
-     * @brief Resolves an incoming document URI to the open document behind it.
-     *
-     * Twenty-eight handlers opened with the same eight lines: canonicalise the URI, look it up
-     * in m_openDocuments, answer null when it is not there, then fetch the tree. Written once
-     * so a change to any of those four steps - a new encoding rule, a cancellation check - is
-     * one edit rather than twenty-eight.
-     *
-     * @return The document, or nullopt when nothing by that URI is open. A request naming a
-     *         document nobody opened is answered with null rather than an error: the client is
-     *         allowed to race a close against a request it already sent.
-    /**
      * @brief Synthesizes and opens a virtual mixin document.
      * @param[in] key Canonical document key.
      * @param[in] uriStr Original request URI.
@@ -1908,6 +1897,19 @@ class Server
      */
     std::optional<OpenDocument> LookupPreindexedFallback(const std::string& key);
 
+    /**
+     * @brief Resolves an incoming document URI to the open document behind it.
+     *
+     * Twenty-eight handlers opened with the same eight lines: canonicalise the URI, look it up
+     * in m_openDocuments, answer null when it is not there, then fetch the tree. Written once
+     * so a change to any of those four steps - a new encoding rule, a cancellation check - is
+     * one edit rather than twenty-eight.
+     *
+     * @param[in] uriStr Document URI string to resolve.
+     * @return The document, or nullopt when nothing by that URI is open. A request naming a
+     *         document nobody opened is answered with null rather than an error: the client is
+     *         allowed to race a close against a request it already sent.
+     */
     std::optional<OpenDocument> LookupOpenDocument(const std::string& uriStr);
 
     /**

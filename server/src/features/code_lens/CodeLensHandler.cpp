@@ -169,7 +169,7 @@ bool IsInsideNamespace(const std::string& fileUri, uint32_t line, const std::str
             }
         }
     }
-    const std::string_view encClass = GetEnclosingClassName(symbolTable, fileUri, line, classCache);
+    const std::string encClass = GetEnclosingClassName(symbolTable, fileUri, line, classCache);
     if (!encClass.empty())
     {
         if (analysis::IsSameOrNestedNamespace(encClass, nsName))
@@ -840,6 +840,11 @@ using TargetIndexMap =
  */
 struct BatchReferenceContext
 {
+    BatchReferenceContext(std::span<SymbolLensTarget> t, const TargetIndexMap& map, const CodeLensRequest& req)
+        : targets(t), targetsByName(map), request(req)
+    {
+    }
+
     std::span<SymbolLensTarget> targets;
     const TargetIndexMap& targetsByName;
     const CodeLensRequest& request;

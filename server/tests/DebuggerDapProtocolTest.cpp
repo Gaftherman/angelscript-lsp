@@ -226,9 +226,14 @@ TEST_CASE("Breakpoint Locations - AngelScript Oracle Bytecode Parity Execution")
         out << script;
     }
 
-    // Execute oracle with --dump-lines --json (with outer quotes for Windows cmd.exe /c)
+    // Execute oracle with --dump-lines --json
+#if defined(_WIN32)
     const std::string cmd = "\"\"" + oracleExe + "\" \"" + tempScript.string() + "\" --dump-lines --json\"";
     FILE* pipe = _popen(cmd.c_str(), "r");
+#else
+    const std::string cmd = "\"" + oracleExe + "\" \"" + tempScript.string() + "\" --dump-lines --json";
+    FILE* pipe = popen(cmd.c_str(), "r");
+#endif
     REQUIRE(pipe != nullptr);
 
     std::string oracleOutput;
@@ -237,7 +242,11 @@ TEST_CASE("Breakpoint Locations - AngelScript Oracle Bytecode Parity Execution")
     {
         oracleOutput += chunk;
     }
+#if defined(_WIN32)
     _pclose(pipe);
+#else
+    pclose(pipe);
+#endif
     fs::remove(tempScript);
 
     // Collect AST breakpoints from our analyzer
@@ -283,4 +292,18 @@ TEST_CASE("Breakpoint Locations - AngelScript Oracle Bytecode Parity Execution")
         INFO("AngelScript oracle emitted bytecode on line: ", line);
         CHECK(std::find(collectedLines.begin(), collectedLines.end(), line) != collectedLines.end());
     }
+}
+
+TEST_CASE("Debugger Runtime - Attach, Breakpoints, and Lifecycle")
+{
+    angel_lsp::debug::Debugger debugger;
+    const std::string section = "test_script.as";
+    debugger.SetBreakpoint(section, 10);
+    debugger.SetBreakpoint(section, 20);
+
+    debugger.ClearBreakpoint(section, 10);
+    debugger.ClearAllBreakpoints();
+    debugger.Continue();
+    debugger.StepIn();
+    debugger.Detach();
 }

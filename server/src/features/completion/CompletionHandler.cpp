@@ -463,26 +463,6 @@ static std::vector<std::string> GetPrimitiveTypeNames()
 }
 
 /**
- * @brief Checks if a symbol represents a user-defined or typedef type.
- * @param[in] sym Target symbol.
- * @return True if Class, Interface, Enum, Typedef, or Funcdef.
- */
-bool IsTypeSymbol(const analysis::Symbol& sym)
-{
-    switch (sym.type)
-    {
-    case analysis::SymbolType::Class:
-    case analysis::SymbolType::Interface:
-    case analysis::SymbolType::Enum:
-    case analysis::SymbolType::Typedef:
-    case analysis::SymbolType::Funcdef:
-        return true;
-    default:
-        return false;
-    }
-}
-
-/**
  * @brief Constructs template insert snippet for a class symbol.
  * @param[in] sym Candidate class symbol.
  * @return Formatted snippet with placeholders, or empty string.
@@ -1093,39 +1073,6 @@ void ResolveContainerMemberItemDetails(const analysis::Symbol& sym, lsp::Complet
     default:
         break;
     }
-}
-
-/**
- * @brief Checks if a qualifier corresponds to an enum type.
- * @param[in] qualifier Scope qualifier text.
- * @param[in] symbolTable Symbol table to query.
- * @return True if qualifier matches an enum symbol.
- */
-bool IsEnumQualifier(const std::string& qualifier, const analysis::SymbolTable& symbolTable)
-{
-    const auto symList = symbolTable.FindSymbolsPtr(qualifier);
-    if (symList)
-    {
-        for (const auto& sym : *symList)
-        {
-            if (sym.type == analysis::SymbolType::Enum)
-            {
-                return true;
-            }
-        }
-    }
-    if (qualifier.find("::") == std::string::npos)
-    {
-        const auto shortMatches = symbolTable.FindTypeSymbolsByShortName(qualifier);
-        for (const auto& sym : shortMatches)
-        {
-            if (sym.type == analysis::SymbolType::Enum)
-            {
-                return true;
-            }
-        }
-    }
-    return false;
 }
 
 /**

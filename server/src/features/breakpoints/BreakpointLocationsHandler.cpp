@@ -101,13 +101,9 @@ std::vector<BreakpointLocationItem> BreakpointLocationsHandler::Collect(const Br
                   return a.endColumn < b.endColumn;
               });
 
-    results.erase(std::unique(results.begin(), results.end(),
-                              [](const BreakpointLocationItem& a, const BreakpointLocationItem& b) noexcept
-                              {
-                                  return a.line == b.line && a.column == b.column && a.endLine == b.endLine &&
-                                         a.endColumn == b.endColumn;
-                              }),
-                  results.end());
+    auto isDuplicate = [](const BreakpointLocationItem& a, const BreakpointLocationItem& b) noexcept
+    { return a.line == b.line && a.column == b.column && a.endLine == b.endLine && a.endColumn == b.endColumn; };
+    results.erase(std::unique(results.begin(), results.end(), isDuplicate), results.end());
 
     return results;
 }

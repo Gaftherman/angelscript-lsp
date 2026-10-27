@@ -590,7 +590,12 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
     TSPoint startPt = ts_node_start_point(capture.node);
     TSPoint endPt = ts_node_end_point(capture.node);
 
-    LocalReference ref{GetNodeText(capture.node, sourceCode), startPt.row, startPt.column, endPt.row, endPt.column};
+    LocalReference ref;
+    ref.name = GetNodeText(capture.node, sourceCode);
+    ref.startLine = startPt.row;
+    ref.startCharacter = startPt.column;
+    ref.endLine = endPt.row;
+    ref.endCharacter = endPt.column;
     ref.startByte = capture.startByte;
     ref.endByte = capture.endByte;
 

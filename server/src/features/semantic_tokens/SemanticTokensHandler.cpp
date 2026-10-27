@@ -864,6 +864,15 @@ PrecalculateScopedEnumUpgrades(const analysis::NodeIndex* nodeIndex, std::string
  */
 struct TokenRefinementContext
 {
+    TokenRefinementContext(const SemanticTokensRequest& req,
+                           const ankerl::unordered_dense::map<uint64_t, analysis::LocalDefinitionKind>& refKinds,
+                           const ankerl::unordered_dense::map<uint32_t, uint32_t>& enumUpgrades,
+                           const ClassSpanIndex& spans, std::shared_ptr<const analysis::rules::RuleIndex> rules)
+        : request(req), referenceKinds(refKinds), scopedEnumUpgrades(enumUpgrades), classSpans(spans),
+          ruleIndex(std::move(rules))
+    {
+    }
+
     const SemanticTokensRequest& request;
     const ankerl::unordered_dense::map<uint64_t, analysis::LocalDefinitionKind>& referenceKinds;
     const ankerl::unordered_dense::map<uint32_t, uint32_t>& scopedEnumUpgrades;
