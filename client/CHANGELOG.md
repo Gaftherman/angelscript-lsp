@@ -4,6 +4,28 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.6-exp.1] - 2026-10-26
+
+### Experimental Release 1.1.6-exp.1: AngelScript Bytecode Oracle Parity, AST Breakpoint Edge Cases & Embeddable DAP Server
+
+- AngelScript 2.39.0 Bytecode Oracle Parity (`tools/oracle/main.cpp`, `DebuggerDapProtocolTest`):
+  - Extended `angelscript_oracle` with `--dump-lines` (and `--json`) to extract true line/column entries from compiled modules via `asIScriptFunction::GetLineEntry` in 0-based LSP coordinates.
+  - Added live oracle comparison tests asserting that every bytecode instruction line emitted by the real AngelScript compiler matches breakpoint locations discovered by the analyzer.
+- Breakpoint Locations Single-Line Range & AST Traversal Invariant Hardening (`BreakpointLocationsHandler`, `BreakpointStatementClassifier`):
+  - Decomposed handler into `BreakpointStatementClassifier` (295 NLOC) adhering to the 300-line anti-monolith mandate.
+  - Fixed single-line range query bug where querying individual lines in `do-while` conditions, multi-line `for` headers, or `if-else` branches returned empty results.
+  - Eliminated prohibited stack-recursive AST traversal in `IsBarePrimitiveOrHandleType`.
+  - Added `tokOpenBracket` and `tokCloseBracket` to detect uninitialized object arrays (`int[] items;`) as executable allocations invoking array constructors (`asBC_ALLOC`).
+  - Added compile-time pure constant folding detection (`const int K = 42;`) preventing spurious breakpoint locations on folded constants.
+  - Captured multiple comma-separated `for` update expressions (`++i, ++j`) while strictly respecting `#if 0` preprocessor exclusions.
+- Complete Embeddable DAP Protocol Server (`angel_lsp_debugger.h`):
+  - Implemented standard DAP JSON-RPC dispatcher `HandleDapRequest` supporting `initialize`, `attach`, `launch`, `setBreakpoints`, `setExceptionBreakpoints`, `configurationDone`, `threads`, `stackTrace`, `scopes`, `variables`, `evaluate`, and execution controls (`continue`, `next`, `stepIn`, `stepOut`, `pause`, `disconnect`).
+  - Implemented `EvaluateExpression` resolving local variables, `this.` properties, and global variables in suspended contexts.
+  - Added TCP framing and unframing helpers (`FrameDapMessage`, `UnframeDapMessage`, `FormatDapEvent`).
+- Client Debug Adapter & LSP Endpoint Integration (`angelscriptDebugAdapter.ts`, `ServerHarnessTest`):
+  - Supported breakpoint requests with both `breakpoints` and `lines` structures and corrected inclusive range LSP queries.
+  - Verified wire protocol compatibility for `textDocument/breakpointLocations` and `angelscript/breakpointLocations` in end-to-end tests.
+
 ## [1.1.5] - 2026-10-26
 
 ### Official 1.1.5 Release: Multi-Type opIndex Overload Resolution, Strict Class vs Namespace Scope Isolation, Difficulty:: Completion Merge, Comment Symbol Eradication, Mixin E210 Scoped Resolution & 100% i18n Hover Parity
