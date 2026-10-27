@@ -99,6 +99,8 @@ void PopulateExpressionsAndLiterals(const TSLanguage* lang, GrammarSymbols& gs) 
 
     gs.symStatementBlock = SymNamed(lang, parser::nodes::StatementBlock);
     gs.symReturnStatement = SymNamed(lang, parser::nodes::ReturnStatement);
+    gs.symBreakStatement = SymNamed(lang, parser::nodes::BreakStatement);
+    gs.symContinueStatement = SymNamed(lang, parser::nodes::ContinueStatement);
     gs.symIfStatement = SymNamed(lang, parser::nodes::IfStatement);
     gs.symForStatement = SymNamed(lang, parser::nodes::ForStatement);
     gs.symForeachStatement = SymNamed(lang, parser::nodes::ForeachStatement);
@@ -168,6 +170,8 @@ void PopulateTokensAndFields(const TSLanguage* lang, GrammarSymbols& gs) noexcep
     gs.fieldDefaultValue = FieldId(lang, parser::fields::DefaultValue);
     gs.fieldBaseType = FieldId(lang, parser::fields::BaseType);
     gs.fieldTemplateParams = FieldId(lang, parser::fields::TemplateParams);
+    gs.fieldUpdate = FieldId(lang, parser::fields::Update);
+    gs.fieldInit = FieldId(lang, parser::fields::Init);
 }
 
 } // namespace

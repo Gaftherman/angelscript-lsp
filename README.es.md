@@ -31,6 +31,7 @@ A diferencia de los enfoques basados en ejecutar scripts dentro de un entorno ho
 - **Motor nativo Clang-Format**: Soporte completo para [Clang-Format Style Options](https://clang.llvm.org/docs/ClangFormatStyleOptions.html) mediante archivos `.clang-format`, `_clang-format` o `.as-clang-format` (incluyendo presets `BasedOnStyle` como `LLVM`, `Google`, `Chromium`, `Mozilla`, `WebKit`, `Microsoft`, `GNU`, `Allman`, secciones multilenguaje `Language: AngelScript` / `Cpp`, `BraceWrapping`, `SpaceBeforeParens`, `PointerAlignment`, `ShortBlocks/Functions/If/Loops`, `ReflowComments` y `// clang-format off/on`).
 - **Alto rendimiento y bajo consumo**: C++20 nativo, registro cero en disco por defecto en compilaciones release, flujos de tokens con cero asignaciones dinámicas y seguridad de memoria para el AST.
 - **Soporte bilingüe nativo**: Localización dual integrada para diagnósticos, títulos de comandos y ajustes de configuración en inglés (`en`) y español (`es`) mediante `@vscode/l10n`.
+- **Protocolo de Adaptador de Depuración (DAP) y Puntos de Interrupción**: Depurador DAP integrado para VS Code (`type: "angelscript"`), ubicaciones semánticas de puntos de interrupción (`textDocument/breakpointLocations`), depurador de cabecera única C++ incrustable (`angel_lsp_debugger.h`) con compatibilidad dual para entornos de ejecución de AngelScript modernos (2.38+) y antiguos (2.20–2.37), inspección de pila, variables locales y puente multiprotocolo (`dap`, `asdbg`, `cdebugger`).
 
 ---
 

@@ -31,6 +31,7 @@ Unlike approaches that rely on running scripts inside an embedded host runtime o
 - **Native Clang-Format Engine**: Full LLVM [Clang-Format Style Options](https://clang.llvm.org/docs/ClangFormatStyleOptions.html) support via `.clang-format`, `_clang-format`, or `.as-clang-format` (including `BasedOnStyle` presets `LLVM`, `Google`, `Chromium`, `Mozilla`, `WebKit`, `Microsoft`, `GNU`, `Allman`, multi-language `Language: AngelScript` / `Cpp` sections, `BraceWrapping`, `SpaceBeforeParens`, `PointerAlignment`, `ShortBlocks/Functions/If/Loops`, `ReflowComments`, and `// clang-format off/on`).
 - **High Performance & Low Overhead**: Native C++20, zero disk logging by default in release builds, zero-allocation token streams, and AST memory safety.
 - **Native Bilingual Support**: Built-in dual localization for diagnostics, command titles, and configuration settings in English (`en`) and Spanish (`es`) via `@vscode/l10n`.
+- **Debug Adapter Protocol (DAP) & Breakpoints**: Integrated DAP debugger for VS Code (`type: "angelscript"`), semantic breakpoint locations (`textDocument/breakpointLocations`), embeddable single-header C++ debugger (`angel_lsp_debugger.h`) with dual support for modern (2.38+) and legacy (2.20–2.37) AngelScript runtimes, stack unwinding, local variable inspection, and multi-protocol bridge (`dap`, `asdbg`, `cdebugger`).
 
 ---
 

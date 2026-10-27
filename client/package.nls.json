@@ -175,5 +175,15 @@
   "config.codeLens.showOnClassesAndInterfaces.description": "Show reference CodeLens above class and interface declarations.",
   "config.codeLens.showOnPropertiesAndVariables.description": "Show reference CodeLens above global and member variable declarations.",
   "config.codeLens.showOnEnums.description": "Show reference CodeLens above enum declarations.",
-  "config.codeLens.showZeroReferences.description": "Show reference CodeLens even when a symbol has 0 references."
+  "config.codeLens.showZeroReferences.description": "Show reference CodeLens even when a symbol has 0 references.",
+  "config.category.debug": "AngelScript: Debugger",
+  "config.debug.enableBreakpointLocations.description": "Enable semantic breakpoint location verification via AngelLSP server before binding breakpoints.",
+  "config.debug.defaultPort.description": "Default TCP port for connecting to AngelScript runtime debug server (default: 9002).",
+  "config.debug.defaultProtocol.description": "Default protocol for AngelScript debugging ('dap' for Debug Adapter Protocol, 'asdbg' for binary socket, or 'cdebugger' for text command socket).",
+  "debugger.angelscript.name": "AngelScript Debugger",
+  "configuration.angelscript.debug.program": "Path to the main AngelScript file to launch or debug.",
+  "configuration.angelscript.debug.stopOnEntry": "Automatically pause execution immediately upon starting or attaching.",
+  "configuration.angelscript.debug.port": "TCP port of the AngelScript debug server to connect to.",
+  "configuration.angelscript.debug.host": "Host address or IP where the AngelScript debug server is listening (default: 127.0.0.1).",
+  "configuration.angelscript.debug.protocol": "Target debugger protocol ('dap', 'asdbg', or 'cdebugger')."
 }

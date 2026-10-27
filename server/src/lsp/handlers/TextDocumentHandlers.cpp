@@ -707,6 +707,12 @@ void Server::RegisterNavigationHandlers()
     m_messageHandler->add<lsp::requests::TextDocument_DocumentHighlight>(
         [this](lsp::requests::TextDocument_DocumentHighlight::Params&& req)
         { return HandleRequestsTextDocument_DocumentHighlight(std::move(req)); });
+
+    m_messageHandler->add("textDocument/breakpointLocations", [this](lsp::json::Value&& params)
+                          { return HandleRequestsTextDocument_BreakpointLocations(std::move(params)); });
+
+    m_messageHandler->add("angelscript/breakpointLocations", [this](lsp::json::Value&& params)
+                          { return HandleRequestsTextDocument_BreakpointLocations(std::move(params)); });
 }
 
 void Server::RegisterEditingHandlers()

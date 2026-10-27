@@ -175,5 +175,15 @@
   "config.codeLens.showOnClassesAndInterfaces.description": "Muestra CodeLens de referencias sobre declaraciones de clases e interfaces.",
   "config.codeLens.showOnPropertiesAndVariables.description": "Muestra CodeLens de referencias sobre declaraciones de variables globales y miembros.",
   "config.codeLens.showOnEnums.description": "Muestra CodeLens de referencias sobre declaraciones de enumeraciones.",
-  "config.codeLens.showZeroReferences.description": "Muestra CodeLens de referencias incluso cuando un símbolo tiene 0 referencias."
+  "config.codeLens.showZeroReferences.description": "Muestra CodeLens de referencias incluso cuando un símbolo tiene 0 referencias.",
+  "config.category.debug": "AngelScript: Depurador",
+  "config.debug.enableBreakpointLocations.description": "Habilitar la verificación semántica de ubicaciones de puntos de interrupción mediante el servidor AngelLSP antes de vincularlos.",
+  "config.debug.defaultPort.description": "Puerto TCP predeterminado para conectar al servidor de depuración en tiempo de ejecución de AngelScript (predeterminado: 9002).",
+  "config.debug.defaultProtocol.description": "Protocolo predeterminado para depuración de AngelScript ('dap' para Protocolo de Adaptador de Depuración, 'asdbg' para socket binario o 'cdebugger' para socket de comandos de texto).",
+  "debugger.angelscript.name": "Depurador de AngelScript",
+  "configuration.angelscript.debug.program": "Ruta al archivo principal de AngelScript a iniciar o depurar.",
+  "configuration.angelscript.debug.stopOnEntry": "Pausar automáticamente la ejecución inmediatamente al iniciar o adjuntar.",
+  "configuration.angelscript.debug.port": "Puerto TCP del servidor de depuración de AngelScript al que conectar.",
+  "configuration.angelscript.debug.host": "Dirección o IP del host donde escucha el servidor de depuración de AngelScript (predeterminado: 127.0.0.1).",
+  "configuration.angelscript.debug.protocol": "Protocolo del depurador de destino ('dap', 'asdbg' o 'cdebugger')."
 }

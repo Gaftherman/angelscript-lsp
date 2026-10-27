@@ -7,8 +7,12 @@ import {
     TextEditorDecorationType, Range, TextEditor, WorkspaceEdit, TextDocumentContentProvider,
     CancellationToken, Position, Selection, ViewColumn, TextEditorRevealType, Location,
     languages, LanguageStatusItem, LanguageStatusSeverity,
-    TabInputText, TabInputTextDiff, TabInputCustom
+    TabInputText, TabInputTextDiff, TabInputCustom, debug
 } from 'vscode';
+import {
+    AngelScriptConfigurationProvider,
+    AngelScriptDebugAdapterDescriptorFactory
+} from './debug/angelscriptDebugAdapter';
 // Types only: erased at compile time, so naming them here costs nothing at runtime.
 import type {
     LanguageClient, LanguageClientOptions, ServerOptions, ErrorHandler
@@ -1414,6 +1418,18 @@ export function buildServerArgs(): string[] {
         args.push(`--log-level=${logLevel}`);
     }
 
+    if (config.get<boolean>('debug.enableBreakpointLocations', true) === false) {
+        args.push('--disable-breakpoint-locations');
+    }
+    const defaultDebugPort = config.get<number>('debug.defaultPort', 9002);
+    if (defaultDebugPort !== 9002) {
+        args.push(`--debug-port=${defaultDebugPort}`);
+    }
+    const defaultDebugProtocol = config.get<string>('debug.defaultProtocol', 'dap').trim();
+    if (defaultDebugProtocol !== 'dap' && defaultDebugProtocol.length > 0) {
+        args.push(`--debug-protocol=${defaultDebugProtocol}`);
+    }
+
     // The server localises its diagnostics; align them with the editor's display language.
     if (env.language) {
         args.push(`--locale=${env.language}`);
@@ -1829,6 +1845,13 @@ export async function activate(context: ExtensionContext) {
                 return `// Built-in AngelScript predefined symbols: ${uri.path}\n`;
             }
         }));
+
+    context.subscriptions.push(
+        debug.registerDebugConfigurationProvider('angelscript', new AngelScriptConfigurationProvider()));
+    context.subscriptions.push(
+        debug.registerDebugAdapterDescriptorFactory(
+            'angelscript',
+            new AngelScriptDebugAdapterDescriptorFactory(() => activeClient())));
 
     // An editor can appear after the notification that described its document - a second group, or
     // a tab returned to - and there is nothing to recompute from at that point, so the last thing

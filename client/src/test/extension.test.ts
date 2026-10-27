@@ -423,6 +423,23 @@ suite('inlayHints settings in buildServerArgs', () => {
     });
 });
 
+suite('debug settings in buildServerArgs', () => {
+    test('enableBreakpointLocations == false emits --disable-breakpoint-locations flag', async () => {
+        const args = await withSetting('debug.enableBreakpointLocations', false, buildServerArgs);
+        assert.ok(args.includes('--disable-breakpoint-locations'), `expected --disable-breakpoint-locations in ${JSON.stringify(args)}`);
+    });
+
+    test('defaultPort != 9002 emits --debug-port flag', async () => {
+        const args = await withSetting('debug.defaultPort', 9005, buildServerArgs);
+        assert.ok(args.includes('--debug-port=9005'), `expected --debug-port=9005 in ${JSON.stringify(args)}`);
+    });
+
+    test('defaultProtocol == "asdbg" emits --debug-protocol=asdbg flag', async () => {
+        const args = await withSetting('debug.defaultProtocol', 'asdbg', buildServerArgs);
+        assert.ok(args.includes('--debug-protocol=asdbg'), `expected --debug-protocol=asdbg in ${JSON.stringify(args)}`);
+    });
+});
+
 suite('portableStubPath', () => {
     test('a stub inside a workspace folder is stored as ${workspaceFolder}/...', () => {
         // The picker used to write the absolute path it had in hand, which pins the setting to one

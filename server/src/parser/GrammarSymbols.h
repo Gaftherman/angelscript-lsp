@@ -89,6 +89,8 @@ struct GrammarSymbols
     // Statements
     TSSymbol symStatementBlock = 0;      ///< statement_block
     TSSymbol symReturnStatement = 0;     ///< return_statement
+    TSSymbol symBreakStatement = 0;      ///< break_statement
+    TSSymbol symContinueStatement = 0;   ///< continue_statement
     TSSymbol symIfStatement = 0;         ///< if_statement
     TSSymbol symForStatement = 0;        ///< for_statement
     TSSymbol symForeachStatement = 0;    ///< foreach_statement
@@ -163,6 +165,8 @@ struct GrammarSymbols
     TSFieldId fieldDefaultValue = 0;   ///< "default_value"
     TSFieldId fieldBaseType = 0;       ///< "base_type"
     TSFieldId fieldTemplateParams = 0; ///< "template_params"
+    TSFieldId fieldUpdate = 0;         ///< "update"
+    TSFieldId fieldInit = 0;           ///< "init"
 };
 
 /**

@@ -1547,6 +1547,13 @@ class Server
     HandleRequestsCodeLens_Resolve(lsp::requests::CodeLens_Resolve::Params&& req);
 
     /**
+     * @brief Handles textDocument/breakpointLocations and angelscript/breakpointLocations requests.
+     * @param[in] params JSON-RPC request parameters containing document URI and optional range.
+     * @return Array of breakpoint locations with start and end positions.
+     */
+    lsp::json::Value HandleRequestsTextDocument_BreakpointLocations(lsp::json::Value&& params);
+
+    /**
      * @brief Bundles parameters for processing an open predefined stub file.
      */
     struct DidOpenPredefinedRequest

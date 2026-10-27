@@ -334,6 +334,14 @@ Las configuraciones de rutas admiten expansión dinámica de variables según el
 | `angelscript.preprocessor.defineInScripts` | `false` | Active esto si el host aplicó un parche a su copia de `scriptbuilder.cpp` para que `#define WORD` en un script defina una palabra.  No está presente en el complemento de serie, donde `DefineWord` es una llamada de C++ que realiza el host y un `#define` escrito en un script es un error de sintaxis. Para declarar las palabras que el propio host define, use `#angelscript.define` o una línea `#define` en un stub predefinido, que no se ven afectados por esta configuración. |
 | `angelscript.preprocessor.pragmaMode` | `"accept"` | Qué reportar para un `#pragma`.  El complemento de serie los rechaza todos: al no haber ningún callback de pragma registrado, sustituye la respuesta del callback por un fallo, escribe `Invalid #pragma directive` y hace fallar toda la sección. Sin embargo, el valor predeterminado aquí es `accept`, porque un host que registra un callback es el caso habitual y reportar un error por defecto pondría un subrayado ondulado en un pragma que compila bien. Elija `error` para un host que realmente no haya registrado nada, o `hint` si no está seguro. |
 | `angelscript.metadata.enabled` | `false` | Habilita el soporte para bloques de metadatos de CScriptBuilder ('[...]') antes de declaraciones de script (clases, interfaces, funciones, variables). |
+
+#### AngelScript: Depurador
+
+| Configuración | Valor por defecto | Descripción |
+| :--- | :--- | :--- |
+| `angelscript.debug.enableBreakpointLocations` | `true` | Habilitar la verificación semántica de ubicaciones de puntos de interrupción mediante el servidor AngelLSP antes de vincularlos. |
+| `angelscript.debug.defaultPort` | `9002` | Puerto TCP predeterminado para conectar al servidor de depuración en tiempo de ejecución de AngelScript (predeterminado: 9002). |
+| `angelscript.debug.defaultProtocol` | `"dap"` | Protocolo predeterminado para depuración de AngelScript ('dap' para Protocolo de Adaptador de Depuración, 'asdbg' para socket binario o 'cdebugger' para socket de comandos de texto). |
 <!-- SETTINGS_CATALOG_END -->
 ---
 

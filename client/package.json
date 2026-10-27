@@ -12,7 +12,8 @@
   "categories": [
     "Programming Languages",
     "Linters",
-    "Formatters"
+    "Formatters",
+    "Debuggers"
   ],
   "keywords": [
     "angelscript",
@@ -77,6 +78,90 @@
           "dark": "./assets/as-predefined-icon.svg"
         },
         "configuration": "./language-configuration.json"
+      }
+    ],
+    "breakpoints": [
+      {
+        "language": "angelscript"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "angelscript",
+        "label": "%debugger.angelscript.name%",
+        "languages": [
+          "angelscript"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "%configuration.angelscript.debug.program%",
+                "default": "${workspaceFolder}/main.as"
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "description": "%configuration.angelscript.debug.stopOnEntry%",
+                "default": false
+              },
+              "port": {
+                "type": "number",
+                "description": "%configuration.angelscript.debug.port%",
+                "default": 9002
+              },
+              "host": {
+                "type": "string",
+                "description": "%configuration.angelscript.debug.host%",
+                "default": "127.0.0.1"
+              },
+              "protocol": {
+                "type": "string",
+                "enum": [
+                  "dap",
+                  "asdbg",
+                  "cdebugger"
+                ],
+                "description": "%configuration.angelscript.debug.protocol%",
+                "default": "dap"
+              }
+            }
+          },
+          "attach": {
+            "properties": {
+              "port": {
+                "type": "number",
+                "description": "%configuration.angelscript.debug.port%",
+                "default": 9002
+              },
+              "host": {
+                "type": "string",
+                "description": "%configuration.angelscript.debug.host%",
+                "default": "127.0.0.1"
+              },
+              "protocol": {
+                "type": "string",
+                "enum": [
+                  "dap",
+                  "asdbg",
+                  "cdebugger"
+                ],
+                "description": "%configuration.angelscript.debug.protocol%",
+                "default": "dap"
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "angelscript",
+            "name": "AngelScript: Attach to Engine",
+            "request": "attach",
+            "host": "127.0.0.1",
+            "port": 9002,
+            "protocol": "dap"
+          }
+        ]
       }
     ],
     "commands": [
@@ -1185,6 +1270,32 @@
             "type": "boolean",
             "default": false,
             "markdownDescription": "%config.metadata.enabled.description%"
+          }
+        }
+      },
+      {
+        "order": 9,
+        "title": "%config.category.debug%",
+        "properties": {
+          "angelscript.debug.enableBreakpointLocations": {
+            "type": "boolean",
+            "default": true,
+            "markdownDescription": "%config.debug.enableBreakpointLocations.description%"
+          },
+          "angelscript.debug.defaultPort": {
+            "type": "number",
+            "default": 9002,
+            "markdownDescription": "%config.debug.defaultPort.description%"
+          },
+          "angelscript.debug.defaultProtocol": {
+            "type": "string",
+            "enum": [
+              "dap",
+              "asdbg",
+              "cdebugger"
+            ],
+            "default": "dap",
+            "markdownDescription": "%config.debug.defaultProtocol.description%"
           }
         }
       }
