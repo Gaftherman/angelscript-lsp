@@ -185,5 +185,8 @@
   "configuration.angelscript.debug.stopOnEntry": "Pausar automáticamente la ejecución inmediatamente al iniciar o adjuntar.",
   "configuration.angelscript.debug.port": "Puerto TCP del servidor de depuración de AngelScript al que conectar.",
   "configuration.angelscript.debug.host": "Dirección o IP del host donde escucha el servidor de depuración de AngelScript (predeterminado: 127.0.0.1).",
-  "configuration.angelscript.debug.protocol": "Protocolo del depurador de destino ('dap', 'asdbg' o 'cdebugger')."
+  "configuration.angelscript.debug.protocol": "Protocolo del depurador de destino ('dap', 'asdbg' o 'cdebugger').",
+  "configuration.angelscript.debug.executable": "Ruta al ejecutable del juego o host para iniciar automáticamente antes de depurar.",
+  "configuration.angelscript.debug.args": "Argumentos de línea de comandos pasados al ejecutable iniciado.",
+  "configuration.angelscript.debug.cwd": "Directorio de trabajo para el ejecutable iniciado."
 }

@@ -1,5 +1,7 @@
 #include <doctest/doctest.h>
 
+#if __has_include(<angelscript.h>)
+
 #include "features/breakpoints/BreakpointLocationsHandler.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
@@ -307,3 +309,13 @@ TEST_CASE("Debugger Runtime - Attach, Breakpoints, and Lifecycle")
     debugger.StepIn();
     debugger.Detach();
 }
+
+#else
+
+TEST_CASE("Debugger DAP Protocol - Parity Oracle Test Suite Notice")
+{
+    MESSAGE("AngelScript SDK header <angelscript.h> not present in this target (non-oracle build). DAP runtime "
+            "integration tests run during oracle parity CI.");
+}
+
+#endif

@@ -1,5 +1,6 @@
-import * as vscode from 'vscode';
+import * as cp from 'child_process';
 import * as net from 'net';
+import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 
 /**
@@ -44,14 +45,8 @@ export class AngelScriptDebugAdapterDescriptorFactory implements vscode.DebugAda
         session: vscode.DebugSession,
         _executable: vscode.DebugAdapterExecutable | undefined
     ): vscode.ProviderResult<vscode.DebugAdapterDescriptor> {
-        const config = session.configuration;
-        const workspaceConfig = vscode.workspace.getConfiguration('angelscript');
-        const port = config.port ?? workspaceConfig.get<number>('debug.defaultPort', 9002);
-        const host = config.host ?? '127.0.0.1';
-
-        // Connect to debug server socket through our custom adapter session
         return new vscode.DebugAdapterInlineImplementation(
-            new AngelScriptDebugAdapterSession(host, port, this.getClient)
+            new AngelScriptDebugAdapterSession(session.configuration, this.getClient)
         );
     }
 }
@@ -63,20 +58,88 @@ class AngelScriptDebugAdapterSession implements vscode.DebugAdapter {
     private readonly _sendMessage = new vscode.EventEmitter<vscode.DebugProtocolMessage>();
     readonly onDidSendMessage: vscode.Event<vscode.DebugProtocolMessage> = this._sendMessage.event;
 
+    private readonly host: string;
+    private readonly port: number;
     private socket?: net.Socket;
+    private spawnedProcess?: cp.ChildProcess;
     private rawBuffer: Buffer = Buffer.alloc(0);
     private outboundQueue: Buffer[] = [];
     private isConnected = false;
+    private retryTimeout?: NodeJS.Timeout;
 
     constructor(
-        private readonly host: string,
-        private readonly port: number,
+        private readonly config: vscode.DebugConfiguration,
         private readonly getClient: () => LanguageClient | undefined
     ) {
-        this.connect();
+        const workspaceConfig = vscode.workspace.getConfiguration('angelscript');
+        this.host = config.host ?? '127.0.0.1';
+        this.port = config.port ?? workspaceConfig.get<number>('debug.defaultPort', 9002);
+
+        this.initSession();
     }
 
-    private connect(): void {
+    private initSession(): void {
+        if (this.config.request === 'launch' && this.config.executable) {
+            try {
+                this.spawnedProcess = cp.spawn(this.config.executable, this.config.args ?? [], {
+                    cwd: this.config.cwd,
+                    detached: false,
+                    shell: false
+                });
+
+                this.spawnedProcess.stdout?.on('data', (chunk: Buffer) => {
+                    this._sendMessage.fire({
+                        seq: 0,
+                        type: 'event',
+                        event: 'output',
+                        body: {
+                            category: 'stdout',
+                            output: chunk.toString('utf8')
+                        }
+                    } as vscode.DebugProtocolMessage);
+                });
+
+                this.spawnedProcess.stderr?.on('data', (chunk: Buffer) => {
+                    this._sendMessage.fire({
+                        seq: 0,
+                        type: 'event',
+                        event: 'output',
+                        body: {
+                            category: 'stderr',
+                            output: chunk.toString('utf8')
+                        }
+                    } as vscode.DebugProtocolMessage);
+                });
+
+                this.spawnedProcess.on('exit', (code, signal) => {
+                    this._sendMessage.fire({
+                        seq: 0,
+                        type: 'event',
+                        event: 'output',
+                        body: {
+                            category: 'console',
+                            output: `Process exited with code ${code ?? 0} (signal: ${signal ?? 'none'})\n`
+                        }
+                    } as vscode.DebugProtocolMessage);
+                });
+            } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : String(err);
+                this._sendMessage.fire({
+                    seq: 0,
+                    type: 'event',
+                    event: 'output',
+                    body: {
+                        category: 'stderr',
+                        output: `Failed to launch executable "${this.config.executable}": ${msg}\n`
+                    }
+                } as vscode.DebugProtocolMessage);
+            }
+        }
+
+        this.connectWithRetry(10, 500);
+    }
+
+    private connectWithRetry(retriesLeft: number, delayMs: number): void {
         this.socket = net.createConnection({ host: this.host, port: this.port }, () => {
             this.isConnected = true;
             if (this.socket && !this.socket.destroyed) {
@@ -92,6 +155,17 @@ class AngelScriptDebugAdapterSession implements vscode.DebugAdapter {
         });
 
         this.socket.on('error', (err: Error) => {
+            if (!this.isConnected && retriesLeft > 0) {
+                if (this.socket) {
+                    this.socket.destroy();
+                    this.socket = undefined;
+                }
+                this.retryTimeout = setTimeout(() => {
+                    this.connectWithRetry(retriesLeft - 1, delayMs);
+                }, delayMs);
+                return;
+            }
+
             this._sendMessage.fire({
                 seq: 0,
                 type: 'event',
@@ -229,8 +303,15 @@ class AngelScriptDebugAdapterSession implements vscode.DebugAdapter {
     dispose(): void {
         this.isConnected = false;
         this.outboundQueue = [];
+        if (this.retryTimeout) {
+            clearTimeout(this.retryTimeout);
+            this.retryTimeout = undefined;
+        }
         if (this.socket && !this.socket.destroyed) {
             this.socket.destroy();
+        }
+        if (this.spawnedProcess && !this.spawnedProcess.killed) {
+            this.spawnedProcess.kill();
         }
     }
 }

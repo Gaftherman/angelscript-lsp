@@ -124,6 +124,24 @@
                 ],
                 "description": "%configuration.angelscript.debug.protocol%",
                 "default": "dap"
+              },
+              "executable": {
+                "type": "string",
+                "description": "%configuration.angelscript.debug.executable%",
+                "default": ""
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "%configuration.angelscript.debug.args%",
+                "default": []
+              },
+              "cwd": {
+                "type": "string",
+                "description": "%configuration.angelscript.debug.cwd%",
+                "default": "${workspaceFolder}"
               }
             }
           },
@@ -157,6 +175,17 @@
             "type": "angelscript",
             "name": "AngelScript: Attach to Engine",
             "request": "attach",
+            "host": "127.0.0.1",
+            "port": 9002,
+            "protocol": "dap"
+          },
+          {
+            "type": "angelscript",
+            "name": "AngelScript: Launch Game and Debug",
+            "request": "launch",
+            "executable": "${workspaceFolder}/bin/game.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
             "host": "127.0.0.1",
             "port": 9002,
             "protocol": "dap"

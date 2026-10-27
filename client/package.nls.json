@@ -185,5 +185,8 @@
   "configuration.angelscript.debug.stopOnEntry": "Automatically pause execution immediately upon starting or attaching.",
   "configuration.angelscript.debug.port": "TCP port of the AngelScript debug server to connect to.",
   "configuration.angelscript.debug.host": "Host address or IP where the AngelScript debug server is listening (default: 127.0.0.1).",
-  "configuration.angelscript.debug.protocol": "Target debugger protocol ('dap', 'asdbg', or 'cdebugger')."
+  "configuration.angelscript.debug.protocol": "Target debugger protocol ('dap', 'asdbg', or 'cdebugger').",
+  "configuration.angelscript.debug.executable": "Path to the game or host executable to automatically launch before debugging.",
+  "configuration.angelscript.debug.args": "Command line arguments passed to the launched executable.",
+  "configuration.angelscript.debug.cwd": "Working directory for the launched executable."
 }
