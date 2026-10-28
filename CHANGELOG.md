@@ -2,6 +2,29 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.6-exp.2] - 2026-10-28
+
+### Experimental Release 1.1.6-exp.2: Full DAP Negotiation, Performance Optimization, Complex Hover Expressions & Strict AngelScript Syntax Parity
+
+- Full DAP Capabilities & Wire Protocol Negotiation (`angel_lsp_debugger.h`, `angelscriptDebugAdapter.ts`, `package.json`):
+  - Enabled capabilities in DAP `initializeResponse`: `supportsConditionalBreakpoints`, `supportsHitConditionalBreakpoints`, `supportsLogPoints`, `supportsTriggerBreakpoints`, `supportsEvaluateForHovers`, `supportsExceptionInfoRequest`, `supportsReadMemoryRequest`, `supportsWriteMemoryRequest`, and `supportsDisassembleRequest`.
+  - Added exception breakpoint filters (`all`, `uncaught`) and forwarded `setExceptionBreakpoints` to active engine context.
+  - Implemented binary memory inspection (`readMemory`, `writeMemory`), assembly disassembly (`disassemble`), and exposed `"Registers"` scope alongside `"Locals"`, `"Parameters"`, and `"Globals"`.
+  - Decorated variables with `memoryReference` (hex format) allowing VS Code's native binary memory inspector.
+- Hot-Path Performance & Concurrency Optimization (`angel_lsp_debugger.h`):
+  - Implemented O(1) atomic line bitmap lookup (`std::atomic<uint64_t> m_lineBitmap[64]`) in `LineCallback`, reducing per-line execution check overhead to ~1 ns.
+  - Replaced thread sleep-polling loops with zero-cost condition variable signaling (`std::condition_variable m_cv`) for execution pause and resumption.
+  - Added bounded 16 MB DAP message envelope protection against malformed or oversized payloads.
+  - Hardened JSON escaping (`JsonEscape`) for Windows backslash paths, double quotes, tabs, and newlines in DAP frames and payloads.
+- Complex Evaluatable Expression Provider (`angelscriptEvaluatableExpression.ts`, `extension.test.ts`):
+  - Registered `vscode.languages.registerEvaluatableExpressionProvider` capturing complete chained member accesses (`data.m_Classname`, `player.pev.health`) and multi-dimensional array indexers (`itemNames[ui]`, `matrix[row][col]`).
+  - Added `findEnclosingIndexAnchor` expanding enclosing brackets when the cursor is positioned within inner index expressions.
+- Strict AngelScript Syntax Parity & Arrow Operator Elimination (`angel_lsp_debugger.h`, `angelscriptEvaluatableExpression.ts`):
+  - Completely eliminated all support for the C++ arrow operator (`->`) across the client expression evaluator and the embedded C++ debugger (`EvaluateMemberChain`).
+  - Enforced exclusive member access via the dot operator (`.`) for both direct object values and object handles (`@`), matching native AngelScript compiler grammar.
+  - Removed ad-hoc `>` comparison operator workarounds in `EvaluateComparison`.
+  - Resolved MSVC `/WX` conversion warnings via `static_cast<uintptr_t>` on `std::strtoull` calls.
+
 ## [1.1.6-exp.1] - 2026-10-26
 
 ### Experimental Release 1.1.6-exp.1: AngelScript Bytecode Oracle Parity, AST Breakpoint Edge Cases & Embeddable DAP Server
