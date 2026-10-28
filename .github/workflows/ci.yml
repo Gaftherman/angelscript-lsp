@@ -8,10 +8,18 @@ on:
     branches: [ main, develop ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  actions: write
+
 jobs:
   build-and-test:
     name: ${{ matrix.os }} (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
+
+    env:
+      SCCACHE_DIR: ${{ github.workspace }}/.sccache
+      SCCACHE_CACHE_SIZE: "2G"
 
     strategy:
       fail-fast: false
@@ -61,9 +69,15 @@ jobs:
           submodules: recursive
 
       - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Restore sccache Cache
+        uses: actions/cache@v4
         with:
-          version: "v0.8.2"
+          path: .sccache
+          key: sccache-${{ matrix.os }}-${{ matrix.arch }}-${{ github.sha }}
+          restore-keys: |
+            sccache-${{ matrix.os }}-${{ matrix.arch }}-
 
       - name: Set up MSVC Developer Prompt (Windows)
         if: matrix.os == 'windows'
@@ -88,12 +102,10 @@ jobs:
         run: |
           Set-MpPreference -DisableRealtimeMonitoring $true
           Add-MpPreference -ExclusionPath "${{ github.workspace }}"
-          Add-MpPreference -ExclusionProcess "cl.exe", "link.exe", "cmake.exe", "ninja.exe"
+          Add-MpPreference -ExclusionProcess "cl.exe", "link.exe", "cmake.exe", "ninja.exe", "sccache.exe"
 
       - name: Configure CMake
         shell: bash
-        env:
-          SCCACHE_GHA_ENABLED: "true"
         run: |
           cmake -B server/build -S server \
             -G Ninja \
@@ -104,8 +116,6 @@ jobs:
 
       - name: Build All Targets
         shell: bash
-        env:
-          SCCACHE_GHA_ENABLED: "true"
         run: cmake --build server/build --config Release
 
       - name: Run CTest Suite
@@ -113,9 +123,12 @@ jobs:
         shell: bash
         run: ctest -C Release --output-on-failure --extra-verbose
 
-      - name: Show sccache stats
+      - name: Show sccache stats and stop server
+        if: always()
         shell: bash
-        run: sccache --show-stats
+        run: |
+          sccache --show-stats || true
+          sccache --stop-server || true
 
       - name: Upload Server Binary
         uses: actions/upload-artifact@v4
@@ -133,6 +146,10 @@ jobs:
     name: Parity against a real AngelScript compiler
     runs-on: ubuntu-latest
 
+    env:
+      SCCACHE_DIR: ${{ github.workspace }}/.sccache
+      SCCACHE_CACHE_SIZE: "2G"
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -140,9 +157,15 @@ jobs:
           submodules: recursive
 
       - name: Set up sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Restore sccache Cache
+        uses: actions/cache@v4
         with:
-          version: "v0.8.2"
+          path: .sccache
+          key: sccache-parity-audit-${{ github.sha }}
+          restore-keys: |
+            sccache-parity-audit-
 
       - name: Install Ninja
         run: sudo apt-get update && sudo apt-get install -y ninja-build
@@ -167,8 +190,6 @@ jobs:
         run: python scripts/format-code.py --check
 
       - name: Configure CMake with the oracle
-        env:
-          SCCACHE_GHA_ENABLED: "true"
         run: |
           cmake -B server/build -S server \
             -G Ninja \
@@ -190,8 +211,6 @@ jobs:
         run: python scripts/check-client-l10n.py
 
       - name: Build the oracle and the test suite
-        env:
-          SCCACHE_GHA_ENABLED: "true"
         run: cmake --build server/build --config Release --target angelscript_oracle angel_lsp_tests
 
       - name: Run the parity audit
@@ -221,6 +240,12 @@ jobs:
             echo "::error::The typing scenarios did not both run and pass."
             exit 1
           fi
+
+      - name: Show sccache stats and stop server
+        if: always()
+        run: |
+          sccache --show-stats || true
+          sccache --stop-server || true
 
   package-extension:
     name: Package VS Code extension
