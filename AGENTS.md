@@ -143,3 +143,22 @@ All contributions must strictly adhere to:
    - Never write `if (locale == "es")` or ternary strings `locale == "es" ? "..." : "..."` in feature handlers.
    - All locale resolution is performed centrally by `angel_lsp::i18n::I18n`.
 
+---
+
+## 11. Mandatory Release, Changelog & Repository Hygiene Standard
+
+Every contribution, version release, and documentation artifact must strictly adhere to:
+1. **Zero Undocumented Releases:**
+   - Every released tag (e.g. `v1.1.6-exp.2`) must have an exact corresponding version section in `CHANGELOG.md` (and mirrored in `client/CHANGELOG.md` via `server/scripts/sync-changelogs.py`).
+2. **Dynamic GitHub Release Body Formatting:**
+   - GitHub Releases must never use blank descriptions or purely generic commit summaries (`--generate-notes` fallback only).
+   - Every GitHub Release body must contain the exact, detailed, markdown changelog extracted from `CHANGELOG.md` for that release version via `server/scripts/extract-release-notes.py`, preserving the git comparison link.
+   - Historical releases on GitHub are synchronized using `server/scripts/sync-github-releases.py`.
+3. **Zero Sensitive Data or Hardcoded Local Paths:**
+   - Never commit or publish personal email addresses, local developer usernames, or machine-specific drive paths (`C:\Users\...`, `E:\Github\...`) in changelogs, test fixtures, or code.
+   - Always use generic paths or dynamic randomized fixtures (`angel_lsp::test::GenerateRandomSymbolName()`).
+4. **Canonical Repository Organization:**
+   - Project documentation resides in `docs/` (`docs/README.es.md`, `docs/rules.md`, `docs/STEPS.md`, `docs/STEPS.json`).
+   - Developer and quality verification scripts reside in `server/scripts/` (`run-harness.ps1`, `check-quality.py`, etc.).
+   - AST analysis rules and configuration reside in `server/rules/` (`server/rules/sgconfig.yml`, `server/rules/ast-grep/`).
+   - Root directory must remain clean and free of temporary logs, scratch scripts, or ad-hoc config files.

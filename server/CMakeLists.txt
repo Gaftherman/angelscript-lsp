@@ -90,6 +90,12 @@ if(MSVC)
     add_compile_options($<$<COMPILE_LANGUAGE:C,CXX>:/FS>)
 endif()
 
+# Parallel compilation for MSVC only when not using compiler wrappers (e.g. sccache/ccache)
+set(ANGELLSP_MSVC_PARALLEL "")
+if(MSVC AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
+    set(ANGELLSP_MSVC_PARALLEL "$<$<COMPILE_LANGUAGE:CXX>:/MP>")
+endif()
+
 # ------------------------------------------------------------------------------
 # Warning level for this project's own targets (never for vendored dependencies).
 # ------------------------------------------------------------------------------
@@ -184,7 +190,7 @@ target_link_libraries(angel_lsp_core PUBLIC
 if(MSVC)
     target_compile_options(angel_lsp_core PRIVATE
         $<$<COMPILE_LANGUAGE:CXX>:/utf-8>
-        $<$<COMPILE_LANGUAGE:CXX>:/MP>
+        ${ANGELLSP_MSVC_PARALLEL}
         /W4
         /WX
         /permissive-
@@ -209,7 +215,7 @@ target_link_libraries(angel_lsp PRIVATE angel_lsp_core)
 if(MSVC)
     target_compile_options(angel_lsp PRIVATE
         $<$<COMPILE_LANGUAGE:CXX>:/utf-8>
-        $<$<COMPILE_LANGUAGE:CXX>:/MP>
+        ${ANGELLSP_MSVC_PARALLEL}
         /W4
         /WX
         /permissive-
@@ -287,7 +293,7 @@ if(TEST_SOURCES)
     if(MSVC)
         target_compile_options(angel_lsp_tests PRIVATE
             $<$<COMPILE_LANGUAGE:CXX>:/utf-8>
-            $<$<COMPILE_LANGUAGE:CXX>:/MP>
+            ${ANGELLSP_MSVC_PARALLEL}
             $<$<COMPILE_LANGUAGE:CXX>:/FS>
             $<$<COMPILE_LANGUAGE:CXX>:/wd5285>
             /W4

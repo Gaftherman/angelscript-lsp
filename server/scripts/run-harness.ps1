@@ -5,7 +5,12 @@ param (
 )
 
 $ErrorActionPreference = "Stop"
-$projectRoot = "E:\Github\src\angelscript-lsp"
+$projectRoot = if ($PSScriptRoot) { (Resolve-Path "$PSScriptRoot").Path } else { (Get-Location).Path }
+if (Test-Path "$projectRoot\server") {
+    # In repo root
+} elseif (Test-Path "$projectRoot\..\..\server") {
+    $projectRoot = (Resolve-Path "$projectRoot\..\..").Path
+}
 Set-Location $projectRoot
 
 Write-Host "==========================================" -ForegroundColor Cyan

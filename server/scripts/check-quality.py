@@ -46,7 +46,10 @@ def main():
 
     # 6. Code Duplication Gate (jscpd threshold <= 3%)
     if shutil.which("npx"):
-        run_step("Code Duplication (jscpd)", "npx jscpd server/src/")
+        run_step(
+            "Code Duplication (jscpd)",
+            'npx jscpd server/src/ --threshold 3 --min-tokens 90 --format cpp --reporters console --ignore "**/build/**,**/tests/**,**/predefined/**,**/_deps/**,**/generated/**"'
+        )
     else:
         skip_step("Code Duplication (jscpd)", "npx not found in PATH")
 
@@ -55,9 +58,9 @@ def main():
 
     # 8. AST Antipattern & Memory Allocation Gate (ast-grep)
     if shutil.which("ast-grep"):
-        run_step("AST Antipattern Gate (ast-grep)", "ast-grep scan server/src/")
+        run_step("AST Antipattern Gate (ast-grep)", "ast-grep scan -c server/rules/sgconfig.yml server/src/")
     elif shutil.which("sg"):
-        run_step("AST Antipattern Gate (sg)", "sg scan server/src/")
+        run_step("AST Antipattern Gate (sg)", "sg scan -c server/rules/sgconfig.yml server/src/")
     else:
         skip_step("AST Antipattern Gate", "ast-grep/sg not found in PATH")
 

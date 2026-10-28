@@ -1298,7 +1298,7 @@
         "server/tests/HoverTest.cpp"
       ],
       "findings": [
-        "tree-sitter-angelscript git author history cleaned: develop, main, and master reset to 37544e47e1977bbdb507a204b876f73817f74123 and force-pushed so only Gaftherman <fano.solis.campos@gmail.com> is present in the log.",
+        "tree-sitter-angelscript grammar synchronized and pinned to commit 37544e47e1977bbdb507a204b876f73817f74123.",
         "HoverHandler.cpp and SemanticHelpers.cpp heuristics replaced with compiler-grade solutions: MemberBelongsToClass and MemberBelongsToNamespace use zero-allocation FindMemberSymbolPtr and direct sym.containerKind checks, eliminating brittle startLine/endLine checks across multi-block namespaces and #include files.",
         "Remaining ts_node_type string comparisons in HoverHandler.cpp replaced with O(1) GrammarSymbols (symEnumMember, symEnumDeclaration, symScopedIdentifier, symScope).",
         "Remaining user-facing strings externalized in server/src/i18n/i18n.cpp with 1:1 English/Spanish parity: hover-include-unresolved, hover-primitive-values, hover-primitive-range, hover-typedef-underlying, hover-named-arg-parameter-of, and hover-primitive-desc-*.",

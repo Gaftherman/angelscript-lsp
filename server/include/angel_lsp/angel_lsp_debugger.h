@@ -45,12 +45,96 @@
 #else
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
 
 namespace angel_lsp::debug
 {
+
+inline bool SafeProbeMemoryReadable(const void* ptr, size_t size)
+{
+    if (!ptr || size == 0)
+        return false;
+#if defined(_WIN32)
+    uintptr_t start = reinterpret_cast<uintptr_t>(ptr);
+    uintptr_t end = start + size;
+    if (end < start)
+        return false;
+
+    MEMORY_BASIC_INFORMATION mbi;
+    uintptr_t current = start;
+    while (current < end)
+    {
+        if (VirtualQuery(reinterpret_cast<const void*>(current), &mbi, sizeof(mbi)) == 0)
+            return false;
+        if (mbi.State != MEM_COMMIT)
+            return false;
+        if (mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS))
+            return false;
+        constexpr DWORD readableFlags = PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READ |
+                                        PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
+        if (!(mbi.Protect & readableFlags))
+            return false;
+        uintptr_t next = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+        if (next <= current)
+            break;
+        current = next;
+    }
+    return true;
+#else
+    uintptr_t start = reinterpret_cast<uintptr_t>(ptr);
+    uintptr_t end = start + size;
+    long pageSize = sysconf(_SC_PAGESIZE);
+    if (pageSize <= 0)
+        pageSize = 4096;
+    uintptr_t page = start & ~(pageSize - 1);
+    while (page < end)
+    {
+        unsigned char vec = 0;
+        if (mincore(reinterpret_cast<void*>(page), pageSize, &vec) != 0)
+            return false;
+        page += pageSize;
+    }
+    return true;
+#endif
+}
+
+inline bool SafeProbeMemoryWritable(void* ptr, size_t size)
+{
+    if (!ptr || size == 0)
+        return false;
+#if defined(_WIN32)
+    uintptr_t start = reinterpret_cast<uintptr_t>(ptr);
+    uintptr_t end = start + size;
+    if (end < start)
+        return false;
+
+    MEMORY_BASIC_INFORMATION mbi;
+    uintptr_t current = start;
+    while (current < end)
+    {
+        if (VirtualQuery(reinterpret_cast<const void*>(current), &mbi, sizeof(mbi)) == 0)
+            return false;
+        if (mbi.State != MEM_COMMIT)
+            return false;
+        if (mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS))
+            return false;
+        constexpr DWORD writableFlags =
+            PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
+        if (!(mbi.Protect & writableFlags))
+            return false;
+        uintptr_t next = reinterpret_cast<uintptr_t>(mbi.BaseAddress) + mbi.RegionSize;
+        if (next <= current)
+            break;
+        current = next;
+    }
+    return true;
+#else
+    return SafeProbeMemoryReadable(ptr, size);
+#endif
+}
 
 /**
  * @brief Current execution state of the debugged script context.
@@ -402,6 +486,32 @@ class Debugger
     }
 
     /**
+     * @brief Traps and reports native C++ binding errors (e.g. from Sven Co-op server.dll logger)
+     *        while the script context is actively running.
+     * @param[in] ctx Active script context.
+     * @param[in] msg Error description message.
+     */
+    void ReportNativeError(asIScriptContext* ctx, const char* msg)
+    {
+        if (!ctx)
+        {
+            return;
+        }
+
+        int col = 0;
+        const char* sec = nullptr;
+        int line = ctx->GetLineNumber(0, &col, &sec);
+        std::string section = sec ? sec : "";
+        std::string exceptionDesc = msg ? msg : "Native AngelScript binding error";
+
+        m_state.store(ExecutionState::Suspended, std::memory_order_release);
+        OnException(ctx, section, line, col, exceptionDesc);
+
+        std::unique_lock<std::mutex> lock(m_cvMutex);
+        m_cv.wait(lock, [this]() { return m_state.load(std::memory_order_acquire) != ExecutionState::Suspended; });
+    }
+
+    /**
      * @brief Validates or snaps a requested line to the nearest executable line in a section.
      * @param[in] section Name of the script section.
      * @param[in] requestedLine 1-based source line.
@@ -737,7 +847,7 @@ class Debugger
         {
             return hitCount < std::atoi(cond.data() + 1);
         }
-        return hitCount >= std::atoi(cond.data());
+        return hitCount == std::atoi(cond.data());
     }
 
     /**
@@ -1324,10 +1434,17 @@ class Debugger
                 int line = activeCtx->GetLineNumber(stackLevel, &col, &sec);
                 std::string fn = func ? func->GetName() : "<unknown>";
                 std::string mod = (func && func->GetModule()) ? func->GetModule()->GetName() : "<none>";
-                AppendVariableEntry(ss, first, "PC", fn + " @ line " + std::to_string(line), "address", 0, "");
+                void* bc = func ? func->GetByteCode() : nullptr;
+                void* thisPtr = activeCtx->GetThisPointer(stackLevel);
+
+                AppendVariableEntry(ss, first, "PC",
+                                    AddressToHex(bc) + " (" + fn + " @ line " + std::to_string(line) + ")", "void*", 0,
+                                    AddressToHex(bc));
                 AppendVariableEntry(ss, first, "State",
                                     activeCtx->GetState() == asEXECUTION_SUSPENDED ? "SUSPENDED" : "ACTIVE",
                                     "asEContextState", 0, "");
+                AppendVariableEntry(ss, first, "This Pointer", AddressToHex(thisPtr), "void*", 0,
+                                    AddressToHex(thisPtr));
                 AppendVariableEntry(ss, first, "CallstackDepth", std::to_string(activeCtx->GetCallstackSize()),
                                     "uint32", 0, "");
                 AppendVariableEntry(ss, first, "ReturnDWord", std::to_string(activeCtx->GetReturnDWord()), "uint32", 0,
@@ -1365,18 +1482,21 @@ class Debugger
         {
             std::string data = ExtractJsonString(requestJson, "\"data\"");
             std::vector<uint8_t> bytes = Base64Decode(data);
-            if (addr != 0 && !bytes.empty())
+            size_t written = 0;
+            if (addr != 0 && !bytes.empty() && SafeProbeMemoryWritable(reinterpret_cast<void*>(addr), bytes.size()))
             {
                 std::memcpy(reinterpret_cast<void*>(addr), bytes.data(), bytes.size());
+                written = bytes.size();
             }
-            ss << ",\"body\":{\"bytesWritten\":" << bytes.size() << "}}";
+            ss << ",\"body\":{\"bytesWritten\":" << written << "}}";
         }
         else
         {
             int count = ExtractJsonInt(requestJson, "\"count\"", 0);
             if (count > 65536)
                 count = 65536;
-            if (addr == 0 || count <= 0)
+            if (addr == 0 || count <= 0 ||
+                !SafeProbeMemoryReadable(reinterpret_cast<const void*>(addr), static_cast<size_t>(count)))
             {
                 ss << ",\"body\":{\"address\":\"" << memRef << "\",\"unreadableBytes\":" << count << ",\"data\":\"\"}}";
             }
@@ -1406,6 +1526,7 @@ class Debugger
         if (count <= 0)
             count = 10;
 
+        asIScriptEngine* engine = activeCtx ? activeCtx->GetEngine() : nullptr;
         asIScriptFunction* func = activeCtx ? activeCtx->GetFunction(0) : nullptr;
         std::string sym = func ? func->GetName() : "code";
         uintptr_t baseAddr = !memRef.empty() ? static_cast<uintptr_t>(std::strtoull(memRef.c_str(), nullptr, 16)) : 0;
@@ -1413,12 +1534,68 @@ class Debugger
         std::ostringstream ss;
         ss << "{\"seq\":" << (seq + 100) << ",\"type\":\"response\",\"request_seq\":" << seq
            << ",\"command\":\"disassemble\",\"success\":true,\"body\":{\"instructions\":[";
+
+        const asDWORD* bc = reinterpret_cast<const asDWORD*>(baseAddr);
         for (int i = 0; i < count; ++i)
         {
-            uintptr_t addr = baseAddr + (i * 4);
-            ss << "{\"address\":\"" << AddressToHex(reinterpret_cast<const void*>(addr))
-               << "\",\"instruction\":\"AS_OP_NOP (offset " << (i * 4) << ")\",\"symbol\":\"" << sym << "\"}"
-               << (i + 1 < count ? "," : "");
+            uintptr_t addr = reinterpret_cast<uintptr_t>(bc);
+            std::string disasm;
+            int instrSize = 1;
+
+            if (baseAddr != 0 && SafeProbeMemoryReadable(bc, sizeof(asDWORD)))
+            {
+                asEBCInstr op = static_cast<asEBCInstr>(*reinterpret_cast<const asBYTE*>(bc));
+                if (static_cast<size_t>(op) < 256 && asBCInfo[op].type != asBCTYPE_INFO)
+                {
+                    instrSize = asBCTypeSize[asBCInfo[op].type];
+                    if (instrSize <= 0)
+                        instrSize = 1;
+
+                    disasm = asBCInfo[op].name;
+                    if (asBCInfo[op].type == asBCTYPE_DW_ARG)
+                    {
+                        if (op == asBC_CALL || op == asBC_CALLSYS || op == asBC_CALLBND)
+                        {
+                            int funcId = asBC_INTARG(bc);
+                            if (engine)
+                            {
+                                auto targetFunc = engine->GetFunctionById(funcId);
+                                if (targetFunc)
+                                    disasm += " " + std::to_string(funcId) + " (" + targetFunc->GetDeclaration() + ")";
+                                else
+                                    disasm += " " + std::to_string(funcId);
+                            }
+                            else
+                                disasm += " " + std::to_string(funcId);
+                        }
+                        else
+                        {
+                            disasm += " " + std::to_string(asBC_DWORDARG(bc));
+                        }
+                    }
+                    else if (asBCInfo[op].type == asBCTYPE_rW_ARG || asBCInfo[op].type == asBCTYPE_wW_ARG ||
+                             asBCInfo[op].type == asBCTYPE_W_ARG)
+                    {
+                        disasm += " r" + std::to_string(asBC_SWORDARG0(bc));
+                    }
+                    bc += instrSize;
+                }
+                else
+                {
+                    disasm = "unknown 0x" + AddressToHex(bc);
+                    bc++;
+                }
+            }
+            else
+            {
+                disasm = "AS_OP_NOP (offset " + std::to_string(i * 4) + ")";
+                addr = baseAddr + (i * 4);
+            }
+
+            ss << "{\"address\":\"" << AddressToHex(reinterpret_cast<const void*>(addr)) << "\",\"instruction\":\""
+               << JsonEscape(disasm) << "\",\"symbol\":\"" << sym << "\"}";
+            if (i + 1 < count)
+                ss << ",";
         }
         ss << "]}}";
         return ss.str();
@@ -1844,11 +2021,7 @@ class Debugger
                 {
                     if (bp.line == line)
                     {
-                        ++bp.hitCount;
-                        if (!bp.hitCondition.empty() && !EvaluateHitCondition(bp.hitCount, bp.hitCondition))
-                        {
-                            continue;
-                        }
+                        // 1. Evaluate condition AST (if false, continue without incrementing hitCount)
                         if (!bp.condition.empty())
                         {
                             auto condVar = EvaluateExpression(ctx, bp.condition);
@@ -1858,6 +2031,15 @@ class Debugger
                                 continue;
                             }
                         }
+
+                        // 2. Increment hitCount and evaluate hit condition
+                        ++bp.hitCount;
+                        if (!bp.hitCondition.empty() && !EvaluateHitCondition(bp.hitCount, bp.hitCondition))
+                        {
+                            continue;
+                        }
+
+                        // 3. Evaluate logMessage / logpoint (interpolate tokens, do not pause)
                         if (!bp.logMessage.empty())
                         {
                             std::string interpolated = InterpolateLogMessage(ctx, bp.logMessage);
@@ -1865,6 +2047,8 @@ class Debugger
                             m_pendingOutputs.push_back(interpolated);
                             continue;
                         }
+
+                        // 4. Pause execution
                         shouldBreak = true;
                         break;
                     }

@@ -50,7 +50,7 @@
 //
 // Opt-in, because it shells out to a binary built from a different repository:
 //
-//   set ASHARNESS_EXE=E:\Github\src\AS-Harness\build_release\Release\asharness.exe
+//   set ASHARNESS_EXE=path\to\asharness.exe
 //   Debug\angel_lsp_tests.exe --no-skip --test-case="*Parity*"
 // =====================================================================================
 

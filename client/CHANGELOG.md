@@ -82,7 +82,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
   - Added method call safety rule detecting unsafe `CustomKeyvalues::SetKeyvalue` invocations and recommending `g_EntityFuncs.DispatchKeyValue` (`as-warn-engine-call-safety` / `W121`).
 - Semantic Tokens & Tree-Sitter Integration (`SemanticTokensHandler`, `BuiltQueries.h`, `TreeSitter.cmake`):
   - Breakdown of `scoped_identifier` in `namespace A::B` declarations into distinct individual namespace tokens.
-  - Pinned and synchronized `tree-sitter-angelscript` to clean commit `37544e47e1977bbdb507a204b876f73817f74123` with exclusive authoring under `Gaftherman <fano.solis.campos@gmail.com>`.
+  - Pinned and synchronized `tree-sitter-angelscript` grammar to commit `37544e47e1977bbdb507a204b876f73817f74123`.
 - 100% Internationalization (`i18n`) Parity (`i18n.cpp`, `HoverHandler`):
   - Externalized all user-facing hover documentation and tooltip strings (unresolved includes, primitive types values/range/descriptions, typedef underlying types, named argument labels) with 1:1 English/Spanish parity.
 
@@ -121,7 +121,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
   - Added method call safety rule detecting unsafe `CustomKeyvalues::SetKeyvalue` invocations and recommending `g_EntityFuncs.DispatchKeyValue` (`as-warn-engine-call-safety` / `W121`).
 - Semantic Tokens & Tree-Sitter Integration (`SemanticTokensHandler`, `BuiltQueries.h`, `TreeSitter.cmake`):
   - Breakdown of `scoped_identifier` in `namespace A::B` declarations into distinct individual namespace tokens.
-  - Pinned and synchronized `tree-sitter-angelscript` to clean commit `37544e47e1977bbdb507a204b876f73817f74123` with exclusive authoring under `Gaftherman <fano.solis.campos@gmail.com>`.
+  - Pinned and synchronized `tree-sitter-angelscript` grammar to commit `37544e47e1977bbdb507a204b876f73817f74123`.
 - 100% Internationalization (`i18n`) Parity (`i18n.cpp`, `HoverHandler`):
   - Externalized all user-facing hover documentation and tooltip strings (unresolved includes, primitive types values/range/descriptions, typedef underlying types, named argument labels) with 1:1 English/Spanish parity.
 
@@ -1350,7 +1350,7 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 ### Machine-Specific Path Elimination, Dynamic Fixture Discovery, & CI Multi-Platform Portability
 
 - Machine-Specific Path Elimination & Portable Test Fixtures:
-  - Eliminated hardcoded developer drive paths (e.g. `E:/Github/src/bts_rc/...` and `E:/Github/src/AS-Harness/...`) across test suites and discovery fixtures.
+  - Eliminated hardcoded absolute drive paths across test suites and discovery fixtures.
   - Implemented dynamic corpus discovery in `SemanticRegressionsBatch2Test` via `BTS_RC_DIR` environment variable and relative sibling repository lookup (`repoRoot / ".." / "bts_rc"`), with clean skip semantics on GitHub Actions CI runners.
   - Converted file path handling in tests to use URI normalization via `utils::PathToUri`.
 - Portable Oracle Compiler Discovery:

@@ -36,8 +36,8 @@ TEST_CASE("IsPredefinedFile - the conventional 'as.predefined' filename matches"
     // match: the default `.as.predefined` wants a dot where such a path has a separator, so the
     // 646 KB Sven Coop stub was never picked up by a workspace scan and every host type stayed
     // invisible. The extension already registers this filename as AngelScript in package.json.
-    CHECK(IsPredefinedFile("file:///c%3A/Users/Fano/Documents/LSP/as.predefined", ".as.predefined"));
-    CHECK(IsPredefinedFile("C:\\Users\\Fano\\Documents\\LSP\\as.predefined", ".as.predefined"));
+    CHECK(IsPredefinedFile("file:///c%3A/Users/Developer/Documents/LSP/as.predefined", ".as.predefined"));
+    CHECK(IsPredefinedFile("C:\\Users\\Developer\\Documents\\LSP\\as.predefined", ".as.predefined"));
     CHECK(IsPredefinedFile("as.predefined", ".as.predefined"));
 
     // Still recognised when no suffix is configured at all - it stands on its own name.

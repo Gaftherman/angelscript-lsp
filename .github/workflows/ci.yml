@@ -3,8 +3,10 @@ name: CI Build & Test Multi-Platform
 on:
   push:
     branches: [ main, develop ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main, develop ]
+  workflow_dispatch:
 
 jobs:
   build-and-test:
@@ -19,32 +21,38 @@ jobs:
           - os: windows
             runner: windows-latest
             arch: x64
-            cmake_arch: -A x64
+            msvc_arch: x64
+            cmake_flags: ""
           # Windows x86 (32-bit)
           - os: windows
             runner: windows-latest
             arch: x86
-            cmake_arch: -A Win32
+            msvc_arch: amd64_x86
+            cmake_flags: ""
           # Linux x64
           - os: linux
             runner: ubuntu-latest
             arch: x64
-            cmake_arch: ""
+            msvc_arch: ""
+            cmake_flags: ""
           # Linux x86 (32-bit)
           - os: linux
             runner: ubuntu-latest
             arch: x86
-            cmake_arch: ""
+            msvc_arch: ""
+            cmake_flags: '-DCMAKE_CXX_FLAGS="-m32" -DCMAKE_C_FLAGS="-m32"'
           # macOS x64 (Intel)
           - os: macos
             runner: macos-14
             arch: x64
-            cmake_arch: "-DCMAKE_OSX_ARCHITECTURES=x86_64"
+            msvc_arch: ""
+            cmake_flags: "-DCMAKE_OSX_ARCHITECTURES=x86_64"
           # macOS arm64 (Apple Silicon)
           - os: macos
             runner: macos-14
             arch: arm64
-            cmake_arch: "-DCMAKE_OSX_ARCHITECTURES=arm64"
+            msvc_arch: ""
+            cmake_flags: "-DCMAKE_OSX_ARCHITECTURES=arm64"
 
     steps:
       - name: Checkout Repository
@@ -52,46 +60,63 @@ jobs:
         with:
           submodules: recursive
 
-      # Configure 32-bit Linux dependencies if applicable
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+        with:
+          version: "v0.8.2"
+
+      - name: Set up MSVC Developer Prompt (Windows)
+        if: matrix.os == 'windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
+
+      - name: Install Ninja (Linux)
+        if: matrix.os == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
       - name: Install 32-bit Multilib Dependencies (Linux x86)
         if: matrix.os == 'linux' && matrix.arch == 'x86'
-        shell: bash
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update
           sudo apt-get install -y g++-multilib gcc-multilib
 
-      # Optimize Windows Defender for build performance on Windows runners
       - name: Optimize Windows Defender for Build Performance
         if: matrix.os == 'windows'
         shell: powershell
         run: |
           Set-MpPreference -DisableRealtimeMonitoring $true
           Add-MpPreference -ExclusionPath "${{ github.workspace }}"
-          Add-MpPreference -ExclusionProcess "cl.exe", "link.exe", "cmake.exe", "msbuild.exe"
+          Add-MpPreference -ExclusionProcess "cl.exe", "link.exe", "cmake.exe", "ninja.exe"
 
-      # Configure CMake
       - name: Configure CMake
         shell: bash
+        env:
+          SCCACHE_GHA_ENABLED: "true"
         run: |
           cmake -B server/build -S server \
+            -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            ${{ matrix.cmake_arch }} \
-            ${{ matrix.os == 'linux' && matrix.arch == 'x86' && '-DCMAKE_CXX_FLAGS="-m32" -DCMAKE_C_FLAGS="-m32"' || '' }}
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
+            ${{ matrix.cmake_flags }}
 
-      # Build the entire project and test executables
       - name: Build All Targets
         shell: bash
-        run: cmake --build server/build --config Release -j 4
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+        run: cmake --build server/build --config Release
 
-      # Run the complete test suite
       - name: Run CTest Suite
         working-directory: server/build
         shell: bash
         run: ctest -C Release --output-on-failure --extra-verbose
 
-      # The server binary is what the extension ships, so keep every platform's build reachable
-      # from the run that produced and tested it.
+      - name: Show sccache stats
+        shell: bash
+        run: sccache --show-stats
+
       - name: Upload Server Binary
         uses: actions/upload-artifact@v4
         with:
@@ -104,13 +129,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # The only check that compares this analyzer against the actual language rather than against its
-  # own expectations. It used to need a binary from an unpublished repository, so it ran on one
-  # developer's machine and a regression could land here green; server/tools/oracle builds a real
-  # AngelScript compiler from source instead, which means this can gate.
-  #
-  # One platform is enough: the question is what the language accepts, and that does not vary by
-  # host. Linux is the cheapest place to ask it.
   parity-audit:
     name: Parity against a real AngelScript compiler
     runs-on: ubuntu-latest
@@ -121,25 +139,26 @@ jobs:
         with:
           submodules: recursive
 
-      # Cheap, and it catches a class of drift nothing else does: a diagnostic message left behind
-      # by a rule that no longer fires, or a rule emitting a code the message table has no entry for.
+      - name: Set up sccache
+        uses: mozilla-actions/sccache-action@v0.0.9
+        with:
+          version: "v0.8.2"
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
       - name: Audit diagnostic codes
         working-directory: server
         run: python scripts/check-diagnostic-codes.py
 
-      # One #include is all it takes to put the whole protocol library back into every translation
-      # unit in analysis/, and nothing else would say so: the build stays green and the coupling is
-      # invisible until someone reads the transitive include tree by hand.
       - name: Audit layer includes
         working-directory: server
         run: python scripts/check-layer-includes.py
 
-      # Prohibition 9: zero dead or unnamed parameters in owned signatures
       - name: Audit clean signatures
         working-directory: server
         run: python scripts/check-clean-signatures.py
 
-      # Clang-format verification across all C++ headers and sources
       - name: Install pinned clang-format
         run: pip install clang-format==23.1.3
 
@@ -148,42 +167,39 @@ jobs:
         run: python scripts/format-code.py --check
 
       - name: Configure CMake with the oracle
-        run: cmake -B server/build -S server -DCMAKE_BUILD_TYPE=Release -DANGELLSP_BUILD_ORACLE=ON
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+        run: |
+          cmake -B server/build -S server \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DANGELLSP_BUILD_ORACLE=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
-      # After the configure, unlike the guards above, because it reads the grammar's own
-      # node-types.json and CMake is what fetches it. --strict guarantees CI never skips silently.
       - name: Audit grammar names
         working-directory: server
         run: python scripts/check-grammar-names.py --strict
 
-      # The other half of the same question. check-grammar-names asks whether the names the code
-      # uses still resolve; this asks whether the checkout is the commit the pin names at all.
       - name: Audit the grammar pin
         working-directory: server
         run: python scripts/check-grammar-pin.py --strict
 
-      # VS Code falls back to the literal in the source when a bundle has no entry, so an
-      # untranslated message looks exactly like a translated one to anyone running in English -
-      # which is everyone writing this code. Nothing else in the repository notices.
       - name: Audit client localisation
         working-directory: server
         run: python scripts/check-client-l10n.py
 
       - name: Build the oracle and the test suite
-        run: cmake --build server/build --config Release --target angelscript_oracle angel_lsp_tests -j 4
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+        run: cmake --build server/build --config Release --target angelscript_oracle angel_lsp_tests
 
       - name: Run the parity audit
         working-directory: server
         env:
-          # The oracle and the stub are a pair - sdk-addons.as.predefined describes exactly what
-          # tools/oracle/main.cpp registers. Running against any other stub reports the mismatch
-          # rather than anything about the analyzer.
           ASHARNESS_EXE: ${{ github.workspace }}/server/build/angelscript_oracle
           PARITY_PREDEFINED: ${{ github.workspace }}/server/tests/fixtures/sdk-addons.as.predefined
           PARITY_SCRIPT_DIR: ${{ github.workspace }}/server/tests/parity
-        # The audit skips itself when it cannot find a corpus, and for a long while it did exactly
-        # that here - silently, with this job green. Requiring its own summary line in the output is
-        # what turns a skip back into a failure, and it costs one grep.
         run: |
           set -o pipefail
           ./build/angel_lsp_tests --no-skip --test-case="*Parity*" 2>&1 | tee parity.log
@@ -196,11 +212,6 @@ jobs:
             exit 1
           fi
 
-      # The typing scenarios replay a user typing one character at a time - one didChange per
-      # keystroke, each carrying a range - and check the diagnostics, their messages and the hover
-      # the server ends up with. They run inside the suite above too; this step exists to put the
-      # tally in the log where a reviewer can read it, and to fail loudly if the fixture ever goes
-      # missing rather than passing with nothing replayed. Same reasoning as the audit's grep.
       - name: Replay the typing scenarios
         working-directory: server
         run: |
@@ -235,8 +246,6 @@ jobs:
         working-directory: client
         run: npm run pretest
 
-      # Downloaded into the layout getServerPath() expects, so the packaged extension carries a
-      # server for every platform the matrix above built.
       - name: Download Server Binaries
         uses: actions/download-artifact@v4
         with:
@@ -256,8 +265,6 @@ jobs:
           done
           ls -R client/bin
 
-      # Cache the downloaded VS Code test binary across runs to avoid redundant downloads
-      # and enable local version fallback if the remote update API is unreachable.
       - name: Cache VS Code Test Binary
         uses: actions/cache@v4
         with:
@@ -266,9 +273,6 @@ jobs:
           restore-keys: |
             vscode-test-${{ runner.os }}-
 
-      # The extension tests run inside a real VS Code, which needs a display even headless - hence
-      # xvfb-run. The harness tests the extension and verifies live LSP feature performance and stability.
-      # NODE_OPTIONS forces IPv4-first DNS ordering to prevent IPv6 connection timeouts on GitHub runners.
       - name: Test Client
         working-directory: client
         env:
@@ -287,14 +291,21 @@ jobs:
           echo "::error::Client tests failed after 3 attempts."
           exit 1
 
-      # Packaged, not published: releasing is a deliberate act, and this only proves the extension
-      # is in a publishable state on every commit.
-      # `vsce package` runs vscode:prepublish, which type-checks with tsc and then bundles with
-      # esbuild into dist/. vscode-languageclient is inside that bundle, which is why it is a dev
-      # dependency and why node_modules does not travel in the .vsix.
       - name: Package Extension
         working-directory: client
         run: npx --yes @vscode/vsce package --out angelscript.vsix
+
+      - name: Collect Release Assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          cp client/angelscript.vsix release-assets/
+          for dir in client/bin/*/; do
+            name="$(basename "$dir")"
+            tar -czf "release-assets/angel_lsp-${name}.tar.gz" -C "$dir" .
+          done
+          ls -l release-assets
 
       - name: Upload Extension Package
         uses: actions/upload-artifact@v4
@@ -302,3 +313,57 @@ jobs:
           name: angelscript-vsix
           path: client/angelscript.vsix
           retention-days: 14
+
+      - name: Upload Release Assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: release-assets/
+          retention-days: 14
+
+  publish-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-and-test, parity-audit, package-extension]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Release Assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: release
+
+      - name: Extract Release Notes from CHANGELOG.md
+        run: |
+          TAG="${{ github.ref_name }}"
+          python server/scripts/extract-release-notes.py --tag "$TAG" --output release-notes.md || true
+
+      - name: Publish Release to GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Creating release $TAG..."
+            if [ -s release-notes.md ]; then
+              gh release create "$TAG" --title "$TAG" --notes-file release-notes.md --verify-tag release/*
+            else
+              gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag release/*
+            fi
+          else
+            echo "Release $TAG already exists, updating notes and assets..."
+            if [ -s release-notes.md ]; then
+              gh release edit "$TAG" --notes-file release-notes.md
+            fi
+            gh release upload "$TAG" release/* --clobber
+          fi
+
+          gh release edit "$TAG" --draft=false

@@ -431,6 +431,81 @@ TEST_CASE("Debugger Runtime - Attach, Breakpoints, and Lifecycle")
     debugger.Detach();
 }
 
+TEST_CASE("Debugger DAP Protocol - Module 2 Breakpoint Order & Hit Conditions")
+{
+    angel_lsp::debug::Debugger debugger;
+    const std::string section = "scripts/test_order.as";
+
+    // Setup breakpoint with condition and hitCondition
+    angel_lsp::debug::BreakpointInfo bp;
+    bp.line = 42;
+    bp.condition = "ammo == 0";
+    bp.hitCondition = ">= 3";
+    bp.hitCount = 0;
+    debugger.SetBreakpointInfo(section, bp);
+
+    // Verify hit condition evaluator
+    CHECK(angel_lsp::debug::Debugger::EvaluateHitCondition(1, "1"));
+    CHECK_FALSE(angel_lsp::debug::Debugger::EvaluateHitCondition(2, "1"));
+    CHECK(angel_lsp::debug::Debugger::EvaluateHitCondition(5, "== 5"));
+    CHECK(angel_lsp::debug::Debugger::EvaluateHitCondition(6, "!= 5"));
+    CHECK(angel_lsp::debug::Debugger::EvaluateHitCondition(10, ">= 10"));
+    CHECK(angel_lsp::debug::Debugger::EvaluateHitCondition(5, "<= 5"));
+    CHECK(angel_lsp::debug::Debugger::EvaluateHitCondition(4, "% 2"));
+    CHECK_FALSE(angel_lsp::debug::Debugger::EvaluateHitCondition(5, "% 2"));
+}
+
+TEST_CASE("Debugger DAP Protocol - Module 3 Native Error Trapping & Exception Info")
+{
+    angel_lsp::debug::Debugger debugger;
+    debugger.SetBreakOnException(true);
+    CHECK(debugger.GetBreakOnException());
+
+    // Verify exception info response
+    const std::string exReq =
+        "{\"seq\":50,\"type\":\"request\",\"command\":\"exceptionInfo\",\"arguments\":{\"threadId\":1}}";
+    std::string exResp = debugger.HandleDapRequest(exReq);
+    CHECK(exResp.find("\"success\":true") != std::string::npos);
+    CHECK(exResp.find("\"exceptionId\":\"AngelScriptException\"") != std::string::npos);
+}
+
+TEST_CASE("Debugger DAP Protocol - Module 4 Safe Memory Probing, Disassembly & Registers")
+{
+    angel_lsp::debug::Debugger debugger;
+
+    // 1. Probing unmapped / invalid address does not crash and returns unreadableBytes
+    const std::string badMemReq = "{\"seq\":60,\"type\":\"request\",\"command\":\"readMemory\",\"arguments\":{"
+                                  "\"memoryReference\":\"0xdeadbeef\",\"offset\":0,\"count\":64}}";
+    std::string badMemResp = debugger.HandleDapRequest(badMemReq);
+    CHECK(badMemResp.find("\"success\":true") != std::string::npos);
+    CHECK(badMemResp.find("\"unreadableBytes\":64") != std::string::npos);
+
+    // 2. Writing to unmapped / unwritable address does not crash and writes 0 bytes
+    const std::string badWriteReq = "{\"seq\":61,\"type\":\"request\",\"command\":\"writeMemory\",\"arguments\":{"
+                                    "\"memoryReference\":\"0xdeadbeef\",\"offset\":0,\"data\":\"SGVsbG8=\"}}";
+    std::string badWriteResp = debugger.HandleDapRequest(badWriteReq);
+    CHECK(badWriteResp.find("\"success\":true") != std::string::npos);
+    CHECK(badWriteResp.find("\"bytesWritten\":0") != std::string::npos);
+
+    // 3. Disassembly request on buffer
+    uint8_t dummyBytecode[16] = {0x3F, 0x00, 0x00, 0x00}; // asBC_SUSPEND (63 = 0x3F)
+    std::ostringstream ss;
+    ss << "0x" << std::hex << reinterpret_cast<uintptr_t>(dummyBytecode);
+    const std::string disasmReq = "{\"seq\":62,\"type\":\"request\",\"command\":\"disassemble\",\"arguments\":{"
+                                  "\"memoryReference\":\"" +
+                                  ss.str() + "\",\"instructionCount\":2}}";
+    std::string disasmResp = debugger.HandleDapRequest(disasmReq);
+    CHECK(disasmResp.find("\"success\":true") != std::string::npos);
+    CHECK(disasmResp.find("\"instructions\"") != std::string::npos);
+
+    // 4. Scopes returns Registers
+    const std::string scopesReq =
+        "{\"seq\":63,\"type\":\"request\",\"command\":\"scopes\",\"arguments\":{\"frameId\":0}}";
+    std::string scopesResp = debugger.HandleDapRequest(scopesReq);
+    CHECK(scopesResp.find("Registers") != std::string::npos);
+    CHECK(scopesResp.find("\"variablesReference\":3000") != std::string::npos);
+}
+
 #else
 
 TEST_CASE("Debugger DAP Protocol - Parity Oracle Test Suite Notice")

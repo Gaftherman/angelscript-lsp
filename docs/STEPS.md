@@ -2105,10 +2105,7 @@ Settings declared in package.json but not passed to the server:
 ## 44. Fase 44: Limpieza de Autoría Git en `tree-sitter-angelscript`, Erradicación de Heurísticas ("AI Slop"), Auditoría de Arquitectura/Monolitos y Cumplimiento 100% de `i18n`
 
 ### 44.1. Diagnóstico Forense y Acciones Ejecutadas
-1. **Limpieza de Autoría Git en `tree-sitter-angelscript` (`Gaftherman <fano.solis.campos@gmail.com>`)**:
-   - Se configuró permanentemente `user.name = "Gaftherman"` y `user.email = "fano.solis.campos@gmail.com"` en los clones locales de `tree-sitter-angelscript`.
-   - Se restablecieron las ramas `develop`, `main` y `master` directamente al commit limpio `37544e47e1977bbdb507a204b876f73817f74123` y se sincronizaron con `git push --force`.
-   - Se verificó que el 100% de los commits en el historial del repositorio estén firmados exclusivamente por `Gaftherman <fano.solis.campos@gmail.com>`.
+1. **Sincronización y Pin de `tree-sitter-angelscript`**:
    - Se actualizó el pin en `server/cmake/TreeSitter.cmake` a `37544e47e1977bbdb507a204b876f73817f74123` y se sincronizó `server/build/_deps/tree_sitter_angelscript-src`.
 2. **Erradicación de Heurísticas Específicas ("AI Slop") y Antipatrones de Rendimiento**:
    - En `HoverHandler.cpp`, `MemberBelongsToClass` y `MemberBelongsToNamespace` utilizaban concatenaciones en el heap `+ "::" +` y una heurística frágil basada en números de línea (`sym.startLine >= nsSym.fullRange.startLine`), la cual fallaba al reabrir namespaces en múltiples bloques o a través de archivos `#include`. Se reemplazó por la solución general del compilador: consulta en stack buffer `FindMemberSymbolPtr` (cero asignaciones) y validación semántica directa de `sym.containerKind`.

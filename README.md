@@ -1,6 +1,6 @@
 # AngelScript Language Server (AngelLSP)
 
-**[English](README.md)** | **[Español](README.es.md)**
+**[English](README.md)** | **[Español](docs/README.es.md)**
 
 [![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/Gaftherman.angelscript-gaftherman.svg?label=Marketplace&color=blue)](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman)
 [![Visual Studio Marketplace Installs](https://img.shields.io/visual-studio-marketplace/i/Gaftherman.angelscript-gaftherman.svg?color=success)](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman)

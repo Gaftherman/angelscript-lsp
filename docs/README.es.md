@@ -1,6 +1,6 @@
 # Servidor de Lenguaje para AngelScript (AngelLSP)
 
-**[English](README.md)** | **[Español](README.es.md)**
+**[English](../README.md)** | **[Español](README.es.md)**
 
 [![Versión en Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/v/Gaftherman.angelscript-gaftherman.svg?label=Marketplace&color=blue)](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman)
 [![Descargas en Visual Studio Marketplace](https://img.shields.io/visual-studio-marketplace/i/Gaftherman.angelscript-gaftherman.svg?color=success)](https://marketplace.visualstudio.com/items?itemName=Gaftherman.angelscript-gaftherman)
@@ -138,8 +138,8 @@ Están disponibles los siguientes stubs comunitarios probados:
 Por defecto, AngelLSP opera como un servidor de lenguaje puro para AngelScript estándar. Sin embargo, en motores reales (como Sven Co-op), el motor C++ invoca funciones y clases de entidades de manera dinámica sin llamadas en el código script. Para eliminar falsos positivos de símbolos sin usar, vincular llamadas proxy `BaseClass` directamente a los encabezados nativos del motor y validar la seguridad de tareas asíncronas, AngelLSP soporta **Reglas del Motor**.
 
 - **Detección Automática**: Coloca cualquier archivo con terminación `*.angelscript.rules.json` en la raíz de tu proyecto (ej. `sven.angelscript.rules.json`).
-- **Reglas de Referencia para Sven Co-op**: [`predefined/sven.angelscript.rules.json`](predefined/sven.angelscript.rules.json)
-- **Documentación Detallada**: Consulta la [**Guía de Reglas del Motor (`docs/rules.es.md`)**](docs/rules.es.md) para una explicación campo por campo, ejemplos prácticos y el comportamiento resultante en el editor.
+- **Reglas de Referencia para Sven Co-op**: [`predefined/sven.angelscript.rules.json`](../predefined/sven.angelscript.rules.json)
+- **Documentación Detallada**: Consulta la [**Guía de Reglas del Motor (`rules.es.md`)**](rules.es.md) para una explicación campo por campo, ejemplos prácticos y el comportamiento resultante en el editor.
 
 ---
 
