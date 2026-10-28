@@ -820,7 +820,7 @@ class Debugger
         {
             if (currentVar->memoryReference.empty() && currentVar->typeId == 0)
                 return std::nullopt;
-            uintptr_t ptr = std::strtoull(currentVar->memoryReference.c_str(), nullptr, 16);
+            uintptr_t ptr = static_cast<uintptr_t>(std::strtoull(currentVar->memoryReference.c_str(), nullptr, 16));
             if (ptr == 0)
                 return std::nullopt;
 
@@ -1354,7 +1354,7 @@ class Debugger
         uintptr_t addr = 0;
         if (!memRef.empty())
         {
-            addr = std::strtoull(memRef.c_str(), nullptr, 16) + offset;
+            addr = static_cast<uintptr_t>(std::strtoull(memRef.c_str(), nullptr, 16) + offset);
         }
 
         std::ostringstream ss;
@@ -1408,7 +1408,7 @@ class Debugger
 
         asIScriptFunction* func = activeCtx ? activeCtx->GetFunction(0) : nullptr;
         std::string sym = func ? func->GetName() : "code";
-        uintptr_t baseAddr = !memRef.empty() ? std::strtoull(memRef.c_str(), nullptr, 16) : 0;
+        uintptr_t baseAddr = !memRef.empty() ? static_cast<uintptr_t>(std::strtoull(memRef.c_str(), nullptr, 16)) : 0;
 
         std::ostringstream ss;
         ss << "{\"seq\":" << (seq + 100) << ",\"type\":\"response\",\"request_seq\":" << seq
@@ -2040,7 +2040,7 @@ class Debugger
     {
         if ((typeId & asTYPEID_MASK_OBJECT) != 0 && !memRef.empty())
         {
-            void* childPtr = reinterpret_cast<void*>(std::strtoull(memRef.data(), nullptr, 16));
+            void* childPtr = reinterpret_cast<void*>(static_cast<uintptr_t>(std::strtoull(memRef.data(), nullptr, 16)));
             if (childPtr)
             {
                 return RegisterObjectRefLocked(childPtr, typeId);
