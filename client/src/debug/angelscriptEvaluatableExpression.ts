@@ -6,7 +6,27 @@ import * as vscode from 'vscode';
  * @return True if valid identifier character.
  */
 function isIdentifierChar(char: string): boolean {
-    return /[a-zA-Z0-9_]/.test(char);
+    const code = char.charCodeAt(0);
+    return (
+        (code >= 48 && code <= 57) ||
+        (code >= 65 && code <= 90) ||
+        (code >= 97 && code <= 122) ||
+        code === 95
+    );
+}
+
+/**
+ * @brief Checks if a character can begin an AngelScript identifier [a-zA-Z_].
+ * @param char Single character to test.
+ * @return True if valid start character.
+ */
+function isIdentifierStartChar(char: string): boolean {
+    const code = char.charCodeAt(0);
+    return (
+        (code >= 65 && code <= 90) ||
+        (code >= 97 && code <= 122) ||
+        code === 95
+    );
 }
 
 /**
@@ -125,7 +145,13 @@ export function extractAngelScriptEvaluatableExpression(
     }
 
     const rawExpr = lineText.substring(start, end).trim();
-    if (!rawExpr || !/[a-zA-Z0-9_]/.test(rawExpr)) {
+    if (!rawExpr) {
+        return undefined;
+    }
+
+    // Must start with an identifier character, not a numeric literal (e.g. 42 or 0x10)
+    const firstWord = rawExpr.split(/[^a-zA-Z0-9_]/).find(part => part.length > 0);
+    if (!firstWord || !isIdentifierStartChar(firstWord[0])) {
         return undefined;
     }
 

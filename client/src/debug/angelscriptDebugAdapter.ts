@@ -239,15 +239,30 @@ class AngelScriptDebugAdapterSession implements vscode.DebugAdapter {
                 );
 
                 if (Array.isArray(locations) && locations.length > 0) {
-                    const validLines = new Set<number>(locations.map(loc => loc.range.start.line + 1));
+                    const sortedValidLines = Array.from(new Set(locations.map(loc => loc.range.start.line + 1))).sort((a, b) => a - b);
+                    const validSet = new Set<number>(sortedValidLines);
                     if (rawBreakpoints) {
                         for (const bp of rawBreakpoints) {
-                            if (!validLines.has(bp.line)) {
-                                const candidates = Array.from(validLines).filter(l => l >= bp.line).sort((a, b) => a - b);
-                                if (candidates.length > 0) {
-                                    bp.line = candidates[0];
+                            if (!validSet.has(bp.line)) {
+                                let low = 0;
+                                let high = sortedValidLines.length - 1;
+                                let best = -1;
+                                while (low <= high) {
+                                    const mid = (low + high) >> 1;
+                                    if (sortedValidLines[mid] >= bp.line) {
+                                        best = sortedValidLines[mid];
+                                        high = mid - 1;
+                                    } else {
+                                        low = mid + 1;
+                                    }
+                                }
+                                if (best !== -1) {
+                                    bp.line = best;
                                 }
                             }
+                        }
+                        if (req.arguments?.lines) {
+                            req.arguments.lines = rawBreakpoints.map(b => b.line);
                         }
                     }
                 }
@@ -272,6 +287,8 @@ class AngelScriptDebugAdapterSession implements vscode.DebugAdapter {
         }
     }
 
+    private static readonly MAX_DAP_PAYLOAD_SIZE = 16 * 1024 * 1024; // 16 MB envelope
+
     private handleIncomingData(chunk: Buffer): void {
         this.rawBuffer = Buffer.concat([this.rawBuffer, chunk]);
         const delimiter = Buffer.from('\r\n\r\n', 'utf8');
@@ -290,13 +307,20 @@ class AngelScriptDebugAdapterSession implements vscode.DebugAdapter {
             }
 
             const contentLength = parseInt(match[1], 10);
+            if (isNaN(contentLength) || contentLength < 0 || contentLength > AngelScriptDebugAdapterSession.MAX_DAP_PAYLOAD_SIZE) {
+                this.rawBuffer = this.rawBuffer.subarray(headerEnd + 4);
+                continue;
+            }
+
             const bodyStart = headerEnd + 4;
             if (this.rawBuffer.length < bodyStart + contentLength) {
                 break;
             }
 
             const bodyBuf = this.rawBuffer.subarray(bodyStart, bodyStart + contentLength);
-            this.rawBuffer = this.rawBuffer.subarray(bodyStart + contentLength);
+            this.rawBuffer = this.rawBuffer.length > bodyStart + contentLength
+                ? Buffer.from(this.rawBuffer.subarray(bodyStart + contentLength))
+                : Buffer.alloc(0);
 
             try {
                 const parsed = JSON.parse(bodyBuf.toString('utf8')) as vscode.DebugProtocolMessage;

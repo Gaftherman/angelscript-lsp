@@ -213,6 +213,63 @@ TEST_CASE("Debugger DAP Protocol - Hit Condition Evaluation & Base64 Roundtrip")
     CHECK(restored == text);
 }
 
+TEST_CASE("Debugger DAP Protocol - Hardened JSON Escaping and Extraction Invariants")
+{
+    // 1. Windows path escaping
+    const std::string randomFolder = test::GenerateRandomSymbolName("WeaponMod");
+    const std::string winPath = "C:\\Games\\" + randomFolder + "\\scripts\\flare.as";
+    const std::string escapedWinPath = angel_lsp::debug::Debugger::JsonEscape(winPath);
+    CHECK(escapedWinPath.find("C:\\\\Games\\\\") != std::string::npos);
+    CHECK(escapedWinPath.find("\\\\scripts\\\\flare.as") != std::string::npos);
+
+    // 2. Quotes, tabs, and newlines escaping
+    const std::string rawText = "Message with \"quotes\" and\tnewlines\n";
+    const std::string escapedText = angel_lsp::debug::Debugger::JsonEscape(rawText);
+    CHECK(escapedText.find("\\\"quotes\\\"") != std::string::npos);
+    CHECK(escapedText.find("\\t") != std::string::npos);
+    CHECK(escapedText.find("\\n") != std::string::npos);
+
+    // 3. setBreakpoints request with escaped quotes inside condition
+    angel_lsp::debug::Debugger debugger;
+    const std::string bpPath = "E:\\Engine\\" + randomFolder + "\\weapon.as";
+    const std::string conditionWithQuotes = "itemNames[ui] == \\\"weapon_bts_flare\\\"";
+    const std::string bpReq =
+        "{\"seq\":101,\"type\":\"request\",\"command\":\"setBreakpoints\",\"arguments\":{\"source\":{\"path\":\"" +
+        angel_lsp::debug::Debugger::JsonEscape(bpPath) + "\"},\"breakpoints\":[{\"line\":42,\"condition\":\"" +
+        conditionWithQuotes + "\"}]}}";
+
+    const std::string bpResp = debugger.HandleDapRequest(bpReq);
+    CHECK(bpResp.find("\"success\":true") != std::string::npos);
+    CHECK(bpResp.find("\"line\":42") != std::string::npos);
+    // Path in response must be properly JSON escaped
+    CHECK(bpResp.find(angel_lsp::debug::Debugger::JsonEscape(bpPath)) != std::string::npos);
+}
+
+TEST_CASE("Debugger DAP Protocol - Bounded Payload & Multi-Frame Scopes Invariants")
+{
+    // 1. UnframeDapMessage rejects payloads > 16 MB
+    std::string giantBuffer = "Content-Length: 17000000\r\n\r\n";
+    const auto rejectResult = angel_lsp::debug::Debugger::UnframeDapMessage(giantBuffer);
+    CHECK_FALSE(rejectResult.has_value());
+    CHECK(giantBuffer.empty());
+
+    // 2. Scopes request with frameId
+    angel_lsp::debug::Debugger debugger;
+    const std::string scopesReqFrame0 =
+        "{\"seq\":201,\"type\":\"request\",\"command\":\"scopes\",\"arguments\":{\"frameId\":0}}";
+    const std::string scopesResp0 = debugger.HandleDapRequest(scopesReqFrame0);
+    CHECK(scopesResp0.find("\"variablesReference\":1000") != std::string::npos);
+    CHECK(scopesResp0.find("\"variablesReference\":2000") != std::string::npos);
+    CHECK(scopesResp0.find("\"variablesReference\":3000") != std::string::npos);
+
+    const std::string scopesReqFrame2 =
+        "{\"seq\":202,\"type\":\"request\",\"command\":\"scopes\",\"arguments\":{\"frameId\":2}}";
+    const std::string scopesResp2 = debugger.HandleDapRequest(scopesReqFrame2);
+    CHECK(scopesResp2.find("\"variablesReference\":1002") != std::string::npos);
+    CHECK(scopesResp2.find("\"variablesReference\":2000") != std::string::npos);
+    CHECK(scopesResp2.find("\"variablesReference\":3002") != std::string::npos);
+}
+
 TEST_CASE("Breakpoint Locations - AngelScript Oracle Bytecode Parity Execution")
 {
     // Find built oracle binary

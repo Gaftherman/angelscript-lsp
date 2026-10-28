@@ -18,7 +18,9 @@
 
 #include <angelscript.h>
 
+#include <array>
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -142,9 +144,13 @@ class Debugger
      */
     void Detach()
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_state = ExecutionState::Running;
-        m_engine = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_state.store(ExecutionState::Running, std::memory_order_release);
+            m_engine = nullptr;
+            ClearObjectRefsLocked();
+        }
+        m_cv.notify_all();
     }
 
     /**
@@ -174,10 +180,12 @@ class Debugger
             if (existing.line == info.line)
             {
                 existing = std::move(info);
+                RebuildLineBitmapLocked();
                 return;
             }
         }
         list.push_back(std::move(info));
+        RebuildLineBitmapLocked();
     }
 
     /**
@@ -207,6 +215,7 @@ class Debugger
                     }
                 }
             }
+            RebuildLineBitmapLocked();
         }
     }
 
@@ -217,6 +226,7 @@ class Debugger
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_breakpoints.clear();
+        RebuildLineBitmapLocked();
     }
 
     /**
@@ -236,7 +246,12 @@ class Debugger
      */
     void Continue()
     {
-        m_state.store(ExecutionState::Running, std::memory_order_release);
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            ClearObjectRefsLocked();
+            m_state.store(ExecutionState::Running, std::memory_order_release);
+        }
+        m_cv.notify_all();
     }
 
     /**
@@ -247,8 +262,17 @@ class Debugger
     {
         if (ctx)
         {
-            m_stepStackDepth = ctx->GetCallstackSize();
-            m_state.store(ExecutionState::StepOver, std::memory_order_release);
+            int col = 0;
+            const char* sec = nullptr;
+            int curLine = ctx->GetLineNumber(0, &col, &sec);
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                ClearObjectRefsLocked();
+                m_stepStackDepth.store(ctx->GetCallstackSize(), std::memory_order_release);
+                m_stepStartLine.store(curLine, std::memory_order_release);
+                m_state.store(ExecutionState::StepOver, std::memory_order_release);
+            }
+            m_cv.notify_all();
         }
     }
 
@@ -257,7 +281,12 @@ class Debugger
      */
     void StepIn()
     {
-        m_state.store(ExecutionState::StepIn, std::memory_order_release);
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            ClearObjectRefsLocked();
+            m_state.store(ExecutionState::StepIn, std::memory_order_release);
+        }
+        m_cv.notify_all();
     }
 
     /**
@@ -268,8 +297,13 @@ class Debugger
     {
         if (ctx && ctx->GetCallstackSize() > 0)
         {
-            m_stepStackDepth = ctx->GetCallstackSize() - 1;
-            m_state.store(ExecutionState::StepOut, std::memory_order_release);
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                ClearObjectRefsLocked();
+                m_stepStackDepth.store(ctx->GetCallstackSize() - 1, std::memory_order_release);
+                m_state.store(ExecutionState::StepOut, std::memory_order_release);
+            }
+            m_cv.notify_all();
         }
     }
 
@@ -288,24 +322,36 @@ class Debugger
             return;
         }
 
+        const auto currentState = m_state.load(std::memory_order_relaxed);
+        const auto bpCount = m_activeBreakpointCount.load(std::memory_order_relaxed);
+        if (currentState == ExecutionState::Running && bpCount == 0)
+        {
+            return;
+        }
+
         int col = 0;
         const char* sec = nullptr;
         int line = ctx->GetLineNumber(0, &col, &sec);
-        std::string section = sec ? sec : "";
 
-        if (ShouldSuspend(ctx, section, line))
+        if (currentState == ExecutionState::Running && line >= 0 && line < 4096)
+        {
+            const size_t word = static_cast<size_t>(line) / 64;
+            const uint64_t mask = 1ULL << (line % 64);
+            if ((m_lineBitmap[word].load(std::memory_order_relaxed) & mask) == 0)
+            {
+                return;
+            }
+        }
+
+        std::string_view sectionView = sec ? sec : "";
+        if (ShouldSuspend(ctx, sectionView, line))
         {
             m_state.store(ExecutionState::Suspended, std::memory_order_release);
+            std::string section(sectionView);
             OnSuspend(ctx, section, line, col);
 
-            while (m_state.load(std::memory_order_acquire) == ExecutionState::Suspended)
-            {
-#if defined(_WIN32)
-                Sleep(10);
-#else
-                usleep(10000);
-#endif
-            }
+            std::unique_lock<std::mutex> lock(m_cvMutex);
+            m_cv.wait(lock, [this]() { return m_state.load(std::memory_order_acquire) != ExecutionState::Suspended; });
         }
     }
 
@@ -336,7 +382,7 @@ class Debugger
 
     void ExceptionCallback(asIScriptContext* ctx)
     {
-        if (!ctx || !m_breakOnException)
+        if (!ctx || !m_breakOnException.load(std::memory_order_relaxed))
         {
             return;
         }
@@ -351,14 +397,8 @@ class Debugger
         m_state.store(ExecutionState::Suspended, std::memory_order_release);
         OnException(ctx, section, line, col, exceptionDesc);
 
-        while (m_state.load(std::memory_order_acquire) == ExecutionState::Suspended)
-        {
-#if defined(_WIN32)
-            Sleep(10);
-#else
-            usleep(10000);
-#endif
-        }
+        std::unique_lock<std::mutex> lock(m_cvMutex);
+        m_cv.wait(lock, [this]() { return m_state.load(std::memory_order_acquire) != ExecutionState::Suspended; });
     }
 
     /**
@@ -985,10 +1025,20 @@ class Debugger
         {
             ++clPos;
         }
-        const size_t length = static_cast<size_t>(std::strtoul(header.c_str() + clPos, nullptr, 10));
+        const unsigned long parsedLength = std::strtoul(header.c_str() + clPos, nullptr, 10);
+        if (parsedLength == 0 && (clPos >= header.size() || header[clPos] != '0'))
+        {
+            buffer.erase(0, headerEnd + delimiter.size());
+            return std::nullopt;
+        }
+        const size_t length = static_cast<size_t>(parsedLength);
+        if (length > k_maxDapPayloadSize)
+        {
+            buffer.clear();
+            return std::nullopt;
+        }
         const size_t bodyStart = headerEnd + delimiter.size();
-
-        if (buffer.size() < bodyStart + length)
+        if (buffer.size() < bodyStart || length > SIZE_MAX - bodyStart || buffer.size() < bodyStart + length)
         {
             return std::nullopt;
         }
@@ -996,6 +1046,57 @@ class Debugger
         std::string json = buffer.substr(bodyStart, length);
         buffer.erase(0, bodyStart + length);
         return json;
+    }
+
+    /**
+     * @brief Escapes a string for safe embedding into DAP JSON envelopes.
+     * @param[in] str Unescaped input string.
+     * @return Escaped JSON string literal content.
+     */
+    static std::string JsonEscape(std::string_view str)
+    {
+        std::string out;
+        out.reserve(str.size() + 16);
+        for (char c : str)
+        {
+            switch (c)
+            {
+            case '"':
+                out += "\\\"";
+                break;
+            case '\\':
+                out += "\\\\";
+                break;
+            case '\b':
+                out += "\\b";
+                break;
+            case '\f':
+                out += "\\f";
+                break;
+            case '\n':
+                out += "\\n";
+                break;
+            case '\r':
+                out += "\\r";
+                break;
+            case '\t':
+                out += "\\t";
+                break;
+            default:
+                if (static_cast<unsigned char>(c) < 0x20)
+                {
+                    char hexBuf[8];
+                    std::snprintf(hexBuf, sizeof(hexBuf), "\\u%04x", static_cast<unsigned char>(c));
+                    out += hexBuf;
+                }
+                else
+                {
+                    out.push_back(c);
+                }
+                break;
+            }
+        }
+        return out;
     }
 
     /**
@@ -1008,7 +1109,7 @@ class Debugger
     static std::string FormatDapEvent(const std::string& eventName, const std::string& bodyJson = "", int seq = 0)
     {
         std::ostringstream ss;
-        ss << "{\"seq\":" << seq << ",\"type\":\"event\",\"event\":\"" << eventName << "\"";
+        ss << "{\"seq\":" << seq << ",\"type\":\"event\",\"event\":\"" << JsonEscape(eventName) << "\"";
         if (!bodyJson.empty())
         {
             ss << ",\"body\":" << bodyJson;
@@ -1129,8 +1230,8 @@ class Debugger
         for (size_t i = 0; i < bps.size(); ++i)
         {
             SetBreakpointInfo(path, bps[i]);
-            ss << "{\"verified\":true,\"line\":" << bps[i].line << ",\"source\":{\"path\":\"" << path << "\"}}"
-               << (i + 1 < bps.size() ? "," : "");
+            ss << "{\"verified\":true,\"line\":" << bps[i].line << ",\"source\":{\"path\":\"" << JsonEscape(path)
+               << "\"}}" << (i + 1 < bps.size() ? "," : "");
         }
         ss << "]}}";
         return ss.str();
@@ -1153,8 +1254,8 @@ class Debugger
             for (size_t i = 0; i < frames.size(); ++i)
             {
                 const auto& f = frames[i];
-                ss << "{\"id\":" << f.id << ",\"name\":\"" << f.functionName << "\",\"line\":" << f.line
-                   << ",\"column\":" << f.column << ",\"source\":{\"path\":\"" << f.scriptSection << "\"}"
+                ss << "{\"id\":" << f.id << ",\"name\":\"" << JsonEscape(f.functionName) << "\",\"line\":" << f.line
+                   << ",\"column\":" << f.column << ",\"source\":{\"path\":\"" << JsonEscape(f.scriptSection) << "\"}"
                    << (!f.instructionPointerReference.empty()
                            ? (",\"instructionPointerReference\":\"" + f.instructionPointerReference + "\"")
                            : "")
@@ -1170,7 +1271,7 @@ class Debugger
     }
 
     /**
-     * @brief Dispatches variables request for Locals (1000), Globals (2000), and Registers (3000).
+     * @brief Dispatches variables request for Locals, Globals, Registers, and expandable objects.
      * @param[in] seq Request sequence number.
      * @param[in] requestJson Raw request JSON.
      * @param[in] activeCtx Active script context.
@@ -1184,64 +1285,66 @@ class Debugger
            << ",\"command\":\"variables\",\"success\":true,\"body\":{\"variables\":[";
         if (activeCtx)
         {
-            if (varRef == 1000)
+            std::lock_guard<std::mutex> lock(m_mutex);
+            bool first = true;
+            if (varRef >= 4000)
             {
-                const auto locals = GetLocalVariables(activeCtx, 0);
-                const auto thisProps = GetThisProperties(activeCtx, 0);
-                bool first = true;
+                auto it = m_objectRefs.find(varRef);
+                if (it != m_objectRefs.end() && it->second.ptr != nullptr)
+                {
+                    const auto props = GetChildProperties(activeCtx->GetEngine(), it->second.ptr, it->second.typeId);
+                    for (const auto& p : props)
+                    {
+                        const int childRef = TryRegisterChildRefLocked(p.typeId, p.memoryReference);
+                        AppendVariableEntry(ss, first, p.name, p.value, p.typeName, childRef, p.memoryReference);
+                    }
+                }
+            }
+            else if (varRef >= 1000 && varRef < 2000)
+            {
+                const asUINT stackLevel = static_cast<asUINT>(varRef - 1000);
+                const auto locals = GetLocalVariables(activeCtx, stackLevel);
+                const auto thisProps = GetThisProperties(activeCtx, stackLevel);
                 for (const auto& var : locals)
                 {
-                    if (!first)
-                        ss << ",";
-                    first = false;
-                    ss << "{\"name\":\"" << var.name << "\",\"value\":\"" << var.value << "\",\"type\":\""
-                       << var.typeName << "\",\"variablesReference\":0"
-                       << (!var.memoryReference.empty() ? (",\"memoryReference\":\"" + var.memoryReference + "\"") : "")
-                       << "}";
+                    const int childRef = TryRegisterChildRefLocked(var.typeId, var.memoryReference);
+                    AppendVariableEntry(ss, first, var.name, var.value, var.typeName, childRef, var.memoryReference);
                 }
                 for (const auto& prop : thisProps)
                 {
-                    if (!first)
-                        ss << ",";
-                    first = false;
-                    ss << "{\"name\":\"this." << prop.name << "\",\"value\":\"" << prop.value << "\",\"type\":\""
-                       << prop.typeName << "\",\"variablesReference\":0"
-                       << (!prop.memoryReference.empty() ? (",\"memoryReference\":\"" + prop.memoryReference + "\"")
-                                                         : "")
-                       << "}";
+                    const int childRef = TryRegisterChildRefLocked(prop.typeId, prop.memoryReference);
+                    AppendVariableEntry(ss, first, "this." + prop.name, prop.value, prop.typeName, childRef,
+                                        prop.memoryReference);
                 }
             }
             else if (varRef == 2000)
             {
                 const auto globals = GetGlobalVariables(activeCtx);
-                for (size_t i = 0; i < globals.size(); ++i)
+                for (const auto& var : globals)
                 {
-                    const auto& var = globals[i];
-                    ss << "{\"name\":\"" << var.name << "\",\"value\":\"" << var.value << "\",\"type\":\""
-                       << var.typeName << "\",\"variablesReference\":0"
-                       << (!var.memoryReference.empty() ? (",\"memoryReference\":\"" + var.memoryReference + "\"") : "")
-                       << "}" << (i + 1 < globals.size() ? "," : "");
+                    const int childRef = TryRegisterChildRefLocked(var.typeId, var.memoryReference);
+                    AppendVariableEntry(ss, first, var.name, var.value, var.typeName, childRef, var.memoryReference);
                 }
             }
-            else if (varRef == 3000)
+            else if (varRef >= 3000 && varRef < 4000)
             {
-                asIScriptFunction* func = activeCtx->GetFunction(0);
+                const asUINT stackLevel = static_cast<asUINT>(varRef - 3000);
+                asIScriptFunction* func = activeCtx->GetFunction(stackLevel);
                 int col = 0;
                 const char* sec = nullptr;
-                int line = activeCtx->GetLineNumber(0, &col, &sec);
+                int line = activeCtx->GetLineNumber(stackLevel, &col, &sec);
                 std::string fn = func ? func->GetName() : "<unknown>";
                 std::string mod = (func && func->GetModule()) ? func->GetModule()->GetName() : "<none>";
-                ss << "{\"name\":\"PC\",\"value\":\"" << fn << " @ line " << line
-                   << "\",\"type\":\"address\",\"variablesReference\":0},"
-                   << "{\"name\":\"State\",\"value\":\""
-                   << (activeCtx->GetState() == asEXECUTION_SUSPENDED ? "SUSPENDED" : "ACTIVE")
-                   << "\",\"type\":\"asEContextState\",\"variablesReference\":0},"
-                   << "{\"name\":\"CallstackDepth\",\"value\":\"" << activeCtx->GetCallstackSize()
-                   << "\",\"type\":\"uint32\",\"variablesReference\":0},"
-                   << "{\"name\":\"ReturnDWord\",\"value\":\"" << activeCtx->GetReturnDWord()
-                   << "\",\"type\":\"uint32\",\"variablesReference\":0},"
-                   << "{\"name\":\"Function\",\"value\":\"" << fn << "\",\"type\":\"string\",\"variablesReference\":0},"
-                   << "{\"name\":\"Module\",\"value\":\"" << mod << "\",\"type\":\"string\",\"variablesReference\":0}";
+                AppendVariableEntry(ss, first, "PC", fn + " @ line " + std::to_string(line), "address", 0, "");
+                AppendVariableEntry(ss, first, "State",
+                                    activeCtx->GetState() == asEXECUTION_SUSPENDED ? "SUSPENDED" : "ACTIVE",
+                                    "asEContextState", 0, "");
+                AppendVariableEntry(ss, first, "CallstackDepth", std::to_string(activeCtx->GetCallstackSize()),
+                                    "uint32", 0, "");
+                AppendVariableEntry(ss, first, "ReturnDWord", std::to_string(activeCtx->GetReturnDWord()), "uint32", 0,
+                                    "");
+                AppendVariableEntry(ss, first, "Function", fn, "string", 0, "");
+                AppendVariableEntry(ss, first, "Module", mod, "string", 0, "");
             }
         }
         ss << "]}}";
@@ -1342,11 +1445,12 @@ class Debugger
     {
         std::string desc = (activeCtx && activeCtx->GetExceptionString()) ? activeCtx->GetExceptionString()
                                                                           : "AngelScript runtime exception";
+        std::string escDesc = JsonEscape(desc);
         std::ostringstream ss;
         ss << "{\"seq\":" << (seq + 100) << ",\"type\":\"response\",\"request_seq\":" << seq
            << ",\"command\":\"exceptionInfo\",\"success\":true,\"body\":{\"exceptionId\":\"AngelScriptException\","
-           << "\"description\":\"" << desc << "\",\"breakMode\":\"userUnhandled\",\"details\":{\"message\":\"" << desc
-           << "\",\"typeName\":\"AngelScriptRuntimeError\",\"stackTrace\":\"" << desc << "\"}}}";
+           << "\"description\":\"" << escDesc << "\",\"breakMode\":\"userUnhandled\",\"details\":{\"message\":\""
+           << escDesc << "\",\"typeName\":\"AngelScriptRuntimeError\",\"stackTrace\":\"" << escDesc << "\"}}}";
         return ss.str();
     }
 
@@ -1360,16 +1464,27 @@ class Debugger
     std::string HandleEvaluate(int seq, const std::string& requestJson, asIScriptContext* activeCtx) const
     {
         const std::string expr = ExtractJsonString(requestJson, "\"expression\"");
-        const auto var = EvaluateExpression(activeCtx, expr);
+        const int frameId = ExtractJsonInt(requestJson, "\"frameId\"", 0);
+        const asUINT stackLevel = static_cast<asUINT>(frameId >= 0 ? frameId : 0);
+        const auto var = EvaluateExpression(activeCtx, expr, stackLevel);
         std::ostringstream ss;
         ss << "{\"seq\":" << (seq + 100) << ",\"type\":\"response\",\"request_seq\":" << seq
            << ",\"command\":\"evaluate\",\"success\":true,";
         if (var)
         {
-            ss << "\"body\":{\"result\":\"" << var->value << "\",\"type\":\"" << var->typeName
-               << "\",\"variablesReference\":0"
-               << (!var->memoryReference.empty() ? (",\"memoryReference\":\"" + var->memoryReference + "\"") : "")
-               << "}}";
+            int childRef = 0;
+            if ((var->typeId & asTYPEID_MASK_OBJECT) != 0 && !var->memoryReference.empty())
+            {
+                std::lock_guard<std::mutex> lock(m_mutex);
+                childRef = TryRegisterChildRefLocked(var->typeId, var->memoryReference);
+            }
+            ss << "\"body\":{\"result\":\"" << JsonEscape(var->value) << "\",\"type\":\"" << JsonEscape(var->typeName)
+               << "\",\"variablesReference\":" << childRef;
+            if (!var->memoryReference.empty())
+            {
+                ss << ",\"memoryReference\":\"" << var->memoryReference << "\"";
+            }
+            ss << "}}";
         }
         else
         {
@@ -1421,10 +1536,15 @@ class Debugger
         }
         else if (cmd == "scopes")
         {
+            const int frameId = ExtractJsonInt(requestJson, "\"frameId\"", 0);
+            const int localsRef = 1000 + frameId;
+            const int globalsRef = 2000;
+            const int registersRef = 3000 + frameId;
             ss << ",\"body\":{\"scopes\":["
-               << "{\"name\":\"Locals\",\"variablesReference\":1000,\"expensive\":false},"
-               << "{\"name\":\"Globals\",\"variablesReference\":2000,\"expensive\":true},"
-               << "{\"name\":\"Registers\",\"variablesReference\":3000,\"presentationHint\":\"registers\","
+               << "{\"name\":\"Locals\",\"variablesReference\":" << localsRef << ",\"expensive\":false},"
+               << "{\"name\":\"Globals\",\"variablesReference\":" << globalsRef << ",\"expensive\":true},"
+               << "{\"name\":\"Registers\",\"variablesReference\":" << registersRef
+               << ",\"presentationHint\":\"registers\","
                   "\"expensive\":false}]}";
         }
         else if (cmd == "threads")
@@ -1547,44 +1667,129 @@ class Debugger
     }
 
   private:
+    static void UnescapeJsonChar(char c, std::string& out)
+    {
+        switch (c)
+        {
+        case '"':
+            out.push_back('"');
+            break;
+        case '\\':
+            out.push_back('\\');
+            break;
+        case '/':
+            out.push_back('/');
+            break;
+        case 'b':
+            out.push_back('\b');
+            break;
+        case 'f':
+            out.push_back('\f');
+            break;
+        case 'n':
+            out.push_back('\n');
+            break;
+        case 'r':
+            out.push_back('\r');
+            break;
+        case 't':
+            out.push_back('\t');
+            break;
+        default:
+            out.push_back(c);
+            break;
+        }
+    }
+
     static std::string ExtractJsonString(std::string_view json, std::string_view key)
     {
-        const size_t pos = json.find(key);
-        if (pos == std::string_view::npos)
+        size_t searchPos = 0;
+        while (searchPos < json.size())
         {
-            return "";
+            const size_t pos = json.find(key, searchPos);
+            if (pos == std::string_view::npos)
+            {
+                return "";
+            }
+            size_t colonPos = pos + key.size();
+            while (colonPos < json.size() && (json[colonPos] == ' ' || json[colonPos] == '\t' ||
+                                              json[colonPos] == '\r' || json[colonPos] == '\n'))
+            {
+                ++colonPos;
+            }
+            if (colonPos < json.size() && json[colonPos] == ':')
+            {
+                size_t valPos = colonPos + 1;
+                while (valPos < json.size() &&
+                       (json[valPos] == ' ' || json[valPos] == '\t' || json[valPos] == '\r' || json[valPos] == '\n'))
+                {
+                    ++valPos;
+                }
+                if (valPos < json.size() && json[valPos] == '"')
+                {
+                    std::string out;
+                    bool escaped = false;
+                    for (size_t i = valPos + 1; i < json.size(); ++i)
+                    {
+                        const char c = json[i];
+                        if (escaped)
+                        {
+                            UnescapeJsonChar(c, out);
+                            escaped = false;
+                        }
+                        else if (c == '\\')
+                        {
+                            escaped = true;
+                        }
+                        else if (c == '"')
+                        {
+                            return out;
+                        }
+                        else
+                        {
+                            out.push_back(c);
+                        }
+                    }
+                    return out;
+                }
+            }
+            searchPos = pos + key.size();
         }
-        size_t start = json.find('"', pos + key.size());
-        if (start == std::string_view::npos)
-        {
-            return "";
-        }
-        ++start;
-        size_t end = json.find('"', start);
-        if (end == std::string_view::npos)
-        {
-            return "";
-        }
-        return std::string(json.substr(start, end - start));
+        return "";
     }
 
     static int ExtractJsonInt(std::string_view json, std::string_view key, int defaultVal = 0)
     {
-        const size_t pos = json.find(key);
-        if (pos == std::string_view::npos)
+        size_t searchPos = 0;
+        while (searchPos < json.size())
         {
-            return defaultVal;
+            const size_t pos = json.find(key, searchPos);
+            if (pos == std::string_view::npos)
+            {
+                return defaultVal;
+            }
+            size_t colonPos = pos + key.size();
+            while (colonPos < json.size() && (json[colonPos] == ' ' || json[colonPos] == '\t' ||
+                                              json[colonPos] == '\r' || json[colonPos] == '\n'))
+            {
+                ++colonPos;
+            }
+            if (colonPos < json.size() && json[colonPos] == ':')
+            {
+                size_t numPos = colonPos + 1;
+                while (numPos < json.size() &&
+                       (json[numPos] == ' ' || json[numPos] == '\t' || json[numPos] == '\r' || json[numPos] == '\n'))
+                {
+                    ++numPos;
+                }
+                if (numPos < json.size())
+                {
+                    return std::atoi(json.data() + numPos);
+                }
+            }
+            searchPos = pos + key.size();
         }
-        size_t numPos = pos + key.size();
-        while (numPos < json.size() && (json[numPos] == ':' || json[numPos] == ' ' || json[numPos] == '\t'))
-        {
-            ++numPos;
-        }
-        if (numPos >= json.size())
-        {
-            return defaultVal;
-        }
-        return std::atoi(json.data() + numPos);
+        return defaultVal;
     }
 
     static std::string NormalizeSection(std::string_view sec)
@@ -1601,55 +1806,91 @@ class Debugger
         return res;
     }
 
-    bool ShouldSuspend(asIScriptContext* ctx, const std::string& section, int line)
+    bool CheckSteppingSuspension(asIScriptContext* ctx, int line) const noexcept
     {
-        const auto currentState = m_state.load(std::memory_order_acquire);
+        const auto currentState = m_state.load(std::memory_order_relaxed);
         if (currentState == ExecutionState::StepIn)
         {
             return true;
         }
         if (currentState == ExecutionState::StepOver)
         {
-            return ctx->GetCallstackSize() <= m_stepStackDepth;
+            const asUINT depth = m_stepStackDepth.load(std::memory_order_relaxed);
+            if (ctx->GetCallstackSize() < depth)
+            {
+                return true;
+            }
+            if (ctx->GetCallstackSize() == depth)
+            {
+                return line != m_stepStartLine.load(std::memory_order_relaxed);
+            }
+            return false;
         }
         if (currentState == ExecutionState::StepOut)
         {
-            return ctx->GetCallstackSize() <= m_stepStackDepth;
+            return ctx->GetCallstackSize() <= m_stepStackDepth.load(std::memory_order_relaxed);
+        }
+        return false;
+    }
+
+    bool ShouldSuspend(asIScriptContext* ctx, std::string_view section, int line)
+    {
+        if (CheckSteppingSuspension(ctx, line))
+        {
+            return true;
         }
 
-        std::lock_guard<std::mutex> lock(m_mutex);
-        auto it = m_breakpoints.find(NormalizeSection(section));
-        if (it != m_breakpoints.end())
+        std::string normSec = NormalizeSection(section);
+        std::vector<std::string> toEmitOutputs;
+        bool shouldBreak = false;
         {
-            for (auto& bp : it->second)
+            std::lock_guard<std::mutex> lock(m_mutex);
+            for (auto& [bpSec, list] : m_breakpoints)
             {
-                if (bp.line == line)
+                if (!SectionMatches(normSec, bpSec))
                 {
-                    ++bp.hitCount;
-                    if (!bp.hitCondition.empty() && !EvaluateHitCondition(bp.hitCount, bp.hitCondition))
+                    continue;
+                }
+                for (auto& bp : list)
+                {
+                    if (bp.line == line)
                     {
-                        continue;
-                    }
-                    if (!bp.condition.empty())
-                    {
-                        auto condVar = EvaluateExpression(ctx, bp.condition);
-                        if (!condVar || condVar->value.empty() || condVar->value == "false" || condVar->value == "0")
+                        ++bp.hitCount;
+                        if (!bp.hitCondition.empty() && !EvaluateHitCondition(bp.hitCount, bp.hitCondition))
                         {
                             continue;
                         }
+                        if (!bp.condition.empty())
+                        {
+                            auto condVar = EvaluateExpression(ctx, bp.condition);
+                            if (!condVar || condVar->value.empty() || condVar->value == "false" ||
+                                condVar->value == "0")
+                            {
+                                continue;
+                            }
+                        }
+                        if (!bp.logMessage.empty())
+                        {
+                            std::string interpolated = InterpolateLogMessage(ctx, bp.logMessage);
+                            toEmitOutputs.push_back(interpolated);
+                            m_pendingOutputs.push_back(interpolated);
+                            continue;
+                        }
+                        shouldBreak = true;
+                        break;
                     }
-                    if (!bp.logMessage.empty())
-                    {
-                        std::string interpolated = InterpolateLogMessage(ctx, bp.logMessage);
-                        OnOutput("console", interpolated);
-                        m_pendingOutputs.push_back(interpolated);
-                        continue;
-                    }
-                    return true;
+                }
+                if (shouldBreak)
+                {
+                    break;
                 }
             }
         }
-        return false;
+        for (const auto& out : toEmitOutputs)
+        {
+            OnOutput("console", out);
+        }
+        return shouldBreak;
     }
 
     static std::string FormatTypeName(asIScriptEngine* engine, int typeId)
@@ -1737,20 +1978,119 @@ class Debugger
                 asITypeInfo* ti = engine->GetTypeInfoById(typeId);
                 if (ti && std::string_view(ti->GetName()) == "string")
                 {
-                    return "\"" + *reinterpret_cast<std::string*>(ptr) + "\"";
+                    return *reinterpret_cast<std::string*>(ptr);
                 }
             }
             return "{...}";
         }
     }
 
+    struct ObjectRefEntry
+    {
+        void* ptr = nullptr;
+        int typeId = 0;
+    };
+
+    static constexpr size_t k_lineBitmapWords = 64;
+    static constexpr size_t k_maxDapPayloadSize = 16 * 1024 * 1024;
+
+    static bool SectionMatches(std::string_view targetSec, std::string_view bpSec) noexcept
+    {
+        if (targetSec == bpSec)
+        {
+            return true;
+        }
+        if (targetSec.size() > bpSec.size())
+        {
+            return targetSec.ends_with(bpSec) && targetSec[targetSec.size() - bpSec.size() - 1] == '/';
+        }
+        if (bpSec.size() > targetSec.size())
+        {
+            return bpSec.ends_with(targetSec) && bpSec[bpSec.size() - targetSec.size() - 1] == '/';
+        }
+        return false;
+    }
+
+    void RebuildLineBitmapLocked() noexcept
+    {
+        for (auto& w : m_lineBitmap)
+        {
+            w.store(0, std::memory_order_relaxed);
+        }
+        uint32_t count = 0;
+        for (const auto& [sec, list] : m_breakpoints)
+        {
+            count += static_cast<uint32_t>(list.size());
+            for (const auto& bp : list)
+            {
+                if (bp.line >= 0 && bp.line < 4096)
+                {
+                    const size_t word = static_cast<size_t>(bp.line) / 64;
+                    const uint64_t mask = 1ULL << (bp.line % 64);
+                    m_lineBitmap[word].fetch_or(mask, std::memory_order_relaxed);
+                }
+            }
+        }
+        m_activeBreakpointCount.store(count, std::memory_order_release);
+    }
+
+    void ClearObjectRefsLocked() const noexcept
+    {
+        m_objectRefs.clear();
+        m_nextObjectRef = 4000;
+    }
+
+    int RegisterObjectRefLocked(void* ptr, int typeId) const
+    {
+        int ref = m_nextObjectRef++;
+        m_objectRefs[ref] = {ptr, typeId};
+        return ref;
+    }
+
+    int TryRegisterChildRefLocked(int typeId, std::string_view memRef) const
+    {
+        if ((typeId & asTYPEID_MASK_OBJECT) != 0 && !memRef.empty())
+        {
+            void* childPtr = reinterpret_cast<void*>(std::strtoull(memRef.data(), nullptr, 16));
+            if (childPtr)
+            {
+                return RegisterObjectRefLocked(childPtr, typeId);
+            }
+        }
+        return 0;
+    }
+
+    static void AppendVariableEntry(std::ostringstream& ss, bool& first, std::string_view name, std::string_view value,
+                                    std::string_view typeName, int childRef, std::string_view memRef)
+    {
+        if (!first)
+        {
+            ss << ",";
+        }
+        first = false;
+        ss << "{\"name\":\"" << JsonEscape(name) << "\",\"value\":\"" << JsonEscape(value) << "\",\"type\":\""
+           << JsonEscape(typeName) << "\",\"variablesReference\":" << childRef;
+        if (!memRef.empty())
+        {
+            ss << ",\"memoryReference\":\"" << memRef << "\"";
+        }
+        ss << "}";
+    }
+
     mutable std::mutex m_mutex;
+    std::mutex m_cvMutex;
+    std::condition_variable m_cv;
     asIScriptEngine* m_engine = nullptr;
     std::atomic<ExecutionState> m_state{ExecutionState::Running};
     std::atomic<bool> m_breakOnException{false};
-    asUINT m_stepStackDepth = 0;
+    std::atomic<asUINT> m_stepStackDepth{0};
+    std::atomic<int> m_stepStartLine{0};
+    std::atomic<uint32_t> m_activeBreakpointCount{0};
+    std::array<std::atomic<uint64_t>, k_lineBitmapWords> m_lineBitmap{};
     std::unordered_map<std::string, std::vector<BreakpointInfo>> m_breakpoints;
     std::vector<std::string> m_pendingOutputs;
+    mutable std::unordered_map<int, ObjectRefEntry> m_objectRefs;
+    mutable int m_nextObjectRef = 4000;
 };
 
 } // namespace angel_lsp::debug

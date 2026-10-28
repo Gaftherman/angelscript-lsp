@@ -749,6 +749,12 @@ suite('ConfigurationTarget and LocalState Scope', () => {
             const res = extractAngelScriptEvaluatableExpression(line, 2);
             assert.strictEqual(res, undefined);
         });
+
+        test('returns undefined for pure numeric literals', () => {
+            const line = 'int count = 42;';
+            const res = extractAngelScriptEvaluatableExpression(line, 13);
+            assert.strictEqual(res, undefined);
+        });
     });
 });
 
