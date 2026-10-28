@@ -22,6 +22,9 @@ import {
     hasLocalStateOverrides,
     setExtensionContext
 } from '../extension';
+import {
+    extractAngelScriptEvaluatableExpression
+} from '../debug/angelscriptEvaluatableExpression';
 
 // =====================================================================================
 // The client's settings-to-arguments mapping.
@@ -695,6 +698,56 @@ suite('ConfigurationTarget and LocalState Scope', () => {
             await withSetting('predefined.active', 'fallback_stub.as.predefined', () => {
                 assert.strictEqual(getActivePredefinedStub(), 'fallback_stub.as.predefined');
             });
+        });
+    });
+
+    suite('AngelScriptEvaluatableExpression', () => {
+        test('extracts single variable', () => {
+            const line = 'int ui = 42;';
+            const res = extractAngelScriptEvaluatableExpression(line, 4);
+            assert.ok(res);
+            assert.strictEqual(res.expression, 'ui');
+        });
+
+        test('extracts chained member properties', () => {
+            const line = 'if (data.m_Classname == "weapon_bts")';
+            const res = extractAngelScriptEvaluatableExpression(line, 12);
+            assert.ok(res);
+            assert.strictEqual(res.expression, 'data.m_Classname');
+        });
+
+        test('extracts multi-level member access', () => {
+            const line = 'float hp = player.pev.health;';
+            const res = extractAngelScriptEvaluatableExpression(line, 22);
+            assert.ok(res);
+            assert.strictEqual(res.expression, 'player.pev.health');
+        });
+
+        test('extracts pointer arrow member access', () => {
+            const line = 'int dmg = pEntity->m_iHealth;';
+            const res = extractAngelScriptEvaluatableExpression(line, 21);
+            assert.ok(res);
+            assert.strictEqual(res.expression, 'pEntity->m_iHealth');
+        });
+
+        test('extracts array indexing expressions', () => {
+            const line = 'string name = itemNames[ui];';
+            const res = extractAngelScriptEvaluatableExpression(line, 24);
+            assert.ok(res);
+            assert.strictEqual(res.expression, 'itemNames[ui]');
+        });
+
+        test('extracts this property access', () => {
+            const line = 'this.m_EquipmentData = value;';
+            const res = extractAngelScriptEvaluatableExpression(line, 10);
+            assert.ok(res);
+            assert.strictEqual(res.expression, 'this.m_EquipmentData');
+        });
+
+        test('returns undefined for whitespace or operators', () => {
+            const line = 'a + b;';
+            const res = extractAngelScriptEvaluatableExpression(line, 2);
+            assert.strictEqual(res, undefined);
         });
     });
 });

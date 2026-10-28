@@ -208,7 +208,13 @@ class AngelScriptDebugAdapterSession implements vscode.DebugAdapter {
             arguments?: {
                 source?: { path?: string };
                 lines?: number[];
-                breakpoints?: Array<{ line: number; column?: number }>;
+                breakpoints?: Array<{
+                    line: number;
+                    column?: number;
+                    condition?: string;
+                    hitCondition?: string;
+                    logMessage?: string;
+                }>;
             };
         };
         const filePath = req.arguments?.source?.path;
@@ -234,13 +240,14 @@ class AngelScriptDebugAdapterSession implements vscode.DebugAdapter {
 
                 if (Array.isArray(locations) && locations.length > 0) {
                     const validLines = new Set<number>(locations.map(loc => loc.range.start.line + 1));
-                    const verifiedLines = requestedLines.filter(line => validLines.has(line));
-                    if (verifiedLines.length > 0 && req.arguments) {
-                        if (req.arguments.lines) {
-                            req.arguments.lines = verifiedLines;
-                        }
-                        if (rawBreakpoints) {
-                            req.arguments.breakpoints = rawBreakpoints.filter(b => validLines.has(b.line));
+                    if (rawBreakpoints) {
+                        for (const bp of rawBreakpoints) {
+                            if (!validLines.has(bp.line)) {
+                                const candidates = Array.from(validLines).filter(l => l >= bp.line).sort((a, b) => a - b);
+                                if (candidates.length > 0) {
+                                    bp.line = candidates[0];
+                                }
+                            }
                         }
                     }
                 }

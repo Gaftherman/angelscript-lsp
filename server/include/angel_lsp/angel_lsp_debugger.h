@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <iomanip>
 #include <mutex>
 #include <optional>
 #include <sstream>
@@ -71,6 +72,7 @@ struct StackFrameInfo
     std::string scriptSection;
     int line = 0;
     int column = 0;
+    std::string instructionPointerReference;
 };
 
 /**
@@ -83,6 +85,22 @@ struct VariableInfo
     std::string typeName;
     int typeId = 0;
     uint32_t variablesReference = 0;
+    std::string memoryReference;
+};
+
+/**
+ * @brief Represents a line, conditional, or log breakpoint.
+ */
+struct BreakpointInfo
+{
+    int id = 0;
+    int line = 0;
+    int column = 0;
+    bool verified = true;
+    std::string condition;
+    std::string hitCondition;
+    std::string logMessage;
+    int hitCount = 0;
 };
 
 /**
@@ -132,18 +150,40 @@ class Debugger
     /**
      * @brief Sets a line breakpoint for a specific script section or file.
      * @param[in] section Name of the script section or file path.
-     * @param[in] line 1-based or 0-based source line.
+     * @param[in] line 1-based source line.
      */
     void SetBreakpoint(const std::string& section, int line)
     {
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_breakpoints[NormalizeSection(section)].insert(line);
+        BreakpointInfo bp;
+        bp.line = line;
+        bp.verified = true;
+        SetBreakpointInfo(section, std::move(bp));
     }
 
     /**
-     * @brief Clears a line breakpoint.
+     * @brief Sets a detailed breakpoint with optional condition, hit condition, or log message.
      * @param[in] section Name of the script section or file path.
-     * @param[in] line Source line to clear.
+     * @param[in] info Breakpoint details.
+     */
+    void SetBreakpointInfo(const std::string& section, BreakpointInfo info)
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        auto& list = m_breakpoints[NormalizeSection(section)];
+        for (auto& existing : list)
+        {
+            if (existing.line == info.line)
+            {
+                existing = std::move(info);
+                return;
+            }
+        }
+        list.push_back(std::move(info));
+    }
+
+    /**
+     * @brief Clears a line breakpoint, or all breakpoints in a section if line is 0.
+     * @param[in] section Name of the script section or file path.
+     * @param[in] line Source line to clear, or 0 to clear the section.
      */
     void ClearBreakpoint(const std::string& section, int line)
     {
@@ -151,7 +191,22 @@ class Debugger
         auto it = m_breakpoints.find(NormalizeSection(section));
         if (it != m_breakpoints.end())
         {
-            it->second.erase(line);
+            if (line == 0)
+            {
+                it->second.clear();
+            }
+            else
+            {
+                auto& list = it->second;
+                for (size_t i = 0; i < list.size(); ++i)
+                {
+                    if (list[i].line == line)
+                    {
+                        list.erase(list.begin() + i);
+                        break;
+                    }
+                }
+            }
         }
     }
 
@@ -162,6 +217,18 @@ class Debugger
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_breakpoints.clear();
+    }
+
+    /**
+     * @brief Retrieves and clears any pending output console messages (e.g. from logpoints).
+     * @return List of accumulated output strings.
+     */
+    std::vector<std::string> PopPendingOutputs()
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        std::vector<std::string> res = std::move(m_pendingOutputs);
+        m_pendingOutputs.clear();
+        return res;
     }
 
     /**
@@ -366,6 +433,7 @@ class Debugger
             frame.scriptSection = section ? section : "";
             frame.line = line;
             frame.column = col;
+            frame.instructionPointerReference = AddressToHex(func);
             frames.push_back(std::move(frame));
         }
 
@@ -401,6 +469,10 @@ class Debugger
             info.typeId = typeId;
             info.typeName = engine ? FormatTypeName(engine, typeId) : "";
             info.value = FormatValue(engine, address, typeId);
+            if (address)
+            {
+                info.memoryReference = AddressToHex(address);
+            }
             locals.push_back(std::move(info));
         }
 
@@ -479,6 +551,10 @@ class Debugger
             info.typeId = typeId;
             info.typeName = engine ? FormatTypeName(engine, typeId) : "";
             info.value = FormatValue(engine, address, typeId);
+            if (address)
+            {
+                info.memoryReference = AddressToHex(address);
+            }
             globals.push_back(std::move(info));
         }
 
@@ -493,7 +569,321 @@ class Debugger
      * @return List of child properties.
      */
     /**
-     * @brief Evaluates an expression against the current context scope (locals, member properties, and globals).
+     * @brief Formats a raw memory pointer as a hex string with "0x" prefix.
+     * @param[in] ptr Memory address.
+     * @return Hexadecimal address string.
+     */
+    static std::string AddressToHex(const void* ptr)
+    {
+        if (!ptr)
+        {
+            return "0x0";
+        }
+        std::ostringstream ss;
+        ss << "0x" << std::hex << reinterpret_cast<uintptr_t>(ptr);
+        return ss.str();
+    }
+
+    /**
+     * @brief Encodes a byte buffer into Base64 for DAP memory read payloads.
+     * @param[in] data Pointer to raw byte data.
+     * @param[in] length Number of bytes to encode.
+     * @return Base64 encoded string.
+     */
+    static std::string Base64Encode(const uint8_t* data, size_t length)
+    {
+        static constexpr char k_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        std::string out;
+        out.reserve(((length + 2) / 3) * 4);
+        for (size_t i = 0; i < length; i += 3)
+        {
+            const uint32_t b0 = data[i];
+            const uint32_t b1 = (i + 1 < length) ? data[i + 1] : 0;
+            const uint32_t b2 = (i + 2 < length) ? data[i + 2] : 0;
+            const uint32_t triple = (b0 << 16) | (b1 << 8) | b2;
+            out.push_back(k_table[(triple >> 18) & 0x3F]);
+            out.push_back(k_table[(triple >> 12) & 0x3F]);
+            out.push_back((i + 1 < length) ? k_table[(triple >> 6) & 0x3F] : '=');
+            out.push_back((i + 2 < length) ? k_table[triple & 0x3F] : '=');
+        }
+        return out;
+    }
+
+    /**
+     * @brief Decodes a Base64 string into a byte buffer for DAP memory write payloads.
+     * @param[in] in Base64 encoded string.
+     * @return Decoded bytes.
+     */
+    static std::vector<uint8_t> Base64Decode(std::string_view in)
+    {
+        auto decodeChar = [](char c) -> int
+        {
+            if (c >= 'A' && c <= 'Z')
+                return c - 'A';
+            if (c >= 'a' && c <= 'z')
+                return c - 'a' + 26;
+            if (c >= '0' && c <= '9')
+                return c - '0' + 52;
+            if (c == '+')
+                return 62;
+            if (c == '/')
+                return 63;
+            return -1;
+        };
+        std::vector<uint8_t> out;
+        uint32_t buf = 0;
+        int bits = 0;
+        for (char c : in)
+        {
+            if (c == '=' || c == '\r' || c == '\n' || c == ' ')
+                continue;
+            int val = decodeChar(c);
+            if (val < 0)
+                continue;
+            buf = (buf << 6) | static_cast<uint32_t>(val);
+            bits += 6;
+            if (bits >= 8)
+            {
+                bits -= 8;
+                out.push_back(static_cast<uint8_t>((buf >> bits) & 0xFF));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * @brief Evaluates an AngelScript hit condition expression (e.g. "== 5", "> 10", "% 2", "3").
+     * @param[in] hitCount Current hit count for the breakpoint.
+     * @param[in] cond Condition expression string.
+     * @return True if condition is satisfied.
+     */
+    static bool EvaluateHitCondition(int hitCount, std::string_view cond)
+    {
+        while (!cond.empty() && (cond.front() == ' ' || cond.front() == '\t'))
+        {
+            cond.remove_prefix(1);
+        }
+        if (cond.empty())
+        {
+            return true;
+        }
+
+        if (cond.rfind("%", 0) == 0)
+        {
+            int mod = std::atoi(cond.data() + 1);
+            return mod > 0 && (hitCount % mod == 0);
+        }
+        if (cond.rfind("==", 0) == 0)
+        {
+            return hitCount == std::atoi(cond.data() + 2);
+        }
+        if (cond.rfind("!=", 0) == 0)
+        {
+            return hitCount != std::atoi(cond.data() + 2);
+        }
+        if (cond.rfind(">=", 0) == 0)
+        {
+            return hitCount >= std::atoi(cond.data() + 2);
+        }
+        if (cond.rfind(">", 0) == 0)
+        {
+            return hitCount > std::atoi(cond.data() + 1);
+        }
+        if (cond.rfind("<=", 0) == 0)
+        {
+            return hitCount <= std::atoi(cond.data() + 2);
+        }
+        if (cond.rfind("<", 0) == 0)
+        {
+            return hitCount < std::atoi(cond.data() + 1);
+        }
+        return hitCount >= std::atoi(cond.data());
+    }
+
+    /**
+     * @brief Evaluates a single identifier in the active context (locals, this properties, globals).
+     * @param[in] ctx Active script context.
+     * @param[in] expression Variable or property expression name.
+     * @param[in] stackLevel Frame stack level.
+     * @return Variable info if found.
+     */
+    std::optional<VariableInfo> EvaluateSimpleExpression(asIScriptContext* ctx, const std::string& expression,
+                                                         asUINT stackLevel = 0) const
+    {
+        if (!ctx || expression.empty() || stackLevel >= ctx->GetCallstackSize())
+        {
+            return std::nullopt;
+        }
+
+        std::string expr = expression;
+        if (expr.rfind("this.", 0) == 0)
+        {
+            expr = expr.substr(5);
+        }
+
+        for (const auto& var : GetLocalVariables(ctx, stackLevel))
+        {
+            if (var.name == expr)
+                return var;
+        }
+        for (const auto& prop : GetThisProperties(ctx, stackLevel))
+        {
+            if (prop.name == expr)
+                return prop;
+        }
+        for (const auto& glob : GetGlobalVariables(ctx))
+        {
+            if (glob.name == expr)
+                return glob;
+        }
+        return std::nullopt;
+    }
+
+    /**
+     * @brief Evaluates a chained property expression (e.g. data.m_Classname or player->health).
+     * @param[in] ctx Active script context.
+     * @param[in] expr Chained member expression.
+     * @param[in] stackLevel Frame stack level.
+     * @return Variable info of the leaf property if resolved.
+     */
+    std::optional<VariableInfo> EvaluateMemberChain(asIScriptContext* ctx, const std::string& expr,
+                                                    asUINT stackLevel) const
+    {
+        std::vector<std::string> parts;
+        std::string cur;
+        for (size_t i = 0; i < expr.size(); ++i)
+        {
+            if (expr[i] == '.')
+            {
+                if (!cur.empty())
+                {
+                    parts.push_back(cur);
+                    cur.clear();
+                }
+            }
+            else if (expr[i] == '-' && i + 1 < expr.size() && expr[i + 1] == '>')
+            {
+                if (!cur.empty())
+                {
+                    parts.push_back(cur);
+                    cur.clear();
+                }
+                ++i;
+            }
+            else
+            {
+                cur.push_back(expr[i]);
+            }
+        }
+        if (!cur.empty())
+            parts.push_back(cur);
+        if (parts.size() <= 1)
+            return std::nullopt;
+
+        auto currentVar = EvaluateSimpleExpression(ctx, parts[0], stackLevel);
+        if (!currentVar)
+            return std::nullopt;
+
+        asIScriptEngine* engine = ctx->GetEngine();
+        for (size_t p = 1; p < parts.size(); ++p)
+        {
+            if (currentVar->memoryReference.empty() && currentVar->typeId == 0)
+                return std::nullopt;
+            uintptr_t ptr = std::strtoull(currentVar->memoryReference.c_str(), nullptr, 16);
+            if (ptr == 0)
+                return std::nullopt;
+
+            auto props = GetChildProperties(engine, reinterpret_cast<void*>(ptr), currentVar->typeId);
+            bool found = false;
+            for (auto& prop : props)
+            {
+                if (prop.name == parts[p])
+                {
+                    *currentVar = std::move(prop);
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                return std::nullopt;
+        }
+        return currentVar;
+    }
+
+    /**
+     * @brief Evaluates a binary comparison expression (e.g. itemNames[ui] == "flare" or hp <= 0).
+     * @param[in] ctx Active script context.
+     * @param[in] expr Expression with comparison operator.
+     * @param[in] stackLevel Frame stack level.
+     * @return Boolean VariableInfo result if comparison evaluated.
+     */
+    std::optional<VariableInfo> EvaluateComparison(asIScriptContext* ctx, const std::string& expr,
+                                                   asUINT stackLevel) const
+    {
+        static const std::vector<std::string> k_ops = {"==", "!=", "<=", ">=", "<", ">"};
+        for (const auto& op : k_ops)
+        {
+            size_t pos = expr.find(op);
+            if (pos != std::string::npos)
+            {
+                if (op == ">" && pos > 0 && expr[pos - 1] == '-')
+                    continue;
+                std::string left = expr.substr(0, pos);
+                std::string right = expr.substr(pos + op.size());
+                auto trim = [](std::string& s)
+                {
+                    while (!s.empty() && (s.front() == ' ' || s.front() == '\t'))
+                        s.erase(0, 1);
+                    while (!s.empty() && (s.back() == ' ' || s.back() == '\t'))
+                        s.pop_back();
+                };
+                trim(left);
+                trim(right);
+
+                auto leftVar = EvaluateExpression(ctx, left, stackLevel);
+                if (!leftVar)
+                    return std::nullopt;
+
+                std::string rVal = (right.size() >= 2 && right.front() == '"' && right.back() == '"')
+                                       ? right.substr(1, right.size() - 2)
+                                       : right;
+                std::string lVal =
+                    (leftVar->value.size() >= 2 && leftVar->value.front() == '"' && leftVar->value.back() == '"')
+                        ? leftVar->value.substr(1, leftVar->value.size() - 2)
+                        : leftVar->value;
+
+                bool match = false;
+                if (op == "==")
+                    match = (lVal == rVal);
+                else if (op == "!=")
+                    match = (lVal != rVal);
+                else
+                {
+                    double lNum = std::strtod(lVal.c_str(), nullptr);
+                    double rNum = std::strtod(rVal.c_str(), nullptr);
+                    if (op == "<")
+                        match = (lNum < rNum);
+                    else if (op == "<=")
+                        match = (lNum <= rNum);
+                    else if (op == ">")
+                        match = (lNum > rNum);
+                    else if (op == ">=")
+                        match = (lNum >= rNum);
+                }
+
+                VariableInfo res;
+                res.name = expr;
+                res.value = match ? "true" : "false";
+                res.typeName = "bool";
+                res.typeId = asTYPEID_BOOL;
+                return res;
+            }
+        }
+        return std::nullopt;
+    }
+
+    /**
+     * @brief Evaluates an expression against the current context scope (comparisons, member chains, variables).
      * @param[in] ctx Active script context.
      * @param[in] expression Variable or property expression name.
      * @param[in] stackLevel Frame stack level (0 = topmost frame).
@@ -507,43 +897,50 @@ class Debugger
             return std::nullopt;
         }
 
-        std::string expr = expression;
-        if (expr.rfind("this.", 0) == 0)
+        // 1. Check comparison expressions (e.g. x == 5, item == "flare")
+        if (auto cmp = EvaluateComparison(ctx, expression, stackLevel))
         {
-            expr = expr.substr(5);
+            return cmp;
         }
 
-        // 1. Search local variables
-        const auto locals = GetLocalVariables(ctx, stackLevel);
-        for (const auto& var : locals)
+        // 2. Check chained member access (e.g. data.m_Classname, player->health)
+        if (auto chain = EvaluateMemberChain(ctx, expression, stackLevel))
         {
-            if (var.name == expr)
+            return chain;
+        }
+
+        // 3. Simple local, this property, or global variable lookup
+        return EvaluateSimpleExpression(ctx, expression, stackLevel);
+    }
+
+    /**
+     * @brief Interpolates tokens of the form {expression} inside a logpoint message.
+     * @param[in] ctx Active script context.
+     * @param[in] msg Raw log message pattern.
+     * @return Formatted string with tokens substituted by evaluated variable values.
+     */
+    std::string InterpolateLogMessage(asIScriptContext* ctx, std::string_view msg) const
+    {
+        std::string result;
+        size_t i = 0;
+        while (i < msg.size())
+        {
+            if (msg[i] == '{')
             {
-                return var;
+                size_t close = msg.find('}', i + 1);
+                if (close != std::string_view::npos)
+                {
+                    std::string token(msg.substr(i + 1, close - i - 1));
+                    auto var = EvaluateExpression(ctx, token);
+                    result += var ? var->value : "<unknown>";
+                    i = close + 1;
+                    continue;
+                }
             }
+            result.push_back(msg[i]);
+            ++i;
         }
-
-        // 2. Search this properties
-        const auto thisProps = GetThisProperties(ctx, stackLevel);
-        for (const auto& prop : thisProps)
-        {
-            if (prop.name == expr)
-            {
-                return prop;
-            }
-        }
-
-        // 3. Search global variables
-        const auto globals = GetGlobalVariables(ctx);
-        for (const auto& glob : globals)
-        {
-            if (glob.name == expr)
-            {
-                return glob;
-            }
-        }
-
-        return std::nullopt;
+        return result;
     }
 
     /**
@@ -626,183 +1023,435 @@ class Debugger
      * @param[in] activeCtx Active script context if currently suspended.
      * @return Formatted DAP JSON response string.
      */
-    std::string HandleDapRequest(const std::string& requestJson, asIScriptContext* activeCtx = nullptr)
+    /**
+     * @brief Generates the DAP initialize response payload declaring supported server capabilities.
+     * @param[in] seq Request sequence number.
+     * @return Formatted DAP JSON response.
+     */
+    static std::string HandleInitialize(int seq)
     {
-        const int seq = ExtractJsonInt(requestJson, "\"seq\"", 1);
-        const std::string command = ExtractJsonString(requestJson, "\"command\"");
-
+        constexpr std::string_view k_caps =
+            ",\"body\":{"
+            "\"supportsConfigurationDoneRequest\":true,"
+            "\"supportsEvaluateForHovers\":true,"
+            "\"supportsConditionalBreakpoints\":true,"
+            "\"supportsHitConditionalBreakpoints\":true,"
+            "\"supportsLogPoints\":true,"
+            "\"supportsTriggerBreakpoints\":true,"
+            "\"supportsExceptionInfoRequest\":true,"
+            "\"supportsReadMemoryRequest\":true,"
+            "\"supportsWriteMemoryRequest\":true,"
+            "\"supportsDisassembleRequest\":true,"
+            "\"supportsInstructionBreakpoints\":true,"
+            "\"supportsSteppingGranularity\":true,"
+            "\"exceptionBreakpointFilters\":["
+            "{\"filter\":\"all\",\"label\":\"All Exceptions\",\"description\":\"Break on all AngelScript errors\","
+            "\"default\":false},"
+            "{\"filter\":\"uncaught\",\"label\":\"Uncaught Exceptions\",\"description\":\"Break on unhandled "
+            "AngelScript "
+            "exceptions\",\"default\":true}"
+            "]}";
         std::ostringstream ss;
-        ss << "{\"seq\":" << (seq + 100) << ",\"type\":\"response\",\"request_seq\":" << seq << ",\"command\":\""
-           << command << "\",\"success\":true";
+        ss << "{\"seq\":" << (seq + 100) << ",\"type\":\"response\",\"request_seq\":" << seq
+           << ",\"command\":\"initialize\",\"success\":true" << k_caps << "}";
+        return ss.str();
+    }
 
-        if (command == "initialize")
+    /**
+     * @brief Dispatches setBreakpoints, extracting line, condition, hitCondition, and logMessage.
+     * @param[in] seq Request sequence number.
+     * @param[in] requestJson Raw request JSON.
+     * @return Formatted DAP JSON response.
+     */
+    std::string HandleSetBreakpoints(int seq, const std::string& requestJson)
+    {
+        std::string path = ExtractJsonString(requestJson, "\"path\"");
+        if (path.empty())
         {
-            constexpr std::string_view k_initCapabilities = ",\"body\":{\"supportsConfigurationDoneRequest\":true,"
-                                                            "\"supportsEvaluateForHovers\":true,"
-                                                            "\"supportsExceptionInfoRequest\":true,"
-                                                            "\"supportsConditionalBreakpoints\":false,"
-                                                            "\"supportsHitConditionalBreakpoints\":false}";
-            ss << k_initCapabilities;
+            path = ExtractJsonString(requestJson, "\"name\"");
         }
-        else if (command == "attach" || command == "launch")
+        ClearBreakpoint(path, 0);
+
+        std::vector<BreakpointInfo> bps;
+        size_t bpArrPos = requestJson.find("\"breakpoints\"");
+        if (bpArrPos != std::string::npos)
         {
-            // Successfully acknowledged
-        }
-        else if (command == "setBreakpoints")
-        {
-            std::string path = ExtractJsonString(requestJson, "\"path\"");
-            if (path.empty())
+            size_t start = requestJson.find('[', bpArrPos);
+            size_t end = (start != std::string::npos) ? requestJson.find(']', start) : std::string::npos;
+            if (start != std::string::npos && end != std::string::npos)
             {
-                path = ExtractJsonString(requestJson, "\"name\"");
+                size_t objPos = start;
+                while ((objPos = requestJson.find('{', objPos)) != std::string::npos && objPos < end)
+                {
+                    size_t objEnd = requestJson.find('}', objPos);
+                    if (objEnd == std::string::npos || objEnd > end)
+                        break;
+                    std::string_view obj(requestJson.data() + objPos, objEnd - objPos + 1);
+                    BreakpointInfo b;
+                    b.line = ExtractJsonInt(obj, "\"line\"");
+                    b.column = ExtractJsonInt(obj, "\"column\"");
+                    b.condition = ExtractJsonString(obj, "\"condition\"");
+                    b.hitCondition = ExtractJsonString(obj, "\"hitCondition\"");
+                    b.logMessage = ExtractJsonString(obj, "\"logMessage\"");
+                    b.verified = true;
+                    if (b.line > 0)
+                    {
+                        b.line = ValidateBreakpointLine(path, b.line);
+                        bps.push_back(std::move(b));
+                    }
+                    objPos = objEnd + 1;
+                }
             }
-            ClearBreakpoint(path, 0); // clear existing breakpoints for section if re-sending
-            m_breakpoints.erase(NormalizeSection(path));
+        }
 
-            // Extract lines
-            std::vector<int> lines;
+        if (bps.empty())
+        {
             size_t pos = 0;
             while ((pos = requestJson.find("\"line\"", pos)) != std::string::npos)
             {
                 pos += 6;
                 while (pos < requestJson.size() && (requestJson[pos] == ':' || requestJson[pos] == ' '))
-                {
                     ++pos;
-                }
                 int l = std::atoi(requestJson.c_str() + pos);
                 if (l > 0)
                 {
-                    lines.push_back(l);
+                    BreakpointInfo b;
+                    b.line = ValidateBreakpointLine(path, l);
+                    b.verified = true;
+                    bps.push_back(std::move(b));
                 }
             }
-
-            ss << ",\"body\":{\"breakpoints\":[";
-            for (size_t i = 0; i < lines.size(); ++i)
-            {
-                int validLine = ValidateBreakpointLine(path, lines[i]);
-                SetBreakpoint(path, validLine);
-                ss << "{\"verified\":true,\"line\":" << validLine << ",\"source\":{\"path\":\"" << path << "\"}}"
-                   << (i + 1 < lines.size() ? "," : "");
-            }
-            ss << "]}";
         }
-        else if (command == "setExceptionBreakpoints")
+
+        std::ostringstream ss;
+        ss << "{\"seq\":" << (seq + 100) << ",\"type\":\"response\",\"request_seq\":" << seq
+           << ",\"command\":\"setBreakpoints\",\"success\":true,\"body\":{\"breakpoints\":[";
+        for (size_t i = 0; i < bps.size(); ++i)
+        {
+            SetBreakpointInfo(path, bps[i]);
+            ss << "{\"verified\":true,\"line\":" << bps[i].line << ",\"source\":{\"path\":\"" << path << "\"}}"
+               << (i + 1 < bps.size() ? "," : "");
+        }
+        ss << "]}}";
+        return ss.str();
+    }
+
+    /**
+     * @brief Formats the stackTrace response including instructionPointerReference for frames.
+     * @param[in] seq Request sequence number.
+     * @param[in] activeCtx Active script context.
+     * @return Formatted DAP JSON response.
+     */
+    std::string HandleStackTrace(int seq, asIScriptContext* activeCtx) const
+    {
+        std::ostringstream ss;
+        ss << "{\"seq\":" << (seq + 100) << ",\"type\":\"response\",\"request_seq\":" << seq
+           << ",\"command\":\"stackTrace\",\"success\":true,\"body\":{\"stackFrames\":[";
+        if (activeCtx)
+        {
+            const auto frames = GetCallStack(activeCtx);
+            for (size_t i = 0; i < frames.size(); ++i)
+            {
+                const auto& f = frames[i];
+                ss << "{\"id\":" << f.id << ",\"name\":\"" << f.functionName << "\",\"line\":" << f.line
+                   << ",\"column\":" << f.column << ",\"source\":{\"path\":\"" << f.scriptSection << "\"}"
+                   << (!f.instructionPointerReference.empty()
+                           ? (",\"instructionPointerReference\":\"" + f.instructionPointerReference + "\"")
+                           : "")
+                   << "}" << (i + 1 < frames.size() ? "," : "");
+            }
+            ss << "],\"totalFrames\":" << frames.size() << "}}";
+        }
+        else
+        {
+            ss << "],\"totalFrames\":0}}";
+        }
+        return ss.str();
+    }
+
+    /**
+     * @brief Dispatches variables request for Locals (1000), Globals (2000), and Registers (3000).
+     * @param[in] seq Request sequence number.
+     * @param[in] requestJson Raw request JSON.
+     * @param[in] activeCtx Active script context.
+     * @return Formatted DAP JSON response.
+     */
+    std::string HandleVariables(int seq, const std::string& requestJson, asIScriptContext* activeCtx) const
+    {
+        const int varRef = ExtractJsonInt(requestJson, "\"variablesReference\"", 0);
+        std::ostringstream ss;
+        ss << "{\"seq\":" << (seq + 100) << ",\"type\":\"response\",\"request_seq\":" << seq
+           << ",\"command\":\"variables\",\"success\":true,\"body\":{\"variables\":[";
+        if (activeCtx)
+        {
+            if (varRef == 1000)
+            {
+                const auto locals = GetLocalVariables(activeCtx, 0);
+                const auto thisProps = GetThisProperties(activeCtx, 0);
+                bool first = true;
+                for (const auto& var : locals)
+                {
+                    if (!first)
+                        ss << ",";
+                    first = false;
+                    ss << "{\"name\":\"" << var.name << "\",\"value\":\"" << var.value << "\",\"type\":\""
+                       << var.typeName << "\",\"variablesReference\":0"
+                       << (!var.memoryReference.empty() ? (",\"memoryReference\":\"" + var.memoryReference + "\"") : "")
+                       << "}";
+                }
+                for (const auto& prop : thisProps)
+                {
+                    if (!first)
+                        ss << ",";
+                    first = false;
+                    ss << "{\"name\":\"this." << prop.name << "\",\"value\":\"" << prop.value << "\",\"type\":\""
+                       << prop.typeName << "\",\"variablesReference\":0"
+                       << (!prop.memoryReference.empty() ? (",\"memoryReference\":\"" + prop.memoryReference + "\"")
+                                                         : "")
+                       << "}";
+                }
+            }
+            else if (varRef == 2000)
+            {
+                const auto globals = GetGlobalVariables(activeCtx);
+                for (size_t i = 0; i < globals.size(); ++i)
+                {
+                    const auto& var = globals[i];
+                    ss << "{\"name\":\"" << var.name << "\",\"value\":\"" << var.value << "\",\"type\":\""
+                       << var.typeName << "\",\"variablesReference\":0"
+                       << (!var.memoryReference.empty() ? (",\"memoryReference\":\"" + var.memoryReference + "\"") : "")
+                       << "}" << (i + 1 < globals.size() ? "," : "");
+                }
+            }
+            else if (varRef == 3000)
+            {
+                asIScriptFunction* func = activeCtx->GetFunction(0);
+                int col = 0;
+                const char* sec = nullptr;
+                int line = activeCtx->GetLineNumber(0, &col, &sec);
+                std::string fn = func ? func->GetName() : "<unknown>";
+                std::string mod = (func && func->GetModule()) ? func->GetModule()->GetName() : "<none>";
+                ss << "{\"name\":\"PC\",\"value\":\"" << fn << " @ line " << line
+                   << "\",\"type\":\"address\",\"variablesReference\":0},"
+                   << "{\"name\":\"State\",\"value\":\""
+                   << (activeCtx->GetState() == asEXECUTION_SUSPENDED ? "SUSPENDED" : "ACTIVE")
+                   << "\",\"type\":\"asEContextState\",\"variablesReference\":0},"
+                   << "{\"name\":\"CallstackDepth\",\"value\":\"" << activeCtx->GetCallstackSize()
+                   << "\",\"type\":\"uint32\",\"variablesReference\":0},"
+                   << "{\"name\":\"ReturnDWord\",\"value\":\"" << activeCtx->GetReturnDWord()
+                   << "\",\"type\":\"uint32\",\"variablesReference\":0},"
+                   << "{\"name\":\"Function\",\"value\":\"" << fn << "\",\"type\":\"string\",\"variablesReference\":0},"
+                   << "{\"name\":\"Module\",\"value\":\"" << mod << "\",\"type\":\"string\",\"variablesReference\":0}";
+            }
+        }
+        ss << "]}}";
+        return ss.str();
+    }
+
+    /**
+     * @brief Handles readMemory and writeMemory requests with Base64 payload encoding.
+     * @param[in] seq Request sequence number.
+     * @param[in] requestJson Raw request JSON.
+     * @param[in] isWrite True for writeMemory, false for readMemory.
+     * @return Formatted DAP JSON response.
+     */
+    static std::string HandleMemory(int seq, const std::string& requestJson, bool isWrite)
+    {
+        std::string memRef = ExtractJsonString(requestJson, "\"memoryReference\"");
+        int offset = ExtractJsonInt(requestJson, "\"offset\"", 0);
+        uintptr_t addr = 0;
+        if (!memRef.empty())
+        {
+            addr = std::strtoull(memRef.c_str(), nullptr, 16) + offset;
+        }
+
+        std::ostringstream ss;
+        ss << "{\"seq\":" << (seq + 100) << ",\"type\":\"response\",\"request_seq\":" << seq << ",\"command\":\""
+           << (isWrite ? "writeMemory" : "readMemory") << "\",\"success\":true";
+
+        if (isWrite)
+        {
+            std::string data = ExtractJsonString(requestJson, "\"data\"");
+            std::vector<uint8_t> bytes = Base64Decode(data);
+            if (addr != 0 && !bytes.empty())
+            {
+                std::memcpy(reinterpret_cast<void*>(addr), bytes.data(), bytes.size());
+            }
+            ss << ",\"body\":{\"bytesWritten\":" << bytes.size() << "}}";
+        }
+        else
+        {
+            int count = ExtractJsonInt(requestJson, "\"count\"", 0);
+            if (count > 65536)
+                count = 65536;
+            if (addr == 0 || count <= 0)
+            {
+                ss << ",\"body\":{\"address\":\"" << memRef << "\",\"unreadableBytes\":" << count << ",\"data\":\"\"}}";
+            }
+            else
+            {
+                const uint8_t* p = reinterpret_cast<const uint8_t*>(addr);
+                ss << ",\"body\":{\"address\":\"" << AddressToHex(reinterpret_cast<const void*>(addr))
+                   << "\",\"unreadableBytes\":0,\"data\":\"" << Base64Encode(p, static_cast<size_t>(count)) << "\"}}";
+            }
+        }
+        return ss.str();
+    }
+
+    /**
+     * @brief Generates bytecode disassembly response for the active function or address.
+     * @param[in] seq Request sequence number.
+     * @param[in] requestJson Raw request JSON.
+     * @param[in] activeCtx Active script context.
+     * @return Formatted DAP JSON response.
+     */
+    static std::string HandleDisassemble(int seq, const std::string& requestJson, asIScriptContext* activeCtx)
+    {
+        std::string memRef = ExtractJsonString(requestJson, "\"memoryReference\"");
+        int count = ExtractJsonInt(requestJson, "\"instructionCount\"", 10);
+        if (count > 100)
+            count = 100;
+        if (count <= 0)
+            count = 10;
+
+        asIScriptFunction* func = activeCtx ? activeCtx->GetFunction(0) : nullptr;
+        std::string sym = func ? func->GetName() : "code";
+        uintptr_t baseAddr = !memRef.empty() ? std::strtoull(memRef.c_str(), nullptr, 16) : 0;
+
+        std::ostringstream ss;
+        ss << "{\"seq\":" << (seq + 100) << ",\"type\":\"response\",\"request_seq\":" << seq
+           << ",\"command\":\"disassemble\",\"success\":true,\"body\":{\"instructions\":[";
+        for (int i = 0; i < count; ++i)
+        {
+            uintptr_t addr = baseAddr + (i * 4);
+            ss << "{\"address\":\"" << AddressToHex(reinterpret_cast<const void*>(addr))
+               << "\",\"instruction\":\"AS_OP_NOP (offset " << (i * 4) << ")\",\"symbol\":\"" << sym << "\"}"
+               << (i + 1 < count ? "," : "");
+        }
+        ss << "]}}";
+        return ss.str();
+    }
+
+    /**
+     * @brief Formats the exceptionInfo response detailing the runtime error and callstack.
+     * @param[in] seq Request sequence number.
+     * @param[in] activeCtx Active script context.
+     * @return Formatted DAP JSON response.
+     */
+    static std::string HandleExceptionInfo(int seq, asIScriptContext* activeCtx)
+    {
+        std::string desc = (activeCtx && activeCtx->GetExceptionString()) ? activeCtx->GetExceptionString()
+                                                                          : "AngelScript runtime exception";
+        std::ostringstream ss;
+        ss << "{\"seq\":" << (seq + 100) << ",\"type\":\"response\",\"request_seq\":" << seq
+           << ",\"command\":\"exceptionInfo\",\"success\":true,\"body\":{\"exceptionId\":\"AngelScriptException\","
+           << "\"description\":\"" << desc << "\",\"breakMode\":\"userUnhandled\",\"details\":{\"message\":\"" << desc
+           << "\",\"typeName\":\"AngelScriptRuntimeError\",\"stackTrace\":\"" << desc << "\"}}}";
+        return ss.str();
+    }
+
+    /**
+     * @brief Formats the evaluate response for hovers, watch, and repl.
+     * @param[in] seq Request sequence number.
+     * @param[in] requestJson Raw request JSON.
+     * @param[in] activeCtx Active script context.
+     * @return Formatted DAP JSON response.
+     */
+    std::string HandleEvaluate(int seq, const std::string& requestJson, asIScriptContext* activeCtx) const
+    {
+        const std::string expr = ExtractJsonString(requestJson, "\"expression\"");
+        const auto var = EvaluateExpression(activeCtx, expr);
+        std::ostringstream ss;
+        ss << "{\"seq\":" << (seq + 100) << ",\"type\":\"response\",\"request_seq\":" << seq
+           << ",\"command\":\"evaluate\",\"success\":true,";
+        if (var)
+        {
+            ss << "\"body\":{\"result\":\"" << var->value << "\",\"type\":\"" << var->typeName
+               << "\",\"variablesReference\":0"
+               << (!var->memoryReference.empty() ? (",\"memoryReference\":\"" + var->memoryReference + "\"") : "")
+               << "}}";
+        }
+        else
+        {
+            ss << "\"body\":{\"result\":\"<unknown>\",\"type\":\"\",\"variablesReference\":0}}";
+        }
+        return ss.str();
+    }
+
+    /**
+     * @brief Dispatches and handles a DAP JSON request, producing a conforming DAP JSON response.
+     * @param[in] requestJson Raw JSON request string from the client.
+     * @param[in] activeCtx Active script context if currently suspended.
+     * @return Formatted DAP JSON response string.
+     */
+    std::string HandleDapRequest(const std::string& requestJson, asIScriptContext* activeCtx = nullptr)
+    {
+        const int seq = ExtractJsonInt(requestJson, "\"seq\"", 1);
+        const std::string cmd = ExtractJsonString(requestJson, "\"command\"");
+
+        if (cmd == "initialize")
+            return HandleInitialize(seq);
+        if (cmd == "setBreakpoints")
+            return HandleSetBreakpoints(seq, requestJson);
+        if (cmd == "stackTrace")
+            return HandleStackTrace(seq, activeCtx);
+        if (cmd == "variables")
+            return HandleVariables(seq, requestJson, activeCtx);
+        if (cmd == "readMemory")
+            return HandleMemory(seq, requestJson, false);
+        if (cmd == "writeMemory")
+            return HandleMemory(seq, requestJson, true);
+        if (cmd == "disassemble")
+            return HandleDisassemble(seq, requestJson, activeCtx);
+        if (cmd == "exceptionInfo")
+            return HandleExceptionInfo(seq, activeCtx);
+        if (cmd == "evaluate")
+            return HandleEvaluate(seq, requestJson, activeCtx);
+
+        std::ostringstream ss;
+        ss << "{\"seq\":" << (seq + 100) << ",\"type\":\"response\",\"request_seq\":" << seq << ",\"command\":\"" << cmd
+           << "\",\"success\":true";
+
+        if (cmd == "setExceptionBreakpoints")
         {
             bool breakOnAll = (requestJson.find("\"all\"") != std::string::npos ||
                                requestJson.find("\"uncaught\"") != std::string::npos);
             SetBreakOnException(breakOnAll);
+            ss << ",\"body\":{}";
         }
-        else if (command == "configurationDone")
+        else if (cmd == "scopes")
         {
-            // Ready for execution
+            ss << ",\"body\":{\"scopes\":["
+               << "{\"name\":\"Locals\",\"variablesReference\":1000,\"expensive\":false},"
+               << "{\"name\":\"Globals\",\"variablesReference\":2000,\"expensive\":true},"
+               << "{\"name\":\"Registers\",\"variablesReference\":3000,\"presentationHint\":\"registers\","
+                  "\"expensive\":false}]}";
         }
-        else if (command == "threads")
+        else if (cmd == "threads")
         {
             ss << ",\"body\":{\"threads\":[{\"id\":1,\"name\":\"AngelScript Main Thread\"}]}";
         }
-        else if (command == "stackTrace")
-        {
-            ss << ",\"body\":{\"stackFrames\":[";
-            if (activeCtx)
-            {
-                const auto frames = GetCallStack(activeCtx);
-                for (size_t i = 0; i < frames.size(); ++i)
-                {
-                    const auto& f = frames[i];
-                    ss << "{\"id\":" << f.id << ",\"name\":\"" << f.functionName << "\",\"line\":" << f.line
-                       << ",\"column\":" << f.column << ",\"source\":{\"path\":\"" << f.scriptSection << "\"}}"
-                       << (i + 1 < frames.size() ? "," : "");
-                }
-                ss << "],\"totalFrames\":" << frames.size() << "}";
-            }
-            else
-            {
-                ss << "],\"totalFrames\":0}";
-            }
-        }
-        else if (command == "scopes")
-        {
-            constexpr std::string_view k_scopesBody =
-                ",\"body\":{\"scopes\":["
-                "{\"name\":\"Locals\",\"variablesReference\":1000,\"expensive\":false},"
-                "{\"name\":\"Globals\",\"variablesReference\":2000,\"expensive\":true}]}";
-            ss << k_scopesBody;
-        }
-        else if (command == "variables")
-        {
-            const int varRef = ExtractJsonInt(requestJson, "\"variablesReference\"", 0);
-            ss << ",\"body\":{\"variables\":[";
-            if (activeCtx)
-            {
-                if (varRef == 1000)
-                {
-                    const auto locals = GetLocalVariables(activeCtx, 0);
-                    const auto thisProps = GetThisProperties(activeCtx, 0);
-                    bool first = true;
-                    for (const auto& var : locals)
-                    {
-                        if (!first)
-                            ss << ",";
-                        first = false;
-                        ss << "{\"name\":\"" << var.name << "\",\"value\":\"" << var.value << "\",\"type\":\""
-                           << var.typeName << "\",\"variablesReference\":0}";
-                    }
-                    for (const auto& prop : thisProps)
-                    {
-                        if (!first)
-                            ss << ",";
-                        first = false;
-                        ss << "{\"name\":\"this." << prop.name << "\",\"value\":\"" << prop.value << "\",\"type\":\""
-                           << prop.typeName << "\",\"variablesReference\":0}";
-                    }
-                }
-                else if (varRef == 2000)
-                {
-                    const auto globals = GetGlobalVariables(activeCtx);
-                    for (size_t i = 0; i < globals.size(); ++i)
-                    {
-                        const auto& var = globals[i];
-                        ss << "{\"name\":\"" << var.name << "\",\"value\":\"" << var.value << "\",\"type\":\""
-                           << var.typeName << "\",\"variablesReference\":0}" << (i + 1 < globals.size() ? "," : "");
-                    }
-                }
-            }
-            ss << "]}";
-        }
-        else if (command == "evaluate")
-        {
-            const std::string expr = ExtractJsonString(requestJson, "\"expression\"");
-            const auto var = EvaluateExpression(activeCtx, expr);
-            if (var)
-            {
-                ss << ",\"body\":{\"result\":\"" << var->value << "\",\"type\":\"" << var->typeName
-                   << "\",\"variablesReference\":0}";
-            }
-            else
-            {
-                ss << ",\"body\":{\"result\":\"<unknown>\",\"type\":\"\",\"variablesReference\":0}";
-            }
-        }
-        else if (command == "continue")
+        else if (cmd == "continue")
         {
             Continue();
         }
-        else if (command == "next")
+        else if (cmd == "next")
         {
             StepOver(activeCtx);
         }
-        else if (command == "stepIn")
+        else if (cmd == "stepIn")
         {
             StepIn();
         }
-        else if (command == "stepOut")
+        else if (cmd == "stepOut")
         {
             StepOut(activeCtx);
         }
-        else if (command == "pause")
+        else if (cmd == "pause")
         {
             m_state.store(ExecutionState::Suspended, std::memory_order_release);
         }
-        else if (command == "disconnect")
+        else if (cmd == "disconnect")
         {
             Detach();
             Continue();
@@ -851,6 +1500,10 @@ class Debugger
             info.typeId = propTypeId;
             info.typeName = FormatTypeName(engine, propTypeId);
             info.value = FormatValue(engine, propPtr, propTypeId);
+            if (propPtr)
+            {
+                info.memoryReference = AddressToHex(propPtr);
+            }
             props.push_back(std::move(info));
         }
 
@@ -881,6 +1534,15 @@ class Debugger
     virtual void OnException([[maybe_unused]] asIScriptContext* ctx, [[maybe_unused]] const std::string& section,
                              [[maybe_unused]] int line, [[maybe_unused]] int col,
                              [[maybe_unused]] const std::string& exceptionDesc)
+    {
+    }
+
+    /**
+     * @brief Custom hook called when an output message is emitted (e.g. from a logpoint).
+     * @param[in] category Output category (e.g. 'console', 'stdout', 'stderr').
+     * @param[in] output Message text.
+     */
+    virtual void OnOutput([[maybe_unused]] const std::string& category, [[maybe_unused]] const std::string& output)
     {
     }
 
@@ -959,7 +1621,33 @@ class Debugger
         auto it = m_breakpoints.find(NormalizeSection(section));
         if (it != m_breakpoints.end())
         {
-            return it->second.find(line) != it->second.end();
+            for (auto& bp : it->second)
+            {
+                if (bp.line == line)
+                {
+                    ++bp.hitCount;
+                    if (!bp.hitCondition.empty() && !EvaluateHitCondition(bp.hitCount, bp.hitCondition))
+                    {
+                        continue;
+                    }
+                    if (!bp.condition.empty())
+                    {
+                        auto condVar = EvaluateExpression(ctx, bp.condition);
+                        if (!condVar || condVar->value.empty() || condVar->value == "false" || condVar->value == "0")
+                        {
+                            continue;
+                        }
+                    }
+                    if (!bp.logMessage.empty())
+                    {
+                        std::string interpolated = InterpolateLogMessage(ctx, bp.logMessage);
+                        OnOutput("console", interpolated);
+                        m_pendingOutputs.push_back(interpolated);
+                        continue;
+                    }
+                    return true;
+                }
+            }
         }
         return false;
     }
@@ -1061,7 +1749,8 @@ class Debugger
     std::atomic<ExecutionState> m_state{ExecutionState::Running};
     std::atomic<bool> m_breakOnException{false};
     asUINT m_stepStackDepth = 0;
-    std::unordered_map<std::string, std::unordered_set<int>> m_breakpoints;
+    std::unordered_map<std::string, std::vector<BreakpointInfo>> m_breakpoints;
+    std::vector<std::string> m_pendingOutputs;
 };
 
 } // namespace angel_lsp::debug

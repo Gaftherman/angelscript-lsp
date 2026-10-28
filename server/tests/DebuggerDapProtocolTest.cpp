@@ -33,6 +33,11 @@ TEST_CASE("Debugger DAP Protocol - Request Dispatcher Lifecycle")
     CHECK(initResp.find("\"success\":true") != std::string::npos);
     CHECK(initResp.find("\"supportsConfigurationDoneRequest\":true") != std::string::npos);
     CHECK(initResp.find("\"supportsEvaluateForHovers\":true") != std::string::npos);
+    CHECK(initResp.find("\"supportsConditionalBreakpoints\":true") != std::string::npos);
+    CHECK(initResp.find("\"supportsHitConditionalBreakpoints\":true") != std::string::npos);
+    CHECK(initResp.find("\"supportsLogPoints\":true") != std::string::npos);
+    CHECK(initResp.find("\"supportsReadMemoryRequest\":true") != std::string::npos);
+    CHECK(initResp.find("\"supportsDisassembleRequest\":true") != std::string::npos);
 
     // 2. attach request
     const std::string attachReq =
@@ -44,7 +49,9 @@ TEST_CASE("Debugger DAP Protocol - Request Dispatcher Lifecycle")
     const std::string section = "scripts/" + test::GenerateRandomSymbolName("Weapon") + ".as";
     const std::string setBpReq =
         "{\"seq\":3,\"type\":\"request\",\"command\":\"setBreakpoints\",\"arguments\":{\"source\":{\"path\":\"" +
-        section + "\"},\"breakpoints\":[{\"line\":10},{\"line\":25}]}}";
+        section +
+        "\"},\"breakpoints\":[{\"line\":10,\"condition\":\"ammo <= 0\",\"hitCondition\":\">= 3\"},"
+        "{\"line\":25,\"logMessage\":\"item is {item}\"}]}}";
     std::string setBpResp = debugger.HandleDapRequest(setBpReq);
     CHECK(setBpResp.find("\"success\":true") != std::string::npos);
     CHECK(setBpResp.find("\"verified\":true") != std::string::npos);
@@ -74,6 +81,7 @@ TEST_CASE("Debugger DAP Protocol - Request Dispatcher Lifecycle")
     CHECK(scopesResp.find("\"success\":true") != std::string::npos);
     CHECK(scopesResp.find("Locals") != std::string::npos);
     CHECK(scopesResp.find("Globals") != std::string::npos);
+    CHECK(scopesResp.find("Registers") != std::string::npos);
 
     // 8. execution control commands (continue, next, stepIn, stepOut, pause, disconnect)
     CHECK(debugger.HandleDapRequest("{\"seq\":8,\"type\":\"request\",\"command\":\"continue\"}")
@@ -89,6 +97,42 @@ TEST_CASE("Debugger DAP Protocol - Request Dispatcher Lifecycle")
         std::string::npos);
     CHECK(debugger.HandleDapRequest("{\"seq\":13,\"type\":\"request\",\"command\":\"disconnect\"}")
               .find("\"success\":true") != std::string::npos);
+
+    // 9. memory read / write request roundtrip
+    uint8_t memoryBuffer[16] = {0};
+    std::ostringstream addrSs;
+    addrSs << "0x" << std::hex << reinterpret_cast<uintptr_t>(memoryBuffer);
+    const std::string memAddr = addrSs.str();
+
+    const std::string writeReq = "{\"seq\":14,\"type\":\"request\",\"command\":\"writeMemory\",\"arguments\":{"
+                                 "\"memoryReference\":\"" +
+                                 memAddr + "\",\"offset\":0,\"data\":\"SGVsbG8gQW5nZWw=\"}}";
+    std::string writeResp = debugger.HandleDapRequest(writeReq);
+    CHECK(writeResp.find("\"success\":true") != std::string::npos);
+    CHECK(writeResp.find("\"bytesWritten\":11") != std::string::npos);
+    CHECK(std::memcmp(memoryBuffer, "Hello Angel", 11) == 0);
+
+    const std::string readReq = "{\"seq\":15,\"type\":\"request\",\"command\":\"readMemory\",\"arguments\":{"
+                                "\"memoryReference\":\"" +
+                                memAddr + "\",\"offset\":0,\"count\":11}}";
+    std::string readResp = debugger.HandleDapRequest(readReq);
+    CHECK(readResp.find("\"success\":true") != std::string::npos);
+    CHECK(readResp.find("SGVsbG8gQW5nZWw=") != std::string::npos);
+
+    // 10. disassemble request
+    const std::string disasmReq = "{\"seq\":16,\"type\":\"request\",\"command\":\"disassemble\",\"arguments\":{"
+                                  "\"memoryReference\":\"" +
+                                  memAddr + "\",\"instructionCount\":5}}";
+    std::string disasmResp = debugger.HandleDapRequest(disasmReq);
+    CHECK(disasmResp.find("\"success\":true") != std::string::npos);
+    CHECK(disasmResp.find("\"instructions\"") != std::string::npos);
+
+    // 11. exceptionInfo request
+    const std::string exInfoReq =
+        "{\"seq\":17,\"type\":\"request\",\"command\":\"exceptionInfo\",\"arguments\":{\"threadId\":1}}";
+    std::string exInfoResp = debugger.HandleDapRequest(exInfoReq);
+    CHECK(exInfoResp.find("\"success\":true") != std::string::npos);
+    CHECK(exInfoResp.find("\"exceptionId\":\"AngelScriptException\"") != std::string::npos);
 }
 
 TEST_CASE("Debugger DAP Protocol - Message Framing and Streaming Unframing")
@@ -147,6 +191,26 @@ TEST_CASE("Debugger DAP Protocol - Event Formatting and Variable Requests")
     std::string evalResp = debugger.HandleDapRequest(evalReq, nullptr);
     CHECK(evalResp.find("\"success\":true") != std::string::npos);
     CHECK(evalResp.find("<unknown>") != std::string::npos);
+}
+
+TEST_CASE("Debugger DAP Protocol - Hit Condition Evaluation & Base64 Roundtrip")
+{
+    CHECK(angel_lsp::debug::Debugger::EvaluateHitCondition(5, "== 5"));
+    CHECK_FALSE(angel_lsp::debug::Debugger::EvaluateHitCondition(4, "== 5"));
+    CHECK(angel_lsp::debug::Debugger::EvaluateHitCondition(6, "> 5"));
+    CHECK(angel_lsp::debug::Debugger::EvaluateHitCondition(4, "< 5"));
+    CHECK(angel_lsp::debug::Debugger::EvaluateHitCondition(6, "% 2"));
+    CHECK_FALSE(angel_lsp::debug::Debugger::EvaluateHitCondition(7, "% 2"));
+    CHECK(angel_lsp::debug::Debugger::EvaluateHitCondition(10, ">= 10"));
+    CHECK(angel_lsp::debug::Debugger::EvaluateHitCondition(10, "<= 10"));
+
+    // Base64 helpers with randomized payload
+    const std::string text = test::GenerateRandomSymbolName("SecretToken");
+    const std::string encoded =
+        angel_lsp::debug::Debugger::Base64Encode(reinterpret_cast<const uint8_t*>(text.data()), text.size());
+    const auto decoded = angel_lsp::debug::Debugger::Base64Decode(encoded);
+    const std::string restored(reinterpret_cast<const char*>(decoded.data()), decoded.size());
+    CHECK(restored == text);
 }
 
 TEST_CASE("Breakpoint Locations - AngelScript Oracle Bytecode Parity Execution")

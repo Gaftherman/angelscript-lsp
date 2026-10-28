@@ -13,6 +13,9 @@ import {
     AngelScriptConfigurationProvider,
     AngelScriptDebugAdapterDescriptorFactory
 } from './debug/angelscriptDebugAdapter';
+import {
+    AngelScriptEvaluatableExpressionProvider
+} from './debug/angelscriptEvaluatableExpression';
 // Types only: erased at compile time, so naming them here costs nothing at runtime.
 import type {
     LanguageClient, LanguageClientOptions, ServerOptions, ErrorHandler
@@ -1852,6 +1855,10 @@ export async function activate(context: ExtensionContext) {
         debug.registerDebugAdapterDescriptorFactory(
             'angelscript',
             new AngelScriptDebugAdapterDescriptorFactory(() => activeClient())));
+    context.subscriptions.push(
+        languages.registerEvaluatableExpressionProvider(
+            'angelscript',
+            new AngelScriptEvaluatableExpressionProvider()));
 
     // An editor can appear after the notification that described its document - a second group, or
     // a tab returned to - and there is nothing to recompute from at that point, so the last thing
