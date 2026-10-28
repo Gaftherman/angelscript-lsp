@@ -780,7 +780,7 @@ class Debugger
     }
 
     /**
-     * @brief Evaluates a chained property expression (e.g. data.m_Classname or player->health).
+     * @brief Evaluates a chained property expression (e.g. data.m_Classname or player.health).
      * @param[in] ctx Active script context.
      * @param[in] expr Chained member expression.
      * @param[in] stackLevel Frame stack level.
@@ -800,15 +800,6 @@ class Debugger
                     parts.push_back(cur);
                     cur.clear();
                 }
-            }
-            else if (expr[i] == '-' && i + 1 < expr.size() && expr[i + 1] == '>')
-            {
-                if (!cur.empty())
-                {
-                    parts.push_back(cur);
-                    cur.clear();
-                }
-                ++i;
             }
             else
             {
@@ -866,8 +857,6 @@ class Debugger
             size_t pos = expr.find(op);
             if (pos != std::string::npos)
             {
-                if (op == ">" && pos > 0 && expr[pos - 1] == '-')
-                    continue;
                 std::string left = expr.substr(0, pos);
                 std::string right = expr.substr(pos + op.size());
                 auto trim = [](std::string& s)
@@ -943,7 +932,7 @@ class Debugger
             return cmp;
         }
 
-        // 2. Check chained member access (e.g. data.m_Classname, player->health)
+        // 2. Check chained member access (e.g. data.m_Classname, player.health)
         if (auto chain = EvaluateMemberChain(ctx, expression, stackLevel))
         {
             return chain;

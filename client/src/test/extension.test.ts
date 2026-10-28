@@ -723,11 +723,18 @@ suite('ConfigurationTarget and LocalState Scope', () => {
             assert.strictEqual(res.expression, 'player.pev.health');
         });
 
-        test('extracts pointer arrow member access', () => {
+        test('extracts handle member property access', () => {
+            const line = 'int dmg = pEntity.m_iHealth;';
+            const res = extractAngelScriptEvaluatableExpression(line, 20);
+            assert.ok(res);
+            assert.strictEqual(res.expression, 'pEntity.m_iHealth');
+        });
+
+        test('does not extract across invalid arrow operator', () => {
             const line = 'int dmg = pEntity->m_iHealth;';
             const res = extractAngelScriptEvaluatableExpression(line, 21);
             assert.ok(res);
-            assert.strictEqual(res.expression, 'pEntity->m_iHealth');
+            assert.strictEqual(res.expression, 'm_iHealth');
         });
 
         test('extracts array indexing expressions', () => {

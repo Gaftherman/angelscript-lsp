@@ -43,8 +43,6 @@ function expandExpressionLeft(lineText: string, startIndex: number): number {
             i--;
         } else if (prev === '.') {
             i--;
-        } else if (prev === '>' && i >= 2 && lineText[i - 2] === '-') {
-            i -= 2;
         } else if (prev === ':' && i >= 2 && lineText[i - 2] === ':') {
             i -= 2;
         } else if (prev === ']') {
@@ -86,8 +84,6 @@ function expandExpressionRight(lineText: string, startIndex: number): number {
             i++;
         } else if (curr === '.') {
             i++;
-        } else if (curr === '-' && i + 1 < len && lineText[i + 1] === '>') {
-            i += 2;
         } else if (curr === ':' && i + 1 < len && lineText[i + 1] === ':') {
             i += 2;
         } else if (curr === '[') {
