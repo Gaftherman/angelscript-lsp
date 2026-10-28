@@ -115,6 +115,48 @@ function expandExpressionRight(lineText: string, startIndex: number): number {
 }
 
 /**
+ * @brief Finds the anchor of the enclosing indexing expression if the position is within brackets.
+ * @param lineText Source text line.
+ * @param anchor Character position.
+ * @return Adjusted anchor pointing to the container expression if enclosed in indexing brackets.
+ */
+function findEnclosingIndexAnchor(lineText: string, anchor: number): number {
+    let curAnchor = anchor;
+    while (curAnchor >= 0) {
+        let depth = 0;
+        let openPos = -1;
+        const scanStart = (curAnchor < lineText.length && lineText[curAnchor] === ']') ? curAnchor - 1 : curAnchor;
+        for (let i = scanStart; i >= 0; i--) {
+            const c = lineText[i];
+            if (c === ']') {
+                depth++;
+            } else if (c === '[') {
+                if (depth === 0) {
+                    openPos = i;
+                    break;
+                }
+                depth--;
+            } else if (c === ';' || c === '{' || c === '}' || c === '(' || c === ')' || c === ',') {
+                break;
+            }
+        }
+
+        if (openPos > 0) {
+            let prev = openPos - 1;
+            while (prev >= 0 && (lineText[prev] === ' ' || lineText[prev] === '\t')) {
+                prev--;
+            }
+            if (prev >= 0 && (isIdentifierChar(lineText[prev]) || lineText[prev] === ']')) {
+                curAnchor = prev;
+                continue;
+            }
+        }
+        break;
+    }
+    return curAnchor;
+}
+
+/**
  * @brief Extracts the full evaluatable AngelScript expression enclosing the given character offset.
  * @param lineText Line text containing the expression.
  * @param charIndex 0-based character index of the cursor/hover.
@@ -136,6 +178,8 @@ export function extractAngelScriptEvaluatableExpression(
             return undefined;
         }
     }
+
+    anchor = findEnclosingIndexAnchor(lineText, anchor);
 
     const start = expandExpressionLeft(lineText, anchor);
     const end = expandExpressionRight(lineText, anchor);

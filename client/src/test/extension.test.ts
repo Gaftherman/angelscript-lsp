@@ -737,6 +737,20 @@ suite('ConfigurationTarget and LocalState Scope', () => {
             assert.strictEqual(res.expression, 'itemNames[ui]');
         });
 
+        test('extracts multi-dimensional array indexing expressions', () => {
+            const line = 'int v = matrix[row][col];';
+            const res = extractAngelScriptEvaluatableExpression(line, 21);
+            assert.ok(res);
+            assert.strictEqual(res.expression, 'matrix[row][col]');
+        });
+
+        test('extracts member access following indexing', () => {
+            const line = 'int len = itemNames[ui].length;';
+            const res = extractAngelScriptEvaluatableExpression(line, 21);
+            assert.ok(res);
+            assert.strictEqual(res.expression, 'itemNames[ui].length');
+        });
+
         test('extracts this property access', () => {
             const line = 'this.m_EquipmentData = value;';
             const res = extractAngelScriptEvaluatableExpression(line, 10);
