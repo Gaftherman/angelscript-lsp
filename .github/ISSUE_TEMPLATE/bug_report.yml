@@ -1,0 +1,100 @@
+name: "Bug Report (LSP / Analysis)"
+description: "Report a diagnostic false-positive, syntax error, completion bug, or hover defect"
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting an issue! Please provide a minimal reproducible example so we can verify compiler parity against the official AngelScript engine and fix the issue promptly.
+  - type: dropdown
+    id: file-context
+    attributes:
+      label: "File Context"
+      description: "What type of file(s) does this issue reproduce with?"
+      options:
+        - "Single .as script"
+        - "Multiple .as scripts (cross-file / #include)"
+        - "Engine predefined stub (.as.predefined)"
+        - "Multiple .as.predefined files"
+        - "Project config (.angelscript.rules.json or asconfig.json)"
+    validations:
+      required: true
+  - type: input
+    id: diagnostic-code
+    attributes:
+      label: "Diagnostic Code"
+      description: "If this is a diagnostic issue, what error code is reported? (e.g., E121, E230, as-err-call-no-matching-signature)"
+      placeholder: "e.g., E121, E230, as-err-member-not-found, or N/A"
+    validations:
+      required: false
+  - type: dropdown
+    id: host-environment
+    attributes:
+      label: "AngelScript Host Environment"
+      description: "Which game engine or host application is targeted?"
+      options:
+        - "Generic / Vanilla AngelScript Engine"
+        - "Sven Co-op"
+        - "OpenClaw"
+        - "Out of the Park Baseball"
+        - "Custom C++ Host Engine"
+    validations:
+      required: true
+  - type: checkboxes
+    id: engine-properties
+    attributes:
+      label: "Active Engine Properties / Flags"
+      description: "Select any non-default engine options enabled in your environment:"
+      options:
+        - label: "asEP_ALLOW_UNSAFE_REFERENCES (--allow-unsafe-references=1)"
+        - label: "asEP_PROPERTY_ACCESSOR_MODE (virtual properties enabled)"
+        - label: "asEP_DISALLOW_GLOBAL_VARS"
+        - label: "asEP_USE_CHARACTER_LITERALS"
+        - label: "asEP_ALLOW_MULTILINE_STRINGS"
+        - label: "asEP_REQUIRE_ENUM_SCOPE"
+  - type: textarea
+    id: minimal-code
+    attributes:
+      label: "Minimal Reproducible Example"
+      description: "Paste a self-contained AngelScript snippet reproducing the issue without external dependencies."
+      placeholder: |
+        ```angelscript
+        namespace MyNamespace {
+            class A {}
+            array<weakref<A>> items;
+        }
+        class B : MyNamespace::A {
+            B() {
+                weakref<MyNamespace::A> ref(this);
+                MyNamespace::items.insertLast(ref);
+            }
+        }
+        ```
+      render: AngelScript
+    validations:
+      required: true
+  - type: textarea
+    id: observed-behavior
+    attributes:
+      label: "Observed Behavior"
+      description: "What did AngelLSP report or how did it behave?"
+      placeholder: "e.g., Reports error E121: No matching signatures to insertLast(const weakref<A>&in)"
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: "Expected Behavior"
+      description: "What should AngelLSP report or do, and does the official AngelScript compiler accept this snippet?"
+      placeholder: "e.g., No diagnostic should be emitted. The official AngelScript compiler compiles this snippet cleanly."
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: "Extension & OS Version"
+      description: "VS Code extension version and OS (e.g., AngelLSP v1.1.6, VS Code 1.95, Windows 11)"
+      placeholder: "e.g., AngelLSP v1.1.6, Windows 11 x64"
+    validations:
+      required: false

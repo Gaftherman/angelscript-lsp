@@ -7,3 +7,8 @@
 # A shell script is read by a shell, not by the platform, and that shell is bash
 # regardless of who checked the file out.
 *.sh text eol=lf
+
+# GitHub Linguist language overrides
+# Prevent *.as and *.as.predefined from being misdetected as ActionScript
+*.as linguist-language=AngelScript
+*.as.predefined linguist-language=AngelScript

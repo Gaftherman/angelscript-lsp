@@ -1,0 +1,69 @@
+name: "Debugger Issue (DAP)"
+description: "Report a breakpoint, stepping, variable inspection, or debug adapter defect"
+title: "[Debug]: "
+labels: ["debugger", "dap", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Report an issue with the AngelScript Debug Adapter Protocol (DAP) implementation or `angel_lsp_debugger.h` integration.
+  - type: dropdown
+    id: debug-mode
+    attributes:
+      label: "Debug Connection Mode"
+      description: "How is the debugger attached to the application?"
+      options:
+        - "TCP Socket (LSP Server attaches to running host via port 9002)"
+        - "Integrated C++ Host Header (angel_lsp_debugger.h)"
+        - "Direct Launch (command-line target)"
+    validations:
+      required: true
+  - type: dropdown
+    id: issue-category
+    attributes:
+      label: "Issue Category"
+      description: "What subsystem of the debugger is failing?"
+      options:
+        - "Breakpoints (breakpoint unresolved, invalid line, or not hitting)"
+        - "Evaluatable Expressions (hover tooltip in debug mode wrong or empty)"
+        - "Variable Inspection (scopes, locals, globals, or watches incorrect)"
+        - "Execution Flow (step over, step into, step out, continue hanging/crashing)"
+        - "Call Stack (frame navigation or source file mapping failed)"
+        - "Debug Completion (eval completion in debug console wrong)"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction-steps
+    attributes:
+      label: "Steps to Reproduce"
+      description: "Step-by-step description of how to reproduce the defect."
+      placeholder: |
+        1. Set breakpoint on line X of test.as
+        2. Launch host application with debugger attached
+        3. Trigger execution of function foo()
+        4. Observe breakpoint is skipped / crash occurs
+    validations:
+      required: true
+  - type: textarea
+    id: script-snippet
+    attributes:
+      label: "AngelScript & Host Code"
+      description: "Minimal AngelScript snippet and relevant C++ host binding code."
+      render: AngelScript
+    validations:
+      required: true
+  - type: textarea
+    id: debug-log
+    attributes:
+      label: "Debug Console / Adapter Logs"
+      description: "Copy and paste logs from the Debug Console or VS Code Output channel."
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: expected-vs-observed
+    attributes:
+      label: "Expected vs Observed Behavior"
+      description: "What did you observe vs what was expected?"
+    validations:
+      required: true

@@ -1,0 +1,39 @@
+name: "Feature Request"
+description: "Suggest an idea, enhancement, new refactoring tool, or host engine support"
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        We welcome feature suggestions and engine compatibility requests! Please describe the motivation and official AngelScript compiler behavior.
+  - type: textarea
+    id: problem-statement
+    attributes:
+      label: "Problem or Missing Capability"
+      description: "Is your feature request related to a problem or limitation? Please describe."
+      placeholder: "e.g., I'm always frustrated when..."
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: "Proposed Solution"
+      description: "Describe what you would like AngelLSP to do and how the feature should behave."
+    validations:
+      required: true
+  - type: textarea
+    id: compiler-parity
+    attributes:
+      label: "Official Compiler / Language Reference"
+      description: "Reference to the AngelScript manual, add-ons, or empirical compiler behavior supporting this request."
+      placeholder: "e.g., Section 'Weak references' in the AngelScript documentation: https://www.angelcode.com/angelscript/sdk/docs/manual/doc_addon_weakref.html"
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives Considered"
+      description: "Any alternative solutions or workarounds you've considered."
+    validations:
+      required: false
