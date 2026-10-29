@@ -83,6 +83,8 @@ function expandExpressionRight(lineText: string, startIndex: number): number {
         const curr = lineText[i];
         if (isIdentifierChar(curr)) {
             i++;
+        } else if (curr === '.') {
+            i++;
         } else if (curr === ':' && i + 1 < len && lineText[i + 1] === ':') {
             i += 2;
         } else if (curr === '[') {
