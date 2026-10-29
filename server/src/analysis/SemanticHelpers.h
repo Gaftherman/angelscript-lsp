@@ -782,6 +782,15 @@ TemplateBinding BindTemplateArguments(const std::string& writtenType, const Symb
 std::string SubstituteTemplateParameters(std::string_view typeStr, const TemplateBinding& binding);
 
 /**
+ * @brief Canonicalizes unqualified types inside container/namespace scope using SymbolTable.
+ * @param[in] typeStr Type string that may contain unqualified member type references.
+ * @param[in] containerScope Namespace or enclosing container name.
+ * @param[in] table Symbol table.
+ * @return Qualified type string where types found in containerScope are prefixed with containerScope + "::".
+ */
+std::string QualifyTypeInContainer(std::string_view typeStr, std::string_view containerScope, const SymbolTable& table);
+
+/**
  * @brief Resolves the resulting type after applying N indexing operations: `x[0][1]`.
  *        Queries `opIndex` from the symbol table with template substitution,
  *        falling back to template arguments or bracket array syntax.

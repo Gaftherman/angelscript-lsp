@@ -838,6 +838,88 @@ std::string SubstituteTypeParam(std::string_view typeStr, std::string_view param
     return result;
 }
 
+namespace
+{
+bool IsTypeSymbolList(const std::vector<Symbol>& syms) noexcept
+{
+    for (const auto& s : syms)
+    {
+        if (s.type == SymbolType::Class || s.type == SymbolType::Interface || s.type == SymbolType::Enum ||
+            s.type == SymbolType::Typedef || s.type == SymbolType::Funcdef)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::optional<std::string> TryQualifyIdentifier(std::string_view ident, std::string_view containerScope,
+                                                const SymbolTable& table)
+{
+    if (parser::primitives::IsPrimitive(ident))
+    {
+        return std::nullopt;
+    }
+    std::string candidate;
+    candidate.reserve(containerScope.size() + 2 + ident.size());
+    candidate.append(containerScope);
+    candidate.append("::");
+    candidate.append(ident);
+    if (const auto syms = table.FindSymbolsPtr(candidate))
+    {
+        if (IsTypeSymbolList(*syms))
+        {
+            return candidate;
+        }
+    }
+    return std::nullopt;
+}
+
+bool IsColonQualified(std::string_view s, size_t start, size_t end) noexcept
+{
+    const bool preceded = (start >= 2 && s[start - 1] == ':' && s[start - 2] == ':');
+    const bool followed = (end + 1 < s.size() && s[end] == ':' && s[end + 1] == ':');
+    return preceded || followed;
+}
+} // namespace
+
+std::string QualifyTypeInContainer(std::string_view typeStr, std::string_view containerScope, const SymbolTable& table)
+{
+    if (typeStr.empty() || containerScope.empty())
+    {
+        return std::string(typeStr);
+    }
+    std::string result;
+    result.reserve(typeStr.size() + containerScope.size() + 2);
+    size_t i = 0;
+    while (i < typeStr.size())
+    {
+        const char c = typeStr[i];
+        if (!isalpha(static_cast<unsigned char>(c)) && c != '_')
+        {
+            result.push_back(c);
+            ++i;
+            continue;
+        }
+        const size_t start = i;
+        while (i < typeStr.size() && (isalnum(static_cast<unsigned char>(typeStr[i])) || typeStr[i] == '_'))
+        {
+            ++i;
+        }
+        const std::string_view ident = typeStr.substr(start, i - start);
+        if (!IsColonQualified(typeStr, start, i))
+        {
+            if (auto qualified = TryQualifyIdentifier(ident, containerScope, table))
+            {
+                result.append(*qualified);
+                continue;
+            }
+        }
+        result.append(ident);
+    }
+    return result;
+}
+
 TemplateBinding BindTemplateArguments(const std::string& writtenType, const SymbolTable& table)
 {
     TemplateBinding binding;
@@ -1080,9 +1162,9 @@ bool AreCompatibleTemplateContainers(std::string_view fromContainer, std::string
     {
         return true;
     }
-    if (fromContainer == "weakref" && toContainer == "const_weakref")
+    if (fromContainer.find("::") != std::string_view::npos && toContainer.find("::") != std::string_view::npos)
     {
-        return true;
+        return false;
     }
     return LastScopeSegment(fromContainer) == LastScopeSegment(toContainer);
 }
@@ -1100,6 +1182,10 @@ bool AreCompatibleTemplateArgPair(std::string_view va, std::string_view vb)
     if (vaIsTmpl && vbIsTmpl)
     {
         return !AreIncompatibleTemplateTypes(va, vb);
+    }
+    if (va.find("::") != std::string_view::npos && vb.find("::") != std::string_view::npos)
+    {
+        return false;
     }
     return LastScopeSegment(va) == LastScopeSegment(vb);
 }
@@ -2803,7 +2889,12 @@ static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const Expression
             if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
                 !sym.GetVariable().typeName.empty())
             {
-                return CleanExpressionType(sym.GetVariable().typeName);
+                std::string type = sym.GetVariable().typeName;
+                if (!sym.containerName.empty())
+                {
+                    type = QualifyTypeInContainer(type, sym.containerName, ctx.symbolTable);
+                }
+                return CleanExpressionType(type);
             }
         }
         if (auto enumType = ResolveScopedEnumMember(whole, exprNode, ctx); !enumType.empty())
@@ -2903,7 +2994,12 @@ static std::string ResolveIdentifierVirtualFallback(const std::string& name, con
                 if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
                     !sym.GetVariable().typeName.empty())
                 {
-                    return CleanExpressionType(sym.GetVariable().typeName);
+                    std::string type = sym.GetVariable().typeName;
+                    if (!sym.containerName.empty())
+                    {
+                        type = QualifyTypeInContainer(type, sym.containerName, ctx.symbolTable);
+                    }
+                    return CleanExpressionType(type);
                 }
             }
             break;
@@ -2993,7 +3089,12 @@ static std::string ResolveIdentifierExpr(TSNode exprNode, const ExpressionTypeCo
         if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
             !sym.GetVariable().typeName.empty())
         {
-            return CleanExpressionType(sym.GetVariable().typeName);
+            std::string type = sym.GetVariable().typeName;
+            if (!sym.containerName.empty())
+            {
+                type = QualifyTypeInContainer(type, sym.containerName, ctx.symbolTable);
+            }
+            return CleanExpressionType(type);
         }
     }
     if (std::string pType = PropertyTypeFromAccessors(syms); !pType.empty())
@@ -3755,15 +3856,25 @@ static std::string ExtractAccessorMemberType(const Symbol& sym)
  * @param[in] sym Member symbol to inspect.
  * @return Cleaned member type, or empty string if unresolved.
  */
-static std::string ExtractMemberSymbolType(const Symbol& sym)
+static std::string ExtractMemberSymbolType(const Symbol& sym, const SymbolTable& table)
 {
     if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) && !sym.GetVariable().typeName.empty())
     {
-        return CleanExpressionType(sym.GetVariable().typeName);
+        std::string type = sym.GetVariable().typeName;
+        if (!sym.containerName.empty())
+        {
+            type = QualifyTypeInContainer(type, sym.containerName, table);
+        }
+        return CleanExpressionType(type);
     }
     if (sym.type == SymbolType::Function)
     {
-        return ExtractAccessorMemberType(sym);
+        std::string type = ExtractAccessorMemberType(sym);
+        if (!sym.containerName.empty())
+        {
+            type = QualifyTypeInContainer(type, sym.containerName, table);
+        }
+        return type;
     }
     return "";
 }
@@ -3806,7 +3917,7 @@ static std::string ResolveMemberExpr(TSNode exprNode, const ExpressionTypeContex
         auto found = FindMemberSymbolsInType(typeName, memName, ctx.symbolTable);
         for (const auto& sym : found)
         {
-            if (auto resolved = ExtractMemberSymbolType(sym); !resolved.empty())
+            if (auto resolved = ExtractMemberSymbolType(sym, ctx.symbolTable); !resolved.empty())
             {
                 return resolved;
             }
