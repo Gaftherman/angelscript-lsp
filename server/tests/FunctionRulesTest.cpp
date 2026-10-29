@@ -585,15 +585,36 @@ TEST_CASE("FunctionRules - Reports inout on a primitive parameter")
 
 TEST_CASE("FunctionRules - inout on an object parameter is accepted")
 {
-    // `Entity &inout` is genuinely legal. `string &inout` is not - a value type registered without
-    // handle support gets the same refusal a primitive does - but nothing in script text says
-    // which registered types support handles, so this pass stays silent on all of them rather than
-    // guessing. A known false negative, and the safe direction.
-    const std::string code = "class Entity {}\n"
-                             "void Move(Entity &inout e) { }\n"
-                             "void Rename(string &inout name) { }\n";
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("Entity");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Move");
+    const std::string code = "class " + className +
+                             " {}\n"
+                             "void " +
+                             fnName + "(" + className + " &inout e) { }\n";
 
     CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(code), "as-err-inout-on-primitive"));
+}
+
+TEST_CASE("FunctionRules - const string reference requires in or out when unsafe references are disallowed")
+{
+    const std::string fn1 = angel_lsp::test::GenerateRandomSymbolName("LogMsg");
+    const std::string fn2 = angel_lsp::test::GenerateRandomSymbolName("MutMsg");
+    const std::string codeDisallowed = "void " + fn1 +
+                                       "(const string& message) { }\n"
+                                       "void " +
+                                       fn2 + "(string& message) { }\n";
+    const std::string codeAllowed = "void " + fn1 +
+                                    "(const string& in message) { }\n"
+                                    "void " +
+                                    fn2 + "(string& out message) { }\n";
+
+    CHECK(HasCode(AnalyzeFunctionSnippet(codeDisallowed), "as-err-inout-on-primitive"));
+    CHECK_FALSE(HasCode(AnalyzeFunctionSnippet(codeAllowed), "as-err-inout-on-primitive"));
+
+    angel_lsp::config::EngineProperties engine;
+    engine.allowUnsafeReferences = true;
+    CHECK_FALSE(
+        HasCode(AnalyzeFunctionSnippet(codeDisallowed, "file:///funcs.as", &engine), "as-err-inout-on-primitive"));
 }
 
 TEST_CASE("FunctionRules - Reports a bare reference on a primitive parameter")

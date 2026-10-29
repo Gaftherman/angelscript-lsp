@@ -7073,3 +7073,47 @@ TEST_CASE("Server - OnTypeFormatting inside heredoc is a no-op")
     INFO("onTypeFormatting response: " << resp);
     CHECK(resp.find(R"("result":null)") != std::string::npos);
 }
+
+TEST_CASE("Server - Independent module entry points isolate duplicate funcdefs without collision")
+{
+    WorkspaceFixture fixture;
+    const std::string nsName = test::GenerateRandomSymbolName("ModNS");
+    const std::string funcdefName = test::GenerateRandomSymbolName("Callback");
+    const std::string fnName = test::GenerateRandomSymbolName("InvokeCb");
+
+    const std::string scriptA = fmt::format("namespace {} {{\n"
+                                            "    funcdef void {}(int val);\n"
+                                            "    void {}({}@ cb) {{ if (cb !is null) cb(42); }}\n"
+                                            "}}\n",
+                                            nsName, funcdefName, fnName, funcdefName);
+
+    const std::string scriptB = fmt::format("namespace {} {{\n"
+                                            "    funcdef void {}(string text, float duration);\n"
+                                            "}}\n",
+                                            nsName, funcdefName);
+
+    fixture.Write("scripts/scriptA.as", scriptA);
+    fixture.Write("scripts/scriptB.as", scriptB);
+
+    config::ServerConfig serverConfig;
+    serverConfig.engineProfile = "standard";
+    serverConfig.modules = {{"ModuleA", (fixture.dir / "scripts/scriptA.as").generic_string(), ""},
+                            {"ModuleB", (fixture.dir / "scripts/scriptB.as").generic_string(), ""}};
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    stream.Push(DidOpenMessage(fixture.Uri("scripts/scriptA.as"), scriptA));
+    stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
+
+    RunScript(serverConfig, stream);
+    const std::string output = stream.Output();
+
+    const std::string publishedA = LastPublishedFor(output, "scriptA.as");
+    INFO("Diagnostics for scriptA.as: ", publishedA);
+    REQUIRE_FALSE(publishedA.empty());
+    CHECK(publishedA.find("as-err-duplicate-declaration") == std::string::npos);
+    CHECK(publishedA.find("as-err-signature-mismatch") == std::string::npos);
+}

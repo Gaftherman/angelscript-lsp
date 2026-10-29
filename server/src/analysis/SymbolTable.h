@@ -558,10 +558,15 @@ class SymbolTable
      *        and safe for concurrent semantic analysis without contaminating the global symbol table.
      * @param uriStr Document URI being analyzed.
      * @param staging Fresh symbols collected for uriStr.
+     * @param allowedModuleFileUris Optional set of URIs belonging to this module's closure. When provided and
+     * non-empty, only symbols from these documents, the active document, and predefined stubs are copied.
+     * @param predefinedExtension Extension used to recognize predefined engine stub files.
      * @return Isolated SymbolTable snapshot owned by unique_ptr.
      */
-    [[nodiscard]] std::unique_ptr<SymbolTable> CreateAnalysisSnapshot(const std::string& uriStr,
-                                                                      const SymbolTable& staging) const;
+    [[nodiscard]] std::unique_ptr<SymbolTable>
+    CreateAnalysisSnapshot(const std::string& uriStr, const SymbolTable& staging,
+                           const ankerl::unordered_dense::set<std::string>* allowedModuleFileUris = nullptr,
+                           std::string_view predefinedExtension = ".as.predefined") const;
 
     /** @brief Returns total number of table clones created via CreateAnalysisSnapshot. */
     [[nodiscard]] static uint64_t GetTableCloneCount() noexcept
@@ -964,6 +969,18 @@ class SymbolTable
     std::string m_defaultArrayType = "array";
     std::string m_stringType = "string";
     inline static std::atomic<uint64_t> s_tableCloneCount{0};
+
+    struct SnapshotFilterContext
+    {
+        const ankerl::unordered_dense::set<std::string>& allowedModuleFileUris;
+        std::string_view targetUri;
+        std::string_view predefinedExtension;
+    };
+
+    static bool IsFileAllowedForSnapshot(std::string_view fileUri, const SnapshotFilterContext& ctx) noexcept;
+    void CopyFilteredSymbolsLocked(SymbolTable& target, const SnapshotFilterContext& ctx) const;
+    void CopyBucketForSnapshotLocked(const std::string& key, const std::shared_ptr<std::vector<Symbol>>& bucketPtr,
+                                     const SnapshotFilterContext& ctx);
 };
 
 /** @brief Converts SymbolType enum to lower/string representation. */

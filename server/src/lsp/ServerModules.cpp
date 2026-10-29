@@ -934,24 +934,41 @@ void Server::PurgeClosureFile(const std::string& uriStr)
     }
 }
 
-std::vector<std::string> Server::ComputeModuleClosure(const std::string& openPath) const
+static void AppendFilteredMembers(const ankerl::unordered_dense::set<std::string>& members, const std::string& openPath,
+                                  std::vector<std::string>& outClosure)
 {
-    const ModuleClaim claim = ClaimFor(openPath);
+    for (const auto& member : members)
+    {
+        if (!NormalizedPathsEqual(member, openPath))
+        {
+            outClosure.push_back(member);
+        }
+    }
+}
+
+void Server::AppendEnclosingFolderModuleMembers(const std::string& openPath, const ModuleClaim& claim,
+                                                std::vector<std::string>& closure) const
+{
+    for (const auto& mod : m_modules)
+    {
+        if (claim.owner != nullptr && mod.name == claim.owner->name)
+        {
+            continue;
+        }
+        if (!mod.folderPath.empty() && PathIsInside(openPath, mod.folderPath))
+        {
+            AppendFilteredMembers(mod.memberPaths, openPath, closure);
+        }
+    }
+}
+
+void Server::AppendIncludeGraphClosure(const std::string& openPath, const ModuleClaim& claim,
+                                       std::vector<std::string>& closure) const
+{
     if (claim.owner != nullptr && claim.owner->closurePaths.contains(openPath))
     {
-        std::vector<std::string> closure;
-        closure.reserve(claim.owner->memberPaths.size());
-        for (const auto& member : claim.owner->memberPaths)
-        {
-            if (!NormalizedPathsEqual(member, openPath))
-            {
-                closure.push_back(member);
-            }
-        }
-        return closure;
+        return;
     }
-
-    std::vector<std::string> closure;
     if (!m_config.moduleEntryPoint.empty())
     {
         const std::string entryPath = ResolveConfiguredPath(m_config.moduleEntryPoint);
@@ -959,39 +976,46 @@ std::vector<std::string> Server::ComputeModuleClosure(const std::string& openPat
         if (std::any_of(fwd.begin(), fwd.end(),
                         [&openPath](const std::string& p) { return NormalizedPathsEqual(p, openPath); }))
         {
-            closure = std::move(fwd);
-        }
-        else
-        {
-            closure = m_includeGraph.GetModuleClosure(openPath);
+            closure.insert(closure.end(), fwd.begin(), fwd.end());
+            return;
         }
     }
-    else
-    {
-        closure = m_includeGraph.GetModuleClosure(openPath);
-    }
+    const auto mc = m_includeGraph.GetModuleClosure(openPath);
+    closure.insert(closure.end(), mc.begin(), mc.end());
+}
 
-    if (claim.owner != nullptr)
-    {
-        for (const auto& member : claim.owner->memberPaths)
-        {
-            if (!NormalizedPathsEqual(member, openPath))
-                closure.push_back(member);
-        }
-    }
-
+void Server::AppendForceIncludesClosure(std::vector<std::string>& closure) const
+{
     for (const auto& forceFile : m_config.forceIncludeFiles)
     {
         const std::string resolvedForce = ResolveConfiguredPath(forceFile);
-        if (!resolvedForce.empty())
+        if (resolvedForce.empty())
         {
-            closure.push_back(resolvedForce);
-            for (const auto& fwd : m_includeGraph.GetForwardClosure(resolvedForce))
-            {
-                closure.push_back(fwd);
-            }
+            continue;
+        }
+        closure.push_back(resolvedForce);
+        for (const auto& fwd : m_includeGraph.GetForwardClosure(resolvedForce))
+        {
+            closure.push_back(fwd);
         }
     }
+}
+
+std::vector<std::string> Server::ComputeModuleClosure(const std::string& openPath) const
+{
+    const ModuleClaim claim = ClaimFor(openPath);
+    std::vector<std::string> closure;
+
+    if (claim.owner != nullptr)
+    {
+        closure.reserve(claim.owner->memberPaths.size());
+        AppendFilteredMembers(claim.owner->memberPaths, openPath, closure);
+    }
+
+    AppendEnclosingFolderModuleMembers(openPath, claim, closure);
+    AppendIncludeGraphClosure(openPath, claim, closure);
+    AppendForceIncludesClosure(closure);
+
     return closure;
 }
 

@@ -30,6 +30,31 @@ void Server::ReanalyseOpenDocuments()
     }
 }
 
+ankerl::unordered_dense::set<std::string> Server::ComputeModuleClosureUris(const std::string& uriStr) const
+{
+    ankerl::unordered_dense::set<std::string> moduleFileUris;
+    moduleFileUris.insert(uriStr);
+    const std::string ownPath = CanonicalPathFromUri(uriStr);
+    if (ownPath.empty())
+    {
+        return moduleFileUris;
+    }
+
+    const auto closurePaths = ComputeModuleClosure(ownPath);
+    std::lock_guard<std::mutex> lock(m_closureMutex);
+    for (const auto& path : closurePaths)
+    {
+        if (path == ownPath)
+        {
+            continue;
+        }
+
+        const auto indexed = m_indexedUriByPath.find(path);
+        moduleFileUris.insert(indexed != m_indexedUriByPath.end() ? indexed->second : UriFromPath(path));
+    }
+    return moduleFileUris;
+}
+
 angel_lsp::analysis::SemanticAnalysisRequest
 Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text, const TSTree* tree,
                              const angel_lsp::analysis::SymbolTable* customSymbolTable) const
@@ -40,21 +65,7 @@ Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
 
     request.typeConfig = &m_config.types;
     request.engineProperties = &m_config.engine;
-
-    if (const std::string ownPath = CanonicalPathFromUri(uriStr); !ownPath.empty())
-    {
-        request.moduleFileUris.insert(uriStr);
-        const auto closurePaths = ComputeModuleClosure(ownPath);
-        std::lock_guard<std::mutex> lock(m_closureMutex);
-        for (const auto& path : closurePaths)
-        {
-            if (path == ownPath)
-                continue;
-
-            const auto indexed = m_indexedUriByPath.find(path);
-            request.moduleFileUris.insert(indexed != m_indexedUriByPath.end() ? indexed->second : UriFromPath(path));
-        }
-    }
+    request.moduleFileUris = ComputeModuleClosureUris(uriStr);
     request.moduleContext = ModuleContextFor(uriStr);
 
     request.diagnostics = &m_config.diagnostics;
@@ -514,6 +525,29 @@ void Server::CommitSyntaxOnlyResults(const AnalyzeDocumentRequest& req, std::vec
                            .text = req.text});
 }
 
+bool Server::IsAnalysisRequestStale(const AnalyzeDocumentRequest& req) const
+{
+    if (req.generation > 0 && !m_documentStore.IsCurrent(req.uriStr, req.generation, req.version))
+    {
+        return true;
+    }
+    return m_analysisScheduler && m_analysisScheduler->IsCancelled(req.uriStr);
+}
+
+const analysis::SymbolTable* Server::PrepareAnalysisSnapshot(const std::string& uriStr, bool unchangedClosedFile,
+                                                             const analysis::SymbolTable& staging,
+                                                             std::unique_ptr<analysis::SymbolTable>& outSnapshot) const
+{
+    if (unchangedClosedFile)
+    {
+        return &m_symbolTable;
+    }
+    const auto moduleUris = ComputeModuleClosureUris(uriStr);
+    outSnapshot =
+        m_symbolTable.CreateAnalysisSnapshot(uriStr, staging, &moduleUris, m_config.info.predefinedFileExtension);
+    return outSnapshot.get();
+}
+
 void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer)
 {
     LogInfo(fmt::format("[Analysis] Starting background analysis for file: {}", req.uriStr));
@@ -534,18 +568,19 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
         return;
     }
 
-    if ((req.generation > 0 && !m_documentStore.IsCurrent(req.uriStr, req.generation, req.version)) ||
-        (m_analysisScheduler && m_analysisScheduler->IsCancelled(req.uriStr)))
+    if (IsAnalysisRequestStale(req))
         return;
 
     const TSNode root = ts_tree_root_node(parsed.tree.get());
     analysis::NodeIndex nodeIndex(root);
     const bool unchangedClosedFile = IsUnchangedClosedDocument(req.uriStr, req.generation, staging);
     if (!unchangedClosedFile)
+    {
         IndexModuleClosure(req.uriStr);
-    std::unique_ptr<analysis::SymbolTable> analysisSnapshot =
-        unchangedClosedFile ? nullptr : m_symbolTable.CreateAnalysisSnapshot(req.uriStr, staging);
-    const analysis::SymbolTable* activeTable = unchangedClosedFile ? &m_symbolTable : analysisSnapshot.get();
+    }
+    std::unique_ptr<analysis::SymbolTable> analysisSnapshot;
+    const analysis::SymbolTable* activeTable =
+        PrepareAnalysisSnapshot(req.uriStr, unchangedClosedFile, staging, analysisSnapshot);
 
     utils::HighResTimer scopeTimer;
     std::shared_ptr<angel_lsp::analysis::Scope> scopeRoot =

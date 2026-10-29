@@ -608,15 +608,86 @@ void SymbolTable::RetainLastKnownGoodTypes(const std::string& fileUri, SymbolTab
     }
 }
 
-std::unique_ptr<SymbolTable> SymbolTable::CreateAnalysisSnapshot(const std::string& uriStr,
-                                                                 const SymbolTable& staging) const
+bool SymbolTable::IsFileAllowedForSnapshot(std::string_view fileUri, const SnapshotFilterContext& ctx) noexcept
+{
+    if (fileUri.empty() || fileUri == ctx.targetUri)
+    {
+        return true;
+    }
+    if (ctx.allowedModuleFileUris.contains(std::string(fileUri)))
+    {
+        return true;
+    }
+    return utils::IsPredefinedFile(fileUri, ctx.predefinedExtension);
+}
+
+void SymbolTable::CopyBucketForSnapshotLocked(const std::string& key,
+                                              const std::shared_ptr<std::vector<Symbol>>& bucketPtr,
+                                              const SnapshotFilterContext& ctx)
+{
+    if (!bucketPtr)
+    {
+        return;
+    }
+    const auto& bucket = *bucketPtr;
+    const bool allAllowed = std::all_of(bucket.begin(), bucket.end(),
+                                        [&](const Symbol& sym) { return IsFileAllowedForSnapshot(sym.fileUri, ctx); });
+
+    if (allAllowed)
+    {
+        m_symbols.emplace(key, bucketPtr);
+        return;
+    }
+
+    auto filtered = std::make_shared<std::vector<Symbol>>();
+    for (const auto& sym : bucket)
+    {
+        if (IsFileAllowedForSnapshot(sym.fileUri, ctx))
+        {
+            filtered->push_back(sym);
+        }
+    }
+    if (!filtered->empty())
+    {
+        m_symbols.emplace(key, std::move(filtered));
+    }
+}
+
+void SymbolTable::CopyFilteredSymbolsLocked(SymbolTable& target, const SnapshotFilterContext& ctx) const
+{
+    for (const auto& [fUri, keys] : m_keysByFile)
+    {
+        if (!IsFileAllowedForSnapshot(fUri, ctx))
+        {
+            continue;
+        }
+
+        target.m_keysByFile[fUri] = keys;
+        for (const auto& key : keys)
+        {
+            if (target.m_symbols.contains(key))
+            {
+                continue;
+            }
+
+            const auto it = m_symbols.find(key);
+            if (it != m_symbols.end())
+            {
+                target.CopyBucketForSnapshotLocked(key, it->second, ctx);
+            }
+        }
+    }
+}
+
+std::unique_ptr<SymbolTable>
+SymbolTable::CreateAnalysisSnapshot(const std::string& uriStr, const SymbolTable& staging,
+                                    const ankerl::unordered_dense::set<std::string>* allowedModuleFileUris,
+                                    std::string_view predefinedExtension) const
 {
     IncrementTableCloneCount();
     auto snapshot = std::make_unique<SymbolTable>();
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
-        snapshot->m_symbols = m_symbols;
-        snapshot->m_keysByFile = m_keysByFile;
         snapshot->m_version = m_version;
         snapshot->m_virtualMixinDocumentsEnabled = m_virtualMixinDocumentsEnabled;
         snapshot->m_mixinClassCount = m_mixinClassCount;
@@ -624,13 +695,23 @@ std::unique_ptr<SymbolTable> SymbolTable::CreateAnalysisSnapshot(const std::stri
         snapshot->m_defaultArrayType = m_defaultArrayType;
         snapshot->m_stringType = m_stringType;
 
-        std::lock_guard<std::mutex> ruleGuard(m_ruleIndexMutex);
-        snapshot->m_ruleIndex = m_ruleIndex;
-        if (m_ruleIndexPartials)
+        if (!allowedModuleFileUris || allowedModuleFileUris->empty())
         {
-            snapshot->m_ruleIndexPartials =
-                std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>(
-                    *m_ruleIndexPartials);
+            snapshot->m_symbols = m_symbols;
+            snapshot->m_keysByFile = m_keysByFile;
+            std::lock_guard<std::mutex> ruleGuard(m_ruleIndexMutex);
+            snapshot->m_ruleIndex = m_ruleIndex;
+            if (m_ruleIndexPartials)
+            {
+                snapshot->m_ruleIndexPartials =
+                    std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>(
+                        *m_ruleIndexPartials);
+            }
+        }
+        else
+        {
+            const SnapshotFilterContext ctx{*allowedModuleFileUris, uriStr, predefinedExtension};
+            CopyFilteredSymbolsLocked(*snapshot, ctx);
         }
     }
 
@@ -772,11 +853,10 @@ void SymbolTable::CleanSynthesizedMembersForClassLocked(const Symbol& sym,
                                                         ankerl::unordered_dense::set<std::string>& fileKeys)
 {
     const std::string hostQName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-    const std::string prefix = hostQName + "::";
     std::vector<std::string> keysToClean;
     for (const auto& k : fileKeys)
     {
-        if (k.starts_with(prefix))
+        if (utils::HasScopePrefix(k, hostQName))
         {
             auto bIt = m_symbols.find(k);
             if (bIt != m_symbols.end() && bIt->second)
@@ -879,7 +959,7 @@ bool SymbolTable::HasSynthesizedMemberConflictLocked(const std::string& synthKey
 void SymbolTable::SynthesizeSingleMixinMemberLocked(const std::string& hostQName, const std::string& hostFileUri,
                                                     const std::string& mixinName, const Symbol& mSym)
 {
-    const std::string synthKey = hostQName + "::" + mSym.name;
+    const std::string synthKey = utils::JoinScopedName(hostQName, mSym.name);
     if (HasSynthesizedMemberConflictLocked(synthKey, mSym))
     {
         return;
@@ -1091,17 +1171,10 @@ bool SymbolTable::HasDocumentSymbols(const std::string& fileUri) const
     return it != m_keysByFile.end() && !it->second.empty();
 }
 
-static inline std::string_view CleanScope(std::string_view name)
-{
-    if (name.starts_with("::"))
-        return name.substr(2);
-    return name;
-}
-
 bool SymbolTable::HasSymbol(std::string_view qualifiedName) const
 {
     std::shared_lock<std::shared_mutex> lock(m_mutex);
-    std::string_view search = CleanScope(qualifiedName);
+    std::string_view search = utils::StripGlobalPrefix(qualifiedName);
     return m_symbols.contains(search);
 }
 
@@ -1153,7 +1226,7 @@ bool SymbolTable::IsReachableInContainerScope(std::string_view cleanName, std::s
 std::shared_ptr<const std::vector<Symbol>> SymbolTable::FindSymbolsPtr(std::string_view qualifiedName) const
 {
     std::shared_lock<std::shared_mutex> lock(m_mutex);
-    std::string_view search = CleanScope(qualifiedName);
+    std::string_view search = utils::StripGlobalPrefix(qualifiedName);
     auto it = m_symbols.find(search);
     return it != m_symbols.end() ? it->second : nullptr;
 }
@@ -1191,7 +1264,7 @@ std::vector<Symbol> SymbolTable::FindMemberSymbols(std::string_view scope, std::
 std::vector<Symbol> SymbolTable::FindSymbols(std::string_view qualifiedName) const
 {
     std::shared_lock<std::shared_mutex> lock(m_mutex);
-    std::string_view search = CleanScope(qualifiedName);
+    std::string_view search = utils::StripGlobalPrefix(qualifiedName);
     auto it = m_symbols.find(search);
     return it != m_symbols.end() ? *it->second : std::vector<Symbol>{};
 }
@@ -1199,7 +1272,7 @@ std::vector<Symbol> SymbolTable::FindSymbols(std::string_view qualifiedName) con
 std::optional<Symbol> SymbolTable::FindFirstSymbol(std::string_view qualifiedName) const
 {
     std::shared_lock<std::shared_mutex> lock(m_mutex);
-    std::string_view search = CleanScope(qualifiedName);
+    std::string_view search = utils::StripGlobalPrefix(qualifiedName);
     auto it = m_symbols.find(search);
     if (it != m_symbols.end() && !it->second->empty())
         return it->second->front();
@@ -1278,7 +1351,7 @@ void SymbolTable::InsertSymbol(const std::string& name, SymbolKind kind, const s
 
 bool SymbolTable::HasSymbolAnywhere(std::string_view name) const
 {
-    std::string_view searchName = CleanScope(name);
+    std::string_view searchName = utils::StripGlobalPrefix(name);
 
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);

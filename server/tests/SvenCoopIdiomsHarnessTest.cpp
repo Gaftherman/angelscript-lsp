@@ -151,6 +151,7 @@ TEST_SUITE("SvenCoopIdiomsHarness")
     TEST_CASE("Mutating Reference String Semantics")
     {
         LspSemanticHarnessFixture fixture;
+        fixture.Config().engine.allowUnsafeReferences = true;
         fixture.LoadPredefinedStub("tests/fixtures/sdk-addons.as.predefined");
 
         const std::string validScript = "void Modify(string& text)\n"

@@ -4,7 +4,8 @@
   "engineProperties": {
     "propertyAccessorMode": 2,
     "disallowGlobalVars": false,
-    "requireEnumScope": false
+    "requireEnumScope": false,
+    "allowUnsafeReferences": false
   },
   "storageRules": [
     {

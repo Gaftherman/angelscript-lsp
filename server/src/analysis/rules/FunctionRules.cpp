@@ -3,7 +3,9 @@
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/overload/OverloadTypeConversions.h"
 #include "parser/GrammarNames.h"
+#include "parser/Primitives.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -104,7 +106,12 @@ bool IsDisallowedInOutType(const ParameterInformation& param, const SymbolTable&
     {
         return true;
     }
-    if (auto syms = table.FindSymbolsPtr(param.baseTypeName))
+    const std::string unwrapped = UnwrapTypedef(param.baseTypeName, table);
+    if (parser::primitives::IsPrimitive(unwrapped) || unwrapped == table.GetStringType())
+    {
+        return true;
+    }
+    if (auto syms = table.FindSymbolsPtr(unwrapped))
     {
         return std::any_of(syms->begin(), syms->end(), [](const Symbol& s) { return s.type == SymbolType::Enum; });
     }

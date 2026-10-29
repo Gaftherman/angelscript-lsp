@@ -2058,6 +2058,37 @@ class Server
     std::vector<std::string> ComputeModuleClosure(const std::string& openPath) const;
 
     /**
+     * @brief Computes all file URIs in the module closure for uriStr (including uriStr itself).
+     * @param[in] uriStr Document URI.
+     * @return Set of URIs belonging to this module's closure.
+     */
+    ankerl::unordered_dense::set<std::string> ComputeModuleClosureUris(const std::string& uriStr) const;
+
+    /**
+     * @brief Appends module member paths for enclosing folder modules.
+     * @param[in] openPath Canonical path of the opened file.
+     * @param[in] claim Module ownership claim for the opened file.
+     * @param[in,out] closure Destination list of closure paths.
+     */
+    void AppendEnclosingFolderModuleMembers(const std::string& openPath, const ModuleClaim& claim,
+                                            std::vector<std::string>& closure) const;
+
+    /**
+     * @brief Appends include-graph module closure paths.
+     * @param[in] openPath Canonical path of the opened file.
+     * @param[in] claim Module ownership claim for the opened file.
+     * @param[in,out] closure Destination list of closure paths.
+     */
+    void AppendIncludeGraphClosure(const std::string& openPath, const ModuleClaim& claim,
+                                   std::vector<std::string>& closure) const;
+
+    /**
+     * @brief Appends force-include file paths and their closures.
+     * @param[in,out] closure Destination list of closure paths.
+     */
+    void AppendForceIncludesClosure(std::vector<std::string>& closure) const;
+
+    /**
      * @brief Indexes every other file in the opened document's #include module.
      *
      * AngelScript modules are composed textually, so a file can use declarations from the file
@@ -2225,6 +2256,25 @@ class Server
      * @param[in] totalTimer High-resolution timer tracking total analysis time.
      */
     void AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer);
+
+    /**
+     * @brief Prepares the active symbol table snapshot for document analysis.
+     * @param[in] uriStr Document URI.
+     * @param[in] unchangedClosedFile True if the document is closed and unchanged.
+     * @param[in] staging Staged symbols from the parsed tree.
+     * @param[out] outSnapshot Owning pointer to the created snapshot if created.
+     * @return Non-owning pointer to the active SymbolTable to query.
+     */
+    const analysis::SymbolTable* PrepareAnalysisSnapshot(const std::string& uriStr, bool unchangedClosedFile,
+                                                         const analysis::SymbolTable& staging,
+                                                         std::unique_ptr<analysis::SymbolTable>& outSnapshot) const;
+
+    /**
+     * @brief Checks if an analysis request has been superseded by a newer version or cancellation.
+     * @param[in] req Analysis request bundle.
+     * @return True if the request is stale and analysis should abort.
+     */
+    bool IsAnalysisRequestStale(const AnalyzeDocumentRequest& req) const;
 
     /**
      * @brief Commits syntax-only diagnostics when stubs or rules are still indexing.
