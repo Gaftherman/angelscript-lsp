@@ -57,6 +57,31 @@ std::string_view NodeType(TSNode node)
     return ts_node_is_null(node) ? std::string_view{} : std::string_view(ts_node_type(node));
 }
 
+namespace
+{
+bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner)
+{
+    const auto aArgs = SplitTemplateArguments(aInner);
+    const auto bArgs = SplitTemplateArguments(bInner);
+    if (aArgs.size() != bArgs.size())
+    {
+        return false;
+    }
+    for (size_t i = 0; i < aArgs.size(); ++i)
+    {
+        std::string_view va = aArgs[i];
+        std::string_view vb = bArgs[i];
+        TrimTypeWhitespace(va);
+        TrimTypeWhitespace(vb);
+        if (!IsSameType(std::string(va), std::string(vb)))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+} // namespace
+
 bool IsSameType(const std::string& a, const std::string& b)
 {
     const std::string ca = CanonicalizeType(a);
@@ -71,30 +96,23 @@ bool IsSameType(const std::string& a, const std::string& b)
     {
         const std::string_view aCont = std::string_view(ca).substr(0, aOpen);
         const std::string_view bCont = std::string_view(cb).substr(0, bOpen);
-        if (aCont != bCont && LastScopeSegment(aCont) != LastScopeSegment(bCont))
+        if (aCont != bCont)
         {
-            return false;
-        }
-        const std::string_view aInner = std::string_view(ca).substr(aOpen + 1, ca.size() - aOpen - 2);
-        const std::string_view bInner = std::string_view(cb).substr(bOpen + 1, cb.size() - bOpen - 2);
-        const auto aArgs = SplitTemplateArguments(aInner);
-        const auto bArgs = SplitTemplateArguments(bInner);
-        if (aArgs.size() != bArgs.size())
-        {
-            return false;
-        }
-        for (size_t i = 0; i < aArgs.size(); ++i)
-        {
-            std::string_view va = aArgs[i];
-            std::string_view vb = bArgs[i];
-            TrimTypeWhitespace(va);
-            TrimTypeWhitespace(vb);
-            if (!IsSameType(std::string(va), std::string(vb)))
+            if (aCont.find("::") != std::string_view::npos && bCont.find("::") != std::string_view::npos)
+            {
+                return false;
+            }
+            if (LastScopeSegment(aCont) != LastScopeSegment(bCont))
             {
                 return false;
             }
         }
-        return true;
+        return AreTemplateArgumentsEqual(std::string_view(ca).substr(aOpen + 1, ca.size() - aOpen - 2),
+                                         std::string_view(cb).substr(bOpen + 1, cb.size() - bOpen - 2));
+    }
+    if (ca.find("::") != std::string::npos && cb.find("::") != std::string::npos)
+    {
+        return false;
     }
     return LastScopeSegment(ca) == LastScopeSegment(cb);
 }
@@ -397,7 +415,7 @@ bool AcceptsSingleArgument(const std::vector<ParameterInformation>& parameters)
 /** @brief The declared type of the single argument such an overload converts from. */
 std::string SingleArgumentType(const std::vector<ParameterInformation>& parameters)
 {
-    return parameters.empty() ? "" : CleanBaseType(parameters[0].typeName);
+    return parameters.empty() ? "" : CanonicalizeType(parameters[0].typeName);
 }
 
 /**
@@ -496,9 +514,19 @@ bool DeclaresConversionTo(const std::string& fromType, const std::string& toType
                           bool implicitOnly)
 {
     bool found = false;
+    TemplateBinding binding;
+    if (fromType.find('<') != std::string::npos)
+    {
+        binding = BindTemplateArguments(fromType, table);
+    }
     const auto matches = [&](const Symbol& sym)
     {
-        if (IsSameType(CleanBaseType(sym.GetFunction().returnType), toType))
+        std::string ret = sym.GetFunction().returnType;
+        if (binding.usable)
+        {
+            ret = SubstituteTemplateParameters(ret, binding);
+        }
+        if (IsSameType(CleanBaseType(ret), toType))
         {
             found = true;
             return true;
@@ -707,6 +735,12 @@ bool CanConvertClasses(const std::string& from, const std::string& to, const Dia
         return true;
     }
 
+    TemplateBinding binding;
+    if (to.find('<') != std::string::npos)
+    {
+        binding = BindTemplateArguments(to, table);
+    }
+
     bool convertible = false;
     const auto acceptsFrom = [&](const Symbol& sym)
     {
@@ -718,7 +752,12 @@ bool CanConvertClasses(const std::string& from, const std::string& to, const Dia
         if (AcceptsSingleArgument(parameters))
         {
             ConversionState nextState{state.depth + 1, state.visitedEdges};
-            if (IsConvertible(from, SingleArgumentType(parameters), ctx, nextState))
+            std::string paramType = SingleArgumentType(parameters);
+            if (binding.usable)
+            {
+                paramType = SubstituteTemplateParameters(paramType, binding);
+            }
+            if (IsConvertible(from, paramType, ctx, nextState))
             {
                 convertible = true;
                 return true;
@@ -777,23 +816,15 @@ bool CanConvertUserTypes(const ConversionTypes& types, const DiagnosticContext& 
 
 namespace
 {
-bool IsWeakrefToConstWeakref(const std::string& from, const std::string& to)
+struct EdgeGuard
 {
-    const size_t fromOpen = from.find('<');
-    const size_t toOpen = to.find('<');
-    if (fromOpen != std::string::npos && from.ends_with('>') && toOpen != std::string::npos && to.ends_with('>'))
+    ankerl::unordered_dense::set<std::string>& edges;
+    std::string key;
+    ~EdgeGuard()
     {
-        const std::string_view fromCont = std::string_view(from).substr(0, fromOpen);
-        const std::string_view toCont = std::string_view(to).substr(0, toOpen);
-        if (fromCont == "weakref" && toCont == "const_weakref")
-        {
-            const std::string_view fromInner = std::string_view(from).substr(fromOpen + 1, from.size() - fromOpen - 2);
-            const std::string_view toInner = std::string_view(to).substr(toOpen + 1, to.size() - toOpen - 2);
-            return IsSameType(std::string(fromInner), std::string(toInner));
-        }
+        edges.erase(key);
     }
-    return false;
-}
+};
 } // namespace
 
 bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx, ConversionState& state)
@@ -821,15 +852,7 @@ bool IsConvertible(const std::string& from, const std::string& to, const Diagnos
 
     const SymbolTable& table = ctx.request.symbolTable;
 
-    struct EdgeGuard
-    {
-        ankerl::unordered_dense::set<std::string>& edges;
-        std::string key;
-        ~EdgeGuard()
-        {
-            edges.erase(key);
-        }
-    } guard{state.visitedEdges, std::move(edgeKey)};
+    EdgeGuard guard{state.visitedEdges, std::move(edgeKey)};
 
     const bool fromBuiltIn = IsBuiltInValueType(from, ctx);
     const bool toBuiltIn = IsBuiltInValueType(to, ctx);
@@ -849,12 +872,7 @@ bool IsConvertible(const std::string& from, const std::string& to, const Diagnos
         return CanConvertEnumTarget(from, to, table, ctx);
     }
 
-    if (AreIncompatibleTemplateTypes(from, to))
-    {
-        return false;
-    }
-
-    if (IsSameType(from, to) || IsWeakrefToConstWeakref(from, to))
+    if (IsSameType(from, to))
     {
         return true;
     }
@@ -864,7 +882,17 @@ bool IsConvertible(const std::string& from, const std::string& to, const Diagnos
         return true;
     }
 
-    return CanConvertUserTypes({from, to}, ctx, state);
+    if (CanConvertUserTypes({from, to}, ctx, state))
+    {
+        return true;
+    }
+
+    if (AreIncompatibleTemplateTypes(from, to))
+    {
+        return false;
+    }
+
+    return false;
 }
 
 bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx, size_t depth = 0)

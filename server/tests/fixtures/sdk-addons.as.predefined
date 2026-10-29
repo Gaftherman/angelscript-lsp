@@ -219,10 +219,13 @@ class weakref<T>{
 class const_weakref<T>{
 	const_weakref();
 	const_weakref(const const_weakref<T>&in);
+	const_weakref(const weakref<T>&in);
 	const_weakref(const T@);
 	/// Returns a strong const handle to the target, or null if it has been destroyed.
 	const T@ get() const;
 	const T@ opImplCast() const;
+	const_weakref<T>& opAssign(const const_weakref<T>&in);
+	const_weakref<T>& opAssign(const weakref<T>&in);
 	const_weakref<T>& opHndlAssign(const const_weakref<T>&in);
 	const_weakref<T>& opHndlAssign(const T@);
 	bool opEquals(const const_weakref<T>&in) const;

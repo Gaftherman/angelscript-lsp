@@ -126,6 +126,50 @@ bool IsViableConvertingConstructor(const Symbol& sym, const std::string& fromTyp
 }
 } // namespace
 
+namespace
+{
+bool MatchesConstructorParameter(const FunctionSignature& sig, const TemplateBinding& binding,
+                                 const std::string& fromType)
+{
+    if (sig.modifiers.isExplicit || sig.modifiers.isDelete || sig.parameters.empty())
+    {
+        return false;
+    }
+    std::string paramType = sig.parameters[0].typeName;
+    if (binding.usable)
+    {
+        paramType = SubstituteTemplateParameters(paramType, binding);
+    }
+    paramType = NormalizeType(paramType);
+    if (paramType != fromType && !IsPrimitiveWidening(fromType, paramType) && !IsSameType(fromType, paramType))
+    {
+        return false;
+    }
+    return std::all_of(sig.parameters.begin() + 1, sig.parameters.end(),
+                       [](const auto& p) { return !p.defaultValue.empty(); });
+}
+
+bool CheckConstructorList(const std::shared_ptr<const std::vector<Symbol>>& syms, const TemplateBinding& binding,
+                          const std::string& fromType)
+{
+    if (!syms)
+    {
+        return false;
+    }
+    for (const auto& sym : *syms)
+    {
+        if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+        {
+            if (MatchesConstructorParameter(sym.GetFunction(), binding, fromType))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+} // namespace
+
 bool HasConvertingConstructor(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable)
 {
     const std::string cleanTo = NormalizeType(toType);
@@ -133,18 +177,17 @@ bool HasConvertingConstructor(const std::string& fromType, const std::string& to
     {
         return false;
     }
-    const auto toSyms = symbolTable.FindMemberSymbolPtr(cleanTo, cleanTo);
-    if (toSyms)
+    const size_t openBracket = cleanTo.find('<');
+    const std::string baseName = (openBracket == std::string::npos) ? cleanTo : cleanTo.substr(0, openBracket);
+    const std::string shortName{LastScopeSegment(baseName)};
+    const TemplateBinding binding =
+        (openBracket != std::string::npos) ? BindTemplateArguments(cleanTo, symbolTable) : TemplateBinding{};
+    if (CheckConstructorList(symbolTable.FindMemberSymbolPtr(baseName, shortName), binding, fromType))
     {
-        for (const auto& sym : *toSyms)
-        {
-            if (IsViableConvertingConstructor(sym, fromType))
-            {
-                return true;
-            }
-        }
+        return true;
     }
-    return false;
+    return shortName != baseName &&
+           CheckConstructorList(symbolTable.FindMemberSymbolPtr(shortName, shortName), binding, fromType);
 }
 
 UserConversionMatch CheckConversionMethod(const std::string& fromType, const std::string& toType,
@@ -153,29 +196,50 @@ UserConversionMatch CheckConversionMethod(const std::string& fromType, const std
     UserConversionMatch bestMatch;
     const std::string cleanFrom = NormalizeType(fromType);
     const std::string cleanTo = NormalizeType(toType);
-
+    const size_t openBracket = cleanFrom.find('<');
+    const std::string baseName = (openBracket == std::string::npos) ? cleanFrom : cleanFrom.substr(0, openBracket);
+    const std::string shortName{LastScopeSegment(baseName)};
+    TemplateBinding binding;
+    if (openBracket != std::string::npos)
+    {
+        binding = BindTemplateArguments(cleanFrom, symbolTable);
+    }
     for (const char* opName : {"opImplConv", "opImplCast"})
     {
-        const auto opSyms = symbolTable.FindMemberSymbolPtr(cleanFrom, opName);
-        if (!opSyms)
+        const auto checkOps = [&](const std::shared_ptr<const std::vector<Symbol>>& opSyms) -> bool
         {
-            continue;
-        }
-        for (const auto& sym : *opSyms)
-        {
-            if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+            if (!opSyms)
             {
-                const std::string retType = NormalizeType(sym.GetFunction().returnType);
-                if (retType == cleanTo)
+                return false;
+            }
+            for (const auto& sym : *opSyms)
+            {
+                if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
                 {
-                    return UserConversionMatch{true, true};
-                }
-                if (IsPrimitiveWidening(retType, cleanTo))
-                {
-                    bestMatch.viable = true;
-                    bestMatch.isExact = false;
+                    std::string retType = sym.GetFunction().returnType;
+                    if (binding.usable)
+                    {
+                        retType = SubstituteTemplateParameters(retType, binding);
+                    }
+                    retType = NormalizeType(retType);
+                    if (retType == cleanTo || IsSameType(retType, cleanTo))
+                    {
+                        bestMatch = UserConversionMatch{true, true};
+                        return true;
+                    }
+                    if (IsPrimitiveWidening(retType, cleanTo))
+                    {
+                        bestMatch.viable = true;
+                        bestMatch.isExact = false;
+                    }
                 }
             }
+            return false;
+        };
+        if (checkOps(symbolTable.FindMemberSymbolPtr(baseName, opName)) ||
+            (shortName != baseName && checkOps(symbolTable.FindMemberSymbolPtr(shortName, opName))))
+        {
+            return bestMatch;
         }
     }
     return bestMatch;
@@ -477,6 +541,31 @@ bool IsContainerParameter(const ParameterInformation& param, const SymbolTable* 
     return ParameterAcceptsInitializerList(param, symbolTable, arrayTypeName);
 }
 
+namespace
+{
+bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner)
+{
+    const auto aArgs = SplitTemplateArguments(aInner);
+    const auto bArgs = SplitTemplateArguments(bInner);
+    if (aArgs.size() != bArgs.size())
+    {
+        return false;
+    }
+    for (size_t i = 0; i < aArgs.size(); ++i)
+    {
+        std::string_view va = aArgs[i];
+        std::string_view vb = bArgs[i];
+        TrimTypeWhitespace(va);
+        TrimTypeWhitespace(vb);
+        if (!IsSameType(std::string(va), std::string(vb)))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+} // namespace
+
 bool IsSameType(const std::string& a, const std::string& b)
 {
     if (a.empty() || b.empty())
@@ -493,30 +582,23 @@ bool IsSameType(const std::string& a, const std::string& b)
     {
         const std::string_view aCont = std::string_view(a).substr(0, aOpen);
         const std::string_view bCont = std::string_view(b).substr(0, bOpen);
-        if (aCont != bCont && LastScopeSegment(aCont) != LastScopeSegment(bCont))
+        if (aCont != bCont)
         {
-            return false;
-        }
-        const std::string_view aInner = std::string_view(a).substr(aOpen + 1, a.size() - aOpen - 2);
-        const std::string_view bInner = std::string_view(b).substr(bOpen + 1, b.size() - bOpen - 2);
-        const auto aArgs = SplitTemplateArguments(aInner);
-        const auto bArgs = SplitTemplateArguments(bInner);
-        if (aArgs.size() != bArgs.size())
-        {
-            return false;
-        }
-        for (size_t i = 0; i < aArgs.size(); ++i)
-        {
-            std::string_view va = aArgs[i];
-            std::string_view vb = bArgs[i];
-            TrimTypeWhitespace(va);
-            TrimTypeWhitespace(vb);
-            if (!IsSameType(std::string(va), std::string(vb)))
+            if (aCont.find("::") != std::string_view::npos && bCont.find("::") != std::string_view::npos)
+            {
+                return false;
+            }
+            if (LastScopeSegment(aCont) != LastScopeSegment(bCont))
             {
                 return false;
             }
         }
-        return true;
+        return AreTemplateArgumentsEqual(std::string_view(a).substr(aOpen + 1, a.size() - aOpen - 2),
+                                         std::string_view(b).substr(bOpen + 1, b.size() - bOpen - 2));
+    }
+    if (a.find("::") != std::string::npos && b.find("::") != std::string::npos)
+    {
+        return false;
     }
     return LastScopeSegment(a) == LastScopeSegment(b);
 }

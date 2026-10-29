@@ -406,6 +406,8 @@ class weakref<T> {
  */
 class const_weakref<T> {
     const_weakref (); // asBEHAVE_CONSTRUCT;
+    const_weakref (const const_weakref<T>& in other);
+    const_weakref (const weakref<T>& in other);
     const_weakref (const T@+ value) explicit; // asBEHAVE_CONSTRUCT;
     ~const_weakref (); // asBEHAVE_DESTRUCT;
 
@@ -428,6 +430,7 @@ class const_weakref<T> {
 
     // The value assignment operator is used when one weakref object is copied to another.
     const_weakref<T>& opAssign (const const_weakref<T>& in other);
+    const_weakref<T>& opAssign (const weakref<T>& in other);
 
     // The identity operators are used to compare the address of the object referred to by the ref type.
     bool opEquals (const const_weakref<T>& in other) const;

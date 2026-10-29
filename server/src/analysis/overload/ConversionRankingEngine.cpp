@@ -423,27 +423,12 @@ ArgumentConversion EvaluateConversionMatch(const MatchContext& ctx)
     {
         return *conv;
     }
-    if (ctx.cleanArg.starts_with("weakref<") && ctx.cleanParam.starts_with("const_weakref<"))
-    {
-        const std::string_view fromInner = std::string_view(ctx.cleanArg).substr(8, ctx.cleanArg.size() - 9);
-        const std::string_view toInner = std::string_view(ctx.cleanParam).substr(14, ctx.cleanParam.size() - 15);
-        if (IsSameType(std::string(fromInner), std::string(toInner)))
-        {
-            return ArgumentConversion{ConversionRank::StandardConv, 10, 0, false,
-                                      static_cast<int>(OverloadMatchPenalty::ConstRef)};
-        }
-    }
     return EvaluateCustomOrUnresolvedConversion(ctx);
 }
 
 bool IsMutableReferenceParam(const ParameterInformation& param, bool paramIsConst)
 {
-    const bool isRefOrOut =
-        param.isReference || param.modifier == ParameterModifier::Out || param.modifier == ParameterModifier::InOut ||
-        param.rawText.find("&inout") != std::string::npos || param.typeName.find("&inout") != std::string::npos ||
-        param.rawText.find("&out") != std::string::npos || param.typeName.find("&out") != std::string::npos;
-    return isRefOrOut && !paramIsConst && param.modifier != ParameterModifier::In &&
-           param.rawText.find("&in") == std::string::npos;
+    return !paramIsConst && (param.isOutRef || param.isInOutRef || param.isStandaloneRef);
 }
 
 ArgumentConversion EvaluateCandidateTypeMatch(const ParameterInformation& param, const MatchContext& ctx)
