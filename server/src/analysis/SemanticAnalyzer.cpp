@@ -403,7 +403,7 @@ static void CheckDialectVariableDeclarationNode(TSNode node, DiagnosticContext& 
         return;
     }
 
-    const TSNode typeNode = parser::GetChildByField(node, parser::fields::VarType);
+    const TSNode typeNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldVarType);
     if (ts_node_is_null(typeNode))
     {
         return;
@@ -459,7 +459,7 @@ static void CheckDialectIntegerDivisionNode(TSNode node, DiagnosticContext& ctx)
     }
 
     const TSNode left = parser::GetChildByField(node, gs.fieldLeft);
-    const TSNode right = parser::GetChildByField(node, parser::fields::Right);
+    const TSNode right = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldRight);
 
     if (IsIntegerLiteral(left, ctx.request.sourceCode) && IsIntegerLiteral(right, ctx.request.sourceCode))
     {
@@ -542,8 +542,8 @@ static bool IsSymbolTableClass(const SymbolTable& table, const std::string& type
 
 static void CheckDialectAssignmentExpressionNode(TSNode node, DiagnosticContext& ctx)
 {
-    const TSNode op = parser::GetChildByField(node, parser::fields::Operator);
-    const TSNode target = parser::GetChildByField(node, parser::fields::Left);
+    const TSNode op = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
+    const TSNode target = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
 
     const auto& gs = parser::GetGrammarSymbols();
     if (ts_node_is_null(op) || ts_node_symbol(op) != gs.tokAssign || ts_node_is_null(target))

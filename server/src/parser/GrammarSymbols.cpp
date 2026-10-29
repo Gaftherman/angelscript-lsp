@@ -153,6 +153,7 @@ void PopulateTokens(const TSLanguage* lang, GrammarSymbols& gs) noexcept
     gs.tokCase = SymAnon(lang, "case");
     gs.tokDot = SymAnon(lang, ".");
     gs.tokSlash = SymAnon(lang, "/");
+    gs.tokTilde = SymAnon(lang, "~");
 }
 
 void PopulateFields(const TSLanguage* lang, GrammarSymbols& gs) noexcept

@@ -214,7 +214,7 @@ void MatchConfiguredReflectionCallees(TSNode callNode, const SemanticAnalysisReq
                                       const std::vector<config::StringReflectionCallee>& callees,
                                       ankerl::unordered_dense::set<std::string>& result)
 {
-    TSNode funcNode = parser::GetChildByField(callNode, parser::fields::Function);
+    TSNode funcNode = parser::GetChildByField(callNode, parser::GetGrammarSymbols().fieldFunction);
     if (ts_node_is_null(funcNode))
         return;
 

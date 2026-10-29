@@ -40,16 +40,21 @@ std::string CleanPropertyName(std::string_view fieldName)
  */
 bool FindEnclosingClassAndBody(TSNode leaf, std::string_view sourceCode, std::string& className, TSNode& classBody)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     TSNode classNode = leaf;
-    while (!ts_node_is_null(classNode) && std::string_view(ts_node_type(classNode)) != "class_declaration")
+    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(classNode);
+         ++depth, classNode = parser::GetParent(classNode))
     {
-        classNode = parser::GetParent(classNode);
+        if (ts_node_symbol(classNode) == gs.symClassDeclaration)
+        {
+            break;
+        }
     }
-    if (ts_node_is_null(classNode))
+    if (ts_node_is_null(classNode) || ts_node_symbol(classNode) != gs.symClassDeclaration)
     {
         return false;
     }
-    classBody = parser::GetChildByField(classNode, parser::fields::Body);
+    classBody = parser::GetChildByField(classNode, gs.fieldBody);
     if (ts_node_is_null(classBody))
     {
         TSTreeCursor cursor = ts_tree_cursor_new(classNode);
@@ -58,7 +63,7 @@ bool FindEnclosingClassAndBody(TSNode leaf, std::string_view sourceCode, std::st
             do
             {
                 TSNode ch = ts_tree_cursor_current_node(&cursor);
-                if (std::string_view(ts_node_type(ch)) == "class_body")
+                if (ts_node_symbol(ch) == gs.symClassBody)
                 {
                     classBody = ch;
                     break;
@@ -71,7 +76,7 @@ bool FindEnclosingClassAndBody(TSNode leaf, std::string_view sourceCode, std::st
     {
         return false;
     }
-    TSNode nameNode = parser::GetChildByField(classNode, parser::fields::Name);
+    TSNode nameNode = parser::GetChildByField(classNode, gs.fieldName);
     className = GetNodeText(nameNode, sourceCode);
     return true;
 }
@@ -86,11 +91,12 @@ bool FindEnclosingClassAndBody(TSNode leaf, std::string_view sourceCode, std::st
  */
 std::vector<std::pair<std::string, std::string>> CollectFieldsFromVarDecl(TSNode varDecl, std::string_view sourceCode)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     std::vector<std::pair<std::string, std::string>> fields;
-    TSNode typeNode = parser::GetChildByField(varDecl, parser::fields::VarType);
+    TSNode typeNode = parser::GetChildByField(varDecl, gs.fieldVarType);
     if (ts_node_is_null(typeNode))
     {
-        typeNode = parser::GetChildByField(varDecl, parser::fields::Type);
+        typeNode = parser::GetChildByField(varDecl, gs.fieldType);
     }
     std::string fieldType = GetNodeText(typeNode, sourceCode);
     if (fieldType.empty())
@@ -104,9 +110,9 @@ std::vector<std::pair<std::string, std::string>> CollectFieldsFromVarDecl(TSNode
         do
         {
             TSNode ch = ts_tree_cursor_current_node(&cursor);
-            if (std::string_view(ts_node_type(ch)) == "variable_declarator")
+            if (ts_node_symbol(ch) == gs.symVariableDeclarator)
             {
-                TSNode vNameNode = parser::GetChildByField(ch, parser::fields::Name);
+                TSNode vNameNode = parser::GetChildByField(ch, gs.fieldName);
                 std::string fName = GetNodeText(vNameNode, sourceCode);
                 if (!fName.empty())
                 {
@@ -122,14 +128,18 @@ std::vector<std::pair<std::string, std::string>> CollectFieldsFromVarDecl(TSNode
 std::vector<std::pair<std::string, std::string>> CollectFieldsForGetterSetter(TSNode leaf, TSNode classBody,
                                                                               const CodeActionRequest& request)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     TSNode varDecl = leaf;
-    while (!ts_node_is_null(varDecl) && std::string_view(ts_node_type(varDecl)) != "variable_declaration" &&
-           !ts_node_eq(varDecl, classBody))
+    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(varDecl);
+         ++depth, varDecl = parser::GetParent(varDecl))
     {
-        varDecl = parser::GetParent(varDecl);
+        if (ts_node_symbol(varDecl) == gs.symVariableDeclaration || ts_node_eq(varDecl, classBody))
+        {
+            break;
+        }
     }
 
-    if (!ts_node_is_null(varDecl) && std::string_view(ts_node_type(varDecl)) == "variable_declaration")
+    if (!ts_node_is_null(varDecl) && ts_node_symbol(varDecl) == gs.symVariableDeclaration)
     {
         return CollectFieldsFromVarDecl(varDecl, request.sourceCode);
     }
@@ -262,8 +272,8 @@ TSPoint FindAccessorPropertyInsertionPoint(TSNode funcNode, TSNode parametersNod
             TSNode child = ts_tree_cursor_current_node(&cursor);
             if (!ts_node_is_null(child) && ts_node_start_byte(child) >= paramsEndByte)
             {
-                std::string_view childType = ts_node_type(child);
-                if (childType == "const" || GetNodeText(child, sourceCode) == "const")
+                const auto& gs = parser::GetGrammarSymbols();
+                if (ts_node_symbol(child) == gs.tokConst || GetNodeText(child, sourceCode) == "const")
                 {
                     insertAt = ts_node_end_point(child);
                     break;
@@ -322,18 +332,23 @@ void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode r
             continue;
         }
 
+        const auto& gs = parser::GetGrammarSymbols();
         const TSPoint point = {diag.range.start.line, diag.range.start.character};
         TSNode node = ts_node_descendant_for_point_range(rootNode, point, point);
-        while (!ts_node_is_null(node) && std::string_view(ts_node_type(node)) != "func_declaration")
+        for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(node);
+             ++depth, node = parser::GetParent(node))
         {
-            node = parser::GetParent(node);
+            if (ts_node_symbol(node) == gs.symFuncDeclaration)
+            {
+                break;
+            }
         }
-        if (ts_node_is_null(node))
+        if (ts_node_is_null(node) || ts_node_symbol(node) != gs.symFuncDeclaration)
         {
             continue;
         }
 
-        const TSNode parameters = parser::GetChildByField(node, parser::fields::Parameters);
+        const TSNode parameters = parser::GetChildByField(node, gs.fieldParameters);
         if (ts_node_is_null(parameters))
         {
             continue;

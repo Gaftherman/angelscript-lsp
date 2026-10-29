@@ -1,5 +1,6 @@
 #include "features/formatting/PredefinedStubFormatter.h"
 #include "document/Document.h"
+#include "parser/GrammarSymbols.h"
 
 #include <algorithm>
 #include <cctype>
@@ -204,10 +205,12 @@ FormattingPlan BuildFormattingPlan(TSNode root, const std::string& source)
     uint32_t cursor = 0;
     const uint32_t childCount = ts_node_named_child_count(root);
 
+    const auto& gs = parser::GetGrammarSymbols();
     for (uint32_t i = 0; i < childCount; ++i)
     {
         const TSNode child = ts_node_named_child(root, i);
-        if (std::string_view(ts_node_type(child)) == "comment")
+        const TSSymbol childSym = ts_node_symbol(child);
+        if (childSym == gs.symComment)
         {
             continue;
         }
@@ -217,7 +220,7 @@ FormattingPlan BuildFormattingPlan(TSNode root, const std::string& source)
         const std::string_view lead = Slice(source, cursor, start);
         cursor = end;
 
-        if (std::string_view(ts_node_type(child)) != "namespace_declaration")
+        if (childSym != gs.symNamespaceDeclaration)
         {
             plan.slots.push_back(Slot{false, std::string(lead) + std::string(Slice(source, start, end)), {}});
             continue;

@@ -981,8 +981,8 @@ static bool CheckMemberNonCallableVariable(const std::string& objType, const std
 CalleeResolution ResolveMemberCallee(const CallValidationContext& valCtx)
 {
     CalleeResolution res;
-    TSNode objectNode = parser::GetChildByField(valCtx.callee, parser::fields::Object);
-    TSNode memberNode = parser::GetChildByField(valCtx.callee, parser::fields::Member);
+    TSNode objectNode = parser::GetChildByField(valCtx.callee, parser::GetGrammarSymbols().fieldObject);
+    TSNode memberNode = parser::GetChildByField(valCtx.callee, parser::GetGrammarSymbols().fieldMember);
     if (ts_node_is_null(objectNode) || ts_node_is_null(memberNode))
     {
         res.shouldCheck = false;
@@ -2136,12 +2136,12 @@ void CheckCall(TSNode node, const CallCheckRequest& request, const Scope* scope,
  */
 TSNode FindVariableTypeNode(TSNode varDeclNode)
 {
-    TSNode varTypeNode = parser::GetChildByField(varDeclNode, parser::fields::VarType);
+    TSNode varTypeNode = parser::GetChildByField(varDeclNode, parser::GetGrammarSymbols().fieldVarType);
     if (!ts_node_is_null(varTypeNode))
     {
         return varTypeNode;
     }
-    varTypeNode = parser::GetChildByField(varDeclNode, parser::fields::Type);
+    varTypeNode = parser::GetChildByField(varDeclNode, parser::GetGrammarSymbols().fieldType);
     if (!ts_node_is_null(varTypeNode))
     {
         return varTypeNode;
@@ -2476,7 +2476,7 @@ void CheckConstructorOverload(TSNode argListNode, const std::vector<Symbol>& can
  */
 void CheckDeclaratorDirectInit(TSNode declarator, const VarInitContext& vctx)
 {
-    TSNode argListNode = parser::GetChildByField(declarator, parser::fields::Arguments);
+    TSNode argListNode = parser::GetChildByField(declarator, parser::GetGrammarSymbols().fieldArguments);
     if (ts_node_is_null(argListNode) || ts_node_has_error(argListNode))
     {
         return;

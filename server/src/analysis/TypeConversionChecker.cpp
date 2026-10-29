@@ -1028,12 +1028,14 @@ ExpressionType ResolveLiteralValueType(TSNode node, const DiagnosticContext& ctx
 
 static ExpressionType ResolveUnaryValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx, int depth)
 {
-    const std::string op = NodeText(parser::GetChildByField(node, parser::fields::Operator), ctx.request.sourceCode);
+    const std::string op =
+        NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator), ctx.request.sourceCode);
     if (op == "!" || op == "not")
     {
         return ExpressionType{"bool", true, false};
     }
-    auto val = ResolveValueType(parser::GetChildByField(node, parser::fields::Operand), scope, ctx, depth + 1);
+    auto val = ResolveValueType(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperand), scope, ctx,
+                                depth + 1);
     if (op == "-")
     {
         if (val.baseName == "uint" || val.baseName == "uint32")
@@ -1058,8 +1060,8 @@ static ExpressionType ResolveUnaryValueType(TSNode node, const Scope* scope, con
 
 static ExpressionType ResolveCastValueType(TSNode node, const DiagnosticContext& ctx)
 {
-    const std::string typeText =
-        CleanBaseType(NodeText(parser::GetChildByField(node, parser::fields::Type), ctx.request.sourceCode));
+    const std::string typeText = CleanBaseType(
+        NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldType), ctx.request.sourceCode));
     return typeText.empty() ? ExpressionType{} : ExpressionType{typeText, true, false};
 }
 
@@ -1291,8 +1293,8 @@ PropertyAccessInfo InspectPropertyAccess(TSNode exprNode, const Scope* scope, co
         return info;
     }
 
-    TSNode objNode = parser::GetChildByField(exprNode, parser::fields::Object);
-    TSNode memNode = parser::GetChildByField(exprNode, parser::fields::Member);
+    TSNode objNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldObject);
+    TSNode memNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldMember);
     if (ts_node_is_null(objNode) && ts_node_named_child_count(exprNode) > 0)
     {
         objNode = ts_node_named_child(exprNode, 0);
@@ -1555,14 +1557,14 @@ bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const DiagnosticCo
  */
 void CheckSignedUnsignedComparison(TSNode node, const Scope* scope, DiagnosticContext& ctx)
 {
-    TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
+    TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
     if (ts_node_is_null(opNode) || !IsComparisonOperator(NodeText(opNode, ctx.request.sourceCode)))
     {
         return;
     }
 
-    TSNode left = parser::GetChildByField(node, parser::fields::Left);
-    TSNode right = parser::GetChildByField(node, parser::fields::Right);
+    TSNode left = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
+    TSNode right = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldRight);
     if (ts_node_is_null(left) || ts_node_is_null(right))
     {
         return;
@@ -1754,7 +1756,7 @@ void CheckHandleInitializer(TSNode valueNode, const ExpressionType& source, cons
 /** @brief Rule for `T v = expr;` - the implicit conversion route. */
 void CheckInitializer(TSNode declaratorNode, const DeclaredType& declared, const Scope* scope, DiagnosticContext& ctx)
 {
-    TSNode valueNode = parser::GetChildByField(declaratorNode, parser::fields::Value);
+    TSNode valueNode = parser::GetChildByField(declaratorNode, parser::GetGrammarSymbols().fieldValue);
     if (ts_node_is_null(valueNode) || NodeType(valueNode) == "initializer_list")
     {
         return;
@@ -2027,7 +2029,7 @@ void CheckDefaultConstructor(TSNode declaratorNode, const std::string& typeName,
 
     const auto [hasZeroArg, isDeleted] = InspectZeroArgConstructor(constructors);
 
-    TSNode nameNode = parser::GetChildByField(declaratorNode, parser::fields::Name);
+    TSNode nameNode = parser::GetChildByField(declaratorNode, parser::GetGrammarSymbols().fieldName);
     TSNode targetNode = ts_node_is_null(nameNode) ? declaratorNode : nameNode;
 
     if (isDeleted)
@@ -2142,10 +2144,10 @@ TSNode UnwrapAddressOfOperator(TSNode valueNode, std::string_view sourceCode)
 {
     if (std::string_view(NodeType(valueNode)) == "unary_expression")
     {
-        TSNode op = parser::GetChildByField(valueNode, parser::fields::Operator);
+        TSNode op = parser::GetChildByField(valueNode, parser::GetGrammarSymbols().fieldOperator);
         if (!ts_node_is_null(op) && NodeText(op, sourceCode) == "@")
         {
-            TSNode operand = parser::GetChildByField(valueNode, parser::fields::Operand);
+            TSNode operand = parser::GetChildByField(valueNode, parser::GetGrammarSymbols().fieldOperand);
             if (!ts_node_is_null(operand))
             {
                 return operand;
@@ -2162,7 +2164,7 @@ bool CheckLambdaFuncdefAssignment(TSNode targetNode, const FuncdefSignature& fun
     {
         return false;
     }
-    TSNode listNode = parser::GetChildByField(actualVal, parser::fields::Parameters);
+    TSNode listNode = parser::GetChildByField(actualVal, parser::GetGrammarSymbols().fieldParameters);
     if (!ts_node_is_null(listNode) && LambdaContradictsFuncdef(ReadLambdaParameters(listNode, ctx.request.sourceCode),
                                                                funcdefSig, ctx.request.symbolTable))
     {
@@ -2257,20 +2259,20 @@ void CheckConstructorDelegation(TSNode funcNode, DiagnosticContext& ctx)
         return;
     }
 
-    TSNode classNameNode = parser::GetChildByField(parent, parser::fields::Name);
+    TSNode classNameNode = parser::GetChildByField(parent, parser::GetGrammarSymbols().fieldName);
     if (ts_node_is_null(classNameNode))
     {
         return;
     }
     const std::string className = NodeText(classNameNode, ctx.request.sourceCode);
 
-    TSNode funcNameNode = parser::GetChildByField(funcNode, parser::fields::Name);
+    TSNode funcNameNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldName);
     if (ts_node_is_null(funcNameNode) || NodeText(funcNameNode, ctx.request.sourceCode) != className)
     {
         return;
     }
 
-    TSNode bodyNode = parser::GetChildByField(funcNode, parser::fields::Body);
+    TSNode bodyNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldBody);
     if (ts_node_is_null(bodyNode))
     {
         return;
@@ -2313,10 +2315,10 @@ bool CheckCastVisibilityGuards(const ConversionTypes& types, bool sourceIsScalar
 /** @brief Rule for `cast<T>(expr)` - the reinterpreting route. */
 void CheckCast(TSNode castNode, const Scope* scope, DiagnosticContext& ctx)
 {
-    const std::string targetName =
-        CleanBaseType(NodeText(parser::GetChildByField(castNode, parser::fields::Type), ctx.request.sourceCode));
+    const std::string targetName = CleanBaseType(
+        NodeText(parser::GetChildByField(castNode, parser::GetGrammarSymbols().fieldType), ctx.request.sourceCode));
 
-    TSNode valueNode = parser::GetChildByField(castNode, parser::fields::Value);
+    TSNode valueNode = parser::GetChildByField(castNode, parser::GetGrammarSymbols().fieldValue);
     if (ts_node_is_null(valueNode) || targetName.empty())
     {
         return;
@@ -2453,22 +2455,25 @@ void CollectBooleanOperands(TSNode expr, std::vector<TSNode>& operands, int dept
 
     if (type == "binary_expression")
     {
-        const TSNode op = parser::GetChildByField(expr, parser::fields::Operator);
+        const TSNode op = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldOperator);
         const std::string_view opText = ts_node_is_null(op) ? std::string_view{} : NodeType(op);
         if (IsLogicalBinaryOperator(opText))
         {
-            CollectBooleanOperands(parser::GetChildByField(expr, parser::fields::Left), operands, depth + 1);
-            CollectBooleanOperands(parser::GetChildByField(expr, parser::fields::Right), operands, depth + 1);
+            CollectBooleanOperands(parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldLeft), operands,
+                                   depth + 1);
+            CollectBooleanOperands(parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldRight), operands,
+                                   depth + 1);
             return;
         }
     }
     else if (type == "unary_expression")
     {
-        const TSNode op = parser::GetChildByField(expr, parser::fields::Operator);
+        const TSNode op = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldOperator);
         const std::string_view opText = ts_node_is_null(op) ? std::string_view{} : NodeType(op);
         if (IsLogicalUnaryOperator(opText))
         {
-            CollectBooleanOperands(parser::GetChildByField(expr, parser::fields::Operand), operands, depth + 1);
+            CollectBooleanOperands(parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldOperand), operands,
+                                   depth + 1);
             return;
         }
     }
@@ -2695,8 +2700,8 @@ static bool AreTernaryBranchesIncompatible(const std::string& clean1, const std:
 
 void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
-    TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
+    TSNode consequence = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldConsequence);
+    TSNode alternative = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldAlternative);
     if (ts_node_is_null(consequence) || ts_node_is_null(alternative))
     {
         return;
@@ -2813,7 +2818,7 @@ void InferForeachVariables(TSNode node, const std::string& containerType, const 
             continue;
         }
 
-        TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
+        TSNode nameNode = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldName);
         const std::string valueType = ForeachValueType(containerType, variableIndex, ctx);
         ++variableIndex;
 
@@ -2843,7 +2848,7 @@ void InferForeachVariables(TSNode node, const std::string& containerType, const 
  */
 void ProcessForeachNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    TSNode collection = parser::GetChildByField(node, parser::fields::Collection);
+    TSNode collection = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldCollection);
     if (ts_node_is_null(collection))
     {
         return;
@@ -2876,7 +2881,7 @@ static bool IsMemberFieldMatch(TSNode parent, TSNode target)
     {
         return false;
     }
-    TSNode memberNode = parser::GetChildByField(parent, parser::fields::Member);
+    TSNode memberNode = parser::GetChildByField(parent, parser::GetGrammarSymbols().fieldMember);
     return !ts_node_is_null(memberNode) &&
            (ts_node_eq(memberNode, target) || ts_node_start_byte(memberNode) == ts_node_start_byte(target));
 }
@@ -3030,7 +3035,7 @@ static bool IsCyclicAutoDependency(TSNode valueNode, TSNode nameNode, const Scop
  */
 void ProcessAutoDeclarator(TSNode child, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
+    TSNode nameNode = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldName);
     const std::string varName = NodeText(nameNode, request.sourceCode);
     TSNode valueNode = FindDeclaratorValueNode(child, request.sourceCode);
 
@@ -3113,8 +3118,8 @@ void CheckDeclaratorConstruction(TSNode child, const DeclaredType& declared, con
         return;
     }
 
-    TSNode argsNode = parser::GetChildByField(child, parser::fields::Arguments);
-    TSNode valNode = parser::GetChildByField(child, parser::fields::Value);
+    TSNode argsNode = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldArguments);
+    TSNode valNode = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldValue);
     if (ts_node_is_null(argsNode) && ts_node_is_null(valNode))
     {
         CheckDefaultConstructor(child, declared.baseName, ctx);
@@ -3147,7 +3152,7 @@ void ProcessDeclaredVariableDeclarators(TSNode node, TSNode typeNode, const Type
             TSNode child = ts_node_named_child(node, i);
             if (NodeType(child) == "variable_declarator")
             {
-                TSNode valNode = parser::GetChildByField(child, parser::fields::Value);
+                TSNode valNode = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldValue);
                 CheckFuncdefAssignment(child, funcdefSym->GetFuncdef(), valNode, ctx);
             }
         }
@@ -3182,10 +3187,10 @@ void ProcessDeclaredVariableDeclarators(TSNode node, TSNode typeNode, const Type
  */
 void ProcessVariableDeclarationNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    TSNode typeNode = parser::GetChildByField(node, parser::fields::VarType);
+    TSNode typeNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldVarType);
     if (ts_node_is_null(typeNode))
     {
-        typeNode = parser::GetChildByField(node, parser::fields::Type);
+        typeNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldType);
     }
 
     const std::string rawType = CleanBaseType(NodeText(typeNode, request.sourceCode));
@@ -3207,18 +3212,18 @@ void ProcessVariableDeclarationNode(TSNode node, const TypeConversionCheckReques
  */
 void CheckAssignmentPropertyAccess(TSNode node, const Scope* scope, DiagnosticContext& ctx)
 {
-    TSNode left = parser::GetChildByField(node, parser::fields::Left);
+    TSNode left = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
     if (ts_node_is_null(left))
     {
         return;
     }
-    TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
+    TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
     const std::string opText = NodeText(opNode, ctx.request.sourceCode);
 
     const std::string_view leftNodeType = NodeType(left);
     if (leftNodeType == "index_expression")
     {
-        TSNode arrayNode = parser::GetChildByField(left, parser::fields::Object);
+        TSNode arrayNode = parser::GetChildByField(left, parser::GetGrammarSymbols().fieldObject);
         if (ts_node_is_null(arrayNode) && ts_node_named_child_count(left) > 0)
         {
             arrayNode = ts_node_named_child(left, 0);
@@ -3294,11 +3299,11 @@ TSNode UnwrapHandleOperand(TSNode expr, std::string_view sourceCode, bool& isHan
 {
     if (std::string_view(NodeType(expr)) == "unary_expression")
     {
-        TSNode op = parser::GetChildByField(expr, parser::fields::Operator);
+        TSNode op = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldOperator);
         if (!ts_node_is_null(op) && NodeText(op, sourceCode) == "@")
         {
             isHandleAssignment = true;
-            TSNode operand = parser::GetChildByField(expr, parser::fields::Operand);
+            TSNode operand = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldOperand);
             if (!ts_node_is_null(operand))
             {
                 return operand;
@@ -3367,7 +3372,7 @@ void CheckAssignmentOperatorConversion(TSNode node, TSNode right, const Conversi
 
     if (!types.from.empty() && types.to != types.from)
     {
-        const TSNode assignOp = parser::GetChildByField(node, parser::fields::Operator);
+        const TSNode assignOp = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
         const std::string_view overload = ts_node_is_null(assignOp)
                                               ? std::string_view()
                                               : AssignmentOverloadName(NodeText(assignOp, ctx.request.sourceCode));
@@ -3532,8 +3537,8 @@ static bool CheckRightSideNamespaceOnly(TSNode right, DiagnosticContext& ctx)
  */
 void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    TSNode left = parser::GetChildByField(node, parser::fields::Left);
-    TSNode right = parser::GetChildByField(node, parser::fields::Right);
+    TSNode left = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
+    TSNode right = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldRight);
     if (ts_node_is_null(left) || ts_node_is_null(right))
     {
         return;
@@ -3596,7 +3601,7 @@ void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& reques
  */
 void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
+    TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
     if (ts_node_is_null(opNode))
     {
         return;
@@ -3623,7 +3628,7 @@ void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, D
 
 static TSNode FindUnaryOperand(TSNode node)
 {
-    TSNode operand = parser::GetChildByField(node, parser::fields::Operand);
+    TSNode operand = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperand);
     if (!ts_node_is_null(operand))
     {
         return operand;
@@ -3652,7 +3657,7 @@ static bool CheckUnaryInvalidOperand(TSNode node, TSNode operand, const Scope* s
         EmitAtNode(operand, ctx, diagnostics::codes::ExpressionIsDataType, *dt);
         return true;
     }
-    TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
+    TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
     std::string opText = NodeText(opNode, ctx.request.sourceCode);
     std::string text = TrimString(NodeText(node, ctx.request.sourceCode));
     if (opText == "@" || (!text.empty() && text.front() == '@'))
@@ -3682,7 +3687,7 @@ void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& re
         return;
     }
 
-    TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
+    TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
     const std::string opText = NodeText(opNode, request.sourceCode);
     const std::string nodeText = NodeText(node, request.sourceCode);
     if (opText != "++" && opText != "--" && nodeText.find("++") == std::string::npos &&
@@ -3696,7 +3701,7 @@ void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& re
         TSNode unwrapped = UnwrapParentheses(operand);
         if (NodeType(unwrapped) == "index_expression")
         {
-            TSNode arrayNode = parser::GetChildByField(unwrapped, parser::fields::Object);
+            TSNode arrayNode = parser::GetChildByField(unwrapped, parser::GetGrammarSymbols().fieldObject);
             if (ts_node_is_null(arrayNode) && ts_node_named_child_count(unwrapped) > 0)
             {
                 arrayNode = ts_node_named_child(unwrapped, 0);
@@ -3745,7 +3750,7 @@ void ProcessMemberExpressionNode(TSNode node, const TypeConversionCheckRequest& 
         }
         else if (parentSym == gs.symAssignmentExpression)
         {
-            TSNode leftChild = parser::GetChildByField(parent, parser::fields::Left);
+            TSNode leftChild = parser::GetChildByField(parent, parser::GetGrammarSymbols().fieldLeft);
             if (ts_node_eq(leftChild, node))
             {
                 isLhsAssignment = true;
@@ -3800,7 +3805,7 @@ void ProcessIndexExpressionNode(TSNode node, const TypeConversionCheckRequest& r
     if (!isLhsAssignment && !isUnaryArg)
     {
         const Scope* scope = ResolveNodeScope(node, request);
-        TSNode arrayNode = parser::GetChildByField(node, parser::fields::Object);
+        TSNode arrayNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldObject);
         if (ts_node_is_null(arrayNode) && ts_node_named_child_count(node) > 0)
         {
             arrayNode = ts_node_named_child(node, 0);
@@ -3879,7 +3884,7 @@ void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Scope* sco
  */
 bool IsFunctionReturnRef(TSNode funcNode, TSNode retTypeNode, std::string_view sourceCode)
 {
-    TSNode nameNode = parser::GetChildByField(funcNode, parser::fields::Name);
+    TSNode nameNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldName);
     const uint32_t headEnd = ts_node_is_null(nameNode) ? ts_node_end_byte(retTypeNode) : ts_node_start_byte(nameNode);
     const uint32_t headStart = ts_node_start_byte(funcNode);
     const std::string headText = (headEnd > headStart && headEnd <= sourceCode.size())
@@ -3947,10 +3952,10 @@ void CheckReturnReference(TSNode expr, TSNode funcNode, const Scope* scope, Diag
  */
 void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Scope* scope, DiagnosticContext& ctx)
 {
-    TSNode retTypeNode = parser::GetChildByField(funcNode, parser::fields::ReturnType);
+    TSNode retTypeNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldReturnType);
     if (ts_node_is_null(retTypeNode))
     {
-        retTypeNode = parser::GetChildByField(funcNode, parser::fields::Type);
+        retTypeNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldType);
     }
     if (ts_node_is_null(retTypeNode))
     {
@@ -4006,7 +4011,7 @@ void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Sco
  */
 void ProcessReturnStatementNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    TSNode expr = parser::GetChildByField(node, parser::fields::Value);
+    TSNode expr = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldValue);
     if (ts_node_is_null(expr))
     {
         if (ts_node_named_child_count(node) == 0)
@@ -4055,7 +4060,7 @@ void ProcessCallOrConstructNode(TSNode node, const TypeConversionCheckRequest& r
     TSNode callee = ResolveCalleeNode(node);
     const std::string calleeName = CleanBaseType(NodeText(callee, request.sourceCode));
 
-    TSNode argsNode = parser::GetChildByField(node, parser::fields::Arguments);
+    TSNode argsNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldArguments);
     TSNode soleArgument = {};
     if (!ts_node_is_null(argsNode) && ts_node_named_child_count(argsNode) == 1)
     {

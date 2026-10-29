@@ -16,10 +16,9 @@ namespace
  * @param[in] nodeType Tree-sitter node type.
  * @return True if subtree should be skipped for field collection.
  */
-bool IsSubtreeSkippable(std::string_view nodeType) noexcept
+bool IsSubtreeSkippable(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
 {
-    return nodeType == "function_declaration" || nodeType == "method_declaration" ||
-           nodeType == "constructor_declaration" || nodeType == "destructor_declaration";
+    return sym == gs.symFuncDeclaration;
 }
 
 /**
@@ -70,14 +69,15 @@ void CollectAstClassFields(TSNode classNode, std::string_view sourceCode,
     size_t depth = 0;
     constexpr size_t k_maxAstDepth = 64;
 
+    const auto& gs = parser::GetGrammarSymbols();
     while (true)
     {
         TSNode curr = ts_tree_cursor_current_node(&cursor);
-        std::string_view nodeType = ts_node_is_null(curr) ? std::string_view{} : std::string_view(ts_node_type(curr));
+        const TSSymbol sym = ts_node_is_null(curr) ? static_cast<TSSymbol>(0) : ts_node_symbol(curr);
 
-        if (nodeType == "variable_declarator")
+        if (sym == gs.symVariableDeclarator)
         {
-            TSNode vNameNode = parser::GetChildByField(curr, parser::fields::Name);
+            TSNode vNameNode = parser::GetChildByField(curr, gs.fieldName);
             std::string fName = GetNodeText(vNameNode, sourceCode);
             if (!fName.empty())
             {
@@ -85,7 +85,7 @@ void CollectAstClassFields(TSNode classNode, std::string_view sourceCode,
             }
         }
 
-        if (!IsSubtreeSkippable(nodeType) && depth < k_maxAstDepth && ts_tree_cursor_goto_first_child(&cursor))
+        if (!IsSubtreeSkippable(sym, gs) && depth < k_maxAstDepth && ts_tree_cursor_goto_first_child(&cursor))
         {
             ++depth;
             continue;
@@ -182,26 +182,27 @@ bool IsFieldOrOuterVar(const ClassMutationContext& context,
 bool CheckAssignmentMutatesClassState(const ClassMutationContext& context,
                                       const ankerl::unordered_dense::set<std::string>& classFields, TSNode curr)
 {
-    if (std::string_view(ts_node_type(curr)) != "assignment_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(curr) != gs.symAssignmentExpression)
     {
         return false;
     }
-    TSNode left = parser::GetChildByField(curr, parser::fields::Left);
+    TSNode left = parser::GetChildByField(curr, gs.fieldLeft);
     if (ts_node_is_null(left))
     {
         return false;
     }
-    std::string_view lType = ts_node_type(left);
-    if (lType == "identifier" || lType == "scoped_identifier")
+    const TSSymbol lSym = ts_node_symbol(left);
+    if (lSym == gs.symIdentifier || lSym == gs.symScopedIdentifier)
     {
         std::string varName = GetNodeText(left, context.sourceCode);
         return IsFieldOrOuterVar(context, classFields, left, varName);
     }
-    if (lType == "member_expression")
+    if (lSym == gs.symMemberExpression)
     {
-        TSNode obj = parser::GetChildByField(left, parser::fields::Object);
-        TSNode mem = parser::GetChildByField(left, parser::fields::Member);
-        if (!ts_node_is_null(obj) && std::string_view(ts_node_type(obj)) == "this_expression")
+        TSNode obj = parser::GetChildByField(left, gs.fieldObject);
+        TSNode mem = parser::GetChildByField(left, gs.fieldMember);
+        if (!ts_node_is_null(obj) && ts_node_symbol(obj) == gs.symThisExpression)
         {
             std::string memName = GetNodeText(mem, context.sourceCode);
             return classFields.contains(memName);
@@ -220,24 +221,25 @@ bool CheckAssignmentMutatesClassState(const ClassMutationContext& context,
 bool CheckIncDecMutatesClassState(const ClassMutationContext& context,
                                   const ankerl::unordered_dense::set<std::string>& classFields, TSNode curr)
 {
-    std::string_view type = ts_node_type(curr);
-    if (type != "postfix_expression" && type != "unary_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol type = ts_node_symbol(curr);
+    if (type != gs.symPostfixExpression && type != gs.symUnaryExpression)
     {
         return false;
     }
-    TSNode opNode = parser::GetChildByField(curr, parser::fields::Operator);
+    TSNode opNode = parser::GetChildByField(curr, gs.fieldOperator);
     std::string op = GetNodeText(opNode, context.sourceCode);
     if (op != "++" && op != "--")
     {
         return false;
     }
-    TSNode arg = parser::GetChildByField(curr, parser::fields::Operand);
+    TSNode arg = parser::GetChildByField(curr, gs.fieldOperand);
     if (ts_node_is_null(arg))
     {
         return false;
     }
-    std::string_view aType = ts_node_type(arg);
-    if (aType == "identifier" || aType == "scoped_identifier")
+    const TSSymbol aType = ts_node_symbol(arg);
+    if (aType == gs.symIdentifier || aType == gs.symScopedIdentifier)
     {
         std::string varName = GetNodeText(arg, context.sourceCode);
         return IsFieldOrOuterVar(context, classFields, arg, varName);
@@ -257,16 +259,17 @@ std::string ExtractThisCallMethodName(TSNode callee, std::string_view sourceCode
     {
         return {};
     }
-    std::string_view cType = ts_node_type(callee);
-    if (cType == "identifier" || cType == "scoped_identifier")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol cType = ts_node_symbol(callee);
+    if (cType == gs.symIdentifier || cType == gs.symScopedIdentifier)
     {
         return GetNodeText(callee, sourceCode);
     }
-    if (cType == "member_expression")
+    if (cType == gs.symMemberExpression)
     {
-        TSNode obj = parser::GetChildByField(callee, parser::fields::Object);
-        TSNode mem = parser::GetChildByField(callee, parser::fields::Member);
-        if (!ts_node_is_null(obj) && std::string_view(ts_node_type(obj)) == "this_expression")
+        TSNode obj = parser::GetChildByField(callee, gs.fieldObject);
+        TSNode mem = parser::GetChildByField(callee, gs.fieldMember);
+        if (!ts_node_is_null(obj) && ts_node_symbol(obj) == gs.symThisExpression)
         {
             return GetNodeText(mem, sourceCode);
         }
@@ -282,11 +285,12 @@ std::string ExtractThisCallMethodName(TSNode callee, std::string_view sourceCode
  */
 bool CheckMethodCallMutatesClassState(const ClassMutationContext& context, TSNode curr)
 {
-    if (std::string_view(ts_node_type(curr)) != "call_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(curr) != gs.symCallExpression)
     {
         return false;
     }
-    TSNode callee = parser::GetChildByField(curr, parser::fields::Function);
+    TSNode callee = parser::GetChildByField(curr, gs.fieldFunction);
     std::string callMethodName = ExtractThisCallMethodName(callee, context.sourceCode);
     if (callMethodName.empty())
     {

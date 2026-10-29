@@ -268,7 +268,7 @@ struct SemanticAnalysisRequest
     std::string_view GetEffectiveStringTypeName() const noexcept
     {
         const auto configured = GetStringTypeName();
-        return configured.empty() ? std::string_view("string") : configured;
+        return configured.empty() ? symbolTable.GetStringType() : configured;
     }
 
     /**
@@ -277,7 +277,7 @@ struct SemanticAnalysisRequest
     std::string_view GetEffectiveArrayTypeName() const noexcept
     {
         const auto configured = GetArrayTypeName();
-        return configured.empty() ? std::string_view("array") : configured;
+        return configured.empty() ? symbolTable.GetDefaultArrayType() : configured;
     }
 
     /**

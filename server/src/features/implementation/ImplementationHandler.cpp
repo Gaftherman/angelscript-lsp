@@ -33,7 +33,7 @@ std::string IdentifierAt(const ImplementationRequest& request, TSNode& outNode)
     const TSNode root = ts_tree_root_node(request.tree);
     const TSPoint point{request.position.line, request.position.character};
     TSNode node = ts_node_descendant_for_point_range(root, point, point);
-    if (ts_node_is_null(node) || std::string_view(ts_node_type(node)) != "identifier")
+    if (ts_node_is_null(node) || ts_node_symbol(node) != parser::GetGrammarSymbols().symIdentifier)
     {
         return "";
     }
@@ -320,9 +320,9 @@ std::string ResolveOwnerType(TSNode node, std::string_view sourceCode, const std
         return owner;
     }
     TSNode p = parser::GetParent(node);
-    if (!ts_node_is_null(p) && std::string_view(ts_node_type(p)) == "member_expression")
+    if (!ts_node_is_null(p) && ts_node_symbol(p) == parser::GetGrammarSymbols().symMemberExpression)
     {
-        TSNode objNode = parser::GetChildByField(p, parser::fields::Object);
+        TSNode objNode = parser::GetChildByField(p, parser::GetGrammarSymbols().fieldObject);
         if (!ts_node_is_null(objNode))
         {
             const std::string objType = analysis::ResolveExpressionType(objNode, {nullptr, table, sourceCode, uri});

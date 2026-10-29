@@ -19,7 +19,7 @@ SourceRange ToSourceRange(TSNode node)
 /** @brief The node naming what a call reaches, or a null node when it names nothing stable. */
 TSNode CalleeNameNode(TSNode callNode)
 {
-    TSNode callee = parser::GetChildByField(callNode, parser::fields::Function);
+    TSNode callee = parser::GetChildByField(callNode, parser::GetGrammarSymbols().fieldFunction);
     if (ts_node_is_null(callee))
     {
         return TSNode{};
@@ -82,7 +82,8 @@ struct NamingContext
 
     uint32_t NextContainer(TSNode node, std::string_view sourceCode, uint32_t current)
     {
-        const std::string name = NodeText(parser::GetChildByField(node, parser::fields::Name), sourceCode);
+        const std::string name =
+            NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName), sourceCode);
         if (name.empty())
         {
             return current;
@@ -94,7 +95,8 @@ struct NamingContext
 
     uint32_t NextCaller(TSNode node, std::string_view sourceCode, uint32_t containerIdx, uint32_t current)
     {
-        const std::string name = NodeText(parser::GetChildByField(node, parser::fields::Name), sourceCode);
+        const std::string name =
+            NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName), sourceCode);
         if (name.empty())
         {
             return current;

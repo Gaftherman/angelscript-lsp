@@ -311,7 +311,7 @@ struct IsolationVisitor
 
     void VisitClassDeclaration(TSNode node, int depth)
     {
-        TSNode nameNode = parser::GetChildByField(node, parser::fields::Name);
+        TSNode nameNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName);
         std::string className = GetNodeText(nameNode, request.sourceCode);
         bool classShared = IsClassShared(node, className);
 
@@ -333,7 +333,7 @@ struct IsolationVisitor
             return true;
         }
 
-        TSNode nameNode = parser::GetChildByField(node, parser::fields::Name);
+        TSNode nameNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName);
         std::string funcName = GetNodeText(nameNode, request.sourceCode);
         if (!funcName.empty())
         {

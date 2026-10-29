@@ -188,7 +188,7 @@ lsp::TextEdit BuildRemoveUnusedVariableEdit(TSNode rootNode, std::string_view so
     TSNode declarator = leaf;
     for (int depth = 0; depth < 8 && !ts_node_is_null(declarator); ++depth)
     {
-        if (std::string_view(ts_node_type(declarator)) == "variable_declarator")
+        if (ts_node_symbol(declarator) == parser::GetGrammarSymbols().symVariableDeclarator)
         {
             break;
         }
@@ -198,7 +198,7 @@ lsp::TextEdit BuildRemoveUnusedVariableEdit(TSNode rootNode, std::string_view so
     TSNode decl = declarator;
     for (int depth = 0; depth < 8 && !ts_node_is_null(decl); ++depth)
     {
-        if (std::string_view(ts_node_type(decl)) == "variable_declaration")
+        if (ts_node_symbol(decl) == parser::GetGrammarSymbols().symVariableDeclaration)
         {
             break;
         }
@@ -221,7 +221,7 @@ lsp::TextEdit BuildRemoveUnusedVariableEdit(TSNode rootNode, std::string_view so
         do
         {
             TSNode child = ts_tree_cursor_current_node(&cursor);
-            if (!ts_node_is_null(child) && std::string_view(ts_node_type(child)) == "variable_declarator")
+            if (!ts_node_is_null(child) && ts_node_symbol(child) == parser::GetGrammarSymbols().symVariableDeclarator)
             {
                 declarators.push_back(child);
             }

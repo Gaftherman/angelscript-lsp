@@ -19,7 +19,7 @@ namespace
  */
 TSNode FindFunctionBodyBlock(TSNode fnNode)
 {
-    TSNode bodyNode = parser::GetChildByField(fnNode, parser::fields::Body);
+    TSNode bodyNode = parser::GetChildByField(fnNode, parser::GetGrammarSymbols().fieldBody);
     if (!ts_node_is_null(bodyNode))
     {
         return bodyNode;
@@ -34,7 +34,7 @@ TSNode FindFunctionBodyBlock(TSNode fnNode)
  */
 TSNode FindFunctionParametersNode(TSNode fnNode)
 {
-    TSNode paramList = parser::GetChildByField(fnNode, parser::fields::Parameters);
+    TSNode paramList = parser::GetChildByField(fnNode, parser::GetGrammarSymbols().fieldParameters);
     if (!ts_node_is_null(paramList))
     {
         return paramList;
@@ -46,13 +46,18 @@ std::optional<lsp::CodeAction> TryBuildMissingConstFixForSymbol(const CodeAction
                                                                 const lsp::Diagnostic& diag,
                                                                 const analysis::Symbol& sym)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     TSPoint fnPt = {sym.startLine, sym.startCharacter};
     TSNode fnNode = ts_node_descendant_for_point_range(rootNode, fnPt, fnPt);
-    while (!ts_node_is_null(fnNode) && std::string_view(ts_node_type(fnNode)) != "func_declaration")
+    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(fnNode);
+         ++depth, fnNode = parser::GetParent(fnNode))
     {
-        fnNode = parser::GetParent(fnNode);
+        if (ts_node_symbol(fnNode) == gs.symFuncDeclaration)
+        {
+            break;
+        }
     }
-    if (ts_node_is_null(fnNode))
+    if (ts_node_is_null(fnNode) || ts_node_symbol(fnNode) != gs.symFuncDeclaration)
     {
         return std::nullopt;
     }
@@ -89,7 +94,7 @@ void TryAddMissingConstDiagnosticFix(const CodeActionRequest& request, TSNode ro
     std::string methodName = GetNodeText(memberNode, request.sourceCode);
 
     TSNode callee = parser::GetParent(memberNode);
-    TSNode objNode = parser::GetChildByField(callee, parser::fields::Object);
+    TSNode objNode = parser::GetChildByField(callee, parser::GetGrammarSymbols().fieldObject);
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
     const analysis::Scope* scope = FindScopeByLineOrRoot(rootScope.get(), dPt.row);
     std::string objType = analysis::CleanBaseType(
@@ -125,6 +130,55 @@ bool HasConstQualifierBetween(std::string_view sourceCode, TSNode paramList, TSN
     return false;
 }
 
+static bool FindEnclosingMethodAndClass(TSNode leaf, TSNode& outFn, TSNode& outClass, const parser::GrammarSymbols& gs)
+{
+    TSNode fnNode = leaf;
+    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(fnNode);
+         ++depth, fnNode = parser::GetParent(fnNode))
+    {
+        if (ts_node_symbol(fnNode) == gs.symFuncDeclaration)
+        {
+            break;
+        }
+    }
+    TSNode classNode = fnNode;
+    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(classNode);
+         ++depth, classNode = parser::GetParent(classNode))
+    {
+        if (ts_node_symbol(classNode) == gs.symClassDeclaration)
+        {
+            break;
+        }
+    }
+    if (ts_node_is_null(fnNode) || ts_node_is_null(classNode) || ts_node_symbol(fnNode) != gs.symFuncDeclaration ||
+        ts_node_symbol(classNode) != gs.symClassDeclaration)
+    {
+        return false;
+    }
+    outFn = fnNode;
+    outClass = classNode;
+    return true;
+}
+
+static lsp::CodeAction BuildAddConstAction(TSNode paramList, const CodeActionRequest& request)
+{
+    TSPoint insertPt = ts_node_end_point(paramList);
+    lsp::TextEdit edit;
+    edit.range = lsp::Range{{insertPt.row, insertPt.column}, {insertPt.row, insertPt.column}};
+    edit.newText = " const";
+
+    lsp::CodeAction action;
+    action.title = i18n::FormatMessage(request.i18n, "action-add-const-qualifier", "Add 'const' qualifier to method");
+    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+
+    lsp::WorkspaceEdit wsEdit;
+    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
+    changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
+    wsEdit.changes = std::move(changes);
+    action.edit = std::move(wsEdit);
+    return action;
+}
+
 void TryAddIntentionalConstAction(const CodeActionRequest& request, TSNode rootNode,
                                   std::vector<lsp::CodeAction>& actions)
 {
@@ -135,17 +189,10 @@ void TryAddIntentionalConstAction(const CodeActionRequest& request, TSNode rootN
         return;
     }
 
-    TSNode fnNode = leaf;
-    while (!ts_node_is_null(fnNode) && std::string_view(ts_node_type(fnNode)) != "func_declaration")
-    {
-        fnNode = parser::GetParent(fnNode);
-    }
-    TSNode classNode = fnNode;
-    while (!ts_node_is_null(classNode) && std::string_view(ts_node_type(classNode)) != "class_declaration")
-    {
-        classNode = parser::GetParent(classNode);
-    }
-    if (ts_node_is_null(fnNode) || ts_node_is_null(classNode))
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode fnNode = {};
+    TSNode classNode = {};
+    if (!FindEnclosingMethodAndClass(leaf, fnNode, classNode, gs))
     {
         return;
     }
@@ -161,7 +208,7 @@ void TryAddIntentionalConstAction(const CodeActionRequest& request, TSNode rootN
         return;
     }
 
-    TSNode classNameNode = parser::GetChildByField(classNode, parser::fields::Name);
+    TSNode classNameNode = parser::GetChildByField(classNode, parser::GetGrammarSymbols().fieldName);
     std::string className = GetNodeText(classNameNode, request.sourceCode);
 
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
@@ -170,23 +217,7 @@ void TryAddIntentionalConstAction(const CodeActionRequest& request, TSNode rootN
     ClassMutationContext mutCtx{bodyNode, classNode, request.sourceCode, request.symbolTable, className, scope};
     if (!MethodBodyMutatesClassState(mutCtx))
     {
-        TSPoint insertPt = ts_node_end_point(paramList);
-        lsp::TextEdit edit;
-        edit.range = lsp::Range{{insertPt.row, insertPt.column}, {insertPt.row, insertPt.column}};
-        edit.newText = " const";
-
-        lsp::CodeAction action;
-        action.title =
-            i18n::FormatMessage(request.i18n, "action-add-const-qualifier", "Add 'const' qualifier to method");
-        action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-
-        lsp::WorkspaceEdit wsEdit;
-        lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-        changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
-        wsEdit.changes = std::move(changes);
-        action.edit = std::move(wsEdit);
-
-        actions.push_back(std::move(action));
+        actions.push_back(BuildAddConstAction(paramList, request));
     }
 }
 

@@ -100,7 +100,7 @@ void CheckRelationalComparison(TSNode opNode, const RelationalCheckOperands& ops
         const std::string_view arrayTypeName =
             (ctx.request.typeConfig && !ctx.request.typeConfig->arrayTypeName.empty())
                 ? std::string_view(ctx.request.typeConfig->arrayTypeName)
-                : std::string_view("array");
+                : ctx.request.symbolTable.GetDefaultArrayType();
         const std::string baseClass = MemberOwnerType(ops.leftType, arrayTypeName);
         if (!baseClass.empty() && ctx.request.symbolTable.FindSymbolsPtr(baseClass))
         {
@@ -138,7 +138,7 @@ void DispatchComparisonCheck(const ComparisonDispatchContext& dispatch, const Co
 
 void CheckHandleComparison(TSNode node, const Scope* scope, DiagnosticContext& ctx)
 {
-    TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
+    TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
     if (ts_node_is_null(opNode))
     {
         return;
@@ -150,8 +150,8 @@ void CheckHandleComparison(TSNode node, const Scope* scope, DiagnosticContext& c
         return;
     }
 
-    TSNode left = parser::GetChildByField(node, parser::fields::Left);
-    TSNode right = parser::GetChildByField(node, parser::fields::Right);
+    TSNode left = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
+    TSNode right = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldRight);
     if (ts_node_is_null(left) || ts_node_is_null(right))
     {
         return;

@@ -437,8 +437,8 @@ void EmitPrivacyViolation(TSNode memberNode, const MemberAccess& member, std::st
 
 void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
 {
-    TSNode objectNode = parser::GetChildByField(node, parser::fields::Object);
-    TSNode memberNode = parser::GetChildByField(node, parser::fields::Member);
+    TSNode objectNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldObject);
+    TSNode memberNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldMember);
     if (ts_node_is_null(objectNode) || ts_node_is_null(memberNode))
     {
         return;

@@ -37,8 +37,8 @@ struct CallCandidateContext
 
 void CollectMemberCandidates(TSNode funcNode, const CallCandidateContext& cctx, std::vector<Symbol>& candidates)
 {
-    TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
-    TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
+    TSNode objNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldObject);
+    TSNode memNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldMember);
     if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
     {
         return;
@@ -253,8 +253,8 @@ bool IsIdentifierAssignable(std::string_view name, const Scope* scope, const Sym
 
 bool IsAssignableMember(TSNode node, const Scope* scope, const SymbolTable& table, std::string_view sourceCode)
 {
-    TSNode objNode = parser::GetChildByField(node, parser::fields::Object);
-    TSNode memNode = parser::GetChildByField(node, parser::fields::Member);
+    TSNode objNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldObject);
+    TSNode memNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldMember);
     if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
     {
         return true;
@@ -309,8 +309,8 @@ bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const SymbolTabl
 
 bool IsTernaryAssignable(TSNode node, const Scope* scope, const SymbolTable& table, std::string_view sourceCode)
 {
-    TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
-    TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
+    TSNode consequence = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldConsequence);
+    TSNode alternative = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldAlternative);
     if (ts_node_is_null(consequence) || ts_node_is_null(alternative))
     {
         if (ts_node_named_child_count(node) >= 3)
@@ -335,10 +335,10 @@ bool IsTernaryAssignable(TSNode node, const Scope* scope, const SymbolTable& tab
 
 bool IsUnaryAssignable(TSNode node, const Scope* scope, const SymbolTable& table, std::string_view sourceCode)
 {
-    TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
+    TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
     if (!ts_node_is_null(opNode) && NodeText(opNode, sourceCode) == "@")
     {
-        TSNode operand = parser::GetChildByField(node, parser::fields::Operand);
+        TSNode operand = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperand);
         return IsAssignableLValueNode(operand, scope, table, sourceCode);
     }
     return false;
@@ -384,7 +384,7 @@ bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const SymbolTabl
 
 void CheckAssignmentTarget(TSNode node, const LValueCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
 {
-    TSNode target = parser::GetChildByField(node, parser::fields::Left);
+    TSNode target = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
     if (ts_node_is_null(target))
     {
         return;

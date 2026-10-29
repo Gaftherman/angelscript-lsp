@@ -551,7 +551,7 @@ DictInfo InspectDictionary(const TemplateSpelling& spelling, const DiagnosticCon
 
     if (state.keyType.empty())
     {
-        state.keyType = "string";
+        state.keyType = ctx.request.symbolTable.GetStringType();
     }
     if (state.valType.empty())
     {
@@ -1001,7 +1001,7 @@ bool IsUniversalProxyClass(const std::string& type, const ListValidationContext&
 
 static bool HasStringIndex(TSNode left)
 {
-    TSNode idx = parser::GetChildByField(left, parser::fields::Index);
+    TSNode idx = parser::GetChildByField(left, parser::GetGrammarSymbols().fieldIndex);
     if (ts_node_is_null(idx))
     {
         uint32_t namedCount = 0;
@@ -1177,8 +1177,8 @@ ElementContext ElementsAt(TSNode node, const InitializerListCheckRequest& reques
  */
 void ProcessTypedInitializerList(TSNode node, const InitializerListContext& initCtx)
 {
-    TSNode typeNode = parser::GetChildByField(node, parser::fields::Type);
-    TSNode valueNode = parser::GetChildByField(node, parser::fields::Value);
+    TSNode typeNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldType);
+    TSNode valueNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldValue);
     if (!ts_node_is_null(typeNode) && !ts_node_is_null(valueNode))
     {
         const ElementContext elements = ElementsAt(valueNode, initCtx.request);
@@ -1202,8 +1202,8 @@ void ProcessAssignmentExpression(TSNode node, const InitializerListContext& init
         return;
     }
 
-    TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
-    TSNode target = parser::GetChildByField(node, parser::fields::Left);
+    TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
+    TSNode target = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
     if (!ts_node_is_null(opNode) && !ts_node_is_null(target) && GetNodeText(opNode, initCtx.request.sourceCode) == "=")
     {
         const ElementContext elements = ElementsAt(value, initCtx.request);
@@ -1259,10 +1259,10 @@ void ProcessReturnStatement(TSNode node, const InitializerListContext& initCtx)
  */
 void ProcessVariableDeclaration(TSNode node, const InitializerListContext& initCtx)
 {
-    TSNode typeNode = parser::GetChildByField(node, parser::fields::VarType);
+    TSNode typeNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldVarType);
     if (ts_node_is_null(typeNode))
     {
-        typeNode = parser::GetChildByField(node, parser::fields::Type);
+        typeNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldType);
     }
     if (ts_node_is_null(typeNode))
     {
@@ -1280,7 +1280,7 @@ void ProcessVariableDeclaration(TSNode node, const InitializerListContext& initC
                 return;
             }
 
-            TSNode valueNode = parser::GetChildByField(declarator, parser::fields::Value);
+            TSNode valueNode = parser::GetChildByField(declarator, parser::GetGrammarSymbols().fieldValue);
             if (!ts_node_is_null(valueNode) && ts_node_symbol(valueNode) == gs.symInitializerList)
             {
                 const ElementContext elements = ElementsAt(valueNode, initCtx.request);

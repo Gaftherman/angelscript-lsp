@@ -57,7 +57,7 @@ void TryRecordOccurrence(TSNode operand, const ConversionTypePair& types, const 
 void InspectComparisonNode(TSNode binNode, const Scope* scope, DiagnosticContext& ctx,
                            std::vector<ConversionOccurrence>& out)
 {
-    TSNode opNode = parser::GetChildByField(binNode, parser::fields::Operator);
+    TSNode opNode = parser::GetChildByField(binNode, parser::GetGrammarSymbols().fieldOperator);
     if (ts_node_is_null(opNode))
     {
         return;
@@ -68,8 +68,8 @@ void InspectComparisonNode(TSNode binNode, const Scope* scope, DiagnosticContext
         return;
     }
 
-    TSNode left = parser::GetChildByField(binNode, parser::fields::Left);
-    TSNode right = parser::GetChildByField(binNode, parser::fields::Right);
+    TSNode left = parser::GetChildByField(binNode, parser::GetGrammarSymbols().fieldLeft);
+    TSNode right = parser::GetChildByField(binNode, parser::GetGrammarSymbols().fieldRight);
     if (ts_node_is_null(left) || ts_node_is_null(right))
     {
         return;
@@ -115,7 +115,7 @@ void CollectConditionConversions(TSNode condNode, const Scope* scope, Diagnostic
 
 TSNode GetIfCondition(TSNode ifNode)
 {
-    TSNode cond = parser::GetChildByField(ifNode, parser::fields::Condition);
+    TSNode cond = parser::GetChildByField(ifNode, parser::GetGrammarSymbols().fieldCondition);
     if (!ts_node_is_null(cond))
     {
         return cond;
@@ -125,7 +125,7 @@ TSNode GetIfCondition(TSNode ifNode)
 
 TSNode GetIfAlternative(TSNode ifNode)
 {
-    TSNode alt = parser::GetChildByField(ifNode, parser::fields::Alternative);
+    TSNode alt = parser::GetChildByField(ifNode, parser::GetGrammarSymbols().fieldAlternative);
     if (!ts_node_is_null(alt))
     {
         return alt;
@@ -220,8 +220,8 @@ std::vector<TSNode> FindOccurrencesInIfLadder(TSNode rootIf, std::string_view ex
             for (uint16_t i = 0; i < match.capture_count; ++i)
             {
                 TSNode bin = match.captures[i].node;
-                TSNode left = parser::GetChildByField(bin, parser::fields::Left);
-                TSNode right = parser::GetChildByField(bin, parser::fields::Right);
+                TSNode left = parser::GetChildByField(bin, parser::GetGrammarSymbols().fieldLeft);
+                TSNode right = parser::GetChildByField(bin, parser::GetGrammarSymbols().fieldRight);
                 if (!ts_node_is_null(left) && GetNodeText(left, sourceCode) == exprText)
                 {
                     results.push_back(left);

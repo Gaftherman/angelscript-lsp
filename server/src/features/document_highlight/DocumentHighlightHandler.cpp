@@ -3,6 +3,7 @@
 #include "analysis/TargetResolution.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
+#include "utils/Constants.h"
 #include <algorithm>
 #include <set>
 #include <string_view>
@@ -91,22 +92,22 @@ bool IsNodeContained(TSNode inner, TSNode outer) noexcept
  * @param[in] pType Parent node type.
  * @return True if declarator node.
  */
-bool IsVariableOrParamDeclarator(std::string_view pType) noexcept
+bool IsVariableOrParamDeclarator(TSSymbol pType, const parser::GrammarSymbols& gs) noexcept
 {
-    return pType == "variable_declarator" || pType == "parameter" || pType == "foreach_variable";
+    return pType == gs.symVariableDeclarator || pType == gs.symParameter || pType == gs.symForeachVariable;
 }
 
 /**
  * @brief Checks if node type is a callable or type-level declaration.
- * @param[in] pType Parent node type.
+ * @param[in] pType Parent node symbol.
  * @return True if callable or type declaration node.
  */
-bool IsCallableOrTypeDeclaration(std::string_view pType) noexcept
+bool IsCallableOrTypeDeclaration(TSSymbol pType, const parser::GrammarSymbols& gs) noexcept
 {
-    return pType == "func_declaration" || pType == "interface_method" || pType == "funcdef_declaration" ||
-           pType == "class_declaration" || pType == "mixin_declaration" || pType == "interface_declaration" ||
-           pType == "namespace_declaration" || pType == "enum_declaration" || pType == "typedef_declaration" ||
-           pType == "enum_member";
+    return pType == gs.symFuncDeclaration || pType == gs.symInterfaceMethod || pType == gs.symFuncdefDeclaration ||
+           pType == gs.symClassDeclaration || pType == gs.symMixinDeclaration || pType == gs.symInterfaceDeclaration ||
+           pType == gs.symNamespaceDeclaration || pType == gs.symEnumDeclaration || pType == gs.symTypedefDeclaration ||
+           pType == gs.symEnumMember;
 }
 
 /**
@@ -121,18 +122,19 @@ std::optional<lsp::DocumentHighlightKind> ClassifyDeclarationNode(TSNode leaf)
     {
         return std::nullopt;
     }
-    std::string_view pType = ts_node_type(parent);
-    if (IsVariableOrParamDeclarator(pType))
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol pType = ts_node_symbol(parent);
+    if (IsVariableOrParamDeclarator(pType, gs))
     {
-        TSNode nameNode = parser::GetChildByField(parent, parser::fields::Name);
+        TSNode nameNode = parser::GetChildByField(parent, gs.fieldName);
         if (!ts_node_is_null(nameNode) && IsNodeContained(leaf, nameNode))
         {
             return lsp::DocumentHighlightKind::Write;
         }
     }
-    if (IsCallableOrTypeDeclaration(pType))
+    if (IsCallableOrTypeDeclaration(pType, gs))
     {
-        TSNode nameNode = parser::GetChildByField(parent, parser::fields::Name);
+        TSNode nameNode = parser::GetChildByField(parent, gs.fieldName);
         if (!ts_node_is_null(nameNode) && IsNodeContained(leaf, nameNode))
         {
             return lsp::DocumentHighlightKind::Text;
@@ -148,21 +150,23 @@ std::optional<lsp::DocumentHighlightKind> ClassifyDeclarationNode(TSNode leaf)
  */
 bool IsTypeAnnotationNode(TSNode leaf)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     constexpr int kMaxDepth = 64;
     int depth = 0;
     for (TSNode cur = leaf; depth < kMaxDepth && !ts_node_is_null(cur); cur = parser::GetParent(cur), ++depth)
     {
-        std::string_view cType = ts_node_type(cur);
-        if (cType == "type" || cType == "datatype" || cType == "base_class_list" || cType == "template_type_list")
+        const TSSymbol cType = ts_node_symbol(cur);
+        if (cType == gs.symType || cType == gs.symDatatype || cType == gs.symBaseClassList ||
+            cType == gs.symTemplateTypeList)
         {
             TSNode curParent = parser::GetParent(cur);
-            if (!ts_node_is_null(curParent) && std::string_view(ts_node_type(curParent)) == "variable_declarator")
+            if (!ts_node_is_null(curParent) && ts_node_symbol(curParent) == gs.symVariableDeclarator)
             {
                 return false;
             }
             return true;
         }
-        if (cType == "statement_block" || cType == "func_declaration" || cType == "class_body")
+        if (cType == gs.symStatementBlock || cType == gs.symFuncDeclaration || cType == gs.symClassBody)
         {
             break;
         }
@@ -179,18 +183,19 @@ bool IsTypeAnnotationNode(TSNode leaf)
  */
 std::optional<lsp::DocumentHighlightKind> CheckUnaryMutation(TSNode cur, TSNode leaf, std::string_view sourceCode)
 {
-    std::string_view cType = ts_node_type(cur);
-    if (cType == "postfix_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol cType = ts_node_symbol(cur);
+    if (cType == gs.symPostfixExpression)
     {
-        TSNode operand = parser::GetChildByField(cur, parser::fields::Operand);
+        TSNode operand = parser::GetChildByField(cur, gs.fieldOperand);
         if (!ts_node_is_null(operand) && IsNodeContained(leaf, operand))
         {
             return lsp::DocumentHighlightKind::Write;
         }
     }
-    if (cType == "unary_expression")
+    if (cType == gs.symUnaryExpression)
     {
-        TSNode opNode = parser::GetChildByField(cur, parser::fields::Operator);
+        TSNode opNode = parser::GetChildByField(cur, gs.fieldOperator);
         if (!ts_node_is_null(opNode))
         {
             uint32_t opStart = ts_node_start_byte(opNode);
@@ -200,7 +205,7 @@ std::optional<lsp::DocumentHighlightKind> CheckUnaryMutation(TSNode cur, TSNode 
                 std::string_view opText = sourceCode.substr(opStart, opEnd - opStart);
                 if (opText == "++" || opText == "--")
                 {
-                    TSNode operand = parser::GetChildByField(cur, parser::fields::Operand);
+                    TSNode operand = parser::GetChildByField(cur, gs.fieldOperand);
                     if (!ts_node_is_null(operand) && IsNodeContained(leaf, operand))
                     {
                         return lsp::DocumentHighlightKind::Write;
@@ -220,17 +225,19 @@ std::optional<lsp::DocumentHighlightKind> CheckUnaryMutation(TSNode cur, TSNode 
  */
 std::optional<lsp::DocumentHighlightKind> CheckAssignmentMutation(TSNode cur, TSNode leaf)
 {
-    if (std::string_view(ts_node_type(cur)) != "assignment_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(cur) != gs.symAssignmentExpression)
     {
         return std::nullopt;
     }
-    TSNode leftNode = parser::GetChildByField(cur, parser::fields::Left);
+    TSNode leftNode = parser::GetChildByField(cur, gs.fieldLeft);
     if (!ts_node_is_null(leftNode) && IsNodeContained(leaf, leftNode))
     {
-        if (std::string_view(ts_node_type(leftNode)) == "member_expression")
+        const TSSymbol leftType = ts_node_symbol(leftNode);
+        if (leftType == gs.symMemberExpression)
         {
-            TSNode objNode = parser::GetChildByField(leftNode, parser::fields::Object);
-            TSNode memNode = parser::GetChildByField(leftNode, parser::fields::Member);
+            TSNode objNode = parser::GetChildByField(leftNode, gs.fieldObject);
+            TSNode memNode = parser::GetChildByField(leftNode, gs.fieldMember);
             if (!ts_node_is_null(objNode) && IsNodeContained(leaf, objNode))
             {
                 return lsp::DocumentHighlightKind::Read;
@@ -240,13 +247,13 @@ std::optional<lsp::DocumentHighlightKind> CheckAssignmentMutation(TSNode cur, TS
                 return lsp::DocumentHighlightKind::Write;
             }
         }
-        if (std::string_view(ts_node_type(leftNode)) == "index_expression")
+        if (leftType == gs.symIndexExpression)
         {
             return lsp::DocumentHighlightKind::Read;
         }
         return lsp::DocumentHighlightKind::Write;
     }
-    TSNode rightNode = parser::GetChildByField(cur, parser::fields::Right);
+    TSNode rightNode = parser::GetChildByField(cur, gs.fieldRight);
     if (!ts_node_is_null(rightNode) && IsNodeContained(leaf, rightNode))
     {
         return lsp::DocumentHighlightKind::Read;
@@ -326,10 +333,11 @@ std::string ResolveCallReceiverType(const std::string& oText, const DocumentHigh
  */
 void ResolveCalleeInfo(TSNode funcNode, const DocumentHighlightRequest& request, uint32_t line, CalleeInfo& info)
 {
-    if (std::string_view(ts_node_type(funcNode)) == "member_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(funcNode) == gs.symMemberExpression)
     {
-        TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
-        TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
+        TSNode memNode = parser::GetChildByField(funcNode, gs.fieldMember);
+        TSNode objNode = parser::GetChildByField(funcNode, gs.fieldObject);
         if (!ts_node_is_null(memNode))
         {
             info.calleeName = GetNodeText(memNode, request.sourceCode);
@@ -404,12 +412,13 @@ bool IsOutOrInOutParameter(const CalleeInfo& info, uint32_t argIndex, const anal
 std::optional<lsp::DocumentHighlightKind>
 CheckCallArgumentMutation(TSNode cur, TSNode leaf, const DocumentHighlightRequest& request, uint32_t line)
 {
-    if (std::string_view(ts_node_type(cur)) != "argument_list")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(cur) != gs.symArgumentList)
     {
         return std::nullopt;
     }
     TSNode callNode = parser::GetParent(cur);
-    if (ts_node_is_null(callNode) || std::string_view(ts_node_type(callNode)) != "call_expression")
+    if (ts_node_is_null(callNode) || ts_node_symbol(callNode) != gs.symCallExpression)
     {
         return std::nullopt;
     }
@@ -418,7 +427,7 @@ CheckCallArgumentMutation(TSNode cur, TSNode leaf, const DocumentHighlightReques
     {
         return std::nullopt;
     }
-    TSNode funcNode = parser::GetChildByField(callNode, parser::fields::Function);
+    TSNode funcNode = parser::GetChildByField(callNode, gs.fieldFunction);
     if (ts_node_is_null(funcNode))
     {
         return std::nullopt;
@@ -458,7 +467,7 @@ lsp::DocumentHighlightKind ClassifyAncestorExpressions(TSNode leaf, const Docume
         {
             return *res;
         }
-        if (std::string_view(ts_node_type(cur)) == "statement_block")
+        if (ts_node_symbol(cur) == parser::GetGrammarSymbols().symStatementBlock)
         {
             break;
         }
@@ -487,7 +496,7 @@ lsp::DocumentHighlightKind ClassifyOccurrence(const DocumentHighlightRequest& re
         return lsp::DocumentHighlightKind::Read;
     }
 
-    if (std::string_view(ts_node_type(leaf)) == "scoped_identifier")
+    if (ts_node_symbol(leaf) == parser::GetGrammarSymbols().symScopedIdentifier)
     {
         TSNode inner = ts_node_descendant_for_point_range(leaf, pt, pt);
         if (!ts_node_is_null(inner))
@@ -771,15 +780,20 @@ std::string ResolveIdentifierReceiverType(const std::string& oText, const analys
  */
 TSNode FindMemberExpressionParent(TSNode refNode) noexcept
 {
+    const auto& gs = parser::GetGrammarSymbols();
     TSNode exprParent = parser::GetParent(refNode);
-    while (!ts_node_is_null(exprParent) && std::string_view(ts_node_type(exprParent)) != "member_expression")
+    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(exprParent);
+         ++depth, exprParent = parser::GetParent(exprParent))
     {
-        std::string_view pType = ts_node_type(exprParent);
-        if (pType == "class_declaration" || pType == "func_declaration" || pType == "lambda_expression")
+        const TSSymbol pType = ts_node_symbol(exprParent);
+        if (pType == gs.symMemberExpression)
+        {
+            return exprParent;
+        }
+        if (pType == gs.symClassDeclaration || pType == gs.symFuncDeclaration || pType == gs.symLambdaExpression)
         {
             return TSNode{};
         }
-        exprParent = parser::GetParent(exprParent);
     }
     return exprParent;
 }
@@ -799,13 +813,14 @@ TSNode ResolveRefNodeLeaf(TSNode rootNode, const analysis::LocalReference& ref, 
     {
         return TSNode{};
     }
-    if (std::string_view(ts_node_type(refNode)) != "identifier")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(refNode) != gs.symIdentifier)
     {
         uint32_t cCount = ts_node_child_count(refNode);
         for (uint32_t c = 0; c < cCount; ++c)
         {
             TSNode ch = ts_node_child(refNode, c);
-            if (!ts_node_is_null(ch) && std::string_view(ts_node_type(ch)) == "identifier" &&
+            if (!ts_node_is_null(ch) && ts_node_symbol(ch) == gs.symIdentifier &&
                 GetNodeText(ch, sourceCode) == ref.name)
             {
                 return ch;
@@ -841,7 +856,7 @@ std::string ResolveMemberRefReceiverType(const analysis::LocalReference& ref, co
     {
         return "";
     }
-    TSNode objNode = parser::GetChildByField(exprParent, parser::fields::Object);
+    TSNode objNode = parser::GetChildByField(exprParent, parser::GetGrammarSymbols().fieldObject);
     if (ts_node_is_null(objNode) && ts_node_named_child_count(exprParent) > 0)
     {
         objNode = ts_node_named_child(exprParent, 0);

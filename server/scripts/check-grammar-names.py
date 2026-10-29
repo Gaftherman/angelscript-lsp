@@ -142,8 +142,12 @@ GRAMMARS = {
 DOXYGEN_MARKERS = ('parser/DoxygenParser.h', 'tree_sitter_doxygen')
 
 
-def find_node_types_json(checkout):
+def find_node_types_json(checkout, binary_dir=None):
     """The grammar checkout lives wherever the build tree is; find it rather than assume one."""
+    if binary_dir:
+        direct = Path(binary_dir) / '_deps' / checkout / 'src' / 'node-types.json'
+        if direct.exists():
+            return direct
     candidates = sorted(SERVER.glob('build*/_deps/%s/src/node-types.json' % checkout))
     if not candidates:
         candidates = sorted(REPO_ROOT.glob('build*/_deps/%s/src/node-types.json' % checkout))
@@ -190,6 +194,7 @@ def grammar_for(text):
 def main():
     parser = argparse.ArgumentParser(description="Audit C++ source code for invalid Tree-Sitter grammar names.")
     parser.add_argument("--strict", action="store_true", help="Fail if grammar definitions are not found (mandatory in CI).")
+    parser.add_argument("--binary-dir", type=str, default=None, help="Path to CMake binary/build directory containing _deps.")
     args = parser.parse_args()
     strict = args.strict or os.environ.get('CI') == 'true'
 
@@ -200,7 +205,7 @@ def main():
     # keyword TEXT would otherwise look like a line comparing node types.
     loaded = {}
     for name, checkout in GRAMMARS.items():
-        found = find_node_types_json(checkout)
+        found = find_node_types_json(checkout, binary_dir=args.binary_dir)
         if found is not None:
             loaded[name] = load_grammar(found)
 

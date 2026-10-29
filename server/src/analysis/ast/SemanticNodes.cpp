@@ -25,7 +25,7 @@ TSNode IfStatementView::Condition() const noexcept
     {
         return TSNode{};
     }
-    TSNode cond = parser::GetChildByField(m_raw, parser::fields::Condition);
+    TSNode cond = parser::GetChildByField(m_raw, parser::GetGrammarSymbols().fieldCondition);
     if (ts_node_is_null(cond) && ts_node_named_child_count(m_raw) > 0)
     {
         cond = ts_node_named_child(m_raw, 0);
@@ -39,7 +39,7 @@ TSNode IfStatementView::Consequence() const noexcept
     {
         return TSNode{};
     }
-    TSNode conseq = parser::GetChildByField(m_raw, parser::fields::Consequence);
+    TSNode conseq = parser::GetChildByField(m_raw, parser::GetGrammarSymbols().fieldConsequence);
     if (ts_node_is_null(conseq) && ts_node_named_child_count(m_raw) > 1)
     {
         conseq = ts_node_named_child(m_raw, 1);
@@ -53,7 +53,7 @@ TSNode IfStatementView::Alternative() const noexcept
     {
         return TSNode{};
     }
-    TSNode alt = parser::GetChildByField(m_raw, parser::fields::Alternative);
+    TSNode alt = parser::GetChildByField(m_raw, parser::GetGrammarSymbols().fieldAlternative);
     if (ts_node_is_null(alt) && ts_node_named_child_count(m_raw) > 2)
     {
         alt = ts_node_named_child(m_raw, 2);
@@ -72,7 +72,7 @@ TSNode ReturnStatementView::Value() const noexcept
     {
         return TSNode{};
     }
-    return parser::GetChildByField(m_raw, parser::fields::Value);
+    return parser::GetChildByField(m_raw, parser::GetGrammarSymbols().fieldValue);
 }
 
 bool ReturnStatementView::HasValue() const noexcept
@@ -86,7 +86,7 @@ TSNode CallExpressionView::Callee() const noexcept
     {
         return TSNode{};
     }
-    TSNode fn = parser::GetChildByField(m_raw, parser::fields::Function);
+    TSNode fn = parser::GetChildByField(m_raw, parser::GetGrammarSymbols().fieldFunction);
     if (ts_node_is_null(fn) && ts_node_named_child_count(m_raw) > 0)
     {
         fn = ts_node_named_child(m_raw, 0);
@@ -116,7 +116,7 @@ TSNode CallExpressionView::ArgumentList() const noexcept
     {
         return m_raw;
     }
-    TSNode args = parser::GetChildByField(m_raw, parser::fields::Arguments);
+    TSNode args = parser::GetChildByField(m_raw, parser::GetGrammarSymbols().fieldArguments);
     if (!ts_node_is_null(args))
     {
         return args;

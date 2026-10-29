@@ -114,6 +114,7 @@ using MessageMap = ankerl::unordered_dense::map<std::string, std::string, I18nSt
  */
 void PopulateEnglishMessages1(MessageMap& m_messages)
 {
+    m_messages["diag-fallback-unknown-code"] = "[{}] Diagnostic code: {}";
     m_messages["as-err-duplicate-symbol"] = "Duplicate symbol declaration '{}' in the same scope.";
     m_messages["as-err-mixin-final"] = "A mixin ('{}') cannot be declared as 'final'.";
     m_messages["as-err-mixin-abstract"] = "A mixin ('{}') cannot be declared as 'abstract'.";

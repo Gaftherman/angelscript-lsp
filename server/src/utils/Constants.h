@@ -2,9 +2,20 @@
 
 #include <cstdint>
 #include <limits>
+#include <string_view>
 
 namespace angel_lsp::constants
 {
+/**
+ * @brief Default diagnostics source identifier for LSP published diagnostics.
+ */
+inline constexpr std::string_view k_diagnosticSource = "AngelScript";
+
+/**
+ * @brief Sentinel type name used to represent poisoned or unresolvable expressions.
+ */
+inline constexpr std::string_view k_poisonTypeSentinel = "<poison>";
+
 /**
  * @brief Canonical ceiling for upward AST traversal hops.
  */

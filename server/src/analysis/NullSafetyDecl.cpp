@@ -130,10 +130,10 @@ Nullability EvaluateExpressionNullability(const NullableEvalRequest& req, const 
 
 void CheckVarDeclaration(TSNode stmt, FlowState& state, NullCheckContext& ctx)
 {
-    TSNode typeNode = parser::GetChildByField(stmt, parser::fields::VarType);
+    TSNode typeNode = parser::GetChildByField(stmt, parser::GetGrammarSymbols().fieldVarType);
     if (ts_node_is_null(typeNode))
     {
-        typeNode = parser::GetChildByField(stmt, parser::fields::Type);
+        typeNode = parser::GetChildByField(stmt, parser::GetGrammarSymbols().fieldType);
     }
     const auto typeInfo = ExtractTypeInfoFromAST(typeNode, ctx.sourceCode);
     const bool isHandle = typeInfo.isHandle;
@@ -146,11 +146,12 @@ void CheckVarDeclaration(TSNode stmt, FlowState& state, NullCheckContext& ctx)
         {
             continue;
         }
-        std::string name = NodeText(parser::GetChildByField(child, parser::fields::Name), ctx.sourceCode);
-        TSNode val = parser::GetChildByField(child, parser::fields::Value);
+        std::string name =
+            NodeText(parser::GetChildByField(child, parser::GetGrammarSymbols().fieldName), ctx.sourceCode);
+        TSNode val = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldValue);
         if (ts_node_is_null(val))
         {
-            val = parser::GetChildByField(child, parser::fields::Init);
+            val = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldInit);
         }
         CheckNullExpression(val, state, ctx, 0);
 
@@ -163,8 +164,8 @@ void CheckVarDeclaration(TSNode stmt, FlowState& state, NullCheckContext& ctx)
 
 void CheckAssignmentStmt(TSNode expr, FlowState& state, NullCheckContext& ctx)
 {
-    TSNode left = parser::GetChildByField(expr, parser::fields::Left);
-    TSNode right = parser::GetChildByField(expr, parser::fields::Right);
+    TSNode left = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldLeft);
+    TSNode right = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldRight);
     CheckNullExpression(right, state, ctx, 0);
 
     TSNode unwrappedLeft = UnwrapNullExpression(left);

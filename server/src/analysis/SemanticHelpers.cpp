@@ -393,8 +393,8 @@ std::optional<std::string> IsBareDataType(TSNode node, const Scope* scope, const
 static bool IsMemberMethodSymbol(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
                                  std::string_view sourceCode)
 {
-    TSNode objNode = parser::GetChildByField(node, parser::fields::Object);
-    TSNode memNode = parser::GetChildByField(node, parser::fields::Member);
+    TSNode objNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldObject);
+    TSNode memNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldMember);
     if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
     {
         return false;
@@ -2089,19 +2089,20 @@ bool IsBaseConstructorCall(TSNode node, std::string_view sourceCode)
 
     const auto& gs = parser::GetGrammarSymbols();
     const TSNode function = FindEnclosingAncestorNode(node, gs.symFuncDeclaration);
-    if (ts_node_is_null(function) || !ts_node_is_null(parser::GetChildByField(function, parser::fields::ReturnType)))
+    if (ts_node_is_null(function) ||
+        !ts_node_is_null(parser::GetChildByField(function, parser::GetGrammarSymbols().fieldReturnType)))
     {
         return false;
     }
 
-    const TSNode functionName = parser::GetChildByField(function, parser::fields::Name);
+    const TSNode functionName = parser::GetChildByField(function, parser::GetGrammarSymbols().fieldName);
     const TSNode owner = FindEnclosingAncestorNode(function, gs.symClassDeclaration);
     if (ts_node_is_null(functionName) || ts_node_is_null(owner))
     {
         return false;
     }
 
-    const TSNode className = parser::GetChildByField(owner, parser::fields::Name);
+    const TSNode className = parser::GetChildByField(owner, parser::GetGrammarSymbols().fieldName);
     if (ts_node_is_null(className) || GetNodeText(className, sourceCode) != GetNodeText(functionName, sourceCode))
     {
         return false;
@@ -2133,7 +2134,7 @@ TSNode AdjustStartNodeIfDeclarationName(TSNode node)
         if (parentSym == gs.symClassDeclaration || parentSym == gs.symInterfaceDeclaration ||
             parentSym == gs.symNamespaceDeclaration || parentSym == gs.symMixinDeclaration)
         {
-            const TSNode nameChild = parser::GetChildByField(parent, parser::fields::Name);
+            const TSNode nameChild = parser::GetChildByField(parent, parser::GetGrammarSymbols().fieldName);
             if (!ts_node_is_null(nameChild) && ts_node_start_byte(nameChild) == ts_node_start_byte(node) &&
                 ts_node_end_byte(nameChild) == ts_node_end_byte(node))
             {
@@ -2239,8 +2240,8 @@ std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view 
                 continue;
             }
 
-            AppendRawContainers(parser::GetChildByField(current, parser::fields::Name), *kind, sourceCode,
-                                rawContainers);
+            AppendRawContainers(parser::GetChildByField(current, parser::GetGrammarSymbols().fieldName), *kind,
+                                sourceCode, rawContainers);
         }
         current = parser::GetParent(current);
     }
@@ -2254,7 +2255,7 @@ std::vector<std::string> CollectUsingNamespaces(const NodeIndex& nodeIndex, std:
     std::vector<std::string> usings;
     for (TSNode cur : nodeIndex.Nodes(parser::nodes::UsingDeclaration))
     {
-        TSNode nameNode = parser::GetChildByField(cur, parser::fields::Name);
+        TSNode nameNode = parser::GetChildByField(cur, parser::GetGrammarSymbols().fieldName);
         if (!ts_node_is_null(nameNode))
         {
             std::string uName = GetNodeText(nameNode, sourceCode);
@@ -3509,9 +3510,9 @@ static std::string ResolveBinaryOverload(std::string_view op, const std::string&
  */
 static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
 {
-    TSNode left = parser::GetChildByField(exprNode, parser::fields::Left);
-    TSNode opNode = parser::GetChildByField(exprNode, parser::fields::Operator);
-    TSNode right = parser::GetChildByField(exprNode, parser::fields::Right);
+    TSNode left = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldLeft);
+    TSNode opNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldOperator);
+    TSNode right = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldRight);
     if (ts_node_is_null(left) || ts_node_is_null(right))
     {
         return std::string(ExpressionTypeCache::k_poisonType);
@@ -3681,8 +3682,8 @@ static std::string ResolveTernaryBranchTypes(std::string_view t1, std::string_vi
  */
 static std::string ResolveTernaryExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
 {
-    TSNode consequence = parser::GetChildByField(exprNode, parser::fields::Consequence);
-    TSNode alternative = parser::GetChildByField(exprNode, parser::fields::Alternative);
+    TSNode consequence = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldConsequence);
+    TSNode alternative = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldAlternative);
     if (ts_node_is_null(consequence) || ts_node_is_null(alternative))
     {
         return std::string(ExpressionTypeCache::k_poisonType);
@@ -3872,8 +3873,8 @@ static std::string ExtractMemberSymbolType(const Symbol& sym, const SymbolTable&
  */
 static std::string ResolveMemberExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
 {
-    TSNode objNode = parser::GetChildByField(exprNode, parser::fields::Object);
-    TSNode memNode = parser::GetChildByField(exprNode, parser::fields::Member);
+    TSNode objNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldObject);
+    TSNode memNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldMember);
     if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
     {
         return "";
@@ -4030,8 +4031,8 @@ static std::vector<Symbol> CollectMemberMethodCandidates(const std::string& owne
 static std::string ResolveMemberCallExpr(TSNode funcNode, const std::vector<std::string>& argTypes,
                                          const ExpressionTypeContext& ctx, int depth)
 {
-    TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
-    TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
+    TSNode objNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldObject);
+    TSNode memNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldMember);
     if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
     {
         return "";
@@ -4254,7 +4255,7 @@ static std::string ResolveCallExpr(TSNode exprNode, const ExpressionTypeContext&
     }
 
     std::vector<std::string> argTypes;
-    TSNode argsNode = parser::GetChildByField(exprNode, parser::fields::Arguments);
+    TSNode argsNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldArguments);
     if (!ts_node_is_null(argsNode))
     {
         uint32_t count = ts_node_named_child_count(argsNode);
@@ -4372,12 +4373,12 @@ static std::string ResolveUnaryMinus(const std::string& operandType)
  */
 static std::string ResolveUnaryExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
 {
-    TSNode operandNode = parser::GetChildByField(exprNode, parser::fields::Operand);
+    TSNode operandNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldOperand);
     if (ts_node_is_null(operandNode) || ts_node_is_error(operandNode) || ts_node_is_missing(operandNode))
     {
         return std::string(ExpressionTypeCache::k_poisonType);
     }
-    TSNode operatorNode = parser::GetChildByField(exprNode, parser::fields::Operator);
+    TSNode operatorNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldOperator);
     std::string op;
     if (!ts_node_is_null(operatorNode))
     {
@@ -4408,7 +4409,7 @@ static std::string ResolveUnaryExpr(TSNode exprNode, const ExpressionTypeContext
  */
 static std::string ResolveConstructCallExpr(TSNode exprNode, std::string_view sourceCode)
 {
-    TSNode typeNode = parser::GetChildByField(exprNode, parser::fields::Type);
+    TSNode typeNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldType);
     if (ts_node_is_null(typeNode))
     {
         return "";
@@ -4439,7 +4440,7 @@ static std::optional<std::string> ResolveCastOrConstructExpr(std::string_view no
 {
     if (nodeType == "cast_expression" || nodeType == "functional_cast_expression")
     {
-        TSNode typeNode = parser::GetChildByField(exprNode, parser::fields::Type);
+        TSNode typeNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldType);
         return ts_node_is_null(typeNode) ? "" : CleanExpressionType(GetNodeText(typeNode, sourceCode));
     }
     if (nodeType == "construct_call_expression")
@@ -4522,8 +4523,8 @@ static std::string FindIndexedGetterType(const std::vector<Symbol>& accessors, c
 static std::string ResolveMemberIndexedProperty(TSNode objNode, const ExpressionTypeContext& ctx, int depth,
                                                 std::string_view indexArgType = "")
 {
-    TSNode recNode = parser::GetChildByField(objNode, parser::fields::Object);
-    TSNode memNode = parser::GetChildByField(objNode, parser::fields::Member);
+    TSNode recNode = parser::GetChildByField(objNode, parser::GetGrammarSymbols().fieldObject);
+    TSNode memNode = parser::GetChildByField(objNode, parser::GetGrammarSymbols().fieldMember);
     if (ts_node_is_null(recNode) || ts_node_is_null(memNode))
     {
         return "";
@@ -4655,7 +4656,7 @@ static std::string ResolveOtherExpr(std::string_view nodeType, TSNode exprNode, 
     }
     if (nodeType == "assignment_expression")
     {
-        TSNode left = parser::GetChildByField(exprNode, parser::fields::Left);
+        TSNode left = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldLeft);
         return ts_node_is_null(left) ? "" : ResolveExpressionType(left, ctx, depth + 1);
     }
     if (nodeType == "index_expression")
@@ -4668,7 +4669,7 @@ static std::string ResolveOtherExpr(std::string_view nodeType, TSNode exprNode, 
     }
     if (nodeType == "postfix_expression")
     {
-        TSNode operandNode = parser::GetChildByField(exprNode, parser::fields::Operand);
+        TSNode operandNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldOperand);
         return ts_node_is_null(operandNode) ? "" : ResolveExpressionType(operandNode, ctx, depth + 1);
     }
     return "";
@@ -4691,7 +4692,7 @@ static std::optional<std::string> ResolvePrimaryExpr(std::string_view nodeType, 
     }
     if (nodeType == "typed_initializer_list")
     {
-        TSNode typeNode = parser::GetChildByField(exprNode, parser::fields::Type);
+        TSNode typeNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldType);
         if (!ts_node_is_null(typeNode))
         {
             return GetNodeText(typeNode, ctx.sourceCode);
@@ -5858,7 +5859,7 @@ bool LambdaContradictsFuncdef(const std::vector<LambdaParameter>& lambdaParamete
 bool LambdaContradictsFuncdef(TSNode lambdaNode, const FuncdefSignature& funcdefSig, const SymbolTable& table,
                               std::string_view sourceCode)
 {
-    TSNode listNode = parser::GetChildByField(lambdaNode, parser::fields::Parameters);
+    TSNode listNode = parser::GetChildByField(lambdaNode, parser::GetGrammarSymbols().fieldParameters);
     if (ts_node_is_null(listNode))
     {
         // No parameter list to read is not the same as an empty one, and guessing which it is
@@ -5948,10 +5949,10 @@ static std::optional<Symbol> FindDeclaratorFuncdefTarget(TSNode parent, const Sy
     TSNode declaration = parser::GetParent(parent);
     if (!ts_node_is_null(declaration))
     {
-        TSNode typeNode = parser::GetChildByField(declaration, parser::fields::VarType);
+        TSNode typeNode = parser::GetChildByField(declaration, parser::GetGrammarSymbols().fieldVarType);
         if (ts_node_is_null(typeNode))
         {
-            typeNode = parser::GetChildByField(declaration, parser::fields::Type);
+            typeNode = parser::GetChildByField(declaration, parser::GetGrammarSymbols().fieldType);
         }
         if (!ts_node_is_null(typeNode))
         {
@@ -6040,7 +6041,7 @@ static bool MatchCandidateFuncdef(const SymbolTable& table, const std::string& n
 static std::optional<Symbol> FindAssignmentFuncdefTarget(TSNode parent, const SymbolTable& table,
                                                          std::string_view sourceCode)
 {
-    TSNode leftNode = parser::GetChildByField(parent, parser::fields::Left);
+    TSNode leftNode = parser::GetChildByField(parent, parser::GetGrammarSymbols().fieldLeft);
     if (ts_node_is_null(leftNode))
     {
         return std::nullopt;
@@ -6385,7 +6386,7 @@ TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::
         }
     }
 
-    TSNode bodyNode = parser::GetChildByField(hostNode, parser::fields::Body);
+    TSNode bodyNode = parser::GetChildByField(hostNode, parser::GetGrammarSymbols().fieldBody);
     if (!ts_node_is_null(bodyNode))
     {
         parser::ForEachChildNodeUntil(bodyNode,

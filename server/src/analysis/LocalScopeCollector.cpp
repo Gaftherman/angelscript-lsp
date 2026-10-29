@@ -273,7 +273,7 @@ void LocalScopeCollector::ProcessScopeCapture(const RawCapture& capture, std::ve
     OpenScope openScope{scopePtr, endByte};
     if (scopeNodeSymbol == m_gs.symFuncDeclaration)
     {
-        TSNode ownNameNode = parser::GetChildByField(capture.node, parser::fields::Name);
+        TSNode ownNameNode = parser::GetChildByField(capture.node, parser::GetGrammarSymbols().fieldName);
         if (!ts_node_is_null(ownNameNode))
         {
             openScope.ownNameStartByte = ts_node_start_byte(ownNameNode);
@@ -365,7 +365,7 @@ void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, co
 
 static TSNode FindArgumentList(TSNode callNode)
 {
-    TSNode argsChild = parser::GetChildByField(callNode, parser::fields::Arguments);
+    TSNode argsChild = parser::GetChildByField(callNode, parser::GetGrammarSymbols().fieldArguments);
     if (!ts_node_is_null(argsChild))
     {
         return argsChild;
@@ -399,7 +399,7 @@ void LocalScopeCollector::DetermineCallReferenceInfo(TSNode refNode, TSNode pare
         const TSSymbol wpSym = ts_node_symbol(walkParent);
         if (wpSym == syms.symCallExpression)
         {
-            TSNode funcChild = parser::GetChildByField(walkParent, parser::fields::Function);
+            TSNode funcChild = parser::GetChildByField(walkParent, parser::GetGrammarSymbols().fieldFunction);
             if (ts_node_is_null(funcChild))
             {
                 TSTreeCursor walkCursor = ts_tree_cursor_new(walkParent);
@@ -464,7 +464,7 @@ static bool IsMemberAccessNode(TSNode node, TSNode parent, TSSymbol memberExprSy
 {
     if (ts_node_symbol(parent) == memberExprSym)
     {
-        TSNode memberField = parser::GetChildByField(parent, parser::fields::Member);
+        TSNode memberField = parser::GetChildByField(parent, parser::GetGrammarSymbols().fieldMember);
         return ts_node_eq(memberField, node) ||
                (!ts_node_is_null(memberField) && ts_node_start_byte(memberField) == ts_node_start_byte(node));
     }
@@ -579,7 +579,7 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
 
     if (!ts_node_is_null(parent) && IsDeclarationContextSymbol(ts_node_symbol(parent)))
     {
-        TSNode nameNode = parser::GetChildByField(parent, parser::fields::Name);
+        TSNode nameNode = parser::GetChildByField(parent, parser::GetGrammarSymbols().fieldName);
         if (ts_node_eq(nameNode, capture.node) ||
             (!ts_node_is_null(nameNode) && ts_node_start_byte(nameNode) == capture.startByte))
         {
@@ -642,7 +642,7 @@ void LocalScopeCollector::PopulateReceiverQualifierRanges(TSNode parent, LocalRe
     {
         ref.qualifierStartByte = ts_node_start_byte(parent);
         ref.qualifierEndByte = ts_node_end_byte(parent);
-        TSNode objNode = parser::GetChildByField(parent, parser::fields::Object);
+        TSNode objNode = parser::GetChildByField(parent, parser::GetGrammarSymbols().fieldObject);
         if (!ts_node_is_null(objNode))
         {
             ref.receiverStartByte = ts_node_start_byte(objNode);
@@ -785,7 +785,7 @@ void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std
     def.fullEndLine = pEnd.row;
     def.fullEndCharacter = pEnd.column;
 
-    TSNode paramTypeNode = parser::GetChildByField(declaratorNode, parser::fields::ParamType);
+    TSNode paramTypeNode = parser::GetChildByField(declaratorNode, parser::GetGrammarSymbols().fieldParamType);
     if (!ts_node_is_null(paramTypeNode))
     {
         TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(paramTypeNode, sourceCode);
@@ -826,7 +826,7 @@ void LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, con
     def.fullEndLine = fEnd.row;
     def.fullEndCharacter = fEnd.column;
 
-    TSNode foreachTypeNode = parser::GetChildByField(declaratorNode, parser::fields::Type);
+    TSNode foreachTypeNode = parser::GetChildByField(declaratorNode, parser::GetGrammarSymbols().fieldType);
     if (!ts_node_is_null(foreachTypeNode))
     {
         TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(foreachTypeNode, sourceCode);
@@ -896,10 +896,10 @@ static uint32_t CountVariableDeclarators(TSNode declarationNode, TSSymbol declar
 
 static TSNode FindDeclarationTypeNode(TSNode declarationNode, TSNode declaratorNode)
 {
-    TSNode typeNode = parser::GetChildByField(declarationNode, parser::fields::VarType);
+    TSNode typeNode = parser::GetChildByField(declarationNode, parser::GetGrammarSymbols().fieldVarType);
     if (ts_node_is_null(typeNode))
     {
-        typeNode = parser::GetChildByField(declarationNode, parser::fields::Type);
+        typeNode = parser::GetChildByField(declarationNode, parser::GetGrammarSymbols().fieldType);
     }
     if (ts_node_is_null(typeNode))
     {
@@ -923,7 +923,7 @@ static TSNode FindDeclarationTypeNode(TSNode declarationNode, TSNode declaratorN
 
 static TSNode FindDeclaratorValueNode(TSNode declaratorNode, const std::string& sourceCode)
 {
-    TSNode valueNode = parser::GetChildByField(declaratorNode, parser::fields::Value);
+    TSNode valueNode = parser::GetChildByField(declaratorNode, parser::GetGrammarSymbols().fieldValue);
     if (!ts_node_is_null(valueNode))
     {
         return valueNode;
@@ -1042,10 +1042,10 @@ void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const
     def.fullEndLine = rEnd.row;
     def.fullEndCharacter = rEnd.column;
 
-    TSNode typeNode = parser::GetChildByField(propertyNode, parser::fields::PropType);
+    TSNode typeNode = parser::GetChildByField(propertyNode, parser::GetGrammarSymbols().fieldPropType);
     if (ts_node_is_null(typeNode))
     {
-        typeNode = parser::GetChildByField(propertyNode, parser::fields::Type);
+        typeNode = parser::GetChildByField(propertyNode, parser::GetGrammarSymbols().fieldType);
     }
     if (!ts_node_is_null(typeNode))
     {
@@ -1101,7 +1101,7 @@ bool ExtractAssignmentLeftVar(TSNode leftNode, const parser::GrammarSymbols& gs,
     }
     if (sym == gs.symScopedIdentifier)
     {
-        TSNode id = parser::GetChildByField(leftNode, parser::fields::Name);
+        TSNode id = parser::GetChildByField(leftNode, parser::GetGrammarSymbols().fieldName);
         if (ts_node_is_null(id))
         {
             uint32_t count = ts_node_child_count(leftNode);
@@ -1117,7 +1117,7 @@ bool ExtractAssignmentLeftVar(TSNode leftNode, const parser::GrammarSymbols& gs,
         if (text.starts_with('@'))
         {
             outIsHandle = true;
-            TSNode operand = parser::GetChildByField(leftNode, parser::fields::Operand);
+            TSNode operand = parser::GetChildByField(leftNode, parser::GetGrammarSymbols().fieldOperand);
             if (ts_node_is_null(operand))
                 operand = ts_node_child(leftNode, 1);
             return ExtractAssignmentLeftVar(operand, gs, sourceCode, outName, outIsHandle, outIdentNode);
@@ -1156,7 +1156,7 @@ bool TryRecoverSplitIfDeclaration(TSNode node, Scope* rootScope, const std::stri
     {
         return false;
     }
-    TSNode cons = parser::GetChildByField(node, parser::fields::Consequence);
+    TSNode cons = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldConsequence);
     if (ts_node_is_null(cons))
     {
         uint32_t count = ts_node_child_count(node);
@@ -1180,7 +1180,7 @@ bool TryRecoverSplitIfDeclaration(TSNode node, Scope* rootScope, const std::stri
     {
         return false;
     }
-    TSNode left = parser::GetChildByField(assignExpr, parser::fields::Left);
+    TSNode left = parser::GetChildByField(assignExpr, parser::GetGrammarSymbols().fieldLeft);
     std::string varName;
     bool isHandle = false;
     TSNode identNode = TSNode{};
@@ -1222,7 +1222,7 @@ void TryRecoverErrorIfDeclaration(TSNode node, Scope* rootScope, const std::stri
         return;
     }
     std::string errTypeName(errTypeView);
-    TSNode cons = parser::GetChildByField(node, parser::fields::Consequence);
+    TSNode cons = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldConsequence);
     if (ts_node_is_null(cons) || ts_node_symbol(cons) != gs.symExpressionStatement)
     {
         return;
@@ -1232,7 +1232,7 @@ void TryRecoverErrorIfDeclaration(TSNode node, Scope* rootScope, const std::stri
     {
         return;
     }
-    TSNode left = parser::GetChildByField(assignExpr, parser::fields::Left);
+    TSNode left = parser::GetChildByField(assignExpr, parser::GetGrammarSymbols().fieldLeft);
     std::string varName;
     bool isHandle = false;
     TSNode identNode = TSNode{};

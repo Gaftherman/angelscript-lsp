@@ -570,7 +570,7 @@ class ClassSpanIndex
         }
         for (TSNode classDecl : nodeIndex->Nodes(syms.symClassDeclaration))
         {
-            TSNode classNameNode = parser::GetChildByField(classDecl, parser::fields::Name);
+            TSNode classNameNode = parser::GetChildByField(classDecl, parser::GetGrammarSymbols().fieldName);
             if (!ts_node_is_null(classNameNode))
             {
                 uint32_t cStart = ts_node_start_byte(classNameNode);

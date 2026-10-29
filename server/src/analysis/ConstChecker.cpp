@@ -85,7 +85,7 @@ std::optional<bool> ParameterIsConst(TSNode node, std::string_view name, std::st
         return std::nullopt;
     }
 
-    TSNode parameters = parser::GetChildByField(owner, parser::fields::Parameters);
+    TSNode parameters = parser::GetChildByField(owner, parser::GetGrammarSymbols().fieldParameters);
     if (ts_node_is_null(parameters))
     {
         return std::nullopt;
@@ -106,7 +106,7 @@ std::optional<bool> ParameterIsConst(TSNode node, std::string_view name, std::st
             continue;
         }
 
-        TSNode typeNode = parser::GetChildByField(parameter, parser::fields::ParamType);
+        TSNode typeNode = parser::GetChildByField(parameter, parser::GetGrammarSymbols().fieldParamType);
         if (ts_node_is_null(typeNode))
         {
             return false;
@@ -340,8 +340,8 @@ bool IsIdentifierMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo,
 bool IsMemberExprOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const ConstContext& ctx,
                         std::string& outMemberName)
 {
-    TSNode obj = parser::GetChildByField(target, parser::fields::Object);
-    TSNode member = parser::GetChildByField(target, parser::fields::Member);
+    TSNode obj = parser::GetChildByField(target, parser::GetGrammarSymbols().fieldObject);
+    TSNode member = parser::GetChildByField(target, parser::GetGrammarSymbols().fieldMember);
     if (ts_node_is_null(obj) || ts_node_is_null(member))
     {
         return false;
@@ -462,7 +462,7 @@ Constness ResolveConstness(TSNode node, const ConstContext& ctx, int depth)
     if (nodeSym == gs.symMemberExpression)
     {
         const Constness object =
-            ResolveConstness(parser::GetChildByField(node, parser::fields::Object), ctx, depth + 1);
+            ResolveConstness(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldObject), ctx, depth + 1);
         return object == Constness::Const ? Constness::Const : Constness::Unknown;
     }
 
@@ -610,7 +610,7 @@ Constness ResolveHandleConstness(TSNode node, const ConstContext& ctx)
 
 void CheckAssignment(TSNode node, const ConstCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
 {
-    TSNode target = parser::GetChildByField(node, parser::fields::Left);
+    TSNode target = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
     if (ts_node_is_null(target))
     {
         return;

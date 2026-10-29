@@ -101,9 +101,9 @@ void ProcessLogicalBinary(const BinaryConditionParams& params, AssertionSink& si
 
 void ProcessBinaryCondition(TSNode condition, std::string_view sourceCode, AssertionSink& sink)
 {
-    TSNode left = parser::GetChildByField(condition, parser::fields::Left);
-    TSNode opNode = parser::GetChildByField(condition, parser::fields::Operator);
-    TSNode right = parser::GetChildByField(condition, parser::fields::Right);
+    TSNode left = parser::GetChildByField(condition, parser::GetGrammarSymbols().fieldLeft);
+    TSNode opNode = parser::GetChildByField(condition, parser::GetGrammarSymbols().fieldOperator);
+    TSNode right = parser::GetChildByField(condition, parser::GetGrammarSymbols().fieldRight);
     if (ts_node_is_null(left) || ts_node_is_null(right))
     {
         return;
@@ -126,8 +126,8 @@ void ProcessBinaryCondition(TSNode condition, std::string_view sourceCode, Asser
 
 void ProcessUnaryCondition(TSNode condition, std::string_view sourceCode, AssertionSink& sink)
 {
-    TSNode opNode = parser::GetChildByField(condition, parser::fields::Operator);
-    TSNode operand = parser::GetChildByField(condition, parser::fields::Operand);
+    TSNode opNode = parser::GetChildByField(condition, parser::GetGrammarSymbols().fieldOperator);
+    TSNode operand = parser::GetChildByField(condition, parser::GetGrammarSymbols().fieldOperand);
     if (ts_node_is_null(operand))
     {
         return;

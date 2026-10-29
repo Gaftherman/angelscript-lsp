@@ -37,7 +37,8 @@ TSNode FindEnumDeclarationNode(TSNode root, const Symbol& sym, std::string_view 
                                               found = node;
                                               return;
                                           }
-                                          const TSNode nameNode = parser::GetChildByField(node, parser::fields::Name);
+                                          const TSNode nameNode =
+                                              parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName);
                                           if (!ts_node_is_null(nameNode) && NodeText(nameNode, sourceCode) == sym.name)
                                           {
                                               found = node;
@@ -348,7 +349,7 @@ void CheckDuplicateEnumMembers(TSNode enumNode, const Symbol& sym, const Diagnos
         {
             continue;
         }
-        const TSNode memberNameNode = parser::GetChildByField(child, parser::fields::Name);
+        const TSNode memberNameNode = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldName);
         if (ts_node_is_null(memberNameNode))
         {
             continue;
@@ -429,7 +430,8 @@ void ValidateInterfaceMembers(const Symbol& sym, const DiagnosticContext& ctx)
         return;
     }
 
-    const std::string qualified = sym.containerName.empty() ? sym.name : sym.containerName + "::" + sym.name;
+    const std::string_view qualified =
+        sym.qualifiedName.empty() ? std::string_view(sym.name) : std::string_view(sym.qualifiedName);
 
     const auto members = ctx.request.symbolTable.FindMemberSymbolPtr(qualified, sym.name);
     if (!members)

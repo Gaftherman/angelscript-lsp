@@ -1,6 +1,7 @@
 #include "analysis/DiagnosticContext.h"
 #include "analysis/ExpressionTypeCache.h"
 #include "analysis/NodeIndex.h"
+#include "utils/Constants.h"
 #include "utils/LspLogger.h"
 #include "utils/Utils.h"
 #include <cstdint>
@@ -63,7 +64,7 @@ void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std::strin
     {
         if (IsPoisonType(a))
         {
-            diag.message = "<poison>";
+            diag.message = std::string(constants::k_poisonTypeSentinel);
             return;
         }
     }
@@ -218,7 +219,7 @@ Diagnostic DiagnosticContext::CreateDiagnostic(SourceRange range, std::string_vi
         }
     }
     diag.code = std::move(codeStr);
-    diag.source = "AngelScript";
+    diag.source = std::string(constants::k_diagnosticSource);
     diag.fileUri = std::string(fileUri);
 
     if (request.i18n)
@@ -227,7 +228,8 @@ Diagnostic DiagnosticContext::CreateDiagnostic(SourceRange range, std::string_vi
     }
     if (diag.message.empty())
     {
-        diag.message = "[" + diag.code + "] Diagnostic code: " + diag.code;
+        diag.message = i18n::FormatMessage(request.i18n, "diag-fallback-unknown-code", "[{}] Diagnostic code: {}",
+                                           diag.code, diag.code);
     }
 
     return diag;

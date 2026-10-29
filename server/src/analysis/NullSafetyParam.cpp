@@ -36,7 +36,7 @@ void CollectParametersFromScope(TSNode bodyNode, const Scope* scopeRoot, FlowSta
 
 TSNode FindParameterListNode(TSNode funcNode)
 {
-    TSNode params = parser::GetChildByField(funcNode, parser::fields::Parameters);
+    TSNode params = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldParameters);
     if (!ts_node_is_null(params))
     {
         return params;
@@ -61,10 +61,10 @@ void CollectRegularParameters(TSNode params, std::string_view sourceCode, FlowSt
     for (uint32_t i = 0; i < count; ++i)
     {
         TSNode param = ts_node_named_child(params, i);
-        TSNode typeNode = parser::GetChildByField(param, parser::fields::ParamType);
+        TSNode typeNode = parser::GetChildByField(param, parser::GetGrammarSymbols().fieldParamType);
         if (ts_node_is_null(typeNode))
         {
-            typeNode = parser::GetChildByField(param, parser::fields::Type);
+            typeNode = parser::GetChildByField(param, parser::GetGrammarSymbols().fieldType);
         }
         if (ts_node_is_null(typeNode) && ts_node_named_child_count(param) > 0)
         {
@@ -89,7 +89,7 @@ void CollectRegularParameters(TSNode params, std::string_view sourceCode, FlowSt
             continue;
         }
 
-        std::string name = NodeText(parser::GetChildByField(param, parser::fields::Name), sourceCode);
+        std::string name = NodeText(parser::GetChildByField(param, parser::GetGrammarSymbols().fieldName), sourceCode);
         if (name.empty())
         {
             for (uint32_t j = ts_node_named_child_count(param); j > 0; --j)

@@ -1,4 +1,5 @@
 #include "features/folding_range/FoldingRangeHandler.h"
+#include "parser/GrammarSymbols.h"
 #include <algorithm>
 #include <array>
 #include <map>
@@ -64,35 +65,33 @@ std::vector<std::string_view> SplitLines(std::string_view source)
  * @param[in] type AST node type string.
  * @return True if the node type is foldable.
  */
-bool IsSyntaxFoldingNode(std::string_view type)
+bool IsSyntaxFoldingSymbol(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
 {
-    static constexpr std::array<std::string_view, 24> k_foldingTypes = {
-        "accessor",
-        "argument_list",
-        "case_clause",
-        "class_declaration",
-        "do_while_statement",
-        "enum_declaration",
-        "for_statement",
-        "foreach_statement",
-        "func_declaration",
-        "funcdef_declaration",
-        "if_statement",
-        "initializer_list",
-        "interface_declaration",
-        "interface_method",
-        "lambda_expression",
-        "mixin_declaration",
-        "namespace_declaration",
-        "parameter_list",
-        "statement_block",
-        "switch_statement",
-        "try_statement",
-        "typed_initializer_list",
-        "virtual_property",
-        "while_statement",
-    };
-    return std::binary_search(k_foldingTypes.begin(), k_foldingTypes.end(), type);
+    const std::array<TSSymbol, 24> kSymbols = {gs.symAccessor,
+                                               gs.symArgumentList,
+                                               gs.symCaseClause,
+                                               gs.symClassDeclaration,
+                                               gs.symDoWhileStatement,
+                                               gs.symEnumDeclaration,
+                                               gs.symForStatement,
+                                               gs.symForeachStatement,
+                                               gs.symFuncDeclaration,
+                                               gs.symFuncdefDeclaration,
+                                               gs.symIfStatement,
+                                               gs.symInitializerList,
+                                               gs.symInterfaceDeclaration,
+                                               gs.symInterfaceMethod,
+                                               gs.symLambdaExpression,
+                                               gs.symMixinDeclaration,
+                                               gs.symNamespaceDeclaration,
+                                               gs.symParameterList,
+                                               gs.symStatementBlock,
+                                               gs.symSwitchStatement,
+                                               gs.symTryStatement,
+                                               gs.symTypedInitializerList,
+                                               gs.symVirtualProperty,
+                                               gs.symWhileStatement};
+    return std::find(kSymbols.begin(), kSymbols.end(), sym) != kSymbols.end();
 }
 
 /**
@@ -103,8 +102,8 @@ bool IsSyntaxFoldingNode(std::string_view type)
  */
 bool TryExtractSyntaxFoldingRange(TSNode node, lsp::FoldingRange& outFr)
 {
-    const char* type = ts_node_type(node);
-    if (!type || !IsSyntaxFoldingNode(type))
+    const auto& gs = parser::GetGrammarSymbols();
+    if (!IsSyntaxFoldingSymbol(ts_node_symbol(node), gs))
     {
         return false;
     }
@@ -133,8 +132,8 @@ bool TryExtractSyntaxFoldingRange(TSNode node, lsp::FoldingRange& outFr)
  */
 bool TryExtractCommentFoldingRange(TSNode node, std::string_view sourceCode, lsp::FoldingRange& outFr)
 {
-    const char* type = ts_node_type(node);
-    if (!type || std::string_view(type) != "comment")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(node) != gs.symComment)
     {
         return false;
     }

@@ -70,9 +70,10 @@ void DeduceReturnAndCallSite(const ExtractedMethodVariables& vars, const Extract
     else if (vars.outputVars.empty())
     {
         TSNode lastNode = stmts.selectedStmts.back();
-        if (std::string_view(ts_node_type(lastNode)) == "return_statement")
+        const auto& gs = parser::GetGrammarSymbols();
+        if (ts_node_symbol(lastNode) == gs.symReturnStatement)
         {
-            TSNode retTypeNode = parser::GetChildByField(stmts.fnNode, parser::fields::Type);
+            TSNode retTypeNode = parser::GetChildByField(stmts.fnNode, gs.fieldType);
             if (!ts_node_is_null(retTypeNode))
             {
                 plan.returnType = GetNodeText(retTypeNode, request.sourceCode);

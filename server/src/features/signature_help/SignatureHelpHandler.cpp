@@ -130,25 +130,27 @@ CallNodes FindCallNodes(TSNode node)
     CallNodes result;
     constexpr int kMaxDepth = 64;
     int depth = 0;
+    const auto& gs = parser::GetGrammarSymbols();
     for (TSNode cur = node; depth < kMaxDepth && !ts_node_is_null(cur); cur = parser::GetParent(cur), ++depth)
     {
-        std::string_view type = ts_node_type(cur);
-        if (type == "argument_list")
+        const TSSymbol type = ts_node_symbol(cur);
+        if (type == gs.symArgumentList)
         {
             result.argListNode = cur;
             TSNode parent = parser::GetParent(cur);
             if (!ts_node_is_null(parent))
             {
-                std::string_view pType = ts_node_type(parent);
-                if (pType == "call_expression" || pType == "construct_call_expression" ||
-                    pType == "variable_declarator")
+                const TSSymbol pType = ts_node_symbol(parent);
+                if (pType == gs.symCallExpression || pType == gs.symConstructCallExpression ||
+                    pType == gs.symVariableDeclarator)
                 {
                     result.callNode = parent;
                     break;
                 }
             }
         }
-        else if (type == "call_expression" || type == "construct_call_expression" || type == "variable_declarator")
+        else if (type == gs.symCallExpression || type == gs.symConstructCallExpression ||
+                 type == gs.symVariableDeclarator)
         {
             result.callNode = cur;
             break;
@@ -182,22 +184,22 @@ uint32_t DetermineActiveParameter(const SignatureHelpRequest& request, TSNode ar
  */
 TSNode ExtractFunctionNode(TSNode callNode)
 {
-    TSNode funcNode = parser::GetChildByField(callNode, parser::fields::Function);
+    TSNode funcNode = parser::GetChildByField(callNode, parser::GetGrammarSymbols().fieldFunction);
     if (!ts_node_is_null(funcNode))
     {
         return funcNode;
     }
-    if (std::string_view(ts_node_type(callNode)) == "variable_declarator")
+    if (ts_node_symbol(callNode) == parser::GetGrammarSymbols().symVariableDeclarator)
     {
         TSNode declNode = parser::GetParent(callNode);
         if (!ts_node_is_null(declNode))
         {
-            TSNode typeNode = parser::GetChildByField(declNode, parser::fields::VarType);
+            TSNode typeNode = parser::GetChildByField(declNode, parser::GetGrammarSymbols().fieldVarType);
             if (!ts_node_is_null(typeNode))
             {
                 return typeNode;
             }
-            TSNode foundType = parser::FindFirstChildOfType(declNode, "type");
+            TSNode foundType = parser::FindFirstChildOfSymbol(declNode, parser::GetGrammarSymbols().symType);
             if (!ts_node_is_null(foundType))
             {
                 return foundType;
@@ -245,8 +247,8 @@ void AppendMemberSymbolCandidates(const std::vector<analysis::Symbol>& symbols, 
  */
 std::vector<analysis::Symbol> ResolveMemberCandidates(const SignatureHelpRequest& request, TSNode funcNode)
 {
-    TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
-    TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
+    TSNode objNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldObject);
+    TSNode memNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldMember);
     if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
     {
         return {};
@@ -523,7 +525,7 @@ std::optional<lsp::SignatureHelp> GetSignatureHelp(const SignatureHelpRequest& r
     }
 
     std::vector<lsp::SignatureInformation> signatures;
-    if (std::string_view(ts_node_type(funcNode)) == "member_expression")
+    if (ts_node_symbol(funcNode) == parser::GetGrammarSymbols().symMemberExpression)
     {
         signatures = BuildSignatureList(ResolveMemberCandidates(request, funcNode));
     }

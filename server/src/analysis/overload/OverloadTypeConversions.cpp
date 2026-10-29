@@ -306,7 +306,7 @@ std::string UnwrapTypedef(const std::string& typeName, const SymbolTable& symbol
         {
             if (s.type == SymbolType::Typedef && std::holds_alternative<TypedefSignature>(s.signature))
             {
-                return NormalizeType(s.GetTypedef().baseType, "array");
+                return NormalizeType(s.GetTypedef().baseType, symbolTable.GetDefaultArrayType());
             }
         }
     }

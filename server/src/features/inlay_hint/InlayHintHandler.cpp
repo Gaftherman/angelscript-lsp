@@ -5,6 +5,7 @@
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
+#include "parser/Keywords.h"
 #include "utils/LspLogger.h"
 #include <algorithm>
 #include <cctype>
@@ -149,7 +150,7 @@ size_t CountRequiredParameters(const std::vector<analysis::ParameterInformation>
  */
 TSNode FindCalleeFunctionNode(TSNode callNode)
 {
-    TSNode funcNode = parser::GetChildByField(callNode, parser::fields::Function);
+    TSNode funcNode = parser::GetChildByField(callNode, parser::GetGrammarSymbols().fieldFunction);
     if (ts_node_is_null(funcNode) && ts_node_child_count(callNode) > 0)
     {
         funcNode = ts_node_child(callNode, 0);
@@ -200,8 +201,8 @@ void CollectHierarchyMembers(const std::vector<std::string>& hierarchy, const st
 std::vector<analysis::Symbol> CollectMemberCalleeCandidates(TSNode funcNode, const InlayHintRequest& request)
 {
     std::vector<analysis::Symbol> candidateSymbols;
-    TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
-    TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
+    TSNode objNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldObject);
+    TSNode memNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldMember);
     if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
     {
         return candidateSymbols;
@@ -495,8 +496,9 @@ CalleeResolutionResult ResolveCalleeParameters(TSNode callNode, const InlayHintR
         return {};
     }
 
-    std::string_view funcType = ts_node_type(funcNode);
-    std::vector<analysis::Symbol> candidateSymbols = (funcType == "member_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol funcType = ts_node_symbol(funcNode);
+    std::vector<analysis::Symbol> candidateSymbols = (funcType == gs.symMemberExpression)
                                                          ? CollectMemberCalleeCandidates(funcNode, request)
                                                          : CollectFreeCalleeCandidates(funcNode, callNode, request);
 
@@ -740,17 +742,18 @@ std::string DeduceNumericLiteralType(std::string_view nodeTxt)
  */
 std::string DeduceLiteralType(TSNode exprNode, std::string_view sourceCode, std::string_view stringTypeName)
 {
-    std::string_view type = ts_node_type(exprNode);
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(exprNode);
     std::string nodeTxt = TrimNodeText(GetNodeText(exprNode, sourceCode));
-    if (IsNumericLiteralText(nodeTxt, type))
+    if (sym == gs.symNumberLiteral)
     {
         return DeduceNumericLiteralType(nodeTxt);
     }
-    if (type == "string_literal" || type == "concatenated_string")
+    if (sym == gs.symStringLiteral || sym == gs.symConcatenatedString)
     {
         return std::string(stringTypeName);
     }
-    if (type == "boolean_literal")
+    if (sym == gs.symBooleanLiteral)
     {
         return "bool";
     }
@@ -765,25 +768,26 @@ std::string DeduceLiteralType(TSNode exprNode, std::string_view sourceCode, std:
  */
 std::string DeduceCastOrConstructType(TSNode exprNode, std::string_view sourceCode)
 {
-    std::string_view type = ts_node_type(exprNode);
-    if (type == "functional_cast_expression" || type == "cast_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol type = ts_node_symbol(exprNode);
+    if (type == gs.symFunctionalCastExpression || type == gs.symCastExpression)
     {
-        TSNode typeNode = parser::GetChildByField(exprNode, parser::fields::Type);
+        TSNode typeNode = parser::GetChildByField(exprNode, gs.fieldType);
         if (!ts_node_is_null(typeNode))
         {
             return GetNodeText(typeNode, sourceCode);
         }
     }
-    else if (type == "construct_call_expression")
+    else if (type == gs.symConstructCallExpression)
     {
-        TSNode typeNode = parser::GetChildByField(exprNode, parser::fields::Type);
+        TSNode typeNode = parser::GetChildByField(exprNode, gs.fieldType);
         if (!ts_node_is_null(typeNode))
         {
             std::string cType = GetNodeText(typeNode, sourceCode);
             parser::ForEachChildNodeUntil(exprNode,
                                           [&](TSNode child)
                                           {
-                                              if (std::string_view(ts_node_type(child)) == "template_type_list")
+                                              if (ts_node_symbol(child) == gs.symTemplateTypeList)
                                               {
                                                   cType += GetNodeText(child, sourceCode);
                                                   return false;
@@ -846,8 +850,8 @@ std::string ResolveMemberCallReceiverType(TSNode objNode, TSNode exprNode, const
 std::string DeduceMemberCallReturnType(TSNode funcNode, TSNode exprNode, const InlayHintRequest& request,
                                        const analysis::Scope* rootScope)
 {
-    TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
-    TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
+    TSNode objNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldObject);
+    TSNode memNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldMember);
     if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
     {
         return "";
@@ -920,7 +924,7 @@ std::string DeduceFreeCallReturnType(TSNode funcNode, TSNode exprNode, const Inl
  */
 std::string DeduceCallExpressionType(TSNode exprNode, const InlayHintRequest& request, const analysis::Scope* rootScope)
 {
-    TSNode funcNode = parser::GetChildByField(exprNode, parser::fields::Function);
+    TSNode funcNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldFunction);
     if (ts_node_is_null(funcNode))
     {
         uint32_t childCount = ts_node_child_count(exprNode);
@@ -933,7 +937,7 @@ std::string DeduceCallExpressionType(TSNode exprNode, const InlayHintRequest& re
     {
         return "";
     }
-    if (std::string_view(ts_node_type(funcNode)) == "member_expression")
+    if (ts_node_symbol(funcNode) == parser::GetGrammarSymbols().symMemberExpression)
     {
         return DeduceMemberCallReturnType(funcNode, exprNode, request, rootScope);
     }
@@ -950,8 +954,8 @@ std::string DeduceCallExpressionType(TSNode exprNode, const InlayHintRequest& re
 std::string DeduceMemberExpressionType(TSNode exprNode, const InlayHintRequest& request,
                                        const analysis::Scope* rootScope)
 {
-    TSNode objNode = parser::GetChildByField(exprNode, parser::fields::Object);
-    TSNode memNode = parser::GetChildByField(exprNode, parser::fields::Member);
+    TSNode objNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldObject);
+    TSNode memNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldMember);
     if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
     {
         return "";
@@ -1088,15 +1092,15 @@ std::string SelectWiderType(std::string_view leftT, std::string_view rightT, std
  */
 std::string DeduceBinaryExpressionType(TSNode exprNode, const InlayHintRequest& request)
 {
-    TSNode opNode = parser::GetChildByField(exprNode, parser::fields::Operator);
+    TSNode opNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldOperator);
     std::string op = GetNodeText(opNode, request.sourceCode);
     if (IsBooleanBinaryOperator(op))
     {
         return "bool";
     }
 
-    TSNode left = parser::GetChildByField(exprNode, parser::fields::Left);
-    TSNode right = parser::GetChildByField(exprNode, parser::fields::Right);
+    TSNode left = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldLeft);
+    TSNode right = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldRight);
     std::string leftT = DeduceExpressionType(left, request);
     std::string rightT = DeduceExpressionType(right, request);
 
@@ -1112,9 +1116,9 @@ std::string DeduceBinaryExpressionType(TSNode exprNode, const InlayHintRequest& 
  */
 std::string DeduceUnaryExpressionType(TSNode exprNode, const InlayHintRequest& request)
 {
-    TSNode opNode = parser::GetChildByField(exprNode, parser::fields::Operator);
+    TSNode opNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldOperator);
     std::string op = GetNodeText(opNode, request.sourceCode);
-    TSNode operand = parser::GetChildByField(exprNode, parser::fields::Operand);
+    TSNode operand = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldOperand);
 
     if (op == "!" || op == "not")
     {
@@ -1141,11 +1145,12 @@ std::string DeduceUnaryExpressionType(TSNode exprNode, const InlayHintRequest& r
 std::string DeduceParenthesizedType(TSNode exprNode, const InlayHintRequest& request)
 {
     std::string result;
+    const auto& gs = parser::GetGrammarSymbols();
     parser::ForEachChildNodeUntil(exprNode,
                                   [&](TSNode child)
                                   {
-                                      std::string_view cType = ts_node_type(child);
-                                      if (cType != "(" && cType != ")")
+                                      const TSSymbol cType = ts_node_symbol(child);
+                                      if (cType != gs.tokOpenParen && cType != gs.tokCloseParen)
                                       {
                                           result = DeduceExpressionType(child, request);
                                           return false;
@@ -1169,28 +1174,29 @@ std::string DeduceParenthesizedType(TSNode exprNode, const InlayHintRequest& req
  * @param[in] rootScope Root lexical scope.
  * @return Deduced type string or empty string.
  */
-std::string DeduceCompoundExpressionType(std::string_view type, TSNode exprNode, const InlayHintRequest& request,
+std::string DeduceCompoundExpressionType(TSSymbol type, TSNode exprNode, const InlayHintRequest& request,
                                          const analysis::Scope* rootScope)
 {
-    if (type == "call_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (type == gs.symCallExpression)
     {
         return DeduceCallExpressionType(exprNode, request, rootScope);
     }
-    if (type == "member_expression")
+    if (type == gs.symMemberExpression)
     {
         return DeduceMemberExpressionType(exprNode, request, rootScope);
     }
-    if (type == "binary_expression")
+    if (type == gs.symBinaryExpression)
     {
         return DeduceBinaryExpressionType(exprNode, request);
     }
-    if (type == "unary_expression")
+    if (type == gs.symUnaryExpression)
     {
         return DeduceUnaryExpressionType(exprNode, request);
     }
-    if (type == "postfix_expression")
+    if (type == gs.symPostfixExpression)
     {
-        TSNode operand = parser::GetChildByField(exprNode, parser::fields::Operand);
+        TSNode operand = parser::GetChildByField(exprNode, gs.fieldOperand);
         return DeduceExpressionType(operand, request);
     }
     return "";
@@ -1209,22 +1215,23 @@ std::string DeduceExpressionType(TSNode exprNode, const InlayHintRequest& reques
 
     const std::string_view strType = (request.config && !request.config->types.stringTypeName.empty())
                                          ? std::string_view(request.config->types.stringTypeName)
-                                         : std::string_view("string");
+                                         : request.symbolTable.GetStringType();
     const std::string_view arrType = (request.config && !request.config->types.arrayTypeName.empty())
                                          ? std::string_view(request.config->types.arrayTypeName)
-                                         : std::string_view("array");
+                                         : request.symbolTable.GetDefaultArrayType();
 
     analysis::ExpressionTypeContext exprCtx{scope, request.symbolTable, request.sourceCode, request.uri};
     exprCtx.stringTypeName = strType;
     exprCtx.arrayTypeName = arrType;
     std::string resolved = analysis::ResolveExpressionType(exprNode, exprCtx);
-    if (!resolved.empty() && resolved != "auto")
+    if (!resolved.empty() && resolved != parser::keywords::Auto)
     {
         return resolved;
     }
 
-    std::string_view type = ts_node_type(exprNode);
-    if (type == "parenthesized_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(exprNode);
+    if (sym == gs.symParenthesizedExpression)
     {
         return DeduceParenthesizedType(exprNode, request);
     }
@@ -1238,11 +1245,11 @@ std::string DeduceExpressionType(TSNode exprNode, const InlayHintRequest& reques
     {
         return cast;
     }
-    if (type == "identifier" || type == "scoped_identifier")
+    if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier)
     {
         return DeduceIdentifierType(exprNode, request, scope);
     }
-    return DeduceCompoundExpressionType(type, exprNode, request, rootScope.get());
+    return DeduceCompoundExpressionType(sym, exprNode, request, rootScope.get());
 }
 
 /**
@@ -1802,16 +1809,16 @@ void ProcessAutoVariableDeclarator(TSNode declarator, const InlayHintRequest& re
     {
         return;
     }
-    TSNode nameNode = parser::GetChildByField(declarator, parser::fields::Name);
+    TSNode nameNode = parser::GetChildByField(declarator, parser::GetGrammarSymbols().fieldName);
     if (ts_node_is_null(nameNode))
     {
         return;
     }
 
-    TSNode initExpr = parser::GetChildByField(declarator, parser::fields::Value);
+    TSNode initExpr = parser::GetChildByField(declarator, parser::GetGrammarSymbols().fieldValue);
     if (ts_node_is_null(initExpr))
     {
-        initExpr = parser::GetChildByField(declarator, parser::fields::Arguments);
+        initExpr = parser::GetChildByField(declarator, parser::GetGrammarSymbols().fieldArguments);
     }
     if (ts_node_is_null(initExpr))
     {
@@ -1855,13 +1862,13 @@ void ProcessAutoVariableDeclarator(TSNode declarator, const InlayHintRequest& re
  */
 TSNode FindDeclaratorArgumentList(TSNode declarator)
 {
-    TSNode argListNode = parser::GetChildByField(declarator, parser::fields::Arguments);
+    TSNode argListNode = parser::GetChildByField(declarator, parser::GetGrammarSymbols().fieldArguments);
     if (ts_node_is_null(argListNode))
     {
         parser::ForEachChildNodeUntil(declarator,
                                       [&](TSNode grandChild)
                                       {
-                                          if (std::string_view(ts_node_type(grandChild)) == "argument_list")
+                                          if (ts_node_symbol(grandChild) == parser::GetGrammarSymbols().symArgumentList)
                                           {
                                               argListNode = grandChild;
                                               return false;
@@ -1903,13 +1910,13 @@ void ProcessConstructorInitDeclarator(const std::string& typeText, TSNode declar
  */
 TSNode FindVariableTypeNode(TSNode varDeclNode)
 {
-    TSNode varTypeNode = parser::GetChildByField(varDeclNode, parser::fields::VarType);
+    TSNode varTypeNode = parser::GetChildByField(varDeclNode, parser::GetGrammarSymbols().fieldVarType);
     if (ts_node_is_null(varTypeNode))
     {
         parser::ForEachChildNodeUntil(varDeclNode,
                                       [&](TSNode child)
                                       {
-                                          if (std::string_view(ts_node_type(child)) == "type")
+                                          if (ts_node_symbol(child) == parser::GetGrammarSymbols().symType)
                                           {
                                               varTypeNode = child;
                                               return false;
@@ -1964,13 +1971,13 @@ static std::string DeduceLambdaReturnType(TSNode node, const InlayHintRequest& r
     {
         return target->GetFuncdef().returnType;
     }
-    TSNode body = parser::GetChildByField(node, parser::fields::Body);
+    TSNode body = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldBody);
     if (ts_node_is_null(body))
     {
         for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
         {
             TSNode ch = ts_node_named_child(node, i);
-            if (std::string_view(ts_node_type(ch)) == "statement_block")
+            if (ts_node_symbol(ch) == parser::GetGrammarSymbols().symStatementBlock)
             {
                 body = ch;
                 break;
@@ -1982,9 +1989,9 @@ static std::string DeduceLambdaReturnType(TSNode node, const InlayHintRequest& r
         for (uint32_t i = 0; i < ts_node_named_child_count(body); ++i)
         {
             TSNode stmt = ts_node_named_child(body, i);
-            if (std::string_view(ts_node_type(stmt)) == "return_statement")
+            if (ts_node_symbol(stmt) == parser::GetGrammarSymbols().symReturnStatement)
             {
-                TSNode retVal = parser::GetChildByField(stmt, parser::fields::Value);
+                TSNode retVal = parser::GetChildByField(stmt, parser::GetGrammarSymbols().fieldValue);
                 if (ts_node_is_null(retVal) && ts_node_named_child_count(stmt) > 0)
                 {
                     retVal = ts_node_named_child(stmt, 0);
@@ -2015,13 +2022,13 @@ static void ProcessLambdaExpression(TSNode node, const InlayHintRequest& request
     {
         return;
     }
-    TSNode params = parser::GetChildByField(node, parser::fields::Parameters);
+    TSNode params = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldParameters);
     if (ts_node_is_null(params))
     {
         for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
         {
             TSNode ch = ts_node_named_child(node, i);
-            if (std::string_view(ts_node_type(ch)) == "lambda_parameter_list")
+            if (ts_node_symbol(ch) == parser::GetGrammarSymbols().symLambdaParameterList)
             {
                 params = ch;
                 break;
@@ -2038,7 +2045,7 @@ static void ProcessLambdaExpression(TSNode node, const InlayHintRequest& request
     {
         return;
     }
-    TSNode retNode = parser::GetChildByField(node, parser::fields::Type);
+    TSNode retNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldType);
     if (!ts_node_is_null(retNode))
     {
         return;
@@ -2080,12 +2087,12 @@ static void ProcessEnumDeclaration(TSNode node, const InlayHintRequest& request,
     for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
     {
         TSNode child = ts_node_named_child(node, i);
-        if (std::string_view(ts_node_type(child)) != "enum_member")
+        if (ts_node_symbol(child) != parser::GetGrammarSymbols().symEnumMember)
         {
             continue;
         }
-        TSNode valNode = parser::GetChildByField(child, parser::fields::Value);
-        TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
+        TSNode valNode = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldValue);
+        TSNode nameNode = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldName);
         if (ts_node_is_null(nameNode) && ts_node_named_child_count(child) > 0)
         {
             nameNode = ts_node_named_child(child, 0);
@@ -2145,24 +2152,25 @@ void CollectInlayHints(TSNode rootNode, const InlayHintRequest& request, std::ve
 
         if (descending && overlaps)
         {
-            std::string_view nodeType = ts_node_type(currentNode);
-            if (nodeType == "call_expression")
+            const auto& gs = parser::GetGrammarSymbols();
+            const TSSymbol sym = ts_node_symbol(currentNode);
+            if (sym == gs.symCallExpression)
             {
                 ProcessCallExpression(currentNode, request, hints);
             }
-            else if (nodeType == "construct_call_expression")
+            else if (sym == gs.symConstructCallExpression)
             {
                 ProcessConstructorCallExpression(currentNode, request, hints);
             }
-            else if (nodeType == "variable_declaration")
+            else if (sym == gs.symVariableDeclaration)
             {
                 ProcessVariableDeclaration(currentNode, request, hints);
             }
-            else if (nodeType == "lambda_expression")
+            else if (sym == gs.symLambdaExpression)
             {
                 ProcessLambdaExpression(currentNode, request, hints);
             }
-            else if (nodeType == "enum_declaration")
+            else if (sym == gs.symEnumDeclaration)
             {
                 ProcessEnumDeclaration(currentNode, request, hints);
             }

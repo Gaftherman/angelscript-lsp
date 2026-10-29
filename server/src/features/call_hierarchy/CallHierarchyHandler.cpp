@@ -1,6 +1,7 @@
 #include "features/call_hierarchy/CallHierarchyHandler.h"
 #include "analysis/ASTUtils.h"
 #include "analysis/SemanticHelpers.h"
+#include "utils/Constants.h"
 
 #include "parser/GrammarNames.h"
 #include <algorithm>
@@ -119,17 +120,22 @@ std::vector<Symbol> FindByBareName(const std::string& bareName, const SymbolTabl
 /** @brief The function whose body a node sits in, qualified, or empty when it sits in none. */
 std::string EnclosingFunction(TSNode node, std::string_view sourceCode)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     TSNode owner = node;
-    while (!ts_node_is_null(owner) && std::string_view(ts_node_type(owner)) != "func_declaration")
+    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(owner);
+         ++depth, owner = parser::GetParent(owner))
     {
-        owner = parser::GetParent(owner);
+        if (ts_node_symbol(owner) == gs.symFuncDeclaration)
+        {
+            break;
+        }
     }
-    if (ts_node_is_null(owner))
+    if (ts_node_is_null(owner) || ts_node_symbol(owner) != gs.symFuncDeclaration)
     {
         return "";
     }
 
-    const std::string name = NodeText(parser::GetChildByField(owner, parser::fields::Name), sourceCode);
+    const std::string name = NodeText(parser::GetChildByField(owner, gs.fieldName), sourceCode);
     if (name.empty())
     {
         return "";
@@ -161,8 +167,8 @@ std::string IdentifierAt(const CallHierarchyPrepareRequest& request, TSNode& out
     }
 
     outNode = node;
-    return std::string_view(ts_node_type(node)) == "identifier" ? std::string(NodeText(node, request.sourceCode))
-                                                                : std::string();
+    const auto& gs = parser::GetGrammarSymbols();
+    return ts_node_symbol(node) == gs.symIdentifier ? std::string(NodeText(node, request.sourceCode)) : std::string();
 }
 
 /**

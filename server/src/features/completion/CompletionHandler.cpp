@@ -431,10 +431,11 @@ std::string CallSnippet(const std::string& name, const std::vector<analysis::Par
  * @param[in] request Auto-completion request context.
  * @return String type name.
  */
-static const std::string& ConfiguredStringTypeName(const CompletionRequest& request) noexcept
+static std::string_view ConfiguredStringTypeName(const CompletionRequest& request) noexcept
 {
-    static const std::string kDefaultString = "string";
-    return request.config ? request.config->types.stringTypeName : kDefaultString;
+    return (request.config && !request.config->types.stringTypeName.empty())
+               ? std::string_view(request.config->types.stringTypeName)
+               : request.symbolTable.GetStringType();
 }
 
 /**
@@ -442,10 +443,11 @@ static const std::string& ConfiguredStringTypeName(const CompletionRequest& requ
  * @param[in] request Auto-completion request context.
  * @return Array container type name.
  */
-static const std::string& ConfiguredArrayTypeName(const CompletionRequest& request) noexcept
+static std::string_view ConfiguredArrayTypeName(const CompletionRequest& request) noexcept
 {
-    static const std::string kDefaultArray = "array";
-    return request.config ? request.config->types.arrayTypeName : kDefaultArray;
+    return (request.config && !request.config->types.arrayTypeName.empty())
+               ? std::string_view(request.config->types.arrayTypeName)
+               : request.symbolTable.GetDefaultArrayType();
 }
 
 /**
@@ -2054,7 +2056,7 @@ static std::string DeduceLiteralOrNamedType(std::string_view expr, const Complet
     }
     if (expr.size() >= 2 && expr.front() == '"' && expr.back() == '"')
     {
-        return ConfiguredStringTypeName(request);
+        return std::string(ConfiguredStringTypeName(request));
     }
     if (expr == "true" || expr == "false")
     {

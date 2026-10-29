@@ -242,8 +242,7 @@ std::string CollapseWhitespace(std::string_view text)
  *        site inside the body has nothing to show. The declaration position it does record
  *        is enough to find the declaring node and read it back with every modifier the user
  *        wrote ('const', '@', '&in'/'&out'/'&inout') still attached. */
-std::string ExtractDeclarationTextAt(TSNode root, const std::string& sourceCode, TSPoint point,
-                                     std::string_view wantedNodeType)
+std::string ExtractDeclarationTextAt(TSNode root, const std::string& sourceCode, TSPoint point, TSSymbol wantedSymbol)
 {
     if (ts_node_is_null(root))
     {
@@ -254,7 +253,7 @@ std::string ExtractDeclarationTextAt(TSNode root, const std::string& sourceCode,
 
     for (int depth = 0; depth < 8 && !ts_node_is_null(current); ++depth, current = parser::GetParent(current))
     {
-        if (std::string_view(ts_node_type(current)) != wantedNodeType)
+        if (ts_node_symbol(current) != wantedSymbol)
         {
             continue;
         }
@@ -424,10 +423,10 @@ struct HoverTarget
     lsp::Range range{};
 };
 
-bool IsHoverableIdentifier(std::string_view txt, std::string_view type)
+bool IsHoverableIdentifier(std::string_view txt, TSSymbol sym, const parser::GrammarSymbols& gs)
 {
-    if (txt == "?" || type == "datatype" || type == "identifier" || type == "scoped_identifier" ||
-        type == "primitive_type" || type == "string_literal" || analysis::IsPrimitiveTypeName(std::string(txt)) ||
+    if (txt == "?" || sym == gs.symDatatype || sym == gs.symIdentifier || sym == gs.symScopedIdentifier ||
+        sym == gs.symPrimitiveType || sym == gs.symStringLiteral || analysis::IsPrimitiveTypeName(std::string(txt)) ||
         analysis::IsReservedKeyword(std::string(txt)))
     {
         return true;
@@ -461,7 +460,7 @@ std::optional<HoverTarget> TryExtractHoverTarget(TSNode node, const std::string&
     }
 
     std::string txt = sourceCode.substr(sb, eb - sb);
-    if (!IsHoverableIdentifier(txt, ts_node_type(node)))
+    if (!IsHoverableIdentifier(txt, ts_node_symbol(node), parser::GetGrammarSymbols()))
     {
         return std::nullopt;
     }
@@ -649,18 +648,19 @@ static bool MatchesTargetNode(TSNode candidate, TSNode target)
 
 static TSNode FindCallFromParent(TSNode parent, TSNode node)
 {
-    std::string_view pType = ts_node_type(parent);
-    if (pType == "call_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol pType = ts_node_symbol(parent);
+    if (pType == gs.symCallExpression)
     {
-        TSNode fn = parser::GetChildByField(parent, parser::fields::Function);
+        TSNode fn = parser::GetChildByField(parent, gs.fieldFunction);
         if (MatchesTargetNode(fn, node))
         {
             return parent;
         }
     }
-    else if (pType == "construct_call_expression")
+    else if (pType == gs.symConstructCallExpression)
     {
-        TSNode typeChild = parser::GetChildByField(parent, parser::fields::Type);
+        TSNode typeChild = parser::GetChildByField(parent, gs.fieldType);
         if (MatchesTargetNode(typeChild, node))
         {
             return parent;
@@ -682,13 +682,14 @@ TSNode FindEnclosingCallNode(TSNode node)
         return call;
     }
 
-    std::string_view pType = ts_node_type(parent);
-    if (pType == "member_expression" || pType == "scoped_identifier")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol pType = ts_node_symbol(parent);
+    if (pType == gs.symMemberExpression || pType == gs.symScopedIdentifier)
     {
         TSNode grandParent = parser::GetParent(parent);
-        if (!ts_node_is_null(grandParent) && std::string_view(ts_node_type(grandParent)) == "call_expression")
+        if (!ts_node_is_null(grandParent) && ts_node_symbol(grandParent) == gs.symCallExpression)
         {
-            TSNode fn = parser::GetChildByField(grandParent, parser::fields::Function);
+            TSNode fn = parser::GetChildByField(grandParent, gs.fieldFunction);
             if (MatchesTargetNode(fn, parent))
             {
                 return grandParent;
@@ -744,7 +745,7 @@ struct HoverProfiler
     angel_lsp::utils::LspLogger* m_logger = nullptr;
     uint32_t line = 0;
     uint32_t character = 0;
-    const char* nodeType = "";
+    std::string_view nodeType = "";
     std::string pathText;
     std::string symbolName;
     double nodeMs = 0.0;
@@ -931,11 +932,12 @@ std::optional<lsp::Hover> TryHoverThis(const HoverQueryContext& ctx)
 
 bool IsMemberChildOfExpression(TSNode node, TSNode parent)
 {
-    if (ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "member_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_is_null(parent) || ts_node_symbol(parent) != gs.symMemberExpression)
     {
         return false;
     }
-    TSNode memNode = parser::GetChildByField(parent, parser::fields::Member);
+    TSNode memNode = parser::GetChildByField(parent, gs.fieldMember);
     return !ts_node_is_null(memNode) &&
            (ts_node_eq(memNode, node) || ts_node_start_byte(memNode) == ts_node_start_byte(node));
 }
@@ -1403,13 +1405,13 @@ std::optional<lsp::Hover> FormatMemberHover(std::vector<analysis::Symbol>& membe
 std::optional<lsp::Hover> TryHoverMemberAccess(const HoverQueryContext& ctx)
 {
     utils::HighResTimer symTimer;
-    if (ts_node_is_null(ctx.parent) || std::string_view(ts_node_type(ctx.parent)) != "member_expression")
+    if (ts_node_is_null(ctx.parent) || ts_node_symbol(ctx.parent) != parser::GetGrammarSymbols().symMemberExpression)
     {
         ctx.profiler.symMs += symTimer.ElapsedMs();
         return std::nullopt;
     }
 
-    TSNode objectNode = parser::GetChildByField(ctx.parent, parser::fields::Object);
+    TSNode objectNode = parser::GetChildByField(ctx.parent, parser::GetGrammarSymbols().fieldObject);
     if (ts_node_is_null(objectNode))
     {
         ctx.profiler.symMs += symTimer.ElapsedMs();
@@ -1454,20 +1456,21 @@ std::optional<lsp::Hover> TryHoverMemberAccess(const HoverQueryContext& ctx)
 
 std::string InferTypeFromAst(TSNode node, const std::string& sourceCode)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     TSNode cur = node;
     for (int i = 0; i < 4 && !ts_node_is_null(cur); ++i, cur = parser::GetParent(cur))
     {
-        std::string_view cType = ts_node_type(cur);
-        if (cType == "parameter" || cType == "variable_declaration")
+        const TSSymbol cType = ts_node_symbol(cur);
+        if (cType == gs.symParameter || cType == gs.symVariableDeclaration)
         {
-            TSNode typeNode = parser::GetChildByField(cur, parser::fields::ParamType);
+            TSNode typeNode = parser::GetChildByField(cur, gs.fieldParamType);
             if (ts_node_is_null(typeNode))
             {
-                typeNode = parser::GetChildByField(cur, parser::fields::VarType);
+                typeNode = parser::GetChildByField(cur, gs.fieldVarType);
             }
             if (ts_node_is_null(typeNode))
             {
-                typeNode = parser::GetChildByField(cur, parser::fields::Type);
+                typeNode = parser::GetChildByField(cur, gs.fieldType);
             }
             if (!ts_node_is_null(typeNode))
             {
@@ -1513,7 +1516,8 @@ void FormatParameterHover(const analysis::LocalDefinition& def, std::string_view
     md += "(parameter) ";
     TSNode rootNode = ts_tree_root_node(ctx.request.tree);
     const std::string declText =
-        ExtractDeclarationTextAt(rootNode, ctx.request.sourceCode, {def.startLine, def.startCharacter}, "parameter");
+        ExtractDeclarationTextAt(rootNode, ctx.request.sourceCode, {def.startLine, def.startCharacter},
+                                 parser::GetGrammarSymbols().symParameter);
     if (!declText.empty())
     {
         md += declText;
@@ -1591,15 +1595,15 @@ const analysis::Scope* FindDefinitionScope(const HoverQueryContext& ctx, const a
 bool IsDirectInitDeclarator(TSNode node)
 {
     TSNode declarator = node;
-    if (!ts_node_is_null(declarator) && std::string_view(ts_node_type(declarator)) != "variable_declarator")
+    if (!ts_node_is_null(declarator) && ts_node_symbol(declarator) != parser::GetGrammarSymbols().symVariableDeclarator)
     {
         declarator = parser::GetParent(node);
     }
-    if (ts_node_is_null(declarator) || std::string_view(ts_node_type(declarator)) != "variable_declarator")
+    if (ts_node_is_null(declarator) || ts_node_symbol(declarator) != parser::GetGrammarSymbols().symVariableDeclarator)
     {
         return false;
     }
-    TSNode args = parser::GetChildByField(declarator, parser::fields::Arguments);
+    TSNode args = parser::GetChildByField(declarator, parser::GetGrammarSymbols().fieldArguments);
     return !ts_node_is_null(args);
 }
 
@@ -1656,11 +1660,11 @@ void TryAppendConstructorSignature(TSNode node, std::string_view typeName, const
                                    std::string& md)
 {
     TSNode declarator = node;
-    if (!ts_node_is_null(declarator) && std::string_view(ts_node_type(declarator)) != "variable_declarator")
+    if (!ts_node_is_null(declarator) && ts_node_symbol(declarator) != parser::GetGrammarSymbols().symVariableDeclarator)
     {
         declarator = parser::GetParent(node);
     }
-    if (!ts_node_is_null(declarator) && std::string_view(ts_node_type(declarator)) == "variable_declarator")
+    if (!ts_node_is_null(declarator) && ts_node_symbol(declarator) == parser::GetGrammarSymbols().symVariableDeclarator)
     {
         if (auto ctorSym = ResolveConstructorForDeclarator(declarator, typeName, ctx))
         {
@@ -1752,7 +1756,8 @@ static void AppendLocalDoc(const analysis::LocalDefinition& def, std::string_vie
     if (doc.empty() && IsDirectInitDeclarator(ctx.node))
     {
         TSNode declarator = ctx.node;
-        if (!ts_node_is_null(declarator) && std::string_view(ts_node_type(declarator)) != "variable_declarator")
+        if (!ts_node_is_null(declarator) &&
+            ts_node_symbol(declarator) != parser::GetGrammarSymbols().symVariableDeclarator)
         {
             declarator = parser::GetParent(ctx.node);
         }
@@ -1867,7 +1872,7 @@ std::optional<lsp::Hover> TryHoverParameterAst(const HoverQueryContext& ctx)
     bool foundParam = false;
     for (int depth = 0; depth < 4 && !ts_node_is_null(current); ++depth, current = parser::GetParent(current))
     {
-        if (std::string_view(ts_node_type(current)) == "parameter")
+        if (ts_node_symbol(current) == parser::GetGrammarSymbols().symParameter)
         {
             foundParam = true;
             break;
@@ -1880,8 +1885,8 @@ std::optional<lsp::Hover> TryHoverParameterAst(const HoverQueryContext& ctx)
     }
 
     TSNode rootNode = ts_tree_root_node(ctx.request.tree);
-    std::string declText =
-        ExtractDeclarationTextAt(rootNode, ctx.request.sourceCode, ts_node_start_point(ctx.node), "parameter");
+    std::string declText = ExtractDeclarationTextAt(rootNode, ctx.request.sourceCode, ts_node_start_point(ctx.node),
+                                                    parser::GetGrammarSymbols().symParameter);
     if (declText.empty())
     {
         return std::nullopt;
@@ -1893,21 +1898,22 @@ std::optional<lsp::Hover> TryHoverParameterAst(const HoverQueryContext& ctx)
 
 static bool IsNamedArgumentLabelAtCursor(TSNode node, TSNode parent)
 {
-    if (ts_node_is_null(node) || ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "argument_list")
+    if (ts_node_is_null(node) || ts_node_is_null(parent) ||
+        ts_node_symbol(parent) != parser::GetGrammarSymbols().symArgumentList)
     {
         return false;
     }
     TSNode next = ts_node_next_sibling(node);
-    while (!ts_node_is_null(next) && std::string_view(ts_node_type(next)) == "comment")
+    while (!ts_node_is_null(next) && ts_node_symbol(next) == parser::GetGrammarSymbols().symComment)
     {
         next = ts_node_next_sibling(next);
     }
-    return !ts_node_is_null(next) && std::string_view(ts_node_type(next)) == ":";
+    return !ts_node_is_null(next) && ts_node_symbol(next) == parser::GetGrammarSymbols().tokColon;
 }
 
 static std::vector<analysis::Symbol> ResolveNamedArgCalleeCandidates(TSNode callNode, const HoverQueryContext& ctx)
 {
-    TSNode funcNode = parser::GetChildByField(callNode, parser::fields::Function);
+    TSNode funcNode = parser::GetChildByField(callNode, parser::GetGrammarSymbols().fieldFunction);
     if (ts_node_is_null(funcNode) && ts_node_child_count(callNode) > 0)
     {
         funcNode = ts_node_child(callNode, 0);
@@ -1917,10 +1923,10 @@ static std::vector<analysis::Symbol> ResolveNamedArgCalleeCandidates(TSNode call
         return {};
     }
 
-    if (std::string_view(ts_node_type(funcNode)) == "member_expression")
+    if (ts_node_symbol(funcNode) == parser::GetGrammarSymbols().symMemberExpression)
     {
-        TSNode objectNode = parser::GetChildByField(funcNode, parser::fields::Object);
-        TSNode memberNode = parser::GetChildByField(funcNode, parser::fields::Member);
+        TSNode objectNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldObject);
+        TSNode memberNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldMember);
         if (!ts_node_is_null(objectNode) && !ts_node_is_null(memberNode))
         {
             std::string receiverTypeName = ResolveReceiverTypeName(objectNode, ctx);
@@ -2262,7 +2268,7 @@ TSNode FindEnclosingLambda(TSNode node)
     TSNode cur = node;
     for (int depth = 0; depth < 5 && !ts_node_is_null(cur); ++depth)
     {
-        if (std::string_view(ts_node_type(cur)) == "lambda_expression")
+        if (ts_node_symbol(cur) == parser::GetGrammarSymbols().symLambdaExpression)
         {
             return cur;
         }
@@ -2286,7 +2292,8 @@ void FormatLambdaParameters(TSNode lambdaNode, std::string_view sourceCode, std:
         parser::ForEachNamedChildNodeUntil(lambdaNode,
                                            [&](TSNode child)
                                            {
-                                               if (std::string_view(ts_node_type(child)) == "parameter_list")
+                                               if (ts_node_symbol(child) ==
+                                                   parser::GetGrammarSymbols().symParameterList)
                                                {
                                                    paramListNode = child;
                                                    return false;
@@ -2356,11 +2363,12 @@ std::optional<lsp::Hover> TryHoverLambda(const HoverQueryContext& ctx)
 
 static TSNode FindEnclosingAutoDeclaration(TSNode node)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     TSNode curr = node;
     for (int depth = 0; depth < 8 && !ts_node_is_null(curr); ++depth)
     {
-        std::string_view nodeType = ts_node_type(curr);
-        if (nodeType == parser::nodes::VariableDeclaration || nodeType == "foreach_statement")
+        const TSSymbol nodeType = ts_node_symbol(curr);
+        if (nodeType == gs.symVariableDeclaration || nodeType == gs.symForeachStatement)
         {
             return curr;
         }
@@ -2371,7 +2379,7 @@ static TSNode FindEnclosingAutoDeclaration(TSNode node)
 
 static std::string DeduceAutoDeclaratorType(TSNode declarator, const HoverQueryContext& ctx)
 {
-    TSNode nameNode = parser::GetChildByField(declarator, parser::fields::Name);
+    TSNode nameNode = parser::GetChildByField(declarator, parser::GetGrammarSymbols().fieldName);
     if (!ts_node_is_null(nameNode) && ctx.scope)
     {
         std::string varName = analysis::GetNodeText(nameNode, ctx.request.sourceCode);
@@ -2385,10 +2393,10 @@ static std::string DeduceAutoDeclaratorType(TSNode declarator, const HoverQueryC
         }
     }
 
-    TSNode valNode = parser::GetChildByField(declarator, parser::fields::Value);
+    TSNode valNode = parser::GetChildByField(declarator, parser::GetGrammarSymbols().fieldValue);
     if (ts_node_is_null(valNode))
     {
-        valNode = parser::GetChildByField(declarator, parser::fields::Arguments);
+        valNode = parser::GetChildByField(declarator, parser::GetGrammarSymbols().fieldArguments);
     }
     if (!ts_node_is_null(valNode))
     {
@@ -2424,13 +2432,13 @@ static std::optional<lsp::Hover> TryHoverAutoType(const HoverQueryContext& ctx)
     }
 
     std::string deduced;
-    if (std::string_view(ts_node_type(declNode)) == parser::nodes::VariableDeclaration)
+    if (ts_node_symbol(declNode) == parser::GetGrammarSymbols().symVariableDeclaration)
     {
         parser::ForEachChildNodeUntil(declNode,
                                       [&](TSNode child)
                                       {
-                                          if (std::string_view(ts_node_type(child)) ==
-                                              parser::nodes::VariableDeclarator)
+                                          if (ts_node_symbol(child) ==
+                                              parser::GetGrammarSymbols().symVariableDeclarator)
                                           {
                                               deduced = DeduceAutoDeclaratorType(child, ctx);
                                               return false;
@@ -2441,10 +2449,10 @@ static std::optional<lsp::Hover> TryHoverAutoType(const HoverQueryContext& ctx)
 
     if (!deduced.empty() && deduced != "auto")
     {
-        TSNode typeNode = parser::GetChildByField(declNode, parser::fields::VarType);
+        TSNode typeNode = parser::GetChildByField(declNode, parser::GetGrammarSymbols().fieldVarType);
         if (ts_node_is_null(typeNode))
         {
-            typeNode = parser::GetChildByField(declNode, parser::fields::Type);
+            typeNode = parser::GetChildByField(declNode, parser::GetGrammarSymbols().fieldType);
         }
         bool isHandle = (ctx.nodeText.find('@') != std::string_view::npos);
         if (!ts_node_is_null(typeNode) &&
@@ -2516,20 +2524,21 @@ static bool IsQualifiedMemberNode(TSNode node, std::string_view sourceCode = {})
     {
         return false;
     }
-    const std::string_view pType = ts_node_type(parent);
-    if (pType == "scoped_identifier")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol pType = ts_node_symbol(parent);
+    if (pType == gs.symScopedIdentifier)
     {
         TSNode firstChild = ts_node_named_child(parent, 0);
         return !ts_node_is_null(firstChild) && !ts_node_eq(firstChild, node) &&
                ts_node_start_byte(firstChild) != ts_node_start_byte(node);
     }
-    if (pType == "member_expression")
+    if (pType == gs.symMemberExpression)
     {
-        TSNode memberField = parser::GetChildByField(parent, parser::fields::Member);
+        TSNode memberField = parser::GetChildByField(parent, gs.fieldMember);
         return ts_node_eq(memberField, node) ||
                (!ts_node_is_null(memberField) && ts_node_start_byte(memberField) == ts_node_start_byte(node));
     }
-    if (pType == parser::nodes::Datatype && !sourceCode.empty())
+    if (pType == gs.symDatatype && !sourceCode.empty())
     {
         return !analysis::ExtractDatatypeScopePrefix(parent, sourceCode).empty();
     }
@@ -2567,7 +2576,7 @@ static bool IsScopeQualifier(TSNode node) noexcept
         int siblingHops = 0;
         while (!ts_node_is_null(next) && siblingHops++ < 8)
         {
-            if (std::string_view(ts_node_type(next)) == "::")
+            if (ts_node_symbol(next) == parser::GetGrammarSymbols().tokColonColon)
             {
                 return true;
             }
@@ -3047,9 +3056,9 @@ TSNode FindTopmostBinaryPlus(TSNode node, std::string_view sourceCode)
     for (size_t depth = 0; depth < 16 && !ts_node_is_null(parser::GetParent(current)); ++depth)
     {
         TSNode parent = parser::GetParent(current);
-        if (std::string_view(ts_node_type(parent)) == "binary_expression")
+        if (ts_node_symbol(parent) == parser::GetGrammarSymbols().symBinaryExpression)
         {
-            TSNode opNode = parser::GetChildByField(parent, parser::fields::Operator);
+            TSNode opNode = parser::GetChildByField(parent, parser::GetGrammarSymbols().fieldOperator);
             if (!ts_node_is_null(opNode) && analysis::GetNodeText(opNode, sourceCode) == "+")
             {
                 current = parent;
@@ -3117,21 +3126,22 @@ std::optional<std::string> EvaluateConstantStringExpr(TSNode node, const HoverRe
         return std::nullopt;
     }
 
-    std::string_view type = ts_node_type(node);
-    if (type == "string_literal")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol type = ts_node_symbol(node);
+    if (type == gs.symStringLiteral)
     {
         std::string text = analysis::GetNodeText(node, request.sourceCode);
         return std::string(UnquoteStringLiteral(text));
     }
-    if (type == "binary_expression")
+    if (type == gs.symBinaryExpression)
     {
-        TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
+        TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
         if (ts_node_is_null(opNode) || analysis::GetNodeText(opNode, request.sourceCode) != "+")
         {
             return std::nullopt;
         }
-        TSNode left = parser::GetChildByField(node, parser::fields::Left);
-        TSNode right = parser::GetChildByField(node, parser::fields::Right);
+        TSNode left = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
+        TSNode right = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldRight);
         auto leftStr = EvaluateConstantStringExpr(left, request, scope, depth + 1);
         auto rightStr = EvaluateConstantStringExpr(right, request, scope, depth + 1);
         if (leftStr.has_value() && rightStr.has_value())
@@ -3140,7 +3150,7 @@ std::optional<std::string> EvaluateConstantStringExpr(TSNode node, const HoverRe
         }
         return std::nullopt;
     }
-    if (type == "identifier" || type == "scoped_identifier")
+    if (type == gs.symIdentifier || type == gs.symScopedIdentifier)
     {
         std::string name = analysis::GetNodeText(node, request.sourceCode);
         return ResolveIdentifierDefaultValue(name, node, request, scope);
@@ -3159,7 +3169,7 @@ std::optional<lsp::Hover> TryHoverConcatenatedString(const HoverTarget& target, 
                                                      bool showLength)
 {
     TSNode topPlus = FindTopmostBinaryPlus(target.node, request.sourceCode);
-    if (ts_node_is_null(topPlus) || std::string_view(ts_node_type(topPlus)) != "binary_expression")
+    if (ts_node_is_null(topPlus) || ts_node_symbol(topPlus) != parser::GetGrammarSymbols().symBinaryExpression)
     {
         return std::nullopt;
     }
@@ -3196,7 +3206,7 @@ std::optional<lsp::Hover> TryHoverStringLiteral(const HoverTarget& target, const
         }
     }
 
-    if (std::string_view(ts_node_type(target.node)) == "binary_expression")
+    if (ts_node_symbol(target.node) == parser::GetGrammarSymbols().symBinaryExpression)
     {
         return std::nullopt;
     }
@@ -3232,8 +3242,9 @@ std::optional<lsp::Hover> TryHoverStringLiteral(const HoverTarget& target, const
  */
 static bool IsStringOrBinaryLiteral(const HoverTarget& target)
 {
-    std::string_view type = ts_node_type(target.node);
-    if (type == "string_literal" || type == "binary_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol type = ts_node_symbol(target.node);
+    if (type == gs.symStringLiteral || type == gs.symBinaryExpression)
     {
         return target.text.size() >= 2 && ((target.text.front() == '"' && target.text.back() == '"') ||
                                            (target.text.front() == '\'' && target.text.back() == '\''));
@@ -3297,7 +3308,7 @@ std::optional<lsp::Hover> GetHover(const HoverRequest& request)
         return std::nullopt;
     }
 
-    profiler.nodeType = ts_node_type(target->node);
+    profiler.nodeType = parser::GetNodeType(target->node);
     if (profiler.IsActive())
     {
         profiler.pathText = target->text;

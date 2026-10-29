@@ -17,8 +17,9 @@ void InsertIfIdentifier(TSNode node, std::string_view sourceCode,
     {
         return;
     }
-    std::string_view t = ts_node_type(node);
-    if (t == "identifier" || t == "scoped_identifier")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol t = ts_node_symbol(node);
+    if (t == gs.symIdentifier || t == gs.symScopedIdentifier)
     {
         if (std::string varName = GetNodeText(node, sourceCode); !varName.empty())
         {
@@ -30,25 +31,25 @@ void InsertIfIdentifier(TSNode node, std::string_view sourceCode,
 void CheckAssignmentMutation(TSNode curr, std::string_view sourceCode,
                              ankerl::unordered_dense::set<std::string>& mutatedVars)
 {
-    TSNode left = parser::GetChildByField(curr, parser::fields::Left);
+    TSNode left = parser::GetChildByField(curr, parser::GetGrammarSymbols().fieldLeft);
     InsertIfIdentifier(left, sourceCode, mutatedVars);
 }
 
 void CheckIncDecMutation(TSNode curr, std::string_view sourceCode,
                          ankerl::unordered_dense::set<std::string>& mutatedVars)
 {
-    TSNode opNode = parser::GetChildByField(curr, parser::fields::Operator);
+    TSNode opNode = parser::GetChildByField(curr, parser::GetGrammarSymbols().fieldOperator);
     std::string op = GetNodeText(opNode, sourceCode);
     if (op == "++" || op == "--")
     {
-        TSNode arg = parser::GetChildByField(curr, parser::fields::Operand);
+        TSNode arg = parser::GetChildByField(curr, parser::GetGrammarSymbols().fieldOperand);
         InsertIfIdentifier(arg, sourceCode, mutatedVars);
     }
 }
 
 void CheckCallMutation(TSNode curr, std::string_view sourceCode, ankerl::unordered_dense::set<std::string>& mutatedVars)
 {
-    TSNode argsNode = parser::GetChildByField(curr, parser::fields::Arguments);
+    TSNode argsNode = parser::GetChildByField(curr, parser::GetGrammarSymbols().fieldArguments);
     if (ts_node_is_null(argsNode))
     {
         return;
@@ -61,7 +62,7 @@ void CheckCallMutation(TSNode curr, std::string_view sourceCode, ankerl::unorder
         if (argText.starts_with("&out ") || argText.starts_with("&inout ") || argText.starts_with("out ") ||
             argText.starts_with("inout "))
         {
-            TSNode idNode = parser::GetChildByField(arg, parser::fields::Name);
+            TSNode idNode = parser::GetChildByField(arg, parser::GetGrammarSymbols().fieldName);
             if (ts_node_is_null(idNode) && ts_node_named_child_count(arg) > 0)
             {
                 idNode = ts_node_named_child(arg, ts_node_named_child_count(arg) - 1);
@@ -74,16 +75,17 @@ void CheckCallMutation(TSNode curr, std::string_view sourceCode, ankerl::unorder
 void CheckNodeMutations(TSNode curr, std::string_view sourceCode,
                         ankerl::unordered_dense::set<std::string>& mutatedVars)
 {
-    std::string_view type = ts_node_type(curr);
-    if (type == "assignment_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol type = ts_node_symbol(curr);
+    if (type == gs.symAssignmentExpression)
     {
         CheckAssignmentMutation(curr, sourceCode, mutatedVars);
     }
-    else if (type == "postfix_expression" || type == "unary_expression")
+    else if (type == gs.symPostfixExpression || type == gs.symUnaryExpression)
     {
         CheckIncDecMutation(curr, sourceCode, mutatedVars);
     }
-    else if (type == "call_expression")
+    else if (type == gs.symCallExpression)
     {
         CheckCallMutation(curr, sourceCode, mutatedVars);
     }

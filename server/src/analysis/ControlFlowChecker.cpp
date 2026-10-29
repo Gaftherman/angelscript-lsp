@@ -258,12 +258,12 @@ bool BlockOrClauseDefinitelyReturns(TSNode node, std::string_view type, std::str
 
 bool IfDefinitelyReturns(TSNode node, std::string_view sourceCode)
 {
-    TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
+    TSNode alternative = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldAlternative);
     if (ts_node_is_null(alternative))
     {
         return false;
     }
-    TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
+    TSNode consequence = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldConsequence);
     return DefinitelyReturns(consequence, sourceCode) && DefinitelyReturns(alternative, sourceCode);
 }
 
@@ -875,9 +875,9 @@ class ControlFlowVisitor
         // make a `break` inside the nested body legal.
         state = FlowState{};
 
-        TSNode body = parser::GetChildByField(node, parser::fields::Body);
-        TSNode returnType = parser::GetChildByField(node, parser::fields::ReturnType);
-        TSNode name = parser::GetChildByField(node, parser::fields::Name);
+        TSNode body = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldBody);
+        TSNode returnType = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldReturnType);
+        TSNode name = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName);
 
         // What this body is required to return, and under whose name to say so.
         //

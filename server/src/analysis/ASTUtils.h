@@ -166,7 +166,7 @@ struct GlobalScopeQualifier
     {
         return {};
     }
-    TSNode valueNode = parser::GetChildByField(declaratorNode, parser::fields::Value);
+    TSNode valueNode = parser::GetChildByField(declaratorNode, parser::GetGrammarSymbols().fieldValue);
     if (!ts_node_is_null(valueNode))
     {
         return valueNode;

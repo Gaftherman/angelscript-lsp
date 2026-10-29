@@ -2,6 +2,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
 #include "parser/ASTUtils.h"
+#include "utils/Constants.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -95,7 +96,7 @@ std::string IdentifierAt(const TypeHierarchyPrepareRequest& request, TSNode& out
     }
 
     outNode = node;
-    if (std::string_view(ts_node_type(node)) != "identifier")
+    if (ts_node_symbol(node) != parser::GetGrammarSymbols().symIdentifier)
     {
         return "";
     }
@@ -109,6 +110,23 @@ std::string IdentifierAt(const TypeHierarchyPrepareRequest& request, TSNode& out
     return request.sourceCode.substr(start, end - start);
 }
 
+static std::vector<Symbol> FindTypeInEnclosingNamespaces(TSNode node, std::string_view text,
+                                                         std::string_view sourceCode, const SymbolTable& symbolTable)
+{
+    for (const auto& container : analysis::GetEnclosingContainers(node, sourceCode))
+    {
+        if (container.kind == analysis::ContainerKind::Namespace)
+        {
+            auto decls = FindTypeDeclarations(container.qualifiedName + "::" + std::string(text), symbolTable);
+            if (!decls.empty())
+            {
+                return decls;
+            }
+        }
+    }
+    return {};
+}
+
 /**
  * @brief Attempts to find type declarations from a qualified type under the cursor.
  * @param[in] node AST node at cursor.
@@ -119,45 +137,34 @@ std::string IdentifierAt(const TypeHierarchyPrepareRequest& request, TSNode& out
 std::vector<Symbol> FindQualifiedTypeUnderCursor(TSNode node, std::string_view sourceCode,
                                                  const SymbolTable& symbolTable)
 {
-    std::vector<Symbol> declarations;
+    const auto& gs = parser::GetGrammarSymbols();
     TSNode p = node;
-    while (!ts_node_is_null(p))
+    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(p); ++depth, p = parser::GetParent(p))
     {
-        const std::string_view pType = ts_node_type(p);
-        if (pType == "type" || pType == "scoped_identifier")
+        const TSSymbol pType = ts_node_symbol(p);
+        if (pType == gs.symType || pType == gs.symScopedIdentifier)
         {
             const std::string text = analysis::CleanBaseType(analysis::GetNodeText(p, sourceCode));
             if (!text.empty() && text.find("::") != std::string::npos)
             {
-                declarations = FindTypeDeclarations(text, symbolTable);
+                auto declarations = FindTypeDeclarations(text, symbolTable);
                 if (declarations.empty())
                 {
-                    for (const auto& container : analysis::GetEnclosingContainers(p, sourceCode))
-                    {
-                        if (container.kind == analysis::ContainerKind::Namespace)
-                        {
-                            declarations = FindTypeDeclarations(container.qualifiedName + "::" + text, symbolTable);
-                            if (!declarations.empty())
-                            {
-                                break;
-                            }
-                        }
-                    }
+                    declarations = FindTypeInEnclosingNamespaces(p, text, sourceCode, symbolTable);
                 }
                 if (!declarations.empty())
                 {
-                    break;
+                    return declarations;
                 }
             }
         }
-        if (pType == "class_declaration" || pType == "interface_declaration" || pType == "func_declaration" ||
-            pType == "statement_block")
+        if (pType == gs.symClassDeclaration || pType == gs.symInterfaceDeclaration || pType == gs.symFuncDeclaration ||
+            pType == gs.symStatementBlock)
         {
             break;
         }
-        p = parser::GetParent(p);
     }
-    return declarations;
+    return {};
 }
 
 /**

@@ -1,5 +1,8 @@
 #pragma once
 
+#include "parser/GrammarSymbols.h"
+#include "utils/Constants.h"
+
 #include <cstdint>
 #include <string>
 #include <string_view>

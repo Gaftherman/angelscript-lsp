@@ -1,11 +1,13 @@
 #include "analysis/rules/ClassRules.h"
 #include "analysis/ASTUtils.h"
 #include "analysis/DiagnosticCodes.h"
+#include "analysis/NodeIndex.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "document/Document.h"
 #include "parser/AngelScriptParser.h"
 #include "spdlog/fmt/fmt.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -149,6 +151,13 @@ CollectImplementedMethodNames(const std::string& typeName, const SymbolTable& ta
     return names;
 }
 
+static bool IsInterfaceSymbol(const SymbolTable& table, std::string_view typeName) noexcept
+{
+    const auto syms = table.FindSymbolsPtr(typeName);
+    return syms &&
+           std::any_of(syms->begin(), syms->end(), [](const Symbol& s) { return s.type == SymbolType::Interface; });
+}
+
 /** @brief Collects all interfaces that must be checked for implementation. */
 void CollectInterfacesToCheck(const std::vector<std::string>& bases, const SymbolTable& table,
                               ankerl::unordered_dense::set<std::string>& interfacesToCheck)
@@ -170,14 +179,12 @@ void CollectInterfacesToCheck(const std::vector<std::string>& bases, const Symbo
             }
             else if (base.type == SymbolType::Class && base.GetClass().modifiers.isMixin)
             {
-                for (const auto& mixinAncestor : GetInheritedTypeHierarchy(cleanBase, table))
+                const auto mixinAncestors = GetInheritedTypeHierarchy(cleanBase, table);
+                for (const auto& ancestor : mixinAncestors)
                 {
-                    const auto mixinAncestorSyms = table.FindSymbolsPtr(mixinAncestor);
-                    if (mixinAncestorSyms &&
-                        std::any_of(mixinAncestorSyms->begin(), mixinAncestorSyms->end(),
-                                    [](const Symbol& s) { return s.type == SymbolType::Interface; }))
+                    if (IsInterfaceSymbol(table, ancestor))
                     {
-                        interfacesToCheck.insert(mixinAncestor);
+                        interfacesToCheck.insert(ancestor);
                     }
                 }
             }
@@ -232,8 +239,7 @@ void CheckInterfaceImplementation(const Symbol& sym, const ClassSignature& sig, 
 bool MatchesFinalBaseFunction(const Symbol& mSym, const std::string& cleanBase, const std::string& methodName,
                               const SymbolTable& table)
 {
-    const std::string baseKey = cleanBase.empty() ? methodName : cleanBase + "::" + methodName;
-    auto basePtr = table.FindSymbolsPtr(baseKey);
+    auto basePtr = table.FindMemberSymbolPtr(cleanBase, methodName);
     if (!basePtr)
     {
         return false;
@@ -266,9 +272,8 @@ bool MatchesFinalBaseProperty(const std::string& cleanBase, const std::string& m
         return false;
     }
 
-    const std::string propName = methodName.substr(4);
-    const std::string basePropKey = cleanBase.empty() ? propName : cleanBase + "::" + propName;
-    auto basePropPtr = table.FindSymbolsPtr(basePropKey);
+    const std::string_view propName = std::string_view(methodName).substr(4);
+    auto basePropPtr = table.FindMemberSymbolPtr(cleanBase, propName);
     if (!basePropPtr)
     {
         return false;
@@ -306,9 +311,8 @@ void CheckFinalPropertyOverride(const std::string& container, const std::string&
         return;
     }
 
-    const std::string propName = methodName.substr(4);
-    const std::string propKey = container.empty() ? propName : container + "::" + propName;
-    auto propPtr = ctx.request.symbolTable.FindSymbolsPtr(propKey);
+    const std::string_view propName = std::string_view(methodName).substr(4);
+    auto propPtr = ctx.request.symbolTable.FindMemberSymbolPtr(container, propName);
     if (!propPtr)
     {
         return;
@@ -340,8 +344,7 @@ void ReportFinalMethodOverrides(const std::string& container, const std::string&
     const SymbolTable& table = ctx.request.symbolTable;
     for (const auto& methodName : ctx.request.GetRuleIndex().Members(cleanBase).finalMethodNames)
     {
-        const std::string derivedName = container.empty() ? methodName : container + "::" + methodName;
-        if (auto methodsPtr = table.FindSymbolsPtr(derivedName))
+        if (auto methodsPtr = table.FindMemberSymbolPtr(container, methodName))
         {
             for (const auto& mSym : *methodsPtr)
             {
@@ -462,39 +465,20 @@ bool CheckBaseClassSymbol(const BaseCheckRequest& req, const Symbol& base, const
 /** @brief Retrieves the base_class_list AST node for a class or interface symbol. */
 TSNode FindBaseListNode(const Symbol& sym, const DiagnosticContext& ctx)
 {
-    if (!ctx.request.tree)
+    if (!ctx.request.nodeIndex)
     {
         return TSNode{};
     }
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode root = ts_tree_root_node(ctx.request.tree);
-    TSPoint pt{sym.selectionRange.startLine, sym.selectionRange.startCharacter};
-    TSNode node = ts_node_descendant_for_point_range(root, pt, pt);
-    for (int depth = 0; depth < 4 && !ts_node_is_null(node); ++depth)
+    for (const TSNode baseList : ctx.request.nodeIndex->Nodes(gs.symBaseClassList))
     {
-        const TSSymbol s = ts_node_symbol(node);
-        if (s == gs.symClassDeclaration || s == gs.symInterfaceDeclaration)
+        const TSPoint pt = ts_node_start_point(baseList);
+        if (pt.row >= sym.startLine && pt.row <= sym.endLine)
         {
-            break;
+            return baseList;
         }
-        node = parser::GetParent(node);
     }
-    if (ts_node_is_null(node))
-    {
-        return TSNode{};
-    }
-    TSNode baseList = TSNode{};
-    parser::ForEachNamedChildNodeUntil(node,
-                                       [&](TSNode child)
-                                       {
-                                           if (ts_node_symbol(child) == gs.symBaseClassList)
-                                           {
-                                               baseList = child;
-                                               return false;
-                                           }
-                                           return true;
-                                       });
-    return baseList;
+    return TSNode{};
 }
 
 /** @brief Obtains the exact AST range of the base at index in base_class_list. */
@@ -538,29 +522,32 @@ bool IsIgnoredOrProxyBase(const std::string& cleanBase, const DiagnosticContext&
 }
 
 /** @brief Finds candidate base symbols in qualified, container, using-namespace or global scopes. */
-std::shared_ptr<const std::vector<Symbol>> FindBaseCandidateSymbols(const std::string& cleanBase, const Symbol& sym,
+std::shared_ptr<const std::vector<Symbol>> FindBaseCandidateSymbols(std::string_view cleanBase, const Symbol& sym,
                                                                     const DiagnosticContext& ctx)
 {
     const auto& table = ctx.request.symbolTable;
 
-    std::string_view curContainer = sym.containerName;
-    while (!curContainer.empty())
+    std::shared_ptr<const std::vector<Symbol>> result = nullptr;
+    utils::ForEachEnclosingScope(sym.containerName,
+                                 [&](std::string_view scope)
+                                 {
+                                     if (!result)
+                                     {
+                                         auto syms = table.FindMemberSymbolPtr(scope, cleanBase);
+                                         if (syms && !syms->empty())
+                                         {
+                                             result = std::move(syms);
+                                         }
+                                     }
+                                 });
+    if (result)
     {
-        const std::string candidate = std::string(curContainer) + "::" + cleanBase;
-        if (auto syms = table.FindSymbolsPtr(candidate))
-        {
-            if (!syms->empty())
-            {
-                return syms;
-            }
-        }
-        curContainer = ScopeQualifier(curContainer);
+        return result;
     }
 
     for (const auto& uNs : analysis::GetUsingNamespaces(ctx.request))
     {
-        const std::string candidate = uNs + "::" + cleanBase;
-        if (auto syms = table.FindSymbolsPtr(candidate))
+        if (auto syms = table.FindMemberSymbolPtr(uNs, cleanBase))
         {
             if (!syms->empty())
             {

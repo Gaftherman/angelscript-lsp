@@ -207,6 +207,17 @@ endif()
 # is no default: a missing definition should fail to compile rather than quietly ship a wrong one.
 target_compile_definitions(angel_lsp_core PUBLIC ANGELLSP_VERSION="${ANGELLSP_VERSION}")
 
+# Compile-blocking AST traversal, parent-climb, and grammar symbol integrity gate
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_custom_target(angel_lsp_anti_slop_gate ALL
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-ast-traversal.py"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-grammar-names.py" --binary-dir "${CMAKE_BINARY_DIR}"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    COMMENT "Verifying AST traversal invariants, node symbol integrity, and anti-slop rules"
+    VERBATIM
+)
+add_dependencies(angel_lsp_core angel_lsp_anti_slop_gate)
+
 # ==============================================================================
 # 3. MAIN EXECUTABLE (LSP Server)
 # ==============================================================================

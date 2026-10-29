@@ -1015,7 +1015,7 @@ static bool ClassHasExplicitConstructor(TSNode bodyNode, std::string_view classN
             TSNode child = ts_tree_cursor_current_node(&cursor);
             if (ts_node_symbol(child) == symFuncDeclaration)
             {
-                TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
+                TSNode nameNode = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldName);
                 if (GetNodeText(nameNode, sourceCode) == className)
                 {
                     found = true;

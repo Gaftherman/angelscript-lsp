@@ -287,13 +287,13 @@ bool ResolveExplicitMemberAccess(TSNode outNode, const ResolveTargetRequest& req
     {
         return false;
     }
-    TSNode memNode = parser::GetChildByField(parent, parser::fields::Member);
+    TSNode memNode = parser::GetChildByField(parent, parser::GetGrammarSymbols().fieldMember);
     if (ts_node_is_null(memNode) ||
         (!ts_node_eq(memNode, outNode) && ts_node_start_byte(memNode) != ts_node_start_byte(outNode)))
     {
         return false;
     }
-    TSNode objectNode = parser::GetChildByField(parent, parser::fields::Object);
+    TSNode objectNode = parser::GetChildByField(parent, parser::GetGrammarSymbols().fieldObject);
     if (ts_node_is_null(objectNode))
     {
         return false;
@@ -524,7 +524,7 @@ bool TryResolveEnumMemberDeclaration(TSNode memberNode, const std::string& nodeT
     {
         return false;
     }
-    TSNode nameNode = parser::GetChildByField(enumDecl, parser::fields::Name);
+    TSNode nameNode = parser::GetChildByField(enumDecl, parser::GetGrammarSymbols().fieldName);
     if (ts_node_is_null(nameNode))
     {
         return false;
@@ -732,7 +732,7 @@ size_t CountCallArguments(TSNode argsChild)
  */
 TSNode FindArgumentListNode(TSNode callNode)
 {
-    TSNode argsChild = parser::GetChildByField(callNode, parser::fields::Arguments);
+    TSNode argsChild = parser::GetChildByField(callNode, parser::GetGrammarSymbols().fieldArguments);
     if (!ts_node_is_null(argsChild))
     {
         return argsChild;
@@ -1331,7 +1331,7 @@ std::string ResolveReceiverFromAst(const analysis::LocalReference& ref, const an
     {
         return "";
     }
-    TSNode objNode = parser::GetChildByField(exprParent, parser::fields::Object);
+    TSNode objNode = parser::GetChildByField(exprParent, parser::GetGrammarSymbols().fieldObject);
     if (ts_node_is_null(objNode))
     {
         return "";

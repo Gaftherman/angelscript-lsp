@@ -320,7 +320,7 @@ static std::string_view ExtractReceiverText(TSNode callNode, std::string_view so
     {
         return {};
     }
-    TSNode callee = parser::GetChildByField(callNode, parser::fields::Function);
+    TSNode callee = parser::GetChildByField(callNode, parser::GetGrammarSymbols().fieldFunction);
     if (ts_node_is_null(callee) && ts_node_child_count(callNode) > 0)
     {
         callee = ts_node_child(callNode, 0);
@@ -329,7 +329,7 @@ static std::string_view ExtractReceiverText(TSNode callNode, std::string_view so
     {
         return {};
     }
-    TSNode objectNode = parser::GetChildByField(callee, parser::fields::Object);
+    TSNode objectNode = parser::GetChildByField(callee, parser::GetGrammarSymbols().fieldObject);
     if (!ts_node_is_null(objectNode))
     {
         return parser::GetNodeTextView(objectNode, sourceCode);

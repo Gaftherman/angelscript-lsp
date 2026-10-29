@@ -159,17 +159,22 @@ lsp::Position FindClassInterfaceInsertionPosition(TSNode rootNode, const analysi
 {
     lsp::Position insertPos{clsSym.endLine, clsSym.endCharacter};
     TSPoint cPt = {clsSym.startLine, clsSym.startCharacter};
+    const auto& gs = parser::GetGrammarSymbols();
     TSNode cNode = ts_node_descendant_for_point_range(rootNode, cPt, cPt);
-    while (!ts_node_is_null(cNode) && std::string_view(ts_node_type(cNode)) != "class_declaration")
+    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(cNode);
+         ++depth, cNode = parser::GetParent(cNode))
     {
-        cNode = parser::GetParent(cNode);
+        if (ts_node_symbol(cNode) == gs.symClassDeclaration)
+        {
+            break;
+        }
     }
-    if (ts_node_is_null(cNode))
+    if (ts_node_is_null(cNode) || ts_node_symbol(cNode) != gs.symClassDeclaration)
     {
         return insertPos;
     }
 
-    TSNode bodyNode = parser::GetChildByField(cNode, parser::fields::Body);
+    TSNode bodyNode = parser::GetChildByField(cNode, parser::GetGrammarSymbols().fieldBody);
     if (ts_node_is_null(bodyNode))
     {
         TSTreeCursor declCursor = ts_tree_cursor_new(cNode);
@@ -178,7 +183,7 @@ lsp::Position FindClassInterfaceInsertionPosition(TSNode rootNode, const analysi
             do
             {
                 TSNode ch = ts_tree_cursor_current_node(&declCursor);
-                if (std::string_view(ts_node_type(ch)) == "class_body")
+                if (ts_node_symbol(ch) == parser::GetGrammarSymbols().symClassBody)
                 {
                     bodyNode = ch;
                     break;
@@ -196,7 +201,7 @@ lsp::Position FindClassInterfaceInsertionPosition(TSNode rootNode, const analysi
             do
             {
                 TSNode bChild = ts_tree_cursor_current_node(&cursor);
-                if (std::string_view(ts_node_type(bChild)) == "{")
+                if (ts_node_symbol(bChild) == parser::GetGrammarSymbols().tokOpenBrace)
                 {
                     TSPoint pt = ts_node_end_point(bChild);
                     insertPos = lsp::Position{pt.row, pt.column};
@@ -237,7 +242,7 @@ void TryAddImplementInterfaceFixes(const CodeActionRequest& request, TSNode root
 {
     const std::string_view strType = (request.config && !request.config->types.stringTypeName.empty())
                                          ? std::string_view(request.config->types.stringTypeName)
-                                         : std::string_view("string");
+                                         : request.symbolTable.GetStringType();
 
     request.symbolTable.ForEachSymbolInFile(
         request.uri,

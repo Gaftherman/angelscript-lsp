@@ -70,9 +70,9 @@ void CheckMemberDereference(TSNode obj, FlowState& state, NullCheckContext& ctx)
 
 void CheckBinaryExpr(TSNode expr, FlowState& state, NullCheckContext& ctx, int depth)
 {
-    TSNode left = parser::GetChildByField(expr, parser::fields::Left);
-    TSNode opNode = parser::GetChildByField(expr, parser::fields::Operator);
-    TSNode right = parser::GetChildByField(expr, parser::fields::Right);
+    TSNode left = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldLeft);
+    TSNode opNode = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldOperator);
+    TSNode right = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldRight);
     std::string op = NodeText(opNode, ctx.sourceCode);
 
     if (op == "&&" || op == "and")
@@ -126,8 +126,9 @@ void CheckNullExpression(TSNode expr, FlowState& state, NullCheckContext& ctx, i
     }
     else if (exprSym == gs.symCallExpression)
     {
-        CheckNullExpression(parser::GetChildByField(expr, parser::fields::Function), state, ctx, depth + 1);
-        TSNode argsNode = parser::GetChildByField(expr, parser::fields::Arguments);
+        CheckNullExpression(parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldFunction), state, ctx,
+                            depth + 1);
+        TSNode argsNode = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldArguments);
         const uint32_t count = ts_node_is_null(argsNode) ? 0 : ts_node_named_child_count(argsNode);
         for (uint32_t i = 0; i < count; ++i)
         {

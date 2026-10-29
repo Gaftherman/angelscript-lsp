@@ -12,7 +12,7 @@ namespace
  */
 TSPoint FindClassBodyInsertionPoint(TSNode classNode)
 {
-    TSNode classBody = parser::GetChildByField(classNode, parser::fields::Body);
+    TSNode classBody = parser::GetChildByField(classNode, parser::GetGrammarSymbols().fieldBody);
     if (ts_node_is_null(classBody))
     {
         TSTreeCursor cursor = ts_tree_cursor_new(classNode);
@@ -21,7 +21,7 @@ TSPoint FindClassBodyInsertionPoint(TSNode classNode)
             do
             {
                 TSNode ch = ts_tree_cursor_current_node(&cursor);
-                if (std::string_view(ts_node_type(ch)) == "class_body")
+                if (ts_node_symbol(ch) == parser::GetGrammarSymbols().symClassBody)
                 {
                     classBody = ch;
                     break;

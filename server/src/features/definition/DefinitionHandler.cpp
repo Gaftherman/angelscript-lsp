@@ -25,9 +25,9 @@ namespace
  * @param[in] nodeType Tree-sitter node type string.
  * @return True if node is an identifier, primitive type, or scoped identifier.
  */
-inline bool IsTargetNodeType(std::string_view nodeType)
+inline bool IsTargetNodeSymbol(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
 {
-    return nodeType == "identifier" || nodeType == "primitive_type" || nodeType == "scoped_identifier";
+    return sym == gs.symIdentifier || sym == gs.symPrimitiveType || sym == gs.symScopedIdentifier;
 }
 
 /**
@@ -44,7 +44,8 @@ TSNode ResolvePrecedingNodeIfIdentifier(TSNode rootNode, lsp::Position pos)
     }
     TSPoint prevPoint = {pos.line, pos.character - 1};
     TSNode prevNode = ts_node_descendant_for_point_range(rootNode, prevPoint, prevPoint);
-    if (!ts_node_is_null(prevNode) && IsTargetNodeType(ts_node_type(prevNode)))
+    const auto& gs = parser::GetGrammarSymbols();
+    if (!ts_node_is_null(prevNode) && IsTargetNodeSymbol(ts_node_symbol(prevNode), gs))
     {
         return prevNode;
     }
@@ -90,7 +91,7 @@ std::string GetNodeTextAt(const DefinitionRequest& request, TSNode& outNode)
         return "";
     }
 
-    if (!IsTargetNodeType(ts_node_type(node)))
+    if (!IsTargetNodeSymbol(ts_node_symbol(node), parser::GetGrammarSymbols()))
     {
         TSNode prevNode = ResolvePrecedingNodeIfIdentifier(rootNode, request.position);
         if (!ts_node_is_null(prevNode))
@@ -99,7 +100,7 @@ std::string GetNodeTextAt(const DefinitionRequest& request, TSNode& outNode)
         }
     }
 
-    if (!IsTargetNodeType(ts_node_type(node)))
+    if (!IsTargetNodeSymbol(ts_node_symbol(node), parser::GetGrammarSymbols()))
     {
         return "";
     }
@@ -120,21 +121,22 @@ TSNode FindEnclosingCallNode(TSNode node)
     {
         return TSNode{};
     }
-    std::string_view pType = ts_node_type(parent);
-    if (pType == "call_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol pType = ts_node_symbol(parent);
+    if (pType == gs.symCallExpression)
     {
-        TSNode fn = parser::GetChildByField(parent, parser::fields::Function);
+        TSNode fn = parser::GetChildByField(parent, gs.fieldFunction);
         if (!ts_node_is_null(fn) && (ts_node_eq(fn, node) || ts_node_start_byte(fn) == ts_node_start_byte(node)))
         {
             return parent;
         }
     }
-    else if (pType == "member_expression" || pType == "scoped_identifier")
+    else if (pType == gs.symMemberExpression || pType == gs.symScopedIdentifier)
     {
         TSNode grandParent = parser::GetParent(parent);
-        if (!ts_node_is_null(grandParent) && std::string_view(ts_node_type(grandParent)) == "call_expression")
+        if (!ts_node_is_null(grandParent) && ts_node_symbol(grandParent) == gs.symCallExpression)
         {
-            TSNode fn = parser::GetChildByField(grandParent, parser::fields::Function);
+            TSNode fn = parser::GetChildByField(grandParent, gs.fieldFunction);
             if (!ts_node_is_null(fn) &&
                 (ts_node_eq(fn, parent) || ts_node_start_byte(fn) == ts_node_start_byte(parent)))
             {
@@ -495,9 +497,10 @@ DefinitionContext MakeDefinitionContext(const DefinitionRequest& request)
 bool IsMemberChildOfExpression(TSNode node)
 {
     TSNode parent = parser::GetParent(node);
-    if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "member_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (!ts_node_is_null(parent) && ts_node_symbol(parent) == gs.symMemberExpression)
     {
-        TSNode memNode = parser::GetChildByField(parent, parser::fields::Member);
+        TSNode memNode = parser::GetChildByField(parent, gs.fieldMember);
         if (!ts_node_is_null(memNode) &&
             (ts_node_eq(memNode, node) || ts_node_start_byte(memNode) == ts_node_start_byte(node)))
         {
@@ -649,12 +652,13 @@ std::optional<std::vector<lsp::Location>> TryResolveMemberDefinition(TSNode node
                                                                      const DefinitionContext& ctx)
 {
     TSNode parent = parser::GetParent(node);
-    if (ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "member_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_is_null(parent) || ts_node_symbol(parent) != gs.symMemberExpression)
     {
         return std::nullopt;
     }
 
-    TSNode objectNode = parser::GetChildByField(parent, parser::fields::Object);
+    TSNode objectNode = parser::GetChildByField(parent, gs.fieldObject);
     if (ts_node_is_null(objectNode))
     {
         return std::nullopt;
@@ -1056,7 +1060,7 @@ static std::string ResolveTargetContainerClass(const DefinitionContext& ctx)
 static std::vector<analysis::Symbol> FilterOverriddenSymbolsByArity(const std::vector<analysis::Symbol>& symbols,
                                                                     TSNode declNode)
 {
-    TSNode paramsNode = parser::GetChildByField(declNode, parser::fields::Parameters);
+    TSNode paramsNode = parser::GetChildByField(declNode, parser::GetGrammarSymbols().fieldParameters);
     uint32_t declaredParamCount = !ts_node_is_null(paramsNode) ? ts_node_named_child_count(paramsNode) : 0;
 
     std::vector<analysis::Symbol> prioritized;
@@ -1152,7 +1156,7 @@ std::optional<std::vector<lsp::Location>> TryResolveDeclarationFallback(TSNode n
     {
         return std::nullopt;
     }
-    TSNode nameNode = parser::GetChildByField(p, parser::fields::Name);
+    TSNode nameNode = parser::GetChildByField(p, parser::GetGrammarSymbols().fieldName);
     if (!ts_node_is_null(nameNode) && !ts_node_eq(nameNode, node) &&
         ts_node_start_byte(nameNode) != ts_node_start_byte(node))
     {

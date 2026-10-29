@@ -8,6 +8,7 @@
 #include "parser/AngelScriptParser.h"
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
+#include "utils/Constants.h"
 #include "utils/LspLogger.h"
 #include "utils/Utils.h"
 
@@ -484,7 +485,7 @@ std::string ResolveReceiverFromAst(const std::string& fileUri, const analysis::L
     {
         return "";
     }
-    TSNode objNode = parser::GetChildByField(exprParent, parser::fields::Object);
+    TSNode objNode = parser::GetChildByField(exprParent, parser::GetGrammarSymbols().fieldObject);
     if (ts_node_is_null(objNode))
     {
         return "";
@@ -1480,10 +1481,15 @@ lsp::Range FindMixinRangeInAst(const analysis::Symbol& sym, const std::string& m
 
     TSNode hostRoot = ts_tree_root_node(request.tree);
     TSPoint hostPt = {sym.startLine, sym.startCharacter};
+    const auto& gs = parser::GetGrammarSymbols();
     TSNode hostNode = ts_node_descendant_for_point_range(hostRoot, hostPt, hostPt);
-    while (!ts_node_is_null(hostNode) && std::string_view(ts_node_type(hostNode)) != "class_declaration")
+    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(hostNode);
+         ++depth, hostNode = parser::GetParent(hostNode))
     {
-        hostNode = parser::GetParent(hostNode);
+        if (ts_node_symbol(hostNode) == gs.symClassDeclaration)
+        {
+            break;
+        }
     }
 
     TSNode incNode = analysis::FindMixinInclusionNode(hostNode, mixinName, mixinName, request.sourceCode);

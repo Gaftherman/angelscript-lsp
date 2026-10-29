@@ -100,7 +100,7 @@ class DefiniteAssignmentVisitor
         m_trackedLocals.clear();
         m_reportedReads.clear();
 
-        TSNode bodyNode = parser::GetChildByField(funcNode, parser::fields::Body);
+        TSNode bodyNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldBody);
         if (ts_node_is_null(bodyNode))
         {
             uint32_t count = ts_node_named_child_count(funcNode);
@@ -149,9 +149,9 @@ class DefiniteAssignmentVisitor
 
     void CheckAssignmentExpressionReads(TSNode node, FlowState& state, int depth)
     {
-        TSNode left = parser::GetChildByField(node, parser::fields::Left);
-        TSNode opNode = parser::GetChildByField(node, parser::fields::Operator);
-        TSNode right = parser::GetChildByField(node, parser::fields::Right);
+        TSNode left = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
+        TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
+        TSNode right = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldRight);
         std::string op = NodeText(opNode, m_request.sourceCode);
 
         // Evaluate right-hand side reads first
@@ -180,8 +180,8 @@ class DefiniteAssignmentVisitor
         const auto& gs = parser::GetGrammarSymbols();
         if (ts_node_symbol(funcNode) == gs.symMemberExpression)
         {
-            TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
-            TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
+            TSNode objNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldObject);
+            TSNode memNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldMember);
             if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
             {
                 const TSPoint objStart = ts_node_start_point(objNode);
@@ -314,8 +314,8 @@ class DefiniteAssignmentVisitor
 
     void CheckCallExpressionReads(TSNode node, FlowState& state, int depth)
     {
-        TSNode funcNode = parser::GetChildByField(node, parser::fields::Function);
-        TSNode argsNode = parser::GetChildByField(node, parser::fields::Arguments);
+        TSNode funcNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldFunction);
+        TSNode argsNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldArguments);
 
         CheckExpressionReads(funcNode, state, depth + 1);
 
@@ -411,7 +411,7 @@ class DefiniteAssignmentVisitor
 
     void AnalyzeVariableDeclarator(TSNode child, bool isPrimitive, FlowState& state, int depth)
     {
-        TSNode nameNode = parser::GetChildByField(child, parser::fields::Name);
+        TSNode nameNode = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldName);
         if (ts_node_is_null(nameNode) && ts_node_named_child_count(child) > 0)
         {
             nameNode = ts_node_named_child(child, 0);
@@ -422,7 +422,7 @@ class DefiniteAssignmentVisitor
         }
 
         std::string varName = NodeText(nameNode, m_request.sourceCode);
-        TSNode initNode = parser::GetChildByField(child, parser::fields::Value);
+        TSNode initNode = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldValue);
         if (ts_node_is_null(initNode))
         {
             uint32_t rawCount = ts_node_child_count(child);
@@ -463,10 +463,10 @@ class DefiniteAssignmentVisitor
 
     void AnalyzeVariableDeclaration(TSNode node, FlowState& state, int depth)
     {
-        TSNode typeNode = parser::GetChildByField(node, parser::fields::VarType);
+        TSNode typeNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldVarType);
         if (ts_node_is_null(typeNode))
         {
-            typeNode = parser::GetChildByField(node, parser::fields::Type);
+            typeNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldType);
         }
 
         bool isPrimitive = false;
@@ -491,13 +491,13 @@ class DefiniteAssignmentVisitor
 
     void AnalyzeIfStatement(TSNode node, FlowState& state, int depth)
     {
-        TSNode cond = parser::GetChildByField(node, parser::fields::Condition);
+        TSNode cond = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldCondition);
         if (ts_node_is_null(cond))
         {
             cond = ts_node_named_child(node, 0);
         }
-        TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
-        TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
+        TSNode consequence = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldConsequence);
+        TSNode alternative = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldAlternative);
 
         CheckExpressionReads(cond, state, depth + 1);
 
@@ -530,12 +530,12 @@ class DefiniteAssignmentVisitor
 
     void AnalyzeWhileStatement(TSNode node, FlowState& state, int depth)
     {
-        TSNode cond = parser::GetChildByField(node, parser::fields::Condition);
+        TSNode cond = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldCondition);
         if (ts_node_is_null(cond))
         {
             cond = ts_node_named_child(node, 0);
         }
-        TSNode body = parser::GetChildByField(node, parser::fields::Body);
+        TSNode body = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldBody);
 
         CheckExpressionReads(cond, state, depth + 1);
 
@@ -553,8 +553,8 @@ class DefiniteAssignmentVisitor
 
     void AnalyzeDoWhileStatement(TSNode node, FlowState& state, int depth)
     {
-        TSNode body = parser::GetChildByField(node, parser::fields::Body);
-        TSNode cond = parser::GetChildByField(node, parser::fields::Condition);
+        TSNode body = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldBody);
+        TSNode cond = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldCondition);
         if (ts_node_is_null(cond))
         {
             cond = ts_node_named_child(node, 1);
@@ -566,10 +566,10 @@ class DefiniteAssignmentVisitor
 
     void AnalyzeForStatement(TSNode node, FlowState& state, int depth)
     {
-        TSNode init = parser::GetChildByField(node, parser::fields::Init);
-        TSNode cond = parser::GetChildByField(node, parser::fields::Condition);
-        TSNode step = parser::GetChildByField(node, parser::fields::Update);
-        TSNode body = parser::GetChildByField(node, parser::fields::Body);
+        TSNode init = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldInit);
+        TSNode cond = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldCondition);
+        TSNode step = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldUpdate);
+        TSNode body = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldBody);
 
         if (!ts_node_is_null(init))
         {
@@ -656,7 +656,7 @@ class DefiniteAssignmentVisitor
 
     void AnalyzeSwitchStatement(TSNode node, FlowState& state, int depth)
     {
-        TSNode cond = parser::GetChildByField(node, parser::fields::Condition);
+        TSNode cond = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldCondition);
         if (ts_node_is_null(cond))
         {
             cond = ts_node_named_child(node, 0);
@@ -705,7 +705,7 @@ class DefiniteAssignmentVisitor
         const auto& gs = parser::GetGrammarSymbols();
         if (sym == gs.symReturnStatement)
         {
-            TSNode retVal = parser::GetChildByField(node, parser::fields::Value);
+            TSNode retVal = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldValue);
             if (!ts_node_is_null(retVal))
             {
                 CheckExpressionReads(retVal, state, depth + 1);

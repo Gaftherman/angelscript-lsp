@@ -145,6 +145,7 @@ struct GrammarSymbols
     TSSymbol tokCase = 0;                          ///< "case"
     TSSymbol tokDot = 0;                           ///< "."
     TSSymbol tokSlash = 0;                         ///< "/"
+    TSSymbol tokTilde = 0;                         ///< "~"
     TSSymbol symError = static_cast<TSSymbol>(-1); ///< ERROR node
 
     // =========================================================================

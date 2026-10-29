@@ -19,15 +19,20 @@ namespace
  */
 TSNode FindEnclosingFunctionNode(TSNode rootNode, const lsp::Range& range)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     TSPoint startPt{static_cast<uint32_t>(range.start.line), static_cast<uint32_t>(range.start.character)};
     TSPoint endPt{static_cast<uint32_t>(range.end.line), static_cast<uint32_t>(range.end.character)};
     TSNode selNode = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
     TSNode fnNode = selNode;
-    while (!ts_node_is_null(fnNode) && std::string_view(ts_node_type(fnNode)) != "func_declaration")
+    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(fnNode);
+         ++depth, fnNode = parser::GetParent(fnNode))
     {
-        fnNode = parser::GetParent(fnNode);
+        if (ts_node_symbol(fnNode) == gs.symFuncDeclaration)
+        {
+            return fnNode;
+        }
     }
-    return fnNode;
+    return TSNode{};
 }
 
 /**
@@ -37,7 +42,7 @@ TSNode FindEnclosingFunctionNode(TSNode rootNode, const lsp::Range& range)
  */
 TSNode FindFunctionBodyBlock(TSNode fnNode)
 {
-    TSNode bodyNode = parser::GetChildByField(fnNode, parser::fields::Body);
+    TSNode bodyNode = parser::GetChildByField(fnNode, parser::GetGrammarSymbols().fieldBody);
     if (!ts_node_is_null(bodyNode))
     {
         return bodyNode;
@@ -48,7 +53,7 @@ TSNode FindFunctionBodyBlock(TSNode fnNode)
         do
         {
             TSNode ch = ts_tree_cursor_current_node(&cursor);
-            if (std::string_view(ts_node_type(ch)) == "statement_block")
+            if (ts_node_symbol(ch) == parser::GetGrammarSymbols().symStatementBlock)
             {
                 bodyNode = ch;
                 break;
@@ -78,8 +83,9 @@ std::vector<TSNode> CollectStatementsInRange(TSNode bodyNode, const lsp::Range& 
             {
                 continue;
             }
-            std::string_view t = ts_node_type(ch);
-            if (t == "{" || t == "}")
+            const TSSymbol t = ts_node_symbol(ch);
+            const auto& gs = parser::GetGrammarSymbols();
+            if (t == gs.tokOpenBrace || t == gs.tokCloseBrace)
             {
                 continue;
             }
@@ -155,12 +161,17 @@ bool IsValidMethodInputRef(const analysis::LocalReference& ref, const analysis::
  */
 TSNode FindEnclosingClassNode(TSNode fnNode)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     TSNode classNode = fnNode;
-    while (!ts_node_is_null(classNode) && std::string_view(ts_node_type(classNode)) != "class_declaration")
+    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(classNode);
+         ++depth, classNode = parser::GetParent(classNode))
     {
-        classNode = parser::GetParent(classNode);
+        if (ts_node_symbol(classNode) == gs.symClassDeclaration)
+        {
+            return classNode;
+        }
     }
-    return classNode;
+    return TSNode{};
 }
 
 TSNode FindInnermostStatementBlock(TSNode rootNode, const lsp::Range& range, TSNode fnNode)
@@ -168,13 +179,14 @@ TSNode FindInnermostStatementBlock(TSNode rootNode, const lsp::Range& range, TSN
     TSPoint startPt{static_cast<uint32_t>(range.start.line), static_cast<uint32_t>(range.start.character)};
     TSPoint endPt{static_cast<uint32_t>(range.end.line), static_cast<uint32_t>(range.end.character)};
     TSNode node = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
-    while (!ts_node_is_null(node) && !ts_node_eq(node, fnNode))
+    const auto& gs = parser::GetGrammarSymbols();
+    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(node) && !ts_node_eq(node, fnNode);
+         ++depth, node = parser::GetParent(node))
     {
-        if (std::string_view(ts_node_type(node)) == "statement_block")
+        if (ts_node_symbol(node) == gs.symStatementBlock)
         {
             return node;
         }
-        node = parser::GetParent(node);
     }
     return FindFunctionBodyBlock(fnNode);
 }

@@ -39,15 +39,25 @@ bool IsExtractableExpression(TSNode node)
     {
         return false;
     }
-    std::string_view type = ts_node_type(node);
-    for (std::string_view candidate : kExtractableExpressionTypes)
-    {
-        if (type == candidate)
-        {
-            return true;
-        }
-    }
-    return false;
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(node);
+    const std::array<TSSymbol, 16> kSymbols = {gs.symBinaryExpression,
+                                               gs.symUnaryExpression,
+                                               gs.symPostfixExpression,
+                                               gs.symCallExpression,
+                                               gs.symMemberExpression,
+                                               gs.symTernaryExpression,
+                                               gs.symCastExpression,
+                                               gs.symFunctionalCastExpression,
+                                               gs.symConstructCallExpression,
+                                               gs.symIndexExpression,
+                                               gs.symParenthesizedExpression,
+                                               gs.symScopedIdentifier,
+                                               gs.symIdentifier,
+                                               gs.symNumberLiteral,
+                                               gs.symStringLiteral,
+                                               gs.symBooleanLiteral};
+    return std::find(kSymbols.begin(), kSymbols.end(), sym) != kSymbols.end();
 }
 
 /**
@@ -57,16 +67,17 @@ bool IsExtractableExpression(TSNode node)
  */
 bool IsLhsOfAssignment(TSNode node)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     TSNode curr = node;
-    while (!ts_node_is_null(curr))
+    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(curr);
+         ++depth, curr = parser::GetParent(curr))
     {
         TSNode parent = parser::GetParent(curr);
         if (!ts_node_is_null(parent))
         {
-            std::string_view pType = ts_node_type(parent);
-            if (pType == "assignment_expression")
+            if (ts_node_symbol(parent) == gs.symAssignmentExpression)
             {
-                TSNode left = parser::GetChildByField(parent, parser::fields::Left);
+                TSNode left = parser::GetChildByField(parent, gs.fieldLeft);
                 if (ts_node_start_byte(left) == ts_node_start_byte(curr) &&
                     ts_node_end_byte(left) == ts_node_end_byte(curr))
                 {
@@ -74,7 +85,6 @@ bool IsLhsOfAssignment(TSNode node)
                 }
             }
         }
-        curr = parent;
     }
     return false;
 }
@@ -91,14 +101,15 @@ static bool IsMemberField(TSNode node, TSNode parent)
     {
         return false;
     }
-    std::string_view pType = ts_node_type(parent);
-    if (pType == "member_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol pType = ts_node_symbol(parent);
+    if (pType == gs.symMemberExpression)
     {
-        TSNode memberNode = parser::GetChildByField(parent, parser::fields::Member);
+        TSNode memberNode = parser::GetChildByField(parent, gs.fieldMember);
         return ts_node_eq(memberNode, node) ||
                (!ts_node_is_null(memberNode) && ts_node_start_byte(memberNode) == ts_node_start_byte(node));
     }
-    return pType == "scoped_identifier";
+    return pType == gs.symScopedIdentifier;
 }
 
 /**
@@ -109,13 +120,24 @@ static bool IsMemberField(TSNode node, TSNode parent)
  */
 static bool IsFunctionFieldOfCall(TSNode node, TSNode parent)
 {
-    if (ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "call_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_is_null(parent) || ts_node_symbol(parent) != gs.symCallExpression)
     {
         return false;
     }
-    TSNode funcNode = parser::GetChildByField(parent, parser::fields::Function);
+    TSNode funcNode = parser::GetChildByField(parent, gs.fieldFunction);
     return ts_node_eq(funcNode, node) ||
            (!ts_node_is_null(funcNode) && ts_node_start_byte(funcNode) == ts_node_start_byte(node));
+}
+
+static bool IsNonExtractableStatementOrContainer(TSSymbol nodeSym, const parser::GrammarSymbols& gs) noexcept
+{
+    const std::array<TSSymbol, 13> kExcluded = {
+        gs.symStatementBlock,      gs.symClassBody,           gs.symParameter,       gs.symPrimitiveType,
+        gs.symExpressionStatement, gs.symReturnStatement,     gs.symIfStatement,     gs.symWhileStatement,
+        gs.symForStatement,        gs.symVariableDeclaration, gs.symFuncDeclaration, gs.symClassDeclaration,
+        gs.symInterfaceDeclaration};
+    return std::find(kExcluded.begin(), kExcluded.end(), nodeSym) != kExcluded.end();
 }
 
 /**
@@ -129,14 +151,11 @@ TSNode FindExtractableExpression(TSNode rootNode, const lsp::Range& range)
     TSPoint startPt = {range.start.line, range.start.character};
     TSPoint endPt = {range.end.line, range.end.character};
     TSNode targetNode = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
-    while (!ts_node_is_null(targetNode) && !IsExtractableExpression(targetNode))
+    for (int depth = 0;
+         depth < constants::k_maxAstClimbDepth && !ts_node_is_null(targetNode) && !IsExtractableExpression(targetNode);
+         ++depth)
     {
-        TSNode p = parser::GetParent(targetNode);
-        if (ts_node_is_null(p))
-        {
-            break;
-        }
-        targetNode = p;
+        targetNode = parser::GetParent(targetNode);
     }
     if (ts_node_is_null(targetNode) || !IsExtractableExpression(targetNode))
     {
@@ -154,10 +173,9 @@ TSNode FindExtractableExpression(TSNode rootNode, const lsp::Range& range)
         targetNode = parent;
     }
 
-    std::string_view nodeType = ts_node_type(targetNode);
-    if (nodeType.ends_with("_statement") || nodeType.ends_with("_declaration") || nodeType == "statement_block" ||
-        nodeType == "class_body" || nodeType == "parameter" || nodeType == "primitive_type" ||
-        IsLhsOfAssignment(targetNode))
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol nodeSym = ts_node_symbol(targetNode);
+    if (IsNonExtractableStatementOrContainer(nodeSym, gs) || IsLhsOfAssignment(targetNode))
     {
         return TSNode{};
     }
@@ -171,15 +189,16 @@ TSNode FindExtractableExpression(TSNode rootNode, const lsp::Range& range)
  */
 TSNode FindEnclosingBlockStatement(TSNode node)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     TSNode stmtNode = node;
-    while (!ts_node_is_null(stmtNode))
+    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(stmtNode);
+         ++depth, stmtNode = parser::GetParent(stmtNode))
     {
         TSNode parent = parser::GetParent(stmtNode);
-        if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "statement_block")
+        if (!ts_node_is_null(parent) && ts_node_symbol(parent) == gs.symStatementBlock)
         {
             return stmtNode;
         }
-        stmtNode = parent;
     }
     return TSNode{};
 }
@@ -197,15 +216,16 @@ std::string ToLowerFirst(std::string_view str)
 
 std::string SuggestNameFromCall(TSNode targetNode, std::string_view sourceCode)
 {
-    TSNode funcNode = parser::GetChildByField(targetNode, parser::fields::Function);
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode funcNode = parser::GetChildByField(targetNode, gs.fieldFunction);
     if (ts_node_is_null(funcNode))
     {
         return "";
     }
     std::string fnNameText;
-    if (std::string_view(ts_node_type(funcNode)) == "member_expression")
+    if (ts_node_symbol(funcNode) == gs.symMemberExpression)
     {
-        TSNode nameNode = parser::GetChildByField(funcNode, parser::fields::Member);
+        TSNode nameNode = parser::GetChildByField(funcNode, gs.fieldMember);
         fnNameText = GetNodeText(nameNode, sourceCode);
     }
     else
@@ -233,10 +253,11 @@ std::string SuggestNameFromCall(TSNode targetNode, std::string_view sourceCode)
 
 std::string SuggestNameFromMemberOrConstruct(TSNode targetNode, std::string_view sourceCode)
 {
-    std::string_view type = ts_node_type(targetNode);
-    if (type == "member_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol type = ts_node_symbol(targetNode);
+    if (type == gs.symMemberExpression)
     {
-        TSNode nameNode = parser::GetChildByField(targetNode, parser::fields::Member);
+        TSNode nameNode = parser::GetChildByField(targetNode, gs.fieldMember);
         std::string memText = GetNodeText(nameNode, sourceCode);
         if (memText.starts_with("m_") && memText.size() > 2)
         {
@@ -247,9 +268,9 @@ std::string SuggestNameFromMemberOrConstruct(TSNode targetNode, std::string_view
             return ToLowerFirst(memText);
         }
     }
-    if (type == "construct_call_expression")
+    if (type == gs.symConstructCallExpression)
     {
-        TSNode typeNode = parser::GetChildByField(targetNode, parser::fields::Type);
+        TSNode typeNode = parser::GetChildByField(targetNode, gs.fieldType);
         std::string tText = GetNodeText(typeNode, sourceCode);
         if (!tText.empty())
         {
@@ -261,8 +282,9 @@ std::string SuggestNameFromMemberOrConstruct(TSNode targetNode, std::string_view
 
 std::string SuggestCandidateName(TSNode targetNode, std::string_view varType, std::string_view sourceCode)
 {
-    std::string_view type = ts_node_type(targetNode);
-    if (type == "call_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol type = ts_node_symbol(targetNode);
+    if (type == gs.symCallExpression)
     {
         if (std::string callName = SuggestNameFromCall(targetNode, sourceCode); !callName.empty())
         {
@@ -358,7 +380,7 @@ std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActionReques
     lsp::TextEdit declEdit;
     TSNode parentBlock = parser::GetParent(stmtNode);
     TSPoint stmtStart = ts_node_start_point(stmtNode);
-    if (!ts_node_is_null(parentBlock) && std::string_view(ts_node_type(parentBlock)) == "statement_block" &&
+    if (!ts_node_is_null(parentBlock) && ts_node_symbol(parentBlock) == parser::GetGrammarSymbols().symStatementBlock &&
         ts_node_start_point(parentBlock).row == stmtStart.row)
     {
         declEdit.range = lsp::Range{{stmtStart.row, stmtStart.column}, {stmtStart.row, stmtStart.column}};
