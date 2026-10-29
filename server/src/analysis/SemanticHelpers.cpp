@@ -768,7 +768,9 @@ bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx, std::s
 
 std::string_view LastScopeSegment(std::string_view name) noexcept
 {
-    const size_t pos = name.rfind("::");
+    const size_t bracketPos = name.find('<');
+    const std::string_view prefix = (bracketPos != std::string_view::npos) ? name.substr(0, bracketPos) : name;
+    const size_t pos = prefix.rfind("::");
     return pos == std::string_view::npos ? name : name.substr(pos + 2);
 }
 
@@ -1070,6 +1072,55 @@ bool IsIgnoredTemplateType(std::string_view s)
 }
 } // namespace
 
+namespace
+{
+bool AreCompatibleTemplateContainers(std::string_view fromContainer, std::string_view toContainer) noexcept
+{
+    if (fromContainer == toContainer)
+    {
+        return true;
+    }
+    if (fromContainer == "weakref" && toContainer == "const_weakref")
+    {
+        return true;
+    }
+    return LastScopeSegment(fromContainer) == LastScopeSegment(toContainer);
+}
+
+bool AreCompatibleTemplateArgPair(std::string_view va, std::string_view vb)
+{
+    TrimTypeWhitespace(va);
+    TrimTypeWhitespace(vb);
+    if (va == vb)
+    {
+        return true;
+    }
+    const bool vaIsTmpl = (va.find('<') != std::string_view::npos && va.ends_with('>'));
+    const bool vbIsTmpl = (vb.find('<') != std::string_view::npos && vb.ends_with('>'));
+    if (vaIsTmpl && vbIsTmpl)
+    {
+        return !AreIncompatibleTemplateTypes(va, vb);
+    }
+    return LastScopeSegment(va) == LastScopeSegment(vb);
+}
+
+bool AreCompatibleTemplateArguments(const std::vector<std::string>& fromArgs, const std::vector<std::string>& toArgs)
+{
+    if (fromArgs.size() != toArgs.size())
+    {
+        return false;
+    }
+    for (size_t i = 0; i < fromArgs.size(); ++i)
+    {
+        if (!AreCompatibleTemplateArgPair(fromArgs[i], toArgs[i]))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+} // namespace
+
 bool AreIncompatibleTemplateTypes(std::string_view from, std::string_view to)
 {
     StripTemplateDecorations(from);
@@ -1084,39 +1135,19 @@ bool AreIncompatibleTemplateTypes(std::string_view from, std::string_view to)
     {
         return true;
     }
-    if (fromIsTmpl && toIsTmpl)
+    if (!fromIsTmpl)
     {
-        const size_t fromOpen = from.find('<');
-        const size_t toOpen = to.find('<');
-        const auto fromContainer = from.substr(0, fromOpen);
-        const auto toContainer = to.substr(0, toOpen);
-        if (fromContainer != toContainer &&
-            LastScopeSegment(std::string(fromContainer)) != LastScopeSegment(std::string(toContainer)))
-        {
-            return true;
-        }
-        const auto fromInner = from.substr(fromOpen + 1, from.size() - fromOpen - 2);
-        const auto toInner = to.substr(toOpen + 1, to.size() - toOpen - 2);
-        auto fromArgs = SplitTemplateArguments(fromInner);
-        auto toArgs = SplitTemplateArguments(toInner);
-        if (fromArgs.size() != toArgs.size())
-        {
-            return true;
-        }
-        for (size_t i = 0; i < fromArgs.size(); ++i)
-        {
-            std::string_view va = fromArgs[i];
-            std::string_view vb = toArgs[i];
-            TrimTypeWhitespace(va);
-            TrimTypeWhitespace(vb);
-            if (va != vb && LastScopeSegment(std::string(va)) != LastScopeSegment(std::string(vb)))
-            {
-                return true;
-            }
-        }
         return false;
     }
-    return false;
+    const size_t fromOpen = from.find('<');
+    const size_t toOpen = to.find('<');
+    if (!AreCompatibleTemplateContainers(from.substr(0, fromOpen), to.substr(0, toOpen)))
+    {
+        return true;
+    }
+    const auto fromInner = from.substr(fromOpen + 1, from.size() - fromOpen - 2);
+    const auto toInner = to.substr(toOpen + 1, to.size() - toOpen - 2);
+    return !AreCompatibleTemplateArguments(SplitTemplateArguments(fromInner), SplitTemplateArguments(toInner));
 }
 
 std::string PropertyNameFromAccessor(const Symbol& sym, bool keywordRequired)

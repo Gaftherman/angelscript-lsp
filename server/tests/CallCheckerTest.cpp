@@ -7,6 +7,7 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
+#include "config/ServerConfig.h"
 #include "helpers/RuleCorpusAudit.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
@@ -29,7 +30,8 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-std::vector<Diagnostic> AnalyzeCallSnippet(const std::string& code, const std::string& fileUri = "file:///calls.as")
+std::vector<Diagnostic> AnalyzeCallSnippet(const std::string& code, const std::string& fileUri = "file:///calls.as",
+                                           const angel_lsp::config::EngineProperties* engineProps = nullptr)
 {
     AngelScriptParser parser;
     SymbolCollector collector(nullptr);
@@ -41,6 +43,7 @@ std::vector<Diagnostic> AnalyzeCallSnippet(const std::string& code, const std::s
     table.EnsureRuleIndex();
 
     SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
+    request.engineProperties = engineProps;
     request.scopeRoot = scopes.CollectScopes(code, parser);
     request.sourceCode = code;
     request.tree = parser.Parse(code);
@@ -2021,4 +2024,77 @@ TEST_CASE("CallChecker - Invariant: Calls to homonymous namespace and class func
     CHECK_FALSE(HasCode(diags, "as-err-call-argument-count"));
     CHECK_FALSE(HasCode(diags, "as-err-call-ambiguous"));
     CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("CallChecker - Template arguments in nested namespace match canonical type without false-positive E121")
+{
+    const std::string ns = angel_lsp::test::GenerateRandomSymbolName("NS");
+    const std::string base = angel_lsp::test::GenerateRandomSymbolName("Base");
+    const std::string arr = angel_lsp::test::GenerateRandomSymbolName("items");
+    const std::string derived = angel_lsp::test::GenerateRandomSymbolName("Derived");
+    const std::string ref = angel_lsp::test::GenerateRandomSymbolName("ref");
+
+    const std::string code = "class array<T> { void insertLast(const T&in val); }\n"
+                             "class weakref<T> { weakref(); weakref(const " +
+                             base +
+                             "@); }\n"
+                             "namespace " +
+                             ns +
+                             " {\n"
+                             "    class " +
+                             base +
+                             " {}\n"
+                             "    array<weakref<" +
+                             base + ">> " + arr +
+                             ";\n"
+                             "}\n"
+                             "class " +
+                             derived + " : " + ns + "::" + base +
+                             " {\n"
+                             "    " +
+                             derived +
+                             "() {\n"
+                             "        weakref<" +
+                             ns + "::" + base + "> " + ref +
+                             "(this);\n"
+                             "        " +
+                             ns + "::" + arr + ".insertLast(" + ref +
+                             ");\n"
+                             "    }\n"
+                             "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-no-matching-signature"));
+    CHECK_FALSE(HasCode(diags, "as-err-no-implicit-conversion"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+}
+
+TEST_CASE("CallChecker - Non-const reference argument requires an l-value under allowUnsafeReferences")
+{
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("Mutate");
+    const std::string constFnName = angel_lsp::test::GenerateRandomSymbolName("Inspect");
+
+    const std::string code = "void " + fnName +
+                             "(int &x) { }\n"
+                             "void " +
+                             constFnName +
+                             "(const int &x) { }\n"
+                             "void main() {\n"
+                             "    int val = 42;\n"
+                             "    " +
+                             fnName +
+                             "(val);\n"
+                             "    " +
+                             fnName +
+                             "(10);\n"
+                             "    " +
+                             constFnName +
+                             "(10);\n"
+                             "}\n";
+
+    angel_lsp::config::EngineProperties engine;
+    engine.allowUnsafeReferences = true;
+
+    auto diags = AnalyzeCallSnippet(code, "file:///calls.as", &engine);
+    CHECK(HasCode(diags, "as-err-lvalue-required-for-out-param"));
 }

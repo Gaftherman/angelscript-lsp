@@ -1,5 +1,6 @@
 #include "analysis/overload/OverloadTypeConversions.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/TypeSanitization.h"
 
 #include <algorithm>
 #include <cctype>
@@ -478,7 +479,46 @@ bool IsContainerParameter(const ParameterInformation& param, const SymbolTable* 
 
 bool IsSameType(const std::string& a, const std::string& b)
 {
-    return !a.empty() && (a == b || LastScopeSegment(a) == LastScopeSegment(b));
+    if (a.empty() || b.empty())
+    {
+        return false;
+    }
+    if (a == b)
+    {
+        return true;
+    }
+    const size_t aOpen = a.find('<');
+    const size_t bOpen = b.find('<');
+    if (aOpen != std::string::npos && a.ends_with('>') && bOpen != std::string::npos && b.ends_with('>'))
+    {
+        const std::string_view aCont = std::string_view(a).substr(0, aOpen);
+        const std::string_view bCont = std::string_view(b).substr(0, bOpen);
+        if (aCont != bCont && LastScopeSegment(aCont) != LastScopeSegment(bCont))
+        {
+            return false;
+        }
+        const std::string_view aInner = std::string_view(a).substr(aOpen + 1, a.size() - aOpen - 2);
+        const std::string_view bInner = std::string_view(b).substr(bOpen + 1, b.size() - bOpen - 2);
+        const auto aArgs = SplitTemplateArguments(aInner);
+        const auto bArgs = SplitTemplateArguments(bInner);
+        if (aArgs.size() != bArgs.size())
+        {
+            return false;
+        }
+        for (size_t i = 0; i < aArgs.size(); ++i)
+        {
+            std::string_view va = aArgs[i];
+            std::string_view vb = bArgs[i];
+            TrimTypeWhitespace(va);
+            TrimTypeWhitespace(vb);
+            if (!IsSameType(std::string(va), std::string(vb)))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+    return LastScopeSegment(a) == LastScopeSegment(b);
 }
 
 } // namespace angel_lsp::analysis

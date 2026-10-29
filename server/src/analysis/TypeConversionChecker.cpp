@@ -61,7 +61,42 @@ bool IsSameType(const std::string& a, const std::string& b)
 {
     const std::string ca = CanonicalizeType(a);
     const std::string cb = CanonicalizeType(b);
-    return ca == cb || LastScopeSegment(ca) == LastScopeSegment(cb);
+    if (ca == cb)
+    {
+        return true;
+    }
+    const size_t aOpen = ca.find('<');
+    const size_t bOpen = cb.find('<');
+    if (aOpen != std::string::npos && ca.ends_with('>') && bOpen != std::string::npos && cb.ends_with('>'))
+    {
+        const std::string_view aCont = std::string_view(ca).substr(0, aOpen);
+        const std::string_view bCont = std::string_view(cb).substr(0, bOpen);
+        if (aCont != bCont && LastScopeSegment(aCont) != LastScopeSegment(bCont))
+        {
+            return false;
+        }
+        const std::string_view aInner = std::string_view(ca).substr(aOpen + 1, ca.size() - aOpen - 2);
+        const std::string_view bInner = std::string_view(cb).substr(bOpen + 1, cb.size() - bOpen - 2);
+        const auto aArgs = SplitTemplateArguments(aInner);
+        const auto bArgs = SplitTemplateArguments(bInner);
+        if (aArgs.size() != bArgs.size())
+        {
+            return false;
+        }
+        for (size_t i = 0; i < aArgs.size(); ++i)
+        {
+            std::string_view va = aArgs[i];
+            std::string_view vb = bArgs[i];
+            TrimTypeWhitespace(va);
+            TrimTypeWhitespace(vb);
+            if (!IsSameType(std::string(va), std::string(vb)))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+    return LastScopeSegment(ca) == LastScopeSegment(cb);
 }
 
 /** @brief Visits every symbol registered under a qualified name without copying the bucket.
@@ -740,6 +775,27 @@ bool CanConvertUserTypes(const ConversionTypes& types, const DiagnosticContext& 
     return CanConvertClasses(types.from, types.to, ctx, state);
 }
 
+namespace
+{
+bool IsWeakrefToConstWeakref(const std::string& from, const std::string& to)
+{
+    const size_t fromOpen = from.find('<');
+    const size_t toOpen = to.find('<');
+    if (fromOpen != std::string::npos && from.ends_with('>') && toOpen != std::string::npos && to.ends_with('>'))
+    {
+        const std::string_view fromCont = std::string_view(from).substr(0, fromOpen);
+        const std::string_view toCont = std::string_view(to).substr(0, toOpen);
+        if (fromCont == "weakref" && toCont == "const_weakref")
+        {
+            const std::string_view fromInner = std::string_view(from).substr(fromOpen + 1, from.size() - fromOpen - 2);
+            const std::string_view toInner = std::string_view(to).substr(toOpen + 1, to.size() - toOpen - 2);
+            return IsSameType(std::string(fromInner), std::string(toInner));
+        }
+    }
+    return false;
+}
+} // namespace
+
 bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx, ConversionState& state)
 {
     if (IsPoisonOrEmptyType(from, to))
@@ -796,6 +852,11 @@ bool IsConvertible(const std::string& from, const std::string& to, const Diagnos
     if (AreIncompatibleTemplateTypes(from, to))
     {
         return false;
+    }
+
+    if (IsSameType(from, to) || IsWeakrefToConstWeakref(from, to))
+    {
+        return true;
     }
 
     if (IsUnresolvedOrExternalType(from, fromBuiltIn, table) || IsUnresolvedOrExternalType(to, toBuiltIn, table))

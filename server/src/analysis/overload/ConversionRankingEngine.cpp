@@ -423,6 +423,16 @@ ArgumentConversion EvaluateConversionMatch(const MatchContext& ctx)
     {
         return *conv;
     }
+    if (ctx.cleanArg.starts_with("weakref<") && ctx.cleanParam.starts_with("const_weakref<"))
+    {
+        const std::string_view fromInner = std::string_view(ctx.cleanArg).substr(8, ctx.cleanArg.size() - 9);
+        const std::string_view toInner = std::string_view(ctx.cleanParam).substr(14, ctx.cleanParam.size() - 15);
+        if (IsSameType(std::string(fromInner), std::string(toInner)))
+        {
+            return ArgumentConversion{ConversionRank::StandardConv, 10, 0, false,
+                                      static_cast<int>(OverloadMatchPenalty::ConstRef)};
+        }
+    }
     return EvaluateCustomOrUnresolvedConversion(ctx);
 }
 
