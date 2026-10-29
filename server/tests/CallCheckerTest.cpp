@@ -2098,3 +2098,104 @@ TEST_CASE("CallChecker - Non-const reference argument requires an l-value under 
     auto diags = AnalyzeCallSnippet(code, "file:///calls.as", &engine);
     CHECK(HasCode(diags, "as-err-lvalue-required-for-out-param"));
 }
+
+TEST_CASE("CallChecker - Strict namespace isolation prevents template type mismatch between distinct namespaces")
+{
+    const std::string ns1 = angel_lsp::test::GenerateRandomSymbolName("NS1");
+    const std::string ns2 = angel_lsp::test::GenerateRandomSymbolName("NS2");
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Item");
+    const std::string arr = angel_lsp::test::GenerateRandomSymbolName("arr");
+    const std::string ref = angel_lsp::test::GenerateRandomSymbolName("ref");
+
+    const std::string code = "class array<T> { void insertLast(const T&in val); }\n"
+                             "class weakref<T> { weakref(); }\n"
+                             "namespace " +
+                             ns1 + " { class " + clsName + " {} array<weakref<" + clsName + ">> " + arr +
+                             "; }\n"
+                             "namespace " +
+                             ns2 + " { class " + clsName +
+                             " {} }\n"
+                             "void Test() {\n"
+                             "    weakref<" +
+                             ns2 + "::" + clsName + "> " + ref +
+                             ";\n"
+                             "    " +
+                             ns1 + "::" + arr + ".insertLast(" + ref +
+                             ");\n"
+                             "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    const bool hasMismatch = HasCode(diags, "as-err-no-matching-signature") ||
+                             HasCode(diags, "as-err-call-no-matching-signature") ||
+                             HasCode(diags, "as-err-no-implicit-conversion");
+    CHECK(hasMismatch);
+}
+
+TEST_CASE("CallChecker - Generic template converting constructor converts weakref to const_weakref")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("TargetNode");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("ProcessConstWeak");
+    const std::string varNode = angel_lsp::test::GenerateRandomSymbolName("node");
+    const std::string varWeak = angel_lsp::test::GenerateRandomSymbolName("weak");
+
+    const std::string predefined = "class " + clsName +
+                                   " {}\n"
+                                   "class weakref<T> {\n"
+                                   "    weakref();\n"
+                                   "    weakref(T@ value);\n"
+                                   "}\n"
+                                   "class const_weakref<T> {\n"
+                                   "    const_weakref();\n"
+                                   "    const_weakref(const const_weakref<T>& in other);\n"
+                                   "    const_weakref(const weakref<T>& in other);\n"
+                                   "    const_weakref(const T@ value);\n"
+                                   "}\n";
+
+    const std::string script = "void " + fnName + "(const_weakref<" + clsName +
+                               "> cw) {}\n"
+                               "void Test(" +
+                               clsName + "@ " + varNode +
+                               ") {\n"
+                               "    weakref<" +
+                               clsName + "> " + varWeak + "(" + varNode +
+                               ");\n"
+                               "    " +
+                               fnName + "(" + varWeak +
+                               ");\n"
+                               "}\n";
+
+    const auto diags = AnalyzeCallSnippet(predefined + script, "file:///engine.as.predefined");
+    CHECK_FALSE(HasCode(diags, "as-err-no-matching-signature"));
+    CHECK_FALSE(HasCode(diags, "as-err-call-no-matching-signature"));
+    CHECK_FALSE(HasCode(diags, "as-err-no-implicit-conversion"));
+}
+
+TEST_CASE("CallChecker - Mutable non-const reference parameter on class requires l-value")
+{
+    const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("Widget");
+    const std::string fnName = angel_lsp::test::GenerateRandomSymbolName("ModifyWidget");
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("w");
+
+    const std::string code = "class " + clsName +
+                             " {}\n"
+                             "void " +
+                             fnName + "(" + clsName +
+                             " &w) {}\n"
+                             "void Test() {\n"
+                             "    " +
+                             clsName + " " + varName +
+                             ";\n"
+                             "    " +
+                             fnName + "(" + varName +
+                             ");\n"
+                             "    " +
+                             fnName + "(" + clsName +
+                             "());\n"
+                             "}\n";
+
+    angel_lsp::config::EngineProperties engine;
+    engine.allowUnsafeReferences = true;
+
+    auto diags = AnalyzeCallSnippet(code, "file:///calls.as", &engine);
+    CHECK(HasCode(diags, "as-err-lvalue-required-for-out-param"));
+}
