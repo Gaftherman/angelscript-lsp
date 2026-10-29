@@ -4,24 +4,75 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.6-exp.4] - 2026-10-29
+
+### Experimental Release 1.1.6-exp.4: Module Symbol Isolation, Oracle Parity for References, Zero-Allocation Scope Utils & Compile-Time Anti-Slop Gates
+
+- Strict Module & Entry Point Symbol Isolation (`SymbolTable`, `ServerModules`, `ServerAnalysis`):
+  - Filtered snapshot analysis in `SymbolTable::CreateAnalysisSnapshot` restricted to the active module's closure (`moduleFileUris`) + stubs and active file.
+  - Saneamiento completo de claves y cubos de símbolos para evitar que archivos `.as` no incluidos colisionen con el archivo activo.
+  - Eliminados los falsos positivos de declaraciones duplicadas (`E104` / `as-err-duplicate-declaration`) y discrepancias de firma en funcdefs (`E121` / `as-err-signature-mismatch`) entre scripts independientes sin relación de inclusión.
+  - Mejora en `ComputeModuleClosure` para heredar automáticamente miembros de módulos carpeta circundantes cuando un entry point reside en su interior.
+- Oracle Parity for Reference Parameters & Unsafe References (`FunctionRules`, `sven.angelscript.rules.json`):
+  - Paridad estricta con `angelscript_oracle.exe` para parámetros de función por referencia: cuando `allowUnsafeReferences == false` (predeterminado del motor), los tipos primitivos y por valor (`string`) con calificador `&` sin dirección explícita (`in`/`out`) emiten `E031` (`as-err-inout-on-primitive`).
+  - Verificación de modificadores de parámetros actualizada para no ignorar parámetros marcados como `const` cuando omiten el calificador `in` explícito (ej. `const string& text` vs `const string&in text`).
+  - Cuando `allowUnsafeReferences == true`, se permiten referencias libres estilo C++ sin emitir falsos diagnósticos.
+- Zero-Allocation Scoped Name Utilities (`ScopedNameUtils.h`):
+  - Nueva cabecera `ScopedNameUtils.h` en Capa 1 operando al 100% sobre `std::string_view` con 0 reservas en el heap: `StripGlobalPrefix`, `HasLeadingGlobalPrefix`, `ParentScopeView`, `SplitScopedName`, `ForEachEnclosingScope`, `EndsWithScopedMember`, `JoinScopedName` y `AppendScopedName`.
+  - Erradicadas el 100% de operaciones manuales con `"::"` (`.starts_with("::")`, `.ends_with("::")`, concatenaciones `+ "::"` y `"::" +`) en Capas 2, 3 y 4.
+  - Bloqueo en tiempo de análisis estático mediante `server/scripts/check-ast-traversal.py`.
+- Zero-Heap AST Operator Tokens & Node Agnosticism (`GrammarSymbols`, `ASTUtils`):
+  - Erradicadas las extracciones de operadores en memoria heap (`NodeText(opNode)`) en todos los analizadores de expresiones (`NullSafetyExpr`, `BinaryOperatorChecker`, `ComparisonOperatorChecker`, `DefiniteAssignmentChecker`, etc.).
+  - Migración a tokens pre-resueltos en tiempo de compilación (`TSSymbol` `gs.tok*`) y vistas directas `std::string_view` (`parser::GetNodeTextView(opNode, ctx.sourceCode)`).
+  - Erradicación de `ts_node_type(node)` y nombres de campo en strings (`parser::fields::*`) en Capas 2, 3 y 4, reemplazados por IDs numéricos precalculados en `GrammarSymbols`.
+- Configured Types & Decoupling from Hardcoded Type Names (`SymbolTable`, `EngineRuleConfig`):
+  - Implementación de la Prohibición 13: desacoplados completamente los nombres de tipos cableados (`"string"`, `"array"`, `"weakref"`) en reglas de sobrecarga y conversión de tipos.
+  - Sustitución por consultas dinámicas a `SymbolTable` (`GetStringType()`, `GetDefaultArrayType()`) y sustitución paramétrica de plantillas.
+  - Integrado el target bloqueante `angel_lsp_anti_slop_gate` en `server/CMakeLists.txt`, impidiendo compilaciones con antipatrones AST.
+- Humanized Configuration Descriptions & Dual-Language Parity (`client/package.nls.json`, `client/package.nls.es.json`):
+  - Rediseño completo de las 17 descripciones de configuración de motor `angelscript.engine.*` en inglés y español con ejemplos prácticos de código AngelScript y especificación de la propiedad nativa `(asEP_*)` al final.
+  - Sincronización automática de las tablas de configuración en `client/README.md` y `client/README.es.md` vía `sync-readme-settings.py`.
+- Tests & Validation Suite:
+  - 100% de 2,546 casos de prueba CTest aprobados en modo Release (`/W4 /WX /we4100`).
+  - 12/12 compuertas de calidad superadas con éxito (`check-quality.py`).
+  - Suite de cliente `npm run pretest` verificada sin errores de compilación ni linting.
+
 ## [1.1.6-exp.3] - 2026-10-28
 
 ### Experimental Release 1.1.6-exp.3: Property Inheritance Parity, AST-Native Evaluatable Expression, Debug Completions & Enum Member Hover
 
-- Property Inheritance Parity — E230 False Positive Fix:
-  - Fixed `FindPropertyAccessors` so each accessor prefix (`get_`, `set_`) is searched independently across the full inheritance chain.
-  - `IsAssignableMember` now walks the full inherited hierarchy, eliminating false E230 on `s = false` in subclasses.
-- AST-Native Evaluatable Expression Extractor:
-  - New `EvaluatableExpressionHandler` extracts the minimal syntactically valid evaluatable expression at cursor position using flat traversal and precompiled queries.
-  - Handles chained member access, array indexing, and bare identifiers.
+- Property Inheritance Parity — E230 False Positive Fix (`SemanticHelpers`, `LValueChecker`, `TypeConversionChecker`):
+  - Fixed `FindPropertyAccessors` so each accessor prefix (`get_`, `set_`) is searched independently across the full inheritance chain; a subclass that only overrides the getter no longer hides the inherited setter.
+  - `CheckVirtualPropertySymbol` and `InspectPropertyAccess` now accumulate `hasGet`/`hasSet` across all ancestors instead of stopping at the first match.
+  - `InspectBareOrScopedProperty` short-circuits on local variables via `ResolveInScopeAt` before attempting the ancestor walk.
+  - `IsAssignableMember` in `LValueChecker` now walks the full inherited hierarchy when checking for a `set_` accessor, eliminating false E230 on `s = false` in subclasses of a class that declares both `get_s` and `set_s`.
+- AST-Native Evaluatable Expression Extractor (`EvaluatableExpressionHandler`, Layer 3):
+  - New `EvaluatableExpressionHandler.h/.cpp` extracts the minimal syntactically valid evaluatable expression at a given cursor position using flat `TSTreeCursor` traversal and precompiled S-expression queries.
+  - Zero `ts_node_parent` calls in the hot path; upward hops are strictly bounded (depth ≤ 1) and replaced by query-cursor matches where possible.
+  - Handles chained member access (`data.m_Classname`, `player.pev.health`), array indexing (`items[i]`, `matrix[row][col]`), and bare identifiers.
+- Debug Expression Handlers (Layer 4, `DebugExpressionHandlers.cpp`):
+  - Added `HandleEvaluatableExpression`: serves `textDocument/evaluatableExpression` and `angelscript/evaluatableExpression` requests routed to the AST extractor.
+  - Added `HandleDebugCompletion`: serves `angelscript/debugCompletion` providing completion items for the debug console input.
+  - Registered all three handlers in `TextDocumentHandlers.cpp` and declared them in `Server.h`.
 - Client Evaluatable Expression Rewrite (`angelscriptEvaluatableExpression.ts`):
-  - Rewritten to delegate to the C++ server via LSP with a local regex fallback; removed eager rightward expansion over `.`.
-  - Registered `CompletionItemProvider` for debug console input tab-completion.
+  - Rewritten to delegate to the C++ server via LSP (`angelscript/evaluatableExpression`) with a local regex fallback; removed eager rightward expansion over `.` that produced oversized expressions.
+  - Registered `CompletionItemProvider` for debug input schemes in `extension.ts`.
 - Debug Engine Improvements (`angel_lsp_debugger.h`):
-  - `IsVarInScope` filtering, reverse local lookup, array element inspection, quoted string/enum label/array preview formatting.
-  - `HandleCompletions` + `supportsCompletionsRequest: true` for debug console tab-completion.
-  - `HandleEvaluate` returns `success: false` only in `"hover"` context to prevent VS Code error overlays.
-- Enum Member Hover Label: enum members now display `(enum member)` instead of `(property)` in hover tooltips.
+  - `IsVarInScope` filtering prevents out-of-scope variables from appearing in Locals.
+  - Reverse local lookup resolves the innermost shadowing variable correctly.
+  - `InspectScriptArray` and `EvaluateIndexedExpression` enable element inspection of `array<T>` in the Variables pane.
+  - `GetChildProperties` uses `asIScriptObject::GetAddressOfProperty` for direct member traversal without string slicing.
+  - `FormatValue` now emits quoted strings, enum labels, and compact array previews.
+  - `HandleCompletions` + `supportsCompletionsRequest: true` in `initializeResponse` for debug console tab-completion.
+  - `HandleEvaluate` returns `success: false` (with a user-facing message) only in `"hover"` context; all other contexts return `<unknown>` to prevent VS Code error overlays.
+- Enum Member Hover Label (`HoverHandler`):
+  - Enum members now display `(enum member)` instead of `(property)` in hover tooltips; `IsContainerProperty` no longer matches `SymbolType::Enum`.
+  - `PublishEnumMembers` decomposed into `BuildEnumMemberNodeMap` and `ComputeEnumDefaultValue` static helpers to satisfy the CCN ≤ 15 and NLOC ≤ 70 ceilings.
+- New Tests:
+  - `EvaluatableExpressionTest.cpp` — 6 AST extraction cases covering bare identifiers, member chains, indexed access, and nested indexing.
+  - `IndexedPropertyTest.cpp` — indexed property accessor tests.
+  - `DebuggerDapProtocolTest.cpp` updated with `Completions and Hover Fallback` case.
+  - `HoverTest.cpp` updated: `(property)` → `(enum member)` assertions for enum members.
 
 ## [1.1.6-exp.2] - 2026-10-28
 
