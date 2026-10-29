@@ -801,7 +801,7 @@ std::string QualifyTypeInContainer(std::string_view typeStr, std::string_view co
  * @return Resulting element or value type.
  */
 std::string ResolveIndexedType(std::string_view typeName, size_t indexCount, const SymbolTable& symbolTable,
-                               std::string_view arrayTypeName = "array");
+                               std::string_view arrayTypeName);
 
 /**
  * @brief Resolves single index element type, matching opIndex overloads with the index argument.
@@ -957,6 +957,7 @@ struct ReceiverTypeContext
     const Scope* scope = nullptr;
     std::string_view virtualHostClass = {};
     std::string_view fileUri = {};
+    std::string_view arrayTypeName = {};
 };
 
 /**

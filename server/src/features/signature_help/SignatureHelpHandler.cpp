@@ -1,5 +1,6 @@
 #include "features/signature_help/SignatureHelpHandler.h"
 #include "analysis/SemanticHelpers.h"
+#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/Utils.h"
 #include <algorithm>
@@ -129,13 +130,13 @@ CallNodes FindCallNodes(TSNode node)
     CallNodes result;
     constexpr int kMaxDepth = 64;
     int depth = 0;
-    for (TSNode cur = node; depth < kMaxDepth && !ts_node_is_null(cur); cur = ts_node_parent(cur), ++depth)
+    for (TSNode cur = node; depth < kMaxDepth && !ts_node_is_null(cur); cur = parser::GetParent(cur), ++depth)
     {
         std::string_view type = ts_node_type(cur);
         if (type == "argument_list")
         {
             result.argListNode = cur;
-            TSNode parent = ts_node_parent(cur);
+            TSNode parent = parser::GetParent(cur);
             if (!ts_node_is_null(parent))
             {
                 std::string_view pType = ts_node_type(parent);
@@ -188,7 +189,7 @@ TSNode ExtractFunctionNode(TSNode callNode)
     }
     if (std::string_view(ts_node_type(callNode)) == "variable_declarator")
     {
-        TSNode declNode = ts_node_parent(callNode);
+        TSNode declNode = parser::GetParent(callNode);
         if (!ts_node_is_null(declNode))
         {
             TSNode typeNode = parser::GetChildByField(declNode, parser::fields::VarType);

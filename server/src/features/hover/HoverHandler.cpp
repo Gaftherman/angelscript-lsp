@@ -124,7 +124,7 @@ static std::string InheritedDocComment(const HoverRequest& request, const analys
             continue;
         }
 
-        const auto inherited = request.symbolTable.FindSymbolsPtr(ancestor + "::" + symbol.name);
+        const auto inherited = request.symbolTable.FindMemberSymbolPtr(ancestor, symbol.name);
         if (!inherited)
         {
             continue;
@@ -252,7 +252,7 @@ std::string ExtractDeclarationTextAt(TSNode root, const std::string& sourceCode,
 
     TSNode current = ts_node_descendant_for_point_range(root, point, point);
 
-    for (int depth = 0; depth < 8 && !ts_node_is_null(current); ++depth, current = ts_node_parent(current))
+    for (int depth = 0; depth < 8 && !ts_node_is_null(current); ++depth, current = parser::GetParent(current))
     {
         if (std::string_view(ts_node_type(current)) != wantedNodeType)
         {
@@ -484,7 +484,7 @@ std::optional<HoverTarget> ExtractHoverNode(TSNode rootNode, const std::string& 
         return target;
     }
 
-    if (auto target = TryExtractHoverTarget(ts_node_parent(node), sourceCode))
+    if (auto target = TryExtractHoverTarget(parser::GetParent(node), sourceCode))
     {
         return target;
     }
@@ -499,7 +499,7 @@ std::optional<HoverTarget> ExtractHoverNode(TSNode rootNode, const std::string& 
         }
         if (!ts_node_is_null(prevNode))
         {
-            if (auto target = TryExtractHoverTarget(ts_node_parent(prevNode), sourceCode))
+            if (auto target = TryExtractHoverTarget(parser::GetParent(prevNode), sourceCode))
             {
                 return target;
             }
@@ -671,7 +671,7 @@ static TSNode FindCallFromParent(TSNode parent, TSNode node)
 
 TSNode FindEnclosingCallNode(TSNode node)
 {
-    TSNode parent = ts_node_parent(node);
+    TSNode parent = parser::GetParent(node);
     if (ts_node_is_null(parent))
     {
         return TSNode{};
@@ -685,7 +685,7 @@ TSNode FindEnclosingCallNode(TSNode node)
     std::string_view pType = ts_node_type(parent);
     if (pType == "member_expression" || pType == "scoped_identifier")
     {
-        TSNode grandParent = ts_node_parent(parent);
+        TSNode grandParent = parser::GetParent(parent);
         if (!ts_node_is_null(grandParent) && std::string_view(ts_node_type(grandParent)) == "call_expression")
         {
             TSNode fn = parser::GetChildByField(grandParent, parser::fields::Function);
@@ -1455,7 +1455,7 @@ std::optional<lsp::Hover> TryHoverMemberAccess(const HoverQueryContext& ctx)
 std::string InferTypeFromAst(TSNode node, const std::string& sourceCode)
 {
     TSNode cur = node;
-    for (int i = 0; i < 4 && !ts_node_is_null(cur); ++i, cur = ts_node_parent(cur))
+    for (int i = 0; i < 4 && !ts_node_is_null(cur); ++i, cur = parser::GetParent(cur))
     {
         std::string_view cType = ts_node_type(cur);
         if (cType == "parameter" || cType == "variable_declaration")
@@ -1593,7 +1593,7 @@ bool IsDirectInitDeclarator(TSNode node)
     TSNode declarator = node;
     if (!ts_node_is_null(declarator) && std::string_view(ts_node_type(declarator)) != "variable_declarator")
     {
-        declarator = ts_node_parent(node);
+        declarator = parser::GetParent(node);
     }
     if (ts_node_is_null(declarator) || std::string_view(ts_node_type(declarator)) != "variable_declarator")
     {
@@ -1658,7 +1658,7 @@ void TryAppendConstructorSignature(TSNode node, std::string_view typeName, const
     TSNode declarator = node;
     if (!ts_node_is_null(declarator) && std::string_view(ts_node_type(declarator)) != "variable_declarator")
     {
-        declarator = ts_node_parent(node);
+        declarator = parser::GetParent(node);
     }
     if (!ts_node_is_null(declarator) && std::string_view(ts_node_type(declarator)) == "variable_declarator")
     {
@@ -1754,7 +1754,7 @@ static void AppendLocalDoc(const analysis::LocalDefinition& def, std::string_vie
         TSNode declarator = ctx.node;
         if (!ts_node_is_null(declarator) && std::string_view(ts_node_type(declarator)) != "variable_declarator")
         {
-            declarator = ts_node_parent(ctx.node);
+            declarator = parser::GetParent(ctx.node);
         }
         if (auto ctorSym = ResolveConstructorForDeclarator(declarator, typeName, ctx))
         {
@@ -1865,7 +1865,7 @@ std::optional<lsp::Hover> TryHoverParameterAst(const HoverQueryContext& ctx)
 
     TSNode current = ctx.node;
     bool foundParam = false;
-    for (int depth = 0; depth < 4 && !ts_node_is_null(current); ++depth, current = ts_node_parent(current))
+    for (int depth = 0; depth < 4 && !ts_node_is_null(current); ++depth, current = parser::GetParent(current))
     {
         if (std::string_view(ts_node_type(current)) == "parameter")
         {
@@ -1985,7 +1985,7 @@ std::optional<lsp::Hover> TryHoverNamedArgument(const HoverQueryContext& ctx)
         return std::nullopt;
     }
 
-    TSNode callNode = ts_node_parent(ctx.parent);
+    TSNode callNode = parser::GetParent(ctx.parent);
     if (ts_node_is_null(callNode))
     {
         return std::nullopt;
@@ -2266,7 +2266,7 @@ TSNode FindEnclosingLambda(TSNode node)
         {
             return cur;
         }
-        cur = ts_node_parent(cur);
+        cur = parser::GetParent(cur);
     }
     return TSNode{};
 }
@@ -2511,7 +2511,7 @@ std::optional<lsp::Hover> TryHoverExpressionOrLocal(const HoverQueryContext& ctx
  */
 static bool IsQualifiedMemberNode(TSNode node, std::string_view sourceCode = {})
 {
-    TSNode parent = ts_node_parent(node);
+    TSNode parent = parser::GetParent(node);
     if (ts_node_is_null(parent))
     {
         return false;
@@ -2550,7 +2550,7 @@ enum class ContainerContextPreference
  */
 static bool IsScopeQualifier(TSNode node) noexcept
 {
-    TSNode parent = ts_node_parent(node);
+    TSNode parent = parser::GetParent(node);
     if (ts_node_is_null(parent))
     {
         return false;
@@ -2582,7 +2582,7 @@ static ContainerContextPreference CheckContextPreference(TSNode node)
     const auto& gs = parser::GetGrammarSymbols();
     if (IsScopeQualifier(node))
     {
-        TSNode cur = ts_node_parent(node);
+        TSNode cur = parser::GetParent(node);
         int depth = 0;
         while (!ts_node_is_null(cur) && depth++ < 8)
         {
@@ -2590,12 +2590,12 @@ static ContainerContextPreference CheckContextPreference(TSNode node)
             {
                 return ContainerContextPreference::PreferNamespace;
             }
-            cur = ts_node_parent(cur);
+            cur = parser::GetParent(cur);
         }
         return ContainerContextPreference::None;
     }
 
-    TSNode cur = ts_node_parent(node);
+    TSNode cur = parser::GetParent(node);
     int depth = 0;
     while (!ts_node_is_null(cur) && depth++ < 8)
     {
@@ -2610,7 +2610,7 @@ static ContainerContextPreference CheckContextPreference(TSNode node)
         }
         if (sym == gs.symScopedIdentifier || sym == gs.symScope)
         {
-            cur = ts_node_parent(cur);
+            cur = parser::GetParent(cur);
             continue;
         }
         break;
@@ -2841,10 +2841,10 @@ static void AppendConstructorSymbolsIfCall(const HoverQueryContext& ctx, std::ve
         if (sym.type == analysis::SymbolType::Class)
         {
             const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-            auto ctors = ctx.request.symbolTable.FindSymbolsPtr(qName + "::" + sym.name);
+            auto ctors = ctx.request.symbolTable.FindMemberSymbolPtr(qName, sym.name);
             if ((!ctors || ctors->empty()) && qName != sym.name)
             {
-                ctors = ctx.request.symbolTable.FindSymbolsPtr(sym.name + "::" + sym.name);
+                ctors = ctx.request.symbolTable.FindMemberSymbolPtr(sym.name, sym.name);
             }
             if (ctors)
             {
@@ -2929,7 +2929,7 @@ HoverQueryContext BuildHoverQueryContext(const HoverRequest& request, HoverProfi
     uint32_t queryLine = analysis::ResolvePhysicalLine(vctx, request.position.line);
     const analysis::Scope* scope =
         rootScope ? FindInnermostScope(rootScope.get(), queryLine, request.position.character) : nullptr;
-    TSNode parent = ts_node_parent(target.node);
+    TSNode parent = parser::GetParent(target.node);
 
     return HoverQueryContext{request,      profiler,        target.node,          std::move(target.text),
                              target.range, std::move(vctx), std::move(rootScope), queryLine,

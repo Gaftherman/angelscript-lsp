@@ -41,6 +41,89 @@ bool StripReferenceSuffix(std::string& s)
     }
     return false;
 }
+
+bool IsViableConvertingConstructor(const Symbol& sym, const std::string& fromType)
+{
+    if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
+    {
+        return false;
+    }
+    const auto& sig = sym.GetFunction();
+    if (sig.modifiers.isExplicit || sig.modifiers.isDelete || sig.parameters.empty())
+    {
+        return false;
+    }
+    const std::string paramType = NormalizeType(sig.parameters[0].typeName, "array");
+    if (paramType != fromType && !IsPrimitiveWidening(fromType, paramType))
+    {
+        return false;
+    }
+    return std::all_of(sig.parameters.begin() + 1, sig.parameters.end(),
+                       [](const auto& p) { return !p.defaultValue.empty(); });
+}
+
+bool MatchesConstructorParameter(const FunctionSignature& sig, const TemplateBinding& binding,
+                                 const std::string& fromType)
+{
+    if (sig.modifiers.isExplicit || sig.modifiers.isDelete || sig.parameters.empty())
+    {
+        return false;
+    }
+    std::string paramType = sig.parameters[0].typeName;
+    if (binding.usable)
+    {
+        paramType = SubstituteTemplateParameters(paramType, binding);
+    }
+    paramType = NormalizeType(paramType, "array");
+    if (paramType != fromType && !IsPrimitiveWidening(fromType, paramType) && !IsSameType(fromType, paramType))
+    {
+        return false;
+    }
+    return std::all_of(sig.parameters.begin() + 1, sig.parameters.end(),
+                       [](const auto& p) { return !p.defaultValue.empty(); });
+}
+
+bool CheckConstructorList(const std::shared_ptr<const std::vector<Symbol>>& syms, const TemplateBinding& binding,
+                          const std::string& fromType)
+{
+    if (!syms)
+    {
+        return false;
+    }
+    for (const auto& sym : *syms)
+    {
+        if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
+        {
+            if (MatchesConstructorParameter(sym.GetFunction(), binding, fromType))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner)
+{
+    const auto aArgs = SplitTemplateArguments(aInner);
+    const auto bArgs = SplitTemplateArguments(bInner);
+    if (aArgs.size() != bArgs.size())
+    {
+        return false;
+    }
+    for (size_t i = 0; i < aArgs.size(); ++i)
+    {
+        std::string_view va = aArgs[i];
+        std::string_view vb = bArgs[i];
+        TrimTypeWhitespace(va);
+        TrimTypeWhitespace(vb);
+        if (!IsSameType(std::string(va), std::string(vb)))
+        {
+            return false;
+        }
+    }
+    return true;
+}
 } // namespace
 
 std::string StripTypeDecorations(std::string result)
@@ -103,76 +186,9 @@ bool HasHandleModifier(std::string_view typeName)
     return typeName.find('@') != std::string_view::npos;
 }
 
-namespace
-{
-bool IsViableConvertingConstructor(const Symbol& sym, const std::string& fromType)
-{
-    if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
-    {
-        return false;
-    }
-    const auto& sig = sym.GetFunction();
-    if (sig.modifiers.isExplicit || sig.modifiers.isDelete || sig.parameters.empty())
-    {
-        return false;
-    }
-    const std::string paramType = NormalizeType(sig.parameters[0].typeName);
-    if (paramType != fromType && !IsPrimitiveWidening(fromType, paramType))
-    {
-        return false;
-    }
-    return std::all_of(sig.parameters.begin() + 1, sig.parameters.end(),
-                       [](const auto& p) { return !p.defaultValue.empty(); });
-}
-} // namespace
-
-namespace
-{
-bool MatchesConstructorParameter(const FunctionSignature& sig, const TemplateBinding& binding,
-                                 const std::string& fromType)
-{
-    if (sig.modifiers.isExplicit || sig.modifiers.isDelete || sig.parameters.empty())
-    {
-        return false;
-    }
-    std::string paramType = sig.parameters[0].typeName;
-    if (binding.usable)
-    {
-        paramType = SubstituteTemplateParameters(paramType, binding);
-    }
-    paramType = NormalizeType(paramType);
-    if (paramType != fromType && !IsPrimitiveWidening(fromType, paramType) && !IsSameType(fromType, paramType))
-    {
-        return false;
-    }
-    return std::all_of(sig.parameters.begin() + 1, sig.parameters.end(),
-                       [](const auto& p) { return !p.defaultValue.empty(); });
-}
-
-bool CheckConstructorList(const std::shared_ptr<const std::vector<Symbol>>& syms, const TemplateBinding& binding,
-                          const std::string& fromType)
-{
-    if (!syms)
-    {
-        return false;
-    }
-    for (const auto& sym : *syms)
-    {
-        if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
-        {
-            if (MatchesConstructorParameter(sym.GetFunction(), binding, fromType))
-            {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-} // namespace
-
 bool HasConvertingConstructor(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable)
 {
-    const std::string cleanTo = NormalizeType(toType);
+    const std::string cleanTo = NormalizeType(toType, "array");
     if (cleanTo.empty() || IsCorePrimitive(cleanTo))
     {
         return false;
@@ -194,8 +210,8 @@ UserConversionMatch CheckConversionMethod(const std::string& fromType, const std
                                           const SymbolTable& symbolTable)
 {
     UserConversionMatch bestMatch;
-    const std::string cleanFrom = NormalizeType(fromType);
-    const std::string cleanTo = NormalizeType(toType);
+    const std::string cleanFrom = NormalizeType(fromType, "array");
+    const std::string cleanTo = NormalizeType(toType, "array");
     const size_t openBracket = cleanFrom.find('<');
     const std::string baseName = (openBracket == std::string::npos) ? cleanFrom : cleanFrom.substr(0, openBracket);
     const std::string shortName{LastScopeSegment(baseName)};
@@ -221,7 +237,7 @@ UserConversionMatch CheckConversionMethod(const std::string& fromType, const std
                     {
                         retType = SubstituteTemplateParameters(retType, binding);
                     }
-                    retType = NormalizeType(retType);
+                    retType = NormalizeType(retType, "array");
                     if (retType == cleanTo || IsSameType(retType, cleanTo))
                     {
                         bestMatch = UserConversionMatch{true, true};
@@ -278,7 +294,7 @@ constexpr int k_maxTypedefDepth = 8;
 
 std::string UnwrapTypedef(const std::string& typeName, const SymbolTable& symbolTable, int depth)
 {
-    std::string current = NormalizeType(typeName);
+    std::string current = NormalizeType(typeName, "array");
     const auto syms = symbolTable.FindSymbolsPtr(current);
     if (syms)
     {
@@ -286,7 +302,7 @@ std::string UnwrapTypedef(const std::string& typeName, const SymbolTable& symbol
         {
             if (s.type == SymbolType::Typedef && std::holds_alternative<TypedefSignature>(s.signature))
             {
-                return NormalizeType(s.GetTypedef().baseType);
+                return NormalizeType(s.GetTypedef().baseType, "array");
             }
         }
     }
@@ -319,19 +335,19 @@ std::string UnwrapTypedef(const std::string& typeName, const SymbolTable& symbol
 
 bool IsIntegerType(const std::string& typeName)
 {
-    return IsIntegerPrimitive(NormalizeType(typeName));
+    return IsIntegerPrimitive(NormalizeType(typeName, "array"));
 }
 
 bool IsUnsignedInteger(const std::string& typeName)
 {
-    const std::string normalized = NormalizeType(typeName);
+    const std::string normalized = NormalizeType(typeName, "array");
     return normalized == "uint" || normalized == "uint8" || normalized == "uint16" || normalized == "uint32" ||
            normalized == "uint64";
 }
 
 bool IsFloatingPointType(const std::string& typeName)
 {
-    return IsFloatingPointPrimitive(NormalizeType(typeName));
+    return IsFloatingPointPrimitive(NormalizeType(typeName, "array"));
 }
 
 bool IsInTypeList(std::string_view target, std::initializer_list<std::string_view> validTypes)
@@ -375,8 +391,8 @@ bool CheckWideningTarget(std::string_view from, std::string_view to)
 
 bool IsPrimitiveWidening(const std::string& fromType, const std::string& toType)
 {
-    const std::string from = NormalizeType(fromType);
-    const std::string to = NormalizeType(toType);
+    const std::string from = NormalizeType(fromType, "array");
+    const std::string to = NormalizeType(toType, "array");
 
     if (from == to || from == "bool" || to == "bool")
     {
@@ -388,8 +404,8 @@ bool IsPrimitiveWidening(const std::string& fromType, const std::string& toType)
 
 bool IsPrimitiveNarrowing(const std::string& fromType, const std::string& toType)
 {
-    const std::string from = NormalizeType(fromType);
-    const std::string to = NormalizeType(toType);
+    const std::string from = NormalizeType(fromType, "array");
+    const std::string to = NormalizeType(toType, "array");
 
     if (from == to)
     {
@@ -540,31 +556,6 @@ bool IsContainerParameter(const ParameterInformation& param, const SymbolTable* 
 {
     return ParameterAcceptsInitializerList(param, symbolTable, arrayTypeName);
 }
-
-namespace
-{
-bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner)
-{
-    const auto aArgs = SplitTemplateArguments(aInner);
-    const auto bArgs = SplitTemplateArguments(bInner);
-    if (aArgs.size() != bArgs.size())
-    {
-        return false;
-    }
-    for (size_t i = 0; i < aArgs.size(); ++i)
-    {
-        std::string_view va = aArgs[i];
-        std::string_view vb = bArgs[i];
-        TrimTypeWhitespace(va);
-        TrimTypeWhitespace(vb);
-        if (!IsSameType(std::string(va), std::string(vb)))
-        {
-            return false;
-        }
-    }
-    return true;
-}
-} // namespace
 
 bool IsSameType(const std::string& a, const std::string& b)
 {

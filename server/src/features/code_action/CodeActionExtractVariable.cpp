@@ -4,6 +4,7 @@
  */
 
 #include "features/code_action/CodeActionInternal.h"
+#include "parser/ASTUtils.h"
 
 namespace angel_lsp::features
 {
@@ -59,7 +60,7 @@ bool IsLhsOfAssignment(TSNode node)
     TSNode curr = node;
     while (!ts_node_is_null(curr))
     {
-        TSNode parent = ts_node_parent(curr);
+        TSNode parent = parser::GetParent(curr);
         if (!ts_node_is_null(parent))
         {
             std::string_view pType = ts_node_type(parent);
@@ -130,7 +131,7 @@ TSNode FindExtractableExpression(TSNode rootNode, const lsp::Range& range)
     TSNode targetNode = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
     while (!ts_node_is_null(targetNode) && !IsExtractableExpression(targetNode))
     {
-        TSNode p = ts_node_parent(targetNode);
+        TSNode p = parser::GetParent(targetNode);
         if (ts_node_is_null(p))
         {
             break;
@@ -142,11 +143,11 @@ TSNode FindExtractableExpression(TSNode rootNode, const lsp::Range& range)
         return TSNode{};
     }
 
-    TSNode parent = ts_node_parent(targetNode);
+    TSNode parent = parser::GetParent(targetNode);
     if (IsMemberField(targetNode, parent))
     {
         targetNode = parent;
-        parent = ts_node_parent(targetNode);
+        parent = parser::GetParent(targetNode);
     }
     if (IsFunctionFieldOfCall(targetNode, parent))
     {
@@ -173,7 +174,7 @@ TSNode FindEnclosingBlockStatement(TSNode node)
     TSNode stmtNode = node;
     while (!ts_node_is_null(stmtNode))
     {
-        TSNode parent = ts_node_parent(stmtNode);
+        TSNode parent = parser::GetParent(stmtNode);
         if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "statement_block")
         {
             return stmtNode;
@@ -355,7 +356,7 @@ std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActionReques
     std::string indent = GetLineIndentation(request.sourceCode, stmtRow);
 
     lsp::TextEdit declEdit;
-    TSNode parentBlock = ts_node_parent(stmtNode);
+    TSNode parentBlock = parser::GetParent(stmtNode);
     TSPoint stmtStart = ts_node_start_point(stmtNode);
     if (!ts_node_is_null(parentBlock) && std::string_view(ts_node_type(parentBlock)) == "statement_block" &&
         ts_node_start_point(parentBlock).row == stmtStart.row)

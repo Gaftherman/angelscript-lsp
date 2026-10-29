@@ -4,6 +4,7 @@
 #include "config/EngineRuleConfig.h"
 #include "config/ServerConfig.h"
 #include "i18n/i18n.h"
+#include "parser/ASTUtils.h"
 #include "parser/AngelScriptParser.h"
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
@@ -477,7 +478,7 @@ std::string ResolveReceiverFromAst(const std::string& fileUri, const analysis::L
     {
         return "";
     }
-    TSNode exprParent = ts_node_parent(refNode);
+    TSNode exprParent = parser::GetParent(refNode);
     const auto& syms = parser::GetGrammarSymbols();
     if (ts_node_is_null(exprParent) || ts_node_symbol(exprParent) != syms.symMemberAccess)
     {
@@ -1446,13 +1447,13 @@ DeclRangeSet CollectAllDeclRanges(const std::string& symName, const std::vector<
     AddSymbolDeclRanges(symbolTable.FindSymbols(symName), allDeclRanges);
     for (const auto& c : compatibleClasses)
     {
-        AddSymbolDeclRanges(symbolTable.FindSymbols(c + "::" + symName), allDeclRanges);
+        AddSymbolDeclRanges(symbolTable.FindMemberSymbols(c, symName), allDeclRanges);
     }
     for (const auto& s : symGroup)
     {
         if (!s.containerName.empty())
         {
-            AddSymbolDeclRanges(symbolTable.FindSymbols(s.containerName + "::" + symName), allDeclRanges);
+            AddSymbolDeclRanges(symbolTable.FindMemberSymbols(s.containerName, symName), allDeclRanges);
         }
     }
     AddSymbolDeclRanges(symGroup, allDeclRanges);
@@ -1482,7 +1483,7 @@ lsp::Range FindMixinRangeInAst(const analysis::Symbol& sym, const std::string& m
     TSNode hostNode = ts_node_descendant_for_point_range(hostRoot, hostPt, hostPt);
     while (!ts_node_is_null(hostNode) && std::string_view(ts_node_type(hostNode)) != "class_declaration")
     {
-        hostNode = ts_node_parent(hostNode);
+        hostNode = parser::GetParent(hostNode);
     }
 
     TSNode incNode = analysis::FindMixinInclusionNode(hostNode, mixinName, mixinName, request.sourceCode);

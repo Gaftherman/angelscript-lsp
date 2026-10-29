@@ -5,6 +5,7 @@
 
 #include "config/ServerConfig.h"
 #include "features/code_action/CodeActionInternal.h"
+#include "parser/ASTUtils.h"
 
 namespace angel_lsp::features
 {
@@ -161,7 +162,7 @@ lsp::Position FindClassInterfaceInsertionPosition(TSNode rootNode, const analysi
     TSNode cNode = ts_node_descendant_for_point_range(rootNode, cPt, cPt);
     while (!ts_node_is_null(cNode) && std::string_view(ts_node_type(cNode)) != "class_declaration")
     {
-        cNode = ts_node_parent(cNode);
+        cNode = parser::GetParent(cNode);
     }
     if (ts_node_is_null(cNode))
     {

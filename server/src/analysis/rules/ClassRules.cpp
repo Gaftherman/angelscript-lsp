@@ -477,7 +477,7 @@ TSNode FindBaseListNode(const Symbol& sym, const DiagnosticContext& ctx)
         {
             break;
         }
-        node = ts_node_parent(node);
+        node = parser::GetParent(node);
     }
     if (ts_node_is_null(node))
     {
@@ -944,7 +944,7 @@ TSNode FindMixinAstNode(const TSTree* mixinTree, const Symbol& mixinSym)
     while (!ts_node_is_null(mixinNode) && NodeType(mixinNode) != "mixin_declaration" &&
            NodeType(mixinNode) != "class_declaration")
     {
-        mixinNode = ts_node_parent(mixinNode);
+        mixinNode = parser::GetParent(mixinNode);
     }
     return mixinNode;
 }
@@ -982,7 +982,7 @@ InstantiationRange FindHostMixinRange(const Symbol& sym, const Symbol& mixinSym,
     int depth = 0;
     while (!ts_node_is_null(hostNode) && depth++ < 16 && ts_node_symbol(hostNode) != gs.symClassDeclaration)
     {
-        hostNode = ts_node_parent(hostNode);
+        hostNode = parser::GetParent(hostNode);
     }
 
     TSNode incNode = FindMixinInclusionNode(hostNode, mixinName, mixinSym.name, ctx.request.sourceCode);
@@ -1059,7 +1059,7 @@ bool IsScopedIdentifierIgnored(TSNode parent, const parser::GrammarSymbols& gs)
     {
         return true;
     }
-    TSNode grandparent = ts_node_parent(parent);
+    TSNode grandparent = parser::GetParent(parent);
     if (ts_node_is_null(grandparent))
     {
         return false;
@@ -1102,7 +1102,7 @@ bool IsDeclarationOrFieldChild(TSNode cur, TSNode parent, TSSymbol pSym, const p
 /** @brief Determines if an identifier node is in a non-reference AST context. */
 bool ShouldIgnoreMixinIdentifier(TSNode cur)
 {
-    TSNode parent = ts_node_parent(cur);
+    TSNode parent = parser::GetParent(cur);
     if (ts_node_is_null(parent))
     {
         return true;

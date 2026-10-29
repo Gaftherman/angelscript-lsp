@@ -23,7 +23,7 @@ std::string StripTypeDecorations(std::string result);
  * @param[in] arrayTypeName Workspace-configured array container type name.
  * @return Desugared type string.
  */
-std::string DesugarArrayBrackets(std::string result, std::string_view arrayTypeName = "array");
+std::string DesugarArrayBrackets(std::string result, std::string_view arrayTypeName);
 
 /**
  * @brief Normalizes a type name for canonical semantic comparison.
@@ -31,7 +31,7 @@ std::string DesugarArrayBrackets(std::string result, std::string_view arrayTypeN
  * @param[in] arrayTypeName Workspace-configured array container type name.
  * @return Canonical normalized type name.
  */
-std::string NormalizeType(std::string_view typeName, std::string_view arrayTypeName = "array");
+std::string NormalizeType(std::string_view typeName, std::string_view arrayTypeName);
 
 /**
  * @brief Checks whether a type name string carries a handle (@) modifier.

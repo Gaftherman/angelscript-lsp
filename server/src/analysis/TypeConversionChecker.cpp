@@ -57,8 +57,8 @@ std::string_view NodeType(TSNode node)
     return ts_node_is_null(node) ? std::string_view{} : std::string_view(ts_node_type(node));
 }
 
-namespace
-{
+bool IsSameType(const std::string& a, const std::string& b);
+
 bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner)
 {
     const auto aArgs = SplitTemplateArguments(aInner);
@@ -80,7 +80,6 @@ bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner)
     }
     return true;
 }
-} // namespace
 
 bool IsSameType(const std::string& a, const std::string& b)
 {
@@ -814,8 +813,6 @@ bool CanConvertUserTypes(const ConversionTypes& types, const DiagnosticContext& 
     return CanConvertClasses(types.from, types.to, ctx, state);
 }
 
-namespace
-{
 struct EdgeGuard
 {
     ankerl::unordered_dense::set<std::string>& edges;
@@ -825,7 +822,6 @@ struct EdgeGuard
         edges.erase(key);
     }
 };
-} // namespace
 
 bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx, ConversionState& state)
 {
@@ -2657,7 +2653,7 @@ void ProcessConditionNode(TSNode node, const TypeConversionCheckRequest& request
 
     if (nodeType == "if_statement")
     {
-        TSNode parent = ts_node_parent(node);
+        TSNode parent = parser::GetParent(node);
         if (ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "if_statement")
         {
             CheckRepeatedConversions(node, scope, ctx);
@@ -2900,7 +2896,7 @@ static bool IsScopedIdentifierQualified(TSNode parent, std::string_view sourceCo
             return true;
         }
     }
-    TSNode grandParent = ts_node_parent(parent);
+    TSNode grandParent = parser::GetParent(parent);
     return !ts_node_is_null(grandParent) && IsMemberFieldMatch(grandParent, parent);
 }
 
@@ -2912,7 +2908,7 @@ static bool IsScopedIdentifierQualified(TSNode parent, std::string_view sourceCo
  */
 static bool IsQualifiedOrMemberIdentifier(TSNode node, std::string_view sourceCode)
 {
-    TSNode parent = ts_node_parent(node);
+    TSNode parent = parser::GetParent(node);
     if (ts_node_is_null(parent))
     {
         return false;
@@ -3727,7 +3723,7 @@ void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& re
  */
 void ProcessMemberExpressionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    TSNode parent = ts_node_parent(node);
+    TSNode parent = parser::GetParent(node);
     bool isLhsAssignment = false;
     bool isUnaryArg = false;
     if (!ts_node_is_null(parent))
@@ -3774,7 +3770,7 @@ void ProcessMemberExpressionNode(TSNode node, const TypeConversionCheckRequest& 
  */
 void ProcessIndexExpressionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    TSNode parent = ts_node_parent(node);
+    TSNode parent = parser::GetParent(node);
     bool isLhsAssignment = false;
     bool isUnaryArg = false;
     if (!ts_node_is_null(parent))
@@ -4294,14 +4290,10 @@ void CheckTypeConversions(const TypeConversionCheckRequest& request, DiagnosticC
 
     if (request.nodeIndex)
     {
-        static constexpr std::array<std::string_view, 19> kConversionTypes = {
-            "if_statement",       "while_statement",      "do_while_statement",       "for_statement",
-            "ternary_expression", "expression_statement", "foreach_statement",        "variable_declaration",
-            "return_statement",   "func_declaration",     "assignment_expression",    "binary_expression",
-            "unary_expression",   "postfix_expression",   "member_expression",        "index_expression",
-            "cast_expression",    "call_expression",      "construct_call_expression"};
-
-        request.nodeIndex->ForEachNodeOrdered(kConversionTypes, [&](TSNode node) { ProcessNode(node, request, ctx); });
+        const auto& gs = parser::GetGrammarSymbols();
+        request.nodeIndex->ForEachNodeOrdered(
+            std::span<const TSSymbol>(gs.conversionTargetSymbols.data(), gs.conversionTargetSymbols.size()),
+            [&](TSNode node) { ProcessNode(node, request, ctx); });
     }
     else
     {

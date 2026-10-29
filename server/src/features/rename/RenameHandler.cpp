@@ -29,7 +29,7 @@ bool AreClassMembersPredefined(const TargetDescriptor& target, const analysis::S
     bool foundAny = false;
     for (const auto& cls : target.relatedClasses)
     {
-        const auto syms = symbolTable.FindSymbols(cls + "::" + target.name);
+        const auto syms = symbolTable.FindMemberSymbols(cls, target.name);
         for (const auto& sym : syms)
         {
             foundAny = true;

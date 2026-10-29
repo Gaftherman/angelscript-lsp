@@ -253,7 +253,7 @@ void CheckSharedEntityEligibility(std::string_view sourceCode, DiagnosticContext
 bool IsCallFunctionNode(TSNode p, TSNode node)
 {
     TSNode fn = parser::GetCallCallee(p);
-    return !ts_node_is_null(fn) && (fn.id == node.id || ts_node_parent(node).id == fn.id);
+    return !ts_node_is_null(fn) && (fn.id == node.id || parser::GetParent(node).id == fn.id);
 }
 
 bool IsDeclarationNameNode(TSNode p, TSNode node, std::string_view pType)
@@ -441,7 +441,7 @@ struct IsolationVisitor
 
     bool IsIdentifierInSpecialContext(TSNode node) const
     {
-        TSNode p = ts_node_parent(node);
+        TSNode p = parser::GetParent(node);
         while (!ts_node_is_null(p))
         {
             std::string_view pType = ts_node_type(p);
@@ -461,7 +461,7 @@ struct IsolationVisitor
             {
                 break;
             }
-            p = ts_node_parent(p);
+            p = parser::GetParent(p);
         }
         return false;
     }

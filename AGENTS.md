@@ -47,6 +47,12 @@ Layer isolation is strict and enforced by `server/scripts/check-layer-includes.p
 5. **Anti-Monolith & 300-Line Limit:** Production source files (`.cpp`) must target $\le 300$ net lines of code. Monolithic files exceeding this ceiling must be decomposed into cohesive, single-responsibility sub-units.
 6. **No Root-Cause Bypass:** Never patch edge cases using string comparison hardcoding (`if (name == "...")`). Fixes must reside in grammar queries, symbol resolution passes, or type rules.
 7. **AST Traversal & Parent-Climb Invariants:** Upward AST traversal must never use unbounded `while (!ts_node_is_null(ts_node_parent(node)))` loops to climb to the root; always use `parser::GetRootNode(node)` in $O(1)$ via `ts_tree_root_node(node.tree)`. Hot-path collectors and query passes (`LocalScopeCollector`, `SymbolCollector`, token classification) must never perform iterative `ts_node_parent` climb loops or string comparisons (`ts_node_type`); use $O(1)$ stack/byte-range containment, pre-cached `TSSymbol` comparisons, or bounded hops (`depth < 16`). Zero `ts_node_parent` calls are permitted in hot-path collectors.
+8. **Official Layer Architecture Tool Matrix:**
+   - **Lexical Scopes:** Query `ScopeTree::FindInnermostScope(byte)` instead of upward AST searching.
+   - **AST Navigation & Parent Isolation:** Upward traversal must strictly use `parser::GetParent(node)` (which safely verifies `!ts_node_is_null`). Calling raw `ts_node_parent` is strictly forbidden outside `server/src/parser/ASTUtils.h`. Root retrieval must use `parser::GetRootNode(node)` in $O(1)$.
+   - **Scoped Name Manipulation:** Use `utils::ScopedNameUtils` (`StripGlobalPrefix`, `HasLeadingGlobalPrefix`, `ParentScopeView`, `SplitScopedName`, `ForEachEnclosingScope`, `AreEquivalentGlobalOrScopedNames`) operating entirely on `std::string_view` with zero heap allocations.
+   - **Zero-Allocation Symbol Table Lookups:** Member lookups must use `SymbolTable::FindMemberSymbolPtr(container, name)` or `SymbolTable::FindMemberSymbols(container, name)`. Reachability in enclosing scopes must use `SymbolTable::HasScopedSymbol(scope, name)` or `SymbolTable::IsReachableInContainerScope(name, containerScope)`. Ad-hoc string concatenations like `+ "::" +` passed into symbol search APIs are strictly prohibited.
+   - **Structure Extraction:** Use precompiled `GrammarSymbols` and `NodeIndex::ForEachNodeOrdered(std::span<const TSSymbol>)` without string conversions or runtime map lookups.
 
 ---
 
@@ -127,6 +133,8 @@ When writing or refactoring C++ code in `server/src/`, all contributions MUST ad
 4. **Mandatory Execution Gate:**
    - Always run `python server/scripts/check-quality.py` before committing.
    - If any gate fails, inspect the report, fix root causes, and re-verify.
+5. **Compulsory Build Verification Pre-Commit Invariant (Golden Workflow):**
+   - Never commit or push changes after running `format-code.py`, Lizard refactoring, or Python refactoring scripts without running a full compilation (`cmake --build build --config Release`) and verifying 0 compilation errors and 0 warnings under `/W4 /WX /we4100`.
 
 ---
 

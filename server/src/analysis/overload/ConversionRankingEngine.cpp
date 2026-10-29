@@ -223,7 +223,7 @@ std::optional<ArgumentConversion> EvaluateMutableRefMatch(const ParameterInforma
             const auto hierarchy = GetInheritedTypeHierarchy(ctx.cleanParam, ctx.table);
             for (size_t dist = 0; dist < hierarchy.size(); ++dist)
             {
-                if (IsSameType(NormalizeType(hierarchy[dist]), ctx.cleanArg))
+                if (IsSameType(NormalizeType(hierarchy[dist], ctx.arrayTypeName), ctx.cleanArg))
                 {
                     const uint8_t distance = static_cast<uint8_t>(std::min<size_t>(dist + 1, 255));
                     return ArgumentConversion{MatchTier::InheritanceRef,
@@ -288,7 +288,7 @@ std::optional<ArgumentConversion> EvaluateInheritedSubtypeMatch(const MatchConte
     const auto hierarchy = GetInheritedTypeHierarchy(ctx.cleanArg, ctx.table);
     for (size_t dist = 0; dist < hierarchy.size(); ++dist)
     {
-        if (IsSameType(NormalizeType(hierarchy[dist]), ctx.cleanParam))
+        if (IsSameType(NormalizeType(hierarchy[dist], ctx.arrayTypeName), ctx.cleanParam))
         {
             const uint8_t distance = static_cast<uint8_t>(std::min<size_t>(dist + 1, 255));
             const int basePenalty = static_cast<int>(OverloadMatchPenalty::Inheritance) + (isValueToHandle ? 1 : 0) +
@@ -473,8 +473,8 @@ ArgumentConversion EvaluateArgumentConversion(const std::string& argType, const 
         return AdjustForLValueConstraint(*specialScore, IsOutParameter(param) && argType != "void", argIsLValue);
     }
 
-    const std::string cleanArg = UnwrapTypedef(NormalizeType(argType), symbolTable);
-    const std::string cleanParam = UnwrapTypedef(NormalizeType(param.typeName), symbolTable);
+    const std::string cleanArg = UnwrapTypedef(NormalizeType(argType, "array"), symbolTable);
+    const std::string cleanParam = UnwrapTypedef(NormalizeType(param.typeName, "array"), symbolTable);
     if (IsPoisonOrEmptyArg(cleanArg, cleanParam))
     {
         return ArgumentConversion{MatchTier::UnknownTypes,

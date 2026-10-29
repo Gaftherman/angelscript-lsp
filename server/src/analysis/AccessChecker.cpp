@@ -327,7 +327,7 @@ MemberAccess FindMember(const std::string& typeName, const std::string& memberNa
 std::string EnclosingClass(TSNode node, std::string_view sourceCode, bool& insideMixin, const SymbolTable& table)
 {
     insideMixin = false;
-    TSNode curr = ts_node_parent(node);
+    TSNode curr = parser::GetParent(node);
     size_t depth = 0;
     while (!ts_node_is_null(curr) && ++depth <= kMaxScopeDepth)
     {
@@ -352,7 +352,7 @@ std::string EnclosingClass(TSNode node, std::string_view sourceCode, bool& insid
                 return className;
             }
         }
-        curr = ts_node_parent(curr);
+        curr = parser::GetParent(curr);
     }
     return "";
 }
@@ -647,7 +647,7 @@ bool IsOuterLocalOrParameter(const Scope* enclosingClosure, std::string_view idT
  */
 std::string EnclosingClassOfLambda(TSNode node, std::string_view sourceCode)
 {
-    TSNode curr = ts_node_parent(node);
+    TSNode curr = parser::GetParent(node);
     size_t depth = 0;
     bool foundLambda = false;
     while (!ts_node_is_null(curr) && ++depth <= kMaxScopeDepth)
@@ -665,7 +665,7 @@ std::string EnclosingClassOfLambda(TSNode node, std::string_view sourceCode)
                 return NodeText(nameNode, sourceCode);
             }
         }
-        curr = ts_node_parent(curr);
+        curr = parser::GetParent(curr);
     }
     return "";
 }
@@ -801,7 +801,7 @@ void CheckImplicitMemberAccess(TSNode node, const Scope* scope, std::string_view
 
 void CheckIdentifierNode(TSNode node, const AccessCheckRequest& request, DiagnosticContext& ctx)
 {
-    TSNode parent = ts_node_parent(node);
+    TSNode parent = parser::GetParent(node);
     if (ShouldSkipIdentifierNode(node, parent))
     {
         return;

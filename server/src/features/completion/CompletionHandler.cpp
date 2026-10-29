@@ -3,6 +3,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SignatureFormatter.h"
 #include "analysis/overload/OverloadTypeConversions.h"
+#include "parser/ASTUtils.h"
 #include "parser/AngelScriptParser.h"
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
@@ -1658,7 +1659,7 @@ static TSNode FindReceiverFromParentAtDot(TSNode rootNode, size_t dotByteOffset)
     {
         return TSNode{};
     }
-    TSNode parent = ts_node_parent(dotNode);
+    TSNode parent = parser::GetParent(dotNode);
     if (ts_node_is_null(parent))
     {
         return TSNode{};
@@ -2955,7 +2956,7 @@ ResolveMemberCalleeCandidates(const std::string& callee, const CompletionRequest
         auto hier = GetInheritedTypeHierarchy(request.symbolTable, cleanType);
         for (const auto& cls : hier)
         {
-            auto syms = request.symbolTable.FindSymbols(cls + "::" + memText);
+            auto syms = request.symbolTable.FindMemberSymbols(cls, memText);
             candidates.insert(candidates.end(), syms.begin(), syms.end());
         }
     }

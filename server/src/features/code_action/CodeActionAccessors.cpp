@@ -1,5 +1,6 @@
 #include "features/code_action/CodeActionInternal.h"
 #include "i18n/i18n.h"
+#include "parser/ASTUtils.h"
 
 namespace angel_lsp::features
 {
@@ -42,7 +43,7 @@ bool FindEnclosingClassAndBody(TSNode leaf, std::string_view sourceCode, std::st
     TSNode classNode = leaf;
     while (!ts_node_is_null(classNode) && std::string_view(ts_node_type(classNode)) != "class_declaration")
     {
-        classNode = ts_node_parent(classNode);
+        classNode = parser::GetParent(classNode);
     }
     if (ts_node_is_null(classNode))
     {
@@ -125,7 +126,7 @@ std::vector<std::pair<std::string, std::string>> CollectFieldsForGetterSetter(TS
     while (!ts_node_is_null(varDecl) && std::string_view(ts_node_type(varDecl)) != "variable_declaration" &&
            !ts_node_eq(varDecl, classBody))
     {
-        varDecl = ts_node_parent(varDecl);
+        varDecl = parser::GetParent(varDecl);
     }
 
     if (!ts_node_is_null(varDecl) && std::string_view(ts_node_type(varDecl)) == "variable_declaration")
@@ -325,7 +326,7 @@ void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode r
         TSNode node = ts_node_descendant_for_point_range(rootNode, point, point);
         while (!ts_node_is_null(node) && std::string_view(ts_node_type(node)) != "func_declaration")
         {
-            node = ts_node_parent(node);
+            node = parser::GetParent(node);
         }
         if (ts_node_is_null(node))
         {

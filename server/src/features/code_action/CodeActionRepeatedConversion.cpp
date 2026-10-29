@@ -73,7 +73,7 @@ TSNode FindRootIfStatement(TSNode node)
         {
             rootIf = curr;
         }
-        curr = ts_node_parent(curr);
+        curr = parser::GetParent(curr);
     }
     return rootIf;
 }

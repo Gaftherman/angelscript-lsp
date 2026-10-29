@@ -5,6 +5,7 @@
 
 #include "features/code_action/CodeActionClassMutation.h"
 #include "features/code_action/CodeActionInternal.h"
+#include "parser/ASTUtils.h"
 
 namespace angel_lsp::features
 {
@@ -49,7 +50,7 @@ std::optional<lsp::CodeAction> TryBuildMissingConstFixForSymbol(const CodeAction
     TSNode fnNode = ts_node_descendant_for_point_range(rootNode, fnPt, fnPt);
     while (!ts_node_is_null(fnNode) && std::string_view(ts_node_type(fnNode)) != "func_declaration")
     {
-        fnNode = ts_node_parent(fnNode);
+        fnNode = parser::GetParent(fnNode);
     }
     if (ts_node_is_null(fnNode))
     {
@@ -87,7 +88,7 @@ void TryAddMissingConstDiagnosticFix(const CodeActionRequest& request, TSNode ro
     TSNode memberNode = ts_node_descendant_for_point_range(rootNode, dPt, dPt);
     std::string methodName = GetNodeText(memberNode, request.sourceCode);
 
-    TSNode callee = ts_node_parent(memberNode);
+    TSNode callee = parser::GetParent(memberNode);
     TSNode objNode = parser::GetChildByField(callee, parser::fields::Object);
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
     const analysis::Scope* scope = FindScopeByLineOrRoot(rootScope.get(), dPt.row);
@@ -137,12 +138,12 @@ void TryAddIntentionalConstAction(const CodeActionRequest& request, TSNode rootN
     TSNode fnNode = leaf;
     while (!ts_node_is_null(fnNode) && std::string_view(ts_node_type(fnNode)) != "func_declaration")
     {
-        fnNode = ts_node_parent(fnNode);
+        fnNode = parser::GetParent(fnNode);
     }
     TSNode classNode = fnNode;
     while (!ts_node_is_null(classNode) && std::string_view(ts_node_type(classNode)) != "class_declaration")
     {
-        classNode = ts_node_parent(classNode);
+        classNode = parser::GetParent(classNode);
     }
     if (ts_node_is_null(fnNode) || ts_node_is_null(classNode))
     {

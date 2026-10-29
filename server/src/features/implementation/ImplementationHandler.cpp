@@ -1,6 +1,7 @@
 #include "features/implementation/ImplementationHandler.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
+#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/LspLogger.h"
 #include <spdlog/fmt/fmt.h>
@@ -318,7 +319,7 @@ std::string ResolveOwnerType(TSNode node, std::string_view sourceCode, const std
     {
         return owner;
     }
-    TSNode p = ts_node_parent(node);
+    TSNode p = parser::GetParent(node);
     if (!ts_node_is_null(p) && std::string_view(ts_node_type(p)) == "member_expression")
     {
         TSNode objNode = parser::GetChildByField(p, parser::fields::Object);
@@ -341,7 +342,7 @@ std::string ResolveOwnerType(TSNode node, std::string_view sourceCode, const std
 std::shared_ptr<const std::vector<Symbol>> FindMemberInClass(const std::string& clsName, const std::string& name,
                                                              const SymbolTable& table)
 {
-    auto memberSyms = table.FindSymbolsPtr(clsName + "::" + name);
+    auto memberSyms = table.FindMemberSymbolPtr(clsName, name);
     if (memberSyms && !memberSyms->empty())
     {
         return memberSyms;
@@ -349,7 +350,7 @@ std::shared_ptr<const std::vector<Symbol>> FindMemberInClass(const std::string& 
     const std::string bareCls{analysis::LastScopeSegment(clsName)};
     if (bareCls != clsName)
     {
-        memberSyms = table.FindSymbolsPtr(bareCls + "::" + name);
+        memberSyms = table.FindMemberSymbolPtr(bareCls, name);
         if (memberSyms && !memberSyms->empty())
         {
             return memberSyms;

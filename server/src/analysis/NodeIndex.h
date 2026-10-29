@@ -110,6 +110,54 @@ class NodeIndex
     }
 
     /**
+     * @brief Iterates multiple grammar symbols in document order (sorted by start byte).
+     * @tparam Callback Visitor callable with signature void(TSNode).
+     * @param[in] symbols List of Tree-Sitter grammar symbol IDs to merge.
+     * @param[in] callback Visitor invoked for each node in sorted order.
+     */
+    template <typename Callback> void ForEachNodeOrdered(std::span<const TSSymbol> symbols, Callback&& callback) const
+    {
+        struct Cursor
+        {
+            std::span<const TSNode> nodes;
+            size_t index = 0;
+            [[nodiscard]] uint32_t currentByte() const noexcept
+            {
+                return (index < nodes.size()) ? ts_node_start_byte(nodes[index]) : UINT32_MAX;
+            }
+        };
+
+        std::vector<Cursor> cursors;
+        cursors.reserve(symbols.size());
+        for (TSSymbol sym : symbols)
+        {
+            cursors.push_back(Cursor{Nodes(sym), 0});
+        }
+
+        while (true)
+        {
+            size_t best = 0;
+            uint32_t minByte = UINT32_MAX;
+            for (size_t c = 0; c < cursors.size(); ++c)
+            {
+                uint32_t b = cursors[c].currentByte();
+                if (b < minByte)
+                {
+                    minByte = b;
+                    best = c;
+                }
+            }
+            if (minByte == UINT32_MAX)
+            {
+                break;
+            }
+
+            TSNode node = cursors[best].nodes[cursors[best].index++];
+            callback(node);
+        }
+    }
+
+    /**
      * @brief Iterates over multiple node types in document order (initializer_list overload).
      */
     template <typename Callback>

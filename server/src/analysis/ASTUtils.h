@@ -97,7 +97,7 @@ struct GlobalScopeQualifier
     const TSSymbol nSym = ts_node_symbol(node);
     if (nSym != gs.symScopedIdentifier)
     {
-        TSNode parent = ts_node_parent(node);
+        TSNode parent = parser::GetParent(node);
         if (!ts_node_is_null(parent) && ts_node_symbol(parent) == gs.symScopedIdentifier)
         {
             target = parent;

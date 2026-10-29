@@ -218,7 +218,7 @@ std::vector<analysis::Symbol> CollectMemberCalleeCandidates(TSNode funcNode, con
 
     if (receiverTypeName.empty())
     {
-        auto directCandidates = request.symbolTable.FindSymbols(objText + "::" + memText);
+        auto directCandidates = request.symbolTable.FindMemberSymbols(objText, memText);
         for (const auto& sym : directCandidates)
         {
             candidateSymbols.push_back(sym);
@@ -276,7 +276,7 @@ std::vector<analysis::Symbol> CollectScopedCalleeCandidates(const std::string& c
     auto hierarchy = analysis::GetInheritedTypeHierarchy(targetContainer, request.symbolTable);
     for (const auto& typeName : hierarchy)
     {
-        auto syms = request.symbolTable.FindSymbols(typeName + "::" + methodName);
+        auto syms = request.symbolTable.FindMemberSymbols(typeName, methodName);
         if (!syms.empty())
         {
             candidates.insert(candidates.end(), syms.begin(), syms.end());
@@ -290,7 +290,7 @@ std::vector<analysis::Symbol> CollectScopedCalleeCandidates(const std::string& c
         if (it->kind == analysis::ContainerKind::Namespace)
         {
             std::string nsPrefix = it->qualifiedName.empty() ? it->name : it->qualifiedName;
-            auto scopedSyms = request.symbolTable.FindSymbols(nsPrefix + "::" + calleeName);
+            auto scopedSyms = request.symbolTable.FindMemberSymbols(nsPrefix, calleeName);
             if (!scopedSyms.empty())
             {
                 return scopedSyms;
@@ -299,7 +299,7 @@ std::vector<analysis::Symbol> CollectScopedCalleeCandidates(const std::string& c
                 analysis::GetInheritedTypeHierarchy(nsPrefix + "::" + targetContainer, request.symbolTable);
             for (const auto& typeName : scopedHier)
             {
-                auto syms = request.symbolTable.FindSymbols(typeName + "::" + methodName);
+                auto syms = request.symbolTable.FindMemberSymbols(typeName, methodName);
                 if (!syms.empty())
                 {
                     candidates.insert(candidates.end(), syms.begin(), syms.end());
@@ -326,10 +326,10 @@ std::vector<analysis::Symbol> CollectClassConstructorCandidates(const std::vecto
         if (sym.type == analysis::SymbolType::Class)
         {
             const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-            auto ctors = symbolTable.FindSymbols(qName + "::" + sym.name);
+            auto ctors = symbolTable.FindMemberSymbols(qName, sym.name);
             if (ctors.empty() && qName != sym.name)
             {
-                ctors = symbolTable.FindSymbols(sym.name + "::" + sym.name);
+                ctors = symbolTable.FindMemberSymbols(sym.name, sym.name);
             }
             ctorSymbols.insert(ctorSymbols.end(), ctors.begin(), ctors.end());
         }
@@ -738,7 +738,7 @@ std::string DeduceNumericLiteralType(std::string_view nodeTxt)
  * @param[in] sourceCode Source text buffer.
  * @return Type string or empty string.
  */
-std::string DeduceLiteralType(TSNode exprNode, std::string_view sourceCode, std::string_view stringTypeName = "string")
+std::string DeduceLiteralType(TSNode exprNode, std::string_view sourceCode, std::string_view stringTypeName)
 {
     std::string_view type = ts_node_type(exprNode);
     std::string nodeTxt = TrimNodeText(GetNodeText(exprNode, sourceCode));

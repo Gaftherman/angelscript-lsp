@@ -97,7 +97,11 @@ void CheckRelationalComparison(TSNode opNode, const RelationalCheckOperands& ops
 
     if (ops.bothHandles)
     {
-        const std::string baseClass = MemberOwnerType(ops.leftType);
+        const std::string_view arrayTypeName =
+            (ctx.request.typeConfig && !ctx.request.typeConfig->arrayTypeName.empty())
+                ? std::string_view(ctx.request.typeConfig->arrayTypeName)
+                : std::string_view("array");
+        const std::string baseClass = MemberOwnerType(ops.leftType, arrayTypeName);
         if (!baseClass.empty() && ctx.request.symbolTable.FindSymbolsPtr(baseClass))
         {
             const auto opSyms = ctx.request.symbolTable.FindMemberSymbolPtr(baseClass, "opCmp");

@@ -115,7 +115,7 @@ std::string GetNodeTextAt(const DefinitionRequest& request, TSNode& outNode)
  */
 TSNode FindEnclosingCallNode(TSNode node)
 {
-    TSNode parent = ts_node_parent(node);
+    TSNode parent = parser::GetParent(node);
     if (ts_node_is_null(parent))
     {
         return TSNode{};
@@ -131,7 +131,7 @@ TSNode FindEnclosingCallNode(TSNode node)
     }
     else if (pType == "member_expression" || pType == "scoped_identifier")
     {
-        TSNode grandParent = ts_node_parent(parent);
+        TSNode grandParent = parser::GetParent(parent);
         if (!ts_node_is_null(grandParent) && std::string_view(ts_node_type(grandParent)) == "call_expression")
         {
             TSNode fn = parser::GetChildByField(grandParent, parser::fields::Function);
@@ -494,7 +494,7 @@ DefinitionContext MakeDefinitionContext(const DefinitionRequest& request)
  */
 bool IsMemberChildOfExpression(TSNode node)
 {
-    TSNode parent = ts_node_parent(node);
+    TSNode parent = parser::GetParent(node);
     if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "member_expression")
     {
         TSNode memNode = parser::GetChildByField(parent, parser::fields::Member);
@@ -567,7 +567,7 @@ std::vector<analysis::Symbol> FindMemberSymbolsInHierarchy(const std::string& re
     {
         return enumFallback;
     }
-    auto directMatches = symbolTable.FindSymbols(receiverTypeName + "::" + nodeText);
+    auto directMatches = symbolTable.FindMemberSymbols(receiverTypeName, nodeText);
     if (!directMatches.empty())
     {
         return directMatches;
@@ -648,7 +648,7 @@ std::string NormalizeReceiverTypeName(std::string receiverTypeName, const analys
 std::optional<std::vector<lsp::Location>> TryResolveMemberDefinition(TSNode node, const std::string& nodeText,
                                                                      const DefinitionContext& ctx)
 {
-    TSNode parent = ts_node_parent(node);
+    TSNode parent = parser::GetParent(node);
     if (ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "member_expression")
     {
         return std::nullopt;
@@ -804,7 +804,7 @@ std::vector<analysis::Symbol> FindSymbolsForNode(TSNode node, const std::string&
 {
     std::vector<analysis::Symbol> symbols;
     bool isExplicitlyScoped = false;
-    TSNode parent = ts_node_parent(node);
+    TSNode parent = parser::GetParent(node);
     if (!ts_node_is_null(parent))
     {
         const auto& gs = parser::GetGrammarSymbols();
@@ -856,7 +856,7 @@ std::vector<analysis::Symbol> FindHostClassSymbols(const std::string& hostClass,
     auto hier = analysis::GetInheritedTypeHierarchy(hostClass, symbolTable);
     for (const auto& cls : hier)
     {
-        auto found = symbolTable.FindSymbols(cls + "::" + nodeText);
+        auto found = symbolTable.FindMemberSymbols(cls, nodeText);
         if (!found.empty())
         {
             return found;
@@ -1132,7 +1132,7 @@ std::optional<std::vector<lsp::Location>> TryResolveDeclarationFallback(TSNode n
     {
         return std::nullopt;
     }
-    TSNode p = ts_node_parent(node);
+    TSNode p = parser::GetParent(node);
     if (ts_node_is_null(p))
     {
         return std::nullopt;
@@ -1141,7 +1141,7 @@ std::optional<std::vector<lsp::Location>> TryResolveDeclarationFallback(TSNode n
     TSSymbol pSym = ts_node_symbol(p);
     if (pSym == gs.symScopedIdentifier)
     {
-        TSNode gp = ts_node_parent(p);
+        TSNode gp = parser::GetParent(p);
         if (!ts_node_is_null(gp))
         {
             p = gp;
@@ -1420,7 +1420,7 @@ TSNode FindScopedIdentifierMember(TSNode node)
     TSNode scopedNode{};
     for (int i = 0; i < 3; ++i)
     {
-        TSNode p = ts_node_parent(curr);
+        TSNode p = parser::GetParent(curr);
         if (ts_node_is_null(p))
         {
             break;

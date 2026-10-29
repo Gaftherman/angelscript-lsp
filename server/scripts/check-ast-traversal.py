@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """
-AST Traversal & Parent-Climb Quality Gate.
+AST Traversal, Parent-Climb & Layer Antipattern Quality Gate.
 Enforces:
 1. No unbounded root-climb loops (while/for (!ts_node_is_null(ts_node_parent(...))) / GetParent) across server/src/.
-2. Zero raw ts_node_parent calls in hot-path collectors (LocalScopeCollector, SymbolCollector, SemanticTokensHandler).
+2. Zero raw ts_node_parent calls across server/src/ outside parser/ASTUtils.h.
 3. Zero hardcoded engine-specific symbols ("BaseClass", "EHandle", etc.) outside EngineProfiles.cpp.
+4. Zero hardcoded type names or parameter defaults ("weakref", "const_weakref", ="string", ="array") in Layer 2 & 3.
+5. Zero heap string concatenations (+ "::" +) passed to SymbolTable lookups.
 """
 
 import sys
@@ -14,13 +16,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SERVER_SRC = REPO_ROOT / "server" / "src"
 
-HOT_PATH_FILES = [
-    SERVER_SRC / "analysis" / "LocalScopeCollector.h",
-    SERVER_SRC / "analysis" / "LocalScopeCollector.cpp",
-    SERVER_SRC / "analysis" / "SymbolCollector.h",
-    SERVER_SRC / "analysis" / "SymbolCollector.cpp",
-    SERVER_SRC / "features" / "semantic_tokens" / "SemanticTokensHandler.cpp",
-]
+RAW_PARENT_ALLOWED_FILES = {
+    SERVER_SRC / "parser" / "ASTUtils.h",
+}
 
 ROOT_CLIMB_PATTERNS = [
     re.compile(r"while\s*\(\s*!ts_node_is_null\s*\(\s*(ts_node_parent|parser::GetParent|GetParent)\s*\("),
@@ -43,6 +41,18 @@ ENGINE_ALLOWED_FILES = {
     SERVER_SRC / "config" / "EngineRuleConfig.h",
 }
 
+FORBIDDEN_TYPE_PATTERNS = [
+    (re.compile(r'"weakref"|"const_weakref"'), 'hardcoded "weakref" / "const_weakref" (use SymbolTable + generic template resolution)'),
+    (re.compile(r'param\.baseTypeName\s*==\s*"string"'), 'hardcoded "string" check on param (use param.isOutRef / isInOutRef / isStandaloneRef)'),
+    (re.compile(r'IsWeakrefToConstWeakref'), 'IsWeakrefToConstWeakref is banned (use generic template constructors)'),
+    (re.compile(r'(?:,|\()\s*(?:const\s+)?std::string_view\s+\w+\s*=\s*"(?:string|array)"'), 'forbidden default parameter ="string" or ="array" in function signature'),
+]
+
+SYMBOL_LOOKUP_CONCAT_PATTERNS = [
+    re.compile(r'\.(?:HasSymbol|FindSymbols|FindSymbolsPtr)\s*\([^)]*\+\s*"::"'),
+    re.compile(r'\.(?:HasSymbol|FindSymbols|FindSymbolsPtr)\s*\([^)]*"::"\s*\+'),
+]
+
 def check_no_root_climb_loops():
     violations = []
     for file_path in SERVER_SRC.rglob("*.[ch]*"):
@@ -62,11 +72,11 @@ def check_no_root_climb_loops():
                     violations.append((file_path, line_num, stripped))
     return violations
 
-def check_hot_path_parent_calls():
+def check_no_raw_ts_node_parent():
     violations = []
     raw_parent_pattern = re.compile(r"\bts_node_parent\s*\(")
-    for file_path in HOT_PATH_FILES:
-        if not file_path.is_file():
+    for file_path in SERVER_SRC.rglob("*.[ch]*"):
+        if not file_path.is_file() or file_path in RAW_PARENT_ALLOWED_FILES:
             continue
         try:
             content = file_path.read_text(encoding="utf-8", errors="ignore")
@@ -74,7 +84,7 @@ def check_hot_path_parent_calls():
             continue
         for line_num, line in enumerate(content.splitlines(), start=1):
             stripped = line.strip()
-            if stripped.startswith("//") or stripped.startswith("*"):
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
                 continue
             if raw_parent_pattern.search(line):
                 violations.append((file_path, line_num, stripped))
@@ -98,35 +108,44 @@ def check_no_engine_hardcoding():
                     violations.append((file_path, line_num, stripped))
     return violations
 
-TYPE_CHECK_TARGET_FILES = [
-    SERVER_SRC / "analysis" / "TypeConversionChecker.cpp",
-    SERVER_SRC / "analysis" / "overload" / "OverloadTypeConversions.cpp",
-    SERVER_SRC / "analysis" / "overload" / "ConversionRankingEngine.cpp",
-    SERVER_SRC / "analysis" / "CallChecker.cpp",
-]
-
-FORBIDDEN_TYPE_PATTERNS = [
-    (re.compile(r'"weakref"|"const_weakref"'), 'hardcoded "weakref" / "const_weakref" (use SymbolTable + generic template resolution)'),
-    (re.compile(r'param\.baseTypeName\s*==\s*"string"'), 'hardcoded "string" check on param (use param.isOutRef / isInOutRef / isStandaloneRef)'),
-    (re.compile(r'IsWeakrefToConstWeakref'), 'IsWeakrefToConstWeakref is banned (use generic template constructors)'),
-]
-
 def check_no_type_hardcoding():
     violations = []
-    for file_path in TYPE_CHECK_TARGET_FILES:
-        if not file_path.is_file():
-            continue
-        try:
-            file_content = file_path.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
-            continue
-        for line_num, line in enumerate(file_content.splitlines(), start=1):
-            stripped = line.strip()
-            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+    scan_roots = [SERVER_SRC / "analysis", SERVER_SRC / "features"]
+    for root in scan_roots:
+        for file_path in root.rglob("*.[ch]*"):
+            if not file_path.is_file() or file_path in ENGINE_ALLOWED_FILES:
                 continue
-            for pattern, reason in FORBIDDEN_TYPE_PATTERNS:
-                if pattern.search(line):
-                    violations.append((file_path, line_num, stripped, reason))
+            try:
+                file_content = file_path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for line_num, line in enumerate(file_content.splitlines(), start=1):
+                stripped = line.strip()
+                if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                    continue
+                for pattern, reason in FORBIDDEN_TYPE_PATTERNS:
+                    if pattern.search(line):
+                        violations.append((file_path, line_num, stripped, reason))
+    return violations
+
+def check_no_symbol_lookup_concat():
+    violations = []
+    scan_roots = [SERVER_SRC / "analysis", SERVER_SRC / "features"]
+    for root in scan_roots:
+        for file_path in root.rglob("*.[ch]*"):
+            if not file_path.is_file():
+                continue
+            try:
+                file_content = file_path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for line_num, line in enumerate(file_content.splitlines(), start=1):
+                stripped = line.strip()
+                if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                    continue
+                for pattern in SYMBOL_LOOKUP_CONCAT_PATTERNS:
+                    if pattern.search(line):
+                        violations.append((file_path, line_num, stripped))
     return violations
 
 def main():
@@ -140,11 +159,11 @@ def main():
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
 
-    hot_path_violations = check_hot_path_parent_calls()
-    if hot_path_violations:
+    raw_parent_violations = check_no_raw_ts_node_parent()
+    if raw_parent_violations:
         has_errors = True
-        print("[ERROR] Raw ts_node_parent calls detected in hot-path collectors (use parser::GetParent or O(1) symbols):")
-        for f, line_num, line in hot_path_violations:
+        print("[ERROR] Raw ts_node_parent calls detected outside parser/ASTUtils.h (use parser::GetParent):")
+        for f, line_num, line in raw_parent_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
 
@@ -159,15 +178,23 @@ def main():
     type_hardcoding_violations = check_no_type_hardcoding()
     if type_hardcoding_violations:
         has_errors = True
-        print("[ERROR] Forbidden type hardcoding detected in Layer 2 (PROHIBITION 13):")
+        print("[ERROR] Forbidden type hardcoding detected in Layer 2 or Layer 3 (PROHIBITION 13):")
         for f, line_num, line, reason in type_hardcoding_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line} -> {reason}")
 
+    concat_violations = check_no_symbol_lookup_concat()
+    if concat_violations:
+        has_errors = True
+        print("[ERROR] Heap string concatenation (+ '::' +) detected in SymbolTable lookups (use FindMemberSymbolPtr / FindMemberSymbols / HasScopedSymbol):")
+        for f, line_num, line in concat_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
     if has_errors:
         sys.exit(1)
 
-    print("[PASSED] AST Traversal, Parent-Climb, Engine Agnosticism, and Type Invariants verified (0 root-climb loops, 0 hot-path ts_node_parent calls, 0 engine hardcodings, 0 type hardcodings).")
+    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 engine hardcodings, 0 type hardcodings, 0 lookup string concatenations).")
 
 if __name__ == "__main__":
     main()

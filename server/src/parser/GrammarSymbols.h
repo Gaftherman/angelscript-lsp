@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <tree_sitter/api.h>
 
 namespace angel_lsp::parser
@@ -171,6 +172,13 @@ struct GrammarSymbols
     TSFieldId fieldInit = 0;           ///< "init"
     TSFieldId fieldConsequence = 0;    ///< "consequence"
     TSFieldId fieldOperand = 0;        ///< "operand"
+
+    // =========================================================================
+    // Pre-resolved Statement & Expression Sets
+    // =========================================================================
+
+    /** @brief Pre-resolved target node symbols for single-pass type conversion checks. */
+    std::array<TSSymbol, 19> conversionTargetSymbols{};
 };
 
 /**

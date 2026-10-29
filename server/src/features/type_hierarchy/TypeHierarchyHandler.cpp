@@ -1,6 +1,7 @@
 #include "features/type_hierarchy/TypeHierarchyHandler.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
+#include "parser/ASTUtils.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -154,7 +155,7 @@ std::vector<Symbol> FindQualifiedTypeUnderCursor(TSNode node, std::string_view s
         {
             break;
         }
-        p = ts_node_parent(p);
+        p = parser::GetParent(p);
     }
     return declarations;
 }

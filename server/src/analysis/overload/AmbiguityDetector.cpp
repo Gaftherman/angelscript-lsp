@@ -25,7 +25,7 @@ bool HasSameParameterList(const Symbol& left, const Symbol& right)
     }
     for (size_t i = 0; i < a.parameters.size(); ++i)
     {
-        if (NormalizeType(a.parameters[i].typeName) != NormalizeType(b.parameters[i].typeName))
+        if (NormalizeType(a.parameters[i].typeName, "array") != NormalizeType(b.parameters[i].typeName, "array"))
         {
             return false;
         }
@@ -58,14 +58,14 @@ bool HasSameSignature(const Symbol& left, const Symbol& right)
         return false;
     }
 
-    if (NormalizeType(a.returnType) != NormalizeType(b.returnType))
+    if (NormalizeType(a.returnType, "array") != NormalizeType(b.returnType, "array"))
     {
         return false;
     }
 
     for (size_t i = 0; i < a.parameters.size(); ++i)
     {
-        if (NormalizeType(a.parameters[i].typeName) != NormalizeType(b.parameters[i].typeName))
+        if (NormalizeType(a.parameters[i].typeName, "array") != NormalizeType(b.parameters[i].typeName, "array"))
         {
             return false;
         }
@@ -265,7 +265,7 @@ bool CheckOverloadAmbiguity(const std::vector<EvaluatedCandidate>& nonDominated,
     const bool anyArgumentUnknown = std::any_of(argumentTypes.begin(), argumentTypes.end(),
                                                 [](const std::string& argType)
                                                 {
-                                                    const std::string bare = NormalizeType(argType);
+                                                    const std::string bare = NormalizeType(argType, "array");
                                                     return bare.empty() || bare == "auto" || bare == "<poison>" ||
                                                            ExpressionTypeCache::IsPoisonType(argType);
                                                 });

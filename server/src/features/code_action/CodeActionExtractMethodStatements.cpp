@@ -4,6 +4,7 @@
  */
 
 #include "features/code_action/CodeActionExtractMethodAnalysis.h"
+#include "parser/ASTUtils.h"
 
 namespace angel_lsp::features
 {
@@ -24,7 +25,7 @@ TSNode FindEnclosingFunctionNode(TSNode rootNode, const lsp::Range& range)
     TSNode fnNode = selNode;
     while (!ts_node_is_null(fnNode) && std::string_view(ts_node_type(fnNode)) != "func_declaration")
     {
-        fnNode = ts_node_parent(fnNode);
+        fnNode = parser::GetParent(fnNode);
     }
     return fnNode;
 }
@@ -157,7 +158,7 @@ TSNode FindEnclosingClassNode(TSNode fnNode)
     TSNode classNode = fnNode;
     while (!ts_node_is_null(classNode) && std::string_view(ts_node_type(classNode)) != "class_declaration")
     {
-        classNode = ts_node_parent(classNode);
+        classNode = parser::GetParent(classNode);
     }
     return classNode;
 }
@@ -173,7 +174,7 @@ TSNode FindInnermostStatementBlock(TSNode rootNode, const lsp::Range& range, TSN
         {
             return node;
         }
-        node = ts_node_parent(node);
+        node = parser::GetParent(node);
     }
     return FindFunctionBodyBlock(fnNode);
 }

@@ -189,6 +189,27 @@ const GrammarSymbols& GetGrammarSymbols() noexcept
         PopulateDeclarations(lang, gs);
         PopulateExpressionsAndLiterals(lang, gs);
         PopulateTokensAndFields(lang, gs);
+        gs.conversionTargetSymbols = {
+            gs.symIfStatement,
+            gs.symWhileStatement,
+            gs.symDoWhileStatement,
+            gs.symForStatement,
+            gs.symTernaryExpression,
+            gs.symExpressionStatement,
+            gs.symForeachStatement,
+            gs.symVariableDeclaration,
+            gs.symReturnStatement,
+            gs.symFuncDeclaration,
+            gs.symAssignmentExpression,
+            gs.symBinaryExpression,
+            gs.symUnaryExpression,
+            gs.symPostfixExpression,
+            gs.symMemberExpression,
+            gs.symIndexExpression,
+            gs.symCastExpression,
+            gs.symCallExpression,
+            gs.symConstructCallExpression,
+        };
         return gs;
     }();
 

@@ -125,7 +125,7 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
         const std::string customArray = GenerateRandomSymbolName("ArrayT");
 
         // Default "array"
-        const std::string singleDesugar = DesugarArrayBrackets(elemType + "[]");
+        const std::string singleDesugar = DesugarArrayBrackets(elemType + "[]", "array");
         CHECK(singleDesugar == "array<" + elemType + ">");
 
         // Custom array container

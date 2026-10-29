@@ -5,6 +5,7 @@
 
 #include "analysis/TargetResolution.h"
 #include "features/code_action/CodeActionInternal.h"
+#include "parser/ASTUtils.h"
 #include <variant>
 
 namespace angel_lsp::features
@@ -191,7 +192,7 @@ lsp::TextEdit BuildRemoveUnusedVariableEdit(TSNode rootNode, std::string_view so
         {
             break;
         }
-        declarator = ts_node_parent(declarator);
+        declarator = parser::GetParent(declarator);
     }
 
     TSNode decl = declarator;
@@ -201,7 +202,7 @@ lsp::TextEdit BuildRemoveUnusedVariableEdit(TSNode rootNode, std::string_view so
         {
             break;
         }
-        decl = ts_node_parent(decl);
+        decl = parser::GetParent(decl);
     }
 
     if (ts_node_is_null(decl))

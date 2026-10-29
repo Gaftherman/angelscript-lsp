@@ -54,7 +54,7 @@ std::string CleanBaseType(std::string_view typeName, std::string_view arrayTypeN
  * @param[in] arrayTypeName Array template name (defaults to "array").
  * @return Canonical template representation (e.g. `array<int>`).
  */
-std::string CanonicalizeArrayType(std::string_view typeName, std::string_view arrayTypeName = "array");
+std::string CanonicalizeArrayType(std::string_view typeName, std::string_view arrayTypeName);
 
 /**
  * @brief Determines the container/owner type for member lookup on a type.
@@ -62,7 +62,7 @@ std::string CanonicalizeArrayType(std::string_view typeName, std::string_view ar
  * @param[in] arrayTypeName Array template name.
  * @return Name of the type owning member declarations.
  */
-std::string MemberOwnerType(std::string_view typeName, std::string_view arrayTypeName = "array");
+std::string MemberOwnerType(std::string_view typeName, std::string_view arrayTypeName);
 
 /**
  * @brief Normalizes primitive type aliases to canonical keywords (e.g., `int32` -> `int`).

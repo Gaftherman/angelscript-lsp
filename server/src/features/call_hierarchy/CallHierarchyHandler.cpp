@@ -122,7 +122,7 @@ std::string EnclosingFunction(TSNode node, std::string_view sourceCode)
     TSNode owner = node;
     while (!ts_node_is_null(owner) && std::string_view(ts_node_type(owner)) != "func_declaration")
     {
-        owner = ts_node_parent(owner);
+        owner = parser::GetParent(owner);
     }
     if (ts_node_is_null(owner))
     {

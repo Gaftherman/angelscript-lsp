@@ -116,7 +116,7 @@ bool IsCallableOrTypeDeclaration(std::string_view pType) noexcept
  */
 std::optional<lsp::DocumentHighlightKind> ClassifyDeclarationNode(TSNode leaf)
 {
-    TSNode parent = ts_node_parent(leaf);
+    TSNode parent = parser::GetParent(leaf);
     if (ts_node_is_null(parent))
     {
         return std::nullopt;
@@ -150,12 +150,12 @@ bool IsTypeAnnotationNode(TSNode leaf)
 {
     constexpr int kMaxDepth = 64;
     int depth = 0;
-    for (TSNode cur = leaf; depth < kMaxDepth && !ts_node_is_null(cur); cur = ts_node_parent(cur), ++depth)
+    for (TSNode cur = leaf; depth < kMaxDepth && !ts_node_is_null(cur); cur = parser::GetParent(cur), ++depth)
     {
         std::string_view cType = ts_node_type(cur);
         if (cType == "type" || cType == "datatype" || cType == "base_class_list" || cType == "template_type_list")
         {
-            TSNode curParent = ts_node_parent(cur);
+            TSNode curParent = parser::GetParent(cur);
             if (!ts_node_is_null(curParent) && std::string_view(ts_node_type(curParent)) == "variable_declarator")
             {
                 return false;
@@ -361,7 +361,7 @@ bool IsOutOrInOutParameter(const CalleeInfo& info, uint32_t argIndex, const anal
         auto related = analysis::GetAllRelatedClasses(info.receiverType, symbolTable);
         for (const auto& cls : related)
         {
-            auto found = symbolTable.FindSymbols(cls + "::" + info.calleeName);
+            auto found = symbolTable.FindMemberSymbols(cls, info.calleeName);
             matches.insert(matches.end(), found.begin(), found.end());
         }
     }
@@ -408,7 +408,7 @@ CheckCallArgumentMutation(TSNode cur, TSNode leaf, const DocumentHighlightReques
     {
         return std::nullopt;
     }
-    TSNode callNode = ts_node_parent(cur);
+    TSNode callNode = parser::GetParent(cur);
     if (ts_node_is_null(callNode) || std::string_view(ts_node_type(callNode)) != "call_expression")
     {
         return std::nullopt;
@@ -444,7 +444,7 @@ lsp::DocumentHighlightKind ClassifyAncestorExpressions(TSNode leaf, const Docume
 {
     constexpr int kMaxDepth = 64;
     int depth = 0;
-    for (TSNode cur = leaf; depth < kMaxDepth && !ts_node_is_null(cur); cur = ts_node_parent(cur), ++depth)
+    for (TSNode cur = leaf; depth < kMaxDepth && !ts_node_is_null(cur); cur = parser::GetParent(cur), ++depth)
     {
         if (auto res = CheckUnaryMutation(cur, leaf, request.sourceCode))
         {
@@ -771,7 +771,7 @@ std::string ResolveIdentifierReceiverType(const std::string& oText, const analys
  */
 TSNode FindMemberExpressionParent(TSNode refNode) noexcept
 {
-    TSNode exprParent = ts_node_parent(refNode);
+    TSNode exprParent = parser::GetParent(refNode);
     while (!ts_node_is_null(exprParent) && std::string_view(ts_node_type(exprParent)) != "member_expression")
     {
         std::string_view pType = ts_node_type(exprParent);
@@ -779,7 +779,7 @@ TSNode FindMemberExpressionParent(TSNode refNode) noexcept
         {
             return TSNode{};
         }
-        exprParent = ts_node_parent(exprParent);
+        exprParent = parser::GetParent(exprParent);
     }
     return exprParent;
 }

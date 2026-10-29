@@ -280,7 +280,7 @@ std::string ResolveExplicitReceiverType(const std::string& objText, const Resolv
 bool ResolveExplicitMemberAccess(TSNode outNode, const ResolveTargetRequest& request,
                                  const std::shared_ptr<const analysis::Scope>& rootScope, TargetDescriptor& target)
 {
-    TSNode parent = ts_node_parent(outNode);
+    TSNode parent = parser::GetParent(outNode);
     if (ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "member_expression")
     {
         return false;
@@ -459,7 +459,7 @@ static bool HasNamespaceSymbol(const std::vector<Symbol>& syms)
 void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const ResolveTargetRequest& request,
                             TargetDescriptor& target)
 {
-    TSNode parent = ts_node_parent(outNode);
+    TSNode parent = parser::GetParent(outNode);
     if (!ts_node_is_null(parent))
     {
         std::string_view pType = ts_node_type(parent);
@@ -516,7 +516,7 @@ void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const R
 bool TryResolveEnumMemberDeclaration(TSNode memberNode, const std::string& nodeText, std::string_view sourceCode,
                                      TargetDescriptor& target)
 {
-    TSNode enumDecl = ts_node_parent(memberNode);
+    TSNode enumDecl = parser::GetParent(memberNode);
     if (ts_node_is_null(enumDecl) || std::string_view(ts_node_type(enumDecl)) != "enum_declaration")
     {
         return false;
@@ -604,7 +604,7 @@ bool TryResolveScopedEnumAccess(TSNode scopedNode, const std::string& nodeText, 
 bool ResolveEnumTarget(TSNode outNode, const std::string& nodeText, const ResolveTargetRequest& request,
                        TargetDescriptor& target)
 {
-    TSNode parent = ts_node_parent(outNode);
+    TSNode parent = parser::GetParent(outNode);
     if (ts_node_is_null(parent))
     {
         return false;
@@ -995,13 +995,19 @@ bool ResolveGlobalScopedTarget(const ResolveTargetRequest& request, const Global
                                                { return sym.type != analysis::SymbolType::CallReference; });
         if (hasRealSymbol)
         {
-            target.kind = TargetKind::NamespaceSymbol;
-            target.qualifiedName = std::string(gsq.rootPath);
             const size_t lastSep = gsq.rootPath.rfind("::");
             if (lastSep != std::string_view::npos)
             {
+                target.kind = TargetKind::NamespaceSymbol;
+                target.qualifiedName = std::string(gsq.rootPath);
                 target.declaringNamespace = std::string(gsq.rootPath.substr(0, lastSep));
                 target.name = std::string(gsq.rootPath.substr(lastSep + 2));
+            }
+            else
+            {
+                target.kind = TargetKind::GlobalSymbol;
+                target.name = std::string(gsq.rootPath);
+                target.qualifiedName = std::string(gsq.rootPath);
             }
             FunctionArgConstraints callInfo = GetCallArgumentConstraints(request.outNode);
             ResolveTargetSignature(target, request, callInfo);
@@ -1315,7 +1321,7 @@ std::string ResolveReceiverFromAst(const analysis::LocalReference& ref, const an
     {
         return "";
     }
-    TSNode exprParent = ts_node_parent(refNode);
+    TSNode exprParent = parser::GetParent(refNode);
     const auto& syms = parser::GetGrammarSymbols();
     if (ts_node_is_null(exprParent) || ts_node_symbol(exprParent) != syms.symMemberAccess)
     {

@@ -654,6 +654,23 @@ class SymbolTable
         return HasSymbolAnywhere(std::string_view(name));
     }
 
+    /**
+     * @brief Checks if a symbol exists within a given scope using a stack buffer without heap allocations.
+     * @param[in] scope Qualified container scope (e.g. "Namespace::Class").
+     * @param[in] name Member or identifier name.
+     * @return True if scope::name exists in the symbol table.
+     */
+    [[nodiscard]] bool HasScopedSymbol(std::string_view scope, std::string_view name) const;
+
+    /**
+     * @brief Tests whether an identifier is reachable from an enclosing container scope traversing upwards.
+     *        Executes with zero heap allocations using stack-buffered lookups.
+     * @param[in] cleanName Identifier to look up.
+     * @param[in] containerScope Enclosing scope to begin ascending search.
+     * @return True if cleanName is declared in containerScope or any enclosing parent scope.
+     */
+    [[nodiscard]] bool IsReachableInContainerScope(std::string_view cleanName, std::string_view containerScope) const;
+
     /** @brief Returns a snapshot handle to the overload list for the given qualified name.
      *  @return Shared pointer to an immutable symbol list. The snapshot stays valid even if
      *          the table is mutated afterwards (copy-on-write), or nullptr if not found.

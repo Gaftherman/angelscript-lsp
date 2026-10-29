@@ -1,4 +1,5 @@
 #include "features/selection_range/SelectionRangeHandler.h"
+#include "parser/ASTUtils.h"
 
 #include <memory>
 #include <utility>
@@ -40,7 +41,7 @@ lsp::SelectionRange BuildChain(TSNode root, const lsp::Position& position)
     constexpr int kMaxDepth = 64;
     int depth = 0;
     for (TSNode current = node; depth < kMaxDepth && !ts_node_is_null(current);
-         current = ts_node_parent(current), ++depth)
+         current = parser::GetParent(current), ++depth)
     {
         const lsp::Range range = ToRange(current);
         if (ranges.empty() || !SameRange(ranges.back(), range))

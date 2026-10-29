@@ -2199,3 +2199,29 @@ TEST_CASE("CallChecker - Mutable non-const reference parameter on class requires
     auto diags = AnalyzeCallSnippet(code, "file:///calls.as", &engine);
     CHECK(HasCode(diags, "as-err-lvalue-required-for-out-param"));
 }
+
+TEST_CASE("CallChecker - Canonical comparison and scope resolution for myVar == ::myVar")
+{
+    const std::string varName = angel_lsp::test::GenerateRandomSymbolName("myVar");
+    const std::string boolName = angel_lsp::test::GenerateRandomSymbolName("b");
+
+    const std::string code = "int " + varName +
+                             " = 1;\n"
+                             "void main() {\n"
+                             "    bool " +
+                             boolName + " = (" + varName + " == ::" + varName +
+                             ");\n"
+                             "    int " +
+                             varName +
+                             " = 2;\n"
+                             "    bool " +
+                             boolName + "2 = (" + varName + " == ::" + varName +
+                             ");\n"
+                             "}\n";
+
+    auto diags = AnalyzeCallSnippet(code);
+    CHECK_FALSE(HasCode(diags, "as-err-no-matching-signature"));
+    CHECK_FALSE(HasCode(diags, "as-err-no-implicit-conversion"));
+    CHECK_FALSE(HasCode(diags, "as-err-binary-op-not-found"));
+    CHECK_FALSE(HasCode(diags, "as-err-unknown-type"));
+}

@@ -107,7 +107,7 @@ static bool TryExtractPrimitiveOrIdentifier(TSNode typeNode, std::string_view so
     if (nodeSymbol == symbols.symPrimitiveType)
     {
         result.baseTypeName = GetNodeText(typeNode, sourceCode);
-        TSNode parentDatatype = ts_node_parent(typeNode);
+        TSNode parentDatatype = parser::GetParent(typeNode);
         if (!ts_node_is_null(parentDatatype))
         {
             TSNode innerToken = ts_node_child(typeNode, 0);

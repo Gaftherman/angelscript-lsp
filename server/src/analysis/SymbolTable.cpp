@@ -5,6 +5,7 @@
 #include "analysis/rules/RuleIndex.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/LspLogger.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -1100,6 +1101,51 @@ bool SymbolTable::HasSymbol(std::string_view qualifiedName) const
     std::shared_lock<std::shared_mutex> lock(m_mutex);
     std::string_view search = CleanScope(qualifiedName);
     return m_symbols.contains(search);
+}
+
+bool SymbolTable::HasScopedSymbol(std::string_view scope, std::string_view name) const
+{
+    if (name.empty())
+    {
+        return false;
+    }
+    if (scope.empty())
+    {
+        return HasSymbol(name);
+    }
+    constexpr size_t kStackBufSize = 512;
+    const size_t totalLen = scope.size() + 2 + name.size();
+    if (totalLen < kStackBufSize)
+    {
+        char buf[kStackBufSize];
+        std::memcpy(buf, scope.data(), scope.size());
+        buf[scope.size()] = ':';
+        buf[scope.size() + 1] = ':';
+        std::memcpy(buf + scope.size() + 2, name.data(), name.size());
+        return HasSymbol(std::string_view(buf, totalLen));
+    }
+    std::string key;
+    key.reserve(totalLen);
+    key.append(scope).append("::").append(name);
+    return HasSymbol(std::string_view(key));
+}
+
+bool SymbolTable::IsReachableInContainerScope(std::string_view cleanName, std::string_view containerScope) const
+{
+    if (cleanName.empty())
+    {
+        return false;
+    }
+    std::string_view current = containerScope;
+    while (!current.empty())
+    {
+        if (HasScopedSymbol(current, cleanName))
+        {
+            return true;
+        }
+        current = utils::ParentScopeView(current);
+    }
+    return false;
 }
 
 std::shared_ptr<const std::vector<Symbol>> SymbolTable::FindSymbolsPtr(std::string_view qualifiedName) const
