@@ -2,6 +2,43 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.6-exp.3] - 2026-10-28
+
+### Experimental Release 1.1.6-exp.3: Property Inheritance Parity, AST-Native Evaluatable Expression, Debug Completions & Enum Member Hover
+
+- Property Inheritance Parity — E230 False Positive Fix (`SemanticHelpers`, `LValueChecker`, `TypeConversionChecker`):
+  - Fixed `FindPropertyAccessors` so each accessor prefix (`get_`, `set_`) is searched independently across the full inheritance chain; a subclass that only overrides the getter no longer hides the inherited setter.
+  - `CheckVirtualPropertySymbol` and `InspectPropertyAccess` now accumulate `hasGet`/`hasSet` across all ancestors instead of stopping at the first match.
+  - `InspectBareOrScopedProperty` short-circuits on local variables via `ResolveInScopeAt` before attempting the ancestor walk.
+  - `IsAssignableMember` in `LValueChecker` now walks the full inherited hierarchy when checking for a `set_` accessor, eliminating false E230 on `s = false` in subclasses of a class that declares both `get_s` and `set_s`.
+- AST-Native Evaluatable Expression Extractor (`EvaluatableExpressionHandler`, Layer 3):
+  - New `EvaluatableExpressionHandler.h/.cpp` extracts the minimal syntactically valid evaluatable expression at a given cursor position using flat `TSTreeCursor` traversal and precompiled S-expression queries.
+  - Zero `ts_node_parent` calls in the hot path; upward hops are strictly bounded (depth ≤ 1) and replaced by query-cursor matches where possible.
+  - Handles chained member access (`data.m_Classname`, `player.pev.health`), array indexing (`items[i]`, `matrix[row][col]`), and bare identifiers.
+- Debug Expression Handlers (Layer 4, `DebugExpressionHandlers.cpp`):
+  - Added `HandleEvaluatableExpression`: serves `textDocument/evaluatableExpression` and `angelscript/evaluatableExpression` requests routed to the AST extractor.
+  - Added `HandleDebugCompletion`: serves `angelscript/debugCompletion` providing completion items for the debug console input.
+  - Registered all three handlers in `TextDocumentHandlers.cpp` and declared them in `Server.h`.
+- Client Evaluatable Expression Rewrite (`angelscriptEvaluatableExpression.ts`):
+  - Rewritten to delegate to the C++ server via LSP (`angelscript/evaluatableExpression`) with a local regex fallback; removed eager rightward expansion over `.` that produced oversized expressions.
+  - Registered `CompletionItemProvider` for debug input schemes in `extension.ts`.
+- Debug Engine Improvements (`angel_lsp_debugger.h`):
+  - `IsVarInScope` filtering prevents out-of-scope variables from appearing in Locals.
+  - Reverse local lookup resolves the innermost shadowing variable correctly.
+  - `InspectScriptArray` and `EvaluateIndexedExpression` enable element inspection of `array<T>` in the Variables pane.
+  - `GetChildProperties` uses `asIScriptObject::GetAddressOfProperty` for direct member traversal without string slicing.
+  - `FormatValue` now emits quoted strings, enum labels, and compact array previews.
+  - `HandleCompletions` + `supportsCompletionsRequest: true` in `initializeResponse` for debug console tab-completion.
+  - `HandleEvaluate` returns `success: false` (with a user-facing message) only in `"hover"` context; all other contexts return `<unknown>` to prevent VS Code error overlays.
+- Enum Member Hover Label (`HoverHandler`):
+  - Enum members now display `(enum member)` instead of `(property)` in hover tooltips; `IsContainerProperty` no longer matches `SymbolType::Enum`.
+  - `PublishEnumMembers` decomposed into `BuildEnumMemberNodeMap` and `ComputeEnumDefaultValue` static helpers to satisfy the CCN ≤ 15 and NLOC ≤ 70 ceilings.
+- New Tests:
+  - `EvaluatableExpressionTest.cpp` — 6 AST extraction cases covering bare identifiers, member chains, indexed access, and nested indexing.
+  - `IndexedPropertyTest.cpp` — indexed property accessor tests.
+  - `DebuggerDapProtocolTest.cpp` updated with `Completions and Hover Fallback` case.
+  - `HoverTest.cpp` updated: `(property)` → `(enum member)` assertions for enum members.
+
 ## [1.1.6-exp.2] - 2026-10-28
 
 ### Experimental Release 1.1.6-exp.2: Full DAP Negotiation, Performance Optimization, Complex Hover Expressions & Strict AngelScript Syntax Parity

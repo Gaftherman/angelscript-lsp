@@ -4,6 +4,25 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.6-exp.3] - 2026-10-28
+
+### Experimental Release 1.1.6-exp.3: Property Inheritance Parity, AST-Native Evaluatable Expression, Debug Completions & Enum Member Hover
+
+- Property Inheritance Parity — E230 False Positive Fix:
+  - Fixed `FindPropertyAccessors` so each accessor prefix (`get_`, `set_`) is searched independently across the full inheritance chain.
+  - `IsAssignableMember` now walks the full inherited hierarchy, eliminating false E230 on `s = false` in subclasses.
+- AST-Native Evaluatable Expression Extractor:
+  - New `EvaluatableExpressionHandler` extracts the minimal syntactically valid evaluatable expression at cursor position using flat traversal and precompiled queries.
+  - Handles chained member access, array indexing, and bare identifiers.
+- Client Evaluatable Expression Rewrite (`angelscriptEvaluatableExpression.ts`):
+  - Rewritten to delegate to the C++ server via LSP with a local regex fallback; removed eager rightward expansion over `.`.
+  - Registered `CompletionItemProvider` for debug console input tab-completion.
+- Debug Engine Improvements (`angel_lsp_debugger.h`):
+  - `IsVarInScope` filtering, reverse local lookup, array element inspection, quoted string/enum label/array preview formatting.
+  - `HandleCompletions` + `supportsCompletionsRequest: true` for debug console tab-completion.
+  - `HandleEvaluate` returns `success: false` only in `"hover"` context to prevent VS Code error overlays.
+- Enum Member Hover Label: enum members now display `(enum member)` instead of `(property)` in hover tooltips.
+
 ## [1.1.6-exp.2] - 2026-10-28
 
 ### Experimental Release 1.1.6-exp.2: Full DAP Negotiation, Performance Optimization, Complex Hover Expressions & Strict AngelScript Syntax Parity
