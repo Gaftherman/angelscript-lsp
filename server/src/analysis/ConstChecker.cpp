@@ -5,6 +5,7 @@
 #include "utils/Utils.h"
 
 #include "parser/GrammarNames.h"
+#include "parser/Keywords.h"
 #include "utils/StopFlag.h"
 #include <algorithm>
 #include <optional>
@@ -94,12 +95,12 @@ std::optional<bool> ParameterIsConst(TSNode node, std::string_view name, std::st
     for (uint32_t i = 0; i < count; ++i)
     {
         TSNode parameter = ts_node_named_child(parameters, i);
-        if (std::string_view(ts_node_type(parameter)) != "parameter")
+        if (ts_node_symbol(parameter) != gs.symParameter)
         {
             continue;
         }
 
-        TSNode nameNode = parser::GetChildByField(parameter, parser::fields::Name);
+        TSNode nameNode = parser::GetChildByField(parameter, gs.fieldName);
         if (ts_node_is_null(nameNode) || NodeText(nameNode, sourceCode) != name)
         {
             continue;
@@ -235,9 +236,9 @@ EnclosingMethodInfo FindEnclosingMethod(TSNode node, std::string_view sourceCode
         do
         {
             TSNode child = ts_tree_cursor_current_node(&cursor);
-            const std::string_view ctype = ts_node_type(child);
-            if (ctype == "const" || (ctype == parser::nodes::FuncAttributes &&
-                                     NodeText(child, sourceCode).find("const") != std::string::npos))
+            const TSSymbol sym = ts_node_symbol(child);
+            if (sym == gs.tokConst ||
+                (sym == gs.symFuncAttributes && NodeText(child, sourceCode).find("const") != std::string::npos))
             {
                 info.isConstMethod = true;
                 break;
@@ -346,8 +347,10 @@ bool IsMemberExprOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const
         return false;
     }
 
-    const std::string_view objType = ts_node_type(obj);
-    if (objType == "this_expression" || (objType == "identifier" && NodeText(obj, ctx.sourceCode) == "this"))
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol objSym = ts_node_symbol(obj);
+    if (objSym == gs.symThisExpression ||
+        (objSym == gs.symIdentifier && NodeText(obj, ctx.sourceCode) == parser::keywords::This))
     {
         outMemberName = NodeText(member, ctx.sourceCode);
         return true;
@@ -394,19 +397,21 @@ bool IsMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const Con
         return false;
     }
 
-    const std::string_view targetType = ts_node_type(target);
-    if (targetType == "this_expression" || (targetType == "identifier" && NodeText(target, ctx.sourceCode) == "this"))
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol targetSym = ts_node_symbol(target);
+    if (targetSym == gs.symThisExpression ||
+        (targetSym == gs.symIdentifier && NodeText(target, ctx.sourceCode) == parser::keywords::This))
     {
-        outMemberName = "this";
+        outMemberName = parser::keywords::This;
         return true;
     }
 
-    if (targetType == "identifier" || targetType == "scoped_identifier")
+    if (targetSym == gs.symIdentifier || targetSym == gs.symScopedIdentifier)
     {
         return IsIdentifierMemberOfThis(target, encInfo, ctx, outMemberName);
     }
 
-    if (targetType == "member_expression")
+    if (targetSym == gs.symMemberExpression)
     {
         return IsMemberExprOfThis(target, encInfo, ctx, outMemberName);
     }
@@ -422,20 +427,22 @@ Constness ResolveConstness(TSNode node, const ConstContext& ctx, int depth)
         return Constness::Unknown;
     }
 
-    const std::string_view nodeType = ts_node_type(node);
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol nodeSym = ts_node_symbol(node);
 
-    if (nodeType == "this_expression" || (nodeType == "identifier" && NodeText(node, ctx.sourceCode) == "this"))
+    if (nodeSym == gs.symThisExpression ||
+        (nodeSym == gs.symIdentifier && NodeText(node, ctx.sourceCode) == parser::keywords::This))
     {
         const auto encInfo = FindEnclosingMethod(node, ctx.sourceCode);
         return (encInfo.inClass && encInfo.isConstMethod) ? Constness::Const : Constness::Mutable;
     }
 
-    if (nodeType == "identifier")
+    if (nodeSym == gs.symIdentifier)
     {
         return ResolveNameConstness(NodeText(node, ctx.sourceCode), node, ctx);
     }
 
-    if (nodeType == "scoped_identifier")
+    if (nodeSym == gs.symScopedIdentifier)
     {
         // Asked for whole first, the way ResolveExpressionType does, since a qualified name
         // is the key the collector stored it under.
@@ -452,14 +459,14 @@ Constness ResolveConstness(TSNode node, const ConstContext& ctx, int depth)
     // `const Entity &in` an error. A member of a mutable object is judged on its own
     // declaration - and a const member is already reported where it is declared, so there
     // is nothing to conclude from one here.
-    if (nodeType == "member_expression")
+    if (nodeSym == gs.symMemberExpression)
     {
         const Constness object =
             ResolveConstness(parser::GetChildByField(node, parser::fields::Object), ctx, depth + 1);
         return object == Constness::Const ? Constness::Const : Constness::Unknown;
     }
 
-    if (nodeType == "parenthesized_expression")
+    if (nodeSym == gs.symParenthesizedExpression)
     {
         return ts_node_named_child_count(node) > 0 ? ResolveConstness(ts_node_named_child(node, 0), ctx, depth + 1)
                                                    : Constness::Unknown;
@@ -566,8 +573,9 @@ Constness ResolveHandleConstness(TSNode node, const ConstContext& ctx)
         return Constness::Unknown;
     }
 
-    const std::string_view nodeType = ts_node_type(node);
-    if (nodeType == "identifier" || nodeType == "scoped_identifier")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol nodeSym = ts_node_symbol(node);
+    if (nodeSym == gs.symIdentifier || nodeSym == gs.symScopedIdentifier)
     {
         const std::string name = NodeText(node, ctx.sourceCode);
         if (ctx.scope)
@@ -610,13 +618,14 @@ void CheckAssignment(TSNode node, const ConstCheckRequest& request, const Scope*
 
     bool isHandleAssignment = false;
     TSNode actualTarget = target;
-    if (std::string_view(ts_node_type(target)) == "unary_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(target) == gs.symUnaryExpression)
     {
-        TSNode opNode = parser::GetChildByField(target, parser::fields::Operator);
-        if (!ts_node_is_null(opNode) && NodeText(opNode, request.sourceCode) == "@")
+        TSNode opNode = parser::GetChildByField(target, gs.fieldOperator);
+        if (!ts_node_is_null(opNode) && ts_node_symbol(opNode) == gs.tokAt)
         {
             isHandleAssignment = true;
-            TSNode operand = parser::GetChildByField(target, parser::fields::Operand);
+            TSNode operand = parser::GetChildByField(target, gs.fieldOperand);
             if (!ts_node_is_null(operand))
             {
                 actualTarget = operand;
@@ -653,14 +662,15 @@ void CheckAssignment(TSNode node, const ConstCheckRequest& request, const Scope*
 
 void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
 {
-    TSNode callee = parser::GetChildByField(node, parser::fields::Function);
-    if (ts_node_is_null(callee) || std::string_view(ts_node_type(callee)) != "member_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode callee = parser::GetChildByField(node, gs.fieldFunction);
+    if (ts_node_is_null(callee) || ts_node_symbol(callee) != gs.symMemberExpression)
     {
         return;
     }
 
-    TSNode objectNode = parser::GetChildByField(callee, parser::fields::Object);
-    TSNode memberNode = parser::GetChildByField(callee, parser::fields::Member);
+    TSNode objectNode = parser::GetChildByField(callee, gs.fieldObject);
+    TSNode memberNode = parser::GetChildByField(callee, gs.fieldMember);
     if (ts_node_is_null(objectNode) || ts_node_is_null(memberNode))
     {
         return;
@@ -697,7 +707,9 @@ void CheckConstCorrectnessIndexed(const ConstCheckRequest& request, DiagnosticCo
         return;
     }
 
-    request.nodeIndex->ForEachNodeOrdered({parser::nodes::AssignmentExpression, parser::nodes::CallExpression},
+    const auto& gs = parser::GetGrammarSymbols();
+    const std::array<TSSymbol, 2> kSymbols = {gs.symAssignmentExpression, gs.symCallExpression};
+    request.nodeIndex->ForEachNodeOrdered(std::span<const TSSymbol>(kSymbols.data(), kSymbols.size()),
                                           [&](TSNode node)
                                           {
                                               if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
@@ -707,8 +719,7 @@ void CheckConstCorrectnessIndexed(const ConstCheckRequest& request, DiagnosticCo
                                               const TSPoint start = ts_node_start_point(node);
                                               const Scope* scope =
                                                   FindInnermostScope(request.scopeRoot, start.row, start.column);
-                                              const std::string_view nodeType = ts_node_type(node);
-                                              if (nodeType == parser::nodes::AssignmentExpression)
+                                              if (ts_node_symbol(node) == gs.symAssignmentExpression)
                                               {
                                                   CheckAssignment(node, request, scope, ctx);
                                               }

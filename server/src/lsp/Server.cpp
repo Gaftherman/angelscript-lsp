@@ -764,6 +764,7 @@ lsp::requests::Initialize::Result Server::HandleRequestsInitialized(lsp::request
     const bool useUtf8 = (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8);
     LogInfo(fmt::format("Negotiated position encoding: {}", useUtf8 ? "utf-8" : "utf-16"));
     m_symbolTable.SetVirtualMixinDocumentsEnabled(m_config.features.enableVirtualMixinDocuments);
+    m_symbolTable.SetConfiguredTypes(m_config.types.arrayTypeName, m_config.types.stringTypeName);
 
     lsp::requests::Initialize::Result result;
     lsp::ServerInfo info;

@@ -364,6 +364,7 @@ OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidate
  * and finds the base's declaration alongside the derived one that overrides it, and those two
  * are one method rather than a choice between two.
  */
+bool HasSameParameterList(const Symbol& left, const Symbol& right, std::string_view arrayTypeName);
 bool HasSameParameterList(const Symbol& left, const Symbol& right);
 
 /**

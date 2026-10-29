@@ -164,9 +164,9 @@ void CheckHandleComparison(TSNode node, const Scope* scope, DiagnosticContext& c
         .isLeftNull = IsNullOperand(left, leftType),
         .isRightNull = IsNullOperand(right, rightType),
         .isLeftHandle = IsHandleType(leftType, ctx.request.symbolTable) ||
-                        std::string_view(ts_node_type(left)) == parser::nodes::ThisExpression,
+                        ts_node_symbol(left) == parser::GetGrammarSymbols().symThisExpression,
         .isRightHandle = IsHandleType(rightType, ctx.request.symbolTable) ||
-                         std::string_view(ts_node_type(right)) == parser::nodes::ThisExpression,
+                         ts_node_symbol(right) == parser::GetGrammarSymbols().symThisExpression,
         .leftType = leftType,
     };
     const ComparisonDispatchContext dispatch{

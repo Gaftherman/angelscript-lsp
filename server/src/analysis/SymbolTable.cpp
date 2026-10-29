@@ -621,6 +621,8 @@ std::unique_ptr<SymbolTable> SymbolTable::CreateAnalysisSnapshot(const std::stri
         snapshot->m_virtualMixinDocumentsEnabled = m_virtualMixinDocumentsEnabled;
         snapshot->m_mixinClassCount = m_mixinClassCount;
         snapshot->m_classesWithSynthesizedMixins = m_classesWithSynthesizedMixins;
+        snapshot->m_defaultArrayType = m_defaultArrayType;
+        snapshot->m_stringType = m_stringType;
 
         std::lock_guard<std::mutex> ruleGuard(m_ruleIndexMutex);
         snapshot->m_ruleIndex = m_ruleIndex;

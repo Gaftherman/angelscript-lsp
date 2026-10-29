@@ -26,9 +26,10 @@ namespace
  * @param[in] nodeType Tree-Sitter node type.
  * @return True if valid identifier, primitive type, or scoped identifier.
  */
-bool IsIdentifierOrType(std::string_view nodeType) noexcept
+bool IsIdentifierOrType(TSSymbol sym) noexcept
 {
-    return nodeType == "identifier" || nodeType == "primitive_type" || nodeType == "scoped_identifier";
+    const auto& gs = parser::GetGrammarSymbols();
+    return sym == gs.symIdentifier || sym == gs.symPrimitiveType || sym == gs.symScopedIdentifier;
 }
 
 /**
@@ -45,7 +46,7 @@ TSNode FindPrecedingIdentifierNode(TSNode rootNode, TargetPosition position)
     }
     TSPoint prevPoint = {position.line, position.character - 1};
     TSNode prevNode = ts_node_descendant_for_point_range(rootNode, prevPoint, prevPoint);
-    if (!ts_node_is_null(prevNode) && IsIdentifierOrType(ts_node_type(prevNode)))
+    if (!ts_node_is_null(prevNode) && IsIdentifierOrType(ts_node_symbol(prevNode)))
     {
         return prevNode;
     }
@@ -60,10 +61,11 @@ TSNode FindPrecedingIdentifierNode(TSNode rootNode, TargetPosition position)
  */
 TSNode ResolveIdentifierLeaf(TSNode node, TSPoint point)
 {
-    if (std::string_view(ts_node_type(node)) == "scoped_identifier")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(node) == gs.symScopedIdentifier)
     {
         TSNode leaf = ts_node_descendant_for_point_range(node, point, point);
-        if (!ts_node_is_null(leaf) && std::string_view(ts_node_type(leaf)) == "identifier")
+        if (!ts_node_is_null(leaf) && ts_node_symbol(leaf) == gs.symIdentifier)
         {
             return leaf;
         }
@@ -95,7 +97,7 @@ std::string GetNodeTextAt(const std::string& sourceCode, TSTree* tree, TargetPos
         return "";
     }
 
-    if (!IsIdentifierOrType(ts_node_type(node)))
+    if (!IsIdentifierOrType(ts_node_symbol(node)))
     {
         node = FindPrecedingIdentifierNode(rootNode, position);
     }
@@ -105,7 +107,7 @@ std::string GetNodeTextAt(const std::string& sourceCode, TSTree* tree, TargetPos
     }
 
     node = ResolveIdentifierLeaf(node, point);
-    if (!IsIdentifierOrType(ts_node_type(node)))
+    if (!IsIdentifierOrType(ts_node_symbol(node)))
     {
         return "";
     }
@@ -281,7 +283,7 @@ bool ResolveExplicitMemberAccess(TSNode outNode, const ResolveTargetRequest& req
                                  const std::shared_ptr<const analysis::Scope>& rootScope, TargetDescriptor& target)
 {
     TSNode parent = parser::GetParent(outNode);
-    if (ts_node_is_null(parent) || std::string_view(ts_node_type(parent)) != "member_expression")
+    if (ts_node_is_null(parent) || ts_node_symbol(parent) != parser::GetGrammarSymbols().symMemberExpression)
     {
         return false;
     }
@@ -462,10 +464,11 @@ void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const R
     TSNode parent = parser::GetParent(outNode);
     if (!ts_node_is_null(parent))
     {
-        std::string_view pType = ts_node_type(parent);
-        if (pType == "class_declaration" || pType == "interface_declaration" || pType == "enum_declaration")
+        const auto& gs = parser::GetGrammarSymbols();
+        const TSSymbol pSym = ts_node_symbol(parent);
+        if (pSym == gs.symClassDeclaration || pSym == gs.symInterfaceDeclaration || pSym == gs.symEnumDeclaration)
         {
-            TSNode nameChild = parser::GetChildByField(parent, parser::fields::Name);
+            TSNode nameChild = parser::GetChildByField(parent, gs.fieldName);
             if (!ts_node_is_null(nameChild) && ts_node_start_byte(nameChild) == ts_node_start_byte(outNode))
             {
                 return;
@@ -517,7 +520,7 @@ bool TryResolveEnumMemberDeclaration(TSNode memberNode, const std::string& nodeT
                                      TargetDescriptor& target)
 {
     TSNode enumDecl = parser::GetParent(memberNode);
-    if (ts_node_is_null(enumDecl) || std::string_view(ts_node_type(enumDecl)) != "enum_declaration")
+    if (ts_node_is_null(enumDecl) || ts_node_symbol(enumDecl) != parser::GetGrammarSymbols().symEnumDeclaration)
     {
         return false;
     }
@@ -609,12 +612,13 @@ bool ResolveEnumTarget(TSNode outNode, const std::string& nodeText, const Resolv
     {
         return false;
     }
-    std::string_view pType = ts_node_type(parent);
-    if (pType == "enum_member")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol pSym = ts_node_symbol(parent);
+    if (pSym == gs.symEnumMember)
     {
         return TryResolveEnumMemberDeclaration(parent, nodeText, request.sourceCode, target);
     }
-    if (pType == "scoped_identifier")
+    if (pSym == gs.symScopedIdentifier)
     {
         return TryResolveScopedEnumAccess(parent, nodeText, request, target);
     }

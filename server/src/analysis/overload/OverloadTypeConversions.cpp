@@ -42,7 +42,7 @@ bool StripReferenceSuffix(std::string& s)
     return false;
 }
 
-bool IsViableConvertingConstructor(const Symbol& sym, const std::string& fromType)
+bool IsViableConvertingConstructor(const Symbol& sym, const std::string& fromType, std::string_view arrayTypeName = {})
 {
     if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
     {
@@ -53,7 +53,7 @@ bool IsViableConvertingConstructor(const Symbol& sym, const std::string& fromTyp
     {
         return false;
     }
-    const std::string paramType = NormalizeType(sig.parameters[0].typeName, "array");
+    const std::string paramType = NormalizeType(sig.parameters[0].typeName, arrayTypeName);
     if (paramType != fromType && !IsPrimitiveWidening(fromType, paramType))
     {
         return false;
@@ -63,7 +63,7 @@ bool IsViableConvertingConstructor(const Symbol& sym, const std::string& fromTyp
 }
 
 bool MatchesConstructorParameter(const FunctionSignature& sig, const TemplateBinding& binding,
-                                 const std::string& fromType)
+                                 const std::string& fromType, std::string_view arrayTypeName = {})
 {
     if (sig.modifiers.isExplicit || sig.modifiers.isDelete || sig.parameters.empty())
     {
@@ -74,7 +74,7 @@ bool MatchesConstructorParameter(const FunctionSignature& sig, const TemplateBin
     {
         paramType = SubstituteTemplateParameters(paramType, binding);
     }
-    paramType = NormalizeType(paramType, "array");
+    paramType = NormalizeType(paramType, arrayTypeName);
     if (paramType != fromType && !IsPrimitiveWidening(fromType, paramType) && !IsSameType(fromType, paramType))
     {
         return false;
@@ -84,7 +84,7 @@ bool MatchesConstructorParameter(const FunctionSignature& sig, const TemplateBin
 }
 
 bool CheckConstructorList(const std::shared_ptr<const std::vector<Symbol>>& syms, const TemplateBinding& binding,
-                          const std::string& fromType)
+                          const std::string& fromType, std::string_view arrayTypeName = {})
 {
     if (!syms)
     {
@@ -94,7 +94,7 @@ bool CheckConstructorList(const std::shared_ptr<const std::vector<Symbol>>& syms
     {
         if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature))
         {
-            if (MatchesConstructorParameter(sym.GetFunction(), binding, fromType))
+            if (MatchesConstructorParameter(sym.GetFunction(), binding, fromType, arrayTypeName))
             {
                 return true;
             }
@@ -153,11 +153,14 @@ std::string StripTypeDecorations(std::string result)
 
 std::string DesugarArrayBrackets(std::string result, std::string_view arrayTypeName)
 {
-    const std::string_view effectiveArrayName = arrayTypeName.empty() ? "array" : arrayTypeName;
+    if (arrayTypeName.empty())
+    {
+        return result;
+    }
     while (result.ends_with("[]"))
     {
-        const std::string inner = DesugarArrayBrackets(result.substr(0, result.size() - 2), effectiveArrayName);
-        result = std::string(effectiveArrayName) + "<" + inner + ">";
+        const std::string inner = DesugarArrayBrackets(result.substr(0, result.size() - 2), arrayTypeName);
+        result = std::string(arrayTypeName) + "<" + inner + ">";
     }
     return result;
 }
@@ -188,7 +191,7 @@ bool HasHandleModifier(std::string_view typeName)
 
 bool HasConvertingConstructor(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable)
 {
-    const std::string cleanTo = NormalizeType(toType, "array");
+    const std::string cleanTo = NormalizeType(toType, symbolTable.GetDefaultArrayType());
     if (cleanTo.empty() || IsCorePrimitive(cleanTo))
     {
         return false;
@@ -198,20 +201,21 @@ bool HasConvertingConstructor(const std::string& fromType, const std::string& to
     const std::string shortName{LastScopeSegment(baseName)};
     const TemplateBinding binding =
         (openBracket != std::string::npos) ? BindTemplateArguments(cleanTo, symbolTable) : TemplateBinding{};
-    if (CheckConstructorList(symbolTable.FindMemberSymbolPtr(baseName, shortName), binding, fromType))
+    const std::string_view defaultArrayType = symbolTable.GetDefaultArrayType();
+    if (CheckConstructorList(symbolTable.FindMemberSymbolPtr(baseName, shortName), binding, fromType, defaultArrayType))
     {
         return true;
     }
-    return shortName != baseName &&
-           CheckConstructorList(symbolTable.FindMemberSymbolPtr(shortName, shortName), binding, fromType);
+    return shortName != baseName && CheckConstructorList(symbolTable.FindMemberSymbolPtr(shortName, shortName), binding,
+                                                         fromType, defaultArrayType);
 }
 
 UserConversionMatch CheckConversionMethod(const std::string& fromType, const std::string& toType,
                                           const SymbolTable& symbolTable)
 {
     UserConversionMatch bestMatch;
-    const std::string cleanFrom = NormalizeType(fromType, "array");
-    const std::string cleanTo = NormalizeType(toType, "array");
+    const std::string cleanFrom = NormalizeType(fromType, symbolTable.GetDefaultArrayType());
+    const std::string cleanTo = NormalizeType(toType, symbolTable.GetDefaultArrayType());
     const size_t openBracket = cleanFrom.find('<');
     const std::string baseName = (openBracket == std::string::npos) ? cleanFrom : cleanFrom.substr(0, openBracket);
     const std::string shortName{LastScopeSegment(baseName)};
@@ -237,7 +241,7 @@ UserConversionMatch CheckConversionMethod(const std::string& fromType, const std
                     {
                         retType = SubstituteTemplateParameters(retType, binding);
                     }
-                    retType = NormalizeType(retType, "array");
+                    retType = NormalizeType(retType, symbolTable.GetDefaultArrayType());
                     if (retType == cleanTo || IsSameType(retType, cleanTo))
                     {
                         bestMatch = UserConversionMatch{true, true};
@@ -294,7 +298,7 @@ constexpr int k_maxTypedefDepth = 8;
 
 std::string UnwrapTypedef(const std::string& typeName, const SymbolTable& symbolTable, int depth)
 {
-    std::string current = NormalizeType(typeName, "array");
+    std::string current = NormalizeType(typeName, symbolTable.GetDefaultArrayType());
     const auto syms = symbolTable.FindSymbolsPtr(current);
     if (syms)
     {
@@ -335,19 +339,19 @@ std::string UnwrapTypedef(const std::string& typeName, const SymbolTable& symbol
 
 bool IsIntegerType(const std::string& typeName)
 {
-    return IsIntegerPrimitive(NormalizeType(typeName, "array"));
+    return IsIntegerPrimitive(CleanBaseTypeView(typeName));
 }
 
 bool IsUnsignedInteger(const std::string& typeName)
 {
-    const std::string normalized = NormalizeType(typeName, "array");
+    const std::string_view normalized = CleanBaseTypeView(typeName);
     return normalized == "uint" || normalized == "uint8" || normalized == "uint16" || normalized == "uint32" ||
            normalized == "uint64";
 }
 
 bool IsFloatingPointType(const std::string& typeName)
 {
-    return IsFloatingPointPrimitive(NormalizeType(typeName, "array"));
+    return IsFloatingPointPrimitive(CleanBaseTypeView(typeName));
 }
 
 bool IsInTypeList(std::string_view target, std::initializer_list<std::string_view> validTypes)
@@ -391,8 +395,8 @@ bool CheckWideningTarget(std::string_view from, std::string_view to)
 
 bool IsPrimitiveWidening(const std::string& fromType, const std::string& toType)
 {
-    const std::string from = NormalizeType(fromType, "array");
-    const std::string to = NormalizeType(toType, "array");
+    const std::string_view from = CleanBaseTypeView(fromType);
+    const std::string_view to = CleanBaseTypeView(toType);
 
     if (from == to || from == "bool" || to == "bool")
     {
@@ -404,19 +408,17 @@ bool IsPrimitiveWidening(const std::string& fromType, const std::string& toType)
 
 bool IsPrimitiveNarrowing(const std::string& fromType, const std::string& toType)
 {
-    const std::string from = NormalizeType(fromType, "array");
-    const std::string to = NormalizeType(toType, "array");
+    const std::string_view from = CleanBaseTypeView(fromType);
+    const std::string_view to = CleanBaseTypeView(toType);
 
     if (from == to)
     {
         return false;
     }
 
-    const auto isNumeric = [](const std::string& t) { return IsNumericPrimitive(t); };
-
-    if (isNumeric(from) && isNumeric(to))
+    if (IsNumericPrimitive(from) && IsNumericPrimitive(to))
     {
-        return !IsPrimitiveWidening(from, to);
+        return !IsPrimitiveWidening(fromType, toType);
     }
     return false;
 }
@@ -532,7 +534,9 @@ bool ParameterAcceptsInitializerList(const ParameterInformation& param, const Sy
         return false;
     }
 
-    const std::string_view effectiveArrayName = arrayTypeName.empty() ? "array" : arrayTypeName;
+    const std::string_view effectiveArrayName =
+        !arrayTypeName.empty() ? arrayTypeName
+                               : (symbolTable ? symbolTable->GetDefaultArrayType() : std::string_view{});
     const auto templateName = ExtractTemplateBaseName(cleanType);
     if (templateName)
     {

@@ -1,4 +1,5 @@
 #include "analysis/ast/SemanticNodes.h"
+#include "parser/GrammarSymbols.h"
 
 namespace angel_lsp::analysis::ast
 {
@@ -120,11 +121,12 @@ TSNode CallExpressionView::ArgumentList() const noexcept
     {
         return args;
     }
+    const auto& gs = parser::GetGrammarSymbols();
     const uint32_t count = ts_node_named_child_count(m_raw);
     for (uint32_t i = 0; i < count; ++i)
     {
         TSNode child = ts_node_named_child(m_raw, i);
-        if (!ts_node_is_null(child) && std::string_view(ts_node_type(child)) == parser::nodes::ArgumentList)
+        if (!ts_node_is_null(child) && ts_node_symbol(child) == gs.symArgumentList)
         {
             return child;
         }

@@ -1263,7 +1263,7 @@ void SymbolCollector::CollectEnumMembers(TSNode node, std::string_view sourceCod
                 member.value = GetNodeText(memberValue, sourceCode);
                 if (!ts_node_is_null(memberValue))
                 {
-                    member.valueNodeType = ts_node_type(memberValue);
+                    member.valueNodeType = std::string(parser::GetNodeType(memberValue));
                 }
                 enumSig.members.push_back(std::move(member));
             }
@@ -2384,7 +2384,7 @@ void SymbolCollector::EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext
 
     if (ts_node_is_missing(node))
     {
-        std::string_view missingToken = ts_node_type(node);
+        std::string_view missingToken = parser::GetNodeType(node);
         const std::string_view pattern = sCtx.request.i18n
                                              ? sCtx.request.i18n->GetMessageView("as-syntax-error-missing")
                                              : std::string_view("Syntax error: missing '{}'");

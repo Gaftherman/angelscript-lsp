@@ -22,6 +22,11 @@ namespace angel_lsp::parser
     return t ? std::string_view(t) : std::string_view{};
 }
 
+[[nodiscard]] inline std::string_view GetNodeType(TSNode node) noexcept
+{
+    return NodeType(node);
+}
+
 /**
  * @brief Returns the root AST node of the document containing the given node in O(1).
  * @param[in] node Any AST node within a parsed tree.
@@ -392,6 +397,28 @@ template <typename Predicate> bool ForEachNamedChildNodeUntil(TSNode parent, Pre
     }
     ts_tree_cursor_delete(&cursor);
     return completed;
+}
+
+/**
+ * @brief Finds the first direct child node matching a specific Tree-Sitter grammar symbol.
+ * @param[in] parent Parent AST node.
+ * @param[in] sym Target grammar symbol.
+ * @return Matching child TSNode or null TSNode if not found.
+ */
+[[nodiscard]] inline TSNode FindFirstChildOfSymbol(TSNode parent, TSSymbol sym) noexcept
+{
+    TSNode found{};
+    ForEachChildNodeUntil(parent,
+                          [&](TSNode child)
+                          {
+                              if (!ts_node_is_null(child) && ts_node_symbol(child) == sym)
+                              {
+                                  found = child;
+                                  return false;
+                              }
+                              return true;
+                          });
+    return found;
 }
 
 /**

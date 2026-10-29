@@ -24,6 +24,12 @@
  */
 namespace angel_lsp::parser::keywords
 {
+inline constexpr std::string_view Auto = "auto";
+inline constexpr std::string_view This = "this";
+inline constexpr std::string_view Void = "void";
+inline constexpr std::string_view Super = "super";
+inline constexpr std::string_view Null = "null";
+
 /**
  * @brief Words that can never be an identifier. Rejected as a local and as a global alike.
  *

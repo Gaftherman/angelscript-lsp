@@ -23,18 +23,19 @@ std::string GetSimpleIdentifierName(TSNode node, std::string_view sourceCode)
     {
         return "";
     }
-    std::string_view type = ts_node_type(node);
-    if (type == "identifier")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(node);
+    if (sym == gs.symIdentifier)
     {
         return NodeText(node, sourceCode);
     }
-    if (type == "scoped_identifier")
+    if (sym == gs.symScopedIdentifier)
     {
         uint32_t count = ts_node_named_child_count(node);
         if (count == 1)
         {
             TSNode child = ts_node_named_child(node, 0);
-            if (std::string_view(ts_node_type(child)) == "identifier")
+            if (ts_node_symbol(child) == gs.symIdentifier)
             {
                 return NodeText(child, sourceCode);
             }
@@ -103,10 +104,11 @@ class DefiniteAssignmentVisitor
         if (ts_node_is_null(bodyNode))
         {
             uint32_t count = ts_node_named_child_count(funcNode);
+            const auto& gs = parser::GetGrammarSymbols();
             for (uint32_t i = 0; i < count; ++i)
             {
                 TSNode child = ts_node_named_child(funcNode, i);
-                if (std::string_view(ts_node_type(child)) == "statement_block")
+                if (ts_node_symbol(child) == gs.symStatementBlock)
                 {
                     bodyNode = child;
                     break;
@@ -175,8 +177,8 @@ class DefiniteAssignmentVisitor
 
     void CollectCallCandidates(TSNode funcNode, TSNode callNode, std::vector<Symbol>& candidates) const
     {
-        std::string_view funcType = ts_node_type(funcNode);
-        if (funcType == "member_expression")
+        const auto& gs = parser::GetGrammarSymbols();
+        if (ts_node_symbol(funcNode) == gs.symMemberExpression)
         {
             TSNode objNode = parser::GetChildByField(funcNode, parser::fields::Object);
             TSNode memNode = parser::GetChildByField(funcNode, parser::fields::Member);
@@ -223,12 +225,12 @@ class DefiniteAssignmentVisitor
 
     void ExtractRawArgNodes(TSNode argsNode, std::vector<TSNode>& argNodes) const
     {
+        const auto& gs = parser::GetGrammarSymbols();
         uint32_t rawChildCount = ts_node_child_count(argsNode);
         for (uint32_t i = 0; i < rawChildCount; ++i)
         {
             TSNode child = ts_node_child(argsNode, i);
-            std::string_view ct = ts_node_type(child);
-            if (ct != "(" && ct != ")" && ct != "," && ct != "comment")
+            if (ts_node_is_named(child) && ts_node_symbol(child) != gs.symComment)
             {
                 argNodes.push_back(child);
             }
@@ -363,29 +365,30 @@ class DefiniteAssignmentVisitor
             return;
         }
 
-        std::string_view type = ts_node_type(node);
+        const auto& gs = parser::GetGrammarSymbols();
+        const TSSymbol sym = ts_node_symbol(node);
 
-        if (type == "identifier" || type == "scoped_identifier")
+        if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier)
         {
             CheckIdentifierRead(node, state);
             return;
         }
 
-        if (type == "assignment_expression")
+        if (sym == gs.symAssignmentExpression)
         {
             CheckAssignmentExpressionReads(node, state, depth);
             return;
         }
 
-        if (type == "call_expression")
+        if (sym == gs.symCallExpression)
         {
             CheckCallExpressionReads(node, state, depth);
             return;
         }
 
-        if (type == "member_expression")
+        if (sym == gs.symMemberExpression)
         {
-            TSNode objNode = parser::GetChildByField(node, parser::fields::Object);
+            TSNode objNode = parser::GetChildByField(node, gs.fieldObject);
             CheckExpressionReads(objNode, state, depth + 1);
             return;
         }
@@ -432,7 +435,8 @@ class DefiniteAssignmentVisitor
                     initNode = rawChild;
                     break;
                 }
-                if (std::string_view(ts_node_type(rawChild)) == "=")
+                const auto& gs = parser::GetGrammarSymbols();
+                if (ts_node_symbol(rawChild) == gs.tokAssign)
                 {
                     sawEq = true;
                 }
@@ -474,10 +478,11 @@ class DefiniteAssignmentVisitor
         }
 
         uint32_t count = ts_node_named_child_count(node);
+        const auto& gs = parser::GetGrammarSymbols();
         for (uint32_t i = 0; i < count; ++i)
         {
             TSNode child = ts_node_named_child(node, i);
-            if (std::string_view(ts_node_type(child)) == "variable_declarator")
+            if (ts_node_symbol(child) == gs.symVariableDeclarator)
             {
                 AnalyzeVariableDeclarator(child, isPrimitive, state, depth);
             }
@@ -568,7 +573,8 @@ class DefiniteAssignmentVisitor
 
         if (!ts_node_is_null(init))
         {
-            if (std::string_view(ts_node_type(init)) == "assignment_expression")
+            const auto& gs = parser::GetGrammarSymbols();
+            if (ts_node_symbol(init) == gs.symAssignmentExpression)
             {
                 CheckExpressionReads(init, state, depth + 1);
             }
@@ -599,12 +605,13 @@ class DefiniteAssignmentVisitor
     {
         TSNode kw = ts_node_child(child, 0);
         FlowState caseState = parentState;
+        const auto& gs = parser::GetGrammarSymbols();
         uint32_t stmtCount = ts_node_named_child_count(child);
-        uint32_t first = (std::string_view(ts_node_type(kw)) == "default") ? 0u : 1u;
+        uint32_t first = (ts_node_symbol(kw) == gs.tokDefault) ? 0u : 1u;
         for (uint32_t j = first; j < stmtCount && !caseState.hasReturned; ++j)
         {
             TSNode stmtChild = ts_node_named_child(child, j);
-            if (std::string_view(ts_node_type(stmtChild)) == "break_statement")
+            if (ts_node_symbol(stmtChild) == gs.symBreakStatement)
             {
                 break;
             }
@@ -659,10 +666,11 @@ class DefiniteAssignmentVisitor
         std::vector<FlowState> caseStates;
         uint32_t count = ts_node_named_child_count(node);
 
+        const auto& gs = parser::GetGrammarSymbols();
         for (uint32_t i = 0; i < count; ++i)
         {
             TSNode child = ts_node_named_child(node, i);
-            if (std::string_view(ts_node_type(child)) == "case_clause")
+            if (ts_node_symbol(child) == gs.symCaseClause)
             {
                 caseStates.push_back(AnalyzeCaseClause(child, state, depth));
             }
@@ -671,19 +679,20 @@ class DefiniteAssignmentVisitor
         MergeSwitchCaseStates(caseStates, state);
     }
 
-    bool AnalyzeLoopStatement(std::string_view type, TSNode node, FlowState& state, int depth)
+    bool AnalyzeLoopStatement(TSSymbol sym, TSNode node, FlowState& state, int depth)
     {
-        if (type == "while_statement")
+        const auto& gs = parser::GetGrammarSymbols();
+        if (sym == gs.symWhileStatement)
         {
             AnalyzeWhileStatement(node, state, depth);
             return true;
         }
-        if (type == "do_while_statement")
+        if (sym == gs.symDoWhileStatement)
         {
             AnalyzeDoWhileStatement(node, state, depth);
             return true;
         }
-        if (type == "for_statement")
+        if (sym == gs.symForStatement)
         {
             AnalyzeForStatement(node, state, depth);
             return true;
@@ -691,9 +700,10 @@ class DefiniteAssignmentVisitor
         return false;
     }
 
-    bool AnalyzeJumpStatement(std::string_view type, TSNode node, FlowState& state, int depth)
+    bool AnalyzeJumpStatement(TSSymbol sym, TSNode node, FlowState& state, int depth)
     {
-        if (type == "return_statement")
+        const auto& gs = parser::GetGrammarSymbols();
+        if (sym == gs.symReturnStatement)
         {
             TSNode retVal = parser::GetChildByField(node, parser::fields::Value);
             if (!ts_node_is_null(retVal))
@@ -708,7 +718,7 @@ class DefiniteAssignmentVisitor
             state.isTerminated = true;
             return true;
         }
-        if (type == "break_statement" || type == "continue_statement")
+        if (sym == gs.symBreakStatement || sym == gs.symContinueStatement)
         {
             state.isTerminated = true;
             return true;
@@ -723,15 +733,16 @@ class DefiniteAssignmentVisitor
             return;
         }
 
-        std::string_view type = ts_node_type(node);
+        const auto& gs = parser::GetGrammarSymbols();
+        const TSSymbol sym = ts_node_symbol(node);
 
-        if (type == "statement_block")
+        if (sym == gs.symStatementBlock)
         {
             AnalyzeBlock(node, state, depth);
             return;
         }
 
-        if (type == "expression_statement")
+        if (sym == gs.symExpressionStatement)
         {
             if (ts_node_named_child_count(node) > 0)
             {
@@ -740,25 +751,25 @@ class DefiniteAssignmentVisitor
             return;
         }
 
-        if (type == "variable_declaration")
+        if (sym == gs.symVariableDeclaration)
         {
             AnalyzeVariableDeclaration(node, state, depth);
             return;
         }
 
-        if (type == "if_statement")
+        if (sym == gs.symIfStatement)
         {
             AnalyzeIfStatement(node, state, depth);
             return;
         }
 
-        if (type == "switch_statement")
+        if (sym == gs.symSwitchStatement)
         {
             AnalyzeSwitchStatement(node, state, depth);
             return;
         }
 
-        if (AnalyzeLoopStatement(type, node, state, depth) || AnalyzeJumpStatement(type, node, state, depth))
+        if (AnalyzeLoopStatement(sym, node, state, depth) || AnalyzeJumpStatement(sym, node, state, depth))
         {
             return;
         }

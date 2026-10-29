@@ -748,7 +748,7 @@ std::string DeduceLiteralType(TSNode exprNode, std::string_view sourceCode, std:
     }
     if (type == "string_literal" || type == "concatenated_string")
     {
-        return stringTypeName.empty() ? "string" : std::string(stringTypeName);
+        return std::string(stringTypeName);
     }
     if (type == "boolean_literal")
     {
@@ -1100,7 +1100,7 @@ std::string DeduceBinaryExpressionType(TSNode exprNode, const InlayHintRequest& 
     std::string leftT = DeduceExpressionType(left, request);
     std::string rightT = DeduceExpressionType(right, request);
 
-    const std::string_view strType = request.config ? std::string_view(request.config->types.stringTypeName) : "string";
+    const std::string_view strType = request.symbolTable.GetStringType();
     return SelectWiderType(leftT, rightT, strType);
 }
 

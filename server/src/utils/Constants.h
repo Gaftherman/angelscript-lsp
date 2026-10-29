@@ -6,6 +6,11 @@
 namespace angel_lsp::constants
 {
 /**
+ * @brief Canonical ceiling for upward AST traversal hops.
+ */
+inline constexpr int k_maxAstClimbDepth = 16;
+
+/**
  * @brief Sentinel value representing an invalid or unmatchable byte offset.
  */
 inline constexpr uint32_t InvalidByteOffset = std::numeric_limits<uint32_t>::max();

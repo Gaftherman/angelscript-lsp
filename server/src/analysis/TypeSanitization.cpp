@@ -112,12 +112,15 @@ std::string CanonicalizeArrayType(std::string_view typeName, std::string_view ar
         s = s.substr(6);
     }
 
-    const std::string_view effectiveArrayName = arrayTypeName.empty() ? "array" : arrayTypeName;
+    if (arrayTypeName.empty())
+    {
+        return s;
+    }
 
     while (s.ends_with("[]"))
     {
-        const std::string element = CanonicalizeArrayType(s.substr(0, s.size() - 2), effectiveArrayName);
-        s = std::string(effectiveArrayName) + "<" + element + ">";
+        const std::string element = CanonicalizeArrayType(s.substr(0, s.size() - 2), arrayTypeName);
+        s = std::string(arrayTypeName) + "<" + element + ">";
     }
 
     return s;

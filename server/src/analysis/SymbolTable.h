@@ -584,6 +584,32 @@ class SymbolTable
     void ResolveIncludedMixins();
 
     /** @brief Controls whether synthetic virtual mixin document URIs are generated during mixin resolution. */
+    /** @brief Sets configured type names for array templates and string primitives. */
+    void SetConfiguredTypes(std::string_view arrayType, std::string_view stringType)
+    {
+        std::unique_lock<std::shared_mutex> lock(m_mutex);
+        if (!arrayType.empty())
+        {
+            m_defaultArrayType = std::string(arrayType);
+        }
+        if (!stringType.empty())
+        {
+            m_stringType = std::string(stringType);
+        }
+    }
+
+    /** @brief Returns effective default array type name (default: "array"). */
+    [[nodiscard]] std::string_view GetDefaultArrayType() const noexcept
+    {
+        return m_defaultArrayType;
+    }
+
+    /** @brief Returns effective default string type name (default: "string"). */
+    [[nodiscard]] std::string_view GetStringType() const noexcept
+    {
+        return m_stringType;
+    }
+
     void SetVirtualMixinDocumentsEnabled(bool enabled);
 
     /** @brief Checks if virtual mixin documents generation is currently enabled. */
@@ -935,6 +961,8 @@ class SymbolTable
     uint32_t m_mixinClassCount = 0;
     /** @brief Set of class qualified names that currently have synthesized mixin members. Guarded by m_mutex. */
     ankerl::unordered_dense::set<std::string> m_classesWithSynthesizedMixins;
+    std::string m_defaultArrayType = "array";
+    std::string m_stringType = "string";
     inline static std::atomic<uint64_t> s_tableCloneCount{0};
 };
 

@@ -4,6 +4,7 @@
 #include "analysis/ScopeTree.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
+#include "utils/Constants.h"
 #include "utils/Utils.h"
 
 #include "analysis/DiagnosticCodes.h"
@@ -329,16 +330,17 @@ std::string EnclosingClass(TSNode node, std::string_view sourceCode, bool& insid
     insideMixin = false;
     TSNode curr = parser::GetParent(node);
     size_t depth = 0;
-    while (!ts_node_is_null(curr) && ++depth <= kMaxScopeDepth)
+    const auto& gs = parser::GetGrammarSymbols();
+    while (!ts_node_is_null(curr) && ++depth <= constants::k_maxAstClimbDepth)
     {
-        const std::string_view currType = ts_node_type(curr);
-        if (currType == "lambda_expression")
+        const TSSymbol sym = ts_node_symbol(curr);
+        if (sym == gs.symLambdaExpression)
         {
             return "";
         }
-        if (currType == parser::nodes::ClassDeclaration)
+        if (sym == gs.symClassDeclaration)
         {
-            TSNode nameNode = parser::GetChildByField(curr, parser::fields::Name);
+            TSNode nameNode = parser::GetChildByField(curr, gs.fieldName);
             if (!ts_node_is_null(nameNode))
             {
                 std::string className = NodeText(nameNode, sourceCode);
@@ -507,25 +509,25 @@ void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const
  * @param[in] type AST node type name.
  * @return True if node type defines a declared symbol name.
  */
-bool IsDeclarationNodeType(std::string_view type)
+bool IsDeclarationNodeType(TSSymbol sym)
 {
-    static constexpr std::string_view kDeclTypes[] = {
-        "variable_declarator",   "parameter",           "func_declaration",   "class_declaration",
-        "interface_declaration", "enum_declaration",    "enum_member",        "virtual_property",
-        "typedef_declaration",   "funcdef_declaration", "import_declaration", "mixin_declaration"};
-    return std::find(std::begin(kDeclTypes), std::end(kDeclTypes), type) != std::end(kDeclTypes);
+    const auto& gs = parser::GetGrammarSymbols();
+    return sym == gs.symVariableDeclarator || sym == gs.symParameter || sym == gs.symFuncDeclaration ||
+           sym == gs.symClassDeclaration || sym == gs.symInterfaceDeclaration || sym == gs.symEnumDeclaration ||
+           sym == gs.symEnumMember || sym == gs.symVirtualProperty || sym == gs.symTypedefDeclaration ||
+           sym == gs.symFuncdefDeclaration || sym == gs.symImportDeclaration || sym == gs.symMixinDeclaration;
 }
 
 /**
- * @brief Checks if an AST node type is a type reference or comment node.
+ * @brief Checks if an AST node is a type reference or comment node.
  *
- * @param[in] type AST node type name.
- * @return True if node type is a type reference or comment.
+ * @param[in] sym Grammar symbol ID.
+ * @return True if node is a type reference or comment.
  */
-bool IsTypeRefOrComment(std::string_view type)
+bool IsTypeRefOrComment(TSSymbol sym)
 {
-    static constexpr std::string_view kTypeRefTypes[] = {"datatype", "primitive_type", "base_class_list", "comment"};
-    return std::find(std::begin(kTypeRefTypes), std::end(kTypeRefTypes), type) != std::end(kTypeRefTypes);
+    const auto& gs = parser::GetGrammarSymbols();
+    return sym == gs.symDatatype || sym == gs.symPrimitiveType || sym == gs.symBaseClassList || sym == gs.symComment;
 }
 
 /**
@@ -542,25 +544,26 @@ bool ShouldSkipIdentifierNode(TSNode node, TSNode parent)
         return true;
     }
 
-    const std::string_view parentType = ts_node_type(parent);
-    if (parentType == "member_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol parentSym = ts_node_symbol(parent);
+    if (parentSym == gs.symMemberExpression)
     {
-        TSNode memberField = parser::GetChildByField(parent, parser::fields::Member);
+        TSNode memberField = parser::GetChildByField(parent, gs.fieldMember);
         return ts_node_eq(node, memberField);
     }
 
-    if (IsDeclarationNodeType(parentType))
+    if (IsDeclarationNodeType(parentSym))
     {
-        TSNode nameField = parser::GetChildByField(parent, parser::fields::Name);
+        TSNode nameField = parser::GetChildByField(parent, gs.fieldName);
         return ts_node_eq(node, nameField);
     }
 
-    if (IsTypeRefOrComment(parentType))
+    if (IsTypeRefOrComment(parentSym))
     {
         return true;
     }
 
-    return std::string_view(ts_node_type(node)) == "identifier" && parentType == "scoped_identifier";
+    return ts_node_symbol(node) == gs.symIdentifier && parentSym == gs.symScopedIdentifier;
 }
 
 /**
@@ -650,16 +653,17 @@ std::string EnclosingClassOfLambda(TSNode node, std::string_view sourceCode)
     TSNode curr = parser::GetParent(node);
     size_t depth = 0;
     bool foundLambda = false;
-    while (!ts_node_is_null(curr) && ++depth <= kMaxScopeDepth)
+    const auto& gs = parser::GetGrammarSymbols();
+    while (!ts_node_is_null(curr) && ++depth <= constants::k_maxAstClimbDepth)
     {
-        const std::string_view currType = ts_node_type(curr);
-        if (currType == "lambda_expression")
+        const TSSymbol sym = ts_node_symbol(curr);
+        if (sym == gs.symLambdaExpression)
         {
             foundLambda = true;
         }
-        else if (foundLambda && currType == parser::nodes::ClassDeclaration)
+        else if (foundLambda && sym == gs.symClassDeclaration)
         {
-            TSNode nameNode = parser::GetChildByField(curr, parser::fields::Name);
+            TSNode nameNode = parser::GetChildByField(curr, gs.fieldName);
             if (!ts_node_is_null(nameNode))
             {
                 return NodeText(nameNode, sourceCode);
@@ -847,16 +851,17 @@ void CheckMemberAccessIndexed(const AccessCheckRequest& request, DiagnosticConte
                                      ctx);
     }
 
+    const auto& gs = parser::GetGrammarSymbols();
+    const std::array<TSSymbol, 3> kSymbols = {gs.symMemberExpression, gs.symScopedIdentifier, gs.symIdentifier};
     request.nodeIndex->ForEachNodeOrdered(
-        {parser::nodes::MemberExpression, parser::nodes::ScopedIdentifier, parser::nodes::Identifier},
+        std::span<const TSSymbol>(kSymbols.data(), kSymbols.size()),
         [&](TSNode node)
         {
             if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
             {
                 return;
             }
-            const std::string_view nodeType = ts_node_type(node);
-            if (nodeType == parser::nodes::MemberExpression)
+            if (ts_node_symbol(node) == gs.symMemberExpression)
             {
                 const TSPoint start = ts_node_start_point(node);
                 CheckMemberExpression(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column),

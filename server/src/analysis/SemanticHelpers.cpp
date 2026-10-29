@@ -8,6 +8,7 @@
 #include "analysis/overload/OverloadTypeConversions.h"
 #include "analysis/rules/RuleIndex.h"
 #include "parser/Keywords.h"
+#include "utils/Constants.h"
 #include "utils/Utils.h"
 
 #include "parser/GrammarNames.h"
@@ -324,7 +325,8 @@ bool AreAllSymbolsPureTypes(const std::vector<Symbol>& syms)
 
 static TSNode UnwrapParens(TSNode node)
 {
-    while (!ts_node_is_null(node) && std::string_view(ts_node_type(node)) == "parenthesized_expression" &&
+    const auto& gs = parser::GetGrammarSymbols();
+    while (!ts_node_is_null(node) && ts_node_symbol(node) == gs.symParenthesizedExpression &&
            ts_node_named_child_count(node) > 0)
     {
         node = ts_node_named_child(node, 0);
@@ -338,8 +340,9 @@ static std::string ExtractTrimmedIdentifier(TSNode node, std::string_view source
     {
         return {};
     }
-    const std::string_view nodeType = ts_node_type(node);
-    if (nodeType != parser::nodes::Identifier && nodeType != parser::nodes::ScopedIdentifier)
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(node);
+    if (sym != gs.symIdentifier && sym != gs.symScopedIdentifier)
     {
         return {};
     }
@@ -488,7 +491,7 @@ static bool IsIdentifierFunctionSymbol(TSNode node, const Scope* scope, const Sy
     {
         return false;
     }
-    if (IsLocalVariableOrFieldInScope(scope, ts_node_type(node), name, ts_node_start_byte(node)))
+    if (IsLocalVariableOrFieldInScope(scope, parser::GetNodeType(node), name, ts_node_start_byte(node)))
     {
         return false;
     }
@@ -497,7 +500,8 @@ static bool IsIdentifierFunctionSymbol(TSNode node, const Scope* scope, const Sy
 
 bool IsFunctionReference(TSNode node, const Scope* scope, const SymbolTable& symbolTable, std::string_view sourceCode)
 {
-    while (!ts_node_is_null(node) && std::string_view(ts_node_type(node)) == "parenthesized_expression" &&
+    const auto& gs = parser::GetGrammarSymbols();
+    while (!ts_node_is_null(node) && ts_node_symbol(node) == gs.symParenthesizedExpression &&
            ts_node_named_child_count(node) > 0)
     {
         node = ts_node_named_child(node, 0);
@@ -506,16 +510,16 @@ bool IsFunctionReference(TSNode node, const Scope* scope, const SymbolTable& sym
     {
         return false;
     }
-    const std::string_view type = ts_node_type(node);
-    if (type == parser::nodes::CallExpression || type == parser::nodes::ConstructCallExpression)
+    const TSSymbol sym = ts_node_symbol(node);
+    if (sym == gs.symCallExpression || sym == gs.symConstructCallExpression)
     {
         return false;
     }
-    if (type == "member_expression")
+    if (sym == gs.symMemberExpression)
     {
         return IsMemberMethodSymbol(node, scope, symbolTable, sourceCode);
     }
-    if (type == parser::nodes::Identifier || type == parser::nodes::ScopedIdentifier)
+    if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier)
     {
         return IsIdentifierFunctionSymbol(node, scope, symbolTable, sourceCode);
     }
@@ -2047,13 +2051,13 @@ std::vector<std::string> GetCompatibleMemberClasses(const std::string& className
     return result;
 }
 
-TSNode FindEnclosingAncestorNode(TSNode node, std::string_view targetType)
+TSNode FindEnclosingAncestorNode(TSNode node, TSSymbol targetSym)
 {
     TSNode parent = parser::GetParent(node);
     int depth = 0;
-    while (!ts_node_is_null(parent) && ts_node_type(parent) != targetType)
+    while (!ts_node_is_null(parent) && ts_node_symbol(parent) != targetSym)
     {
-        if (++depth > k_maxAstDepth)
+        if (++depth > constants::k_maxAstClimbDepth)
         {
             return TSNode{};
         }
@@ -2064,10 +2068,11 @@ TSNode FindEnclosingAncestorNode(TSNode node, std::string_view targetType)
 
 bool HasBaseClassList(TSNode classNode)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     const uint32_t childCount = ts_node_named_child_count(classNode);
     for (uint32_t i = 0; i < childCount; ++i)
     {
-        if (ts_node_type(ts_node_named_child(classNode, i)) == std::string_view("base_class_list"))
+        if (ts_node_symbol(ts_node_named_child(classNode, i)) == gs.symBaseClassList)
         {
             return true;
         }
@@ -2082,14 +2087,15 @@ bool IsBaseConstructorCall(TSNode node, std::string_view sourceCode)
         return false;
     }
 
-    const TSNode function = FindEnclosingAncestorNode(node, "func_declaration");
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSNode function = FindEnclosingAncestorNode(node, gs.symFuncDeclaration);
     if (ts_node_is_null(function) || !ts_node_is_null(parser::GetChildByField(function, parser::fields::ReturnType)))
     {
         return false;
     }
 
     const TSNode functionName = parser::GetChildByField(function, parser::fields::Name);
-    const TSNode owner = FindEnclosingAncestorNode(function, "class_declaration");
+    const TSNode owner = FindEnclosingAncestorNode(function, gs.symClassDeclaration);
     if (ts_node_is_null(functionName) || ts_node_is_null(owner))
     {
         return false;
@@ -2139,17 +2145,18 @@ TSNode AdjustStartNodeIfDeclarationName(TSNode node)
     return node;
 }
 
-std::optional<ContainerKind> ClassifyContainerKind(std::string_view type)
+std::optional<ContainerKind> ClassifyContainerKind(TSSymbol sym)
 {
-    if (type == "class_declaration" || type == "mixin_declaration")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (sym == gs.symClassDeclaration || sym == gs.symMixinDeclaration)
     {
         return ContainerKind::Class;
     }
-    if (type == "interface_declaration")
+    if (sym == gs.symInterfaceDeclaration)
     {
         return ContainerKind::Interface;
     }
-    if (type == "namespace_declaration")
+    if (sym == gs.symNamespaceDeclaration)
     {
         return ContainerKind::Namespace;
     }
@@ -2216,15 +2223,15 @@ std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view 
     TSNode current = parser::GetParent(AdjustStartNodeIfDeclarationName(node));
     size_t depth = 0;
     bool crossedLambda = false;
-    while (!ts_node_is_null(current) && ++depth <= kMaxScopeDepth)
+    const auto& gs = parser::GetGrammarSymbols();
+    while (!ts_node_is_null(current) && ++depth <= constants::k_maxAstClimbDepth)
     {
-        const std::string_view nodeType = ts_node_type(current);
-        if (nodeType == "lambda_expression")
+        if (ts_node_symbol(current) == gs.symLambdaExpression)
         {
             crossedLambda = true;
         }
 
-        if (const auto kind = ClassifyContainerKind(nodeType))
+        if (const auto kind = ClassifyContainerKind(ts_node_symbol(current)))
         {
             if (crossedLambda && (*kind == ContainerKind::Class || *kind == ContainerKind::Interface))
             {
@@ -2601,9 +2608,10 @@ static void CollectUsingsFromAncestor(TSNode p, std::string_view sourceCode, std
         do
         {
             TSNode ch = ts_tree_cursor_current_node(&cursor);
-            if (std::string_view(ts_node_type(ch)) == "using_declaration")
+            const auto& gs = parser::GetGrammarSymbols();
+            if (ts_node_symbol(ch) == gs.symUsingDeclaration)
             {
-                TSNode nameNode = parser::GetChildByField(ch, parser::fields::Name);
+                TSNode nameNode = parser::GetChildByField(ch, gs.fieldName);
                 if (!ts_node_is_null(nameNode))
                 {
                     std::string uName = GetNodeText(nameNode, sourceCode);
@@ -2699,7 +2707,7 @@ static std::string ResolveLiteralExpr(TSSymbol nodeSym, TSNode exprNode, std::st
     const auto& gs = parser::GetGrammarSymbols();
     if (nodeSym == gs.symStringLiteral)
     {
-        return stringTypeName.empty() ? "string" : std::string(stringTypeName);
+        return std::string(stringTypeName);
     }
     if (nodeSym == gs.symBooleanLiteral)
     {
@@ -2735,8 +2743,7 @@ static std::string ResolveParenthesizedExpr(TSNode exprNode, const ExpressionTyp
     for (uint32_t i = 0; i < count; ++i)
     {
         TSNode child = ts_node_child(exprNode, i);
-        std::string_view cType = ts_node_type(child);
-        if (cType != "(" && cType != ")")
+        if (ts_node_is_named(child))
         {
             std::string res = ResolveExpressionType(child, ctx, depth + 1);
             if (!res.empty())
@@ -2864,7 +2871,7 @@ static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const Expression
     for (uint32_t i = 0; i < childCount; ++i)
     {
         TSNode child = ts_node_named_child(exprNode, i);
-        if (std::string_view(ts_node_type(child)) == "identifier")
+        if (ts_node_symbol(child) == parser::GetGrammarSymbols().symIdentifier)
         {
             qualified = !ts_node_is_null(lastIdentifier);
             lastIdentifier = child;
@@ -3450,7 +3457,8 @@ static std::string ResolveStringConcatenation(std::string_view op, const std::st
     {
         return {};
     }
-    const std::string_view effectiveStr = ctx.stringTypeName.empty() ? "string" : ctx.stringTypeName;
+    const std::string_view effectiveStr =
+        ctx.stringTypeName.empty() ? ctx.symbolTable.GetStringType() : ctx.stringTypeName;
     if (CleanBaseType(leftType, ctx.arrayTypeName) == effectiveStr ||
         CleanBaseType(rightType, ctx.arrayTypeName) == effectiveStr)
     {
@@ -3912,7 +3920,7 @@ static std::string ResolveMemberExpr(TSNode exprNode, const ExpressionTypeContex
 static std::string ResolveContainerMethodFallback(std::string_view memName, const TemplateTypeInfo& templateInfo,
                                                   std::string_view objType, std::string_view arrayTypeName)
 {
-    const std::string_view effectiveArrayName = arrayTypeName.empty() ? "array" : arrayTypeName;
+    const std::string_view effectiveArrayName = arrayTypeName;
     if ((templateInfo.containerName == effectiveArrayName && !templateInfo.templateArgs.empty()) ||
         objType.ends_with("[]"))
     {
@@ -4256,7 +4264,7 @@ static std::string ResolveCallExpr(TSNode exprNode, const ExpressionTypeContext&
         }
     }
 
-    if (std::string_view(ts_node_type(funcNode)) == "member_expression")
+    if (ts_node_symbol(funcNode) == parser::GetGrammarSymbols().symMemberExpression)
     {
         if (auto res = ResolveMemberCallExpr(funcNode, argTypes, ctx, depth); !res.empty())
         {
@@ -4410,7 +4418,7 @@ static std::string ResolveConstructCallExpr(TSNode exprNode, std::string_view so
     for (uint32_t i = 0; i < childCount; ++i)
     {
         TSNode child = ts_node_named_child(exprNode, i);
-        if (std::string_view(ts_node_type(child)) == "template_type_list")
+        if (ts_node_symbol(child) == parser::GetGrammarSymbols().symTemplateTypeList)
         {
             written += GetNodeText(child, sourceCode);
             break;
@@ -4802,7 +4810,7 @@ std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& 
             return "void";
         }
 
-        std::string_view nodeType = ts_node_type(exprNode);
+        const std::string_view nodeType = parser::GetNodeType(exprNode);
         std::string resolved = ResolveExpressionTypeUncached(nodeType, exprNode, ctx, depth);
         ctx.cache->types.emplace(key, resolved);
         return resolved;
@@ -4814,7 +4822,7 @@ std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& 
         return "void";
     }
 
-    std::string_view nodeType = ts_node_type(exprNode);
+    const std::string_view nodeType = parser::GetNodeType(exprNode);
     return ResolveExpressionTypeUncached(nodeType, exprNode, ctx, depth);
 }
 
@@ -4857,7 +4865,7 @@ static TSNode FindLocalDefinitionValueNode(const LocalDefinition& def, const Exp
         TSNode decl = idNode;
         for (int i = 0; i < 4 && !ts_node_is_null(decl); ++i)
         {
-            if (std::string_view(ts_node_type(decl)) == parser::nodes::VariableDeclarator)
+            if (ts_node_symbol(decl) == parser::GetGrammarSymbols().symVariableDeclarator)
             {
                 return FindDeclaratorValueNode(decl, ctx.sourceCode);
             }
@@ -5139,7 +5147,8 @@ std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, con
     }
 
     std::string effectiveHostClass = GetEffectiveHostClass(ctx.virtualHostClass, ctx.fileUri);
-    const std::string_view arrayTypeName = ctx.arrayTypeName.empty() ? "array" : ctx.arrayTypeName;
+    const std::string_view arrayTypeName =
+        ctx.arrayTypeName.empty() ? symbolTable.GetDefaultArrayType() : ctx.arrayTypeName;
 
     if (objText == "this")
     {
@@ -5220,14 +5229,15 @@ TSNode ResolveArgumentListNode(TSNode node)
     {
         return TSNode{};
     }
-    std::string_view nodeType = ts_node_type(node);
-    if (nodeType == "argument_list")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(node);
+    if (sym == gs.symArgumentList)
     {
         return node;
     }
-    if (nodeType == "call_expression" || nodeType == "construct_call_expression" || nodeType == "variable_declarator")
+    if (sym == gs.symCallExpression || sym == gs.symConstructCallExpression || sym == gs.symVariableDeclarator)
     {
-        TSNode args = parser::GetChildByField(node, parser::fields::Arguments);
+        TSNode args = parser::GetChildByField(node, gs.fieldArguments);
         if (!ts_node_is_null(args))
         {
             return args;
@@ -5238,7 +5248,7 @@ TSNode ResolveArgumentListNode(TSNode node)
             do
             {
                 TSNode ch = ts_tree_cursor_current_node(&cursor);
-                if (std::string_view(ts_node_type(ch)) == "argument_list")
+                if (ts_node_symbol(ch) == gs.symArgumentList)
                 {
                     ts_tree_cursor_delete(&cursor);
                     return ch;
@@ -5288,17 +5298,18 @@ std::vector<CallArgumentInfo> ExtractCallArguments(TSNode argumentList, std::str
     do
     {
         TSNode child = ts_tree_cursor_current_node(&cursor);
-        std::string_view type = ts_node_type(child);
+        const auto& gs = parser::GetGrammarSymbols();
+        const TSSymbol sym = ts_node_symbol(child);
 
-        if (type == "(" || type == "comment" || type == ":")
+        if (sym == gs.tokOpenParen || sym == gs.symComment || sym == gs.tokColon)
         {
             continue;
         }
-        if (type == ")")
+        if (sym == gs.tokCloseParen)
         {
             break;
         }
-        if (type == ",")
+        if (sym == gs.tokComma)
         {
             if (inArgument)
             {
@@ -5344,8 +5355,9 @@ static bool IsConstArgumentNode(TSNode exprNode, const ExpressionTypeContext& ct
     {
         return false;
     }
-    const std::string_view nodeType = ts_node_type(exprNode);
-    if (nodeType != "identifier" && nodeType != "scoped_identifier")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(exprNode);
+    if (sym != gs.symIdentifier && sym != gs.symScopedIdentifier)
     {
         return false;
     }
@@ -5362,10 +5374,10 @@ static bool IsConstArgumentNode(TSNode exprNode, const ExpressionTypeContext& ct
     }
     if (const auto syms = ctx.symbolTable.FindSymbolsPtr(name))
     {
-        for (const auto& sym : *syms)
+        for (const auto& foundSym : *syms)
         {
-            if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
-                sym.GetVariable().modifiers.isConst)
+            if ((foundSym.type == SymbolType::Variable || foundSym.type == SymbolType::Property) &&
+                foundSym.GetVariable().modifiers.isConst)
             {
                 return true;
             }
@@ -5637,8 +5649,7 @@ bool IsLambdaExpression(TSNode node) noexcept
     {
         return false;
     }
-    const std::string_view type(ts_node_type(node));
-    return type == node_types::LambdaExpression;
+    return ts_node_symbol(node) == parser::GetGrammarSymbols().symLambdaExpression;
 }
 
 /**
@@ -5652,14 +5663,15 @@ static TSNode ResolveLambdaParameterListNode(TSNode node)
     {
         return TSNode{};
     }
-    std::string_view nodeType = ts_node_type(node);
-    if (nodeType == "lambda_parameter_list")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(node);
+    if (sym == gs.symLambdaParameterList)
     {
         return node;
     }
-    if (nodeType == "lambda_expression")
+    if (sym == gs.symLambdaExpression)
     {
-        TSNode params = parser::GetChildByField(node, parser::fields::Parameters);
+        TSNode params = parser::GetChildByField(node, gs.fieldParameters);
         if (!ts_node_is_null(params))
         {
             return params;
@@ -5670,7 +5682,7 @@ static TSNode ResolveLambdaParameterListNode(TSNode node)
             do
             {
                 TSNode ch = ts_tree_cursor_current_node(&cursor);
-                if (std::string_view(ts_node_type(ch)) == "lambda_parameter_list")
+                if (ts_node_symbol(ch) == gs.symLambdaParameterList)
                 {
                     ts_tree_cursor_delete(&cursor);
                     return ch;
@@ -5686,7 +5698,7 @@ void ApplyLambdaParamChild(TSNode child, const char* field, std::string_view sou
 {
     std::string_view fieldName = field ? std::string_view(field) : std::string_view{};
     std::string text = GetNodeText(child, sourceCode);
-    std::string_view type = ts_node_type(child);
+    std::string_view type = parser::GetNodeType(child);
 
     if (fieldName == "param_type")
     {
@@ -5736,17 +5748,18 @@ std::vector<LambdaParamASTInfo> ExtractLambdaParameters(TSNode lambdaParamList, 
     do
     {
         TSNode child = ts_tree_cursor_current_node(&cursor);
-        std::string_view type = ts_node_type(child);
+        const auto& gs = parser::GetGrammarSymbols();
+        const TSSymbol sym = ts_node_symbol(child);
 
-        if (type == "(" || type == "comment")
+        if (sym == gs.tokOpenParen || sym == gs.symComment)
         {
             continue;
         }
-        if (type == ")")
+        if (sym == gs.tokCloseParen)
         {
             break;
         }
-        if (type == ",")
+        if (sym == gs.tokComma)
         {
             if (inParam)
             {
@@ -6116,16 +6129,17 @@ std::optional<Symbol> FuncdefTargetOfLambda(TSNode lambdaNode, const SymbolTable
         return std::nullopt;
     }
 
-    const std::string_view parentType(ts_node_type(parent));
-    if (parentType == "variable_declarator")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol parentSym = ts_node_symbol(parent);
+    if (parentSym == gs.symVariableDeclarator)
     {
         return FindDeclaratorFuncdefTarget(parent, table, sourceCode);
     }
-    if (parentType == "assignment_expression")
+    if (parentSym == gs.symAssignmentExpression)
     {
         return FindAssignmentFuncdefTarget(parent, table, sourceCode);
     }
-    if (parentType != "argument_list")
+    if (parentSym != gs.symArgumentList)
     {
         return std::nullopt;
     }
@@ -6183,7 +6197,7 @@ std::string InferLambdaParamType(TSNode nodeInLambda, std::string_view paramName
 
     TSNode lambdaNode{};
     TSNode cur = nodeInLambda;
-    for (int i = 0; i < 24 && !ts_node_is_null(cur); ++i, cur = parser::GetParent(cur))
+    for (int i = 0; i < constants::k_maxAstClimbDepth && !ts_node_is_null(cur); ++i, cur = parser::GetParent(cur))
     {
         if (IsLambdaExpression(cur))
         {
@@ -6196,7 +6210,7 @@ std::string InferLambdaParamType(TSNode nodeInLambda, std::string_view paramName
         return "";
     }
 
-    TSNode paramsNode = parser::GetChildByField(lambdaNode, parser::fields::Parameters);
+    TSNode paramsNode = parser::GetChildByField(lambdaNode, parser::GetGrammarSymbols().fieldParameters);
     if (ts_node_is_null(paramsNode))
     {
         return "";
@@ -6219,7 +6233,7 @@ std::string InferLambdaParamType(TSNode nodeInLambda, std::string_view paramName
         const auto& fd = targetFuncdef->GetFuncdef();
         if (paramIdx < fd.parameters.size())
         {
-            return MemberOwnerType(fd.parameters[paramIdx].typeName, "array");
+            return MemberOwnerType(fd.parameters[paramIdx].typeName, symbolTable.GetDefaultArrayType());
         }
     }
     else if (std::holds_alternative<FunctionSignature>(targetFuncdef->signature))
@@ -6227,7 +6241,7 @@ std::string InferLambdaParamType(TSNode nodeInLambda, std::string_view paramName
         const auto& fn = targetFuncdef->GetFunction();
         if (paramIdx < fn.parameters.size())
         {
-            return MemberOwnerType(fn.parameters[paramIdx].typeName, "array");
+            return MemberOwnerType(fn.parameters[paramIdx].typeName, symbolTable.GetDefaultArrayType());
         }
     }
     return "";
@@ -6393,7 +6407,8 @@ TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::
 std::string ExtractDatatypeScopePrefix(TSNode datatypeNode, std::string_view sourceCode)
 {
     TSNode typeNode = parser::GetParent(datatypeNode);
-    if (ts_node_is_null(typeNode) || std::string_view(ts_node_type(typeNode)) != parser::nodes::Type)
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_is_null(typeNode) || ts_node_symbol(typeNode) != gs.symType)
     {
         return {};
     }
@@ -6403,7 +6418,7 @@ std::string ExtractDatatypeScopePrefix(TSNode datatypeNode, std::string_view sou
         do
         {
             TSNode c = ts_tree_cursor_current_node(&cursor);
-            if (std::string_view(ts_node_type(c)) == parser::nodes::Scope)
+            if (ts_node_symbol(c) == gs.symScope)
             {
                 const uint32_t sStart = ts_node_start_byte(c);
                 const uint32_t sEnd = ts_node_end_byte(c);

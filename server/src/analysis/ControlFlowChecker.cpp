@@ -20,9 +20,9 @@ namespace angel_lsp::analysis
 {
 namespace
 {
-std::string_view NodeType(TSNode node)
+TSSymbol NodeSymbol(TSNode node)
 {
-    return ts_node_is_null(node) ? std::string_view{} : std::string_view(ts_node_type(node));
+    return ts_node_is_null(node) ? 0 : ts_node_symbol(node);
 }
 
 std::string_view NodeText(TSNode node, std::string_view sourceCode)
@@ -63,19 +63,19 @@ std::string_view Trim(std::string_view text)
  * default clause. That silenced the default-must-be-last rule on exactly the switch
  * statements most likely to carry the bug.
  */
-std::string_view ClauseKeyword(TSNode clause)
+TSSymbol ClauseKeyword(TSNode clause)
 {
     if (ts_node_is_null(clause) || ts_node_child_count(clause) == 0)
     {
-        return {};
+        return 0;
     }
-    return NodeType(ts_node_child(clause, 0));
+    return NodeSymbol(ts_node_child(clause, 0));
 }
 
 /** @brief True when the clause is spelled `default:` rather than `case <expr>:`. */
 bool IsDefaultClause(TSNode clause)
 {
-    return ClauseKeyword(clause) == "default";
+    return ClauseKeyword(clause) == parser::GetGrammarSymbols().tokDefault;
 }
 
 /**
@@ -132,16 +132,17 @@ void CheckEmptyBranch(TSNode node, DiagnosticContext& ctx)
         return;
     }
 
-    const TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
-    if (!ts_node_is_null(consequence) && std::string_view(ts_node_type(consequence)) == ";")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSNode consequence = parser::GetChildByField(node, gs.fieldConsequence);
+    if (!ts_node_is_null(consequence) && ts_node_symbol(consequence) == gs.tokSemicolon)
     {
         const TSPoint start = ts_node_start_point(consequence);
         const TSPoint end = ts_node_end_point(consequence);
         ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-if-empty-statement");
     }
 
-    const TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
-    if (!ts_node_is_null(alternative) && std::string_view(ts_node_type(alternative)) == ";")
+    const TSNode alternative = parser::GetChildByField(node, gs.fieldAlternative);
+    if (!ts_node_is_null(alternative) && ts_node_symbol(alternative) == gs.tokSemicolon)
     {
         const TSPoint start = ts_node_start_point(alternative);
         const TSPoint end = ts_node_end_point(alternative);
@@ -330,7 +331,7 @@ bool SwitchDefinitelyReturns(TSNode node, std::string_view sourceCode)
     ForEachNamedChildNode(node,
                           [&](TSNode clause)
                           {
-                              if (NodeType(clause) != "case_clause")
+                              if (NodeSymbol(clause) != parser::GetGrammarSymbols().symCaseClause)
                               {
                                   return;
                               }
@@ -635,7 +636,7 @@ void ProcessCaseClause(TSNode clause, std::string_view sourceCode, std::vector<s
                        DiagnosticContext& ctx)
 {
     TSNode value = ts_node_named_child(clause, 0);
-    if (ts_node_is_null(value) || ClauseKeyword(clause) != "case")
+    if (ts_node_is_null(value) || ClauseKeyword(clause) != parser::GetGrammarSymbols().tokCase)
     {
         return;
     }
@@ -679,7 +680,7 @@ void CheckVariablesInClause(TSNode clause, DiagnosticContext& ctx)
                                   skippedLabel = true;
                                   return;
                               }
-                              if (NodeType(stmt) == parser::nodes::VariableDeclaration)
+                              if (NodeSymbol(stmt) == parser::GetGrammarSymbols().symVariableDeclaration)
                               {
                                   EmitAtNode(stmt, ctx, diagnostics::codes::VariableInSwitchCase);
                               }
@@ -696,9 +697,9 @@ void CheckSwitch(TSNode node, std::string_view sourceCode, DiagnosticContext& ct
     ForEachNamedChildNode(node,
                           [&](TSNode clause)
                           {
-                              if (NodeType(clause) != "case_clause")
+                              if (NodeSymbol(clause) != parser::GetGrammarSymbols().symCaseClause)
                               {
-                                  if (NodeType(clause) == parser::nodes::VariableDeclaration)
+                                  if (NodeSymbol(clause) == parser::GetGrammarSymbols().symVariableDeclaration)
                                   {
                                       EmitAtNode(clause, ctx, diagnostics::codes::VariableInSwitchCase);
                                   }
@@ -862,7 +863,7 @@ class ControlFlowVisitor
         // registered a conversion this analyzer cannot see - is left alone.
         if (!state.requiredReturn.empty() && state.requiredReturn.find('@') == std::string::npos &&
             IsNonNullablePrimitiveName(state.requiredReturn) && ts_node_named_child_count(node) == 1 &&
-            NodeType(ts_node_named_child(node, 0)) == node_types::NullLiteral)
+            NodeSymbol(ts_node_named_child(node, 0)) == parser::GetGrammarSymbols().symNullLiteral)
         {
             EmitAtNode(node, m_ctx, "as-err-null-non-handle", state.requiredReturn);
         }
@@ -893,7 +894,7 @@ class ControlFlowVisitor
             requiredReturn = Trim(NodeText(returnType, m_sourceCode));
             reportedName = std::string(NodeText(name, m_sourceCode));
         }
-        else if (NodeType(node) == node_types::LambdaExpression)
+        else if (NodeSymbol(node) == parser::GetGrammarSymbols().symLambdaExpression)
         {
             if (const auto target = FuncdefTargetOfLambda(node, m_ctx.request.symbolTable, m_sourceCode))
             {
@@ -917,7 +918,8 @@ class ControlFlowVisitor
         // does nothing, which is the same silence the rule above keeps.
         state.requiredReturn = requiredReturn;
         state.functionName = reportedName;
-        state.implicitVoid = ts_node_is_null(returnType) && NodeType(node) != node_types::LambdaExpression;
+        state.implicitVoid =
+            ts_node_is_null(returnType) && NodeSymbol(node) != parser::GetGrammarSymbols().symLambdaExpression;
     }
 
     bool CheckLoopControl(TSNode node, std::string_view type, const FlowState& state)

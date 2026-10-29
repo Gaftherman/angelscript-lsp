@@ -473,8 +473,9 @@ ArgumentConversion EvaluateArgumentConversion(const std::string& argType, const 
         return AdjustForLValueConstraint(*specialScore, IsOutParameter(param) && argType != "void", argIsLValue);
     }
 
-    const std::string cleanArg = UnwrapTypedef(NormalizeType(argType, "array"), symbolTable);
-    const std::string cleanParam = UnwrapTypedef(NormalizeType(param.typeName, "array"), symbolTable);
+    const std::string cleanArg = UnwrapTypedef(NormalizeType(argType, symbolTable.GetDefaultArrayType()), symbolTable);
+    const std::string cleanParam =
+        UnwrapTypedef(NormalizeType(param.typeName, symbolTable.GetDefaultArrayType()), symbolTable);
     if (IsPoisonOrEmptyArg(cleanArg, cleanParam))
     {
         return ArgumentConversion{MatchTier::UnknownTypes,

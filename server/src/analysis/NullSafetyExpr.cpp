@@ -53,10 +53,11 @@ void CheckMemberDereference(TSNode obj, FlowState& state, NullCheckContext& ctx)
         }
         return;
     }
-    std::string_view objType = ts_node_type(obj);
-    if (objType == parser::nodes::CastExpression)
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol objSym = ts_node_symbol(obj);
+    if (objSym == gs.symCastExpression)
     {
-        TSNode typeNode = parser::GetChildByField(obj, parser::fields::Type);
+        TSNode typeNode = parser::GetChildByField(obj, gs.fieldType);
         const auto typeInfo = ExtractTypeInfoFromAST(typeNode, ctx.sourceCode);
         if (typeInfo.isHandle)
         {
@@ -108,21 +109,22 @@ void CheckNullExpression(TSNode expr, FlowState& state, NullCheckContext& ctx, i
     {
         return;
     }
-    std::string_view exprType = ts_node_type(expr);
-    if (exprType == parser::nodes::MemberExpression)
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol exprSym = ts_node_symbol(expr);
+    if (exprSym == gs.symMemberExpression)
     {
-        TSNode obj = parser::GetChildByField(expr, parser::fields::Object);
+        TSNode obj = parser::GetChildByField(expr, gs.fieldObject);
         CheckMemberDereference(obj, state, ctx);
         CheckNullExpression(obj, state, ctx, depth + 1);
     }
-    else if (exprType == parser::nodes::IndexExpression)
+    else if (exprSym == gs.symIndexExpression)
     {
-        TSNode obj = parser::GetChildByField(expr, parser::fields::Object);
+        TSNode obj = parser::GetChildByField(expr, gs.fieldObject);
         CheckMemberDereference(obj, state, ctx);
         CheckNullExpression(obj, state, ctx, depth + 1);
-        CheckNullExpression(parser::GetChildByField(expr, parser::fields::Index), state, ctx, depth + 1);
+        CheckNullExpression(parser::GetChildByField(expr, gs.fieldIndex), state, ctx, depth + 1);
     }
-    else if (exprType == parser::nodes::CallExpression)
+    else if (exprSym == gs.symCallExpression)
     {
         CheckNullExpression(parser::GetChildByField(expr, parser::fields::Function), state, ctx, depth + 1);
         TSNode argsNode = parser::GetChildByField(expr, parser::fields::Arguments);
@@ -132,23 +134,23 @@ void CheckNullExpression(TSNode expr, FlowState& state, NullCheckContext& ctx, i
             CheckNullExpression(ts_node_named_child(argsNode, i), state, ctx, depth + 1);
         }
     }
-    else if (exprType == parser::nodes::BinaryExpression)
+    else if (exprSym == gs.symBinaryExpression)
     {
         CheckBinaryExpr(expr, state, ctx, depth);
     }
-    else if (exprType == parser::nodes::CastExpression)
+    else if (exprSym == gs.symCastExpression)
     {
-        CheckNullExpression(parser::GetChildByField(expr, parser::fields::Value), state, ctx, depth + 1);
+        CheckNullExpression(parser::GetChildByField(expr, gs.fieldValue), state, ctx, depth + 1);
     }
-    else if (exprType == parser::nodes::ParenthesizedExpression)
+    else if (exprSym == gs.symParenthesizedExpression)
     {
         CheckNullExpression(ts_node_named_child(expr, 0), state, ctx, depth + 1);
     }
-    else if (exprType == parser::nodes::TernaryExpression)
+    else if (exprSym == gs.symTernaryExpression)
     {
-        CheckNullExpression(parser::GetChildByField(expr, parser::fields::Condition), state, ctx, depth + 1);
-        CheckNullExpression(parser::GetChildByField(expr, parser::fields::Consequence), state, ctx, depth + 1);
-        CheckNullExpression(parser::GetChildByField(expr, parser::fields::Alternative), state, ctx, depth + 1);
+        CheckNullExpression(parser::GetChildByField(expr, gs.fieldCondition), state, ctx, depth + 1);
+        CheckNullExpression(parser::GetChildByField(expr, gs.fieldConsequence), state, ctx, depth + 1);
+        CheckNullExpression(parser::GetChildByField(expr, gs.fieldAlternative), state, ctx, depth + 1);
     }
 }
 

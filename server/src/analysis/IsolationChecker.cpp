@@ -256,22 +256,24 @@ bool IsCallFunctionNode(TSNode p, TSNode node)
     return !ts_node_is_null(fn) && (fn.id == node.id || parser::GetParent(node).id == fn.id);
 }
 
-bool IsDeclarationNameNode(TSNode p, TSNode node, std::string_view pType)
+bool IsDeclarationNameNode(TSNode p, TSNode node, TSSymbol pSym)
 {
-    if (pType == "variable_declarator")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (pSym == gs.symVariableDeclarator)
     {
-        TSNode val = parser::GetChildByField(p, parser::fields::Value);
+        TSNode val = parser::GetChildByField(p, gs.fieldValue);
         return ts_node_is_null(val) || ts_node_start_byte(node) < ts_node_start_byte(val);
     }
-    if (pType == "func_declaration" || pType == "class_declaration" || pType == "parameter" || pType == "enum_member")
+    if (pSym == gs.symFuncDeclaration || pSym == gs.symClassDeclaration || pSym == gs.symParameter ||
+        pSym == gs.symEnumMember)
     {
-        TSNode nameNode = parser::GetChildByField(p, parser::fields::Name);
+        TSNode nameNode = parser::GetChildByField(p, gs.fieldName);
         return !ts_node_is_null(nameNode) &&
                (nameNode.id == node.id || ts_node_start_byte(node) == ts_node_start_byte(nameNode));
     }
-    if (pType == "member_expression")
+    if (pSym == gs.symMemberExpression)
     {
-        TSNode propNode = parser::GetChildByField(p, parser::fields::Member);
+        TSNode propNode = parser::GetChildByField(p, gs.fieldMember);
         return !ts_node_is_null(propNode) && propNode.id == node.id;
     }
     return false;
@@ -410,8 +412,9 @@ struct IsolationVisitor
             return;
         }
 
-        std::string_view funcNodeType = ts_node_type(funcNode);
-        if (funcNodeType != "scoped_identifier" && funcNodeType != "identifier")
+        const auto& gs = parser::GetGrammarSymbols();
+        const TSSymbol funcSym = ts_node_symbol(funcNode);
+        if (funcSym != gs.symScopedIdentifier && funcSym != gs.symIdentifier)
         {
             return;
         }
@@ -442,22 +445,23 @@ struct IsolationVisitor
     bool IsIdentifierInSpecialContext(TSNode node) const
     {
         TSNode p = parser::GetParent(node);
+        const auto& gs = parser::GetGrammarSymbols();
         while (!ts_node_is_null(p))
         {
-            std::string_view pType = ts_node_type(p);
-            if (pType == "call_expression" && IsCallFunctionNode(p, node))
+            const TSSymbol pSym = ts_node_symbol(p);
+            if (pSym == gs.symCallExpression && IsCallFunctionNode(p, node))
             {
                 return true;
             }
-            if (pType == "datatype" || pType == "type" || pType == "base_class_list")
+            if (pSym == gs.symDatatype || pSym == gs.symType || pSym == gs.symBaseClassList)
             {
                 return true;
             }
-            if (IsDeclarationNameNode(p, node, pType))
+            if (IsDeclarationNameNode(p, node, pSym))
             {
                 return true;
             }
-            if (pType == "statement_block" || pType == "func_declaration" || pType == "class_declaration")
+            if (pSym == gs.symStatementBlock || pSym == gs.symFuncDeclaration || pSym == gs.symClassDeclaration)
             {
                 break;
             }
@@ -524,15 +528,16 @@ struct IsolationVisitor
             return;
         }
 
-        std::string_view nodeType = ts_node_type(node);
+        const auto& gs = parser::GetGrammarSymbols();
+        const TSSymbol nodeSym = ts_node_symbol(node);
 
-        if (nodeType == "class_declaration")
+        if (nodeSym == gs.symClassDeclaration)
         {
             VisitClassDeclaration(node, depth);
             return;
         }
 
-        if (nodeType == "func_declaration")
+        if (nodeSym == gs.symFuncDeclaration)
         {
             VisitFunctionDeclaration(node, inSharedContext, depth);
             return;
@@ -540,15 +545,15 @@ struct IsolationVisitor
 
         if (inSharedContext)
         {
-            if (nodeType == "datatype")
+            if (nodeSym == gs.symDatatype)
             {
                 CheckSharedDatatype(node);
             }
-            else if (nodeType == "call_expression")
+            else if (nodeSym == gs.symCallExpression)
             {
                 CheckSharedCallExpression(node);
             }
-            else if (nodeType == "identifier")
+            else if (nodeSym == gs.symIdentifier)
             {
                 CheckSharedIdentifier(node);
             }

@@ -141,12 +141,17 @@ struct GlobalScopeQualifier
  */
 [[nodiscard]] inline bool IsHandleAssignmentTarget(TSNode target) noexcept
 {
-    if (ts_node_is_null(target) || std::string_view(ts_node_type(target)) != "unary_expression")
+    if (ts_node_is_null(target))
     {
         return false;
     }
-    const TSNode prefix = parser::GetChildByField(target, parser::fields::Operator);
-    return !ts_node_is_null(prefix) && std::string_view(ts_node_type(prefix)) == "@";
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(target) != gs.symUnaryExpression)
+    {
+        return false;
+    }
+    const TSNode prefix = parser::GetChildByField(target, gs.fieldOperator);
+    return !ts_node_is_null(prefix) && ts_node_symbol(prefix) == gs.tokAt;
 }
 
 /**

@@ -148,6 +148,25 @@ def check_no_symbol_lookup_concat():
                         violations.append((file_path, line_num, stripped))
     return violations
 
+def check_no_ts_node_type_in_analysis():
+    violations = []
+    ts_node_type_pattern = re.compile(r"\bts_node_type\s*\(")
+    analysis_root = SERVER_SRC / "analysis"
+    for file_path in analysis_root.rglob("*.[ch]*"):
+        if not file_path.is_file() or file_path.name == "DoxygenMarkdown.cpp":
+            continue
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for line_num, line in enumerate(content.splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                continue
+            if ts_node_type_pattern.search(line):
+                violations.append((file_path, line_num, stripped))
+    return violations
+
 def main():
     has_errors = False
     
@@ -191,10 +210,18 @@ def main():
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
 
+    ts_node_type_violations = check_no_ts_node_type_in_analysis()
+    if ts_node_type_violations:
+        has_errors = True
+        print("[ERROR] Raw ts_node_type calls detected in Layer 2 analysis (use ts_node_symbol and parser::GetGrammarSymbols()):")
+        for f, line_num, line in ts_node_type_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
     if has_errors:
         sys.exit(1)
 
-    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 engine hardcodings, 0 type hardcodings, 0 lookup string concatenations).")
+    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in analysis, 0 engine hardcodings, 0 type hardcodings, 0 lookup string concatenations).")
 
 if __name__ == "__main__":
     main()

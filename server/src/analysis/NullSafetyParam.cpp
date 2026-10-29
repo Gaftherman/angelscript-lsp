@@ -45,8 +45,9 @@ TSNode FindParameterListNode(TSNode funcNode)
     for (uint32_t i = 0; i < c; ++i)
     {
         TSNode child = ts_node_named_child(funcNode, i);
-        std::string_view childType = ts_node_type(child);
-        if (childType == parser::nodes::ParameterList || childType == parser::nodes::LambdaParameterList)
+        const auto& gs = parser::GetGrammarSymbols();
+        const TSSymbol sym = ts_node_symbol(child);
+        if (sym == gs.symParameterList || sym == gs.symLambdaParameterList)
         {
             return child;
         }
@@ -68,9 +69,10 @@ void CollectRegularParameters(TSNode params, std::string_view sourceCode, FlowSt
         if (ts_node_is_null(typeNode) && ts_node_named_child_count(param) > 0)
         {
             TSNode first = ts_node_named_child(param, 0);
-            std::string_view cType = ts_node_type(first);
-            if (cType == parser::nodes::Type || cType == parser::nodes::PrimitiveType ||
-                cType == parser::nodes::ScopedIdentifier || cType == parser::nodes::Identifier)
+            const auto& gs = parser::GetGrammarSymbols();
+            const TSSymbol sym = ts_node_symbol(first);
+            if (sym == gs.symType || sym == gs.symPrimitiveType || sym == gs.symScopedIdentifier ||
+                sym == gs.symIdentifier)
             {
                 typeNode = first;
             }
@@ -116,8 +118,8 @@ void CollectParametersFromAST(TSNode funcNode, std::string_view sourceCode, Flow
         return;
     }
 
-    std::string_view listType = ts_node_type(params);
-    if (listType == parser::nodes::LambdaParameterList)
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(params) == gs.symLambdaParameterList)
     {
         const auto lambdaParams = ExtractLambdaParameters(params, sourceCode);
         for (const auto& lp : lambdaParams)
@@ -136,8 +138,9 @@ void CollectParametersFromAST(TSNode funcNode, std::string_view sourceCode, Flow
 
 TSNode FindFunctionBody(TSNode funcNode)
 {
-    TSNode body = parser::GetChildByField(funcNode, parser::fields::Body);
-    if (!ts_node_is_null(body) && std::string_view(ts_node_type(body)) == parser::nodes::StatementBlock)
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode body = parser::GetChildByField(funcNode, gs.fieldBody);
+    if (!ts_node_is_null(body) && ts_node_symbol(body) == gs.symStatementBlock)
     {
         return body;
     }
@@ -145,7 +148,7 @@ TSNode FindFunctionBody(TSNode funcNode)
     for (uint32_t i = 0; i < count; ++i)
     {
         TSNode child = ts_node_named_child(funcNode, i);
-        if (std::string_view(ts_node_type(child)) == parser::nodes::StatementBlock)
+        if (ts_node_symbol(child) == gs.symStatementBlock)
         {
             return child;
         }

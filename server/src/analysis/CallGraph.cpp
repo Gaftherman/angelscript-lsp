@@ -25,14 +25,15 @@ TSNode CalleeNameNode(TSNode callNode)
         return TSNode{};
     }
 
-    const std::string_view calleeType = ts_node_type(callee);
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol calleeSym = ts_node_symbol(callee);
 
-    if (calleeType == "member_expression")
+    if (calleeSym == gs.symMemberExpression)
     {
-        return parser::GetChildByField(callee, parser::fields::Member);
+        return parser::GetChildByField(callee, gs.fieldMember);
     }
 
-    if (calleeType == "scoped_identifier")
+    if (calleeSym == gs.symScopedIdentifier)
     {
         // The last segment, so `Game::Spawn()` and `Spawn()` are recorded under one name.
         // Resolving which declaration that reaches is the hierarchy's job, not the index's.
@@ -41,7 +42,7 @@ TSNode CalleeNameNode(TSNode callNode)
         for (uint32_t i = 0; i < count; ++i)
         {
             TSNode child = ts_node_named_child(callee, i);
-            if (std::string_view(ts_node_type(child)) == "identifier")
+            if (ts_node_symbol(child) == gs.symIdentifier)
             {
                 last = child;
             }
@@ -49,7 +50,7 @@ TSNode CalleeNameNode(TSNode callNode)
         return last;
     }
 
-    if (calleeType == "identifier")
+    if (calleeSym == gs.symIdentifier)
     {
         return callee;
     }
@@ -67,10 +68,11 @@ struct TraversalItem
     int depth = 0;
 };
 
-bool IsContainerType(std::string_view nodeType)
+bool IsContainerSymbol(TSSymbol sym)
 {
-    return nodeType == "class_declaration" || nodeType == "interface_declaration" || nodeType == "mixin_declaration" ||
-           nodeType == "namespace_declaration";
+    const auto& gs = parser::GetGrammarSymbols();
+    return sym == gs.symClassDeclaration || sym == gs.symInterfaceDeclaration || sym == gs.symMixinDeclaration ||
+           sym == gs.symNamespaceDeclaration;
 }
 
 struct NamingContext
@@ -140,19 +142,20 @@ void CollectCallsInto(TSNode root, std::string_view sourceCode, std::vector<Call
             continue;
         }
 
-        const std::string_view nodeType = ts_node_type(item.node);
+        const auto& gs = parser::GetGrammarSymbols();
+        const TSSymbol sym = ts_node_symbol(item.node);
         uint32_t nextContainer = item.containerIndex;
         uint32_t nextCaller = item.callerIndex;
 
-        if (IsContainerType(nodeType))
+        if (IsContainerSymbol(sym))
         {
             nextContainer = ctx.NextContainer(item.node, sourceCode, item.containerIndex);
         }
-        else if (nodeType == "func_declaration")
+        else if (sym == gs.symFuncDeclaration)
         {
             nextCaller = ctx.NextCaller(item.node, sourceCode, item.containerIndex, item.callerIndex);
         }
-        else if (nodeType == "call_expression")
+        else if (sym == gs.symCallExpression)
         {
             RecordCallSite(item.node, sourceCode, ctx.callers[item.callerIndex], out);
         }

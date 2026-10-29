@@ -42,7 +42,7 @@ void CheckScopedIdentifier(TSNode node, std::string_view sourceCode, const Symbo
         return;
     }
     TSNode firstChild = ts_node_named_child(node, 0);
-    if (ts_node_is_null(firstChild) || std::string_view(ts_node_type(firstChild)) != "identifier")
+    if (ts_node_is_null(firstChild) || ts_node_symbol(firstChild) != parser::GetGrammarSymbols().symIdentifier)
     {
         return;
     }
@@ -220,16 +220,17 @@ void CheckImportBody(TSNode node, std::string_view sourceCode, DiagnosticContext
  */
 void ProcessNamespaceNode(TSNode node, const NamespaceCheckRequest& request, DiagnosticContext& ctx)
 {
-    const std::string_view type = ts_node_type(node);
-    if (type == "scoped_identifier")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(node);
+    if (sym == gs.symScopedIdentifier)
     {
         CheckScopedIdentifier(node, request.sourceCode, ctx.request.symbolTable, ctx);
     }
-    else if (type == "call_expression")
+    else if (sym == gs.symCallExpression)
     {
         CheckCallExpression(node, request, ctx);
     }
-    else if (type == "import_declaration" || type == "ERROR")
+    else if (sym == gs.symImportDeclaration || ts_node_is_error(node))
     {
         CheckImportBody(node, request.sourceCode, ctx);
     }

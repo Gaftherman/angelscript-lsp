@@ -147,10 +147,11 @@ void ProcessUnaryCondition(TSNode condition, std::string_view sourceCode, Assert
 
 TSNode UnwrapNullExpression(TSNode expr)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     while (!ts_node_is_null(expr))
     {
-        std::string_view type = ts_node_type(expr);
-        if (type == parser::nodes::ParenthesizedExpression)
+        const TSSymbol sym = ts_node_symbol(expr);
+        if (sym == gs.symParenthesizedExpression)
         {
             if (ts_node_named_child_count(expr) == 1)
             {
@@ -158,19 +159,19 @@ TSNode UnwrapNullExpression(TSNode expr)
                 continue;
             }
         }
-        else if (type == parser::nodes::UnaryExpression)
+        else if (sym == gs.symUnaryExpression)
         {
-            TSNode op = parser::GetChildByField(expr, parser::fields::Operator);
-            TSNode operand = parser::GetChildByField(expr, parser::fields::Operand);
+            TSNode op = parser::GetChildByField(expr, gs.fieldOperator);
+            TSNode operand = parser::GetChildByField(expr, gs.fieldOperand);
             if (!ts_node_is_null(op) && !ts_node_is_null(operand) && ts_node_end_byte(op) - ts_node_start_byte(op) == 1)
             {
                 expr = operand;
                 continue;
             }
         }
-        else if (type == parser::nodes::AssignmentExpression)
+        else if (sym == gs.symAssignmentExpression)
         {
-            TSNode left = parser::GetChildByField(expr, parser::fields::Left);
+            TSNode left = parser::GetChildByField(expr, gs.fieldLeft);
             if (!ts_node_is_null(left))
             {
                 expr = left;
@@ -189,12 +190,13 @@ std::string GetIdentifierName(TSNode node, std::string_view sourceCode)
     {
         return "";
     }
-    std::string_view type = ts_node_type(unwrapped);
-    if (type == parser::nodes::Identifier)
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(unwrapped);
+    if (sym == gs.symIdentifier)
     {
         return std::string(NodeText(unwrapped, sourceCode));
     }
-    if (type == parser::nodes::ScopedIdentifier)
+    if (sym == gs.symScopedIdentifier)
     {
         std::string text = NodeText(unwrapped, sourceCode);
         if (text.find("::") == std::string::npos)
@@ -215,14 +217,15 @@ void ExtractConditionAssertions(TSNode condition, std::string_view sourceCode,
     }
 
     TSNode unwrapped = UnwrapNullExpression(condition);
-    std::string_view nodeType = ts_node_type(unwrapped);
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(unwrapped);
     AssertionSink sink{positiveAssertions, negativeAssertions};
 
-    if (nodeType == parser::nodes::BinaryExpression)
+    if (sym == gs.symBinaryExpression)
     {
         ProcessBinaryCondition(unwrapped, sourceCode, sink);
     }
-    else if (nodeType == parser::nodes::UnaryExpression)
+    else if (sym == gs.symUnaryExpression)
     {
         ProcessUnaryCondition(unwrapped, sourceCode, sink);
     }

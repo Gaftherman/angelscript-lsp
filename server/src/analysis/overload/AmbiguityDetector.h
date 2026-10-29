@@ -87,6 +87,9 @@ std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, const std
  * @param[in] right Second symbol.
  * @return True if identical signature.
  */
+bool HasSameParameterList(const Symbol& left, const Symbol& right, std::string_view arrayTypeName);
+bool HasSameParameterList(const Symbol& left, const Symbol& right);
+bool HasSameSignature(const Symbol& left, const Symbol& right, std::string_view arrayTypeName);
 bool HasSameSignature(const Symbol& left, const Symbol& right);
 
 } // namespace angel_lsp::analysis

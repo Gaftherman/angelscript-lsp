@@ -118,17 +118,17 @@ std::string ExtractStringValue(TSNode exprNode, const SemanticAnalysisRequest& r
     if (ts_node_is_null(exprNode) || depth > 8)
         return {};
 
-    const std::string_view type = ts_node_type(exprNode);
-    if (type == parser::nodes::StringLiteral)
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(exprNode);
+    if (sym == gs.symStringLiteral)
     {
         std::string_view text = parser::GetNodeTextView(exprNode, req.sourceCode);
         return std::string(parser::UnquoteStringView(text));
     }
-    if (type == parser::nodes::BinaryExpression)
+    if (sym == gs.symBinaryExpression)
     {
-        const auto& gs = parser::GetGrammarSymbols();
-        TSNode left = ts_node_child_by_field_id(exprNode, gs.fieldLeft);
-        TSNode right = ts_node_child_by_field_id(exprNode, gs.fieldRight);
+        TSNode left = parser::GetChildByField(exprNode, gs.fieldLeft);
+        TSNode right = parser::GetChildByField(exprNode, gs.fieldRight);
         return ExtractStringValue(left, req, depth + 1) + ExtractStringValue(right, req, depth + 1);
     }
     return {};

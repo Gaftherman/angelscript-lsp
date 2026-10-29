@@ -1,7 +1,9 @@
 #include "analysis/overload/AmbiguityDetector.h"
 #include "analysis/ExpressionTypeCache.h"
+#include "analysis/TypeSanitization.h"
 #include "analysis/overload/ConversionRankingEngine.h"
 #include "analysis/overload/OverloadTypeConversions.h"
+#include "parser/Keywords.h"
 
 #include <algorithm>
 
@@ -9,6 +11,16 @@ namespace angel_lsp::analysis
 {
 
 bool HasSameParameterList(const Symbol& left, const Symbol& right)
+{
+    return HasSameParameterList(left, right, {});
+}
+
+bool HasSameSignature(const Symbol& left, const Symbol& right)
+{
+    return HasSameSignature(left, right, {});
+}
+
+bool HasSameParameterList(const Symbol& left, const Symbol& right, std::string_view arrayTypeName)
 {
     if (!std::holds_alternative<FunctionSignature>(left.signature) ||
         !std::holds_alternative<FunctionSignature>(right.signature))
@@ -25,9 +37,14 @@ bool HasSameParameterList(const Symbol& left, const Symbol& right)
     }
     for (size_t i = 0; i < a.parameters.size(); ++i)
     {
-        if (NormalizeType(a.parameters[i].typeName, "array") != NormalizeType(b.parameters[i].typeName, "array"))
+        const auto& pa = a.parameters[i].typeName;
+        const auto& pb = b.parameters[i].typeName;
+        if (pa != pb)
         {
-            return false;
+            if (arrayTypeName.empty() || NormalizeType(pa, arrayTypeName) != NormalizeType(pb, arrayTypeName))
+            {
+                return false;
+            }
         }
         if (a.parameters[i].modifier != b.parameters[i].modifier)
         {
@@ -37,7 +54,7 @@ bool HasSameParameterList(const Symbol& left, const Symbol& right)
     return true;
 }
 
-bool HasSameSignature(const Symbol& left, const Symbol& right)
+bool HasSameSignature(const Symbol& left, const Symbol& right, std::string_view arrayTypeName)
 {
     if (!std::holds_alternative<FunctionSignature>(left.signature) ||
         !std::holds_alternative<FunctionSignature>(right.signature))
@@ -58,16 +75,25 @@ bool HasSameSignature(const Symbol& left, const Symbol& right)
         return false;
     }
 
-    if (NormalizeType(a.returnType, "array") != NormalizeType(b.returnType, "array"))
+    if (a.returnType != b.returnType)
     {
-        return false;
+        if (arrayTypeName.empty() ||
+            NormalizeType(a.returnType, arrayTypeName) != NormalizeType(b.returnType, arrayTypeName))
+        {
+            return false;
+        }
     }
 
     for (size_t i = 0; i < a.parameters.size(); ++i)
     {
-        if (NormalizeType(a.parameters[i].typeName, "array") != NormalizeType(b.parameters[i].typeName, "array"))
+        const auto& pa = a.parameters[i].typeName;
+        const auto& pb = b.parameters[i].typeName;
+        if (pa != pb)
         {
-            return false;
+            if (arrayTypeName.empty() || NormalizeType(pa, arrayTypeName) != NormalizeType(pb, arrayTypeName))
+            {
+                return false;
+            }
         }
         if (a.parameters[i].modifier != b.parameters[i].modifier)
         {
@@ -265,9 +291,9 @@ bool CheckOverloadAmbiguity(const std::vector<EvaluatedCandidate>& nonDominated,
     const bool anyArgumentUnknown = std::any_of(argumentTypes.begin(), argumentTypes.end(),
                                                 [](const std::string& argType)
                                                 {
-                                                    const std::string bare = NormalizeType(argType, "array");
-                                                    return bare.empty() || bare == "auto" || bare == "<poison>" ||
-                                                           ExpressionTypeCache::IsPoisonType(argType);
+                                                    const std::string_view bare = CleanBaseTypeView(argType);
+                                                    return bare.empty() || bare == parser::keywords::Auto ||
+                                                           ExpressionTypeCache::IsPoisonType(bare);
                                                 });
     if (anyArgumentUnknown)
     {

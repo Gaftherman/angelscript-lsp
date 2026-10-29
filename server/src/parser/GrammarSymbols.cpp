@@ -85,6 +85,7 @@ void PopulateExpressionsAndLiterals(const TSLanguage* lang, GrammarSymbols& gs) 
     gs.symTernaryExpression = SymNamed(lang, parser::nodes::TernaryExpression);
     gs.symIndexExpression = SymNamed(lang, parser::nodes::IndexExpression);
     gs.symLambdaExpression = SymNamed(lang, parser::nodes::LambdaExpression);
+    gs.symThisExpression = SymNamed(lang, parser::nodes::ThisExpression);
     gs.symInitializerList = SymNamed(lang, parser::nodes::InitializerList);
     gs.symTypedInitializerList = SymNamed(lang, parser::nodes::TypedInitializerList);
 
@@ -112,7 +113,7 @@ void PopulateExpressionsAndLiterals(const TSLanguage* lang, GrammarSymbols& gs) 
     gs.symExpressionStatement = SymNamed(lang, parser::nodes::ExpressionStatement);
 }
 
-void PopulateTokensAndFields(const TSLanguage* lang, GrammarSymbols& gs) noexcept
+void PopulateTokens(const TSLanguage* lang, GrammarSymbols& gs) noexcept
 {
     gs.tokConst = SymAnon(lang, "const");
     gs.tokIn = SymAnon(lang, "in");
@@ -141,11 +142,21 @@ void PopulateTokensAndFields(const TSLanguage* lang, GrammarSymbols& gs) noexcep
     gs.tokInterface = SymAnon(lang, "interface");
     gs.tokFunction = SymAnon(lang, "function");
     gs.tokComma = SymAnon(lang, ",");
+    gs.tokOpenParen = SymAnon(lang, "(");
     gs.tokCloseParen = SymAnon(lang, ")");
     gs.tokColon = SymAnon(lang, ":");
     gs.tokOpenBracket = SymAnon(lang, "[");
     gs.tokCloseBracket = SymAnon(lang, "]");
+    gs.tokAssign = SymAnon(lang, "=");
+    gs.tokSemicolon = SymAnon(lang, ";");
+    gs.tokDefault = SymAnon(lang, "default");
+    gs.tokCase = SymAnon(lang, "case");
+    gs.tokDot = SymAnon(lang, ".");
+    gs.tokSlash = SymAnon(lang, "/");
+}
 
+void PopulateFields(const TSLanguage* lang, GrammarSymbols& gs) noexcept
+{
     gs.fieldName = FieldId(lang, parser::fields::Name);
     gs.fieldType = FieldId(lang, parser::fields::Type);
     gs.fieldReturnType = FieldId(lang, parser::fields::ReturnType);
@@ -176,6 +187,12 @@ void PopulateTokensAndFields(const TSLanguage* lang, GrammarSymbols& gs) noexcep
     gs.fieldInit = FieldId(lang, parser::fields::Init);
     gs.fieldConsequence = FieldId(lang, parser::fields::Consequence);
     gs.fieldOperand = FieldId(lang, parser::fields::Operand);
+    gs.fieldAlternative = FieldId(lang, parser::fields::Alternative);
+    gs.fieldBase = FieldId(lang, parser::fields::Base);
+    gs.fieldCollection = FieldId(lang, parser::fields::Collection);
+    gs.fieldModifier = FieldId(lang, parser::fields::Modifier);
+    gs.fieldParam = FieldId(lang, parser::fields::Param);
+    gs.fieldUnderlyingType = FieldId(lang, parser::fields::UnderlyingType);
 }
 
 } // namespace
@@ -188,7 +205,8 @@ const GrammarSymbols& GetGrammarSymbols() noexcept
         GrammarSymbols gs;
         PopulateDeclarations(lang, gs);
         PopulateExpressionsAndLiterals(lang, gs);
-        PopulateTokensAndFields(lang, gs);
+        PopulateTokens(lang, gs);
+        PopulateFields(lang, gs);
         gs.conversionTargetSymbols = {
             gs.symIfStatement,
             gs.symWhileStatement,

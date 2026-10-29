@@ -99,8 +99,9 @@ void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx, int de
     {
         return;
     }
-    std::string_view stmtType = ts_node_type(stmt);
-    if (stmtType == parser::nodes::StatementBlock)
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol stmtSym = ts_node_symbol(stmt);
+    if (stmtSym == gs.symStatementBlock)
     {
         const uint32_t count = ts_node_named_child_count(stmt);
         for (uint32_t i = 0; i < count && !state.isTerminated; ++i)
@@ -108,14 +109,14 @@ void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx, int de
             CheckStatement(ts_node_named_child(stmt, i), state, ctx, depth + 1);
         }
     }
-    else if (stmtType == parser::nodes::VariableDeclaration)
+    else if (stmtSym == gs.symVariableDeclaration)
     {
         CheckVarDeclaration(stmt, state, ctx);
     }
-    else if (stmtType == parser::nodes::ExpressionStatement)
+    else if (stmtSym == gs.symExpressionStatement)
     {
         TSNode expr = ts_node_named_child(stmt, 0);
-        if (!ts_node_is_null(expr) && std::string_view(ts_node_type(expr)) == parser::nodes::AssignmentExpression)
+        if (!ts_node_is_null(expr) && ts_node_symbol(expr) == gs.symAssignmentExpression)
         {
             CheckAssignmentStmt(expr, state, ctx);
         }
@@ -124,11 +125,11 @@ void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx, int de
             CheckNullExpression(expr, state, ctx, depth + 1);
         }
     }
-    else if (stmtType == parser::nodes::IfStatement)
+    else if (stmtSym == gs.symIfStatement)
     {
         CheckIfStmt(stmt, state, ctx, depth + 1);
     }
-    else if (stmtType == parser::nodes::ReturnStatement)
+    else if (stmtSym == gs.symReturnStatement)
     {
         const ast::ReturnStatementView retView(stmt, ctx.sourceCode);
         CheckNullExpression(retView.Value(), state, ctx, depth + 1);

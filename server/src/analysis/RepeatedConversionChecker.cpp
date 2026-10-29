@@ -29,9 +29,10 @@ bool IsExtractableCandidate(TSNode node)
     {
         return false;
     }
-    const std::string_view type = ts_node_type(node);
-    return type == "member_expression" || type == "identifier" || type == "call_expression" ||
-           type == "index_expression" || type == "scoped_identifier";
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(node);
+    return sym == gs.symMemberExpression || sym == gs.symIdentifier || sym == gs.symCallExpression ||
+           sym == gs.symIndexExpression || sym == gs.symScopedIdentifier;
 }
 
 struct ConversionTypePair
@@ -136,7 +137,8 @@ std::vector<TSNode> CollectLadderIfNodes(TSNode rootIfNode)
 {
     std::vector<TSNode> ifNodes;
     TSNode curr = rootIfNode;
-    while (!ts_node_is_null(curr) && std::string_view(ts_node_type(curr)) == "if_statement")
+    const auto& gs = parser::GetGrammarSymbols();
+    while (!ts_node_is_null(curr) && ts_node_symbol(curr) == gs.symIfStatement)
     {
         ifNodes.push_back(curr);
         curr = GetIfAlternative(curr);

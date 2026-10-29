@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/SemanticHelpers.h"
+#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 
 #include <cstdint>
@@ -45,7 +46,7 @@ class AstNodeView
     /** @brief Returns the raw grammar type name of the node. */
     [[nodiscard]] std::string_view Type() const noexcept
     {
-        return IsValid() ? std::string_view(ts_node_type(m_raw)) : std::string_view{};
+        return parser::GetNodeType(m_raw);
     }
 
     /** @brief Returns the underlying TSNode handle. */

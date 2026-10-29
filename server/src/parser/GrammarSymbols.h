@@ -74,6 +74,7 @@ struct GrammarSymbols
     TSSymbol symTernaryExpression = 0;        ///< ternary_expression
     TSSymbol symIndexExpression = 0;          ///< index_expression
     TSSymbol symLambdaExpression = 0;         ///< lambda_expression
+    TSSymbol symThisExpression = 0;           ///< this_expression
     TSSymbol symInitializerList = 0;          ///< initializer_list
     TSSymbol symTypedInitializerList = 0;     ///< typed_initializer_list
 
@@ -106,37 +107,45 @@ struct GrammarSymbols
     // Anonymous Token Symbols (tok*)
     // =========================================================================
 
-    TSSymbol tokConst = 0;        ///< "const"
-    TSSymbol tokIn = 0;           ///< "in"
-    TSSymbol tokOut = 0;          ///< "out"
-    TSSymbol tokInout = 0;        ///< "inout"
-    TSSymbol tokAmp = 0;          ///< "&"
-    TSSymbol tokAt = 0;           ///< "@"
-    TSSymbol tokPrivate = 0;      ///< "private"
-    TSSymbol tokProtected = 0;    ///< "protected"
-    TSSymbol tokShared = 0;       ///< "shared"
-    TSSymbol tokMixin = 0;        ///< "mixin"
-    TSSymbol tokAbstract = 0;     ///< "abstract"
-    TSSymbol tokFinal = 0;        ///< "final"
-    TSSymbol tokOverride = 0;     ///< "override"
-    TSSymbol tokExplicit = 0;     ///< "explicit"
-    TSSymbol tokProperty = 0;     ///< "property"
-    TSSymbol tokDelete = 0;       ///< "delete"
-    TSSymbol tokExternal = 0;     ///< "external"
-    TSSymbol tokImport = 0;       ///< "import"
-    TSSymbol tokOpenBrace = 0;    ///< "{"
-    TSSymbol tokCloseBrace = 0;   ///< "}"
-    TSSymbol tokGet = 0;          ///< "get"
-    TSSymbol tokSet = 0;          ///< "set"
-    TSSymbol tokColonColon = 0;   ///< "::"
-    TSSymbol tokClass = 0;        ///< "class"
-    TSSymbol tokInterface = 0;    ///< "interface"
-    TSSymbol tokFunction = 0;     ///< "function"
-    TSSymbol tokComma = 0;        ///< ","
-    TSSymbol tokCloseParen = 0;   ///< ")"
-    TSSymbol tokColon = 0;        ///< ":"
-    TSSymbol tokOpenBracket = 0;  ///< "["
-    TSSymbol tokCloseBracket = 0; ///< "]"
+    TSSymbol tokConst = 0;                         ///< "const"
+    TSSymbol tokIn = 0;                            ///< "in"
+    TSSymbol tokOut = 0;                           ///< "out"
+    TSSymbol tokInout = 0;                         ///< "inout"
+    TSSymbol tokAmp = 0;                           ///< "&"
+    TSSymbol tokAt = 0;                            ///< "@"
+    TSSymbol tokPrivate = 0;                       ///< "private"
+    TSSymbol tokProtected = 0;                     ///< "protected"
+    TSSymbol tokShared = 0;                        ///< "shared"
+    TSSymbol tokMixin = 0;                         ///< "mixin"
+    TSSymbol tokAbstract = 0;                      ///< "abstract"
+    TSSymbol tokFinal = 0;                         ///< "final"
+    TSSymbol tokOverride = 0;                      ///< "override"
+    TSSymbol tokExplicit = 0;                      ///< "explicit"
+    TSSymbol tokProperty = 0;                      ///< "property"
+    TSSymbol tokDelete = 0;                        ///< "delete"
+    TSSymbol tokExternal = 0;                      ///< "external"
+    TSSymbol tokImport = 0;                        ///< "import"
+    TSSymbol tokOpenBrace = 0;                     ///< "{"
+    TSSymbol tokCloseBrace = 0;                    ///< "}"
+    TSSymbol tokGet = 0;                           ///< "get"
+    TSSymbol tokSet = 0;                           ///< "set"
+    TSSymbol tokColonColon = 0;                    ///< "::"
+    TSSymbol tokClass = 0;                         ///< "class"
+    TSSymbol tokInterface = 0;                     ///< "interface"
+    TSSymbol tokFunction = 0;                      ///< "function"
+    TSSymbol tokComma = 0;                         ///< ","
+    TSSymbol tokOpenParen = 0;                     ///< "("
+    TSSymbol tokCloseParen = 0;                    ///< ")"
+    TSSymbol tokColon = 0;                         ///< ":"
+    TSSymbol tokOpenBracket = 0;                   ///< "["
+    TSSymbol tokCloseBracket = 0;                  ///< "]"
+    TSSymbol tokAssign = 0;                        ///< "="
+    TSSymbol tokSemicolon = 0;                     ///< ";"
+    TSSymbol tokDefault = 0;                       ///< "default"
+    TSSymbol tokCase = 0;                          ///< "case"
+    TSSymbol tokDot = 0;                           ///< "."
+    TSSymbol tokSlash = 0;                         ///< "/"
+    TSSymbol symError = static_cast<TSSymbol>(-1); ///< ERROR node
 
     // =========================================================================
     // Pre-resolved Field IDs (field*)
@@ -172,6 +181,12 @@ struct GrammarSymbols
     TSFieldId fieldInit = 0;           ///< "init"
     TSFieldId fieldConsequence = 0;    ///< "consequence"
     TSFieldId fieldOperand = 0;        ///< "operand"
+    TSFieldId fieldAlternative = 0;    ///< "alternative"
+    TSFieldId fieldBase = 0;           ///< "base"
+    TSFieldId fieldCollection = 0;     ///< "collection"
+    TSFieldId fieldModifier = 0;       ///< "modifier"
+    TSFieldId fieldParam = 0;          ///< "param"
+    TSFieldId fieldUnderlyingType = 0; ///< "underlying_type"
 
     // =========================================================================
     // Pre-resolved Statement & Expression Sets

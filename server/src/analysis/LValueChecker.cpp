@@ -169,17 +169,18 @@ void CheckCallLValue(TSNode callNode, const LValueCheckRequest& request, const S
 
     const CallCandidateContext cctx{request, scope, ctx};
     std::vector<Symbol> candidates;
-    const std::string_view funcNodeType = ts_node_type(funcNode);
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol funcSym = ts_node_symbol(funcNode);
 
-    if (funcNodeType == "member_expression")
+    if (funcSym == gs.symMemberExpression)
     {
         CollectMemberCandidates(funcNode, cctx, candidates);
     }
-    else if (funcNodeType == "scoped_identifier")
+    else if (funcSym == gs.symScopedIdentifier)
     {
         CollectScopedCandidates(funcNode, cctx, candidates);
     }
-    else if (funcNodeType == "identifier" || funcNodeType == "function")
+    else if (funcSym == gs.symIdentifier || funcSym == gs.tokFunction)
     {
         CollectIdentifierCandidates(funcNode, cctx, candidates);
     }
@@ -190,7 +191,8 @@ void CheckCallLValue(TSNode callNode, const LValueCheckRequest& request, const S
 TSNode UnwrapParentheses(TSNode node)
 {
     TSNode current = node;
-    while (!ts_node_is_null(current) && std::string_view(ts_node_type(current)) == "parenthesized_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    while (!ts_node_is_null(current) && ts_node_symbol(current) == gs.symParenthesizedExpression)
     {
         uint32_t count = ts_node_named_child_count(current);
         if (count > 0)
@@ -202,8 +204,7 @@ TSNode UnwrapParentheses(TSNode node)
         for (uint32_t i = 0; i < ts_node_child_count(current); ++i)
         {
             TSNode ch = ts_node_child(current, i);
-            std::string_view ct = ts_node_type(ch);
-            if (ct != "(" && ct != ")")
+            if (ts_node_is_named(ch))
             {
                 found = ch;
                 break;
@@ -356,24 +357,25 @@ bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const SymbolTabl
         return false;
     }
 
-    const std::string_view nodeType = ts_node_type(node);
-    if (nodeType == "ternary_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(node);
+    if (sym == gs.symTernaryExpression)
     {
         return IsTernaryAssignable(node, scope, table, sourceCode);
     }
-    if (nodeType == "unary_expression")
+    if (sym == gs.symUnaryExpression)
     {
         return IsUnaryAssignable(node, scope, table, sourceCode);
     }
-    if (nodeType == "member_expression")
+    if (sym == gs.symMemberExpression)
     {
         return IsAssignableMember(node, scope, table, sourceCode);
     }
-    if (nodeType == "index_expression")
+    if (sym == gs.symIndexExpression)
     {
         return true;
     }
-    if (nodeType == "identifier" || nodeType == "scoped_identifier" || nodeType == "function")
+    if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier || sym == gs.tokFunction)
     {
         return IsIdentifierAssignable(NodeText(node, sourceCode), scope, table, ts_node_start_byte(node));
     }
@@ -388,22 +390,23 @@ void CheckAssignmentTarget(TSNode node, const LValueCheckRequest& request, const
         return;
     }
 
-    const std::string_view targetType = ts_node_type(target);
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol targetSym = ts_node_symbol(target);
 
-    if (targetType == "call_expression")
+    if (targetSym == gs.symCallExpression)
     {
         CheckCallLValue(target, request, scope, ctx);
         return;
     }
 
     TSNode unwrapped = UnwrapParentheses(target);
-    if (std::string_view(ts_node_type(unwrapped)) == "call_expression")
+    if (ts_node_symbol(unwrapped) == gs.symCallExpression)
     {
         CheckCallLValue(unwrapped, request, scope, ctx);
         return;
     }
 
-    if (targetType == "ternary_expression")
+    if (targetSym == gs.symTernaryExpression)
     {
         return;
     }

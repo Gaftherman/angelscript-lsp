@@ -834,8 +834,8 @@ struct ExpressionTypeContext
     const SymbolTable& symbolTable;
     std::string_view sourceCode;
     std::string_view uri = "";
-    std::string_view stringTypeName = "string";
-    std::string_view arrayTypeName = "array";
+    std::string_view stringTypeName = {};
+    std::string_view arrayTypeName = {};
     bool disableIntegerDivision = false;
     ExpressionTypeCache* cache = nullptr;
     const NodeIndex* nodeIndex = nullptr;
@@ -844,7 +844,8 @@ struct ExpressionTypeContext
 
     ExpressionTypeContext(const Scope* sc, const SymbolTable& st, std::string_view src, std::string_view u = "",
                           TSNode root = {})
-        : scope(sc), symbolTable(st), sourceCode(src), uri(u), rootNode(root)
+        : scope(sc), symbolTable(st), sourceCode(src), uri(u), stringTypeName(st.GetStringType()),
+          arrayTypeName(st.GetDefaultArrayType()), rootNode(root)
     {
     }
 

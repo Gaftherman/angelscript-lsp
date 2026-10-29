@@ -673,6 +673,7 @@ void Server::UpdateFeatureConfiguration(const lsp::LSPObject& section)
     {
         m_config.features.enableVirtualMixinDocuments = *vmd;
         m_symbolTable.SetVirtualMixinDocumentsEnabled(m_config.features.enableVirtualMixinDocuments);
+        m_symbolTable.SetConfiguredTypes(m_config.types.arrayTypeName, m_config.types.stringTypeName);
     }
     if (auto ih = FindSectionBool(section, featObj, "inlayHints", "features"); ih.has_value())
     {

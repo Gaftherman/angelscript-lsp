@@ -15,6 +15,17 @@ namespace angel_lsp::analysis
  * so downstream checkers can short-circuit without cascading diagnostics.
  */
 inline constexpr std::string_view k_poisonType = "<poison>";
+inline constexpr std::string_view k_unknownType = "unknown";
+
+/**
+ * @brief Checks whether the given type is empty, unresolved, void, or poisoned.
+ * @param[in] type Type name or string view.
+ * @return True if the type is unresolved or poisoned, false otherwise.
+ */
+[[nodiscard]] inline constexpr bool IsUnresolvedOrPoisonType(std::string_view type) noexcept
+{
+    return type.empty() || type == k_unknownType || type == "void" || type.find(k_poisonType) != std::string_view::npos;
+}
 
 /**
  * @brief Checks whether the given type is the poisoned sentinel type.

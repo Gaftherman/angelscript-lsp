@@ -619,8 +619,9 @@ struct ObjectTypeInfo
  */
 bool IsObjectNodeConst(TSNode objectNode, const CallValidationContext& valCtx)
 {
-    const std::string_view nodeType = ts_node_type(objectNode);
-    if (nodeType != "identifier" && nodeType != "scoped_identifier")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(objectNode);
+    if (sym != gs.symIdentifier && sym != gs.symScopedIdentifier)
     {
         return false;
     }
@@ -639,10 +640,10 @@ bool IsObjectNodeConst(TSNode objectNode, const CallValidationContext& valCtx)
 
     if (const auto syms = valCtx.ctx.request.symbolTable.FindSymbolsPtr(name))
     {
-        for (const auto& sym : *syms)
+        for (const auto& symbol : *syms)
         {
-            if ((sym.type == SymbolType::Variable || sym.type == SymbolType::Property) &&
-                sym.GetVariable().modifiers.isConst)
+            if ((symbol.type == SymbolType::Variable || symbol.type == SymbolType::Property) &&
+                symbol.GetVariable().modifiers.isConst)
             {
                 return true;
             }
@@ -1579,8 +1580,9 @@ void CheckMalformedTernaryArgs(const std::vector<TSNode>& argNodes, const std::v
 
     for (size_t i = 0; i < limit; ++i)
     {
+        const auto& gs = parser::GetGrammarSymbols();
         TSNode node = UnwrapParenNode(argNodes[i]);
-        if (std::string_view(ts_node_type(node)) != parser::nodes::TernaryExpression || !argTypes[i].empty())
+        if (ts_node_symbol(node) != gs.symTernaryExpression || !argTypes[i].empty())
         {
             continue;
         }
@@ -1590,8 +1592,8 @@ void CheckMalformedTernaryArgs(const std::vector<TSNode>& argNodes, const std::v
         }
 
         const std::string expected = fn.parameters[i].typeName;
-        TSNode consequence = parser::GetChildByField(node, parser::fields::Consequence);
-        TSNode alternative = parser::GetChildByField(node, parser::fields::Alternative);
+        TSNode consequence = parser::GetChildByField(node, gs.fieldConsequence);
+        TSNode alternative = parser::GetChildByField(node, gs.fieldAlternative);
         std::string t1 = ResolveExpressionType(consequence, ExpressionTypeContext(valCtx.scope, valCtx.ctx));
         std::string t2 = ResolveExpressionType(alternative, ExpressionTypeContext(valCtx.scope, valCtx.ctx));
 
@@ -1746,32 +1748,33 @@ bool IsAssignableLValueSymbol(std::string_view name, const Scope* scope, const S
  */
 bool CheckArgIsLValue(TSNode argNode, std::string_view sourceCode, const Scope* scope, const SymbolTable& table)
 {
-    std::string_view aType = ts_node_type(argNode);
+    const auto& gs = parser::GetGrammarSymbols();
+    TSSymbol aSym = ts_node_symbol(argNode);
     std::string aText = NodeText(argNode, sourceCode);
     TrimString(aText);
 
-    if (aType == "unary_expression" && aText.starts_with("@"))
+    if (aSym == gs.symUnaryExpression && aText.starts_with("@"))
     {
-        TSNode operand = parser::GetChildByField(argNode, parser::fields::Operand);
+        TSNode operand = parser::GetChildByField(argNode, gs.fieldOperand);
         if (!ts_node_is_null(operand))
         {
             argNode = operand;
-            aType = ts_node_type(argNode);
+            aSym = ts_node_symbol(argNode);
             aText = NodeText(argNode, sourceCode);
             TrimString(aText);
         }
     }
 
-    if (aType == parser::nodes::ThisExpression || aText == "this")
+    if (aSym == gs.symThisExpression || aText == parser::keywords::This)
     {
         return true;
     }
 
-    if (aType == "identifier" || aType == "scoped_identifier")
+    if (aSym == gs.symIdentifier || aSym == gs.symScopedIdentifier)
     {
         return IsAssignableLValueSymbol(aText, scope, table, ts_node_start_byte(argNode));
     }
-    return (aType == "member_expression" || aType == "index_expression");
+    return (aSym == gs.symMemberExpression || aSym == gs.symIndexExpression);
 }
 
 /**
@@ -1970,12 +1973,14 @@ void CheckCallOverloads(std::span<const Symbol* const> matchingArity, const Call
  */
 CalleeResolution ResolveCalleeCandidates(const CallValidationContext& valCtx)
 {
-    const std::string_view calleeType = ts_node_type(valCtx.callee);
-    if (calleeType == "member_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol calleeSym = ts_node_symbol(valCtx.callee);
+    if (calleeSym == gs.symMemberExpression)
     {
         return ResolveMemberCallee(valCtx);
     }
-    if (calleeType == "scoped_identifier" || calleeType == "identifier" || calleeType == "function" ||
+    const std::string_view calleeType = parser::GetNodeType(valCtx.callee);
+    if (calleeSym == gs.symScopedIdentifier || calleeSym == gs.symIdentifier || calleeSym == gs.tokFunction ||
         parser::keywords::IsKeyword(calleeType))
     {
         return ResolveIdentifierCallee(valCtx);

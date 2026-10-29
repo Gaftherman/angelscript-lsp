@@ -358,9 +358,10 @@ static void CheckDialectEmptyListElements(const NodeIndex& nodeIndex, Diagnostic
             const uint32_t childCount = ts_node_child_count(node);
             for (uint32_t i = 1; i < childCount; ++i)
             {
-                const std::string_view previous = ts_node_type(ts_node_child(node, i - 1));
-                const std::string_view current = ts_node_type(ts_node_child(node, i));
-                if (previous == "," && (current == "," || current == "}"))
+                const auto& gs = parser::GetGrammarSymbols();
+                const TSSymbol prevSym = ts_node_symbol(ts_node_child(node, i - 1));
+                const TSSymbol currSym = ts_node_symbol(ts_node_child(node, i));
+                if (prevSym == gs.tokComma && (currSym == gs.tokComma || currSym == gs.tokCloseBrace))
                 {
                     const TSPoint at = ts_node_start_point(ts_node_child(node, i - 1));
                     ctx.EmitAtRange({at.row, at.column, at.row, at.column + 1}, "as-err-empty-list-element",
@@ -373,13 +374,14 @@ static void CheckDialectEmptyListElements(const NodeIndex& nodeIndex, Diagnostic
 
 static void CheckCharLiteralDeclarator(TSNode declarator, const std::string& declared, DiagnosticContext& ctx)
 {
-    if (std::string_view(ts_node_type(declarator)) != "variable_declarator")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(declarator) != gs.symVariableDeclarator)
     {
         return;
     }
 
-    const TSNode value = parser::GetChildByField(declarator, parser::fields::Value);
-    if (ts_node_is_null(value) || std::string_view(ts_node_type(value)) != "string_literal")
+    const TSNode value = parser::GetChildByField(declarator, gs.fieldValue);
+    if (ts_node_is_null(value) || ts_node_symbol(value) != gs.symStringLiteral)
     {
         return;
     }
@@ -439,7 +441,7 @@ static void CheckDialectCharacterLiterals(const NodeIndex& nodeIndex, Diagnostic
 
 static bool IsIntegerLiteral(TSNode candidate, std::string_view sourceCode)
 {
-    if (ts_node_is_null(candidate) || std::string_view(ts_node_type(candidate)) != "number_literal")
+    if (ts_node_is_null(candidate) || ts_node_symbol(candidate) != parser::GetGrammarSymbols().symNumberLiteral)
     {
         return false;
     }
@@ -449,13 +451,14 @@ static bool IsIntegerLiteral(TSNode candidate, std::string_view sourceCode)
 
 static void CheckDialectIntegerDivisionNode(TSNode node, DiagnosticContext& ctx)
 {
-    const TSNode op = parser::GetChildByField(node, parser::fields::Operator);
-    if (ts_node_is_null(op) || std::string_view(ts_node_type(op)) != "/")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSNode op = parser::GetChildByField(node, gs.fieldOperator);
+    if (ts_node_is_null(op) || ts_node_symbol(op) != gs.tokSlash)
     {
         return;
     }
 
-    const TSNode left = parser::GetChildByField(node, parser::fields::Left);
+    const TSNode left = parser::GetChildByField(node, gs.fieldLeft);
     const TSNode right = parser::GetChildByField(node, parser::fields::Right);
 
     if (IsIntegerLiteral(left, ctx.request.sourceCode) && IsIntegerLiteral(right, ctx.request.sourceCode))
@@ -488,23 +491,24 @@ static void CheckDialectNamedArguments(const NodeIndex& nodeIndex, DiagnosticCon
             const uint32_t argCount = ts_node_named_child_count(node);
             for (uint32_t i = 0; i < argCount; ++i)
             {
+                const auto& gs = parser::GetGrammarSymbols();
                 const TSNode argument = ts_node_named_child(node, i);
-                if (std::string_view(ts_node_type(argument)) != "assignment_expression")
+                if (ts_node_symbol(argument) != gs.symAssignmentExpression)
                 {
                     continue;
                 }
 
-                const TSNode target = parser::GetChildByField(argument, parser::fields::Left);
+                const TSNode target = parser::GetChildByField(argument, gs.fieldLeft);
                 if (ts_node_is_null(target))
                 {
                     continue;
                 }
-                const std::string_view targetType = ts_node_type(target);
-                if (targetType != "identifier" && targetType != "scoped_identifier")
+                const TSSymbol targetSym = ts_node_symbol(target);
+                if (targetSym != gs.symIdentifier && targetSym != gs.symScopedIdentifier)
                 {
                     continue;
                 }
-                if (targetType == "scoped_identifier" && ts_node_named_child_count(target) != 1)
+                if (targetSym == gs.symScopedIdentifier && ts_node_named_child_count(target) != 1)
                 {
                     continue;
                 }
@@ -541,7 +545,8 @@ static void CheckDialectAssignmentExpressionNode(TSNode node, DiagnosticContext&
     const TSNode op = parser::GetChildByField(node, parser::fields::Operator);
     const TSNode target = parser::GetChildByField(node, parser::fields::Left);
 
-    if (ts_node_is_null(op) || std::string_view(ts_node_type(op)) != "=" || ts_node_is_null(target))
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_is_null(op) || ts_node_symbol(op) != gs.tokAssign || ts_node_is_null(target))
     {
         return;
     }
@@ -631,9 +636,10 @@ static void CheckDialectNodeInitializerList(TSNode node, DiagnosticContext& ctx)
         const uint32_t childCount = ts_node_child_count(node);
         for (uint32_t i = 1; i < childCount; ++i)
         {
-            const std::string_view previous = ts_node_type(ts_node_child(node, i - 1));
-            const std::string_view current = ts_node_type(ts_node_child(node, i));
-            if (previous == "," && (current == "," || current == "}"))
+            const auto& gs = parser::GetGrammarSymbols();
+            const TSSymbol prevSym = ts_node_symbol(ts_node_child(node, i - 1));
+            const TSSymbol currSym = ts_node_symbol(ts_node_child(node, i));
+            if (prevSym == gs.tokComma && (currSym == gs.tokComma || currSym == gs.tokCloseBrace))
             {
                 const TSPoint at = ts_node_start_point(ts_node_child(node, i - 1));
                 ctx.EmitAtRange({at.row, at.column, at.row, at.column + 1}, "as-err-empty-list-element",
@@ -664,23 +670,24 @@ static void CheckDialectNodeArgumentList(TSNode node, DiagnosticContext& ctx)
         const uint32_t argCount = ts_node_named_child_count(node);
         for (uint32_t i = 0; i < argCount; ++i)
         {
+            const auto& gs = parser::GetGrammarSymbols();
             const TSNode argument = ts_node_named_child(node, i);
-            if (std::string_view(ts_node_type(argument)) != "assignment_expression")
+            if (ts_node_symbol(argument) != gs.symAssignmentExpression)
             {
                 continue;
             }
 
-            const TSNode target = parser::GetChildByField(argument, parser::fields::Left);
+            const TSNode target = parser::GetChildByField(argument, gs.fieldLeft);
             if (ts_node_is_null(target))
             {
                 continue;
             }
-            const std::string_view targetType = ts_node_type(target);
-            if (targetType != "identifier" && targetType != "scoped_identifier")
+            const TSSymbol targetSym = ts_node_symbol(target);
+            if (targetSym != gs.symIdentifier && targetSym != gs.symScopedIdentifier)
             {
                 continue;
             }
-            if (targetType == "scoped_identifier" && ts_node_named_child_count(target) != 1)
+            if (targetSym == gs.symScopedIdentifier && ts_node_named_child_count(target) != 1)
             {
                 continue;
             }
@@ -725,32 +732,33 @@ static void CheckDialectNodeStringLiteral(TSNode node, DiagnosticContext& ctx)
 
 static void ProcessDialectNode(TSNode node, DiagnosticContext& ctx)
 {
-    const std::string_view engineNodeType = ts_node_type(node);
-    if (engineNodeType == "foreach_statement")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(node);
+    if (sym == gs.symForeachStatement)
     {
         CheckDialectNodeForeach(node, ctx);
     }
-    else if (engineNodeType == "initializer_list")
+    else if (sym == gs.symInitializerList)
     {
         CheckDialectNodeInitializerList(node, ctx);
     }
-    else if (engineNodeType == "variable_declaration")
+    else if (sym == gs.symVariableDeclaration)
     {
         CheckDialectNodeVariableDeclaration(node, ctx);
     }
-    else if (engineNodeType == "binary_expression")
+    else if (sym == gs.symBinaryExpression)
     {
         CheckDialectNodeBinaryExpression(node, ctx);
     }
-    else if (engineNodeType == "argument_list")
+    else if (sym == gs.symArgumentList)
     {
         CheckDialectNodeArgumentList(node, ctx);
     }
-    else if (engineNodeType == "assignment_expression")
+    else if (sym == gs.symAssignmentExpression)
     {
         CheckDialectNodeAssignmentExpression(node, ctx);
     }
-    else if (engineNodeType == "string_literal")
+    else if (sym == gs.symStringLiteral)
     {
         CheckDialectNodeStringLiteral(node, ctx);
     }
@@ -770,8 +778,8 @@ void SemanticAnalyzer::CheckEngineDialectRules(TSNode node, DiagnosticContext& c
         TSNode current = ts_tree_cursor_current_node(&cursor);
         ProcessDialectNode(current, ctx);
 
-        std::string_view nodeType = ts_node_type(current);
-        if (nodeType == "string_literal" || !ts_tree_cursor_goto_first_child(&cursor))
+        const auto& gs = parser::GetGrammarSymbols();
+        if (ts_node_symbol(current) == gs.symStringLiteral || !ts_tree_cursor_goto_first_child(&cursor))
         {
             if (ts_tree_cursor_goto_next_sibling(&cursor))
             {
@@ -902,7 +910,7 @@ bool ShouldIgnoreReference(const LocalReference& ref, const DiagnosticContext& c
         const TSPoint at{ref.startLine, ref.startCharacter};
         const TSNode node = ts_node_descendant_for_point_range(ts_tree_root_node(ctx.request.tree), at, at);
         TSNode parent = parser::GetParent(node);
-        if (!ts_node_is_null(parent) && std::string_view(ts_node_type(parent)) == "lambda_expression")
+        if (!ts_node_is_null(parent) && ts_node_symbol(parent) == parser::GetGrammarSymbols().symLambdaExpression)
             return true;
     }
 
@@ -942,8 +950,7 @@ bool IsEnumReferenceQualified(const LocalReference& ref, const DiagnosticContext
     {
         return false;
     }
-    const std::string_view pType = ts_node_type(parent);
-    if (pType == "scoped_identifier")
+    if (ts_node_symbol(parent) == parser::GetGrammarSymbols().symScopedIdentifier)
     {
         const uint32_t pStart = ts_node_start_byte(parent);
         const uint32_t pEnd = ts_node_end_byte(parent);
@@ -1149,7 +1156,7 @@ static bool IsReferenceInSyntaxErrorOrMetadata(TSNode root, const LocalReference
     TSNode walk = node;
     for (int d = 0; d < 8 && !ts_node_is_null(walk); ++d)
     {
-        if (ts_node_is_error(walk) || std::string_view(ts_node_type(walk)) == "metadata")
+        if (ts_node_is_error(walk) || ts_node_symbol(walk) == parser::GetGrammarSymbols().symMetadata)
         {
             return true;
         }

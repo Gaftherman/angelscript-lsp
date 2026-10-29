@@ -93,8 +93,9 @@ Nullability EvaluateExpressionNullability(const NullableEvalRequest& req, const 
         return Nullability::DefinitelyNull;
     }
 
-    std::string_view valType = ts_node_type(unwrapped);
-    if (valType == parser::nodes::ConstructCallExpression || valType == parser::nodes::ThisExpression)
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(unwrapped);
+    if (sym == gs.symConstructCallExpression || sym == gs.symThisExpression)
     {
         return Nullability::NonNull;
     }
@@ -109,9 +110,9 @@ Nullability EvaluateExpressionNullability(const NullableEvalRequest& req, const 
         }
     }
 
-    if (valType == parser::nodes::CallExpression)
+    if (sym == gs.symCallExpression)
     {
-        TSNode fn = parser::GetChildByField(unwrapped, parser::fields::Function);
+        TSNode fn = parser::GetChildByField(unwrapped, gs.fieldFunction);
         std::string fnName = GetIdentifierName(fn, ctx.sourceCode);
         if (fnName.empty() && !ts_node_is_null(fn))
         {
@@ -141,7 +142,7 @@ void CheckVarDeclaration(TSNode stmt, FlowState& state, NullCheckContext& ctx)
     for (uint32_t i = 0; i < childCount; ++i)
     {
         TSNode child = ts_node_named_child(stmt, i);
-        if (std::string_view(ts_node_type(child)) != parser::nodes::VariableDeclarator)
+        if (ts_node_symbol(child) != parser::GetGrammarSymbols().symVariableDeclarator)
         {
             continue;
         }

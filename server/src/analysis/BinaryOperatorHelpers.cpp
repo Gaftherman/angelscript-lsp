@@ -4,6 +4,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeExtraction.h"
 #include "parser/GrammarNames.h"
+#include "parser/Keywords.h"
 #include "parser/Primitives.h"
 
 #include <algorithm>
@@ -106,11 +107,11 @@ bool IsKnownType(std::string_view type, const SymbolTable& table, std::string_vi
 
 bool IsNullOperand(TSNode node, std::string_view type)
 {
-    if (type == "null" || IsNullInitializer(node))
+    if (type == parser::keywords::Null || IsNullInitializer(node))
     {
         return true;
     }
-    return !ts_node_is_null(node) && std::string_view(ts_node_type(node)) == parser::nodes::NullLiteral;
+    return !ts_node_is_null(node) && ts_node_symbol(node) == parser::GetGrammarSymbols().symNullLiteral;
 }
 
 static std::string StripModifiers(std::string_view type)

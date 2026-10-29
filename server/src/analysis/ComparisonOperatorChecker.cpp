@@ -18,12 +18,17 @@ namespace
 
 bool IsHandleAddressOperand(TSNode node)
 {
-    if (ts_node_is_null(node) || std::string_view(ts_node_type(node)) != "unary_expression")
+    if (ts_node_is_null(node))
     {
         return false;
     }
-    TSNode op = parser::GetChildByField(node, parser::fields::Operator);
-    return !ts_node_is_null(op) && std::string_view(ts_node_type(op)) == "@";
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(node) != gs.symUnaryExpression)
+    {
+        return false;
+    }
+    TSNode op = parser::GetChildByField(node, gs.fieldOperator);
+    return !ts_node_is_null(op) && ts_node_symbol(op) == gs.tokAt;
 }
 
 bool ShouldSkipAddressComparison(TSNode left, TSNode right, bool isRelational)
