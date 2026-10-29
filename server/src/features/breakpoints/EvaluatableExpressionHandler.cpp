@@ -1,6 +1,6 @@
 #include "features/breakpoints/EvaluatableExpressionHandler.h"
 
-#include "parser/GrammarNames.h"
+#include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
 
 #include <string_view>
@@ -11,9 +11,11 @@ namespace angel_lsp::features
 namespace
 {
 
+constexpr uint32_t k_maxClimbDepth = 16;
+
 bool IsNodeInsideCallFunction(TSNode memberExpr, const parser::GrammarSymbols& gs)
 {
-    TSNode parent = ts_node_parent(memberExpr);
+    TSNode parent = parser::GetParent(memberExpr);
     if (ts_node_is_null(parent) || ts_node_symbol(parent) != gs.symCallExpression)
     {
         return false;
@@ -74,10 +76,14 @@ std::optional<EvaluatableExpressionItem> HandleIndexExpression(TSNode leaf, TSNo
     return MakeItem(parent, sourceCode);
 }
 
-bool IsIgnoredNodeType(std::string_view type)
+bool IsIgnoredNode(TSNode node, const parser::GrammarSymbols& gs)
 {
-    return type.empty() || type == parser::nodes::Comment || type == parser::nodes::StringLiteral || type == ";" ||
-           type == "{" || type == "}";
+    if (ts_node_is_null(node))
+    {
+        return true;
+    }
+    const TSSymbol sym = ts_node_symbol(node);
+    return sym == gs.symComment || sym == gs.symStringLiteral || sym == gs.tokOpenBrace || sym == gs.tokCloseBrace;
 }
 
 } // namespace
@@ -97,16 +103,16 @@ EvaluatableExpressionHandler::Extract(const EvaluatableExpressionRequest& reques
         return std::nullopt;
     }
 
-    std::string_view leafType = ts_node_type(leaf);
-    if (IsIgnoredNodeType(leafType))
+    const auto& gs = parser::GetGrammarSymbols();
+    if (IsIgnoredNode(leaf, gs))
     {
         return std::nullopt;
     }
 
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode parent = ts_node_parent(leaf);
+    TSNode parent = parser::GetParent(leaf);
+    const TSSymbol leafSym = ts_node_symbol(leaf);
 
-    if (leafType == "[" || leafType == "]")
+    if (leafSym == gs.tokOpenBracket || leafSym == gs.tokCloseBracket)
     {
         if (!ts_node_is_null(parent) && ts_node_symbol(parent) == gs.symIndexExpression)
         {

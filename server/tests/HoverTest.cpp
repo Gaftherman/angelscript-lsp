@@ -944,6 +944,43 @@ TEST_CASE("Hover - Enum member displays default value and property tag")
     CHECK(textBare.find("FIRST = 10") != std::string::npos);
 }
 
+TEST_CASE("Hover - Enum member sequential values and scoped access parity")
+{
+    TestEnvironment env("enum DynamicEquipmentType {\n"
+                        "    Undefined = -1,\n"
+                        "    Health\n"
+                        "};\n"
+                        "void main() {\n"
+                        "    DynamicEquipmentType::Undefined;\n"
+                        "    DynamicEquipmentType::Health;\n"
+                        "    Health;\n"
+                        "}\n");
+
+    // Scoped access: DynamicEquipmentType::Undefined
+    const auto hoverScopedUndefined = env.HoverAt(5, 28);
+    REQUIRE(hoverScopedUndefined.has_value());
+    const std::string textScopedUndefined = std::get<lsp::MarkupContent>(hoverScopedUndefined->contents).value;
+    CHECK(textScopedUndefined.find("(enum member)") != std::string::npos);
+    CHECK(textScopedUndefined.find("(property)") == std::string::npos);
+    CHECK(textScopedUndefined.find("Undefined = -1") != std::string::npos);
+
+    // Scoped access: DynamicEquipmentType::Health (sequential calculated value = 0)
+    const auto hoverScopedHealth = env.HoverAt(6, 28);
+    REQUIRE(hoverScopedHealth.has_value());
+    const std::string textScopedHealth = std::get<lsp::MarkupContent>(hoverScopedHealth->contents).value;
+    CHECK(textScopedHealth.find("(enum member)") != std::string::npos);
+    CHECK(textScopedHealth.find("(property)") == std::string::npos);
+    CHECK(textScopedHealth.find("Health = 0") != std::string::npos);
+
+    // Bare access: Health
+    const auto hoverBareHealth = env.HoverAt(7, 6);
+    REQUIRE(hoverBareHealth.has_value());
+    const std::string textBareHealth = std::get<lsp::MarkupContent>(hoverBareHealth->contents).value;
+    CHECK(textBareHealth.find("(enum member)") != std::string::npos);
+    CHECK(textBareHealth.find("(property)") == std::string::npos);
+    CHECK(textBareHealth.find("Health = 0") != std::string::npos);
+}
+
 TEST_CASE("HoverHandler - Call overload resolution across inheritance hierarchy")
 {
     std::string code =

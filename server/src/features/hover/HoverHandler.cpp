@@ -283,6 +283,10 @@ std::string FormatVariableSignature(const analysis::Symbol& sym, const char* rol
     {
         return std::string(role) + sym.name;
     }
+    if (sym.containerKind == analysis::ContainerKind::Enum || sym.GetVariable().isEnumConstant)
+    {
+        role = "(enum member) ";
+    }
     return std::string(role) + analysis::FormatVariableDeclaration(sym.GetVariable(), sym.name);
 }
 
@@ -307,34 +311,17 @@ bool IsContainerProperty(std::string_view containerName, const analysis::SymbolT
     return false;
 }
 
-bool IsEnumType(std::string_view typeName, const analysis::SymbolTable* symbolTable)
-{
-    if (typeName.empty() || !symbolTable)
-    {
-        return false;
-    }
-    auto typeSyms = symbolTable->FindSymbolsPtr(typeName);
-    if (!typeSyms)
-    {
-        return false;
-    }
-    for (const auto& ts : *typeSyms)
-    {
-        if (ts.type == analysis::SymbolType::Enum)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
 bool IsVariableProperty(const analysis::Symbol& sym, const analysis::SymbolTable* symbolTable)
 {
-    if (IsContainerProperty(sym.containerName, symbolTable))
+    if (sym.containerKind == analysis::ContainerKind::Enum)
     {
-        return true;
+        return false;
     }
-    return IsEnumType(sym.GetVariable().typeName, symbolTable);
+    if (std::holds_alternative<analysis::VariableSignature>(sym.signature) && sym.GetVariable().isEnumConstant)
+    {
+        return false;
+    }
+    return IsContainerProperty(sym.containerName, symbolTable);
 }
 
 static std::string FormatNamespaceDeclaration(const analysis::Symbol& sym)
@@ -373,7 +360,7 @@ std::string FormatDeclarationText(const analysis::Symbol& sym, const analysis::S
             return "enum " + sym.name;
         case analysis::SymbolType::Variable:
         {
-            if (sym.GetVariable().isEnumConstant)
+            if (sym.containerKind == analysis::ContainerKind::Enum || sym.GetVariable().isEnumConstant)
             {
                 return FormatVariableSignature(sym, "(enum member) ");
             }
@@ -2183,12 +2170,12 @@ void FilterEnumMemberSymbols(std::vector<analysis::Symbol>& symbols, const Hover
     {
         return;
     }
-    TSNode enumDecl = ts_node_parent(ctx.parent);
+    TSNode enumDecl = parser::GetParent(ctx.parent);
     if (ts_node_is_null(enumDecl) || ts_node_symbol(enumDecl) != gs.symEnumDeclaration)
     {
         return;
     }
-    TSNode nameNode = parser::GetChildByField(enumDecl, parser::fields::Name);
+    TSNode nameNode = parser::GetChildByField(enumDecl, gs.fieldName);
     if (ts_node_is_null(nameNode))
     {
         return;

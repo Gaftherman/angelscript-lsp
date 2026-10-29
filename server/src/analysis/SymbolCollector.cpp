@@ -13,6 +13,7 @@
 #include "utils/Utils.h"
 #include <ankerl/unordered_dense.h>
 #include <cctype>
+#include <charconv>
 #include <cstring>
 #include <string_view>
 
@@ -1254,8 +1255,8 @@ void SymbolCollector::CollectEnumMembers(TSNode node, std::string_view sourceCod
             TSNode child = ts_tree_cursor_current_node(&cursor);
             if (ts_node_is_named(child) && ts_node_symbol(child) == m_gs.symEnumMember)
             {
-                TSNode memberName = GetChildByFieldName(child, "name");
-                TSNode memberValue = GetChildByFieldName(child, "value");
+                TSNode memberName = parser::GetChildByField(child, m_gs.fieldName);
+                TSNode memberValue = parser::GetChildByField(child, m_gs.fieldValue);
 
                 EnumMemberInformation member;
                 member.name = GetNodeText(memberName, sourceCode);
@@ -1272,7 +1273,7 @@ void SymbolCollector::CollectEnumMembers(TSNode node, std::string_view sourceCod
 }
 
 static ankerl::unordered_dense::map<std::string, MemberNodes>
-BuildEnumMemberNodeMap(TSNode node, TSSymbol symEnumMember, std::string_view sourceCode)
+BuildEnumMemberNodeMap(TSNode node, TSSymbol symEnumMember, TSFieldId fieldName, std::string_view sourceCode)
 {
     ankerl::unordered_dense::map<std::string, MemberNodes> map;
     TSTreeCursor cursor = ts_tree_cursor_new(node);
@@ -1283,7 +1284,7 @@ BuildEnumMemberNodeMap(TSNode node, TSSymbol symEnumMember, std::string_view sou
             TSNode child = ts_tree_cursor_current_node(&cursor);
             if (ts_node_is_named(child) && ts_node_symbol(child) == symEnumMember)
             {
-                TSNode mNameNode = parser::GetChildByField(child, parser::fields::Name);
+                TSNode mNameNode = ts_node_child_by_field_id(child, fieldName);
                 std::string mName = parser::GetNodeText(mNameNode, sourceCode);
                 if (!mName.empty())
                 {
@@ -1296,19 +1297,53 @@ BuildEnumMemberNodeMap(TSNode node, TSSymbol symEnumMember, std::string_view sou
     return map;
 }
 
-static std::string ComputeEnumDefaultValue(const std::string& explicitVal, int64_t& nextVal)
+static std::string ComputeEnumDefaultValue(std::string_view explicitVal, int64_t& nextVal)
 {
     if (!explicitVal.empty())
     {
-        try
+        std::string_view trimmed = explicitVal;
+        while (!trimmed.empty() && isspace(static_cast<unsigned char>(trimmed.front())))
         {
-            nextVal = std::stoll(explicitVal, nullptr, 0) + 1;
+            trimmed.remove_prefix(1);
         }
-        catch (...)
+        while (!trimmed.empty() && isspace(static_cast<unsigned char>(trimmed.back())))
+        {
+            trimmed.remove_suffix(1);
+        }
+
+        int64_t parsed = 0;
+        int base = 10;
+        bool isNegative = false;
+        if (trimmed.starts_with("-"))
+        {
+            isNegative = true;
+            trimmed.remove_prefix(1);
+        }
+        else if (trimmed.starts_with("+"))
+        {
+            trimmed.remove_prefix(1);
+        }
+
+        if (trimmed.starts_with("0x") || trimmed.starts_with("0X"))
+        {
+            trimmed.remove_prefix(2);
+            base = 16;
+        }
+
+        auto [ptr, ec] = std::from_chars(trimmed.data(), trimmed.data() + trimmed.size(), parsed, base);
+        if (ec == std::errc{})
+        {
+            if (isNegative)
+            {
+                parsed = -parsed;
+            }
+            nextVal = parsed + 1;
+        }
+        else
         {
             nextVal++;
         }
-        return explicitVal;
+        return std::string(explicitVal);
     }
     return std::to_string(nextVal++);
 }
@@ -1316,9 +1351,10 @@ static std::string ComputeEnumDefaultValue(const std::string& explicitVal, int64
 void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumSig, SymbolCollectContext& sCtx,
                                          const CollectionContext& ctx)
 {
-    TSNode nameNode = GetChildByFieldName(node, "name");
+    TSNode nameNode = parser::GetChildByField(node, m_gs.fieldName);
     std::string enumName = GetNodeText(nameNode, sCtx.request.sourceCode);
-    const auto memberNodeMap = BuildEnumMemberNodeMap(node, m_gs.symEnumMember, sCtx.request.sourceCode);
+    const auto memberNodeMap =
+        BuildEnumMemberNodeMap(node, m_gs.symEnumMember, m_gs.fieldName, sCtx.request.sourceCode);
 
     std::string enumContainer;
     appendQualifiedName(enumContainer, ctx.containerPath, enumName);
@@ -1343,11 +1379,12 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
             memberNameNode = it->second.nameNode;
         }
 
-        SymbolLocationContext contLoc{sCtx, ctx.containerPath, ctx.containerKind};
+        SymbolLocationContext contLoc{sCtx, ctx.containerPath, ContainerKind::Enum};
         Symbol mSym = CreateSymbol(SymbolType::Variable, memberDeclNode, memberNameNode, contLoc);
         mSym.name = m.name;
         appendQualifiedName(mSym.qualifiedName, ctx.containerPath, m.name);
         mSym.containerName = ctx.containerPath;
+        mSym.containerKind = ContainerKind::Enum;
         mSym.signature = varSig;
         sCtx.collectedSymbols.push_back(std::move(mSym));
 
@@ -1356,6 +1393,7 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
         mSymScoped.name = m.name;
         appendQualifiedName(mSymScoped.qualifiedName, enumContainer, m.name);
         mSymScoped.containerName = enumContainer;
+        mSymScoped.containerKind = ContainerKind::Enum;
         mSymScoped.signature = varSig;
         sCtx.collectedSymbols.push_back(std::move(mSymScoped));
     }
