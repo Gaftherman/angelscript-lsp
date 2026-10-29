@@ -98,6 +98,37 @@ def check_no_engine_hardcoding():
                     violations.append((file_path, line_num, stripped))
     return violations
 
+TYPE_CHECK_TARGET_FILES = [
+    SERVER_SRC / "analysis" / "TypeConversionChecker.cpp",
+    SERVER_SRC / "analysis" / "overload" / "OverloadTypeConversions.cpp",
+    SERVER_SRC / "analysis" / "overload" / "ConversionRankingEngine.cpp",
+    SERVER_SRC / "analysis" / "CallChecker.cpp",
+]
+
+FORBIDDEN_TYPE_PATTERNS = [
+    (re.compile(r'"weakref"|"const_weakref"'), 'hardcoded "weakref" / "const_weakref" (use SymbolTable + generic template resolution)'),
+    (re.compile(r'param\.baseTypeName\s*==\s*"string"'), 'hardcoded "string" check on param (use param.isOutRef / isInOutRef / isStandaloneRef)'),
+    (re.compile(r'IsWeakrefToConstWeakref'), 'IsWeakrefToConstWeakref is banned (use generic template constructors)'),
+]
+
+def check_no_type_hardcoding():
+    violations = []
+    for file_path in TYPE_CHECK_TARGET_FILES:
+        if not file_path.is_file():
+            continue
+        try:
+            file_content = file_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for line_num, line in enumerate(file_content.splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                continue
+            for pattern, reason in FORBIDDEN_TYPE_PATTERNS:
+                if pattern.search(line):
+                    violations.append((file_path, line_num, stripped, reason))
+    return violations
+
 def main():
     has_errors = False
     
@@ -125,10 +156,18 @@ def main():
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
 
+    type_hardcoding_violations = check_no_type_hardcoding()
+    if type_hardcoding_violations:
+        has_errors = True
+        print("[ERROR] Forbidden type hardcoding detected in Layer 2 (PROHIBITION 13):")
+        for f, line_num, line, reason in type_hardcoding_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line} -> {reason}")
+
     if has_errors:
         sys.exit(1)
 
-    print("[PASSED] AST Traversal, Parent-Climb, and Engine Agnosticism Invariants verified (0 root-climb loops, 0 hot-path ts_node_parent calls, 0 engine hardcodings).")
+    print("[PASSED] AST Traversal, Parent-Climb, Engine Agnosticism, and Type Invariants verified (0 root-climb loops, 0 hot-path ts_node_parent calls, 0 engine hardcodings, 0 type hardcodings).")
 
 if __name__ == "__main__":
     main()

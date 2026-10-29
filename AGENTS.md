@@ -94,7 +94,7 @@ Format: `<type>(<scope>): <short imperative description>`
 
 ---
 
-## 8. The 12 Absolute Prohibitions
+## 8. The 13 Absolute Prohibitions
 
 1. **PROHIBITION 1: No Unprotected Raw AST Pointer Escaping:** Never return or store raw `TSTree*` pointers without an enclosing reader lock or owning `std::shared_ptr<const document::Document>`.
 2. **PROHIBITION 2: No Uncaught Exceptions Escaping Secondary Threads:** Never allow an exception to escape a `std::thread` boundary; unhandled exceptions that invoke `std::terminate()` are classified as critical severity bugs.
@@ -108,6 +108,7 @@ Format: `<type>(<scope>): <short imperative description>`
 10. **PROHIBITION 10: No Static or Hardcoded Test Fixtures:** Tests must use dynamic randomized generators and sandboxes to verify semantic invariants rather than overfitting to fixed strings.
 11. **PROHIBITION 11: No Hardcoded User-Facing Text or Ad-Hoc Bilingual Conditionals:** Every string displayed to the end user (hover markdown tooltips, diagnostics, code action titles, document link titles, notifications) must be externalized in `server/src/i18n/i18n.cpp` and resolved via `angel_lsp::i18n::FormatMessage(i18n, key, fallback, ...)` (or `bundle.l10n.json` via `l10n.t()` in the client). Hardcoding raw user-facing natural language strings directly in C++ feature handlers or writing ad-hoc language branching (`if (locale == "es")`) is strictly prohibited.
 12. **PROHIBITION 12: No Unbounded Parent-Climb Loops or Hot-Path `ts_node_parent` Iteration:** Never write `while (!ts_node_is_null(ts_node_parent(node)))` or unbounded climb loops. Always obtain the root node via `parser::GetRootNode(node)` in $O(1)$ time. In hot-path collectors (`LocalScopeCollector`, `SymbolCollector`), upward parent climbing is strictly prohibited; rely on downward query cursor matching, container stacks, and pre-resolved `TSSymbol` IDs.
+13. **PROHIBITION 13: No Hardcoded Predefined Type Names or Blind Namespace Matching in Layer 2:** Never hardcode predefined or add-on type names (`"weakref"`, `"const_weakref"`, `"string"`, `"dictionary"`) in conversion rules, overload rankings, or type checkers (`TypeConversionChecker.cpp`, `OverloadTypeConversions.cpp`, `ConversionRankingEngine.cpp`, `CallChecker.cpp`). All type capabilities (constructors, conversion operators) must be resolved dynamically via `SymbolTable` and template parameter substitution (`BindTemplateArguments`, `SubstituteTemplateParameters`). Furthermore, never use blind `LastScopeSegment(a) == LastScopeSegment(b)` comparisons across different scopes when both types contain explicit namespace qualifiers (`::`).
 
 ---
 
