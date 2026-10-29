@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import type { LanguageClient } from 'vscode-languageclient/node';
 
 /**
  * @brief Checks if a character is a valid AngelScript identifier character [a-zA-Z0-9_].
@@ -70,7 +71,7 @@ function expandExpressionLeft(lineText: string, startIndex: number): number {
 }
 
 /**
- * @brief Expands an expression range forwards from a start index, handling identifiers, member operators, and brackets.
+ * @brief Expands an expression range forwards from a start index, stopping before member dots to avoid eager rightward expansion.
  * @param lineText Source text line.
  * @param startIndex Starting character index.
  * @return Rightmost boundary index (exclusive) of the expression.
@@ -81,8 +82,6 @@ function expandExpressionRight(lineText: string, startIndex: number): number {
     while (i < len) {
         const curr = lineText[i];
         if (isIdentifierChar(curr)) {
-            i++;
-        } else if (curr === '.') {
             i++;
         } else if (curr === ':' && i + 1 < len && lineText[i + 1] === ':') {
             i += 2;
@@ -202,14 +201,41 @@ export function extractAngelScriptEvaluatableExpression(
 }
 
 /**
- * @brief Provides expanded evaluatable expressions for hover and watch during debugging.
+ * @brief Provides expanded evaluatable expressions for hover and watch during debugging, querying AST via LSP when available.
  */
 export class AngelScriptEvaluatableExpressionProvider implements vscode.EvaluatableExpressionProvider {
-    provideEvaluatableExpression(
+    constructor(private readonly getClient?: () => LanguageClient | undefined) {}
+
+    async provideEvaluatableExpression(
         document: vscode.TextDocument,
         position: vscode.Position,
         _token: vscode.CancellationToken
-    ): vscode.ProviderResult<vscode.EvaluatableExpression> {
+    ): Promise<vscode.EvaluatableExpression | undefined> {
+        const client = this.getClient?.();
+        if (client) {
+            try {
+                const res = await client.sendRequest<{
+                    range: { start: { line: number; character: number }; end: { line: number; character: number } };
+                    expression?: string;
+                } | null>('textDocument/evaluatableExpression', {
+                    textDocument: { uri: document.uri.toString() },
+                    position: { line: position.line, character: position.character }
+                });
+                if (res && res.range) {
+                    const range = new vscode.Range(
+                        res.range.start.line,
+                        res.range.start.character,
+                        res.range.end.line,
+                        res.range.end.character
+                    );
+                    return new vscode.EvaluatableExpression(range, res.expression);
+                }
+                return undefined;
+            } catch {
+                // Fall back to local expression extraction
+            }
+        }
+
         const line = document.lineAt(position.line);
         const result = extractAngelScriptEvaluatableExpression(line.text, position.character);
         if (!result) {

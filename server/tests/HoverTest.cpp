@@ -927,7 +927,7 @@ TEST_CASE("Hover - Enum member displays default value and property tag")
     const auto hover = env.HoverAt(6, 18);
     REQUIRE(hover.has_value());
     const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
-    CHECK(text.find("(property)") != std::string::npos);
+    CHECK(text.find("(enum member)") != std::string::npos);
     CHECK(text.find("IDLE = 0") != std::string::npos);
 
     TestEnvironment envBare("enum SimpleEnum {\n"
@@ -940,7 +940,7 @@ TEST_CASE("Hover - Enum member displays default value and property tag")
     const auto hoverBare = envBare.HoverAt(4, 5);
     REQUIRE(hoverBare.has_value());
     const std::string textBare = std::get<lsp::MarkupContent>(hoverBare->contents).value;
-    CHECK(textBare.find("(property)") != std::string::npos);
+    CHECK(textBare.find("(enum member)") != std::string::npos);
     CHECK(textBare.find("FIRST = 10") != std::string::npos);
 }
 

@@ -1143,13 +1143,14 @@ std::vector<Symbol> FindPropertyAccessors(const std::string& typeName, const std
     if (typeName.empty() || propertyName.empty())
         return accessors;
 
-    // Getter first, and the whole hierarchy before moving on to the setter, so the type this
-    // reports comes from the getter whenever there is one.
+    const auto hierarchy = GetInheritedTypeHierarchy(typeName, symbolTable);
     for (const std::string_view prefix : {std::string_view("get_"), std::string_view("set_")})
     {
-        for (const auto& owner : GetInheritedTypeHierarchy(typeName, symbolTable))
+        const std::string accessorName = std::string(prefix) + propertyName;
+        for (const auto& owner : hierarchy)
         {
-            if (const auto syms = symbolTable.FindMemberSymbolPtr(owner, std::string(prefix) + propertyName))
+            bool foundForOwner = false;
+            if (const auto syms = symbolTable.FindMemberSymbolPtr(owner, accessorName))
             {
                 for (const auto& sym : *syms)
                 {
@@ -1159,12 +1160,13 @@ std::vector<Symbol> FindPropertyAccessors(const std::string& typeName, const std
                         continue;
 
                     accessors.push_back(sym);
+                    foundForOwner = true;
                 }
             }
 
-            // A derived class overriding the accessor answers for it; the base's copy would only
+            // A derived class overriding this accessor answers for it; the base's copy would only
             // be the same property said twice.
-            if (!accessors.empty())
+            if (foundForOwner)
                 break;
         }
     }

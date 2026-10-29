@@ -1069,8 +1069,14 @@ bool CheckVirtualPropertySymbol(const std::string& typeName, const std::string& 
                 if (vs.isVirtualProperty)
                 {
                     info.isProperty = true;
-                    info.hasGet = vs.hasGet;
-                    info.hasSet = vs.hasSet;
+                    if (vs.hasGet)
+                    {
+                        info.hasGet = true;
+                    }
+                    if (vs.hasSet)
+                    {
+                        info.hasSet = true;
+                    }
                     return true;
                 }
             }
@@ -1082,27 +1088,33 @@ bool CheckVirtualPropertySymbol(const std::string& typeName, const std::string& 
 void CheckAccessorMethods(const std::string& typeName, const std::string& propName, const SymbolTable& table,
                           PropertyAccessInfo& info)
 {
-    if (auto getSyms = table.FindMemberSymbolPtr(typeName, "get_" + propName); getSyms && !getSyms->empty())
+    if (!info.hasGet)
     {
-        info.isProperty = true;
-        info.hasGet = true;
-        for (const auto& gs : *getSyms)
+        if (auto getSyms = table.FindMemberSymbolPtr(typeName, "get_" + propName); getSyms && !getSyms->empty())
         {
-            if (gs.type == SymbolType::Function && !gs.GetFunction().parameters.empty())
+            info.isProperty = true;
+            info.hasGet = true;
+            for (const auto& gs : *getSyms)
             {
-                info.isIndexed = true;
+                if (gs.type == SymbolType::Function && !gs.GetFunction().parameters.empty())
+                {
+                    info.isIndexed = true;
+                }
             }
         }
     }
-    if (auto setSyms = table.FindMemberSymbolPtr(typeName, "set_" + propName); setSyms && !setSyms->empty())
+    if (!info.hasSet)
     {
-        info.isProperty = true;
-        info.hasSet = true;
-        for (const auto& ss : *setSyms)
+        if (auto setSyms = table.FindMemberSymbolPtr(typeName, "set_" + propName); setSyms && !setSyms->empty())
         {
-            if (ss.type == SymbolType::Function && ss.GetFunction().parameters.size() > 1)
+            info.isProperty = true;
+            info.hasSet = true;
+            for (const auto& ss : *setSyms)
             {
-                info.isIndexed = true;
+                if (ss.type == SymbolType::Function && ss.GetFunction().parameters.size() > 1)
+                {
+                    info.isIndexed = true;
+                }
             }
         }
     }
@@ -1136,7 +1148,7 @@ static void PopulateAccessorInfo(const std::vector<Symbol>& accessors, PropertyA
     }
 }
 
-static PropertyAccessInfo InspectBareOrScopedProperty(TSNode exprNode, const DiagnosticContext& ctx)
+static PropertyAccessInfo InspectBareOrScopedProperty(TSNode exprNode, const Scope* scope, const DiagnosticContext& ctx)
 {
     PropertyAccessInfo info;
     std::string text = TrimString(NodeText(exprNode, ctx.request.sourceCode));
@@ -1148,6 +1160,15 @@ static PropertyAccessInfo InspectBareOrScopedProperty(TSNode exprNode, const Dia
         auto accessors = FindPropertyAccessors(scopeName, info.propName, ctx.request.symbolTable, false);
         PopulateAccessorInfo(accessors, info);
         return info;
+    }
+
+    if (scope != nullptr)
+    {
+        if (const auto* def = ResolveInScopeAt(scope, text, ts_node_start_byte(exprNode)))
+        {
+            // The identifier is a local variable or parameter; it shadows any outer property.
+            return info;
+        }
     }
 
     info.propName = text;
@@ -1176,7 +1197,7 @@ PropertyAccessInfo InspectPropertyAccess(TSNode exprNode, const Scope* scope, co
     std::string_view nodeType = NodeType(exprNode);
     if (nodeType == "identifier" || nodeType == "scoped_identifier")
     {
-        return InspectBareOrScopedProperty(exprNode, ctx);
+        return InspectBareOrScopedProperty(exprNode, scope, ctx);
     }
 
     PropertyAccessInfo info;
@@ -1211,12 +1232,9 @@ PropertyAccessInfo InspectPropertyAccess(TSNode exprNode, const Scope* scope, co
     const auto hierarchy = GetInheritedTypeHierarchy(cleanObj, ctx.request.symbolTable);
     for (const auto& typeName : hierarchy)
     {
-        if (CheckVirtualPropertySymbol(typeName, info.propName, ctx.request.symbolTable, info))
-        {
-            return info;
-        }
+        CheckVirtualPropertySymbol(typeName, info.propName, ctx.request.symbolTable, info);
         CheckAccessorMethods(typeName, info.propName, ctx.request.symbolTable, info);
-        if (info.isProperty)
+        if (info.isProperty && info.hasGet && info.hasSet)
         {
             return info;
         }
@@ -3626,7 +3644,15 @@ void ProcessMemberExpressionNode(TSNode node, const TypeConversionCheckRequest& 
     if (!ts_node_is_null(parent))
     {
         std::string_view pType = ts_node_type(parent);
-        if (pType == "assignment_expression")
+        if (pType == "call_expression")
+        {
+            TSNode callee = parser::GetChildByField(parent, parser::fields::Function);
+            if (ts_node_eq(callee, node))
+            {
+                return;
+            }
+        }
+        else if (pType == "assignment_expression")
         {
             TSNode leftChild = parser::GetChildByField(parent, parser::fields::Left);
             if (ts_node_eq(leftChild, node))

@@ -1554,6 +1554,20 @@ class Server
     lsp::json::Value HandleRequestsTextDocument_BreakpointLocations(lsp::json::Value&& params);
 
     /**
+     * @brief Handles textDocument/evaluatableExpression and angelscript/evaluatableExpression requests.
+     * @param[in] params JSON-RPC request parameters containing document URI and position.
+     * @return Evaluatable expression range and text, or null.
+     */
+    lsp::json::Value HandleRequestsTextDocument_EvaluatableExpression(lsp::json::Value&& params);
+
+    /**
+     * @brief Handles angelscript/debugCompletion requests for breakpoint conditions and debug input.
+     * @param[in] params JSON-RPC request parameters containing document URI, line, and expression.
+     * @return Array of completion items in scope.
+     */
+    lsp::json::Value HandleRequestsAngelscript_DebugCompletion(lsp::json::Value&& params);
+
+    /**
      * @brief Bundles parameters for processing an open predefined stub file.
      */
     struct DidOpenPredefinedRequest

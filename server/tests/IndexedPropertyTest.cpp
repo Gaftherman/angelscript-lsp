@@ -266,4 +266,86 @@ TEST_SUITE("IndexedProperties")
         const auto diags = AnalyzeSnippet(script);
         CHECK_FALSE(HasAnyError(diags));
     }
+
+    TEST_CASE("InheritedProperties - Derived classes inherit setters and getters with zero false positive E230")
+    {
+        const std::string classA = test::GenerateRandomSymbolName("BaseA");
+        const std::string classB = test::GenerateRandomSymbolName("DerivedB");
+        const std::string classC = test::GenerateRandomSymbolName("OverrideC");
+        const std::string propName = test::GenerateRandomSymbolName("status");
+        const std::string fieldName = test::GenerateRandomSymbolName("val");
+
+        const std::string script = "class " + classA +
+                                   " {\n"
+                                   "    bool " +
+                                   fieldName +
+                                   ";\n"
+                                   "    void set_" +
+                                   propName + "(bool v) property { this." + fieldName +
+                                   " = v; }\n"
+                                   "    const bool get_" +
+                                   propName + "() const property { return this." + fieldName +
+                                   "; }\n"
+                                   "}\n"
+                                   "class " +
+                                   classB + " : " + classA +
+                                   " {\n"
+                                   "    " +
+                                   classB +
+                                   "() {\n"
+                                   "        " +
+                                   propName +
+                                   " = false;\n"
+                                   "        this." +
+                                   propName +
+                                   " = false;\n"
+                                   "    }\n"
+                                   "}\n"
+                                   "class " +
+                                   classC + " : " + classA +
+                                   " {\n"
+                                   "    const bool get_" +
+                                   propName + "() const property override { return this." + fieldName +
+                                   "; }\n"
+                                   "    " +
+                                   classC +
+                                   "() {\n"
+                                   "        " +
+                                   propName +
+                                   " = false;\n"
+                                   "        this." +
+                                   propName +
+                                   " = false;\n"
+                                   "    }\n"
+                                   "}\n";
+
+        const auto diags = AnalyzeSnippet(script);
+        CHECK_FALSE(HasCode(diags, "as-err-read-only-property"));
+        CHECK_FALSE(HasAnyError(diags));
+    }
+
+    TEST_CASE("InheritedProperties - Local variable shadows read-only property cleanly")
+    {
+        const std::string cls = test::GenerateRandomSymbolName("Host");
+        const std::string propName = test::GenerateRandomSymbolName("flag");
+
+        const std::string script = "class " + cls +
+                                   " {\n"
+                                   "    int get_" +
+                                   propName +
+                                   "() const property { return 1; }\n"
+                                   "    void Execute() {\n"
+                                   "        int " +
+                                   propName +
+                                   " = 0;\n"
+                                   "        " +
+                                   propName +
+                                   " = 42;\n"
+                                   "    }\n"
+                                   "}\n";
+
+        const auto diags = AnalyzeSnippet(script);
+        CHECK_FALSE(HasCode(diags, "as-err-read-only-property"));
+        CHECK_FALSE(HasAnyError(diags));
+    }
 }

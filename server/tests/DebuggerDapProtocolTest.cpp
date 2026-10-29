@@ -506,6 +506,30 @@ TEST_CASE("Debugger DAP Protocol - Module 4 Safe Memory Probing, Disassembly & R
     CHECK(scopesResp.find("\"variablesReference\":3000") != std::string::npos);
 }
 
+TEST_CASE("Debugger DAP Protocol - Completions and Hover Fallback")
+{
+    angel_lsp::debug::Debugger debugger;
+
+    // 1. Initialize advertises completions capability
+    const std::string initReq = "{\"seq\":1,\"type\":\"request\",\"command\":\"initialize\"}";
+    std::string initResp = debugger.HandleDapRequest(initReq);
+    CHECK(initResp.find("\"supportsCompletionsRequest\":true") != std::string::npos);
+
+    // 2. Hover evaluate on unknown variable returns success: false so VS Code falls back to LSP hover
+    const std::string hoverEvalReq = "{\"seq\":2,\"type\":\"request\",\"command\":\"evaluate\",\"arguments\":{"
+                                     "\"expression\":\"unknownVar\",\"context\":\"hover\"}}";
+    std::string hoverEvalResp = debugger.HandleDapRequest(hoverEvalReq, nullptr);
+    CHECK(hoverEvalResp.find("\"success\":false") != std::string::npos);
+
+    // 3. Completions request produces valid targets response
+    const std::string compReq =
+        "{\"seq\":3,\"type\":\"request\",\"command\":\"completions\",\"arguments\":{\"text\":\"ui\",\"column\":3}}";
+    std::string compResp = debugger.HandleDapRequest(compReq, nullptr);
+    CHECK(compResp.find("\"command\":\"completions\"") != std::string::npos);
+    CHECK(compResp.find("\"success\":true") != std::string::npos);
+    CHECK(compResp.find("\"targets\":[") != std::string::npos);
+}
+
 #else
 
 TEST_CASE("Debugger DAP Protocol - Parity Oracle Test Suite Notice")

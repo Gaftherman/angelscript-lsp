@@ -7,7 +7,7 @@ import {
     TextEditorDecorationType, Range, TextEditor, WorkspaceEdit, TextDocumentContentProvider,
     CancellationToken, Position, Selection, ViewColumn, TextEditorRevealType, Location,
     languages, LanguageStatusItem, LanguageStatusSeverity,
-    TabInputText, TabInputTextDiff, TabInputCustom, debug
+    TabInputText, TabInputTextDiff, TabInputCustom, debug, CompletionItem, CompletionItemKind
 } from 'vscode';
 import {
     AngelScriptConfigurationProvider,
@@ -1858,7 +1858,47 @@ export async function activate(context: ExtensionContext) {
     context.subscriptions.push(
         languages.registerEvaluatableExpressionProvider(
             'angelscript',
-            new AngelScriptEvaluatableExpressionProvider()));
+            new AngelScriptEvaluatableExpressionProvider(() => activeClient())));
+
+    context.subscriptions.push(
+        languages.registerCompletionItemProvider(
+            [{ scheme: 'vscode-debug-input' }, { scheme: 'debug' }],
+            {
+                async provideCompletionItems(doc, pos) {
+                    const client = activeClient();
+                    if (!client) {
+                        return undefined;
+                    }
+                    const ed = window.activeTextEditor;
+                    const uri = ed ? ed.document.uri.toString() : '';
+                    const line = ed ? ed.selection.active.line : 0;
+                    try {
+                        const items = await client.sendRequest<Array<{ label: string; kind?: number; detail?: string }>>(
+                            'angelscript/debugCompletion',
+                            {
+                                textDocument: { uri },
+                                line,
+                                expression: doc.getText(),
+                                column: pos.character
+                            }
+                        );
+                        if (!Array.isArray(items)) {
+                            return undefined;
+                        }
+                        return items.map(it => {
+                            const ci = new CompletionItem(it.label, it.kind ?? CompletionItemKind.Variable);
+                            if (it.detail) {
+                                ci.detail = it.detail;
+                            }
+                            return ci;
+                        });
+                    } catch {
+                        return undefined;
+                    }
+                }
+            },
+            '.'
+        ));
 
     // An editor can appear after the notification that described its document - a second group, or
     // a tab returned to - and there is nothing to recompute from at that point, so the last thing

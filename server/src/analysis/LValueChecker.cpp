@@ -284,8 +284,17 @@ bool IsAssignableMember(TSNode node, const Scope* scope, const SymbolTable& tabl
             }
             if (!hasAssignable)
             {
-                auto setters = table.FindSymbolsPtr(typeName + "::set_" + memName);
-                if (!setters || setters->empty())
+                bool hasSetter = false;
+                for (const auto& ancestor : GetInheritedTypeHierarchy(cleanObj, table))
+                {
+                    auto setters = table.FindSymbolsPtr(ancestor + "::set_" + memName);
+                    if (setters && !setters->empty())
+                    {
+                        hasSetter = true;
+                        break;
+                    }
+                }
+                if (!hasSetter)
                 {
                     return false;
                 }

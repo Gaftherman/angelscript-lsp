@@ -299,8 +299,7 @@ bool IsContainerProperty(std::string_view containerName, const analysis::SymbolT
     }
     for (const auto& cs : *containerSyms)
     {
-        if (cs.type == analysis::SymbolType::Class || cs.type == analysis::SymbolType::Interface ||
-            cs.type == analysis::SymbolType::Enum)
+        if (cs.type == analysis::SymbolType::Class || cs.type == analysis::SymbolType::Interface)
         {
             return true;
         }
@@ -374,6 +373,10 @@ std::string FormatDeclarationText(const analysis::Symbol& sym, const analysis::S
             return "enum " + sym.name;
         case analysis::SymbolType::Variable:
         {
+            if (sym.GetVariable().isEnumConstant)
+            {
+                return FormatVariableSignature(sym, "(enum member) ");
+            }
             bool isProperty = IsVariableProperty(sym, symbolTable);
             return FormatVariableSignature(sym, isProperty ? "(property) " : "(global variable) ");
         }

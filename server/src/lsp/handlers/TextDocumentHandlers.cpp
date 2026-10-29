@@ -713,6 +713,15 @@ void Server::RegisterNavigationHandlers()
 
     m_messageHandler->add("angelscript/breakpointLocations", [this](lsp::json::Value&& params)
                           { return HandleRequestsTextDocument_BreakpointLocations(std::move(params)); });
+
+    m_messageHandler->add("textDocument/evaluatableExpression", [this](lsp::json::Value&& params)
+                          { return HandleRequestsTextDocument_EvaluatableExpression(std::move(params)); });
+
+    m_messageHandler->add("angelscript/evaluatableExpression", [this](lsp::json::Value&& params)
+                          { return HandleRequestsTextDocument_EvaluatableExpression(std::move(params)); });
+
+    m_messageHandler->add("angelscript/debugCompletion", [this](lsp::json::Value&& params)
+                          { return HandleRequestsAngelscript_DebugCompletion(std::move(params)); });
 }
 
 void Server::RegisterEditingHandlers()

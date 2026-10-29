@@ -612,6 +612,14 @@ class Debugger
             const char* name = nullptr;
             int typeId = 0;
             ctx->GetVar(static_cast<asUINT>(i), stackLevel, &name, &typeId);
+            if (!name || name[0] == '\0')
+            {
+                continue;
+            }
+            if (!ctx->IsVarInScope(static_cast<asUINT>(i), stackLevel))
+            {
+                continue;
+            }
             void* address = ctx->GetAddressOfVar(static_cast<asUINT>(i), stackLevel);
 
             VariableInfo info;
@@ -871,10 +879,11 @@ class Debugger
             expr = expr.substr(5);
         }
 
-        for (const auto& var : GetLocalVariables(ctx, stackLevel))
+        const auto locals = GetLocalVariables(ctx, stackLevel);
+        for (auto it = locals.rbegin(); it != locals.rend(); ++it)
         {
-            if (var.name == expr)
-                return var;
+            if (it->name == expr)
+                return *it;
         }
         for (const auto& prop : GetThisProperties(ctx, stackLevel))
         {
@@ -887,6 +896,141 @@ class Debugger
                 return glob;
         }
         return std::nullopt;
+    }
+
+    struct ScriptArrayInspection
+    {
+        uint32_t length = 0;
+        int elementTypeId = 0;
+        std::vector<void*> elementPtrs;
+    };
+
+    static std::optional<ScriptArrayInspection> InspectScriptArray(asIScriptEngine* engine, void* arrayPtr, int typeId)
+    {
+        if (!engine || !arrayPtr)
+        {
+            return std::nullopt;
+        }
+        asITypeInfo* ti = engine->GetTypeInfoById(typeId);
+        if (!ti || (std::string_view(ti->GetName()) != "array" && (ti->GetFlags() & asOBJ_TEMPLATE) == 0))
+        {
+            return std::nullopt;
+        }
+        constexpr size_t k_headerSize = sizeof(void*) * 5;
+        if (!SafeProbeMemoryReadable(arrayPtr, k_headerSize))
+        {
+            return std::nullopt;
+        }
+        const uint8_t* base = reinterpret_cast<const uint8_t*>(arrayPtr);
+        const asITypeInfo* actualTi = *reinterpret_cast<asITypeInfo* const*>(base + sizeof(void*) * 2);
+        if (actualTi != ti)
+        {
+            return std::nullopt;
+        }
+        const void* bufPtr = *reinterpret_cast<void* const*>(base + sizeof(void*) * 3);
+        if (!bufPtr || !SafeProbeMemoryReadable(bufPtr, sizeof(uint32_t) * 2))
+        {
+            return std::nullopt;
+        }
+        const uint32_t numElements =
+            *reinterpret_cast<const uint32_t*>(reinterpret_cast<const uint8_t*>(bufPtr) + sizeof(uint32_t));
+        const int elemSize = *reinterpret_cast<const int*>(base + sizeof(void*) * 4);
+        if (elemSize <= 0 || elemSize > 1024 * 1024)
+        {
+            return std::nullopt;
+        }
+        ScriptArrayInspection insp;
+        insp.length = numElements;
+        insp.elementTypeId = ti->GetSubTypeId();
+        const uint8_t* dataArray = reinterpret_cast<const uint8_t*>(bufPtr) + sizeof(uint32_t) * 2;
+        const size_t totalBytes = static_cast<size_t>(numElements) * static_cast<size_t>(elemSize);
+        if (totalBytes > 0 && SafeProbeMemoryReadable(dataArray, totalBytes))
+        {
+            const uint32_t cap = std::min<uint32_t>(numElements, 100);
+            insp.elementPtrs.reserve(cap);
+            for (uint32_t i = 0; i < cap; ++i)
+            {
+                insp.elementPtrs.push_back(const_cast<uint8_t*>(dataArray + i * elemSize));
+            }
+        }
+        return insp;
+    }
+
+    std::optional<VariableInfo> EvaluateIndexedExpression(asIScriptContext* ctx, const std::string& expr,
+                                                          asUINT stackLevel) const
+    {
+        if (expr.empty() || expr.back() != ']')
+        {
+            return std::nullopt;
+        }
+        size_t openBracket = expr.rfind('[');
+        if (openBracket == std::string::npos || openBracket == 0)
+        {
+            return std::nullopt;
+        }
+        std::string baseExpr = expr.substr(0, openBracket);
+        std::string indexExpr = expr.substr(openBracket + 1, expr.size() - openBracket - 2);
+        auto baseVar = EvaluateExpression(ctx, baseExpr, stackLevel);
+        if (!baseVar || baseVar->memoryReference.empty())
+        {
+            return std::nullopt;
+        }
+        uintptr_t ptr = static_cast<uintptr_t>(std::strtoull(baseVar->memoryReference.c_str(), nullptr, 16));
+        if (ptr == 0)
+        {
+            return std::nullopt;
+        }
+        asIScriptEngine* engine = ctx->GetEngine();
+        auto insp = InspectScriptArray(engine, reinterpret_cast<void*>(ptr), baseVar->typeId);
+        if (!insp)
+        {
+            return std::nullopt;
+        }
+        uint32_t idx = 0;
+        bool isNumber = !indexExpr.empty();
+        for (char c : indexExpr)
+        {
+            if (c < '0' || c > '9')
+            {
+                isNumber = false;
+                break;
+            }
+        }
+        if (isNumber)
+        {
+            idx = static_cast<uint32_t>(std::stoul(indexExpr));
+        }
+        else
+        {
+            auto idxVar = EvaluateExpression(ctx, indexExpr, stackLevel);
+            if (!idxVar || idxVar->value.empty())
+            {
+                return std::nullopt;
+            }
+            try
+            {
+                idx = static_cast<uint32_t>(std::stoul(idxVar->value));
+            }
+            catch (...)
+            {
+                return std::nullopt;
+            }
+        }
+        if (idx >= insp->elementPtrs.size())
+        {
+            return std::nullopt;
+        }
+        void* elemPtr = insp->elementPtrs[idx];
+        VariableInfo info;
+        info.name = expr;
+        info.typeId = insp->elementTypeId;
+        info.typeName = engine ? FormatTypeName(engine, insp->elementTypeId) : "";
+        info.value = FormatValue(engine, elemPtr, insp->elementTypeId);
+        if (elemPtr)
+        {
+            info.memoryReference = AddressToHex(elemPtr);
+        }
+        return info;
     }
 
     /**
@@ -1046,6 +1190,11 @@ class Debugger
         if (auto chain = EvaluateMemberChain(ctx, expression, stackLevel))
         {
             return chain;
+        }
+
+        if (auto indexed = EvaluateIndexedExpression(ctx, expression, stackLevel))
+        {
+            return indexed;
         }
 
         // 3. Simple local, this property, or global variable lookup
@@ -1234,6 +1383,7 @@ class Debugger
             ",\"body\":{"
             "\"supportsConfigurationDoneRequest\":true,"
             "\"supportsEvaluateForHovers\":true,"
+            "\"supportsCompletionsRequest\":true,"
             "\"supportsConditionalBreakpoints\":true,"
             "\"supportsHitConditionalBreakpoints\":true,"
             "\"supportsLogPoints\":true,"
@@ -1627,6 +1777,69 @@ class Debugger
      * @param[in] activeCtx Active script context.
      * @return Formatted DAP JSON response.
      */
+    std::string HandleCompletions(int seq, const std::string& requestJson, asIScriptContext* activeCtx) const
+    {
+        const std::string text = ExtractJsonString(requestJson, "\"text\"");
+        const int frameId = ExtractJsonInt(requestJson, "\"frameId\"", 0);
+        const asUINT stackLevel = static_cast<asUINT>(frameId >= 0 ? frameId : 0);
+
+        std::ostringstream ss;
+        ss << "{\"seq\":" << (seq + 100) << ",\"type\":\"response\",\"request_seq\":" << seq
+           << ",\"command\":\"completions\",\"success\":true,\"body\":{\"targets\":[";
+
+        bool first = true;
+        auto emitTarget = [&](std::string_view label, std::string_view type)
+        {
+            if (!first)
+                ss << ",";
+            first = false;
+            ss << "{\"label\":\"" << JsonEscape(std::string(label)) << "\",\"type\":\"" << type << "\"}";
+        };
+
+        if (activeCtx)
+        {
+            asIScriptEngine* engine = activeCtx->GetEngine();
+            size_t dotPos = text.rfind('.');
+            if (dotPos != std::string::npos)
+            {
+                std::string receiverExpr = text.substr(0, dotPos);
+                auto recv = EvaluateExpression(activeCtx, receiverExpr, stackLevel);
+                if (recv && engine && !recv->memoryReference.empty())
+                {
+                    uintptr_t ptr = static_cast<uintptr_t>(std::strtoull(recv->memoryReference.c_str(), nullptr, 16));
+                    if (ptr)
+                    {
+                        auto props = GetChildProperties(engine, reinterpret_cast<void*>(ptr), recv->typeId);
+                        for (const auto& p : props)
+                        {
+                            emitTarget(p.name, "property");
+                        }
+                    }
+                }
+            }
+            else
+            {
+                for (const auto& var : GetLocalVariables(activeCtx, stackLevel))
+                {
+                    if (text.empty() || var.name.starts_with(text))
+                    {
+                        emitTarget(var.name, "variable");
+                    }
+                }
+                for (const auto& prop : GetThisProperties(activeCtx, stackLevel))
+                {
+                    if (text.empty() || prop.name.starts_with(text))
+                    {
+                        emitTarget(prop.name, "property");
+                    }
+                }
+            }
+        }
+
+        ss << "]}}";
+        return ss.str();
+    }
+
     std::string HandleEvaluate(int seq, const std::string& requestJson, asIScriptContext* activeCtx) const
     {
         const std::string expr = ExtractJsonString(requestJson, "\"expression\"");
@@ -1654,6 +1867,14 @@ class Debugger
         }
         else
         {
+            const std::string context = ExtractJsonString(requestJson, "\"context\"");
+            if (context == "hover")
+            {
+                return "{\"seq\":" + std::to_string(seq + 100) +
+                       ",\"type\":\"response\",\"request_seq\":" + std::to_string(seq) +
+                       ",\"command\":\"evaluate\",\"success\":false,\"message\":\"Expression not available in current "
+                       "scope\"}";
+            }
             ss << "\"body\":{\"result\":\"<unknown>\",\"type\":\"\",\"variablesReference\":0}}";
         }
         return ss.str();
@@ -1688,6 +1909,8 @@ class Debugger
             return HandleExceptionInfo(seq, activeCtx);
         if (cmd == "evaluate")
             return HandleEvaluate(seq, requestJson, activeCtx);
+        if (cmd == "completions")
+            return HandleCompletions(seq, requestJson, activeCtx);
 
         std::ostringstream ss;
         ss << "{\"seq\":" << (seq + 100) << ",\"type\":\"response\",\"request_seq\":" << seq << ",\"command\":\"" << cmd
@@ -1768,6 +1991,57 @@ class Debugger
         asITypeInfo* typeInfo = engine->GetTypeInfoById(typeId);
         if (!typeInfo)
         {
+            return props;
+        }
+
+        if (auto insp = InspectScriptArray(engine, objPtr, typeId))
+        {
+            props.reserve(insp->elementPtrs.size() + 1);
+            VariableInfo lenInfo;
+            lenInfo.name = "length";
+            lenInfo.typeId = asTYPEID_UINT32;
+            lenInfo.typeName = "uint";
+            lenInfo.value = std::to_string(insp->length);
+            props.push_back(std::move(lenInfo));
+
+            for (size_t i = 0; i < insp->elementPtrs.size(); ++i)
+            {
+                VariableInfo elem;
+                elem.name = "[" + std::to_string(i) + "]";
+                elem.typeId = insp->elementTypeId;
+                elem.typeName = FormatTypeName(engine, insp->elementTypeId);
+                elem.value = FormatValue(engine, insp->elementPtrs[i], insp->elementTypeId);
+                if (insp->elementPtrs[i])
+                {
+                    elem.memoryReference = AddressToHex(insp->elementPtrs[i]);
+                }
+                props.push_back(std::move(elem));
+            }
+            return props;
+        }
+
+        if ((typeId & asTYPEID_SCRIPTOBJECT) != 0)
+        {
+            asIScriptObject* sObj = reinterpret_cast<asIScriptObject*>(objPtr);
+            const asUINT propCount = sObj->GetPropertyCount();
+            props.reserve(propCount);
+            for (asUINT p = 0; p < propCount; ++p)
+            {
+                const char* propName = sObj->GetPropertyName(p);
+                int propTypeId = sObj->GetPropertyTypeId(p);
+                void* propPtr = sObj->GetAddressOfProperty(p);
+
+                VariableInfo info;
+                info.name = propName ? propName : "";
+                info.typeId = propTypeId;
+                info.typeName = FormatTypeName(engine, propTypeId);
+                info.value = FormatValue(engine, propPtr, propTypeId);
+                if (propPtr)
+                {
+                    info.memoryReference = AddressToHex(propPtr);
+                }
+                props.push_back(std::move(info));
+            }
             return props;
         }
 
@@ -2151,7 +2425,45 @@ class Debugger
                 asITypeInfo* ti = engine->GetTypeInfoById(typeId);
                 if (ti && std::string_view(ti->GetName()) == "string")
                 {
-                    return *reinterpret_cast<std::string*>(ptr);
+                    const auto* s = reinterpret_cast<const std::string*>(ptr);
+                    return "\"" + (s ? *s : "") + "\"";
+                }
+                if (ti && (ti->GetFlags() & asOBJ_ENUM) != 0)
+                {
+                    int val = *reinterpret_cast<const int*>(ptr);
+                    const asUINT enumCount = ti->GetEnumValueCount();
+                    for (asUINT e = 0; e < enumCount; ++e)
+                    {
+                        asINT64 outVal = 0;
+                        const char* name = ti->GetEnumValueByIndex(e, &outVal);
+                        if (name && outVal == val)
+                        {
+                            return std::string(name) + " (" + std::to_string(val) + ")";
+                        }
+                    }
+                    return std::to_string(val);
+                }
+                if (auto insp = InspectScriptArray(engine, ptr, typeId))
+                {
+                    if (insp->length == 0)
+                    {
+                        return "[0] {}";
+                    }
+                    std::ostringstream ss;
+                    ss << "[" << insp->length << "] { ";
+                    const size_t previewCount = std::min<size_t>(insp->elementPtrs.size(), 3);
+                    for (size_t i = 0; i < previewCount; ++i)
+                    {
+                        if (i > 0)
+                            ss << ", ";
+                        ss << FormatValue(engine, insp->elementPtrs[i], insp->elementTypeId);
+                    }
+                    if (insp->length > previewCount)
+                    {
+                        ss << ", ...";
+                    }
+                    ss << " }";
+                    return ss.str();
                 }
             }
             return "{...}";
