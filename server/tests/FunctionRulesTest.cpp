@@ -625,6 +625,38 @@ TEST_CASE("FunctionRules - allowUnsafeReferences retires the primitive reference
     }
 }
 
+TEST_CASE("FunctionRules - String and enum types without handles reject &inout in default mode but allow under unsafe "
+          "references")
+{
+    const std::string enumName = angel_lsp::test::GenerateRandomSymbolName("State");
+    const std::string fn1 = angel_lsp::test::GenerateRandomSymbolName("HandleState");
+    const std::string fn2 = angel_lsp::test::GenerateRandomSymbolName("FormatString");
+    const std::string intfName = angel_lsp::test::GenerateRandomSymbolName("IReceiver");
+
+    const std::string code = "enum " + enumName +
+                             " { ValueA, ValueB };\n"
+                             "void " +
+                             fn1 + "(" + enumName +
+                             " &s) { }\n"
+                             "void " +
+                             fn2 +
+                             "(string &text) { }\n"
+                             "interface " +
+                             intfName +
+                             " { }\n"
+                             "void Dispatch(" +
+                             intfName + " &r) { }\n";
+
+    angel_lsp::config::EngineProperties engine;
+    engine.allowUnsafeReferences = true;
+
+    auto defaultDiags = AnalyzeFunctionSnippet(code);
+    CHECK(HasCode(defaultDiags, "as-err-inout-on-primitive"));
+
+    auto unsafeDiags = AnalyzeFunctionSnippet(code, "file:///funcs.as", &engine);
+    CHECK_FALSE(HasCode(unsafeDiags, "as-err-inout-on-primitive"));
+}
+
 TEST_CASE("FunctionRules - An in or out reference on a primitive is never the unsafe kind")
 {
     // `&in` and `&out` are the two the engine suggests instead, and they are legal whatever the

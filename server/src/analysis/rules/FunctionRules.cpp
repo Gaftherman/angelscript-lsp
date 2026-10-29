@@ -97,6 +97,20 @@ bool IsValueOnlyKind(TypeKind kind)
     }
 }
 
+/** @brief True when the type cannot be passed as &inout without unsafe references. */
+bool IsDisallowedInOutType(const ParameterInformation& param, const SymbolTable& table)
+{
+    if (IsValueOnlyKind(param.typeKind) || param.typeKind == TypeKind::String)
+    {
+        return true;
+    }
+    if (auto syms = table.FindSymbolsPtr(param.baseTypeName))
+    {
+        return std::any_of(syms->begin(), syms->end(), [](const Symbol& s) { return s.type == SymbolType::Enum; });
+    }
+    return false;
+}
+
 // =============================================================================
 // Body
 // =============================================================================
@@ -600,7 +614,8 @@ void CheckParamModifiers(const Symbol& sym, const ParameterInformation& param, c
     }
 
     const bool isInOutReference = param.modifier == ParameterModifier::InOut || param.isStandaloneRef;
-    if (isInOutReference && IsValueOnlyKind(param.typeKind) && !param.isArray && !ctx.request.AllowsUnsafeReferences())
+    if (isInOutReference && !param.isArray && !ctx.request.AllowsUnsafeReferences() &&
+        IsDisallowedInOutType(param, ctx.request.symbolTable))
     {
         ctx.LogParam("ValidateParameters", "as-err-inout-on-primitive", param, sym);
         ctx.Emit(param, sym, "as-err-inout-on-primitive", param.baseTypeName);
