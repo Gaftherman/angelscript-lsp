@@ -1788,19 +1788,15 @@ void ValidateOutArguments(const Symbol& candidate, const std::vector<TSNode>& ar
     for (size_t i = 0; i < argNodes.size() && i < fn.parameters.size(); ++i)
     {
         const auto& param = fn.parameters[i];
-        const bool isOut = param.rawText.find("&out") != std::string::npos ||
-                           param.typeName.find("&out") != std::string::npos ||
-                           param.typeName.find("& out") != std::string::npos;
-        const bool isUnsafeNonConstRef = !param.isConst && param.isStandaloneRef &&
-                                         (IsPrimitiveTypeName(param.baseTypeName) || param.baseTypeName == "string");
-        if (!isOut && !isUnsafeNonConstRef)
+        const bool isMutableRef = !param.isConst && (param.isOutRef || param.isInOutRef || param.isStandaloneRef);
+        if (!isMutableRef)
         {
             continue;
         }
 
-        std::string aText = NodeText(argNodes[i], valCtx.request.sourceCode);
-        TrimString(aText);
-        if (aText == "void" && isOut)
+        std::string_view aText = parser::GetNodeTextView(argNodes[i], valCtx.request.sourceCode);
+        TrimTypeWhitespace(aText);
+        if (aText == "void" && param.isOutRef)
         {
             continue;
         }

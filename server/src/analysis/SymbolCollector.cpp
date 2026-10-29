@@ -2765,6 +2765,8 @@ ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, std
 
     paramInfo.hasDoubleReference = (refCount > 1);
     paramInfo.isStandaloneRef = (paramInfo.isReference && paramInfo.modifier == ParameterModifier::None);
+    paramInfo.isOutRef = (paramInfo.modifier == ParameterModifier::Out);
+    paramInfo.isInOutRef = (paramInfo.modifier == ParameterModifier::InOut);
     return paramInfo;
 }
 

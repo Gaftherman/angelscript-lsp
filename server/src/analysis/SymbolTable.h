@@ -179,6 +179,8 @@ struct ParameterInformation
     bool isReference = false;
     bool hasDoubleReference = false;
     bool isStandaloneRef = false;
+    bool isOutRef = false;
+    bool isInOutRef = false;
 
     uint32_t startLine = 0;
     uint32_t startCharacter = 0;
