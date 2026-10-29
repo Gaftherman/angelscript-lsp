@@ -887,8 +887,9 @@ void CollectEnumMembersUnderQualifier(const std::string& qualifier, CompletionCo
                 for (const auto& mem : sym.GetEnum().members)
                 {
                     std::string sortText = FormatProximitySortText(prox, mem.name);
-                    AddItemIfNew(collector, {mem.name, lsp::CompletionItemKind::EnumMember, qualifier + "::" + mem.name,
-                                             "", "", "", std::move(sortText)});
+                    AddItemIfNew(collector,
+                                 {mem.name, lsp::CompletionItemKind::EnumMember,
+                                  utils::JoinScopedName(qualifier, mem.name), "", "", "", std::move(sortText)});
                 }
             }
         }
@@ -904,8 +905,9 @@ void CollectEnumMembersUnderQualifier(const std::string& qualifier, CompletionCo
                 for (const auto& mem : sym.GetEnum().members)
                 {
                     std::string sortText = FormatProximitySortText(prox, mem.name);
-                    AddItemIfNew(collector, {mem.name, lsp::CompletionItemKind::EnumMember, qualifier + "::" + mem.name,
-                                             "", "", "", std::move(sortText)});
+                    AddItemIfNew(collector,
+                                 {mem.name, lsp::CompletionItemKind::EnumMember,
+                                  utils::JoinScopedName(qualifier, mem.name), "", "", "", std::move(sortText)});
                 }
             }
         }
@@ -1003,7 +1005,7 @@ std::vector<std::string> CollectVisibleNamespaces(const CompletionRequest& reque
             AppendUniqueNamespace(visible, imported);
             for (const auto& enc : enclosing)
             {
-                AppendUniqueNamespace(visible, enc + "::" + imported);
+                AppendUniqueNamespace(visible, utils::JoinScopedName(enc, imported));
             }
         }
     }
@@ -1030,7 +1032,7 @@ void ResolveContainerMemberItemDetails(const analysis::Symbol& sym, lsp::Complet
         {
             kind = lsp::CompletionItemKind::EnumMember;
             const auto& var = sym.GetVariable();
-            detail = var.typeName.empty() ? sym.qualifiedName : (var.typeName + "::" + sym.name);
+            detail = var.typeName.empty() ? sym.qualifiedName : utils::JoinScopedName(var.typeName, sym.name);
         }
         else
         {
@@ -1116,7 +1118,7 @@ void CollectContainerMembersUnderQualifier(const std::string& qualifier, Complet
     }
     for (const auto& ns : CollectVisibleNamespaces(collector.request, nullptr))
     {
-        const std::string qualifiedContainer = ns + "::" + qualifier;
+        const std::string qualifiedContainer = utils::JoinScopedName(ns, qualifier);
         AddContainerMembers(qualifiedContainer, qualifier, ruleIndex.get(), collector);
     }
 }
@@ -1135,15 +1137,11 @@ bool TryCompleteScopeResolution(const std::string& prefix, CompletionCollector& 
     {
         return false;
     }
-    std::string qualifier = scopeMatch[1].str();
-    if (qualifier.ends_with("::"))
-    {
-        qualifier.resize(qualifier.size() - 2);
-    }
+    std::string qualifier = std::string(utils::StripTrailingScopeSeparator(scopeMatch[1].str()));
     CollectEnumMembersUnderQualifier(qualifier, collector);
     for (const auto& ns : CollectVisibleNamespaces(collector.request, nullptr))
     {
-        CollectEnumMembersUnderQualifier(ns + "::" + qualifier, collector);
+        CollectEnumMembersUnderQualifier(utils::JoinScopedName(ns, qualifier), collector);
     }
     CollectContainerMembersUnderQualifier(qualifier, collector);
     return true;
@@ -1260,11 +1258,7 @@ std::optional<InheritanceContext> DetectInheritanceContext(const CompletionReque
     std::smatch scopeMatch;
     if (std::regex_search(prefix, scopeMatch, scopeRegex))
     {
-        ctx.qualifier = scopeMatch[1].str();
-        if (ctx.qualifier.ends_with("::"))
-        {
-            ctx.qualifier.resize(ctx.qualifier.size() - 2);
-        }
+        ctx.qualifier = std::string(utils::StripTrailingScopeSeparator(scopeMatch[1].str()));
     }
     return ctx;
 }
@@ -2252,7 +2246,7 @@ static void AddEnumConstantCandidate(CompletionCollector& collector, const analy
 {
     const auto& var = sym.GetVariable();
     lsp::CompletionItemKind kind = lsp::CompletionItemKind::EnumMember;
-    std::string detail = var.typeName.empty() ? sym.name : var.typeName + "::" + sym.name;
+    std::string detail = var.typeName.empty() ? sym.name : utils::JoinScopedName(var.typeName, sym.name);
     const bool qualifyEnum =
         !collector.request.config || collector.request.config->features.completionQualifyEnumValues;
     const std::string_view predefinedExt = GetPredefinedExtension(collector.request);
@@ -2261,7 +2255,7 @@ static void AddEnumConstantCandidate(CompletionCollector& collector, const analy
     CompletionCandidate cand{sym.name, kind, detail, "", sym.qualifiedName, "", std::move(sortText)};
     if (qualifyEnum && !var.typeName.empty())
     {
-        cand.insertText = var.typeName + "::" + sym.name;
+        cand.insertText = utils::JoinScopedName(var.typeName, sym.name);
     }
     AddItemIfNew(collector, std::move(cand));
 }
@@ -2276,7 +2270,7 @@ static void AddEnumConstantCandidate(CompletionCollector& collector, const analy
 void ProcessScopeConstantDefinition(const analysis::LocalDefinition& def, const std::string& scopeNs,
                                     CompletionCollector& collector, SymbolProximity prox)
 {
-    const std::string symbolKey = scopeNs.empty() ? def.name : (scopeNs + "::" + def.name);
+    const std::string symbolKey = utils::JoinScopedName(scopeNs, def.name);
     auto syms = collector.request.symbolTable.FindSymbols(symbolKey);
     if (syms.empty() && !scopeNs.empty())
     {
@@ -2314,7 +2308,7 @@ void ProcessScopeDefinition(const analysis::LocalDefinition& def, const std::str
         ProcessScopeConstantDefinition(def, scopeNs, collector, prox);
         return;
     }
-    const std::string symbolKey = scopeNs.empty() ? def.name : (scopeNs + "::" + def.name);
+    const std::string symbolKey = utils::JoinScopedName(scopeNs, def.name);
     lsp::CompletionItemKind kind = lsp::CompletionItemKind::Variable;
     bool isCallable = false;
     std::string snippet;

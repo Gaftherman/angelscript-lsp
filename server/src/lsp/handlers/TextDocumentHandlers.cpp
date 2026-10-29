@@ -14,6 +14,7 @@
 #include "features/signature_help/SignatureHelpHandler.h"
 #include "lsp/PositionCodec.h"
 #include "lsp/Server.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/Timer.h"
 #include "utils/Utils.h"
 #include <fstream>
@@ -164,7 +165,7 @@ Server::HandleRequestsTextDocument_Moniker(lsp::requests::TextDocument_Moniker::
                 {
                     continue;
                 }
-                qualified = sym.containerName.empty() ? sym.name : sym.containerName + "::" + sym.name;
+                qualified = utils::JoinScopedName(sym.containerName, sym.name);
             }
         });
 

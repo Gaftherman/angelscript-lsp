@@ -1,5 +1,6 @@
 #include "analysis/CallGraph.h"
 #include "analysis/ASTUtils.h"
+#include "utils/ScopedNameUtils.h"
 
 #include "parser/GrammarNames.h"
 #include <string>
@@ -89,7 +90,7 @@ struct NamingContext
             return current;
         }
         const std::string& parent = containers[current];
-        containers.push_back(parent.empty() ? name : parent + "::" + name);
+        containers.push_back(utils::JoinScopedName(parent, name));
         return static_cast<uint32_t>(containers.size() - 1);
     }
 
@@ -102,7 +103,7 @@ struct NamingContext
             return current;
         }
         const std::string& parent = containers[containerIdx];
-        callers.push_back(parent.empty() ? name : parent + "::" + name);
+        callers.push_back(utils::JoinScopedName(parent, name));
         return static_cast<uint32_t>(callers.size() - 1);
     }
 };

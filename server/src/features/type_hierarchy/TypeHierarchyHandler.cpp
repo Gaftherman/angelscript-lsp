@@ -118,7 +118,7 @@ static std::vector<Symbol> FindTypeInEnclosingNamespaces(TSNode node, std::strin
     {
         if (container.kind == analysis::ContainerKind::Namespace)
         {
-            auto decls = FindTypeDeclarations(container.qualifiedName + "::" + std::string(text), symbolTable);
+            auto decls = FindTypeDeclarations(utils::JoinScopedName(container.qualifiedName, text), symbolTable);
             if (!decls.empty())
             {
                 return decls;
@@ -187,7 +187,8 @@ std::vector<Symbol> FindTypeFromIdentifier(std::string_view name, TSNode node, s
         {
             if (container.kind == analysis::ContainerKind::Namespace)
             {
-                declarations = FindTypeDeclarations(container.qualifiedName + "::" + nameStr, symbolTable);
+                declarations =
+                    FindTypeDeclarations(utils::JoinScopedName(container.qualifiedName, nameStr), symbolTable);
                 if (!declarations.empty())
                 {
                     break;
@@ -335,7 +336,7 @@ std::vector<Symbol> ResolveBaseSymbols(const std::string& cleanBase, std::string
     }
     if (baseSymbols.empty() && !declPrefix.empty())
     {
-        baseSymbols = FindTypeDeclarations(std::string(declPrefix) + "::" + cleanBase, symbolTable);
+        baseSymbols = FindTypeDeclarations(utils::JoinScopedName(declPrefix, cleanBase), symbolTable);
     }
     const std::string_view baseName = analysis::LastScopeSegment(cleanBase);
     if (baseSymbols.empty() && !baseName.empty())

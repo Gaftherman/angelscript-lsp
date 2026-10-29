@@ -2,6 +2,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 #include <algorithm>
 #include <sstream>
@@ -276,7 +277,7 @@ std::vector<analysis::Symbol> ResolveMemberCandidates(const SignatureHelpRequest
     auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverTypeName, request.symbolTable);
     for (const auto& typeName : hierarchy)
     {
-        std::string qualifiedName = typeName + "::" + std::string(memText);
+        std::string qualifiedName = utils::JoinScopedName(typeName, memText);
         auto found = request.symbolTable.FindSymbolsPtr(qualifiedName);
         if (found && !found->empty())
         {

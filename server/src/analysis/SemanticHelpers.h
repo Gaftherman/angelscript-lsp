@@ -200,8 +200,7 @@ bool IsReservedKeyword(const std::string& name);
     {
         return true;
     }
-    return full.size() > suffix.size() + 2 && full.ends_with(suffix) && full[full.size() - suffix.size() - 2] == ':' &&
-           full[full.size() - suffix.size() - 1] == ':';
+    return utils::EndsWithScopedMember(full, suffix);
 }
 
 /**
@@ -214,8 +213,9 @@ bool IsReservedKeyword(const std::string& name);
 [[nodiscard]] constexpr bool MatchesScopedPair(std::string_view scoped, std::string_view prefix,
                                                std::string_view suffix) noexcept
 {
-    return scoped.size() == prefix.size() + 2 + suffix.size() && scoped.starts_with(prefix) &&
-           scoped.ends_with(suffix) && scoped.substr(prefix.size(), 2) == "::";
+    return scoped.size() == prefix.size() + utils::k_scopeSeparator.size() + suffix.size() &&
+           scoped.starts_with(prefix) && scoped.ends_with(suffix) &&
+           scoped.substr(prefix.size(), utils::k_scopeSeparator.size()) == utils::k_scopeSeparator;
 }
 
 /**
@@ -226,8 +226,7 @@ bool IsReservedKeyword(const std::string& name);
  */
 [[nodiscard]] constexpr bool SuffixMatchesScoped(std::string_view target, std::string_view suffix) noexcept
 {
-    return target.ends_with(suffix) && target.size() > suffix.size() + 1 &&
-           target.substr(target.size() - suffix.size() - 2, 2) == "::";
+    return utils::EndsWithScopedMember(target, suffix);
 }
 
 /**

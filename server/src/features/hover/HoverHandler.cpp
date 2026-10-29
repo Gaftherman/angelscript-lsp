@@ -79,9 +79,9 @@ static std::string CompanionDocComment(const HoverRequest& request, const analys
     {
         propName = propName.substr(4);
     }
-    const std::string candidates[] = {symbol.containerName + "::" + propName,
-                                      symbol.containerName + "::get_" + propName,
-                                      symbol.containerName + "::set_" + propName};
+    const std::string candidates[] = {utils::JoinScopedName(symbol.containerName, propName),
+                                      utils::JoinScopedName(symbol.containerName, "get_" + propName),
+                                      utils::JoinScopedName(symbol.containerName, "set_" + propName)};
     for (const auto& candidateName : candidates)
     {
         if (candidateName == symbol.qualifiedName)
@@ -332,7 +332,7 @@ static std::string FormatNamespaceDeclaration(const analysis::Symbol& sym)
     }
     if (!sym.containerName.empty())
     {
-        return "namespace " + sym.containerName + "::" + sym.name;
+        return "namespace " + utils::JoinScopedName(sym.containerName, sym.name);
     }
     return "namespace " + sym.name;
 }
@@ -967,7 +967,7 @@ std::vector<analysis::Symbol> CollectReceiverMemberSymbols(const std::string& re
     auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverTypeName, symbolTable);
     for (const auto& typeName : hierarchy)
     {
-        std::string qualifiedMember = typeName + "::" + std::string(memberName);
+        std::string qualifiedMember = utils::JoinScopedName(typeName, memberName);
         auto found = symbolTable.FindSymbolsPtr(qualifiedMember);
         if (found)
         {
@@ -2195,14 +2195,15 @@ void FilterEnumMemberSymbols(std::vector<analysis::Symbol>& symbols, const Hover
     std::erase_if(symbols,
                   [&](const analysis::Symbol& s)
                   {
-                      if (s.containerName == enumName || s.containerName.ends_with("::" + enumName))
+                      if (s.containerName == enumName || utils::EndsWithScopedMember(s.containerName, enumName))
                       {
                           return false;
                       }
                       if (std::holds_alternative<analysis::VariableSignature>(s.signature))
                       {
                           const auto& vs = s.GetVariable();
-                          if (vs.isEnumConstant && (vs.typeName == enumName || vs.typeName.ends_with("::" + enumName)))
+                          if (vs.isEnumConstant &&
+                              (vs.typeName == enumName || utils::EndsWithScopedMember(vs.typeName, enumName)))
                           {
                               return false;
                           }

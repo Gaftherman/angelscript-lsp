@@ -526,7 +526,7 @@ std::vector<analysis::Symbol> FindMemberSymbolsInHierarchy(const std::string& re
     std::vector<analysis::Symbol> enumFallback;
     for (const auto& typeName : hierarchy)
     {
-        std::string qualifiedMember = typeName + "::" + nodeText;
+        std::string qualifiedMember = utils::JoinScopedName(typeName, nodeText);
         auto found = symbolTable.FindSymbols(qualifiedMember);
         std::erase_if(found, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::CallReference; });
         if (!found.empty())

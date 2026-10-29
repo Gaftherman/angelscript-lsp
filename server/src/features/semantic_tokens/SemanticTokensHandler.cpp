@@ -7,6 +7,7 @@
 #include "parser/GrammarSymbols.h"
 #include "parser/QueryRegistry.h"
 #include "parser/queries/BuiltQueries.h"
+#include "utils/ScopedNameUtils.h"
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
 #include <cstring>
@@ -578,16 +579,10 @@ class ClassSpanIndex
                 if (cStart < cEnd && cEnd <= sourceCode.size())
                 {
                     std::string_view bareName(sourceCode.data() + cStart, cEnd - cStart);
-                    std::string qName;
                     const auto containers = analysis::GetEnclosingContainers(classDecl, sourceCode);
-                    if (!containers.empty() && !containers.front().qualifiedName.empty())
-                    {
-                        qName = containers.front().qualifiedName + "::" + std::string(bareName);
-                    }
-                    else
-                    {
-                        qName = std::string(bareName);
-                    }
+                    const std::string qName = (!containers.empty() && !containers.front().qualifiedName.empty())
+                                                  ? utils::JoinScopedName(containers.front().qualifiedName, bareName)
+                                                  : std::string(bareName);
                     index.m_spans.push_back(
                         ClassSpan{ts_node_start_byte(classDecl), ts_node_end_byte(classDecl), std::move(qName), -1});
                 }
@@ -787,14 +782,11 @@ void UpgradeScopedTypeEnumTokens(TSNode typeNode, std::string_view sourceCode, c
         return;
     }
 
-    std::string_view scopeText = analysis::GetNodeTextView(firstChild, sourceCode);
+    std::string_view scopeText =
+        utils::StripGlobalPrefix(utils::StripTrailingScopeSeparator(analysis::GetNodeTextView(firstChild, sourceCode)));
     while (scopeText.ends_with(':'))
     {
         scopeText.remove_suffix(1);
-    }
-    if (scopeText.starts_with("::"))
-    {
-        scopeText.remove_prefix(2);
     }
     const std::string_view memberText = analysis::GetNodeTextView(secondChild, sourceCode);
     if (scopeText.empty() || memberText.empty())
@@ -819,7 +811,7 @@ void UpgradeScopedTypeEnumTokens(TSNode typeNode, std::string_view sourceCode, c
         upgrades[memberStart] = Type_EnumMember;
         return;
     }
-    const std::string qualifiedName = std::string(scopeText) + "::" + std::string(memberText);
+    const std::string qualifiedName = utils::JoinScopedName(scopeText, memberText);
     if (ContainsEnumConstant(symbolTable.FindSymbolsPtr(qualifiedName)))
     {
         upgrades[memberStart] = Type_EnumMember;
@@ -1217,7 +1209,7 @@ bool ShouldSuppressScopedLeafToken(TSNode node, std::string_view tokenText, cons
         return false;
     }
 
-    const std::string qName = std::string(qualText) + "::" + std::string(tokenText);
+    const std::string qName = utils::JoinScopedName(qualText, tokenText);
     return !ctx.request.symbolTable.FindSymbolsPtr(qName);
 }
 

@@ -10,6 +10,7 @@
 #include "parser/queries/BuiltQueries.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/LspLogger.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 #include <ankerl/unordered_dense.h>
 #include <cctype>
@@ -382,8 +383,7 @@ void SymbolCollector::PushClassContainer(TSNode node, const SymbolCollectContext
     if (!stack.empty())
     {
         classCtx.isInsideNamespace = stack.back().ctx.isInsideNamespace;
-        classCtx.containerPath =
-            stack.back().ctx.containerPath.empty() ? className : stack.back().ctx.containerPath + "::" + className;
+        classCtx.containerPath = utils::JoinScopedName(stack.back().ctx.containerPath, className);
     }
     else
     {
@@ -413,8 +413,7 @@ void SymbolCollector::PushInterfaceContainer(TSNode node, const SymbolCollectCon
     if (!stack.empty())
     {
         ifaceCtx.isInsideNamespace = stack.back().ctx.isInsideNamespace;
-        ifaceCtx.containerPath =
-            stack.back().ctx.containerPath.empty() ? ifaceName : stack.back().ctx.containerPath + "::" + ifaceName;
+        ifaceCtx.containerPath = utils::JoinScopedName(stack.back().ctx.containerPath, ifaceName);
     }
     else
     {
@@ -443,7 +442,7 @@ void SymbolCollector::PushNamespaceContainer(TSNode node, const SymbolCollectCon
     nsCtx.isInsideNamespace = true;
     if (!stack.empty() && !stack.back().ctx.containerPath.empty())
     {
-        nsCtx.containerPath = stack.back().ctx.containerPath + "::" + nsName;
+        nsCtx.containerPath = utils::JoinScopedName(stack.back().ctx.containerPath, nsName);
     }
     else
     {
@@ -1101,7 +1100,7 @@ void SymbolCollector::ProcessClass(TSNode classNode, SymbolCollectContext& sCtx,
     if (angleInName != std::string::npos)
     {
         sym.name = sym.name.substr(0, angleInName);
-        sym.qualifiedName = ctx.containerPath.empty() ? sym.name : ctx.containerPath + "::" + sym.name;
+        sym.qualifiedName = utils::JoinScopedName(ctx.containerPath, sym.name);
     }
 
     TSNode bodyNode = GetChildByFieldName(classNode, "body");

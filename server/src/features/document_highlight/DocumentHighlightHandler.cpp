@@ -614,7 +614,7 @@ void CollectClassMemberDeclarations(const std::unordered_set<std::string>& relat
 {
     for (const auto& clsName : relatedSet)
     {
-        std::string qualifiedName = clsName + "::" + target.name;
+        std::string qualifiedName = utils::JoinScopedName(clsName, target.name);
         auto syms = request.symbolTable.FindSymbols(qualifiedName);
         for (const auto& sym : syms)
         {
@@ -695,7 +695,7 @@ std::string ResolveChainRootType(const std::string& part, const analysis::Scope*
 std::string ResolveChainMemberType(const std::string& curType, const std::string& part,
                                    const DocumentHighlightRequest& request)
 {
-    std::string qMem = curType + "::" + part;
+    std::string qMem = utils::JoinScopedName(curType, part);
     auto mSyms = request.symbolTable.FindSymbols(qMem);
     if (mSyms.empty())
     {

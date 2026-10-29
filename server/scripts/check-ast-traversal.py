@@ -232,6 +232,29 @@ def check_no_manual_scope_find():
                 violations.append((file_path, line_num, stripped))
     return violations
 
+def check_no_manual_scope_string_ops():
+    violations = []
+    scope_ops_pattern = re.compile(r'\.(?:starts_with|ends_with)\s*\(\s*"::"\s*\)|\+\s*"::"|"::"\s*\+')
+    allowed_files = {
+        SERVER_SRC / "utils" / "ScopedNameUtils.h",
+        SERVER_SRC / "utils" / "ScopedNameUtils.cpp",
+        SERVER_SRC / "lsp" / "SignatureFormatter.cpp",
+    }
+    for file_path in SERVER_SRC.rglob("*.[ch]*"):
+        if not file_path.is_file() or file_path in allowed_files:
+            continue
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for line_num, line in enumerate(content.splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                continue
+            if scope_ops_pattern.search(line):
+                violations.append((file_path, line_num, stripped))
+    return violations
+
 def check_no_operator_node_text():
     violations = []
     op_text_pattern = re.compile(r'(?:NodeText|GetNodeText)\s*\(\s*(?:opNode|operatorNode)\b')
@@ -344,6 +367,14 @@ def main():
         has_errors = True
         print("[ERROR] Manual .find('::') or .rfind('::') detected outside ScopedNameUtils (use utils::ScopedNameUtils):")
         for f, line_num, line in manual_scope_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
+    manual_scope_ops_violations = check_no_manual_scope_string_ops()
+    if manual_scope_ops_violations:
+        has_errors = True
+        print("[ERROR] Manual scope operations (+ '::', '::' +, .starts_with('::'), .ends_with('::')) detected outside ScopedNameUtils:")
+        for f, line_num, line in manual_scope_ops_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
 

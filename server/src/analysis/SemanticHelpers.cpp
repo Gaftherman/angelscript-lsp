@@ -604,10 +604,9 @@ static bool MatchesQualifiedTypeSuffix(std::string_view clean, const rules::Rule
         return false;
     }
     const bool isPartiallyQualified = utils::ContainsScopeSeparator(clean);
-    const std::string suffix = "::" + std::string(clean);
     for (const auto& qType : it->second)
     {
-        if (qType == clean || (isPartiallyQualified && qType.ends_with(suffix)))
+        if (qType == clean || (isPartiallyQualified && utils::EndsWithScopedMember(qType, clean)))
         {
             return true;
         }
@@ -627,8 +626,7 @@ bool MatchesParentNamespaceType(std::string_view clean, const SymbolTable& table
     while (!prefix.empty())
     {
         prefix = utils::ParentScopeView(prefix);
-        const std::string candidate =
-            prefix.empty() ? std::string(member) : std::string(prefix) + "::" + std::string(member);
+        const std::string candidate = utils::JoinScopedName(prefix, member);
         if (table.HasSymbol(candidate) || table.HasSymbolAnywhere(candidate) ||
             MatchesQualifiedTypeSuffix(candidate, ruleIndex))
         {
@@ -643,7 +641,7 @@ bool IsReachableViaUsingDirectives(std::string_view clean, const DiagnosticConte
     const auto& usings = GetUsingNamespaces(ctx.request);
     for (const auto& ns : usings)
     {
-        std::string q = ns + "::" + std::string(clean);
+        std::string q = utils::JoinScopedName(ns, clean);
         if (ctx.request.symbolTable.HasSymbol(q))
         {
             return true;
@@ -724,7 +722,7 @@ bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx, std::s
     if (ctx.request.IsRegisteredSymbol(baseName))
         return true;
 
-    std::string_view clean = baseName.starts_with("::") ? baseName.substr(2) : baseName;
+    std::string_view clean = utils::StripGlobalPrefix(baseName);
     if (ctx.request.symbolTable.HasSymbol(clean))
         return true;
 
@@ -2341,8 +2339,8 @@ static bool HasContainerMatchingPrefix(const SymbolTable& table, const std::stri
             }
             for (const auto& s : syms)
             {
-                if (s.containerName == prefix || s.containerName.rfind(prefix + "::", 0) == 0 || s.name == prefix ||
-                    qName == prefix || qName.rfind(prefix + "::", 0) == 0)
+                if (s.containerName == prefix || utils::HasScopePrefix(s.containerName, prefix) || s.name == prefix ||
+                    qName == prefix || utils::HasScopePrefix(qName, prefix))
                 {
                     hasContainer = true;
                     return;
@@ -2361,7 +2359,7 @@ static bool IsKnownInEnclosingContainers(const SymbolTable& table, const std::st
     auto containers = GetEnclosingContainers(node, sourceCode);
     for (const auto& c : containers)
     {
-        std::string q = c.qualifiedName + "::" + prefix;
+        std::string q = utils::JoinScopedName(c.qualifiedName, prefix);
         if (table.HasSymbol(q) || table.HasSymbolAnywhere(q))
         {
             return true;
@@ -2380,7 +2378,7 @@ static bool IsKnownInUsingNamespaces(const SymbolTable& table, const std::string
     {
         for (const auto& ns : precomputedUsings)
         {
-            std::string q = ns + "::" + prefix;
+            std::string q = utils::JoinScopedName(ns, prefix);
             if (table.HasSymbol(q) || table.HasSymbolAnywhere(q))
             {
                 return true;
@@ -2397,7 +2395,7 @@ static bool IsKnownInUsingNamespaces(const SymbolTable& table, const std::string
     auto usings = CollectUsingNamespaces(GetRootNode(node), sourceCode);
     for (const auto& ns : usings)
     {
-        std::string q = ns + "::" + prefix;
+        std::string q = utils::JoinScopedName(ns, prefix);
         if (table.HasSymbol(q) || table.HasSymbolAnywhere(q))
         {
             return true;
@@ -4198,7 +4196,7 @@ static std::string FindClassOrInterfaceName(const std::string& funcName, const S
             }
             if (!sym.containerName.empty())
             {
-                return sym.containerName + "::" + sym.name;
+                return utils::JoinScopedName(sym.containerName, sym.name);
             }
             return sym.name;
         }
@@ -6084,7 +6082,7 @@ static std::optional<Symbol> FindCallArgumentFuncdef(const SymbolTable& table, c
         return std::nullopt;
     }
 
-    if (!utils::ContainsScopeSeparator(calleeName) && lookUp(calleeName + "::" + calleeName))
+    if (!utils::ContainsScopeSeparator(calleeName) && lookUp(utils::JoinScopedName(calleeName, calleeName)))
     {
         return agreement.agreed;
     }
@@ -6349,7 +6347,6 @@ TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::
     }
 
     TSNode found{};
-    const std::string shortSuffix = "::" + std::string(mixinShortName);
     TSNode baseList = parser::FindFirstChildOfType(hostNode, "base_class_list");
     if (!ts_node_is_null(baseList))
     {
@@ -6358,7 +6355,7 @@ TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::
                                            {
                                                const std::string bText = GetNodeText(baseChild, sourceCode);
                                                if (CleanBaseTypeView(bText) == mixinName || bText == mixinShortName ||
-                                                   bText.ends_with(shortSuffix))
+                                                   utils::EndsWithScopedMember(bText, mixinShortName))
                                                {
                                                    found = baseChild;
                                                    return false;
@@ -6412,9 +6409,9 @@ std::string ExtractDatatypeScopePrefix(TSNode datatypeNode, std::string_view sou
                 if (sStart < sourceCode.size() && sEnd <= sourceCode.size() && sStart < sEnd)
                 {
                     std::string scopeText(sourceCode.substr(sStart, sEnd - sStart));
-                    if (!scopeText.ends_with("::"))
+                    if (!utils::EndsWithScopeSeparator(scopeText))
                     {
-                        scopeText += "::";
+                        scopeText.append(utils::k_scopeSeparator);
                     }
                     return scopeText;
                 }

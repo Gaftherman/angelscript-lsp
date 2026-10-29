@@ -501,8 +501,7 @@ void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const R
             {
                 target.kind = TargetKind::NamespaceSymbol;
                 target.declaringNamespace = container.qualifiedName;
-                target.qualifiedName =
-                    container.qualifiedName.empty() ? nodeText : container.qualifiedName + "::" + nodeText;
+                target.qualifiedName = utils::JoinScopedName(container.qualifiedName, nodeText);
                 return;
             }
         }
@@ -541,10 +540,10 @@ bool TryResolveEnumMemberDeclaration(TSNode memberNode, const std::string& nodeT
             break;
         }
     }
-    std::string fullEnum = prefix.empty() ? enumName : prefix + "::" + enumName;
+    std::string fullEnum = utils::JoinScopedName(prefix, enumName);
     target.kind = TargetKind::EnumMember;
     target.declaringEnum = fullEnum;
-    target.qualifiedName = fullEnum + "::" + nodeText;
+    target.qualifiedName = utils::JoinScopedName(fullEnum, nodeText);
     return true;
 }
 
@@ -566,7 +565,7 @@ bool TryResolveScopedEnumAccess(TSNode scopedNode, const std::string& nodeText, 
         return false;
     }
     std::string scopedText = request.sourceCode.substr(pStart, pEnd - pStart);
-    if (!scopedText.ends_with("::" + nodeText))
+    if (!utils::EndsWithScopedMember(scopedText, nodeText))
     {
         return false;
     }
@@ -864,7 +863,7 @@ void ApplyFunctionSignature(TargetDescriptor& target, const analysis::FunctionSi
 bool ResolveDirectClassMember(TargetDescriptor& target, const ResolveTargetRequest& request,
                               analysis::AccessModifier& resolvedAccess)
 {
-    std::string qMember = target.declaringClass.empty() ? target.name : (target.declaringClass + "::" + target.name);
+    std::string qMember = utils::JoinScopedName(target.declaringClass, target.name);
     auto localSyms = request.symbolTable.FindSymbols(qMember);
     if (localSyms.empty() && !target.declaringClass.empty())
     {
@@ -1520,7 +1519,7 @@ void CollectClassMemberDeclarations(const ankerl::unordered_dense::set<std::stri
 {
     for (const auto& clsName : relatedSet)
     {
-        std::string qualifiedName = clsName + "::" + request.target.name;
+        std::string qualifiedName = utils::JoinScopedName(clsName, request.target.name);
         auto syms = request.symbolTable.FindSymbols(qualifiedName);
         for (const auto& sym : syms)
         {

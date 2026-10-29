@@ -2,6 +2,7 @@
 #include "analysis/ASTUtils.h"
 #include "analysis/SemanticHelpers.h"
 #include "utils/Constants.h"
+#include "utils/ScopedNameUtils.h"
 
 #include "parser/GrammarNames.h"
 #include <algorithm>
@@ -144,7 +145,7 @@ std::string EnclosingFunction(TSNode node, std::string_view sourceCode)
     const auto containers = analysis::GetEnclosingContainers(owner, sourceCode);
     if (!containers.empty())
     {
-        return containers.front().qualifiedName.empty() ? name : containers.front().qualifiedName + "::" + name;
+        return utils::JoinScopedName(containers.front().qualifiedName, name);
     }
     return name;
 }
@@ -198,7 +199,7 @@ std::vector<DocumentCalls> FindCallsFromCaller(const std::string& caller, const 
     {
         if (sym.isSynthesized && !sym.containerName.empty())
         {
-            const std::string originCaller = sym.containerName + "::" + sym.name;
+            const std::string originCaller = utils::JoinScopedName(sym.containerName, sym.name);
             calls = callGraph.FindCallsFrom(originCaller);
             if (!calls.empty())
             {

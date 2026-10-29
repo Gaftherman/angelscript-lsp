@@ -1,10 +1,16 @@
 #pragma once
 
+#include <string>
 #include <string_view>
 #include <utility>
 
 namespace angel_lsp::utils
 {
+
+/**
+ * @brief Standard AngelScript scope resolution operator.
+ */
+inline constexpr std::string_view k_scopeSeparator = "::";
 
 /**
  * @brief Strips a leading global scope qualifier ("::") if present.
@@ -13,7 +19,7 @@ namespace angel_lsp::utils
  */
 [[nodiscard]] constexpr std::string_view StripGlobalPrefix(std::string_view name) noexcept
 {
-    return name.starts_with("::") ? name.substr(2) : name;
+    return name.starts_with(k_scopeSeparator) ? name.substr(k_scopeSeparator.size()) : name;
 }
 
 /**
@@ -23,7 +29,104 @@ namespace angel_lsp::utils
  */
 [[nodiscard]] constexpr bool HasLeadingGlobalPrefix(std::string_view name) noexcept
 {
-    return name.starts_with("::");
+    return name.starts_with(k_scopeSeparator);
+}
+
+/**
+ * @brief Checks if a name ends with the scope resolution operator ("::").
+ * @param[in] name Identifier or scoped name.
+ * @return True if name ends with "::".
+ */
+[[nodiscard]] constexpr bool EndsWithScopeSeparator(std::string_view name) noexcept
+{
+    return name.ends_with(k_scopeSeparator);
+}
+
+/**
+ * @brief Strips a trailing scope separator ("::") if present.
+ * @param[in] name Identifier or scoped name.
+ * @return View with trailing "::" removed, or original view if absent.
+ */
+[[nodiscard]] constexpr std::string_view StripTrailingScopeSeparator(std::string_view name) noexcept
+{
+    return EndsWithScopeSeparator(name) ? name.substr(0, name.size() - k_scopeSeparator.size()) : name;
+}
+
+/**
+ * @brief Checks in O(1) without heap allocation if full ends with "::" + member.
+ * @param[in] full Full scoped path or identifier.
+ * @param[in] member Member or leaf name to match.
+ * @return True if full ends with "::" followed by member.
+ */
+[[nodiscard]] constexpr bool EndsWithScopedMember(std::string_view full, std::string_view member) noexcept
+{
+    if (full.size() < member.size() + k_scopeSeparator.size())
+    {
+        return false;
+    }
+    if (!full.ends_with(member))
+    {
+        return false;
+    }
+    const size_t sepPos = full.size() - member.size() - k_scopeSeparator.size();
+    return full.substr(sepPos, k_scopeSeparator.size()) == k_scopeSeparator;
+}
+
+/**
+ * @brief Checks in O(1) without heap allocation if name starts with prefix + "::".
+ * @param[in] name Full scoped name to test.
+ * @param[in] prefix Scope prefix to test.
+ * @return True if name starts with prefix followed by "::".
+ */
+[[nodiscard]] constexpr bool HasScopePrefix(std::string_view name, std::string_view prefix) noexcept
+{
+    if (prefix.empty() || name.size() < prefix.size() + k_scopeSeparator.size())
+    {
+        return false;
+    }
+    return name.starts_with(prefix) && name.substr(prefix.size(), k_scopeSeparator.size()) == k_scopeSeparator;
+}
+
+/**
+ * @brief Concatenates a scope qualifier and a symbol name with "::" in a single heap allocation.
+ * @param[in] scope Scope qualifier prefix (e.g. "Namespace").
+ * @param[in] name Leaf symbol name (e.g. "Class").
+ * @return Qualified scoped name ("Namespace::Class"), or name if scope is empty.
+ */
+[[nodiscard]] inline std::string JoinScopedName(std::string_view scope, std::string_view name)
+{
+    if (scope.empty())
+    {
+        return std::string(name);
+    }
+    if (name.empty())
+    {
+        return std::string(scope);
+    }
+    std::string out;
+    out.reserve(scope.size() + k_scopeSeparator.size() + name.size());
+    out.append(scope);
+    out.append(k_scopeSeparator);
+    out.append(name);
+    return out;
+}
+
+/**
+ * @brief Appends a scope-qualified name segment to an existing buffer using "::".
+ * @param[in,out] buffer Existing scoped string buffer.
+ * @param[in] name Segment to append.
+ */
+inline void AppendScopedName(std::string& buffer, std::string_view name)
+{
+    if (name.empty())
+    {
+        return;
+    }
+    if (!buffer.empty())
+    {
+        buffer.append(k_scopeSeparator);
+    }
+    buffer.append(name);
 }
 
 /**

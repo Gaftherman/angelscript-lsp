@@ -171,7 +171,7 @@ void CollectHierarchyMembers(const std::vector<std::string>& hierarchy, const st
 {
     for (const auto& typeName : hierarchy)
     {
-        std::string qualifiedName = typeName + "::" + memberName;
+        std::string qualifiedName = utils::JoinScopedName(typeName, memberName);
         auto found = symbolTable.FindSymbols(qualifiedName);
         for (const auto& sym : found)
         {
@@ -297,8 +297,8 @@ std::vector<analysis::Symbol> CollectScopedCalleeCandidates(const std::string& c
             {
                 return scopedSyms;
             }
-            auto scopedHier =
-                analysis::GetInheritedTypeHierarchy(nsPrefix + "::" + targetContainer, request.symbolTable);
+            auto scopedHier = analysis::GetInheritedTypeHierarchy(utils::JoinScopedName(nsPrefix, targetContainer),
+                                                                  request.symbolTable);
             for (const auto& typeName : scopedHier)
             {
                 auto syms = request.symbolTable.FindMemberSymbols(typeName, methodName);
@@ -349,11 +349,7 @@ std::vector<analysis::Symbol> CollectClassConstructorCandidates(const std::vecto
 std::vector<analysis::Symbol> CollectFreeCalleeCandidates(TSNode funcNode, TSNode callNode,
                                                           const InlayHintRequest& request)
 {
-    std::string calleeName = GetNodeText(funcNode, request.sourceCode);
-    if (calleeName.starts_with("::"))
-    {
-        calleeName = calleeName.substr(2);
-    }
+    std::string calleeName = std::string(utils::StripGlobalPrefix(GetNodeText(funcNode, request.sourceCode)));
     auto candidateSymbols = analysis::FindSymbolsInScope(calleeName, callNode, request.sourceCode, request.symbolTable);
 
     CollectEnclosingClassCallees(calleeName, callNode, request, candidateSymbols);
@@ -870,7 +866,7 @@ std::string DeduceMemberCallReturnType(TSNode funcNode, TSNode exprNode, const I
     }
     for (const auto& typeName : hierarchy)
     {
-        std::string qualifiedName = typeName + "::" + memText;
+        std::string qualifiedName = utils::JoinScopedName(typeName, memText);
         auto found = request.symbolTable.FindSymbols(qualifiedName);
         for (const auto& sym : found)
         {
@@ -984,7 +980,7 @@ std::string DeduceMemberExpressionType(TSNode exprNode, const InlayHintRequest& 
     auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverType, request.symbolTable);
     for (const auto& typeName : hierarchy)
     {
-        std::string qualifiedName = typeName + "::" + memText;
+        std::string qualifiedName = utils::JoinScopedName(typeName, memText);
         auto found = request.symbolTable.FindSymbols(qualifiedName);
         for (const auto& sym : found)
         {
