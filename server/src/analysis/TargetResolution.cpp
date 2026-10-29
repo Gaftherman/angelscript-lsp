@@ -5,6 +5,7 @@
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
 #include "utils/LspLogger.h"
+#include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
@@ -999,13 +1000,13 @@ bool ResolveGlobalScopedTarget(const ResolveTargetRequest& request, const Global
                                                { return sym.type != analysis::SymbolType::CallReference; });
         if (hasRealSymbol)
         {
-            const size_t lastSep = gsq.rootPath.rfind("::");
-            if (lastSep != std::string_view::npos)
+            const auto [nsPrefix, leafName] = utils::SplitScopedName(gsq.rootPath);
+            if (!nsPrefix.empty())
             {
                 target.kind = TargetKind::NamespaceSymbol;
                 target.qualifiedName = std::string(gsq.rootPath);
-                target.declaringNamespace = std::string(gsq.rootPath.substr(0, lastSep));
-                target.name = std::string(gsq.rootPath.substr(lastSep + 2));
+                target.declaringNamespace = std::string(nsPrefix);
+                target.name = std::string(leafName);
             }
             else
             {
@@ -1983,18 +1984,16 @@ std::optional<bool> CheckAstEnumMemberMatch(const analysis::LocalReference& ref,
     {
         std::string_view scoped = std::string_view(ctx.request.sourceCode)
                                       .substr(ref.qualifierStartByte, ref.qualifierEndByte - ref.qualifierStartByte);
-        if (scoped.find("::") != std::string_view::npos)
+        if (utils::ContainsScopeSeparator(scoped))
         {
             if (scoped == ctx.request.target.qualifiedName ||
                 MatchesScopedPair(scoped, ctx.request.target.declaringEnum, ctx.request.target.name))
             {
                 return true;
             }
-            const size_t lastSep = scoped.rfind("::");
-            if (lastSep != std::string_view::npos)
+            const auto [qualifier, name] = utils::SplitScopedName(scoped);
+            if (!qualifier.empty())
             {
-                std::string_view qualifier = scoped.substr(0, lastSep);
-                std::string_view name = scoped.substr(lastSep + 2);
                 if (name == ctx.request.target.name &&
                     EnumQualifierMatches(qualifier, ctx.request.target.declaringEnum))
                 {

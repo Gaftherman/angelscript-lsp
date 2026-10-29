@@ -2,6 +2,7 @@
 #include "analysis/ASTUtils.h"
 #include "analysis/TypeExtraction.h"
 #include "parser/GrammarNames.h"
+#include "utils/ScopedNameUtils.h"
 #include <string>
 
 namespace angel_lsp::analysis
@@ -18,7 +19,7 @@ struct BinaryConditionParams
 {
     TSNode left;
     TSNode right;
-    std::string_view op;
+    TSSymbol opSym;
     std::string_view sourceCode;
 };
 
@@ -74,14 +75,15 @@ void ProcessLogicalBinary(const BinaryConditionParams& params, AssertionSink& si
     ExtractConditionAssertions(params.left, params.sourceCode, posL, negL);
     ExtractConditionAssertions(params.right, params.sourceCode, posR, negR);
 
-    if (params.op == "&&" || params.op == "and")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (params.opSym == gs.tokAmpAmp || params.opSym == gs.tokAnd)
     {
         sink.positive.insert(sink.positive.end(), posL.begin(), posL.end());
         sink.positive.insert(sink.positive.end(), posR.begin(), posR.end());
         sink.negative.insert(sink.negative.end(), negL.begin(), negL.end());
         sink.negative.insert(sink.negative.end(), negR.begin(), negR.end());
     }
-    else if (params.op == "||" || params.op == "or")
+    else if (params.opSym == gs.tokPipePipe || params.opSym == gs.tokOr)
     {
         for (const auto& l : posL)
         {
@@ -101,40 +103,42 @@ void ProcessLogicalBinary(const BinaryConditionParams& params, AssertionSink& si
 
 void ProcessBinaryCondition(TSNode condition, std::string_view sourceCode, AssertionSink& sink)
 {
-    TSNode left = parser::GetChildByField(condition, parser::GetGrammarSymbols().fieldLeft);
-    TSNode opNode = parser::GetChildByField(condition, parser::GetGrammarSymbols().fieldOperator);
-    TSNode right = parser::GetChildByField(condition, parser::GetGrammarSymbols().fieldRight);
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode left = parser::GetChildByField(condition, gs.fieldLeft);
+    TSNode opNode = parser::GetChildByField(condition, gs.fieldOperator);
+    TSNode right = parser::GetChildByField(condition, gs.fieldRight);
     if (ts_node_is_null(left) || ts_node_is_null(right))
     {
         return;
     }
 
-    std::string op = NodeText(opNode, sourceCode);
-    if (op == "is" || op == "==")
+    const TSSymbol opSym = ts_node_symbol(opNode);
+    if (opSym == gs.tokIs || opSym == gs.tokEqEq)
     {
         HandleEqualityNullCheck(left, right, sourceCode, sink);
     }
-    else if (op == "!is" || op == "!=")
+    else if (opSym == gs.tokBangIs || opSym == gs.tokBangEq)
     {
         HandleInequalityNullCheck(left, right, sourceCode, sink);
     }
-    else if (op == "&&" || op == "and" || op == "||" || op == "or")
+    else if (opSym == gs.tokAmpAmp || opSym == gs.tokAnd || opSym == gs.tokPipePipe || opSym == gs.tokOr)
     {
-        ProcessLogicalBinary({left, right, op, sourceCode}, sink);
+        ProcessLogicalBinary({left, right, opSym, sourceCode}, sink);
     }
 }
 
 void ProcessUnaryCondition(TSNode condition, std::string_view sourceCode, AssertionSink& sink)
 {
-    TSNode opNode = parser::GetChildByField(condition, parser::GetGrammarSymbols().fieldOperator);
-    TSNode operand = parser::GetChildByField(condition, parser::GetGrammarSymbols().fieldOperand);
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode opNode = parser::GetChildByField(condition, gs.fieldOperator);
+    TSNode operand = parser::GetChildByField(condition, gs.fieldOperand);
     if (ts_node_is_null(operand))
     {
         return;
     }
 
-    std::string op = NodeText(opNode, sourceCode);
-    if (op == "!" || op == "not")
+    const TSSymbol opSym = ts_node_symbol(opNode);
+    if (opSym == gs.tokBang || opSym == gs.tokNot)
     {
         std::vector<NullAssertion> innerPos;
         std::vector<NullAssertion> innerNeg;
@@ -199,7 +203,7 @@ std::string GetIdentifierName(TSNode node, std::string_view sourceCode)
     if (sym == gs.symScopedIdentifier)
     {
         std::string text = NodeText(unwrapped, sourceCode);
-        if (text.find("::") == std::string::npos)
+        if (!utils::ContainsScopeSeparator(text))
         {
             return text;
         }

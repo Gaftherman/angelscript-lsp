@@ -260,10 +260,11 @@ void EmitGetterSetterActionsForField(const CodeActionRequest& request, const Get
  * @param[in] sourceCode Source text of the document.
  * @return Insertion point coordinates.
  */
-TSPoint FindAccessorPropertyInsertionPoint(TSNode funcNode, TSNode parametersNode, std::string_view sourceCode)
+TSPoint FindAccessorPropertyInsertionPoint(TSNode funcNode, TSNode parametersNode)
 {
     TSPoint insertAt = ts_node_end_point(parametersNode);
     const uint32_t paramsEndByte = ts_node_end_byte(parametersNode);
+    const auto& gs = parser::GetGrammarSymbols();
     TSTreeCursor cursor = ts_tree_cursor_new(funcNode);
     if (ts_tree_cursor_goto_first_child(&cursor))
     {
@@ -272,8 +273,7 @@ TSPoint FindAccessorPropertyInsertionPoint(TSNode funcNode, TSNode parametersNod
             TSNode child = ts_tree_cursor_current_node(&cursor);
             if (!ts_node_is_null(child) && ts_node_start_byte(child) >= paramsEndByte)
             {
-                const auto& gs = parser::GetGrammarSymbols();
-                if (ts_node_symbol(child) == gs.tokConst || GetNodeText(child, sourceCode) == "const")
+                if (ts_node_symbol(child) == gs.tokConst)
                 {
                     insertAt = ts_node_end_point(child);
                     break;
@@ -334,16 +334,8 @@ void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode r
 
         const auto& gs = parser::GetGrammarSymbols();
         const TSPoint point = {diag.range.start.line, diag.range.start.character};
-        TSNode node = ts_node_descendant_for_point_range(rootNode, point, point);
-        for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(node);
-             ++depth, node = parser::GetParent(node))
-        {
-            if (ts_node_symbol(node) == gs.symFuncDeclaration)
-            {
-                break;
-            }
-        }
-        if (ts_node_is_null(node) || ts_node_symbol(node) != gs.symFuncDeclaration)
+        TSNode node = parser::FindEnclosingNodeAtPoint(rootNode, point, gs.symFuncDeclaration);
+        if (ts_node_is_null(node))
         {
             continue;
         }
@@ -354,7 +346,7 @@ void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode r
             continue;
         }
 
-        const TSPoint insertAt = FindAccessorPropertyInsertionPoint(node, parameters, request.sourceCode);
+        const TSPoint insertAt = FindAccessorPropertyInsertionPoint(node, parameters);
 
         lsp::TextEdit edit;
         edit.range.start.line = insertAt.row;

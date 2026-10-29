@@ -1,5 +1,6 @@
 #include "analysis/TypeSanitization.h"
 #include "analysis/SemanticHelpers.h"
+#include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
 
@@ -201,23 +202,18 @@ std::vector<std::string> SplitTemplateArguments(std::string_view inner)
 
 bool HasScopeQualifier(std::string_view name) noexcept
 {
-    return name.find("::") != std::string_view::npos;
+    return utils::ContainsScopeSeparator(name);
 }
 
 std::vector<std::string> SplitScopeSegments(std::string_view name)
 {
     std::vector<std::string> segments;
-    size_t start = 0;
-    while (start < name.size())
+    std::string_view cur = name;
+    while (!cur.empty())
     {
-        const size_t pos = name.find("::", start);
-        if (pos == std::string_view::npos)
-        {
-            segments.emplace_back(name.substr(start));
-            break;
-        }
-        segments.emplace_back(name.substr(start, pos - start));
-        start = pos + 2;
+        const auto [first, rest] = utils::SplitFirstScopeSegment(cur);
+        segments.emplace_back(first);
+        cur = rest;
     }
     return segments;
 }

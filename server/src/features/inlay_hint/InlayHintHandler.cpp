@@ -7,6 +7,7 @@
 #include "parser/GrammarSymbols.h"
 #include "parser/Keywords.h"
 #include "utils/LspLogger.h"
+#include "utils/ScopedNameUtils.h"
 #include <algorithm>
 #include <cctype>
 #include <spdlog/fmt/fmt.h>
@@ -266,13 +267,13 @@ std::vector<analysis::Symbol> CollectScopedCalleeCandidates(const std::string& c
                                                             const InlayHintRequest& request)
 {
     std::vector<analysis::Symbol> candidates;
-    if (calleeName.find("::") == std::string::npos)
+    const auto [targetContainerView, methodNameView] = utils::SplitScopedName(calleeName);
+    if (targetContainerView.empty())
     {
         return candidates;
     }
-    size_t lastColon = calleeName.rfind("::");
-    std::string targetContainer = calleeName.substr(0, lastColon);
-    std::string methodName = calleeName.substr(lastColon + 2);
+    std::string targetContainer(targetContainerView);
+    std::string methodName(methodNameView);
 
     auto hierarchy = analysis::GetInheritedTypeHierarchy(targetContainer, request.symbolTable);
     for (const auto& typeName : hierarchy)
@@ -1031,14 +1032,15 @@ std::string DeduceIdentifierType(TSNode exprNode, const InlayHintRequest& reques
 
 /**
  * @brief Checks if an operator produces a boolean result.
- * @param[in] op Operator string.
+ * @param[in] sym Operator grammar symbol.
+ * @param[in] gs Pre-resolved grammar symbols reference.
  * @return True if operator is comparison or logical.
  */
-bool IsBooleanBinaryOperator(std::string_view op)
+bool IsBooleanBinaryOperator(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
 {
-    static const std::unordered_set<std::string_view> kBoolOps = {"==", "!=",  "<",  ">",   "<=", ">=", "&&",
-                                                                  "||", "and", "or", "xor", "^^", "is", "!is"};
-    return kBoolOps.contains(op);
+    return sym == gs.tokEqEq || sym == gs.tokBangEq || sym == gs.tokLt || sym == gs.tokLtEq || sym == gs.tokGt ||
+           sym == gs.tokGtEq || sym == gs.tokAmpAmp || sym == gs.tokAnd || sym == gs.tokPipePipe || sym == gs.tokOr ||
+           sym == gs.tokCaretCaret || sym == gs.tokXor || sym == gs.tokIs || sym == gs.tokBangIs;
 }
 
 /**
@@ -1092,15 +1094,15 @@ std::string SelectWiderType(std::string_view leftT, std::string_view rightT, std
  */
 std::string DeduceBinaryExpressionType(TSNode exprNode, const InlayHintRequest& request)
 {
-    TSNode opNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldOperator);
-    std::string op = GetNodeText(opNode, request.sourceCode);
-    if (IsBooleanBinaryOperator(op))
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode opNode = parser::GetChildByField(exprNode, gs.fieldOperator);
+    if (!ts_node_is_null(opNode) && IsBooleanBinaryOperator(ts_node_symbol(opNode), gs))
     {
         return "bool";
     }
 
-    TSNode left = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldLeft);
-    TSNode right = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldRight);
+    TSNode left = parser::GetChildByField(exprNode, gs.fieldLeft);
+    TSNode right = parser::GetChildByField(exprNode, gs.fieldRight);
     std::string leftT = DeduceExpressionType(left, request);
     std::string rightT = DeduceExpressionType(right, request);
 
@@ -1116,15 +1118,16 @@ std::string DeduceBinaryExpressionType(TSNode exprNode, const InlayHintRequest& 
  */
 std::string DeduceUnaryExpressionType(TSNode exprNode, const InlayHintRequest& request)
 {
-    TSNode opNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldOperator);
-    std::string op = GetNodeText(opNode, request.sourceCode);
-    TSNode operand = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldOperand);
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode opNode = parser::GetChildByField(exprNode, gs.fieldOperator);
+    const TSSymbol opSym = !ts_node_is_null(opNode) ? ts_node_symbol(opNode) : 0;
+    TSNode operand = parser::GetChildByField(exprNode, gs.fieldOperand);
 
-    if (op == "!" || op == "not")
+    if (opSym == gs.tokBang || opSym == gs.tokNot)
     {
         return "bool";
     }
-    if (op == "@")
+    if (opSym == gs.tokAt)
     {
         std::string opT = DeduceExpressionType(operand, request);
         if (!opT.empty() && !opT.ends_with("@"))

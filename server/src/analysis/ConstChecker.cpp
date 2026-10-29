@@ -6,6 +6,7 @@
 
 #include "parser/GrammarNames.h"
 #include "parser/Keywords.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/StopFlag.h"
 #include <algorithm>
 #include <optional>
@@ -296,14 +297,10 @@ bool IsIdentifierMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo,
                               std::string& outMemberName)
 {
     const std::string text = NodeText(target, ctx.sourceCode);
-    const std::string_view baseName = LastScopeSegment(text);
-    if (text != baseName)
+    const auto [prefix, baseName] = utils::SplitScopedName(text);
+    if (!prefix.empty() && prefix != encInfo.className)
     {
-        const size_t sepPos = text.rfind("::");
-        if (sepPos != std::string::npos && text.substr(0, sepPos) != encInfo.className)
-        {
-            return false;
-        }
+        return false;
     }
 
     const std::string name(baseName);

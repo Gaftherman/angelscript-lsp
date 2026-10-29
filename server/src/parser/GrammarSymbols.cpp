@@ -113,14 +113,67 @@ void PopulateExpressionsAndLiterals(const TSLanguage* lang, GrammarSymbols& gs) 
     gs.symExpressionStatement = SymNamed(lang, parser::nodes::ExpressionStatement);
 }
 
-void PopulateTokens(const TSLanguage* lang, GrammarSymbols& gs) noexcept
+void PopulateLogicalAndRelationalTokens(const TSLanguage* lang, GrammarSymbols& gs) noexcept
+{
+    gs.tokAmpAmp = SymAnon(lang, "&&");
+    gs.tokAnd = SymAnon(lang, "and");
+    gs.tokPipePipe = SymAnon(lang, "||");
+    gs.tokOr = SymAnon(lang, "or");
+    gs.tokCaretCaret = SymAnon(lang, "^^");
+    gs.tokXor = SymAnon(lang, "xor");
+    gs.tokBang = SymAnon(lang, "!");
+    gs.tokNot = SymAnon(lang, "not");
+    gs.tokAmp = SymAnon(lang, "&");
+    gs.tokPipe = SymAnon(lang, "|");
+    gs.tokCaret = SymAnon(lang, "^");
+    gs.tokTilde = SymAnon(lang, "~");
+
+    gs.tokEqEq = SymAnon(lang, "==");
+    gs.tokBangEq = SymAnon(lang, "!=");
+    gs.tokIs = SymAnon(lang, "is");
+    gs.tokBangIs = SymAnon(lang, "!is");
+    gs.tokLt = SymAnon(lang, "<");
+    gs.tokLtEq = SymAnon(lang, "<=");
+    gs.tokGt = SymAnon(lang, ">");
+    gs.tokGtEq = SymAnon(lang, ">=");
+}
+
+void PopulateArithmeticAndAssignmentTokens(const TSLanguage* lang, GrammarSymbols& gs) noexcept
+{
+    gs.tokPlus = SymAnon(lang, "+");
+    gs.tokDash = SymAnon(lang, "-");
+    gs.tokStar = SymAnon(lang, "*");
+    gs.tokStarStar = SymAnon(lang, "**");
+    gs.tokSlash = SymAnon(lang, "/");
+    gs.tokPercent = SymAnon(lang, "%");
+    gs.tokLtLt = SymAnon(lang, "<<");
+    gs.tokGtGt = SymAnon(lang, ">>");
+    gs.tokGtGtGt = SymAnon(lang, ">>>");
+    gs.tokPlusPlus = SymAnon(lang, "++");
+    gs.tokDashDash = SymAnon(lang, "--");
+
+    gs.tokAssign = SymAnon(lang, "=");
+    gs.tokPlusEq = SymAnon(lang, "+=");
+    gs.tokDashEq = SymAnon(lang, "-=");
+    gs.tokStarEq = SymAnon(lang, "*=");
+    gs.tokStarStarEq = SymAnon(lang, "**=");
+    gs.tokSlashEq = SymAnon(lang, "/=");
+    gs.tokPercentEq = SymAnon(lang, "%=");
+    gs.tokAmpEq = SymAnon(lang, "&=");
+    gs.tokPipeEq = SymAnon(lang, "|=");
+    gs.tokCaretEq = SymAnon(lang, "^=");
+    gs.tokLtLtEq = SymAnon(lang, "<<=");
+    gs.tokGtGtEq = SymAnon(lang, ">>=");
+    gs.tokGtGtGtEq = SymAnon(lang, ">>>=");
+    gs.tokAtEq = SymAnon(lang, "@=");
+}
+
+void PopulateKeywordTokens(const TSLanguage* lang, GrammarSymbols& gs) noexcept
 {
     gs.tokConst = SymAnon(lang, "const");
     gs.tokIn = SymAnon(lang, "in");
     gs.tokOut = SymAnon(lang, "out");
     gs.tokInout = SymAnon(lang, "inout");
-    gs.tokAmp = SymAnon(lang, "&");
-    gs.tokAt = SymAnon(lang, "@");
     gs.tokPrivate = SymAnon(lang, "private");
     gs.tokProtected = SymAnon(lang, "protected");
     gs.tokShared = SymAnon(lang, "shared");
@@ -133,27 +186,33 @@ void PopulateTokens(const TSLanguage* lang, GrammarSymbols& gs) noexcept
     gs.tokDelete = SymAnon(lang, "delete");
     gs.tokExternal = SymAnon(lang, "external");
     gs.tokImport = SymAnon(lang, "import");
-    gs.tokOpenBrace = SymAnon(lang, "{");
-    gs.tokCloseBrace = SymAnon(lang, "}");
     gs.tokGet = SymAnon(lang, "get");
     gs.tokSet = SymAnon(lang, "set");
-    gs.tokColonColon = SymAnon(lang, "::");
     gs.tokClass = SymAnon(lang, "class");
     gs.tokInterface = SymAnon(lang, "interface");
     gs.tokFunction = SymAnon(lang, "function");
-    gs.tokComma = SymAnon(lang, ",");
-    gs.tokOpenParen = SymAnon(lang, "(");
-    gs.tokCloseParen = SymAnon(lang, ")");
-    gs.tokColon = SymAnon(lang, ":");
-    gs.tokOpenBracket = SymAnon(lang, "[");
-    gs.tokCloseBracket = SymAnon(lang, "]");
-    gs.tokAssign = SymAnon(lang, "=");
-    gs.tokSemicolon = SymAnon(lang, ";");
     gs.tokDefault = SymAnon(lang, "default");
     gs.tokCase = SymAnon(lang, "case");
+    gs.tokTrue = SymAnon(lang, "true");
+    gs.tokFalse = SymAnon(lang, "false");
+    gs.tokNull = SymAnon(lang, "null");
+}
+
+void PopulatePunctuationTokens(const TSLanguage* lang, GrammarSymbols& gs) noexcept
+{
+    gs.tokAt = SymAnon(lang, "@");
+    gs.tokQmark = SymAnon(lang, "?");
+    gs.tokColon = SymAnon(lang, ":");
+    gs.tokColonColon = SymAnon(lang, "::");
+    gs.tokComma = SymAnon(lang, ",");
     gs.tokDot = SymAnon(lang, ".");
-    gs.tokSlash = SymAnon(lang, "/");
-    gs.tokTilde = SymAnon(lang, "~");
+    gs.tokSemicolon = SymAnon(lang, ";");
+    gs.tokOpenBrace = SymAnon(lang, "{");
+    gs.tokCloseBrace = SymAnon(lang, "}");
+    gs.tokOpenParen = SymAnon(lang, "(");
+    gs.tokCloseParen = SymAnon(lang, ")");
+    gs.tokOpenBracket = SymAnon(lang, "[");
+    gs.tokCloseBracket = SymAnon(lang, "]");
 }
 
 void PopulateFields(const TSLanguage* lang, GrammarSymbols& gs) noexcept
@@ -206,7 +265,10 @@ const GrammarSymbols& GetGrammarSymbols() noexcept
         GrammarSymbols gs;
         PopulateDeclarations(lang, gs);
         PopulateExpressionsAndLiterals(lang, gs);
-        PopulateTokens(lang, gs);
+        PopulateLogicalAndRelationalTokens(lang, gs);
+        PopulateArithmeticAndAssignmentTokens(lang, gs);
+        PopulateKeywordTokens(lang, gs);
+        PopulatePunctuationTokens(lang, gs);
         PopulateFields(lang, gs);
         gs.conversionTargetSymbols = {
             gs.symIfStatement,

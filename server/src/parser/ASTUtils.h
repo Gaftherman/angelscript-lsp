@@ -4,6 +4,7 @@
 #include "utils/Constants.h"
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
@@ -212,6 +213,18 @@ struct NodeTextResult
 [[nodiscard]] inline std::string_view GetNodeTextView(TSNode node, std::string_view sourceCode) noexcept
 {
     return NodeText(node, sourceCode).view;
+}
+
+/**
+ * @brief Checks if a string view begins and ends with matching quotes.
+ * @param[in] raw Raw string literal view.
+ * @return True if enclosed in single, double, or triple quotes.
+ */
+[[nodiscard]] constexpr bool IsQuotedString(std::string_view raw) noexcept
+{
+    return (raw.starts_with("\"\"\"") && raw.size() >= 6 && raw.ends_with("\"\"\"")) ||
+           (raw.size() >= 2 &&
+            ((raw.front() == '"' && raw.back() == '"') || (raw.front() == '\'' && raw.back() == '\'')));
 }
 
 /**
@@ -444,6 +457,75 @@ inline TSNode FindFirstChildOfType(TSNode parent, std::string_view typeName)
                               return true;
                           });
     return found;
+}
+
+/**
+ * @brief Finds the nearest ancestor node matching a specific Tree-Sitter grammar symbol.
+ * @param[in] node Starting child AST node.
+ * @param[in] targetSym Target grammar symbol to search for.
+ * @param[in] maxDepth Maximum upward climb depth (bounded by k_maxAstClimbDepth).
+ * @return Matching ancestor TSNode or null TSNode if not found.
+ */
+[[nodiscard]] inline TSNode FindAncestorWithSymbol(TSNode node, TSSymbol targetSym,
+                                                   uint32_t maxDepth = constants::k_maxAstClimbDepth) noexcept
+{
+    TSNode curr = node;
+    uint32_t depth = 0;
+    while (!ts_node_is_null(curr) && depth < maxDepth)
+    {
+        if (ts_node_symbol(curr) == targetSym)
+        {
+            return curr;
+        }
+        curr = GetParent(curr);
+        depth++;
+    }
+    return TSNode{};
+}
+
+/**
+ * @brief Finds the nearest ancestor node matching any of the specified Tree-Sitter grammar symbols.
+ * @param[in] node Starting child AST node.
+ * @param[in] targetSyms Span of target grammar symbols.
+ * @param[in] maxDepth Maximum upward climb depth (bounded by k_maxAstClimbDepth).
+ * @return Matching ancestor TSNode or null TSNode if not found.
+ */
+[[nodiscard]] inline TSNode FindAncestorWithAnySymbol(TSNode node, std::span<const TSSymbol> targetSyms,
+                                                      uint32_t maxDepth = constants::k_maxAstClimbDepth) noexcept
+{
+    TSNode curr = node;
+    uint32_t depth = 0;
+    while (!ts_node_is_null(curr) && depth < maxDepth)
+    {
+        const TSSymbol sym = ts_node_symbol(curr);
+        for (const TSSymbol target : targetSyms)
+        {
+            if (sym == target)
+            {
+                return curr;
+            }
+        }
+        curr = GetParent(curr);
+        depth++;
+    }
+    return TSNode{};
+}
+
+/**
+ * @brief Finds the enclosing node of a given symbol type at the specified point range.
+ * @param[in] root Root AST node.
+ * @param[in] point Document point (row, column).
+ * @param[in] targetSym Target grammar symbol to locate.
+ * @return Matching ancestor TSNode or null TSNode if not found.
+ */
+[[nodiscard]] inline TSNode FindEnclosingNodeAtPoint(TSNode root, TSPoint point, TSSymbol targetSym) noexcept
+{
+    if (ts_node_is_null(root))
+    {
+        return TSNode{};
+    }
+    TSNode descendant = ts_node_descendant_for_point_range(root, point, point);
+    return FindAncestorWithSymbol(descendant, targetSym);
 }
 
 } // namespace angel_lsp::parser

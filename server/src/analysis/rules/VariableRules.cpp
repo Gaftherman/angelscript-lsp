@@ -2,6 +2,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/rules/EngineRuleChecker.h"
 #include "spdlog/fmt/fmt.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -25,21 +26,12 @@ const Symbol* FindTypeDeclaration(std::string_view typeName, const SymbolTable& 
     keepAlive = table.FindSymbolsPtr(typeName);
     if (!keepAlive && !enclosingNs.empty())
     {
-        std::string current(enclosingNs);
-        while (!current.empty())
-        {
-            keepAlive = table.FindMemberSymbolPtr(current, typeName);
-            if (keepAlive)
-            {
-                break;
-            }
-            const auto lastSep = current.rfind("::");
-            if (lastSep == std::string::npos)
-            {
-                break;
-            }
-            current.erase(lastSep);
-        }
+        utils::ForEachEnclosingScope(enclosingNs,
+                                     [&](std::string_view current)
+                                     {
+                                         keepAlive = table.FindMemberSymbolPtr(current, typeName);
+                                         return keepAlive != nullptr;
+                                     });
     }
     if (!keepAlive)
     {

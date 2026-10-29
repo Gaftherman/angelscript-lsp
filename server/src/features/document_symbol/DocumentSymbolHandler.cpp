@@ -138,14 +138,15 @@ void ProcessNamespace(TSNode node, const TraversalContext& ctx, std::vector<lsp:
 /**
  * @brief Processes class, mixin, or interface declaration AST nodes.
  * @param[in] node AST node.
- * @param[in] nodeType Grammar node type string.
+ * @param[in] sym Grammar symbol identifier.
  * @param[in] ctx Traversal context.
  * @param[in,out] outSymbols Symbol list to append to.
  */
-void ProcessClassLike(TSNode node, std::string_view nodeType, const TraversalContext& ctx,
+void ProcessClassLike(TSNode node, TSSymbol sym, const TraversalContext& ctx,
                       std::vector<lsp::DocumentSymbol>& outSymbols)
 {
-    const bool isInterface = (nodeType == "interface_declaration");
+    const auto& gs = parser::GetGrammarSymbols();
+    const bool isInterface = (sym == gs.symInterfaceDeclaration);
     const auto kind = isInterface ? lsp::SymbolKind::Interface : lsp::SymbolKind::Class;
     auto symOpt = CreateDeclarationSymbol(node, kind, ctx);
     if (!symOpt)
@@ -153,22 +154,22 @@ void ProcessClassLike(TSNode node, std::string_view nodeType, const TraversalCon
         return;
     }
 
-    auto sym = std::move(*symOpt);
-    const std::string name = sym.name;
-    sym.detail = isInterface ? "interface" : ((nodeType == "mixin_declaration") ? "mixin" : "class");
+    auto docSym = std::move(*symOpt);
+    const std::string name = docSym.name;
+    docSym.detail = isInterface ? "interface" : ((sym == gs.symMixinDeclaration) ? "mixin" : "class");
 
-    TSNode bodyNode = GetChildByField(node, parser::GetGrammarSymbols().fieldBody);
+    TSNode bodyNode = GetChildByField(node, gs.fieldBody);
     if (!ts_node_is_null(bodyNode))
     {
         TraversalContext bodyCtx{ctx.sourceCode, true, name};
         auto children = ProcessChildren(bodyNode, bodyCtx);
         if (!children.empty())
         {
-            sym.children = std::move(children);
+            docSym.children = std::move(children);
         }
     }
 
-    outSymbols.push_back(std::move(sym));
+    outSymbols.push_back(std::move(docSym));
 }
 
 /**
@@ -505,10 +506,7 @@ bool ProcessStructuralNode(TSNode node, const TraversalContext& ctx, std::vector
     }
     if (sym == gs.symClassDeclaration || sym == gs.symMixinDeclaration || sym == gs.symInterfaceDeclaration)
     {
-        const std::string_view nodeType = (sym == gs.symClassDeclaration)   ? "class_declaration"
-                                          : (sym == gs.symMixinDeclaration) ? "mixin_declaration"
-                                                                            : "interface_declaration";
-        ProcessClassLike(node, nodeType, ctx, outSymbols);
+        ProcessClassLike(node, sym, ctx, outSymbols);
         return true;
     }
     if (sym == gs.symEnumDeclaration)

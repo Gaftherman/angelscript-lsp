@@ -2,6 +2,7 @@
 #include "analysis/ASTUtils.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
+#include "utils/ScopedNameUtils.h"
 
 #include "parser/GrammarNames.h"
 #include <cctype>
@@ -159,11 +160,11 @@ void CheckCallExpression(TSNode node, const NamespaceCheckRequest& request, Diag
         return;
     }
 
-    if (calleeName.starts_with("::"))
+    if (utils::HasLeadingGlobalPrefix(calleeName))
     {
-        if (calleeName.find("::", 2) == std::string_view::npos)
+        const std::string_view identView = utils::StripGlobalPrefix(calleeName);
+        if (!utils::ContainsScopeSeparator(identView))
         {
-            const std::string_view identView = calleeName.substr(2);
             if (!identView.empty() && !IsKnownDirectGlobalCallee(identView, ctx))
             {
                 TSNode funcNode = parser::GetCallCallee(node);
@@ -174,10 +175,10 @@ void CheckCallExpression(TSNode node, const NamespaceCheckRequest& request, Diag
             }
             return;
         }
-        calleeName = calleeName.substr(2);
+        calleeName = utils::StripGlobalPrefix(calleeName);
     }
 
-    if (calleeName.find("::") != std::string_view::npos)
+    if (utils::ContainsScopeSeparator(calleeName))
     {
         return;
     }

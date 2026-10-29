@@ -13,6 +13,7 @@
 #include "utils/IncludeResolver.h"
 #include "utils/LspLogger.h"
 #include "utils/MultiFileLogger.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/Timer.h"
 #include "utils/Utils.h"
 #include <algorithm>
@@ -2231,7 +2232,7 @@ std::vector<analysis::Symbol> CollectScopedSymbols(HoverQueryContext& ctx)
                 }
                 symbols = analysis::FindSymbolsInScope(scopedPrefix, ctx.node, ctx.request.sourceCode,
                                                        ctx.request.symbolTable);
-                isExplicitlyScoped = (scopedPrefix.find("::") != std::string::npos);
+                isExplicitlyScoped = utils::ContainsScopeSeparator(scopedPrefix);
             }
         }
         else if (pSym == gs.symDatatype)
@@ -3050,16 +3051,17 @@ static std::string FormatResolvedAssetMarkdown(std::string_view unquoted, const 
  * @param[in] sourceCode Source text buffer.
  * @return Topmost binary plus node, or the node itself if no binary plus parent exists.
  */
-TSNode FindTopmostBinaryPlus(TSNode node, std::string_view sourceCode)
+TSNode FindTopmostBinaryPlus(TSNode node)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     TSNode current = node;
     for (size_t depth = 0; depth < 16 && !ts_node_is_null(parser::GetParent(current)); ++depth)
     {
         TSNode parent = parser::GetParent(current);
-        if (ts_node_symbol(parent) == parser::GetGrammarSymbols().symBinaryExpression)
+        if (ts_node_symbol(parent) == gs.symBinaryExpression)
         {
-            TSNode opNode = parser::GetChildByField(parent, parser::GetGrammarSymbols().fieldOperator);
-            if (!ts_node_is_null(opNode) && analysis::GetNodeText(opNode, sourceCode) == "+")
+            TSNode opNode = parser::GetChildByField(parent, gs.fieldOperator);
+            if (!ts_node_is_null(opNode) && ts_node_symbol(opNode) == gs.tokPlus)
             {
                 current = parent;
                 continue;
@@ -3136,12 +3138,12 @@ std::optional<std::string> EvaluateConstantStringExpr(TSNode node, const HoverRe
     if (type == gs.symBinaryExpression)
     {
         TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
-        if (ts_node_is_null(opNode) || analysis::GetNodeText(opNode, request.sourceCode) != "+")
+        if (ts_node_is_null(opNode) || ts_node_symbol(opNode) != gs.tokPlus)
         {
             return std::nullopt;
         }
-        TSNode left = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
-        TSNode right = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldRight);
+        TSNode left = parser::GetChildByField(node, gs.fieldLeft);
+        TSNode right = parser::GetChildByField(node, gs.fieldRight);
         auto leftStr = EvaluateConstantStringExpr(left, request, scope, depth + 1);
         auto rightStr = EvaluateConstantStringExpr(right, request, scope, depth + 1);
         if (leftStr.has_value() && rightStr.has_value())
@@ -3168,8 +3170,9 @@ std::optional<std::string> EvaluateConstantStringExpr(TSNode node, const HoverRe
 std::optional<lsp::Hover> TryHoverConcatenatedString(const HoverTarget& target, const HoverRequest& request,
                                                      bool showLength)
 {
-    TSNode topPlus = FindTopmostBinaryPlus(target.node, request.sourceCode);
-    if (ts_node_is_null(topPlus) || ts_node_symbol(topPlus) != parser::GetGrammarSymbols().symBinaryExpression)
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode topPlus = FindTopmostBinaryPlus(target.node);
+    if (ts_node_is_null(topPlus) || ts_node_symbol(topPlus) != gs.symBinaryExpression)
     {
         return std::nullopt;
     }

@@ -3,6 +3,8 @@
 #include "analysis/DiagnosticContext.h"
 #include "analysis/ScopeTree.h"
 #include "analysis/SymbolTable.h"
+#include "parser/GrammarSymbols.h"
+#include "parser/Keywords.h"
 #include <optional>
 #include <string>
 #include <string_view>
@@ -26,7 +28,8 @@ struct BinaryOperandTypes
  */
 [[nodiscard]] constexpr bool IsComparisonOp(std::string_view op) noexcept
 {
-    return op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=";
+    using namespace parser::keywords::operators;
+    return op == EqEq || op == BangEq || op == Lt || op == LtEq || op == Gt || op == GtEq;
 }
 
 /**
@@ -36,7 +39,31 @@ struct BinaryOperandTypes
  */
 [[nodiscard]] constexpr bool IsRelationalOp(std::string_view op) noexcept
 {
-    return op == "<" || op == "<=" || op == ">" || op == ">=";
+    using namespace parser::keywords::operators;
+    return op == Lt || op == LtEq || op == Gt || op == GtEq;
+}
+
+/**
+ * @brief Checks if a grammar symbol represents a comparison operator.
+ * @param[in] sym Tree-Sitter grammar symbol.
+ * @param[in] gs Pre-resolved grammar symbols.
+ * @return True if symbol is a comparison operator.
+ */
+[[nodiscard]] inline bool IsComparisonOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
+{
+    return sym == gs.tokEqEq || sym == gs.tokBangEq || sym == gs.tokLt || sym == gs.tokLtEq || sym == gs.tokGt ||
+           sym == gs.tokGtEq;
+}
+
+/**
+ * @brief Checks if a grammar symbol represents a relational comparison operator.
+ * @param[in] sym Tree-Sitter grammar symbol.
+ * @param[in] gs Pre-resolved grammar symbols.
+ * @return True if symbol is a relational operator.
+ */
+[[nodiscard]] inline bool IsRelationalOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
+{
+    return sym == gs.tokLt || sym == gs.tokLtEq || sym == gs.tokGt || sym == gs.tokGtEq;
 }
 
 /**

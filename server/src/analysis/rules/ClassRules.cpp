@@ -454,12 +454,7 @@ bool CheckBaseClassSymbol(const BaseCheckRequest& req, const Symbol& base, const
 
 [[nodiscard]] inline std::string_view ScopeQualifier(std::string_view name) noexcept
 {
-    const size_t pos = name.rfind("::");
-    if (pos == std::string_view::npos)
-    {
-        return {};
-    }
-    return name.substr(0, pos);
+    return utils::ParentScopeView(name);
 }
 
 /** @brief Retrieves the base_class_list AST node for a class or interface symbol. */
@@ -1325,7 +1320,7 @@ void CheckCallMember(TSNode cur, std::string_view mixinSource, FunctionCheckStat
     }
 
     std::string fnName = GetNodeText(fnNode, mixinSource);
-    if (fnName.find("::") == std::string::npos && !fnName.empty() && !IsValidMixinIdentifier(fnName, state, ctx) &&
+    if (!utils::ContainsScopeSeparator(fnName) && !fnName.empty() && !IsValidMixinIdentifier(fnName, state, ctx) &&
         !state.mctx.reported.contains(fnName))
     {
         state.mctx.reported.insert(fnName);

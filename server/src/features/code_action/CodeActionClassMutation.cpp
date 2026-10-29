@@ -228,8 +228,8 @@ bool CheckIncDecMutatesClassState(const ClassMutationContext& context,
         return false;
     }
     TSNode opNode = parser::GetChildByField(curr, gs.fieldOperator);
-    std::string op = GetNodeText(opNode, context.sourceCode);
-    if (op != "++" && op != "--")
+    const TSSymbol opSym = ts_node_symbol(opNode);
+    if (opSym != gs.tokPlusPlus && opSym != gs.tokDashDash)
     {
         return false;
     }

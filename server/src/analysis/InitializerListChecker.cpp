@@ -1202,9 +1202,9 @@ void ProcessAssignmentExpression(TSNode node, const InitializerListContext& init
         return;
     }
 
-    TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
-    TSNode target = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
-    if (!ts_node_is_null(opNode) && !ts_node_is_null(target) && GetNodeText(opNode, initCtx.request.sourceCode) == "=")
+    TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
+    TSNode target = parser::GetChildByField(node, gs.fieldLeft);
+    if (!ts_node_is_null(opNode) && !ts_node_is_null(target) && ts_node_symbol(opNode) == gs.tokAssign)
     {
         const ElementContext elements = ElementsAt(value, initCtx.request);
         const std::string targetType =

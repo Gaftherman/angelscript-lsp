@@ -25,6 +25,7 @@
 #include "parser/GrammarNames.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/LspLogger.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/Timer.h"
 
 namespace angel_lsp::analysis
@@ -957,7 +958,7 @@ bool IsEnumReferenceQualified(const LocalReference& ref, const DiagnosticContext
         if (pStart < ctx.request.sourceCode.size() && pEnd <= ctx.request.sourceCode.size() && pStart < pEnd)
         {
             const std::string_view text = ctx.request.sourceCode.substr(pStart, pEnd - pStart);
-            if (text.find("::") != std::string_view::npos)
+            if (utils::ContainsScopeSeparator(text))
             {
                 return true;
             }

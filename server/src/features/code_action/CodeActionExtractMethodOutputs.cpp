@@ -31,18 +31,20 @@ void InsertIfIdentifier(TSNode node, std::string_view sourceCode,
 void CheckAssignmentMutation(TSNode curr, std::string_view sourceCode,
                              ankerl::unordered_dense::set<std::string>& mutatedVars)
 {
-    TSNode left = parser::GetChildByField(curr, parser::GetGrammarSymbols().fieldLeft);
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode left = parser::GetChildByField(curr, gs.fieldLeft);
     InsertIfIdentifier(left, sourceCode, mutatedVars);
 }
 
 void CheckIncDecMutation(TSNode curr, std::string_view sourceCode,
                          ankerl::unordered_dense::set<std::string>& mutatedVars)
 {
-    TSNode opNode = parser::GetChildByField(curr, parser::GetGrammarSymbols().fieldOperator);
-    std::string op = GetNodeText(opNode, sourceCode);
-    if (op == "++" || op == "--")
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode opNode = parser::GetChildByField(curr, gs.fieldOperator);
+    const TSSymbol opSym = ts_node_symbol(opNode);
+    if (opSym == gs.tokPlusPlus || opSym == gs.tokDashDash)
     {
-        TSNode arg = parser::GetChildByField(curr, parser::GetGrammarSymbols().fieldOperand);
+        TSNode arg = parser::GetChildByField(curr, gs.fieldOperand);
         InsertIfIdentifier(arg, sourceCode, mutatedVars);
     }
 }

@@ -4,6 +4,7 @@
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/Constants.h"
+#include "utils/ScopedNameUtils.h"
 #include <algorithm>
 #include <set>
 #include <string_view>
@@ -1224,11 +1225,9 @@ bool IsEnumMemberHighlightMatch(const analysis::LocalReference& ref, const Targe
     {
         return true;
     }
-    const size_t lastSep = scoped.rfind("::");
-    if (lastSep != std::string_view::npos)
+    const auto [qualifier, name] = utils::SplitScopedName(scoped);
+    if (!qualifier.empty())
     {
-        std::string_view qualifier = scoped.substr(0, lastSep);
-        std::string_view name = scoped.substr(lastSep + 2);
         return name == target.name && analysis::EnumQualifierMatches(qualifier, target.declaringEnum);
     }
     return false;

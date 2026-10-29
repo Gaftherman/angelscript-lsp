@@ -1,6 +1,7 @@
 #include "analysis/overload/OverloadTypeConversions.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeSanitization.h"
+#include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
 #include <cctype>
@@ -579,7 +580,7 @@ bool IsSameType(const std::string& a, const std::string& b)
         const std::string_view bCont = std::string_view(b).substr(0, bOpen);
         if (aCont != bCont)
         {
-            if (aCont.find("::") != std::string_view::npos && bCont.find("::") != std::string_view::npos)
+            if (utils::ContainsScopeSeparator(aCont) && utils::ContainsScopeSeparator(bCont))
             {
                 return false;
             }
@@ -591,7 +592,7 @@ bool IsSameType(const std::string& a, const std::string& b)
         return AreTemplateArgumentsEqual(std::string_view(a).substr(aOpen + 1, a.size() - aOpen - 2),
                                          std::string_view(b).substr(bOpen + 1, b.size() - bOpen - 2));
     }
-    if (a.find("::") != std::string::npos && b.find("::") != std::string::npos)
+    if (utils::ContainsScopeSeparator(a) && utils::ContainsScopeSeparator(b))
     {
         return false;
     }

@@ -210,6 +210,68 @@ def check_no_scope_string_concat_in_rules():
                 violations.append((file_path, line_num, stripped))
     return violations
 
+def check_no_manual_scope_find():
+    violations = []
+    scope_find_pattern = re.compile(r'\.(?:find|rfind)\s*\(\s*"::"')
+    allowed_files = {
+        SERVER_SRC / "utils" / "ScopedNameUtils.h",
+        SERVER_SRC / "utils" / "ScopedNameUtils.cpp",
+    }
+    for file_path in SERVER_SRC.rglob("*.[ch]*"):
+        if not file_path.is_file() or file_path in allowed_files:
+            continue
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for line_num, line in enumerate(content.splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                continue
+            if scope_find_pattern.search(line):
+                violations.append((file_path, line_num, stripped))
+    return violations
+
+def check_no_operator_node_text():
+    violations = []
+    op_text_pattern = re.compile(r'(?:NodeText|GetNodeText)\s*\(\s*(?:opNode|operatorNode)\b')
+    scan_roots = [SERVER_SRC / "analysis", SERVER_SRC / "features"]
+    for root in scan_roots:
+        for file_path in root.rglob("*.[ch]*"):
+            if not file_path.is_file():
+                continue
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for line_num, line in enumerate(content.splitlines(), start=1):
+                stripped = line.strip()
+                if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                    continue
+                if op_text_pattern.search(line):
+                    violations.append((file_path, line_num, stripped))
+    return violations
+
+def check_no_keyword_fallbacks():
+    violations = []
+    kw_fallback_pattern = re.compile(r'(?:NodeText|GetNodeText)\s*\([^)]*\)\s*==\s*"const"')
+    scan_roots = [SERVER_SRC / "analysis", SERVER_SRC / "features"]
+    for root in scan_roots:
+        for file_path in root.rglob("*.[ch]*"):
+            if not file_path.is_file():
+                continue
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for line_num, line in enumerate(content.splitlines(), start=1):
+                stripped = line.strip()
+                if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                    continue
+                if kw_fallback_pattern.search(line):
+                    violations.append((file_path, line_num, stripped))
+    return violations
+
 def main():
     has_errors = False
     
@@ -277,10 +339,34 @@ def main():
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
 
+    manual_scope_violations = check_no_manual_scope_find()
+    if manual_scope_violations:
+        has_errors = True
+        print("[ERROR] Manual .find('::') or .rfind('::') detected outside ScopedNameUtils (use utils::ScopedNameUtils):")
+        for f, line_num, line in manual_scope_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
+    op_text_violations = check_no_operator_node_text()
+    if op_text_violations:
+        has_errors = True
+        print("[ERROR] NodeText/GetNodeText called on operator node (use ts_node_symbol with gs.tok*):")
+        for f, line_num, line in op_text_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
+    kw_fallback_violations = check_no_keyword_fallbacks()
+    if kw_fallback_violations:
+        has_errors = True
+        print("[ERROR] NodeText == 'const' fallback detected (use ts_node_symbol == gs.tokConst):")
+        for f, line_num, line in kw_fallback_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
     if has_errors:
         sys.exit(1)
 
-    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 parser::fields:: in layers 2/3, 0 scope concatenations in rules, 0 engine hardcodings, 0 type hardcodings).")
+    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 engine hardcodings, 0 type hardcodings).")
 
 if __name__ == "__main__":
     main()

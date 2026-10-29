@@ -57,19 +57,20 @@ void TryRecordOccurrence(TSNode operand, const ConversionTypePair& types, const 
 void InspectComparisonNode(TSNode binNode, const Scope* scope, DiagnosticContext& ctx,
                            std::vector<ConversionOccurrence>& out)
 {
-    TSNode opNode = parser::GetChildByField(binNode, parser::GetGrammarSymbols().fieldOperator);
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode opNode = parser::GetChildByField(binNode, gs.fieldOperator);
     if (ts_node_is_null(opNode))
     {
         return;
     }
-    const std::string op = GetNodeText(opNode, ctx.request.sourceCode);
-    if (op != "==" && op != "!=")
+    const TSSymbol opSym = ts_node_symbol(opNode);
+    if (opSym != gs.tokEqEq && opSym != gs.tokBangEq)
     {
         return;
     }
 
-    TSNode left = parser::GetChildByField(binNode, parser::GetGrammarSymbols().fieldLeft);
-    TSNode right = parser::GetChildByField(binNode, parser::GetGrammarSymbols().fieldRight);
+    TSNode left = parser::GetChildByField(binNode, gs.fieldLeft);
+    TSNode right = parser::GetChildByField(binNode, gs.fieldRight);
     if (ts_node_is_null(left) || ts_node_is_null(right))
     {
         return;
@@ -215,18 +216,19 @@ std::vector<TSNode> FindOccurrencesInIfLadder(TSNode rootIf, std::string_view ex
 
         ts_query_cursor_exec(cursor, query, cond);
         TSQueryMatch match;
+        const auto& gs = parser::GetGrammarSymbols();
         while (ts_query_cursor_next_match(cursor, &match))
         {
             for (uint16_t i = 0; i < match.capture_count; ++i)
             {
                 TSNode bin = match.captures[i].node;
-                TSNode left = parser::GetChildByField(bin, parser::GetGrammarSymbols().fieldLeft);
-                TSNode right = parser::GetChildByField(bin, parser::GetGrammarSymbols().fieldRight);
-                if (!ts_node_is_null(left) && GetNodeText(left, sourceCode) == exprText)
+                TSNode left = parser::GetChildByField(bin, gs.fieldLeft);
+                TSNode right = parser::GetChildByField(bin, gs.fieldRight);
+                if (!ts_node_is_null(left) && GetNodeTextView(left, sourceCode) == exprText)
                 {
                     results.push_back(left);
                 }
-                if (!ts_node_is_null(right) && GetNodeText(right, sourceCode) == exprText)
+                if (!ts_node_is_null(right) && GetNodeTextView(right, sourceCode) == exprText)
                 {
                     results.push_back(right);
                 }

@@ -14,6 +14,7 @@
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
 #include "parser/Keywords.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/StopFlag.h"
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
@@ -1141,12 +1142,7 @@ std::string FindEnclosingClassOrInterface(TSNode node, std::string_view sourceCo
  */
 static std::string_view GetScopeQualifierPrefix(std::string_view name) noexcept
 {
-    const size_t pos = name.rfind("::");
-    if (pos == std::string_view::npos)
-    {
-        return {};
-    }
-    return name.substr(0, pos);
+    return utils::ParentScopeView(name);
 }
 
 /**

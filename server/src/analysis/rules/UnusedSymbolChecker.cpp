@@ -11,6 +11,7 @@
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -139,17 +140,15 @@ bool MatchCallee(std::string_view funcText, const config::StringReflectionCallee
     std::string_view receiver;
     std::string_view method = funcText;
     const auto dotPos = funcText.find('.');
-    const auto colonPos = funcText.rfind("::");
 
     if (dotPos != std::string_view::npos)
     {
         receiver = funcText.substr(0, dotPos);
         method = funcText.substr(dotPos + 1);
     }
-    else if (colonPos != std::string_view::npos)
+    else if (utils::ContainsScopeSeparator(funcText))
     {
-        receiver = funcText.substr(0, colonPos);
-        method = funcText.substr(colonPos + 2);
+        std::tie(receiver, method) = utils::SplitScopedName(funcText);
     }
 
     if (!c.callee.empty() && receiver != c.callee)
@@ -199,7 +198,7 @@ void RegisterReflectedSymbol(const std::string& str, const SemanticAnalysisReque
         return;
     }
 
-    if (str.find("::") == std::string::npos)
+    if (!utils::ContainsScopeSeparator(str))
     {
         auto types = req.symbolTable.FindTypeSymbolsByShortName(str);
         for (const auto& t : types)
@@ -381,7 +380,7 @@ bool CheckBaseClassLifecycleMethods(std::string_view className, std::string_view
                                     const config::UnusedSymbolRules& unusedRules)
 {
     auto it = unusedRules.baseClassLifecycleMethods.find(className);
-    if (it == unusedRules.baseClassLifecycleMethods.end() && className.find("::") != std::string_view::npos)
+    if (it == unusedRules.baseClassLifecycleMethods.end() && utils::ContainsScopeSeparator(className))
     {
         it = unusedRules.baseClassLifecycleMethods.find(LastScopeSegment(className));
     }

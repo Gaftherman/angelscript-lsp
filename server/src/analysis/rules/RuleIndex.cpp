@@ -1,5 +1,6 @@
 #include "analysis/rules/RuleIndex.h"
 #include "analysis/SemanticHelpers.h"
+#include "utils/ScopedNameUtils.h"
 #include <algorithm>
 
 namespace angel_lsp::analysis::rules
@@ -118,14 +119,11 @@ void ProcessSymbolNames(RuleIndexPartial& partial, const Symbol& sym)
     if (sym.type == SymbolType::Namespace)
     {
         std::string_view remaining = sym.name;
-        for (size_t at = remaining.find("::"); at != std::string_view::npos; at = remaining.find("::"))
+        while (!remaining.empty())
         {
-            partial.allNames.push_back(std::string(remaining.substr(0, at)));
-            remaining.remove_prefix(at + 2);
-        }
-        if (!remaining.empty())
-        {
-            partial.allNames.push_back(std::string(remaining));
+            const auto [seg, rest] = utils::SplitFirstScopeSegment(remaining);
+            partial.allNames.push_back(std::string(seg));
+            remaining = rest;
         }
     }
 }
@@ -156,16 +154,7 @@ void ProcessGlobalNames(RuleIndexPartial& partial, const Symbol& sym)
         break;
     case SymbolType::Namespace:
     {
-        std::string_view remaining = sym.name;
-        const size_t at = remaining.find("::");
-        if (at != std::string_view::npos)
-        {
-            partial.globalNames.push_back(std::string(remaining.substr(0, at)));
-        }
-        else
-        {
-            partial.globalNames.push_back(sym.name);
-        }
+        partial.globalNames.push_back(std::string(utils::FirstScopeSegment(sym.name)));
         break;
     }
     default:

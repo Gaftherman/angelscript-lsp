@@ -10,6 +10,7 @@
 #include "parser/GrammarSymbols.h"
 #include "utils/Constants.h"
 #include "utils/LspLogger.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -1623,11 +1624,7 @@ SymbolLensTarget CreateFunctionOrVariableTarget(const RangeKey& key, const analy
     std::string targetNamespace;
     if (isEnumConstant)
     {
-        auto sepPos = targetEnumContainer.rfind("::");
-        if (sepPos != std::string::npos)
-        {
-            targetNamespace = targetEnumContainer.substr(0, sepPos);
-        }
+        targetNamespace = std::string(utils::ParentScopeView(targetEnumContainer));
     }
     else if (!sym.containerName.empty() && !IsContainerClass(sym.containerName, ctx.symbolTable))
     {

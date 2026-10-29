@@ -5,6 +5,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeExtraction.h"
 #include "parser/GrammarNames.h"
+#include "parser/Keywords.h"
 #include <string>
 #include <string_view>
 
@@ -48,17 +49,19 @@ struct ComparisonOperandsState
     std::string leftType;
 };
 
-[[nodiscard]] constexpr ComparisonOperatorInfo ClassifyComparisonOperator(std::string_view op) noexcept
+[[nodiscard]] inline ComparisonOperatorInfo ClassifyComparisonOperatorSym(TSSymbol sym,
+                                                                          const parser::GrammarSymbols& gs) noexcept
 {
-    if (op == "==")
+    using namespace parser::keywords::operators;
+    if (sym == gs.tokEqEq)
     {
-        return {ComparisonCategory::ValueEquality, "is"};
+        return {ComparisonCategory::ValueEquality, Is};
     }
-    if (op == "!=")
+    if (sym == gs.tokBangEq)
     {
-        return {ComparisonCategory::ValueEquality, "!is"};
+        return {ComparisonCategory::ValueEquality, BangIs};
     }
-    if (IsRelationalOp(op))
+    if (IsRelationalOpSym(sym, gs))
     {
         return {ComparisonCategory::Relational, {}};
     }
@@ -138,20 +141,21 @@ void DispatchComparisonCheck(const ComparisonDispatchContext& dispatch, const Co
 
 void CheckHandleComparison(TSNode node, const Scope* scope, DiagnosticContext& ctx)
 {
-    TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
     if (ts_node_is_null(opNode))
     {
         return;
     }
-    const std::string op = GetNodeText(opNode, ctx.request.sourceCode);
-    const ComparisonOperatorInfo opInfo = ClassifyComparisonOperator(op);
+    const TSSymbol opSym = ts_node_symbol(opNode);
+    const ComparisonOperatorInfo opInfo = ClassifyComparisonOperatorSym(opSym, gs);
     if (opInfo.category == ComparisonCategory::None)
     {
         return;
     }
 
-    TSNode left = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
-    TSNode right = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldRight);
+    TSNode left = parser::GetChildByField(node, gs.fieldLeft);
+    TSNode right = parser::GetChildByField(node, gs.fieldRight);
     if (ts_node_is_null(left) || ts_node_is_null(right))
     {
         return;
@@ -163,15 +167,14 @@ void CheckHandleComparison(TSNode node, const Scope* scope, DiagnosticContext& c
     const ComparisonOperandsState operandsState{
         .isLeftNull = IsNullOperand(left, leftType),
         .isRightNull = IsNullOperand(right, rightType),
-        .isLeftHandle = IsHandleType(leftType, ctx.request.symbolTable) ||
-                        ts_node_symbol(left) == parser::GetGrammarSymbols().symThisExpression,
-        .isRightHandle = IsHandleType(rightType, ctx.request.symbolTable) ||
-                         ts_node_symbol(right) == parser::GetGrammarSymbols().symThisExpression,
+        .isLeftHandle = IsHandleType(leftType, ctx.request.symbolTable) || ts_node_symbol(left) == gs.symThisExpression,
+        .isRightHandle =
+            IsHandleType(rightType, ctx.request.symbolTable) || ts_node_symbol(right) == gs.symThisExpression,
         .leftType = leftType,
     };
     const ComparisonDispatchContext dispatch{
         .opNode = opNode,
-        .op = op,
+        .op = GetNodeTextView(opNode, ctx.request.sourceCode),
         .opInfo = opInfo,
     };
     DispatchComparisonCheck(dispatch, operandsState, ctx);

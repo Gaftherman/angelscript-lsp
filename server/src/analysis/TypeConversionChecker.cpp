@@ -14,6 +14,7 @@
 #include "parser/GrammarNames.h"
 #include "parser/Primitives.h"
 #include "utils/LspLogger.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
@@ -97,7 +98,7 @@ bool IsSameType(const std::string& a, const std::string& b)
         const std::string_view bCont = std::string_view(cb).substr(0, bOpen);
         if (aCont != bCont)
         {
-            if (aCont.find("::") != std::string_view::npos && bCont.find("::") != std::string_view::npos)
+            if (utils::ContainsScopeSeparator(aCont) && utils::ContainsScopeSeparator(bCont))
             {
                 return false;
             }
@@ -109,7 +110,7 @@ bool IsSameType(const std::string& a, const std::string& b)
         return AreTemplateArgumentsEqual(std::string_view(ca).substr(aOpen + 1, ca.size() - aOpen - 2),
                                          std::string_view(cb).substr(bOpen + 1, cb.size() - bOpen - 2));
     }
-    if (ca.find("::") != std::string::npos && cb.find("::") != std::string::npos)
+    if (utils::ContainsScopeSeparator(ca) && utils::ContainsScopeSeparator(cb))
     {
         return false;
     }
@@ -428,31 +429,32 @@ std::string SingleArgumentType(const std::vector<ParameterInformation>& paramete
  */
 std::string_view AssignmentOverloadName(std::string_view op)
 {
-    if (op == "=")
+    using namespace parser::keywords::operators;
+    if (op == Assign)
         return "opAssign";
-    if (op == "+=")
+    if (op == PlusAssign)
         return "opAddAssign";
-    if (op == "-=")
+    if (op == MinusAssign)
         return "opSubAssign";
-    if (op == "*=")
+    if (op == StarAssign)
         return "opMulAssign";
-    if (op == "/=")
+    if (op == SlashAssign)
         return "opDivAssign";
-    if (op == "%=")
+    if (op == PercentAssign)
         return "opModAssign";
-    if (op == "**=")
+    if (op == StarStarAssign)
         return "opPowAssign";
-    if (op == "&=")
+    if (op == AmpAssign)
         return "opAndAssign";
-    if (op == "|=")
+    if (op == PipeAssign)
         return "opOrAssign";
-    if (op == "^=")
+    if (op == CaretAssign)
         return "opXorAssign";
-    if (op == "<<=")
+    if (op == LtLtAssign)
         return "opShlAssign";
-    if (op == ">>=")
+    if (op == GtGtAssign)
         return "opShrAssign";
-    if (op == ">>>=")
+    if (op == GtGtGtAssign)
         return "opUShrAssign";
     return {};
 }
@@ -1239,11 +1241,11 @@ static PropertyAccessInfo InspectBareOrScopedProperty(TSNode exprNode, const Sco
 {
     PropertyAccessInfo info;
     std::string text = TrimString(NodeText(exprNode, ctx.request.sourceCode));
-    const auto colonPos = text.rfind("::");
-    if (colonPos != std::string::npos)
+    const auto [scopeNameView, propNameView] = utils::SplitScopedName(text);
+    if (!scopeNameView.empty())
     {
-        std::string scopeName = TrimString(text.substr(0, colonPos));
-        info.propName = TrimString(text.substr(colonPos + 2));
+        std::string scopeName = TrimString(std::string(scopeNameView));
+        info.propName = TrimString(std::string(propNameView));
         auto accessors = FindPropertyAccessors(scopeName, info.propName, ctx.request.symbolTable, false);
         PopulateAccessorInfo(accessors, info);
         return info;
@@ -1557,14 +1559,15 @@ bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const DiagnosticCo
  */
 void CheckSignedUnsignedComparison(TSNode node, const Scope* scope, DiagnosticContext& ctx)
 {
-    TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
-    if (ts_node_is_null(opNode) || !IsComparisonOperator(NodeText(opNode, ctx.request.sourceCode)))
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
+    if (ts_node_is_null(opNode) || !IsComparisonOpSym(ts_node_symbol(opNode), gs))
     {
         return;
     }
 
-    TSNode left = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
-    TSNode right = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldRight);
+    TSNode left = parser::GetChildByField(node, gs.fieldLeft);
+    TSNode right = parser::GetChildByField(node, gs.fieldRight);
     if (ts_node_is_null(left) || ts_node_is_null(right))
     {
         return;
@@ -2899,7 +2902,7 @@ static bool IsScopedIdentifierQualified(TSNode parent, std::string_view sourceCo
     if (pStart < sourceCode.size() && pEnd <= sourceCode.size() && pStart < pEnd)
     {
         const std::string_view scopedText = sourceCode.substr(pStart, pEnd - pStart);
-        if (scopedText.find("::") != std::string_view::npos)
+        if (utils::ContainsScopeSeparator(scopedText))
         {
             return true;
         }
@@ -3212,18 +3215,19 @@ void ProcessVariableDeclarationNode(TSNode node, const TypeConversionCheckReques
  */
 void CheckAssignmentPropertyAccess(TSNode node, const Scope* scope, DiagnosticContext& ctx)
 {
-    TSNode left = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode left = parser::GetChildByField(node, gs.fieldLeft);
     if (ts_node_is_null(left))
     {
         return;
     }
-    TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
-    const std::string opText = NodeText(opNode, ctx.request.sourceCode);
+    TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
+    const TSSymbol opSym = ts_node_symbol(opNode);
 
-    const std::string_view leftNodeType = NodeType(left);
-    if (leftNodeType == "index_expression")
+    const TSSymbol leftSym = ts_node_symbol(left);
+    if (leftSym == gs.symIndexExpression)
     {
-        TSNode arrayNode = parser::GetChildByField(left, parser::GetGrammarSymbols().fieldObject);
+        TSNode arrayNode = parser::GetChildByField(left, gs.fieldObject);
         if (ts_node_is_null(arrayNode) && ts_node_named_child_count(left) > 0)
         {
             arrayNode = ts_node_named_child(left, 0);
@@ -3231,7 +3235,7 @@ void CheckAssignmentPropertyAccess(TSNode node, const Scope* scope, DiagnosticCo
         PropertyAccessInfo pInfo = InspectPropertyAccess(arrayNode, scope, ctx);
         if (pInfo.isProperty && pInfo.isIndexed)
         {
-            if (opText != "=")
+            if (opSym != gs.tokAssign)
             {
                 EmitAtNode(node, ctx, "as-err-compound-assign-on-indexed-prop", pInfo.propName);
             }
@@ -3250,7 +3254,7 @@ void CheckAssignmentPropertyAccess(TSNode node, const Scope* scope, DiagnosticCo
             {
                 EmitAtNode(left, ctx, "as-err-read-only-property", pInfo.propName);
             }
-            else if (opText != "=" && pInfo.receiverType.find('@') == std::string::npos)
+            else if (opSym != gs.tokAssign && pInfo.receiverType.find('@') == std::string::npos)
             {
                 EmitAtNode(node, ctx, "as-err-compound-assign-on-value-prop", pInfo.propName);
             }
@@ -3657,10 +3661,9 @@ static bool CheckUnaryInvalidOperand(TSNode node, TSNode operand, const Scope* s
         EmitAtNode(operand, ctx, diagnostics::codes::ExpressionIsDataType, *dt);
         return true;
     }
-    TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
-    std::string opText = NodeText(opNode, ctx.request.sourceCode);
-    std::string text = TrimString(NodeText(node, ctx.request.sourceCode));
-    if (opText == "@" || (!text.empty() && text.front() == '@'))
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
+    if (!ts_node_is_null(opNode) && ts_node_symbol(opNode) == gs.tokAt)
     {
         return false;
     }
@@ -3687,11 +3690,10 @@ void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& re
         return;
     }
 
-    TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
-    const std::string opText = NodeText(opNode, request.sourceCode);
-    const std::string nodeText = NodeText(node, request.sourceCode);
-    if (opText != "++" && opText != "--" && nodeText.find("++") == std::string::npos &&
-        nodeText.find("--") == std::string::npos)
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
+    const TSSymbol opSym = ts_node_symbol(opNode);
+    if (opSym != gs.tokPlusPlus && opSym != gs.tokDashDash)
     {
         return;
     }
@@ -3699,9 +3701,9 @@ void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& re
     if (!ts_node_is_null(operand))
     {
         TSNode unwrapped = UnwrapParentheses(operand);
-        if (NodeType(unwrapped) == "index_expression")
+        if (ts_node_symbol(unwrapped) == gs.symIndexExpression)
         {
-            TSNode arrayNode = parser::GetChildByField(unwrapped, parser::GetGrammarSymbols().fieldObject);
+            TSNode arrayNode = parser::GetChildByField(unwrapped, gs.fieldObject);
             if (ts_node_is_null(arrayNode) && ts_node_named_child_count(unwrapped) > 0)
             {
                 arrayNode = ts_node_named_child(unwrapped, 0);

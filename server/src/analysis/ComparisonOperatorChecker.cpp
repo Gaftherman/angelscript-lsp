@@ -197,24 +197,27 @@ void EmitComparisonDiagnostics(TSNode opNode, std::string_view op, const BinaryO
 
 void CheckComparisonOperatorCompatibility(TSNode node, const Scope* scope, DiagnosticContext& ctx)
 {
-    TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
-    TSNode left = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
-    TSNode right = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldRight);
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
+    TSNode left = parser::GetChildByField(node, gs.fieldLeft);
+    TSNode right = parser::GetChildByField(node, gs.fieldRight);
     if (ts_node_is_null(opNode) || ts_node_is_null(left) || ts_node_is_null(right))
     {
         return;
     }
 
-    const std::string_view op = GetNodeTextView(opNode, ctx.request.sourceCode);
-    if (!IsComparisonOp(op))
+    const TSSymbol opSym = ts_node_symbol(opNode);
+    if (!IsComparisonOpSym(opSym, gs))
     {
         return;
     }
 
-    if (ShouldSkipAddressComparison(left, right, IsRelationalOp(op)))
+    if (ShouldSkipAddressComparison(left, right, IsRelationalOpSym(opSym, gs)))
     {
         return;
     }
+
+    const std::string_view op = GetNodeTextView(opNode, ctx.request.sourceCode);
 
     if (const auto dt = IsBareDataType(left, scope, ctx.request.symbolTable, ctx.request.sourceCode))
     {

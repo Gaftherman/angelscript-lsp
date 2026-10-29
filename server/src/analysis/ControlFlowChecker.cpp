@@ -5,6 +5,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/RuleIndex.h"
+#include "utils/ScopedNameUtils.h"
 
 #include "parser/GrammarNames.h"
 #include "parser/Primitives.h"
@@ -75,7 +76,8 @@ TSSymbol ClauseKeyword(TSNode clause)
 /** @brief True when the clause is spelled `default:` rather than `case <expr>:`. */
 bool IsDefaultClause(TSNode clause)
 {
-    return ClauseKeyword(clause) == parser::GetGrammarSymbols().tokDefault;
+    const auto& gs = parser::GetGrammarSymbols();
+    return ClauseKeyword(clause) == gs.tokDefault;
 }
 
 /**
@@ -473,18 +475,9 @@ std::optional<long long> ExtractMemberValue(const EnumSignature& enumSig, std::s
 
 std::pair<std::string_view, std::string_view> SplitEnumeratorQualifier(std::string_view label)
 {
-    std::string_view enumName;
-    if (const size_t sep = label.rfind("::"); sep != std::string_view::npos)
-    {
-        enumName = label.substr(0, sep);
-        label = label.substr(sep + 2);
-
-        if (const size_t outer = enumName.rfind("::"); outer != std::string_view::npos)
-        {
-            enumName = enumName.substr(outer + 2);
-        }
-    }
-    return {enumName, label};
+    const auto [qualifier, leaf] = utils::SplitScopedName(label);
+    const std::string_view enumName = utils::LastScopeSegment(qualifier);
+    return {enumName, leaf};
 }
 
 /**
@@ -635,8 +628,9 @@ std::string ComputeCaseKey(std::string_view text, const rules::RuleIndex& ruleIn
 void ProcessCaseClause(TSNode clause, std::string_view sourceCode, std::vector<std::string>& seenValues,
                        DiagnosticContext& ctx)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     TSNode value = ts_node_named_child(clause, 0);
-    if (ts_node_is_null(value) || ClauseKeyword(clause) != parser::GetGrammarSymbols().tokCase)
+    if (ts_node_is_null(value) || ClauseKeyword(clause) != gs.tokCase)
     {
         return;
     }

@@ -149,15 +149,16 @@ class DefiniteAssignmentVisitor
 
     void CheckAssignmentExpressionReads(TSNode node, FlowState& state, int depth)
     {
-        TSNode left = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
-        TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
-        TSNode right = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldRight);
-        std::string op = NodeText(opNode, m_request.sourceCode);
+        const auto& gs = parser::GetGrammarSymbols();
+        TSNode left = parser::GetChildByField(node, gs.fieldLeft);
+        TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
+        TSNode right = parser::GetChildByField(node, gs.fieldRight);
+        const TSSymbol opSym = ts_node_symbol(opNode);
 
         // Evaluate right-hand side reads first
         CheckExpressionReads(right, state, depth + 1);
 
-        if (op == "=")
+        if (opSym == gs.tokAssign)
         {
             std::string varName = GetSimpleIdentifierName(left, m_request.sourceCode);
             if (!varName.empty() && m_trackedLocals.contains(varName))
@@ -180,8 +181,8 @@ class DefiniteAssignmentVisitor
         const auto& gs = parser::GetGrammarSymbols();
         if (ts_node_symbol(funcNode) == gs.symMemberExpression)
         {
-            TSNode objNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldObject);
-            TSNode memNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldMember);
+            TSNode objNode = parser::GetChildByField(funcNode, gs.fieldObject);
+            TSNode memNode = parser::GetChildByField(funcNode, gs.fieldMember);
             if (!ts_node_is_null(objNode) && !ts_node_is_null(memNode))
             {
                 const TSPoint objStart = ts_node_start_point(objNode);

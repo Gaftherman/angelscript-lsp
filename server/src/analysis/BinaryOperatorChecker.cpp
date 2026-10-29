@@ -5,6 +5,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/overload/OverloadTypeConversions.h"
 #include "parser/GrammarNames.h"
+#include "parser/Keywords.h"
 #include "parser/Primitives.h"
 
 #include <string>
@@ -17,39 +18,54 @@ namespace
 {
 [[nodiscard]] constexpr bool IsBitwiseOp(std::string_view op) noexcept
 {
-    return op == "|" || op == "&" || op == "^" || op == "<<" || op == ">>" || op == ">>>";
+    using namespace parser::keywords::operators;
+    return op == Pipe || op == Amp || op == Caret || op == LtLt || op == GtGt || op == GtGtGt;
 }
 
 [[nodiscard]] constexpr bool IsArithmeticOp(std::string_view op) noexcept
 {
-    return op == "+" || op == "-" || op == "*" || op == "/" || op == "%" || op == "**";
+    using namespace parser::keywords::operators;
+    return op == Plus || op == Minus || op == Star || op == Slash || op == Percent || op == StarStar;
+}
+
+[[nodiscard]] inline bool IsBitwiseOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
+{
+    return sym == gs.tokPipe || sym == gs.tokAmp || sym == gs.tokCaret || sym == gs.tokLtLt || sym == gs.tokGtGt ||
+           sym == gs.tokGtGtGt;
+}
+
+[[nodiscard]] inline bool IsArithmeticOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
+{
+    return sym == gs.tokPlus || sym == gs.tokDash || sym == gs.tokStar || sym == gs.tokSlash || sym == gs.tokPercent ||
+           sym == gs.tokStarStar;
 }
 
 std::pair<std::string_view, std::string_view> GetOpMethods(std::string_view op)
 {
-    if (op == "|")
+    using namespace parser::keywords::operators;
+    if (op == Pipe)
         return {"opOr", "opOr_r"};
-    if (op == "&")
+    if (op == Amp)
         return {"opAnd", "opAnd_r"};
-    if (op == "^")
+    if (op == Caret)
         return {"opXor", "opXor_r"};
-    if (op == "<<")
+    if (op == LtLt)
         return {"opShl", "opShl_r"};
-    if (op == ">>")
+    if (op == GtGt)
         return {"opShr", "opShr_r"};
-    if (op == ">>>")
+    if (op == GtGtGt)
         return {"opUShr", "opUShr_r"};
-    if (op == "+")
+    if (op == Plus)
         return {"opAdd", "opAdd_r"};
-    if (op == "-")
+    if (op == Minus)
         return {"opSub", "opSub_r"};
-    if (op == "*")
+    if (op == Star)
         return {"opMul", "opMul_r"};
-    if (op == "/")
+    if (op == Slash)
         return {"opDiv", "opDiv_r"};
-    if (op == "%")
+    if (op == Percent)
         return {"opMod", "opMod_r"};
-    if (op == "**")
+    if (op == StarStar)
         return {"opPow", "opPow_r"};
     return {"", ""};
 }
@@ -206,19 +222,21 @@ bool AreBinaryOperandsCompatible(std::string_view op, const BinaryOperandTypes& 
 
 void CheckBinaryOperatorCompatibility(TSNode node, const Scope* scope, DiagnosticContext& ctx)
 {
-    TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
-    TSNode left = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
-    TSNode right = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldRight);
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
+    TSNode left = parser::GetChildByField(node, gs.fieldLeft);
+    TSNode right = parser::GetChildByField(node, gs.fieldRight);
     if (ts_node_is_null(opNode) || ts_node_is_null(left) || ts_node_is_null(right))
     {
         return;
     }
 
-    const std::string_view op = GetNodeTextView(opNode, ctx.request.sourceCode);
-    if (!IsBitwiseOp(op) && !IsArithmeticOp(op))
+    const TSSymbol opSym = ts_node_symbol(opNode);
+    if (!IsBitwiseOpSym(opSym, gs) && !IsArithmeticOpSym(opSym, gs))
     {
         return;
     }
+    const std::string_view op = GetNodeTextView(opNode, ctx.request.sourceCode);
 
     if (const auto dt = IsBareDataType(left, scope, ctx.request.symbolTable, ctx.request.sourceCode))
     {

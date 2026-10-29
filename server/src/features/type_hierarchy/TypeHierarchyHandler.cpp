@@ -3,6 +3,7 @@
 #include "analysis/rules/RuleIndex.h"
 #include "parser/ASTUtils.h"
 #include "utils/Constants.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -145,7 +146,7 @@ std::vector<Symbol> FindQualifiedTypeUnderCursor(TSNode node, std::string_view s
         if (pType == gs.symType || pType == gs.symScopedIdentifier)
         {
             const std::string text = analysis::CleanBaseType(analysis::GetNodeText(p, sourceCode));
-            if (!text.empty() && text.find("::") != std::string::npos)
+            if (!text.empty() && utils::ContainsScopeSeparator(text))
             {
                 auto declarations = FindTypeDeclarations(text, symbolTable);
                 if (declarations.empty())
@@ -328,7 +329,7 @@ std::vector<Symbol> ResolveBaseSymbols(const std::string& cleanBase, std::string
                                        const SymbolTable& symbolTable)
 {
     std::vector<Symbol> baseSymbols;
-    if (cleanBase.find("::") != std::string::npos)
+    if (utils::ContainsScopeSeparator(cleanBase))
     {
         baseSymbols = FindTypeDeclarations(cleanBase, symbolTable);
     }

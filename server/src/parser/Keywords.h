@@ -29,6 +29,61 @@ inline constexpr std::string_view This = "this";
 inline constexpr std::string_view Void = "void";
 inline constexpr std::string_view Super = "super";
 inline constexpr std::string_view Null = "null";
+inline constexpr std::string_view True = "true";
+inline constexpr std::string_view False = "false";
+inline constexpr std::string_view Const = "const";
+
+namespace operators
+{
+inline constexpr std::string_view AmpAmp = "&&";
+inline constexpr std::string_view And = "and";
+inline constexpr std::string_view PipePipe = "||";
+inline constexpr std::string_view Or = "or";
+inline constexpr std::string_view CaretCaret = "^^";
+inline constexpr std::string_view Xor = "xor";
+inline constexpr std::string_view Bang = "!";
+inline constexpr std::string_view Not = "not";
+inline constexpr std::string_view EqEq = "==";
+inline constexpr std::string_view BangEq = "!=";
+inline constexpr std::string_view Is = "is";
+inline constexpr std::string_view BangIs = "!is";
+inline constexpr std::string_view Assign = "=";
+inline constexpr std::string_view PlusAssign = "+=";
+inline constexpr std::string_view MinusAssign = "-=";
+inline constexpr std::string_view StarAssign = "*=";
+inline constexpr std::string_view StarStarAssign = "**=";
+inline constexpr std::string_view SlashAssign = "/=";
+inline constexpr std::string_view PercentAssign = "%=";
+inline constexpr std::string_view AmpAssign = "&=";
+inline constexpr std::string_view PipeAssign = "|=";
+inline constexpr std::string_view CaretAssign = "^=";
+inline constexpr std::string_view LtLtAssign = "<<=";
+inline constexpr std::string_view GtGtAssign = ">>=";
+inline constexpr std::string_view GtGtGtAssign = ">>>=";
+inline constexpr std::string_view Plus = "+";
+inline constexpr std::string_view Minus = "-";
+inline constexpr std::string_view Star = "*";
+inline constexpr std::string_view StarStar = "**";
+inline constexpr std::string_view Slash = "/";
+inline constexpr std::string_view Percent = "%";
+inline constexpr std::string_view Lt = "<";
+inline constexpr std::string_view LtEq = "<=";
+inline constexpr std::string_view Gt = ">";
+inline constexpr std::string_view GtEq = ">=";
+inline constexpr std::string_view Amp = "&";
+inline constexpr std::string_view Pipe = "|";
+inline constexpr std::string_view Caret = "^";
+inline constexpr std::string_view Tilde = "~";
+inline constexpr std::string_view LtLt = "<<";
+inline constexpr std::string_view GtGt = ">>";
+inline constexpr std::string_view GtGtGt = ">>>";
+inline constexpr std::string_view PlusPlus = "++";
+inline constexpr std::string_view MinusMinus = "--";
+inline constexpr std::string_view At = "@";
+inline constexpr std::string_view AtAssign = "@=";
+inline constexpr std::string_view Question = "?";
+inline constexpr std::string_view Colon = ":";
+} // namespace operators
 
 /**
  * @brief Words that can never be an identifier. Rejected as a local and as a global alike.

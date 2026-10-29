@@ -70,12 +70,13 @@ void CheckMemberDereference(TSNode obj, FlowState& state, NullCheckContext& ctx)
 
 void CheckBinaryExpr(TSNode expr, FlowState& state, NullCheckContext& ctx, int depth)
 {
-    TSNode left = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldLeft);
-    TSNode opNode = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldOperator);
-    TSNode right = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldRight);
-    std::string op = NodeText(opNode, ctx.sourceCode);
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode left = parser::GetChildByField(expr, gs.fieldLeft);
+    TSNode opNode = parser::GetChildByField(expr, gs.fieldOperator);
+    TSNode right = parser::GetChildByField(expr, gs.fieldRight);
+    const TSSymbol opSym = ts_node_symbol(opNode);
 
-    if (op == "&&" || op == "and")
+    if (opSym == gs.tokAmpAmp || opSym == gs.tokAnd)
     {
         CheckNullExpression(left, state, ctx, depth + 1);
         std::vector<NullAssertion> posAssertions;
@@ -85,7 +86,7 @@ void CheckBinaryExpr(TSNode expr, FlowState& state, NullCheckContext& ctx, int d
         ApplyAssertions(tempState, posAssertions);
         CheckNullExpression(right, tempState, ctx, depth + 1);
     }
-    else if (op == "||" || op == "or")
+    else if (opSym == gs.tokPipePipe || opSym == gs.tokOr)
     {
         CheckNullExpression(left, state, ctx, depth + 1);
         std::vector<NullAssertion> posAssertions;
@@ -126,9 +127,8 @@ void CheckNullExpression(TSNode expr, FlowState& state, NullCheckContext& ctx, i
     }
     else if (exprSym == gs.symCallExpression)
     {
-        CheckNullExpression(parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldFunction), state, ctx,
-                            depth + 1);
-        TSNode argsNode = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldArguments);
+        CheckNullExpression(parser::GetChildByField(expr, gs.fieldFunction), state, ctx, depth + 1);
+        TSNode argsNode = parser::GetChildByField(expr, gs.fieldArguments);
         const uint32_t count = ts_node_is_null(argsNode) ? 0 : ts_node_named_child_count(argsNode);
         for (uint32_t i = 0; i < count; ++i)
         {

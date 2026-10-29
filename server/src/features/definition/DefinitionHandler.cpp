@@ -8,6 +8,7 @@
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
 #include "utils/IncludeResolver.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 #include <algorithm>
 #include <cmath>
@@ -821,7 +822,7 @@ std::vector<analysis::Symbol> FindSymbolsForNode(TSNode node, const std::string&
             {
                 const std::string scopedText = request.sourceCode.substr(pStart, pEnd - pStart);
                 symbols = analysis::FindSymbolsInScope(scopedText, node, request.sourceCode, request.symbolTable);
-                isExplicitlyScoped = (scopedText.find("::") != std::string::npos);
+                isExplicitlyScoped = utils::ContainsScopeSeparator(scopedText);
             }
         }
         else if (pSym == gs.symDatatype)

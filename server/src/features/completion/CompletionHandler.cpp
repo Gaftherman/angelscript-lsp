@@ -10,6 +10,7 @@
 #include "parser/Keywords.h"
 #include "utils/IncludeResolver.h"
 #include "utils/PositionEncoding.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 #include <algorithm>
 #include <cctype>
@@ -107,7 +108,7 @@ std::vector<std::string> CollectDirectBases(const analysis::SymbolTable& symbolT
     std::vector<std::string> bases;
     auto symsPtr = symbolTable.FindSymbolsPtr(currentTypeName);
     std::vector<analysis::Symbol> fallbackSyms;
-    if ((!symsPtr || symsPtr->empty()) && currentTypeName.find("::") == std::string::npos)
+    if ((!symsPtr || symsPtr->empty()) && !utils::ContainsScopeSeparator(currentTypeName))
     {
         fallbackSyms = symbolTable.FindTypeSymbolsByShortName(currentTypeName);
     }
@@ -424,30 +425,6 @@ std::string CallSnippet(const std::string& name, const std::vector<analysis::Par
     }
     snippet += ")$0";
     return snippet;
-}
-
-/**
- * @brief Retrieves the configured or default string type name.
- * @param[in] request Auto-completion request context.
- * @return String type name.
- */
-static std::string_view ConfiguredStringTypeName(const CompletionRequest& request) noexcept
-{
-    return (request.config && !request.config->types.stringTypeName.empty())
-               ? std::string_view(request.config->types.stringTypeName)
-               : request.symbolTable.GetStringType();
-}
-
-/**
- * @brief Retrieves the configured or default array container type name.
- * @param[in] request Auto-completion request context.
- * @return Array container type name.
- */
-static std::string_view ConfiguredArrayTypeName(const CompletionRequest& request) noexcept
-{
-    return (request.config && !request.config->types.arrayTypeName.empty())
-               ? std::string_view(request.config->types.arrayTypeName)
-               : request.symbolTable.GetDefaultArrayType();
 }
 
 /**
@@ -916,7 +893,7 @@ void CollectEnumMembersUnderQualifier(const std::string& qualifier, CompletionCo
             }
         }
     }
-    else if (qualifier.find("::") == std::string::npos)
+    else if (!utils::ContainsScopeSeparator(qualifier))
     {
         auto shortMatches = collector.request.symbolTable.FindTypeSymbolsByShortName(qualifier);
         for (const auto& sym : shortMatches)
@@ -1126,7 +1103,7 @@ void CollectContainerMembersUnderQualifier(const std::string& qualifier, Complet
     }
 
     AddContainerMembers(qualifier, qualifier, ruleIndex.get(), collector);
-    if (qualifier.find("::") == std::string::npos)
+    if (!utils::ContainsScopeSeparator(qualifier))
     {
         auto qit = ruleIndex->qualifiedTypesByShortName.find(qualifier);
         if (qit != ruleIndex->qualifiedTypesByShortName.end())
@@ -1370,8 +1347,7 @@ void CompleteInheritanceNamespaces(CompletionCollector& collector)
 {
     for (const auto& ns : CollectVisibleNamespaces(collector.request, nullptr))
     {
-        const size_t colon = ns.find("::");
-        const std::string rootNs = (colon == std::string::npos) ? ns : ns.substr(0, colon);
+        const std::string rootNs = std::string(utils::FirstScopeSegment(ns));
         std::string sortText = FormatProximitySortText(SymbolProximity::ExternalFile, rootNs);
         AddItemIfNew(collector, {rootNs, lsp::CompletionItemKind::Module, "", "", rootNs, "", std::move(sortText)});
     }
@@ -1380,7 +1356,7 @@ void CompleteInheritanceNamespaces(CompletionCollector& collector)
     {
         for (const auto& [container, _] : ruleIndex->byContainer)
         {
-            if (container.find("::") == std::string::npos && !container.empty())
+            if (!utils::ContainsScopeSeparator(container) && !container.empty())
             {
                 auto syms = collector.request.symbolTable.FindSymbolsPtr(container);
                 if (syms && std::any_of(syms->begin(), syms->end(), [](const analysis::Symbol& s)
@@ -1923,8 +1899,8 @@ std::string ResolveReceiverNodeType(TSNode receiverNode, const CompletionRequest
         return named;
     }
 
-    const auto& strType = ConfiguredStringTypeName(request);
-    const auto& arrType = ConfiguredArrayTypeName(request);
+    const auto& strType = request.symbolTable.GetStringType();
+    const auto& arrType = request.symbolTable.GetDefaultArrayType();
 
     analysis::ExpressionTypeContext exprCtx{innermostScope, request.symbolTable, request.sourceCode, request.uri};
     exprCtx.stringTypeName = strType;
@@ -2054,11 +2030,11 @@ static std::string DeduceLiteralOrNamedType(std::string_view expr, const Complet
     {
         return "";
     }
-    if (expr.size() >= 2 && expr.front() == '"' && expr.back() == '"')
+    if (parser::IsQuotedString(expr))
     {
-        return std::string(ConfiguredStringTypeName(request));
+        return std::string(request.symbolTable.GetStringType());
     }
-    if (expr == "true" || expr == "false")
+    if (expr == parser::keywords::True || expr == parser::keywords::False)
     {
         return "bool";
     }
@@ -2171,7 +2147,7 @@ static std::string ResolveFallbackReceiverType(const std::string& prefix, size_t
     if (indexCount > 0)
     {
         std::string indexArgType = DeduceLiteralOrNamedType(peel.lastIndexExpr, collector.request, innermostScope);
-        const auto& arrayContainer = ConfiguredArrayTypeName(collector.request);
+        const auto& arrayContainer = collector.request.symbolTable.GetDefaultArrayType();
         if (indexCount == 1)
         {
             rawTypeName = analysis::ResolveIndexedTypeWithArg(rawTypeName, collector.request.symbolTable,
@@ -2206,7 +2182,7 @@ static std::optional<size_t> FindAccessDotCol(const std::string& prefix)
 
 static void PopulateHierarchicalMembers(const std::string& rawTypeName, CompletionCollector& collector)
 {
-    const auto& arrayContainer = ConfiguredArrayTypeName(collector.request);
+    const auto& arrayContainer = collector.request.symbolTable.GetDefaultArrayType();
     std::string canonicalType = CanonicalizeArrayType(rawTypeName, arrayContainer);
     std::string baseContainer = FindCanonicalBaseContainer(canonicalType, collector.request.symbolTable);
     auto targetTemplate = analysis::ParseTemplateType(canonicalType);

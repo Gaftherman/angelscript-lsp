@@ -335,10 +335,11 @@ bool IsTernaryAssignable(TSNode node, const Scope* scope, const SymbolTable& tab
 
 bool IsUnaryAssignable(TSNode node, const Scope* scope, const SymbolTable& table, std::string_view sourceCode)
 {
-    TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
-    if (!ts_node_is_null(opNode) && NodeText(opNode, sourceCode) == "@")
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
+    if (!ts_node_is_null(opNode) && ts_node_symbol(opNode) == gs.tokAt)
     {
-        TSNode operand = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperand);
+        TSNode operand = parser::GetChildByField(node, gs.fieldOperand);
         return IsAssignableLValueNode(operand, scope, table, sourceCode);
     }
     return false;

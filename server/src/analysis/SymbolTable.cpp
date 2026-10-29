@@ -1944,7 +1944,7 @@ std::string SymbolTable::FindEnclosingClassName(std::string_view uri, uint32_t l
 
 std::string SymbolTable::QualifyShortTypeName(std::string_view typeName) const
 {
-    if (typeName.find("::") == std::string_view::npos && !HasSymbol(typeName))
+    if (!utils::ContainsScopeSeparator(typeName) && !HasSymbol(typeName))
     {
         auto shortMatches = FindTypeSymbolsByShortName(typeName);
         for (const auto& sym : shortMatches)

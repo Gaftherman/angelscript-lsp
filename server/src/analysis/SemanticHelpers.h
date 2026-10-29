@@ -7,6 +7,7 @@
 #include "config/EngineRuleConfig.h"
 #include "parser/ASTUtils.h"
 #include "parser/Primitives.h"
+#include "utils/ScopedNameUtils.h"
 #include <ankerl/unordered_dense.h>
 #include <optional>
 #include <span>
@@ -249,10 +250,9 @@ bool IsReservedKeyword(const std::string& name);
     {
         return true;
     }
-    const size_t lastSep = declaringEnum.rfind("::");
-    if (lastSep != std::string_view::npos)
+    const std::string_view nsPrefix = utils::ParentScopeView(declaringEnum);
+    if (!nsPrefix.empty())
     {
-        std::string_view nsPrefix = declaringEnum.substr(0, lastSep);
         return qualifier == nsPrefix || SuffixMatchesScoped(nsPrefix, qualifier);
     }
     return false;

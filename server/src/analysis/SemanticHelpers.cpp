@@ -9,6 +9,7 @@
 #include "analysis/rules/RuleIndex.h"
 #include "parser/Keywords.h"
 #include "utils/Constants.h"
+#include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
 #include "parser/GrammarNames.h"
@@ -454,7 +455,7 @@ static bool IsLocalVariableOrFieldInScope(const Scope* scope, std::string_view n
                                           uint32_t refByte = UINT32_MAX)
 {
     const bool isUnqualified = (nodeType == parser::nodes::Identifier ||
-                                (nodeType == parser::nodes::ScopedIdentifier && name.find("::") == std::string::npos));
+                                (nodeType == parser::nodes::ScopedIdentifier && !utils::ContainsScopeSeparator(name)));
     if (isUnqualified && scope)
     {
         if (const auto def = ResolveInScopeAt(scope, name, refByte))
@@ -602,7 +603,7 @@ static bool MatchesQualifiedTypeSuffix(std::string_view clean, const rules::Rule
     {
         return false;
     }
-    const bool isPartiallyQualified = clean.find("::") != std::string_view::npos;
+    const bool isPartiallyQualified = utils::ContainsScopeSeparator(clean);
     const std::string suffix = "::" + std::string(clean);
     for (const auto& qType : it->second)
     {
@@ -616,26 +617,18 @@ static bool MatchesQualifiedTypeSuffix(std::string_view clean, const rules::Rule
 
 bool MatchesParentNamespaceType(std::string_view clean, const SymbolTable& table, const rules::RuleIndex* ruleIndex)
 {
-    const size_t lastSep = clean.rfind("::");
-    if (lastSep == std::string_view::npos)
+    const auto [parent, member] = utils::SplitScopedName(clean);
+    if (parent.empty())
     {
         return false;
     }
 
-    const std::string_view member = clean.substr(lastSep + 2);
-    std::string prefix(clean.substr(0, lastSep));
+    std::string_view prefix = parent;
     while (!prefix.empty())
     {
-        const size_t parentSep = prefix.rfind("::");
-        if (parentSep == std::string_view::npos)
-        {
-            prefix.clear();
-        }
-        else
-        {
-            prefix.resize(parentSep);
-        }
-        const std::string candidate = prefix.empty() ? std::string(member) : prefix + "::" + std::string(member);
+        prefix = utils::ParentScopeView(prefix);
+        const std::string candidate =
+            prefix.empty() ? std::string(member) : std::string(prefix) + "::" + std::string(member);
         if (table.HasSymbol(candidate) || table.HasSymbolAnywhere(candidate) ||
             MatchesQualifiedTypeSuffix(candidate, ruleIndex))
         {
@@ -752,14 +745,12 @@ std::string_view LastScopeSegment(std::string_view name) noexcept
 {
     const size_t bracketPos = name.find('<');
     const std::string_view prefix = (bracketPos != std::string_view::npos) ? name.substr(0, bracketPos) : name;
-    const size_t pos = prefix.rfind("::");
-    return pos == std::string_view::npos ? name : name.substr(pos + 2);
+    return utils::LastScopeSegment(prefix);
 }
 
 std::string_view ParentScope(std::string_view name) noexcept
 {
-    const size_t pos = name.rfind("::");
-    return pos == std::string_view::npos ? std::string_view{} : name.substr(0, pos);
+    return utils::ParentScopeView(name);
 }
 
 bool ResolvesToEnum(std::string_view typeName, const SymbolTable& table)
@@ -1136,7 +1127,7 @@ bool AreCompatibleTemplateContainers(std::string_view fromContainer, std::string
     {
         return true;
     }
-    if (fromContainer.find("::") != std::string_view::npos && toContainer.find("::") != std::string_view::npos)
+    if (utils::ContainsScopeSeparator(fromContainer) && utils::ContainsScopeSeparator(toContainer))
     {
         return false;
     }
@@ -1157,7 +1148,7 @@ bool AreCompatibleTemplateArgPair(std::string_view va, std::string_view vb)
     {
         return !AreIncompatibleTemplateTypes(va, vb);
     }
-    if (va.find("::") != std::string_view::npos && vb.find("::") != std::string_view::npos)
+    if (utils::ContainsScopeSeparator(va) && utils::ContainsScopeSeparator(vb))
     {
         return false;
     }
@@ -1355,7 +1346,7 @@ std::vector<Symbol> FindHierarchyTypeSymbols(const std::string& curType, const S
             return *symbols;
         }
     }
-    if (curType.find("::") == std::string::npos)
+    if (!utils::ContainsScopeSeparator(curType))
     {
         return symbolTable.FindTypeSymbolsByShortName(curType);
     }
@@ -1545,7 +1536,7 @@ void ExpandMixinHostHierarchies(std::string_view containerClass, const SymbolTab
         return;
     }
     auto mixinIt = ruleIndex->hostClassesByMixin.find(containerClass);
-    if (mixinIt == ruleIndex->hostClassesByMixin.end() && containerClass.find("::") != std::string_view::npos)
+    if (mixinIt == ruleIndex->hostClassesByMixin.end() && utils::ContainsScopeSeparator(containerClass))
     {
         mixinIt = ruleIndex->hostClassesByMixin.find(LastScopeSegment(containerClass));
     }
@@ -1579,7 +1570,7 @@ std::vector<std::string> ResolveLinkedBaseClasses(std::string_view className, co
     if (options.proxyMap)
     {
         auto it = options.proxyMap->find(className);
-        if (it == options.proxyMap->end() && className.find("::") != std::string_view::npos)
+        if (it == options.proxyMap->end() && utils::ContainsScopeSeparator(className))
         {
             it = options.proxyMap->find(LastScopeSegment(className));
         }
@@ -1855,13 +1846,12 @@ void AddClassAndShortName(const std::string& c, ankerl::unordered_dense::set<std
         return;
     }
     result.push_back(c);
-    const auto colon = c.rfind("::");
-    if (colon != std::string::npos)
+    const std::string_view shortName = utils::LastScopeSegment(c);
+    if (shortName != c)
     {
-        const std::string shortName = c.substr(colon + 2);
-        if (visited.insert(shortName).second)
+        if (visited.insert(std::string(shortName)).second)
         {
-            result.push_back(shortName);
+            result.push_back(std::string(shortName));
         }
     }
 }
@@ -1918,7 +1908,7 @@ struct MixinExpansionContext
 void ExpandMixinFromRuleIndex(const rules::RuleIndex& ruleIndex, const MixinExpansionContext& ctx)
 {
     auto it = ruleIndex.hostClassesByMixin.find(ctx.cleanClass);
-    if (it == ruleIndex.hostClassesByMixin.end() && ctx.cleanClass.find("::") != std::string::npos)
+    if (it == ruleIndex.hostClassesByMixin.end() && utils::ContainsScopeSeparator(ctx.cleanClass))
     {
         it = ruleIndex.hostClassesByMixin.find(std::string(LastScopeSegment(ctx.cleanClass)));
     }
@@ -2000,7 +1990,7 @@ void CollectPrivateCompatibleClasses(const std::string& cleanClass, const Symbol
                                      std::vector<std::string>& result)
 {
     AddClassAndShortName(cleanClass, visited, result);
-    if (cleanClass.find("::") == std::string::npos)
+    if (!utils::ContainsScopeSeparator(cleanClass))
     {
         for (const auto& ts : symbolTable.FindTypeSymbolsByShortName(cleanClass))
         {
@@ -2196,7 +2186,7 @@ static void AppendRawContainers(TSNode nameNode, ContainerKind kind, std::string
     }
 
     std::string text(sourceCode.substr(start, end - start));
-    if (kind == ContainerKind::Namespace && text.find("::") != std::string::npos)
+    if (kind == ContainerKind::Namespace && utils::ContainsScopeSeparator(text))
     {
         auto segs = SplitScopeSegments(text);
         for (auto it = segs.rbegin(); it != segs.rend(); ++it)
@@ -2562,13 +2552,13 @@ std::vector<Symbol> FindSymbolsInScope(const SymbolTable& symbolTable, const std
         return {};
     }
 
-    if (name.rfind("::", 0) == 0)
+    if (utils::HasLeadingGlobalPrefix(name))
     {
-        const std::string rest = name.substr(2);
-        if (rest.find("::") == std::string::npos)
+        const std::string_view rest = utils::StripGlobalPrefix(name);
+        if (!utils::ContainsScopeSeparator(rest))
         {
             std::vector<Symbol> filtered;
-            if (auto symsPtr = symbolTable.FindSymbolsPtr(rest))
+            if (auto symsPtr = symbolTable.FindSymbolsPtr(std::string(rest)))
             {
                 for (const auto& sym : *symsPtr)
                 {
@@ -2802,13 +2792,12 @@ static std::string ResolveThisExpr(TSNode exprNode, const ExpressionTypeContext&
  */
 static std::string ResolveScopedEnumMember(std::string_view whole, TSNode exprNode, const ExpressionTypeContext& ctx)
 {
-    size_t lastSep = whole.rfind("::");
-    if (lastSep == std::string_view::npos)
+    const auto [qualView, mem] = utils::SplitScopedName(whole);
+    if (qualView.empty())
     {
         return "";
     }
-    std::string qual(whole.substr(0, lastSep));
-    std::string_view mem = whole.substr(lastSep + 2);
+    std::string qual(qualView);
     auto qSyms = ctx.symbolTable.FindSymbols(qual);
     if (qSyms.empty())
     {
@@ -3374,11 +3363,11 @@ static std::string ResolveBinaryPrimitivePromotion(std::string_view op, const st
     return ResolveBinary32OrLess(cleanLeft, cleanRight);
 }
 
-static bool IsBooleanBinaryOp(std::string_view op)
+static bool IsBooleanBinaryOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
 {
-    static const std::unordered_set<std::string_view> k_boolOps = {"==",  "!=", "<",  "<=",  ">",  ">=", "is",
-                                                                   "!is", "&&", "||", "and", "or", "^^", "xor"};
-    return k_boolOps.contains(op);
+    return sym == gs.tokEqEq || sym == gs.tokBangEq || sym == gs.tokLt || sym == gs.tokLtEq || sym == gs.tokGt ||
+           sym == gs.tokGtEq || sym == gs.tokIs || sym == gs.tokBangIs || sym == gs.tokAmpAmp ||
+           sym == gs.tokPipePipe || sym == gs.tokAnd || sym == gs.tokOr || sym == gs.tokCaretCaret || sym == gs.tokXor;
 }
 
 /**
@@ -3510,9 +3499,10 @@ static std::string ResolveBinaryOverload(std::string_view op, const std::string&
  */
 static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
 {
-    TSNode left = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldLeft);
-    TSNode opNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldOperator);
-    TSNode right = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldRight);
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode left = parser::GetChildByField(exprNode, gs.fieldLeft);
+    TSNode opNode = parser::GetChildByField(exprNode, gs.fieldOperator);
+    TSNode right = parser::GetChildByField(exprNode, gs.fieldRight);
     if (ts_node_is_null(left) || ts_node_is_null(right))
     {
         return std::string(ExpressionTypeCache::k_poisonType);
@@ -3525,11 +3515,12 @@ static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContex
         return std::string(ExpressionTypeCache::k_poisonType);
     }
 
-    std::string op = GetNodeText(opNode, ctx.sourceCode);
-    if (IsBooleanBinaryOp(op))
+    const TSSymbol opSym = ts_node_symbol(opNode);
+    if (IsBooleanBinaryOpSym(opSym, gs))
     {
         return "bool";
     }
+    const std::string_view op = GetNodeTextView(opNode, ctx.sourceCode);
     if (std::string strType = ResolveStringConcatenation(op, leftType, rightType, ctx); !strType.empty())
     {
         return strType;
@@ -4378,26 +4369,23 @@ static std::string ResolveUnaryExpr(TSNode exprNode, const ExpressionTypeContext
     {
         return std::string(ExpressionTypeCache::k_poisonType);
     }
-    TSNode operatorNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldOperator);
-    std::string op;
-    if (!ts_node_is_null(operatorNode))
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode operatorNode = parser::GetChildByField(exprNode, gs.fieldOperator);
+    const TSSymbol opSym = !ts_node_is_null(operatorNode) ? ts_node_symbol(operatorNode) : 0;
+    if (opSym == gs.tokBang || opSym == gs.tokNot)
     {
-        op = GetNodeText(operatorNode, ctx.sourceCode);
-        if (op == "!" || op == "not")
-        {
-            return "bool";
-        }
-        if (op == "@")
-        {
-            return ResolveUnaryHandle(operandNode, exprNode, ctx, depth);
-        }
+        return "bool";
+    }
+    if (opSym == gs.tokAt)
+    {
+        return ResolveUnaryHandle(operandNode, exprNode, ctx, depth);
     }
     std::string operandType = ResolveExpressionType(operandNode, ctx, depth + 1);
     if (ExpressionTypeCache::IsPoisonType(operandType))
     {
         return std::string(ExpressionTypeCache::k_poisonType);
     }
-    if (op == "-")
+    if (opSym == gs.tokDash)
     {
         return ResolveUnaryMinus(operandType);
     }
@@ -4554,11 +4542,9 @@ static std::string ResolveScopedOrBareIndexedProperty(TSNode objNode, const Expr
     if (objSym == gs.symScopedIdentifier)
     {
         std::string_view text = GetNodeTextView(objNode, ctx.sourceCode);
-        const auto colonPos = text.rfind("::");
-        if (colonPos != std::string_view::npos)
+        const auto [scopeName, name] = utils::SplitScopedName(text);
+        if (!scopeName.empty())
         {
-            std::string_view scopeName = text.substr(0, colonPos);
-            std::string_view name = text.substr(colonPos + 2);
             return FindIndexedGetterType(
                 FindPropertyAccessors(std::string(scopeName), std::string(name), ctx.symbolTable, false),
                 &ctx.symbolTable, indexArgType);
@@ -5622,8 +5608,7 @@ uint32_t CalculateActiveCallParameter(TSNode argListNode, size_t cursorByte, std
 
 std::string LastSegmentOf(const std::string& name)
 {
-    const size_t at = name.rfind("::");
-    return at == std::string::npos ? name : name.substr(at + 2);
+    return std::string(utils::LastScopeSegment(name));
 }
 
 /** @brief True for a name that denotes a typedef, whose alias no spelling can see through. */
@@ -6099,7 +6084,7 @@ static std::optional<Symbol> FindCallArgumentFuncdef(const SymbolTable& table, c
         return std::nullopt;
     }
 
-    if (calleeName.find("::") == std::string::npos && lookUp(calleeName + "::" + calleeName))
+    if (!utils::ContainsScopeSeparator(calleeName) && lookUp(calleeName + "::" + calleeName))
     {
         return agreement.agreed;
     }
@@ -6108,8 +6093,8 @@ static std::optional<Symbol> FindCallArgumentFuncdef(const SymbolTable& table, c
         return std::nullopt;
     }
 
-    const size_t lastSeparator = calleeName.rfind("::");
-    if (lastSeparator != std::string::npos && lookUp(calleeName.substr(lastSeparator + 2)))
+    const std::string_view leaf = utils::LastScopeSegment(calleeName);
+    if (leaf != calleeName && lookUp(std::string(leaf)))
     {
         return agreement.agreed;
     }
@@ -6463,8 +6448,7 @@ bool IsValidIdentifierOrQualified(std::string_view text) noexcept
     }
     while (!text.empty())
     {
-        auto colon = text.find("::");
-        std::string_view part = (colon == std::string_view::npos) ? text : text.substr(0, colon);
+        const auto [part, rest] = utils::SplitFirstScopeSegment(text);
         if (part.empty() || (!std::isalpha(static_cast<unsigned char>(part[0])) && part[0] != '_'))
         {
             return false;
@@ -6477,11 +6461,7 @@ bool IsValidIdentifierOrQualified(std::string_view text) noexcept
                 return false;
             }
         }
-        if (colon == std::string_view::npos)
-        {
-            break;
-        }
-        text.remove_prefix(colon + 2);
+        text = rest;
     }
     return true;
 }
