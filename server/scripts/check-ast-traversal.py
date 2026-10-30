@@ -341,6 +341,48 @@ def check_no_keyword_fallbacks():
                     violations.append((file_path, line_num, stripped))
     return violations
 
+def check_no_node_type_wrapper():
+    violations = []
+    pattern = re.compile(r'(?<!\w)NodeType\s*\(')
+    scan_roots = [SERVER_SRC / "analysis", SERVER_SRC / "features", SERVER_SRC / "lsp"]
+    for root in scan_roots:
+        for file_path in root.rglob("*.[ch]*"):
+            if not file_path.is_file():
+                continue
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for line_num, line in enumerate(content.splitlines(), start=1):
+                stripped = line.strip()
+                if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                    continue
+                if pattern.search(line):
+                    violations.append((file_path, line_num, stripped))
+    return violations
+
+def check_no_modifier_string_literals():
+    violations = []
+    pattern = re.compile(r'"(?:class|interface|enum|funcdef|shared)[\s\t]"')
+    allowed_files = {
+        SERVER_SRC / "analysis" / "SignatureFormatter.cpp",
+        SERVER_SRC / "analysis" / "EngineConfigConverter.cpp",
+    }
+    for file_path in (SERVER_SRC / "analysis").rglob("*.[ch]*"):
+        if not file_path.is_file() or file_path in allowed_files:
+            continue
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for line_num, line in enumerate(content.splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                continue
+            if pattern.search(line):
+                violations.append((file_path, line_num, stripped))
+    return violations
+
 def main():
     has_errors = False
     
@@ -448,10 +490,26 @@ def main():
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
 
+    node_type_violations = check_no_node_type_wrapper()
+    if node_type_violations:
+        has_errors = True
+        print("[ERROR] Deprecated NodeType(node) wrapper calls detected in Layer 2/3/4 (use ts_node_symbol with parser::GetGrammarSymbols()):")
+        for f, line_num, line in node_type_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
+    modifier_violations = check_no_modifier_string_literals()
+    if modifier_violations:
+        has_errors = True
+        print("[ERROR] Modifier string literals ('class ', 'interface ', etc.) detected in server/src/analysis/ (use parser::keywords or AST grammar tokens):")
+        for f, line_num, line in modifier_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
     if has_errors:
         sys.exit(1)
 
-    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 engine hardcodings, 0 type hardcodings).")
+    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 engine hardcodings, 0 type hardcodings).")
 
 if __name__ == "__main__":
     main()

@@ -1474,9 +1474,10 @@ namespace
 void CheckInitializerListArgs(const CallArgTypes& args, const FunctionSignature& fn,
                               const CallValidationContext& valCtx)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     for (size_t i = 0; i < args.argNodes.size(); ++i)
     {
-        if (NodeType(args.argNodes[i]) != "initializer_list")
+        if (ts_node_symbol(args.argNodes[i]) != gs.symInitializerList)
         {
             continue;
         }

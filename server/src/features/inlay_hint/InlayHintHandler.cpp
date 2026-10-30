@@ -677,34 +677,6 @@ CalleeResolutionResult ResolveConstructorParameters(const std::string& declaredT
 std::string DeduceExpressionType(TSNode exprNode, const InlayHintRequest& request);
 
 /**
- * @brief Checks if trimmed text represents a numeric literal token.
- * @param[in] text Trimmed text string.
- * @param[in] nodeType AST node type name.
- * @return True if token is numeric.
- */
-bool IsNumericLiteralText(std::string_view text, std::string_view nodeType)
-{
-    if (text.empty())
-    {
-        return false;
-    }
-    if (nodeType == "number_literal")
-    {
-        return true;
-    }
-    if (isdigit(static_cast<unsigned char>(text[0])))
-    {
-        return true;
-    }
-    if (text.size() > 1 && (text[0] == '-' || text[0] == '+') && isdigit(static_cast<unsigned char>(text[1])))
-    {
-        return true;
-    }
-    return text.starts_with("0x") || text.starts_with("0X") || text.starts_with("0b") || text.starts_with("0B") ||
-           text.starts_with("0o") || text.starts_with("0O");
-}
-
-/**
  * @brief Deduces AngelScript type string from a numeric literal text.
  * @param[in] nodeTxt Trimmed literal string.
  * @return Deduced type ("float", "double", or "int").

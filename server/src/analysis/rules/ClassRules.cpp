@@ -1401,10 +1401,11 @@ void CheckFuncBodyStatements(TSNode funcBody, std::string_view mixinSource, Func
 void CheckMixinBody(TSNode bodyNode, std::string_view mixinSource, MixinCheckContext& mctx,
                     const DiagnosticContext& ctx)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     parser::ForEachChildNode(bodyNode,
                              [&](TSNode mem)
                              {
-                                 if (NodeType(mem) != "func_declaration")
+                                 if (ts_node_symbol(mem) != gs.symFuncDeclaration)
                                  {
                                      return;
                                  }

@@ -11,12 +11,7 @@
 
 namespace angel_lsp::parser
 {
-/**
- * @brief Returns the AST node type name as a zero-allocation string view.
- * @param[in] node The TSNode to inspect.
- * @return String view containing the node type name, or empty if null.
- */
-[[nodiscard]] inline std::string_view NodeType(TSNode node) noexcept
+[[nodiscard]] inline std::string_view GetNodeType(TSNode node) noexcept
 {
     if (ts_node_is_null(node))
     {
@@ -24,11 +19,6 @@ namespace angel_lsp::parser
     }
     const char* t = ts_node_type(node);
     return t ? std::string_view(t) : std::string_view{};
-}
-
-[[nodiscard]] inline std::string_view GetNodeType(TSNode node) noexcept
-{
-    return NodeType(node);
 }
 
 /**
@@ -321,6 +311,35 @@ template <typename Callback> void ForEachChildNode(TSNode parent, Callback&& cal
         } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
     ts_tree_cursor_delete(&cursor);
+}
+
+/**
+ * @brief Finds the first direct child node matching the given grammar symbol.
+ * @param[in] parent Parent AST node.
+ * @param[in] targetSym Grammar symbol to match.
+ * @return First matching child TSNode, or a null node if none found.
+ */
+[[nodiscard]] inline TSNode FindChildWithSymbol(TSNode parent, TSSymbol targetSym) noexcept
+{
+    if (ts_node_is_null(parent))
+    {
+        return TSNode{};
+    }
+    TSTreeCursor cursor = ts_tree_cursor_new(parent);
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        do
+        {
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            if (ts_node_symbol(child) == targetSym)
+            {
+                ts_tree_cursor_delete(&cursor);
+                return child;
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    }
+    ts_tree_cursor_delete(&cursor);
+    return TSNode{};
 }
 
 /**

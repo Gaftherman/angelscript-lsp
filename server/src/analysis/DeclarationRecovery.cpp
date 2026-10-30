@@ -1,5 +1,7 @@
 #include "analysis/DeclarationRecovery.h"
 #include "analysis/SymbolTable.h"
+#include "parser/Keywords.h"
+#include "utils/Utils.h"
 #include <cctype>
 
 namespace angel_lsp::analysis
@@ -108,21 +110,24 @@ size_t FindBraceBlockEnd(std::string_view sourceCode, size_t braceStart)
     return n;
 }
 
+using utils::MatchKeywordPrefix;
+
 size_t SkipModifiers(std::string_view line, size_t pos)
 {
+    namespace kw = parser::keywords;
     while (pos < line.size())
     {
         const std::string_view rest = line.substr(pos);
-        if (rest.starts_with("abstract ") || rest.starts_with("abstract\t"))
-            pos += 9;
-        else if (rest.starts_with("final ") || rest.starts_with("final\t"))
-            pos += 6;
-        else if (rest.starts_with("shared ") || rest.starts_with("shared\t"))
-            pos += 7;
-        else if (rest.starts_with("external ") || rest.starts_with("external\t"))
-            pos += 9;
-        else if (rest.starts_with("mixin ") || rest.starts_with("mixin\t"))
-            pos += 6;
+        if (MatchKeywordPrefix(rest, kw::Abstract))
+            pos += kw::Abstract.size();
+        else if (MatchKeywordPrefix(rest, kw::Final))
+            pos += kw::Final.size();
+        else if (MatchKeywordPrefix(rest, kw::Shared))
+            pos += kw::Shared.size();
+        else if (MatchKeywordPrefix(rest, kw::External))
+            pos += kw::External.size();
+        else if (MatchKeywordPrefix(rest, kw::Mixin))
+            pos += kw::Mixin.size();
         else
             break;
 
@@ -134,25 +139,26 @@ size_t SkipModifiers(std::string_view line, size_t pos)
 
 std::string_view MatchKeyword(std::string_view rest, size_t& pos)
 {
-    if (rest.starts_with("class ") || rest.starts_with("class\t"))
+    namespace kw = parser::keywords;
+    if (MatchKeywordPrefix(rest, kw::Class))
     {
-        pos += 6;
-        return "class";
+        pos += kw::Class.size();
+        return kw::Class;
     }
-    if (rest.starts_with("interface ") || rest.starts_with("interface\t"))
+    if (MatchKeywordPrefix(rest, kw::Interface))
     {
-        pos += 10;
-        return "interface";
+        pos += kw::Interface.size();
+        return kw::Interface;
     }
-    if (rest.starts_with("enum ") || rest.starts_with("enum\t"))
+    if (MatchKeywordPrefix(rest, kw::Enum))
     {
-        pos += 5;
-        return "enum";
+        pos += kw::Enum.size();
+        return kw::Enum;
     }
-    if (rest.starts_with("funcdef ") || rest.starts_with("funcdef\t"))
+    if (MatchKeywordPrefix(rest, kw::Funcdef))
     {
-        pos += 8;
-        return "funcdef";
+        pos += kw::Funcdef.size();
+        return kw::Funcdef;
     }
     return {};
 }

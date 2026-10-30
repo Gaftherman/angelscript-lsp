@@ -21,7 +21,6 @@ using parser::GetRootNode;
 using parser::NodeText;
 using parser::NodeTextResult;
 using parser::NodeTextString;
-using parser::NodeType;
 using parser::UnquoteStringView;
 
 /**

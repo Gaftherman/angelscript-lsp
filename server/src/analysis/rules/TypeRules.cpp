@@ -29,7 +29,7 @@ TSNode FindEnumDeclarationNode(TSNode root, const Symbol& sym, std::string_view 
                                       {
                                           return;
                                       }
-                                      if (NodeType(node) == parser::nodes::EnumDeclaration)
+                                      if (ts_node_symbol(node) == parser::GetGrammarSymbols().symEnumDeclaration)
                                       {
                                           const TSPoint pt = ts_node_start_point(node);
                                           if (pt.row == sym.startLine && pt.column == sym.startCharacter)
@@ -345,7 +345,7 @@ void CheckDuplicateEnumMembers(TSNode enumNode, const Symbol& sym, const Diagnos
     do
     {
         const TSNode child = ts_tree_cursor_current_node(&cursor);
-        if (NodeType(child) != parser::nodes::EnumMember)
+        if (ts_node_symbol(child) != parser::GetGrammarSymbols().symEnumMember)
         {
             continue;
         }

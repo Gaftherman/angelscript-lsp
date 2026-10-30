@@ -53,11 +53,6 @@ struct ConversionTypes
     std::string to{};
 };
 
-std::string_view NodeType(TSNode node)
-{
-    return parser::GetNodeType(node);
-}
-
 bool IsSameType(const std::string& a, const std::string& b);
 
 bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner)
@@ -1012,16 +1007,17 @@ ExpressionType ResolveCallValueType(TSNode node, const DiagnosticContext& ctx)
 
 ExpressionType ResolveLiteralValueType(TSNode node, const DiagnosticContext& ctx)
 {
-    const std::string_view nodeType = NodeType(node);
-    if (nodeType == node_types::NumberLiteral)
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(node);
+    if (sym == gs.symNumberLiteral)
     {
         return ExpressionType{ClassifyNumberLiteral(NodeText(node, ctx.request.sourceCode)), true, true};
     }
-    if (nodeType == node_types::StringLiteral)
+    if (sym == gs.symStringLiteral)
     {
         return ExpressionType{std::string(ctx.request.GetEffectiveStringTypeName()), true, true};
     }
-    if (nodeType == node_types::BooleanLiteral)
+    if (sym == gs.symBooleanLiteral)
     {
         return ExpressionType{"bool", true, true};
     }
@@ -1069,35 +1065,36 @@ static ExpressionType ResolveCastValueType(TSNode node, const DiagnosticContext&
 
 ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx, int depth)
 {
-    const std::string_view nodeType = NodeType(node);
-    if (nodeType == "parenthesized_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(node);
+    if (sym == gs.symParenthesizedExpression)
     {
         return ts_node_named_child_count(node) > 0
                    ? ResolveValueType(ts_node_named_child(node, 0), scope, ctx, depth + 1)
                    : ExpressionType{};
     }
 
-    if (nodeType == "unary_expression")
+    if (sym == gs.symUnaryExpression)
     {
         return ResolveUnaryValueType(node, scope, ctx, depth);
     }
 
-    if (nodeType == "identifier" || nodeType == "scoped_identifier")
+    if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier)
     {
         return ResolveIdentifierValueType(node, scope, ctx);
     }
 
-    if (nodeType == node_types::CallExpression || nodeType == "construct_call_expression")
+    if (sym == gs.symCallExpression || sym == gs.symConstructCallExpression)
     {
         return ResolveCallValueType(node, ctx);
     }
 
-    if (nodeType == "cast_expression" || nodeType == "functional_cast_expression")
+    if (sym == gs.symCastExpression || sym == gs.symFunctionalCastExpression)
     {
         return ResolveCastValueType(node, ctx);
     }
 
-    if (nodeType == "member_expression")
+    if (sym == gs.symMemberExpression)
     {
         const std::string resolved = ResolveExpressionType(node, ExpressionTypeContext(scope, ctx));
         return resolved.empty() ? ExpressionType{} : ExpressionType{CleanBaseType(resolved), true, false};
@@ -1120,13 +1117,13 @@ ExpressionType ResolveValueType(TSNode node, const Scope* scope, const Diagnosti
         return ExpressionType{std::string(ExpressionTypeCache::k_poisonType), false, false};
     }
 
-    const std::string_view nodeType = NodeType(node);
-    if (nodeType == node_types::NumberLiteral || nodeType == node_types::StringLiteral ||
-        nodeType == node_types::BooleanLiteral)
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(node);
+    if (sym == gs.symNumberLiteral || sym == gs.symStringLiteral || sym == gs.symBooleanLiteral)
     {
         return ResolveLiteralValueType(node, ctx);
     }
-    if (nodeType == node_types::NullLiteral)
+    if (sym == gs.symNullLiteral)
     {
         // 'null' has its own rule (CheckNullAssignedToNonHandle) and no type of its own.
         return ExpressionType{};
@@ -1283,14 +1280,15 @@ static PropertyAccessInfo InspectBareOrScopedProperty(TSNode exprNode, const Sco
 
 PropertyAccessInfo InspectPropertyAccess(TSNode exprNode, const Scope* scope, const DiagnosticContext& ctx)
 {
-    std::string_view nodeType = NodeType(exprNode);
-    if (nodeType == "identifier" || nodeType == "scoped_identifier")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(exprNode);
+    if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier)
     {
         return InspectBareOrScopedProperty(exprNode, scope, ctx);
     }
 
     PropertyAccessInfo info;
-    if (nodeType != "member_expression")
+    if (sym != gs.symMemberExpression)
     {
         return info;
     }
@@ -1474,12 +1472,14 @@ bool IsNumericLiteralExpression(TSNode node, int depth = 0)
         return false;
     }
 
-    const std::string_view nodeType = NodeType(node);
-    if (nodeType.ends_with("_literal") || nodeType == "number")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(node);
+    if (sym == gs.symNumberLiteral || sym == gs.symStringLiteral || sym == gs.symBooleanLiteral ||
+        sym == gs.symNullLiteral)
     {
         return true;
     }
-    if (nodeType != "parenthesized_expression" && nodeType != "unary_expression")
+    if (sym != gs.symParenthesizedExpression && sym != gs.symUnaryExpression)
     {
         return false;
     }
@@ -1515,13 +1515,14 @@ bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const DiagnosticCo
         return false;
     }
 
-    const std::string_view nodeType = NodeType(node);
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(node);
     if (IsNumericLiteralExpression(node))
     {
         return true;
     }
 
-    if (nodeType == "parenthesized_expression")
+    if (sym == gs.symParenthesizedExpression)
     {
         for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
         {
@@ -1533,7 +1534,7 @@ bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const DiagnosticCo
         return false;
     }
 
-    if (nodeType != "identifier" && nodeType != "scoped_identifier" && nodeType != "qualified_identifier")
+    if (sym != gs.symIdentifier && sym != gs.symScopedIdentifier)
     {
         return false;
     }
@@ -1768,7 +1769,7 @@ void CheckHandleInitializer(TSNode valueNode, const ExpressionType& source, cons
 void CheckInitializer(TSNode declaratorNode, const DeclaredType& declared, const Scope* scope, DiagnosticContext& ctx)
 {
     TSNode valueNode = parser::GetChildByField(declaratorNode, parser::GetGrammarSymbols().fieldValue);
-    if (ts_node_is_null(valueNode) || NodeType(valueNode) == "initializer_list")
+    if (ts_node_is_null(valueNode) || ts_node_symbol(valueNode) == parser::GetGrammarSymbols().symInitializerList)
     {
         return;
     }
@@ -2153,12 +2154,13 @@ bool MatchesFuncdefSignature(const FunctionSignature& fn, const FuncdefSignature
 
 TSNode UnwrapAddressOfOperator(TSNode valueNode, std::string_view sourceCode)
 {
-    if (std::string_view(NodeType(valueNode)) == "unary_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(valueNode) == gs.symUnaryExpression)
     {
-        TSNode op = parser::GetChildByField(valueNode, parser::GetGrammarSymbols().fieldOperator);
-        if (!ts_node_is_null(op) && NodeText(op, sourceCode) == "@")
+        TSNode op = parser::GetChildByField(valueNode, gs.fieldOperator);
+        if (!ts_node_is_null(op) && (ts_node_symbol(op) == gs.tokAt || NodeText(op, sourceCode) == "@"))
         {
-            TSNode operand = parser::GetChildByField(valueNode, parser::GetGrammarSymbols().fieldOperand);
+            TSNode operand = parser::GetChildByField(valueNode, gs.fieldOperand);
             if (!ts_node_is_null(operand))
             {
                 return operand;
@@ -2171,7 +2173,7 @@ TSNode UnwrapAddressOfOperator(TSNode valueNode, std::string_view sourceCode)
 bool CheckLambdaFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSig, TSNode actualVal,
                                   DiagnosticContext& ctx)
 {
-    if (NodeType(actualVal) != node_types::LambdaExpression)
+    if (ts_node_symbol(actualVal) != parser::GetGrammarSymbols().symLambdaExpression)
     {
         return false;
     }
@@ -2440,14 +2442,15 @@ const std::string* BoolConversionOperator(const std::string& typeName, const Sym
  * Only the logical operators recurse. `a == b` also yields a bool but its operands are
  * compared, not converted to bool, and the engine's rules for that are a different question.
  */
-static bool IsLogicalBinaryOperator(std::string_view op)
+static bool IsLogicalBinaryOperator(TSSymbol sym, const parser::GrammarSymbols& gs)
 {
-    return op == "&&" || op == "and" || op == "||" || op == "or" || op == "^^" || op == "xor";
+    return sym == gs.tokAmpAmp || sym == gs.tokAnd || sym == gs.tokPipePipe || sym == gs.tokOr ||
+           sym == gs.tokCaretCaret || sym == gs.tokXor;
 }
 
-static bool IsLogicalUnaryOperator(std::string_view op)
+static bool IsLogicalUnaryOperator(TSSymbol sym, const parser::GrammarSymbols& gs)
 {
-    return op == "!" || op == "not";
+    return sym == gs.tokBang || sym == gs.tokNot;
 }
 
 void CollectBooleanOperands(TSNode expr, std::vector<TSNode>& operands, int depth = 0)
@@ -2455,29 +2458,27 @@ void CollectBooleanOperands(TSNode expr, std::vector<TSNode>& operands, int dept
     if (ts_node_is_null(expr) || depth > k_maxAstDepth)
         return;
 
-    const std::string_view type = NodeType(expr);
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(expr);
 
-    if (type == "binary_expression")
+    if (sym == gs.symBinaryExpression)
     {
-        const TSNode op = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldOperator);
-        const std::string_view opText = ts_node_is_null(op) ? std::string_view{} : NodeType(op);
-        if (IsLogicalBinaryOperator(opText))
+        const TSNode op = parser::GetChildByField(expr, gs.fieldOperator);
+        const TSSymbol opSym = ts_node_is_null(op) ? 0 : ts_node_symbol(op);
+        if (IsLogicalBinaryOperator(opSym, gs))
         {
-            CollectBooleanOperands(parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldLeft), operands,
-                                   depth + 1);
-            CollectBooleanOperands(parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldRight), operands,
-                                   depth + 1);
+            CollectBooleanOperands(parser::GetChildByField(expr, gs.fieldLeft), operands, depth + 1);
+            CollectBooleanOperands(parser::GetChildByField(expr, gs.fieldRight), operands, depth + 1);
             return;
         }
     }
-    else if (type == "unary_expression")
+    else if (sym == gs.symUnaryExpression)
     {
-        const TSNode op = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldOperator);
-        const std::string_view opText = ts_node_is_null(op) ? std::string_view{} : NodeType(op);
-        if (IsLogicalUnaryOperator(opText))
+        const TSNode op = parser::GetChildByField(expr, gs.fieldOperator);
+        const TSSymbol opSym = ts_node_is_null(op) ? 0 : ts_node_symbol(op);
+        if (IsLogicalUnaryOperator(opSym, gs))
         {
-            CollectBooleanOperands(parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldOperand), operands,
-                                   depth + 1);
+            CollectBooleanOperands(parser::GetChildByField(expr, gs.fieldOperand), operands, depth + 1);
             return;
         }
     }
@@ -2506,10 +2507,10 @@ const Scope* ResolveNodeScope(TSNode node, const TypeConversionCheckRequest& req
 /**
  * @brief Extracts the condition node from control-flow or ternary expressions.
  * @param[in] node Condition-bearing expression or statement.
- * @param[in] nodeType Tree-Sitter node type name.
+ * @param[in] sym Tree-Sitter grammar symbol of the node.
  * @return Extracted condition node, or a null node if absent.
  */
-TSNode ExtractConditionNode(TSNode node, std::string_view nodeType)
+TSNode ExtractConditionNode(TSNode node, TSSymbol sym)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode condition = parser::GetChildByField(node, gs.fieldCondition);
@@ -2519,7 +2520,7 @@ TSNode ExtractConditionNode(TSNode node, std::string_view nodeType)
     }
     if (ts_node_is_null(condition))
     {
-        condition = ts_node_named_child(node, nodeType == "do_while_statement" ? 1 : 0);
+        condition = ts_node_named_child(node, sym == gs.symDoWhileStatement ? 1 : 0);
     }
     return condition;
 }
@@ -2648,8 +2649,9 @@ void CheckRefTypeBoolConversion(TSNode condNode, const Scope* scope, DiagnosticC
  */
 void ProcessConditionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    const std::string_view nodeType = NodeType(node);
-    TSNode condition = ExtractConditionNode(node, nodeType);
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(node);
+    TSNode condition = ExtractConditionNode(node, sym);
     if (ts_node_is_null(condition))
     {
         return;
@@ -2658,15 +2660,15 @@ void ProcessConditionNode(TSNode node, const TypeConversionCheckRequest& request
     const Scope* scope = ResolveNodeScope(node, request);
     CheckBooleanOperands(condition, scope, ctx);
 
-    if (nodeType != "ternary_expression")
+    if (sym != gs.symTernaryExpression)
     {
         CheckRefTypeBoolConversion(condition, scope, ctx);
     }
 
-    if (nodeType == "if_statement")
+    if (sym == gs.symIfStatement)
     {
         TSNode parent = parser::GetParent(node);
-        if (ts_node_is_null(parent) || ts_node_symbol(parent) != parser::GetGrammarSymbols().symIfStatement)
+        if (ts_node_is_null(parent) || ts_node_symbol(parent) != gs.symIfStatement)
         {
             CheckRepeatedConversions(node, scope, ctx);
         }
@@ -2817,7 +2819,7 @@ void InferForeachVariables(TSNode node, const std::string& containerType, const 
     for (uint32_t i = 0; i < childCount; ++i)
     {
         TSNode child = ts_node_named_child(node, i);
-        if (NodeType(child) != "foreach_variable")
+        if (ts_node_symbol(child) != parser::GetGrammarSymbols().symForeachVariable)
         {
             continue;
         }
@@ -3095,11 +3097,12 @@ void ProcessAutoDeclarator(TSNode child, const TypeConversionCheckRequest& reque
  */
 void ProcessAutoVariableDeclarators(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     const uint32_t count = ts_node_named_child_count(node);
     for (uint32_t i = 0; i < count; ++i)
     {
         TSNode child = ts_node_named_child(node, i);
-        if (NodeType(child) == "variable_declarator")
+        if (ts_node_symbol(child) == gs.symVariableDeclarator)
         {
             ProcessAutoDeclarator(child, request, ctx);
         }
@@ -3148,15 +3151,16 @@ void ProcessDeclaredVariableDeclarators(TSNode node, TSNode typeNode, const Type
     const std::string baseType = CleanBaseType(fullType);
     auto funcdefSym = FindFuncdef(baseType, ctx.request.symbolTable);
 
+    const auto& gs = parser::GetGrammarSymbols();
     const uint32_t count = ts_node_named_child_count(node);
     if (funcdefSym)
     {
         for (uint32_t i = 0; i < count; ++i)
         {
             TSNode child = ts_node_named_child(node, i);
-            if (NodeType(child) == "variable_declarator")
+            if (ts_node_symbol(child) == gs.symVariableDeclarator)
             {
-                TSNode valNode = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldValue);
+                TSNode valNode = parser::GetChildByField(child, gs.fieldValue);
                 CheckFuncdefAssignment(child, funcdefSym->GetFuncdef(), valNode, ctx);
             }
         }
@@ -3169,7 +3173,7 @@ void ProcessDeclaredVariableDeclarators(TSNode node, TSNode typeNode, const Type
         for (uint32_t i = 0; i < count; ++i)
         {
             TSNode child = ts_node_named_child(node, i);
-            if (NodeType(child) != "variable_declarator")
+            if (ts_node_symbol(child) != gs.symVariableDeclarator)
             {
                 continue;
             }
@@ -3296,19 +3300,19 @@ std::string GetVariableOrPropertyType(TSNode node, const Scope* scope, const Dia
 /**
  * @brief Unwraps handle operator `@` from an expression node.
  * @param[in] expr Expression node.
- * @param[in] sourceCode Document source text.
  * @param[in,out] isHandleAssignment Flag set to true if `@` operator is encountered.
  * @return Unwrapped operand node if handle operator was present; expr otherwise.
  */
-TSNode UnwrapHandleOperand(TSNode expr, std::string_view sourceCode, bool& isHandleAssignment)
+TSNode UnwrapHandleOperand(TSNode expr, bool& isHandleAssignment)
 {
-    if (std::string_view(NodeType(expr)) == "unary_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(expr) == gs.symUnaryExpression)
     {
-        TSNode op = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldOperator);
-        if (!ts_node_is_null(op) && NodeText(op, sourceCode) == "@")
+        TSNode op = parser::GetChildByField(expr, gs.fieldOperator);
+        if (!ts_node_is_null(op) && ts_node_symbol(op) == gs.tokAt)
         {
             isHandleAssignment = true;
-            TSNode operand = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldOperand);
+            TSNode operand = parser::GetChildByField(expr, gs.fieldOperand);
             if (!ts_node_is_null(operand))
             {
                 return operand;
@@ -3329,8 +3333,8 @@ void CheckHandleConstAssignment(AssignmentOperands operands, const ConversionTyp
                                 DiagnosticContext& ctx)
 {
     bool isHandleAssignment = false;
-    TSNode actualLeft = UnwrapHandleOperand(operands.left, ctx.request.sourceCode, isHandleAssignment);
-    TSNode actualRight = UnwrapHandleOperand(operands.right, ctx.request.sourceCode, isHandleAssignment);
+    TSNode actualLeft = UnwrapHandleOperand(operands.left, isHandleAssignment);
+    TSNode actualRight = UnwrapHandleOperand(operands.right, isHandleAssignment);
 
     if (!isHandleAssignment)
     {
@@ -3633,17 +3637,24 @@ void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, D
 
 static TSNode FindUnaryOperand(TSNode node)
 {
-    TSNode operand = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperand);
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode operand = parser::GetChildByField(node, gs.fieldOperand);
     if (!ts_node_is_null(operand))
     {
         return operand;
     }
+    const TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
     const uint32_t count = ts_node_named_child_count(node);
     for (uint32_t i = 0; i < count; ++i)
     {
         TSNode ch = ts_node_named_child(node, i);
-        std::string_view ct = parser::GetNodeType(ch);
-        if (ct != "operator" && ct != "++" && ct != "--" && ct != "!" && ct != "-" && ct != "+" && ct != "~")
+        if (!ts_node_is_null(opNode) && ts_node_eq(ch, opNode))
+        {
+            continue;
+        }
+        const TSSymbol sym = ts_node_symbol(ch);
+        if (sym != gs.tokPlusPlus && sym != gs.tokDashDash && sym != gs.tokBang && sym != gs.tokNot &&
+            sym != gs.tokDash && sym != gs.tokPlus && sym != gs.tokTilde)
         {
             return ch;
         }
@@ -4068,7 +4079,8 @@ void ProcessCallOrConstructNode(TSNode node, const TypeConversionCheckRequest& r
     {
         soleArgument = ts_node_named_child(argsNode, 0);
     }
-    const bool soleArgumentIsLambda = (NodeType(soleArgument) == node_types::LambdaExpression);
+    const bool soleArgumentIsLambda = (!ts_node_is_null(soleArgument) &&
+                                       ts_node_symbol(soleArgument) == parser::GetGrammarSymbols().symLambdaExpression);
 
     std::optional<Symbol> calleeFuncdef;
     if (soleArgumentIsLambda)
@@ -4102,36 +4114,36 @@ void ProcessCallOrConstructNode(TSNode node, const TypeConversionCheckRequest& r
 
 /**
  * @brief Processes statement nodes during type conversion analysis.
- * @param[in] nodeType Syntax node type.
+ * @param[in] sym Tree-Sitter grammar symbol.
  * @param[in] node Syntax tree node.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
  * @return True if node was handled as a statement; false otherwise.
  */
-bool ProcessStatementNode(std::string_view nodeType, TSNode node, const TypeConversionCheckRequest& request,
-                          DiagnosticContext& ctx)
+bool ProcessStatementNode(TSSymbol sym, TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    if (nodeType == "expression_statement")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (sym == gs.symExpressionStatement)
     {
         ProcessExpressionStatementNode(node, request, ctx);
         return true;
     }
-    if (nodeType == "foreach_statement")
+    if (sym == gs.symForeachStatement)
     {
         ProcessForeachNode(node, request, ctx);
         return true;
     }
-    if (nodeType == "variable_declaration")
+    if (sym == gs.symVariableDeclaration)
     {
         ProcessVariableDeclarationNode(node, request, ctx);
         return true;
     }
-    if (nodeType == "return_statement")
+    if (sym == gs.symReturnStatement)
     {
         ProcessReturnStatementNode(node, request, ctx);
         return true;
     }
-    if (nodeType == "func_declaration")
+    if (sym == gs.symFuncDeclaration)
     {
         CheckConstructorDelegation(node, ctx);
         return true;
@@ -4141,85 +4153,81 @@ bool ProcessStatementNode(std::string_view nodeType, TSNode node, const TypeConv
 
 /**
  * @brief Processes expression nodes during type conversion analysis.
- * @param[in] nodeType Syntax node type.
+ * @param[in] sym Tree-Sitter grammar symbol.
  * @param[in] node Syntax tree node.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void ProcessExpressionNode(std::string_view nodeType, TSNode node, const TypeConversionCheckRequest& request,
-                           DiagnosticContext& ctx)
+void ProcessExpressionNode(TSSymbol sym, TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    if (nodeType == "assignment_expression")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (sym == gs.symAssignmentExpression)
     {
         ProcessAssignmentNode(node, request, ctx);
     }
-    else if (nodeType == "binary_expression")
+    else if (sym == gs.symBinaryExpression)
     {
         ProcessBinaryNode(node, request, ctx);
     }
-    else if (nodeType == "unary_expression" || nodeType == "postfix_expression")
+    else if (sym == gs.symUnaryExpression || sym == gs.symPostfixExpression)
     {
         ProcessUnaryOrPostfixNode(node, request, ctx);
     }
-    else if (nodeType == "member_expression")
+    else if (sym == gs.symMemberExpression)
     {
         ProcessMemberExpressionNode(node, request, ctx);
     }
-    else if (nodeType == "index_expression")
+    else if (sym == gs.symIndexExpression)
     {
         ProcessIndexExpressionNode(node, request, ctx);
     }
-    else if (nodeType == "cast_expression")
+    else if (sym == gs.symCastExpression)
     {
         ProcessCastNode(node, request, ctx);
     }
-    else if (nodeType == node_types::CallExpression || nodeType == "construct_call_expression")
+    else if (sym == gs.symCallExpression || sym == gs.symConstructCallExpression)
     {
         ProcessCallOrConstructNode(node, request, ctx);
     }
 }
 
 /**
- * @brief Dispatches analysis for a single syntax tree node.
- * @param[in] node Syntax tree node to process.
- * @param[in] request Analysis request details.
- * @param[in,out] ctx Diagnostic collection context.
+ * @brief Checks if a symbol represents a node relevant to type conversion analysis.
+ * @param[in] sym Tree-Sitter grammar symbol to inspect.
+ * @param[in] gs Pre-resolved grammar symbols reference.
+ * @return True if conversion analysis applies to the node type.
  */
-bool IsConversionRelevantNodeType(std::string_view type)
+bool IsConversionRelevantSymbol(TSSymbol sym, const parser::GrammarSymbols& gs)
 {
-    static const ankerl::unordered_dense::set<std::string_view> kRelevantTypes = {
-        "if_statement",       "while_statement",      "do_while_statement",       "for_statement",
-        "ternary_expression", "expression_statement", "foreach_statement",        "variable_declaration",
-        "return_statement",   "func_declaration",     "assignment_expression",    "binary_expression",
-        "unary_expression",   "postfix_expression",   "member_expression",        "index_expression",
-        "cast_expression",    "call_expression",      "construct_call_expression"};
-    return kRelevantTypes.contains(type);
+    return std::find(gs.conversionTargetSymbols.begin(), gs.conversionTargetSymbols.end(), sym) !=
+           gs.conversionTargetSymbols.end();
 }
 
 void ProcessNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    const std::string_view nodeType = NodeType(node);
-    if (!IsConversionRelevantNodeType(nodeType))
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(node);
+    if (!IsConversionRelevantSymbol(sym, gs))
     {
         return;
     }
 
-    if (nodeType == "if_statement" || nodeType == "while_statement" || nodeType == "do_while_statement" ||
-        nodeType == "for_statement")
+    if (sym == gs.symIfStatement || sym == gs.symWhileStatement || sym == gs.symDoWhileStatement ||
+        sym == gs.symForStatement)
     {
         ProcessConditionNode(node, request, ctx);
         return;
     }
-    if (nodeType == "ternary_expression")
+    if (sym == gs.symTernaryExpression)
     {
         ProcessConditionNode(node, request, ctx);
         ProcessTernaryNode(node, request, ctx);
         return;
     }
 
-    if (!ProcessStatementNode(nodeType, node, request, ctx))
+    if (!ProcessStatementNode(sym, node, request, ctx))
     {
-        ProcessExpressionNode(nodeType, node, request, ctx);
+        ProcessExpressionNode(sym, node, request, ctx);
     }
 }
 

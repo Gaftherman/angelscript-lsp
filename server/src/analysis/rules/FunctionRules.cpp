@@ -843,14 +843,15 @@ namespace
 {
 void WalkStandaloneLambda(TSNode root, const DiagnosticContext& ctx)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     parser::ForEachDescendantNode(
         root,
         [&](TSNode node)
         {
-            if (NodeType(node) == parser::nodes::ExpressionStatement && ts_node_named_child_count(node) == 1)
+            if (ts_node_symbol(node) == gs.symExpressionStatement && ts_node_named_child_count(node) == 1)
             {
                 const TSNode child = ts_node_named_child(node, 0);
-                if (NodeType(child) == parser::nodes::LambdaExpression)
+                if (ts_node_symbol(child) == gs.symLambdaExpression)
                 {
                     const TSPoint start = ts_node_start_point(child);
                     const TSPoint end = ts_node_end_point(child);
@@ -869,12 +870,13 @@ void ValidateStandaloneLambda(TSNode root, const DiagnosticContext& ctx)
 
 void ValidateStandaloneLambda(const analysis::NodeIndex& nodeIndex, const DiagnosticContext& ctx)
 {
-    for (const TSNode& node : nodeIndex.Nodes(parser::nodes::ExpressionStatement))
+    const auto& gs = parser::GetGrammarSymbols();
+    for (const TSNode& node : nodeIndex.Nodes(gs.symExpressionStatement))
     {
         if (ts_node_named_child_count(node) == 1)
         {
             const TSNode child = ts_node_named_child(node, 0);
-            if (NodeType(child) == parser::nodes::LambdaExpression)
+            if (ts_node_symbol(child) == gs.symLambdaExpression)
             {
                 const TSPoint start = ts_node_start_point(child);
                 const TSPoint end = ts_node_end_point(child);

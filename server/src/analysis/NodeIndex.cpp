@@ -78,6 +78,33 @@ void NodeIndex::IndexNode(TSNode node, TraversalBudget* budget)
             m_nodesBySymbol.resize(static_cast<size_t>(sym) + 1);
             m_nodesBySymbol[sym].push_back(node);
         }
+
+        RecordContainerSpan(node, sym);
+    }
+}
+
+void NodeIndex::RecordContainerSpan(TSNode node, TSSymbol sym)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    if (sym == gs.symClassDeclaration || sym == gs.symMixinDeclaration || sym == gs.symInterfaceDeclaration ||
+        sym == gs.symNamespaceDeclaration || sym == gs.symLambdaExpression)
+    {
+        IndexedContainerSpan span;
+        span.startByte = ts_node_start_byte(node);
+        span.endByte = ts_node_end_byte(node);
+        span.symbol = sym;
+        if (sym != gs.symLambdaExpression)
+        {
+            TSNode nameNode = parser::GetChildByField(node, gs.fieldName);
+            if (!ts_node_is_null(nameNode))
+            {
+                span.nameStartByte = ts_node_start_byte(nameNode);
+                span.nameEndByte = ts_node_end_byte(nameNode);
+            }
+        }
+        span.isMixin =
+            (sym == gs.symMixinDeclaration) || !ts_node_is_null(parser::FindChildWithSymbol(node, gs.tokMixin));
+        m_containerSpans.push_back(span);
     }
 }
 
@@ -320,6 +347,7 @@ void NodeIndex::Clear() noexcept
     m_nodesBySymbol.clear();
     m_errorRanges.clear();
     m_commentRanges.clear();
+    m_containerSpans.clear();
     m_symbolByName.clear();
     m_symComment = 0;
 }
@@ -382,6 +410,34 @@ TSNode NodeIndex::FindEnclosingClassOrMixin(uint32_t byteOffset) const noexcept
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol targets[] = {gs.symClassDeclaration, gs.symInterfaceDeclaration, gs.symMixinDeclaration};
     return FindEnclosingNodeAny(byteOffset, targets);
+}
+
+const IndexedContainerSpan* NodeIndex::FindInnermostClassSpan(uint32_t byteOffset) const noexcept
+{
+    if (m_containerSpans.empty())
+    {
+        return nullptr;
+    }
+    const auto& gs = parser::GetGrammarSymbols();
+    auto it = std::upper_bound(m_containerSpans.begin(), m_containerSpans.end(), byteOffset,
+                               [](uint32_t val, const IndexedContainerSpan& s) { return val < s.startByte; });
+    while (it != m_containerSpans.begin())
+    {
+        --it;
+        if (byteOffset < it->endByte)
+        {
+            if (it->symbol == gs.symLambdaExpression)
+            {
+                return nullptr;
+            }
+            if (it->symbol == gs.symClassDeclaration || it->symbol == gs.symMixinDeclaration)
+            {
+                return &(*it);
+            }
+            return nullptr;
+        }
+    }
+    return nullptr;
 }
 
 TSNode NodeIndex::FindEnclosingCallable(uint32_t byteOffset) const noexcept

@@ -26,6 +26,19 @@ struct ContainerInfo
 };
 
 /**
+ * @brief Precalculated byte interval and metadata for an AST container declaration.
+ */
+struct IndexedContainerSpan
+{
+    uint32_t startByte = 0;
+    uint32_t endByte = 0;
+    TSSymbol symbol = 0;
+    uint32_t nameStartByte = 0;
+    uint32_t nameEndByte = 0;
+    bool isMixin = false;
+};
+
+/**
  * @brief Single-pass index of AST nodes grouped by Tree-Sitter symbol for O(1) retrieval.
  *
  * Traverses an AST once in preorder, bucketing nodes by their Tree-Sitter TSSymbol id
@@ -294,6 +307,14 @@ class NodeIndex
     [[nodiscard]] TSNode FindEnclosingClassOrMixin(uint32_t byteOffset) const noexcept;
 
     /**
+     * @brief Finds the innermost class or mixin declaration enclosing byteOffset in O(log K).
+     *        If an intermediate lambda closure barrier is encountered, returns nullptr.
+     * @param[in] byteOffset Document byte offset to test.
+     * @return Pointer to innermost IndexedContainerSpan, or nullptr if none or inside lambda.
+     */
+    [[nodiscard]] const IndexedContainerSpan* FindInnermostClassSpan(uint32_t byteOffset) const noexcept;
+
+    /**
      * @brief Finds the innermost callable declaration (function or lambda expression) enclosing byteOffset.
      * @param[in] byteOffset Document byte offset to test.
      * @return Innermost enclosing function or lambda TSNode or null node if none found.
@@ -325,6 +346,7 @@ class NodeIndex
   private:
     void PopulatePredefinedSymbols(const TSLanguage* lang);
     void IndexNode(TSNode node, TraversalBudget* budget = nullptr);
+    void RecordContainerSpan(TSNode node, TSSymbol sym);
     void TraverseTree(TSNode root, TraversalBudget* budget = nullptr);
     void PostProcessErrorRanges();
     void PostProcessCommentRanges();
@@ -336,6 +358,7 @@ class NodeIndex
     std::vector<std::vector<TSNode>> m_nodesBySymbol;
     std::vector<ErrorRange> m_errorRanges;
     std::vector<CommentRange> m_commentRanges;
+    std::vector<IndexedContainerSpan> m_containerSpans;
     ankerl::unordered_dense::map<std::string_view, TSSymbol> m_symbolByName;
     TSSymbol m_symComment = 0;
 };

@@ -325,73 +325,26 @@ MemberAccess FindMember(const std::string& typeName, const std::string& memberNa
 }
 
 /** @brief Innermost class body enclosing a node, or empty when the node sits outside one. */
-std::string EnclosingClass(TSNode node, std::string_view sourceCode, bool& insideMixin, const SymbolTable& table,
+std::string EnclosingClass(TSNode node, std::string_view sourceCode, bool& insideMixin,
                            const NodeIndex* nodeIndex = nullptr)
 {
     insideMixin = false;
-    if (ts_node_is_null(node))
+    if (ts_node_is_null(node) || !nodeIndex)
     {
         return "";
     }
 
     const uint32_t byteOffset = ts_node_start_byte(node);
-    if (nodeIndex)
+    const auto* span = nodeIndex->FindInnermostClassSpan(byteOffset);
+    if (span)
     {
-        if (nodeIndex->IsInsideLambdaClosure(byteOffset))
+        insideMixin = span->isMixin;
+        if (span->nameStartByte < span->nameEndByte && span->nameEndByte <= sourceCode.size())
         {
-            return "";
+            return std::string(sourceCode.substr(span->nameStartByte, span->nameEndByte - span->nameStartByte));
         }
-        TSNode classNode = nodeIndex->FindEnclosingClassOrMixin(byteOffset);
-        if (!ts_node_is_null(classNode))
-        {
-            TSNode nameNode = parser::GetChildByField(classNode, parser::GetGrammarSymbols().fieldName);
-            if (!ts_node_is_null(nameNode))
-            {
-                std::string className = NodeText(nameNode, sourceCode);
-                const auto symbols = table.FindSymbolsPtr(className);
-                if (symbols)
-                {
-                    insideMixin =
-                        std::any_of(symbols->begin(), symbols->end(), [](const Symbol& sym)
-                                    { return sym.type == SymbolType::Class && sym.GetClass().modifiers.isMixin; });
-                }
-                return className;
-            }
-        }
-        return "";
     }
-
-    std::string resultClassName;
-    const auto& gs = parser::GetGrammarSymbols();
-    parser::ForEachAncestor(
-        parser::GetParent(node),
-        [&](TSNode curr) -> bool
-        {
-            const TSSymbol sym = ts_node_symbol(curr);
-            if (sym == gs.symLambdaExpression)
-            {
-                return false;
-            }
-            if (sym == gs.symClassDeclaration)
-            {
-                TSNode nameNode = parser::GetChildByField(curr, gs.fieldName);
-                if (!ts_node_is_null(nameNode))
-                {
-                    std::string className = NodeText(nameNode, sourceCode);
-                    const auto symbols = table.FindSymbolsPtr(className);
-                    if (symbols)
-                    {
-                        insideMixin =
-                            std::any_of(symbols->begin(), symbols->end(), [](const Symbol& sym)
-                                        { return sym.type == SymbolType::Class && sym.GetClass().modifiers.isMixin; });
-                    }
-                    resultClassName = std::move(className);
-                    return false;
-                }
-            }
-            return true;
-        });
-    return resultClassName;
+    return "";
 }
 
 /**
@@ -530,8 +483,7 @@ void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const
     if (member.decided)
     {
         bool insideMixin = false;
-        const std::string accessingClass =
-            EnclosingClass(node, request.sourceCode, insideMixin, table, request.nodeIndex);
+        const std::string accessingClass = EnclosingClass(node, request.sourceCode, insideMixin, request.nodeIndex);
         if (!IsMemberAccessAllowed(member, accessingClass, objectType, ctx))
         {
             EmitPrivacyViolation(memberNode, member, memberName, ctx);
@@ -687,48 +639,21 @@ bool IsOuterLocalOrParameter(const Scope* enclosingClosure, std::string_view idT
  */
 std::string EnclosingClassOfLambda(TSNode node, std::string_view sourceCode, const NodeIndex* nodeIndex = nullptr)
 {
-    if (ts_node_is_null(node))
+    if (ts_node_is_null(node) || !nodeIndex)
     {
         return "";
     }
 
-    if (nodeIndex)
+    TSNode classNode = nodeIndex->FindEnclosingClassOrMixin(ts_node_start_byte(node));
+    if (!ts_node_is_null(classNode))
     {
-        TSNode classNode = nodeIndex->FindEnclosingClassOrMixin(ts_node_start_byte(node));
-        if (!ts_node_is_null(classNode))
+        TSNode nameNode = parser::GetChildByField(classNode, parser::GetGrammarSymbols().fieldName);
+        if (!ts_node_is_null(nameNode))
         {
-            TSNode nameNode = parser::GetChildByField(classNode, parser::GetGrammarSymbols().fieldName);
-            if (!ts_node_is_null(nameNode))
-            {
-                return NodeText(nameNode, sourceCode);
-            }
+            return NodeText(nameNode, sourceCode);
         }
-        return "";
     }
-
-    std::string resultClassName;
-    bool foundLambda = false;
-    const auto& gs = parser::GetGrammarSymbols();
-    parser::ForEachAncestor(parser::GetParent(node),
-                            [&](TSNode curr) -> bool
-                            {
-                                const TSSymbol sym = ts_node_symbol(curr);
-                                if (sym == gs.symLambdaExpression)
-                                {
-                                    foundLambda = true;
-                                }
-                                else if (foundLambda && sym == gs.symClassDeclaration)
-                                {
-                                    TSNode nameNode = parser::GetChildByField(curr, gs.fieldName);
-                                    if (!ts_node_is_null(nameNode))
-                                    {
-                                        resultClassName = NodeText(nameNode, sourceCode);
-                                        return false;
-                                    }
-                                }
-                                return true;
-                            });
-    return resultClassName;
+    return "";
 }
 
 /**
@@ -834,8 +759,7 @@ void CheckImplicitMemberAccess(TSNode node, const Scope* scope, std::string_view
     const SymbolTable& table = ctx.request.symbolTable;
 
     bool insideMixin = false;
-    const std::string accessingClass =
-        EnclosingClass(node, ctx.request.sourceCode, insideMixin, table, ctx.request.nodeIndex);
+    const std::string accessingClass = EnclosingClass(node, ctx.request.sourceCode, insideMixin, ctx.request.nodeIndex);
     if (accessingClass.empty())
     {
         return;

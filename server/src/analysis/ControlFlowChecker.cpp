@@ -6,6 +6,7 @@
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/RuleIndex.h"
 #include "utils/ScopedNameUtils.h"
+#include "utils/Utils.h"
 
 #include "parser/GrammarNames.h"
 #include "parser/Primitives.h"
@@ -168,7 +169,7 @@ bool IsNonNullablePrimitiveName(std::string_view typeName)
     return parser::primitives::IsNonNullable(typeName);
 }
 
-bool BlockOrClauseDefinitelyReturns(TSNode node, std::string_view type, std::string_view sourceCode);
+bool BlockOrClauseDefinitelyReturns(TSNode node, TSSymbol sym, std::string_view sourceCode);
 bool IfDefinitelyReturns(TSNode node, std::string_view sourceCode);
 bool SwitchDefinitelyReturns(TSNode node, std::string_view sourceCode);
 bool TryDefinitelyReturns(TSNode node, std::string_view sourceCode);
@@ -185,24 +186,25 @@ bool TryDefinitelyReturns(TSNode node, std::string_view sourceCode);
  */
 bool DefinitelyReturns(TSNode node, std::string_view sourceCode)
 {
-    const std::string_view type = NodeType(node);
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(node);
 
-    if (type == "return_statement")
+    if (sym == gs.symReturnStatement)
     {
         return true;
     }
 
-    if (type == "statement_block" || type == "case_clause")
+    if (sym == gs.symStatementBlock || sym == gs.symCaseClause)
     {
-        return BlockOrClauseDefinitelyReturns(node, type, sourceCode);
+        return BlockOrClauseDefinitelyReturns(node, sym, sourceCode);
     }
 
-    if (type == "if_statement")
+    if (sym == gs.symIfStatement)
     {
         return IfDefinitelyReturns(node, sourceCode);
     }
 
-    if (type == "switch_statement")
+    if (sym == gs.symSwitchStatement)
     {
         return SwitchDefinitelyReturns(node, sourceCode);
     }
@@ -218,13 +220,13 @@ bool DefinitelyReturns(TSNode node, std::string_view sourceCode)
     // Its analysis is structural: a loop body may run zero times as far as it is concerned,
     // so a return inside one is not a return on every path. Believing otherwise cost three
     // errors the compiler gives and this analyzer did not.
-    if (type == "while_statement" || type == "do_while_statement" || type == "for_statement" ||
-        type == "foreach_statement")
+    if (sym == gs.symWhileStatement || sym == gs.symDoWhileStatement || sym == gs.symForStatement ||
+        sym == gs.symForeachStatement)
     {
         return false;
     }
 
-    if (type == "try_statement")
+    if (sym == gs.symTryStatement)
     {
         return TryDefinitelyReturns(node, sourceCode);
     }
@@ -232,9 +234,10 @@ bool DefinitelyReturns(TSNode node, std::string_view sourceCode)
     return false;
 }
 
-bool BlockOrClauseDefinitelyReturns(TSNode node, std::string_view type, std::string_view sourceCode)
+bool BlockOrClauseDefinitelyReturns(TSNode node, TSSymbol sym, std::string_view sourceCode)
 {
-    const bool isCaseClause = (type == "case_clause");
+    const auto& gs = parser::GetGrammarSymbols();
+    const bool isCaseClause = (sym == gs.symCaseClause);
     const bool isDefault = isCaseClause && IsDefaultClause(node);
     bool skippedLabel = false;
     bool returned = false;
@@ -283,21 +286,22 @@ bool ClauseHasEscapingBreak(TSNode clause)
         return false;
     }
 
+    const auto& gs = parser::GetGrammarSymbols();
     bool hasBreak = false;
     while (true)
     {
         TSNode node = ts_tree_cursor_current_node(&cursor);
         if (!ts_node_is_null(node))
         {
-            std::string_view type = NodeType(node);
-            if (type == "break_statement")
+            const TSSymbol sym = ts_node_symbol(node);
+            if (sym == gs.symBreakStatement)
             {
                 hasBreak = true;
                 break;
             }
-            const bool isInnerEnclosure = type == "while_statement" || type == "do_while_statement" ||
-                                          type == "for_statement" || type == "foreach_statement" ||
-                                          type == "switch_statement";
+            const bool isInnerEnclosure = sym == gs.symWhileStatement || sym == gs.symDoWhileStatement ||
+                                          sym == gs.symForStatement || sym == gs.symForeachStatement ||
+                                          sym == gs.symSwitchStatement;
             if (!isInnerEnclosure && ts_tree_cursor_goto_first_child(&cursor))
             {
                 continue;
@@ -401,14 +405,15 @@ bool TryDefinitelyReturns(TSNode node, std::string_view sourceCode)
 /** @brief True for a case value shape AngelScript cannot use as a label. */
 bool IsUnusableCaseValue(TSNode expression, std::string_view sourceCode)
 {
-    const std::string_view type = NodeType(expression);
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(expression);
 
-    if (type == "string_literal")
+    if (sym == gs.symStringLiteral)
     {
         return true;
     }
 
-    if (type == "number_literal")
+    if (sym == gs.symNumberLiteral)
     {
         // A case label has to be an integral constant, so a fractional literal is out.
         // Identifiers are left alone: an enum member and a `const int` both arrive as one
@@ -546,7 +551,7 @@ std::optional<long long> EnumeratorValue(std::string_view label, const rules::Ru
     return found;
 }
 
-bool CheckLocalCaseConstantness(TSNode value, const std::string& idText, DiagnosticContext& ctx)
+bool CheckLocalCaseConstantness(TSNode value, std::string_view idText, DiagnosticContext& ctx)
 {
     if (!ctx.request.scopeRoot)
     {
@@ -584,13 +589,14 @@ bool CheckLocalCaseConstantness(TSNode value, const std::string& idText, Diagnos
 
 void CheckCaseConstantness(TSNode value, std::string_view sourceCode, DiagnosticContext& ctx)
 {
-    const std::string_view nodeType = NodeType(value);
-    if (nodeType == "identifier" || nodeType == "scoped_identifier")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(value);
+    if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier)
     {
-        std::string idText(Trim(NodeText(value, sourceCode)));
+        const std::string_view idText = utils::TrimView(parser::GetNodeTextView(value, sourceCode));
 
         bool reported = false;
-        auto syms = FindSymbolsInScope(idText, value, sourceCode, ctx.request.symbolTable);
+        auto syms = FindSymbolsInScope(std::string(idText), value, sourceCode, ctx.request.symbolTable);
         for (const auto& s : syms)
         {
             if (s.type == SymbolType::Variable && !s.GetVariable().modifiers.isConst)
@@ -606,7 +612,7 @@ void CheckCaseConstantness(TSNode value, std::string_view sourceCode, Diagnostic
             CheckLocalCaseConstantness(value, idText, ctx);
         }
     }
-    else if (nodeType == "call_expression")
+    else if (sym == gs.symCallExpression)
     {
         EmitAtNode(value, ctx, "as-err-case-not-constant");
     }
@@ -777,17 +783,18 @@ void CheckUnreachable(TSNode block, DiagnosticContext& ctx)
         return;
     }
 
+    const auto& gs = parser::GetGrammarSymbols();
     const uint32_t count = ts_node_named_child_count(block);
     bool terminated = false;
 
     for (uint32_t i = 0; i < count; ++i)
     {
         TSNode child = ts_node_named_child(block, i);
-        const std::string_view childType = NodeType(child);
+        const TSSymbol childSym = ts_node_symbol(child);
 
         // Comments are extras rather than statements, and a comment after a return is
         // ordinary - it is usually what explains the return.
-        if (childType == "comment")
+        if (childSym == gs.symComment)
         {
             continue;
         }
@@ -798,7 +805,7 @@ void CheckUnreachable(TSNode block, DiagnosticContext& ctx)
         // statement after it read as dead. One directive anywhere in the block retires the
         // question for the whole block, because a `#endif` alone gives no clue what its
         // `#if` decided.
-        if (childType == "preproc_directive")
+        if (childSym == gs.symPreprocDirective)
         {
             return;
         }
@@ -809,8 +816,8 @@ void CheckUnreachable(TSNode block, DiagnosticContext& ctx)
             return;
         }
 
-        terminated =
-            childType == "return_statement" || childType == "break_statement" || childType == "continue_statement";
+        terminated = childSym == gs.symReturnStatement || childSym == gs.symBreakStatement ||
+                     childSym == gs.symContinueStatement;
     }
 }
 
@@ -916,9 +923,10 @@ class ControlFlowVisitor
             ts_node_is_null(returnType) && NodeSymbol(node) != parser::GetGrammarSymbols().symLambdaExpression;
     }
 
-    bool CheckLoopControl(TSNode node, std::string_view type, const FlowState& state)
+    bool CheckLoopControl(TSNode node, TSSymbol sym, const FlowState& state)
     {
-        if (type == "break_statement")
+        const auto& gs = parser::GetGrammarSymbols();
+        if (sym == gs.symBreakStatement)
         {
             if (state.loopDepth == 0 && state.switchDepth == 0)
             {
@@ -926,7 +934,7 @@ class ControlFlowVisitor
             }
             return true;
         }
-        if (type == "continue_statement")
+        if (sym == gs.symContinueStatement)
         {
             if (state.loopDepth == 0)
             {
@@ -937,19 +945,20 @@ class ControlFlowVisitor
         return false;
     }
 
-    void UpdateBranchState(TSNode node, std::string_view type, FlowState& state)
+    void UpdateBranchState(TSNode node, TSSymbol sym, FlowState& state)
     {
-        if (type == "while_statement" || type == "for_statement" || type == "foreach_statement" ||
-            type == "do_while_statement")
+        const auto& gs = parser::GetGrammarSymbols();
+        if (sym == gs.symWhileStatement || sym == gs.symForStatement || sym == gs.symForeachStatement ||
+            sym == gs.symDoWhileStatement)
         {
             ++state.loopDepth;
         }
-        else if (type == "switch_statement")
+        else if (sym == gs.symSwitchStatement)
         {
             CheckSwitch(node, m_sourceCode, m_ctx);
             ++state.switchDepth;
         }
-        else if (type == "if_statement")
+        else if (sym == gs.symIfStatement)
         {
             CheckEmptyBranch(node, m_ctx);
         }
@@ -963,28 +972,29 @@ class ControlFlowVisitor
             return;
         }
 
-        const std::string_view type = NodeType(node);
+        const auto& gs = parser::GetGrammarSymbols();
+        const TSSymbol sym = ts_node_symbol(node);
 
-        if (CheckLoopControl(node, type, state))
+        if (CheckLoopControl(node, sym, state))
         {
             return;
         }
 
-        if (type == "statement_block" || type == "case_clause")
+        if (sym == gs.symStatementBlock || sym == gs.symCaseClause)
         {
             CheckUnreachable(node, m_ctx);
         }
-        else if (type == "return_statement")
+        else if (sym == gs.symReturnStatement)
         {
             CheckReturnStatement(node, state);
         }
-        else if (type == "func_declaration" || type == "lambda_expression")
+        else if (sym == gs.symFuncDeclaration || sym == gs.symLambdaExpression)
         {
             CheckFunctionDeclaration(node, state);
         }
         else
         {
-            UpdateBranchState(node, type, state);
+            UpdateBranchState(node, sym, state);
         }
 
         const uint32_t count = ts_node_named_child_count(node);

@@ -781,11 +781,12 @@ class DefiniteAssignmentVisitor
 
 void TraverseFunctions(TSNode root, DefiniteAssignmentVisitor& visitor)
 {
+    const auto& gs = parser::GetGrammarSymbols();
     parser::ForEachDescendantNode(root,
                                   [&](TSNode node)
                                   {
-                                      std::string_view type = NodeType(node);
-                                      if (type == "func_declaration" || type == "lambda_expression")
+                                      const TSSymbol sym = ts_node_symbol(node);
+                                      if (sym == gs.symFuncDeclaration || sym == gs.symLambdaExpression)
                                       {
                                           visitor.AnalyzeFunction(node);
                                       }

@@ -58,7 +58,7 @@ SRC = SERVER / 'src'
 # the shape all twenty had - a real name and a wrong one, side by side.
 NODE_TYPE_HOLDERS = re.compile(
     r'\b(?:ts_node_type\s*\(|NodeType\s*\()')
-COMPARISON = re.compile(r'==\s*"([a-z][a-z_]*)"')
+COMPARISON = re.compile(r'(?:==|!=)\s*"([a-z][a-z_]*)"|"([a-z][a-z_]*)"\s*(?:==|!=)')
 
 # `ts_node_type` returns a `const char *`, so the other natural spelling of the same comparison puts
 # the literal to the LEFT of the operator and the regex above never sees it:
@@ -95,6 +95,7 @@ NOT_NODE_TYPES = {
     'protected', 'bool', 'int', 'uint', 'float', 'double', 'mixin', 'enum', 'class', 'interface',
     'namespace', 'funcdef', 'typedef', 'import', 'from', 'module',
     'endcode', 'verbatim', 'endverbatim',
+    'parameter', 'variable', 'method', 'comment', 'operator', 'type', 'function', 'left', 'right',
 }
 
 
@@ -216,6 +217,8 @@ def main():
 
     bad_nodes = []
     bad_fields = []
+    bad_node_type_calls = []
+    banned_node_comparisons = []
     unchecked = set()
 
     for path in sorted(SRC.rglob('*')):
@@ -223,11 +226,11 @@ def main():
             continue
 
         text = path.read_text(encoding='utf-8', errors='replace')
+        is_layer_2_3 = any(part in ('analysis', 'features') for part in path.parts)
+        is_layer_2_3_4 = is_layer_2_3 or 'lsp' in path.parts
 
-        # A file that never touches a node cannot be comparing node types. This is not a shortcut:
-        # FormattingHandler.cpp compares `prev.text == "return"` against its own hand-lexed tokens
-        # and has no parse tree at all, and every word it matches would read as a node type here.
-        if 'ts_node' not in text:
+        # Files outside Layers 2 and 3 that never touch a node cannot be comparing node types.
+        if not is_layer_2_3 and 'ts_node' not in text:
             continue
 
         # A file whose grammar this checkout has not fetched cannot be checked. Skipping it is the
@@ -248,6 +251,9 @@ def main():
             if COMMENT.match(line):
                 continue
 
+            if is_layer_2_3_4 and re.search(r'(?<!\w)NodeType\s*\(', line):
+                bad_node_type_calls.append((rel, number))
+
             for match in FIELD_LOOKUP.finditer(line):
                 field = match.group(1)
                 if field not in grammar_fields:
@@ -261,12 +267,21 @@ def main():
             if 'child_by_field' in line:
                 continue
 
-            compared = [match.group(1) for match in COMPARISON.finditer(line)]
+            compared = []
+            for match in COMPARISON.finditer(line):
+                cand = match.group(1) or match.group(2)
+                if cand:
+                    compared.append(cand)
             strcmp_hits = [(match.group(1), match.group(2))
                            for match in STRCMP_COMPARISON.finditer(line)]
             compared += [name for _, name in strcmp_hits]
             if not compared:
                 continue
+
+            if is_layer_2_3 and path.name != 'DoxygenMarkdown.cpp':
+                for candidate in compared:
+                    if candidate in grammar_named and candidate not in NOT_NODE_TYPES:
+                        banned_node_comparisons.append((rel, number, candidate))
 
             # Either the line reads a node type outright, one of the names it compares is a real
             # node type, or it strcmps a variable this file filled from ts_node_type - all three
@@ -288,11 +303,17 @@ def main():
     for rel, number, name in bad_fields:
         print('%s:%d: field "%s" is not in the grammar - this lookup always returns null' %
               (rel, number, name))
+    for rel, number in bad_node_type_calls:
+        print('%s:%d: NodeType(TSNode) wrapper is banned in Layers 2/3/4 - use ts_node_symbol with parser::GetGrammarSymbols()' %
+              (rel, number))
+    for rel, number, name in banned_node_comparisons:
+        print('%s:%d: comparison against node type "%s" is banned in Layers 2 and 3 - use ts_node_symbol with parser::GetGrammarSymbols()' %
+              (rel, number, name))
 
-    total = len(bad_nodes) + len(bad_fields)
+    total = len(bad_nodes) + len(bad_fields) + len(bad_node_type_calls) + len(banned_node_comparisons)
     if total:
         print()
-        print('%d name(s) no grammar defines. Either the name is wrong, or the grammar needs it - '
+        print('%d error(s) found in grammar name usage or banned wrappers. Either the name is wrong, or the grammar needs it - '
               'check %s.' % (total, ', '.join(sorted(
                   loaded[name]['path'].relative_to(SERVER).as_posix() for name in loaded))))
         return 1

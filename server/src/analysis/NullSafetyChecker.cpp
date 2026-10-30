@@ -176,12 +176,12 @@ void CheckNullSafety(const NullSafetyCheckRequest& request, DiagnosticContext& c
         return;
     }
 
+    const auto& gs = parser::GetGrammarSymbols();
     parser::ForEachDescendantNode(request.root,
                                   [&](TSNode node)
                                   {
-                                      std::string_view type = NodeType(node);
-                                      if (type == parser::nodes::FuncDeclaration ||
-                                          type == parser::nodes::LambdaExpression)
+                                      const TSSymbol sym = ts_node_symbol(node);
+                                      if (sym == gs.symFuncDeclaration || sym == gs.symLambdaExpression)
                                       {
                                           AnalyzeFunction(node, request.scopeRoot, checkCtx);
                                       }

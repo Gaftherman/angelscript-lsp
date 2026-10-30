@@ -44,6 +44,10 @@ inline constexpr std::string_view Override = "override";
 inline constexpr std::string_view Explicit = "explicit";
 inline constexpr std::string_view Property = "property";
 inline constexpr std::string_view Delete = "delete";
+inline constexpr std::string_view Class = "class";
+inline constexpr std::string_view Interface = "interface";
+inline constexpr std::string_view Enum = "enum";
+inline constexpr std::string_view Funcdef = "funcdef";
 
 namespace operators
 {

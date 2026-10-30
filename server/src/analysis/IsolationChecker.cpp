@@ -23,15 +23,7 @@ void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, cons
 
 std::string TrimWhitespace(std::string_view text)
 {
-    while (!text.empty() && (text.front() == ' ' || text.front() == '\t'))
-    {
-        text.remove_prefix(1);
-    }
-    while (!text.empty() && (text.back() == ' ' || text.back() == '\t'))
-    {
-        text.remove_suffix(1);
-    }
-    return std::string(text);
+    return std::string(utils::TrimView(text));
 }
 
 std::string CleanSharedTypeName(std::string_view raw)
@@ -135,119 +127,177 @@ bool IsLocalVariableOrParameter(const Scope* startScope, std::string_view name)
     return false;
 }
 
-bool NodeHasModifierToken(TSNode node, std::string_view modifierName, std::string_view sourceCode)
+bool NodeHasModifierToken(TSNode node, TSSymbol targetSym)
 {
     if (ts_node_is_null(node))
     {
         return false;
     }
+    const auto& gs = parser::GetGrammarSymbols();
     TSTreeCursor cursor = ts_tree_cursor_new(node);
     if (!ts_tree_cursor_goto_first_child(&cursor))
     {
         ts_tree_cursor_delete(&cursor);
         return false;
     }
+    bool found = false;
     do
     {
         TSNode child = ts_tree_cursor_current_node(&cursor);
-        const uint32_t start = ts_node_start_byte(child);
-        const uint32_t end = ts_node_end_byte(child);
-        if (start < end && end <= sourceCode.size())
+        const TSSymbol sym = ts_node_symbol(child);
+        if (sym == targetSym)
         {
-            if (sourceCode.substr(start, end - start) == modifierName)
+            found = true;
+            break;
+        }
+        if (sym == gs.symDeclarationModifier || sym == gs.symSharedExternalModifier)
+        {
+            if (!ts_node_is_null(parser::FindChildWithSymbol(child, targetSym)))
             {
-                ts_tree_cursor_delete(&cursor);
-                return true;
+                found = true;
+                break;
             }
         }
     } while (ts_tree_cursor_goto_next_sibling(&cursor));
 
     ts_tree_cursor_delete(&cursor);
-    return false;
+    return found;
 }
 
-bool IsAllowedSharedEntity(std::string_view afterShared)
+bool ContainsSymbolDescendant(TSNode root, TSSymbol targetSym) noexcept
 {
-    if (afterShared.starts_with("class ") || afterShared.starts_with("class\t") ||
-        afterShared.starts_with("interface ") || afterShared.starts_with("interface\t") ||
-        afterShared.starts_with("enum ") || afterShared.starts_with("enum\t") || afterShared.starts_with("funcdef ") ||
-        afterShared.starts_with("funcdef\t") || afterShared.starts_with("external "))
+    if (ts_node_is_null(root))
+    {
+        return false;
+    }
+    TSTreeCursor cursor = ts_tree_cursor_new(root);
+    bool found = false;
+    uint32_t depth = 0;
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        depth = 1;
+        while (depth > 0)
+        {
+            if (ts_node_symbol(ts_tree_cursor_current_node(&cursor)) == targetSym)
+            {
+                found = true;
+                break;
+            }
+            if (depth < k_maxAstDepth && ts_tree_cursor_goto_first_child(&cursor))
+            {
+                ++depth;
+                continue;
+            }
+            if (ts_tree_cursor_goto_next_sibling(&cursor))
+            {
+                continue;
+            }
+            while (depth > 0 && !ts_tree_cursor_goto_next_sibling(&cursor))
+            {
+                ts_tree_cursor_goto_parent(&cursor);
+                --depth;
+            }
+        }
+    }
+    ts_tree_cursor_delete(&cursor);
+    return found;
+}
+
+bool IsAllowedSharedSymbol(TSSymbol declSym, const parser::GrammarSymbols& gs) noexcept
+{
+    return declSym == gs.symClassDeclaration || declSym == gs.symInterfaceDeclaration ||
+           declSym == gs.symFuncdefDeclaration || declSym == gs.symFuncDeclaration;
+}
+
+bool IsValidEnumSharedModifier(TSNode parent, const parser::GrammarSymbols& gs) noexcept
+{
+    TSNode next = ts_node_next_sibling(parent);
+    while (!ts_node_is_null(next))
+    {
+        const TSSymbol sym = ts_node_symbol(next);
+        if (sym != gs.symSharedExternalModifier && sym != gs.symDeclarationModifier && sym != gs.symComment)
+        {
+            break;
+        }
+        next = ts_node_next_sibling(next);
+    }
+
+    if (!ts_node_is_null(next) && ts_node_is_error(next))
+    {
+        return !ContainsSymbolDescendant(next, gs.symPrimitiveType);
+    }
+    return true;
+}
+
+bool IsValidSharedNode(TSNode sharedNode)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode parent = parser::GetParent(sharedNode);
+    if (ts_node_is_null(parent))
     {
         return true;
     }
 
-    size_t parenPos = afterShared.find('(');
-    size_t semiPos = afterShared.find(';');
-    size_t eqPos = afterShared.find('=');
+    TSNode declNode = parent;
+    const TSSymbol parentSym = ts_node_symbol(parent);
+    if (parentSym == gs.symDeclarationModifier || parentSym == gs.symSharedExternalModifier)
+    {
+        declNode = parser::GetParent(parent);
+    }
 
-    return parenPos != std::string_view::npos && (semiPos == std::string_view::npos || parenPos < semiPos) &&
-           (eqPos == std::string_view::npos || parenPos < eqPos);
+    if (ts_node_is_null(declNode) || ts_node_is_error(declNode))
+    {
+        return false;
+    }
+
+    const TSSymbol declSym = ts_node_symbol(declNode);
+    if (IsAllowedSharedSymbol(declSym, gs))
+    {
+        return true;
+    }
+    if (declSym == gs.symEnumDeclaration)
+    {
+        return IsValidEnumSharedModifier(parent, gs);
+    }
+    return false;
 }
 
-void CheckSharedLine(std::string_view line, uint32_t lineNum, DiagnosticContext& ctx)
+void CheckSharedEntityEligibility(const IsolationCheckRequest& request, DiagnosticContext& ctx)
 {
-    size_t col = 0;
-    while (col < line.size() && (line[col] == ' ' || line[col] == '\t'))
+    const auto& gs = parser::GetGrammarSymbols();
+    std::span<const TSNode> sharedNodes;
+    std::vector<TSNode> fallbackNodes;
+    if (request.nodeIndex)
     {
-        ++col;
+        sharedNodes = request.nodeIndex->Nodes(gs.tokShared);
+    }
+    else
+    {
+        ForEachDescendantNode(request.rootNode,
+                              [&](TSNode node)
+                              {
+                                  if (ts_node_symbol(node) == gs.tokShared)
+                                  {
+                                      fallbackNodes.push_back(node);
+                                  }
+                              });
+        sharedNodes = fallbackNodes;
     }
 
-    std::string_view trimmed = line.substr(col);
-    if (trimmed.starts_with("//") || trimmed.starts_with("/*"))
+    for (TSNode sharedNode : sharedNodes)
     {
-        return;
-    }
-
-    if (!trimmed.starts_with("shared ") && !trimmed.starts_with("shared\t"))
-    {
-        return;
-    }
-
-    std::string codePart(trimmed);
-    size_t commentIdx = codePart.find("//");
-    if (commentIdx != std::string::npos)
-    {
-        codePart = codePart.substr(0, commentIdx);
-    }
-
-    std::string afterShared = codePart.substr(6);
-    while (!afterShared.empty() && (afterShared.front() == ' ' || afterShared.front() == '\t'))
-    {
-        afterShared.erase(afterShared.begin());
-    }
-
-    if (!IsAllowedSharedEntity(afterShared))
-    {
-        uint32_t startCol = static_cast<uint32_t>(col);
-        uint32_t endCol = static_cast<uint32_t>(col + 6);
-        ctx.LogRule("CheckSharedEntityEligibility", "as-err-shared-not-allowed-on-entity", {});
-        ctx.EmitAtRange({lineNum, startCol, lineNum, endCol}, "as-err-shared-not-allowed-on-entity");
-    }
-}
-
-void CheckSharedEntityEligibility(std::string_view sourceCode, DiagnosticContext& ctx)
-{
-    size_t startPos = 0;
-    uint32_t lineNum = 0;
-
-    while (startPos < sourceCode.size())
-    {
-        size_t endPos = sourceCode.find('\n', startPos);
-        if (endPos == std::string_view::npos)
+        if (request.nodeIndex && request.nodeIndex->IsInsideComment(ts_node_start_byte(sharedNode)))
         {
-            endPos = sourceCode.size();
+            continue;
         }
 
-        std::string_view line = sourceCode.substr(startPos, endPos - startPos);
-        if (!line.empty() && line.back() == '\r')
+        if (!IsValidSharedNode(sharedNode))
         {
-            line.remove_suffix(1);
+            const TSPoint start = ts_node_start_point(sharedNode);
+            const TSPoint end = ts_node_end_point(sharedNode);
+            ctx.LogRule("CheckSharedEntityEligibility", "as-err-shared-not-allowed-on-entity", {});
+            ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-shared-not-allowed-on-entity");
         }
-
-        CheckSharedLine(line, lineNum, ctx);
-
-        startPos = endPos + 1;
-        ++lineNum;
     }
 }
 
@@ -289,7 +339,7 @@ struct IsolationVisitor
 
     bool IsClassShared(TSNode node, const std::string& className) const
     {
-        if (NodeHasModifierToken(node, "shared", request.sourceCode))
+        if (NodeHasModifierToken(node, parser::GetGrammarSymbols().tokShared))
         {
             return true;
         }
@@ -329,7 +379,7 @@ struct IsolationVisitor
 
     bool IsFunctionShared(TSNode node, bool inSharedContext) const
     {
-        if (inSharedContext || NodeHasModifierToken(node, "shared", request.sourceCode))
+        if (inSharedContext || NodeHasModifierToken(node, parser::GetGrammarSymbols().tokShared))
         {
             return true;
         }
@@ -579,7 +629,7 @@ void CheckSharedIsolation(const IsolationCheckRequest& request, DiagnosticContex
         return;
     }
 
-    CheckSharedEntityEligibility(request.sourceCode, ctx);
+    CheckSharedEntityEligibility(request, ctx);
 
     IsolationVisitor visitor{request, ctx, "", false};
     visitor.Visit(request.rootNode, false);

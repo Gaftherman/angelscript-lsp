@@ -167,6 +167,24 @@ inline bool TrySkipCommentDispatch(std::string_view sourceCode, State& state, Li
 }
 
 /**
+ * @brief Trims leading and trailing whitespace from a string_view without allocations.
+ * @param[in] text The input string_view to trim.
+ * @return Trimmed string_view.
+ */
+inline std::string_view TrimView(std::string_view text) noexcept
+{
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())))
+    {
+        text.remove_prefix(1);
+    }
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back())))
+    {
+        text.remove_suffix(1);
+    }
+    return text;
+}
+
+/**
  * @brief Compares two strings case-insensitively for equality.
  * @param[in] a First string to compare.
  * @param[in] b Second string to compare.
@@ -208,5 +226,26 @@ inline bool CaseInsensitiveStartsWith(std::string_view str, std::string_view pre
         }
     }
     return true;
+}
+
+/**
+ * @brief Checks if a string starts with a keyword followed by whitespace or delimiter.
+ * @param[in] text The text view to check.
+ * @param[in] keyword The keyword to match.
+ * @return True if text starts with keyword and is at a word boundary.
+ */
+inline bool MatchKeywordPrefix(std::string_view text, std::string_view keyword) noexcept
+{
+    if (!text.starts_with(keyword))
+    {
+        return false;
+    }
+    if (text.size() == keyword.size())
+    {
+        return true;
+    }
+    const char nextChar = text[keyword.size()];
+    return nextChar == ' ' || nextChar == '\t' || nextChar == '\r' || nextChar == '\n' || nextChar == ';' ||
+           nextChar == '{' || nextChar == '(';
 }
 } // namespace angel_lsp::utils
