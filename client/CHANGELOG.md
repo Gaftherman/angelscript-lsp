@@ -4,6 +4,35 @@ All notable changes to the "angelscript" extension will be documented in this fi
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.1.6-exp.6] - 2026-10-30
+
+### Experimental Release 1.1.6-exp.6: O(log K) Interval Lookups, AST Traversal Hardening, Qualified Enum Hover & Zero-Allocation Keyword Centralization
+
+- O(log K) AST Interval Indexing & Total Eradication of Upward Climb Loops (`NodeIndex`, `ASTUtils`, `check-ast-traversal.py`):
+  - Added binary search interval lookups in `NodeIndex` (`FindEnclosingNode`, `FindEnclosingNodeAny`, `FindEnclosingClassOrMixin`, `FindEnclosingCallable`, `CollectEnclosingContainers`) operating in $O(\log K)$ time over ordered declaration vectors.
+  - Centralized upward AST navigation in `ASTUtils.h` (`FindAncestorWithSymbol`, `FindAncestorWithAnySymbol`, `FindDirectChildOfAncestor`, `FindOutermostAncestorWithSymbol`, `ForEachAncestor`), eliminating 100% of ad-hoc `depth < 64` / `depth < 16` loops across 20+ analysis and feature handlers.
+  - Hardened static quality gate `check-ast-traversal.py` to strictly ban any upward climb loop calling `GetParent` outside `ASTUtils.h` and ban magic depth comparison patterns (`\bdepth\s*<\s*\d+`).
+- O(1) Token-Based Shared Isolation Checking (`IsolationChecker`, `SemanticAnalyzer`):
+  - Eliminated full-text substring scan `sourceCode.find("shared")` in `IsolationChecker::CheckSharedIsolation`.
+  - Replaced text scanning with an instantaneous $O(1)$ token lookup `request.nodeIndex->Nodes(gs.tokShared).empty()`, passing `NodeIndex` through `IsolationCheckRequest` and `SemanticAnalyzer`.
+- Qualified Enum Member & Namespace Variable Hover Resolution (`HoverHandler`, `SemanticHelpers`):
+  - Fixed hover resolution for enum member access in qualified expressions (e.g., `int(Version::V2)`) and namespace-qualified constant assignments (`const Version Latest = Version::V2`).
+  - Corrected scoped type name lookup and prefix matching to prevent empty hover markdowns on enum member constants referenced across nested namespaces.
+- Predefined Snapshot Caching Optimization (`SymbolTable`):
+  - Introduced caching of cloned predefined symbol table buckets during analysis snapshot creation in `SymbolTable::CreateAnalysisSnapshot`.
+  - Avoided redundant cloning of thousands of engine predefined symbols and rule partials across documents when predefined stubs remain unchanged.
+- Canonical Predefined Tracking & Header Decoupling (`SymbolTable`, `SymbolCollector`, `Utils`, `WorkspaceStateStore`):
+  - Integrated `builtin://` URI recognition into `utils::IsPredefinedFile`, establishing a single canonical source of truth for predefined stubs and built-in engine profiles.
+  - Added `bool isPredefined` directly onto `struct Symbol`, populated during AST collection in `SymbolCollector`.
+  - Removed ad-hoc `k_profileUriPrefix` string matching and `#include "analysis/EngineProfiles.h"` from `SymbolTable.cpp`.
+  - Replaced manual forward declarations in `WorkspaceStateStore.h` with direct include of `analysis/SymbolTable.h`.
+- Zero Hardcoded Modifier Strings & Single-Pass Signature Formatting (`Keywords.h`, `SignatureFormatter.cpp`):
+  - Centralized declaration and access modifiers (`Private`, `Protected`, `Public`, `External`, `Shared`, `Mixin`, `Abstract`, `Final`, `Override`, `Explicit`, `Property`, `Delete`) in `angel_lsp::parser::keywords`.
+  - Rewrote `ApplyConstAndHandle`, `FormatAccessPrefix`, `FormatDeclarationPrefix`, and `FormatFunctionSuffix` to use `parser::keywords::*` constants and pre-reserved buffers with zero string literal duplication and zero `.insert(0, ...)` reallocations.
+- Verification & Test Coverage:
+  - 100% of 2,554 CTest test cases passing in Release mode under `/W4 /WX /we4100 /w14505`.
+  - 12/12 active static quality gates passing with 0 warnings (`check-quality.py`).
+
 ## [1.1.6-exp.5] - 2026-10-29
 
 ### Experimental Release 1.1.6-exp.5: Deep AST Navigation Resilience, Predefined Caching Optimization, Robust Member Chaining & Smart Operator Completions
