@@ -9,33 +9,33 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 ### Experimental Release 1.1.6-exp.4: Module Symbol Isolation, Oracle Parity for References, Zero-Allocation Scope Utils & Compile-Time Anti-Slop Gates
 
 - Strict Module & Entry Point Symbol Isolation (`SymbolTable`, `ServerModules`, `ServerAnalysis`):
-  - Filtered snapshot analysis in `SymbolTable::CreateAnalysisSnapshot` restricted to the active module's closure (`moduleFileUris`) + stubs and active file.
-  - Saneamiento completo de claves y cubos de símbolos para evitar que archivos `.as` no incluidos colisionen con el archivo activo.
-  - Eliminados los falsos positivos de declaraciones duplicadas (`E104` / `as-err-duplicate-declaration`) y discrepancias de firma en funcdefs (`E121` / `as-err-signature-mismatch`) entre scripts independientes sin relación de inclusión.
-  - Mejora en `ComputeModuleClosure` para heredar automáticamente miembros de módulos carpeta circundantes cuando un entry point reside en su interior.
+  - Filtered snapshot analysis in `SymbolTable::CreateAnalysisSnapshot` restricted to the active module's closure (`moduleFileUris`) plus predefined stubs and active file.
+  - Sanitized symbol keys and buckets to ensure unincluded `.as` files never collide with or pollute the active document's analysis scope.
+  - Eliminated false-positive duplicate declaration (`E104` / `as-err-duplicate-declaration`) and funcdef signature mismatch (`E121` / `as-err-signature-mismatch`) diagnostics across independent scripts with disjoint include graphs.
+  - Enhanced `ComputeModuleClosure` to automatically inherit member paths from enclosing folder modules when an entry point file resides inside a configured folder module.
 - Oracle Parity for Reference Parameters & Unsafe References (`FunctionRules`, `sven.angelscript.rules.json`):
-  - Paridad estricta con `angelscript_oracle.exe` para parámetros de función por referencia: cuando `allowUnsafeReferences == false` (predeterminado del motor), los tipos primitivos y por valor (`string`) con calificador `&` sin dirección explícita (`in`/`out`) emiten `E031` (`as-err-inout-on-primitive`).
-  - Verificación de modificadores de parámetros actualizada para no ignorar parámetros marcados como `const` cuando omiten el calificador `in` explícito (ej. `const string& text` vs `const string&in text`).
-  - Cuando `allowUnsafeReferences == true`, se permiten referencias libres estilo C++ sin emitir falsos diagnósticos.
+  - Strict compiler parity with `angelscript_oracle.exe` for reference parameters: when `allowUnsafeReferences == false` (the engine default), primitive and value types (`string`) using reference qualifier `&` without explicit direction (`in`/`out`) strictly emit `E031` (`as-err-inout-on-primitive`).
+  - Parameter modifier validation updated to evaluate `const` references omitting an explicit `in` direction qualifier (e.g., `const string& text` is treated as `&inout` by default, requiring `const string&in text` unless unsafe references are enabled).
+  - When `allowUnsafeReferences == true`, raw C++-style references on all types are accepted cleanly with zero false-positive diagnostics.
 - Zero-Allocation Scoped Name Utilities (`ScopedNameUtils.h`):
-  - Nueva cabecera `ScopedNameUtils.h` en Capa 1 operando al 100% sobre `std::string_view` con 0 reservas en el heap: `StripGlobalPrefix`, `HasLeadingGlobalPrefix`, `ParentScopeView`, `SplitScopedName`, `ForEachEnclosingScope`, `EndsWithScopedMember`, `JoinScopedName` y `AppendScopedName`.
-  - Erradicadas el 100% de operaciones manuales con `"::"` (`.starts_with("::")`, `.ends_with("::")`, concatenaciones `+ "::"` y `"::" +`) en Capas 2, 3 y 4.
-  - Bloqueo en tiempo de análisis estático mediante `server/scripts/check-ast-traversal.py`.
+  - New `ScopedNameUtils.h` header in Layer 1 operating entirely on `std::string_view` with zero heap allocations: `StripGlobalPrefix`, `HasLeadingGlobalPrefix`, `ParentScopeView`, `SplitScopedName`, `ForEachEnclosingScope`, `EndsWithScopedMember`, `JoinScopedName`, and `AppendScopedName`.
+  - Eradicated 100% of manual `"::"` operations (`.starts_with("::")`, `.ends_with("::")`, `+ "::"`, and `"::" +`) across Layers 2, 3, and 4.
+  - Enforced at quality gate level via static AST checks in `server/scripts/check-ast-traversal.py`.
 - Zero-Heap AST Operator Tokens & Node Agnosticism (`GrammarSymbols`, `ASTUtils`):
-  - Erradicadas las extracciones de operadores en memoria heap (`NodeText(opNode)`) en todos los analizadores de expresiones (`NullSafetyExpr`, `BinaryOperatorChecker`, `ComparisonOperatorChecker`, `DefiniteAssignmentChecker`, etc.).
-  - Migración a tokens pre-resueltos en tiempo de compilación (`TSSymbol` `gs.tok*`) y vistas directas `std::string_view` (`parser::GetNodeTextView(opNode, ctx.sourceCode)`).
-  - Erradicación de `ts_node_type(node)` y nombres de campo en strings (`parser::fields::*`) en Capas 2, 3 y 4, reemplazados por IDs numéricos precalculados en `GrammarSymbols`.
+  - Eradicated heap-allocating operator text extractions (`NodeText(opNode)`) across all expression checkers (`NullSafetyExpr`, `BinaryOperatorChecker`, `ComparisonOperatorChecker`, `DefiniteAssignmentChecker`, etc.).
+  - Migrated operator checks to pre-resolved `TSSymbol` tokens (`gs.tok*`) and zero-allocation string views (`parser::GetNodeTextView(opNode, ctx.sourceCode)`).
+  - Replaced `ts_node_type(node)` string comparisons and string field lookups (`parser::fields::*`) across Layers 2, 3, and 4 with numeric IDs pre-cached in `GrammarSymbols`.
 - Configured Types & Decoupling from Hardcoded Type Names (`SymbolTable`, `EngineRuleConfig`):
-  - Implementación de la Prohibición 13: desacoplados completamente los nombres de tipos cableados (`"string"`, `"array"`, `"weakref"`) en reglas de sobrecarga y conversión de tipos.
-  - Sustitución por consultas dinámicas a `SymbolTable` (`GetStringType()`, `GetDefaultArrayType()`) y sustitución paramétrica de plantillas.
-  - Integrado el target bloqueante `angel_lsp_anti_slop_gate` en `server/CMakeLists.txt`, impidiendo compilaciones con antipatrones AST.
+  - Enforced Prohibition 13: completely decoupled hardcoded type names (`"string"`, `"array"`, `"weakref"`) in overload ranking and type conversion checkers.
+  - Substituted with dynamic lookups via `SymbolTable` (`GetStringType()`, `GetDefaultArrayType()`) and generic template parameter substitutions.
+  - Integrated the blocking `angel_lsp_anti_slop_gate` target in `server/CMakeLists.txt` to immediately halt compilation if any AST anti-patterns or traversal rules are violated.
 - Humanized Configuration Descriptions & Dual-Language Parity (`client/package.nls.json`, `client/package.nls.es.json`):
-  - Rediseño completo de las 17 descripciones de configuración de motor `angelscript.engine.*` en inglés y español con ejemplos prácticos de código AngelScript y especificación de la propiedad nativa `(asEP_*)` al final.
-  - Sincronización automática de las tablas de configuración en `client/README.md` y `client/README.es.md` vía `sync-readme-settings.py`.
+  - Redesigned all 17 `angelscript.engine.*` configuration setting descriptions in both English and Spanish with practical AngelScript code examples and the corresponding host engine property `(asEP_*)` placed in parentheses.
+  - Synchronized documentation catalog tables in `client/README.md` and `client/README.es.md` using `sync-readme-settings.py`.
 - Tests & Validation Suite:
-  - 100% de 2,546 casos de prueba CTest aprobados en modo Release (`/W4 /WX /we4100`).
-  - 12/12 compuertas de calidad superadas con éxito (`check-quality.py`).
-  - Suite de cliente `npm run pretest` verificada sin errores de compilación ni linting.
+  - 100% of 2,546 CTest test cases passing in Release mode under `/W4 /WX /we4100`.
+  - 12/12 active static quality gates passing with 0 warnings (`check-quality.py`).
+  - Client extension verification passing with 0 TypeScript, bundling, ESLint, and settings-wiring errors (`npm run pretest`).
 
 ## [1.1.6-exp.3] - 2026-10-28
 
