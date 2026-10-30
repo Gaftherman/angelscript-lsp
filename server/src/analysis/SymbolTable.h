@@ -355,6 +355,7 @@ struct Symbol
     SourceRange selectionRange; ///< Source range of the identifier token itself (for DocumentSymbol/Rename).
 
     bool isSynthesized = false;        ///< True when synthesized into a host class (e.g. from an included mixin).
+    bool isPredefined = false;         ///< True when parsed from a predefined stub or builtin profile.
     std::string virtualFileUri;        ///< Synthetic URI when virtual mixin documents are enabled (e.g.
                                        ///< angelscript-virtual://<host_class>/<mixin>.as).
     std::vector<std::string> metadata; ///< CScriptBuilder metadata strings attached to this symbol.

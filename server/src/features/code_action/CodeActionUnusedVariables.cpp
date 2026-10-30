@@ -185,25 +185,9 @@ lsp::TextEdit BuildRemoveUnusedVariableEdit(TSNode rootNode, std::string_view so
     TSPoint pt = {def->startLine, def->startCharacter};
     TSNode leaf = ts_node_descendant_for_point_range(rootNode, pt, pt);
 
-    TSNode declarator = leaf;
-    for (int depth = 0; depth < 8 && !ts_node_is_null(declarator); ++depth)
-    {
-        if (ts_node_symbol(declarator) == parser::GetGrammarSymbols().symVariableDeclarator)
-        {
-            break;
-        }
-        declarator = parser::GetParent(declarator);
-    }
-
-    TSNode decl = declarator;
-    for (int depth = 0; depth < 8 && !ts_node_is_null(decl); ++depth)
-    {
-        if (ts_node_symbol(decl) == parser::GetGrammarSymbols().symVariableDeclaration)
-        {
-            break;
-        }
-        decl = parser::GetParent(decl);
-    }
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode declarator = parser::FindAncestorWithSymbol(leaf, gs.symVariableDeclarator);
+    TSNode decl = parser::FindAncestorWithSymbol(declarator, gs.symVariableDeclaration);
 
     if (ts_node_is_null(decl))
     {

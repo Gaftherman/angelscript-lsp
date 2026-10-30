@@ -129,34 +129,34 @@ struct CallNodes
 CallNodes FindCallNodes(TSNode node)
 {
     CallNodes result;
-    constexpr int kMaxDepth = 64;
-    int depth = 0;
     const auto& gs = parser::GetGrammarSymbols();
-    for (TSNode cur = node; depth < kMaxDepth && !ts_node_is_null(cur); cur = parser::GetParent(cur), ++depth)
-    {
-        const TSSymbol type = ts_node_symbol(cur);
-        if (type == gs.symArgumentList)
-        {
-            result.argListNode = cur;
-            TSNode parent = parser::GetParent(cur);
-            if (!ts_node_is_null(parent))
-            {
-                const TSSymbol pType = ts_node_symbol(parent);
-                if (pType == gs.symCallExpression || pType == gs.symConstructCallExpression ||
-                    pType == gs.symVariableDeclarator)
-                {
-                    result.callNode = parent;
-                    break;
-                }
-            }
-        }
-        else if (type == gs.symCallExpression || type == gs.symConstructCallExpression ||
-                 type == gs.symVariableDeclarator)
-        {
-            result.callNode = cur;
-            break;
-        }
-    }
+    parser::ForEachAncestor(node,
+                            [&](TSNode cur) -> bool
+                            {
+                                const TSSymbol type = ts_node_symbol(cur);
+                                if (type == gs.symArgumentList)
+                                {
+                                    result.argListNode = cur;
+                                    TSNode parent = parser::GetParent(cur);
+                                    if (!ts_node_is_null(parent))
+                                    {
+                                        const TSSymbol pType = ts_node_symbol(parent);
+                                        if (pType == gs.symCallExpression || pType == gs.symConstructCallExpression ||
+                                            pType == gs.symVariableDeclarator)
+                                        {
+                                            result.callNode = parent;
+                                            return false;
+                                        }
+                                    }
+                                }
+                                else if (type == gs.symCallExpression || type == gs.symConstructCallExpression ||
+                                         type == gs.symVariableDeclarator)
+                                {
+                                    result.callNode = cur;
+                                    return false;
+                                }
+                                return true;
+                            });
 
     if (!ts_node_is_null(result.callNode) && ts_node_is_null(result.argListNode))
     {

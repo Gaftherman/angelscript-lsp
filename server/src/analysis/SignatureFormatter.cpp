@@ -1,4 +1,5 @@
 #include "analysis/SignatureFormatter.h"
+#include "parser/Keywords.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <sstream>
@@ -13,15 +14,34 @@ namespace
  *        marker is only added when the text does not already show it. */
 std::string ApplyConstAndHandle(const std::string& typeName, bool isConst, bool isHandle)
 {
-    std::string result = typeName;
+    const bool hasConst =
+        typeName.starts_with(parser::keywords::Const) &&
+        (typeName.size() == parser::keywords::Const.size() || typeName[parser::keywords::Const.size()] == ' ');
+    const bool needsConst = isConst && !hasConst;
+    const bool needsHandle = isHandle && (typeName.empty() || typeName.back() != '@');
 
-    if (isHandle && (result.empty() || result.back() != '@'))
+    size_t extraLen = 0;
+    if (needsConst)
     {
-        result += '@';
+        extraLen += parser::keywords::Const.size() + 1;
     }
-    if (isConst && !result.starts_with("const "))
+    if (needsHandle)
     {
-        result.insert(0, "const ");
+        extraLen += 1;
+    }
+
+    std::string result;
+    result.reserve(typeName.size() + extraLen);
+
+    if (needsConst)
+    {
+        result.append(parser::keywords::Const);
+        result.push_back(' ');
+    }
+    result.append(typeName);
+    if (needsHandle)
+    {
+        result.push_back('@');
     }
     return result;
 }
@@ -32,14 +52,23 @@ std::string FormatAccessPrefix(const SymbolModifiers& modifiers)
     switch (modifiers.access)
     {
     case AccessModifier::Private:
-        return "private ";
+        return std::string(parser::keywords::Private) + ' ';
     case AccessModifier::Protected:
-        return "protected ";
+        return std::string(parser::keywords::Protected) + ' ';
     case AccessModifier::Public:
     default:
         return "";
     }
 }
+
+namespace
+{
+void AppendModifier(std::string& result, std::string_view mod)
+{
+    result.append(mod);
+    result.push_back(' ');
+}
+} // namespace
 
 std::string FormatDeclarationPrefix(const SymbolModifiers& modifiers)
 {
@@ -47,23 +76,23 @@ std::string FormatDeclarationPrefix(const SymbolModifiers& modifiers)
 
     if (modifiers.isExternal)
     {
-        result += "external ";
+        AppendModifier(result, parser::keywords::External);
     }
     if (modifiers.isShared)
     {
-        result += "shared ";
+        AppendModifier(result, parser::keywords::Shared);
     }
     if (modifiers.isMixin)
     {
-        result += "mixin ";
+        AppendModifier(result, parser::keywords::Mixin);
     }
     if (modifiers.isDeclarationAbstract)
     {
-        result += "abstract ";
+        AppendModifier(result, parser::keywords::Abstract);
     }
     if (modifiers.isDeclarationFinal)
     {
-        result += "final ";
+        AppendModifier(result, parser::keywords::Final);
     }
     return result;
 }
@@ -128,28 +157,34 @@ std::string FormatFunctionSuffix(const SymbolModifiers& modifiers)
 
     if (modifiers.isConst)
     {
-        result += " const";
+        result += ' ';
+        result += parser::keywords::Const;
     }
     if (modifiers.isOverride)
     {
-        result += " override";
+        result += ' ';
+        result += parser::keywords::Override;
     }
     // A 'final' written before the return type was already emitted by FormatDeclarationPrefix.
     if (modifiers.isFinal && !modifiers.isDeclarationFinal)
     {
-        result += " final";
+        result += ' ';
+        result += parser::keywords::Final;
     }
     if (modifiers.isExplicit)
     {
-        result += " explicit";
+        result += ' ';
+        result += parser::keywords::Explicit;
     }
     if (modifiers.isProperty)
     {
-        result += " property";
+        result += ' ';
+        result += parser::keywords::Property;
     }
     if (modifiers.isDelete)
     {
-        result += " delete";
+        result += ' ';
+        result += parser::keywords::Delete;
     }
     return result;
 }
@@ -158,7 +193,7 @@ std::string FormatReturnType(const std::string& returnType, const SymbolModifier
 {
     if (returnType.empty())
     {
-        return "void";
+        return std::string(parser::keywords::Void);
     }
 
     if (modifiers.isReturnReference && returnType.back() != '&')

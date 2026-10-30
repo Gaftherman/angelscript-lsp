@@ -175,6 +175,7 @@ static void TryRecoverClassFromErrorNode(TSNode node, RecoverClassContext& ctx)
     sym.name = className;
     sym.qualifiedName = className;
     sym.fileUri = ctx.fileUri;
+    sym.isPredefined = angel_lsp::utils::IsPredefinedFile(ctx.fileUri, ".as.predefined");
     sym.startLine = startPt.row;
     sym.startCharacter = startPt.column;
     sym.endLine = endPt.row;
@@ -1041,6 +1042,7 @@ void SymbolCollector::SynthesizeDefaultConstructor(const Symbol& sym, SymbolColl
     ctorSym.containerKind = ContainerKind::Class;
     SymbolCollector::appendQualifiedName(ctorSym.qualifiedName, sym.qualifiedName, sym.name);
     ctorSym.fileUri = sym.fileUri;
+    ctorSym.isPredefined = sym.isPredefined;
     ctorSym.fullRange = sym.fullRange;
     ctorSym.selectionRange = sym.selectionRange;
     ctorSym.startLine = sym.startLine;
@@ -2846,6 +2848,7 @@ Symbol SymbolCollector::CreateSymbol(SymbolType type, TSNode node, TSNode nameNo
     sym.containerKind = loc.containerKind;
     appendQualifiedName(sym.qualifiedName, loc.containerPath, sym.name);
     sym.fileUri = loc.fileUri;
+    sym.isPredefined = loc.isPredefined;
     sym.startLine = startPt.row;
     sym.startCharacter = startPt.column;
     sym.endLine = endPt.row;

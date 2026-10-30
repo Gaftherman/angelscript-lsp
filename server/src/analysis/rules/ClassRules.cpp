@@ -923,12 +923,9 @@ TSNode FindMixinAstNode(const TSTree* mixinTree, const Symbol& mixinSym)
     TSNode rootNode = ts_tree_root_node(mixinTree);
     TSPoint pt = {mixinSym.startLine, mixinSym.startCharacter};
     TSNode mixinNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
-    while (!ts_node_is_null(mixinNode) && NodeType(mixinNode) != "mixin_declaration" &&
-           NodeType(mixinNode) != "class_declaration")
-    {
-        mixinNode = parser::GetParent(mixinNode);
-    }
-    return mixinNode;
+    const auto& gs = parser::GetGrammarSymbols();
+    const std::array<TSSymbol, 2> targets = {gs.symMixinDeclaration, gs.symClassDeclaration};
+    return parser::FindAncestorWithAnySymbol(mixinNode, targets);
 }
 
 /** @brief Locates the point range where a mixin is included in the host class. */
@@ -961,11 +958,7 @@ InstantiationRange FindHostMixinRange(const Symbol& sym, const Symbol& mixinSym,
     TSPoint hostPt = {sym.startLine, sym.startCharacter};
     TSNode hostNode = ts_node_descendant_for_point_range(hostRoot, hostPt, hostPt);
     const auto& gs = parser::GetGrammarSymbols();
-    int depth = 0;
-    while (!ts_node_is_null(hostNode) && depth++ < 16 && ts_node_symbol(hostNode) != gs.symClassDeclaration)
-    {
-        hostNode = parser::GetParent(hostNode);
-    }
+    hostNode = parser::FindAncestorWithSymbol(hostNode, gs.symClassDeclaration);
 
     TSNode incNode = FindMixinInclusionNode(hostNode, mixinName, mixinSym.name, ctx.request.sourceCode);
     if (!ts_node_is_null(incNode))

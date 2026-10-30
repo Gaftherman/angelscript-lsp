@@ -133,7 +133,7 @@ void SemanticAnalyzer::RunTypeAndStructureRules(const SemanticAnalysisRequest& r
 {
 
     const IsolationCheckRequest isolationRequest{ts_tree_root_node(request.tree), request.sourceCode,
-                                                 request.scopeRoot.get()};
+                                                 request.scopeRoot.get(), indexPtr};
     CheckSharedIsolation(isolationRequest, ctx);
 
     CheckNamespacesAndScopes(NamespaceCheckRequest{ts_tree_root_node(request.tree), request.sourceCode, indexPtr}, ctx);
@@ -1165,16 +1165,19 @@ static bool IsReferenceInSyntaxErrorOrMetadata(TSNode root, const LocalReference
     {
         return true;
     }
-    TSNode walk = node;
-    for (int d = 0; d < 8 && !ts_node_is_null(walk); ++d)
-    {
-        if (ts_node_is_error(walk) || ts_node_symbol(walk) == parser::GetGrammarSymbols().symMetadata)
-        {
-            return true;
-        }
-        walk = parser::GetParent(walk);
-    }
-    return false;
+    bool inErrorOrMeta = false;
+    parser::ForEachAncestor(node,
+                            [&](TSNode walk) -> bool
+                            {
+                                if (ts_node_is_error(walk) ||
+                                    ts_node_symbol(walk) == parser::GetGrammarSymbols().symMetadata)
+                                {
+                                    inErrorOrMeta = true;
+                                    return false;
+                                }
+                                return true;
+                            });
+    return inErrorOrMeta;
 }
 
 void CheckScopeReferences(const Scope* scope, const UndefinedIdentifierContext& uCtx)

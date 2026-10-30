@@ -821,28 +821,25 @@ void FilterMethodCandidatesConstness(std::vector<Symbol>& candidates, bool isRec
 bool IsEnclosingMethodConst(TSNode node, std::string_view sourceCode)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode curr = node;
-    for (int depth = 0; depth < 16 && !ts_node_is_null(curr); ++depth, curr = parser::GetParent(curr))
+    TSNode curr = parser::FindAncestorWithSymbol(node, gs.symFuncDeclaration);
+    if (!ts_node_is_null(curr))
     {
-        if (ts_node_symbol(curr) == gs.symFuncDeclaration)
+        TSTreeCursor cursor = ts_tree_cursor_new(curr);
+        bool isConst = false;
+        if (ts_tree_cursor_goto_first_child(&cursor))
         {
-            TSTreeCursor cursor = ts_tree_cursor_new(curr);
-            bool isConst = false;
-            if (ts_tree_cursor_goto_first_child(&cursor))
+            do
             {
-                do
+                TSNode child = ts_tree_cursor_current_node(&cursor);
+                if (ts_node_symbol(child) == gs.symFuncAttributes)
                 {
-                    TSNode child = ts_tree_cursor_current_node(&cursor);
-                    if (ts_node_symbol(child) == gs.symFuncAttributes)
-                    {
-                        isConst = (NodeText(child, sourceCode).find("const") != std::string::npos);
-                        break;
-                    }
-                } while (ts_tree_cursor_goto_next_sibling(&cursor));
-            }
-            ts_tree_cursor_delete(&cursor);
-            return isConst;
+                    isConst = (NodeText(child, sourceCode).find("const") != std::string::npos);
+                    break;
+                }
+            } while (ts_tree_cursor_goto_next_sibling(&cursor));
         }
+        ts_tree_cursor_delete(&cursor);
+        return isConst;
     }
     return false;
 }

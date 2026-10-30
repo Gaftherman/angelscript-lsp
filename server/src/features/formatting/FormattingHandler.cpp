@@ -187,22 +187,11 @@ std::optional<std::vector<lsp::TextEdit>> FormatOnType(const OnTypeFormattingReq
         if (!ts_node_is_null(nodeAtPoint))
         {
             const auto& gs = parser::GetGrammarSymbols();
-            TSSymbol sym = ts_node_symbol(nodeAtPoint);
-            if (sym == gs.symStringLiteral || sym == gs.symComment)
+            const std::array<TSSymbol, 2> skipSyms = {gs.symStringLiteral, gs.symComment};
+            TSNode skipNode = parser::FindAncestorWithAnySymbol(nodeAtPoint, skipSyms);
+            if (!ts_node_is_null(skipNode))
             {
                 return std::nullopt;
-            }
-            TSNode p = parser::GetParent(nodeAtPoint);
-            int depth = 0;
-            while (!ts_node_is_null(p) && depth < 8)
-            {
-                TSSymbol pSym = ts_node_symbol(p);
-                if (pSym == gs.symStringLiteral || pSym == gs.symComment)
-                {
-                    return std::nullopt;
-                }
-                p = parser::GetParent(p);
-                ++depth;
             }
         }
     }

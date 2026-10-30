@@ -23,15 +23,7 @@ TSNode FindEnclosingFunctionNode(TSNode rootNode, const lsp::Range& range)
     TSPoint startPt{static_cast<uint32_t>(range.start.line), static_cast<uint32_t>(range.start.character)};
     TSPoint endPt{static_cast<uint32_t>(range.end.line), static_cast<uint32_t>(range.end.character)};
     TSNode selNode = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
-    TSNode fnNode = selNode;
-    for (int depth = 0; depth < 64 && !ts_node_is_null(fnNode); ++depth, fnNode = parser::GetParent(fnNode))
-    {
-        if (ts_node_symbol(fnNode) == gs.symFuncDeclaration)
-        {
-            return fnNode;
-        }
-    }
-    return TSNode{};
+    return parser::FindAncestorWithSymbol(selNode, gs.symFuncDeclaration);
 }
 
 /**
@@ -161,15 +153,7 @@ bool IsValidMethodInputRef(const analysis::LocalReference& ref, const analysis::
 TSNode FindEnclosingClassNode(TSNode fnNode)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode classNode = fnNode;
-    for (int depth = 0; depth < 64 && !ts_node_is_null(classNode); ++depth, classNode = parser::GetParent(classNode))
-    {
-        if (ts_node_symbol(classNode) == gs.symClassDeclaration)
-        {
-            return classNode;
-        }
-    }
-    return TSNode{};
+    return parser::FindAncestorWithSymbol(fnNode, gs.symClassDeclaration);
 }
 
 TSNode FindInnermostStatementBlock(TSNode rootNode, const lsp::Range& range, TSNode fnNode)
@@ -178,14 +162,22 @@ TSNode FindInnermostStatementBlock(TSNode rootNode, const lsp::Range& range, TSN
     TSPoint endPt{static_cast<uint32_t>(range.end.line), static_cast<uint32_t>(range.end.character)};
     TSNode node = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
     const auto& gs = parser::GetGrammarSymbols();
-    for (; !ts_node_is_null(node) && !ts_node_eq(node, fnNode); node = parser::GetParent(node))
-    {
-        if (ts_node_symbol(node) == gs.symStatementBlock)
-        {
-            return node;
-        }
-    }
-    return FindFunctionBodyBlock(fnNode);
+    TSNode result{};
+    parser::ForEachAncestor(node,
+                            [&](TSNode cur) -> bool
+                            {
+                                if (ts_node_eq(cur, fnNode))
+                                {
+                                    return false;
+                                }
+                                if (ts_node_symbol(cur) == gs.symStatementBlock)
+                                {
+                                    result = cur;
+                                    return false;
+                                }
+                                return true;
+                            });
+    return !ts_node_is_null(result) ? result : FindFunctionBodyBlock(fnNode);
 }
 
 } // namespace

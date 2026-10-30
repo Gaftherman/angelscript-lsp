@@ -324,13 +324,36 @@ void NodeIndex::Clear() noexcept
     m_symComment = 0;
 }
 
-TSNode NodeIndex::FindEnclosingClassOrMixin(uint32_t byteOffset) const noexcept
+TSNode NodeIndex::FindEnclosingNode(uint32_t byteOffset, TSSymbol targetSym) const noexcept
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol targets[] = {gs.symClassDeclaration, gs.symInterfaceDeclaration, gs.symMixinDeclaration};
     TSNode bestNode{};
     uint32_t bestSpan = UINT32_MAX;
-    for (TSSymbol sym : targets)
+    for (TSNode node : Nodes(targetSym))
+    {
+        const uint32_t start = ts_node_start_byte(node);
+        if (start > byteOffset)
+        {
+            break;
+        }
+        const uint32_t end = ts_node_end_byte(node);
+        if (byteOffset < end)
+        {
+            const uint32_t span = end - start;
+            if (span < bestSpan)
+            {
+                bestSpan = span;
+                bestNode = node;
+            }
+        }
+    }
+    return bestNode;
+}
+
+TSNode NodeIndex::FindEnclosingNodeAny(uint32_t byteOffset, std::span<const TSSymbol> targetSyms) const noexcept
+{
+    TSNode bestNode{};
+    uint32_t bestSpan = UINT32_MAX;
+    for (TSSymbol sym : targetSyms)
     {
         for (TSNode node : Nodes(sym))
         {
@@ -354,34 +377,18 @@ TSNode NodeIndex::FindEnclosingClassOrMixin(uint32_t byteOffset) const noexcept
     return bestNode;
 }
 
+TSNode NodeIndex::FindEnclosingClassOrMixin(uint32_t byteOffset) const noexcept
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol targets[] = {gs.symClassDeclaration, gs.symInterfaceDeclaration, gs.symMixinDeclaration};
+    return FindEnclosingNodeAny(byteOffset, targets);
+}
+
 TSNode NodeIndex::FindEnclosingCallable(uint32_t byteOffset) const noexcept
 {
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol targets[] = {gs.symFuncDeclaration, gs.symLambdaExpression};
-    TSNode bestNode{};
-    uint32_t bestSpan = UINT32_MAX;
-    for (TSSymbol sym : targets)
-    {
-        for (TSNode node : Nodes(sym))
-        {
-            const uint32_t start = ts_node_start_byte(node);
-            if (start > byteOffset)
-            {
-                break;
-            }
-            const uint32_t end = ts_node_end_byte(node);
-            if (byteOffset < end)
-            {
-                const uint32_t span = end - start;
-                if (span < bestSpan)
-                {
-                    bestSpan = span;
-                    bestNode = node;
-                }
-            }
-        }
-    }
-    return bestNode;
+    return FindEnclosingNodeAny(byteOffset, targets);
 }
 
 bool NodeIndex::IsInsideLambdaClosure(uint32_t byteOffset) const noexcept

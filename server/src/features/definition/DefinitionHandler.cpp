@@ -1421,22 +1421,7 @@ TSNode FindScopedIdentifierMember(TSNode node)
         return TSNode{};
     }
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode curr = node;
-    TSNode scopedNode{};
-    for (int i = 0; i < 3; ++i)
-    {
-        TSNode p = parser::GetParent(curr);
-        if (ts_node_is_null(p))
-        {
-            break;
-        }
-        if (ts_node_symbol(p) == gs.symScopedIdentifier)
-        {
-            scopedNode = p;
-            break;
-        }
-        curr = p;
-    }
+    TSNode scopedNode = parser::FindAncestorWithSymbol(parser::GetParent(node), gs.symScopedIdentifier);
     if (ts_node_is_null(scopedNode))
     {
         return TSNode{};

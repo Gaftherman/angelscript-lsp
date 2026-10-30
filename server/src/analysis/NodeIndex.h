@@ -271,6 +271,22 @@ class NodeIndex
     [[nodiscard]] std::span<const CommentRange> CommentRanges() const noexcept;
 
     /**
+     * @brief Finds the innermost node matching a specific grammar symbol enclosing byteOffset in O(log K).
+     * @param[in] byteOffset Document byte offset to test.
+     * @param[in] targetSym Target grammar symbol to search for.
+     * @return Innermost enclosing TSNode or null node if not enclosed.
+     */
+    [[nodiscard]] TSNode FindEnclosingNode(uint32_t byteOffset, TSSymbol targetSym) const noexcept;
+
+    /**
+     * @brief Finds the innermost node matching any of the specified grammar symbols enclosing byteOffset in O(log K).
+     * @param[in] byteOffset Document byte offset to test.
+     * @param[in] targetSyms Span of target grammar symbols.
+     * @return Innermost enclosing TSNode or null node if not enclosed.
+     */
+    [[nodiscard]] TSNode FindEnclosingNodeAny(uint32_t byteOffset, std::span<const TSSymbol> targetSyms) const noexcept;
+
+    /**
      * @brief Finds the innermost class, interface, or mixin declaration enclosing the given byte offset.
      * @param[in] byteOffset Document byte offset to test.
      * @return Innermost enclosing class/interface/mixin TSNode or null node if outside any class.

@@ -1697,16 +1697,17 @@ static TSNode FindReceiverPrecedingDot(TSNode rootNode, std::string_view sourceC
     }
     TSNode curr = leaf;
     const auto& gs = parser::GetGrammarSymbols();
-    for (size_t depth = 0; depth < 16 && !ts_node_is_null(parser::GetParent(curr)); ++depth)
-    {
-        TSNode p = parser::GetParent(curr);
-        if (ts_node_is_error(p) || IsExpressionBoundarySymbol(ts_node_symbol(p), gs) ||
-            ts_node_end_byte(p) > dotByteOffset)
-        {
-            break;
-        }
-        curr = p;
-    }
+    parser::ForEachAncestor(parser::GetParent(leaf),
+                            [&](TSNode p) -> bool
+                            {
+                                if (ts_node_is_error(p) || IsExpressionBoundarySymbol(ts_node_symbol(p), gs) ||
+                                    ts_node_end_byte(p) > dotByteOffset)
+                                {
+                                    return false;
+                                }
+                                curr = p;
+                                return true;
+                            });
     return curr;
 }
 
@@ -2727,19 +2728,23 @@ static bool IsInClassBodyOutsideFunction(const analysis::Scope* innermostScope, 
     TSPoint pt{request.position.line, request.position.character};
     TSNode cur = ts_node_descendant_for_point_range(rootNode, pt, pt);
     const auto& gs = parser::GetGrammarSymbols();
-    for (int i = 0; i < 16 && !ts_node_is_null(cur); ++i, cur = parser::GetParent(cur))
-    {
-        const TSSymbol sym = ts_node_symbol(cur);
-        if (sym == gs.symFuncDeclaration || sym == gs.symStatementBlock)
-        {
-            return false;
-        }
-        if (sym == gs.symClassDeclaration || sym == gs.symInterfaceDeclaration)
-        {
-            return true;
-        }
-    }
-    return false;
+    bool inClass = false;
+    parser::ForEachAncestor(cur,
+                            [&](TSNode node) -> bool
+                            {
+                                const TSSymbol sym = ts_node_symbol(node);
+                                if (sym == gs.symFuncDeclaration || sym == gs.symStatementBlock)
+                                {
+                                    return false;
+                                }
+                                if (sym == gs.symClassDeclaration || sym == gs.symInterfaceDeclaration)
+                                {
+                                    inClass = true;
+                                    return false;
+                                }
+                                return true;
+                            });
+    return inClass;
 }
 
 static void CollectClassOperatorSnippets(const analysis::Scope* innermostScope, CompletionCollector& collector)

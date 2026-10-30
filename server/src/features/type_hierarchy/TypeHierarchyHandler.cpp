@@ -139,33 +139,38 @@ std::vector<Symbol> FindQualifiedTypeUnderCursor(TSNode node, std::string_view s
                                                  const SymbolTable& symbolTable)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode p = node;
-    for (int depth = 0; depth < 64 && !ts_node_is_null(p); ++depth, p = parser::GetParent(p))
-    {
-        const TSSymbol pType = ts_node_symbol(p);
-        if (pType == gs.symType || pType == gs.symScopedIdentifier)
-        {
-            const std::string text = analysis::CleanBaseType(analysis::GetNodeText(p, sourceCode));
-            if (!text.empty() && utils::ContainsScopeSeparator(text))
-            {
-                auto declarations = FindTypeDeclarations(text, symbolTable);
-                if (declarations.empty())
-                {
-                    declarations = FindTypeInEnclosingNamespaces(p, text, sourceCode, symbolTable);
-                }
-                if (!declarations.empty())
-                {
-                    return declarations;
-                }
-            }
-        }
-        if (pType == gs.symClassDeclaration || pType == gs.symInterfaceDeclaration || pType == gs.symFuncDeclaration ||
-            pType == gs.symStatementBlock)
-        {
-            break;
-        }
-    }
-    return {};
+    std::vector<Symbol> result;
+    parser::ForEachAncestor(node,
+                            [&](TSNode p) -> bool
+                            {
+                                const TSSymbol pType = ts_node_symbol(p);
+                                if (pType == gs.symType || pType == gs.symScopedIdentifier)
+                                {
+                                    const std::string text =
+                                        analysis::CleanBaseType(analysis::GetNodeText(p, sourceCode));
+                                    if (!text.empty() && utils::ContainsScopeSeparator(text))
+                                    {
+                                        auto declarations = FindTypeDeclarations(text, symbolTable);
+                                        if (declarations.empty())
+                                        {
+                                            declarations =
+                                                FindTypeInEnclosingNamespaces(p, text, sourceCode, symbolTable);
+                                        }
+                                        if (!declarations.empty())
+                                        {
+                                            result = std::move(declarations);
+                                            return false;
+                                        }
+                                    }
+                                }
+                                if (pType == gs.symClassDeclaration || pType == gs.symInterfaceDeclaration ||
+                                    pType == gs.symFuncDeclaration || pType == gs.symStatementBlock)
+                                {
+                                    return false;
+                                }
+                                return true;
+                            });
+    return result;
 }
 
 /**

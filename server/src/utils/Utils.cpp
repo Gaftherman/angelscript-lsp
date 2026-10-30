@@ -146,6 +146,11 @@ void ApplyIncrementalChange(std::string& buffer, const TextChangeRange& range, c
 
 bool IsPredefinedFile(const std::string_view& fileUri, const std::string_view extension)
 {
+    if (fileUri.starts_with("builtin://"))
+    {
+        return true;
+    }
+
     // AngelScript's own convention is a file named exactly `as.predefined`, and that is what
     // the community's stubs are called. It is not matched by the configured suffix - the
     // default `.as.predefined` wants a dot where such a path has a separator - so it is

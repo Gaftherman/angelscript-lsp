@@ -1,6 +1,7 @@
 #include "analysis/IsolationChecker.h"
 #include "analysis/ASTUtils.h"
 #include "analysis/DiagnosticContext.h"
+#include "analysis/NodeIndex.h"
 #include "analysis/ScopeTree.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SymbolTable.h"
@@ -444,30 +445,31 @@ struct IsolationVisitor
 
     bool IsIdentifierInSpecialContext(TSNode node) const
     {
-        TSNode p = parser::GetParent(node);
         const auto& gs = parser::GetGrammarSymbols();
-        while (!ts_node_is_null(p))
-        {
-            const TSSymbol pSym = ts_node_symbol(p);
-            if (pSym == gs.symCallExpression && IsCallFunctionNode(p, node))
-            {
-                return true;
-            }
-            if (pSym == gs.symDatatype || pSym == gs.symType || pSym == gs.symBaseClassList)
-            {
-                return true;
-            }
-            if (IsDeclarationNameNode(p, node, pSym))
-            {
-                return true;
-            }
-            if (pSym == gs.symStatementBlock || pSym == gs.symFuncDeclaration || pSym == gs.symClassDeclaration)
-            {
-                break;
-            }
-            p = parser::GetParent(p);
-        }
-        return false;
+        bool result = false;
+        parser::ForEachAncestor(parser::GetParent(node),
+                                [&](TSNode p) -> bool
+                                {
+                                    const TSSymbol pSym = ts_node_symbol(p);
+                                    if (pSym == gs.symCallExpression && IsCallFunctionNode(p, node))
+                                    {
+                                        result = true;
+                                        return false;
+                                    }
+                                    if (pSym == gs.symDatatype || pSym == gs.symType || pSym == gs.symBaseClassList)
+                                    {
+                                        result = true;
+                                        return false;
+                                    }
+                                    if (IsDeclarationNameNode(p, node, pSym))
+                                    {
+                                        result = true;
+                                        return false;
+                                    }
+                                    return pSym != gs.symStatementBlock && pSym != gs.symFuncDeclaration &&
+                                           pSym != gs.symClassDeclaration;
+                                });
+        return result;
     }
 
     bool IsAllowedVariable(std::string_view varName, TSNode node) const
@@ -566,8 +568,13 @@ struct IsolationVisitor
 
 void CheckSharedIsolation(const IsolationCheckRequest& request, DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(request.rootNode) || request.sourceCode.empty() ||
-        request.sourceCode.find("shared") == std::string_view::npos)
+    if (ts_node_is_null(request.rootNode) || request.sourceCode.empty())
+    {
+        return;
+    }
+
+    const auto& gs = parser::GetGrammarSymbols();
+    if (request.nodeIndex && request.nodeIndex->Nodes(gs.tokShared).empty())
     {
         return;
     }

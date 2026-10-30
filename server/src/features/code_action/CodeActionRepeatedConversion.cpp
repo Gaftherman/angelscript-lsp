@@ -66,16 +66,7 @@ std::string DeriveVariableName(std::string_view exprText, std::string_view toTyp
 TSNode FindRootIfStatement(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode rootIf = {};
-    TSNode curr = node;
-    for (int depth = 0; depth < 64 && !ts_node_is_null(curr); ++depth, curr = parser::GetParent(curr))
-    {
-        if (ts_node_symbol(curr) == gs.symIfStatement)
-        {
-            rootIf = curr;
-        }
-    }
-    return rootIf;
+    return parser::FindOutermostAncestorWithSymbol(node, gs.symIfStatement);
 }
 
 void BuildCodeActionEdits(TSNode rootIf, const ExtractedDiagInfo& info, const CodeActionRequest& request,

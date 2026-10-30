@@ -22,15 +22,8 @@ namespace
 bool IsInsideMixinBody(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode current = parser::GetParent(node);
-    for (int depth = 0; depth < 16 && !ts_node_is_null(current); ++depth, current = parser::GetParent(current))
-    {
-        if (ts_node_symbol(current) == gs.symMixinDeclaration)
-        {
-            return true;
-        }
-    }
-    return false;
+    TSNode mixinNode = parser::FindAncestorWithSymbol(parser::GetParent(node), gs.symMixinDeclaration);
+    return !ts_node_is_null(mixinNode);
 }
 /**
  * @brief Checks if a scoped identifier refers to a known namespace or type prefix.

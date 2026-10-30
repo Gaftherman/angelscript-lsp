@@ -361,34 +361,37 @@ std::string EnclosingClass(TSNode node, std::string_view sourceCode, bool& insid
         return "";
     }
 
-    TSNode curr = parser::GetParent(node);
+    std::string resultClassName;
     const auto& gs = parser::GetGrammarSymbols();
-    while (!ts_node_is_null(curr))
-    {
-        const TSSymbol sym = ts_node_symbol(curr);
-        if (sym == gs.symLambdaExpression)
+    parser::ForEachAncestor(
+        parser::GetParent(node),
+        [&](TSNode curr) -> bool
         {
-            return "";
-        }
-        if (sym == gs.symClassDeclaration)
-        {
-            TSNode nameNode = parser::GetChildByField(curr, gs.fieldName);
-            if (!ts_node_is_null(nameNode))
+            const TSSymbol sym = ts_node_symbol(curr);
+            if (sym == gs.symLambdaExpression)
             {
-                std::string className = NodeText(nameNode, sourceCode);
-                const auto symbols = table.FindSymbolsPtr(className);
-                if (symbols)
-                {
-                    insideMixin =
-                        std::any_of(symbols->begin(), symbols->end(), [](const Symbol& sym)
-                                    { return sym.type == SymbolType::Class && sym.GetClass().modifiers.isMixin; });
-                }
-                return className;
+                return false;
             }
-        }
-        curr = parser::GetParent(curr);
-    }
-    return "";
+            if (sym == gs.symClassDeclaration)
+            {
+                TSNode nameNode = parser::GetChildByField(curr, gs.fieldName);
+                if (!ts_node_is_null(nameNode))
+                {
+                    std::string className = NodeText(nameNode, sourceCode);
+                    const auto symbols = table.FindSymbolsPtr(className);
+                    if (symbols)
+                    {
+                        insideMixin =
+                            std::any_of(symbols->begin(), symbols->end(), [](const Symbol& sym)
+                                        { return sym.type == SymbolType::Class && sym.GetClass().modifiers.isMixin; });
+                    }
+                    resultClassName = std::move(className);
+                    return false;
+                }
+            }
+            return true;
+        });
+    return resultClassName;
 }
 
 /**
@@ -703,27 +706,29 @@ std::string EnclosingClassOfLambda(TSNode node, std::string_view sourceCode, con
         return "";
     }
 
-    TSNode curr = parser::GetParent(node);
+    std::string resultClassName;
     bool foundLambda = false;
     const auto& gs = parser::GetGrammarSymbols();
-    while (!ts_node_is_null(curr))
-    {
-        const TSSymbol sym = ts_node_symbol(curr);
-        if (sym == gs.symLambdaExpression)
-        {
-            foundLambda = true;
-        }
-        else if (foundLambda && sym == gs.symClassDeclaration)
-        {
-            TSNode nameNode = parser::GetChildByField(curr, gs.fieldName);
-            if (!ts_node_is_null(nameNode))
-            {
-                return NodeText(nameNode, sourceCode);
-            }
-        }
-        curr = parser::GetParent(curr);
-    }
-    return "";
+    parser::ForEachAncestor(parser::GetParent(node),
+                            [&](TSNode curr) -> bool
+                            {
+                                const TSSymbol sym = ts_node_symbol(curr);
+                                if (sym == gs.symLambdaExpression)
+                                {
+                                    foundLambda = true;
+                                }
+                                else if (foundLambda && sym == gs.symClassDeclaration)
+                                {
+                                    TSNode nameNode = parser::GetChildByField(curr, gs.fieldName);
+                                    if (!ts_node_is_null(nameNode))
+                                    {
+                                        resultClassName = NodeText(nameNode, sourceCode);
+                                        return false;
+                                    }
+                                }
+                                return true;
+                            });
+    return resultClassName;
 }
 
 /**

@@ -1,5 +1,4 @@
 #include "SymbolTable.h"
-#include "analysis/EngineProfiles.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SignatureFormatter.h"
@@ -619,7 +618,7 @@ bool SymbolTable::IsFileAllowedForSnapshot(std::string_view fileUri, const Snaps
     {
         return true;
     }
-    return utils::IsPredefinedFile(fileUri, ctx.predefinedExtension) || fileUri.starts_with(k_profileUriPrefix);
+    return utils::IsPredefinedFile(fileUri, ctx.predefinedExtension);
 }
 
 void SymbolTable::CopyBucketForSnapshotLocked(const std::string& key,
@@ -687,7 +686,7 @@ using SymbolBucketMap = ankerl::unordered_dense::map<std::string, std::shared_pt
 
 bool IsPredefinedOrBuiltinUri(std::string_view fileUri, std::string_view effectiveExt) noexcept
 {
-    return utils::IsPredefinedFile(fileUri, effectiveExt) || fileUri.starts_with(k_profileUriPrefix);
+    return utils::IsPredefinedFile(fileUri, effectiveExt);
 }
 
 void CopyPredefinedBucket(const std::string& key, const std::shared_ptr<std::vector<Symbol>>& bucket,
@@ -700,7 +699,7 @@ void CopyPredefinedBucket(const std::string& key, const std::shared_ptr<std::vec
     bool allPredefined = true;
     for (const auto& sym : *bucket)
     {
-        if (!IsPredefinedOrBuiltinUri(sym.fileUri, effectiveExt))
+        if (!sym.isPredefined && !IsPredefinedOrBuiltinUri(sym.fileUri, effectiveExt))
         {
             allPredefined = false;
             break;
@@ -714,7 +713,7 @@ void CopyPredefinedBucket(const std::string& key, const std::shared_ptr<std::vec
     auto filtered = std::make_shared<std::vector<Symbol>>();
     for (const auto& sym : *bucket)
     {
-        if (IsPredefinedOrBuiltinUri(sym.fileUri, effectiveExt))
+        if (sym.isPredefined || IsPredefinedOrBuiltinUri(sym.fileUri, effectiveExt))
         {
             filtered->push_back(sym);
         }

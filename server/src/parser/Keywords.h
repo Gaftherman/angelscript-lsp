@@ -32,6 +32,18 @@ inline constexpr std::string_view Null = "null";
 inline constexpr std::string_view True = "true";
 inline constexpr std::string_view False = "false";
 inline constexpr std::string_view Const = "const";
+inline constexpr std::string_view Private = "private";
+inline constexpr std::string_view Protected = "protected";
+inline constexpr std::string_view Public = "public";
+inline constexpr std::string_view External = "external";
+inline constexpr std::string_view Shared = "shared";
+inline constexpr std::string_view Mixin = "mixin";
+inline constexpr std::string_view Abstract = "abstract";
+inline constexpr std::string_view Final = "final";
+inline constexpr std::string_view Override = "override";
+inline constexpr std::string_view Explicit = "explicit";
+inline constexpr std::string_view Property = "property";
+inline constexpr std::string_view Delete = "delete";
 
 namespace operators
 {

@@ -41,15 +41,8 @@ std::string CleanPropertyName(std::string_view fieldName)
 bool FindEnclosingClassAndBody(TSNode leaf, std::string_view sourceCode, std::string& className, TSNode& classBody)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode classNode = leaf;
-    for (int depth = 0; depth < 64 && !ts_node_is_null(classNode); ++depth, classNode = parser::GetParent(classNode))
-    {
-        if (ts_node_symbol(classNode) == gs.symClassDeclaration)
-        {
-            break;
-        }
-    }
-    if (ts_node_is_null(classNode) || ts_node_symbol(classNode) != gs.symClassDeclaration)
+    TSNode classNode = parser::FindAncestorWithSymbol(leaf, gs.symClassDeclaration);
+    if (ts_node_is_null(classNode))
     {
         return false;
     }
@@ -128,16 +121,9 @@ std::vector<std::pair<std::string, std::string>> CollectFieldsForGetterSetter(TS
                                                                               const CodeActionRequest& request)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode varDecl = leaf;
-    for (int depth = 0; depth < 64 && !ts_node_is_null(varDecl); ++depth, varDecl = parser::GetParent(varDecl))
-    {
-        if (ts_node_symbol(varDecl) == gs.symVariableDeclaration || ts_node_eq(varDecl, classBody))
-        {
-            break;
-        }
-    }
-
-    if (!ts_node_is_null(varDecl) && ts_node_symbol(varDecl) == gs.symVariableDeclaration)
+    TSNode varDecl = parser::FindAncestorWithSymbol(leaf, gs.symVariableDeclaration);
+    if (!ts_node_is_null(varDecl) && ts_node_start_byte(varDecl) >= ts_node_start_byte(classBody) &&
+        ts_node_end_byte(varDecl) <= ts_node_end_byte(classBody))
     {
         return CollectFieldsFromVarDecl(varDecl, request.sourceCode);
     }

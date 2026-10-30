@@ -38,17 +38,15 @@ lsp::SelectionRange BuildChain(TSNode root, const lsp::Position& position)
     }
 
     std::vector<lsp::Range> ranges;
-    constexpr int kMaxDepth = 64;
-    int depth = 0;
-    for (TSNode current = node; depth < kMaxDepth && !ts_node_is_null(current);
-         current = parser::GetParent(current), ++depth)
-    {
-        const lsp::Range range = ToRange(current);
-        if (ranges.empty() || !SameRange(ranges.back(), range))
-        {
-            ranges.push_back(range);
-        }
-    }
+    parser::ForEachAncestor(node,
+                            [&](TSNode current)
+                            {
+                                const lsp::Range range = ToRange(current);
+                                if (ranges.empty() || !SameRange(ranges.back(), range))
+                                {
+                                    ranges.push_back(range);
+                                }
+                            });
 
     if (ranges.empty())
     {

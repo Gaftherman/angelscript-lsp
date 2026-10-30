@@ -504,6 +504,76 @@ inline TSNode FindFirstChildOfType(TSNode parent, std::string_view typeName)
 }
 
 /**
+ * @brief Finds the direct child node of an ancestor matching ancestorSym.
+ * @param[in] node Starting child AST node.
+ * @param[in] ancestorSym Target ancestor grammar symbol.
+ * @return Direct child of matching ancestor containing node, or null TSNode.
+ */
+[[nodiscard]] inline TSNode FindDirectChildOfAncestor(TSNode node, TSSymbol ancestorSym) noexcept
+{
+    TSNode curr = node;
+    TSNode parent = GetParent(curr);
+    while (!ts_node_is_null(parent))
+    {
+        if (ts_node_symbol(parent) == ancestorSym)
+        {
+            return curr;
+        }
+        curr = parent;
+        parent = GetParent(curr);
+    }
+    return TSNode{};
+}
+
+/**
+ * @brief Finds the outermost ancestor matching targetSym by climbing to root.
+ * @param[in] node Starting child AST node.
+ * @param[in] targetSym Target grammar symbol to search for.
+ * @return Outermost matching ancestor TSNode or null TSNode if none match.
+ */
+[[nodiscard]] inline TSNode FindOutermostAncestorWithSymbol(TSNode node, TSSymbol targetSym) noexcept
+{
+    TSNode result{};
+    TSNode curr = node;
+    while (!ts_node_is_null(curr))
+    {
+        if (ts_node_symbol(curr) == targetSym)
+        {
+            result = curr;
+        }
+        curr = GetParent(curr);
+    }
+    return result;
+}
+
+/**
+ * @brief Traverses ancestors from node up to root, invoking callback(curr).
+ *        Stops traversal early if callback returns false.
+ * @tparam Callback Callable with signature bool(TSNode) or void(TSNode).
+ * @param[in] node Starting child AST node.
+ * @param[in] callback Visitor function.
+ */
+template <typename Callback> inline void ForEachAncestor(TSNode node, Callback&& callback) noexcept
+{
+    TSNode curr = node;
+    while (!ts_node_is_null(curr))
+    {
+        if constexpr (std::is_invocable_r_v<bool, Callback, TSNode>)
+        {
+            if (!callback(curr))
+            {
+                break;
+            }
+        }
+        else
+        {
+            callback(curr);
+        }
+        curr = GetParent(curr);
+    }
+}
+
+/**
  * @brief Finds the enclosing node of a given symbol type at the specified point range.
  * @param[in] root Root AST node.
  * @param[in] point Document point (row, column).

@@ -8,6 +8,8 @@
 
 namespace angel_lsp::analysis
 {
+class NodeIndex;
+
 /**
  * @brief Request context for strict shared isolation boundary checking.
  */
@@ -16,6 +18,7 @@ struct IsolationCheckRequest
     TSNode rootNode;
     std::string_view sourceCode;
     const Scope* scopeRoot = nullptr;
+    const NodeIndex* nodeIndex = nullptr;
 };
 
 /**

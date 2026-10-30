@@ -229,18 +229,20 @@ class SymbolCollector
         std::string containerPath;
         ContainerKind containerKind = ContainerKind::None;
         bool sourceHasBrackets = false;
+        bool isPredefined = false;
 
         SymbolLocationContext(std::string_view src, std::string uri, std::string path,
-                              ContainerKind kind = ContainerKind::None, bool hasBrackets = false)
+                              ContainerKind kind = ContainerKind::None, bool hasBrackets = false,
+                              bool predefined = false)
             : sourceCode(src), fileUri(std::move(uri)), containerPath(std::move(path)), containerKind(kind),
-              sourceHasBrackets(hasBrackets)
+              sourceHasBrackets(hasBrackets), isPredefined(predefined)
         {
         }
 
         SymbolLocationContext(const SymbolCollectContext& sCtx, std::string path,
                               ContainerKind kind = ContainerKind::None)
             : sourceCode(sCtx.request.sourceCode), fileUri(sCtx.request.fileUri), containerPath(std::move(path)),
-              containerKind(kind), sourceHasBrackets(sCtx.sourceHasBrackets)
+              containerKind(kind), sourceHasBrackets(sCtx.sourceHasBrackets), isPredefined(sCtx.isPredefined)
         {
         }
     };

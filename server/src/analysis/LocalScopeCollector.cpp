@@ -392,45 +392,43 @@ static TSNode FindArgumentList(TSNode callNode)
 void LocalScopeCollector::DetermineCallReferenceInfo(TSNode refNode, TSNode parent, LocalReference& ref)
 {
     const auto& syms = parser::GetGrammarSymbols();
-    TSNode walk = refNode;
-    TSNode walkParent = parent;
-    for (int depth = 0; depth < 8 && !ts_node_is_null(walkParent); ++depth)
-    {
-        const TSSymbol wpSym = ts_node_symbol(walkParent);
-        if (wpSym == syms.symCallExpression)
+    TSNode prev = refNode;
+    parser::ForEachAncestor(
+        parent,
+        [&](TSNode walkParent) -> bool
         {
-            TSNode funcChild = parser::GetChildByField(walkParent, parser::GetGrammarSymbols().fieldFunction);
-            if (ts_node_is_null(funcChild))
+            const TSSymbol wpSym = ts_node_symbol(walkParent);
+            if (wpSym == syms.symCallExpression)
             {
-                TSTreeCursor walkCursor = ts_tree_cursor_new(walkParent);
-                if (ts_tree_cursor_goto_first_child(&walkCursor))
+                TSNode funcChild = parser::GetChildByField(walkParent, parser::GetGrammarSymbols().fieldFunction);
+                if (ts_node_is_null(funcChild))
                 {
-                    funcChild = ts_tree_cursor_current_node(&walkCursor);
+                    TSTreeCursor walkCursor = ts_tree_cursor_new(walkParent);
+                    if (ts_tree_cursor_goto_first_child(&walkCursor))
+                    {
+                        funcChild = ts_tree_cursor_current_node(&walkCursor);
+                    }
+                    ts_tree_cursor_delete(&walkCursor);
                 }
-                ts_tree_cursor_delete(&walkCursor);
+                if (!ts_node_is_null(funcChild) &&
+                    (ts_node_eq(funcChild, prev) || ts_node_start_byte(funcChild) == ts_node_start_byte(prev)))
+                {
+                    ref.isCall = true;
+                    TSNode argsChild = FindArgumentList(walkParent);
+                    if (!ts_node_is_null(argsChild))
+                    {
+                        ref.argumentCount = static_cast<uint32_t>(CountCallArguments(argsChild));
+                    }
+                }
+                return false;
             }
-            if (!ts_node_is_null(funcChild) &&
-                (ts_node_eq(funcChild, walk) || ts_node_start_byte(funcChild) == ts_node_start_byte(walk)))
+            if (wpSym == syms.symMemberAccess || wpSym == syms.symScopedIdentifier)
             {
-                ref.isCall = true;
-                TSNode argsChild = FindArgumentList(walkParent);
-                if (!ts_node_is_null(argsChild))
-                {
-                    ref.argumentCount = static_cast<uint32_t>(CountCallArguments(argsChild));
-                }
+                prev = walkParent;
+                return true;
             }
-            break;
-        }
-        if (wpSym == syms.symMemberAccess || wpSym == syms.symScopedIdentifier)
-        {
-            walk = walkParent;
-            walkParent = parser::GetParent(walkParent);
-        }
-        else
-        {
-            break;
-        }
-    }
+            return false;
+        });
 }
 
 static bool IsTypeSpecifierSymbol(TSSymbol sym, const parser::GrammarSymbols& syms) noexcept
@@ -442,22 +440,19 @@ static bool IsTypeSpecifierSymbol(TSSymbol sym, const parser::GrammarSymbols& sy
 static bool IsTypeSpecifierContext(TSNode parent)
 {
     const auto& syms = parser::GetGrammarSymbols();
-    TSNode cur = parent;
-    for (int depth = 0; depth < 8 && !ts_node_is_null(cur); ++depth)
-    {
-        const TSSymbol sym = ts_node_symbol(cur);
-        if (IsTypeSpecifierSymbol(sym, syms))
-        {
-            return true;
-        }
-        if (sym == syms.symScopedIdentifier || sym == syms.symScope)
-        {
-            cur = parser::GetParent(cur);
-            continue;
-        }
-        break;
-    }
-    return false;
+    bool result = false;
+    parser::ForEachAncestor(parent,
+                            [&](TSNode cur) -> bool
+                            {
+                                const TSSymbol sym = ts_node_symbol(cur);
+                                if (IsTypeSpecifierSymbol(sym, syms))
+                                {
+                                    result = true;
+                                    return false;
+                                }
+                                return sym == syms.symScopedIdentifier || sym == syms.symScope;
+                            });
+    return result;
 }
 
 static bool IsMemberAccessNode(TSNode node, TSNode parent, TSSymbol memberExprSym, TSSymbol scopedIdSym)
@@ -522,14 +517,20 @@ static bool ShouldSkipReferenceCapture(TSNode parent, ScopeKind scopeKind, bool 
     if (isDeclarationScope && hasMetadataInDoc)
     {
         const auto& syms = parser::GetGrammarSymbols();
-        TSNode curr = parent;
-        for (int depth = 0; depth < 8 && !ts_node_is_null(curr); ++depth)
+        bool inMetadata = false;
+        parser::ForEachAncestor(parent,
+                                [&](TSNode curr) -> bool
+                                {
+                                    if (ts_node_is_error(curr) || ts_node_symbol(curr) == syms.symMetadata)
+                                    {
+                                        inMetadata = true;
+                                        return false;
+                                    }
+                                    return true;
+                                });
+        if (inMetadata)
         {
-            if (ts_node_is_error(curr) || ts_node_symbol(curr) == syms.symMetadata)
-            {
-                return true;
-            }
-            curr = parser::GetParent(curr);
+            return true;
         }
     }
     return false;

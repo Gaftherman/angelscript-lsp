@@ -21,9 +21,12 @@ RAW_PARENT_ALLOWED_FILES = {
 }
 
 ROOT_CLIMB_PATTERNS = [
-    re.compile(r"while\s*\(\s*!ts_node_is_null\s*\(\s*(ts_node_parent|parser::GetParent|GetParent)\s*\("),
-    re.compile(r"for\s*\([^;]*;\s*!ts_node_is_null\s*\([^)]*\)\s*;\s*[^)]*(ts_node_parent|parser::GetParent|GetParent)\s*\("),
+    re.compile(r"\b(?:for|while)\s*\([^)]*(?:ts_node_parent|parser::GetParent|GetParent)"),
 ]
+
+PARENT_LOOP_ALLOWED_FILES = {
+    SERVER_SRC / "parser" / "ASTUtils.h",
+}
 
 ENGINE_HARDCODED_SYMBOLS = [
     '"BaseClass"',
@@ -54,7 +57,52 @@ SYMBOL_LOOKUP_CONCAT_PATTERNS = [
 ]
 
 def check_no_root_climb_loops():
+    """
+    Enforces that NO loop (while/for) invokes GetParent or ts_node_parent outside ASTUtils.h.
+    Any upward AST climbing must use parser::FindAncestorWithSymbol, parser::ForEachAncestor,
+    or NodeIndex interval lookups in O(log K).
+    """
     violations = []
+    parent_climb_re = re.compile(r"\b(\w+)\s*=\s*(?:parser::)?GetParent\s*\(\1\)")
+    loop_head_re = re.compile(r"\b(for|while)\s*\(")
+
+    for file_path in SERVER_SRC.rglob("*.[ch]*"):
+        if not file_path.is_file() or file_path in PARENT_LOOP_ALLOWED_FILES:
+            continue
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+
+        lines = content.splitlines()
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                continue
+            if loop_head_re.search(line):
+                if any(p.search(line) for p in ROOT_CLIMB_PATTERNS):
+                    violations.append((file_path, idx + 1, stripped))
+                    continue
+                brace_count = 0
+                seen_open = False
+                for j in range(idx, min(idx + 35, len(lines))):
+                    l = lines[j]
+                    if parent_climb_re.search(l):
+                        violations.append((file_path, idx + 1, stripped))
+                        break
+                    brace_count += l.count("{") - l.count("}")
+                    if "{" in l:
+                        seen_open = True
+                    if seen_open and brace_count <= 0:
+                        break
+    return violations
+
+def check_no_magic_depth_comparisons():
+    """
+    Enforces that NO magic depth numbers (depth < <number>) exist for upward AST traversal.
+    """
+    violations = []
+    magic_depth_re = re.compile(r"\bdepth\s*<\s*\d+")
     for file_path in SERVER_SRC.rglob("*.[ch]*"):
         if not file_path.is_file():
             continue
@@ -64,12 +112,10 @@ def check_no_root_climb_loops():
             continue
         for line_num, line in enumerate(content.splitlines(), start=1):
             stripped = line.strip()
-            if stripped.startswith("//") or stripped.startswith("*"):
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
                 continue
-            if any(p.search(line) for p in ROOT_CLIMB_PATTERNS):
-                # Allow if depth-bounded
-                if "depth" not in line and "kMax" not in line and "k_max" not in line:
-                    violations.append((file_path, line_num, stripped))
+            if magic_depth_re.search(line):
+                violations.append((file_path, line_num, stripped))
     return violations
 
 def check_no_raw_ts_node_parent():
@@ -301,8 +347,16 @@ def main():
     root_climb_violations = check_no_root_climb_loops()
     if root_climb_violations:
         has_errors = True
-        print("[ERROR] Unbounded root-climb loops detected in server/src/ (use parser::GetRootNode(node) in O(1)):")
+        print("[ERROR] AST upward climb loops detected outside parser/ASTUtils.h (use parser::FindAncestorWithSymbol, parser::ForEachAncestor, or NodeIndex):")
         for f, line_num, line in root_climb_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
+    magic_depth_violations = check_no_magic_depth_comparisons()
+    if magic_depth_violations:
+        has_errors = True
+        print("[ERROR] Magic depth comparisons (depth < <number>) detected in server/src/ (use parser::FindAncestorWithSymbol or parser::ForEachAncestor in ASTUtils.h):")
+        for f, line_num, line in magic_depth_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
 

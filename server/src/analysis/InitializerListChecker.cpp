@@ -144,23 +144,16 @@ void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, std:
 std::string EnclosingReturnType(TSNode returnNode, std::string_view sourceCode)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode parent = parser::GetParent(returnNode);
-    for (int depth = 0; depth < 16 && !ts_node_is_null(parent); ++depth, parent = parser::GetParent(parent))
+    const std::array<TSSymbol, 2> targets = {gs.symLambdaExpression, gs.symFuncDeclaration};
+    TSNode enclosing = parser::FindAncestorWithAnySymbol(parser::GetParent(returnNode), targets);
+    if (!ts_node_is_null(enclosing) && ts_node_symbol(enclosing) == gs.symFuncDeclaration)
     {
-        const TSSymbol sym = ts_node_symbol(parent);
-        if (sym == gs.symLambdaExpression)
+        TSNode returnType = parser::GetChildByField(enclosing, gs.fieldReturnType);
+        if (ts_node_is_null(returnType))
         {
-            return "";
+            returnType = parser::GetChildByField(enclosing, gs.fieldType);
         }
-        if (sym == gs.symFuncDeclaration)
-        {
-            TSNode returnType = parser::GetChildByField(parent, gs.fieldReturnType);
-            if (ts_node_is_null(returnType))
-            {
-                returnType = parser::GetChildByField(parent, gs.fieldType);
-            }
-            return ts_node_is_null(returnType) ? std::string() : GetNodeText(returnType, sourceCode);
-        }
+        return ts_node_is_null(returnType) ? std::string() : GetNodeText(returnType, sourceCode);
     }
     return "";
 }

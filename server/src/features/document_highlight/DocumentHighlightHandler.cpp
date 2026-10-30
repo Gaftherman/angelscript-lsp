@@ -152,27 +152,27 @@ std::optional<lsp::DocumentHighlightKind> ClassifyDeclarationNode(TSNode leaf)
 bool IsTypeAnnotationNode(TSNode leaf)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    constexpr int kMaxDepth = 64;
-    int depth = 0;
-    for (TSNode cur = leaf; depth < kMaxDepth && !ts_node_is_null(cur); cur = parser::GetParent(cur), ++depth)
-    {
-        const TSSymbol cType = ts_node_symbol(cur);
-        if (cType == gs.symType || cType == gs.symDatatype || cType == gs.symBaseClassList ||
-            cType == gs.symTemplateTypeList)
+    bool result = false;
+    parser::ForEachAncestor(
+        leaf,
+        [&](TSNode cur) -> bool
         {
-            TSNode curParent = parser::GetParent(cur);
-            if (!ts_node_is_null(curParent) && ts_node_symbol(curParent) == gs.symVariableDeclarator)
+            const TSSymbol cType = ts_node_symbol(cur);
+            if (cType == gs.symType || cType == gs.symDatatype || cType == gs.symBaseClassList ||
+                cType == gs.symTemplateTypeList)
             {
+                TSNode curParent = parser::GetParent(cur);
+                if (!ts_node_is_null(curParent) && ts_node_symbol(curParent) == gs.symVariableDeclarator)
+                {
+                    result = false;
+                    return false;
+                }
+                result = true;
                 return false;
             }
-            return true;
-        }
-        if (cType == gs.symStatementBlock || cType == gs.symFuncDeclaration || cType == gs.symClassBody)
-        {
-            break;
-        }
-    }
-    return false;
+            return cType != gs.symStatementBlock && cType != gs.symFuncDeclaration && cType != gs.symClassBody;
+        });
+    return result;
 }
 
 /**
@@ -452,26 +452,34 @@ CheckCallArgumentMutation(TSNode cur, TSNode leaf, const DocumentHighlightReques
 lsp::DocumentHighlightKind ClassifyAncestorExpressions(TSNode leaf, const DocumentHighlightRequest& request,
                                                        uint32_t line)
 {
-    constexpr int kMaxDepth = 64;
-    int depth = 0;
-    for (TSNode cur = leaf; depth < kMaxDepth && !ts_node_is_null(cur); cur = parser::GetParent(cur), ++depth)
+    lsp::DocumentHighlightKind result = lsp::DocumentHighlightKind::Read;
+    bool found = false;
+    parser::ForEachAncestor(leaf,
+                            [&](TSNode cur) -> bool
+                            {
+                                if (auto res = CheckUnaryMutation(cur, leaf, request.sourceCode))
+                                {
+                                    result = *res;
+                                    found = true;
+                                    return false;
+                                }
+                                if (auto res = CheckAssignmentMutation(cur, leaf))
+                                {
+                                    result = *res;
+                                    found = true;
+                                    return false;
+                                }
+                                if (auto res = CheckCallArgumentMutation(cur, leaf, request, line))
+                                {
+                                    result = *res;
+                                    found = true;
+                                    return false;
+                                }
+                                return ts_node_symbol(cur) != parser::GetGrammarSymbols().symStatementBlock;
+                            });
+    if (found)
     {
-        if (auto res = CheckUnaryMutation(cur, leaf, request.sourceCode))
-        {
-            return *res;
-        }
-        if (auto res = CheckAssignmentMutation(cur, leaf))
-        {
-            return *res;
-        }
-        if (auto res = CheckCallArgumentMutation(cur, leaf, request, line))
-        {
-            return *res;
-        }
-        if (ts_node_symbol(cur) == parser::GetGrammarSymbols().symStatementBlock)
-        {
-            break;
-        }
+        return result;
     }
     return lsp::DocumentHighlightKind::Read;
 }
@@ -782,20 +790,20 @@ std::string ResolveIdentifierReceiverType(const std::string& oText, const analys
 TSNode FindMemberExpressionParent(TSNode refNode) noexcept
 {
     const auto& gs = parser::GetGrammarSymbols();
-    for (TSNode exprParent = parser::GetParent(refNode); !ts_node_is_null(exprParent);
-         exprParent = parser::GetParent(exprParent))
-    {
-        const TSSymbol pType = ts_node_symbol(exprParent);
-        if (pType == gs.symMemberExpression)
-        {
-            return exprParent;
-        }
-        if (pType == gs.symClassDeclaration || pType == gs.symFuncDeclaration || pType == gs.symLambdaExpression)
-        {
-            return TSNode{};
-        }
-    }
-    return TSNode{};
+    TSNode result{};
+    parser::ForEachAncestor(parser::GetParent(refNode),
+                            [&](TSNode exprParent) -> bool
+                            {
+                                const TSSymbol pType = ts_node_symbol(exprParent);
+                                if (pType == gs.symMemberExpression)
+                                {
+                                    result = exprParent;
+                                    return false;
+                                }
+                                return pType != gs.symClassDeclaration && pType != gs.symFuncDeclaration &&
+                                       pType != gs.symLambdaExpression;
+                            });
+    return result;
 }
 
 /**

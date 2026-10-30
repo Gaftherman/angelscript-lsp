@@ -2041,12 +2041,7 @@ std::vector<std::string> GetCompatibleMemberClasses(const std::string& className
 
 TSNode FindEnclosingAncestorNode(TSNode node, TSSymbol targetSym)
 {
-    TSNode parent = parser::GetParent(node);
-    while (!ts_node_is_null(parent) && ts_node_symbol(parent) != targetSym)
-    {
-        parent = parser::GetParent(parent);
-    }
-    return parent;
+    return parser::FindAncestorWithSymbol(parser::GetParent(node), targetSym);
 }
 
 bool HasBaseClassList(TSNode classNode)
@@ -2097,36 +2092,40 @@ bool IsBaseConstructorCall(TSNode node, std::string_view sourceCode)
 TSNode AdjustStartNodeIfDeclarationName(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode cur = node;
-    for (int depth = 0; depth < 5 && !ts_node_is_null(cur); ++depth)
-    {
-        const TSNode parent = parser::GetParent(cur);
-        if (ts_node_is_null(parent))
+    TSNode result = node;
+    parser::ForEachAncestor(
+        node,
+        [&](TSNode cur) -> bool
         {
-            break;
-        }
-        const TSSymbol parentSym = ts_node_symbol(parent);
-        if (parentSym == gs.symBaseClassList)
-        {
-            TSNode decl = parser::GetParent(parent);
-            if (!ts_node_is_null(decl))
+            const TSNode parent = parser::GetParent(cur);
+            if (ts_node_is_null(parent))
             {
-                return decl;
+                return false;
             }
-        }
-        if (parentSym == gs.symClassDeclaration || parentSym == gs.symInterfaceDeclaration ||
-            parentSym == gs.symNamespaceDeclaration || parentSym == gs.symMixinDeclaration)
-        {
-            const TSNode nameChild = parser::GetChildByField(parent, parser::GetGrammarSymbols().fieldName);
-            if (!ts_node_is_null(nameChild) && ts_node_start_byte(nameChild) == ts_node_start_byte(node) &&
-                ts_node_end_byte(nameChild) == ts_node_end_byte(node))
+            const TSSymbol parentSym = ts_node_symbol(parent);
+            if (parentSym == gs.symBaseClassList)
             {
-                return parent;
+                TSNode decl = parser::GetParent(parent);
+                if (!ts_node_is_null(decl))
+                {
+                    result = decl;
+                    return false;
+                }
             }
-        }
-        cur = parent;
-    }
-    return node;
+            if (parentSym == gs.symClassDeclaration || parentSym == gs.symInterfaceDeclaration ||
+                parentSym == gs.symNamespaceDeclaration || parentSym == gs.symMixinDeclaration)
+            {
+                const TSNode nameChild = parser::GetChildByField(parent, parser::GetGrammarSymbols().fieldName);
+                if (!ts_node_is_null(nameChild) && ts_node_start_byte(nameChild) == ts_node_start_byte(node) &&
+                    ts_node_end_byte(nameChild) == ts_node_end_byte(node))
+                {
+                    result = parent;
+                    return false;
+                }
+            }
+            return true;
+        });
+    return result;
 }
 
 std::optional<ContainerKind> ClassifyContainerKind(TSSymbol sym)
@@ -2209,29 +2208,28 @@ std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view 
     }
 
     std::vector<ContainerInfo> rawContainers;
-    TSNode current = parser::GetParent(AdjustStartNodeIfDeclarationName(node));
     bool crossedLambda = false;
     const auto& gs = parser::GetGrammarSymbols();
-    while (!ts_node_is_null(current))
-    {
-        if (ts_node_symbol(current) == gs.symLambdaExpression)
+    parser::ForEachAncestor(
+        parser::GetParent(AdjustStartNodeIfDeclarationName(node)),
+        [&](TSNode current)
         {
-            crossedLambda = true;
-        }
-
-        if (const auto kind = ClassifyContainerKind(ts_node_symbol(current)))
-        {
-            if (crossedLambda && (*kind == ContainerKind::Class || *kind == ContainerKind::Interface))
+            if (ts_node_symbol(current) == gs.symLambdaExpression)
             {
-                current = parser::GetParent(current);
-                continue;
+                crossedLambda = true;
             }
 
-            AppendRawContainers(parser::GetChildByField(current, parser::GetGrammarSymbols().fieldName), *kind,
-                                sourceCode, rawContainers);
-        }
-        current = parser::GetParent(current);
-    }
+            if (const auto kind = ClassifyContainerKind(ts_node_symbol(current)))
+            {
+                if (crossedLambda && (*kind == ContainerKind::Class || *kind == ContainerKind::Interface))
+                {
+                    return;
+                }
+
+                AppendRawContainers(parser::GetChildByField(current, parser::GetGrammarSymbols().fieldName), *kind,
+                                    sourceCode, rawContainers);
+            }
+        });
 
     ComputeContainerQualifiedNames(rawContainers);
     return rawContainers;
@@ -2620,11 +2618,7 @@ std::vector<Symbol> FindSymbolsInScope(const std::string& name, TSNode node, std
     std::vector<std::string> usings;
     if (sourceCode.find("using") != std::string_view::npos)
     {
-        TSNode p = node;
-        for (int depth = 0; depth < 16 && !ts_node_is_null(p); ++depth, p = parser::GetParent(p))
-        {
-            CollectUsingsFromAncestor(p, sourceCode, usings);
-        }
+        parser::ForEachAncestor(node, [&](TSNode p) { CollectUsingsFromAncestor(p, sourceCode, usings); });
     }
 
     std::vector<ContainerInfo> containers = GetEnclosingContainers(node, sourceCode);
@@ -4851,14 +4845,10 @@ static TSNode FindLocalDefinitionValueNode(const LocalDefinition& def, const Exp
                             ? ts_node_descendant_for_byte_range(root, def.startByte, def.endByte)
                             : ts_node_descendant_for_point_range(root, TSPoint{def.startLine, def.startCharacter},
                                                                  TSPoint{def.endLine, def.endCharacter});
-        TSNode decl = idNode;
-        for (int i = 0; i < 4 && !ts_node_is_null(decl); ++i)
+        TSNode decl = parser::FindAncestorWithSymbol(idNode, parser::GetGrammarSymbols().symVariableDeclarator);
+        if (!ts_node_is_null(decl))
         {
-            if (ts_node_symbol(decl) == parser::GetGrammarSymbols().symVariableDeclarator)
-            {
-                return FindDeclaratorValueNode(decl, ctx.sourceCode);
-            }
-            decl = parser::GetParent(decl);
+            return FindDeclaratorValueNode(decl, ctx.sourceCode);
         }
     }
     return {};
@@ -6183,16 +6173,7 @@ std::string InferLambdaParamType(TSNode nodeInLambda, std::string_view paramName
         return "";
     }
 
-    TSNode lambdaNode{};
-    int depth = 0;
-    for (TSNode cur = nodeInLambda; depth < 64 && !ts_node_is_null(cur); ++depth, cur = parser::GetParent(cur))
-    {
-        if (IsLambdaExpression(cur))
-        {
-            lambdaNode = cur;
-            break;
-        }
-    }
+    TSNode lambdaNode = parser::FindAncestorWithSymbol(nodeInLambda, parser::GetGrammarSymbols().symLambdaExpression);
     if (ts_node_is_null(lambdaNode))
     {
         return "";

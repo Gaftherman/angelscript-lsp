@@ -160,15 +160,9 @@ lsp::Position FindClassInterfaceInsertionPosition(TSNode rootNode, const analysi
     lsp::Position insertPos{clsSym.endLine, clsSym.endCharacter};
     TSPoint cPt = {clsSym.startLine, clsSym.startCharacter};
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode cNode = ts_node_descendant_for_point_range(rootNode, cPt, cPt);
-    for (int depth = 0; depth < 64 && !ts_node_is_null(cNode); ++depth, cNode = parser::GetParent(cNode))
-    {
-        if (ts_node_symbol(cNode) == gs.symClassDeclaration)
-        {
-            break;
-        }
-    }
-    if (ts_node_is_null(cNode) || ts_node_symbol(cNode) != gs.symClassDeclaration)
+    TSNode cNode =
+        parser::FindAncestorWithSymbol(ts_node_descendant_for_point_range(rootNode, cPt, cPt), gs.symClassDeclaration);
+    if (ts_node_is_null(cNode))
     {
         return insertPos;
     }

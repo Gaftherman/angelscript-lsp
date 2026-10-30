@@ -1379,19 +1379,27 @@ void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, cons
             return;
         }
         const auto& gs = parser::GetGrammarSymbols();
-        TSNode walk = node;
-        for (int depth = 0; depth < 5 && !ts_node_is_null(walk); ++depth)
+        bool skip = false;
+        parser::ForEachAncestor(node,
+                                [&](TSNode walk) -> bool
+                                {
+                                    if (ts_node_has_error(walk) || ts_node_is_error(walk))
+                                    {
+                                        skip = true;
+                                        return false;
+                                    }
+                                    TSSymbol sym = ts_node_symbol(walk);
+                                    if (sym == gs.symIfStatement || sym == gs.symWhileStatement ||
+                                        sym == gs.symForStatement)
+                                    {
+                                        skip = true;
+                                        return false;
+                                    }
+                                    return true;
+                                });
+        if (skip)
         {
-            if (ts_node_has_error(walk) || ts_node_is_error(walk))
-            {
-                return;
-            }
-            TSSymbol sym = ts_node_symbol(walk);
-            if (sym == gs.symIfStatement || sym == gs.symWhileStatement || sym == gs.symForStatement)
-            {
-                return;
-            }
-            walk = parser::GetParent(walk);
+            return;
         }
     }
     const TSPoint start = ts_node_start_point(node);
@@ -2249,15 +2257,8 @@ void CheckConstructorDelegationStatement(TSNode stmt, const std::string& classNa
 void CheckConstructorDelegation(TSNode funcNode, DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode parent = parser::GetParent(funcNode);
-    for (int depth = 0; depth < 8 && !ts_node_is_null(parent); ++depth, parent = parser::GetParent(parent))
-    {
-        if (ts_node_symbol(parent) == gs.symClassDeclaration)
-        {
-            break;
-        }
-    }
-    if (ts_node_is_null(parent) || ts_node_symbol(parent) != gs.symClassDeclaration)
+    TSNode parent = parser::FindAncestorWithSymbol(parser::GetParent(funcNode), gs.symClassDeclaration);
+    if (ts_node_is_null(parent))
     {
         return;
     }
@@ -4024,19 +4025,18 @@ void ProcessReturnStatementNode(TSNode node, const TypeConversionCheckRequest& r
     }
     const Scope* scope = ResolveNodeScope(node, request);
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode parent = parser::GetParent(node);
-    for (int depth = 0; depth < 16 && !ts_node_is_null(parent); ++depth, parent = parser::GetParent(parent))
+    const std::array<TSSymbol, 2> returnTargets = {gs.symLambdaExpression, gs.symFuncDeclaration};
+    TSNode parent = parser::FindAncestorWithAnySymbol(parser::GetParent(node), returnTargets);
+    if (!ts_node_is_null(parent))
     {
         const TSSymbol pSym = ts_node_symbol(parent);
         if (pSym == gs.symLambdaExpression)
         {
             CheckLambdaReturnStatement(expr, parent, scope, ctx);
-            break;
         }
-        if (pSym == gs.symFuncDeclaration)
+        else if (pSym == gs.symFuncDeclaration)
         {
             CheckFuncDeclarationReturnStatement(expr, parent, scope, ctx);
-            break;
         }
     }
 }

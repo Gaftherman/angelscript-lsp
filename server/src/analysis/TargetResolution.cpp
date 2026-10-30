@@ -749,36 +749,34 @@ FunctionArgConstraints GetCallArgumentConstraints(TSNode outNode)
 {
     const auto& gs = parser::GetGrammarSymbols();
     FunctionArgConstraints info;
-    TSNode walk = outNode;
-    TSNode walkP = parser::GetParent(outNode);
-    for (int depth = 0; depth < 8 && !ts_node_is_null(walkP); ++depth)
-    {
-        const TSSymbol wpSym = ts_node_symbol(walkP);
-        if (wpSym == gs.symCallExpression)
+    TSNode prev = outNode;
+    parser::ForEachAncestor(
+        parser::GetParent(outNode),
+        [&](TSNode walkP) -> bool
         {
-            TSNode funcChild = parser::GetCallCallee(walkP);
-            if (!ts_node_is_null(funcChild) &&
-                (ts_node_eq(funcChild, walk) || ts_node_start_byte(funcChild) == ts_node_start_byte(walk)))
+            const TSSymbol wpSym = ts_node_symbol(walkP);
+            if (wpSym == gs.symCallExpression)
             {
-                info.cursorOnCall = true;
-                TSNode argsChild = FindArgumentListNode(walkP);
-                if (!ts_node_is_null(argsChild))
+                TSNode funcChild = parser::GetCallCallee(walkP);
+                if (!ts_node_is_null(funcChild) &&
+                    (ts_node_eq(funcChild, prev) || ts_node_start_byte(funcChild) == ts_node_start_byte(prev)))
                 {
-                    info.callArgCount = CountCallArguments(argsChild);
+                    info.cursorOnCall = true;
+                    TSNode argsChild = FindArgumentListNode(walkP);
+                    if (!ts_node_is_null(argsChild))
+                    {
+                        info.callArgCount = CountCallArguments(argsChild);
+                    }
                 }
+                return false;
             }
-            break;
-        }
-        if (wpSym == gs.symMemberExpression || wpSym == gs.symScopedIdentifier)
-        {
-            walk = walkP;
-            walkP = parser::GetParent(walkP);
-        }
-        else
-        {
-            break;
-        }
-    }
+            if (wpSym == gs.symMemberExpression || wpSym == gs.symScopedIdentifier)
+            {
+                prev = walkP;
+                return true;
+            }
+            return false;
+        });
     return info;
 }
 

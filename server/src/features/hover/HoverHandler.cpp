@@ -251,21 +251,15 @@ std::string ExtractDeclarationTextAt(TSNode root, const std::string& sourceCode,
     }
 
     TSNode current = ts_node_descendant_for_point_range(root, point, point);
-
-    for (int depth = 0; depth < 8 && !ts_node_is_null(current); ++depth, current = parser::GetParent(current))
+    TSNode declNode = parser::FindAncestorWithSymbol(current, wantedSymbol);
+    if (!ts_node_is_null(declNode))
     {
-        if (ts_node_symbol(current) != wantedSymbol)
-        {
-            continue;
-        }
-
-        const uint32_t start = ts_node_start_byte(current);
-        const uint32_t end = ts_node_end_byte(current);
+        const uint32_t start = ts_node_start_byte(declNode);
+        const uint32_t end = ts_node_end_byte(declNode);
         if (start < end && end <= sourceCode.size())
         {
             return CollapseWhitespace(sourceCode.substr(start, end - start));
         }
-        break;
     }
     return "";
 }
@@ -1469,29 +1463,26 @@ std::optional<lsp::Hover> TryHoverMemberAccess(const HoverQueryContext& ctx)
 std::string InferTypeFromAst(TSNode node, const std::string& sourceCode)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode cur = node;
-    for (int i = 0; i < 4 && !ts_node_is_null(cur); ++i, cur = parser::GetParent(cur))
+    const std::array<TSSymbol, 2> declSyms = {gs.symParameter, gs.symVariableDeclaration};
+    TSNode cur = parser::FindAncestorWithAnySymbol(node, declSyms);
+    if (!ts_node_is_null(cur))
     {
-        const TSSymbol cType = ts_node_symbol(cur);
-        if (cType == gs.symParameter || cType == gs.symVariableDeclaration)
+        TSNode typeNode = parser::GetChildByField(cur, gs.fieldParamType);
+        if (ts_node_is_null(typeNode))
         {
-            TSNode typeNode = parser::GetChildByField(cur, gs.fieldParamType);
-            if (ts_node_is_null(typeNode))
+            typeNode = parser::GetChildByField(cur, gs.fieldVarType);
+        }
+        if (ts_node_is_null(typeNode))
+        {
+            typeNode = parser::GetChildByField(cur, gs.fieldType);
+        }
+        if (!ts_node_is_null(typeNode))
+        {
+            uint32_t tStart = ts_node_start_byte(typeNode);
+            uint32_t tEnd = ts_node_end_byte(typeNode);
+            if (tStart < sourceCode.size() && tEnd <= sourceCode.size() && tStart < tEnd)
             {
-                typeNode = parser::GetChildByField(cur, gs.fieldVarType);
-            }
-            if (ts_node_is_null(typeNode))
-            {
-                typeNode = parser::GetChildByField(cur, gs.fieldType);
-            }
-            if (!ts_node_is_null(typeNode))
-            {
-                uint32_t tStart = ts_node_start_byte(typeNode);
-                uint32_t tEnd = ts_node_end_byte(typeNode);
-                if (tStart < sourceCode.size() && tEnd <= sourceCode.size() && tStart < tEnd)
-                {
-                    return sourceCode.substr(tStart, tEnd - tStart);
-                }
+                return sourceCode.substr(tStart, tEnd - tStart);
             }
         }
     }
@@ -1880,18 +1871,8 @@ std::optional<lsp::Hover> TryHoverParameterAst(const HoverQueryContext& ctx)
         return std::nullopt;
     }
 
-    TSNode current = ctx.node;
-    bool foundParam = false;
-    for (int depth = 0; depth < 4 && !ts_node_is_null(current); ++depth, current = parser::GetParent(current))
-    {
-        if (ts_node_symbol(current) == parser::GetGrammarSymbols().symParameter)
-        {
-            foundParam = true;
-            break;
-        }
-    }
-
-    if (!foundParam)
+    TSNode paramNode = parser::FindAncestorWithSymbol(ctx.node, parser::GetGrammarSymbols().symParameter);
+    if (ts_node_is_null(paramNode))
     {
         return std::nullopt;
     }
@@ -2304,16 +2285,7 @@ std::vector<analysis::Symbol> CollectScopedSymbols(HoverQueryContext& ctx)
  */
 TSNode FindEnclosingLambda(TSNode node)
 {
-    TSNode cur = node;
-    for (int depth = 0; depth < 5 && !ts_node_is_null(cur); ++depth)
-    {
-        if (ts_node_symbol(cur) == parser::GetGrammarSymbols().symLambdaExpression)
-        {
-            return cur;
-        }
-        cur = parser::GetParent(cur);
-    }
-    return TSNode{};
+    return parser::FindAncestorWithSymbol(node, parser::GetGrammarSymbols().symLambdaExpression);
 }
 
 /**
@@ -2403,17 +2375,8 @@ std::optional<lsp::Hover> TryHoverLambda(const HoverQueryContext& ctx)
 static TSNode FindEnclosingAutoDeclaration(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode curr = node;
-    for (int depth = 0; depth < 8 && !ts_node_is_null(curr); ++depth)
-    {
-        const TSSymbol nodeType = ts_node_symbol(curr);
-        if (nodeType == gs.symVariableDeclaration || nodeType == gs.symForeachStatement)
-        {
-            return curr;
-        }
-        curr = parser::GetParent(curr);
-    }
-    return TSNode{};
+    const std::array<TSSymbol, 2> declSyms = {gs.symVariableDeclaration, gs.symForeachStatement};
+    return parser::FindAncestorWithAnySymbol(node, declSyms);
 }
 
 static std::string DeduceAutoDeclaratorType(TSNode declarator, const HoverQueryContext& ctx)
@@ -2630,40 +2593,30 @@ static ContainerContextPreference CheckContextPreference(TSNode node)
     const auto& gs = parser::GetGrammarSymbols();
     if (IsScopeQualifier(node))
     {
-        TSNode cur = parser::GetParent(node);
-        int depth = 0;
-        while (!ts_node_is_null(cur) && depth++ < 8)
-        {
-            if (ts_node_symbol(cur) == gs.symUsingDeclaration)
-            {
-                return ContainerContextPreference::PreferNamespace;
-            }
-            cur = parser::GetParent(cur);
-        }
-        return ContainerContextPreference::None;
+        TSNode usingDecl = parser::FindAncestorWithSymbol(parser::GetParent(node), gs.symUsingDeclaration);
+        return !ts_node_is_null(usingDecl) ? ContainerContextPreference::PreferNamespace
+                                           : ContainerContextPreference::None;
     }
 
-    TSNode cur = parser::GetParent(node);
-    int depth = 0;
-    while (!ts_node_is_null(cur) && depth++ < 8)
-    {
-        const TSSymbol sym = ts_node_symbol(cur);
-        if (sym == gs.symDatatype || sym == gs.symTemplateTypeList || sym == gs.symBaseClassList || sym == gs.symType)
-        {
-            return ContainerContextPreference::PreferClass;
-        }
-        if (sym == gs.symUsingDeclaration)
-        {
-            return ContainerContextPreference::PreferNamespace;
-        }
-        if (sym == gs.symScopedIdentifier || sym == gs.symScope)
-        {
-            cur = parser::GetParent(cur);
-            continue;
-        }
-        break;
-    }
-    return ContainerContextPreference::None;
+    ContainerContextPreference pref = ContainerContextPreference::None;
+    parser::ForEachAncestor(parser::GetParent(node),
+                            [&](TSNode cur) -> bool
+                            {
+                                const TSSymbol sym = ts_node_symbol(cur);
+                                if (sym == gs.symDatatype || sym == gs.symTemplateTypeList ||
+                                    sym == gs.symBaseClassList || sym == gs.symType)
+                                {
+                                    pref = ContainerContextPreference::PreferClass;
+                                    return false;
+                                }
+                                if (sym == gs.symUsingDeclaration)
+                                {
+                                    pref = ContainerContextPreference::PreferNamespace;
+                                    return false;
+                                }
+                                return sym == gs.symScopedIdentifier || sym == gs.symScope;
+                            });
+    return pref;
 }
 
 static bool IsTypeSymbol(const analysis::Symbol& sym) noexcept
@@ -3093,20 +3046,20 @@ TSNode FindTopmostBinaryPlus(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode current = node;
-    for (size_t depth = 0; depth < 16 && !ts_node_is_null(parser::GetParent(current)); ++depth)
-    {
-        TSNode parent = parser::GetParent(current);
-        if (ts_node_symbol(parent) == gs.symBinaryExpression)
-        {
-            TSNode opNode = parser::GetChildByField(parent, gs.fieldOperator);
-            if (!ts_node_is_null(opNode) && ts_node_symbol(opNode) == gs.tokPlus)
-            {
-                current = parent;
-                continue;
-            }
-        }
-        break;
-    }
+    parser::ForEachAncestor(parser::GetParent(node),
+                            [&](TSNode parent) -> bool
+                            {
+                                if (ts_node_symbol(parent) == gs.symBinaryExpression)
+                                {
+                                    TSNode opNode = parser::GetChildByField(parent, gs.fieldOperator);
+                                    if (!ts_node_is_null(opNode) && ts_node_symbol(opNode) == gs.tokPlus)
+                                    {
+                                        current = parent;
+                                        return true;
+                                    }
+                                }
+                                return false;
+                            });
     return current;
 }
 

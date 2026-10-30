@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/SymbolTable.h"
 #include "document/Document.h"
 #include "lsp/DocumentStore.h"
 #include "lsp/ModuleIndex.h"
@@ -14,11 +15,6 @@
 
 namespace angel_lsp
 {
-
-namespace analysis
-{
-class SymbolTable;
-}
 
 /**
  * @brief Immutable snapshot of workspace-wide configuration and preprocessor state.

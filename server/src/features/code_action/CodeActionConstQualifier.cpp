@@ -48,15 +48,9 @@ std::optional<lsp::CodeAction> TryBuildMissingConstFixForSymbol(const CodeAction
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSPoint fnPt = {sym.startLine, sym.startCharacter};
-    TSNode fnNode = ts_node_descendant_for_point_range(rootNode, fnPt, fnPt);
-    for (int depth = 0; depth < 64 && !ts_node_is_null(fnNode); ++depth, fnNode = parser::GetParent(fnNode))
-    {
-        if (ts_node_symbol(fnNode) == gs.symFuncDeclaration)
-        {
-            break;
-        }
-    }
-    if (ts_node_is_null(fnNode) || ts_node_symbol(fnNode) != gs.symFuncDeclaration)
+    TSNode fnNode =
+        parser::FindAncestorWithSymbol(ts_node_descendant_for_point_range(rootNode, fnPt, fnPt), gs.symFuncDeclaration);
+    if (ts_node_is_null(fnNode))
     {
         return std::nullopt;
     }
@@ -131,24 +125,9 @@ bool HasConstQualifierBetween(std::string_view sourceCode, TSNode paramList, TSN
 
 static bool FindEnclosingMethodAndClass(TSNode leaf, TSNode& outFn, TSNode& outClass, const parser::GrammarSymbols& gs)
 {
-    TSNode fnNode = leaf;
-    for (int depth = 0; depth < 64 && !ts_node_is_null(fnNode); ++depth, fnNode = parser::GetParent(fnNode))
-    {
-        if (ts_node_symbol(fnNode) == gs.symFuncDeclaration)
-        {
-            break;
-        }
-    }
-    TSNode classNode = fnNode;
-    for (int depth = 0; depth < 64 && !ts_node_is_null(classNode); ++depth, classNode = parser::GetParent(classNode))
-    {
-        if (ts_node_symbol(classNode) == gs.symClassDeclaration)
-        {
-            break;
-        }
-    }
-    if (ts_node_is_null(fnNode) || ts_node_is_null(classNode) || ts_node_symbol(fnNode) != gs.symFuncDeclaration ||
-        ts_node_symbol(classNode) != gs.symClassDeclaration)
+    TSNode fnNode = parser::FindAncestorWithSymbol(leaf, gs.symFuncDeclaration);
+    TSNode classNode = parser::FindAncestorWithSymbol(fnNode, gs.symClassDeclaration);
+    if (ts_node_is_null(fnNode) || ts_node_is_null(classNode))
     {
         return false;
     }

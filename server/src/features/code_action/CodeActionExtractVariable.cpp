@@ -55,24 +55,14 @@ bool IsExtractableExpression(TSNode node)
 bool IsLhsOfAssignment(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    int depth = 0;
-    for (TSNode curr = node; depth < 64 && !ts_node_is_null(curr); ++depth, curr = parser::GetParent(curr))
+    TSNode assign = parser::FindAncestorWithSymbol(node, gs.symAssignmentExpression);
+    if (ts_node_is_null(assign))
     {
-        TSNode parent = parser::GetParent(curr);
-        if (!ts_node_is_null(parent))
-        {
-            if (ts_node_symbol(parent) == gs.symAssignmentExpression)
-            {
-                TSNode left = parser::GetChildByField(parent, gs.fieldLeft);
-                if (ts_node_start_byte(left) == ts_node_start_byte(curr) &&
-                    ts_node_end_byte(left) == ts_node_end_byte(curr))
-                {
-                    return true;
-                }
-            }
-        }
+        return false;
     }
-    return false;
+    TSNode left = parser::GetChildByField(assign, gs.fieldLeft);
+    return !ts_node_is_null(left) && ts_node_start_byte(node) >= ts_node_start_byte(left) &&
+           ts_node_end_byte(node) <= ts_node_end_byte(left);
 }
 
 /**
@@ -136,12 +126,19 @@ TSNode FindExtractableExpression(TSNode rootNode, const lsp::Range& range)
 {
     TSPoint startPt = {range.start.line, range.start.character};
     TSPoint endPt = {range.end.line, range.end.character};
-    TSNode targetNode = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
-    while (!ts_node_is_null(targetNode) && !IsExtractableExpression(targetNode))
-    {
-        targetNode = parser::GetParent(targetNode);
-    }
-    if (ts_node_is_null(targetNode) || !IsExtractableExpression(targetNode))
+    TSNode startNode = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
+    TSNode targetNode{};
+    parser::ForEachAncestor(startNode,
+                            [&](TSNode cur) -> bool
+                            {
+                                if (IsExtractableExpression(cur))
+                                {
+                                    targetNode = cur;
+                                    return false;
+                                }
+                                return true;
+                            });
+    if (ts_node_is_null(targetNode))
     {
         return TSNode{};
     }
@@ -174,17 +171,7 @@ TSNode FindExtractableExpression(TSNode rootNode, const lsp::Range& range)
 TSNode FindEnclosingBlockStatement(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    int depth = 0;
-    for (TSNode stmtNode = node; depth < 64 && !ts_node_is_null(stmtNode);
-         ++depth, stmtNode = parser::GetParent(stmtNode))
-    {
-        TSNode parent = parser::GetParent(stmtNode);
-        if (!ts_node_is_null(parent) && ts_node_symbol(parent) == gs.symStatementBlock)
-        {
-            return stmtNode;
-        }
-    }
-    return TSNode{};
+    return parser::FindDirectChildOfAncestor(node, gs.symStatementBlock);
 }
 
 std::string ToLowerFirst(std::string_view str)

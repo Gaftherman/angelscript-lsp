@@ -71,16 +71,9 @@ std::optional<bool> ParameterIsConst(TSNode node, std::string_view name, std::st
                                      bool checkHandleConst = false)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode owner = node;
-    for (int depth = 0; depth < 16 && !ts_node_is_null(owner); ++depth, owner = parser::GetParent(owner))
-    {
-        const TSSymbol ownerSym = ts_node_symbol(owner);
-        if (ownerSym == gs.symFuncDeclaration || ownerSym == gs.symLambdaExpression ||
-            ownerSym == gs.symVirtualProperty || ownerSym == gs.symAccessor)
-        {
-            break;
-        }
-    }
+    const std::array<TSSymbol, 4> ownerSyms = {gs.symFuncDeclaration, gs.symLambdaExpression, gs.symVirtualProperty,
+                                               gs.symAccessor};
+    TSNode owner = parser::FindAncestorWithAnySymbol(node, ownerSyms);
     if (ts_node_is_null(owner))
     {
         return std::nullopt;
@@ -203,30 +196,26 @@ struct EnclosingMethodInfo
 EnclosingMethodInfo FindEnclosingMethod(TSNode node, std::string_view sourceCode)
 {
     EnclosingMethodInfo info;
-    TSNode curr = node;
-    TSNode funcNode{};
-
     const auto& gs = parser::GetGrammarSymbols();
-    for (int depth = 0; depth < 16 && !ts_node_is_null(curr); ++depth, curr = parser::GetParent(curr))
+    const std::array<TSSymbol, 2> funcSyms = {gs.symFuncDeclaration, gs.symAccessor};
+    TSNode funcNode = parser::FindAncestorWithAnySymbol(node, funcSyms);
+    if (ts_node_is_null(funcNode))
     {
-        const TSSymbol sym = ts_node_symbol(curr);
-        if (ts_node_is_null(funcNode) && (sym == gs.symFuncDeclaration || sym == gs.symAccessor))
+        return info;
+    }
+
+    TSNode classNode = parser::FindAncestorWithSymbol(funcNode, gs.symClassDeclaration);
+    if (!ts_node_is_null(classNode))
+    {
+        info.inClass = true;
+        TSNode nameNode = parser::GetChildByField(classNode, gs.fieldName);
+        if (!ts_node_is_null(nameNode))
         {
-            funcNode = curr;
-        }
-        else if (sym == gs.symClassDeclaration)
-        {
-            info.inClass = true;
-            TSNode nameNode = parser::GetChildByField(curr, gs.fieldName);
-            if (!ts_node_is_null(nameNode))
-            {
-                info.className = NodeText(nameNode, sourceCode);
-            }
-            break;
+            info.className = NodeText(nameNode, sourceCode);
         }
     }
 
-    if (!info.inClass || ts_node_is_null(funcNode))
+    if (!info.inClass)
     {
         return info;
     }
