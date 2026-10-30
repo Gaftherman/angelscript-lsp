@@ -1,4 +1,5 @@
 #include "lsp/WorkspaceStateStore.h"
+#include "analysis/SymbolTable.h"
 #include "utils/Utils.h"
 
 #include <filesystem>
@@ -167,6 +168,24 @@ std::shared_ptr<const document::Document> WorkspaceStateStore::GetPreindexedDocu
     return nullptr;
 }
 
+void WorkspaceStateStore::SetPredefinedBaseTable(std::shared_ptr<const analysis::SymbolTable> baseTable)
+{
+    std::lock_guard<std::mutex> lock(m_predefinedBaseMutex);
+    m_predefinedBaseTable = std::move(baseTable);
+}
+
+std::shared_ptr<const analysis::SymbolTable> WorkspaceStateStore::GetPredefinedBaseTable() const
+{
+    std::lock_guard<std::mutex> lock(m_predefinedBaseMutex);
+    return m_predefinedBaseTable;
+}
+
+void WorkspaceStateStore::InvalidatePredefinedBaseTable()
+{
+    std::lock_guard<std::mutex> lock(m_predefinedBaseMutex);
+    m_predefinedBaseTable.reset();
+}
+
 void WorkspaceStateStore::Clear()
 {
     m_documentStore.Clear();
@@ -176,6 +195,10 @@ void WorkspaceStateStore::Clear()
     {
         std::lock_guard<std::mutex> lock(m_preindexedMutex);
         m_preindexedDocuments.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_predefinedBaseMutex);
+        m_predefinedBaseTable.reset();
     }
 
     std::lock_guard<std::mutex> lock(m_configMutex);

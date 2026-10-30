@@ -483,16 +483,17 @@ Server::ParseAndCollectResult Server::ParseAndCollectSymbols(AnalyzeDocumentRequ
 void Server::LogAnalysisProfile(std::string_view prefix, const std::string& uriStr,
                                 const AnalysisTimingProfile& profile) const
 {
-    LogInfo(fmt::format("{} Finished analysis for file: {} in {} (Parse: {}, Collector: {}, "
+    LogInfo(fmt::format("{} Finished analysis for file: {} in {} (Snapshot: {}, Parse: {}, Collector: {}, "
                         "Scopes: {}, Checkers: {})",
-                        prefix, uriStr, utils::FormatDuration(profile.totalMs), utils::FormatDuration(profile.parseMs),
+                        prefix, uriStr, utils::FormatDuration(profile.totalMs),
+                        utils::FormatDuration(profile.snapshotMs), utils::FormatDuration(profile.parseMs),
                         utils::FormatDuration(profile.colMs), utils::FormatDuration(profile.scopeMs),
                         utils::FormatDuration(profile.checkMs)));
-    LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {} (Parse: {}, Collector: {}, "
+    LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {} (Snapshot: {}, Parse: {}, Collector: {}, "
                         "Scopes: {}, Checkers: {})",
-                        uriStr, utils::FormatDuration(profile.totalMs), utils::FormatDuration(profile.parseMs),
-                        utils::FormatDuration(profile.colMs), utils::FormatDuration(profile.scopeMs),
-                        utils::FormatDuration(profile.checkMs)));
+                        uriStr, utils::FormatDuration(profile.totalMs), utils::FormatDuration(profile.snapshotMs),
+                        utils::FormatDuration(profile.parseMs), utils::FormatDuration(profile.colMs),
+                        utils::FormatDuration(profile.scopeMs), utils::FormatDuration(profile.checkMs)));
 }
 
 bool Server::IsUnchangedClosedDocument(const std::string& uriStr, uint64_t generation,
@@ -543,8 +544,14 @@ const analysis::SymbolTable* Server::PrepareAnalysisSnapshot(const std::string& 
         return &m_symbolTable;
     }
     const auto moduleUris = ComputeModuleClosureUris(uriStr);
-    outSnapshot =
-        m_symbolTable.CreateAnalysisSnapshot(uriStr, staging, &moduleUris, m_config.info.predefinedFileExtension);
+    const auto predefinedBase = GetWorkspaceStore().GetPredefinedBaseTable();
+    outSnapshot = m_symbolTable.CreateAnalysisSnapshot({
+        .uriStr = uriStr,
+        .staging = staging,
+        .allowedModuleFileUris = &moduleUris,
+        .predefinedExtension = m_config.info.predefinedFileExtension,
+        .predefinedBase = predefinedBase.get(),
+    });
     return outSnapshot.get();
 }
 
@@ -578,9 +585,11 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     {
         IndexModuleClosure(req.uriStr);
     }
+    utils::HighResTimer snapshotTimer;
     std::unique_ptr<analysis::SymbolTable> analysisSnapshot;
     const analysis::SymbolTable* activeTable =
         PrepareAnalysisSnapshot(req.uriStr, unchangedClosedFile, staging, analysisSnapshot);
+    const double snapshotMs = snapshotTimer.ElapsedMs();
 
     utils::HighResTimer scopeTimer;
     std::shared_ptr<angel_lsp::analysis::Scope> scopeRoot =
@@ -603,7 +612,7 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     AppendIncludeDiagnostics(req.uriStr, req.text, parsed.diagnostics);
 
     const double totalMs = totalTimer.ElapsedMs();
-    LogAnalysisProfile("[Analysis]", req.uriStr, {totalMs, parsed.parseMs, parsed.colMs, scopeMs, checkMs});
+    LogAnalysisProfile("[Analysis]", req.uriStr, {totalMs, snapshotMs, parsed.parseMs, parsed.colMs, scopeMs, checkMs});
 
     CommitAnalysisResults({.uriStr = req.uriStr,
                            .version = req.version,

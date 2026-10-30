@@ -1,9 +1,12 @@
 #pragma once
 
+#include "analysis/SymbolTable.h"
+
 #include <ankerl/unordered_dense.h>
 #include <cstdint>
 #include <initializer_list>
 #include <span>
+#include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
 #include <vector>
@@ -11,6 +14,16 @@
 namespace angel_lsp::analysis
 {
 class TraversalBudget;
+
+/**
+ * @brief Information about an enclosing container in the AST hierarchy.
+ */
+struct ContainerInfo
+{
+    std::string name;          ///< Bare name, e.g. "Player" or "Game"
+    std::string qualifiedName; ///< Fully qualified path, e.g. "Game::Player" or "Game"
+    ContainerKind kind;
+};
 
 /**
  * @brief Single-pass index of AST nodes grouped by Tree-Sitter symbol for O(1) retrieval.
@@ -256,6 +269,37 @@ class NodeIndex
      * @return Span of comment ranges.
      */
     [[nodiscard]] std::span<const CommentRange> CommentRanges() const noexcept;
+
+    /**
+     * @brief Finds the innermost class, interface, or mixin declaration enclosing the given byte offset.
+     * @param[in] byteOffset Document byte offset to test.
+     * @return Innermost enclosing class/interface/mixin TSNode or null node if outside any class.
+     */
+    [[nodiscard]] TSNode FindEnclosingClassOrMixin(uint32_t byteOffset) const noexcept;
+
+    /**
+     * @brief Finds the innermost callable declaration (function or lambda expression) enclosing byteOffset.
+     * @param[in] byteOffset Document byte offset to test.
+     * @return Innermost enclosing function or lambda TSNode or null node if none found.
+     */
+    [[nodiscard]] TSNode FindEnclosingCallable(uint32_t byteOffset) const noexcept;
+
+    /**
+     * @brief Tests whether byteOffset is enclosed by an intermediate lambda expression closure barrier.
+     * @param[in] byteOffset Document byte offset to test.
+     * @return True if the innermost callable enclosing byteOffset is a lambda expression.
+     */
+    [[nodiscard]] bool IsInsideLambdaClosure(uint32_t byteOffset) const noexcept;
+
+    /**
+     * @brief Reconstructs the enclosing container hierarchy (namespaces, classes, interfaces) for byteOffset.
+     *        Operates in O(K) where K is the number of containers in the document, with zero GetParent calls.
+     * @param[in] byteOffset Document byte offset to test.
+     * @param[in] sourceCode Document source text buffer.
+     * @return Vector of ContainerInfo ordered from innermost to outermost container.
+     */
+    [[nodiscard]] std::vector<ContainerInfo> CollectEnclosingContainers(uint32_t byteOffset,
+                                                                        std::string_view sourceCode) const;
 
     /**
      * @brief Clears all indexed nodes and symbol maps.

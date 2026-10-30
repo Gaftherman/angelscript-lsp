@@ -286,8 +286,14 @@ std::string FormatVariableSignature(const analysis::Symbol& sym, const char* rol
     if (sym.containerKind == analysis::ContainerKind::Enum || sym.GetVariable().isEnumConstant)
     {
         role = "(enum member) ";
+        return std::string(role) + analysis::FormatVariableDeclaration(sym.GetVariable(), sym.name);
     }
-    return std::string(role) + analysis::FormatVariableDeclaration(sym.GetVariable(), sym.name);
+    std::string displayName = sym.name;
+    if (sym.containerKind == analysis::ContainerKind::Namespace && !sym.containerName.empty())
+    {
+        displayName = utils::JoinScopedName(sym.containerName, sym.name);
+    }
+    return std::string(role) + analysis::FormatVariableDeclaration(sym.GetVariable(), displayName);
 }
 
 bool IsContainerProperty(std::string_view containerName, const analysis::SymbolTable* symbolTable)
@@ -337,6 +343,53 @@ static std::string FormatNamespaceDeclaration(const analysis::Symbol& sym)
     return "namespace " + sym.name;
 }
 
+std::string FormatVariableOrProperty(const analysis::Symbol& sym, const analysis::SymbolTable* symbolTable)
+{
+    if (sym.containerKind == analysis::ContainerKind::Enum || sym.GetVariable().isEnumConstant)
+    {
+        return FormatVariableSignature(sym, "(enum member) ");
+    }
+    const bool isProperty = IsVariableProperty(sym, symbolTable);
+    return FormatVariableSignature(sym, isProperty ? "(property) " : "(global variable) ");
+}
+
+std::string FormatSymbolBody(const analysis::Symbol& sym, const analysis::SymbolTable* symbolTable)
+{
+    switch (sym.type)
+    {
+    case analysis::SymbolType::Function:
+    case analysis::SymbolType::Funcdef:
+        return FormatFunctionSignature(sym);
+    case analysis::SymbolType::Class:
+    case analysis::SymbolType::Interface:
+        return FormatClassSignature(sym);
+    case analysis::SymbolType::Enum:
+    {
+        const std::string enumName =
+            !sym.containerName.empty() ? utils::JoinScopedName(sym.containerName, sym.name) : sym.name;
+        return "enum " + enumName;
+    }
+    case analysis::SymbolType::Variable:
+        return FormatVariableOrProperty(sym, symbolTable);
+    case analysis::SymbolType::Typedef:
+    {
+        const std::string tdName =
+            !sym.containerName.empty() ? utils::JoinScopedName(sym.containerName, sym.name) : sym.name;
+        return "typedef " + sym.GetTypedef().baseType + " " + tdName;
+    }
+    case analysis::SymbolType::Namespace:
+        return FormatNamespaceDeclaration(sym);
+    case analysis::SymbolType::Property:
+        if (std::holds_alternative<analysis::VariableSignature>(sym.signature))
+        {
+            return FormatVariableSignature(sym, "(property) ");
+        }
+        return "(property) " + sym.name;
+    default:
+        return sym.name;
+    }
+}
+
 /** @brief Renders the single hover line that describes a symbol of any kind. */
 std::string FormatDeclarationText(const analysis::Symbol& sym, const analysis::SymbolTable* symbolTable = nullptr)
 {
@@ -345,44 +398,7 @@ std::string FormatDeclarationText(const analysis::Symbol& sym, const analysis::S
     {
         metaPrefix += meta + "\n";
     }
-
-    auto formatBody = [&]() -> std::string
-    {
-        switch (sym.type)
-        {
-        case analysis::SymbolType::Function:
-        case analysis::SymbolType::Funcdef:
-            return FormatFunctionSignature(sym);
-        case analysis::SymbolType::Class:
-        case analysis::SymbolType::Interface:
-            return FormatClassSignature(sym);
-        case analysis::SymbolType::Enum:
-            return "enum " + sym.name;
-        case analysis::SymbolType::Variable:
-        {
-            if (sym.containerKind == analysis::ContainerKind::Enum || sym.GetVariable().isEnumConstant)
-            {
-                return FormatVariableSignature(sym, "(enum member) ");
-            }
-            bool isProperty = IsVariableProperty(sym, symbolTable);
-            return FormatVariableSignature(sym, isProperty ? "(property) " : "(global variable) ");
-        }
-        case analysis::SymbolType::Typedef:
-            return "typedef " + sym.GetTypedef().baseType + " " + sym.name;
-        case analysis::SymbolType::Namespace:
-            return FormatNamespaceDeclaration(sym);
-        case analysis::SymbolType::Property:
-            if (std::holds_alternative<analysis::VariableSignature>(sym.signature))
-            {
-                return FormatVariableSignature(sym, "(property) ");
-            }
-            return "(property) " + sym.name;
-        default:
-            return sym.name;
-        }
-    };
-
-    return metaPrefix + formatBody();
+    return metaPrefix + FormatSymbolBody(sym, symbolTable);
 }
 
 /** @brief Drops symbols that are the same declaration seen twice.
@@ -2207,6 +2223,31 @@ void FilterEnumMemberSymbols(std::vector<analysis::Symbol>& symbols, const Hover
                   });
 }
 
+static void ResolveScopedMemberFallback(std::string_view scopedPrefix, const HoverQueryContext& ctx,
+                                        std::vector<analysis::Symbol>& symbols)
+{
+    if (!symbols.empty() || !utils::ContainsScopeSeparator(scopedPrefix))
+    {
+        return;
+    }
+    const std::string_view qualifierView = utils::ParentScopeView(scopedPrefix);
+    if (qualifierView.empty())
+    {
+        return;
+    }
+    const std::string qualifier(qualifierView);
+    auto qualSyms = analysis::FindSymbolsInScope(qualifier, ctx.node, ctx.request.sourceCode, ctx.request.symbolTable);
+    for (const auto& qs : qualSyms)
+    {
+        const std::string qName = qs.qualifiedName.empty() ? qs.name : qs.qualifiedName;
+        if (const auto found = ctx.request.symbolTable.FindMemberSymbolPtr(qName, ctx.nodeText))
+        {
+            symbols.insert(symbols.end(), found->begin(), found->end());
+            return;
+        }
+    }
+}
+
 std::vector<analysis::Symbol> CollectScopedSymbols(HoverQueryContext& ctx)
 {
     std::vector<analysis::Symbol> symbols;
@@ -2228,6 +2269,7 @@ std::vector<analysis::Symbol> CollectScopedSymbols(HoverQueryContext& ctx)
                 }
                 symbols = analysis::FindSymbolsInScope(scopedPrefix, ctx.node, ctx.request.sourceCode,
                                                        ctx.request.symbolTable);
+                ResolveScopedMemberFallback(scopedPrefix, ctx, symbols);
                 isExplicitlyScoped = utils::ContainsScopeSeparator(scopedPrefix);
             }
         }

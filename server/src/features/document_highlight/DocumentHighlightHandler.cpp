@@ -782,9 +782,8 @@ std::string ResolveIdentifierReceiverType(const std::string& oText, const analys
 TSNode FindMemberExpressionParent(TSNode refNode) noexcept
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode exprParent = parser::GetParent(refNode);
-    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(exprParent);
-         ++depth, exprParent = parser::GetParent(exprParent))
+    for (TSNode exprParent = parser::GetParent(refNode); !ts_node_is_null(exprParent);
+         exprParent = parser::GetParent(exprParent))
     {
         const TSSymbol pType = ts_node_symbol(exprParent);
         if (pType == gs.symMemberExpression)
@@ -796,7 +795,7 @@ TSNode FindMemberExpressionParent(TSNode refNode) noexcept
             return TSNode{};
         }
     }
-    return exprParent;
+    return TSNode{};
 }
 
 /**

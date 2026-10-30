@@ -123,8 +123,7 @@ std::string EnclosingFunction(TSNode node, std::string_view sourceCode)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode owner = node;
-    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(owner);
-         ++depth, owner = parser::GetParent(owner))
+    for (int depth = 0; depth < 64 && !ts_node_is_null(owner); ++depth, owner = parser::GetParent(owner))
     {
         if (ts_node_symbol(owner) == gs.symFuncDeclaration)
         {

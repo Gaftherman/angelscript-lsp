@@ -1,4 +1,5 @@
 #include "analysis/SignatureFormatter.h"
+#include "utils/ScopedNameUtils.h"
 
 #include <sstream>
 
@@ -306,7 +307,7 @@ std::string FormatVariableDeclaration(const VariableSignature& var, const std::s
     return oss.str();
 }
 
-void FormatClassDeclaration(std::ostringstream& oss, const Symbol& sym)
+void FormatClassDeclaration(std::ostringstream& oss, const Symbol& sym, bool qualified = true)
 {
     const auto& sig = sym.GetClass();
     oss << FormatAccessPrefix(sig.modifiers);
@@ -332,7 +333,9 @@ void FormatClassDeclaration(std::ostringstream& oss, const Symbol& sym)
         oss << "final ";
     }
 
-    oss << "class " << sym.name;
+    const std::string displayName =
+        (qualified && !sym.containerName.empty()) ? utils::JoinScopedName(sym.containerName, sym.name) : sym.name;
+    oss << "class " << displayName;
 
     if (sig.isTemplate && !sig.templateParams.empty())
     {
@@ -354,7 +357,7 @@ void FormatClassDeclaration(std::ostringstream& oss, const Symbol& sym)
     }
 }
 
-void FormatInterfaceDeclaration(std::ostringstream& oss, const Symbol& sym)
+void FormatInterfaceDeclaration(std::ostringstream& oss, const Symbol& sym, bool qualified = true)
 {
     const auto& sig = sym.GetInterface();
     oss << FormatAccessPrefix(sig.modifiers);
@@ -368,7 +371,9 @@ void FormatInterfaceDeclaration(std::ostringstream& oss, const Symbol& sym)
         oss << "shared ";
     }
 
-    oss << "interface " << sym.name;
+    const std::string displayName =
+        (qualified && !sym.containerName.empty()) ? utils::JoinScopedName(sym.containerName, sym.name) : sym.name;
+    oss << "interface " << displayName;
 
     for (size_t i = 0; i < sig.inheritedInterfaces.size(); ++i)
     {
@@ -376,16 +381,16 @@ void FormatInterfaceDeclaration(std::ostringstream& oss, const Symbol& sym)
     }
 }
 
-std::string FormatTypeDeclaration(const Symbol& sym)
+std::string FormatTypeDeclaration(const Symbol& sym, bool qualified)
 {
     std::ostringstream oss;
     if (sym.type == SymbolType::Class)
     {
-        FormatClassDeclaration(oss, sym);
+        FormatClassDeclaration(oss, sym, qualified);
     }
     else if (sym.type == SymbolType::Interface)
     {
-        FormatInterfaceDeclaration(oss, sym);
+        FormatInterfaceDeclaration(oss, sym, qualified);
     }
     return oss.str();
 }

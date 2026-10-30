@@ -24,8 +24,7 @@ TSNode FindEnclosingFunctionNode(TSNode rootNode, const lsp::Range& range)
     TSPoint endPt{static_cast<uint32_t>(range.end.line), static_cast<uint32_t>(range.end.character)};
     TSNode selNode = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
     TSNode fnNode = selNode;
-    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(fnNode);
-         ++depth, fnNode = parser::GetParent(fnNode))
+    for (int depth = 0; depth < 64 && !ts_node_is_null(fnNode); ++depth, fnNode = parser::GetParent(fnNode))
     {
         if (ts_node_symbol(fnNode) == gs.symFuncDeclaration)
         {
@@ -163,8 +162,7 @@ TSNode FindEnclosingClassNode(TSNode fnNode)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode classNode = fnNode;
-    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(classNode);
-         ++depth, classNode = parser::GetParent(classNode))
+    for (int depth = 0; depth < 64 && !ts_node_is_null(classNode); ++depth, classNode = parser::GetParent(classNode))
     {
         if (ts_node_symbol(classNode) == gs.symClassDeclaration)
         {
@@ -180,8 +178,7 @@ TSNode FindInnermostStatementBlock(TSNode rootNode, const lsp::Range& range, TSN
     TSPoint endPt{static_cast<uint32_t>(range.end.line), static_cast<uint32_t>(range.end.character)};
     TSNode node = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
     const auto& gs = parser::GetGrammarSymbols();
-    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(node) && !ts_node_eq(node, fnNode);
-         ++depth, node = parser::GetParent(node))
+    for (; !ts_node_is_null(node) && !ts_node_eq(node, fnNode); node = parser::GetParent(node))
     {
         if (ts_node_symbol(node) == gs.symStatementBlock)
         {

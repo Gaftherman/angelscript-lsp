@@ -140,7 +140,7 @@ std::vector<Symbol> FindQualifiedTypeUnderCursor(TSNode node, std::string_view s
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode p = node;
-    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(p); ++depth, p = parser::GetParent(p))
+    for (int depth = 0; depth < 64 && !ts_node_is_null(p); ++depth, p = parser::GetParent(p))
     {
         const TSSymbol pType = ts_node_symbol(p);
         if (pType == gs.symType || pType == gs.symScopedIdentifier)

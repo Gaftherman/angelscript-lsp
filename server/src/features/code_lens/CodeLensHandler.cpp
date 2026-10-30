@@ -1484,8 +1484,7 @@ lsp::Range FindMixinRangeInAst(const analysis::Symbol& sym, const std::string& m
     TSPoint hostPt = {sym.startLine, sym.startCharacter};
     const auto& gs = parser::GetGrammarSymbols();
     TSNode hostNode = ts_node_descendant_for_point_range(hostRoot, hostPt, hostPt);
-    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(hostNode);
-         ++depth, hostNode = parser::GetParent(hostNode))
+    for (int depth = 0; depth < 64 && !ts_node_is_null(hostNode); ++depth, hostNode = parser::GetParent(hostNode))
     {
         if (ts_node_symbol(hostNode) == gs.symClassDeclaration)
         {

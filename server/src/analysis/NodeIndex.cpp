@@ -1,6 +1,8 @@
 #include "analysis/NodeIndex.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/TypeSanitization.h"
 #include "parser/GrammarNames.h"
+#include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
 
@@ -320,5 +322,200 @@ void NodeIndex::Clear() noexcept
     m_commentRanges.clear();
     m_symbolByName.clear();
     m_symComment = 0;
+}
+
+TSNode NodeIndex::FindEnclosingClassOrMixin(uint32_t byteOffset) const noexcept
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol targets[] = {gs.symClassDeclaration, gs.symInterfaceDeclaration, gs.symMixinDeclaration};
+    TSNode bestNode{};
+    uint32_t bestSpan = UINT32_MAX;
+    for (TSSymbol sym : targets)
+    {
+        for (TSNode node : Nodes(sym))
+        {
+            const uint32_t start = ts_node_start_byte(node);
+            if (start > byteOffset)
+            {
+                break;
+            }
+            const uint32_t end = ts_node_end_byte(node);
+            if (byteOffset < end)
+            {
+                const uint32_t span = end - start;
+                if (span < bestSpan)
+                {
+                    bestSpan = span;
+                    bestNode = node;
+                }
+            }
+        }
+    }
+    return bestNode;
+}
+
+TSNode NodeIndex::FindEnclosingCallable(uint32_t byteOffset) const noexcept
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol targets[] = {gs.symFuncDeclaration, gs.symLambdaExpression};
+    TSNode bestNode{};
+    uint32_t bestSpan = UINT32_MAX;
+    for (TSSymbol sym : targets)
+    {
+        for (TSNode node : Nodes(sym))
+        {
+            const uint32_t start = ts_node_start_byte(node);
+            if (start > byteOffset)
+            {
+                break;
+            }
+            const uint32_t end = ts_node_end_byte(node);
+            if (byteOffset < end)
+            {
+                const uint32_t span = end - start;
+                if (span < bestSpan)
+                {
+                    bestSpan = span;
+                    bestNode = node;
+                }
+            }
+        }
+    }
+    return bestNode;
+}
+
+bool NodeIndex::IsInsideLambdaClosure(uint32_t byteOffset) const noexcept
+{
+    const TSNode callable = FindEnclosingCallable(byteOffset);
+    return !ts_node_is_null(callable) && ts_node_symbol(callable) == parser::GetGrammarSymbols().symLambdaExpression;
+}
+
+namespace
+{
+std::optional<ContainerKind> ClassifyIndexContainerKind(TSSymbol sym) noexcept
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    if (sym == gs.symClassDeclaration || sym == gs.symMixinDeclaration)
+    {
+        return ContainerKind::Class;
+    }
+    if (sym == gs.symInterfaceDeclaration)
+    {
+        return ContainerKind::Interface;
+    }
+    if (sym == gs.symNamespaceDeclaration)
+    {
+        return ContainerKind::Namespace;
+    }
+    return std::nullopt;
+}
+
+void AppendIndexRawContainers(TSNode nameNode, ContainerKind kind, std::string_view sourceCode,
+                              std::vector<ContainerInfo>& rawContainers)
+{
+    if (ts_node_is_null(nameNode))
+    {
+        return;
+    }
+    const uint32_t start = ts_node_start_byte(nameNode);
+    const uint32_t end = ts_node_end_byte(nameNode);
+    if (start >= end || end > sourceCode.size())
+    {
+        return;
+    }
+
+    std::string text(sourceCode.substr(start, end - start));
+    if (kind == ContainerKind::Namespace && utils::ContainsScopeSeparator(text))
+    {
+        auto segs = SplitScopeSegments(text);
+        for (auto it = segs.rbegin(); it != segs.rend(); ++it)
+        {
+            if (!it->empty())
+            {
+                rawContainers.push_back({*it, "", kind});
+            }
+        }
+    }
+    else
+    {
+        rawContainers.push_back({std::move(text), "", kind});
+    }
+}
+
+void ComputeIndexContainerQualifiedNames(std::vector<ContainerInfo>& containers)
+{
+    for (size_t i = 0; i < containers.size(); ++i)
+    {
+        std::string qName;
+        for (size_t j = containers.size(); j > i; --j)
+        {
+            if (!qName.empty())
+            {
+                qName += "::";
+            }
+            qName += containers[j - 1].name;
+        }
+        containers[i].qualifiedName = std::move(qName);
+    }
+}
+} // namespace
+
+std::vector<ContainerInfo> NodeIndex::CollectEnclosingContainers(uint32_t byteOffset, std::string_view sourceCode) const
+{
+    std::vector<ContainerInfo> rawContainers;
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol containerSymbols[] = {gs.symNamespaceDeclaration, gs.symClassDeclaration, gs.symMixinDeclaration,
+                                         gs.symInterfaceDeclaration};
+
+    std::vector<TSNode> enclosingNodes;
+    for (TSSymbol sym : containerSymbols)
+    {
+        for (TSNode node : Nodes(sym))
+        {
+            const uint32_t start = ts_node_start_byte(node);
+            if (start > byteOffset)
+            {
+                break;
+            }
+            const uint32_t end = ts_node_end_byte(node);
+            if (byteOffset < end)
+            {
+                enclosingNodes.push_back(node);
+            }
+        }
+    }
+
+    if (enclosingNodes.empty())
+    {
+        return rawContainers;
+    }
+
+    std::sort(enclosingNodes.begin(), enclosingNodes.end(),
+              [](TSNode a, TSNode b) { return ts_node_start_byte(a) > ts_node_start_byte(b); });
+
+    const bool insideLambda = IsInsideLambdaClosure(byteOffset);
+    const TSNode lambdaNode = insideLambda ? FindEnclosingCallable(byteOffset) : TSNode{};
+    const uint32_t lambdaStart = insideLambda ? ts_node_start_byte(lambdaNode) : 0;
+
+    for (TSNode node : enclosingNodes)
+    {
+        const auto kind = ClassifyIndexContainerKind(ts_node_symbol(node));
+        if (!kind)
+        {
+            continue;
+        }
+
+        if (insideLambda && (*kind == ContainerKind::Class || *kind == ContainerKind::Interface) &&
+            ts_node_start_byte(node) < lambdaStart)
+        {
+            continue;
+        }
+
+        TSNode nameNode = parser::GetChildByField(node, gs.fieldName);
+        AppendIndexRawContainers(nameNode, *kind, sourceCode, rawContainers);
+    }
+
+    ComputeIndexContainerQualifiedNames(rawContainers);
+    return rawContainers;
 }
 } // namespace angel_lsp::analysis

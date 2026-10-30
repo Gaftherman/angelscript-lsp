@@ -42,8 +42,7 @@ bool FindEnclosingClassAndBody(TSNode leaf, std::string_view sourceCode, std::st
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode classNode = leaf;
-    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(classNode);
-         ++depth, classNode = parser::GetParent(classNode))
+    for (int depth = 0; depth < 64 && !ts_node_is_null(classNode); ++depth, classNode = parser::GetParent(classNode))
     {
         if (ts_node_symbol(classNode) == gs.symClassDeclaration)
         {
@@ -130,8 +129,7 @@ std::vector<std::pair<std::string, std::string>> CollectFieldsForGetterSetter(TS
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode varDecl = leaf;
-    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(varDecl);
-         ++depth, varDecl = parser::GetParent(varDecl))
+    for (int depth = 0; depth < 64 && !ts_node_is_null(varDecl); ++depth, varDecl = parser::GetParent(varDecl))
     {
         if (ts_node_symbol(varDecl) == gs.symVariableDeclaration || ts_node_eq(varDecl, classBody))
         {

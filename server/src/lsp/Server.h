@@ -2247,6 +2247,7 @@ class Server
     struct AnalysisTimingProfile
     {
         double totalMs = 0.0;
+        double snapshotMs = 0.0;
         double parseMs = 0.0;
         double colMs = 0.0;
         double scopeMs = 0.0;

@@ -858,7 +858,7 @@ TEST_CASE("Hover - Variable with default value displays initializer")
     REQUIRE(hover1.has_value());
     const std::string text1 = std::get<lsp::MarkupContent>(hover1->contents).value;
     CHECK(text1.find("(global variable)") != std::string::npos);
-    CHECK(text1.find("string SPR_CAT = \"ins2/arf/\"") != std::string::npos);
+    CHECK(text1.find("string INS2_L85A2::SPR_CAT = \"ins2/arf/\"") != std::string::npos);
 
     // Line 4, column 9 is on speed
     const auto hover2 = env.HoverAt(4, 9);
@@ -1889,7 +1889,7 @@ TEST_CASE("Hover - Invariant: Scoped inheritance shows namespace on qualifier an
         auto hover = env.HoverAt(line, static_cast<uint32_t>(pos - lineStart));
         REQUIRE(hover.has_value());
         const std::string val = std::get<lsp::MarkupContent>(hover->contents).value;
-        CHECK(val.find("mixin class " + mixinName) != std::string::npos);
+        CHECK(val.find("mixin class " + nsName + "::" + mixinName) != std::string::npos);
     }
 }
 
@@ -2160,4 +2160,157 @@ TEST_CASE("Hover - Immediate preceding single-line doc comment extraction")
     REQUIRE(hover.has_value());
     const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
     CHECK(text.find("Returns the entity classname") != std::string::npos);
+}
+
+TEST_CASE("Hover - Qualified enum member from sub-namespace and same namespace with computed default value")
+{
+    const std::string rootNs = test::GenerateRandomSymbolName("meta_api");
+    const std::string subNs = test::GenerateRandomSymbolName("json");
+    const std::string enumName = test::GenerateRandomSymbolName("Version");
+    const std::string mem0 = test::GenerateRandomSymbolName("Undefined");
+    const std::string mem1 = test::GenerateRandomSymbolName("V1");
+    const std::string mem2 = test::GenerateRandomSymbolName("V2");
+    const std::string clsName = test::GenerateRandomSymbolName("Validator");
+
+    const std::string code = "namespace " + rootNs + " { namespace " + subNs +
+                             " {\n"
+                             "    enum " +
+                             enumName + " { " + mem0 + " = 0, " + mem1 + " = 1, " + mem2 +
+                             " };\n"
+                             "    const " +
+                             enumName + " Latest = " + enumName + "::" + mem2 +
+                             ";\n"
+                             "}}\n"
+                             "namespace " +
+                             rootNs + " { namespace " + subNs +
+                             " { namespace v2 { namespace schema {\n"
+                             "    class " +
+                             clsName +
+                             " {\n"
+                             "        void Validate() {\n"
+                             "            int x = int( " +
+                             enumName + "::" + mem2 +
+                             " );\n"
+                             "        }\n"
+                             "    }\n"
+                             "}}}}\n";
+
+    TestEnvironment env(code);
+
+    // 1. Hover on mem2 in "Latest = enumName::mem2"
+    {
+        const size_t pos = code.find("Latest = " + enumName + "::" + mem2);
+        REQUIRE(pos != std::string::npos);
+        const size_t targetPos = pos + ("Latest = " + enumName + "::").length();
+        uint32_t line = 0;
+        size_t lineStart = 0;
+        for (size_t i = 0; i < targetPos; ++i)
+        {
+            if (code[i] == '\n')
+            {
+                ++line;
+                lineStart = i + 1;
+            }
+        }
+        auto hover = env.HoverAt(line, static_cast<uint32_t>(targetPos - lineStart));
+        REQUIRE(hover.has_value());
+        const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+        CHECK(text.find("(enum member)") != std::string::npos);
+        CHECK(text.find(mem2) != std::string::npos);
+        CHECK(text.find("= 2") != std::string::npos);
+    }
+
+    // 2. Hover on mem2 in "int( enumName::mem2 )" from sub-namespace
+    {
+        const size_t pos = code.rfind(enumName + "::" + mem2);
+        REQUIRE(pos != std::string::npos);
+        const size_t targetPos = pos + (enumName + "::").length();
+        uint32_t line = 0;
+        size_t lineStart = 0;
+        for (size_t i = 0; i < targetPos; ++i)
+        {
+            if (code[i] == '\n')
+            {
+                ++line;
+                lineStart = i + 1;
+            }
+        }
+        auto hover = env.HoverAt(line, static_cast<uint32_t>(targetPos - lineStart));
+        REQUIRE(hover.has_value());
+        const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+        CHECK(text.find("(enum member)") != std::string::npos);
+        CHECK(text.find(mem2) != std::string::npos);
+        CHECK(text.find("= 2") != std::string::npos);
+    }
+}
+
+TEST_CASE("Hover - Type in qualified path and namespace global variable formatting")
+{
+    const std::string nsName = test::GenerateRandomSymbolName("parser");
+    const std::string enumType = test::GenerateRandomSymbolName("Style");
+    const std::string enumVal = test::GenerateRandomSymbolName("AllMan");
+    const std::string globalVar = test::GenerateRandomSymbolName("EMPTY_STRING");
+
+    const std::string code = "namespace " + nsName +
+                             " {\n"
+                             "    enum " +
+                             enumType + " { " + enumVal +
+                             " = 1 };\n"
+                             "    const int " +
+                             globalVar +
+                             " = 42;\n"
+                             "}\n"
+                             "void Run() {\n"
+                             "    int s = " +
+                             nsName + "::" + enumType + "::" + enumVal +
+                             ";\n"
+                             "    int g = " +
+                             nsName + "::" + globalVar +
+                             ";\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+
+    // 1. Hover on enumType in "nsName::enumType::enumVal"
+    {
+        const size_t pos = code.find(nsName + "::" + enumType);
+        REQUIRE(pos != std::string::npos);
+        const size_t targetPos = pos + (nsName + "::").length();
+        uint32_t line = 0;
+        size_t lineStart = 0;
+        for (size_t i = 0; i < targetPos; ++i)
+        {
+            if (code[i] == '\n')
+            {
+                ++line;
+                lineStart = i + 1;
+            }
+        }
+        auto hover = env.HoverAt(line, static_cast<uint32_t>(targetPos - lineStart));
+        REQUIRE(hover.has_value());
+        const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+        CHECK(text.find("enum " + nsName + "::" + enumType) != std::string::npos);
+    }
+
+    // 2. Hover on globalVar in "nsName::globalVar"
+    {
+        const size_t pos = code.find(nsName + "::" + globalVar);
+        REQUIRE(pos != std::string::npos);
+        const size_t targetPos = pos + (nsName + "::").length();
+        uint32_t line = 0;
+        size_t lineStart = 0;
+        for (size_t i = 0; i < targetPos; ++i)
+        {
+            if (code[i] == '\n')
+            {
+                ++line;
+                lineStart = i + 1;
+            }
+        }
+        auto hover = env.HoverAt(line, static_cast<uint32_t>(targetPos - lineStart));
+        REQUIRE(hover.has_value());
+        const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+        CHECK(text.find("(global variable)") != std::string::npos);
+        CHECK(text.find(nsName + "::" + globalVar) != std::string::npos);
+    }
 }

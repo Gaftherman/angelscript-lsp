@@ -574,10 +574,28 @@ class SymbolTable
         return m_predefinedFileExtension;
     }
 
+    struct AnalysisSnapshotRequest
+    {
+        const std::string& uriStr;
+        const SymbolTable& staging;
+        const ankerl::unordered_dense::set<std::string>* allowedModuleFileUris = nullptr;
+        std::string_view predefinedExtension = {};
+        const SymbolTable* predefinedBase = nullptr;
+    };
+
+    [[nodiscard]] std::unique_ptr<SymbolTable> CreateAnalysisSnapshot(const AnalysisSnapshotRequest& request) const;
+
     [[nodiscard]] std::unique_ptr<SymbolTable>
     CreateAnalysisSnapshot(const std::string& uriStr, const SymbolTable& staging,
                            const ankerl::unordered_dense::set<std::string>* allowedModuleFileUris = nullptr,
                            std::string_view predefinedExtension = {}) const;
+
+    /**
+     * @brief Clones predefined symbol buckets and rule index from a source SymbolTable.
+     * @param[in] source Fully initialized source table.
+     * @param[in] predefinedExtension Predefined file extension filter.
+     */
+    void ClonePredefinedBaseFrom(const SymbolTable& source, std::string_view predefinedExtension = {});
 
     /** @brief Returns total number of table clones created via CreateAnalysisSnapshot. */
     [[nodiscard]] static uint64_t GetTableCloneCount() noexcept
@@ -991,6 +1009,8 @@ class SymbolTable
 
     static bool IsFileAllowedForSnapshot(std::string_view fileUri, const SnapshotFilterContext& ctx) noexcept;
     void CopyFilteredSymbolsLocked(SymbolTable& target, const SnapshotFilterContext& ctx) const;
+    void CopyActiveModuleSymbolsLocked(SymbolTable& snapshot, const SnapshotFilterContext& ctx) const;
+    static void PopulateSnapshotFromPredefinedBaseLocked(SymbolTable& snapshot, const SymbolTable& base);
     void CopyBucketForSnapshotLocked(const std::string& key, const std::shared_ptr<std::vector<Symbol>>& bucketPtr,
                                      const SnapshotFilterContext& ctx);
 };

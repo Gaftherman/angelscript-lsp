@@ -22,11 +22,6 @@ inline constexpr std::string_view k_poisonTypeSentinel = "<poison>";
 inline constexpr std::string_view k_defaultPredefinedExt = ".as.predefined";
 
 /**
- * @brief Canonical ceiling for upward AST traversal hops.
- */
-inline constexpr int k_maxAstClimbDepth = 256;
-
-/**
  * @brief Sentinel value representing an invalid or unmatchable byte offset.
  */
 inline constexpr uint32_t InvalidByteOffset = std::numeric_limits<uint32_t>::max();

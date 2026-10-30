@@ -463,22 +463,18 @@ inline TSNode FindFirstChildOfType(TSNode parent, std::string_view typeName)
  * @brief Finds the nearest ancestor node matching a specific Tree-Sitter grammar symbol.
  * @param[in] node Starting child AST node.
  * @param[in] targetSym Target grammar symbol to search for.
- * @param[in] maxDepth Maximum upward climb depth (bounded by k_maxAstClimbDepth).
  * @return Matching ancestor TSNode or null TSNode if not found.
  */
-[[nodiscard]] inline TSNode FindAncestorWithSymbol(TSNode node, TSSymbol targetSym,
-                                                   uint32_t maxDepth = constants::k_maxAstClimbDepth) noexcept
+[[nodiscard]] inline TSNode FindAncestorWithSymbol(TSNode node, TSSymbol targetSym) noexcept
 {
     TSNode curr = node;
-    uint32_t depth = 0;
-    while (!ts_node_is_null(curr) && depth < maxDepth)
+    while (!ts_node_is_null(curr))
     {
         if (ts_node_symbol(curr) == targetSym)
         {
             return curr;
         }
         curr = GetParent(curr);
-        depth++;
     }
     return TSNode{};
 }
@@ -487,15 +483,12 @@ inline TSNode FindFirstChildOfType(TSNode parent, std::string_view typeName)
  * @brief Finds the nearest ancestor node matching any of the specified Tree-Sitter grammar symbols.
  * @param[in] node Starting child AST node.
  * @param[in] targetSyms Span of target grammar symbols.
- * @param[in] maxDepth Maximum upward climb depth (bounded by k_maxAstClimbDepth).
  * @return Matching ancestor TSNode or null TSNode if not found.
  */
-[[nodiscard]] inline TSNode FindAncestorWithAnySymbol(TSNode node, std::span<const TSSymbol> targetSyms,
-                                                      uint32_t maxDepth = constants::k_maxAstClimbDepth) noexcept
+[[nodiscard]] inline TSNode FindAncestorWithAnySymbol(TSNode node, std::span<const TSSymbol> targetSyms) noexcept
 {
     TSNode curr = node;
-    uint32_t depth = 0;
-    while (!ts_node_is_null(curr) && depth < maxDepth)
+    while (!ts_node_is_null(curr))
     {
         const TSSymbol sym = ts_node_symbol(curr);
         for (const TSSymbol target : targetSyms)
@@ -506,7 +499,6 @@ inline TSNode FindFirstChildOfType(TSNode parent, std::string_view typeName)
             }
         }
         curr = GetParent(curr);
-        depth++;
     }
     return TSNode{};
 }

@@ -325,13 +325,45 @@ MemberAccess FindMember(const std::string& typeName, const std::string& memberNa
 }
 
 /** @brief Innermost class body enclosing a node, or empty when the node sits outside one. */
-std::string EnclosingClass(TSNode node, std::string_view sourceCode, bool& insideMixin, const SymbolTable& table)
+std::string EnclosingClass(TSNode node, std::string_view sourceCode, bool& insideMixin, const SymbolTable& table,
+                           const NodeIndex* nodeIndex = nullptr)
 {
     insideMixin = false;
+    if (ts_node_is_null(node))
+    {
+        return "";
+    }
+
+    const uint32_t byteOffset = ts_node_start_byte(node);
+    if (nodeIndex)
+    {
+        if (nodeIndex->IsInsideLambdaClosure(byteOffset))
+        {
+            return "";
+        }
+        TSNode classNode = nodeIndex->FindEnclosingClassOrMixin(byteOffset);
+        if (!ts_node_is_null(classNode))
+        {
+            TSNode nameNode = parser::GetChildByField(classNode, parser::GetGrammarSymbols().fieldName);
+            if (!ts_node_is_null(nameNode))
+            {
+                std::string className = NodeText(nameNode, sourceCode);
+                const auto symbols = table.FindSymbolsPtr(className);
+                if (symbols)
+                {
+                    insideMixin =
+                        std::any_of(symbols->begin(), symbols->end(), [](const Symbol& sym)
+                                    { return sym.type == SymbolType::Class && sym.GetClass().modifiers.isMixin; });
+                }
+                return className;
+            }
+        }
+        return "";
+    }
+
     TSNode curr = parser::GetParent(node);
-    size_t depth = 0;
     const auto& gs = parser::GetGrammarSymbols();
-    while (!ts_node_is_null(curr) && ++depth <= constants::k_maxAstClimbDepth)
+    while (!ts_node_is_null(curr))
     {
         const TSSymbol sym = ts_node_symbol(curr);
         if (sym == gs.symLambdaExpression)
@@ -495,7 +527,8 @@ void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const
     if (member.decided)
     {
         bool insideMixin = false;
-        const std::string accessingClass = EnclosingClass(node, request.sourceCode, insideMixin, table);
+        const std::string accessingClass =
+            EnclosingClass(node, request.sourceCode, insideMixin, table, request.nodeIndex);
         if (!IsMemberAccessAllowed(member, accessingClass, objectType, ctx))
         {
             EmitPrivacyViolation(memberNode, member, memberName, ctx);
@@ -646,15 +679,34 @@ bool IsOuterLocalOrParameter(const Scope* enclosingClosure, std::string_view idT
  *
  * @param[in] node AST node inside the closure.
  * @param[in] sourceCode Document source text.
+ * @param[in] nodeIndex Optional pre-indexed node index.
  * @return Name of the outer class enclosing the lambda, or empty if none.
  */
-std::string EnclosingClassOfLambda(TSNode node, std::string_view sourceCode)
+std::string EnclosingClassOfLambda(TSNode node, std::string_view sourceCode, const NodeIndex* nodeIndex = nullptr)
 {
+    if (ts_node_is_null(node))
+    {
+        return "";
+    }
+
+    if (nodeIndex)
+    {
+        TSNode classNode = nodeIndex->FindEnclosingClassOrMixin(ts_node_start_byte(node));
+        if (!ts_node_is_null(classNode))
+        {
+            TSNode nameNode = parser::GetChildByField(classNode, parser::GetGrammarSymbols().fieldName);
+            if (!ts_node_is_null(nameNode))
+            {
+                return NodeText(nameNode, sourceCode);
+            }
+        }
+        return "";
+    }
+
     TSNode curr = parser::GetParent(node);
-    size_t depth = 0;
     bool foundLambda = false;
     const auto& gs = parser::GetGrammarSymbols();
-    while (!ts_node_is_null(curr) && ++depth <= constants::k_maxAstClimbDepth)
+    while (!ts_node_is_null(curr))
     {
         const TSSymbol sym = ts_node_symbol(curr);
         if (sym == gs.symLambdaExpression)
@@ -713,7 +765,7 @@ bool CheckClosureDisallowedAccess(TSNode node, const Scope* scope, std::string_v
         return true;
     }
 
-    const std::string outerClass = EnclosingClassOfLambda(node, ctx.request.sourceCode);
+    const std::string outerClass = EnclosingClassOfLambda(node, ctx.request.sourceCode, ctx.request.nodeIndex);
     if (!outerClass.empty())
     {
         const MemberAccess member = FindMember(outerClass, std::string(idText), ctx.request.symbolTable, false);
@@ -777,7 +829,8 @@ void CheckImplicitMemberAccess(TSNode node, const Scope* scope, std::string_view
     const SymbolTable& table = ctx.request.symbolTable;
 
     bool insideMixin = false;
-    const std::string accessingClass = EnclosingClass(node, ctx.request.sourceCode, insideMixin, table);
+    const std::string accessingClass =
+        EnclosingClass(node, ctx.request.sourceCode, insideMixin, table, ctx.request.nodeIndex);
     if (accessingClass.empty())
     {
         return;

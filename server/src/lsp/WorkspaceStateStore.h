@@ -15,6 +15,11 @@
 namespace angel_lsp
 {
 
+namespace analysis
+{
+class SymbolTable;
+}
+
 /**
  * @brief Immutable snapshot of workspace-wide configuration and preprocessor state.
  */
@@ -198,6 +203,23 @@ class WorkspaceStateStore
     [[nodiscard]] std::shared_ptr<const document::Document> GetPreindexedDocument(const std::string& uri) const;
 
     /**
+     * @brief Caches pre-indexed base SymbolTable for predefined symbols.
+     * @param[in] baseTable Shared pointer to predefined SymbolTable.
+     */
+    void SetPredefinedBaseTable(std::shared_ptr<const analysis::SymbolTable> baseTable);
+
+    /**
+     * @brief Retrieves cached pre-indexed base SymbolTable for predefined symbols.
+     * @return Shared pointer to predefined SymbolTable or nullptr.
+     */
+    [[nodiscard]] std::shared_ptr<const analysis::SymbolTable> GetPredefinedBaseTable() const;
+
+    /**
+     * @brief Invalidates cached predefined base SymbolTable.
+     */
+    void InvalidatePredefinedBaseTable();
+
+    /**
      * @brief Clears all document, include, module, and preprocessor state.
      */
     void Clear();
@@ -217,6 +239,9 @@ class WorkspaceStateStore
 
     mutable std::mutex m_preindexedMutex;
     ankerl::unordered_dense::map<std::string, std::shared_ptr<const document::Document>> m_preindexedDocuments;
+
+    mutable std::mutex m_predefinedBaseMutex;
+    std::shared_ptr<const analysis::SymbolTable> m_predefinedBaseTable;
 };
 
 } // namespace angel_lsp

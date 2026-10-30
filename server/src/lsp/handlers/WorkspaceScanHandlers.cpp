@@ -508,6 +508,7 @@ bool Server::HandleWatchedFileChanged(const std::string& path, bool isPredefined
         if (m_config.features.enablePredefinedLoader)
         {
             ParserPredefined(path, parser, true);
+            SetPredefinedReady(true);
             return true;
         }
         return false;
@@ -571,6 +572,7 @@ void Server::ReplaceDeletedPredefinedStub(angel_lsp::parser::AngelScriptParser& 
     {
         LogInfo("The predefined stub in force was deleted, and no other was found");
     }
+    SetPredefinedReady(true);
 }
 
 void Server::RefreshOpenDocumentIncludes()

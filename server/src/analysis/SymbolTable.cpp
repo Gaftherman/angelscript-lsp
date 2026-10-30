@@ -1,4 +1,5 @@
 #include "SymbolTable.h"
+#include "analysis/EngineProfiles.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SignatureFormatter.h"
@@ -618,7 +619,7 @@ bool SymbolTable::IsFileAllowedForSnapshot(std::string_view fileUri, const Snaps
     {
         return true;
     }
-    return utils::IsPredefinedFile(fileUri, ctx.predefinedExtension);
+    return utils::IsPredefinedFile(fileUri, ctx.predefinedExtension) || fileUri.starts_with(k_profileUriPrefix);
 }
 
 void SymbolTable::CopyBucketForSnapshotLocked(const std::string& key,
@@ -679,10 +680,156 @@ void SymbolTable::CopyFilteredSymbolsLocked(SymbolTable& target, const SnapshotF
     }
 }
 
-std::unique_ptr<SymbolTable>
-SymbolTable::CreateAnalysisSnapshot(const std::string& uriStr, const SymbolTable& staging,
-                                    const ankerl::unordered_dense::set<std::string>* allowedModuleFileUris,
-                                    std::string_view predefinedExtension) const
+namespace
+{
+using SymbolBucketMap = ankerl::unordered_dense::map<std::string, std::shared_ptr<std::vector<Symbol>>,
+                                                     TransparentStringHash, std::equal_to<>>;
+
+bool IsPredefinedOrBuiltinUri(std::string_view fileUri, std::string_view effectiveExt) noexcept
+{
+    return utils::IsPredefinedFile(fileUri, effectiveExt) || fileUri.starts_with(k_profileUriPrefix);
+}
+
+void CopyPredefinedBucket(const std::string& key, const std::shared_ptr<std::vector<Symbol>>& bucket,
+                          std::string_view effectiveExt, SymbolBucketMap& dest)
+{
+    if (!bucket)
+    {
+        return;
+    }
+    bool allPredefined = true;
+    for (const auto& sym : *bucket)
+    {
+        if (!IsPredefinedOrBuiltinUri(sym.fileUri, effectiveExt))
+        {
+            allPredefined = false;
+            break;
+        }
+    }
+    if (allPredefined)
+    {
+        dest.emplace(key, bucket);
+        return;
+    }
+    auto filtered = std::make_shared<std::vector<Symbol>>();
+    for (const auto& sym : *bucket)
+    {
+        if (IsPredefinedOrBuiltinUri(sym.fileUri, effectiveExt))
+        {
+            filtered->push_back(sym);
+        }
+    }
+    if (!filtered->empty())
+    {
+        dest.emplace(key, std::move(filtered));
+    }
+}
+} // namespace
+
+void SymbolTable::ClonePredefinedBaseFrom(const SymbolTable& source, std::string_view predefinedExtension)
+{
+    std::shared_lock<std::shared_mutex> lock(source.m_mutex);
+    m_version = source.m_version;
+    m_defaultArrayType = source.m_defaultArrayType;
+    m_stringType = source.m_stringType;
+    m_predefinedFileExtension = source.m_predefinedFileExtension;
+
+    const std::string_view effectiveExt =
+        predefinedExtension.empty() ? std::string_view(m_predefinedFileExtension) : predefinedExtension;
+
+    for (const auto& [fUri, keys] : source.m_keysByFile)
+    {
+        if (!IsPredefinedOrBuiltinUri(fUri, effectiveExt))
+        {
+            continue;
+        }
+        m_keysByFile[fUri] = keys;
+        for (const auto& key : keys)
+        {
+            if (m_symbols.contains(key))
+            {
+                continue;
+            }
+            const auto it = source.m_symbols.find(key);
+            if (it != source.m_symbols.end())
+            {
+                CopyPredefinedBucket(key, it->second, effectiveExt, m_symbols);
+            }
+        }
+    }
+
+    std::lock_guard<std::mutex> ruleGuard(source.m_ruleIndexMutex);
+    if (source.m_ruleIndexPartials)
+    {
+        m_ruleIndexPartials = std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>();
+        auto index = std::make_shared<rules::RuleIndex>();
+        for (const auto& [fUri, partial] : *source.m_ruleIndexPartials)
+        {
+            if (IsPredefinedOrBuiltinUri(fUri, effectiveExt))
+            {
+                (*m_ruleIndexPartials)[fUri] = partial;
+                index->ApplyPartial(partial);
+            }
+        }
+        m_ruleIndex = std::move(index);
+    }
+}
+
+void SymbolTable::CopyActiveModuleSymbolsLocked(SymbolTable& snapshot, const SnapshotFilterContext& ctx) const
+{
+    for (const auto& modUri : ctx.allowedModuleFileUris)
+    {
+        if (snapshot.m_keysByFile.contains(modUri))
+        {
+            continue;
+        }
+        const auto itKeys = m_keysByFile.find(modUri);
+        if (itKeys == m_keysByFile.end())
+        {
+            continue;
+        }
+        snapshot.m_keysByFile[modUri] = itKeys->second;
+        for (const auto& key : itKeys->second)
+        {
+            const auto itSym = m_symbols.find(key);
+            if (itSym != m_symbols.end())
+            {
+                snapshot.CopyBucketForSnapshotLocked(key, itSym->second, ctx);
+            }
+        }
+        std::lock_guard<std::mutex> ruleGuard(m_ruleIndexMutex);
+        if (m_ruleIndexPartials && snapshot.m_ruleIndex && snapshot.m_ruleIndexPartials)
+        {
+            const auto itPartial = m_ruleIndexPartials->find(modUri);
+            if (itPartial != m_ruleIndexPartials->end())
+            {
+                snapshot.m_ruleIndex->ApplyPartial(itPartial->second);
+                (*snapshot.m_ruleIndexPartials)[modUri] = itPartial->second;
+            }
+        }
+    }
+}
+
+void SymbolTable::PopulateSnapshotFromPredefinedBaseLocked(SymbolTable& snapshot, const SymbolTable& base)
+{
+    std::shared_lock<std::shared_mutex> baseLock(base.m_mutex);
+    snapshot.m_symbols = base.m_symbols;
+    snapshot.m_keysByFile = base.m_keysByFile;
+
+    std::lock_guard<std::mutex> baseRuleGuard(base.m_ruleIndexMutex);
+    if (base.m_ruleIndex)
+    {
+        snapshot.m_ruleIndex = std::make_shared<rules::RuleIndex>(*base.m_ruleIndex);
+    }
+    if (base.m_ruleIndexPartials)
+    {
+        snapshot.m_ruleIndexPartials =
+            std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>(
+                *base.m_ruleIndexPartials);
+    }
+}
+
+std::unique_ptr<SymbolTable> SymbolTable::CreateAnalysisSnapshot(const AnalysisSnapshotRequest& request) const
 {
     IncrementTableCloneCount();
     auto snapshot = std::make_unique<SymbolTable>();
@@ -696,10 +843,11 @@ SymbolTable::CreateAnalysisSnapshot(const std::string& uriStr, const SymbolTable
         snapshot->m_stringType = m_stringType;
         snapshot->m_predefinedFileExtension = m_predefinedFileExtension;
 
-        const std::string_view effectivePredefinedExt =
-            predefinedExtension.empty() ? std::string_view(m_predefinedFileExtension) : predefinedExtension;
+        const std::string_view effectivePredefinedExt = request.predefinedExtension.empty()
+                                                            ? std::string_view(m_predefinedFileExtension)
+                                                            : request.predefinedExtension;
 
-        if (!allowedModuleFileUris || allowedModuleFileUris->empty())
+        if (!request.allowedModuleFileUris || request.allowedModuleFileUris->empty())
         {
             snapshot->m_symbols = m_symbols;
             snapshot->m_keysByFile = m_keysByFile;
@@ -712,15 +860,35 @@ SymbolTable::CreateAnalysisSnapshot(const std::string& uriStr, const SymbolTable
                         *m_ruleIndexPartials);
             }
         }
+        else if (request.predefinedBase && request.predefinedBase->GetRuleIndex())
+        {
+            PopulateSnapshotFromPredefinedBaseLocked(*snapshot, *request.predefinedBase);
+            const SnapshotFilterContext ctx{*request.allowedModuleFileUris, request.uriStr, effectivePredefinedExt};
+            CopyActiveModuleSymbolsLocked(*snapshot, ctx);
+        }
         else
         {
-            const SnapshotFilterContext ctx{*allowedModuleFileUris, uriStr, effectivePredefinedExt};
+            const SnapshotFilterContext ctx{*request.allowedModuleFileUris, request.uriStr, effectivePredefinedExt};
             CopyFilteredSymbolsLocked(*snapshot, ctx);
         }
     }
 
-    snapshot->ReplaceDocumentSymbols(uriStr, staging);
+    snapshot->ReplaceDocumentSymbols(request.uriStr, request.staging);
     return snapshot;
+}
+
+std::unique_ptr<SymbolTable>
+SymbolTable::CreateAnalysisSnapshot(const std::string& uriStr, const SymbolTable& staging,
+                                    const ankerl::unordered_dense::set<std::string>* allowedModuleFileUris,
+                                    std::string_view predefinedExtension) const
+{
+    return CreateAnalysisSnapshot(AnalysisSnapshotRequest{
+        .uriStr = uriStr,
+        .staging = staging,
+        .allowedModuleFileUris = allowedModuleFileUris,
+        .predefinedExtension = predefinedExtension,
+        .predefinedBase = nullptr,
+    });
 }
 
 void SymbolTable::PublishDocumentSymbols(const std::string& fileUri, std::vector<Symbol>&& fresh)

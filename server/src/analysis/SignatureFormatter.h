@@ -82,5 +82,5 @@ std::string FormatVariableDeclaration(const VariableSignature& var, const std::s
  * @param sym Symbol of type Class or Interface.
  * @return Declaration text, or an empty string when sym is neither.
  */
-std::string FormatTypeDeclaration(const Symbol& sym);
+std::string FormatTypeDeclaration(const Symbol& sym, bool qualified = true);
 } // namespace angel_lsp::analysis

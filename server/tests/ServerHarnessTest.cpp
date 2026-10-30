@@ -5968,7 +5968,8 @@ TEST_CASE("Telemetry - emits high-resolution profiling messages for didOpen and 
     const std::string output = RunScript(serverConfig, stream);
 
     CHECK(output.find("[Open/Change Profile]") != std::string::npos);
-    CHECK(output.find("(Parse:") != std::string::npos);
+    CHECK(output.find("Snapshot:") != std::string::npos);
+    CHECK(output.find("Parse:") != std::string::npos);
     CHECK(output.find("Collector:") != std::string::npos);
     CHECK(output.find("Scopes:") != std::string::npos);
     CHECK(output.find("Checkers:") != std::string::npos);

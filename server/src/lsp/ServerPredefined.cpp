@@ -336,6 +336,8 @@ bool Server::UnloadPredefinedUri(std::string uriStr)
         SetDefinedWordsFrom(path, {});
     }
 
+    SetPredefinedReady(true);
+
     return unloaded;
 }
 
@@ -623,6 +625,18 @@ void Server::LoadPredefinedIncludes(const std::string& content, const std::strin
 
 void Server::SetPredefinedReady(bool ready)
 {
+    if (ready)
+    {
+        m_symbolTable.EnsureRuleIndex();
+        auto base = std::make_unique<analysis::SymbolTable>();
+        base->ClonePredefinedBaseFrom(m_symbolTable, m_config.info.predefinedFileExtension);
+        base->EnsureRuleIndex();
+        GetWorkspaceStore().SetPredefinedBaseTable(std::move(base));
+    }
+    else
+    {
+        GetWorkspaceStore().InvalidatePredefinedBaseTable();
+    }
     {
         std::lock_guard<std::mutex> lock(m_predefinedMutex);
         m_predefinedReady.store(ready, std::memory_order_release);

@@ -566,7 +566,8 @@ struct IsolationVisitor
 
 void CheckSharedIsolation(const IsolationCheckRequest& request, DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(request.rootNode) || request.sourceCode.empty())
+    if (ts_node_is_null(request.rootNode) || request.sourceCode.empty() ||
+        request.sourceCode.find("shared") == std::string_view::npos)
     {
         return;
     }

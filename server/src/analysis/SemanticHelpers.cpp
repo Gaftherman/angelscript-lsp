@@ -2042,13 +2042,8 @@ std::vector<std::string> GetCompatibleMemberClasses(const std::string& className
 TSNode FindEnclosingAncestorNode(TSNode node, TSSymbol targetSym)
 {
     TSNode parent = parser::GetParent(node);
-    int depth = 0;
     while (!ts_node_is_null(parent) && ts_node_symbol(parent) != targetSym)
     {
-        if (++depth > constants::k_maxAstClimbDepth)
-        {
-            return TSNode{};
-        }
         parent = parser::GetParent(parent);
     }
     return parent;
@@ -2201,19 +2196,23 @@ static void AppendRawContainers(TSNode nameNode, ContainerKind kind, std::string
     }
 }
 
-std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view sourceCode)
+std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view sourceCode, const NodeIndex* nodeIndex)
 {
-    std::vector<ContainerInfo> rawContainers;
     if (ts_node_is_null(node))
     {
-        return rawContainers;
+        return {};
     }
 
+    if (nodeIndex)
+    {
+        return nodeIndex->CollectEnclosingContainers(ts_node_start_byte(node), sourceCode);
+    }
+
+    std::vector<ContainerInfo> rawContainers;
     TSNode current = parser::GetParent(AdjustStartNodeIfDeclarationName(node));
-    size_t depth = 0;
     bool crossedLambda = false;
     const auto& gs = parser::GetGrammarSymbols();
-    while (!ts_node_is_null(current) && ++depth <= constants::k_maxAstClimbDepth)
+    while (!ts_node_is_null(current))
     {
         if (ts_node_symbol(current) == gs.symLambdaExpression)
         {
@@ -2329,25 +2328,22 @@ const std::vector<std::string>& GetUsingNamespaces(const SemanticAnalysisRequest
  */
 static bool HasContainerMatchingPrefix(const SymbolTable& table, const std::string& prefix)
 {
-    bool hasContainer = false;
-    table.ForEachSymbol(
-        [&](const std::string& qName, const std::vector<Symbol>& syms)
+    if (const auto ruleIndex = table.GetRuleIndex())
+    {
+        if (ruleIndex->byContainer.contains(prefix))
         {
-            if (hasContainer)
+            return true;
+        }
+        for (const auto& [container, _] : ruleIndex->byContainer)
+        {
+            if (utils::HasScopePrefix(container, prefix))
             {
-                return;
+                return true;
             }
-            for (const auto& s : syms)
-            {
-                if (s.containerName == prefix || utils::HasScopePrefix(s.containerName, prefix) || s.name == prefix ||
-                    qName == prefix || utils::HasScopePrefix(qName, prefix))
-                {
-                    hasContainer = true;
-                    return;
-                }
-            }
-        });
-    return hasContainer;
+        }
+        return false;
+    }
+    return table.HasSymbol(prefix) || table.HasSymbolAnywhere(prefix);
 }
 
 /**
@@ -2442,8 +2438,7 @@ static std::vector<Symbol> FilterSymbolsByContainerKind(std::vector<Symbol> foun
                       }
                       if (expected == ContainerKind::Namespace)
                       {
-                          return s.containerKind == ContainerKind::Class ||
-                                 s.containerKind == ContainerKind::Interface || s.containerKind == ContainerKind::Enum;
+                          return s.containerKind == ContainerKind::Class || s.containerKind == ContainerKind::Interface;
                       }
                       return false;
                   });
@@ -6189,8 +6184,8 @@ std::string InferLambdaParamType(TSNode nodeInLambda, std::string_view paramName
     }
 
     TSNode lambdaNode{};
-    TSNode cur = nodeInLambda;
-    for (int i = 0; i < constants::k_maxAstClimbDepth && !ts_node_is_null(cur); ++i, cur = parser::GetParent(cur))
+    int depth = 0;
+    for (TSNode cur = nodeInLambda; depth < 64 && !ts_node_is_null(cur); ++depth, cur = parser::GetParent(cur))
     {
         if (IsLambdaExpression(cur))
         {

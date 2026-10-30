@@ -55,9 +55,8 @@ bool IsExtractableExpression(TSNode node)
 bool IsLhsOfAssignment(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode curr = node;
-    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(curr);
-         ++depth, curr = parser::GetParent(curr))
+    int depth = 0;
+    for (TSNode curr = node; depth < 64 && !ts_node_is_null(curr); ++depth, curr = parser::GetParent(curr))
     {
         TSNode parent = parser::GetParent(curr);
         if (!ts_node_is_null(parent))
@@ -138,9 +137,7 @@ TSNode FindExtractableExpression(TSNode rootNode, const lsp::Range& range)
     TSPoint startPt = {range.start.line, range.start.character};
     TSPoint endPt = {range.end.line, range.end.character};
     TSNode targetNode = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
-    for (int depth = 0;
-         depth < constants::k_maxAstClimbDepth && !ts_node_is_null(targetNode) && !IsExtractableExpression(targetNode);
-         ++depth)
+    while (!ts_node_is_null(targetNode) && !IsExtractableExpression(targetNode))
     {
         targetNode = parser::GetParent(targetNode);
     }
@@ -177,8 +174,8 @@ TSNode FindExtractableExpression(TSNode rootNode, const lsp::Range& range)
 TSNode FindEnclosingBlockStatement(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode stmtNode = node;
-    for (int depth = 0; depth < constants::k_maxAstClimbDepth && !ts_node_is_null(stmtNode);
+    int depth = 0;
+    for (TSNode stmtNode = node; depth < 64 && !ts_node_is_null(stmtNode);
          ++depth, stmtNode = parser::GetParent(stmtNode))
     {
         TSNode parent = parser::GetParent(stmtNode);

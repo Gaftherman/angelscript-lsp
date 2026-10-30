@@ -2,6 +2,7 @@
 
 #include "analysis/DiagnosticContext.h"
 #include "analysis/ExpressionTypeCache.h"
+#include "analysis/NodeIndex.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/TypeSanitization.h"
 #include "config/EngineRuleConfig.h"
@@ -18,7 +19,6 @@
 
 namespace angel_lsp::analysis
 {
-class NodeIndex;
 
 namespace node_types
 {
@@ -83,16 +83,6 @@ bool AreIncompatibleTemplateTypes(std::string_view from, std::string_view to);
  * @return Cleaned type name.
  */
 std::string CleanExpressionType(std::string_view typeName);
-
-/**
- * @brief Information about an enclosing container in the AST hierarchy.
- */
-struct ContainerInfo
-{
-    std::string name;          ///< Bare name, e.g. "Player" or "Game"
-    std::string qualifiedName; ///< Fully qualified path, e.g. "Game::Player" or "Game"
-    ContainerKind kind;
-};
 
 /**
  * @brief Checks whether the given name is a reserved AngelScript keyword.
@@ -674,9 +664,11 @@ std::vector<std::string> GetCompatibleMemberClasses(const std::string& className
  * @brief Extracts all enclosing container scopes (classes, interfaces, namespaces) for a given AST node.
  * @param node The AST node from which to trace enclosing containers.
  * @param sourceCode Document source text.
+ * @param nodeIndex Optional precomputed NodeIndex for O(K) range queries without parent climbs.
  * @return Enclosing containers ordered from innermost to outermost.
  */
-std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view sourceCode);
+std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view sourceCode,
+                                                  const NodeIndex* nodeIndex = nullptr);
 
 /**
  * @brief Whether `node` is the callee of a legal `super(...)` base-constructor call.
