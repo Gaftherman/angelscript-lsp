@@ -2,6 +2,46 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.6-exp.5] - 2026-10-29
+
+### Experimental Release 1.1.6-exp.5: Deep AST Navigation Resilience, Predefined Caching Optimization, Robust Member Chaining & Smart Operator Completions
+
+- Deep AST Navigation & Include Closure Hardening (`Constants`, `ServerModules`, `SemanticAnalyzer`):
+  - Elevated `k_maxAstClimbDepth` from 16 to 256 in AST traversal utilities to prevent premature search termination in deeply nested blocks (8+ nested `if` statements, lambda bodies, deep call chains).
+  - Fixed false-positive `W108` (`as-warn-undeclared-identifier`) on synthetic properties (`self`, `pev`) and member variables in deep block structures without hardcoding identifiers.
+  - Expanded include closure resolution in `AppendIncludeGraphClosure` and `ComputeModuleClosure` to traverse parent and sibling include relationships transitively, eliminating false-positive `E103` (`as-err-unknown-type`) and `E111` (`as-err-undefined-symbol`) on multi-level namespace sub-headers (`schema.as`).
+  - Audited formal function signatures to maintain zero dead parameters under `/we4100`.
+- Checker Performance Optimization & Predefined Stub Deduplication (`UnusedSymbolChecker`, `ClassRules`, `PredefinedStubManager`, `ServerPredefined`):
+  - Optimized `UnusedSymbolChecker::CollectStringReflection` to scan only the active module's file URIs (`moduleFileUris`) rather than traversing the entire workspace scope tree, and skipped cross-file sweeps when global/function/class unused symbol rules are disabled.
+  - Hoisted mixin AST parsing cache (`MixinFileCache`) to the document analysis level in `SemanticAnalyzer`, ensuring mixin ASTs are parsed at most once per document rather than being re-parsed for each instantiating class.
+  - Introduced content and preprocessor definitions fingerprinting (`StubFingerprint`, `HasMatchingFingerprint`, `RecordFingerprint`) in `PredefinedStubManager` and `ServerPredefined` to eliminate redundant reload passes on identical `.as.predefined` stub files.
+- Decoupled Predefined File Extension & Code Action Cleanup (`SymbolTable`, `CodeActionExtractVariable`, `InlayHintHandler`):
+  - Decoupled hardcoded `.as.predefined` defaults in `SymbolTable` by introducing configurable `m_predefinedFileExtension` with dedicated getter and setter methods.
+  - Cleaned dead code and static tables in `CodeActionExtractVariable`, integrating dynamic symbol table type queries (`GetStringType()`) and primitive validation.
+  - Enriched parameter inlay hint hover tooltips to format signatures within code blocks `(parameter) <signature>`.
+- Chained Property Calls & Initializer Lists Hover Support (`ConversionRankingEngine`, `SemanticHelpers`, `HoverHandler`):
+  - Resolved member expression types across accessor properties (`FindPropertyAccessors` fallback) in `ResolveMemberExpr`, enabling hover resolution over chained access expressions (e.g. `g_Logger.error.print(...)`).
+  - Passed default array types dynamically into `ParameterAcceptsInitializerList` in `ConversionRankingEngine` to rank initializer list arguments `{ ... }` against container parameters as exact matches.
+  - Added candidate symbol fallbacks in `HoverHandler::ResolveCallOverload` and `ResolveOrMatchCandidate` to ensure hover displays member signatures when calls involve complex initializer lists.
+- Preceding Doc Comment Association & Compact Overload Summaries (`DocComment`, `DoxygenMarkdown`, `HoverHandler`):
+  - Preserved single-line doc comments on immediately preceding lines in `DoxygenMarkdown` without artificial truncation or sentence splitting.
+  - Redesigned multi-overload hover formatting into a compact markdown summary (`**+1 more overload**` / `**+N more overloads**`) paired with the clickable `[Peek overloads](...)` link, omitting massive code blocks of alternate signatures.
+  - Maintained bilingual parity across English and Spanish localized overload messages (`hover-more-overloads-singular`, `hover-more-overloads-plural`).
+- Syntax Highlighting for Hover Labels & Semantic Token Refinement (`angelscript.tmLanguage.json`, `package.json`, `SemanticTokensHandler`):
+  - Added `#hover-labels` pattern in TextMate grammar mapped to `storage.modifier.hover-label.angelscript` to style hover headers `(property)`, `(parameter)`, `(field)`, `(method)`, etc.
+  - Corrected semantic token `"modifier"` scope in `package.json` to map to `storage.modifier.angelscript` instead of conditional keywords.
+  - Refined semantic token classification in `SemanticTokensHandler` to categorize language keywords and modifiers cleanly without emitting superfluous type or variable semantic tokens.
+- Smart Operator Filtering & Class Body Operator Overload Snippets (`CompletionHandler`):
+  - Filtered internal `op*` operators on member completions (`variable.`) unless the query explicitly begins with `op`, keeping member lists uncluttered.
+  - Added completions for operator overload declarations (`opCall`, `opIndex`, `opAssign`, `opEquals`, `opCmp`, `opAdd`, `opSub`, `opMul`, `opDiv`) when autocompleting inside class and interface bodies outside function scopes.
+- Compiler Warning Hardening & Linter Checks (`CMakeLists.txt`, `.clang-tidy`):
+  - Enabled `/w14505` (unreferenced local function has been removed) on MSVC and `-Wunused-function` on GCC/Clang in `ANGELLSP_WARNING_FLAGS`.
+  - Added `readability-redundant-string-init` to active `.clang-tidy` checks.
+- Verification & Test Coverage:
+  - 100% of 2,552 CTest test cases passing in Release mode under `/W4 /WX /we4100 /w14505`.
+  - 12/12 active static quality gates passing with 0 warnings (`check-quality.py`).
+  - Full client test suite passing with 0 errors across 74 integration tests (`vscode-test`).
+
 ## [1.1.6-exp.4] - 2026-10-29
 
 ### Experimental Release 1.1.6-exp.4: Module Symbol Isolation, Oracle Parity for References, Zero-Allocation Scope Utils & Compile-Time Anti-Slop Gates
