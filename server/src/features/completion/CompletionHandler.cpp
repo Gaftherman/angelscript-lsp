@@ -1433,6 +1433,7 @@ struct MemberTemplateContext
 {
     const analysis::TemplateBinding& binding;
     const std::vector<std::string>& templateArgs;
+    std::string_view memberPrefix = "";
 };
 
 /**
@@ -1536,15 +1537,14 @@ void PopulateMemberSymbolCandidate(const analysis::Symbol& sym, const std::strin
  * @param[in] templateArgs Explicit template arguments.
  * @param[in,out] collector Completion collector context.
  */
-void PopulateMembersForType(const std::string& typeName, const analysis::TemplateBinding& binding,
-                            const std::vector<std::string>& templateArgs, CompletionCollector& collector)
+void PopulateMembersForType(const std::string& typeName, const MemberTemplateContext& tCtx,
+                            CompletionCollector& collector)
 {
     const auto ruleIndex = collector.request.symbolTable.GetRuleIndex();
     if (!ruleIndex)
     {
         return;
     }
-    MemberTemplateContext tCtx{binding, templateArgs};
     const auto& members = ruleIndex->Members(typeName);
     for (const auto& key : members.memberKeys)
     {
@@ -1556,6 +1556,10 @@ void PopulateMembersForType(const std::string& typeName, const analysis::Templat
         for (const auto& sym : *symbols)
         {
             if (sym.type == analysis::SymbolType::CallReference)
+            {
+                continue;
+            }
+            if (sym.name.starts_with("op") && !tCtx.memberPrefix.starts_with("op"))
             {
                 continue;
             }
@@ -2174,18 +2178,20 @@ static std::optional<size_t> FindAccessDotCol(const std::string& prefix)
     return i - 1;
 }
 
-static void PopulateHierarchicalMembers(const std::string& rawTypeName, CompletionCollector& collector)
+static void PopulateHierarchicalMembers(const std::string& rawTypeName, std::string_view memberPrefix,
+                                        CompletionCollector& collector)
 {
     const auto& arrayContainer = collector.request.symbolTable.GetDefaultArrayType();
     std::string canonicalType = CanonicalizeArrayType(rawTypeName, arrayContainer);
     std::string baseContainer = FindCanonicalBaseContainer(canonicalType, collector.request.symbolTable);
     auto targetTemplate = analysis::ParseTemplateType(canonicalType);
     const auto binding = analysis::BindTemplateArguments(canonicalType, collector.request.symbolTable);
+    MemberTemplateContext tCtx{binding, targetTemplate.templateArgs, memberPrefix};
 
     auto hierarchy = GetInheritedTypeHierarchy(collector.request.symbolTable, baseContainer);
     for (const auto& typeName : hierarchy)
     {
-        PopulateMembersForType(typeName, binding, targetTemplate.templateArgs, collector);
+        PopulateMembersForType(typeName, tCtx, collector);
     }
 }
 
@@ -2233,7 +2239,12 @@ bool TryCompleteMemberAccess(const std::string& prefix, const analysis::Scope* i
         return true;
     }
 
-    PopulateHierarchicalMembers(rawTypeName, collector);
+    std::string_view memberPrefix;
+    if (*dotCol + 1 < prefix.size())
+    {
+        memberPrefix = std::string_view(prefix).substr(*dotCol + 1);
+    }
+    PopulateHierarchicalMembers(rawTypeName, memberPrefix, collector);
     return true;
 }
 
@@ -2699,6 +2710,78 @@ void CollectVisibleNamespaceSymbols(const analysis::Scope* innermostScope, std::
                 }
             }
         }
+    }
+}
+
+static bool IsInClassBodyOutsideFunction(const analysis::Scope* innermostScope, const CompletionRequest& request)
+{
+    if (innermostScope && innermostScope->kind == analysis::ScopeKind::Class)
+    {
+        return true;
+    }
+    if (!request.tree)
+    {
+        return false;
+    }
+    TSNode rootNode = ts_tree_root_node(request.tree);
+    TSPoint pt{request.position.line, request.position.character};
+    TSNode cur = ts_node_descendant_for_point_range(rootNode, pt, pt);
+    const auto& gs = parser::GetGrammarSymbols();
+    for (int i = 0; i < 16 && !ts_node_is_null(cur); ++i, cur = parser::GetParent(cur))
+    {
+        const TSSymbol sym = ts_node_symbol(cur);
+        if (sym == gs.symFuncDeclaration || sym == gs.symStatementBlock)
+        {
+            return false;
+        }
+        if (sym == gs.symClassDeclaration || sym == gs.symInterfaceDeclaration)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void CollectClassOperatorSnippets(const analysis::Scope* innermostScope, CompletionCollector& collector)
+{
+    if (!IsInClassBodyOutsideFunction(innermostScope, collector.request))
+    {
+        return;
+    }
+
+    struct OperatorSnippet
+    {
+        const char* label;
+        const char* snippet;
+        const char* detail;
+    };
+
+    static constexpr OperatorSnippet k_operatorSnippets[] = {
+        {"opCall", "${1:void} opCall(${2})\n{\n    $0\n}", "Call operator overload"},
+        {"opIndex", "${1:int}& opIndex(${2:uint} index)\n{\n    $0\n}", "Index operator overload"},
+        {"opAssign", "${1:Type}& opAssign(const ${1:Type} &in other)\n{\n    $0\n    return this;\n}",
+         "Assignment operator overload"},
+        {"opEquals", "bool opEquals(const ${1:Type} &in other) const\n{\n    $0\n}", "Equality operator overload"},
+        {"opCmp", "int opCmp(const ${1:Type} &in other) const\n{\n    $0\n}", "Comparison operator overload"},
+        {"opAdd", "${1:Type} opAdd(const ${1:Type} &in other) const\n{\n    $0\n}", "Addition operator overload"},
+        {"opSub", "${1:Type} opSub(const ${1:Type} &in other) const\n{\n    $0\n}", "Subtraction operator overload"},
+        {"opMul", "${1:Type} opMul(const ${1:Type} &in other) const\n{\n    $0\n}", "Multiplication operator overload"},
+        {"opDiv", "${1:Type} opDiv(const ${1:Type} &in other) const\n{\n    $0\n}", "Division operator overload"},
+    };
+
+    for (const auto& op : k_operatorSnippets)
+    {
+        lsp::CompletionItem item;
+        item.label = op.label;
+        item.kind = lsp::CompletionItemKindEnum(lsp::CompletionItemKind::Function);
+        item.insertText = collector.request.snippetSupport ? op.snippet : op.label;
+        if (collector.request.snippetSupport)
+        {
+            item.insertTextFormat = lsp::InsertTextFormatEnum(lsp::InsertTextFormat::Snippet);
+        }
+        item.sortText = FormatProximitySortText(SymbolProximity::Snippet, op.label);
+        item.detail = op.detail;
+        collector.items.push_back(std::move(item));
     }
 }
 
@@ -3215,6 +3298,7 @@ void CollectUnscopedSymbols(const CompletionRequest& request, const analysis::Sc
     CollectVisibleNamespaceSymbols(innermostScope, queryPrefix, collector);
     CollectGlobalSymbols(accessorsAreProperties, accessorKeywordRequired, queryPrefix, collector);
     CollectDeclarationSnippets(collector);
+    CollectClassOperatorSnippets(innermostScope, collector);
     CollectKeywords(collector);
 }
 

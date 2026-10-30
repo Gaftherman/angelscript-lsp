@@ -98,7 +98,7 @@ std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(const std::string
     }
     if (argType == "init_list")
     {
-        if (ParameterAcceptsInitializerList(param, &symbolTable, ""))
+        if (ParameterAcceptsInitializerList(param, &symbolTable, symbolTable.GetDefaultArrayType()))
         {
             return ArgumentConversion{ConversionRank::Exact, 0, 0, false,
                                       static_cast<int>(OverloadMatchPenalty::Exact)};

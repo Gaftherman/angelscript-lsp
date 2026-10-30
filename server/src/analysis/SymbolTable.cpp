@@ -694,6 +694,10 @@ SymbolTable::CreateAnalysisSnapshot(const std::string& uriStr, const SymbolTable
         snapshot->m_classesWithSynthesizedMixins = m_classesWithSynthesizedMixins;
         snapshot->m_defaultArrayType = m_defaultArrayType;
         snapshot->m_stringType = m_stringType;
+        snapshot->m_predefinedFileExtension = m_predefinedFileExtension;
+
+        const std::string_view effectivePredefinedExt =
+            predefinedExtension.empty() ? std::string_view(m_predefinedFileExtension) : predefinedExtension;
 
         if (!allowedModuleFileUris || allowedModuleFileUris->empty())
         {
@@ -710,7 +714,7 @@ SymbolTable::CreateAnalysisSnapshot(const std::string& uriStr, const SymbolTable
         }
         else
         {
-            const SnapshotFilterContext ctx{*allowedModuleFileUris, uriStr, predefinedExtension};
+            const SnapshotFilterContext ctx{*allowedModuleFileUris, uriStr, effectivePredefinedExt};
             CopyFilteredSymbolsLocked(*snapshot, ctx);
         }
     }

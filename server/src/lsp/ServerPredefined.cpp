@@ -466,6 +466,38 @@ void Server::CommitPredefinedIndex(const std::string& uri, const std::string& co
     }
 }
 
+static uint64_t
+ComputeDefinedWordsHash(const std::shared_ptr<const ankerl::unordered_dense::set<std::string>>& defsSnapshot)
+{
+    uint64_t definesHash = 0;
+    if (defsSnapshot)
+    {
+        for (const auto& w : *defsSnapshot)
+        {
+            definesHash ^= std::hash<std::string>{}(w) + 0x9e3779b9 + (definesHash << 6) + (definesHash >> 2);
+        }
+    }
+    return definesHash;
+}
+
+Server::PredefinedIndexTiming Server::IndexAndCommitPredefinedStub(const std::string& uri, const std::string& content,
+                                                                   angel_lsp::parser::AngelScriptParser& parser)
+{
+    utils::HighResTimer parseTimer;
+    document::TreePtr tree = document::MakeTreePtr(parser.Parse(content));
+    double parseMs = parseTimer.ElapsedMs();
+
+    utils::HighResTimer symTimer;
+    ReplaceSymbolsFromTree(uri, content, tree.get());
+    double symMs = symTimer.ElapsedMs();
+
+    utils::HighResTimer scopeTimer;
+    CommitPredefinedIndex(uri, content, std::move(tree));
+    double scopeMs = scopeTimer.ElapsedMs();
+
+    return PredefinedIndexTiming{parseMs, symMs, scopeMs};
+}
+
 void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::parser::AngelScriptParser& parser,
                                       bool forceReload, std::unordered_set<std::string>& visited)
 {
@@ -501,6 +533,14 @@ void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::pa
         m_config.engine = conv.engineProperties;
     }
 
+    const uint64_t definesHash = ComputeDefinedWordsHash(DefinedWords());
+    const uint64_t contentHash = std::hash<std::string_view>{}(content);
+
+    if (!forceReload && m_predefinedManager.HasMatchingFingerprint(normPath, contentHash, definesHash))
+    {
+        return;
+    }
+
     if (!ClaimPredefinedFile(uri, forceReload))
     {
         return;
@@ -509,17 +549,10 @@ void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::pa
     LogInfo(fmt::format("[Predefined Index] Starting index for predefined stub: {}", filePath));
     m_predefinedManager.SetDocumentText(uri, content);
 
-    utils::HighResTimer parseTimer;
-    document::TreePtr tree = document::MakeTreePtr(parser.Parse(content));
-    double parseMs = parseTimer.ElapsedMs();
+    auto timing = IndexAndCommitPredefinedStub(uri, content, parser);
 
-    utils::HighResTimer symTimer;
-    ReplaceSymbolsFromTree(uri, content, tree.get());
-    double symMs = symTimer.ElapsedMs();
-
-    utils::HighResTimer scopeTimer;
-    CommitPredefinedIndex(uri, content, std::move(tree));
-    double scopeMs = scopeTimer.ElapsedMs();
+    m_predefinedManager.MarkCanonicalPathLoaded(normPath);
+    m_predefinedManager.RecordFingerprint(normPath, contentHash, definesHash);
 
     if (SetDefinedWordsFrom(normPath, angel_lsp::utils::ScanDefinedWords(content)))
         LogInfo(fmt::format("Defined words changed after loading: {}", filePath));
@@ -527,12 +560,27 @@ void Server::ParserPredefinedInternal(const std::string& filePath, angel_lsp::pa
     const double totalMs = totalTimer.ElapsedMs();
     LogInfo(fmt::format("[Predefined Index] Finished index for predefined stub: {} in {} "
                         "(Parse: {}, Symbols: {}, Scopes: {})",
-                        filePath, utils::FormatDuration(totalMs), utils::FormatDuration(parseMs),
-                        utils::FormatDuration(symMs), utils::FormatDuration(scopeMs)));
+                        filePath, utils::FormatDuration(totalMs), utils::FormatDuration(timing.parseMs),
+                        utils::FormatDuration(timing.symMs), utils::FormatDuration(timing.scopeMs)));
     LogInfo(fmt::format("Loaded predefined file: {}", filePath));
 
     PredefinedLoadContext ctx{parser, forceReload, visited};
     LoadPredefinedIncludes(content, filePath, ctx);
+}
+
+void Server::PreScanStubDefinedWords(const std::vector<std::string>& stubPaths)
+{
+    for (const auto& path : stubPaths)
+    {
+        std::error_code ec;
+        const std::filesystem::path p(path);
+        const auto canon = std::filesystem::weakly_canonical(p, ec);
+        const std::string normPath = angel_lsp::utils::IncludeResolver::NormalizePath(ec ? p : canon);
+        if (auto contentOpt = ReadPredefinedFile(normPath, path, nullptr))
+        {
+            SetDefinedWordsFrom(normPath, angel_lsp::utils::ScanDefinedWords(*contentOpt));
+        }
+    }
 }
 
 void Server::LoadPredefinedIncludes(const std::string& content, const std::string& filePath, PredefinedLoadContext& ctx)

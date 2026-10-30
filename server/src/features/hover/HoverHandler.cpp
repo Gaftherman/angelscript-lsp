@@ -707,9 +707,13 @@ TSNode FindEnclosingCallNode(TSNode node)
 std::optional<analysis::Symbol> ResolveCallOverload(TSNode node, const std::vector<analysis::Symbol>& candidates,
                                                     const HoverRequest& request, const analysis::Scope* scope)
 {
-    if (candidates.size() <= 1)
+    if (candidates.empty())
     {
         return std::nullopt;
+    }
+    if (candidates.size() == 1)
+    {
+        return candidates.front();
     }
 
     TSNode callNode = FindEnclosingCallNode(node);
@@ -736,7 +740,10 @@ std::optional<analysis::Symbol> ResolveCallOverload(TSNode node, const std::vect
     {
         return *fallback;
     }
-
+    if (!candidates.empty())
+    {
+        return candidates.front();
+    }
     return std::nullopt;
 }
 
@@ -1231,23 +1238,7 @@ std::string FormatMoreOverloads(const std::vector<analysis::Symbol>& symbols, si
                                              count);
 
     std::ostringstream oss;
-    oss << "**" << summaryText << "**:\n\n```angelscript\n";
-    const std::string_view primaryName = symbols.front().name;
-    bool first = true;
-    for (size_t i = 1; i < symbols.size(); ++i)
-    {
-        if (symbols[i].name != primaryName || !IsCallableSymbol(symbols[i]))
-        {
-            continue;
-        }
-        if (!first)
-        {
-            oss << "\n";
-        }
-        first = false;
-        oss << FormatDeclarationText(symbols[i], &ctx.request.symbolTable);
-    }
-    oss << "\n```\n\n" << BuildPeekOverloadsLink(symbols, ctx);
+    oss << "**+" << summaryText << "**\n\n" << BuildPeekOverloadsLink(symbols, ctx);
     return oss.str();
 }
 
@@ -1276,6 +1267,10 @@ std::optional<analysis::Symbol> ResolveOrMatchCandidate(std::vector<analysis::Sy
         {
             best = *it;
             std::rotate(symbols.begin(), it, it + 1);
+        }
+        else if (!symbols.empty())
+        {
+            best = symbols.front();
         }
     }
     else

@@ -1,12 +1,27 @@
 #pragma once
 
 #include "analysis/DiagnosticContext.h"
+#include "document/Document.h"
+#include "parser/AngelScriptParser.h"
 
 #include <ankerl/unordered_dense.h>
+#include <memory>
 #include <string>
 
 namespace angel_lsp::analysis::rules
 {
+/**
+ * @brief Cache entry for parsed mixin source and AST tree.
+ */
+struct MixinFileCacheEntry
+{
+    std::string source;
+    std::unique_ptr<parser::AngelScriptParser> parser;
+    document::TreePtr tree;
+};
+
+using MixinFileCache = ankerl::unordered_dense::map<std::string, MixinFileCacheEntry>;
+
 /**
  * @brief Validates a class or interface declaration.
  *
@@ -16,8 +31,9 @@ namespace angel_lsp::analysis::rules
  *
  * @param sym Class or interface symbol to validate.
  * @param ctx Diagnostic sink; also carries the SymbolTable every lookup goes through.
+ * @param mixinCache Optional shared cache of parsed mixin ASTs across class checks.
  */
-void ValidateClass(const Symbol& sym, const DiagnosticContext& ctx);
+void ValidateClass(const Symbol& sym, const DiagnosticContext& ctx, MixinFileCache* mixinCache = nullptr);
 
 /**
  * @brief Reports whether a type participates in an inheritance cycle.

@@ -106,6 +106,7 @@ if(MSVC)
         $<$<COMPILE_LANGUAGE:CXX>:/w14263>
         $<$<COMPILE_LANGUAGE:CXX>:/w14265>
         $<$<COMPILE_LANGUAGE:CXX>:/w14296>
+        $<$<COMPILE_LANGUAGE:CXX>:/w14505>
     )
 else()
     set(ANGELLSP_WARNING_FLAGS
@@ -119,6 +120,7 @@ else()
         $<$<COMPILE_LANGUAGE:CXX>:-Wpessimizing-move>
         $<$<COMPILE_LANGUAGE:CXX>:-Wredundant-move>
         $<$<COMPILE_LANGUAGE:CXX>:-Wunused-const-variable>
+        $<$<COMPILE_LANGUAGE:CXX>:-Wunused-function>
     )
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         list(APPEND ANGELLSP_WARNING_FLAGS $<$<COMPILE_LANGUAGE:CXX>:-Wimplicit-fallthrough>)

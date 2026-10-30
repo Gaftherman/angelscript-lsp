@@ -12,6 +12,8 @@
 
 #include <variant>
 
+#include "utils/Constants.h"
+
 // Forward-declared rather than included: avoids pulling <lsp/messages.h> into every TU that touches symbols.
 namespace angel_lsp::utils
 {
@@ -563,10 +565,19 @@ class SymbolTable
      * @param predefinedExtension Extension used to recognize predefined engine stub files.
      * @return Isolated SymbolTable snapshot owned by unique_ptr.
      */
+    void SetPredefinedFileExtension(std::string_view ext)
+    {
+        m_predefinedFileExtension = std::string(ext);
+    }
+    [[nodiscard]] std::string_view GetPredefinedFileExtension() const noexcept
+    {
+        return m_predefinedFileExtension;
+    }
+
     [[nodiscard]] std::unique_ptr<SymbolTable>
     CreateAnalysisSnapshot(const std::string& uriStr, const SymbolTable& staging,
                            const ankerl::unordered_dense::set<std::string>* allowedModuleFileUris = nullptr,
-                           std::string_view predefinedExtension = ".as.predefined") const;
+                           std::string_view predefinedExtension = {}) const;
 
     /** @brief Returns total number of table clones created via CreateAnalysisSnapshot. */
     [[nodiscard]] static uint64_t GetTableCloneCount() noexcept
@@ -968,6 +979,7 @@ class SymbolTable
     ankerl::unordered_dense::set<std::string> m_classesWithSynthesizedMixins;
     std::string m_defaultArrayType = "array";
     std::string m_stringType = "string";
+    std::string m_predefinedFileExtension{angel_lsp::constants::k_defaultPredefinedExt};
     inline static std::atomic<uint64_t> s_tableCloneCount{0};
 
     struct SnapshotFilterContext

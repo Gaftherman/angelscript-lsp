@@ -3897,6 +3897,15 @@ static std::string ResolveMemberExpr(TSNode exprNode, const ExpressionTypeContex
             }
         }
     }
+    auto accessors = FindPropertyAccessors(cleanObj, memName, ctx.symbolTable, false);
+    if (!accessors.empty())
+    {
+        std::string pType = PropertyTypeFromAccessors(accessors);
+        if (!pType.empty())
+        {
+            return pType;
+        }
+    }
     return "";
 }
 

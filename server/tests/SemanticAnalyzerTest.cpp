@@ -3001,3 +3001,61 @@ TEST_CASE("SemanticAnalyzer - Strict scope isolation between class X and homonym
     CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diagsInsideNs, nsVar));
     CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diagsInsideNs, nsFunc));
 }
+
+TEST_CASE("SemanticAnalyzer - Deeply nested expression in 8 if blocks resolves inherited member without W108")
+{
+    const std::string baseClassName = angel_lsp::test::GenerateRandomSymbolName("EntBase");
+    const std::string derivedClassName = angel_lsp::test::GenerateRandomSymbolName("MyMonster");
+    const std::string varOrigin = angel_lsp::test::GenerateRandomSymbolName("origin");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("Think");
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    const std::string baseCode = "class Vector3 { float x; float y; float z; }\n"
+                                 "class EntVars { Vector3 " +
+                                 varOrigin +
+                                 "; }\n"
+                                 "class " +
+                                 baseClassName +
+                                 " {\n"
+                                 "    " +
+                                 baseClassName +
+                                 "@ self;\n"
+                                 "    EntVars@ pev;\n"
+                                 "}\n";
+
+    AnalyzeSource(baseCode, table, i18n, "file:///base.as");
+
+    const std::string derivedCode = "class " + derivedClassName + " : " + baseClassName +
+                                    " {\n"
+                                    "    void " +
+                                    methodName +
+                                    "() {\n"
+                                    "        if (true) {\n"
+                                    "            if (true) {\n"
+                                    "                if (true) {\n"
+                                    "                    if (true) {\n"
+                                    "                        if (true) {\n"
+                                    "                            if (true) {\n"
+                                    "                                if (true) {\n"
+                                    "                                    if (self.pev." +
+                                    varOrigin + ".y <= self.pev." + varOrigin +
+                                    ".y - 60.0f) {\n"
+                                    "                                        int dummy = 1;\n"
+                                    "                                    }\n"
+                                    "                                }\n"
+                                    "                            }\n"
+                                    "                        }\n"
+                                    "                    }\n"
+                                    "                }\n"
+                                    "            }\n"
+                                    "        }\n"
+                                    "    }\n"
+                                    "}\n";
+
+    const auto diags = AnalyzeSource(derivedCode, table, i18n, "file:///derived.as");
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, "self"));
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, "pev"));
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, varOrigin));
+}

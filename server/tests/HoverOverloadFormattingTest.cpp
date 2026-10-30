@@ -105,13 +105,12 @@ TEST_CASE("HoverOverload - Call-site hover prioritizes matched overload and only
 
     const size_t primaryPos =
         content.value.find("void " + className + "::" + fnName + "(const string &in szFunc, float flRepeat)");
-    const size_t detailsPos = content.value.find("**1 more overload**:");
-    const size_t secondaryPos = content.value.find("(? &in obj");
+    const size_t detailsPos = content.value.find("**+1 more overload**");
     REQUIRE(primaryPos != std::string::npos);
     REQUIRE(detailsPos != std::string::npos);
-    REQUIRE(secondaryPos != std::string::npos);
     CHECK(primaryPos < detailsPos);
-    CHECK(secondaryPos > detailsPos);
+    CHECK(content.value.find("(? &in obj") == std::string::npos);
+    CHECK(content.value.find("Peek overloads") != std::string::npos);
     CHECK(content.value.find("Schedules a function string repeatedly.") != std::string::npos);
     CHECK(content.value.find("Schedules a method call on a target object.") == std::string::npos);
 }
@@ -250,13 +249,12 @@ TEST_CASE("HoverOverload - Method call with multiple overloads shows single reso
 
         const size_t primaryPos = content.value.find(
             "bool " + className + "::" + fnName + "(const string &in key, float &out val, bool strict = true) const");
-        const size_t detailsPos = content.value.find("**8 sobrecargas más**:");
-        const size_t secondaryPos = content.value.find("int &out val");
+        const size_t detailsPos = content.value.find("**+8 sobrecargas más**");
         REQUIRE(primaryPos != std::string::npos);
         REQUIRE(detailsPos != std::string::npos);
-        REQUIRE(secondaryPos != std::string::npos);
         CHECK(primaryPos < detailsPos);
-        CHECK(secondaryPos > detailsPos);
+        CHECK(content.value.find("int &out val") == std::string::npos);
+        CHECK(content.value.find("Ver sobrecargas") != std::string::npos);
         CHECK(content.value.find("Gets float value.") != std::string::npos);
         CHECK(content.value.find("<details>") == std::string::npos);
         CHECK(content.value.find("<summary>") == std::string::npos);
@@ -273,13 +271,12 @@ TEST_CASE("HoverOverload - Method call with multiple overloads shows single reso
 
         const size_t primaryPos = content.value.find(
             "bool " + className + "::" + fnName + "(const string &in key, float &out val, bool strict = true) const");
-        const size_t detailsPos = content.value.find("**8 more overloads**:");
-        const size_t secondaryPos = content.value.find("int &out val");
+        const size_t detailsPos = content.value.find("**+8 more overloads**");
         REQUIRE(primaryPos != std::string::npos);
         REQUIRE(detailsPos != std::string::npos);
-        REQUIRE(secondaryPos != std::string::npos);
         CHECK(primaryPos < detailsPos);
-        CHECK(secondaryPos > detailsPos);
+        CHECK(content.value.find("int &out val") == std::string::npos);
+        CHECK(content.value.find("Peek overloads") != std::string::npos);
         CHECK(content.value.find("Gets float value.") != std::string::npos);
         CHECK(content.value.find("<details>") == std::string::npos);
         CHECK(content.value.find("<summary>") == std::string::npos);
@@ -312,13 +309,12 @@ TEST_CASE("HoverOverload - Hovering on declaration selects specific overload and
     REQUIRE(hover1.has_value());
     const auto& content1 = std::get<lsp::MarkupContent>(hover1->contents);
     const size_t primary1 = content1.value.find("void " + fnName + "(int taskId)");
-    const size_t details1 = content1.value.find("**1 more overload**:");
-    const size_t secondary1 = content1.value.find("taskWeight");
+    const size_t details1 = content1.value.find("**+1 more overload**");
     REQUIRE(primary1 != std::string::npos);
     REQUIRE(details1 != std::string::npos);
-    REQUIRE(secondary1 != std::string::npos);
     CHECK(primary1 < details1);
-    CHECK(secondary1 > details1);
+    CHECK(content1.value.find("taskWeight") == std::string::npos);
+    CHECK(content1.value.find("Peek overloads") != std::string::npos);
     CHECK(content1.value.find("First overload.") != std::string::npos);
     CHECK(content1.value.find("Second overload.") == std::string::npos);
     CHECK(content1.value.find("<details>") == std::string::npos);
@@ -332,7 +328,8 @@ TEST_CASE("HoverOverload - Hovering on declaration selects specific overload and
         auto hoverEs = envEs.HoverAt(code, line1, col1, &i18nEs);
         REQUIRE(hoverEs.has_value());
         const auto& contentEs = std::get<lsp::MarkupContent>(hoverEs->contents);
-        CHECK(contentEs.value.find("**1 sobrecarga más**:") != std::string::npos);
+        CHECK(contentEs.value.find("**+1 sobrecarga más**") != std::string::npos);
+        CHECK(contentEs.value.find("Ver sobrecargas") != std::string::npos);
         CHECK(contentEs.value.find("<details>") == std::string::npos);
         CHECK(contentEs.value.find("<summary>") == std::string::npos);
         CHECK(contentEs.value.find("▶") == std::string::npos);
@@ -350,13 +347,12 @@ TEST_CASE("HoverOverload - Hovering on declaration selects specific overload and
     REQUIRE(hover2.has_value());
     const auto& content2 = std::get<lsp::MarkupContent>(hover2->contents);
     const size_t primary2 = content2.value.find("void " + fnName + "(float taskWeight)");
-    const size_t details2 = content2.value.find("**1 more overload**:");
-    const size_t secondary2 = content2.value.find("taskId");
+    const size_t details2 = content2.value.find("**+1 more overload**");
     REQUIRE(primary2 != std::string::npos);
     REQUIRE(details2 != std::string::npos);
-    REQUIRE(secondary2 != std::string::npos);
     CHECK(primary2 < details2);
-    CHECK(secondary2 > details2);
+    CHECK(content2.value.find("taskId") == std::string::npos);
+    CHECK(content2.value.find("Peek overloads") != std::string::npos);
     CHECK(content2.value.find("Second overload.") != std::string::npos);
     CHECK(content2.value.find("First overload.") == std::string::npos);
     CHECK(content2.value.find("<details>") == std::string::npos);

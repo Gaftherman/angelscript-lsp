@@ -357,8 +357,7 @@
             "storage.type"
           ],
           "modifier": [
-            "keyword.control.conditional.angelscript",
-            "storage.modifier.reference.angelscript"
+            "storage.modifier.angelscript"
           ]
         }
       },
@@ -376,8 +375,7 @@
             "storage.type"
           ],
           "modifier": [
-            "keyword.control.conditional.angelscript",
-            "storage.modifier.reference.angelscript"
+            "storage.modifier.angelscript"
           ]
         }
       }

@@ -853,12 +853,26 @@ class Server
     void LoadPredefinedIncludes(const std::string& content, const std::string& filePath, PredefinedLoadContext& ctx);
 
     /**
+     * @brief Pre-scans preprocessor define directives from candidate predefined stubs.
+     * @param[in] stubPaths Discovered candidate stub file paths.
+     */
+    void PreScanStubDefinedWords(const std::vector<std::string>& stubPaths);
+
+    /**
      * @brief Recursively loads and indexes a predefined stub with cycle detection.
      * @param[in] filePath Path of the predefined stub on disk.
      * @param[in,out] parser Parser instance to reuse.
      * @param[in] forceReload True to re-index even if already owned.
      * @param[in,out] visited Set of visited normalized paths.
      */
+    struct PredefinedIndexTiming
+    {
+        double parseMs = 0.0;
+        double symMs = 0.0;
+        double scopeMs = 0.0;
+    };
+    PredefinedIndexTiming IndexAndCommitPredefinedStub(const std::string& uri, const std::string& content,
+                                                       angel_lsp::parser::AngelScriptParser& parser);
     void ParserPredefinedInternal(const std::string& filePath, angel_lsp::parser::AngelScriptParser& parser,
                                   bool forceReload, std::unordered_set<std::string>& visited);
 
@@ -2076,11 +2090,9 @@ class Server
     /**
      * @brief Appends include-graph module closure paths.
      * @param[in] openPath Canonical path of the opened file.
-     * @param[in] claim Module ownership claim for the opened file.
      * @param[in,out] closure Destination list of closure paths.
      */
-    void AppendIncludeGraphClosure(const std::string& openPath, const ModuleClaim& claim,
-                                   std::vector<std::string>& closure) const;
+    void AppendIncludeGraphClosure(const std::string& openPath, std::vector<std::string>& closure) const;
 
     /**
      * @brief Appends force-include file paths and their closures.

@@ -161,6 +161,33 @@ class PredefinedStubManager
      */
     bool MarkCanonicalPathLoaded(const std::string& path);
 
+    struct StubFingerprint
+    {
+        uint64_t contentHash = 0;
+        uint64_t definesHash = 0;
+    };
+
+    /**
+     * @brief Checks if a stub has matching content and defines hashes.
+     * @param path Filesystem path.
+
+     * * @param contentHash Content hash.
+     * @param definesHash Active preprocessor defines hash.
+     * @return
+     * True if hashes match.
+     */
+    [[nodiscard]] bool HasMatchingFingerprint(const std::string& path, uint64_t contentHash,
+                                              uint64_t definesHash) const;
+
+    /**
+     * @brief Records content and defines hashes for a stub path.
+     * @param path Filesystem path.
+     *
+     * @param contentHash Content hash.
+     * @param definesHash Active preprocessor defines hash.
+     */
+    void RecordFingerprint(const std::string& path, uint64_t contentHash, uint64_t definesHash);
+
     /**
      * @brief Clears all registered stubs and path mappings.
      */
@@ -176,6 +203,7 @@ class PredefinedStubManager
     ankerl::unordered_dense::set<std::string> m_predefinedUris;
     ankerl::unordered_dense::map<std::string, std::string> m_predefinedUriByPath;
     ankerl::unordered_dense::set<std::string> m_loadedCanonicalPaths;
+    ankerl::unordered_dense::map<std::string, StubFingerprint> m_fingerprints;
     ankerl::unordered_dense::map<std::string, std::shared_ptr<std::string>> m_predefinedDocuments;
     ankerl::unordered_dense::map<std::string, std::shared_ptr<const document::Document>> m_preindexedSnapshots;
 };

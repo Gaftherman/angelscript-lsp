@@ -2717,3 +2717,68 @@ TEST_CASE("Completion - Merges enum members and namespace functions when enum an
     CHECK(HasItem(items, enumMember2));
     CHECK(HasItem(items, nsFunc));
 }
+
+TEST_CASE("Completion - Filter op* operators on member completion unless query starts with op")
+{
+    const std::string className = test::GenerateRandomSymbolName("VectorMath");
+    const std::string code = "class " + className +
+                             " {\n"
+                             "    void NormalMethod() {}\n"
+                             "    " +
+                             className + "& opAssign(const " + className +
+                             " &in other) { return this; }\n"
+                             "    bool opEquals(const " +
+                             className +
+                             " &in other) const { return false; }\n"
+                             "}\n"
+                             "void Test(" +
+                             className +
+                             " v) {\n"
+                             "    v.\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    // Line 6: "    v." -> character 6
+    auto itemsWithoutOp = env.CompleteAt(6, 6);
+    CHECK(HasItem(itemsWithoutOp, "NormalMethod"));
+    CHECK(!HasItem(itemsWithoutOp, "opAssign"));
+    CHECK(!HasItem(itemsWithoutOp, "opEquals"));
+
+    // Now with prefix "v.op"
+    const std::string codeWithOp = "class " + className +
+                                   " {\n"
+                                   "    void NormalMethod() {}\n"
+                                   "    " +
+                                   className + "& opAssign(const " + className +
+                                   " &in other) { return this; }\n"
+                                   "    bool opEquals(const " +
+                                   className +
+                                   " &in other) const { return false; }\n"
+                                   "}\n"
+                                   "void Test(" +
+                                   className +
+                                   " v) {\n"
+                                   "    v.op\n"
+                                   "}\n";
+
+    TestEnvironment envWithOp(codeWithOp);
+    auto itemsWithOp = envWithOp.CompleteAt(6, 8);
+    CHECK(HasItem(itemsWithOp, "opAssign"));
+    CHECK(HasItem(itemsWithOp, "opEquals"));
+}
+
+TEST_CASE("Completion - Suggest operator overloads including opCall in class body")
+{
+    const std::string className = test::GenerateRandomSymbolName("FunctorObject");
+    const std::string code = "class " + className +
+                             " {\n"
+                             "    \n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    // Line 1: inside class body outside function
+    auto items = env.CompleteAt(1, 4, true);
+    CHECK(HasItem(items, "opCall"));
+    CHECK(HasItem(items, "opIndex"));
+    CHECK(HasItem(items, "opAssign"));
+}

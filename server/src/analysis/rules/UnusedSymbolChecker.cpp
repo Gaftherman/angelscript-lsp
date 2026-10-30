@@ -270,16 +270,18 @@ ankerl::unordered_dense::set<std::string> CollectStringReflection(const Semantic
     {
         CollectScopeStringLiteralRefs(req.scopeRoot.get(), result);
     }
-    if (req.scopeIndex)
+    if (req.scopeIndex && !req.moduleFileUris.empty())
     {
-        req.scopeIndex->ForEachScopeTree(
-            [&](const std::string& uri, const std::shared_ptr<const Scope>& root)
+        for (const auto& uri : req.moduleFileUris)
+        {
+            if (uri != req.fileUri && !utils::IsPredefinedFile(uri, req.predefinedFileExtension))
             {
-                if (root && uri != req.fileUri && !utils::IsPredefinedFile(uri, req.predefinedFileExtension))
+                if (const auto root = req.scopeIndex->GetRoot(uri))
                 {
                     CollectScopeStringLiteralRefs(root.get(), result);
                 }
-            });
+            }
+        }
     }
 
     const std::vector<config::StringReflectionCallee>* callees =
@@ -779,30 +781,12 @@ config::UnusedSymbolRules ResolveEffectiveRules(const SemanticAnalysisRequest& r
 
 } // namespace
 
-void CheckUnusedSymbols(const SemanticAnalysisRequest& request, DiagnosticContext& ctx)
+static void BuildInheritedAndDerivedMaps(
+    const RuleIndex& ruleIndex,
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>& inheritedOrMixedInClasses,
+    ankerl::unordered_dense::map<std::string, std::vector<std::string>, TransparentStringHash, std::equal_to<>>&
+        derivedClassesByBase)
 {
-    if (!request.scopeRoot || utils::IsPredefinedFile(request.fileUri, request.predefinedFileExtension))
-        return;
-
-    config::UnusedSymbolRules rules = ResolveEffectiveRules(request);
-
-    ankerl::unordered_dense::set<uint64_t> defLocs;
-    CollectDefLocations(request.scopeRoot.get(), defLocs);
-
-    ankerl::unordered_dense::set<std::string> refNames;
-    CollectDocReferences(request.scopeRoot.get(), defLocs, refNames, request.sourceCode,
-                         rules.baseClassDelegateProperties);
-    CollectCrossFileReferences(request, refNames);
-
-    ankerl::unordered_dense::set<const LocalDefinition*> usedLocals;
-    CollectUsedLocals(request.scopeRoot.get(), usedLocals);
-
-    const auto& ruleIndex = request.GetRuleIndex();
-
-    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> inheritedOrMixedInClasses;
-    ankerl::unordered_dense::map<std::string, std::vector<std::string>, TransparentStringHash, std::equal_to<>>
-        derivedClassesByBase;
-
     for (const auto& [base, derivedList] : ruleIndex.derivedByBase)
     {
         inheritedOrMixedInClasses.insert(base);
@@ -829,8 +813,40 @@ void CheckUnusedSymbols(const SemanticAnalysisRequest& request, DiagnosticContex
             }
         }
     }
+}
 
-    const auto reflections = CollectStringReflection(request);
+void CheckUnusedSymbols(const SemanticAnalysisRequest& request, DiagnosticContext& ctx)
+{
+    if (!request.scopeRoot || utils::IsPredefinedFile(request.fileUri, request.predefinedFileExtension))
+        return;
+
+    config::UnusedSymbolRules rules = ResolveEffectiveRules(request);
+
+    ankerl::unordered_dense::set<uint64_t> defLocs;
+    CollectDefLocations(request.scopeRoot.get(), defLocs);
+
+    const bool checkAnyCrossFile = rules.checkGlobals || rules.checkFunctions || rules.checkClasses;
+
+    ankerl::unordered_dense::set<std::string> refNames;
+    CollectDocReferences(request.scopeRoot.get(), defLocs, refNames, request.sourceCode,
+                         rules.baseClassDelegateProperties);
+    if (checkAnyCrossFile)
+    {
+        CollectCrossFileReferences(request, refNames);
+    }
+
+    ankerl::unordered_dense::set<const LocalDefinition*> usedLocals;
+    CollectUsedLocals(request.scopeRoot.get(), usedLocals);
+
+    const auto& ruleIndex = request.GetRuleIndex();
+
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> inheritedOrMixedInClasses;
+    ankerl::unordered_dense::map<std::string, std::vector<std::string>, TransparentStringHash, std::equal_to<>>
+        derivedClassesByBase;
+    BuildInheritedAndDerivedMaps(ruleIndex, inheritedOrMixedInClasses, derivedClassesByBase);
+
+    const auto reflections =
+        checkAnyCrossFile ? CollectStringReflection(request) : ankerl::unordered_dense::set<std::string>{};
     const UnusedCheckContext uCtx{
         refNames, usedLocals, reflections, rules, inheritedOrMixedInClasses, derivedClassesByBase, ruleIndex};
 

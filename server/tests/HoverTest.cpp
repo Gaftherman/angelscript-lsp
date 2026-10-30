@@ -254,13 +254,11 @@ TEST_CASE("HoverHandler - Global Function Hover with Overloads")
     REQUIRE(hover.has_value());
     auto content = std::get<lsp::MarkupContent>(hover->contents);
     const size_t primaryPos = content.value.find("float Dist(float x, float y)");
-    const size_t detailsPos = content.value.find("**1 more overload**:");
-    const size_t secondaryPos = content.value.find("float Dist(float x, float y, float z)");
+    const size_t detailsPos = content.value.find("**+1 more overload**");
     REQUIRE(primaryPos != std::string::npos);
     REQUIRE(detailsPos != std::string::npos);
-    REQUIRE(secondaryPos != std::string::npos);
     CHECK(primaryPos < detailsPos);
-    CHECK(secondaryPos > detailsPos);
+    CHECK(content.value.find("float Dist(float x, float y, float z)") == std::string::npos);
     CHECK(content.value.find("command:angelscript.peekOverloads") != std::string::npos);
     CHECK(content.value.find("\n\n---\n\nCalculates distance.") != std::string::npos);
 }
@@ -491,13 +489,11 @@ TEST_CASE("HoverHandler - Call overload shows resolved signature and summarizes 
     const std::string rendered = std::get<lsp::MarkupContent>(hover->contents).value;
 
     const size_t primaryPos = rendered.find("void Emit(int id)");
-    const size_t detailsPos = rendered.find("**1 more overload**:");
-    const size_t secondaryPos = rendered.find("void Emit(const string &in name)");
+    const size_t detailsPos = rendered.find("**+1 more overload**");
     REQUIRE(primaryPos != std::string::npos);
     REQUIRE(detailsPos != std::string::npos);
-    REQUIRE(secondaryPos != std::string::npos);
     CHECK(primaryPos < detailsPos);
-    CHECK(secondaryPos > detailsPos);
+    CHECK(rendered.find("void Emit(const string &in name)") == std::string::npos);
     CHECK(rendered.find("command:angelscript.peekOverloads") != std::string::npos);
 }
 
@@ -1001,13 +997,11 @@ TEST_CASE("HoverHandler - Call overload resolution across inheritance hierarchy"
     auto content = std::get<lsp::MarkupContent>(hover->contents);
     const size_t primaryPos = content.value.find(
         "bool WeaponBase::Deploy(string v, string p, int draw, string model, int body, float speed)");
-    const size_t detailsPos = content.value.find("**1 more overload**:");
-    const size_t secondaryPos = content.value.find("weapon_ins2l85a2::Deploy");
+    const size_t detailsPos = content.value.find("**+1 more overload**");
     REQUIRE(primaryPos != std::string::npos);
     REQUIRE(detailsPos != std::string::npos);
-    REQUIRE(secondaryPos != std::string::npos);
     CHECK(primaryPos < detailsPos);
-    CHECK(secondaryPos > detailsPos);
+    CHECK(content.value.find("weapon_ins2l85a2::Deploy") == std::string::npos);
 }
 
 TEST_CASE("HoverHandler - Call overload resolution fallback when argument type mismatches")
@@ -1029,13 +1023,11 @@ TEST_CASE("HoverHandler - Call overload resolution fallback when argument type m
     auto content = std::get<lsp::MarkupContent>(hover->contents);
     const size_t primaryPos = content.value.find(
         "bool WeaponBase::Deploy(string v, string p, int draw, string model, int body, float speed)");
-    const size_t detailsPos = content.value.find("**1 more overload**:");
-    const size_t secondaryPos = content.value.find("weapon_ins2l85a2::Deploy");
+    const size_t detailsPos = content.value.find("**+1 more overload**");
     REQUIRE(primaryPos != std::string::npos);
     REQUIRE(detailsPos != std::string::npos);
-    REQUIRE(secondaryPos != std::string::npos);
     CHECK(primaryPos < detailsPos);
-    CHECK(secondaryPos > detailsPos);
+    CHECK(content.value.find("weapon_ins2l85a2::Deploy") == std::string::npos);
 }
 
 TEST_CASE("HoverHandler - Predefined Stub Parameter AST Fallback")
@@ -1494,7 +1486,7 @@ TEST_CASE("Hover - Overloads render clean markdown summary, peekOverloads comman
     auto hoverEn = env.HoverAt(9, 9);
     REQUIRE(hoverEn.has_value());
     const std::string textEn = std::get<lsp::MarkupContent>(hoverEn->contents).value;
-    CHECK(textEn.find("**1 more overload**:") != std::string::npos);
+    CHECK(textEn.find("**+1 more overload**") != std::string::npos);
     CHECK(textEn.find("[Peek overloads](command:angelscript.peekOverloads?") != std::string::npos);
     CHECK(textEn.find("\n\n---\n\n" + docComment) != std::string::npos);
 
@@ -1502,7 +1494,7 @@ TEST_CASE("Hover - Overloads render clean markdown summary, peekOverloads comman
     auto hoverEs = env.HoverAt(9, 9, nullptr, &spanish);
     REQUIRE(hoverEs.has_value());
     const std::string textEs = std::get<lsp::MarkupContent>(hoverEs->contents).value;
-    CHECK(textEs.find("**1 sobrecarga m\xC3\xA1s**:") != std::string::npos);
+    CHECK(textEs.find("**+1 sobrecarga m\xC3\xA1s**") != std::string::npos);
     CHECK(textEs.find("[Ver sobrecargas](command:angelscript.peekOverloads?") != std::string::npos);
     CHECK(textEs.find("\n\n---\n\n" + docComment) != std::string::npos);
 }
@@ -2067,4 +2059,105 @@ TEST_CASE("Hover - Unresolved include directive respects English and Spanish i18
     REQUIRE(hoverEs.has_value());
     const std::string valEs = std::get<lsp::MarkupContent>(hoverEs->contents).value;
     CHECK(valEs.find("No se resuelve a ningún archivo") != std::string::npos);
+}
+
+TEST_CASE("Hover - Chained property and initializer list print call")
+{
+    const std::string loggerClass = test::GenerateRandomSymbolName("CustomLogger");
+    const std::string channelClass = test::GenerateRandomSymbolName("CustomChannel");
+    const std::string entityClass = test::GenerateRandomSymbolName("CustomEntity");
+    const std::string printMethod = test::GenerateRandomSymbolName("print");
+
+    const std::string code = "class " + channelClass +
+                             " {\n"
+                             "    void " +
+                             printMethod +
+                             "(const string &in message, array<string>@ arguments = null) const {}\n"
+                             "}\n"
+                             "class " +
+                             loggerClass +
+                             " {\n"
+                             "    " +
+                             channelClass +
+                             "@ error;\n"
+                             "}\n" +
+                             loggerClass +
+                             " g_Logger;\n"
+                             "class " +
+                             entityClass +
+                             " {\n"
+                             "    string GetName() { return \"\"; }\n"
+                             "    void Test() {\n"
+                             "        g_Logger.error." +
+                             printMethod +
+                             "( \"[{}] Can not create null entity {}\", { this.GetName() } );\n"
+                             "    }\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    // Find print call on line 10
+    const size_t pos = code.find("g_Logger.error." + printMethod);
+    REQUIRE(pos != std::string::npos);
+    const size_t printPos = pos + std::string("g_Logger.error.").length();
+
+    uint32_t line = 0;
+    size_t lineStart = 0;
+    for (size_t i = 0; i < printPos; ++i)
+    {
+        if (code[i] == '\n')
+        {
+            ++line;
+            lineStart = i + 1;
+        }
+    }
+    const uint32_t col = static_cast<uint32_t>(printPos - lineStart);
+
+    auto hover = env.HoverAt(line, col);
+    REQUIRE(hover.has_value());
+    const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(text.find("void " + channelClass + "::" + printMethod +
+                    "(const string &in message, array<string>@ arguments = null) const") != std::string::npos);
+}
+
+TEST_CASE("Hover - Immediate preceding single-line doc comment extraction")
+{
+    const std::string entityClass = test::GenerateRandomSymbolName("BaseEntity");
+    const std::string getFn = test::GenerateRandomSymbolName("get_classname");
+
+    const std::string code = "class " + entityClass +
+                             " {\n"
+                             "    // Returns the entity classname\n"
+                             "    string " +
+                             getFn +
+                             "() const { return \"\"; }\n"
+                             "}\n"
+                             "void Test(" +
+                             entityClass +
+                             "@ ent) {\n"
+                             "    ent." +
+                             getFn +
+                             "();\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const size_t pos = code.find("ent." + getFn);
+    REQUIRE(pos != std::string::npos);
+    const size_t callPos = pos + std::string("ent.").length();
+
+    uint32_t line = 0;
+    size_t lineStart = 0;
+    for (size_t i = 0; i < callPos; ++i)
+    {
+        if (code[i] == '\n')
+        {
+            ++line;
+            lineStart = i + 1;
+        }
+    }
+    const uint32_t col = static_cast<uint32_t>(callPos - lineStart);
+
+    auto hover = env.HoverAt(line, col);
+    REQUIRE(hover.has_value());
+    const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(text.find("Returns the entity classname") != std::string::npos);
 }

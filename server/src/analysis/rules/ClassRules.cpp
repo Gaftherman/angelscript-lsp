@@ -1440,13 +1440,6 @@ void CollectMixinSelfMembers(const Symbol& mixinSym, const RuleIndex& ruleIndex,
     }
 }
 
-struct MixinFileCacheEntry
-{
-    std::string source;
-    std::unique_ptr<parser::AngelScriptParser> parser;
-    document::TreePtr tree;
-};
-
 struct MixinInstantiationCheckRequest
 {
     const std::string& mixinName;
@@ -1524,7 +1517,8 @@ void CheckSingleMixinInstantiation(MixinInstantiationCheckRequest& req)
 /**
  * @brief Checks that internal statements of mixins instantiated in a host class resolve against the host.
  */
-void CheckMixinInstantiations(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
+void CheckMixinInstantiations(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx,
+                              MixinFileCache* sharedCache)
 {
     if (sig.modifiers.isMixin)
     {
@@ -1543,10 +1537,11 @@ void CheckMixinInstantiations(const Symbol& sym, const ClassSignature& sig, cons
     MixinHierarchyMembers baseMembers{hostClassName, {}};
     CollectHierarchyMembers(hostHierarchy, ctx.request.GetRuleIndex(), baseMembers.hostMembers);
 
-    ankerl::unordered_dense::map<std::string, MixinFileCacheEntry> fileCache;
+    MixinFileCache localCache;
+    MixinFileCache& effectiveCache = sharedCache ? *sharedCache : localCache;
     for (const auto& mixinName : includedMixins)
     {
-        MixinInstantiationCheckRequest req{mixinName, sym, baseMembers, ctx, fileCache};
+        MixinInstantiationCheckRequest req{mixinName, sym, baseMembers, ctx, effectiveCache};
         CheckSingleMixinInstantiation(req);
     }
 }
@@ -1619,7 +1614,7 @@ bool HasInheritanceCycle(const std::string& typeName, const SymbolTable& table)
     return false;
 }
 
-void ValidateClass(const Symbol& sym, const DiagnosticContext& ctx)
+void ValidateClass(const Symbol& sym, const DiagnosticContext& ctx, MixinFileCache* mixinCache)
 {
     if (sym.type != SymbolType::Class && sym.type != SymbolType::Interface)
     {
@@ -1662,6 +1657,6 @@ void ValidateClass(const Symbol& sym, const DiagnosticContext& ctx)
     CheckFinalOverrides(sym, sig, ctx);
     CheckInterfaceImplementation(sym, sig, ctx);
     CheckPropertyAccessors(sym, ctx);
-    CheckMixinInstantiations(sym, sig, ctx);
+    CheckMixinInstantiations(sym, sig, ctx, mixinCache);
 }
 } // namespace angel_lsp::analysis::rules

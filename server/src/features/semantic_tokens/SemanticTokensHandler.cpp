@@ -1213,8 +1213,41 @@ bool ShouldSuppressScopedLeafToken(TSNode node, std::string_view tokenText, cons
     return !ctx.request.symbolTable.FindSymbolsPtr(qName);
 }
 
+static std::optional<uint32_t> ClassifyReservedKeywordOrModifier(std::string_view tokenText) noexcept
+{
+    static constexpr std::string_view k_declarationKeywords[] = {"class",     "interface", "mixin",
+                                                                 "namespace", "funcdef",   "typedef"};
+    for (const auto kw : k_declarationKeywords)
+    {
+        if (tokenText == kw)
+        {
+            return Type_Keyword;
+        }
+    }
+    static constexpr std::string_view k_modifiers[] = {"const", "final", "override", "private", "protected"};
+    for (const auto mod : k_modifiers)
+    {
+        if (tokenText == mod)
+        {
+            return Type_Modifier;
+        }
+    }
+    return std::nullopt;
+}
+
 uint32_t RefineCapturedTokenType(TSNode node, uint32_t tokenType, const TokenRefinementContext& ctx)
 {
+    const uint32_t startByte = ts_node_start_byte(node);
+    const uint32_t endByte = ts_node_end_byte(node);
+    if (startByte < endByte && endByte <= ctx.request.sourceCode.size())
+    {
+        const std::string_view tokenText(ctx.request.sourceCode.data() + startByte, endByte - startByte);
+        if (auto kwType = ClassifyReservedKeywordOrModifier(tokenText))
+        {
+            return *kwType;
+        }
+    }
+
     TSPoint startPoint = ts_node_start_point(node);
     if (tokenType == Type_Variable)
     {
@@ -1224,8 +1257,6 @@ uint32_t RefineCapturedTokenType(TSNode node, uint32_t tokenType, const TokenRef
     if (tokenType == Type_Type || tokenType == Type_Variable || tokenType == Type_Function ||
         tokenType == Type_Namespace)
     {
-        const uint32_t startByte = ts_node_start_byte(node);
-        const uint32_t endByte = ts_node_end_byte(node);
         if (startByte < endByte && endByte <= ctx.request.sourceCode.size())
         {
             std::string_view tokenText(ctx.request.sourceCode.data() + startByte, endByte - startByte);

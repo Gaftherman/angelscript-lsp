@@ -57,18 +57,21 @@ void SemanticAnalyzer::LogSymbolDump(const SemanticAnalysisRequest& request) con
     }
 }
 
-void SemanticAnalyzer::RunScopeRules(const SemanticAnalysisRequest& request, DiagnosticContext& ctx) const
+double SemanticAnalyzer::RunScopeRules(const SemanticAnalysisRequest& request, DiagnosticContext& ctx) const
 {
     if (!request.scopeRoot)
     {
-        return;
+        return 0.0;
     }
     CheckUndefinedIdentifiers(request.scopeRoot.get(), request.GetRuleIndex().globalNames, ctx);
 
+    utils::HighResTimer unusedTimer;
     rules::CheckUnusedSymbols(request, ctx);
+    const double unusedMs = unusedTimer.ElapsedMs();
 
     CheckNullAssignedToNonHandleInScope(request.scopeRoot.get(), ctx);
     CheckLocalVariableDeclarations(request.scopeRoot.get(), ctx);
+    return unusedMs;
 }
 
 void SemanticAnalyzer::RunStatementAndControlFlowRules(const SemanticAnalysisRequest& request,
@@ -128,12 +131,6 @@ void SemanticAnalyzer::RunExpressionRules(const SemanticAnalysisRequest& request
 void SemanticAnalyzer::RunTypeAndStructureRules(const SemanticAnalysisRequest& request, const NodeIndex* indexPtr,
                                                 DiagnosticContext& ctx) const
 {
-    if (request.enableTypeConversionChecks)
-    {
-        const TypeConversionCheckRequest conversionRequest{ts_tree_root_node(request.tree), request.sourceCode,
-                                                           request.scopeRoot.get(), request.mutableScopeRoot, indexPtr};
-        CheckTypeConversions(conversionRequest, ctx);
-    }
 
     const IsolationCheckRequest isolationRequest{ts_tree_root_node(request.tree), request.sourceCode,
                                                  request.scopeRoot.get()};
@@ -212,6 +209,16 @@ SemanticAnalyzer::TimedAstBreakdown SemanticAnalyzer::RunTimedAstRules(const Sem
         utils::HighResTimer stmtTimer;
         RunStatementAndControlFlowRules(request, indexPtr, ctx);
         breakdown.stmtMs = stmtTimer.ElapsedMs();
+
+        if (request.enableTypeConversionChecks)
+        {
+            utils::HighResTimer typeConvTimer;
+            const TypeConversionCheckRequest conversionRequest{ts_tree_root_node(request.tree), request.sourceCode,
+                                                               request.scopeRoot.get(), request.mutableScopeRoot,
+                                                               indexPtr};
+            CheckTypeConversions(conversionRequest, ctx);
+            breakdown.typeConvMs = typeConvTimer.ElapsedMs();
+        }
 
         utils::HighResTimer typeTimer;
         RunTypeAndStructureRules(request, indexPtr, ctx);
@@ -317,19 +324,21 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
         CheckDeclarationRules(request.symbolTable, ctx);
 
         utils::HighResTimer scopeTimer;
-        RunScopeRules(request, ctx);
+        const double unusedMs = RunScopeRules(request, ctx);
         const double scopeMs = scopeTimer.ElapsedMs();
 
-        const auto breakdown = RunTimedAstRules(request, indexPtr, ctx);
+        auto breakdown = RunTimedAstRules(request, indexPtr, ctx);
+        breakdown.unusedMs = unusedMs;
         CheckDirectivesAndModules(request, ctx);
         CheckMetadataSupport(request, indexPtr, ctx);
 
         if (m_logger && m_logger->IsEnabled(utils::LogLevel::Info))
         {
-            m_logger->LogInfo(fmt::format("[Checkers Breakdown] File: {} | ScopeRules: {:.2f} ms, StmtFlow: {:.2f} ms, "
-                                          "ExprRules: {:.2f} ms, TypeRules: {:.2f} ms",
-                                          request.fileUri, scopeMs, breakdown.stmtMs, breakdown.exprMs,
-                                          breakdown.typeMs));
+            m_logger->LogInfo(
+                fmt::format("[Checkers Breakdown] File: {} | ScopeRules: {:.2f} ms, StmtFlow: {:.2f} ms, "
+                            "ExprRules: {:.2f} ms, TypeRules: {:.2f} ms, TypeConv: {:.2f} ms, Unused: {:.2f} ms",
+                            request.fileUri, scopeMs, breakdown.stmtMs, breakdown.exprMs, breakdown.typeMs,
+                            breakdown.typeConvMs, breakdown.unusedMs));
         }
     }
 
@@ -803,15 +812,16 @@ void SemanticAnalyzer::CheckEngineDialectRules(TSNode node, DiagnosticContext& c
     ts_tree_cursor_delete(&cursor);
 }
 
-static void DispatchDeclarationRule(const Symbol& sym, DiagnosticContext& ctx)
+static void DispatchDeclarationRule(const Symbol& sym, DiagnosticContext& ctx,
+                                    rules::MixinFileCache* mixinCache = nullptr)
 {
     switch (sym.type)
     {
     case SymbolType::Class:
-        rules::ValidateClass(sym, ctx);
+        rules::ValidateClass(sym, ctx, mixinCache);
         break;
     case SymbolType::Interface:
-        rules::ValidateClass(sym, ctx);
+        rules::ValidateClass(sym, ctx, mixinCache);
         rules::ValidateInterfaceMembers(sym, ctx);
         break;
     case SymbolType::Typedef:
@@ -839,6 +849,7 @@ static void DispatchDeclarationRule(const Symbol& sym, DiagnosticContext& ctx)
 
 void SemanticAnalyzer::CheckDeclarationRules(const SymbolTable& symbolTable, DiagnosticContext& ctx) const
 {
+    rules::MixinFileCache documentMixinCache;
     symbolTable.ForEachSymbolInFile(
         ctx.request.fileUri,
         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
@@ -848,7 +859,7 @@ void SemanticAnalyzer::CheckDeclarationRules(const SymbolTable& symbolTable, Dia
             {
                 if (sym.fileUri == ctx.request.fileUri)
                 {
-                    DispatchDeclarationRule(sym, ctx);
+                    DispatchDeclarationRule(sym, ctx, &documentMixinCache);
                 }
             }
         });

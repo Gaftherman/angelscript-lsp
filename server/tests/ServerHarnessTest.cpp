@@ -7117,3 +7117,58 @@ TEST_CASE("Server - Independent module entry points isolate duplicate funcdefs w
     CHECK(publishedA.find("as-err-duplicate-declaration") == std::string::npos);
     CHECK(publishedA.find("as-err-signature-mismatch") == std::string::npos);
 }
+
+TEST_CASE("ServerHarness - Sub-header included by root resolves parent types and functions without E103 or W108")
+{
+    WorkspaceFixture fixture;
+    const std::string typeJson = test::GenerateRandomSymbolName("CustomJson");
+    const std::string fnPrefix = test::GenerateRandomSymbolName("GetLogPrefix");
+    const std::string validatorCls = test::GenerateRandomSymbolName("Validator");
+
+    const std::string rootSource = fmt::format("namespace meta_api {{\n"
+                                               "namespace json {{\n"
+                                               "namespace v2 {{\n"
+                                               "namespace schema {{\n"
+                                               "    class {} {{ int code; }}\n"
+                                               "    string {}() {{ return \"prefix\"; }}\n"
+                                               "}}}}\n"
+                                               "#include \"sub/schema.as\"\n",
+                                               typeJson, fnPrefix);
+
+    const std::string subSource = fmt::format("namespace meta_api {{\n"
+                                              "namespace json {{\n"
+                                              "namespace v2 {{\n"
+                                              "namespace schema {{\n"
+                                              "    class {} {{\n"
+                                              "        {} config;\n"
+                                              "        void Validate() {{\n"
+                                              "            string p = {}();\n"
+                                              "        }}\n"
+                                              "    }}\n"
+                                              "}}}}\n",
+                                              validatorCls, typeJson, fnPrefix);
+
+    fixture.Write("scripts/root.as", rootSource);
+    fixture.Write("scripts/sub/schema.as", subSource);
+
+    config::ServerConfig serverConfig;
+    serverConfig.engineProfile = "standard";
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    stream.Push(DidOpenMessage(fixture.Uri("scripts/sub/schema.as"), subSource));
+    stream.PushAction([&stream]() { WaitForCount(stream, "publishDiagnostics", 1); });
+
+    RunScript(serverConfig, stream);
+    const std::string output = stream.Output();
+
+    const std::string publishedSub = LastPublishedFor(output, "schema.as");
+    INFO("Diagnostics for schema.as: ", publishedSub);
+    REQUIRE_FALSE(publishedSub.empty());
+    CHECK(publishedSub.find("as-err-unknown-type") == std::string::npos);
+    CHECK(publishedSub.find("as-err-undeclared-identifier") == std::string::npos);
+    CHECK(publishedSub.find("as-warn-unreferenced-symbol") == std::string::npos);
+}

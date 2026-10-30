@@ -17,9 +17,14 @@ inline constexpr std::string_view k_diagnosticSource = "AngelScript";
 inline constexpr std::string_view k_poisonTypeSentinel = "<poison>";
 
 /**
+ * @brief Default file extension for predefined API stub files.
+ */
+inline constexpr std::string_view k_defaultPredefinedExt = ".as.predefined";
+
+/**
  * @brief Canonical ceiling for upward AST traversal hops.
  */
-inline constexpr int k_maxAstClimbDepth = 16;
+inline constexpr int k_maxAstClimbDepth = 256;
 
 /**
  * @brief Sentinel value representing an invalid or unmatchable byte offset.

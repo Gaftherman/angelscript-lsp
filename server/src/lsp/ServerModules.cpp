@@ -962,13 +962,8 @@ void Server::AppendEnclosingFolderModuleMembers(const std::string& openPath, con
     }
 }
 
-void Server::AppendIncludeGraphClosure(const std::string& openPath, const ModuleClaim& claim,
-                                       std::vector<std::string>& closure) const
+void Server::AppendIncludeGraphClosure(const std::string& openPath, std::vector<std::string>& closure) const
 {
-    if (claim.owner != nullptr && claim.owner->closurePaths.contains(openPath))
-    {
-        return;
-    }
     if (!m_config.moduleEntryPoint.empty())
     {
         const std::string entryPath = ResolveConfiguredPath(m_config.moduleEntryPoint);
@@ -1013,7 +1008,7 @@ std::vector<std::string> Server::ComputeModuleClosure(const std::string& openPat
     }
 
     AppendEnclosingFolderModuleMembers(openPath, claim, closure);
-    AppendIncludeGraphClosure(openPath, claim, closure);
+    AppendIncludeGraphClosure(openPath, closure);
     AppendForceIncludesClosure(closure);
 
     return closure;

@@ -5,28 +5,12 @@
 
 #include "features/code_action/CodeActionInternal.h"
 #include "parser/ASTUtils.h"
+#include "parser/Keywords.h"
 
 namespace angel_lsp::features
 {
 namespace
 {
-
-constexpr std::string_view kExtractableExpressionTypes[] = {"binary_expression",
-                                                            "unary_expression",
-                                                            "postfix_expression",
-                                                            "call_expression",
-                                                            "member_expression",
-                                                            "ternary_expression",
-                                                            "cast_expression",
-                                                            "functional_cast_expression",
-                                                            "construct_call_expression",
-                                                            "index_expression",
-                                                            "parenthesized_expression",
-                                                            "scoped_identifier",
-                                                            "identifier",
-                                                            "number_literal",
-                                                            "string_literal",
-                                                            "boolean_literal"};
 
 /**
  * @brief Checks whether an AST node is an extractable expression.
@@ -41,22 +25,25 @@ bool IsExtractableExpression(TSNode node)
     }
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol sym = ts_node_symbol(node);
-    const std::array<TSSymbol, 16> kSymbols = {gs.symBinaryExpression,
-                                               gs.symUnaryExpression,
-                                               gs.symPostfixExpression,
-                                               gs.symCallExpression,
-                                               gs.symMemberExpression,
-                                               gs.symTernaryExpression,
-                                               gs.symCastExpression,
-                                               gs.symFunctionalCastExpression,
-                                               gs.symConstructCallExpression,
-                                               gs.symIndexExpression,
-                                               gs.symParenthesizedExpression,
-                                               gs.symScopedIdentifier,
-                                               gs.symIdentifier,
-                                               gs.symNumberLiteral,
-                                               gs.symStringLiteral,
-                                               gs.symBooleanLiteral};
+    static const auto kSymbols = [&gs]()
+    {
+        return std::array<TSSymbol, 16>{gs.symBinaryExpression,
+                                        gs.symUnaryExpression,
+                                        gs.symPostfixExpression,
+                                        gs.symCallExpression,
+                                        gs.symMemberExpression,
+                                        gs.symTernaryExpression,
+                                        gs.symCastExpression,
+                                        gs.symFunctionalCastExpression,
+                                        gs.symConstructCallExpression,
+                                        gs.symIndexExpression,
+                                        gs.symParenthesizedExpression,
+                                        gs.symScopedIdentifier,
+                                        gs.symIdentifier,
+                                        gs.symNumberLiteral,
+                                        gs.symStringLiteral,
+                                        gs.symBooleanLiteral};
+    }();
     return std::find(kSymbols.begin(), kSymbols.end(), sym) != kSymbols.end();
 }
 
@@ -280,7 +267,8 @@ std::string SuggestNameFromMemberOrConstruct(TSNode targetNode, std::string_view
     return "";
 }
 
-std::string SuggestCandidateName(TSNode targetNode, std::string_view varType, std::string_view sourceCode)
+std::string SuggestCandidateName(TSNode targetNode, std::string_view varType, std::string_view sourceCode,
+                                 const analysis::SymbolTable* symbolTable)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol type = ts_node_symbol(targetNode);
@@ -295,11 +283,12 @@ std::string SuggestCandidateName(TSNode targetNode, std::string_view varType, st
     {
         return memName;
     }
-    if (!varType.empty() && varType != "auto" && varType != "null" && varType != "int" && varType != "uint" &&
-        varType != "float" && varType != "double" && varType != "bool")
+    const std::string_view strType = symbolTable ? symbolTable->GetStringType() : std::string_view("string");
+    if (!varType.empty() && varType != parser::keywords::Auto && varType != parser::keywords::Null &&
+        !analysis::IsPrimitiveTypeName(varType))
     {
         std::string clean = analysis::CleanBaseType(varType);
-        if (!clean.empty() && clean != "string")
+        if (!clean.empty() && clean != strType)
         {
             return ToLowerFirst(clean);
         }
@@ -325,9 +314,9 @@ bool IsNameInScope(const analysis::Scope* scope, std::string_view name)
 }
 
 std::string SuggestVariableName(TSNode targetNode, std::string_view varType, std::string_view sourceCode,
-                                const analysis::Scope* scope)
+                                const analysis::Scope* scope, const analysis::SymbolTable* symbolTable)
 {
-    std::string candidate = SuggestCandidateName(targetNode, varType, sourceCode);
+    std::string candidate = SuggestCandidateName(targetNode, varType, sourceCode, symbolTable);
     if (!scope)
     {
         return candidate;
@@ -367,7 +356,7 @@ std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActionReques
         varType = "auto";
     }
 
-    std::string varName = SuggestVariableName(targetNode, varType, request.sourceCode, scope);
+    std::string varName = SuggestVariableName(targetNode, varType, request.sourceCode, scope, &request.symbolTable);
     std::string exprText = GetNodeText(targetNode, request.sourceCode);
     if (exprText.empty())
     {

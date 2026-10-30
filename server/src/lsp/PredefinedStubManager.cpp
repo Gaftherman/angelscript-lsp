@@ -151,6 +151,34 @@ bool PredefinedStubManager::MarkCanonicalPathLoaded(const std::string& path)
     return m_loadedCanonicalPaths.insert(canon).second;
 }
 
+bool PredefinedStubManager::HasMatchingFingerprint(const std::string& path, uint64_t contentHash,
+                                                   uint64_t definesHash) const
+{
+    const std::string canon = CanonicalizeStubPath(path);
+    if (canon.empty())
+    {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(m_mutex);
+    const auto it = m_fingerprints.find(canon);
+    if (it == m_fingerprints.end())
+    {
+        return false;
+    }
+    return it->second.contentHash == contentHash && it->second.definesHash == definesHash;
+}
+
+void PredefinedStubManager::RecordFingerprint(const std::string& path, uint64_t contentHash, uint64_t definesHash)
+{
+    const std::string canon = CanonicalizeStubPath(path);
+    if (canon.empty())
+    {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_fingerprints[canon] = StubFingerprint{contentHash, definesHash};
+}
+
 bool PredefinedStubManager::ClaimFile(const std::string& uri, const std::string& path, bool forceReload,
                                       std::string* outPreviousUri)
 {
@@ -265,6 +293,7 @@ void PredefinedStubManager::Clear()
     m_predefinedUris.clear();
     m_predefinedUriByPath.clear();
     m_loadedCanonicalPaths.clear();
+    m_fingerprints.clear();
     m_predefinedDocuments.clear();
     m_preindexedSnapshots.clear();
 }

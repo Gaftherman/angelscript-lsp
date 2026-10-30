@@ -4,6 +4,9 @@
   "scopeName": "source.angelscript",
   "patterns": [
     {
+      "include": "#hover-labels"
+    },
+    {
       "include": "#comments"
     },
     {
@@ -44,6 +47,10 @@
     }
   ],
   "repository": {
+    "hover-labels": {
+      "match": "^\\s*\\((?:property|local variable|parameter|enum member|global variable|field|method|function|class|interface|mixin|namespace|funcdef|typedef)\\)",
+      "name": "storage.modifier.hover-label.angelscript"
+    },
     "comments": {
       "patterns": [
         {

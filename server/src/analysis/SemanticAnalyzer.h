@@ -144,7 +144,7 @@ class SemanticAnalyzer
      * @param[in] request The semantic analysis request.
      * @param[in,out] ctx Diagnostic context accumulating emitted diagnostics.
      */
-    void RunScopeRules(const SemanticAnalysisRequest& request, DiagnosticContext& ctx) const;
+    double RunScopeRules(const SemanticAnalysisRequest& request, DiagnosticContext& ctx) const;
 
     /**
      * @brief Executes statement and control flow rules (breaks, returns, loops).
@@ -169,9 +169,11 @@ class SemanticAnalyzer
      */
     struct TimedAstBreakdown
     {
-        double stmtMs = 0.0; ///< Elapsed milliseconds for statement and control flow rules.
-        double typeMs = 0.0; ///< Elapsed milliseconds for type and structural rules.
-        double exprMs = 0.0; ///< Elapsed milliseconds for expression rules.
+        double stmtMs = 0.0;     ///< Elapsed milliseconds for statement and control flow rules.
+        double typeMs = 0.0;     ///< Elapsed milliseconds for type and structural rules.
+        double exprMs = 0.0;     ///< Elapsed milliseconds for expression rules.
+        double typeConvMs = 0.0; ///< Elapsed milliseconds for type conversion checker.
+        double unusedMs = 0.0;   ///< Elapsed milliseconds for unused symbol checker.
     };
 
     /**

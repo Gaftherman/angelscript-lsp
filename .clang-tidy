@@ -3,6 +3,7 @@ Checks: >
   -*,
   bugprone-*,
   performance-*,
+  readability-redundant-string-init,
   readability-function-cognitive-complexity,
   cppcoreguidelines-init-variables,
   cppcoreguidelines-special-member-functions

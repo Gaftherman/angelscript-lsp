@@ -1290,7 +1290,7 @@ std::string FormatParameterTooltip(const analysis::ParameterInformation& param, 
     {
         sig = !param.typeName.empty() ? param.typeName : label;
     }
-    return "(parameter) " + sig;
+    return "```angelscript\n(parameter) " + sig + "\n```";
 }
 
 /**
