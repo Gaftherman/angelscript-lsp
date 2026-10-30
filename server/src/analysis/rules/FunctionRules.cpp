@@ -839,35 +839,6 @@ void ValidateFunction(const Symbol& sym, const DiagnosticContext& ctx)
     }
 }
 
-namespace
-{
-void WalkStandaloneLambda(TSNode root, const DiagnosticContext& ctx)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    parser::ForEachDescendantNode(
-        root,
-        [&](TSNode node)
-        {
-            if (ts_node_symbol(node) == gs.symExpressionStatement && ts_node_named_child_count(node) == 1)
-            {
-                const TSNode child = ts_node_named_child(node, 0);
-                if (ts_node_symbol(child) == gs.symLambdaExpression)
-                {
-                    const TSPoint start = ts_node_start_point(child);
-                    const TSPoint end = ts_node_end_point(child);
-                    ctx.EmitAtRange({start.row, start.column, end.row, end.column},
-                                    diagnostics::codes::StandaloneAnonymousFunction, DiagnosticSeverity::Error);
-                }
-            }
-        });
-}
-} // namespace
-
-void ValidateStandaloneLambda(TSNode root, const DiagnosticContext& ctx)
-{
-    WalkStandaloneLambda(root, ctx);
-}
-
 void ValidateStandaloneLambda(const analysis::NodeIndex& nodeIndex, const DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();

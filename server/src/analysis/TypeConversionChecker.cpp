@@ -925,7 +925,7 @@ std::string EnclosingClassName(TSNode node, std::string_view sourceCode)
     return "";
 }
 
-ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx, int depth = 0);
+ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx);
 
 /** @brief Resolves the type a bare (possibly scope-qualified) name denotes as a value. */
 ExpressionType ResolveIdentifierValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
@@ -1024,7 +1024,7 @@ ExpressionType ResolveLiteralValueType(TSNode node, const DiagnosticContext& ctx
     return ExpressionType{};
 }
 
-static ExpressionType ResolveUnaryValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx, int depth)
+static ExpressionType ResolveUnaryValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
     const std::string op =
         NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator), ctx.request.sourceCode);
@@ -1032,8 +1032,7 @@ static ExpressionType ResolveUnaryValueType(TSNode node, const Scope* scope, con
     {
         return ExpressionType{"bool", true, false};
     }
-    auto val = ResolveValueType(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperand), scope, ctx,
-                                depth + 1);
+    auto val = ResolveValueType(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperand), scope, ctx);
     if (op == "-")
     {
         if (val.baseName == "uint" || val.baseName == "uint32")
@@ -1063,20 +1062,26 @@ static ExpressionType ResolveCastValueType(TSNode node, const DiagnosticContext&
     return typeText.empty() ? ExpressionType{} : ExpressionType{typeText, true, false};
 }
 
-ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx, int depth)
+ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(node);
-    if (sym == gs.symParenthesizedExpression)
+    while (!ts_node_is_null(node) && ts_node_symbol(node) == gs.symParenthesizedExpression)
     {
-        return ts_node_named_child_count(node) > 0
-                   ? ResolveValueType(ts_node_named_child(node, 0), scope, ctx, depth + 1)
-                   : ExpressionType{};
+        if (ts_node_named_child_count(node) == 0)
+        {
+            return ExpressionType{};
+        }
+        node = ts_node_named_child(node, 0);
+    }
+    if (ts_node_is_null(node))
+    {
+        return ExpressionType{};
     }
 
+    const TSSymbol sym = ts_node_symbol(node);
     if (sym == gs.symUnaryExpression)
     {
-        return ResolveUnaryValueType(node, scope, ctx, depth);
+        return ResolveUnaryValueType(node, scope, ctx);
     }
 
     if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier)
@@ -1103,11 +1108,18 @@ ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const D
     return ExpressionType{};
 }
 
-ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx, int depth)
+ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
-    // See k_maxAstDepth in ASTUtils.h. Returning the empty type is this file's established
-    // "cannot see enough to judge" answer, which every caller already treats as silence.
-    if (depth > k_maxAstDepth || ts_node_is_null(node))
+    const auto& gs = parser::GetGrammarSymbols();
+    while (!ts_node_is_null(node) && ts_node_symbol(node) == gs.symParenthesizedExpression)
+    {
+        if (ts_node_named_child_count(node) == 0)
+        {
+            return ExpressionType{};
+        }
+        node = ts_node_named_child(node, 0);
+    }
+    if (ts_node_is_null(node))
     {
         return ExpressionType{};
     }
@@ -1117,7 +1129,6 @@ ExpressionType ResolveValueType(TSNode node, const Scope* scope, const Diagnosti
         return ExpressionType{std::string(ExpressionTypeCache::k_poisonType), false, false};
     }
 
-    const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol sym = ts_node_symbol(node);
     if (sym == gs.symNumberLiteral || sym == gs.symStringLiteral || sym == gs.symBooleanLiteral)
     {
@@ -1129,7 +1140,7 @@ ExpressionType ResolveValueType(TSNode node, const Scope* scope, const Diagnosti
         return ExpressionType{};
     }
 
-    return ResolveCompoundValueType(node, scope, ctx, depth);
+    return ResolveCompoundValueType(node, scope, ctx);
 }
 
 struct PropertyAccessInfo
@@ -1465,30 +1476,27 @@ bool IsComparisonOperator(std::string_view op) noexcept
 }
 
 /** @brief True for a written-out number, through any parentheses and unary sign. */
-bool IsNumericLiteralExpression(TSNode node, int depth = 0)
+bool IsNumericLiteralExpression(TSNode node)
 {
-    if (ts_node_is_null(node) || depth > k_maxAstDepth)
-    {
-        return false;
-    }
-
     const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(node);
-    if (sym == gs.symNumberLiteral || sym == gs.symStringLiteral || sym == gs.symBooleanLiteral ||
-        sym == gs.symNullLiteral)
+    TSNode current = node;
+    while (!ts_node_is_null(current))
     {
-        return true;
-    }
-    if (sym != gs.symParenthesizedExpression && sym != gs.symUnaryExpression)
-    {
-        return false;
-    }
-    for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
-    {
-        if (IsNumericLiteralExpression(ts_node_named_child(node, i), depth + 1))
+        const TSSymbol sym = ts_node_symbol(current);
+        if (sym == gs.symNumberLiteral || sym == gs.symStringLiteral || sym == gs.symBooleanLiteral ||
+            sym == gs.symNullLiteral)
         {
             return true;
         }
+        if (sym != gs.symParenthesizedExpression && sym != gs.symUnaryExpression)
+        {
+            return false;
+        }
+        if (ts_node_named_child_count(current) == 0)
+        {
+            return false;
+        }
+        current = ts_node_named_child(current, 0);
     }
     return false;
 }
@@ -1508,41 +1516,45 @@ bool IsNumericLiteralExpression(TSNode node, int depth = 0)
  * An unrecognised shape answers false, which is the emitting side. That is what the
  * corpus audit in TypeConversionTest.cpp exists to hold honest.
  */
-bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const DiagnosticContext& ctx, int depth = 0)
+bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(node) || depth > k_maxAstDepth)
-    {
-        return false;
-    }
-
     const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(node);
-    if (IsNumericLiteralExpression(node))
+    TSNode current = node;
+    while (!ts_node_is_null(current))
     {
-        return true;
+        if (IsNumericLiteralExpression(current))
+        {
+            return true;
+        }
+
+        if (ts_node_symbol(current) == gs.symParenthesizedExpression)
+        {
+            if (ts_node_named_child_count(current) == 0)
+            {
+                return false;
+            }
+            current = ts_node_named_child(current, 0);
+            continue;
+        }
+
+        break;
     }
 
-    if (sym == gs.symParenthesizedExpression)
+    if (ts_node_is_null(current))
     {
-        for (uint32_t i = 0; i < ts_node_named_child_count(node); ++i)
-        {
-            if (IsFoldedConstantOperand(ts_node_named_child(node, i), scope, ctx, depth + 1))
-            {
-                return true;
-            }
-        }
         return false;
     }
 
+    const TSSymbol sym = ts_node_symbol(current);
     if (sym != gs.symIdentifier && sym != gs.symScopedIdentifier)
     {
         return false;
     }
 
-    const std::string name = NodeText(node, ctx.request.sourceCode);
+    const std::string name = NodeText(current, ctx.request.sourceCode);
     if (scope)
     {
-        if (const LocalDefinition* def = ResolveInScopeAt(scope, LastScopeSegment(name), ts_node_start_byte(node)))
+        if (const LocalDefinition* def = ResolveInScopeAt(scope, LastScopeSegment(name), ts_node_start_byte(current)))
         {
             return def->typeName.starts_with("const ");
         }
@@ -1550,13 +1562,13 @@ bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const DiagnosticCo
 
     bool folded = false;
     ForEachSymbolNamed(name, ctx.request.symbolTable,
-                       [&folded](const Symbol& sym)
+                       [&folded](const Symbol& symVal)
                        {
-                           if (sym.type != SymbolType::Variable && sym.type != SymbolType::Property)
+                           if (symVal.type != SymbolType::Variable && symVal.type != SymbolType::Property)
                            {
                                return false;
                            }
-                           folded = sym.GetVariable().typeName.starts_with("const ");
+                           folded = symVal.GetVariable().typeName.starts_with("const ");
                            return true;
                        });
     return folded;
@@ -2453,37 +2465,52 @@ static bool IsLogicalUnaryOperator(TSSymbol sym, const parser::GrammarSymbols& g
     return sym == gs.tokBang || sym == gs.tokNot;
 }
 
-void CollectBooleanOperands(TSNode expr, std::vector<TSNode>& operands, int depth = 0)
+void CollectBooleanOperands(TSNode rootExpr, std::vector<TSNode>& operands)
 {
-    if (ts_node_is_null(expr) || depth > k_maxAstDepth)
+    if (ts_node_is_null(rootExpr))
+    {
         return;
+    }
 
+    std::vector<TSNode> worklist{rootExpr};
     const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(expr);
 
-    if (sym == gs.symBinaryExpression)
+    while (!worklist.empty())
     {
-        const TSNode op = parser::GetChildByField(expr, gs.fieldOperator);
-        const TSSymbol opSym = ts_node_is_null(op) ? 0 : ts_node_symbol(op);
-        if (IsLogicalBinaryOperator(opSym, gs))
-        {
-            CollectBooleanOperands(parser::GetChildByField(expr, gs.fieldLeft), operands, depth + 1);
-            CollectBooleanOperands(parser::GetChildByField(expr, gs.fieldRight), operands, depth + 1);
-            return;
-        }
-    }
-    else if (sym == gs.symUnaryExpression)
-    {
-        const TSNode op = parser::GetChildByField(expr, gs.fieldOperator);
-        const TSSymbol opSym = ts_node_is_null(op) ? 0 : ts_node_symbol(op);
-        if (IsLogicalUnaryOperator(opSym, gs))
-        {
-            CollectBooleanOperands(parser::GetChildByField(expr, gs.fieldOperand), operands, depth + 1);
-            return;
-        }
-    }
+        TSNode expr = worklist.back();
+        worklist.pop_back();
 
-    operands.push_back(expr);
+        if (ts_node_is_null(expr))
+        {
+            continue;
+        }
+
+        const TSSymbol sym = ts_node_symbol(expr);
+
+        if (sym == gs.symBinaryExpression)
+        {
+            const TSNode op = parser::GetChildByField(expr, gs.fieldOperator);
+            const TSSymbol opSym = ts_node_is_null(op) ? 0 : ts_node_symbol(op);
+            if (IsLogicalBinaryOperator(opSym, gs))
+            {
+                worklist.push_back(parser::GetChildByField(expr, gs.fieldRight));
+                worklist.push_back(parser::GetChildByField(expr, gs.fieldLeft));
+                continue;
+            }
+        }
+        else if (sym == gs.symUnaryExpression)
+        {
+            const TSNode op = parser::GetChildByField(expr, gs.fieldOperator);
+            const TSSymbol opSym = ts_node_is_null(op) ? 0 : ts_node_symbol(op);
+            if (IsLogicalUnaryOperator(opSym, gs))
+            {
+                worklist.push_back(parser::GetChildByField(expr, gs.fieldOperand));
+                continue;
+            }
+        }
+
+        operands.push_back(expr);
+    }
 }
 
 struct AssignmentOperands

@@ -83,10 +83,6 @@ void SemanticAnalyzer::RunStatementAndControlFlowRules(const SemanticAnalysisReq
     {
         rules::ValidateStandaloneLambda(*indexPtr, ctx);
     }
-    else
-    {
-        rules::ValidateStandaloneLambda(ts_tree_root_node(request.tree), ctx);
-    }
 }
 
 void SemanticAnalyzer::RunExpressionRules(const SemanticAnalysisRequest& request, const NodeIndex* indexPtr,
@@ -236,7 +232,7 @@ static void CheckMetadataSupport(const SemanticAnalysisRequest& request, const N
 {
     if (!request.enableMetadata && indexPtr)
     {
-        const auto metaNodes = indexPtr->Nodes(parser::nodes::Metadata);
+        const auto metaNodes = indexPtr->Nodes(parser::GetGrammarSymbols().symMetadata);
         for (TSNode metaNode : metaNodes)
         {
             const TSPoint start = ts_node_start_point(metaNode);
@@ -350,7 +346,7 @@ static void CheckDialectForeach(const NodeIndex& nodeIndex, DiagnosticContext& c
 {
     if (!ctx.request.SupportsForeach())
     {
-        for (TSNode node : nodeIndex.Nodes(parser::nodes::ForeachStatement))
+        for (TSNode node : nodeIndex.Nodes(parser::GetGrammarSymbols().symForeachStatement))
         {
             const TSPoint start = ts_node_start_point(node);
             ctx.EmitAtRange({start.row, start.column, start.row, start.column + 7}, "as-err-foreach-unsupported",
@@ -363,21 +359,28 @@ static void CheckDialectEmptyListElements(const NodeIndex& nodeIndex, Diagnostic
 {
     if (ctx.request.DisallowsEmptyListElements())
     {
-        for (TSNode node : nodeIndex.Nodes(parser::nodes::InitializerList))
+        const auto& gs = parser::GetGrammarSymbols();
+        for (TSNode node : nodeIndex.Nodes(gs.symInitializerList))
         {
-            const uint32_t childCount = ts_node_child_count(node);
-            for (uint32_t i = 1; i < childCount; ++i)
+            TSTreeCursor cursor = ts_tree_cursor_new(node);
+            if (ts_tree_cursor_goto_first_child(&cursor))
             {
-                const auto& gs = parser::GetGrammarSymbols();
-                const TSSymbol prevSym = ts_node_symbol(ts_node_child(node, i - 1));
-                const TSSymbol currSym = ts_node_symbol(ts_node_child(node, i));
-                if (prevSym == gs.tokComma && (currSym == gs.tokComma || currSym == gs.tokCloseBrace))
+                TSSymbol prevSym = 0;
+                TSPoint prevStart{};
+                do
                 {
-                    const TSPoint at = ts_node_start_point(ts_node_child(node, i - 1));
-                    ctx.EmitAtRange({at.row, at.column, at.row, at.column + 1}, "as-err-empty-list-element",
-                                    DiagnosticSeverity::Error);
-                }
+                    TSNode ch = ts_tree_cursor_current_node(&cursor);
+                    TSSymbol currSym = ts_node_symbol(ch);
+                    if (prevSym == gs.tokComma && (currSym == gs.tokComma || currSym == gs.tokCloseBrace))
+                    {
+                        ctx.EmitAtRange({prevStart.row, prevStart.column, prevStart.row, prevStart.column + 1},
+                                        "as-err-empty-list-element", DiagnosticSeverity::Error);
+                    }
+                    prevSym = currSym;
+                    prevStart = ts_node_start_point(ch);
+                } while (ts_tree_cursor_goto_next_sibling(&cursor));
             }
+            ts_tree_cursor_delete(&cursor);
         }
     }
 }
@@ -443,7 +446,7 @@ static void CheckDialectCharacterLiterals(const NodeIndex& nodeIndex, Diagnostic
         return;
     }
 
-    for (TSNode node : nodeIndex.Nodes(parser::nodes::VariableDeclaration))
+    for (TSNode node : nodeIndex.Nodes(parser::GetGrammarSymbols().symVariableDeclaration))
     {
         CheckDialectVariableDeclarationNode(node, ctx);
     }
@@ -485,7 +488,7 @@ static void CheckDialectIntegerDivision(const NodeIndex& nodeIndex, DiagnosticCo
     if (ctx.request.diagnostics && ctx.request.diagnostics->reportIntegerDivision &&
         !ctx.request.DisablesIntegerDivision())
     {
-        for (TSNode node : nodeIndex.Nodes(parser::nodes::BinaryExpression))
+        for (TSNode node : nodeIndex.Nodes(parser::GetGrammarSymbols().symBinaryExpression))
         {
             CheckDialectIntegerDivisionNode(node, ctx);
         }
@@ -496,7 +499,7 @@ static void CheckDialectNamedArguments(const NodeIndex& nodeIndex, DiagnosticCon
 {
     if (ctx.request.NamedArgumentSyntaxMode() != 2)
     {
-        for (TSNode node : nodeIndex.Nodes(parser::nodes::ArgumentList))
+        for (TSNode node : nodeIndex.Nodes(parser::GetGrammarSymbols().symArgumentList))
         {
             const uint32_t argCount = ts_node_named_child_count(node);
             for (uint32_t i = 0; i < argCount; ++i)
@@ -586,7 +589,7 @@ static void CheckDialectValueAssignForRef(const NodeIndex& nodeIndex, Diagnostic
 {
     if (ctx.request.DisallowsValueAssignForRef())
     {
-        for (TSNode node : nodeIndex.Nodes(parser::nodes::AssignmentExpression))
+        for (TSNode node : nodeIndex.Nodes(parser::GetGrammarSymbols().symAssignmentExpression))
         {
             CheckDialectAssignmentExpressionNode(node, ctx);
         }
@@ -597,7 +600,7 @@ static void CheckDialectMultilineStrings(const NodeIndex& nodeIndex, DiagnosticC
 {
     if (!ctx.request.AllowsMultilineStrings())
     {
-        for (TSNode node : nodeIndex.Nodes(parser::nodes::StringLiteral))
+        for (TSNode node : nodeIndex.Nodes(parser::GetGrammarSymbols().symStringLiteral))
         {
             const TSPoint start = ts_node_start_point(node);
             const TSPoint end = ts_node_end_point(node);
@@ -774,9 +777,9 @@ static void ProcessDialectNode(TSNode node, DiagnosticContext& ctx)
     }
 }
 
-void SemanticAnalyzer::CheckEngineDialectRules(TSNode node, DiagnosticContext& ctx, int depth) const
+void SemanticAnalyzer::CheckEngineDialectRules(TSNode node, DiagnosticContext& ctx) const
 {
-    if (ts_node_is_null(node) || depth > k_maxAstDepth)
+    if (ts_node_is_null(node))
     {
         return;
     }
@@ -1214,18 +1217,28 @@ void CheckScopeReferences(const Scope* scope, const UndefinedIdentifierContext& 
     }
 }
 
-void CheckUndefinedIdentifiersRecursive(const Scope* scope, const UndefinedIdentifierContext& uCtx, int depth)
+void CheckUndefinedIdentifiersIterative(const Scope* rootScope, const UndefinedIdentifierContext& uCtx)
 {
-    if (depth > k_maxAstDepth || !scope)
+    if (!rootScope)
     {
         return;
     }
 
-    CheckScopeReferences(scope, uCtx);
-
-    for (const auto& child : scope->children)
+    std::vector<const Scope*> worklist{rootScope};
+    while (!worklist.empty())
     {
-        CheckUndefinedIdentifiersRecursive(child.get(), uCtx, depth + 1);
+        const Scope* scope = worklist.back();
+        worklist.pop_back();
+
+        CheckScopeReferences(scope, uCtx);
+
+        for (const auto& child : scope->children)
+        {
+            if (child)
+            {
+                worklist.push_back(child.get());
+            }
+        }
     }
 }
 } // namespace
@@ -1233,10 +1246,9 @@ void CheckUndefinedIdentifiersRecursive(const Scope* scope, const UndefinedIdent
 void SemanticAnalyzer::CheckUndefinedIdentifiers(
     const Scope* scope,
     const ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>>& knownGlobalNames,
-    DiagnosticContext& ctx, int depth) const
+    DiagnosticContext& ctx) const
 {
-    // Scope trees nest as deeply as the source blocks do; see k_maxAstDepth in ASTUtils.h.
-    if (depth > k_maxAstDepth || !scope)
+    if (!scope)
     {
         return;
     }
@@ -1248,81 +1260,98 @@ void SemanticAnalyzer::CheckUndefinedIdentifiers(
             : (ctx.request.tree ? CollectUsingNamespaces(ts_tree_root_node(ctx.request.tree), ctx.request.sourceCode)
                                 : std::vector<std::string>{});
     const UndefinedIdentifierContext uCtx{knownGlobalNames, mixinRanges, usingNamespaces, ctx};
-    CheckUndefinedIdentifiersRecursive(scope, uCtx, depth);
+    CheckUndefinedIdentifiersIterative(scope, uCtx);
 }
 
-void SemanticAnalyzer::CollectUsedDefinitions(const Scope* scope,
-                                              ankerl::unordered_dense::set<const LocalDefinition*>& used,
-                                              int depth) const
+void SemanticAnalyzer::CollectUsedDefinitions(const Scope* rootScope,
+                                              ankerl::unordered_dense::set<const LocalDefinition*>& used) const
 {
-    // Scope trees nest as deeply as the source blocks do; see k_maxAstDepth in ASTUtils.h.
-    if (depth > k_maxAstDepth)
-        return;
-
-    for (const auto& ref : scope->references)
+    if (!rootScope)
     {
-        if (ref.isMemberAccess || ref.isNamedArgument)
-            continue;
-
-        const LocalDefinition* def = ResolveInScope(scope, ref.name);
-        if (!def)
-            continue;
-
-        bool isSelfOccurrence = ref.startLine == def->startLine && ref.startCharacter == def->startCharacter &&
-                                ref.endLine == def->endLine && ref.endCharacter == def->endCharacter;
-        if (isSelfOccurrence)
-            continue;
-
-        used.insert(def);
+        return;
     }
 
-    for (const auto& child : scope->children)
-        CollectUsedDefinitions(child.get(), used, depth + 1);
+    std::vector<const Scope*> worklist{rootScope};
+    while (!worklist.empty())
+    {
+        const Scope* scope = worklist.back();
+        worklist.pop_back();
+
+        for (const auto& ref : scope->references)
+        {
+            if (ref.isMemberAccess || ref.isNamedArgument)
+                continue;
+
+            const LocalDefinition* def = ResolveInScope(scope, ref.name);
+            if (!def)
+                continue;
+
+            bool isSelfOccurrence = ref.startLine == def->startLine && ref.startCharacter == def->startCharacter &&
+                                    ref.endLine == def->endLine && ref.endCharacter == def->endCharacter;
+            if (isSelfOccurrence)
+                continue;
+
+            used.insert(def);
+        }
+
+        for (const auto& child : scope->children)
+        {
+            if (child)
+            {
+                worklist.push_back(child.get());
+            }
+        }
+    }
 }
 
-void SemanticAnalyzer::CheckUnusedVariables(const Scope* scope,
+void SemanticAnalyzer::CheckUnusedVariables(const Scope* rootScope,
                                             const ankerl::unordered_dense::set<const LocalDefinition*>& used,
-                                            DiagnosticContext& ctx, int depth) const
+                                            DiagnosticContext& ctx) const
 {
-    // Scope trees nest as deeply as the source blocks do; see k_maxAstDepth in ASTUtils.h.
-    if (depth > k_maxAstDepth)
+    if (!rootScope)
+    {
         return;
-
-    // A Variable-kind definition only counts as a true local (as opposed to a module/
-    // namespace-scope global, which LOCALS_QUERY's @local.definition.var captures under the
-    // identical kind - its own comment says "Variables (locals and globals)") if it or some
-    // ancestor scope was opened by a function/lambda. Globals need cross-file visibility
-    // (another file in the same workspace, or the engine itself, may reference them) that a
-    // single document's Scope tree can never see - confirmed by corpus spot-check, where
-    // module-level declarations like "string WPN_NAME = ...;" were being flagged "unused"
-    // even though "unused" isn't decidable from this file alone for those.
-    bool isFunctionNested = false;
-    for (const Scope* ancestor = scope; ancestor != nullptr; ancestor = ancestor->parent)
-    {
-        if (ancestor->isFunctionScope)
-        {
-            isFunctionNested = true;
-            break;
-        }
     }
 
-    if (isFunctionNested)
+    std::vector<const Scope*> worklist{rootScope};
+    while (!worklist.empty())
     {
-        for (const auto& def : scope->definitions)
+        const Scope* scope = worklist.back();
+        worklist.pop_back();
+
+        bool isFunctionNested = false;
+        for (const Scope* ancestor = scope; ancestor != nullptr; ancestor = ancestor->parent)
         {
-            if (def.kind != LocalDefinitionKind::Variable)
-                continue;
+            if (ancestor->isFunctionScope)
+            {
+                isFunctionNested = true;
+                break;
+            }
+        }
 
-            if (used.contains(&def))
-                continue;
+        if (isFunctionNested)
+        {
+            for (const auto& def : scope->definitions)
+            {
+                if (def.kind != LocalDefinitionKind::Variable)
+                    continue;
 
-            ctx.EmitAtRange({def.startLine, def.startCharacter, def.endLine, def.endCharacter},
-                            "as-warn-unused-variable", def.name, DiagnosticSeverity::Warning);
+                if (used.contains(&def))
+                    continue;
+
+                ctx.EmitAtRange({def.startLine, def.startCharacter, def.endLine, def.endCharacter},
+                                "as-warn-unused-variable", def.name, DiagnosticSeverity::Warning);
+            }
+        }
+
+        for (const auto& child : scope->children)
+        {
+            if (child)
+            {
+                worklist.push_back(child.get());
+            }
         }
     }
-
-    for (const auto& child : scope->children)
-        CheckUnusedVariables(child.get(), used, ctx, depth + 1);
 }
 
 namespace
@@ -1384,47 +1413,55 @@ void SemanticAnalyzer::CheckNullAssignedToNonHandle(const SymbolTable& symbolTab
         });
 }
 
-void SemanticAnalyzer::CheckNullAssignedToNonHandleInScope(const Scope* scope, DiagnosticContext& ctx, int depth) const
+void SemanticAnalyzer::CheckNullAssignedToNonHandleInScope(const Scope* rootScope, DiagnosticContext& ctx) const
 {
-    // Scope trees nest as deeply as the source blocks do; see k_maxAstDepth in ASTUtils.h.
-    if (depth > k_maxAstDepth)
+    if (!rootScope)
+    {
         return;
-
-    // Same isFunctionScope ancestor-walk as CheckUnusedVariables: a Variable-kind definition
-    // only counts as a true function-body local (not a module/namespace/class-scope global or
-    // field, which LOCALS_QUERY's @local.definition.var captures under the identical kind) if
-    // it or some ancestor scope was opened by a function/lambda. Module/class-scope
-    // declarations are already covered by CheckNullAssignedToNonHandle via SymbolTable.
-    bool isFunctionNested = false;
-    for (const Scope* ancestor = scope; ancestor != nullptr; ancestor = ancestor->parent)
-    {
-        if (ancestor->isFunctionScope)
-        {
-            isFunctionNested = true;
-            break;
-        }
     }
 
-    if (isFunctionNested)
+    std::vector<const Scope*> worklist{rootScope};
+    while (!worklist.empty())
     {
-        for (const auto& def : scope->definitions)
+        const Scope* scope = worklist.back();
+        worklist.pop_back();
+
+        bool isFunctionNested = false;
+        for (const Scope* ancestor = scope; ancestor != nullptr; ancestor = ancestor->parent)
         {
-            if (def.kind != LocalDefinitionKind::Variable)
-                continue;
+            if (ancestor->isFunctionScope)
+            {
+                isFunctionNested = true;
+                break;
+            }
+        }
 
-            if (!def.hasNullInitializer || def.isHandleType)
-                continue;
+        if (isFunctionNested)
+        {
+            for (const auto& def : scope->definitions)
+            {
+                if (def.kind != LocalDefinitionKind::Variable)
+                    continue;
 
-            if (!IsUnconditionallyNonNullablePrimitive(def.typeKind))
-                continue;
+                if (!def.hasNullInitializer || def.isHandleType)
+                    continue;
 
-            ctx.EmitAtRange({def.startLine, def.startCharacter, def.endLine, def.endCharacter},
-                            "as-err-null-non-handle", def.typeName, DiagnosticSeverity::Error);
+                if (!IsUnconditionallyNonNullablePrimitive(def.typeKind))
+                    continue;
+
+                ctx.EmitAtRange({def.startLine, def.startCharacter, def.endLine, def.endCharacter},
+                                "as-err-null-non-handle", def.typeName, DiagnosticSeverity::Error);
+            }
+        }
+
+        for (const auto& child : scope->children)
+        {
+            if (child)
+            {
+                worklist.push_back(child.get());
+            }
         }
     }
-
-    for (const auto& child : scope->children)
-        CheckNullAssignedToNonHandleInScope(child.get(), ctx, depth + 1);
 }
 
 namespace
@@ -1605,31 +1642,42 @@ void SemanticAnalyzer::CheckLocalTypes(const Scope* scope, DiagnosticContext& ct
     }
 }
 
-void SemanticAnalyzer::CheckLocalVariableDeclarations(const Scope* scope, DiagnosticContext& ctx, int depth) const
+void SemanticAnalyzer::CheckLocalVariableDeclarations(const Scope* rootScope, DiagnosticContext& ctx) const
 {
-    // Scope trees nest as deeply as the source blocks do; see k_maxAstDepth in ASTUtils.h.
-    if (depth > k_maxAstDepth || !scope)
+    if (!rootScope)
+    {
         return;
+    }
 
-    bool isFunctionNested = false;
-    for (const Scope* ancestor = scope; ancestor != nullptr; ancestor = ancestor->parent)
+    std::vector<const Scope*> worklist{rootScope};
+    while (!worklist.empty())
     {
-        if (ancestor->isFunctionScope)
+        const Scope* scope = worklist.back();
+        worklist.pop_back();
+
+        bool isFunctionNested = false;
+        for (const Scope* ancestor = scope; ancestor != nullptr; ancestor = ancestor->parent)
         {
-            isFunctionNested = true;
-            break;
+            if (ancestor->isFunctionScope)
+            {
+                isFunctionNested = true;
+                break;
+            }
         }
-    }
 
-    if (isFunctionNested)
-    {
-        CheckLocalNames(scope, ctx);
-        CheckLocalTypes(scope, ctx);
-    }
+        if (isFunctionNested)
+        {
+            CheckLocalNames(scope, ctx);
+            CheckLocalTypes(scope, ctx);
+        }
 
-    for (const auto& child : scope->children)
-    {
-        CheckLocalVariableDeclarations(child.get(), ctx, depth + 1);
+        for (const auto& child : scope->children)
+        {
+            if (child)
+            {
+                worklist.push_back(child.get());
+            }
+        }
     }
 }
 } // namespace angel_lsp::analysis

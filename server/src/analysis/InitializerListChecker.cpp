@@ -765,7 +765,7 @@ void ValidateList(TSNode listNode, const std::string& targetType, const ListVali
 void ValidateMultiDimensionalContainer(TSNode node, uint32_t dimension, const std::string& elemType,
                                        const ListValidationContext& valCtx)
 {
-    if (valCtx.depth >= k_maxAstDepth || ts_node_is_null(node))
+    if (ts_node_is_null(node))
     {
         return;
     }
@@ -1091,7 +1091,7 @@ static void CheckUnknownListPattern(TSNode listNode, const std::string& type, co
 
 void ValidateList(TSNode listNode, const std::string& targetType, const ListValidationContext& valCtx)
 {
-    if (valCtx.depth >= k_maxAstDepth || ts_node_is_null(listNode))
+    if (ts_node_is_null(listNode))
     {
         return;
     }
@@ -1319,10 +1319,10 @@ void DispatchInitListNode(TSNode node, const InitializerListContext& initCtx)
  */
 void DispatchIndexedInitializerLists(const InitializerListContext& initCtx)
 {
-    initCtx.request.nodeIndex->ForEachNodeOrdered(
-        std::array{parser::nodes::TypedInitializerList, parser::nodes::AssignmentExpression,
-                   parser::nodes::ReturnStatement, parser::nodes::VariableDeclaration},
-        [&](TSNode node) { DispatchInitListNode(node, initCtx); });
+    const auto& gs = parser::GetGrammarSymbols();
+    initCtx.request.nodeIndex->ForEachNodeOrdered(std::array{gs.symTypedInitializerList, gs.symAssignmentExpression,
+                                                             gs.symReturnStatement, gs.symVariableDeclaration},
+                                                  [&](TSNode node) { DispatchInitListNode(node, initCtx); });
 }
 
 /**

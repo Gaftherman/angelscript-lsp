@@ -35,7 +35,7 @@ std::string Repeat(const std::string& unit, size_t times)
 
 TEST_CASE("Deep nesting - Thousands of nested parentheses do not overflow the stack")
 {
-    // Depth well past k_maxAstDepth (512), in a document of only a few kilobytes.
+    // Depth of 4000 nested parentheses, processed iteratively without stack recursion.
     const size_t depth = 4000;
     const std::string script = "void Main() {\n    int x = " + Repeat("(", depth) + "1" + Repeat(")", depth) + ";\n}\n";
 

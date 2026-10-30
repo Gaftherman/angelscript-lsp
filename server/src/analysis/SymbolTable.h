@@ -13,6 +13,7 @@
 #include <variant>
 
 #include "utils/Constants.h"
+#include <tree_sitter/api.h>
 
 // Forward-declared rather than included: avoids pulling <lsp/messages.h> into every TU that touches symbols.
 namespace angel_lsp::utils
@@ -202,6 +203,22 @@ struct SourceRange
     uint32_t endLine = 0;
     uint32_t endCharacter = 0;
 };
+
+/**
+ * @brief Constructs a SourceRange from a Tree-Sitter AST node.
+ * @param[in] node AST node.
+ * @return SourceRange spanning start and end points of the node.
+ */
+[[nodiscard]] inline SourceRange ToSourceRange(TSNode node) noexcept
+{
+    if (ts_node_is_null(node))
+    {
+        return {};
+    }
+    const TSPoint start = ts_node_start_point(node);
+    const TSPoint end = ts_node_end_point(node);
+    return SourceRange{start.row, start.column, end.row, end.column};
+}
 
 struct TypeExtractionResult
 {

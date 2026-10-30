@@ -964,43 +964,60 @@ class ControlFlowVisitor
         }
     }
 
-    void Visit(TSNode node, FlowState state, int depth = 0)
+    struct FlowItem
     {
-        // See k_maxAstDepth in ASTUtils.h.
-        if (depth > k_maxAstDepth)
+        TSNode node;
+        FlowState state;
+    };
+
+    void Visit(TSNode rootNode, FlowState initialState)
+    {
+        if (ts_node_is_null(rootNode))
         {
             return;
         }
+
+        std::vector<FlowItem> worklist;
+        worklist.push_back({rootNode, std::move(initialState)});
 
         const auto& gs = parser::GetGrammarSymbols();
-        const TSSymbol sym = ts_node_symbol(node);
 
-        if (CheckLoopControl(node, sym, state))
+        while (!worklist.empty())
         {
-            return;
-        }
+            FlowItem item = std::move(worklist.back());
+            worklist.pop_back();
 
-        if (sym == gs.symStatementBlock || sym == gs.symCaseClause)
-        {
-            CheckUnreachable(node, m_ctx);
-        }
-        else if (sym == gs.symReturnStatement)
-        {
-            CheckReturnStatement(node, state);
-        }
-        else if (sym == gs.symFuncDeclaration || sym == gs.symLambdaExpression)
-        {
-            CheckFunctionDeclaration(node, state);
-        }
-        else
-        {
-            UpdateBranchState(node, sym, state);
-        }
+            TSNode node = item.node;
+            FlowState state = std::move(item.state);
+            const TSSymbol sym = ts_node_symbol(node);
 
-        const uint32_t count = ts_node_named_child_count(node);
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            Visit(ts_node_named_child(node, i), state, depth + 1);
+            if (CheckLoopControl(node, sym, state))
+            {
+                continue;
+            }
+
+            if (sym == gs.symStatementBlock || sym == gs.symCaseClause)
+            {
+                CheckUnreachable(node, m_ctx);
+            }
+            else if (sym == gs.symReturnStatement)
+            {
+                CheckReturnStatement(node, state);
+            }
+            else if (sym == gs.symFuncDeclaration || sym == gs.symLambdaExpression)
+            {
+                CheckFunctionDeclaration(node, state);
+            }
+            else
+            {
+                UpdateBranchState(node, sym, state);
+            }
+
+            const uint32_t count = ts_node_named_child_count(node);
+            for (uint32_t i = count; i > 0; --i)
+            {
+                worklist.push_back({ts_node_named_child(node, i - 1), state});
+            }
         }
     }
 };

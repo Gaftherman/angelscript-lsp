@@ -153,7 +153,7 @@ void CheckVarDeclaration(TSNode stmt, FlowState& state, NullCheckContext& ctx)
         {
             val = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldInit);
         }
-        CheckNullExpression(val, state, ctx, 0);
+        CheckNullExpression(val, state, ctx);
 
         if (isHandle && !name.empty())
         {
@@ -166,7 +166,7 @@ void CheckAssignmentStmt(TSNode expr, FlowState& state, NullCheckContext& ctx)
 {
     TSNode left = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldLeft);
     TSNode right = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldRight);
-    CheckNullExpression(right, state, ctx, 0);
+    CheckNullExpression(right, state, ctx);
 
     TSNode unwrappedLeft = UnwrapNullExpression(left);
     std::string name = GetIdentifierName(unwrappedLeft, ctx.sourceCode);
@@ -180,7 +180,7 @@ void CheckAssignmentStmt(TSNode expr, FlowState& state, NullCheckContext& ctx)
     }
     else
     {
-        CheckNullExpression(left, state, ctx, 0);
+        CheckNullExpression(left, state, ctx);
     }
 }
 

@@ -1,10 +1,12 @@
 #pragma once
 
+#include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
 #include "utils/Constants.h"
 
 #include <cstdint>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
@@ -607,6 +609,312 @@ template <typename Callback> inline void ForEachAncestor(TSNode node, Callback&&
     }
     TSNode descendant = ts_node_descendant_for_point_range(root, point, point);
     return FindAncestorWithSymbol(descendant, targetSym);
+}
+
+/**
+ * @brief Trims leading and trailing ASCII whitespace from a string view.
+ * @param text The input string view.
+ * @return The trimmed string view.
+ */
+[[nodiscard]] inline std::string_view Trim(std::string_view text) noexcept
+{
+    while (!text.empty() &&
+           (text.front() == ' ' || text.front() == '\t' || text.front() == '\r' || text.front() == '\n'))
+    {
+        text.remove_prefix(1);
+    }
+    while (!text.empty() && (text.back() == ' ' || text.back() == '\t' || text.back() == '\r' || text.back() == '\n'))
+    {
+        text.remove_suffix(1);
+    }
+    return text;
+}
+
+/**
+ * @brief Represents the global scope qualification of an AST node.
+ */
+struct GlobalScopeQualifier
+{
+    bool isGlobal = false;       ///< True if prefixed with leading "::"
+    bool isDirectRoot = false;   ///< True if direct root-global (::Ident with no namespace path)
+    std::string_view rootPath{}; ///< Path after leading "::", e.g. "Deploy" or "NS::Deploy"
+};
+
+/**
+ * @brief Analyzes whether an AST node is globally qualified (starts with leading "::").
+ * @param[in] node AST node (identifier, scoped_identifier, etc.).
+ * @param[in] sourceCode Source text.
+ * @return GlobalScopeQualifier structure.
+ */
+[[nodiscard]] inline GlobalScopeQualifier GetGlobalScopeQualifier(TSNode node, std::string_view sourceCode) noexcept
+{
+    if (ts_node_is_null(node))
+    {
+        return {};
+    }
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode target = node;
+    const TSSymbol nSym = ts_node_symbol(node);
+    if (nSym != gs.symScopedIdentifier)
+    {
+        TSNode parent = parser::GetParent(node);
+        if (!ts_node_is_null(parent) && ts_node_symbol(parent) == gs.symScopedIdentifier)
+        {
+            target = parent;
+        }
+        else
+        {
+            return {};
+        }
+    }
+
+    if (ts_node_child_count(target) == 0)
+    {
+        return {};
+    }
+
+    TSNode firstChild = ts_node_child(target, 0);
+    if (ts_node_symbol(firstChild) != gs.tokColonColon)
+    {
+        return {};
+    }
+
+    GlobalScopeQualifier res;
+    res.isGlobal = true;
+
+    const uint32_t start = ts_node_start_byte(target);
+    const uint32_t end = ts_node_end_byte(target);
+    if (start < end && end <= sourceCode.size() && (start + 2) <= end)
+    {
+        res.rootPath = sourceCode.substr(start + 2, end - (start + 2));
+    }
+
+    const uint32_t namedCount = ts_node_named_child_count(target);
+    res.isDirectRoot = (namedCount == 1);
+    return res;
+}
+
+/**
+ * @brief Checks if an expression node is a handle assignment target (e.g. '@target = ...').
+ * @param[in] target Target AST node to test.
+ * @return True if target is a unary expression whose operator is '@'.
+ */
+[[nodiscard]] inline bool IsHandleAssignmentTarget(TSNode target) noexcept
+{
+    if (ts_node_is_null(target))
+    {
+        return false;
+    }
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(target) != gs.symUnaryExpression)
+    {
+        return false;
+    }
+    const TSNode prefix = parser::GetChildByField(target, gs.fieldOperator);
+    return !ts_node_is_null(prefix) && ts_node_symbol(prefix) == gs.tokAt;
+}
+
+/**
+ * @brief Finds the initializer value node for a variable declarator.
+ * @param[in] declaratorNode Variable declarator syntax node.
+ * @param[in] sourceCode Document source text.
+ * @return Value expression node, or a null node if none found.
+ */
+[[nodiscard]] inline TSNode FindDeclaratorValueNode(TSNode declaratorNode, std::string_view sourceCode) noexcept
+{
+    if (ts_node_is_null(declaratorNode))
+    {
+        return {};
+    }
+    TSNode valueNode = parser::GetChildByField(declaratorNode, parser::GetGrammarSymbols().fieldValue);
+    if (!ts_node_is_null(valueNode))
+    {
+        return valueNode;
+    }
+
+    const uint32_t childCount = ts_node_child_count(declaratorNode);
+    bool foundEq = false;
+    for (uint32_t c = 0; c < childCount; ++c)
+    {
+        TSNode ch = ts_node_child(declaratorNode, c);
+        if (foundEq)
+        {
+            return ch;
+        }
+        if (parser::NodeText(ch, sourceCode) == "=")
+        {
+            foundEq = true;
+        }
+    }
+    return {};
+}
+
+/**
+ * @brief Summary of active braces and unmatched positions across a source file.
+ */
+struct BraceBalance
+{
+    int openBraces = 0;
+    int closeBraces = 0;
+    int firstUnmatchedCloseLine = -1;
+    uint32_t firstUnmatchedCloseByte = UINT32_MAX;
+
+    [[nodiscard]] bool HasMissingOpenBrace() const noexcept
+    {
+        return openBraces < closeBraces;
+    }
+};
+
+inline void SkipComment(std::string_view sourceCode, size_t& i, int& currentLine) noexcept
+{
+    const size_t len = sourceCode.size();
+    if (sourceCode[i + 1] == '/')
+    {
+        i += 2;
+        while (i < len && sourceCode[i] != '\n')
+            ++i;
+    }
+    else if (sourceCode[i + 1] == '*')
+    {
+        i += 2;
+        while (i + 1 < len && !(sourceCode[i] == '*' && sourceCode[i + 1] == '/'))
+        {
+            if (sourceCode[i] == '\n')
+                ++currentLine;
+            ++i;
+        }
+        i = (i + 1 < len) ? (i + 2) : len;
+    }
+}
+
+/**
+ * @brief Advances index past a triple-quoted heredoc literal (""" ... """).
+ * @param[in] sourceCode Document source text.
+ * @param[in,out] i Character index in source text.
+ * @param[in,out] currentLine Current line count.
+ */
+inline void SkipHeredocLiteral(std::string_view sourceCode, size_t& i, int& currentLine) noexcept
+{
+    i += 3;
+    const size_t len = sourceCode.size();
+    while (i < len)
+    {
+        if (sourceCode[i] == '\n')
+        {
+            ++currentLine;
+            ++i;
+        }
+        else if (sourceCode.substr(i).starts_with("\"\"\""))
+        {
+            i += 3;
+            return;
+        }
+        else
+        {
+            ++i;
+        }
+    }
+}
+
+/**
+ * @brief Advances index past a string or character literal, stopping at newlines for unclosed literals.
+ * @param[in] sourceCode Document source text.
+ * @param[in,out] i Character index in source text.
+ * @param[in,out] currentLine Current line count.
+ */
+inline void SkipLiteral(std::string_view sourceCode, size_t& i, int& currentLine) noexcept
+{
+    if (sourceCode.substr(i).starts_with("\"\"\""))
+    {
+        SkipHeredocLiteral(sourceCode, i, currentLine);
+        return;
+    }
+    const size_t len = sourceCode.size();
+    const char quote = sourceCode[i++];
+    while (i < len && sourceCode[i] != quote)
+    {
+        if (sourceCode[i] == '\\' && i + 1 < len)
+        {
+            if (sourceCode[i + 1] == '\n')
+            {
+                ++currentLine;
+            }
+            i += 2;
+            continue;
+        }
+        if (sourceCode[i] == '\n' || sourceCode[i] == '\r')
+        {
+            break;
+        }
+        ++i;
+    }
+    if (i < len && sourceCode[i] == quote)
+    {
+        ++i;
+    }
+}
+
+/**
+ * @brief Fast single-pass calculation of brace balance outside comments and literals.
+ * @param[in] sourceCode Document source text.
+ * @return Computed BraceBalance metrics.
+ */
+[[nodiscard]] inline BraceBalance ComputeBraceBalance(std::string_view sourceCode) noexcept
+{
+    BraceBalance balance;
+    int currentDepth = 0;
+    int currentLine = 0;
+    const size_t len = sourceCode.size();
+    size_t i = 0;
+
+    while (i < len)
+    {
+        const char c = sourceCode[i];
+        if (c == '\n')
+        {
+            ++currentLine;
+            ++i;
+            continue;
+        }
+        if (c == '/' && i + 1 < len && (sourceCode[i + 1] == '/' || sourceCode[i + 1] == '*'))
+        {
+            SkipComment(sourceCode, i, currentLine);
+            continue;
+        }
+        if (c == '"' || c == '\'')
+        {
+            SkipLiteral(sourceCode, i, currentLine);
+            continue;
+        }
+        if (c == '{')
+        {
+            ++balance.openBraces;
+            ++currentDepth;
+        }
+        else if (c == '}')
+        {
+            ++balance.closeBraces;
+            --currentDepth;
+            if (currentDepth < 0 && balance.firstUnmatchedCloseLine == -1)
+            {
+                balance.firstUnmatchedCloseLine = currentLine;
+                balance.firstUnmatchedCloseByte = static_cast<uint32_t>(i);
+            }
+        }
+        ++i;
+    }
+    return balance;
+}
+
+/**
+ * @brief Checks if an identifier or scoped identifier has leading global scope qualifier ("::").
+ * @param[in] node AST node.
+ * @param[in] sourceCode Document source text.
+ * @return True if qualified strictly by leading global "::".
+ */
+[[nodiscard]] inline bool IsGlobalScopedNode(TSNode node, std::string_view sourceCode) noexcept
+{
+    return GetGlobalScopeQualifier(node, sourceCode).isGlobal;
 }
 
 } // namespace angel_lsp::parser

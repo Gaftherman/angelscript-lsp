@@ -21,19 +21,19 @@ namespace angel_lsp::analysis
 namespace
 {
 /** @brief Compares two type names by their last segment, so a qualification cannot hide a match. */
-bool IsSameType(const std::string& a, const std::string& b)
+bool IsSameType(std::string_view a, std::string_view b)
 {
     return !a.empty() && (a == b || LastScopeSegment(a) == LastScopeSegment(b));
 }
 
 /** @brief True when derived is base, or reaches it through its declared base chain. */
-bool DerivesFrom(const std::string& derived, const std::string& base, const SymbolTable& table)
+bool DerivesFrom(std::string_view derived, std::string_view base, const SymbolTable& table)
 {
     if (IsSameType(derived, base))
     {
         return true;
     }
-    for (const auto& ancestor : GetInheritedTypeHierarchy(derived, table))
+    for (const auto& ancestor : GetInheritedTypeHierarchy(std::string(derived), table))
     {
         if (IsSameType(ancestor, base))
         {
@@ -325,13 +325,12 @@ MemberAccess FindMember(const std::string& typeName, const std::string& memberNa
 }
 
 /** @brief Innermost class body enclosing a node, or empty when the node sits outside one. */
-std::string EnclosingClass(TSNode node, std::string_view sourceCode, bool& insideMixin,
-                           const NodeIndex* nodeIndex = nullptr)
+std::string_view EnclosingClass(TSNode node, std::string_view sourceCode, bool& insideMixin, const NodeIndex* nodeIndex)
 {
     insideMixin = false;
     if (ts_node_is_null(node) || !nodeIndex)
     {
-        return "";
+        return {};
     }
 
     const uint32_t byteOffset = ts_node_start_byte(node);
@@ -341,10 +340,10 @@ std::string EnclosingClass(TSNode node, std::string_view sourceCode, bool& insid
         insideMixin = span->isMixin;
         if (span->nameStartByte < span->nameEndByte && span->nameEndByte <= sourceCode.size())
         {
-            return std::string(sourceCode.substr(span->nameStartByte, span->nameEndByte - span->nameStartByte));
+            return sourceCode.substr(span->nameStartByte, span->nameEndByte - span->nameStartByte);
         }
     }
-    return "";
+    return {};
 }
 
 /**
@@ -391,7 +390,7 @@ void MaybeEmitAccessorHint(TSNode memberNode, const MemberAccess& member, const 
  * @param[in] ctx Diagnostic context.
  * @return True if member access is allowed, false if access violation.
  */
-bool IsMemberAccessAllowed(const MemberAccess& member, const std::string& accessingClass, const std::string& objectType,
+bool IsMemberAccessAllowed(const MemberAccess& member, std::string_view accessingClass, std::string_view objectType,
                            const DiagnosticContext& ctx)
 {
     const bool declaredPrivate = member.access == AccessModifier::Private;
@@ -483,7 +482,8 @@ void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const
     if (member.decided)
     {
         bool insideMixin = false;
-        const std::string accessingClass = EnclosingClass(node, request.sourceCode, insideMixin, request.nodeIndex);
+        const std::string_view accessingClass =
+            EnclosingClass(node, request.sourceCode, insideMixin, request.nodeIndex);
         if (!IsMemberAccessAllowed(member, accessingClass, objectType, ctx))
         {
             EmitPrivacyViolation(memberNode, member, memberName, ctx);
@@ -637,11 +637,11 @@ bool IsOuterLocalOrParameter(const Scope* enclosingClosure, std::string_view idT
  * @param[in] nodeIndex Optional pre-indexed node index.
  * @return Name of the outer class enclosing the lambda, or empty if none.
  */
-std::string EnclosingClassOfLambda(TSNode node, std::string_view sourceCode, const NodeIndex* nodeIndex = nullptr)
+std::string_view EnclosingClassOfLambda(TSNode node, std::string_view sourceCode, const NodeIndex* nodeIndex)
 {
     if (ts_node_is_null(node) || !nodeIndex)
     {
-        return "";
+        return {};
     }
 
     TSNode classNode = nodeIndex->FindEnclosingClassOrMixin(ts_node_start_byte(node));
@@ -650,10 +650,10 @@ std::string EnclosingClassOfLambda(TSNode node, std::string_view sourceCode, con
         TSNode nameNode = parser::GetChildByField(classNode, parser::GetGrammarSymbols().fieldName);
         if (!ts_node_is_null(nameNode))
         {
-            return NodeText(nameNode, sourceCode);
+            return parser::GetNodeTextView(nameNode, sourceCode);
         }
     }
-    return "";
+    return {};
 }
 
 /**
@@ -695,10 +695,11 @@ bool CheckClosureDisallowedAccess(TSNode node, const Scope* scope, std::string_v
         return true;
     }
 
-    const std::string outerClass = EnclosingClassOfLambda(node, ctx.request.sourceCode, ctx.request.nodeIndex);
+    const std::string_view outerClass = EnclosingClassOfLambda(node, ctx.request.sourceCode, ctx.request.nodeIndex);
     if (!outerClass.empty())
     {
-        const MemberAccess member = FindMember(outerClass, std::string(idText), ctx.request.symbolTable, false);
+        const MemberAccess member =
+            FindMember(std::string(outerClass), std::string(idText), ctx.request.symbolTable, false);
         if (member.found)
         {
             const TSPoint start = ts_node_start_point(node);
@@ -759,14 +760,15 @@ void CheckImplicitMemberAccess(TSNode node, const Scope* scope, std::string_view
     const SymbolTable& table = ctx.request.symbolTable;
 
     bool insideMixin = false;
-    const std::string accessingClass = EnclosingClass(node, ctx.request.sourceCode, insideMixin, ctx.request.nodeIndex);
+    const std::string_view accessingClass =
+        EnclosingClass(node, ctx.request.sourceCode, insideMixin, ctx.request.nodeIndex);
     if (accessingClass.empty())
     {
         return;
     }
 
     const MemberAccess member =
-        FindMember(accessingClass, std::string(idText), table, ctx.request.RequiresAccessorKeyword());
+        FindMember(std::string(accessingClass), std::string(idText), table, ctx.request.RequiresAccessorKeyword());
     if (!member.decided)
     {
         return;
@@ -822,7 +824,8 @@ void CheckMemberAccessIndexed(const AccessCheckRequest& request, DiagnosticConte
         return;
     }
 
-    for (TSNode thisNode : request.nodeIndex->Nodes(parser::nodes::ThisExpression))
+    const auto& gs = parser::GetGrammarSymbols();
+    for (TSNode thisNode : request.nodeIndex->Nodes(gs.symThisExpression))
     {
         if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
         {
@@ -833,7 +836,6 @@ void CheckMemberAccessIndexed(const AccessCheckRequest& request, DiagnosticConte
                                      ctx);
     }
 
-    const auto& gs = parser::GetGrammarSymbols();
     const std::array<TSSymbol, 3> kSymbols = {gs.symMemberExpression, gs.symScopedIdentifier, gs.symIdentifier};
     request.nodeIndex->ForEachNodeOrdered(
         std::span<const TSSymbol>(kSymbols.data(), kSymbols.size()),

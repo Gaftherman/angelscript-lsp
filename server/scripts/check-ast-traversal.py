@@ -383,6 +383,100 @@ def check_no_modifier_string_literals():
                 violations.append((file_path, line_num, stripped))
     return violations
 
+def check_no_parser_nodes_in_layers_2_3_4():
+    """
+    Enforces that NO parser::nodes:: is referenced in Layer 2 (analysis), Layer 3 (features), or Layer 4 (lsp).
+    All AST node type checks must use precompiled TSSymbols via parser::GetGrammarSymbols().
+    """
+    violations = []
+    pattern = re.compile(r"\bparser::nodes::")
+    scan_roots = [SERVER_SRC / "analysis", SERVER_SRC / "features", SERVER_SRC / "lsp"]
+    for root in scan_roots:
+        for file_path in root.rglob("*.[ch]*"):
+            if not file_path.is_file():
+                continue
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for line_num, line in enumerate(content.splitlines(), start=1):
+                stripped = line.strip()
+                if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                    continue
+                if pattern.search(line):
+                    violations.append((file_path, line_num, stripped))
+    return violations
+
+def check_no_cursor_field_name():
+    """
+    Enforces that NO ts_tree_cursor_current_field_name is called in Layer 2, 3, or 4.
+    Must use ts_tree_cursor_current_field_id with cached TSFieldId symbols.
+    """
+    violations = []
+    pattern = re.compile(r"\bts_tree_cursor_current_field_name\b")
+    scan_roots = [SERVER_SRC / "analysis", SERVER_SRC / "features", SERVER_SRC / "lsp"]
+    for root in scan_roots:
+        for file_path in root.rglob("*.[ch]*"):
+            if not file_path.is_file():
+                continue
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for line_num, line in enumerate(content.splitlines(), start=1):
+                stripped = line.strip()
+                if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                    continue
+                if pattern.search(line):
+                    violations.append((file_path, line_num, stripped))
+    return violations
+
+def check_no_depth_number_comparisons():
+    """
+    Enforces that NO magic depth numbers (depth > N, depth >= N) or k_maxAstDepth exist in Layers 2, 3, or 4.
+    Sub-tree traversals must be flat with iterative worklists rather than recursive depth caps.
+    """
+    violations = []
+    pattern = re.compile(r"\bk_maxAstDepth\b|\bdepth\s*(?:>=?|>|<=)\s*(?:[1-9]\d*|k_maxAstDepth)")
+    scan_roots = [SERVER_SRC / "analysis", SERVER_SRC / "features", SERVER_SRC / "lsp"]
+    for root in scan_roots:
+        for file_path in root.rglob("*.[ch]*"):
+            if not file_path.is_file():
+                continue
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for line_num, line in enumerate(content.splitlines(), start=1):
+                stripped = line.strip()
+                if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                    continue
+                if pattern.search(line):
+                    violations.append((file_path, line_num, stripped))
+    return violations
+
+def check_no_duplicate_to_source_range():
+    """
+    Enforces that NO duplicate ToSourceRange(TSNode) definitions exist in .cpp files.
+    The centralized canonical implementation lives in SymbolTable.h.
+    """
+    violations = []
+    pattern = re.compile(r"\bSourceRange\s+ToSourceRange\s*\(")
+    for file_path in (SERVER_SRC / "analysis").rglob("*.cpp"):
+        if not file_path.is_file():
+            continue
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for line_num, line in enumerate(content.splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                continue
+            if pattern.search(line):
+                violations.append((file_path, line_num, stripped))
+    return violations
+
 def main():
     has_errors = False
     
@@ -506,10 +600,42 @@ def main():
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
 
+    parser_nodes_violations = check_no_parser_nodes_in_layers_2_3_4()
+    if parser_nodes_violations:
+        has_errors = True
+        print("[ERROR] parser::nodes:: detected in Layer 2/3/4 (use gs.sym* from parser::GetGrammarSymbols()):")
+        for f, line_num, line in parser_nodes_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
+    cursor_field_violations = check_no_cursor_field_name()
+    if cursor_field_violations:
+        has_errors = True
+        print("[ERROR] ts_tree_cursor_current_field_name detected in Layer 2/3/4 (use ts_tree_cursor_current_field_id):")
+        for f, line_num, line in cursor_field_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
+    depth_violations = check_no_depth_number_comparisons()
+    if depth_violations:
+        has_errors = True
+        print("[ERROR] Magic depth comparisons or k_maxAstDepth detected in Layer 2/3/4 (use flat iterative worklists):")
+        for f, line_num, line in depth_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
+    duplicate_to_source_range_violations = check_no_duplicate_to_source_range()
+    if duplicate_to_source_range_violations:
+        has_errors = True
+        print("[ERROR] Duplicate ToSourceRange definition detected in .cpp files (use centralized SymbolTable.h ToSourceRange):")
+        for f, line_num, line in duplicate_to_source_range_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
     if has_errors:
         sys.exit(1)
 
-    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 engine hardcodings, 0 type hardcodings).")
+    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 engine hardcodings, 0 type hardcodings).")
 
 if __name__ == "__main__":
     main()

@@ -1,6 +1,7 @@
 #include "analysis/rules/TypeRules.h"
 #include "analysis/ASTUtils.h"
 #include "analysis/DiagnosticCodes.h"
+#include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
 #include "parser/GrammarNames.h"
 #include "utils/Utils.h"
@@ -19,33 +20,23 @@ namespace
 /**
  * @brief Searches for the enum_declaration AST node matching the symbol's start point or name.
  */
-TSNode FindEnumDeclarationNode(TSNode root, const Symbol& sym, std::string_view sourceCode)
+TSNode FindEnumDeclarationNode(const NodeIndex& nodeIndex, const Symbol& sym, std::string_view sourceCode)
 {
-    TSNode found{};
-    parser::ForEachDescendantNode(root,
-                                  [&](TSNode node)
-                                  {
-                                      if (!ts_node_is_null(found))
-                                      {
-                                          return;
-                                      }
-                                      if (ts_node_symbol(node) == parser::GetGrammarSymbols().symEnumDeclaration)
-                                      {
-                                          const TSPoint pt = ts_node_start_point(node);
-                                          if (pt.row == sym.startLine && pt.column == sym.startCharacter)
-                                          {
-                                              found = node;
-                                              return;
-                                          }
-                                          const TSNode nameNode =
-                                              parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName);
-                                          if (!ts_node_is_null(nameNode) && NodeText(nameNode, sourceCode) == sym.name)
-                                          {
-                                              found = node;
-                                          }
-                                      }
-                                  });
-    return found;
+    const auto& gs = parser::GetGrammarSymbols();
+    for (TSNode node : nodeIndex.Nodes(gs.symEnumDeclaration))
+    {
+        const TSPoint pt = ts_node_start_point(node);
+        if (pt.row == sym.startLine && pt.column == sym.startCharacter)
+        {
+            return node;
+        }
+        const TSNode nameNode = parser::GetChildByField(node, gs.fieldName);
+        if (!ts_node_is_null(nameNode) && parser::GetNodeTextView(nameNode, sourceCode) == sym.name)
+        {
+            return node;
+        }
+    }
+    return TSNode{};
 }
 
 /** @brief True when the name collides with a keyword or a built-in type name. */
@@ -408,10 +399,9 @@ void ValidateEnum(const Symbol& sym, const DiagnosticContext& ctx)
     CheckEnumModifiersAndBody(sym, sig, ctx);
     CheckEnumMemberInitializers(sym, sig, ctx);
 
-    if (ctx.request.tree && !ctx.request.sourceCode.empty())
+    if (ctx.request.nodeIndex && !ctx.request.sourceCode.empty())
     {
-        const TSNode root = ts_tree_root_node(ctx.request.tree);
-        const TSNode enumNode = FindEnumDeclarationNode(root, sym, ctx.request.sourceCode);
+        const TSNode enumNode = FindEnumDeclarationNode(*ctx.request.nodeIndex, sym, ctx.request.sourceCode);
         if (!ts_node_is_null(enumNode))
         {
             CheckDuplicateEnumMembers(enumNode, sym, ctx);

@@ -1,5 +1,6 @@
 #include "analysis/CallGraph.h"
 #include "analysis/ASTUtils.h"
+#include "analysis/SymbolTable.h"
 #include "utils/ScopedNameUtils.h"
 
 #include "parser/GrammarNames.h"
@@ -10,12 +11,6 @@ namespace angel_lsp::analysis
 {
 namespace
 {
-SourceRange ToSourceRange(TSNode node)
-{
-    const TSPoint start = ts_node_start_point(node);
-    const TSPoint end = ts_node_end_point(node);
-    return SourceRange{start.row, start.column, end.row, end.column};
-}
 
 /** @brief The node naming what a call reaches, or a null node when it names nothing stable. */
 TSNode CalleeNameNode(TSNode callNode)
@@ -66,7 +61,6 @@ struct TraversalItem
     TSNode node{};
     uint32_t containerIndex = 0;
     uint32_t callerIndex = 0;
-    int depth = 0;
 };
 
 bool IsContainerSymbol(TSSymbol sym)
@@ -133,17 +127,12 @@ void CollectCallsInto(TSNode root, std::string_view sourceCode, std::vector<Call
 {
     NamingContext ctx;
     std::vector<TraversalItem> worklist;
-    worklist.push_back(TraversalItem{root, 0, 0, 0});
+    worklist.push_back(TraversalItem{root, 0, 0});
 
     while (!worklist.empty())
     {
         const TraversalItem item = worklist.back();
         worklist.pop_back();
-
-        if (item.depth > k_maxAstDepth)
-        {
-            continue;
-        }
 
         const auto& gs = parser::GetGrammarSymbols();
         const TSSymbol sym = ts_node_symbol(item.node);
@@ -166,8 +155,7 @@ void CollectCallsInto(TSNode root, std::string_view sourceCode, std::vector<Call
         const uint32_t childCount = ts_node_named_child_count(item.node);
         for (uint32_t i = childCount; i > 0; --i)
         {
-            worklist.push_back(
-                TraversalItem{ts_node_named_child(item.node, i - 1), nextContainer, nextCaller, item.depth + 1});
+            worklist.push_back(TraversalItem{ts_node_named_child(item.node, i - 1), nextContainer, nextCaller});
         }
     }
 }

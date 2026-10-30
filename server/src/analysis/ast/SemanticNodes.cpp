@@ -111,17 +111,16 @@ TSNode CallExpressionView::ArgumentList() const noexcept
     {
         return TSNode{};
     }
-    const std::string_view nodeType = Type();
-    if (nodeType == parser::nodes::ArgumentList)
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(m_raw) == gs.symArgumentList)
     {
         return m_raw;
     }
-    TSNode args = parser::GetChildByField(m_raw, parser::GetGrammarSymbols().fieldArguments);
+    TSNode args = parser::GetChildByField(m_raw, gs.fieldArguments);
     if (!ts_node_is_null(args))
     {
         return args;
     }
-    const auto& gs = parser::GetGrammarSymbols();
     const uint32_t count = ts_node_named_child_count(m_raw);
     for (uint32_t i = 0; i < count; ++i)
     {

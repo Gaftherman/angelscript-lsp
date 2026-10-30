@@ -432,7 +432,7 @@ void CheckLValuesIndexed(const LValueCheckRequest& request, DiagnosticContext& c
         return;
     }
 
-    for (const TSNode& node : request.nodeIndex->Nodes(parser::nodes::AssignmentExpression))
+    for (const TSNode& node : request.nodeIndex->Nodes(parser::GetGrammarSymbols().symAssignmentExpression))
     {
         if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
         {

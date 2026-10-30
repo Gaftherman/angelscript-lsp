@@ -964,10 +964,9 @@ struct ReceiverTypeContext
  *
  * @param[in] exprNode The expression AST node.
  * @param[in] ctx The resolution context containing scope, symbol table, source code, and URI.
- * @param[in] depth Current recursion depth.
  * @return Resolved base type name or empty string if unresolved.
  */
-std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& ctx, int depth = 0);
+std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& ctx);
 
 /**
  * @brief Resolves the type name of an expression AST node (convenience overload).
@@ -980,17 +979,16 @@ std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& 
 inline std::string ResolveExpressionType(TSNode exprNode, const Scope* scope, const SymbolTable& symbolTable,
                                          std::string_view sourceCode)
 {
-    return ResolveExpressionType(exprNode, ExpressionTypeContext{scope, symbolTable, sourceCode, ""}, 0);
+    return ResolveExpressionType(exprNode, ExpressionTypeContext{scope, symbolTable, sourceCode, ""});
 }
 
 /**
  * @brief Resolves the effective type of a local definition, deducing auto/auto@ types on demand.
  * @param[in] def Local definition in scope.
  * @param[in] ctx Expression type resolution context.
- * @param[in] depth AST recursion depth guard.
  * @return Resolved type name with handle modifiers preserved, or empty string.
  */
-std::string ResolveLocalDefinitionType(const LocalDefinition& def, const ExpressionTypeContext& ctx, int depth = 0);
+std::string ResolveLocalDefinitionType(const LocalDefinition& def, const ExpressionTypeContext& ctx);
 
 /**
  * @brief Resolves the type name of a receiver object node in member or call expressions.

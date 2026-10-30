@@ -129,7 +129,7 @@ struct ConstContext
     std::string_view sourceCode;
 };
 
-Constness ResolveConstness(TSNode node, const ConstContext& ctx, int depth = 0);
+Constness ResolveConstness(TSNode node, const ConstContext& ctx);
 
 /** @brief Constness of a plain name, whether it is a local, a parameter or a global. */
 Constness ResolveNameConstness(std::string_view name, TSNode node, const ConstContext& ctx)
@@ -405,14 +405,8 @@ bool IsMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const Con
     return false;
 }
 
-Constness ResolveConstness(TSNode node, const ConstContext& ctx, int depth)
+static Constness ResolveLeafConstness(TSNode node, const ConstContext& ctx)
 {
-    // See k_maxAstDepth in ASTUtils.h.
-    if (depth > k_maxAstDepth || ts_node_is_null(node))
-    {
-        return Constness::Unknown;
-    }
-
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol nodeSym = ts_node_symbol(node);
 
@@ -430,8 +424,6 @@ Constness ResolveConstness(TSNode node, const ConstContext& ctx, int depth)
 
     if (nodeSym == gs.symScopedIdentifier)
     {
-        // Asked for whole first, the way ResolveExpressionType does, since a qualified name
-        // is the key the collector stored it under.
         const std::string whole = NodeText(node, ctx.sourceCode);
         const Constness qualified = ResolveNameConstness(whole, node, ctx);
         if (qualified != Constness::Unknown)
@@ -441,26 +433,40 @@ Constness ResolveConstness(TSNode node, const ConstContext& ctx, int depth)
         return ResolveNameConstness(LastScopeSegment(whole), node, ctx);
     }
 
-    // A member of a const object is const, which is what makes `e.field = 1` through a
-    // `const Entity &in` an error. A member of a mutable object is judged on its own
-    // declaration - and a const member is already reported where it is declared, so there
-    // is nothing to conclude from one here.
-    if (nodeSym == gs.symMemberExpression)
+    return Constness::Unknown;
+}
+
+Constness ResolveConstness(TSNode node, const ConstContext& ctx)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode current = node;
+    bool inMemberChain = false;
+
+    while (!ts_node_is_null(current))
     {
-        const Constness object =
-            ResolveConstness(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldObject), ctx, depth + 1);
-        return object == Constness::Const ? Constness::Const : Constness::Unknown;
+        const TSSymbol nodeSym = ts_node_symbol(current);
+
+        if (nodeSym == gs.symMemberExpression)
+        {
+            inMemberChain = true;
+            current = parser::GetChildByField(current, gs.fieldObject);
+            continue;
+        }
+
+        if (nodeSym == gs.symParenthesizedExpression)
+        {
+            current = ts_node_named_child_count(current) > 0 ? ts_node_named_child(current, 0) : TSNode{};
+            continue;
+        }
+
+        const Constness leaf = ResolveLeafConstness(current, ctx);
+        if (inMemberChain)
+        {
+            return leaf == Constness::Const ? Constness::Const : Constness::Unknown;
+        }
+        return leaf;
     }
 
-    if (nodeSym == gs.symParenthesizedExpression)
-    {
-        return ts_node_named_child_count(node) > 0 ? ResolveConstness(ts_node_named_child(node, 0), ctx, depth + 1)
-                                                   : Constness::Unknown;
-    }
-
-    // An index into a const container, a cast, a call result: each has an answer, and none
-    // of them is one this pass can reach without more of the engine's rules than it has.
-    // Unknown keeps the caller quiet, which is the only safe direction.
     return Constness::Unknown;
 }
 

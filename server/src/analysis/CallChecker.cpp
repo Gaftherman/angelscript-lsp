@@ -1372,13 +1372,14 @@ struct CallArgTypes
 static TSNode UnwrapParenNode(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    if (ts_node_symbol(node) == gs.symParenthesizedExpression)
+    while (!ts_node_is_null(node) && ts_node_symbol(node) == gs.symParenthesizedExpression)
     {
         TSNode child = ts_node_named_child(node, 0);
-        if (!ts_node_is_null(child))
+        if (ts_node_is_null(child))
         {
-            return child;
+            break;
         }
+        node = child;
     }
     return node;
 }
@@ -2572,8 +2573,9 @@ void CheckCallArgumentsIndexed(const CallCheckRequest& request, DiagnosticContex
         return;
     }
 
+    const auto& gs = parser::GetGrammarSymbols();
     request.nodeIndex->ForEachNodeOrdered(
-        {parser::nodes::CallExpression, parser::nodes::VariableDeclaration},
+        std::array{gs.symCallExpression, gs.symVariableDeclaration},
         [&](TSNode node)
         {
             if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())

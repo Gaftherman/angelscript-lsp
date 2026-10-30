@@ -46,30 +46,30 @@ FlowState MergeFlowStates(const FlowState& s1, const FlowState& s2)
     return result;
 }
 
-void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx, int depth);
+void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx);
 
-void CheckIfStmt(TSNode stmt, FlowState& state, NullCheckContext& ctx, int depth)
+void CheckIfStmt(TSNode stmt, FlowState& state, NullCheckContext& ctx)
 {
     const ast::IfStatementView ifView(stmt, ctx.sourceCode);
     const TSNode cond = ifView.Condition();
     const TSNode conseq = ifView.Consequence();
     const TSNode alt = ifView.Alternative();
 
-    CheckNullExpression(cond, state, ctx, depth + 1);
+    CheckNullExpression(cond, state, ctx);
     std::vector<NullAssertion> posAssertions;
     std::vector<NullAssertion> negAssertions;
     ExtractConditionAssertions(cond, ctx.sourceCode, posAssertions, negAssertions);
 
     FlowState thenState = state;
     ApplyAssertions(thenState, posAssertions);
-    CheckStatement(conseq, thenState, ctx, depth + 1);
+    CheckStatement(conseq, thenState, ctx);
 
     FlowState elseState = state;
     ApplyAssertions(elseState, negAssertions);
 
     if (ifView.HasAlternative())
     {
-        CheckStatement(alt, elseState, ctx, depth + 1);
+        CheckStatement(alt, elseState, ctx);
         if (thenState.isTerminated && elseState.isTerminated)
         {
             state.isTerminated = true;
@@ -93,9 +93,9 @@ void CheckIfStmt(TSNode stmt, FlowState& state, NullCheckContext& ctx, int depth
     }
 }
 
-void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx, int depth)
+void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx)
 {
-    if (ts_node_is_null(stmt) || state.isTerminated || depth > k_maxAstDepth)
+    if (ts_node_is_null(stmt) || state.isTerminated)
     {
         return;
     }
@@ -106,7 +106,7 @@ void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx, int de
         const uint32_t count = ts_node_named_child_count(stmt);
         for (uint32_t i = 0; i < count && !state.isTerminated; ++i)
         {
-            CheckStatement(ts_node_named_child(stmt, i), state, ctx, depth + 1);
+            CheckStatement(ts_node_named_child(stmt, i), state, ctx);
         }
     }
     else if (stmtSym == gs.symVariableDeclaration)
@@ -122,17 +122,17 @@ void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx, int de
         }
         else
         {
-            CheckNullExpression(expr, state, ctx, depth + 1);
+            CheckNullExpression(expr, state, ctx);
         }
     }
     else if (stmtSym == gs.symIfStatement)
     {
-        CheckIfStmt(stmt, state, ctx, depth + 1);
+        CheckIfStmt(stmt, state, ctx);
     }
     else if (stmtSym == gs.symReturnStatement)
     {
         const ast::ReturnStatementView retView(stmt, ctx.sourceCode);
-        CheckNullExpression(retView.Value(), state, ctx, depth + 1);
+        CheckNullExpression(retView.Value(), state, ctx);
         state.isTerminated = true;
     }
 }
@@ -147,13 +147,13 @@ void AnalyzeFunction(TSNode funcNode, const Scope* scopeRoot, NullCheckContext& 
 
     FlowState state;
     CollectParameters(funcNode, scopeRoot, ctx.sourceCode, state);
-    CheckStatement(body, state, ctx, 0);
+    CheckStatement(body, state, ctx);
 }
 } // namespace
 
 void CheckNullSafety(const NullSafetyCheckRequest& request, DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(request.root) || request.sourceCode.empty())
+    if (ts_node_is_null(request.root) || request.sourceCode.empty() || !request.nodeIndex)
     {
         return;
     }
@@ -163,29 +163,15 @@ void CheckNullSafety(const NullSafetyCheckRequest& request, DiagnosticContext& c
     }
 
     NullCheckContext checkCtx{request.sourceCode, ctx, request.scopeRoot};
-    if (request.nodeIndex)
-    {
-        for (TSNode funcNode : request.nodeIndex->Nodes(parser::nodes::FuncDeclaration))
-        {
-            AnalyzeFunction(funcNode, request.scopeRoot, checkCtx);
-        }
-        for (TSNode lambdaNode : request.nodeIndex->Nodes(parser::nodes::LambdaExpression))
-        {
-            AnalyzeFunction(lambdaNode, request.scopeRoot, checkCtx);
-        }
-        return;
-    }
-
     const auto& gs = parser::GetGrammarSymbols();
-    parser::ForEachDescendantNode(request.root,
-                                  [&](TSNode node)
-                                  {
-                                      const TSSymbol sym = ts_node_symbol(node);
-                                      if (sym == gs.symFuncDeclaration || sym == gs.symLambdaExpression)
-                                      {
-                                          AnalyzeFunction(node, request.scopeRoot, checkCtx);
-                                      }
-                                  });
+    for (TSNode funcNode : request.nodeIndex->Nodes(gs.symFuncDeclaration))
+    {
+        AnalyzeFunction(funcNode, request.scopeRoot, checkCtx);
+    }
+    for (TSNode lambdaNode : request.nodeIndex->Nodes(gs.symLambdaExpression))
+    {
+        AnalyzeFunction(lambdaNode, request.scopeRoot, checkCtx);
+    }
 }
 
 } // namespace angel_lsp::analysis

@@ -43,57 +43,93 @@ inline uint64_t PackLoc(uint32_t line, uint32_t col) noexcept
     return (static_cast<uint64_t>(line) << 32) | static_cast<uint64_t>(col);
 }
 
-void CollectDefLocations(const Scope* scope, ankerl::unordered_dense::set<uint64_t>& defLocs, int depth = 0)
+void CollectDefLocations(const Scope* rootScope, ankerl::unordered_dense::set<uint64_t>& defLocs)
 {
-    if (!scope || depth > k_maxAstDepth)
+    if (!rootScope)
         return;
-    for (const auto& def : scope->definitions)
-        defLocs.insert(PackLoc(def.startLine, def.startCharacter));
-    for (const auto& child : scope->children)
-        CollectDefLocations(child.get(), defLocs, depth + 1);
-}
-
-void CollectDocReferences(const Scope* scope, const ankerl::unordered_dense::set<uint64_t>& defLocs,
-                          ankerl::unordered_dense::set<std::string>& refNames, std::string_view sourceCode,
-                          std::span<const std::string> delegateProps, int depth = 0)
-{
-    if (!scope || depth > k_maxAstDepth)
-        return;
-    for (const auto& ref : scope->references)
+    std::vector<const Scope*> worklist{rootScope};
+    while (!worklist.empty())
     {
-        if (defLocs.contains(PackLoc(ref.startLine, ref.startCharacter)))
-            continue;
-        if (!delegateProps.empty() && ref.isMemberAccess && ref.receiverEndByte > ref.receiverStartByte &&
-            !sourceCode.empty() && ref.receiverEndByte <= sourceCode.size())
+        const Scope* scope = worklist.back();
+        worklist.pop_back();
+
+        for (const auto& def : scope->definitions)
+            defLocs.insert(PackLoc(def.startLine, def.startCharacter));
+        for (const auto& child : scope->children)
         {
-            std::string_view recv =
-                sourceCode.substr(ref.receiverStartByte, ref.receiverEndByte - ref.receiverStartByte);
-            if (std::find(delegateProps.begin(), delegateProps.end(), recv) != delegateProps.end())
-            {
-                continue;
-            }
+            if (child)
+                worklist.push_back(child.get());
         }
-        refNames.insert(ref.name);
     }
-    for (const auto& child : scope->children)
-        CollectDocReferences(child.get(), defLocs, refNames, sourceCode, delegateProps, depth + 1);
 }
 
-void CollectUsedLocals(const Scope* scope, ankerl::unordered_dense::set<const LocalDefinition*>& usedLocals,
-                       int depth = 0)
+struct DocRefCollectContext
 {
-    if (!scope || depth > k_maxAstDepth)
+    const ankerl::unordered_dense::set<uint64_t>& defLocs;
+    std::string_view sourceCode;
+    std::span<const std::string> delegateProps;
+};
+
+void CollectDocReferences(const Scope* rootScope, const DocRefCollectContext& docCtx,
+                          ankerl::unordered_dense::set<std::string>& refNames)
+{
+    if (!rootScope)
         return;
-    for (const auto& ref : scope->references)
+    std::vector<const Scope*> worklist{rootScope};
+    while (!worklist.empty())
     {
-        if (ref.isMemberAccess || ref.isNamedArgument)
-            continue;
-        const LocalDefinition* def = ResolveInScope(scope, ref.name);
-        if (def && (ref.startLine != def->startLine || ref.startCharacter != def->startCharacter))
-            usedLocals.insert(def);
+        const Scope* scope = worklist.back();
+        worklist.pop_back();
+
+        for (const auto& ref : scope->references)
+        {
+            if (docCtx.defLocs.contains(PackLoc(ref.startLine, ref.startCharacter)))
+                continue;
+            if (!docCtx.delegateProps.empty() && ref.isMemberAccess && ref.receiverEndByte > ref.receiverStartByte &&
+                !docCtx.sourceCode.empty() && ref.receiverEndByte <= docCtx.sourceCode.size())
+            {
+                std::string_view recv =
+                    docCtx.sourceCode.substr(ref.receiverStartByte, ref.receiverEndByte - ref.receiverStartByte);
+                if (std::find(docCtx.delegateProps.begin(), docCtx.delegateProps.end(), recv) !=
+                    docCtx.delegateProps.end())
+                {
+                    continue;
+                }
+            }
+            refNames.insert(ref.name);
+        }
+        for (const auto& child : scope->children)
+        {
+            if (child)
+                worklist.push_back(child.get());
+        }
     }
-    for (const auto& child : scope->children)
-        CollectUsedLocals(child.get(), usedLocals, depth + 1);
+}
+
+void CollectUsedLocals(const Scope* rootScope, ankerl::unordered_dense::set<const LocalDefinition*>& usedLocals)
+{
+    if (!rootScope)
+        return;
+    std::vector<const Scope*> worklist{rootScope};
+    while (!worklist.empty())
+    {
+        const Scope* scope = worklist.back();
+        worklist.pop_back();
+
+        for (const auto& ref : scope->references)
+        {
+            if (ref.isMemberAccess || ref.isNamedArgument)
+                continue;
+            const LocalDefinition* def = ResolveInScope(scope, ref.name);
+            if (def && (ref.startLine != def->startLine || ref.startCharacter != def->startCharacter))
+                usedLocals.insert(def);
+        }
+        for (const auto& child : scope->children)
+        {
+            if (child)
+                worklist.push_back(child.get());
+        }
+    }
 }
 
 void CollectCrossFileReferences(const SemanticAnalysisRequest& req, ankerl::unordered_dense::set<std::string>& refNames)
@@ -108,31 +144,51 @@ void CollectCrossFileReferences(const SemanticAnalysisRequest& req, ankerl::unor
             {
                 ankerl::unordered_dense::set<uint64_t> defs;
                 CollectDefLocations(root.get(), defs);
-                CollectDocReferences(root.get(), defs, refNames, "", {});
+                CollectDocReferences(root.get(), DocRefCollectContext{defs, "", {}}, refNames);
             }
         }
     }
 }
 
-std::string ExtractStringValue(TSNode exprNode, const SemanticAnalysisRequest& req, int depth = 0)
+std::string ExtractStringValue(TSNode exprNode, const SemanticAnalysisRequest& req)
 {
-    if (ts_node_is_null(exprNode) || depth > 8)
+    if (ts_node_is_null(exprNode))
+    {
         return {};
+    }
 
     const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(exprNode);
-    if (sym == gs.symStringLiteral)
+    std::string result;
+    std::vector<TSNode> stack{exprNode};
+    while (!stack.empty())
     {
-        std::string_view text = parser::GetNodeTextView(exprNode, req.sourceCode);
-        return std::string(parser::UnquoteStringView(text));
+        TSNode node = stack.back();
+        stack.pop_back();
+        if (ts_node_is_null(node))
+        {
+            continue;
+        }
+        const TSSymbol sym = ts_node_symbol(node);
+        if (sym == gs.symStringLiteral)
+        {
+            std::string_view text = parser::GetNodeTextView(node, req.sourceCode);
+            result += parser::UnquoteStringView(text);
+        }
+        else if (sym == gs.symBinaryExpression)
+        {
+            TSNode left = parser::GetChildByField(node, gs.fieldLeft);
+            TSNode right = parser::GetChildByField(node, gs.fieldRight);
+            if (!ts_node_is_null(right))
+            {
+                stack.push_back(right);
+            }
+            if (!ts_node_is_null(left))
+            {
+                stack.push_back(left);
+            }
+        }
     }
-    if (sym == gs.symBinaryExpression)
-    {
-        TSNode left = parser::GetChildByField(exprNode, gs.fieldLeft);
-        TSNode right = parser::GetChildByField(exprNode, gs.fieldRight);
-        return ExtractStringValue(left, req, depth + 1) + ExtractStringValue(right, req, depth + 1);
-    }
-    return {};
+    return result;
 }
 
 bool MatchCallee(std::string_view funcText, const config::StringReflectionCallee& c)
@@ -519,15 +575,9 @@ bool IsIgnoredFunction(const Symbol& sym, const SemanticAnalysisRequest& request
     return IsEngineManagedFunction(sym, request.symbolTable, rules);
 }
 
-void CheckLocalsAndFields(const Scope* scope, const UnusedCheckContext& uCtx, DiagnosticContext& ctx, int depth = 0)
+static void CheckScopeDefinitions(const Scope* scope, bool isFunc, const UnusedCheckContext& uCtx,
+                                  DiagnosticContext& ctx)
 {
-    if (!scope || depth > k_maxAstDepth)
-        return;
-
-    bool isFunc = false;
-    for (const Scope* cur = scope; cur != nullptr && !isFunc; cur = cur->parent)
-        isFunc = cur->isFunctionScope;
-
     for (const auto& def : scope->definitions)
     {
         if (uCtx.rules.checkLocals && isFunc && def.kind == LocalDefinitionKind::Variable &&
@@ -543,9 +593,31 @@ void CheckLocalsAndFields(const Scope* scope, const UnusedCheckContext& uCtx, Di
                             diagnostics::codes::UnusedField, def.name, DiagnosticSeverity::Warning);
         }
     }
+}
 
-    for (const auto& child : scope->children)
-        CheckLocalsAndFields(child.get(), uCtx, ctx, depth + 1);
+void CheckLocalsAndFields(const Scope* rootScope, const UnusedCheckContext& uCtx, DiagnosticContext& ctx)
+{
+    if (!rootScope)
+        return;
+
+    std::vector<const Scope*> worklist{rootScope};
+    while (!worklist.empty())
+    {
+        const Scope* scope = worklist.back();
+        worklist.pop_back();
+
+        bool isFunc = false;
+        for (const Scope* cur = scope; cur != nullptr && !isFunc; cur = cur->parent)
+            isFunc = cur->isFunctionScope;
+
+        CheckScopeDefinitions(scope, isFunc, uCtx, ctx);
+
+        for (const auto& child : scope->children)
+        {
+            if (child)
+                worklist.push_back(child.get());
+        }
+    }
 }
 
 static bool IsExemptGlobalType(const VariableSignature& var, const std::vector<std::string>& exemptTypes)
@@ -828,8 +900,9 @@ void CheckUnusedSymbols(const SemanticAnalysisRequest& request, DiagnosticContex
     const bool checkAnyCrossFile = rules.checkGlobals || rules.checkFunctions || rules.checkClasses;
 
     ankerl::unordered_dense::set<std::string> refNames;
-    CollectDocReferences(request.scopeRoot.get(), defLocs, refNames, request.sourceCode,
-                         rules.baseClassDelegateProperties);
+    CollectDocReferences(request.scopeRoot.get(),
+                         DocRefCollectContext{defLocs, request.sourceCode, rules.baseClassDelegateProperties},
+                         refNames);
     if (checkAnyCrossFile)
     {
         CollectCrossFileReferences(request, refNames);

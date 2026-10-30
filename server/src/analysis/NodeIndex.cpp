@@ -111,7 +111,6 @@ void NodeIndex::RecordContainerSpan(TSNode node, TSSymbol sym)
 void NodeIndex::TraverseTree(TSNode root, TraversalBudget* budget)
 {
     TSTreeCursor cursor = ts_tree_cursor_new(root);
-    int depth = 0;
     bool visiting = true;
 
     while (visiting)
@@ -119,9 +118,8 @@ void NodeIndex::TraverseTree(TSNode root, TraversalBudget* budget)
         TSNode node = ts_tree_cursor_current_node(&cursor);
         IndexNode(node, budget);
 
-        if (depth < k_maxAstDepth && ts_tree_cursor_goto_first_child(&cursor))
+        if (ts_tree_cursor_goto_first_child(&cursor))
         {
-            depth++;
             continue;
         }
 
@@ -133,7 +131,6 @@ void NodeIndex::TraverseTree(TSNode root, TraversalBudget* budget)
         bool backtracked = false;
         while (ts_tree_cursor_goto_parent(&cursor))
         {
-            depth--;
             if (ts_tree_cursor_goto_next_sibling(&cursor))
             {
                 backtracked = true;
@@ -170,7 +167,11 @@ void NodeIndex::Build(TSNode root, const TSLanguage* lang, TraversalBudget* budg
 
 std::span<const TSNode> NodeIndex::Nodes(TSSymbol symbol) const noexcept
 {
-    if (symbol != static_cast<TSSymbol>(-1) && static_cast<size_t>(symbol) < m_nodesBySymbol.size())
+    if (symbol == parser::GetGrammarSymbols().symError || symbol == static_cast<TSSymbol>(-1))
+    {
+        return m_errorNodes;
+    }
+    if (static_cast<size_t>(symbol) < m_nodesBySymbol.size())
     {
         return m_nodesBySymbol[symbol];
     }

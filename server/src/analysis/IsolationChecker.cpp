@@ -183,7 +183,7 @@ bool ContainsSymbolDescendant(TSNode root, TSSymbol targetSym) noexcept
                 found = true;
                 break;
             }
-            if (depth < k_maxAstDepth && ts_tree_cursor_goto_first_child(&cursor))
+            if (ts_tree_cursor_goto_first_child(&cursor))
             {
                 ++depth;
                 continue;
@@ -360,23 +360,6 @@ struct IsolationVisitor
         return false;
     }
 
-    void VisitClassDeclaration(TSNode node, int depth)
-    {
-        TSNode nameNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName);
-        std::string className = GetNodeText(nameNode, request.sourceCode);
-        bool classShared = IsClassShared(node, className);
-
-        std::string oldClassName = currentClassName;
-        bool oldClassShared = isCurrentClassShared;
-        currentClassName = className;
-        isCurrentClassShared = classShared;
-
-        ForEachChildNode(node, [&](TSNode child) { Visit(child, classShared, depth + 1); });
-
-        currentClassName = oldClassName;
-        isCurrentClassShared = oldClassShared;
-    }
-
     bool IsFunctionShared(TSNode node, bool inSharedContext) const
     {
         if (inSharedContext || NodeHasModifierToken(node, parser::GetGrammarSymbols().tokShared))
@@ -404,12 +387,6 @@ struct IsolationVisitor
             }
         }
         return false;
-    }
-
-    void VisitFunctionDeclaration(TSNode node, bool inSharedContext, int depth)
-    {
-        bool funcShared = IsFunctionShared(node, inSharedContext);
-        ForEachChildNode(node, [&](TSNode child) { Visit(child, funcShared, depth + 1); });
     }
 
     void CheckSharedDatatype(TSNode node)
@@ -573,45 +550,85 @@ struct IsolationVisitor
         }
     }
 
-    void Visit(TSNode node, bool inSharedContext, int depth = 0)
+    struct IsoItem
     {
-        if (depth > k_maxAstDepth || ts_node_is_null(node))
+        TSNode node;
+        std::string className;
+        bool isClassShared = false;
+        bool inSharedContext = false;
+    };
+
+    void PushChildren(TSNode node, const std::string& className, bool isClassShared, bool inSharedContext,
+                      std::vector<IsoItem>& worklist)
+    {
+        uint32_t count = ts_node_child_count(node);
+        for (uint32_t i = count; i > 0; --i)
+        {
+            TSNode child = ts_node_child(node, i - 1);
+            if (!ts_node_is_null(child))
+            {
+                worklist.push_back({child, className, isClassShared, inSharedContext});
+            }
+        }
+    }
+
+    void Visit(TSNode rootNode)
+    {
+        if (ts_node_is_null(rootNode))
         {
             return;
         }
+
+        std::vector<IsoItem> worklist;
+        worklist.push_back({rootNode, "", false, false});
 
         const auto& gs = parser::GetGrammarSymbols();
-        const TSSymbol nodeSym = ts_node_symbol(node);
 
-        if (nodeSym == gs.symClassDeclaration)
+        while (!worklist.empty())
         {
-            VisitClassDeclaration(node, depth);
-            return;
-        }
+            IsoItem item = std::move(worklist.back());
+            worklist.pop_back();
 
-        if (nodeSym == gs.symFuncDeclaration)
-        {
-            VisitFunctionDeclaration(node, inSharedContext, depth);
-            return;
-        }
+            TSNode node = item.node;
+            const TSSymbol nodeSym = ts_node_symbol(node);
 
-        if (inSharedContext)
-        {
-            if (nodeSym == gs.symDatatype)
-            {
-                CheckSharedDatatype(node);
-            }
-            else if (nodeSym == gs.symCallExpression)
-            {
-                CheckSharedCallExpression(node);
-            }
-            else if (nodeSym == gs.symIdentifier)
-            {
-                CheckSharedIdentifier(node);
-            }
-        }
+            currentClassName = item.className;
+            isCurrentClassShared = item.isClassShared;
 
-        ForEachChildNode(node, [&](TSNode child) { Visit(child, inSharedContext, depth + 1); });
+            if (nodeSym == gs.symClassDeclaration)
+            {
+                TSNode nameNode = parser::GetChildByField(node, gs.fieldName);
+                std::string className = GetNodeText(nameNode, request.sourceCode);
+                bool classShared = IsClassShared(node, className);
+                PushChildren(node, className, classShared, classShared, worklist);
+                continue;
+            }
+
+            if (nodeSym == gs.symFuncDeclaration)
+            {
+                bool funcShared = IsFunctionShared(node, item.inSharedContext);
+                PushChildren(node, item.className, item.isClassShared, funcShared, worklist);
+                continue;
+            }
+
+            if (item.inSharedContext)
+            {
+                if (nodeSym == gs.symDatatype)
+                {
+                    CheckSharedDatatype(node);
+                }
+                else if (nodeSym == gs.symCallExpression)
+                {
+                    CheckSharedCallExpression(node);
+                }
+                else if (nodeSym == gs.symIdentifier)
+                {
+                    CheckSharedIdentifier(node);
+                }
+            }
+
+            PushChildren(node, item.className, item.isClassShared, item.inSharedContext, worklist);
+        }
     }
 };
 } // namespace
@@ -632,6 +649,6 @@ void CheckSharedIsolation(const IsolationCheckRequest& request, DiagnosticContex
     CheckSharedEntityEligibility(request, ctx);
 
     IsolationVisitor visitor{request, ctx, "", false};
-    visitor.Visit(request.rootNode, false);
+    visitor.Visit(request.rootNode);
 }
 } // namespace angel_lsp::analysis

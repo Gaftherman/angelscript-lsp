@@ -2239,7 +2239,7 @@ std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view 
 std::vector<std::string> CollectUsingNamespaces(const NodeIndex& nodeIndex, std::string_view sourceCode)
 {
     std::vector<std::string> usings;
-    for (TSNode cur : nodeIndex.Nodes(parser::nodes::UsingDeclaration))
+    for (TSNode cur : nodeIndex.Nodes(parser::GetGrammarSymbols().symUsingDeclaration))
     {
         TSNode nameNode = parser::GetChildByField(cur, parser::GetGrammarSymbols().fieldName);
         if (!ts_node_is_null(nameNode))
@@ -2703,33 +2703,40 @@ static std::string ResolveLiteralExpr(TSSymbol nodeSym, TSNode exprNode, std::st
     return "";
 }
 
+static TSNode UnwrapParenthesizedExpression(TSNode node, const parser::GrammarSymbols& gs) noexcept
+{
+    while (!ts_node_is_null(node) && ts_node_symbol(node) == gs.symParenthesizedExpression)
+    {
+        const uint32_t count = ts_node_named_child_count(node);
+        TSNode inner{};
+        for (uint32_t i = 0; i < count; ++i)
+        {
+            TSNode child = ts_node_named_child(node, i);
+            if (!ts_node_is_null(child))
+            {
+                inner = child;
+                break;
+            }
+        }
+        if (ts_node_is_null(inner))
+        {
+            break;
+        }
+        node = inner;
+    }
+    return node;
+}
+
 /**
  * @brief Resolves parenthesized expression type.
  */
-static std::string ResolveParenthesizedExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
+static std::string ResolveParenthesizedExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
 {
-    const uint32_t namedCount = ts_node_named_child_count(exprNode);
-    for (uint32_t i = 0; i < namedCount; ++i)
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode inner = UnwrapParenthesizedExpression(exprNode, gs);
+    if (!ts_node_is_null(inner) && ts_node_symbol(inner) != gs.symParenthesizedExpression)
     {
-        TSNode child = ts_node_named_child(exprNode, i);
-        std::string res = ResolveExpressionType(child, ctx, depth + 1);
-        if (!res.empty())
-        {
-            return res;
-        }
-    }
-    const uint32_t count = ts_node_child_count(exprNode);
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode child = ts_node_child(exprNode, i);
-        if (ts_node_is_named(child))
-        {
-            std::string res = ResolveExpressionType(child, ctx, depth + 1);
-            if (!res.empty())
-            {
-                return res;
-            }
-        }
+        return ResolveExpressionType(inner, ctx);
     }
     return "";
 }
@@ -2835,7 +2842,7 @@ static std::string ResolveGlobalScopedExpr(TSNode exprNode, std::string_view roo
     return ResolveScopedEnumMember(std::string(rootPath), exprNode, ctx);
 }
 
-static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
+static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
 {
     const auto gsq = analysis::GetGlobalScopeQualifier(exprNode, ctx.sourceCode);
     if (gsq.isGlobal)
@@ -2871,7 +2878,7 @@ static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const Expression
         return ResolveScopedEnumMember(whole, exprNode, ctx);
     }
 
-    return ts_node_is_null(lastIdentifier) ? std::string() : ResolveExpressionType(lastIdentifier, ctx, depth + 1);
+    return ts_node_is_null(lastIdentifier) ? std::string() : ResolveExpressionType(lastIdentifier, ctx);
 }
 
 /**
@@ -3024,7 +3031,7 @@ static std::string ResolveIdentifierAccessorFallback(const std::string& name, co
 /**
  * @brief Resolves bare identifier expression type.
  */
-static std::string ResolveIdentifierExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth = 0)
+static std::string ResolveIdentifierExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
 {
     std::string name = GetNodeText(exprNode, ctx.sourceCode);
     if (auto special = ResolveIdentifierSpecial(name, exprNode, ctx); !special.empty())
@@ -3036,7 +3043,7 @@ static std::string ResolveIdentifierExpr(TSNode exprNode, const ExpressionTypeCo
         const LocalDefinition* def = ResolveInScopeAt(ctx.scope, name, ts_node_start_byte(exprNode));
         if (def)
         {
-            std::string dType = ResolveLocalDefinitionType(*def, ctx, depth);
+            std::string dType = ResolveLocalDefinitionType(*def, ctx);
             if (!dType.empty())
             {
                 return CleanExpressionType(dType);
@@ -3478,37 +3485,14 @@ static std::string ResolveBinaryOverload(std::string_view op, const std::string&
     return SelectBestBinaryOverload(forwardMatch, reverseMatch);
 }
 
-/**
- * @brief Resolves binary expression type.
- * @param[in] exprNode Binary expression AST node.
- * @param[in] ctx Expression typing context.
- * @param[in] depth Current recursion depth.
- * @return Resolved expression type string or poison type.
- */
-static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
+static std::string EvaluateBinaryResultType(std::string_view op, TSSymbol opSym, const std::string& leftType,
+                                            const std::string& rightType, const ExpressionTypeContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode left = parser::GetChildByField(exprNode, gs.fieldLeft);
-    TSNode opNode = parser::GetChildByField(exprNode, gs.fieldOperator);
-    TSNode right = parser::GetChildByField(exprNode, gs.fieldRight);
-    if (ts_node_is_null(left) || ts_node_is_null(right))
-    {
-        return std::string(ExpressionTypeCache::k_poisonType);
-    }
-
-    std::string leftType = ResolveExpressionType(left, ctx, depth + 1);
-    std::string rightType = ResolveExpressionType(right, ctx, depth + 1);
-    if (ExpressionTypeCache::IsPoisonType(leftType) || ExpressionTypeCache::IsPoisonType(rightType))
-    {
-        return std::string(ExpressionTypeCache::k_poisonType);
-    }
-
-    const TSSymbol opSym = ts_node_symbol(opNode);
     if (IsBooleanBinaryOpSym(opSym, gs))
     {
         return "bool";
     }
-    const std::string_view op = GetNodeTextView(opNode, ctx.sourceCode);
     if (std::string strType = ResolveStringConcatenation(op, leftType, rightType, ctx); !strType.empty())
     {
         return strType;
@@ -3534,6 +3518,56 @@ static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContex
     }
 
     return ResolveBinaryPrimitivePromotion(op, cleanLeft, cleanRight, ctx.disableIntegerDivision, &ctx.symbolTable);
+}
+
+/**
+ * @brief Resolves binary expression type.
+ * @param[in] exprNode Binary expression AST node.
+ * @param[in] ctx Expression typing context.
+ * @return Resolved expression type string or poison type.
+ */
+static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    std::vector<TSNode> chain;
+    TSNode curr = exprNode;
+    while (!ts_node_is_null(curr) && ts_node_symbol(curr) == gs.symBinaryExpression)
+    {
+        chain.push_back(curr);
+        curr = parser::GetChildByField(curr, gs.fieldLeft);
+    }
+
+    if (chain.empty() || ts_node_is_null(curr))
+    {
+        return std::string(ExpressionTypeCache::k_poisonType);
+    }
+
+    std::string currentType = ResolveExpressionType(curr, ctx);
+    for (auto it = chain.rbegin(); it != chain.rend(); ++it)
+    {
+        TSNode node = *it;
+        TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
+        TSNode right = parser::GetChildByField(node, gs.fieldRight);
+        if (ts_node_is_null(opNode) || ts_node_is_null(right))
+        {
+            return std::string(ExpressionTypeCache::k_poisonType);
+        }
+
+        std::string rightType = ResolveExpressionType(right, ctx);
+        if (ExpressionTypeCache::IsPoisonType(currentType) || ExpressionTypeCache::IsPoisonType(rightType))
+        {
+            return std::string(ExpressionTypeCache::k_poisonType);
+        }
+
+        const TSSymbol opSym = ts_node_symbol(opNode);
+        const std::string_view op = GetNodeTextView(opNode, ctx.sourceCode);
+        currentType = EvaluateBinaryResultType(op, opSym, currentType, rightType, ctx);
+        if (currentType.empty())
+        {
+            break;
+        }
+    }
+    return currentType;
 }
 
 struct TernaryBranchTypes
@@ -3659,7 +3693,7 @@ static std::string ResolveTernaryBranchTypes(std::string_view t1, std::string_vi
 /**
  * @brief Resolves ternary expression type.
  */
-static std::string ResolveTernaryExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
+static std::string ResolveTernaryExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
 {
     TSNode consequence = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldConsequence);
     TSNode alternative = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldAlternative);
@@ -3667,8 +3701,8 @@ static std::string ResolveTernaryExpr(TSNode exprNode, const ExpressionTypeConte
     {
         return std::string(ExpressionTypeCache::k_poisonType);
     }
-    std::string t1 = ResolveExpressionType(consequence, ctx, depth + 1);
-    std::string t2 = ResolveExpressionType(alternative, ctx, depth + 1);
+    std::string t1 = ResolveExpressionType(consequence, ctx);
+    std::string t2 = ResolveExpressionType(alternative, ctx);
     if (ExpressionTypeCache::IsPoisonType(t1) || ExpressionTypeCache::IsPoisonType(t2))
     {
         return std::string(ExpressionTypeCache::k_poisonType);
@@ -3847,10 +3881,9 @@ static std::string ExtractMemberSymbolType(const Symbol& sym, const SymbolTable&
  * @brief Resolves member expression type.
  * @param[in] exprNode Member expression AST node.
  * @param[in] ctx Expression type resolution context.
- * @param[in] depth Current AST recursion depth.
  * @return Resolved member type, or empty string if unresolved.
  */
-static std::string ResolveMemberExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
+static std::string ResolveMemberExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
 {
     TSNode objNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldObject);
     TSNode memNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldMember);
@@ -3859,7 +3892,7 @@ static std::string ResolveMemberExpr(TSNode exprNode, const ExpressionTypeContex
         return "";
     }
 
-    std::string objType = ResolveExpressionType(objNode, ctx, depth + 1);
+    std::string objType = ResolveExpressionType(objNode, ctx);
     if (ExpressionTypeCache::IsPoisonType(objType))
     {
         return std::string(ExpressionTypeCache::k_poisonType);
@@ -4013,11 +4046,10 @@ static std::vector<Symbol> CollectMemberMethodCandidates(const std::string& owne
  * @param[in] funcNode Function AST node (member_expression).
  * @param[in] argTypes Evaluated argument types.
  * @param[in] ctx Expression type resolution context.
- * @param[in] depth Current AST recursion depth.
  * @return Resolved return type, or empty string.
  */
 static std::string ResolveMemberCallExpr(TSNode funcNode, const std::vector<std::string>& argTypes,
-                                         const ExpressionTypeContext& ctx, int depth)
+                                         const ExpressionTypeContext& ctx)
 {
     TSNode objNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldObject);
     TSNode memNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldMember);
@@ -4026,7 +4058,7 @@ static std::string ResolveMemberCallExpr(TSNode funcNode, const std::vector<std:
         return "";
     }
 
-    std::string objType = CanonicalizeArrayType(ResolveExpressionType(objNode, ctx, depth + 1), ctx.arrayTypeName);
+    std::string objType = CanonicalizeArrayType(ResolveExpressionType(objNode, ctx), ctx.arrayTypeName);
     std::string memName = GetTrimmedNodeText(memNode, ctx.sourceCode);
 
     std::string ownerType = MemberOwnerType(objType, ctx.arrayTypeName);
@@ -4234,7 +4266,7 @@ static std::string ResolveBareCallExpr(TSNode exprNode, TSNode funcNode, const s
 /**
  * @brief Resolves call expression type.
  */
-static std::string ResolveCallExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
+static std::string ResolveCallExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
 {
     TSNode funcNode = parser::GetCallCallee(exprNode);
     if (ts_node_is_null(funcNode))
@@ -4249,13 +4281,13 @@ static std::string ResolveCallExpr(TSNode exprNode, const ExpressionTypeContext&
         uint32_t count = ts_node_named_child_count(argsNode);
         for (uint32_t i = 0; i < count; ++i)
         {
-            argTypes.push_back(ResolveExpressionType(ts_node_named_child(argsNode, i), ctx, depth + 1));
+            argTypes.push_back(ResolveExpressionType(ts_node_named_child(argsNode, i), ctx));
         }
     }
 
     if (ts_node_symbol(funcNode) == parser::GetGrammarSymbols().symMemberExpression)
     {
-        if (auto res = ResolveMemberCallExpr(funcNode, argTypes, ctx, depth); !res.empty())
+        if (auto res = ResolveMemberCallExpr(funcNode, argTypes, ctx); !res.empty())
         {
             return res;
         }
@@ -4268,7 +4300,7 @@ static std::string ResolveCallExpr(TSNode exprNode, const ExpressionTypeContext&
         }
     }
 
-    std::string calleeType = ResolveExpressionType(funcNode, ctx, depth + 1);
+    std::string calleeType = ResolveExpressionType(funcNode, ctx);
     std::string cleanCallee = CleanBaseType(calleeType);
     if (!cleanCallee.empty())
     {
@@ -4315,13 +4347,13 @@ static bool IsFunctionHandleTarget(TSNode target, TSNode exprNode, const Express
     return false;
 }
 
-static std::string ResolveUnaryHandle(TSNode operandNode, TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
+static std::string ResolveUnaryHandle(TSNode operandNode, TSNode exprNode, const ExpressionTypeContext& ctx)
 {
     if (IsFunctionHandleTarget(operandNode, exprNode, ctx))
     {
         return {};
     }
-    std::string operandType = ResolveExpressionType(operandNode, ctx, depth + 1);
+    std::string operandType = ResolveExpressionType(operandNode, ctx);
     if (ExpressionTypeCache::IsPoisonType(operandType))
     {
         return std::string(ExpressionTypeCache::k_poisonType);
@@ -4359,7 +4391,7 @@ static std::string ResolveUnaryMinus(const std::string& operandType)
 /**
  * @brief Resolves unary expression type.
  */
-static std::string ResolveUnaryExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
+static std::string ResolveUnaryExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
 {
     TSNode operandNode = parser::GetChildByField(exprNode, parser::GetGrammarSymbols().fieldOperand);
     if (ts_node_is_null(operandNode) || ts_node_is_error(operandNode) || ts_node_is_missing(operandNode))
@@ -4375,9 +4407,9 @@ static std::string ResolveUnaryExpr(TSNode exprNode, const ExpressionTypeContext
     }
     if (opSym == gs.tokAt)
     {
-        return ResolveUnaryHandle(operandNode, exprNode, ctx, depth);
+        return ResolveUnaryHandle(operandNode, exprNode, ctx);
     }
-    std::string operandType = ResolveExpressionType(operandNode, ctx, depth + 1);
+    std::string operandType = ResolveExpressionType(operandNode, ctx);
     if (ExpressionTypeCache::IsPoisonType(operandType))
     {
         return std::string(ExpressionTypeCache::k_poisonType);
@@ -4502,11 +4534,10 @@ static std::string FindIndexedGetterType(const std::vector<Symbol>& accessors, c
  * @brief Resolves indexed property accessor type from member expression receiver.
  * @param[in] objNode Member expression AST node.
  * @param[in] ctx Expression type resolution context.
- * @param[in] depth AST recursion depth.
  * @param[in] indexArgType Inferred type of the index argument.
  * @return Resolved return type of the indexed getter, or empty string.
  */
-static std::string ResolveMemberIndexedProperty(TSNode objNode, const ExpressionTypeContext& ctx, int depth,
+static std::string ResolveMemberIndexedProperty(TSNode objNode, const ExpressionTypeContext& ctx,
                                                 std::string_view indexArgType = "")
 {
     TSNode recNode = parser::GetChildByField(objNode, parser::GetGrammarSymbols().fieldObject);
@@ -4515,7 +4546,7 @@ static std::string ResolveMemberIndexedProperty(TSNode objNode, const Expression
     {
         return "";
     }
-    std::string recType = CleanBaseType(ResolveExpressionType(recNode, ctx, depth + 1));
+    std::string recType = CleanBaseType(ResolveExpressionType(recNode, ctx));
     std::string memName = GetTrimmedNodeText(memNode, ctx.sourceCode);
     if (recType.empty() || memName.empty())
     {
@@ -4582,10 +4613,9 @@ static std::string ResolveScopedOrBareIndexedProperty(TSNode objNode, const Expr
  * @brief Resolves index expression types for containers and indexed property accessors.
  * @param[in] exprNode Index expression AST node.
  * @param[in] ctx Expression type resolution context.
- * @param[in] depth AST recursion depth.
  * @return Resolved indexed expression type, or empty string.
  */
-static std::string ResolveIndexExpr(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
+static std::string ResolveIndexExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode objNode = ts_node_child_by_field_id(exprNode, gs.fieldObject);
@@ -4598,12 +4628,12 @@ static std::string ResolveIndexExpr(TSNode exprNode, const ExpressionTypeContext
     std::string indexArgType;
     if (!ts_node_is_null(indexNode))
     {
-        indexArgType = ResolveExpressionType(indexNode, ctx, depth + 1);
+        indexArgType = ResolveExpressionType(indexNode, ctx);
     }
 
     if (ts_node_symbol(objNode) == gs.symMemberAccess)
     {
-        if (std::string propType = ResolveMemberIndexedProperty(objNode, ctx, depth, indexArgType); !propType.empty())
+        if (std::string propType = ResolveMemberIndexedProperty(objNode, ctx, indexArgType); !propType.empty())
         {
             return propType;
         }
@@ -4616,7 +4646,7 @@ static std::string ResolveIndexExpr(TSNode exprNode, const ExpressionTypeContext
         }
     }
 
-    std::string objType = ResolveExpressionType(objNode, ctx, depth + 1);
+    std::string objType = ResolveExpressionType(objNode, ctx);
     if (objType.empty())
     {
         return "";
@@ -4627,7 +4657,7 @@ static std::string ResolveIndexExpr(TSNode exprNode, const ExpressionTypeContext
 /**
  * @brief Resolves miscellaneous and secondary expression types.
  */
-static std::string ResolveOtherExpr(TSSymbol sym, TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
+static std::string ResolveOtherExpr(TSSymbol sym, TSNode exprNode, const ExpressionTypeContext& ctx)
 {
     if (auto castOrConstruct = ResolveCastOrConstructExpr(sym, exprNode, ctx.sourceCode))
     {
@@ -4641,20 +4671,20 @@ static std::string ResolveOtherExpr(TSSymbol sym, TSNode exprNode, const Express
     if (sym == gs.symAssignmentExpression)
     {
         TSNode left = parser::GetChildByField(exprNode, gs.fieldLeft);
-        return ts_node_is_null(left) ? "" : ResolveExpressionType(left, ctx, depth + 1);
+        return ts_node_is_null(left) ? "" : ResolveExpressionType(left, ctx);
     }
     if (sym == gs.symIndexExpression)
     {
-        return ResolveIndexExpr(exprNode, ctx, depth);
+        return ResolveIndexExpr(exprNode, ctx);
     }
     if (sym == gs.symUnaryExpression)
     {
-        return ResolveUnaryExpr(exprNode, ctx, depth);
+        return ResolveUnaryExpr(exprNode, ctx);
     }
     if (sym == gs.symPostfixExpression)
     {
         TSNode operandNode = parser::GetChildByField(exprNode, gs.fieldOperand);
-        return ts_node_is_null(operandNode) ? "" : ResolveExpressionType(operandNode, ctx, depth + 1);
+        return ts_node_is_null(operandNode) ? "" : ResolveExpressionType(operandNode, ctx);
     }
     return "";
 }
@@ -4664,16 +4694,14 @@ static std::string ResolveOtherExpr(TSSymbol sym, TSNode exprNode, const Express
  * @param[in] sym Tree-sitter AST grammar symbol.
  * @param[in] exprNode Expression AST node.
  * @param[in] ctx Expression type resolution context.
- * @param[in] depth Current AST recursion depth.
  * @return Optional containing resolved type if sym is primary, or std::nullopt.
  */
-static std::optional<std::string> ResolvePrimaryExpr(TSSymbol sym, TSNode exprNode, const ExpressionTypeContext& ctx,
-                                                     int depth)
+static std::optional<std::string> ResolvePrimaryExpr(TSSymbol sym, TSNode exprNode, const ExpressionTypeContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (sym == gs.symParenthesizedExpression)
     {
-        return ResolveParenthesizedExpr(exprNode, ctx, depth);
+        return ResolveParenthesizedExpr(exprNode, ctx);
     }
     if (sym == gs.symTypedInitializerList)
     {
@@ -4693,11 +4721,11 @@ static std::optional<std::string> ResolvePrimaryExpr(TSSymbol sym, TSNode exprNo
     }
     if (sym == gs.symScopedIdentifier)
     {
-        return ResolveScopedIdentifierExpr(exprNode, ctx, depth);
+        return ResolveScopedIdentifierExpr(exprNode, ctx);
     }
     if (sym == gs.symIdentifier || sym == gs.tokFunction || parser::keywords::IsKeyword(parser::GetNodeType(exprNode)))
     {
-        return ResolveIdentifierExpr(exprNode, ctx, depth);
+        return ResolveIdentifierExpr(exprNode, ctx);
     }
     return std::nullopt;
 }
@@ -4707,39 +4735,37 @@ static std::optional<std::string> ResolvePrimaryExpr(TSSymbol sym, TSNode exprNo
  * @param[in] sym Tree-sitter AST grammar symbol.
  * @param[in] exprNode Expression AST node.
  * @param[in] ctx Expression type resolution context.
- * @param[in] depth Current AST recursion depth.
  * @return Resolved type string, or empty string.
  */
-static std::string ResolveCompositeExpr(TSSymbol sym, TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
+static std::string ResolveCompositeExpr(TSSymbol sym, TSNode exprNode, const ExpressionTypeContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (sym == gs.symBinaryExpression)
     {
-        return ResolveBinaryExpr(exprNode, ctx, depth);
+        return ResolveBinaryExpr(exprNode, ctx);
     }
     if (sym == gs.symTernaryExpression)
     {
-        return ResolveTernaryExpr(exprNode, ctx, depth);
+        return ResolveTernaryExpr(exprNode, ctx);
     }
     if (sym == gs.symMemberExpression)
     {
-        return ResolveMemberExpr(exprNode, ctx, depth);
+        return ResolveMemberExpr(exprNode, ctx);
     }
     if (sym == gs.symCallExpression)
     {
-        return ResolveCallExpr(exprNode, ctx, depth);
+        return ResolveCallExpr(exprNode, ctx);
     }
-    return ResolveOtherExpr(sym, exprNode, ctx, depth);
+    return ResolveOtherExpr(sym, exprNode, ctx);
 }
 
-static std::string ResolveExpressionTypeUncached(TSSymbol sym, TSNode exprNode, const ExpressionTypeContext& ctx,
-                                                 int depth)
+static std::string ResolveExpressionTypeUncached(TSSymbol sym, TSNode exprNode, const ExpressionTypeContext& ctx)
 {
-    if (auto primary = ResolvePrimaryExpr(sym, exprNode, ctx, depth))
+    if (auto primary = ResolvePrimaryExpr(sym, exprNode, ctx))
     {
         return *primary;
     }
-    return ResolveCompositeExpr(sym, exprNode, ctx, depth);
+    return ResolveCompositeExpr(sym, exprNode, ctx);
 }
 
 static std::string_view GetTrimmedNodeTextView(TSNode node, std::string_view sourceCode) noexcept
@@ -4762,14 +4788,11 @@ static std::string_view GetTrimmedNodeTextView(TSNode node, std::string_view sou
     return sv;
 }
 
-std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& ctx, int depth)
+std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& ctx)
 {
-    // This resolver recurses on operands and member chains with nothing else bounding it, so a
-    // deeply nested expression walked the stack down until it ran out. Returning empty is the
-    // established "cannot see enough to judge" answer everywhere in this file, and every caller
-    // already treats it as "stay silent" - so a truncated resolution costs a diagnostic, never
-    // a wrong one. See k_maxAstDepth in ASTUtils.h.
-    if (depth > k_maxAstDepth || ts_node_is_null(exprNode) || ctx.sourceCode.empty())
+    const auto& gs = parser::GetGrammarSymbols();
+    exprNode = UnwrapParenthesizedExpression(exprNode, gs);
+    if (ts_node_is_null(exprNode) || ctx.sourceCode.empty())
     {
         return "";
     }
@@ -4795,7 +4818,7 @@ std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& 
             return "void";
         }
 
-        std::string resolved = ResolveExpressionTypeUncached(sym, exprNode, ctx, depth);
+        std::string resolved = ResolveExpressionTypeUncached(sym, exprNode, ctx);
         ctx.cache->types.emplace(key, resolved);
         return resolved;
     }
@@ -4806,7 +4829,7 @@ std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& 
         return "void";
     }
 
-    return ResolveExpressionTypeUncached(sym, exprNode, ctx, depth);
+    return ResolveExpressionTypeUncached(sym, exprNode, ctx);
 }
 
 struct ActiveLocalDefKey
@@ -4889,14 +4912,14 @@ static std::string FormatDeducedType(const LocalDefinition& def, std::string rhs
     return rhsType;
 }
 
-static std::string TryDeduceAutoDefinition(const LocalDefinition& def, const ExpressionTypeContext& ctx, int depth)
+static std::string TryDeduceAutoDefinition(const LocalDefinition& def, const ExpressionTypeContext& ctx)
 {
     TSNode valNode = FindLocalDefinitionValueNode(def, ctx);
     if (ts_node_is_null(valNode))
     {
         return def.typeName;
     }
-    std::string rhsType = ResolveExpressionType(valNode, ctx, depth + 1);
+    std::string rhsType = ResolveExpressionType(valNode, ctx);
     if (!IsValidDeducedRhsType(rhsType))
     {
         return def.typeName;
@@ -4906,7 +4929,7 @@ static std::string TryDeduceAutoDefinition(const LocalDefinition& def, const Exp
     return finalType;
 }
 
-std::string ResolveLocalDefinitionType(const LocalDefinition& def, const ExpressionTypeContext& ctx, int depth)
+std::string ResolveLocalDefinitionType(const LocalDefinition& def, const ExpressionTypeContext& ctx)
 {
     if (!def.typeName.empty() && CleanBaseTypeView(def.typeName) != "auto")
     {
@@ -4928,7 +4951,7 @@ std::string ResolveLocalDefinitionType(const LocalDefinition& def, const Express
         return def.typeName;
     }
 
-    if (depth > 8 || IsLocalDefActive(def))
+    if (s_activeLocalDefs.size() > 8 || IsLocalDefActive(def))
     {
         return "";
     }
@@ -4936,7 +4959,7 @@ std::string ResolveLocalDefinitionType(const LocalDefinition& def, const Express
     s_activeLocalDefs.push_back({def.name, def.startLine, def.startCharacter});
     ActiveLocalDefGuard guard{true};
 
-    return TryDeduceAutoDefinition(def, ctx, depth);
+    return TryDeduceAutoDefinition(def, ctx);
 }
 
 /**
@@ -5239,9 +5262,10 @@ TSNode ResolveArgumentListNode(TSNode node)
     return TSNode{};
 }
 
-void ProcessCallArgumentChild(TSNode child, const char* field, std::string_view sourceCode, CallArgumentInfo& current)
+void ProcessCallArgumentChild(TSNode child, TSFieldId fieldId, std::string_view sourceCode, CallArgumentInfo& current)
 {
-    if (field && std::string_view(field) == "arg_name")
+    const auto& gs = parser::GetGrammarSymbols();
+    if (fieldId == gs.fieldArgName)
     {
         current.nameNode = child;
         if (!sourceCode.empty())
@@ -5307,8 +5331,8 @@ std::vector<CallArgumentInfo> ExtractCallArguments(TSNode argumentList, std::str
             current.index = static_cast<uint32_t>(result.size());
         }
 
-        const char* field = ts_tree_cursor_current_field_name(&cursor);
-        ProcessCallArgumentChild(child, field, sourceCode, current);
+        const TSFieldId fieldId = ts_tree_cursor_current_field_id(&cursor);
+        ProcessCallArgumentChild(child, fieldId, sourceCode, current);
         inArgument = true;
 
     } while (ts_tree_cursor_goto_next_sibling(&cursor));
@@ -5672,32 +5696,33 @@ static TSNode ResolveLambdaParameterListNode(TSNode node)
     return TSNode{};
 }
 
-void ApplyLambdaParamChild(TSNode child, const char* field, std::string_view sourceCode, LambdaParamASTInfo& current)
+void ApplyLambdaParamChild(TSNode child, TSFieldId fieldId, std::string_view sourceCode, LambdaParamASTInfo& current)
 {
-    std::string_view fieldName = field ? std::string_view(field) : std::string_view{};
-    std::string text = GetNodeText(child, sourceCode);
-    if (fieldName == "param_type")
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(child);
+    if (fieldId == gs.fieldParamType)
     {
         current.typeNode = child;
         current.hasWrittenType = true;
+        std::string_view text = parser::GetNodeTextView(child, sourceCode);
         current.isConst = text.starts_with("const ") || text == "const";
-        current.isHandle = text.find('@') != std::string::npos;
+        current.isHandle = text.find('@') != std::string_view::npos;
         current.typeName = CleanBaseType(text);
     }
-    else if (text == "&")
+    else if (sym == gs.tokAmp)
     {
         current.isReference = true;
     }
-    else if (text == "in" || text == "out" || text == "inout")
+    else if (sym == gs.tokIn || sym == gs.tokOut || sym == gs.tokInout)
     {
-        current.modifier = (text == "in")    ? ParameterModifier::In
-                           : (text == "out") ? ParameterModifier::Out
-                                             : ParameterModifier::InOut;
+        current.modifier = (sym == gs.tokIn)    ? ParameterModifier::In
+                           : (sym == gs.tokOut) ? ParameterModifier::Out
+                                                : ParameterModifier::InOut;
     }
-    else if (fieldName == "name" || ts_node_symbol(child) == parser::GetGrammarSymbols().symIdentifier)
+    else if (fieldId == gs.fieldName || sym == gs.symIdentifier)
     {
         current.nameNode = child;
-        current.name = std::move(text);
+        current.name = GetNodeText(child, sourceCode);
     }
 }
 
@@ -5753,8 +5778,8 @@ std::vector<LambdaParamASTInfo> ExtractLambdaParameters(TSNode lambdaParamList, 
         }
         inParam = true;
 
-        const char* field = ts_tree_cursor_current_field_name(&cursor);
-        ApplyLambdaParamChild(child, field, sourceCode, current);
+        const TSFieldId fieldId = ts_tree_cursor_current_field_id(&cursor);
+        ApplyLambdaParamChild(child, fieldId, sourceCode, current);
 
     } while (ts_tree_cursor_goto_next_sibling(&cursor));
 
@@ -5970,7 +5995,7 @@ struct FuncdefAgreement
 /**
  * @brief Matches candidate function parameters at position against funcdef symbols.
  */
-static bool MatchCandidateFuncdef(const SymbolTable& table, const std::string& name, uint32_t position,
+static bool MatchCandidateFuncdef(const SymbolTable& table, std::string_view name, uint32_t position,
                                   FuncdefAgreement& agreement)
 {
     if (agreement.conflict)
@@ -6048,11 +6073,11 @@ static std::optional<Symbol> FindAssignmentFuncdefTarget(TSNode parent, const Sy
 /**
  * @brief Resolves target funcdef symbol across possible callee member/function names.
  */
-static std::optional<Symbol> FindCallArgumentFuncdef(const SymbolTable& table, const std::string& calleeName,
+static std::optional<Symbol> FindCallArgumentFuncdef(const SymbolTable& table, std::string_view calleeName,
                                                      uint32_t position)
 {
     FuncdefAgreement agreement;
-    auto lookUp = [&](const std::string& name) -> bool
+    auto lookUp = [&](std::string_view name) -> bool
     { return MatchCandidateFuncdef(table, name, position, agreement); };
 
     if (lookUp(calleeName))
@@ -6065,7 +6090,7 @@ static std::optional<Symbol> FindCallArgumentFuncdef(const SymbolTable& table, c
     }
 
     const size_t dot = calleeName.rfind('.');
-    if (dot != std::string::npos && lookUp(calleeName.substr(dot + 1)))
+    if (dot != std::string_view::npos && lookUp(calleeName.substr(dot + 1)))
     {
         return agreement.agreed;
     }
@@ -6084,7 +6109,7 @@ static std::optional<Symbol> FindCallArgumentFuncdef(const SymbolTable& table, c
     }
 
     const std::string_view leaf = utils::LastScopeSegment(calleeName);
-    if (leaf != calleeName && lookUp(std::string(leaf)))
+    if (leaf != calleeName && lookUp(leaf))
     {
         return agreement.agreed;
     }

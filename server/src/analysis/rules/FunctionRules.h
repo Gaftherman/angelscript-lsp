@@ -42,15 +42,6 @@ namespace angel_lsp::analysis::rules
 {
 /**
  * @brief Reports an anonymous function (lambda expression) that stands alone as an expression statement.
- *
- * An anonymous function is an expression, not a statement. It is only legal when passed as an argument
- * where a funcdef is expected or assigned to a funcdef handle.
- *
- * @param root Root node of the document's syntax tree.
- * @param ctx Diagnostic sink.
- */
-void ValidateStandaloneLambda(TSNode root, const DiagnosticContext& ctx);
-
 /**
  * @brief Reports an anonymous function (lambda expression) using pre-indexed AST nodes.
  * @param nodeIndex Pre-indexed syntax tree nodes.

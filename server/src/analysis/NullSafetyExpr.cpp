@@ -2,21 +2,17 @@
 #include "analysis/ASTUtils.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/NullSafetyCondition.h"
+#include "analysis/SymbolTable.h"
 #include "analysis/TypeExtraction.h"
 #include "parser/GrammarNames.h"
+#include <memory>
 #include <string>
+#include <vector>
 
 namespace angel_lsp::analysis
 {
 namespace
 {
-SourceRange ToSourceRange(TSNode node)
-{
-    const TSPoint start = ts_node_start_point(node);
-    const TSPoint end = ts_node_end_point(node);
-    return SourceRange{start.row, start.column, end.row, end.column};
-}
-
 void ApplyAssertions(FlowState& state, const std::vector<NullAssertion>& assertions)
 {
     for (const auto& a : assertions)
@@ -68,9 +64,15 @@ void CheckMemberDereference(TSNode obj, FlowState& state, NullCheckContext& ctx)
     }
 }
 
-void CheckBinaryExpr(TSNode expr, FlowState& state, NullCheckContext& ctx, int depth)
+struct NullWorkItem
 {
-    const auto& gs = parser::GetGrammarSymbols();
+    TSNode expr;
+    std::shared_ptr<FlowState> state;
+};
+
+void ProcessBinaryExpr(TSNode expr, const parser::GrammarSymbols& gs, std::vector<NullWorkItem>& worklist,
+                       NullCheckContext& ctx, FlowState& state, const std::shared_ptr<FlowState>& statePtr)
+{
     TSNode left = parser::GetChildByField(expr, gs.fieldLeft);
     TSNode opNode = parser::GetChildByField(expr, gs.fieldOperator);
     TSNode right = parser::GetChildByField(expr, gs.fieldRight);
@@ -78,81 +80,115 @@ void CheckBinaryExpr(TSNode expr, FlowState& state, NullCheckContext& ctx, int d
 
     if (opSym == gs.tokAmpAmp || opSym == gs.tokAnd)
     {
-        CheckNullExpression(left, state, ctx, depth + 1);
         std::vector<NullAssertion> posAssertions;
         std::vector<NullAssertion> negAssertions;
         ExtractConditionAssertions(left, ctx.sourceCode, posAssertions, negAssertions);
-        FlowState tempState = state;
-        ApplyAssertions(tempState, posAssertions);
-        CheckNullExpression(right, tempState, ctx, depth + 1);
+        auto rightState = std::make_shared<FlowState>(state);
+        ApplyAssertions(*rightState, posAssertions);
+
+        worklist.push_back({right, rightState});
+        worklist.push_back({left, statePtr});
     }
     else if (opSym == gs.tokPipePipe || opSym == gs.tokOr)
     {
-        CheckNullExpression(left, state, ctx, depth + 1);
         std::vector<NullAssertion> posAssertions;
         std::vector<NullAssertion> negAssertions;
         ExtractConditionAssertions(left, ctx.sourceCode, posAssertions, negAssertions);
-        FlowState tempState = state;
-        ApplyAssertions(tempState, negAssertions);
-        CheckNullExpression(right, tempState, ctx, depth + 1);
+        auto rightState = std::make_shared<FlowState>(state);
+        ApplyAssertions(*rightState, negAssertions);
+
+        worklist.push_back({right, rightState});
+        worklist.push_back({left, statePtr});
     }
     else
     {
-        CheckNullExpression(left, state, ctx, depth + 1);
-        CheckNullExpression(right, state, ctx, depth + 1);
+        worklist.push_back({right, statePtr});
+        worklist.push_back({left, statePtr});
     }
 }
-} // namespace
 
-void CheckNullExpression(TSNode expr, FlowState& state, NullCheckContext& ctx, int depth)
+void ProcessCallExpr(TSNode expr, const parser::GrammarSymbols& gs, std::vector<NullWorkItem>& worklist,
+                     const std::shared_ptr<FlowState>& statePtr)
 {
-    if (ts_node_is_null(expr) || depth >= 64)
+    TSNode argsNode = parser::GetChildByField(expr, gs.fieldArguments);
+    const uint32_t count = ts_node_is_null(argsNode) ? 0 : ts_node_named_child_count(argsNode);
+    for (uint32_t i = count; i > 0; --i)
     {
-        return;
+        worklist.push_back({ts_node_named_child(argsNode, i - 1), statePtr});
     }
-    const auto& gs = parser::GetGrammarSymbols();
+    worklist.push_back({parser::GetChildByField(expr, gs.fieldFunction), statePtr});
+}
+
+void DispatchExprWorkItem(const NullWorkItem& item, const parser::GrammarSymbols& gs,
+                          std::vector<NullWorkItem>& worklist, NullCheckContext& ctx)
+{
+    TSNode expr = item.expr;
+    FlowState& state = *item.state;
     const TSSymbol exprSym = ts_node_symbol(expr);
+
     if (exprSym == gs.symMemberExpression)
     {
         TSNode obj = parser::GetChildByField(expr, gs.fieldObject);
         CheckMemberDereference(obj, state, ctx);
-        CheckNullExpression(obj, state, ctx, depth + 1);
+        worklist.push_back({obj, item.state});
     }
     else if (exprSym == gs.symIndexExpression)
     {
         TSNode obj = parser::GetChildByField(expr, gs.fieldObject);
         CheckMemberDereference(obj, state, ctx);
-        CheckNullExpression(obj, state, ctx, depth + 1);
-        CheckNullExpression(parser::GetChildByField(expr, gs.fieldIndex), state, ctx, depth + 1);
+        worklist.push_back({parser::GetChildByField(expr, gs.fieldIndex), item.state});
+        worklist.push_back({obj, item.state});
     }
     else if (exprSym == gs.symCallExpression)
     {
-        CheckNullExpression(parser::GetChildByField(expr, gs.fieldFunction), state, ctx, depth + 1);
-        TSNode argsNode = parser::GetChildByField(expr, gs.fieldArguments);
-        const uint32_t count = ts_node_is_null(argsNode) ? 0 : ts_node_named_child_count(argsNode);
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            CheckNullExpression(ts_node_named_child(argsNode, i), state, ctx, depth + 1);
-        }
+        ProcessCallExpr(expr, gs, worklist, item.state);
     }
     else if (exprSym == gs.symBinaryExpression)
     {
-        CheckBinaryExpr(expr, state, ctx, depth);
+        ProcessBinaryExpr(expr, gs, worklist, ctx, state, item.state);
     }
     else if (exprSym == gs.symCastExpression)
     {
-        CheckNullExpression(parser::GetChildByField(expr, gs.fieldValue), state, ctx, depth + 1);
+        worklist.push_back({parser::GetChildByField(expr, gs.fieldValue), item.state});
     }
     else if (exprSym == gs.symParenthesizedExpression)
     {
-        CheckNullExpression(ts_node_named_child(expr, 0), state, ctx, depth + 1);
+        worklist.push_back({ts_node_named_child(expr, 0), item.state});
     }
     else if (exprSym == gs.symTernaryExpression)
     {
-        CheckNullExpression(parser::GetChildByField(expr, gs.fieldCondition), state, ctx, depth + 1);
-        CheckNullExpression(parser::GetChildByField(expr, gs.fieldConsequence), state, ctx, depth + 1);
-        CheckNullExpression(parser::GetChildByField(expr, gs.fieldAlternative), state, ctx, depth + 1);
+        worklist.push_back({parser::GetChildByField(expr, gs.fieldAlternative), item.state});
+        worklist.push_back({parser::GetChildByField(expr, gs.fieldConsequence), item.state});
+        worklist.push_back({parser::GetChildByField(expr, gs.fieldCondition), item.state});
     }
+}
+} // namespace
+
+void CheckNullExpression(TSNode expr, FlowState& state, NullCheckContext& ctx)
+{
+    if (ts_node_is_null(expr))
+    {
+        return;
+    }
+    const auto& gs = parser::GetGrammarSymbols();
+    auto sharedRootState = std::make_shared<FlowState>(state);
+
+    std::vector<NullWorkItem> worklist;
+    worklist.push_back({expr, sharedRootState});
+
+    while (!worklist.empty())
+    {
+        NullWorkItem item = std::move(worklist.back());
+        worklist.pop_back();
+
+        if (ts_node_is_null(item.expr))
+        {
+            continue;
+        }
+        DispatchExprWorkItem(item, gs, worklist, ctx);
+    }
+
+    state = *sharedRootState;
 }
 
 } // namespace angel_lsp::analysis

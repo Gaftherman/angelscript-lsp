@@ -369,7 +369,7 @@ DiagnosticSuppressionMap ParseDiagnosticSuppressions(std::string_view sourceCode
 
     if (nodeIndex)
     {
-        for (TSNode cNode : nodeIndex->Nodes(parser::nodes::Comment))
+        for (TSNode cNode : nodeIndex->Nodes(parser::GetGrammarSymbols().symComment))
         {
             uint32_t startByte = ts_node_start_byte(cNode);
             uint32_t endByte = ts_node_end_byte(cNode);

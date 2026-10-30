@@ -81,7 +81,7 @@ class NodeIndex
 
     /**
      * @brief Returns all nodes of a given node type name in document order.
-     * @param typeName The grammar node type name (e.g. parser::nodes::CallExpression).
+     * @param typeName The grammar node type name (e.g. "call_expression").
      * @return Span of matching nodes. Empty if type name has no occurrences.
      */
     [[nodiscard]] std::span<const TSNode> Nodes(std::string_view typeName) const noexcept;

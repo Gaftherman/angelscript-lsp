@@ -24,21 +24,16 @@ bool IsSubtreeSkippable(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
 /**
  * @brief Traverses up the AST cursor to find the next available sibling or reaches root.
  * @param[in,out] cursor Active tree-sitter cursor.
- * @param[in,out] depth Current traversal depth counter.
  * @param[in] rootNode Enclosing root node boundary.
  * @return True if a next sibling was found, false if root was reached.
  */
-bool StepUpCursor(TSTreeCursor& cursor, size_t& depth, TSNode rootNode)
+bool StepUpCursor(TSTreeCursor& cursor, TSNode rootNode)
 {
     while (true)
     {
         if (!ts_tree_cursor_goto_parent(&cursor))
         {
             return false;
-        }
-        if (depth > 0)
-        {
-            --depth;
         }
         if (ts_node_eq(ts_tree_cursor_current_node(&cursor), rootNode))
         {
@@ -66,8 +61,6 @@ void CollectAstClassFields(TSNode classNode, std::string_view sourceCode,
     }
 
     TSTreeCursor cursor = ts_tree_cursor_new(classNode);
-    size_t depth = 0;
-    constexpr size_t k_maxAstDepth = 64;
 
     const auto& gs = parser::GetGrammarSymbols();
     while (true)
@@ -85,16 +78,15 @@ void CollectAstClassFields(TSNode classNode, std::string_view sourceCode,
             }
         }
 
-        if (!IsSubtreeSkippable(sym, gs) && depth < k_maxAstDepth && ts_tree_cursor_goto_first_child(&cursor))
+        if (!IsSubtreeSkippable(sym, gs) && ts_tree_cursor_goto_first_child(&cursor))
         {
-            ++depth;
             continue;
         }
         if (ts_tree_cursor_goto_next_sibling(&cursor))
         {
             continue;
         }
-        if (!StepUpCursor(cursor, depth, classNode))
+        if (!StepUpCursor(cursor, classNode))
         {
             break;
         }
@@ -324,8 +316,6 @@ bool MethodBodyMutatesClassState(const ClassMutationContext& context)
 
     auto classFields = CollectClassFields(context);
     TSTreeCursor cursor = ts_tree_cursor_new(context.bodyNode);
-    size_t depth = 0;
-    constexpr size_t k_maxAstDepth = 64;
 
     while (true)
     {
@@ -338,16 +328,15 @@ bool MethodBodyMutatesClassState(const ClassMutationContext& context)
             return true;
         }
 
-        if (depth < k_maxAstDepth && ts_tree_cursor_goto_first_child(&cursor))
+        if (ts_tree_cursor_goto_first_child(&cursor))
         {
-            ++depth;
             continue;
         }
         if (ts_tree_cursor_goto_next_sibling(&cursor))
         {
             continue;
         }
-        if (!StepUpCursor(cursor, depth, context.bodyNode))
+        if (!StepUpCursor(cursor, context.bodyNode))
         {
             break;
         }

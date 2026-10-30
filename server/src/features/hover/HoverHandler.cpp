@@ -3112,43 +3112,63 @@ std::optional<std::string> ResolveIdentifierDefaultValue(const std::string& name
  * @return Concatenated string value, or std::nullopt if not fully constant.
  */
 std::optional<std::string> EvaluateConstantStringExpr(TSNode node, const HoverRequest& request,
-                                                      const analysis::Scope* scope, int depth = 0)
+                                                      const analysis::Scope* scope)
 {
-    if (ts_node_is_null(node) || depth > 16)
+    if (ts_node_is_null(node))
     {
         return std::nullopt;
     }
 
     const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol type = ts_node_symbol(node);
-    if (type == gs.symStringLiteral)
+    std::string result;
+    std::vector<TSNode> stack{node};
+    while (!stack.empty())
     {
-        std::string text = analysis::GetNodeText(node, request.sourceCode);
-        return std::string(UnquoteStringLiteral(text));
-    }
-    if (type == gs.symBinaryExpression)
-    {
-        TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
-        if (ts_node_is_null(opNode) || ts_node_symbol(opNode) != gs.tokPlus)
+        TSNode current = stack.back();
+        stack.pop_back();
+        if (ts_node_is_null(current))
         {
             return std::nullopt;
         }
-        TSNode left = parser::GetChildByField(node, gs.fieldLeft);
-        TSNode right = parser::GetChildByField(node, gs.fieldRight);
-        auto leftStr = EvaluateConstantStringExpr(left, request, scope, depth + 1);
-        auto rightStr = EvaluateConstantStringExpr(right, request, scope, depth + 1);
-        if (leftStr.has_value() && rightStr.has_value())
+
+        const TSSymbol type = ts_node_symbol(current);
+        if (type == gs.symStringLiteral)
         {
-            return *leftStr + *rightStr;
+            std::string text = analysis::GetNodeText(current, request.sourceCode);
+            result += UnquoteStringLiteral(text);
         }
-        return std::nullopt;
+        else if (type == gs.symBinaryExpression)
+        {
+            TSNode opNode = parser::GetChildByField(current, gs.fieldOperator);
+            if (ts_node_is_null(opNode) || ts_node_symbol(opNode) != gs.tokPlus)
+            {
+                return std::nullopt;
+            }
+            TSNode left = parser::GetChildByField(current, gs.fieldLeft);
+            TSNode right = parser::GetChildByField(current, gs.fieldRight);
+            if (ts_node_is_null(left) || ts_node_is_null(right))
+            {
+                return std::nullopt;
+            }
+            stack.push_back(right);
+            stack.push_back(left);
+        }
+        else if (type == gs.symIdentifier || type == gs.symScopedIdentifier)
+        {
+            std::string name = analysis::GetNodeText(current, request.sourceCode);
+            auto val = ResolveIdentifierDefaultValue(name, current, request, scope);
+            if (!val.has_value())
+            {
+                return std::nullopt;
+            }
+            result += *val;
+        }
+        else
+        {
+            return std::nullopt;
+        }
     }
-    if (type == gs.symIdentifier || type == gs.symScopedIdentifier)
-    {
-        std::string name = analysis::GetNodeText(node, request.sourceCode);
-        return ResolveIdentifierDefaultValue(name, node, request, scope);
-    }
-    return std::nullopt;
+    return result;
 }
 
 /**

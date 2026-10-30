@@ -21,8 +21,7 @@ struct NullCheckContext
  * @param[in] expr Expression AST node to check.
  * @param[in,out] state Dataflow state tracking handle nullability.
  * @param[in,out] ctx Diagnostic context and source code view.
- * @param[in] depth Current AST traversal depth.
  */
-void CheckNullExpression(TSNode expr, FlowState& state, NullCheckContext& ctx, int depth);
+void CheckNullExpression(TSNode expr, FlowState& state, NullCheckContext& ctx);
 
 } // namespace angel_lsp::analysis
