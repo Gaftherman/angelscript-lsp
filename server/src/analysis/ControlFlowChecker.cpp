@@ -1,10 +1,10 @@
-#include "analysis/ControlFlowChecker.h"
-#include "analysis/ASTUtils.h"
+﻿#include "analysis/ControlFlowChecker.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/RuleIndex.h"
+#include "parser/ASTUtils.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
@@ -25,34 +25,6 @@ namespace
 TSSymbol NodeSymbol(TSNode node)
 {
     return ts_node_is_null(node) ? 0 : ts_node_symbol(node);
-}
-
-std::string_view NodeText(TSNode node, std::string_view sourceCode)
-{
-    if (ts_node_is_null(node))
-    {
-        return {};
-    }
-    const uint32_t start = ts_node_start_byte(node);
-    const uint32_t end = ts_node_end_byte(node);
-    if (start >= end || end > sourceCode.size())
-    {
-        return {};
-    }
-    return sourceCode.substr(start, end - start);
-}
-
-std::string_view Trim(std::string_view text)
-{
-    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())))
-    {
-        text.remove_prefix(1);
-    }
-    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back())))
-    {
-        text.remove_suffix(1);
-    }
-    return text;
 }
 
 /**

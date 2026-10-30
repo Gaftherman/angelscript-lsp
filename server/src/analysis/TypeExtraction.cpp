@@ -80,25 +80,6 @@ static const TypeExtractionSymbols& GetTypeExtractionSymbols()
     return symbols;
 }
 
-static std::string GetNodeText(TSNode node, std::string_view sourceCode)
-{
-    return parser::GetNodeText(node, sourceCode);
-}
-
-static std::string_view GetNodeView(TSNode node, std::string_view sourceCode)
-{
-    if (ts_node_is_null(node))
-        return {};
-
-    uint32_t start = ts_node_start_byte(node);
-    uint32_t end = ts_node_end_byte(node);
-
-    if (start >= end || end > sourceCode.size())
-        return {};
-
-    return std::string_view(sourceCode.data() + start, end - start);
-}
-
 static bool TryExtractPrimitiveOrIdentifier(TSNode typeNode, std::string_view sourceCode, TypeExtractionResult& result)
 {
     const auto& symbols = GetTypeExtractionSymbols();
@@ -106,7 +87,7 @@ static bool TryExtractPrimitiveOrIdentifier(TSNode typeNode, std::string_view so
 
     if (nodeSymbol == symbols.symPrimitiveType)
     {
-        result.baseTypeName = GetNodeText(typeNode, sourceCode);
+        result.baseTypeName = parser::GetNodeText(typeNode, sourceCode);
         TSNode parentDatatype = parser::GetParent(typeNode);
         if (!ts_node_is_null(parentDatatype))
         {
@@ -125,7 +106,7 @@ static bool TryExtractPrimitiveOrIdentifier(TSNode typeNode, std::string_view so
 
     if (nodeSymbol == symbols.symIdentifier)
     {
-        result.baseTypeName = GetNodeText(typeNode, sourceCode);
+        result.baseTypeName = parser::GetNodeText(typeNode, sourceCode);
         result.kind = TypeKind::Unknown;
         return true;
     }
@@ -146,7 +127,7 @@ static void ProcessDatatypeChild(TSNode child, std::string_view sourceCode, Type
     }
     else
     {
-        datatypeText = GetNodeText(child, sourceCode);
+        datatypeText = parser::GetNodeText(child, sourceCode);
         result.baseTypeName = datatypeText;
     }
 }
@@ -185,7 +166,7 @@ static void ProcessAnonymousModifier(TSNode child, TSNode prevChild, std::string
                                      TypeExtractionResult& result)
 {
     const auto& symbols = GetTypeExtractionSymbols();
-    const std::string_view tok = GetNodeView(child, sourceCode);
+    const std::string_view tok = parser::GetNodeTextView(child, sourceCode);
     if (tok == "[")
     {
         result.isArray = true;
@@ -193,7 +174,8 @@ static void ProcessAnonymousModifier(TSNode child, TSNode prevChild, std::string
     }
     else if (tok == "@")
     {
-        const std::string_view prevTok = !ts_node_is_null(prevChild) ? GetNodeView(prevChild, sourceCode) : "";
+        const std::string_view prevTok =
+            !ts_node_is_null(prevChild) ? parser::GetNodeTextView(prevChild, sourceCode) : "";
         if (result.isHandle && prevTok != "const")
         {
             result.hasPrimitiveHandle = true;
@@ -246,7 +228,7 @@ TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, std::string_view so
 
             if (childSym == symbols.symScope)
             {
-                scopePrefix = GetNodeText(child, sourceCode);
+                scopePrefix = parser::GetNodeText(child, sourceCode);
             }
             else if (childSym == symbols.symDatatype)
             {

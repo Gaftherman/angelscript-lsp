@@ -1,5 +1,4 @@
-#include "analysis/SemanticAnalyzer.h"
-#include "analysis/ASTUtils.h"
+﻿#include "analysis/SemanticAnalyzer.h"
 #include "analysis/AccessChecker.h"
 #include "analysis/CallChecker.h"
 #include "analysis/ConstChecker.h"
@@ -22,6 +21,7 @@
 #include "analysis/rules/TypeRules.h"
 #include "analysis/rules/UnusedSymbolChecker.h"
 #include "analysis/rules/VariableRules.h"
+#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/LspLogger.h"
@@ -117,10 +117,6 @@ void SemanticAnalyzer::RunExpressionRules(const SemanticAnalysisRequest& request
     if (indexPtr)
     {
         CheckEngineDialectRules(*indexPtr, ctx);
-    }
-    else
-    {
-        CheckEngineDialectRules(ts_tree_root_node(request.tree), ctx);
     }
 }
 
@@ -630,189 +626,6 @@ void SemanticAnalyzer::CheckEngineDialectRules(const NodeIndex& nodeIndex, Diagn
     CheckDialectNamedArguments(nodeIndex, ctx);
     CheckDialectValueAssignForRef(nodeIndex, ctx);
     CheckDialectMultilineStrings(nodeIndex, ctx);
-}
-
-static void CheckDialectNodeForeach(TSNode node, DiagnosticContext& ctx)
-{
-    if (!ctx.request.SupportsForeach())
-    {
-        const TSPoint start = ts_node_start_point(node);
-        ctx.EmitAtRange({start.row, start.column, start.row, start.column + 7}, "as-err-foreach-unsupported",
-                        DiagnosticSeverity::Error);
-    }
-}
-
-static void CheckDialectNodeInitializerList(TSNode node, DiagnosticContext& ctx)
-{
-    if (ctx.request.DisallowsEmptyListElements())
-    {
-        const uint32_t childCount = ts_node_child_count(node);
-        for (uint32_t i = 1; i < childCount; ++i)
-        {
-            const auto& gs = parser::GetGrammarSymbols();
-            const TSSymbol prevSym = ts_node_symbol(ts_node_child(node, i - 1));
-            const TSSymbol currSym = ts_node_symbol(ts_node_child(node, i));
-            if (prevSym == gs.tokComma && (currSym == gs.tokComma || currSym == gs.tokCloseBrace))
-            {
-                const TSPoint at = ts_node_start_point(ts_node_child(node, i - 1));
-                ctx.EmitAtRange({at.row, at.column, at.row, at.column + 1}, "as-err-empty-list-element",
-                                DiagnosticSeverity::Error);
-            }
-        }
-    }
-}
-
-static void CheckDialectNodeVariableDeclaration(TSNode node, DiagnosticContext& ctx)
-{
-    CheckDialectVariableDeclarationNode(node, ctx);
-}
-
-static void CheckDialectNodeBinaryExpression(TSNode node, DiagnosticContext& ctx)
-{
-    if (ctx.request.diagnostics && ctx.request.diagnostics->reportIntegerDivision &&
-        !ctx.request.DisablesIntegerDivision())
-    {
-        CheckDialectIntegerDivisionNode(node, ctx);
-    }
-}
-
-static void CheckDialectNodeArgumentList(TSNode node, DiagnosticContext& ctx)
-{
-    if (ctx.request.NamedArgumentSyntaxMode() != 2)
-    {
-        const uint32_t argCount = ts_node_named_child_count(node);
-        for (uint32_t i = 0; i < argCount; ++i)
-        {
-            const auto& gs = parser::GetGrammarSymbols();
-            const TSNode argument = ts_node_named_child(node, i);
-            if (ts_node_symbol(argument) != gs.symAssignmentExpression)
-            {
-                continue;
-            }
-
-            const TSNode target = parser::GetChildByField(argument, gs.fieldLeft);
-            if (ts_node_is_null(target))
-            {
-                continue;
-            }
-            const TSSymbol targetSym = ts_node_symbol(target);
-            if (targetSym != gs.symIdentifier && targetSym != gs.symScopedIdentifier)
-            {
-                continue;
-            }
-            if (targetSym == gs.symScopedIdentifier && ts_node_named_child_count(target) != 1)
-            {
-                continue;
-            }
-
-            const TSPoint start = ts_node_start_point(argument);
-            const TSPoint end = ts_node_end_point(argument);
-            const std::string name = GetNodeText(target, ctx.request.sourceCode);
-
-            ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-named-argument-syntax", name,
-                            ctx.request.NamedArgumentSyntaxMode() == 1 ? DiagnosticSeverity::Warning
-                                                                       : DiagnosticSeverity::Error);
-        }
-    }
-}
-
-static void CheckDialectNodeAssignmentExpression(TSNode node, DiagnosticContext& ctx)
-{
-    if (ctx.request.DisallowsValueAssignForRef())
-    {
-        CheckDialectAssignmentExpressionNode(node, ctx);
-    }
-}
-
-static void CheckDialectNodeStringLiteral(TSNode node, DiagnosticContext& ctx)
-{
-    const TSPoint start = ts_node_start_point(node);
-    const TSPoint end = ts_node_end_point(node);
-
-    if (end.row > start.row && !ctx.request.AllowsMultilineStrings())
-    {
-        const uint32_t from = ts_node_start_byte(node);
-        const bool isHeredoc =
-            from + 3 <= ctx.request.sourceCode.size() && ctx.request.sourceCode.compare(from, 3, "\"\"\"") == 0;
-
-        if (!isHeredoc)
-        {
-            ctx.EmitAtRange({start.row, start.column, start.row, start.column + 1}, "as-err-multiline-string",
-                            DiagnosticSeverity::Error);
-        }
-    }
-}
-
-static void ProcessDialectNode(TSNode node, DiagnosticContext& ctx)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(node);
-    if (sym == gs.symForeachStatement)
-    {
-        CheckDialectNodeForeach(node, ctx);
-    }
-    else if (sym == gs.symInitializerList)
-    {
-        CheckDialectNodeInitializerList(node, ctx);
-    }
-    else if (sym == gs.symVariableDeclaration)
-    {
-        CheckDialectNodeVariableDeclaration(node, ctx);
-    }
-    else if (sym == gs.symBinaryExpression)
-    {
-        CheckDialectNodeBinaryExpression(node, ctx);
-    }
-    else if (sym == gs.symArgumentList)
-    {
-        CheckDialectNodeArgumentList(node, ctx);
-    }
-    else if (sym == gs.symAssignmentExpression)
-    {
-        CheckDialectNodeAssignmentExpression(node, ctx);
-    }
-    else if (sym == gs.symStringLiteral)
-    {
-        CheckDialectNodeStringLiteral(node, ctx);
-    }
-}
-
-void SemanticAnalyzer::CheckEngineDialectRules(TSNode node, DiagnosticContext& ctx) const
-{
-    if (ts_node_is_null(node))
-    {
-        return;
-    }
-
-    TSTreeCursor cursor = ts_tree_cursor_new(node);
-    bool visiting = true;
-    while (visiting)
-    {
-        TSNode current = ts_tree_cursor_current_node(&cursor);
-        ProcessDialectNode(current, ctx);
-
-        const auto& gs = parser::GetGrammarSymbols();
-        if (ts_node_symbol(current) == gs.symStringLiteral || !ts_tree_cursor_goto_first_child(&cursor))
-        {
-            if (ts_tree_cursor_goto_next_sibling(&cursor))
-            {
-                continue;
-            }
-            while (true)
-            {
-                if (!ts_tree_cursor_goto_parent(&cursor))
-                {
-                    visiting = false;
-                    break;
-                }
-                if (ts_tree_cursor_goto_next_sibling(&cursor))
-                {
-                    break;
-                }
-            }
-        }
-    }
-    ts_tree_cursor_delete(&cursor);
 }
 
 static void DispatchDeclarationRule(const Symbol& sym, DiagnosticContext& ctx,

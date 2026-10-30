@@ -1,8 +1,8 @@
-#include "analysis/rules/TypeRules.h"
-#include "analysis/ASTUtils.h"
+﻿#include "analysis/rules/TypeRules.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
+#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/Utils.h"
 
@@ -399,9 +399,10 @@ void ValidateEnum(const Symbol& sym, const DiagnosticContext& ctx)
     CheckEnumModifiersAndBody(sym, sig, ctx);
     CheckEnumMemberInitializers(sym, sig, ctx);
 
-    if (ctx.request.nodeIndex && !ctx.request.sourceCode.empty())
+    const auto* nodeIndex = ctx.request.GetNodeIndex();
+    if (nodeIndex && !ctx.request.sourceCode.empty())
     {
-        const TSNode enumNode = FindEnumDeclarationNode(*ctx.request.nodeIndex, sym, ctx.request.sourceCode);
+        const TSNode enumNode = FindEnumDeclarationNode(*nodeIndex, sym, ctx.request.sourceCode);
         if (!ts_node_is_null(enumNode))
         {
             CheckDuplicateEnumMembers(enumNode, sym, ctx);

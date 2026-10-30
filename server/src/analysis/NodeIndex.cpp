@@ -1,6 +1,6 @@
-#include "analysis/NodeIndex.h"
-#include "analysis/ASTUtils.h"
+﻿#include "analysis/NodeIndex.h"
 #include "analysis/TypeSanitization.h"
+#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/ScopedNameUtils.h"
 

@@ -1,7 +1,7 @@
-#include "analysis/ConstChecker.h"
-#include "analysis/ASTUtils.h"
+﻿#include "analysis/ConstChecker.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
+#include "parser/ASTUtils.h"
 #include "utils/Utils.h"
 
 #include "parser/GrammarNames.h"

@@ -1,6 +1,6 @@
-#include "analysis/CallGraph.h"
-#include "analysis/ASTUtils.h"
+﻿#include "analysis/CallGraph.h"
 #include "analysis/SymbolTable.h"
+#include "parser/ASTUtils.h"
 #include "utils/ScopedNameUtils.h"
 
 #include "parser/GrammarNames.h"

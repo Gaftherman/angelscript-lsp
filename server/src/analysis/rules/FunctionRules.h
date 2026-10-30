@@ -41,8 +41,6 @@ class NodeIndex;
 namespace angel_lsp::analysis::rules
 {
 /**
- * @brief Reports an anonymous function (lambda expression) that stands alone as an expression statement.
-/**
  * @brief Reports an anonymous function (lambda expression) using pre-indexed AST nodes.
  * @param nodeIndex Pre-indexed syntax tree nodes.
  * @param ctx Diagnostic sink.

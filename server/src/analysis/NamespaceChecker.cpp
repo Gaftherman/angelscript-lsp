@@ -1,7 +1,7 @@
-#include "analysis/NamespaceChecker.h"
-#include "analysis/ASTUtils.h"
+﻿#include "analysis/NamespaceChecker.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
+#include "parser/ASTUtils.h"
 #include "utils/ScopedNameUtils.h"
 
 #include "parser/GrammarNames.h"

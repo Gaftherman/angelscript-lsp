@@ -1,9 +1,9 @@
-#include "analysis/HandleComparisonChecker.h"
-#include "analysis/ASTUtils.h"
+﻿#include "analysis/HandleComparisonChecker.h"
 #include "analysis/BinaryOperatorHelpers.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeExtraction.h"
+#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "parser/Keywords.h"
 #include <string>

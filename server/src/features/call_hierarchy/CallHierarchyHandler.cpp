@@ -1,6 +1,6 @@
-#include "features/call_hierarchy/CallHierarchyHandler.h"
-#include "analysis/ASTUtils.h"
+﻿#include "features/call_hierarchy/CallHierarchyHandler.h"
 #include "analysis/SemanticHelpers.h"
+#include "parser/ASTUtils.h"
 #include "utils/Constants.h"
 #include "utils/ScopedNameUtils.h"
 

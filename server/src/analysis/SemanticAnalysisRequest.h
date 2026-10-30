@@ -245,6 +245,14 @@ struct SemanticAnalysisRequest
     mutable const NodeIndex* nodeIndex = nullptr;
 
     /**
+     * @brief Returns the precomputed NodeIndex, or nullptr if none was set.
+     */
+    [[nodiscard]] const NodeIndex* GetNodeIndex() const noexcept
+    {
+        return nodeIndex;
+    }
+
+    /**
      * @brief Gets configured name for the string type or empty if not configured.
      */
     std::string_view GetStringTypeName() const noexcept

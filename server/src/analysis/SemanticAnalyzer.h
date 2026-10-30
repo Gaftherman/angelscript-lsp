@@ -115,8 +115,6 @@ class SemanticAnalyzer
      */
     void CheckEngineDialectRules(const NodeIndex& nodeIndex, DiagnosticContext& ctx) const;
 
-    void CheckEngineDialectRules(TSNode node, DiagnosticContext& ctx) const;
-
     /**
      * @brief Same rule as CheckNullAssignedToNonHandle, applied to function-body locals -
      *        ScopeTree::LocalDefinition entries of kind Variable in an isFunctionScope-nested

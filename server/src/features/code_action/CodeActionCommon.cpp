@@ -6,11 +6,6 @@
 namespace angel_lsp::features
 {
 
-std::string GetNodeText(TSNode node, std::string_view sourceCode)
-{
-    return parser::GetNodeText(node, sourceCode);
-}
-
 std::string GetLineIndentation(std::string_view sourceCode, uint32_t line)
 {
     uint32_t currLine = 0;

@@ -5,6 +5,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SymbolTable.h"
 #include "features/code_action/CodeActionHandler.h"
+#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/IncludeResolver.h"
 #include "utils/PositionEncoding.h"
@@ -23,13 +24,7 @@
 namespace angel_lsp::features
 {
 
-/**
- * @brief Extracts text slice of an AST node from the source code.
- * @param[in] node Tree-sitter AST node.
- * @param[in] sourceCode Source document text.
- * @return Extracted node text.
- */
-std::string GetNodeText(TSNode node, std::string_view sourceCode);
+using parser::GetNodeText;
 
 /**
  * @brief Extracts leading whitespace indentation of a given 0-indexed line.

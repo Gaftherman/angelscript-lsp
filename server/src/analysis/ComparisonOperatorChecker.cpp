@@ -1,9 +1,9 @@
-#include "analysis/ComparisonOperatorChecker.h"
-#include "analysis/ASTUtils.h"
+﻿#include "analysis/ComparisonOperatorChecker.h"
 #include "analysis/BinaryOperatorHelpers.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/overload/OverloadTypeConversions.h"
+#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "parser/Primitives.h"
 

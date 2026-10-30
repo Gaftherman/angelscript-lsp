@@ -36,16 +36,7 @@ inline lsp::Range ToLspRange(TSNode node)
     return lsp::Range{lsp::Position{start.row, start.column}, lsp::Position{end.row, end.column}};
 }
 
-/**
- * @brief Extracts text content from source code for a given AST node.
- * @param node Target TSNode.
- * @param sourceCode Full document source text.
- * @return Extracted string slice.
- */
-inline std::string GetNodeText(TSNode node, std::string_view sourceCode)
-{
-    return parser::GetNodeText(node, sourceCode);
-}
+using parser::GetNodeText;
 
 /**
  * @brief Helper to query a child node by its grammar field name.

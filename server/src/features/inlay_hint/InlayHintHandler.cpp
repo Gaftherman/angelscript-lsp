@@ -20,16 +20,7 @@ namespace angel_lsp::features
 {
 namespace
 {
-/**
- * @brief Extracts text slice of an AST node from the source code.
- * @param[in] node Tree-sitter AST node.
- * @param[in] sourceCode Source text buffer.
- * @return Extracted node text or empty string.
- */
-std::string GetNodeText(TSNode node, std::string_view sourceCode)
-{
-    return parser::GetNodeText(node, sourceCode);
-}
+using parser::GetNodeText;
 
 /**
  * @brief Trims surrounding whitespace, parentheses, and semicolons from node text.

@@ -1,5 +1,4 @@
-#include "analysis/NullSafetyChecker.h"
-#include "analysis/ASTUtils.h"
+﻿#include "analysis/NullSafetyChecker.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/NullSafetyCondition.h"
@@ -7,6 +6,7 @@
 #include "analysis/NullSafetyExpr.h"
 #include "analysis/NullSafetyParam.h"
 #include "analysis/ast/SemanticNodes.h"
+#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/Utils.h"
 #include <string>

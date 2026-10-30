@@ -1,5 +1,4 @@
-#include "analysis/TypeConversionChecker.h"
-#include "analysis/ASTUtils.h"
+﻿#include "analysis/TypeConversionChecker.h"
 #include "analysis/BinaryOperatorChecker.h"
 #include "analysis/ComparisonOperatorChecker.h"
 #include "analysis/DiagnosticCodes.h"
@@ -7,6 +6,7 @@
 #include "analysis/HandleComparisonChecker.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/RepeatedConversionChecker.h"
+#include "parser/ASTUtils.h"
 
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeSanitization.h"

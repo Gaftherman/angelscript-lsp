@@ -1,9 +1,9 @@
-#include "analysis/InitializerListChecker.h"
-#include "analysis/ASTUtils.h"
+﻿#include "analysis/InitializerListChecker.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/rules/RuleIndex.h"
+#include "parser/ASTUtils.h"
 
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"

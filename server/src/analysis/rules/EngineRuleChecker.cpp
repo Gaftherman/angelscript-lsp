@@ -1,11 +1,11 @@
-#include "analysis/rules/EngineRuleChecker.h"
+﻿#include "analysis/rules/EngineRuleChecker.h"
 
-#include "analysis/ASTUtils.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeConversionChecker.h"
 #include "analysis/TypeSanitization.h"
 #include "i18n/i18n.h"
+#include "parser/ASTUtils.h"
 #include "parser/Primitives.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/Utils.h"

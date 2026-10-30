@@ -1,10 +1,10 @@
-#include "analysis/IsolationChecker.h"
-#include "analysis/ASTUtils.h"
+﻿#include "analysis/IsolationChecker.h"
 #include "analysis/DiagnosticContext.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/ScopeTree.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SymbolTable.h"
+#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/Utils.h"
 #include <string_view>
@@ -264,29 +264,16 @@ bool IsValidSharedNode(TSNode sharedNode)
 
 void CheckSharedEntityEligibility(const IsolationCheckRequest& request, DiagnosticContext& ctx)
 {
+    if (!request.nodeIndex)
+    {
+        return;
+    }
     const auto& gs = parser::GetGrammarSymbols();
-    std::span<const TSNode> sharedNodes;
-    std::vector<TSNode> fallbackNodes;
-    if (request.nodeIndex)
-    {
-        sharedNodes = request.nodeIndex->Nodes(gs.tokShared);
-    }
-    else
-    {
-        ForEachDescendantNode(request.rootNode,
-                              [&](TSNode node)
-                              {
-                                  if (ts_node_symbol(node) == gs.tokShared)
-                                  {
-                                      fallbackNodes.push_back(node);
-                                  }
-                              });
-        sharedNodes = fallbackNodes;
-    }
+    const auto sharedNodes = request.nodeIndex->Nodes(gs.tokShared);
 
     for (TSNode sharedNode : sharedNodes)
     {
-        if (request.nodeIndex && request.nodeIndex->IsInsideComment(ts_node_start_byte(sharedNode)))
+        if (request.nodeIndex->IsInsideComment(ts_node_start_byte(sharedNode)))
         {
             continue;
         }

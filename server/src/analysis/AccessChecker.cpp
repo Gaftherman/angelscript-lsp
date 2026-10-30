@@ -1,9 +1,9 @@
-#include "analysis/AccessChecker.h"
-#include "analysis/ASTUtils.h"
+﻿#include "analysis/AccessChecker.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/ScopeTree.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
+#include "parser/ASTUtils.h"
 #include "utils/Constants.h"
 #include "utils/Utils.h"
 

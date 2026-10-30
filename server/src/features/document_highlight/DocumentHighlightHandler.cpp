@@ -57,16 +57,7 @@ std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, cons
     return symbolTable.FindEnclosingClassName(uri, line, excludeName);
 }
 
-/**
- * @brief Extracts source code substring corresponding to an AST node.
- * @param[in] node AST node.
- * @param[in] sourceCode Source text.
- * @return Node text or empty string.
- */
-std::string GetNodeText(TSNode node, std::string_view sourceCode)
-{
-    return parser::GetNodeText(node, sourceCode);
-}
+using parser::GetNodeText;
 
 /**
  * @brief Checks if an AST node is contained within another AST node range.

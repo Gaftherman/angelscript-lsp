@@ -470,5 +470,42 @@ TEST_CASE("Assignment of Null Literal to NonNull Handle Emits Warning on Subsequ
     const auto diags = AnalyzeScript(code);
     CHECK(HasNullDereferenceWarning(diags, varName));
 }
+
+TEST_CASE("Short Circuit Conjunction Deduplicates Warning Across Operands and Retains Warned State")
+{
+    const std::string typeName = GenerateRandomSymbolName("Player");
+    const std::string varA = GenerateRandomSymbolName("pA");
+    const std::string varB = GenerateRandomSymbolName("pB");
+    const std::string isAliveMethod = GenerateRandomSymbolName("IsAlive");
+    const std::string resetMethod = GenerateRandomSymbolName("Reset");
+    const std::string funcName = GenerateRandomSymbolName("TestFunc");
+
+    const std::string code = "class " + typeName + " { bool " + isAliveMethod + "() { return true; } void " +
+                             resetMethod + "() {} }\n" + "void " + funcName + "(" + typeName + "@ " + varA + ", " +
+                             typeName + "@ " + varB + ")\n" + "{\n" + "    if (" + varA + "." + isAliveMethod +
+                             "() && " + varB + "." + isAliveMethod + "())\n" + "    {\n" + "    }\n" + "    " + varB +
+                             "." + resetMethod + "();\n" + "}\n";
+
+    const auto diags = AnalyzeScript(code);
+    size_t countA = 0;
+    size_t countB = 0;
+    for (const auto& d : diags)
+    {
+        if (d.code == diagnostics::codes::PossibleNullDereference)
+        {
+            if (d.message.find(varA) != std::string::npos)
+            {
+                ++countA;
+            }
+            if (d.message.find(varB) != std::string::npos)
+            {
+                ++countB;
+            }
+        }
+    }
+    CHECK_EQ(countA, 1);
+    CHECK_EQ(countB, 1);
+}
+
 TEST_SUITE_END();
 } // namespace angel_lsp::test

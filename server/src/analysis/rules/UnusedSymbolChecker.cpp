@@ -1,6 +1,5 @@
-#include "analysis/rules/UnusedSymbolChecker.h"
+﻿#include "analysis/rules/UnusedSymbolChecker.h"
 
-#include "analysis/ASTUtils.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/DiagnosticContext.h"
 #include "analysis/NodeIndex.h"

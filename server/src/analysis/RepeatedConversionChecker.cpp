@@ -1,8 +1,8 @@
-#include "analysis/RepeatedConversionChecker.h"
-#include "analysis/ASTUtils.h"
+﻿#include "analysis/RepeatedConversionChecker.h"
 #include "analysis/ComparisonOperatorChecker.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticHelpers.h"
+#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "parser/QueryRegistry.h"
 

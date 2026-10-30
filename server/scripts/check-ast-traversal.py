@@ -462,20 +462,29 @@ def check_no_duplicate_to_source_range():
     """
     violations = []
     pattern = re.compile(r"\bSourceRange\s+ToSourceRange\s*\(")
-    for file_path in (SERVER_SRC / "analysis").rglob("*.cpp"):
-        if not file_path.is_file():
-            continue
-        try:
-            content = file_path.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
-            continue
-        for line_num, line in enumerate(content.splitlines(), start=1):
-            stripped = line.strip()
-            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+    scan_roots = [SERVER_SRC / "analysis", SERVER_SRC / "features", SERVER_SRC / "lsp"]
+    for root in scan_roots:
+        for file_path in root.rglob("*.cpp"):
+            if not file_path.is_file():
                 continue
-            if pattern.search(line):
-                violations.append((file_path, line_num, stripped))
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for line_num, line in enumerate(content.splitlines(), start=1):
+                stripped = line.strip()
+                if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                    continue
+                if pattern.search(line):
+                    violations.append((file_path, line_num, stripped))
     return violations
+
+def check_no_analysis_ast_utils():
+    """Enforces that analysis/ASTUtils.h does not exist (unified into parser/ASTUtils.h)."""
+    target = SERVER_SRC / "analysis" / "ASTUtils.h"
+    if target.exists():
+        return [target]
+    return []
 
 def main():
     has_errors = False
@@ -631,6 +640,14 @@ def main():
         for f, line_num, line in duplicate_to_source_range_violations:
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
+
+    analysis_ast_utils_violations = check_no_analysis_ast_utils()
+    if analysis_ast_utils_violations:
+        has_errors = True
+        print("[ERROR] analysis/ASTUtils.h still exists! It must be unified into parser/ASTUtils.h:")
+        for f in analysis_ast_utils_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}")
 
     if has_errors:
         sys.exit(1)

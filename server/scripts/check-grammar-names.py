@@ -219,6 +219,10 @@ def main():
     bad_fields = []
     bad_node_type_calls = []
     banned_node_comparisons = []
+    bad_parser_nodes = []
+    bad_cursor_field_names = []
+    bad_depth_comparisons = []
+    duplicate_to_source_range = []
     unchecked = set()
 
     for path in sorted(SRC.rglob('*')):
@@ -229,8 +233,8 @@ def main():
         is_layer_2_3 = any(part in ('analysis', 'features') for part in path.parts)
         is_layer_2_3_4 = is_layer_2_3 or 'lsp' in path.parts
 
-        # Files outside Layers 2 and 3 that never touch a node cannot be comparing node types.
-        if not is_layer_2_3 and 'ts_node' not in text:
+        # Files outside Layers 2, 3, and 4 that never touch a node cannot be comparing node types.
+        if not is_layer_2_3_4 and 'ts_node' not in text:
             continue
 
         # A file whose grammar this checkout has not fetched cannot be checked. Skipping it is the
@@ -250,6 +254,18 @@ def main():
         for number, line in logical_lines(text):
             if COMMENT.match(line):
                 continue
+
+            if is_layer_2_3_4 and re.search(r'\bparser::nodes::', line):
+                bad_parser_nodes.append((rel, number))
+
+            if is_layer_2_3_4 and re.search(r'\bts_tree_cursor_current_field_name\b', line):
+                bad_cursor_field_names.append((rel, number))
+
+            if is_layer_2_3_4 and re.search(r'\bk_maxAstDepth\b|\bdepth\s*(?:>=?|>|<=)\s*(?:[1-9]\d*|k_maxAstDepth)', line):
+                bad_depth_comparisons.append((rel, number))
+
+            if is_layer_2_3_4 and path.suffix == '.cpp' and re.search(r'\bSourceRange\s+ToSourceRange\s*\(', line):
+                duplicate_to_source_range.append((rel, number))
 
             if is_layer_2_3_4 and re.search(r'(?<!\w)NodeType\s*\(', line):
                 bad_node_type_calls.append((rel, number))
@@ -309,8 +325,23 @@ def main():
     for rel, number, name in banned_node_comparisons:
         print('%s:%d: comparison against node type "%s" is banned in Layers 2 and 3 - use ts_node_symbol with parser::GetGrammarSymbols()' %
               (rel, number, name))
+    for rel, number in bad_parser_nodes:
+        print('%s:%d: parser::nodes:: is banned in Layers 2/3/4 - use gs.sym* from parser::GetGrammarSymbols()' %
+              (rel, number))
+    for rel, number in bad_cursor_field_names:
+        print('%s:%d: ts_tree_cursor_current_field_name is banned in Layers 2/3/4 - use ts_tree_cursor_current_field_id' %
+              (rel, number))
+    for rel, number in bad_depth_comparisons:
+        print('%s:%d: magic depth comparison or k_maxAstDepth is banned in Layers 2/3/4 - use flat iterative worklists' %
+              (rel, number))
+    for rel, number in duplicate_to_source_range:
+        print('%s:%d: duplicate ToSourceRange definition in .cpp - use centralized SymbolTable.h ToSourceRange' %
+              (rel, number))
 
-    total = len(bad_nodes) + len(bad_fields) + len(bad_node_type_calls) + len(banned_node_comparisons)
+    total = (len(bad_nodes) + len(bad_fields) + len(bad_node_type_calls) +
+             len(banned_node_comparisons) + len(bad_parser_nodes) +
+             len(bad_cursor_field_names) + len(bad_depth_comparisons) +
+             len(duplicate_to_source_range))
     if total:
         print()
         print('%d error(s) found in grammar name usage or banned wrappers. Either the name is wrong, or the grammar needs it - '

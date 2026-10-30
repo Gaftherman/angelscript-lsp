@@ -1,5 +1,4 @@
-#include "analysis/CallChecker.h"
-#include "analysis/ASTUtils.h"
+﻿#include "analysis/CallChecker.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/ExpressionTypeCache.h"
 #include "analysis/InitializerListChecker.h"
@@ -9,6 +8,7 @@
 #include "analysis/ast/SemanticNodes.h"
 #include "analysis/overload/OverloadTypeConversions.h"
 #include "analysis/rules/EngineRuleChecker.h"
+#include "parser/ASTUtils.h"
 #include "utils/Utils.h"
 
 #include "parser/GrammarNames.h"
