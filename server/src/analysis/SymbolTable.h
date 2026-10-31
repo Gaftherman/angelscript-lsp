@@ -909,6 +909,18 @@ class SymbolTable
 
     void PrintSymbols(angel_lsp::utils::LspLogger* logger) const;
 
+    /**
+     * @brief Configures delegate property names that dynamically dispatch to the base class.
+     * @param properties Delegate property names (e.g. from engine rules).
+     */
+    void SetBaseClassDelegateProperties(std::vector<std::string> properties);
+
+    /**
+     * @brief Returns configured base class delegate properties.
+     * @return Const reference to delegate property names.
+     */
+    [[nodiscard]] const std::vector<std::string>& GetBaseClassDelegateProperties() const noexcept;
+
   private:
     /** @brief Records that a symbol's bucket now holds something from its file. Caller holds the write lock. */
     void IndexKeyForFileLocked(const std::string& fileUri, const std::string& key);
@@ -1016,6 +1028,7 @@ class SymbolTable
     std::string m_defaultArrayType = "array";
     std::string m_stringType = "string";
     std::string m_predefinedFileExtension{angel_lsp::constants::k_defaultPredefinedExt};
+    std::vector<std::string> m_baseClassDelegateProperties;
     inline static std::atomic<uint64_t> s_tableCloneCount{0};
 
     struct SnapshotFilterContext

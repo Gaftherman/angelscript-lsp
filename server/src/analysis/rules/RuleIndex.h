@@ -134,6 +134,10 @@ struct RuleIndex
     /** @brief SymbolTable bucket key -> file URIs declaring a non-external `shared` class or function body. */
     ankerl::unordered_dense::map<std::string, std::vector<std::string>> sharedDeclarationFilesByKey;
 
+    /** @brief Dynamic delegate property names that dispatch to base classes. */
+    std::vector<std::string> baseClassDelegateProperties;
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> baseClassDelegatePropertySet;
+
     /** @brief Members of one container, or an empty set of them when it declares none. */
     const ContainerMembers& Members(std::string_view containerName) const;
     const ContainerMembers& Members(const std::string& containerName) const;

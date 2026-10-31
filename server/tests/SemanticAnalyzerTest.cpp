@@ -252,29 +252,17 @@ TEST_CASE("SemanticAnalyzer - engine globals declared in a predefined-style file
     // mechanism the corpus audit's "self"/"g_Engine" false positives are missing, not a
     // real stub library (see the "Undefined Identifier Corpus Audit" test's MESSAGE for why
     // the corpus itself has no .as.predefined file for this to load in that audit).
-    std::string predefinedSource = R"AS(
-class Entity
-{
-    void Log(const string &in msg) {}
-}
+    const std::string entityClass = angel_lsp::test::GenerateRandomSymbolName("Entity");
+    const std::string engineClass = angel_lsp::test::GenerateRandomSymbolName("Engine");
+    const std::string randomSelf = angel_lsp::test::GenerateRandomSymbolName("self");
+    const std::string randomEngine = angel_lsp::test::GenerateRandomSymbolName("g_Engine");
 
-class Engine
-{
-    void Log(const string &in msg) {}
-}
+    std::string predefinedSource = "class " + entityClass + " {\n" + "    void Log(const string &in msg) {}\n" + "}\n" +
+                                   "class " + engineClass + " {\n" + "    void Log(const string &in msg) {}\n" + "}\n" +
+                                   entityClass + "@ " + randomSelf + ";\n" + engineClass + "@ " + randomEngine + ";\n";
 
-Entity@ self;
-Engine@ g_Engine;
-)AS";
-
-    std::string scriptSource = R"AS(
-void Foo()
-{
-    self.Log("hi");
-    g_Engine.Log("hi");
-    Undefined = 5;
-}
-)AS";
+    std::string scriptSource = std::string("void Foo() {\n") + "    " + randomSelf + ".Log(\"hi\");\n" + "    " +
+                               randomEngine + ".Log(\"hi\");\n" + "    Undefined = 5;\n" + "}\n";
 
     SymbolTable table;
     AngelScriptParser predefinedParser;
@@ -284,8 +272,8 @@ void Foo()
     angel_lsp::i18n::I18n i18n;
     auto diagnostics = AnalyzeSource(scriptSource, table, i18n, "file:///script.as");
 
-    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diagnostics, "self"));
-    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diagnostics, "g_Engine"));
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diagnostics, randomSelf));
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diagnostics, randomEngine));
     CHECK(HasUndefinedIdentifierDiagnostic(diagnostics, "Undefined"));
 }
 
@@ -1844,25 +1832,34 @@ class WeaponHost : WeaponMixin
 
     SUBCASE("self is treated as a regular identifier handle and not conflated with this")
     {
-        const std::string code = R"(
-class CBasePlayerWeapon
-{
-    int m_iClip;
-}
+        const std::string weaponClass = angel_lsp::test::GenerateRandomSymbolName("CBasePlayerWeapon");
+        const std::string mixinName = angel_lsp::test::GenerateRandomSymbolName("WeaponMixin");
+        const std::string hostName = angel_lsp::test::GenerateRandomSymbolName("WeaponHost");
+        const std::string randomSelf = angel_lsp::test::GenerateRandomSymbolName("self");
+        const std::string clipProp = angel_lsp::test::GenerateRandomSymbolName("m_iClip");
 
-mixin class WeaponMixin
-{
-    void Shoot()
-    {
-        self.m_iClip = 10;
-    }
-}
-
-class WeaponHost : WeaponMixin
-{
-    CBasePlayerWeapon@ self;
-}
-)";
+        const std::string code = "class " + weaponClass +
+                                 " {\n"
+                                 "    int " +
+                                 clipProp +
+                                 ";\n"
+                                 "}\n"
+                                 "mixin class " +
+                                 mixinName +
+                                 " {\n"
+                                 "    void Shoot() {\n"
+                                 "        " +
+                                 randomSelf + "." + clipProp +
+                                 " = 10;\n"
+                                 "    }\n"
+                                 "}\n"
+                                 "class " +
+                                 hostName + " : " + mixinName +
+                                 " {\n"
+                                 "    " +
+                                 weaponClass + "@ " + randomSelf +
+                                 ";\n"
+                                 "}\n";
         SymbolTable table;
         const auto diagnostics = AnalyzeSource(code, table, i18n, "file:///mixin_self_var.as");
 
@@ -3008,6 +3005,8 @@ TEST_CASE("SemanticAnalyzer - Deeply nested expression in 8 if blocks resolves i
     const std::string derivedClassName = angel_lsp::test::GenerateRandomSymbolName("MyMonster");
     const std::string varOrigin = angel_lsp::test::GenerateRandomSymbolName("origin");
     const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("Think");
+    const std::string randomSelf = angel_lsp::test::GenerateRandomSymbolName("self");
+    const std::string randomPev = angel_lsp::test::GenerateRandomSymbolName("pev");
 
     SymbolTable table;
     angel_lsp::i18n::I18n i18n;
@@ -3020,9 +3019,11 @@ TEST_CASE("SemanticAnalyzer - Deeply nested expression in 8 if blocks resolves i
                                  baseClassName +
                                  " {\n"
                                  "    " +
-                                 baseClassName +
-                                 "@ self;\n"
-                                 "    EntVars@ pev;\n"
+                                 baseClassName + "@ " + randomSelf +
+                                 ";\n"
+                                 "    EntVars@ " +
+                                 randomPev +
+                                 ";\n"
                                  "}\n";
 
     AnalyzeSource(baseCode, table, i18n, "file:///base.as");
@@ -3039,8 +3040,9 @@ TEST_CASE("SemanticAnalyzer - Deeply nested expression in 8 if blocks resolves i
                                     "                        if (true) {\n"
                                     "                            if (true) {\n"
                                     "                                if (true) {\n"
-                                    "                                    if (self.pev." +
-                                    varOrigin + ".y <= self.pev." + varOrigin +
+                                    "                                    if (" +
+                                    randomSelf + "." + randomPev + "." + varOrigin + ".y <= " + randomSelf + "." +
+                                    randomPev + "." + varOrigin +
                                     ".y - 60.0f) {\n"
                                     "                                        int dummy = 1;\n"
                                     "                                    }\n"
@@ -3055,8 +3057,8 @@ TEST_CASE("SemanticAnalyzer - Deeply nested expression in 8 if blocks resolves i
                                     "}\n";
 
     const auto diags = AnalyzeSource(derivedCode, table, i18n, "file:///derived.as");
-    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, "self"));
-    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, "pev"));
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, randomSelf));
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, randomPev));
     CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, varOrigin));
 }
 
@@ -3067,6 +3069,7 @@ TEST_CASE("SemanticAnalyzer - Virtual property set accessor implicit value param
     const std::string handleClass = angel_lsp::test::GenerateRandomSymbolName("EHandle");
     const std::string hostClass = angel_lsp::test::GenerateRandomSymbolName("WeaponHost");
     const std::string propName = angel_lsp::test::GenerateRandomSymbolName("m_pPlayer");
+    const std::string randomSelf = angel_lsp::test::GenerateRandomSymbolName("self");
 
     SymbolTable table;
     angel_lsp::i18n::I18n i18n;
@@ -3075,9 +3078,9 @@ TEST_CASE("SemanticAnalyzer - Virtual property set accessor implicit value param
                              " {};\n" + "class " + handleClass + " {\n" + "    " + handleClass + "() {}\n" + "    " +
                              handleClass + "(" + entityClass + "@ pEnt) {}\n" + "};\n" + "class " + hostClass + " {\n" +
                              "    " + handleClass + " m_hPlayer;\n" + "    " + playerClass + "@ " + propName + " {\n" +
-                             "        get const { return null; }\n" + "        set { self.m_hPlayer = " + handleClass +
-                             "(@value); }\n" + "    }\n" + "    " + hostClass + "@ self { get { return this; } }\n" +
-                             "};\n";
+                             "        get const { return null; }\n" + "        set { " + randomSelf +
+                             ".m_hPlayer = " + handleClass + "(@value); }\n" + "    }\n" + "    " + hostClass + "@ " +
+                             randomSelf + " { get { return this; } }\n" + "};\n";
 
     const auto diags = AnalyzeSource(code, table, i18n, "file:///host.as");
     CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, "value"));

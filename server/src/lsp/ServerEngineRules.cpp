@@ -142,6 +142,7 @@ void Server::LoadWorkspaceEngineRules(const std::vector<std::string>& workspaceR
         {
             LogInfo("No engine rules file found. Resetting to vanilla AngelScript safety rules.");
             m_config.engineRules = config::EngineRuleConfig{};
+            m_symbolTable.SetBaseClassDelegateProperties({});
         }
         return;
     }
@@ -155,6 +156,7 @@ void Server::LoadWorkspaceEngineRules(const std::vector<std::string>& workspaceR
     }
 
     m_config.engineRules = std::move(*parsed);
+    m_symbolTable.SetBaseClassDelegateProperties(m_config.engineRules.unusedRules.baseClassDelegateProperties);
     LogInfo(fmt::format("Loaded engine rules: {} storage rule(s), {} type suggestion(s), {} scheduler rule(s)",
                         m_config.engineRules.storageRules.size(), m_config.engineRules.typeSuggestions.size(),
                         m_config.engineRules.schedulerRules.size()));

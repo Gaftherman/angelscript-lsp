@@ -669,7 +669,9 @@ std::optional<std::vector<lsp::Location>> TryResolveMemberDefinition(TSNode node
         ctx.rootScope ? FindInnermostScope(ctx.rootScope.get(), ctx.queryLine, ctx.request.position.character)
                       : nullptr;
     std::string receiverTypeName = analysis::ResolveReceiverType(
-        objectNode, ctx.request.sourceCode, ctx.request.symbolTable, {scope, ctx.vCtx.hostClass, ctx.request.uri});
+        objectNode, ctx.request.sourceCode, ctx.request.symbolTable,
+        {scope, ctx.vCtx.hostClass, ctx.request.uri, ctx.request.symbolTable.GetDefaultArrayType(), nullptr,
+         ctx.request.engineRules});
 
     if (receiverTypeName.empty())
     {
@@ -993,68 +995,65 @@ std::optional<std::vector<lsp::Location>> TryResolveLocalDefinitionFallback(TSNo
  * @param[in] ctx Definition context.
  * @return Locations pointing to the class or interface, or nullopt.
  */
-static std::string ResolveTargetClassForKeyword(TSNode node, const DefinitionContext& ctx)
+static std::optional<std::vector<lsp::Location>> TryResolveThisKeyword(TSNode node, const DefinitionContext& ctx)
 {
+    std::string hostClass;
     if (ctx.vCtx.isVirtual && !ctx.vCtx.hostClass.empty())
     {
-        return ctx.vCtx.hostClass;
+        hostClass = ctx.vCtx.hostClass;
     }
-    std::string targetClass =
-        analysis::InferHostClassFromEnclosingMixin(node, ctx.request.sourceCode, ctx.request.symbolTable);
-    if (!targetClass.empty())
+    else
     {
-        return targetClass;
+        hostClass = analysis::InferHostClassFromEnclosingMixin(node, ctx.request.sourceCode, ctx.request.symbolTable);
     }
-    auto containers = analysis::GetEnclosingContainers(node, ctx.request.sourceCode);
-    for (const auto& c : containers)
+    if (hostClass.empty())
     {
-        if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
+        auto containers = analysis::GetEnclosingContainers(node, ctx.request.sourceCode);
+        for (const auto& c : containers)
         {
-            return c.qualifiedName.empty() ? c.name : c.qualifiedName;
+            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
+            {
+                hostClass = c.qualifiedName.empty() ? c.name : c.qualifiedName;
+                break;
+            }
         }
     }
-    return "";
-}
-
-static std::string ResolveNonMixinBase(const std::string& targetClass, const analysis::SymbolTable& table)
-{
-    auto hier = analysis::GetInheritedTypeHierarchy(targetClass, table);
-    for (size_t i = 1; i < hier.size(); ++i)
-    {
-        if (!analysis::IsMixinClass(hier[i], table))
-        {
-            return hier[i];
-        }
-    }
-    return "";
-}
-
-/**
- * @brief Resolves definition for 'this', 'self', or 'BaseClass' keywords to the target class.
- * @param[in] node AST node at cursor.
- * @param[in] nodeText Keyword identifier text.
- * @param[in] ctx Definition context.
- * @return Locations pointing to the class or interface, or nullopt.
- */
-std::optional<std::vector<lsp::Location>> TryResolveThisOrSpecialKeyword(TSNode node, const std::string& nodeText,
-                                                                         const DefinitionContext& ctx)
-{
-    std::string targetClass = ResolveTargetClassForKeyword(node, ctx);
-    if (targetClass.empty())
+    if (hostClass.empty())
     {
         return std::nullopt;
     }
-    if (nodeText == config::k_baseClassIdentifier)
+    std::vector<lsp::Location> locations;
+    auto cands = ctx.request.symbolTable.FindSymbols(hostClass);
+    for (const auto& c : cands)
     {
-        targetClass = ResolveNonMixinBase(targetClass, ctx.request.symbolTable);
-        if (targetClass.empty())
+        if (c.type == analysis::SymbolType::Class || c.type == analysis::SymbolType::Interface)
         {
-            return std::nullopt;
+            locations.push_back(MakeLocation(c, ctx.request));
         }
     }
+    if (!locations.empty())
+    {
+        return locations;
+    }
+    return std::nullopt;
+}
+
+static std::optional<std::vector<lsp::Location>>
+TryResolveDelegatePropertyDefinition(TSNode node, const std::string& nodeText, const DefinitionContext& ctx)
+{
+    if (!analysis::IsBaseClassDelegateProperty(nodeText, ctx.request.symbolTable, ctx.request.engineRules))
+    {
+        return std::nullopt;
+    }
+    std::string baseClass = analysis::ResolveDelegateTargetBaseClass(
+        {node, ctx.request.sourceCode, ctx.request.symbolTable, ctx.vCtx.isVirtual ? ctx.vCtx.hostClass : "",
+         ctx.request.engineRules});
+    if (baseClass.empty())
+    {
+        return std::nullopt;
+    }
     std::vector<lsp::Location> locations;
-    auto cands = ctx.request.symbolTable.FindSymbols(targetClass);
-    for (const auto& c : cands)
+    for (const auto& c : ctx.request.symbolTable.FindSymbols(baseClass))
     {
         if (c.type == analysis::SymbolType::Class || c.type == analysis::SymbolType::Interface)
         {
@@ -1639,7 +1638,7 @@ ResolveSymbolsOrSpecialLocations(TSNode node, const std::string& nodeText, const
 
     if (nodeText == "this")
     {
-        if (auto specialLocs = TryResolveThisOrSpecialKeyword(node, nodeText, ctx))
+        if (auto specialLocs = TryResolveThisKeyword(node, ctx))
         {
             return specialLocs;
         }
@@ -1658,12 +1657,7 @@ ResolveSymbolsOrSpecialLocations(TSNode node, const std::string& nodeText, const
         return locations;
     }
 
-    if (nodeText == config::k_selfIdentifier || nodeText == config::k_baseClassIdentifier)
-    {
-        return TryResolveThisOrSpecialKeyword(node, nodeText, ctx);
-    }
-
-    return std::nullopt;
+    return TryResolveDelegatePropertyDefinition(node, nodeText, ctx);
 }
 
 } // namespace

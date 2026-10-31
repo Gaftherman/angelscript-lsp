@@ -963,8 +963,11 @@ bool IsMemberChildOfExpression(TSNode node, TSNode parent)
 
 std::string ResolveReceiverTypeName(TSNode objectNode, const HoverQueryContext& ctx)
 {
-    std::string receiverTypeName = analysis::ResolveReceiverType(
-        objectNode, ctx.request.sourceCode, ctx.request.symbolTable, {ctx.scope, ctx.vctx.hostClass, ctx.request.uri});
+    const config::EngineRuleConfig* engineRules = ctx.request.config ? &ctx.request.config->engineRules : nullptr;
+    std::string receiverTypeName =
+        analysis::ResolveReceiverType(objectNode, ctx.request.sourceCode, ctx.request.symbolTable,
+                                      {ctx.scope, ctx.vctx.hostClass, ctx.request.uri,
+                                       ctx.request.symbolTable.GetDefaultArrayType(), nullptr, engineRules});
     if (!receiverTypeName.empty() && ctx.request.config && !ctx.request.config->types.arrayTypeName.empty())
     {
         receiverTypeName = analysis::MemberOwnerType(receiverTypeName, ctx.request.config->types.arrayTypeName);
@@ -2991,38 +2994,19 @@ static void FilterDirectRootGlobalSymbols(std::vector<analysis::Symbol>& symbols
     }
 }
 
-static std::optional<lsp::Hover> TryHoverSpecialKeywordFallback(const HoverQueryContext& ctx)
+static std::optional<lsp::Hover> TryHoverDelegatePropertyFallback(const HoverQueryContext& ctx)
 {
-    if (ctx.nodeText != config::k_selfIdentifier && ctx.nodeText != config::k_baseClassIdentifier)
+    const auto* engineRules = ctx.request.config ? &ctx.request.config->engineRules : nullptr;
+    if (!analysis::IsBaseClassDelegateProperty(ctx.nodeText, ctx.request.symbolTable, engineRules))
     {
         return std::nullopt;
     }
-    std::string hostClass;
-    if (ctx.vctx.isVirtual && !ctx.vctx.hostClass.empty())
+    std::string baseClass =
+        analysis::ResolveDelegateTargetBaseClass({ctx.node, ctx.request.sourceCode, ctx.request.symbolTable,
+                                                  ctx.vctx.isVirtual ? ctx.vctx.hostClass : "", engineRules});
+    if (!baseClass.empty())
     {
-        hostClass = ctx.vctx.hostClass;
-    }
-    else
-    {
-        hostClass =
-            analysis::InferHostClassFromEnclosingMixin(ctx.node, ctx.request.sourceCode, ctx.request.symbolTable);
-    }
-    if (hostClass.empty())
-    {
-        auto containers = analysis::GetEnclosingContainers(ctx.node, ctx.request.sourceCode);
-        for (const auto& c : containers)
-        {
-            if (c.kind == analysis::ContainerKind::Class)
-            {
-                hostClass = c.qualifiedName.empty() ? c.name : c.qualifiedName;
-                break;
-            }
-        }
-    }
-    if (auto special = analysis::ResolveSelfOrBaseClass(ctx.nodeText, hostClass, ctx.request.symbolTable);
-        !special.empty())
-    {
-        std::string text = "```angelscript\n" + special + "@ " + ctx.nodeText + "\n```";
+        std::string text = "```angelscript\n" + baseClass + "@ " + ctx.nodeText + "\n```";
         return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(text)},
                           ctx.range};
     }
@@ -3066,7 +3050,7 @@ std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx)
 
     if (symbols.empty() && !gsq.isGlobal)
     {
-        if (auto specialHover = TryHoverSpecialKeywordFallback(ctx))
+        if (auto specialHover = TryHoverDelegatePropertyFallback(ctx))
         {
             return specialHover;
         }

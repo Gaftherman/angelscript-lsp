@@ -89,6 +89,7 @@ struct TestEnvironment
 
     std::optional<std::vector<lsp::Location>> DefAt(uint32_t line, uint32_t character)
     {
+        symbolTable.SetBaseClassDelegateProperties(engineRules.unusedRules.baseClassDelegateProperties);
         DefinitionRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, character}};
         req.resolveInclude = resolveInclude;
         req.engineRules = &engineRules;
@@ -945,16 +946,17 @@ TEST_CASE("Definition - Go To Definition on overriding method declaration naviga
     const std::string proxyClass = angel_lsp::test::GenerateRandomSymbolName("ScriptBaseWeapon");
     const std::string derivedClass = angel_lsp::test::GenerateRandomSymbolName("CustomPistol");
     const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("DoSpecialAction");
+    const std::string baseProp = angel_lsp::test::GenerateRandomSymbolName("BaseClass");
 
     const std::string baseCode = "class " + baseClass + " {\n" + "    void " + methodName + "() {}\n" + "}\n" +
-                                 "class " + proxyClass + " {\n" + "    " + baseClass +
-                                 "@ BaseClass { get const { return null; } }\n" + "}\n";
+                                 "class " + proxyClass + " {\n" + "    " + baseClass + "@ " + baseProp +
+                                 " { get const { return null; } }\n" + "}\n";
 
     const std::string derivedCode =
         "class " + derivedClass + " : " + proxyClass + " {\n" + "    void " + methodName + "() {}\n" + "}\n";
 
     TestEnvironment env(derivedCode, "file:///derived.as");
-    env.engineRules.unusedRules.baseClassDelegateProperties = {"BaseClass"};
+    env.engineRules.unusedRules.baseClassDelegateProperties = {baseProp};
     env.AddFile("file:///base.as", baseCode);
 
     // Find methodName in derivedCode declaration
@@ -965,6 +967,51 @@ TEST_CASE("Definition - Go To Definition on overriding method declaration naviga
     REQUIRE(!def->empty());
     CHECK((*def)[0].uri.toString().find("base.as") != std::string::npos);
     CHECK((*def)[0].range.start.line == 1);
+}
+
+TEST_CASE("Definition - Go To Definition on delegate property navigates to target base class")
+{
+    const std::string baseClass = angel_lsp::test::GenerateRandomSymbolName("BaseWeapon");
+    const std::string derivedClass = angel_lsp::test::GenerateRandomSymbolName("CustomPistol");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("DoSpecialAction");
+    const std::string baseProp = angel_lsp::test::GenerateRandomSymbolName("BaseClass");
+
+    const std::string baseCode = "class " + baseClass + " {\n    void " + methodName + "() {}\n}\n";
+    const std::string derivedCode = "class " + derivedClass + " : " + baseClass + " {\n" + "    void " + methodName +
+                                    "() {\n" + "        " + baseProp + "." + methodName + "();\n" + "    }\n" + "}\n";
+
+    TestEnvironment env(derivedCode, "file:///derived.as");
+    env.engineRules.unusedRules.baseClassDelegateProperties = {baseProp};
+    env.AddFile("file:///base.as", baseCode);
+
+    auto pos = FindPos(derivedCode, baseProp);
+    auto def = env.DefAt(pos.line, pos.character);
+
+    REQUIRE(def.has_value());
+    REQUIRE(!def->empty());
+    CHECK((*def)[0].uri.toString().find("base.as") != std::string::npos);
+    CHECK((*def)[0].range.start.line == 0);
+}
+
+TEST_CASE("Definition - Local variable shadowing delegate property navigates to local variable")
+{
+    const std::string baseClass = angel_lsp::test::GenerateRandomSymbolName("BaseWeapon");
+    const std::string derivedClass = angel_lsp::test::GenerateRandomSymbolName("CustomPistol");
+    const std::string baseProp = angel_lsp::test::GenerateRandomSymbolName("BaseClass");
+
+    const std::string code = "class " + baseClass + " {}\n" + "class " + derivedClass + " : " + baseClass + " {\n" +
+                             "    void Test() {\n" + "        int " + baseProp + " = 10;\n" + "        " + baseProp +
+                             " = 20;\n" + "    }\n" + "}\n";
+
+    TestEnvironment env(code, "file:///code.as");
+    env.engineRules.unusedRules.baseClassDelegateProperties = {baseProp};
+
+    auto posUse = FindPos(code, baseProp, code.rfind(baseProp));
+    auto def = env.DefAt(posUse.line, posUse.character);
+
+    REQUIRE(def.has_value());
+    REQUIRE(!def->empty());
+    CHECK((*def)[0].range.start.line == 3);
 }
 
 TEST_CASE("Definition - Global ::Deploy inside namespace and mixin does not navigate to enclosing class method")

@@ -15,6 +15,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SERVER_SRC = REPO_ROOT / "server" / "src"
+SERVER_TESTS = REPO_ROOT / "server" / "tests"
 
 RAW_PARENT_ALLOWED_FILES = {
     SERVER_SRC / "parser" / "ASTUtils.h",
@@ -30,6 +31,7 @@ PARENT_LOOP_ALLOWED_FILES = {
 
 ENGINE_HARDCODED_SYMBOLS = [
     '"BaseClass"',
+    '"self"',
     '"EHandle"',
     '"HUDTextParams"',
     '"CBasePlayer"',
@@ -40,9 +42,15 @@ ENGINE_HARDCODED_SYMBOLS = [
 ]
 
 ENGINE_ALLOWED_FILES = {
-    SERVER_SRC / "config" / "EngineProfiles.cpp",
-    SERVER_SRC / "config" / "EngineRuleConfig.h",
+    SERVER_SRC / "analysis" / "EngineProfiles.cpp",
 }
+
+BANNED_IDENTIFIER_PATTERNS = [
+    (re.compile(r"\bk_baseClassIdentifier\b"), "banned identifier k_baseClassIdentifier (eradicated in favor of dynamic baseClassDelegateProperties)"),
+    (re.compile(r"\bk_selfIdentifier\b"), "banned identifier k_selfIdentifier (eradicated in favor of generic SymbolTable / property accessors)"),
+    (re.compile(r"\bResolveSelfOrBaseClass\b"), "banned function ResolveSelfOrBaseClass (eradicated in favor of generic ResolveBaseClass / delegate properties)"),
+    (re.compile(r"\bResolveSelfOrBaseReceiver\b"), "banned function ResolveSelfOrBaseReceiver (eradicated in favor of generic ResolveDelegatePropertyReceiver)"),
+]
 
 FORBIDDEN_TYPE_PATTERNS = [
     (re.compile(r'"weakref"|"const_weakref"'), 'hardcoded "weakref" / "const_weakref" (use SymbolTable + generic template resolution)'),
@@ -147,10 +155,11 @@ def check_no_engine_hardcoding():
             continue
         for line_num, line in enumerate(content.splitlines(), start=1):
             stripped = line.strip()
-            if stripped.startswith("//") or stripped.startswith("*"):
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
                 continue
+            code_part = line.split("//")[0].strip()
             for sym in ENGINE_HARDCODED_SYMBOLS:
-                if sym in line:
+                if sym in code_part:
                     violations.append((file_path, line_num, stripped))
     return violations
 
@@ -500,6 +509,43 @@ def check_no_for_each_descendant_node():
                 violations.append((file_path, line_num, stripped))
     return violations
 
+def check_no_banned_identifiers():
+    violations = []
+    for file_path in SERVER_SRC.rglob("*.[ch]*"):
+        if not file_path.is_file():
+            continue
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for line_num, line in enumerate(content.splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                continue
+            for pat, reason in BANNED_IDENTIFIER_PATTERNS:
+                if pat.search(line):
+                    violations.append((file_path, line_num, stripped, reason))
+    return violations
+
+def check_no_baseclass_in_tests():
+    violations = []
+    allowed_pattern = re.compile(r'GenerateRandomSymbolName\s*\(\s*"BaseClass"\s*\)')
+    for file_path in SERVER_TESTS.rglob("*.cpp"):
+        if not file_path.is_file():
+            continue
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for line_num, line in enumerate(content.splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                continue
+            if '"BaseClass"' in line:
+                if not allowed_pattern.search(line):
+                    violations.append((file_path, line_num, stripped))
+    return violations
+
 def check_no_analysis_ast_utils():
     """Enforces that analysis/ASTUtils.h does not exist (unified into parser/ASTUtils.h)."""
     target = SERVER_SRC / "analysis" / "ASTUtils.h"
@@ -678,10 +724,26 @@ def main():
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}")
 
+    banned_id_violations = check_no_banned_identifiers()
+    if banned_id_violations:
+        has_errors = True
+        print("[ERROR] Banned identifier or function detected in server/src/ (const-laundering eradication):")
+        for f, line_num, line, reason in banned_id_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line} -> {reason}")
+
+    test_baseclass_violations = check_no_baseclass_in_tests()
+    if test_baseclass_violations:
+        has_errors = True
+        print("[ERROR] Literal 'BaseClass' detected in server/tests/ outside GenerateRandomSymbolName('BaseClass'):")
+        for f, line_num, line in test_baseclass_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
     if has_errors:
         sys.exit(1)
 
-    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 ForEachDescendantNode, 0 engine hardcodings, 0 type hardcodings).")
+    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 ForEachDescendantNode, 0 engine hardcodings, 0 type hardcodings, 0 banned identifiers, 0 unrandomized test BaseClass).")
 
 if __name__ == "__main__":
     main()

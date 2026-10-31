@@ -21,7 +21,7 @@ struct StorageRule
     bool disallowInMembers = false;   ///< Prohibit storage in class/struct member variables.
     bool disallowInGlobals = false;   ///< Prohibit storage in global variables.
     bool disallowInArrays = false;    ///< Prohibit storage in array elements (array<T>).
-    std::string suggestReplacement;   ///< Suggested safe replacement type (e.g. "EHandle").
+    std::string suggestReplacement;   ///< Suggested safe replacement type (e.g. "SafeHandle").
     std::string message;              ///< Custom diagnostic message template.
     std::string severity = "warning"; ///< Diagnostic severity: "warning", "error", "info", "hint".
 };
@@ -45,8 +45,8 @@ struct TypeSuggestionRule
 struct SchedulerRule
 {
     std::string id;                            ///< Unique identifier for the rule.
-    std::vector<std::string> receiverTypes;    ///< Method receiver types (e.g. ["CScheduler"]).
-    std::vector<std::string> methodNames;      ///< Method names (e.g. ["SetTimeout", "SetInterval"]).
+    std::vector<std::string> receiverTypes;    ///< Method receiver types (e.g. ["SchedulerClass"]).
+    std::vector<std::string> methodNames;      ///< Method names (e.g. ["QueueTask", "ScheduleInterval"]).
     std::string disallowParamInheritsFrom;     ///< Callback parameter base type to disallow.
     std::string disallowParamRegex;            ///< Callback parameter regex to disallow.
     bool disallowParamHandleOnly = true;       ///< Disallow only handle parameters in callback.
@@ -162,7 +162,7 @@ struct UnusedSymbolRules
     std::vector<std::string> ignoredBaseClasses;          ///< Entity base classes (e.g. "ScriptBaseEntity").
     std::vector<std::string> lifecycleMethods;            ///< Lifecycle callback methods (e.g. "Spawn").
     StringVectorMap baseClassLifecycleMethods;            ///< Per-base-class lifecycle methods.
-    std::vector<std::string> baseClassDelegateProperties; ///< Delegate property names (e.g. ["BaseClass", "self"]).
+    std::vector<std::string> baseClassDelegateProperties; ///< Delegate property names for dynamic base dispatch.
     StringVectorMap baseClassProxyMap;                    ///< Proxy base class mappings.
     std::vector<StringReflectionCallee> stringReflectionCallees; ///< Reflection callees taking string symbols.
     bool ignoreUnusedGlobalsWithCallInitializer =
@@ -208,8 +208,5 @@ struct EngineRuleConfig
                unusedRules.HasActiveRules() || engineProperties.HasActiveProperties();
     }
 };
-
-inline constexpr std::string_view k_baseClassIdentifier = "BaseClass";
-inline constexpr std::string_view k_selfIdentifier = "self";
 
 } // namespace angel_lsp::config

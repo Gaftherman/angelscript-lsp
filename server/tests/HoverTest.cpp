@@ -126,8 +126,12 @@ struct TwoFileEnvironment
     }
 
     /** @brief Hovers in main.as, with library.as reachable through readDocument. */
-    std::optional<lsp::Hover> HoverAt(uint32_t line, uint32_t character)
+    std::optional<lsp::Hover> HoverAt(uint32_t line, uint32_t character, const config::ServerConfig* config = nullptr)
     {
+        if (config)
+        {
+            symbolTable.SetBaseClassDelegateProperties(config->engineRules.unusedRules.baseClassDelegateProperties);
+        }
         HoverRequest req{usingUri,
                          usingCode,
                          tree,
@@ -142,6 +146,7 @@ struct TwoFileEnvironment
                                  return &usingCode;
                              return nullptr;
                          }};
+        req.config = config;
         return GetHover(req);
     }
 
@@ -1642,18 +1647,19 @@ TEST_CASE("Hover - Inherit doc comment from base class discovered via BaseClass 
     const std::string proxyClass = test::GenerateRandomSymbolName("ScriptBaseWeapon");
     const std::string derivedClass = test::GenerateRandomSymbolName("MyCustomGun");
     const std::string methodName = test::GenerateRandomSymbolName("ReloadAmmo");
+    const std::string baseProp = test::GenerateRandomSymbolName("BaseClass");
 
-    const std::string code = "class " + baseClass + " {\n" +
-                             "    /** @brief Reloads primary ammo reserve into the weapon clip. */\n" + "    void " +
-                             methodName + "() {}\n" + "}\n" + "class " + proxyClass + " {\n" + "    " + baseClass +
-                             "@ BaseClass { get const { return null; } }\n" + "}\n" + "class " + derivedClass + " : " +
-                             proxyClass + " {\n" + "    void " + methodName + "() {}\n" + "}\n" + "void Entry() {\n" +
-                             "    " + derivedClass + " gun;\n" + "    gun." + methodName + "();\n" + "}\n";
+    const std::string code =
+        "class " + baseClass + " {\n" + "    /** @brief Reloads primary ammo reserve into the weapon clip. */\n" +
+        "    void " + methodName + "() {}\n" + "}\n" + "class " + proxyClass + " {\n" + "    " + baseClass + "@ " +
+        baseProp + " { get const { return null; } }\n" + "}\n" + "class " + derivedClass + " : " + proxyClass + " {\n" +
+        "    void " + methodName + "() {}\n" + "}\n" + "void Entry() {\n" + "    " + derivedClass + " gun;\n" +
+        "    gun." + methodName + "();\n" + "}\n";
 
     TestEnvironment env(code);
 
     config::ServerConfig cfg;
-    cfg.engineRules.unusedRules.baseClassDelegateProperties = {"BaseClass"};
+    cfg.engineRules.unusedRules.baseClassDelegateProperties = {baseProp};
 
     // Hover over gun.ReloadAmmo() call on line 12
     const std::string callLine = "    gun." + methodName + "();";
@@ -2492,6 +2498,10 @@ TEST_CASE("Hover - Mixin host context resolves receiver and members from host cl
     const std::string hostName = test::GenerateRandomSymbolName("WeaponHost");
     const std::string baseName = test::GenerateRandomSymbolName("BaseEntity");
     const std::string methodName = test::GenerateRandomSymbolName("FallInit");
+    const std::string randomSelf = test::GenerateRandomSymbolName("self");
+    const std::string randomBase = test::GenerateRandomSymbolName("BaseClass");
+    const std::string randomPev = test::GenerateRandomSymbolName("pev");
+    const std::string randomPlayer = test::GenerateRandomSymbolName("m_pPlayer");
 
     const std::string libraryCode = "class " + baseName +
                                     " {\n"
@@ -2502,32 +2512,46 @@ TEST_CASE("Hover - Mixin host context resolves receiver and members from host cl
                                     "};\n"
                                     "class EntVars { int button; };\n"
                                     "class PlayerItem {\n"
-                                    "    EntVars@ pev;\n"
+                                    "    EntVars@ " +
+                                    randomPev +
+                                    ";\n"
                                     "};\n"
                                     "class " +
                                     hostName + " : " + baseName + ", " + mixinName +
                                     " {\n"
-                                    "    PlayerItem@ m_pPlayer;\n"
+                                    "    " +
+                                    baseName + "@ get_" + randomSelf +
+                                    "() const property { return null; }\n"
+                                    "    PlayerItem@ " +
+                                    randomPlayer +
+                                    ";\n"
                                     "};\n";
 
     const std::string mainCode = "mixin class " + mixinName +
                                  " {\n"
                                  "    void Attack() {\n"
-                                 "        self." +
-                                 methodName +
+                                 "        " +
+                                 randomSelf + "." + methodName +
                                  "();\n"
-                                 "        BaseClass.AddToPlayer(1);\n"
-                                 "        int b = m_pPlayer.pev.button;\n"
+                                 "        " +
+                                 randomBase +
+                                 ".AddToPlayer(1);\n"
+                                 "        int b = " +
+                                 randomPlayer + "." + randomPev +
+                                 ".button;\n"
                                  "    }\n"
                                  "};\n";
 
     TwoFileEnvironment env(libraryCode, mainCode);
     env.symbolTable.ResolveIncludedMixins();
 
+    config::ServerConfig cfg;
+    cfg.engineRules.unusedRules.baseClassDelegateProperties = {randomBase};
+
     const size_t pos = mainCode.find("." + methodName);
     REQUIRE(pos != std::string::npos);
     auto p = FindPos(mainCode, methodName, pos + 1);
-    auto hover = env.HoverAt(p.line, p.character);
+    auto hover = env.HoverAt(p.line, p.character, &cfg);
     REQUIRE(hover.has_value());
     const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
     CHECK(text.find("void " + baseName + "::" + methodName + "()") != std::string::npos);
@@ -2535,7 +2559,7 @@ TEST_CASE("Hover - Mixin host context resolves receiver and members from host cl
     const size_t basePos = mainCode.find("AddToPlayer");
     REQUIRE(basePos != std::string::npos);
     auto pBase = FindPos(mainCode, "AddToPlayer", basePos);
-    auto hoverBase = env.HoverAt(pBase.line, pBase.character);
+    auto hoverBase = env.HoverAt(pBase.line, pBase.character, &cfg);
     REQUIRE(hoverBase.has_value());
     const std::string textBase = std::get<lsp::MarkupContent>(hoverBase->contents).value;
     CHECK(textBase.find("AddToPlayer") != std::string::npos);
@@ -2543,10 +2567,41 @@ TEST_CASE("Hover - Mixin host context resolves receiver and members from host cl
     const size_t btnPos = mainCode.find("button");
     REQUIRE(btnPos != std::string::npos);
     auto pBtn = FindPos(mainCode, "button", btnPos);
-    auto hoverBtn = env.HoverAt(pBtn.line, pBtn.character);
+    auto hoverBtn = env.HoverAt(pBtn.line, pBtn.character, &cfg);
     REQUIRE(hoverBtn.has_value());
     const std::string textBtn = std::get<lsp::MarkupContent>(hoverBtn->contents).value;
     CHECK(textBtn.find("button") != std::string::npos);
+
+    const size_t randBasePos = mainCode.find(randomBase + ".");
+    REQUIRE(randBasePos != std::string::npos);
+    auto pRandBase = FindPos(mainCode, randomBase, randBasePos);
+    auto hoverRandBase = env.HoverAt(pRandBase.line, pRandBase.character, &cfg);
+    REQUIRE(hoverRandBase.has_value());
+    const std::string textRandBase = std::get<lsp::MarkupContent>(hoverRandBase->contents).value;
+    CHECK(textRandBase.find(baseName + "@ " + randomBase) != std::string::npos);
+}
+
+TEST_CASE("Hover - Local variable shadowing delegate property displays local variable type")
+{
+    const std::string baseClass = test::GenerateRandomSymbolName("BaseWeapon");
+    const std::string derivedClass = test::GenerateRandomSymbolName("CustomPistol");
+    const std::string baseProp = test::GenerateRandomSymbolName("BaseClass");
+
+    const std::string code = "class " + baseClass + " {}\n" + "class " + derivedClass + " : " + baseClass + " {\n" +
+                             "    void Test() {\n" + "        int " + baseProp + " = 10;\n" + "        " + baseProp +
+                             " = 20;\n" + "    }\n" + "}\n";
+
+    TestEnvironment env(code);
+    config::ServerConfig cfg;
+    cfg.engineRules.unusedRules.baseClassDelegateProperties = {baseProp};
+
+    auto posUse = FindPos(code, baseProp, code.rfind(baseProp));
+    auto hover = env.HoverAt(posUse.line, posUse.character, &cfg);
+
+    REQUIRE(hover.has_value());
+    const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(text.find("int " + baseProp) != std::string::npos);
+    CHECK(text.find(baseClass) == std::string::npos);
 }
 
 TEST_CASE("Hover - Virtual property set accessor EHandle and value hover")
@@ -2556,14 +2611,15 @@ TEST_CASE("Hover - Virtual property set accessor EHandle and value hover")
     const std::string playerClass = test::GenerateRandomSymbolName("CBasePlayer");
     const std::string hostClass = test::GenerateRandomSymbolName("WeaponHost");
     const std::string propName = test::GenerateRandomSymbolName("Player");
+    const std::string randomSelf = test::GenerateRandomSymbolName("self");
 
     const std::string code = "class " + entityClass + " {};\n" + "class " + playerClass + " : " + entityClass +
                              " {};\n" + "class " + handleClass + " {\n" + "    " + handleClass + "() {}\n" + "    " +
                              handleClass + "(" + entityClass + "@ pEnt) {}\n" + "};\n" + "class " + hostClass + " {\n" +
-                             "    " + handleClass + " m_hPlayer;\n" + "    " + hostClass +
-                             "@ self { get { return this; } }\n" + "    " + playerClass + "@ " + propName + " {\n" +
-                             "        get { return null; }\n" + "        set { self.m_hPlayer = " + handleClass +
-                             "(@value); }\n" + "    }\n" + "};\n";
+                             "    " + handleClass + " m_hPlayer;\n" + "    " + hostClass + "@ " + randomSelf +
+                             " { get { return this; } }\n" + "    " + playerClass + "@ " + propName + " {\n" +
+                             "        get { return null; }\n" + "        set { " + randomSelf +
+                             ".m_hPlayer = " + handleClass + "(@value); }\n" + "    }\n" + "};\n";
 
     TestEnvironment env(code);
 

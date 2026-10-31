@@ -251,16 +251,17 @@ TEST_CASE("Vector 9 - Multi-hop base class resolution across predefined stubs")
     const std::string schedClass = GenerateRandomSymbolName("Schedule");
     const std::string scriptBase = GenerateRandomSymbolName("bts_rc_base_monster");
     const std::string parasiteClass = GenerateRandomSymbolName("monster_parasite");
+    const std::string randomBase = GenerateRandomSymbolName("BaseClass");
 
     const std::string predefinedCode = "class " + taskClass + " {}\n" + "class " + schedClass + " {}\n" + "class " +
                                        stubMonster + " {\n" + "    void RunTask(" + taskClass + "@ pTask) {}\n" +
-                                       "    " + schedClass + "@ m_Schedules;\n" + "    " + stubMonster +
-                                       "@ BaseClass;\n" + "}\n";
+                                       "    " + schedClass + "@ m_Schedules;\n" + "    " + stubMonster + "@ " +
+                                       randomBase + ";\n" + "}\n";
 
     const std::string scriptCode = "class " + scriptBase + " : " + stubMonster + " {}\n" + "class " + parasiteClass +
                                    " : " + scriptBase + " {\n" + "    void CustomMethod(" + taskClass + "@ pTask) {\n" +
-                                   "        @this.m_Schedules = null;\n" + "        BaseClass.RunTask(pTask);\n" +
-                                   "    }\n" + "}\n";
+                                   "        @this.m_Schedules = null;\n" + "        " + randomBase +
+                                   ".RunTask(pTask);\n" + "    }\n" + "}\n";
 
     const auto diags = AnalyzeSnippetWithPredefined(scriptCode, predefinedCode);
     DumpDiags("Vector 9", diags);
@@ -271,8 +272,8 @@ TEST_CASE("Vector 9 - Multi-hop base class resolution across predefined stubs")
     const std::string cleanBase = GenerateRandomSymbolName("PureBase");
     const std::string cleanDerived = GenerateRandomSymbolName("PureDerived");
     const std::string cleanCode = "class " + cleanBase + " { void RunTask() {} }\n" + "class " + cleanDerived + " : " +
-                                  cleanBase + " {\n" + "    void Test() {\n" + "        BaseClass.RunTask();\n" +
-                                  "    }\n" + "}\n";
+                                  cleanBase + " {\n" + "    void Test() {\n" + "        " + randomBase +
+                                  ".RunTask();\n" + "    }\n" + "}\n";
     const auto cleanDiags = AnalyzeSnippetWithPredefined(cleanCode);
     CHECK(HasDiagCode(cleanDiags, "as-warn-undeclared-identifier"));
 }

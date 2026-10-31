@@ -2819,9 +2819,9 @@ static std::string ResolveThisIdentifier(TSNode exprNode, const ExpressionTypeCo
 }
 
 /**
- * @brief Resolves special 'this' identifier.
+ * @brief Resolves 'this' expression type based on enclosing container hierarchy or mixin host.
  */
-static std::string ResolveIdentifierSpecial(std::string_view name, TSNode exprNode, const ExpressionTypeContext& ctx)
+static std::string ResolveThisExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
 {
     const bool isVirtual = ctx.uri.starts_with("angelscript-virtual:") || ctx.uri.starts_with("angelscript-virtual://");
     std::string hostClass = isVirtual ? SymbolTable::ExtractVirtualHostClass(ctx.uri) : "";
@@ -2829,25 +2829,7 @@ static std::string ResolveIdentifierSpecial(std::string_view name, TSNode exprNo
     {
         hostClass = InferHostClassFromEnclosingMixin(exprNode, ctx.sourceCode, ctx.symbolTable);
     }
-
-    if (name == "this" || name == config::k_selfIdentifier)
-    {
-        return ResolveThisIdentifier(exprNode, ctx, hostClass);
-    }
-    if (name == config::k_baseClassIdentifier)
-    {
-        std::string targetClass = ResolveThisIdentifier(exprNode, ctx, hostClass);
-        if (!targetClass.empty())
-        {
-            return ResolveSelfOrBaseClass(config::k_baseClassIdentifier, targetClass, ctx.symbolTable);
-        }
-    }
-    return "";
-}
-
-static std::string ResolveThisExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
-{
-    return ResolveIdentifierSpecial("this", exprNode, ctx);
+    return ResolveThisIdentifier(exprNode, ctx, hostClass);
 }
 
 /**
@@ -3013,15 +2995,20 @@ static std::vector<Symbol> ResolveIdentifierSymbols(const std::string& name, TSN
 }
 
 /**
- * @brief Virtual document fallback resolution for identifiers in mixin host classes.
+ * @brief Host class fallback resolution for identifiers in mixin classes and virtual documents.
  */
-static std::string ResolveIdentifierVirtualFallback(const std::string& name, const ExpressionTypeContext& ctx)
+static std::string ResolveIdentifierHostFallback(const std::string& name, TSNode exprNode,
+                                                 const ExpressionTypeContext& ctx)
 {
-    if (!ctx.uri.starts_with("angelscript-virtual:") && !ctx.uri.starts_with("angelscript-virtual://"))
+    std::string hostClass;
+    if (ctx.uri.starts_with("angelscript-virtual:") || ctx.uri.starts_with("angelscript-virtual://"))
     {
-        return "";
+        hostClass = SymbolTable::ExtractVirtualHostClass(ctx.uri);
     }
-    std::string hostClass = SymbolTable::ExtractVirtualHostClass(ctx.uri);
+    else
+    {
+        hostClass = InferHostClassFromEnclosingMixin(exprNode, ctx.sourceCode, ctx.symbolTable);
+    }
     if (hostClass.empty())
     {
         return "";
@@ -3097,15 +3084,33 @@ static std::string ResolveIdentifierAccessorFallback(const std::string& name, co
     return "";
 }
 
+static std::string ResolveIdentifierDelegateProperty(std::string_view name, TSNode exprNode,
+                                                     const ExpressionTypeContext& ctx)
+{
+    if (!IsBaseClassDelegateProperty(name, ctx.symbolTable))
+    {
+        return "";
+    }
+    const bool isVirtual = ctx.uri.starts_with("angelscript-virtual:") || ctx.uri.starts_with("angelscript-virtual://");
+    std::string hostClass = isVirtual ? SymbolTable::ExtractVirtualHostClass(ctx.uri) : "";
+    std::string baseClass =
+        ResolveDelegateTargetBaseClass({exprNode, ctx.sourceCode, ctx.symbolTable, hostClass, nullptr});
+    if (!baseClass.empty())
+    {
+        return MemberOwnerType(baseClass, ctx.arrayTypeName);
+    }
+    return "";
+}
+
 /**
  * @brief Resolves bare identifier expression type.
  */
 static std::string ResolveIdentifierExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
 {
     std::string name = GetNodeText(exprNode, ctx.sourceCode);
-    if (auto special = ResolveIdentifierSpecial(name, exprNode, ctx); !special.empty())
+    if (name == "this")
     {
-        return special;
+        return ResolveThisExpr(exprNode, ctx);
     }
     if (ctx.scope)
     {
@@ -3122,9 +3127,9 @@ static std::string ResolveIdentifierExpr(TSNode exprNode, const ExpressionTypeCo
     auto syms = ResolveIdentifierSymbols(name, exprNode, ctx);
     if (syms.empty())
     {
-        if (auto virt = ResolveIdentifierVirtualFallback(name, ctx); !virt.empty())
+        if (auto hostRes = ResolveIdentifierHostFallback(name, exprNode, ctx); !hostRes.empty())
         {
-            return virt;
+            return hostRes;
         }
     }
     for (const auto& sym : syms)
@@ -3144,7 +3149,11 @@ static std::string ResolveIdentifierExpr(TSNode exprNode, const ExpressionTypeCo
     {
         return CleanExpressionType(pType);
     }
-    return ResolveIdentifierAccessorFallback(name, ctx.symbolTable);
+    if (auto accessorRes = ResolveIdentifierAccessorFallback(name, ctx.symbolTable); !accessorRes.empty())
+    {
+        return accessorRes;
+    }
+    return ResolveIdentifierDelegateProperty(name, exprNode, ctx);
 }
 
 /**
@@ -5232,60 +5241,106 @@ std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourc
     return "";
 }
 
-std::string ResolveSelfOrBaseClass(std::string_view objText, std::string_view targetClass,
-                                   const SymbolTable& symbolTable)
+struct DelegatePropertyReceiverContext
 {
-    if (objText != config::k_selfIdentifier && objText != config::k_baseClassIdentifier)
+    TSNode objNode;
+    std::string_view objText;
+    std::string_view effectiveHostClass;
+    std::string_view sourceCode;
+    std::string_view arrayTypeName;
+};
+
+bool IsBaseClassDelegateProperty(std::string_view name, const SymbolTable& symbolTable,
+                                 const config::EngineRuleConfig* engineRules)
+{
+    std::span<const std::string> delegateProps;
+    if (engineRules && !engineRules->unusedRules.baseClassDelegateProperties.empty())
     {
-        return "";
+        delegateProps = engineRules->unusedRules.baseClassDelegateProperties;
     }
-    if (targetClass.empty())
+    else
     {
-        return "";
+        delegateProps = symbolTable.GetBaseClassDelegateProperties();
     }
-    if (objText == config::k_selfIdentifier)
+    if (delegateProps.empty())
     {
-        return std::string(targetClass);
-    }
-    auto hier = GetInheritedTypeHierarchy(std::string(targetClass), symbolTable);
-    for (size_t i = 1; i < hier.size(); ++i)
-    {
-        if (!IsMixinClass(hier[i], symbolTable))
+        if (const auto ruleIndex = symbolTable.GetRuleIndex())
         {
-            return hier[i];
+            delegateProps = ruleIndex->baseClassDelegateProperties;
+        }
+    }
+    return std::any_of(delegateProps.begin(), delegateProps.end(), [&](const std::string& p) { return p == name; });
+}
+
+static std::string FindEnclosingClassOrHost(TSNode node, std::string_view sourceCode, const SymbolTable& symbolTable,
+                                            std::string_view virtualHostClass)
+{
+    if (!virtualHostClass.empty())
+    {
+        return std::string(virtualHostClass);
+    }
+    std::string hostClass = InferHostClassFromEnclosingMixin(node, sourceCode, symbolTable);
+    if (!hostClass.empty())
+    {
+        return hostClass;
+    }
+    for (const auto& c : GetEnclosingContainers(node, sourceCode))
+    {
+        if (c.kind == ContainerKind::Class)
+        {
+            return c.qualifiedName.empty() ? c.name : c.qualifiedName;
         }
     }
     return "";
 }
 
-struct SpecialReceiverContext
+std::string ResolveDelegateTargetBaseClass(const DelegateTargetClassRequest& req)
 {
-    std::string_view objText;
-    std::string_view sourceCode;
-    std::string_view effectiveHostClass;
-};
-
-static std::string ResolveSelfOrBaseReceiver(TSNode objNode, const SpecialReceiverContext& sctx,
-                                             const SymbolTable& symbolTable)
-{
-    if (sctx.objText != config::k_selfIdentifier && sctx.objText != config::k_baseClassIdentifier)
+    std::string targetClass = FindEnclosingClassOrHost(req.node, req.sourceCode, req.symbolTable, req.virtualHostClass);
+    if (targetClass.empty())
     {
         return "";
     }
-    std::string targetClass(sctx.effectiveHostClass);
-    if (targetClass.empty())
+    std::string baseClass = ResolveBaseClass(targetClass, req.symbolTable);
+    if (baseClass.empty() && req.engineRules)
     {
-        auto containers = GetEnclosingContainers(objNode, sctx.sourceCode);
-        for (const auto& c : containers)
+        auto it = req.engineRules->unusedRules.baseClassProxyMap.find(targetClass);
+        if (it != req.engineRules->unusedRules.baseClassProxyMap.end() && !it->second.empty())
         {
-            if (c.kind == ContainerKind::Class)
-            {
-                targetClass = c.qualifiedName.empty() ? c.name : c.qualifiedName;
-                break;
-            }
+            baseClass = CleanBaseType(it->second.front());
         }
     }
-    return ResolveSelfOrBaseClass(sctx.objText, targetClass, symbolTable);
+    return baseClass;
+}
+
+static std::string ResolveDelegatePropertyReceiver(const DelegatePropertyReceiverContext& dctx,
+                                                   const SymbolTable& symbolTable, const ReceiverTypeContext& ctx)
+{
+    if (!IsBaseClassDelegateProperty(dctx.objText, symbolTable, ctx.engineRules))
+    {
+        return "";
+    }
+    std::string baseClass = ResolveDelegateTargetBaseClass(
+        {dctx.objNode, dctx.sourceCode, symbolTable, dctx.effectiveHostClass, ctx.engineRules});
+    if (!baseClass.empty())
+    {
+        return MemberOwnerType(baseClass, dctx.arrayTypeName);
+    }
+    return "";
+}
+
+static std::string ResolveMemberOrContainerReceiver(TSNode objNode, std::string_view sourceCode,
+                                                    const std::string& objText, const std::string& hostClass,
+                                                    const SymbolTable& symbolTable, std::string_view arrayTypeName)
+{
+    if (!hostClass.empty())
+    {
+        if (auto res = ResolveMemberInHierarchy(hostClass, objText, symbolTable, arrayTypeName); !res.empty())
+        {
+            return res;
+        }
+    }
+    return ResolveReceiverInEnclosingContainers(objNode, sourceCode, objText, symbolTable, arrayTypeName);
 }
 
 std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, const SymbolTable& symbolTable,
@@ -5315,12 +5370,6 @@ std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, con
         return ResolveThisReceiver(objNode, sourceCode, effectiveHostClass);
     }
 
-    if (auto special = ResolveSelfOrBaseReceiver(objNode, {objText, sourceCode, effectiveHostClass}, symbolTable);
-        !special.empty())
-    {
-        return special;
-    }
-
     ExpressionTypeContext exprCtx(ctx.scope, symbolTable, sourceCode, ctx.fileUri, parser::GetRootNode(objNode));
     exprCtx.cache = ctx.cache;
     if (auto scopeRes = ResolveReceiverScope(ctx.scope, objText, ts_node_start_byte(objNode), &exprCtx, arrayTypeName);
@@ -5334,18 +5383,18 @@ std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, con
         return inferred;
     }
 
-    if (!effectiveHostClass.empty())
-    {
-        if (auto res = ResolveMemberInHierarchy(effectiveHostClass, objText, symbolTable, arrayTypeName); !res.empty())
-        {
-            return res;
-        }
-    }
-
-    if (auto res = ResolveReceiverInEnclosingContainers(objNode, sourceCode, objText, symbolTable, arrayTypeName);
+    if (auto res = ResolveMemberOrContainerReceiver(objNode, sourceCode, objText, effectiveHostClass, symbolTable,
+                                                    arrayTypeName);
         !res.empty())
     {
         return res;
+    }
+
+    if (auto delRes = ResolveDelegatePropertyReceiver({objNode, objText, effectiveHostClass, sourceCode, arrayTypeName},
+                                                      symbolTable, ctx);
+        !delRes.empty())
+    {
+        return delRes;
     }
 
     ExpressionTypeContext exprResCtx(ctx.scope, symbolTable, sourceCode, ctx.fileUri);

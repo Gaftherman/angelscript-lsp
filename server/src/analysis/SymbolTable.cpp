@@ -1760,6 +1760,11 @@ std::shared_ptr<const rules::RuleIndex> SymbolTable::GetRuleIndex() const
     }
 
     auto index = std::make_shared<rules::RuleIndex>();
+    index->baseClassDelegateProperties = m_baseClassDelegateProperties;
+    for (const auto& prop : m_baseClassDelegateProperties)
+    {
+        index->baseClassDelegatePropertySet.insert(prop);
+    }
     for (const auto& [fileUri, keys] : m_keysByFile)
     {
         auto docSymbols = GetDocumentSymbolPointersLocked(fileUri);
@@ -1776,6 +1781,28 @@ void SymbolTable::EnsureRuleIndex() const
     // Delegate to the lazy builder. If already constructed, this is a no-op
     // (one mutex acquisition + null check).
     GetRuleIndex();
+}
+
+void SymbolTable::SetBaseClassDelegateProperties(std::vector<std::string> properties)
+{
+    std::unique_lock<std::shared_mutex> lock(m_mutex);
+    m_baseClassDelegateProperties = std::move(properties);
+    std::lock_guard<std::mutex> ruleGuard(m_ruleIndexMutex);
+    if (m_ruleIndex)
+    {
+        auto modifiableIndex = std::const_pointer_cast<rules::RuleIndex>(m_ruleIndex);
+        modifiableIndex->baseClassDelegateProperties = m_baseClassDelegateProperties;
+        modifiableIndex->baseClassDelegatePropertySet.clear();
+        for (const auto& prop : m_baseClassDelegateProperties)
+        {
+            modifiableIndex->baseClassDelegatePropertySet.insert(prop);
+        }
+    }
+}
+
+const std::vector<std::string>& SymbolTable::GetBaseClassDelegateProperties() const noexcept
+{
+    return m_baseClassDelegateProperties;
 }
 
 namespace

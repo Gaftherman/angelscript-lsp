@@ -471,19 +471,17 @@ TEST_CASE("InlayHintHandler - ShootGrenade and trailing parameter hints")
 
 TEST_CASE("InlayHintHandler - BaseClass and inherited unqualified call parameter hints")
 {
+    const std::string baseClass = test::GenerateRandomSymbolName("WeaponBase");
+    const std::string derivedClass = test::GenerateRandomSymbolName("weapon_ins2l85a2");
+    const std::string baseProp = test::GenerateRandomSymbolName("BaseClass");
+
     std::string code =
-        "class WeaponBase {\n"
-        "    WeaponBase@ BaseClass;\n"
-        "    void Holster(int skiplocal = 0) {}\n"
-        "    bool Deploy(string v, string p, int draw, string model, int body, float speed) { return true; }\n"
-        "}\n"
-        "class weapon_ins2l85a2 : WeaponBase {\n"
-        "    bool Deploy() { return true; }\n"
-        "    void Holster(int skipLocal = 0) {\n"
-        "        BaseClass.Holster(skipLocal);\n"
-        "        Deploy(\"v\", \"p\", 1, \"model\", 0, 1.5f);\n"
-        "    }\n"
-        "}\n";
+        "class " + baseClass + " {\n" + "    " + baseClass + "@ " + baseProp + ";\n" +
+        "    void Holster(int skiplocal = 0) {}\n" +
+        "    bool Deploy(string v, string p, int draw, string model, int body, float speed) { return true; }\n" +
+        "}\n" + "class " + derivedClass + " : " + baseClass + " {\n" + "    bool Deploy() { return true; }\n" +
+        "    void Holster(int skipLocal = 0) {\n" + "        " + baseProp + ".Holster(skipLocal);\n" +
+        "        Deploy(\"v\", \"p\", 1, \"model\", 0, 1.5f);\n" + "    }\n" + "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();
@@ -626,18 +624,16 @@ TEST_CASE("InlayHintHandler - Mixin Method Parameter Hints on Instance")
 
 TEST_CASE("InlayHintHandler - BaseClass Method Parameter Hints with Mixin in Hierarchy")
 {
-    std::string code = "mixin class WeaponMixin {\n"
-                       "    void MixinMethod() {}\n"
-                       "}\n"
-                       "class BasePlayerWeapon {\n"
-                       "    BasePlayerWeapon@ BaseClass;\n"
-                       "    void Holster(int pPlayer) {}\n"
-                       "}\n"
-                       "class MyWeapon : BasePlayerWeapon, WeaponMixin {\n"
-                       "    void Holster() {\n"
-                       "        BaseClass.Holster(42);\n"
-                       "    }\n"
-                       "}\n";
+    const std::string mixinName = test::GenerateRandomSymbolName("WeaponMixin");
+    const std::string baseClass = test::GenerateRandomSymbolName("BasePlayerWeapon");
+    const std::string derivedClass = test::GenerateRandomSymbolName("MyWeapon");
+    const std::string baseProp = test::GenerateRandomSymbolName("BaseClass");
+
+    std::string code = "mixin class " + mixinName + " {\n" + "    void MixinMethod() {}\n" + "}\n" + "class " +
+                       baseClass + " {\n" + "    " + baseClass + "@ " + baseProp + ";\n" +
+                       "    void Holster(int pPlayer) {}\n" + "}\n" + "class " + derivedClass + " : " + baseClass +
+                       ", " + mixinName + " {\n" + "    void Holster() {\n" + "        " + baseProp +
+                       ".Holster(42);\n" + "    }\n" + "}\n";
 
     TestEnvironment env(code);
     auto hints = env.InlayHints();

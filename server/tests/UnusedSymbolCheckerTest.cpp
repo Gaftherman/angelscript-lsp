@@ -906,16 +906,17 @@ TEST_CASE("UnusedSymbolChecker - baseClassDelegateProperties discovers base meth
     const std::string derivedClass = angel_lsp::test::GenerateRandomSymbolName("MyWeapon");
     const std::string tickMethod = angel_lsp::test::GenerateRandomSymbolName("OnTick");
     const std::string deadMethod = angel_lsp::test::GenerateRandomSymbolName("UnusedLocalMethod");
+    const std::string baseProp = angel_lsp::test::GenerateRandomSymbolName("BaseClass");
 
     const std::string predefCode = "class " + nativeClass + " { void " + tickMethod + "() {} }\n";
-    const std::string code = "class " + scriptBridge + " {\n" + "    " + nativeClass +
-                             "@ BaseClass { get const { return null; } }\n" + "}\n" + "class " + derivedClass + " : " +
+    const std::string code = "class " + scriptBridge + " {\n" + "    " + nativeClass + "@ " + baseProp +
+                             " { get const { return null; } }\n" + "}\n" + "class " + derivedClass + " : " +
                              scriptBridge + " {\n" + "    void " + tickMethod + "() {}\n" + "    void " + deadMethod +
                              "() {}\n" + "}\n" + "void Main() { " + derivedClass + " w; }\n";
 
     angel_lsp::config::EngineRuleConfig rules;
     rules.unusedRules.enabled = true;
-    rules.unusedRules.baseClassDelegateProperties = {"BaseClass"};
+    rules.unusedRules.baseClassDelegateProperties = {baseProp};
 
     auto diags = AnalyzeSnippetWithPredefined(code, &rules, predefCode);
     CHECK_FALSE(HasDiag(diags, codes::UnusedMethod, tickMethod));
@@ -927,17 +928,18 @@ TEST_CASE("UnusedSymbolChecker - BaseClass method access does not mask truly unr
     const std::string baseClass = angel_lsp::test::GenerateRandomSymbolName("ParentClass");
     const std::string derivedClass = angel_lsp::test::GenerateRandomSymbolName("ChildClass");
     const std::string deadMethod = angel_lsp::test::GenerateRandomSymbolName("OrphanMethod");
+    const std::string baseProp = angel_lsp::test::GenerateRandomSymbolName("BaseClass");
 
     // deadMethod is called via BaseClass.<deadMethod>() inside its own body, but Base does not have it,
     // so it should not be considered an external reference
     const std::string code = "class " + baseClass + " {}\n" + "class " + derivedClass + " : " + baseClass + " {\n" +
-                             "    " + baseClass + "@ BaseClass { get const { return null; } }\n" + "    void " +
-                             deadMethod + "() {\n" + "        BaseClass." + deadMethod + "();\n" + "    }\n" + "}\n" +
-                             "void Entry() { " + derivedClass + " c; }\n";
+                             "    " + baseClass + "@ " + baseProp + " { get const { return null; } }\n" + "    void " +
+                             deadMethod + "() {\n" + "        " + baseProp + "." + deadMethod + "();\n" + "    }\n" +
+                             "}\n" + "void Entry() { " + derivedClass + " c; }\n";
 
     angel_lsp::config::EngineRuleConfig rules;
     rules.unusedRules.enabled = true;
-    rules.unusedRules.baseClassDelegateProperties = {"BaseClass"};
+    rules.unusedRules.baseClassDelegateProperties = {baseProp};
 
     auto diags = AnalyzeSnippet(code, &rules);
     CHECK(HasDiag(diags, codes::UnusedMethod, deadMethod));

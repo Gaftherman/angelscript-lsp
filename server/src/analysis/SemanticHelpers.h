@@ -566,6 +566,35 @@ void ExpandMixinHostHierarchies(std::string_view containerClass, const SymbolTab
                                 std::vector<std::string>& hierarchy);
 
 /**
+ * @brief Bundled parameters for resolving target base class of a delegate property.
+ */
+struct DelegateTargetClassRequest
+{
+    TSNode node;                                           ///< Delegate property receiver AST node.
+    std::string_view sourceCode;                           ///< Document source code.
+    const SymbolTable& symbolTable;                        ///< Global symbol table.
+    std::string_view virtualHostClass = {};                ///< Host class name for virtual documents.
+    const config::EngineRuleConfig* engineRules = nullptr; ///< Optional engine rule configuration.
+};
+
+/**
+ * @brief Resolves target base class for a delegate property receiver node.
+ * @param[in] req Request containing AST node, source code, symbolTable, and engine rules.
+ * @return Resolved base class name, or empty string if not resolvable.
+ */
+std::string ResolveDelegateTargetBaseClass(const DelegateTargetClassRequest& req);
+
+/**
+ * @brief Checks if an identifier matches any configured base class delegate property.
+ * @param[in] name Identifier to test.
+ * @param[in] symbolTable Global symbol table.
+ * @param[in] engineRules Optional engine rule configuration.
+ * @return True if name matches a delegate property, false otherwise.
+ */
+bool IsBaseClassDelegateProperty(std::string_view name, const SymbolTable& symbolTable,
+                                 const config::EngineRuleConfig* engineRules = nullptr);
+
+/**
  * @brief The `get_X`/`set_X` methods, anywhere in a type's hierarchy, that stand for `X`.
  *
  * `class E { int get_Health() const property; void set_Health(int) property; }` gives `e.Health`
@@ -951,6 +980,8 @@ struct ReceiverTypeContext
     std::string_view fileUri = {};
     std::string_view arrayTypeName = {};
     ExpressionTypeCache* cache = nullptr;
+    const config::EngineRuleConfig* engineRules = nullptr;
+    std::span<const std::string> delegateProps = {};
 };
 
 /**
@@ -1010,16 +1041,6 @@ std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, con
  * @return Qualified or unqualified name of the first including host class, or empty string.
  */
 std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourceCode, const SymbolTable& symbolTable);
-
-/**
- * @brief Resolves receiver type for special identifiers 'self' and 'BaseClass'.
- * @param[in] objText Node text ('self' or 'BaseClass').
- * @param[in] targetClass Target host or enclosing class name.
- * @param[in] symbolTable Workspace symbol table.
- * @return Resolved receiver type name, or empty string.
- */
-std::string ResolveSelfOrBaseClass(std::string_view objText, std::string_view targetClass,
-                                   const SymbolTable& symbolTable);
 
 // --- A lambda against the funcdef it is being handed to ---------------------------------
 //
