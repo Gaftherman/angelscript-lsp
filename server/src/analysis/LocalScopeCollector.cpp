@@ -165,9 +165,13 @@ std::unique_ptr<Scope> LocalScopeCollector::CollectScopesFromTree(TSNode rootNod
     }
 
     auto root = BuildScopeTree(captures, sourceCode);
-    if (root && ts_node_has_error(rootNode))
+    if (root)
     {
-        RecoverDeclarationsFromErrorNodes(rootNode, root.get(), sourceCode);
+        RegisterVirtualPropertySetParameters(rootNode, root.get(), sourceCode);
+        if (ts_node_has_error(rootNode))
+        {
+            RecoverDeclarationsFromErrorNodes(rootNode, root.get(), sourceCode);
+        }
     }
     return root;
 }
@@ -1252,6 +1256,97 @@ void TryRecoverUnbracedIfDeclaration(TSNode node, Scope* rootScope, const std::s
     }
     TryRecoverErrorIfDeclaration(node, rootScope, sourceCode, gs);
 }
+
+struct VirtualPropertyContext
+{
+    const std::string& propTypeStr;
+    const TypeExtractionResult& typeInfo;
+    Scope* root = nullptr;
+    const parser::GrammarSymbols& gs;
+    std::string_view sourceCode;
+};
+
+void ProcessVirtualPropertySetAccessor(TSNode accNode, const VirtualPropertyContext& ctx)
+{
+    TSNode kindNode = parser::GetChildByField(accNode, ctx.gs.fieldKind);
+    if (ts_node_is_null(kindNode))
+    {
+        return;
+    }
+    const bool isSet =
+        (ts_node_symbol(kindNode) == ctx.gs.tokSet || parser::GetNodeText(kindNode, ctx.sourceCode) == "set");
+    if (!isSet)
+    {
+        return;
+    }
+    TSNode bodyNode = parser::GetChildByField(accNode, ctx.gs.fieldBody);
+    if (ts_node_is_null(bodyNode))
+    {
+        return;
+    }
+    TSPoint pt = ts_node_start_point(bodyNode);
+    Scope* setScope = FindInnermostScopeMut(ctx.root, pt.row, pt.column);
+    if (!setScope)
+    {
+        return;
+    }
+    for (const auto& existing : setScope->definitions)
+    {
+        if (existing.name == "value")
+        {
+            return;
+        }
+    }
+    LocalDefinition def;
+    def.name = "value";
+    def.kind = LocalDefinitionKind::Parameter;
+    def.typeName = ctx.propTypeStr;
+    def.typeKind = ctx.typeInfo.kind;
+    def.isHandleType = ctx.typeInfo.isHandle;
+    def.visibleFromByte = 0;
+    TSPoint bStart = ts_node_start_point(bodyNode);
+    TSPoint bEnd = ts_node_end_point(bodyNode);
+    def.startLine = bStart.row;
+    def.startCharacter = bStart.column;
+    def.endLine = bEnd.row;
+    def.endCharacter = bEnd.column;
+    def.fullStartLine = bStart.row;
+    def.fullStartCharacter = bStart.column;
+    def.fullEndLine = bEnd.row;
+    def.fullEndCharacter = bEnd.column;
+    setScope->definitions.push_back(std::move(def));
+}
+
+void ProcessVirtualPropertyNode(TSNode propNode, Scope* root, const parser::GrammarSymbols& gs,
+                                std::string_view sourceCode)
+{
+    TSNode propTypeNode = parser::GetChildByField(propNode, gs.fieldPropType);
+    if (ts_node_is_null(propTypeNode))
+    {
+        propTypeNode = parser::GetChildByField(propNode, gs.fieldType);
+    }
+    if (ts_node_is_null(propTypeNode))
+    {
+        return;
+    }
+    std::string propTypeStr = parser::GetNodeText(propTypeNode, sourceCode);
+    TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(propTypeNode, sourceCode);
+    VirtualPropertyContext ctx{propTypeStr, typeInfo, root, gs, sourceCode};
+
+    TSTreeCursor cursor = ts_tree_cursor_new(propNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        do
+        {
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            if (ts_node_is_named(child) && ts_node_symbol(child) == gs.symAccessor)
+            {
+                ProcessVirtualPropertySetAccessor(child, ctx);
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    }
+    ts_tree_cursor_delete(&cursor);
+}
 } // namespace
 
 void LocalScopeCollector::RecoverDeclarationsFromErrorNodes(TSNode rootNode, Scope* rootScope,
@@ -1296,6 +1391,45 @@ void LocalScopeCollector::RecoverDeclarationsFromErrorNodes(TSNode rootNode, Sco
             break;
     }
 
+    ts_tree_cursor_delete(&cursor);
+}
+
+void LocalScopeCollector::RegisterVirtualPropertySetParameters(TSNode rootNode, Scope* rootScope,
+                                                               const std::string& sourceCode) const
+{
+    if (!rootScope || ts_node_is_null(rootNode))
+    {
+        return;
+    }
+    static constexpr size_t kMaxDepth = 64;
+    TSTreeCursor cursor = ts_tree_cursor_new(rootNode);
+    size_t depth = 0;
+    bool visiting = true;
+
+    while (visiting)
+    {
+        TSNode node = ts_tree_cursor_current_node(&cursor);
+        if (ts_node_is_named(node) && ts_node_symbol(node) == m_gs.symVirtualProperty)
+        {
+            ProcessVirtualPropertyNode(node, rootScope, m_gs, sourceCode);
+        }
+
+        if (depth < kMaxDepth && ts_tree_cursor_goto_first_child(&cursor))
+        {
+            ++depth;
+            continue;
+        }
+
+        while (!ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            if (!ts_tree_cursor_goto_parent(&cursor))
+            {
+                visiting = false;
+                break;
+            }
+            --depth;
+        }
+    }
     ts_tree_cursor_delete(&cursor);
 }
 } // namespace angel_lsp::analysis

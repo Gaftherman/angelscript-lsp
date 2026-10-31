@@ -1,4 +1,4 @@
-﻿#include "analysis/TargetResolution.h"
+#include "analysis/TargetResolution.h"
 
 #include "analysis/SemanticHelpers.h"
 #include "parser/ASTUtils.h"
@@ -452,29 +452,63 @@ static bool HasNamespaceSymbol(const std::vector<Symbol>& syms)
     return false;
 }
 
+static bool IsContainerDeclarationName(TSNode outNode)
+{
+    TSNode parent = parser::GetParent(outNode);
+    if (ts_node_is_null(parent))
+    {
+        return false;
+    }
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol pSym = ts_node_symbol(parent);
+    if (pSym == gs.symClassDeclaration || pSym == gs.symInterfaceDeclaration || pSym == gs.symEnumDeclaration)
+    {
+        TSNode nameChild = parser::GetChildByField(parent, gs.fieldName);
+        return !ts_node_is_null(nameChild) && ts_node_start_byte(nameChild) == ts_node_start_byte(outNode);
+    }
+    return false;
+}
+
+static bool TryResolveNamespaceEnumMember(const std::string& containerQualifiedName, const std::string& nodeText,
+                                          const SymbolTable& symbolTable, TargetDescriptor& target)
+{
+    const auto ruleIndex = symbolTable.GetRuleIndex();
+    if (!ruleIndex)
+    {
+        return false;
+    }
+    auto it = ruleIndex->enumSymbolsByMemberName.find(nodeText);
+    if (it == ruleIndex->enumSymbolsByMemberName.end())
+    {
+        return false;
+    }
+    for (const auto& enumSym : it->second)
+    {
+        if (enumSym.containerName == containerQualifiedName ||
+            analysis::IsSameOrNestedNamespace(enumSym.containerName, containerQualifiedName))
+        {
+            target.kind = TargetKind::EnumMember;
+            target.declaringEnum = enumSym.qualifiedName;
+            target.qualifiedName = utils::JoinScopedName(enumSym.qualifiedName, nodeText);
+            return true;
+        }
+    }
+    return false;
+}
+
 /**
- * @brief Resolves target through enclosing class, interface, or namespace containers.
- * @param[in] outNode AST node.
+ * @brief Resolves a target as a member or symbol within an enclosing container.
+ * @param[in] outNode Identifier AST node.
  * @param[in] nodeText Symbol identifier text.
- * @param[in] request Resolution request.
+ * @param[in] request Original resolve target request.
  * @param[out] target Target descriptor to populate.
  */
 void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const ResolveTargetRequest& request,
                             TargetDescriptor& target)
 {
-    TSNode parent = parser::GetParent(outNode);
-    if (!ts_node_is_null(parent))
+    if (IsContainerDeclarationName(outNode))
     {
-        const auto& gs = parser::GetGrammarSymbols();
-        const TSSymbol pSym = ts_node_symbol(parent);
-        if (pSym == gs.symClassDeclaration || pSym == gs.symInterfaceDeclaration || pSym == gs.symEnumDeclaration)
-        {
-            TSNode nameChild = parser::GetChildByField(parent, gs.fieldName);
-            if (!ts_node_is_null(nameChild) && ts_node_start_byte(nameChild) == ts_node_start_byte(outNode))
-            {
-                return;
-            }
-        }
+        return;
     }
 
     auto containers = analysis::GetEnclosingContainers(outNode, request.sourceCode);
@@ -502,6 +536,10 @@ void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const R
                 target.kind = TargetKind::NamespaceSymbol;
                 target.declaringNamespace = container.qualifiedName;
                 target.qualifiedName = utils::JoinScopedName(container.qualifiedName, nodeText);
+                return;
+            }
+            if (TryResolveNamespaceEnumMember(container.qualifiedName, nodeText, request.symbolTable, target))
+            {
                 return;
             }
         }
@@ -2032,17 +2070,34 @@ bool HasPrecedingEnumQualifier(const analysis::LocalReference& ref, const analys
 
 /**
  * @brief Checks if an unscoped reference matches the enum member target without collisions.
+ * @param[in] ref Local reference.
  * @param[in] scope Scope of reference.
  * @param[in] ctx Occurrence scan context.
  * @return True if the unscoped reference safely resolves to the target enum member.
  */
-bool IsUnscopedEnumMemberMatch(const analysis::Scope* scope, const OccurrenceScanContext& ctx)
+bool IsUnscopedEnumMemberMatch(const analysis::LocalReference& ref, const analysis::Scope* scope,
+                               const OccurrenceScanContext& ctx)
 {
     auto docScopeRoot = ctx.request.scopeIndex.GetRoot(ctx.fileUri);
     if (docScopeRoot && IsShadowedInFunctionScope(scope, ctx.request.target.name, docScopeRoot.get()))
     {
         return false;
     }
+    const std::string_view declaringNamespace = utils::ParentScopeView(ctx.request.target.declaringEnum);
+    if (!declaringNamespace.empty())
+    {
+        auto nsRanges =
+            CollectNamespaceAndContainerLineRanges(ctx.request.symbolTable, ctx.fileUri, declaringNamespace);
+        for (const auto& nr : nsRanges)
+        {
+            if (ref.startLine >= nr.first && ref.startLine <= nr.second)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     size_t enumCount = 0;
     auto syms = ctx.request.symbolTable.FindSymbols(ctx.request.target.name);
     for (const auto& s : syms)
@@ -2090,7 +2145,7 @@ bool IsEnumMemberReferenceMatch(const analysis::LocalReference& ref, const analy
     {
         return HasPrecedingEnumQualifier(ref, scope, ctx.request.target.declaringEnum);
     }
-    return IsUnscopedEnumMemberMatch(scope, ctx);
+    return IsUnscopedEnumMemberMatch(ref, scope, ctx);
 }
 
 /**

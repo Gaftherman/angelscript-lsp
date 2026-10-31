@@ -1,4 +1,4 @@
-﻿#include "analysis/SemanticHelpers.h"
+#include "analysis/SemanticHelpers.h"
 #include "analysis/DiagnosticContext.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/OverloadResolver.h"
@@ -1223,7 +1223,8 @@ std::vector<Symbol> FindPropertyAccessors(const std::string& typeName, const std
     if (typeName.empty() || propertyName.empty())
         return accessors;
 
-    const auto hierarchy = GetInheritedTypeHierarchy(typeName, symbolTable);
+    auto hierarchy = GetInheritedTypeHierarchy(typeName, symbolTable);
+    ExpandMixinHostHierarchies(typeName, symbolTable, hierarchy);
     for (const std::string_view prefix : {std::string_view("get_"), std::string_view("set_")})
     {
         const std::string accessorName = std::string(prefix) + propertyName;
@@ -2444,6 +2445,61 @@ static std::vector<Symbol> FilterSymbolsByContainerKind(std::vector<Symbol> foun
     return found;
 }
 
+static std::vector<Symbol> FindEnumMemberInNamespace(const SymbolTable& symbolTable, const std::string& namespaceName,
+                                                     const std::string& name)
+{
+    const auto ruleIndex = symbolTable.GetRuleIndex();
+    if (!ruleIndex)
+    {
+        return {};
+    }
+    auto it = ruleIndex->enumSymbolsByMemberName.find(name);
+    if (it == ruleIndex->enumSymbolsByMemberName.end())
+    {
+        return {};
+    }
+    for (const auto& enumSym : it->second)
+    {
+        if (enumSym.containerName == namespaceName || IsSameOrNestedNamespace(enumSym.containerName, namespaceName))
+        {
+            auto enumMember = symbolTable.FindMemberSymbols(enumSym.qualifiedName, name);
+            if (!enumMember.empty())
+            {
+                return enumMember;
+            }
+        }
+    }
+    return {};
+}
+
+static std::vector<Symbol> FindSymbolInClassHierarchy(const SymbolTable& symbolTable, const ContainerInfo& container,
+                                                      const std::string& name)
+{
+    auto hierarchy = GetInheritedTypeHierarchy(container.qualifiedName, symbolTable);
+    for (const auto& cls : hierarchy)
+    {
+        auto found = FilterSymbolsByContainerKind(symbolTable.FindMemberSymbols(cls, name), container.kind);
+        if (!found.empty())
+        {
+            return found;
+        }
+    }
+
+    if (container.name != container.qualifiedName)
+    {
+        auto bareHierarchy = GetInheritedTypeHierarchy(container.name, symbolTable);
+        for (const auto& cls : bareHierarchy)
+        {
+            auto found = FilterSymbolsByContainerKind(symbolTable.FindMemberSymbols(cls, name), container.kind);
+            if (!found.empty())
+            {
+                return found;
+            }
+        }
+    }
+    return {};
+}
+
 /**
  * @brief Searches for a symbol name within an enclosing container hierarchy.
  */
@@ -2466,27 +2522,10 @@ static std::vector<Symbol> FindSymbolInContainerHierarchy(const SymbolTable& sym
 
         if (container.kind == ContainerKind::Class || container.kind == ContainerKind::Interface)
         {
-            auto hierarchy = GetInheritedTypeHierarchy(container.qualifiedName, symbolTable);
-            for (const auto& cls : hierarchy)
+            auto found = FindSymbolInClassHierarchy(symbolTable, container, name);
+            if (!found.empty())
             {
-                auto found = FilterSymbolsByContainerKind(symbolTable.FindMemberSymbols(cls, name), container.kind);
-                if (!found.empty())
-                {
-                    return found;
-                }
-            }
-
-            if (container.name != container.qualifiedName)
-            {
-                auto bareHierarchy = GetInheritedTypeHierarchy(container.name, symbolTable);
-                for (const auto& cls : bareHierarchy)
-                {
-                    auto found = FilterSymbolsByContainerKind(symbolTable.FindMemberSymbols(cls, name), container.kind);
-                    if (!found.empty())
-                    {
-                        return found;
-                    }
-                }
+                return found;
             }
         }
         else if (container.kind == ContainerKind::Namespace)
@@ -2496,6 +2535,11 @@ static std::vector<Symbol> FindSymbolInContainerHierarchy(const SymbolTable& sym
             if (!found.empty())
             {
                 return found;
+            }
+            auto enumMember = FindEnumMemberInNamespace(symbolTable, container.qualifiedName, name);
+            if (!enumMember.empty())
+            {
+                return enumMember;
             }
         }
     }
@@ -2515,6 +2559,11 @@ static std::vector<Symbol> FindSymbolInUsingNamespaces(const SymbolTable& symbol
         if (!found.empty())
         {
             return found;
+        }
+        auto enumMember = FindEnumMemberInNamespace(symbolTable, ns, name);
+        if (!enumMember.empty())
+        {
+            return enumMember;
         }
     }
     return {};
@@ -4994,6 +5043,7 @@ static std::string ResolveMemberInHierarchy(const std::string& hostClass, const 
                                             const SymbolTable& symbolTable, std::string_view arrayTypeName)
 {
     auto hier = GetInheritedTypeHierarchy(hostClass, symbolTable);
+    ExpandMixinHostHierarchies(hostClass, symbolTable, hier);
     for (const auto& cls : hier)
     {
         auto memberSyms = symbolTable.FindMemberSymbols(cls, memberName);
@@ -5158,6 +5208,7 @@ std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, con
     }
 
     ExpressionTypeContext exprCtx(ctx.scope, symbolTable, sourceCode, ctx.fileUri, parser::GetRootNode(objNode));
+    exprCtx.cache = ctx.cache;
     if (auto scopeRes = ResolveReceiverScope(ctx.scope, objText, ts_node_start_byte(objNode), &exprCtx, arrayTypeName);
         !scopeRes.empty())
     {
@@ -5183,7 +5234,9 @@ std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, con
         return res;
     }
 
-    std::string exprType = ResolveExpressionType(objNode, {ctx.scope, symbolTable, sourceCode, ctx.fileUri});
+    ExpressionTypeContext exprResCtx(ctx.scope, symbolTable, sourceCode, ctx.fileUri);
+    exprResCtx.cache = ctx.cache;
+    std::string exprType = ResolveExpressionType(objNode, exprResCtx);
     if (!exprType.empty() && exprType != "void" && exprType != "unknown")
     {
         return MemberOwnerType(exprType, arrayTypeName);

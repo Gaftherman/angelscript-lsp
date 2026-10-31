@@ -399,10 +399,48 @@ void Server::StorePredefinedSnapshot(const AnalyzeDocumentRequest& req, const st
     }
 }
 
+bool Server::TryZeroCopyPredefinedAnalysis(const AnalyzeDocumentRequest& req, const std::string& analysisText,
+                                           const utils::HighResTimer& totalTimer)
+{
+    auto preindexedDoc = m_workspaceStore ? m_workspaceStore->GetPreindexedDocument(req.uriStr)
+                                          : m_predefinedManager.GetPreindexedDocument(req.uriStr);
+    if (!preindexedDoc)
+    {
+        preindexedDoc = m_predefinedManager.GetPreindexedDocument(req.uriStr);
+    }
+    if (!preindexedDoc || !angel_lsp::utils::TextContentMatchesIgnoringLineEndings(preindexedDoc->text, analysisText))
+    {
+        return false;
+    }
+    const double totalMs = totalTimer.ElapsedMs();
+    LogInfo(
+        fmt::format("[Predefined Zero-Copy Fast Path] File: {} content unchanged; linked pre-indexed snapshot in {}",
+                    req.uriStr, utils::FormatDuration(totalMs)));
+    LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {} (Parse: 0.00 ms, Collector: 0.00 ms, "
+                        "Scopes: 0.00 ms, Checkers: 0.00 ms)",
+                        req.uriStr, utils::FormatDuration(totalMs)));
+    CommitAnalysisResults({
+        .uriStr = req.uriStr,
+        .version = req.version,
+        .generation = req.generation,
+        .configRevision = req.configRevision,
+        .staging = nullptr,
+        .scopeRoot = nullptr,
+        .calls = {},
+        .diagnostics = {},
+        .text = req.text,
+    });
+    return true;
+}
+
 void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer)
 {
     LogInfo(fmt::format("[Analysis] Starting predefined analysis for file: {}", req.uriStr));
     const std::string analysisText = AnalysisTextFor(req.uriStr, req.text);
+    if (TryZeroCopyPredefinedAnalysis(req, analysisText, totalTimer))
+    {
+        return;
+    }
     utils::HighResTimer parseTimer;
     document::TreePtr tree =
         req.treeCopy ? std::move(req.treeCopy) : document::MakeTreePtr(req.parser.Parse(analysisText));

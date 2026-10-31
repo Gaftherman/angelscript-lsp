@@ -176,6 +176,7 @@
   "config.codeLens.showOnPropertiesAndVariables.description": "Show reference CodeLens above global and member variable declarations.",
   "config.codeLens.showOnEnums.description": "Show reference CodeLens above enum declarations.",
   "config.codeLens.showZeroReferences.description": "Show reference CodeLens even when a symbol has 0 references.",
+  "config.codeLens.showMixinExpansion.description": "Show CodeLens link to expand or inspect mixin classes included by a class (default: false).",
   "config.category.debug": "AngelScript: Debugger",
   "config.debug.enableBreakpointLocations.description": "Enable semantic breakpoint location verification via AngelLSP server before binding breakpoints.",
   "config.debug.defaultPort.description": "Default TCP port for connecting to AngelScript runtime debug server (default: 9002).",

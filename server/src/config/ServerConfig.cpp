@@ -508,6 +508,8 @@ static constexpr FeatureFlagMapping kFeatureFlags[] = {
      &FeatureFlags::codeLensShowOnEnums},
     {"--codelens-zero-references", "--enable-codelens-zero-references", "--disable-codelens-zero-references",
      "--no-codelens-zero-references", &FeatureFlags::codeLensShowZeroReferences},
+    {"--codelens-mixin-expansion", "--enable-codelens-mixin-expansion", "--disable-codelens-mixin-expansion",
+     "--no-codelens-mixin-expansion", &FeatureFlags::codeLensShowMixinExpansion},
     {"--completion-complete-function-parens", "--enable-completion-function-parens",
      "--disable-completion-function-parens", "--no-completion-complete-function-parens",
      &FeatureFlags::completionCompleteFunctionParens},

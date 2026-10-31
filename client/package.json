@@ -998,6 +998,12 @@
             "default": true,
             "scope": "resource",
             "markdownDescription": "%config.codeLens.showZeroReferences.description%"
+          },
+          "angelscript.codeLens.showMixinExpansion": {
+            "type": "boolean",
+            "default": false,
+            "scope": "resource",
+            "markdownDescription": "%config.codeLens.showMixinExpansion.description%"
           }
         }
       },

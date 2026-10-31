@@ -284,6 +284,7 @@ Path-valued settings support dynamic variable expansions matching VS Code's `lau
 | `angelscript.codeLens.showOnPropertiesAndVariables` | `true` | Show reference CodeLens above global and member variable declarations. |
 | `angelscript.codeLens.showOnEnums` | `true` | Show reference CodeLens above enum declarations. |
 | `angelscript.codeLens.showZeroReferences` | `true` | Show reference CodeLens even when a symbol has 0 references. |
+| `angelscript.codeLens.showMixinExpansion` | `false` | Show CodeLens link to expand or inspect mixin classes included by a class (default: false). |
 
 #### 6. Semantic Diagnostics & Analysis Configuration
 

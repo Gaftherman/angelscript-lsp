@@ -1390,6 +1390,10 @@ export function buildServerArgs(): string[] {
         args.push('--disable-codelens-zero-references');
     }
 
+    if (config.get<boolean>('codeLens.showMixinExpansion', false) === true) {
+        args.push('--codelens-mixin-expansion');
+    }
+
     if (config.get<boolean>('hover.stringLiteralLength', true) === false) {
         args.push('--disable-hover-string-literal-length');
     }

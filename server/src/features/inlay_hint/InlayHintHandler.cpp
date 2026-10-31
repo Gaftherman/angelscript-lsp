@@ -1,6 +1,7 @@
 #include "features/inlay_hint/InlayHintHandler.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/SignatureFormatter.h"
 #include "i18n/i18n.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
@@ -1257,14 +1258,10 @@ std::string ResolveParameterLabel(const analysis::ParameterInformation& param)
  */
 std::string FormatParameterTooltip(const analysis::ParameterInformation& param, const std::string& label)
 {
-    std::string sig;
-    if (!param.name.empty())
+    std::string sig = analysis::FormatParameter(param);
+    if (sig.empty())
     {
-        sig = (!param.typeName.empty() ? (param.typeName + " ") : "") + param.name;
-    }
-    else
-    {
-        sig = !param.typeName.empty() ? param.typeName : label;
+        sig = label;
     }
     return "```angelscript\n(parameter) " + sig + "\n```";
 }
@@ -1383,7 +1380,7 @@ lsp::InlayHint BuildParameterHint(const ParamHintContext& ctx, const analysis::P
     {
         part.location = ResolveParameterLocation(ctx.request.uri, ctx.callee.fileUri, param, ctx.callee.selectionRange);
     }
-    if (enableTooltip)
+    if (enableTooltip && !part.location.has_value())
     {
         part.tooltip =
             lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), FormatParameterTooltip(param, label)};

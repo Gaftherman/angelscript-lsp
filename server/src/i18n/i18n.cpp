@@ -527,6 +527,7 @@ void PopulateEnglishHoverMessages(MessageMap& m_messages)
     m_messages["hover-primitive-desc-uint64"] = "64-bit unsigned integer";
     m_messages["hover-primitive-desc-float"] = "32-bit single-precision floating-point (IEEE 754)";
     m_messages["hover-primitive-desc-double"] = "64-bit double-precision floating-point (IEEE 754)";
+    m_messages["hover-mixin-members"] = "Mixin Members:";
 }
 
 /**
@@ -987,6 +988,7 @@ void PopulateSpanishHoverMessages(MessageMap& m_messages)
     m_messages["hover-primitive-desc-uint64"] = "Entero sin signo de 64 bits";
     m_messages["hover-primitive-desc-float"] = "Punto flotante de precisión simple de 32 bits (IEEE 754)";
     m_messages["hover-primitive-desc-double"] = "Punto flotante de doble precisión de 64 bits (IEEE 754)";
+    m_messages["hover-mixin-members"] = "Miembros del mixin:";
 }
 
 /**

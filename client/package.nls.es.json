@@ -176,6 +176,7 @@
   "config.codeLens.showOnPropertiesAndVariables.description": "Muestra CodeLens de referencias sobre declaraciones de variables globales y miembros.",
   "config.codeLens.showOnEnums.description": "Muestra CodeLens de referencias sobre declaraciones de enumeraciones.",
   "config.codeLens.showZeroReferences.description": "Muestra CodeLens de referencias incluso cuando un símbolo tiene 0 referencias.",
+  "config.codeLens.showMixinExpansion.description": "Muestra enlace de CodeLens para expandir o inspeccionar clases mixin incluidas por una clase (por defecto: false).",
   "config.category.debug": "AngelScript: Depurador",
   "config.debug.enableBreakpointLocations.description": "Habilitar la verificación semántica de ubicaciones de puntos de interrupción mediante el servidor AngelLSP antes de vincularlos.",
   "config.debug.defaultPort.description": "Puerto TCP predeterminado para conectar al servidor de depuración en tiempo de ejecución de AngelScript (predeterminado: 9002).",

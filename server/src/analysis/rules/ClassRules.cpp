@@ -1448,7 +1448,7 @@ void CheckMixinBody(TSNode bodyNode, std::string_view mixinSource, MixinCheckCon
                                      return;
                                  }
 
-                                 TSNode funcBody = parser::GetChildByField(mem, parser::GetGrammarSymbols().fieldBody);
+                                 TSNode funcBody = parser::GetChildByField(mem, gs.fieldBody);
                                  if (ts_node_is_null(funcBody))
                                  {
                                      return;

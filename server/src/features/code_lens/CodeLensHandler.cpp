@@ -1835,7 +1835,10 @@ void AppendLensesForGroup(const RangeKey& key, const std::vector<analysis::Symbo
     else if (sym.type == analysis::SymbolType::Class)
     {
         AppendReferenceLens(key, sym, ctx, lenses);
-        AppendMixinExpansionLenses(sym, ctx.request, lenses);
+        if (ctx.request.config && ctx.request.config->features.codeLensShowMixinExpansion)
+        {
+            AppendMixinExpansionLenses(sym, ctx.request, lenses);
+        }
     }
     else if (sym.type == analysis::SymbolType::Variable || sym.type == analysis::SymbolType::Property)
     {

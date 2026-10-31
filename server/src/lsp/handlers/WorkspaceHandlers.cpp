@@ -626,6 +626,10 @@ static void UpdateCodeLensFeatureConfig(const lsp::LSPObject& section, config::S
     {
         cfg.features.codeLensShowZeroReferences = *showZero;
     }
+    if (auto showMixin = FindSectionBool(section, clObj, "showMixinExpansion", "codeLens"); showMixin.has_value())
+    {
+        cfg.features.codeLensShowMixinExpansion = *showMixin;
+    }
 }
 
 static void UpdateMetadataFeatureConfig(const lsp::LSPObject& section, config::ServerConfig& cfg)

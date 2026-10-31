@@ -17,6 +17,32 @@ using namespace angel_lsp::parser;
 
 namespace
 {
+struct SourcePos
+{
+    uint32_t line = 0;
+    uint32_t character = 0;
+};
+
+SourcePos FindPos(const std::string& source, const std::string& needle, size_t startAt = 0)
+{
+    size_t pos = source.find(needle, startAt);
+    if (pos == std::string::npos)
+    {
+        return {0, 0};
+    }
+    uint32_t line = 0;
+    size_t lineStart = 0;
+    for (size_t i = 0; i < pos; ++i)
+    {
+        if (source[i] == '\n')
+        {
+            ++line;
+            lineStart = i + 1;
+        }
+    }
+    return {line, static_cast<uint32_t>(pos - lineStart)};
+}
+
 struct MultiFileTestEnv
 {
     AngelScriptParser parser;
@@ -956,4 +982,52 @@ TEST_CASE("ReferencesHandler - Private mixin property references match across ho
     }
     CHECK(foundSibling);
     CHECK(foundHost);
+}
+
+TEST_CASE("References - Enum member occurrences isolated between different namespaces")
+{
+    MultiFileTestEnv env;
+    const std::string nsA = angel_lsp::test::GenerateRandomSymbolName("NS_WeaponA");
+    const std::string nsB = angel_lsp::test::GenerateRandomSymbolName("NS_WeaponB");
+    const std::string enumA = angel_lsp::test::GenerateRandomSymbolName("AnimA");
+    const std::string enumB = angel_lsp::test::GenerateRandomSymbolName("AnimB");
+    const std::string memberName = angel_lsp::test::GenerateRandomSymbolName("IRON_FIRE2");
+
+    const std::string codeA = "namespace " + nsA +
+                              " {\n"
+                              "    enum " +
+                              enumA + " { " + memberName +
+                              " = 1 };\n"
+                              "    void Shoot() {\n"
+                              "        int a = " +
+                              memberName +
+                              ";\n"
+                              "    }\n"
+                              "}\n";
+
+    const std::string codeB = "namespace " + nsB +
+                              " {\n"
+                              "    enum " +
+                              enumB + " { " + memberName +
+                              " = 2 };\n"
+                              "    void Shoot() {\n"
+                              "        int b = " +
+                              memberName +
+                              ";\n"
+                              "    }\n"
+                              "}\n";
+
+    env.AddFile("file:///weapon_a.as", codeA);
+    env.AddFile("file:///weapon_b.as", codeB);
+
+    const size_t declPos = codeA.find(memberName);
+    auto posA = FindPos(codeA, memberName, declPos);
+
+    auto refs = env.RefsAt("file:///weapon_a.as", posA.line, posA.character, true);
+    REQUIRE(refs.has_value());
+    CHECK(refs->size() == 2);
+    for (const auto& ref : *refs)
+    {
+        CHECK(ref.uri.toString() == "file:///weapon_a.as");
+    }
 }

@@ -60,10 +60,11 @@ struct CodeLensFixture
     }
 
     std::optional<std::vector<lsp::CodeLens>> GetLenses(const config::UnusedSymbolRules* unusedRules = nullptr,
-                                                        const i18n::I18n* i18n = nullptr)
+                                                        const i18n::I18n* i18n = nullptr,
+                                                        const config::ServerConfig* config = nullptr)
     {
         CodeLensRequest req{uri,     sourceCode,       tree,        symbolTable, scopeIndex,
-                            nullptr, ".as.predefined", unusedRules, i18n};
+                            nullptr, ".as.predefined", unusedRules, i18n,        config};
         return GetCodeLenses(req);
     }
 };
@@ -266,9 +267,10 @@ TEST_CASE("CodeLens - Provides View Mixin Expansion lens on class mixin inclusio
     TSTree* hostTree = parser.Parse(hostCode);
     symbolCollector.CollectSymbols(mixinUri, mixinCode, parser, symbolTable);
     symbolCollector.CollectSymbols(hostUri, hostCode, parser, symbolTable);
-    symbolTable.ResolveIncludedMixins();
-
-    CodeLensRequest req{hostUri, hostCode, hostTree, symbolTable, scopeIndex};
+    config::ServerConfig cfg;
+    cfg.features.codeLensShowMixinExpansion = true;
+    CodeLensRequest req{hostUri, hostCode,         hostTree, symbolTable, scopeIndex,
+                        nullptr, ".as.predefined", nullptr,  nullptr,     &cfg};
     const auto lenses = GetCodeLenses(req);
     REQUIRE(lenses.has_value());
 
@@ -1187,8 +1189,10 @@ TEST_CASE("CodeLens - Spanish localized titles for references, implementations, 
                        "class " +
                        implClass + " : " + ifaceName + " { void Fire() {} }\n";
 
+    config::ServerConfig cfg;
+    cfg.features.codeLensShowMixinExpansion = true;
     CodeLensFixture fixture(code);
-    const auto lenses = fixture.GetLenses(nullptr, &i18nEs);
+    const auto lenses = fixture.GetLenses(nullptr, &i18nEs, &cfg);
     REQUIRE(lenses.has_value());
 
     bool foundMixinExpansion = false;

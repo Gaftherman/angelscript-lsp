@@ -1,4 +1,4 @@
-﻿#include "features/definition/DefinitionHandler.h"
+#include "features/definition/DefinitionHandler.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/VirtualMixinContext.h"
@@ -1357,6 +1357,31 @@ void FilterAndPrioritizeLocalSymbols(std::vector<analysis::Symbol>& symbols, TSN
         if (!localSymbols.empty())
         {
             symbols = std::move(localSymbols);
+        }
+    }
+
+    if (symbols.size() > 1)
+    {
+        auto containers = analysis::GetEnclosingContainers(node, request.sourceCode);
+        for (const auto& cont : containers)
+        {
+            if (cont.kind == analysis::ContainerKind::Namespace)
+            {
+                std::vector<analysis::Symbol> nsMatches;
+                for (const auto& s : symbols)
+                {
+                    if (analysis::IsSameOrNestedNamespace(s.containerName, cont.qualifiedName) ||
+                        analysis::IsSameOrNestedNamespace(utils::ParentScopeView(s.containerName), cont.qualifiedName))
+                    {
+                        nsMatches.push_back(s);
+                    }
+                }
+                if (!nsMatches.empty())
+                {
+                    symbols = std::move(nsMatches);
+                    break;
+                }
+            }
         }
     }
 }

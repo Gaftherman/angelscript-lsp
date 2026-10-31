@@ -2246,6 +2246,16 @@ class Server
                                  const document::TreePtr& tree, bool contributes);
 
     /**
+     * @brief Checks if a predefined document's text is unchanged and performs a zero-copy fast commit.
+     * @param[in] req Analysis request bundle.
+     * @param[in] analysisText Preprocessed analysis text.
+     * @param[in] totalTimer High-resolution timer tracking total analysis time.
+     * @return True if zero-copy fast path was committed, false if re-analysis is needed.
+     */
+    bool TryZeroCopyPredefinedAnalysis(const AnalyzeDocumentRequest& req, const std::string& analysisText,
+                                       const utils::HighResTimer& totalTimer);
+
+    /**
      * @brief Analyzes a predefined stub document and commits its symbols and defined words.
      * @param[in] req Analysis request bundle.
      * @param[in] totalTimer High-resolution timer tracking total analysis time.

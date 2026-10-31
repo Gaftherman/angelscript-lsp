@@ -1255,8 +1255,7 @@ TEST_CASE("InlayHintHandler - Nameless wildcard parameter ?& in generates fallba
             const auto& parts = std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label);
             REQUIRE_FALSE(parts.empty());
             REQUIRE(parts[0].location.has_value());
-            REQUIRE(parts[0].tooltip.has_value());
-            CHECK(GetTooltipText(parts[0].tooltip).find("(parameter)") != std::string::npos);
+            CHECK_FALSE(parts[0].tooltip.has_value());
             CHECK_FALSE(hint.tooltip.has_value());
         }
     }
@@ -1313,9 +1312,7 @@ TEST_CASE("InlayHintHandler - Parameter hint label part location navigates to ca
                 const auto& range = part.location->range;
                 CHECK(range.start.line == 4);
                 CHECK(range.end.line == 4);
-                REQUIRE(part.tooltip.has_value());
-                CHECK(GetTooltipText(part.tooltip).find("(parameter) " + nsName + "::Type " + typeParam) !=
-                      std::string::npos);
+                CHECK_FALSE(part.tooltip.has_value());
                 CHECK_FALSE(hint.tooltip.has_value());
                 foundTypeHintWithDeclLocation = true;
             }
@@ -1361,10 +1358,7 @@ TEST_CASE("InlayHintHandler - Tooltip uses angelscript code block and respects c
             {
                 foundParamHint = true;
                 CHECK(part.location.has_value());
-                REQUIRE(part.tooltip.has_value());
-                const std::string tip = GetTooltipText(part.tooltip);
-                CHECK(tip.find("(parameter) CBaseEntity@ " + paramName) != std::string::npos);
-                CHECK(tip.find("[Go to Definition](") == std::string::npos);
+                CHECK_FALSE(part.tooltip.has_value());
             }
         }
     }
@@ -1410,6 +1404,47 @@ TEST_CASE("InlayHintHandler - Tooltip uses angelscript code block and respects c
         }
     }
     CHECK(foundNoLocParamHint);
+}
+
+TEST_CASE("InlayHintHandler - Fallback tooltip formats reference modifiers")
+{
+    const std::string funcName = test::GenerateRandomSymbolName("ModifyValues");
+    const std::string paramName = test::GenerateRandomSymbolName("outVal");
+
+    const std::string code = "void " + funcName + "(int &out " + paramName +
+                             ") {}\n"
+                             "void main() {\n"
+                             "    int x = 0;\n"
+                             "    " +
+                             funcName +
+                             "(x);\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    config::ServerConfig noLocConfig;
+    noLocConfig.features.inlayHintsEnableLocation = false;
+    auto hints = env.InlayHintsWithConfig(noLocConfig);
+    REQUIRE(hints.has_value());
+
+    bool foundOutHint = false;
+    for (const auto& hint : *hints)
+    {
+        if (std::holds_alternative<std::vector<lsp::InlayHintLabelPart>>(hint.label))
+        {
+            for (const auto& part : std::get<std::vector<lsp::InlayHintLabelPart>>(hint.label))
+            {
+                if (part.value.find(paramName) != std::string::npos)
+                {
+                    foundOutHint = true;
+                    CHECK_FALSE(part.location.has_value());
+                    REQUIRE(part.tooltip.has_value());
+                    std::string tooltip = GetTooltipText(part.tooltip);
+                    CHECK(tooltip.find("&out " + paramName) != std::string::npos);
+                }
+            }
+        }
+    }
+    CHECK(foundOutHint);
 }
 
 TEST_CASE("InlayHintHandler - Constructor call expression parameter hints")

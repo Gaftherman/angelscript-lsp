@@ -5,6 +5,7 @@
 #include "analysis/SignatureFormatter.h"
 #include "analysis/VirtualMixinContext.h"
 #include "analysis/overload/ConversionRankingEngine.h"
+#include "analysis/rules/RuleIndex.h"
 #include "i18n/i18n.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
@@ -1340,6 +1341,57 @@ static std::string FormatSynthesizedPropertyHeader(const std::vector<analysis::S
     return oss.str();
 }
 
+static void CollectContainerMemberNames(const analysis::rules::RuleIndex& ruleIndex, std::string_view key,
+                                        std::vector<std::string>& outNames)
+{
+    const auto& members = ruleIndex.Members(key);
+    for (const auto& m : members.allMemberNames)
+    {
+        outNames.push_back(m);
+    }
+    for (const auto& acc : members.accessorPropertyNames)
+    {
+        if (std::find(outNames.begin(), outNames.end(), acc) == outNames.end())
+        {
+            outNames.push_back(acc);
+        }
+    }
+}
+
+void AppendMixinMembersSection(const analysis::Symbol& sym, const HoverQueryContext& ctx, std::ostringstream& oss)
+{
+    if (sym.type != analysis::SymbolType::Class || !std::holds_alternative<analysis::ClassSignature>(sym.signature))
+    {
+        return;
+    }
+    if (!sym.GetClass().modifiers.isMixin)
+    {
+        return;
+    }
+    const auto ruleIndex = ctx.request.symbolTable.GetRuleIndex();
+    if (!ruleIndex)
+    {
+        return;
+    }
+    const std::string containerKey = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+    std::vector<std::string> memberNames;
+    CollectContainerMemberNames(*ruleIndex, containerKey, memberNames);
+    if (memberNames.empty() && containerKey != sym.name)
+    {
+        CollectContainerMemberNames(*ruleIndex, sym.name, memberNames);
+    }
+    if (memberNames.empty())
+    {
+        return;
+    }
+    std::sort(memberNames.begin(), memberNames.end());
+    oss << "\n\n---\n**" << i18n::FormatMessage(ctx.request.i18n, "hover-mixin-members", "Mixin Members:") << "**\n";
+    for (const auto& name : memberNames)
+    {
+        oss << "\n- `" << name << "`";
+    }
+}
+
 /**
  * @brief Formats hover information for a resolved set of symbols with single signature and overload summary.
  * @param[in,out] symbols Candidate symbol list.
@@ -1383,6 +1435,11 @@ lsp::Hover FormatSymbolsHover(std::vector<analysis::Symbol>& symbols, std::strin
         {
             oss << "\n\n" << d;
         }
+    }
+
+    if (!symbols.empty())
+    {
+        AppendMixinMembersSection(symbols.front(), ctx, oss);
     }
 
     if (ctx.request.config && ctx.request.config->features.hoverShowFileLocation && !symbols.empty() &&
@@ -2815,6 +2872,50 @@ static void DisambiguateContainerSymbols(const HoverQueryContext& ctx, std::vect
     }
 }
 
+static void FilterAndAddConstructorCandidates(const std::vector<analysis::Symbol>* list,
+                                              const analysis::Symbol& classSym, const std::string& qName,
+                                              std::vector<analysis::Symbol>& ctorSymbols)
+{
+    if (!list)
+    {
+        return;
+    }
+    for (const auto& s : *list)
+    {
+        if (s.type == analysis::SymbolType::Function && s.name == classSym.name &&
+            (s.containerName == qName || s.containerName == classSym.name ||
+             analysis::LastScopeSegment(s.containerName) == classSym.name))
+        {
+            if (std::none_of(ctorSymbols.begin(), ctorSymbols.end(), [&](const analysis::Symbol& existing)
+                             { return existing.name == s.name && analysis::HasSameParameterList(existing, s); }))
+            {
+                ctorSymbols.push_back(s);
+            }
+        }
+    }
+}
+
+static void CollectClassConstructors(const analysis::Symbol& sym, const HoverQueryContext& ctx,
+                                     std::vector<analysis::Symbol>& ctorSymbols)
+{
+    const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+    auto ctors = ctx.request.symbolTable.FindMemberSymbolPtr(qName, sym.name);
+    if ((!ctors || ctors->empty()) && qName != sym.name)
+    {
+        ctors = ctx.request.symbolTable.FindMemberSymbolPtr(sym.name, sym.name);
+    }
+    if (ctors)
+    {
+        ctorSymbols.insert(ctorSymbols.end(), ctors->begin(), ctors->end());
+    }
+
+    FilterAndAddConstructorCandidates(ctx.request.symbolTable.FindSymbolsPtr(sym.name).get(), sym, qName, ctorSymbols);
+    if (qName != sym.name)
+    {
+        FilterAndAddConstructorCandidates(ctx.request.symbolTable.FindSymbolsPtr(qName).get(), sym, qName, ctorSymbols);
+    }
+}
+
 /**
  * @brief Resolves constructor symbols when hovering over a class name used as a call target.
  * @param[in] ctx Hover query context.
@@ -2833,21 +2934,23 @@ static void AppendConstructorSymbolsIfCall(const HoverQueryContext& ctx, std::ve
     {
         if (sym.type == analysis::SymbolType::Class)
         {
-            const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-            auto ctors = ctx.request.symbolTable.FindMemberSymbolPtr(qName, sym.name);
-            if ((!ctors || ctors->empty()) && qName != sym.name)
-            {
-                ctors = ctx.request.symbolTable.FindMemberSymbolPtr(sym.name, sym.name);
-            }
-            if (ctors)
-            {
-                ctorSymbols.insert(ctorSymbols.end(), ctors->begin(), ctors->end());
-            }
+            CollectClassConstructors(sym, ctx, ctorSymbols);
         }
     }
     if (!ctorSymbols.empty())
     {
-        symbols = std::move(ctorSymbols);
+        auto best = ResolveCallOverload(ctx.node, ctorSymbols, ctx.request, ctx.scope);
+        if (best.has_value())
+        {
+            symbols = std::move(ctorSymbols);
+        }
+        else
+        {
+            for (auto&& cs : ctorSymbols)
+            {
+                symbols.push_back(std::move(cs));
+            }
+        }
     }
 }
 

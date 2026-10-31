@@ -284,6 +284,7 @@ Las configuraciones de rutas admiten expansión dinámica de variables según el
 | `angelscript.codeLens.showOnPropertiesAndVariables` | `true` | Muestra CodeLens de referencias sobre declaraciones de variables globales y miembros. |
 | `angelscript.codeLens.showOnEnums` | `true` | Muestra CodeLens de referencias sobre declaraciones de enumeraciones. |
 | `angelscript.codeLens.showZeroReferences` | `true` | Muestra CodeLens de referencias incluso cuando un símbolo tiene 0 referencias. |
+| `angelscript.codeLens.showMixinExpansion` | `false` | Muestra enlace de CodeLens para expandir o inspeccionar clases mixin incluidas por una clase (por defecto: false). |
 
 #### 6. Configuración de diagnósticos semánticos y análisis
 

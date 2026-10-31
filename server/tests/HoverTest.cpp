@@ -18,6 +18,32 @@ using namespace angel_lsp::parser;
 
 namespace
 {
+struct SourcePos
+{
+    uint32_t line = 0;
+    uint32_t character = 0;
+};
+
+SourcePos FindPos(const std::string& source, const std::string& needle, size_t startAt = 0)
+{
+    size_t pos = source.find(needle, startAt);
+    if (pos == std::string::npos)
+    {
+        return {0, 0};
+    }
+    uint32_t line = 0;
+    size_t lineStart = 0;
+    for (size_t i = 0; i < pos; ++i)
+    {
+        if (source[i] == '\n')
+        {
+            ++line;
+            lineStart = i + 1;
+        }
+    }
+    return {line, static_cast<uint32_t>(pos - lineStart)};
+}
+
 struct TestEnvironment
 {
     AngelScriptParser parser;
@@ -2389,4 +2415,136 @@ TEST_CASE("HoverHandler - Virtual Property and Member Access Chain in Binary Con
     checkHover(flagsField, flagsField);
     checkHover(flOnGround, flOnGround);
     checkHover(waterlevelFeet, waterlevelFeet);
+}
+
+TEST_CASE("Hover - Virtual property set accessor implicit value parameter")
+{
+    const std::string className = test::GenerateRandomSymbolName("PlayerWrapper");
+    const std::string propName = test::GenerateRandomSymbolName("Player");
+    const std::string typeName = test::GenerateRandomSymbolName("CBasePlayer");
+
+    const std::string code = "class " + typeName +
+                             " {};\n"
+                             "class " +
+                             className +
+                             " {\n"
+                             "    " +
+                             typeName +
+                             "@ m_target;\n"
+                             "    " +
+                             typeName + "@ " + propName +
+                             " {\n"
+                             "        get { return m_target; }\n"
+                             "        set { @m_target = value; }\n"
+                             "    }\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const size_t pos = code.rfind("value");
+    REQUIRE(pos != std::string::npos);
+    auto p = FindPos(code, "value", pos);
+
+    auto hover = env.HoverAt(p.line, p.character);
+    REQUIRE(hover.has_value());
+    const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(text.find("(parameter) " + typeName + "@ value") != std::string::npos);
+}
+
+TEST_CASE("Hover - Constructor overload resolution and fallback")
+{
+    const std::string handleClass = test::GenerateRandomSymbolName("EHandle");
+    const std::string entityClass = test::GenerateRandomSymbolName("CBaseEntity");
+
+    const std::string code = "class " + entityClass +
+                             " {};\n"
+                             "class " +
+                             handleClass +
+                             " {\n"
+                             "    " +
+                             handleClass +
+                             "() {}\n"
+                             "    " +
+                             handleClass + "(" + entityClass +
+                             "@ pEnt) {}\n"
+                             "}\n"
+                             "void main() {\n"
+                             "    " +
+                             entityClass +
+                             "@ ent = null;\n"
+                             "    auto h = " +
+                             handleClass +
+                             "(@ent);\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const size_t pos = code.rfind(handleClass + "(@ent)");
+    auto p = FindPos(code, handleClass, pos);
+
+    auto hover = env.HoverAt(p.line, p.character);
+    REQUIRE(hover.has_value());
+    const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(text.find(handleClass + "(" + entityClass + "@ pEnt)") != std::string::npos);
+}
+
+TEST_CASE("Hover - Mixin host context resolves receiver and members from host class")
+{
+    const std::string mixinName = test::GenerateRandomSymbolName("WeaponMixin");
+    const std::string hostName = test::GenerateRandomSymbolName("WeaponHost");
+    const std::string baseName = test::GenerateRandomSymbolName("BaseEntity");
+    const std::string methodName = test::GenerateRandomSymbolName("FallInit");
+
+    const std::string libraryCode = "class " + baseName +
+                                    " {\n"
+                                    "    void " +
+                                    methodName +
+                                    "() {}\n"
+                                    "};\n"
+                                    "class " +
+                                    hostName + " : " + mixinName +
+                                    " {\n"
+                                    "    " +
+                                    baseName +
+                                    "@ self;\n"
+                                    "};\n";
+
+    const std::string mainCode = "mixin class " + mixinName +
+                                 " {\n"
+                                 "    void Attack() {\n"
+                                 "        self." +
+                                 methodName +
+                                 "();\n"
+                                 "    }\n"
+                                 "};\n";
+
+    TwoFileEnvironment env(libraryCode, mainCode);
+    env.symbolTable.ResolveIncludedMixins();
+
+    const size_t pos = mainCode.find("." + methodName);
+    REQUIRE(pos != std::string::npos);
+    auto p = FindPos(mainCode, methodName, pos + 1);
+
+    auto hover = env.HoverAt(p.line, p.character);
+    REQUIRE(hover.has_value());
+    const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(text.find("void " + baseName + "::" + methodName + "()") != std::string::npos);
+}
+
+TEST_CASE("Hover - Mixin class hover summarizes declared members")
+{
+    const std::string mixinName = test::GenerateRandomSymbolName("StatsMixin");
+    const std::string code = "mixin class " + mixinName +
+                             " {\n"
+                             "    int m_health;\n"
+                             "    void ResetHealth() {}\n"
+                             "};\n";
+
+    TestEnvironment env(code);
+    auto p = FindPos(code, mixinName);
+
+    auto hover = env.HoverAt(p.line, p.character);
+    REQUIRE(hover.has_value());
+    const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+    CHECK(text.find("Mixin Members:") != std::string::npos);
+    CHECK(text.find("`m_health`") != std::string::npos);
+    CHECK(text.find("`ResetHealth`") != std::string::npos);
 }

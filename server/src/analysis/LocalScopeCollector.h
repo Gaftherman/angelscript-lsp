@@ -165,6 +165,14 @@ class LocalScopeCollector
     void RecoverDeclarationsFromErrorNodes(TSNode rootNode, Scope* rootScope, const std::string& sourceCode) const;
 
     /**
+     * @brief Registers implicit 'value' parameter in virtual property 'set' accessor scopes.
+     * @param rootNode Pre-parsed Tree-Sitter root node.
+     * @param rootScope Root lexical scope.
+     * @param sourceCode Source text of the document.
+     */
+    void RegisterVirtualPropertySetParameters(TSNode rootNode, Scope* rootScope, const std::string& sourceCode) const;
+
+    /**
      * @brief Ancestor nodes and enclosing symbol cached during capture processing.
      */
     struct CaptureAncestors

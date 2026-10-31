@@ -950,6 +950,7 @@ struct ReceiverTypeContext
     std::string_view virtualHostClass = {};
     std::string_view fileUri = {};
     std::string_view arrayTypeName = {};
+    ExpressionTypeCache* cache = nullptr;
 };
 
 /**

@@ -1016,3 +1016,40 @@ TEST_CASE("Definition - Disambiguates homonymous interface and namespace by qual
     REQUIRE(def->size() == 1);
     CHECK((*def)[0].range.start.line == 3);
 }
+
+TEST_CASE("Definition - Disambiguates unscoped enum member in namespace with identical member in another namespace")
+{
+    const std::string nsA = angel_lsp::test::GenerateRandomSymbolName("NS_WeaponA");
+    const std::string nsB = angel_lsp::test::GenerateRandomSymbolName("NS_WeaponB");
+    const std::string enumA = angel_lsp::test::GenerateRandomSymbolName("AnimA");
+    const std::string enumB = angel_lsp::test::GenerateRandomSymbolName("AnimB");
+    const std::string memberName = angel_lsp::test::GenerateRandomSymbolName("IRON_FIRE2");
+
+    const std::string code = "namespace " + nsA +
+                             " {\n"
+                             "    enum " +
+                             enumA + " { " + memberName +
+                             " = 1 };\n"
+                             "    void Test() {\n"
+                             "        int x = " +
+                             memberName +
+                             ";\n"
+                             "    }\n"
+                             "}\n"
+                             "namespace " +
+                             nsB +
+                             " {\n"
+                             "    enum " +
+                             enumB + " { " + memberName +
+                             " = 2 };\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const size_t refPos = code.find("int x = " + memberName);
+    auto pos = FindPos(code, memberName, refPos);
+
+    auto def = env.DefAt(pos.line, pos.character);
+    REQUIRE(def.has_value());
+    REQUIRE(def->size() == 1);
+    CHECK((*def)[0].range.start.line == 1);
+}
