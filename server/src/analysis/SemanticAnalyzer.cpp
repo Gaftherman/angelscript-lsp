@@ -569,8 +569,8 @@ static void CheckDialectAssignmentExpressionNode(TSNode node, DiagnosticContext&
                              ? FindInnermostScope(ctx.request.scopeRoot.get(), ts_node_start_point(target).row,
                                                   ts_node_start_point(target).column)
                              : nullptr;
-    const std::string targetType = CleanBaseType(
-        ResolveExpressionType(target, {scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.fileUri}));
+    ExpressionTypeContext exprCtx(scope, ctx);
+    const std::string targetType = CleanBaseType(ResolveExpressionType(target, exprCtx));
 
     if (IsSymbolTableClass(ctx.request.symbolTable, targetType))
     {

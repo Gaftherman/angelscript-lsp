@@ -2068,6 +2068,31 @@ bool HasPrecedingEnumQualifier(const analysis::LocalReference& ref, const analys
     return false;
 }
 
+static bool MatchesDeclaringNamespace(const analysis::LocalReference& ref, std::string_view declaringNamespace,
+                                      const OccurrenceScanContext& ctx)
+{
+    auto nsRanges = CollectNamespaceAndContainerLineRanges(ctx.request.symbolTable, ctx.fileUri, declaringNamespace);
+    for (const auto& nr : nsRanges)
+    {
+        if (ref.startLine >= nr.first && ref.startLine <= nr.second)
+        {
+            return true;
+        }
+    }
+    if (ctx.fileUri == ctx.request.currentUri && ctx.request.tree)
+    {
+        auto usings = analysis::CollectUsingNamespaces(ts_tree_root_node(ctx.request.tree), ctx.request.sourceCode);
+        for (const auto& u : usings)
+        {
+            if (u == declaringNamespace)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 /**
  * @brief Checks if an unscoped reference matches the enum member target without collisions.
  * @param[in] ref Local reference.
@@ -2086,16 +2111,7 @@ bool IsUnscopedEnumMemberMatch(const analysis::LocalReference& ref, const analys
     const std::string_view declaringNamespace = utils::ParentScopeView(ctx.request.target.declaringEnum);
     if (!declaringNamespace.empty())
     {
-        auto nsRanges =
-            CollectNamespaceAndContainerLineRanges(ctx.request.symbolTable, ctx.fileUri, declaringNamespace);
-        for (const auto& nr : nsRanges)
-        {
-            if (ref.startLine >= nr.first && ref.startLine <= nr.second)
-            {
-                return true;
-            }
-        }
-        return false;
+        return MatchesDeclaringNamespace(ref, declaringNamespace, ctx);
     }
 
     size_t enumCount = 0;

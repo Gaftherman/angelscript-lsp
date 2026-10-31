@@ -3059,3 +3059,30 @@ TEST_CASE("SemanticAnalyzer - Deeply nested expression in 8 if blocks resolves i
     CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, "pev"));
     CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, varOrigin));
 }
+
+TEST_CASE("SemanticAnalyzer - Virtual property set accessor implicit value parameter with EHandle constructor")
+{
+    const std::string playerClass = angel_lsp::test::GenerateRandomSymbolName("CBasePlayer");
+    const std::string entityClass = angel_lsp::test::GenerateRandomSymbolName("CBaseEntity");
+    const std::string handleClass = angel_lsp::test::GenerateRandomSymbolName("EHandle");
+    const std::string hostClass = angel_lsp::test::GenerateRandomSymbolName("WeaponHost");
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("m_pPlayer");
+
+    SymbolTable table;
+    angel_lsp::i18n::I18n i18n;
+
+    const std::string code = "class " + entityClass + " {};\n" + "class " + playerClass + " : " + entityClass +
+                             " {};\n" + "class " + handleClass + " {\n" + "    " + handleClass + "() {}\n" + "    " +
+                             handleClass + "(" + entityClass + "@ pEnt) {}\n" + "};\n" + "class " + hostClass + " {\n" +
+                             "    " + handleClass + " m_hPlayer;\n" + "    " + playerClass + "@ " + propName + " {\n" +
+                             "        get const { return null; }\n" + "        set { self.m_hPlayer = " + handleClass +
+                             "(@value); }\n" + "    }\n" + "    " + hostClass + "@ self { get { return this; } }\n" +
+                             "};\n";
+
+    const auto diags = AnalyzeSource(code, table, i18n, "file:///host.as");
+    CHECK_FALSE(HasUndefinedIdentifierDiagnostic(diags, "value"));
+    for (const auto& diag : diags)
+    {
+        CHECK(diag.severity != DiagnosticSeverity::Error);
+    }
+}

@@ -1021,14 +1021,13 @@ TEST_CASE("Definition - Disambiguates unscoped enum member in namespace with ide
 {
     const std::string nsA = angel_lsp::test::GenerateRandomSymbolName("NS_WeaponA");
     const std::string nsB = angel_lsp::test::GenerateRandomSymbolName("NS_WeaponB");
-    const std::string enumA = angel_lsp::test::GenerateRandomSymbolName("AnimA");
-    const std::string enumB = angel_lsp::test::GenerateRandomSymbolName("AnimB");
+    const std::string enumName = "Anim";
     const std::string memberName = angel_lsp::test::GenerateRandomSymbolName("IRON_FIRE2");
 
     const std::string code = "namespace " + nsA +
                              " {\n"
                              "    enum " +
-                             enumA + " { " + memberName +
+                             enumName + " { " + memberName +
                              " = 1 };\n"
                              "    void Test() {\n"
                              "        int x = " +
@@ -1040,14 +1039,21 @@ TEST_CASE("Definition - Disambiguates unscoped enum member in namespace with ide
                              nsB +
                              " {\n"
                              "    enum " +
-                             enumB + " { " + memberName +
+                             enumName + " { " + memberName +
                              " = 2 };\n"
                              "}\n";
 
     TestEnvironment env(code);
+
+    const size_t declPos = code.find(memberName + " = 1");
+    auto declCoord = FindPos(code, memberName, declPos);
+    auto declDef = env.DefAt(declCoord.line, declCoord.character);
+    REQUIRE(declDef.has_value());
+    REQUIRE(declDef->size() == 1);
+    CHECK((*declDef)[0].range.start.line == 1);
+
     const size_t refPos = code.find("int x = " + memberName);
     auto pos = FindPos(code, memberName, refPos);
-
     auto def = env.DefAt(pos.line, pos.character);
     REQUIRE(def.has_value());
     REQUIRE(def->size() == 1);

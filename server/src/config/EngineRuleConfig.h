@@ -209,4 +209,7 @@ struct EngineRuleConfig
     }
 };
 
+inline constexpr std::string_view k_baseClassIdentifier = "BaseClass";
+inline constexpr std::string_view k_selfIdentifier = "self";
+
 } // namespace angel_lsp::config

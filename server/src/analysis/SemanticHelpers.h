@@ -1002,6 +1002,25 @@ std::string ResolveLocalDefinitionType(const LocalDefinition& def, const Express
 std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, const SymbolTable& symbolTable,
                                 const ReceiverTypeContext& ctx = {});
 
+/**
+ * @brief Infers the host class for an AST node inside a mixin class from RuleIndex.
+ * @param[in] node AST node within the mixin class.
+ * @param[in] sourceCode Source text of the document.
+ * @param[in] symbolTable Workspace symbol table.
+ * @return Qualified or unqualified name of the first including host class, or empty string.
+ */
+std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourceCode, const SymbolTable& symbolTable);
+
+/**
+ * @brief Resolves receiver type for special identifiers 'self' and 'BaseClass'.
+ * @param[in] objText Node text ('self' or 'BaseClass').
+ * @param[in] targetClass Target host or enclosing class name.
+ * @param[in] symbolTable Workspace symbol table.
+ * @return Resolved receiver type name, or empty string.
+ */
+std::string ResolveSelfOrBaseClass(std::string_view objText, std::string_view targetClass,
+                                   const SymbolTable& symbolTable);
+
 // --- A lambda against the funcdef it is being handed to ---------------------------------
 //
 // Shared because a lambda reaches a funcdef three ways and the compiler judges all three by

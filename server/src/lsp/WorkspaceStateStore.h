@@ -216,6 +216,26 @@ class WorkspaceStateStore
     void InvalidatePredefinedBaseTable();
 
     /**
+     * @brief Caches pre-indexed base SymbolTable for a module.
+     * @param[in] moduleKey Key representing the module or module URI.
+     * @param[in] baseTable Shared pointer to module SymbolTable.
+     */
+    void SetModuleBaseTable(const std::string& moduleKey, std::shared_ptr<const analysis::SymbolTable> baseTable);
+
+    /**
+     * @brief Retrieves cached pre-indexed base SymbolTable for a module.
+     * @param[in] moduleKey Key representing the module or module URI.
+     * @return Shared pointer to module SymbolTable or nullptr.
+     */
+    [[nodiscard]] std::shared_ptr<const analysis::SymbolTable> GetModuleBaseTable(const std::string& moduleKey) const;
+
+    /**
+     * @brief Invalidates cached module base SymbolTables (or for a specific module).
+     * @param[in] moduleKey Optional module key; clears all if empty.
+     */
+    void InvalidateModuleBaseTable(const std::string& moduleKey = "");
+
+    /**
      * @brief Clears all document, include, module, and preprocessor state.
      */
     void Clear();
@@ -238,6 +258,9 @@ class WorkspaceStateStore
 
     mutable std::mutex m_predefinedBaseMutex;
     std::shared_ptr<const analysis::SymbolTable> m_predefinedBaseTable;
+
+    mutable std::mutex m_moduleBaseMutex;
+    ankerl::unordered_dense::map<std::string, std::shared_ptr<const analysis::SymbolTable>> m_moduleBaseTables;
 };
 
 } // namespace angel_lsp

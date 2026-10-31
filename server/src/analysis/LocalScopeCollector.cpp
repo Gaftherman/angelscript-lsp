@@ -1304,16 +1304,16 @@ void ProcessVirtualPropertySetAccessor(TSNode accNode, const VirtualPropertyCont
     def.typeKind = ctx.typeInfo.kind;
     def.isHandleType = ctx.typeInfo.isHandle;
     def.visibleFromByte = 0;
-    TSPoint bStart = ts_node_start_point(bodyNode);
-    TSPoint bEnd = ts_node_end_point(bodyNode);
-    def.startLine = bStart.row;
-    def.startCharacter = bStart.column;
-    def.endLine = bEnd.row;
-    def.endCharacter = bEnd.column;
-    def.fullStartLine = bStart.row;
-    def.fullStartCharacter = bStart.column;
-    def.fullEndLine = bEnd.row;
-    def.fullEndCharacter = bEnd.column;
+    TSPoint kStart = ts_node_start_point(kindNode);
+    TSPoint kEnd = ts_node_end_point(kindNode);
+    def.startLine = kStart.row;
+    def.startCharacter = kStart.column;
+    def.endLine = kEnd.row;
+    def.endCharacter = kEnd.column;
+    def.fullStartLine = kStart.row;
+    def.fullStartCharacter = kStart.column;
+    def.fullEndLine = kEnd.row;
+    def.fullEndCharacter = kEnd.column;
     setScope->definitions.push_back(std::move(def));
 }
 

@@ -186,6 +186,33 @@ void WorkspaceStateStore::InvalidatePredefinedBaseTable()
     m_predefinedBaseTable.reset();
 }
 
+void WorkspaceStateStore::SetModuleBaseTable(const std::string& moduleKey,
+                                             std::shared_ptr<const analysis::SymbolTable> baseTable)
+{
+    std::lock_guard<std::mutex> lock(m_moduleBaseMutex);
+    m_moduleBaseTables[moduleKey] = std::move(baseTable);
+}
+
+std::shared_ptr<const analysis::SymbolTable> WorkspaceStateStore::GetModuleBaseTable(const std::string& moduleKey) const
+{
+    std::lock_guard<std::mutex> lock(m_moduleBaseMutex);
+    auto it = m_moduleBaseTables.find(moduleKey);
+    return it != m_moduleBaseTables.end() ? it->second : nullptr;
+}
+
+void WorkspaceStateStore::InvalidateModuleBaseTable(const std::string& moduleKey)
+{
+    std::lock_guard<std::mutex> lock(m_moduleBaseMutex);
+    if (moduleKey.empty())
+    {
+        m_moduleBaseTables.clear();
+    }
+    else
+    {
+        m_moduleBaseTables.erase(moduleKey);
+    }
+}
+
 void WorkspaceStateStore::Clear()
 {
     m_documentStore.Clear();
@@ -199,6 +226,10 @@ void WorkspaceStateStore::Clear()
     {
         std::lock_guard<std::mutex> lock(m_predefinedBaseMutex);
         m_predefinedBaseTable.reset();
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_moduleBaseMutex);
+        m_moduleBaseTables.clear();
     }
 
     std::lock_guard<std::mutex> lock(m_configMutex);

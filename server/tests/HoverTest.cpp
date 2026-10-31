@@ -2498,13 +2498,16 @@ TEST_CASE("Hover - Mixin host context resolves receiver and members from host cl
                                     "    void " +
                                     methodName +
                                     "() {}\n"
+                                    "    bool AddToPlayer(int p) { return true; }\n"
+                                    "};\n"
+                                    "class EntVars { int button; };\n"
+                                    "class PlayerItem {\n"
+                                    "    EntVars@ pev;\n"
                                     "};\n"
                                     "class " +
-                                    hostName + " : " + mixinName +
+                                    hostName + " : " + baseName + ", " + mixinName +
                                     " {\n"
-                                    "    " +
-                                    baseName +
-                                    "@ self;\n"
+                                    "    PlayerItem@ m_pPlayer;\n"
                                     "};\n";
 
     const std::string mainCode = "mixin class " + mixinName +
@@ -2513,6 +2516,8 @@ TEST_CASE("Hover - Mixin host context resolves receiver and members from host cl
                                  "        self." +
                                  methodName +
                                  "();\n"
+                                 "        BaseClass.AddToPlayer(1);\n"
+                                 "        int b = m_pPlayer.pev.button;\n"
                                  "    }\n"
                                  "};\n";
 
@@ -2522,11 +2527,61 @@ TEST_CASE("Hover - Mixin host context resolves receiver and members from host cl
     const size_t pos = mainCode.find("." + methodName);
     REQUIRE(pos != std::string::npos);
     auto p = FindPos(mainCode, methodName, pos + 1);
-
     auto hover = env.HoverAt(p.line, p.character);
     REQUIRE(hover.has_value());
     const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
     CHECK(text.find("void " + baseName + "::" + methodName + "()") != std::string::npos);
+
+    const size_t basePos = mainCode.find("AddToPlayer");
+    REQUIRE(basePos != std::string::npos);
+    auto pBase = FindPos(mainCode, "AddToPlayer", basePos);
+    auto hoverBase = env.HoverAt(pBase.line, pBase.character);
+    REQUIRE(hoverBase.has_value());
+    const std::string textBase = std::get<lsp::MarkupContent>(hoverBase->contents).value;
+    CHECK(textBase.find("AddToPlayer") != std::string::npos);
+
+    const size_t btnPos = mainCode.find("button");
+    REQUIRE(btnPos != std::string::npos);
+    auto pBtn = FindPos(mainCode, "button", btnPos);
+    auto hoverBtn = env.HoverAt(pBtn.line, pBtn.character);
+    REQUIRE(hoverBtn.has_value());
+    const std::string textBtn = std::get<lsp::MarkupContent>(hoverBtn->contents).value;
+    CHECK(textBtn.find("button") != std::string::npos);
+}
+
+TEST_CASE("Hover - Virtual property set accessor EHandle and value hover")
+{
+    const std::string handleClass = test::GenerateRandomSymbolName("EHandle");
+    const std::string entityClass = test::GenerateRandomSymbolName("CBaseEntity");
+    const std::string playerClass = test::GenerateRandomSymbolName("CBasePlayer");
+    const std::string hostClass = test::GenerateRandomSymbolName("WeaponHost");
+    const std::string propName = test::GenerateRandomSymbolName("Player");
+
+    const std::string code = "class " + entityClass + " {};\n" + "class " + playerClass + " : " + entityClass +
+                             " {};\n" + "class " + handleClass + " {\n" + "    " + handleClass + "() {}\n" + "    " +
+                             handleClass + "(" + entityClass + "@ pEnt) {}\n" + "};\n" + "class " + hostClass + " {\n" +
+                             "    " + handleClass + " m_hPlayer;\n" + "    " + hostClass +
+                             "@ self { get { return this; } }\n" + "    " + playerClass + "@ " + propName + " {\n" +
+                             "        get { return null; }\n" + "        set { self.m_hPlayer = " + handleClass +
+                             "(@value); }\n" + "    }\n" + "};\n";
+
+    TestEnvironment env(code);
+
+    const size_t valPos = code.rfind("value");
+    REQUIRE(valPos != std::string::npos);
+    auto pVal = FindPos(code, "value", valPos);
+    auto hoverVal = env.HoverAt(pVal.line, pVal.character);
+    REQUIRE(hoverVal.has_value());
+    const std::string textVal = std::get<lsp::MarkupContent>(hoverVal->contents).value;
+    CHECK(textVal.find("(parameter) " + playerClass + "@ value") != std::string::npos);
+
+    const size_t ctorPos = code.rfind(handleClass + "(@value)");
+    REQUIRE(ctorPos != std::string::npos);
+    auto pCtor = FindPos(code, handleClass, ctorPos);
+    auto hoverCtor = env.HoverAt(pCtor.line, pCtor.character);
+    REQUIRE(hoverCtor.has_value());
+    const std::string textCtor = std::get<lsp::MarkupContent>(hoverCtor->contents).value;
+    CHECK(textCtor.find(handleClass + "(" + entityClass + "@ pEnt)") != std::string::npos);
 }
 
 TEST_CASE("Hover - Mixin class hover summarizes declared members")

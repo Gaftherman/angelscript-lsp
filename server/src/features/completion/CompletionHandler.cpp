@@ -183,6 +183,7 @@ std::vector<std::string> GetInheritedTypeHierarchy(const analysis::SymbolTable& 
             }
         }
     }
+    analysis::ExpandMixinHostHierarchies(initialTypeName, symbolTable, hierarchy);
     return hierarchy;
 }
 
@@ -2487,6 +2488,7 @@ void CollectEnclosingClassMembers(CompletionCollector& collector)
         return;
     }
     auto hierarchy = analysis::GetInheritedTypeHierarchy(enclosingClassName, collector.request.symbolTable);
+    analysis::ExpandMixinHostHierarchies(enclosingClassName, collector.request.symbolTable, hierarchy);
     for (const auto& clsName : hierarchy)
     {
         const auto& cm = ruleIndex->ClassMembers(clsName);

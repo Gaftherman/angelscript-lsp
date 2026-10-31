@@ -6,6 +6,7 @@
 #include "analysis/VirtualMixinContext.h"
 #include "analysis/overload/ConversionRankingEngine.h"
 #include "analysis/rules/RuleIndex.h"
+#include "config/EngineRuleConfig.h"
 #include "i18n/i18n.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
@@ -696,15 +697,14 @@ TSNode FindEnclosingCallNode(TSNode node)
 
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol pType = ts_node_symbol(parent);
-    if (pType == gs.symMemberExpression || pType == gs.symScopedIdentifier)
+    if (pType == gs.symDatatype || pType == gs.symMemberExpression || pType == gs.symScopedIdentifier)
     {
         TSNode grandParent = parser::GetParent(parent);
-        if (!ts_node_is_null(grandParent) && ts_node_symbol(grandParent) == gs.symCallExpression)
+        if (!ts_node_is_null(grandParent))
         {
-            TSNode fn = parser::GetChildByField(grandParent, gs.fieldFunction);
-            if (MatchesTargetNode(fn, parent))
+            if (TSNode call = FindCallFromParent(grandParent, parent); !ts_node_is_null(call))
             {
-                return grandParent;
+                return call;
             }
         }
     }
@@ -2150,17 +2150,27 @@ void MergeHostSymbols(std::vector<analysis::Symbol>& symbols, std::vector<analys
 void AppendVirtualHostSymbols(const HoverQueryContext& ctx, std::vector<analysis::Symbol>& symbols,
                               std::string& accessorPropertyType)
 {
-    if (!ctx.vctx.isVirtual || ctx.vctx.hostClass.empty())
+    std::string hostClass;
+    if (ctx.vctx.isVirtual && !ctx.vctx.hostClass.empty())
+    {
+        hostClass = ctx.vctx.hostClass;
+    }
+    else
+    {
+        hostClass =
+            analysis::InferHostClassFromEnclosingMixin(ctx.node, ctx.request.sourceCode, ctx.request.symbolTable);
+    }
+    if (hostClass.empty())
     {
         return;
     }
 
     std::vector<analysis::Symbol> hostSymbols =
-        CollectHierarchyHostSymbols(ctx.vctx.hostClass, ctx.nodeText, ctx.request.symbolTable);
+        CollectHierarchyHostSymbols(hostClass, ctx.nodeText, ctx.request.symbolTable);
 
     if (hostSymbols.empty())
     {
-        auto hierarchy = analysis::GetInheritedTypeHierarchy(ctx.vctx.hostClass, ctx.request.symbolTable);
+        auto hierarchy = analysis::GetInheritedTypeHierarchy(hostClass, ctx.request.symbolTable);
         for (const auto& typeName : hierarchy)
         {
             auto accessors = analysis::FindPropertyAccessors(typeName, ctx.nodeText, ctx.request.symbolTable, false);
@@ -2942,6 +2952,12 @@ static void AppendConstructorSymbolsIfCall(const HoverQueryContext& ctx, std::ve
         auto best = ResolveCallOverload(ctx.node, ctorSymbols, ctx.request, ctx.scope);
         if (best.has_value())
         {
+            auto it = std::find_if(ctorSymbols.begin(), ctorSymbols.end(), [&](const analysis::Symbol& s)
+                                   { return s.name == best->name && analysis::HasSameParameterList(s, *best); });
+            if (it != ctorSymbols.end() && it != ctorSymbols.begin())
+            {
+                std::rotate(ctorSymbols.begin(), it, it + 1);
+            }
             symbols = std::move(ctorSymbols);
         }
         else
@@ -2973,6 +2989,44 @@ static void FilterDirectRootGlobalSymbols(std::vector<analysis::Symbol>& symbols
         std::erase_if(symbols, [](const analysis::Symbol& s)
                       { return !s.containerName.empty() || s.type == analysis::SymbolType::CallReference; });
     }
+}
+
+static std::optional<lsp::Hover> TryHoverSpecialKeywordFallback(const HoverQueryContext& ctx)
+{
+    if (ctx.nodeText != config::k_selfIdentifier && ctx.nodeText != config::k_baseClassIdentifier)
+    {
+        return std::nullopt;
+    }
+    std::string hostClass;
+    if (ctx.vctx.isVirtual && !ctx.vctx.hostClass.empty())
+    {
+        hostClass = ctx.vctx.hostClass;
+    }
+    else
+    {
+        hostClass =
+            analysis::InferHostClassFromEnclosingMixin(ctx.node, ctx.request.sourceCode, ctx.request.symbolTable);
+    }
+    if (hostClass.empty())
+    {
+        auto containers = analysis::GetEnclosingContainers(ctx.node, ctx.request.sourceCode);
+        for (const auto& c : containers)
+        {
+            if (c.kind == analysis::ContainerKind::Class)
+            {
+                hostClass = c.qualifiedName.empty() ? c.name : c.qualifiedName;
+                break;
+            }
+        }
+    }
+    if (auto special = analysis::ResolveSelfOrBaseClass(ctx.nodeText, hostClass, ctx.request.symbolTable);
+        !special.empty())
+    {
+        std::string text = "```angelscript\n" + special + "@ " + ctx.nodeText + "\n```";
+        return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(text)},
+                          ctx.range};
+    }
+    return std::nullopt;
 }
 
 std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx)
@@ -3008,6 +3062,14 @@ std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx)
     if (symbols.empty() && accessorPropertyType.empty() && !gsq.isGlobal)
     {
         PopulateGlobalPropertyAccessors(symbols, accessorPropertyType, ctx);
+    }
+
+    if (symbols.empty() && !gsq.isGlobal)
+    {
+        if (auto specialHover = TryHoverSpecialKeywordFallback(ctx))
+        {
+            return specialHover;
+        }
     }
 
     ctx.profiler.symMs += symTimer.ElapsedMs();

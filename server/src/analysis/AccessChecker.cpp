@@ -1,4 +1,4 @@
-﻿#include "analysis/AccessChecker.h"
+#include "analysis/AccessChecker.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/ScopeTree.h"
 #include "analysis/SemanticHelpers.h"
@@ -8,6 +8,7 @@
 #include "utils/Utils.h"
 
 #include "analysis/DiagnosticCodes.h"
+#include "config/EngineRuleConfig.h"
 #include "parser/GrammarNames.h"
 #include "parser/Keywords.h"
 #include "utils/StopFlag.h"
@@ -422,6 +423,48 @@ void EmitPrivacyViolation(TSNode memberNode, const MemberAccess& member, std::st
                     memberName, member.declaringClass);
 }
 
+/**
+ * @brief Finds a member across type hierarchy and configured engine proxy base classes.
+ * @param[in] objectType Owning object type name.
+ * @param[in] memberName Member name to look up.
+ * @param[in] table Symbol table.
+ * @param[in] ctx Diagnostic context containing optional engine rules.
+ * @return MemberAccess structure indicating whether the member was found.
+ */
+static MemberAccess FindMemberWithProxies(const std::string& objectType, const std::string& memberName,
+                                          const SymbolTable& table, const DiagnosticContext& ctx)
+{
+    MemberAccess member = FindMember(objectType, memberName, table, ctx.request.RequiresAccessorKeyword());
+    if (member.found || !ctx.request.engineRules)
+    {
+        return member;
+    }
+
+    const auto& proxyMap = ctx.request.engineRules->unusedRules.baseClassProxyMap;
+    if (proxyMap.empty())
+    {
+        return member;
+    }
+
+    auto hier = GetInheritedTypeHierarchy(objectType, table);
+    for (const auto& owner : hier)
+    {
+        auto it = proxyMap.find(owner);
+        if (it != proxyMap.end())
+        {
+            for (const auto& proxy : it->second)
+            {
+                member = FindMember(proxy, memberName, table, ctx.request.RequiresAccessorKeyword());
+                if (member.found)
+                {
+                    return member;
+                }
+            }
+        }
+    }
+    return member;
+}
+
 void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
 {
     TSNode objectNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldObject);
@@ -467,7 +510,7 @@ void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const
         return;
     }
 
-    const MemberAccess member = FindMember(objectType, memberName, table, ctx.request.RequiresAccessorKeyword());
+    const MemberAccess member = FindMemberWithProxies(objectType, memberName, table, ctx);
     if (!member.found)
     {
         const TSPoint start = ts_node_start_point(memberNode);

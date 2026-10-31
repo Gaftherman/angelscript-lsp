@@ -884,14 +884,23 @@ std::vector<analysis::Symbol> FindHostClassSymbols(const std::string& hostClass,
  * @param[in] nodeText Symbol identifier text.
  * @param[in] ctx Definition context.
  */
-void AppendHostClassHierarchySymbols(std::vector<analysis::Symbol>& symbols, const std::string& nodeText,
+void AppendHostClassHierarchySymbols(std::vector<analysis::Symbol>& symbols, TSNode node, const std::string& nodeText,
                                      const DefinitionContext& ctx)
 {
-    if (!ctx.vCtx.isVirtual || ctx.vCtx.hostClass.empty())
+    std::string hostClass;
+    if (ctx.vCtx.isVirtual && !ctx.vCtx.hostClass.empty())
+    {
+        hostClass = ctx.vCtx.hostClass;
+    }
+    else
+    {
+        hostClass = analysis::InferHostClassFromEnclosingMixin(node, ctx.request.sourceCode, ctx.request.symbolTable);
+    }
+    if (hostClass.empty())
     {
         return;
     }
-    auto hostSymbols = FindHostClassSymbols(ctx.vCtx.hostClass, nodeText, ctx.request.symbolTable);
+    auto hostSymbols = FindHostClassSymbols(hostClass, nodeText, ctx.request.symbolTable);
     if (hostSymbols.empty())
     {
         return;
@@ -931,7 +940,7 @@ std::vector<analysis::Symbol> ResolveCandidateSymbols(TSNode node, const std::st
     std::vector<analysis::Symbol> symbols = FindSymbolsForNode(node, nodeText, ctx.request);
     if (!gsq.isGlobal)
     {
-        AppendHostClassHierarchySymbols(symbols, nodeText, ctx);
+        AppendHostClassHierarchySymbols(symbols, node, nodeText, ctx);
     }
     const analysis::Scope* scope =
         ctx.rootScope ? FindInnermostScope(ctx.rootScope.get(), ctx.queryLine, ctx.request.position.character)
@@ -978,33 +987,70 @@ std::optional<std::vector<lsp::Location>> TryResolveLocalDefinitionFallback(TSNo
 }
 
 /**
- * @brief Resolves definition for the `this` keyword to the enclosing class or interface.
+ * @brief Resolves definition for 'this', 'self', or 'BaseClass' keywords to the target class.
  * @param[in] node AST node at cursor.
+ * @param[in] nodeText Keyword identifier text.
  * @param[in] ctx Definition context.
- * @return Locations pointing to the enclosing class or interface, or nullopt.
+ * @return Locations pointing to the class or interface, or nullopt.
  */
-std::optional<std::vector<lsp::Location>> TryResolveThisKeyword(TSNode node, const DefinitionContext& ctx)
+static std::string ResolveTargetClassForKeyword(TSNode node, const DefinitionContext& ctx)
 {
-    std::string targetClass;
     if (ctx.vCtx.isVirtual && !ctx.vCtx.hostClass.empty())
     {
-        targetClass = ctx.vCtx.hostClass;
+        return ctx.vCtx.hostClass;
     }
-    else
+    std::string targetClass =
+        analysis::InferHostClassFromEnclosingMixin(node, ctx.request.sourceCode, ctx.request.symbolTable);
+    if (!targetClass.empty())
     {
-        auto containers = analysis::GetEnclosingContainers(node, ctx.request.sourceCode);
-        for (const auto& c : containers)
+        return targetClass;
+    }
+    auto containers = analysis::GetEnclosingContainers(node, ctx.request.sourceCode);
+    for (const auto& c : containers)
+    {
+        if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
         {
-            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
-            {
-                targetClass = c.qualifiedName.empty() ? c.name : c.qualifiedName;
-                break;
-            }
+            return c.qualifiedName.empty() ? c.name : c.qualifiedName;
         }
     }
+    return "";
+}
+
+static std::string ResolveNonMixinBase(const std::string& targetClass, const analysis::SymbolTable& table)
+{
+    auto hier = analysis::GetInheritedTypeHierarchy(targetClass, table);
+    for (size_t i = 1; i < hier.size(); ++i)
+    {
+        if (!analysis::IsMixinClass(hier[i], table))
+        {
+            return hier[i];
+        }
+    }
+    return "";
+}
+
+/**
+ * @brief Resolves definition for 'this', 'self', or 'BaseClass' keywords to the target class.
+ * @param[in] node AST node at cursor.
+ * @param[in] nodeText Keyword identifier text.
+ * @param[in] ctx Definition context.
+ * @return Locations pointing to the class or interface, or nullopt.
+ */
+std::optional<std::vector<lsp::Location>> TryResolveThisOrSpecialKeyword(TSNode node, const std::string& nodeText,
+                                                                         const DefinitionContext& ctx)
+{
+    std::string targetClass = ResolveTargetClassForKeyword(node, ctx);
     if (targetClass.empty())
     {
         return std::nullopt;
+    }
+    if (nodeText == config::k_baseClassIdentifier)
+    {
+        targetClass = ResolveNonMixinBase(targetClass, ctx.request.symbolTable);
+        if (targetClass.empty())
+        {
+            return std::nullopt;
+        }
     }
     std::vector<lsp::Location> locations;
     auto cands = ctx.request.symbolTable.FindSymbols(targetClass);
@@ -1327,6 +1373,91 @@ std::vector<analysis::Symbol> CollectTypeDefinitionSymbols(TSNode node, const st
     return typeSymbols;
 }
 
+static void FilterByEnclosingEnumContainer(std::vector<analysis::Symbol>& symbols, TSNode node,
+                                           std::string_view sourceCode)
+{
+    if (symbols.size() <= 1)
+    {
+        return;
+    }
+    auto containers = analysis::GetEnclosingContainers(node, sourceCode);
+    for (const auto& cont : containers)
+    {
+        if (cont.kind == analysis::ContainerKind::Enum)
+        {
+            std::vector<analysis::Symbol> enumMatches;
+            for (const auto& s : symbols)
+            {
+                if (s.containerName == cont.qualifiedName || s.containerName == cont.name)
+                {
+                    enumMatches.push_back(s);
+                }
+            }
+            if (!enumMatches.empty())
+            {
+                symbols = std::move(enumMatches);
+                return;
+            }
+        }
+    }
+}
+
+static void FilterByEnclosingNamespaceContainer(std::vector<analysis::Symbol>& symbols, TSNode node,
+                                                std::string_view sourceCode)
+{
+    if (symbols.size() <= 1)
+    {
+        return;
+    }
+    auto containers = analysis::GetEnclosingContainers(node, sourceCode);
+    for (const auto& cont : containers)
+    {
+        if (cont.kind == analysis::ContainerKind::Namespace)
+        {
+            std::vector<analysis::Symbol> nsMatches;
+            for (const auto& s : symbols)
+            {
+                if (analysis::IsSameOrNestedNamespace(s.containerName, cont.qualifiedName) ||
+                    analysis::IsSameOrNestedNamespace(utils::ParentScopeView(s.containerName), cont.qualifiedName))
+                {
+                    nsMatches.push_back(s);
+                }
+            }
+            if (!nsMatches.empty())
+            {
+                symbols = std::move(nsMatches);
+                return;
+            }
+        }
+    }
+}
+
+static void DeduplicateEnumMemberSymbols(std::vector<analysis::Symbol>& symbols)
+{
+    if (symbols.size() <= 1)
+    {
+        return;
+    }
+    bool allEnum = std::all_of(symbols.begin(), symbols.end(), [](const analysis::Symbol& s)
+                               { return s.containerKind == analysis::ContainerKind::Enum; });
+    if (!allEnum)
+    {
+        return;
+    }
+    std::vector<analysis::Symbol> scopedOnly;
+    for (const auto& s : symbols)
+    {
+        if (utils::ContainsScopeSeparator(s.containerName))
+        {
+            scopedOnly.push_back(s);
+        }
+    }
+    if (scopedOnly.size() == 1)
+    {
+        symbols = std::move(scopedOnly);
+    }
+}
+
 /**
  * @brief Filters CallReference symbols and prioritizes matching symbols from the local file.
  * @param[in,out] symbols Candidate symbol vector to refine.
@@ -1360,30 +1491,9 @@ void FilterAndPrioritizeLocalSymbols(std::vector<analysis::Symbol>& symbols, TSN
         }
     }
 
-    if (symbols.size() > 1)
-    {
-        auto containers = analysis::GetEnclosingContainers(node, request.sourceCode);
-        for (const auto& cont : containers)
-        {
-            if (cont.kind == analysis::ContainerKind::Namespace)
-            {
-                std::vector<analysis::Symbol> nsMatches;
-                for (const auto& s : symbols)
-                {
-                    if (analysis::IsSameOrNestedNamespace(s.containerName, cont.qualifiedName) ||
-                        analysis::IsSameOrNestedNamespace(utils::ParentScopeView(s.containerName), cont.qualifiedName))
-                    {
-                        nsMatches.push_back(s);
-                    }
-                }
-                if (!nsMatches.empty())
-                {
-                    symbols = std::move(nsMatches);
-                    break;
-                }
-            }
-        }
-    }
+    FilterByEnclosingEnumContainer(symbols, node, request.sourceCode);
+    FilterByEnclosingNamespaceContainer(symbols, node, request.sourceCode);
+    DeduplicateEnumMemberSymbols(symbols);
 }
 
 static bool ContainerKindMatches(analysis::SymbolType containerType, analysis::ContainerKind memberContainerKind)
@@ -1504,6 +1614,58 @@ void DisambiguateScopedQualifierContainer(std::vector<analysis::Symbol>& symbols
     }
 }
 
+static std::optional<std::vector<lsp::Location>>
+TryResolveContextualOrDeclFallback(TSNode node, const std::string& nodeText, const DefinitionContext& ctx)
+{
+    if (auto contextualLocs = TryResolveContextualDefinition(node, nodeText, ctx))
+    {
+        return contextualLocs;
+    }
+    return TryResolveDeclarationFallback(node, ctx);
+}
+
+static std::optional<std::vector<lsp::Location>>
+ResolveSymbolsOrSpecialLocations(TSNode node, const std::string& nodeText, const DefinitionContext& ctx)
+{
+    const auto gsq = analysis::GetGlobalScopeQualifier(node, ctx.request.sourceCode);
+    std::vector<analysis::Symbol> symbols = ResolveCandidateSymbols(node, nodeText, ctx);
+    if (symbols.empty() && !gsq.isGlobal)
+    {
+        if (auto localFallback = TryResolveLocalDefinitionFallback(node, nodeText, ctx))
+        {
+            return localFallback;
+        }
+    }
+
+    if (nodeText == "this")
+    {
+        if (auto specialLocs = TryResolveThisOrSpecialKeyword(node, nodeText, ctx))
+        {
+            return specialLocs;
+        }
+    }
+
+    if (!gsq.isGlobal)
+    {
+        FilterAndPrioritizeLocalSymbols(symbols, node, nodeText, ctx.request);
+    }
+
+    DisambiguateScopedQualifierContainer(symbols, node, ctx.request);
+
+    auto locations = ConvertSymbolsToLocations(symbols, ctx.request);
+    if (!locations.empty())
+    {
+        return locations;
+    }
+
+    if (nodeText == config::k_selfIdentifier || nodeText == config::k_baseClassIdentifier)
+    {
+        return TryResolveThisOrSpecialKeyword(node, nodeText, ctx);
+    }
+
+    return std::nullopt;
+}
+
 } // namespace
 
 std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest& request)
@@ -1526,48 +1688,12 @@ std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest&
     }
 
     DefinitionContext ctx = MakeDefinitionContext(request);
-    if (auto contextualLocs = TryResolveContextualDefinition(node, nodeText, ctx))
+    if (auto early = TryResolveContextualOrDeclFallback(node, nodeText, ctx))
     {
-        return contextualLocs;
+        return early;
     }
 
-    if (auto declFallback = TryResolveDeclarationFallback(node, ctx))
-    {
-        return declFallback;
-    }
-
-    const auto gsq = analysis::GetGlobalScopeQualifier(node, request.sourceCode);
-    std::vector<analysis::Symbol> symbols = ResolveCandidateSymbols(node, nodeText, ctx);
-    if (symbols.empty() && !gsq.isGlobal)
-    {
-        if (auto localFallback = TryResolveLocalDefinitionFallback(node, nodeText, ctx))
-        {
-            return localFallback;
-        }
-    }
-
-    if (nodeText == "this")
-    {
-        if (auto thisLocs = TryResolveThisKeyword(node, ctx))
-        {
-            return thisLocs;
-        }
-    }
-
-    if (!gsq.isGlobal)
-    {
-        FilterAndPrioritizeLocalSymbols(symbols, node, nodeText, request);
-    }
-
-    DisambiguateScopedQualifierContainer(symbols, node, request);
-
-    auto locations = ConvertSymbolsToLocations(symbols, request);
-    if (!locations.empty())
-    {
-        return locations;
-    }
-
-    return std::nullopt;
+    return ResolveSymbolsOrSpecialLocations(node, nodeText, ctx);
 }
 
 std::optional<std::vector<lsp::Location>> GetTypeDefinition(const DefinitionRequest& request)

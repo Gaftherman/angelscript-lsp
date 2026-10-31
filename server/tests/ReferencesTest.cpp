@@ -989,14 +989,13 @@ TEST_CASE("References - Enum member occurrences isolated between different names
     MultiFileTestEnv env;
     const std::string nsA = angel_lsp::test::GenerateRandomSymbolName("NS_WeaponA");
     const std::string nsB = angel_lsp::test::GenerateRandomSymbolName("NS_WeaponB");
-    const std::string enumA = angel_lsp::test::GenerateRandomSymbolName("AnimA");
-    const std::string enumB = angel_lsp::test::GenerateRandomSymbolName("AnimB");
+    const std::string enumName = "Anim";
     const std::string memberName = angel_lsp::test::GenerateRandomSymbolName("IRON_FIRE2");
 
     const std::string codeA = "namespace " + nsA +
                               " {\n"
                               "    enum " +
-                              enumA + " { " + memberName +
+                              enumName + " { " + memberName +
                               " = 1 };\n"
                               "    void Shoot() {\n"
                               "        int a = " +
@@ -1008,7 +1007,7 @@ TEST_CASE("References - Enum member occurrences isolated between different names
     const std::string codeB = "namespace " + nsB +
                               " {\n"
                               "    enum " +
-                              enumB + " { " + memberName +
+                              enumName + " { " + memberName +
                               " = 2 };\n"
                               "    void Shoot() {\n"
                               "        int b = " +
