@@ -124,6 +124,7 @@
   "command.statusMenu.title": "AngelScript Status Menu",
   "command.setModuleEntryPoint.title": "Set as Module Entry Point",
   "command.setModuleFolder.title": "Set as Module Folder",
+  "command.switchActiveModule.title": "Switch Active Module",
   "command.selectPredefined.title": "Select Predefined Stub",
   "command.selectPredefined.category": "AngelScript",
   "extension.description": "High-performance AngelScript language support powered by Tree-sitter C++.",

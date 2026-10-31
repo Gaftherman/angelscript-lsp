@@ -243,7 +243,7 @@ class LspSemanticHarnessFixture
      */
     const std::vector<analysis::Diagnostic>& GetDiagnostics(const std::string& uri) const;
 
-  private:
+  protected:
     std::filesystem::path m_sandboxDir;
     std::string m_oracleExe;
     parser::AngelScriptParser m_parser;

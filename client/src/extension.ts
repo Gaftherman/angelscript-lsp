@@ -140,6 +140,9 @@ const SET_MODULE_ENTRY_POINT_COMMAND = 'angelscript.setModuleEntryPoint';
 /** @brief Command that registers a directory as a module folder in workspace settings. */
 const SET_MODULE_FOLDER_COMMAND = 'angelscript.setModuleFolder';
 
+/** @brief Command that switches the active module or activates all modules. */
+const SWITCH_ACTIVE_MODULE_COMMAND = 'angelscript.switchActiveModule';
+
 /** @brief Command that gathers a predefined stub's scattered namespaces into one block each. */
 const FORMAT_STUB_COMMAND = 'angelscript.formatPredefinedStub';
 
@@ -376,6 +379,7 @@ function setStatus(state: 'starting' | 'running' | 'failed', tooltip: string): v
 
 let languageStatusItem: LanguageStatusItem | undefined;
 let stubsStatusItem: LanguageStatusItem | undefined;
+let moduleStatusItem: LanguageStatusItem | undefined;
 
 function createLanguageStatusItem(context: ExtensionContext): void {
     if (typeof languages.createLanguageStatusItem !== 'function') {
@@ -396,6 +400,14 @@ function createLanguageStatusItem(context: ExtensionContext): void {
         title: l10n.t('Select Stubs')
     };
     context.subscriptions.push(stubsStatusItem);
+
+    moduleStatusItem = languages.createLanguageStatusItem('angelscript.module', { language: 'angelscript' });
+    moduleStatusItem.name = l10n.t('AngelScript Active Module');
+    moduleStatusItem.command = {
+        command: SWITCH_ACTIVE_MODULE_COMMAND,
+        title: l10n.t('Switch Active Module')
+    };
+    context.subscriptions.push(moduleStatusItem);
 
     updateLanguageStatus();
 }
@@ -435,6 +447,28 @@ function updateLanguageStatus(isIndexing = false): void {
         } else {
             stubsStatusItem.text = `$(file-code) ${l10n.t('No active stubs')}`;
             stubsStatusItem.detail = l10n.t('Click to configure predefined stubs');
+        }
+    }
+
+    if (moduleStatusItem) {
+        moduleStatusItem.severity = LanguageStatusSeverity.Information;
+        moduleStatusItem.busy = isIndexing;
+        const configured = getConfiguredModules();
+        const allWorkspaceModules = workspace.getConfiguration('angelscript').get<ModuleConfig[]>('modules', []);
+        const localOverride = extensionContext?.workspaceState.get<ModuleConfig[]>('angelscript.local.modules');
+
+        if (configured.length === 0 && allWorkspaceModules.length === 0) {
+            moduleStatusItem.text = `$(package) ${l10n.t('No modules configured')}`;
+            moduleStatusItem.detail = l10n.t('Configure angelscript.modules to isolate project modules');
+        } else if (localOverride !== undefined && localOverride.length === 1) {
+            moduleStatusItem.text = `$(package) ${localOverride[0].name}`;
+            moduleStatusItem.detail = l10n.t('Active Module: {0} (Isolated) | Click to switch', localOverride[0].name);
+        } else if (allWorkspaceModules.length > 0) {
+            moduleStatusItem.text = `$(package) ${l10n.t('All Modules ({0})', configured.length)}`;
+            moduleStatusItem.detail = l10n.t('{0} active modules | Click to isolate or switch', configured.length);
+        } else {
+            moduleStatusItem.text = `$(package) ${l10n.t('Modules: {0}', configured.length)}`;
+            moduleStatusItem.detail = l10n.t('Click to switch active module');
         }
     }
 }
@@ -1766,6 +1800,9 @@ export async function activate(context: ExtensionContext) {
             commands.registerCommand(SET_MODULE_FOLDER_COMMAND, (resource?: Uri) => setModuleFolder(resource)));
 
         context.subscriptions.push(
+            commands.registerCommand(SWITCH_ACTIVE_MODULE_COMMAND, () => switchActiveModule()));
+
+        context.subscriptions.push(
             commands.registerCommand(FORMAT_STUB_COMMAND, (resource?: Uri) => formatPredefinedStub(resource)));
 
         context.subscriptions.push(
@@ -2885,6 +2922,64 @@ export async function setModuleFolder(resource?: Uri): Promise<void> {
     }
 
     await configureModule(resource, 'folder');
+}
+
+/**
+ * @brief Prompts user to select an active module to isolate or revert to all workspace modules.
+ */
+export async function switchActiveModule(): Promise<void> {
+    const allModules = workspace.getConfiguration('angelscript').get<ModuleConfig[]>('modules', []);
+    if (allModules.length === 0) {
+        void window.showInformationMessage(
+            l10n.t('No modules are configured in angelscript.modules. Use Explorer context menu or settings to define modules.'));
+        return;
+    }
+
+    interface ModuleQuickPickItem extends QuickPickItem {
+        module?: ModuleConfig;
+        isAll?: boolean;
+    }
+
+    const items: ModuleQuickPickItem[] = [
+        {
+            label: `$(layers) ${l10n.t('All Modules')}`,
+            description: l10n.t('Activate all {0} workspace modules', allModules.length),
+            isAll: true
+        }
+    ];
+
+    for (const mod of allModules) {
+        const targetDesc = mod.entry ? `entry: ${mod.entry}` : (mod.folder ? `folder: ${mod.folder}` : '');
+        items.push({
+            label: `$(package) ${mod.name}`,
+            description: targetDesc,
+            module: mod
+        });
+    }
+
+    const selected = await window.showQuickPick(items, {
+        placeHolder: l10n.t('Select an AngelScript module to isolate, or activate all modules')
+    });
+
+    if (!selected) {
+        return;
+    }
+
+    if (selected.isAll) {
+        if (extensionContext) {
+            await extensionContext.workspaceState.update('angelscript.local.modules', undefined);
+        }
+        await applyLocalStateChanges();
+        updateLanguageStatus();
+        void window.showInformationMessage(l10n.t('Activated all workspace modules.'));
+    } else if (selected.module) {
+        if (extensionContext) {
+            await extensionContext.workspaceState.update('angelscript.local.modules', [selected.module]);
+        }
+        await applyLocalStateChanges();
+        updateLanguageStatus();
+        void window.showInformationMessage(l10n.t('Isolated active module: {0}', selected.module.name));
+    }
 }
 
 /**

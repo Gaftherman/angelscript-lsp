@@ -521,6 +521,15 @@ std::vector<std::string> GetInheritedTypeHierarchy(const std::string& className,
 std::string ResolveBaseClass(std::string_view className, const SymbolTable& symbolTable);
 
 /**
+ * @brief Checks whether derivedClass inherits directly or transitively from baseClass.
+ * @param[in] derivedClass Child class name.
+ * @param[in] baseClass Ancestor class or interface name.
+ * @param[in] symbolTable Symbol table containing hierarchy declarations.
+ * @return True if derivedClass is baseClass or inherits from it.
+ */
+bool IsDerivedFrom(std::string_view derivedClass, std::string_view baseClass, const SymbolTable& symbolTable);
+
+/**
  * @brief Configuration options for resolving delegate or proxy base classes.
  */
 struct LinkedBaseOptions

@@ -1,4 +1,4 @@
-﻿#include "analysis/CallChecker.h"
+#include "analysis/CallChecker.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/ExpressionTypeCache.h"
 #include "analysis/InitializerListChecker.h"
@@ -1430,6 +1430,10 @@ CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
             {
                 argType = "null";
             }
+            else if (ts_node_symbol(unwrapped) == gs.symInitializerList)
+            {
+                argType = "init_list";
+            }
             else
             {
                 result.allArgsResolved = false;
@@ -1667,6 +1671,22 @@ std::optional<size_t> FindAgreedBlamedArgument(std::span<const Symbol* const> ca
     return blamed < argTypes.size() ? std::optional<size_t>(blamed) : std::nullopt;
 }
 
+static std::string FormatCallDescriptionWithNull(const std::string& calleeName,
+                                                 const std::vector<std::string>& argTypes)
+{
+    std::string callDesc = calleeName + "(";
+    for (size_t i = 0; i < argTypes.size(); ++i)
+    {
+        if (i > 0)
+        {
+            callDesc += ", ";
+        }
+        callDesc += (argTypes[i] == "null" ? "<null handle>" : argTypes[i]);
+    }
+    callDesc += ")";
+    return callDesc;
+}
+
 /**
  * @brief Emits diagnostics when overload resolution finds no viable candidates.
  *
@@ -1681,6 +1701,13 @@ void ReportOverloadResolutionFailure(std::span<const Symbol* const> candidates, 
     const auto blamedArg = FindAgreedBlamedArgument(candidates, args.argTypes, valCtx.ctx.request.symbolTable);
     if (blamedArg && *blamedArg < args.argNodes.size())
     {
+        if (args.argTypes[*blamedArg] == "null")
+        {
+            valCtx.ctx.EmitAtRange(GetCalleeDiagnosticRange(valCtx.callee), "as-err-call-no-matching-signature",
+                                   FormatCallDescriptionWithNull(reportedName, args.argTypes));
+            return;
+        }
+
         const auto& fn = candidates[0]->GetFunction();
         const std::string expected =
             *blamedArg < fn.parameters.size() ? fn.parameters[*blamedArg].typeName : std::string();
@@ -1693,8 +1720,10 @@ void ReportOverloadResolutionFailure(std::span<const Symbol* const> candidates, 
 
     if (args.allArgsResolved)
     {
+        const bool hasNull =
+            std::any_of(args.argTypes.begin(), args.argTypes.end(), [](const std::string& t) { return t == "null"; });
         valCtx.ctx.EmitAtRange(GetCalleeDiagnosticRange(valCtx.callee), "as-err-call-no-matching-signature",
-                               reportedName);
+                               hasNull ? FormatCallDescriptionWithNull(reportedName, args.argTypes) : reportedName);
     }
 }
 
@@ -1941,10 +1970,12 @@ void CheckCallOverloads(std::span<const Symbol* const> matchingArity, const Call
     {
         const std::string_view prioritySig =
             match.priorityCandidate != nullptr ? match.priorityCandidate->GetDisplaySignature() : std::string_view{};
+        const bool hasInitList = std::any_of(
+            args.argNodes.begin(), args.argNodes.end(), [](TSNode n)
+            { return !ts_node_is_null(n) && ts_node_symbol(n) == parser::GetGrammarSymbols().symInitializerList; });
         valCtx.ctx.EmitAtRange(GetCalleeDiagnosticRange(valCtx.callee), "as-err-call-ambiguous",
                                {std::string_view(calleeRes.reportedName), prioritySig},
-                               match.priorityCandidate != nullptr ? DiagnosticSeverity::Warning
-                                                                  : DiagnosticSeverity::Error);
+                               hasInitList ? DiagnosticSeverity::Error : DiagnosticSeverity::Warning);
     }
     else if (match.viableCandidates.empty() || match.bestCandidate == nullptr)
     {

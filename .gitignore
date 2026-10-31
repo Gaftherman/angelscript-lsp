@@ -60,3 +60,9 @@ compile_commands.json
 *.ilk
 *.obj
 *.idb
+
+# Python Bytecode
+__pycache__/
+*.pyc
+
+

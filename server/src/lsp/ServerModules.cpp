@@ -459,7 +459,7 @@ void Server::AnalyzeConfiguredModules()
 
 void Server::WithdrawStaleModuleDiagnostics()
 {
-    std::vector<std::string> stale;
+    ankerl::unordered_dense::set<std::string> stale;
 
     {
         std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
@@ -468,7 +468,19 @@ void Server::WithdrawStaleModuleDiagnostics()
             const std::string path = CanonicalPathFromUri(uriStr);
             if (path.empty() || ClaimFor(path).owner == nullptr)
             {
-                stale.push_back(uriStr);
+                stale.insert(uriStr);
+            }
+        }
+    }
+
+    if (!m_config.modules.empty())
+    {
+        for (const auto& uriStr : m_documentStore.GetOpenUris())
+        {
+            const std::string path = CanonicalPathFromUri(uriStr);
+            if (path.empty() || ClaimFor(path).owner == nullptr)
+            {
+                stale.insert(uriStr);
             }
         }
     }

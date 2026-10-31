@@ -1,4 +1,4 @@
-﻿#include "analysis/TypeConversionChecker.h"
+#include "analysis/TypeConversionChecker.h"
 #include "analysis/BinaryOperatorChecker.h"
 #include "analysis/ComparisonOperatorChecker.h"
 #include "analysis/DiagnosticCodes.h"
@@ -34,6 +34,7 @@ struct ExpressionType
     std::string baseName;   ///< Cleaned base type name, e.g. "Money" or "int".
     bool known = false;     ///< False means "give up" - never a reason to diagnose.
     bool isLiteral = false; ///< A literal's type is exact, so it can be judged strictly.
+    bool isConst = false;   ///< True if expression has const-qualified type.
 };
 
 /** @brief The little a rule needs to know about a type declaration.
@@ -942,7 +943,9 @@ ExpressionType ResolveIdentifierValueType(TSNode node, const Scope* scope, const
         if (const LocalDefinition* def = ResolveInScopeAt(scope, name, ts_node_start_byte(node));
             def && !def->typeName.empty())
         {
-            return ExpressionType{CleanBaseType(def->typeName), true, false};
+            const bool isConst =
+                def->typeName.starts_with("const ") || def->typeName.find("const ") != std::string::npos;
+            return ExpressionType{CleanBaseType(def->typeName), true, false, isConst};
         }
     }
 
@@ -958,7 +961,10 @@ ExpressionType ResolveIdentifierValueType(TSNode node, const Scope* scope, const
                            }
                            if (!sym.GetVariable().typeName.empty())
                            {
-                               result = ExpressionType{CleanBaseType(sym.GetVariable().typeName), true, false};
+                               const auto& var = sym.GetVariable();
+                               const bool isConst = var.modifiers.isConst || var.typeName.starts_with("const ") ||
+                                                    var.typeName.find("const ") != std::string::npos;
+                               result = ExpressionType{CleanBaseType(var.typeName), true, false, isConst};
                                return true;
                            }
                            return false;
@@ -984,11 +990,11 @@ ExpressionType ResolveCallValueType(TSNode node, const DiagnosticContext& ctx)
     // Type(args) constructs a value of that type; anything else is an ordinary call.
     if (FindTypeDeclaration(calleeName, ctx.request.symbolTable).found)
     {
-        return ExpressionType{calleeName, true, false};
+        return ExpressionType{calleeName, true, false, false};
     }
     if (IsBuiltInValueType(calleeName, ctx))
     {
-        return ExpressionType{calleeName, true, false};
+        return ExpressionType{calleeName, true, false, false};
     }
 
     ExpressionType result;
@@ -997,7 +1003,10 @@ ExpressionType ResolveCallValueType(TSNode node, const DiagnosticContext& ctx)
                        {
                            if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
                            {
-                               result = ExpressionType{CleanBaseType(sym.GetFunction().returnType), true, false};
+                               const auto& fn = sym.GetFunction();
+                               const bool isConst = fn.returnType.starts_with("const ") ||
+                                                    fn.returnType.find("const ") != std::string::npos;
+                               result = ExpressionType{CleanBaseType(fn.returnType), true, false, isConst};
                                return true;
                            }
                            return false;
@@ -1057,9 +1066,11 @@ static ExpressionType ResolveUnaryValueType(TSNode node, const Scope* scope, con
 
 static ExpressionType ResolveCastValueType(TSNode node, const DiagnosticContext& ctx)
 {
-    const std::string typeText = CleanBaseType(
-        NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldType), ctx.request.sourceCode));
-    return typeText.empty() ? ExpressionType{} : ExpressionType{typeText, true, false};
+    const std::string rawText =
+        NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldType), ctx.request.sourceCode);
+    const bool isConst = rawText.starts_with("const ") || rawText.find("const ") != std::string::npos;
+    const std::string typeText = CleanBaseType(rawText);
+    return typeText.empty() ? ExpressionType{} : ExpressionType{typeText, true, false, isConst};
 }
 
 ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
@@ -1102,7 +1113,8 @@ ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const D
     if (sym == gs.symMemberExpression)
     {
         const std::string resolved = ResolveExpressionType(node, ExpressionTypeContext(scope, ctx));
-        return resolved.empty() ? ExpressionType{} : ExpressionType{CleanBaseType(resolved), true, false};
+        const bool isConst = resolved.starts_with("const ") || resolved.find("const ") != std::string::npos;
+        return resolved.empty() ? ExpressionType{} : ExpressionType{CleanBaseType(resolved), true, false, isConst};
     }
 
     return ExpressionType{};
@@ -1283,6 +1295,26 @@ static PropertyAccessInfo InspectBareOrScopedProperty(TSNode exprNode, const Sco
         PopulateAccessorInfo(contAcc, info);
         if (info.isProperty)
         {
+            if (info.hasGet && !info.hasSet)
+            {
+                for (const auto& ancestor :
+                     GetInheritedTypeHierarchy(cName, ctx.request.symbolTable, ctx.request.exprCache))
+                {
+                    auto ancestorAcc = FindPropertyAccessors(ancestor, info.propName, ctx.request.symbolTable, false);
+                    for (const auto& sym : ancestorAcc)
+                    {
+                        if (sym.name.starts_with("set_"))
+                        {
+                            info.hasSet = true;
+                            break;
+                        }
+                    }
+                    if (info.hasSet)
+                    {
+                        break;
+                    }
+                }
+            }
             return info;
         }
     }
@@ -1637,6 +1669,7 @@ struct DeclaredType
 {
     std::string baseName;
     bool isHandle = false;
+    bool isConst = false;
     bool usable = false; ///< False when the shape is out of scope (array, template, unknown).
 
     /**
@@ -1685,6 +1718,7 @@ DeclaredType ReadDeclaredType(TSNode typeNode, const DiagnosticContext& ctx)
     }
 
     result.isHandle = raw.find('@') != std::string::npos;
+    result.isConst = raw.starts_with("const ") || raw.find("const ") != std::string::npos;
     result.baseName = CleanBaseType(raw);
     if (result.baseName.empty() || ctx.request.IsRegisteredSymbol(result.baseName))
     {
@@ -1756,6 +1790,13 @@ void CheckHandleInitializer(TSNode valueNode, const ExpressionType& source, cons
     if (source.isLiteral)
     {
         EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", {source.baseName, declared.baseName});
+        return;
+    }
+
+    if (source.isConst && !declared.isConst)
+    {
+        EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion",
+                   {"const " + source.baseName + "@", declared.baseName + "@"});
         return;
     }
 

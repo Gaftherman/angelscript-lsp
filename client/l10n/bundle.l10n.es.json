@@ -92,5 +92,20 @@
   "Added \"{0}\" to predefined files.": "Se añadió \"{0}\" a los archivos predefinidos.",
   "Created starter \"{0}\".": "Se creó la plantilla inicial \"{0}\".",
   "No engine rules file found in workspace.": "No se encontró ningún archivo de reglas del motor en el espacio de trabajo.",
-  "AngelScript Debugger connection error: {0}": "Error de conexión del depurador de AngelScript: {0}"
+  "AngelScript Debugger connection error: {0}": "Error de conexión del depurador de AngelScript: {0}",
+  "AngelScript Active Module": "Módulo Activo de AngelScript",
+  "Switch Active Module": "Cambiar Módulo Activo",
+  "No modules configured": "Ningún módulo configurado",
+  "Configure angelscript.modules to isolate project modules": "Configure angelscript.modules para aislar los módulos del proyecto",
+  "Active Module: {0} (Isolated) | Click to switch": "Módulo Activo: {0} (Aislado) | Clic para cambiar",
+  "All Modules ({0})": "Todos los Módulos ({0})",
+  "{0} active modules | Click to isolate or switch": "{0} módulos activos | Clic para aislar o cambiar",
+  "Modules: {0}": "Módulos: {0}",
+  "Click to switch active module": "Clic para cambiar el módulo activo",
+  "No modules are configured in angelscript.modules. Use Explorer context menu or settings to define modules.": "No hay módulos configurados en angelscript.modules. Use el menú contextual del Explorador o la configuración para definirlos.",
+  "All Modules": "Todos los Módulos",
+  "Activate all {0} workspace modules": "Activar los {0} módulos del espacio de trabajo",
+  "Select an AngelScript module to isolate, or activate all modules": "Seleccione un módulo AngelScript para aislar, o active todos los módulos",
+  "Activated all workspace modules.": "Todos los módulos del espacio de trabajo han sido activados.",
+  "Isolated active module: {0}": "Módulo activo aislado: {0}"
 }

@@ -682,6 +682,23 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
         calls = analysis::CollectCalls(root, req.text);
     const double scopeMs = scopeTimer.ElapsedMs();
 
+    if (!m_config.modules.empty() && ClaimFor(CanonicalPathFromUri(req.uriStr)).owner == nullptr)
+    {
+        LogAnalysisProfileAndClosure(
+            req.uriStr, closureMs,
+            AnalysisTimingProfile{totalTimer.ElapsedMs(), snapshotMs, parsed.parseMs, parsed.colMs, scopeMs, 0.0});
+        CommitAnalysisResults({req.uriStr,
+                               req.version,
+                               req.generation,
+                               req.configRevision,
+                               unchangedClosedFile ? nullptr : &staging,
+                               std::move(scopeRoot),
+                               std::move(calls),
+                               {},
+                               req.text});
+        return;
+    }
+
     auto request = BuildAnalysisRequest(req.uriStr, req.text, parsed.tree.get(), activeTable);
     request.scopeRoot = scopeRoot;
     request.mutableScopeRoot = scopeRoot.get();
@@ -693,23 +710,13 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     parsed.diagnostics.insert(parsed.diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
     AppendIncludeDiagnostics(req.uriStr, req.text, parsed.diagnostics);
 
-    LogAnalysisProfileAndClosure(req.uriStr, closureMs,
-                                 AnalysisTimingProfile{.totalMs = totalTimer.ElapsedMs(),
-                                                       .snapshotMs = snapshotMs,
-                                                       .parseMs = parsed.parseMs,
-                                                       .colMs = parsed.colMs,
-                                                       .scopeMs = scopeMs,
-                                                       .checkMs = checkMs});
+    LogAnalysisProfileAndClosure(
+        req.uriStr, closureMs,
+        AnalysisTimingProfile{totalTimer.ElapsedMs(), snapshotMs, parsed.parseMs, parsed.colMs, scopeMs, checkMs});
 
-    CommitAnalysisResults({.uriStr = req.uriStr,
-                           .version = req.version,
-                           .generation = req.generation,
-                           .configRevision = req.configRevision,
-                           .staging = unchangedClosedFile ? nullptr : &staging,
-                           .scopeRoot = std::move(scopeRoot),
-                           .calls = std::move(calls),
-                           .diagnostics = std::move(parsed.diagnostics),
-                           .text = req.text});
+    CommitAnalysisResults({req.uriStr, req.version, req.generation, req.configRevision,
+                           unchangedClosedFile ? nullptr : &staging, std::move(scopeRoot), std::move(calls),
+                           std::move(parsed.diagnostics), req.text});
 }
 
 void Server::AnalyzeDocument(AnalyzeDocumentRequest req)

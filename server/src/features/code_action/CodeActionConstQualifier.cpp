@@ -197,6 +197,59 @@ void TryAddIntentionalConstAction(const CodeActionRequest& request, TSNode rootN
     }
 }
 
+void TryAddConstHandleDiagnosticFix(const CodeActionRequest& request, TSNode rootNode, const lsp::Diagnostic& diag,
+                                    std::vector<lsp::CodeAction>& actions)
+{
+    const TSPoint dPt = {diag.range.start.line, diag.range.start.character};
+    TSNode node = ts_node_descendant_for_point_range(rootNode, dPt, dPt);
+    if (ts_node_is_null(node))
+    {
+        return;
+    }
+
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode declNode = parser::FindAncestorWithSymbol(node, gs.symVariableDeclaration);
+    if (ts_node_is_null(declNode))
+    {
+        return;
+    }
+
+    TSNode typeNode = parser::GetChildByField(declNode, gs.fieldVarType);
+    if (ts_node_is_null(typeNode))
+    {
+        typeNode = parser::FindChildWithSymbol(declNode, gs.symType);
+    }
+    if (ts_node_is_null(typeNode))
+    {
+        return;
+    }
+
+    const std::string typeText = GetNodeText(typeNode, request.sourceCode);
+    if (typeText.find('@') == std::string::npos || typeText.starts_with("const ") ||
+        typeText.find("const") != std::string::npos)
+    {
+        return;
+    }
+
+    const TSPoint insertPt = ts_node_start_point(typeNode);
+    lsp::TextEdit edit;
+    edit.range = lsp::Range{{insertPt.row, insertPt.column}, {insertPt.row, insertPt.column}};
+    edit.newText = "const ";
+
+    lsp::CodeAction action;
+    action.title = i18n::FormatMessage(request.i18n, "action-add-const-variable-qualifier", "Add 'const' qualifier");
+    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
+    action.isPreferred = true;
+    action.diagnostics = {diag};
+
+    lsp::WorkspaceEdit wsEdit;
+    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
+    changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
+    wsEdit.changes = std::move(changes);
+    action.edit = std::move(wsEdit);
+    actions.push_back(std::move(action));
+}
+
 } // namespace
 
 void TryAddConstQualifierActions(const CodeActionRequest& request, TSNode rootNode,
@@ -211,6 +264,10 @@ void TryAddConstQualifierActions(const CodeActionRequest& request, TSNode rootNo
         if (MatchDiagnosticCode(diag, "as-err-const-method-required"))
         {
             TryAddMissingConstDiagnosticFix(request, rootNode, diag, actions);
+        }
+        else if (MatchDiagnosticCode(diag, "as-err-no-implicit-conversion"))
+        {
+            TryAddConstHandleDiagnosticFix(request, rootNode, diag, actions);
         }
     }
     TryAddIntentionalConstAction(request, rootNode, actions);

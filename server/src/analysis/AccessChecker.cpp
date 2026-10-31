@@ -30,18 +30,7 @@ bool IsSameType(std::string_view a, std::string_view b)
 /** @brief True when derived is base, or reaches it through its declared base chain. */
 bool DerivesFrom(std::string_view derived, std::string_view base, const SymbolTable& table)
 {
-    if (IsSameType(derived, base))
-    {
-        return true;
-    }
-    for (const auto& ancestor : GetInheritedTypeHierarchy(std::string(derived), table))
-    {
-        if (IsSameType(ancestor, base))
-        {
-            return true;
-        }
-    }
-    return false;
+    return IsDerivedFrom(derived, base, table);
 }
 
 /** @brief The access modifier a declaration carries, whatever kind of declaration it is. */
@@ -465,6 +454,31 @@ static MemberAccess FindMemberWithProxies(const std::string& objectType, const s
     return member;
 }
 
+static void ValidateMemberPrivacy(TSNode node, const MemberAccess& member, const std::string& objectType,
+                                  DiagnosticContext& ctx)
+{
+    if (!member.decided)
+    {
+        return;
+    }
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode objectNode = parser::GetChildByField(node, gs.fieldObject);
+    TSNode memberNode = parser::GetChildByField(node, gs.fieldMember);
+    bool insideMixin = false;
+    const std::string_view accessingClass =
+        EnclosingClass(node, ctx.request.sourceCode, insideMixin, ctx.request.nodeIndex);
+    const bool isThisAccess = GetNodeTextView(objectNode, ctx.request.sourceCode) == "this";
+    if (insideMixin && (isThisAccess || IsSameType(accessingClass, member.declaringClass)))
+    {
+        return;
+    }
+    if (!IsMemberAccessAllowed(member, accessingClass, objectType, ctx))
+    {
+        const std::string memberName = NodeText(memberNode, ctx.request.sourceCode);
+        EmitPrivacyViolation(memberNode, member, memberName, ctx);
+    }
+}
+
 void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
 {
     TSNode objectNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldObject);
@@ -521,17 +535,7 @@ void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const
     }
 
     MaybeEmitAccessorHint(memberNode, member, objectType, ctx);
-
-    if (member.decided)
-    {
-        bool insideMixin = false;
-        const std::string_view accessingClass =
-            EnclosingClass(node, request.sourceCode, insideMixin, request.nodeIndex);
-        if (!IsMemberAccessAllowed(member, accessingClass, objectType, ctx))
-        {
-            EmitPrivacyViolation(memberNode, member, memberName, ctx);
-        }
-    }
+    ValidateMemberPrivacy(node, member, objectType, ctx);
 }
 
 /**
@@ -820,6 +824,11 @@ void CheckImplicitMemberAccess(TSNode node, const Scope* scope, std::string_view
     const bool declaredPrivate = member.access == AccessModifier::Private;
     if (declaredPrivate && !ctx.request.TreatsPrivateAsProtected())
     {
+        if (insideMixin &&
+            (IsSameType(accessingClass, member.declaringClass) || member.declaringClass == accessingClass))
+        {
+            return;
+        }
         if (!IsSameType(accessingClass, member.declaringClass))
         {
             const TSPoint start = ts_node_start_point(node);

@@ -240,6 +240,11 @@
         "category": "%command.selectPredefined.category%"
       },
       {
+        "command": "angelscript.switchActiveModule",
+        "title": "%command.switchActiveModule.title%",
+        "category": "%command.selectPredefined.category%"
+      },
+      {
         "command": "angelscript.formatPredefinedStub",
         "title": "%command.formatPredefinedStub.title%",
         "category": "%command.selectPredefined.category%"

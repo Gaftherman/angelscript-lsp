@@ -104,9 +104,7 @@ LocalScopeCollector::ResolveCaptureAncestors(CaptureKind kind, LocalDefinitionKi
     {
         result.parent = parser::GetParent(node);
     }
-    else if (kind == CaptureKind::Definition &&
-             (defKind == LocalDefinitionKind::Variable || defKind == LocalDefinitionKind::Parameter ||
-              defKind == LocalDefinitionKind::Field))
+    else if (kind == CaptureKind::Definition)
     {
         result.parent = parser::GetParent(node);
         result.grandparent = parser::GetParent(result.parent);
@@ -216,52 +214,166 @@ struct LocalScopeCollector::OpenScope
     uint32_t ownNameEndByte = 0;
 };
 
-void LocalScopeCollector::ProcessScopeCapture(const RawCapture& capture, std::vector<OpenScope>& stack,
-                                              std::unique_ptr<Scope>& root) const
+/**
+ * @brief Checks if a function declaration has method qualifiers preventing it from being treated as a variable.
+ */
+static bool HasDisqualifyingMethodQualifiers(TSNode funcNode, TSNode paramsNode, std::string_view sourceCode) noexcept
 {
+    std::string_view fullText = parser::GetNodeTextView(funcNode, sourceCode);
+    if (fullText.find("override") != std::string_view::npos || fullText.find("final") != std::string_view::npos ||
+        fullText.find("delete") != std::string_view::npos || fullText.find("abstract") != std::string_view::npos ||
+        fullText.find("external") != std::string_view::npos || fullText.find("import") != std::string_view::npos)
+    {
+        return true;
+    }
+    if (!ts_node_is_null(paramsNode))
+    {
+        uint32_t pEnd = ts_node_end_byte(paramsNode);
+        uint32_t fEnd = ts_node_end_byte(funcNode);
+        if (pEnd < fEnd && fEnd <= sourceCode.size())
+        {
+            std::string_view afterParams = sourceCode.substr(pEnd, fEnd - pEnd);
+            if (afterParams.find("const") != std::string_view::npos)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Checks if a function declaration returns a reference or handle.
+ */
+static bool HasReferenceOrHandleReturnType(TSNode funcNode, TSNode typeNode, const parser::GrammarSymbols& gs,
+                                           std::string_view sourceCode) noexcept
+{
+    std::string_view retText = parser::GetNodeTextView(typeNode, sourceCode);
+    if (retText.empty() || retText == "void" || retText.find('&') != std::string_view::npos ||
+        retText.find('@') != std::string_view::npos)
+    {
+        return true;
+    }
+    TSNode nameNode = parser::GetChildByField(funcNode, gs.fieldName);
+    if (!ts_node_is_null(nameNode))
+    {
+        uint32_t tEnd = ts_node_end_byte(typeNode);
+        uint32_t nStart = ts_node_start_byte(nameNode);
+        if (tEnd < nStart && nStart <= sourceCode.size())
+        {
+            std::string_view between = sourceCode.substr(tEnd, nStart - tEnd);
+            if (between.find('&') != std::string_view::npos || between.find('@') != std::string_view::npos)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Checks if a function declaration is an empty-parentheses bodyless declaration (variable declaration).
+ * @param funcNode Function declaration AST node.
+ * @param gs Grammar symbols.
+ * @param sourceCode Document source text.
+ * @param currentScopeKind Enclosing scope kind.
+ * @return True if empty-parentheses bodyless declaration.
+ */
+static bool IsEmptyParenFuncDeclaration(TSNode funcNode, const parser::GrammarSymbols& gs, std::string_view sourceCode,
+                                        ScopeKind currentScopeKind) noexcept
+{
+    if (ts_node_is_null(funcNode) || ts_node_symbol(funcNode) != gs.symFuncDeclaration)
+    {
+        return false;
+    }
+    if (currentScopeKind != ScopeKind::Class && currentScopeKind != ScopeKind::Function &&
+        currentScopeKind != ScopeKind::Block)
+    {
+        return false;
+    }
+    TSNode parent = parser::GetParent(funcNode);
+    if (!ts_node_is_null(parent) && ts_node_symbol(parent) == gs.symInterfaceBody)
+    {
+        return false;
+    }
+    if (!ts_node_is_null(parser::GetChildByField(funcNode, gs.fieldBody)))
+    {
+        return false;
+    }
+    TSNode paramsNode = parser::GetChildByField(funcNode, gs.fieldParameters);
+    if (!ts_node_is_null(paramsNode) && ts_node_named_child_count(paramsNode) > 0)
+    {
+        return false;
+    }
+    TSNode typeNode = parser::GetChildByField(funcNode, gs.fieldReturnType);
+    if (ts_node_is_null(typeNode))
+    {
+        return false;
+    }
+    if (HasReferenceOrHandleReturnType(funcNode, typeNode, gs, sourceCode))
+    {
+        return false;
+    }
+    return !HasDisqualifyingMethodQualifiers(funcNode, paramsNode, sourceCode);
+}
+
+/**
+ * @brief Resolves ScopeKind and function scope flag for a scope AST node.
+ */
+static std::optional<std::pair<ScopeKind, bool>> DetermineScopeKind(TSNode node, const parser::GrammarSymbols& gs,
+                                                                    std::string_view sourceCode,
+                                                                    ScopeKind parentKind) noexcept
+{
+    TSSymbol sym = ts_node_symbol(node);
+    if (sym == gs.symLambdaExpression)
+    {
+        return std::make_pair(ScopeKind::Closure, true);
+    }
+    if (sym == gs.symFuncDeclaration)
+    {
+        if (IsEmptyParenFuncDeclaration(node, gs, sourceCode, parentKind))
+        {
+            return std::nullopt;
+        }
+        return std::make_pair(ScopeKind::Function, true);
+    }
+    if (sym == gs.symClassBody || sym == gs.symInterfaceBody)
+    {
+        return std::make_pair(ScopeKind::Class, false);
+    }
+    if (sym == gs.symNamespaceBody)
+    {
+        return std::make_pair(ScopeKind::Namespace, false);
+    }
+    if (sym == gs.symScript)
+    {
+        return std::make_pair(ScopeKind::Global, false);
+    }
+    return std::make_pair(ScopeKind::Block, false);
+}
+
+void LocalScopeCollector::ProcessScopeCapture(const RawCapture& capture, std::vector<OpenScope>& stack,
+                                              std::unique_ptr<Scope>& root, const std::string& sourceCode) const
+{
+    const ScopeKind parentKind = stack.empty() ? ScopeKind::Global : stack.back().scope->kind;
+    auto kindInfo = DetermineScopeKind(capture.node, m_gs, sourceCode, parentKind);
+    if (!kindInfo)
+    {
+        return;
+    }
+
     TSPoint startPt = ts_node_start_point(capture.node);
     TSPoint endPt = ts_node_end_point(capture.node);
 
     auto newScope = std::make_unique<Scope>();
-    TSSymbol scopeNodeSymbol = ts_node_symbol(capture.node);
-    if (scopeNodeSymbol == m_gs.symLambdaExpression)
-    {
-        newScope->kind = ScopeKind::Closure;
-        newScope->isFunctionScope = true;
-    }
-    else if (scopeNodeSymbol == m_gs.symFuncDeclaration)
-    {
-        newScope->kind = ScopeKind::Function;
-        newScope->isFunctionScope = true;
-    }
-    else if (scopeNodeSymbol == m_gs.symClassBody || scopeNodeSymbol == m_gs.symInterfaceBody)
-    {
-        newScope->kind = ScopeKind::Class;
-        newScope->isFunctionScope = false;
-    }
-    else if (scopeNodeSymbol == m_gs.symNamespaceBody)
-    {
-        newScope->kind = ScopeKind::Namespace;
-        newScope->isFunctionScope = false;
-    }
-    else if (scopeNodeSymbol == m_gs.symScript)
-    {
-        newScope->kind = ScopeKind::Global;
-        newScope->isFunctionScope = false;
-    }
-    else
-    {
-        newScope->kind = ScopeKind::Block;
-        newScope->isFunctionScope = false;
-    }
+    newScope->kind = kindInfo->first;
+    newScope->isFunctionScope = kindInfo->second;
     newScope->startLine = startPt.row;
     newScope->startCharacter = startPt.column;
     newScope->endLine = endPt.row;
     newScope->endCharacter = endPt.column;
 
-    uint32_t endByte = capture.endByte;
     Scope* scopePtr = nullptr;
-
     if (stack.empty())
     {
         root = std::move(newScope);
@@ -274,10 +386,10 @@ void LocalScopeCollector::ProcessScopeCapture(const RawCapture& capture, std::ve
         scopePtr = stack.back().scope->children.back().get();
     }
 
-    OpenScope openScope{scopePtr, endByte};
-    if (scopeNodeSymbol == m_gs.symFuncDeclaration)
+    OpenScope openScope{scopePtr, capture.endByte};
+    if (ts_node_symbol(capture.node) == m_gs.symFuncDeclaration)
     {
-        TSNode ownNameNode = parser::GetChildByField(capture.node, parser::GetGrammarSymbols().fieldName);
+        TSNode ownNameNode = parser::GetChildByField(capture.node, m_gs.fieldName);
         if (!ts_node_is_null(ownNameNode))
         {
             openScope.ownNameStartByte = ts_node_start_byte(ownNameNode);
@@ -316,6 +428,45 @@ static bool IsDisallowedVariableType(std::string_view typeName)
     return IsReservedKeyword(baseType) && !IsPrimitiveTypeName(baseType) && baseType != "auto";
 }
 
+/**
+ * @brief Resolves effective local definition kind, converting empty-parentheses func declarations to variable/field.
+ * @param rawKind Query capture definition kind.
+ * @param parentNode Parent AST node.
+ * @param currentScopeKind Active enclosing scope kind.
+ * @param sourceCode Document source text.
+ * @return Effective local definition kind.
+ */
+static LocalDefinitionKind DetermineDefinitionKind(LocalDefinitionKind rawKind, TSNode parentNode,
+                                                   ScopeKind currentScopeKind, std::string_view sourceCode) noexcept
+{
+    if ((rawKind == LocalDefinitionKind::Function || rawKind == LocalDefinitionKind::Method) &&
+        IsEmptyParenFuncDeclaration(parentNode, parser::GetGrammarSymbols(), sourceCode, currentScopeKind))
+    {
+        return (currentScopeKind == ScopeKind::Class) ? LocalDefinitionKind::Field : LocalDefinitionKind::Variable;
+    }
+    return rawKind;
+}
+
+/**
+ * @brief Computes byte offset from which a definition is visible within its enclosing scope.
+ * @param kind Definition kind.
+ * @param scopeKind Enclosing scope kind.
+ * @param defStartByte Declaration start byte.
+ * @return Visible-from byte offset.
+ */
+static uint32_t CalculateVisibleFromByte(LocalDefinitionKind kind, ScopeKind scopeKind, uint32_t defStartByte) noexcept
+{
+    if (kind != LocalDefinitionKind::Variable)
+    {
+        return 0;
+    }
+    if (scopeKind == ScopeKind::Global || scopeKind == ScopeKind::Namespace || scopeKind == ScopeKind::Class)
+    {
+        return 0;
+    }
+    return defStartByte;
+}
+
 void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, const std::vector<OpenScope>& stack,
                                                    const std::string& sourceCode) const
 {
@@ -331,6 +482,9 @@ void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, co
     {
         return;
     }
+
+    LocalDefinitionKind defKind =
+        DetermineDefinitionKind(capture.definitionKind, capture.parent, current->kind, sourceCode);
     TSPoint startPt = ts_node_start_point(capture.node);
     TSPoint endPt = ts_node_end_point(capture.node);
 
@@ -341,7 +495,7 @@ void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, co
         current = stack[stack.size() - 2].scope;
     }
 
-    LocalDefinition def{GetNodeText(capture.node, sourceCode), capture.definitionKind,
+    LocalDefinition def{GetNodeText(capture.node, sourceCode), defKind,
                         SourceRange{startPt.row, startPt.column, endPt.row, endPt.column}};
     def.fullStartLine = startPt.row;
     def.fullStartCharacter = startPt.column;
@@ -349,15 +503,13 @@ void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, co
     def.fullEndCharacter = endPt.column;
     def.startByte = capture.startByte;
     def.endByte = capture.endByte;
-    def.visibleFromByte = (capture.definitionKind == LocalDefinitionKind::Variable) ? defStartByte : 0;
+    def.visibleFromByte = CalculateVisibleFromByte(defKind, current->kind, defStartByte);
 
-    if (capture.definitionKind == LocalDefinitionKind::Variable ||
-        capture.definitionKind == LocalDefinitionKind::Parameter ||
-        capture.definitionKind == LocalDefinitionKind::Field)
+    if (defKind == LocalDefinitionKind::Variable || defKind == LocalDefinitionKind::Parameter ||
+        defKind == LocalDefinitionKind::Field)
     {
         ReadVariableTypeInfo(capture, sourceCode, def);
-        if ((capture.definitionKind == LocalDefinitionKind::Variable ||
-             capture.definitionKind == LocalDefinitionKind::Field) &&
+        if ((defKind == LocalDefinitionKind::Variable || defKind == LocalDefinitionKind::Field) &&
             IsDisallowedVariableType(def.typeName))
         {
             return;
@@ -698,7 +850,7 @@ std::unique_ptr<Scope> LocalScopeCollector::BuildScopeTree(std::vector<RawCaptur
 
         if (capture.kind == CaptureKind::Scope)
         {
-            ProcessScopeCapture(capture, stack, root);
+            ProcessScopeCapture(capture, stack, root, sourceCode);
             continue;
         }
 
@@ -995,6 +1147,32 @@ void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, 
     def.hasNullInitializer = IsNullInitializer(valueNode);
 }
 
+/**
+ * @brief Reads variable type info from an empty-parentheses func declaration.
+ * @param funcNode Function AST node.
+ * @param sourceCode Source text.
+ * @param def Local definition to populate.
+ */
+void LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const std::string& sourceCode,
+                                                         LocalDefinition& def) const
+{
+    TSPoint rStart = ts_node_start_point(funcNode);
+    TSPoint rEnd = ts_node_end_point(funcNode);
+    def.fullStartLine = rStart.row;
+    def.fullStartCharacter = rStart.column;
+    def.fullEndLine = rEnd.row;
+    def.fullEndCharacter = rEnd.column;
+    TSNode typeNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldReturnType);
+    if (!ts_node_is_null(typeNode))
+    {
+        TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
+        def.isHandleType = typeInfo.isHandle;
+        def.typeKind = typeInfo.kind;
+        def.typeName = GetNodeText(typeNode, sourceCode);
+        PopulateTypeRanges(typeNode, sourceCode, def);
+    }
+}
+
 void LocalScopeCollector::ReadVariableTypeInfo(const RawCapture& capture, const std::string& sourceCode,
                                                LocalDefinition& def) const
 {
@@ -1006,6 +1184,11 @@ void LocalScopeCollector::ReadVariableTypeInfo(const RawCapture& capture, const 
     if (ts_node_is_null(declaratorNode))
         return;
 
+    if (ts_node_symbol(declaratorNode) == m_gs.symFuncDeclaration)
+    {
+        ReadEmptyParenVariableTypeInfo(declaratorNode, sourceCode, def);
+        return;
+    }
     if (ts_node_symbol(declaratorNode) == m_gs.symParameter)
     {
         ReadParameterTypeInfo(declaratorNode, sourceCode, def);

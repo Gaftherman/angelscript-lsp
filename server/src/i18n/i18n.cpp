@@ -461,6 +461,7 @@ void PopulateEnglishActionMessages(MessageMap& m_messages)
     m_messages["action-remove-primitive-handle"] = "Remove '@' - primitive type cannot have a handle";
     m_messages["action-call-explicitly"] = "Call {}() explicitly";
     m_messages["action-add-const-qualifier"] = "Add 'const' qualifier to method";
+    m_messages["action-add-const-variable-qualifier"] = "Add 'const' qualifier";
     m_messages["action-extract-method"] = "Extract Method";
     m_messages["action-extract-variable"] = "Extract Variable";
     m_messages["action-did-you-mean"] = "Did you mean '{}'?";
@@ -922,6 +923,7 @@ void PopulateSpanishActionMessages(MessageMap& m_messages)
     m_messages["action-remove-primitive-handle"] = "Eliminar '@' - un tipo primitivo no admite manejador";
     m_messages["action-call-explicitly"] = "Llamar a {}() explícitamente";
     m_messages["action-add-const-qualifier"] = "Añadir calificador 'const' al método";
+    m_messages["action-add-const-variable-qualifier"] = "Añadir calificador 'const'";
     m_messages["action-extract-method"] = "Extraer método";
     m_messages["action-extract-variable"] = "Extraer variable";
     m_messages["action-did-you-mean"] = "¿Quiso decir '{}'?";

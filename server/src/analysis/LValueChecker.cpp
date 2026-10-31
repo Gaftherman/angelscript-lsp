@@ -291,7 +291,7 @@ bool IsAssignableMember(TSNode node, const Scope* scope, const DiagnosticContext
                 for (const auto& ancestor :
                      GetInheritedTypeHierarchy(cleanObj, ctx.request.symbolTable, ctx.request.exprCache))
                 {
-                    auto setters = ctx.request.symbolTable.FindSymbolsPtr(ancestor + "::set_" + memName);
+                    auto setters = ctx.request.symbolTable.FindMemberSymbolPtr(ancestor, "set_" + memName);
                     if (setters && !setters->empty())
                     {
                         hasSetter = true;

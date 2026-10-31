@@ -92,5 +92,20 @@
   "Added \"{0}\" to predefined files.": "Added \"{0}\" to predefined files.",
   "Created starter \"{0}\".": "Created starter \"{0}\".",
   "No engine rules file found in workspace.": "No engine rules file found in workspace.",
-  "AngelScript Debugger connection error: {0}": "AngelScript Debugger connection error: {0}"
+  "AngelScript Debugger connection error: {0}": "AngelScript Debugger connection error: {0}",
+  "AngelScript Active Module": "AngelScript Active Module",
+  "Switch Active Module": "Switch Active Module",
+  "No modules configured": "No modules configured",
+  "Configure angelscript.modules to isolate project modules": "Configure angelscript.modules to isolate project modules",
+  "Active Module: {0} (Isolated) | Click to switch": "Active Module: {0} (Isolated) | Click to switch",
+  "All Modules ({0})": "All Modules ({0})",
+  "{0} active modules | Click to isolate or switch": "{0} active modules | Click to isolate or switch",
+  "Modules: {0}": "Modules: {0}",
+  "Click to switch active module": "Click to switch active module",
+  "No modules are configured in angelscript.modules. Use Explorer context menu or settings to define modules.": "No modules are configured in angelscript.modules. Use Explorer context menu or settings to define modules.",
+  "All Modules": "All Modules",
+  "Activate all {0} workspace modules": "Activate all {0} workspace modules",
+  "Select an AngelScript module to isolate, or activate all modules": "Select an AngelScript module to isolate, or activate all modules",
+  "Activated all workspace modules.": "Activated all workspace modules.",
+  "Isolated active module: {0}": "Isolated active module: {0}"
 }

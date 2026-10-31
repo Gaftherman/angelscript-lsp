@@ -1,4 +1,4 @@
-﻿#include "analysis/SymbolCollector.h"
+#include "analysis/SymbolCollector.h"
 #include "analysis/DeclarationRecovery.h"
 #include "analysis/DocComment.h"
 #include "analysis/SemanticHelpers.h"
@@ -946,6 +946,99 @@ std::string SymbolCollector::ExtractOriginModule(TSNode funcNode, std::string_vi
     return "";
 }
 
+void SymbolCollector::ProcessEmptyParenVariable(TSNode funcNode, SymbolCollectContext& sCtx,
+                                                const CollectionContext& ctx)
+{
+    TSNode nameNode = GetChildByFieldId(funcNode, m_gs.fieldName);
+    TSNode typeNode = GetChildByFieldId(funcNode, m_gs.fieldReturnType);
+    TypeExtractionResult retInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
+    SymbolModifiers modifiers = ExtractModifiers(funcNode, sCtx.request.sourceCode);
+
+    SymbolLocationContext loc{sCtx, ctx.containerPath, ctx.containerKind};
+    Symbol sym = CreateSymbol(SymbolType::Variable, funcNode, nameNode, loc);
+
+    VariableSignature varSig;
+    varSig.typeName = GetNodeText(typeNode, sCtx.request.sourceCode);
+    varSig.baseTypeName = retInfo.baseTypeName;
+    varSig.templateName = retInfo.templateName;
+    for (const auto& tArg : retInfo.templateArguments)
+    {
+        varSig.templateArgumentTypes.push_back(tArg.baseTypeName);
+    }
+    varSig.typeKind = retInfo.kind;
+    varSig.isArray = retInfo.isArray;
+    varSig.hasPrimitiveHandle = retInfo.hasPrimitiveHandle;
+    varSig.arrayDepth = retInfo.arrayDepth;
+    varSig.modifiers = modifiers;
+    if (retInfo.isConst)
+    {
+        varSig.modifiers.isConst = true;
+    }
+    varSig.hasCallInitializer = true;
+    varSig.hasSemicolon = true;
+
+    sym.signature = std::move(varSig);
+    sCtx.collectedSymbols.push_back(std::move(sym));
+
+    if (!ts_node_is_null(typeNode))
+    {
+        CallReferenceSignature callSig;
+        callSig.calleeName = GetNodeText(typeNode, sCtx.request.sourceCode);
+        Symbol callSym = CreateSymbol(SymbolType::CallReference, typeNode, typeNode, loc);
+        callSym.signature = std::move(callSig);
+        sCtx.collectedSymbols.push_back(std::move(callSym));
+    }
+}
+
+static bool HasDisqualifyingModifiers(const SymbolModifiers& modifiers)
+{
+    return modifiers.isExternal || modifiers.isAbstract || modifiers.isOverride || modifiers.isFinal ||
+           modifiers.isDelete || modifiers.isConst || modifiers.isReturnReference || modifiers.isHandle;
+}
+
+static bool IsDisqualifyingReturnType(const TypeExtractionResult& retInfo, std::string_view typeText)
+{
+    return retInfo.baseTypeName == "void" || typeText == "void" || retInfo.isReference || retInfo.isHandle;
+}
+
+bool SymbolCollector::TryProcessEmptyParenVariable(TSNode funcNode, const SymbolModifiers& modifiers,
+                                                   SymbolCollectContext& sCtx, const CollectionContext& ctx)
+{
+    if (ctx.containerKind != ContainerKind::Class || sCtx.isPredefined)
+    {
+        return false;
+    }
+    TSNode bodyNode = FindFunctionBody(funcNode);
+    if (!ts_node_is_null(bodyNode))
+    {
+        return false;
+    }
+    const TSSymbol sym = ts_node_symbol(funcNode);
+    if (sym == m_gs.symInterfaceMethod || sym == m_gs.symImportDeclaration || HasDisqualifyingModifiers(modifiers))
+    {
+        return false;
+    }
+    TSNode paramsNode = GetChildByFieldId(funcNode, m_gs.fieldParameters);
+    if (!ts_node_is_null(paramsNode) && ts_node_named_child_count(paramsNode) > 0)
+    {
+        return false;
+    }
+    TSNode nameNode = GetChildByFieldId(funcNode, m_gs.fieldName);
+    const std::string nameText = GetNodeText(nameNode, sCtx.request.sourceCode);
+    if (nameText == ctx.containerPath || nameText.starts_with('~'))
+    {
+        return false;
+    }
+    TSNode typeNode = GetChildByFieldId(funcNode, m_gs.fieldReturnType);
+    TypeExtractionResult retInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
+    if (IsDisqualifyingReturnType(retInfo, GetNodeText(typeNode, sCtx.request.sourceCode)))
+    {
+        return false;
+    }
+    ProcessEmptyParenVariable(funcNode, sCtx, ctx);
+    return true;
+}
+
 void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
     TSNode nameNode = GetChildByFieldId(funcNode, m_gs.fieldName);
@@ -957,7 +1050,14 @@ void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCt
     SymbolModifiers modifiers = ExtractModifiers(funcNode, sCtx.request.sourceCode);
 
     if (IsExternalFunction(funcNode, sCtx.request.sourceCode))
+    {
         modifiers.isExternal = true;
+    }
+
+    if (TryProcessEmptyParenVariable(funcNode, modifiers, sCtx, ctx))
+    {
+        return;
+    }
 
     modifiers.isHandle = retInfo.isHandle || modifiers.isHandle;
     modifiers.isReturnReference = retInfo.isReference || modifiers.isReturnReference;

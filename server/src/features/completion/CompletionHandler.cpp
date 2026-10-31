@@ -1475,6 +1475,48 @@ static bool ShouldCompleteParens(const CompletionCollector& collector)
     return configEnabled && !HasTrailingOpenParen(collector.request.sourceCode, collector.request.position);
 }
 
+std::string FindEnclosingClassName(const CompletionRequest& request);
+
+/**
+ * @brief Checks if a member symbol is accessible in completion from the cursor context.
+ * @param[in] sym Target member symbol.
+ * @param[in] typeName Container type name.
+ * @param[in] collector Completion collector context.
+ * @return True if accessible, false if restricted by private/protected visibility.
+ */
+static bool IsMemberAccessibleForCompletion(const analysis::Symbol& sym, const std::string& typeName,
+                                            const CompletionCollector& collector)
+{
+    analysis::AccessModifier access = analysis::AccessModifier::Public;
+    if (sym.type == analysis::SymbolType::Function)
+    {
+        access = sym.GetFunction().modifiers.access;
+    }
+    else if (sym.type == analysis::SymbolType::Variable)
+    {
+        access = sym.GetVariable().modifiers.access;
+    }
+    if (access == analysis::AccessModifier::Public)
+    {
+        return true;
+    }
+    const std::string enclosingClass = FindEnclosingClassName(collector.request);
+    if (enclosingClass.empty())
+    {
+        return false;
+    }
+    if (enclosingClass == typeName || enclosingClass == sym.containerName)
+    {
+        return true;
+    }
+    if (access == analysis::AccessModifier::Protected)
+    {
+        return analysis::IsDerivedFrom(enclosingClass, sym.containerName, collector.request.symbolTable) ||
+               analysis::IsDerivedFrom(enclosingClass, typeName, collector.request.symbolTable);
+    }
+    return false;
+}
+
 /**
  * @brief Converts a member symbol into a completion candidate item.
  * @param[in] sym Target member symbol.
@@ -1485,6 +1527,11 @@ static bool ShouldCompleteParens(const CompletionCollector& collector)
 void PopulateMemberSymbolCandidate(const analysis::Symbol& sym, const std::string& typeName,
                                    const MemberTemplateContext& tCtx, CompletionCollector& collector)
 {
+    if (!IsMemberAccessibleForCompletion(sym, typeName, collector))
+    {
+        return;
+    }
+
     lsp::CompletionItemKind kind = lsp::CompletionItemKind::Field;
     std::string detail;
     std::string snippet;

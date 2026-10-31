@@ -1481,6 +1481,22 @@ std::string ResolveBaseClass(std::string_view className, const SymbolTable& symb
     return "";
 }
 
+bool IsDerivedFrom(std::string_view derivedClass, std::string_view baseClass, const SymbolTable& symbolTable)
+{
+    if (derivedClass == baseClass || IsSameType(std::string(derivedClass), std::string(baseClass)))
+    {
+        return true;
+    }
+    for (const auto& ancestor : GetInheritedTypeHierarchy(std::string(derivedClass), symbolTable))
+    {
+        if (ancestor == baseClass || IsSameType(ancestor, std::string(baseClass)))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 void ExtractTypesFromMemberSymbols(const std::vector<Symbol>& syms, std::string_view className,
                                    std::vector<std::string>& result)
 {

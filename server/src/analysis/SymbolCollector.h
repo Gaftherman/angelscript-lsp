@@ -326,6 +326,9 @@ class SymbolCollector
     void ApplyFuncAttributeTokens(TSNode attrNode, bool isGet, bool isSet, VariableSignature& varSig) const;
 
     void ProcessFunction(TSNode funcNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
+    void ProcessEmptyParenVariable(TSNode funcNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
+    bool TryProcessEmptyParenVariable(TSNode funcNode, const SymbolModifiers& modifiers, SymbolCollectContext& sCtx,
+                                      const CollectionContext& ctx);
     TSNode FindFunctionBody(TSNode funcNode) const;
     bool IsExternalFunction(TSNode funcNode, std::string_view sourceCode) const;
     std::string ExtractOriginModule(TSNode funcNode, std::string_view sourceCode) const;

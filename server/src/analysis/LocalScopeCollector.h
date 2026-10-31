@@ -128,8 +128,8 @@ class LocalScopeCollector
      * @param[in,out] stack Open scope tracking stack.
      * @param[in,out] root Root scope pointer.
      */
-    void ProcessScopeCapture(const RawCapture& capture, std::vector<OpenScope>& stack,
-                             std::unique_ptr<Scope>& root) const;
+    void ProcessScopeCapture(const RawCapture& capture, std::vector<OpenScope>& stack, std::unique_ptr<Scope>& root,
+                             const std::string& sourceCode) const;
 
     /**
      * @brief Processes a definition capture node.
@@ -257,6 +257,14 @@ class LocalScopeCollector
      * @param[out] def LocalDefinition receiving type info.
      */
     void ReadVirtualPropertyTypeInfo(TSNode propertyNode, const std::string& sourceCode, LocalDefinition& def) const;
+
+    /**
+     * @brief Reads declared type information for an empty-parentheses func declaration.
+     * @param funcNode Function AST node.
+     * @param sourceCode Source text of the document.
+     * @param[out] def LocalDefinition receiving type info.
+     */
+    void ReadEmptyParenVariableTypeInfo(TSNode funcNode, const std::string& sourceCode, LocalDefinition& def) const;
 
     /**
      * @brief Populates type span coordinates and template argument positions.

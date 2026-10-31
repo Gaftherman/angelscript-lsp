@@ -93,6 +93,11 @@ constexpr uint64_t PositionKey(uint32_t line, uint32_t character)
 void CollectReferenceKinds(const analysis::Scope* scope,
                            ankerl::unordered_dense::map<uint64_t, analysis::LocalDefinitionKind>& out)
 {
+    for (const auto& def : scope->definitions)
+    {
+        out[PositionKey(def.startLine, def.startCharacter)] = def.kind;
+    }
+
     for (const auto& ref : scope->references)
     {
         if (ref.isMemberAccess)
@@ -987,7 +992,8 @@ uint32_t MatchAgreedSymbolType(analysis::SymbolType agreedType, uint32_t tokenTy
     {
         return Type_Method;
     }
-    if (agreedType == analysis::SymbolType::Variable && tokenType == Type_Variable)
+    if (agreedType == analysis::SymbolType::Variable &&
+        (tokenType == Type_Variable || tokenType == Type_Function || tokenType == Type_Method))
     {
         return MatchAgreedVariableToken(isEnumConstant, hasContainer);
     }
@@ -1104,6 +1110,8 @@ ResolveReferenceTokenType(TSPoint point,
     }
     switch (resolved->second)
     {
+    case analysis::LocalDefinitionKind::Variable:
+        return Type_Variable;
     case analysis::LocalDefinitionKind::Parameter:
         return Type_Parameter;
     case analysis::LocalDefinitionKind::Field:
