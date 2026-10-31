@@ -1,6 +1,6 @@
 {
   "project": "angelscript-lsp",
-  "currentPhase": "PHASE_49_V1_1_6_STABLE_RELEASE",
+  "currentPhase": "PHASE_50_V1_1_7_STABLE_RELEASE",
   "status": "COMPLETED",
   "baselineMetrics": {
     "largeScript3000ParseAndAnalysisMs": 25.12,
@@ -1435,6 +1435,55 @@
         "Verified full test suite (2,567 unit tests, 35,000+ assertions passing), 12/12 static quality gates passing, and 74/74 client integration tests passing.",
         "Merged develop branch into main, pushed main, and published annotated git tag v1.1.6 with official release notes."
       ]
+    },
+    {
+      "id": "PHASE_50",
+      "name": "Official v1.1.7 Stable Release: Empty-Paren Variables, Workspace Module Isolation & UI Status, GitHub Issues (#3, #4, #7, #8, #9) & Unified Feature Harness",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "CHANGELOG.md",
+        "client/package.json",
+        "client/package-lock.json",
+        "client/CHANGELOG.md",
+        "client/src/extension.ts",
+        "client/l10n/bundle.l10n.json",
+        "client/l10n/bundle.l10n.es.json",
+        "docs/STEPS.md",
+        "docs/STEPS.json",
+        "server/src/analysis/AccessChecker.cpp",
+        "server/src/analysis/CallChecker.cpp",
+        "server/src/analysis/LocalScopeCollector.cpp",
+        "server/src/analysis/LocalScopeCollector.h",
+        "server/src/analysis/LValueChecker.cpp",
+        "server/src/analysis/SemanticHelpers.cpp",
+        "server/src/analysis/SemanticHelpers.h",
+        "server/src/analysis/SymbolCollector.cpp",
+        "server/src/analysis/SymbolCollector.h",
+        "server/src/analysis/TypeConversionChecker.cpp",
+        "server/src/features/code_action/CodeActionConstQualifier.cpp",
+        "server/src/features/completion/CompletionHandler.cpp",
+        "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
+        "server/src/i18n/i18n.cpp",
+        "server/src/lsp/ServerAnalysis.cpp",
+        "server/src/lsp/ServerModules.cpp",
+        "server/src/lsp/handlers/WorkspaceHandlers.cpp",
+        "server/tests/EmptyParenAndTelemetryParityTest.cpp",
+        "server/tests/GitHubIssuesOracleParityTest.cpp",
+        "server/tests/helpers/UnifiedFeatureAuditHarness.cpp",
+        "server/tests/helpers/UnifiedFeatureAuditHarness.h"
+      ],
+      "findings": [
+        "Supported empty-parentheses variable declarations (Type var();) across global, namespace, class, and local scopes, distinguishing default constructor variables from bodyless function prototypes in SymbolCollector and LocalScopeCollector.",
+        "Bounded background workspace analysis and diagnostics publishing to active module #include closures when angelscript.modules is configured, automatically withdrawing stale diagnostics for files outside active partitions via WithdrawStaleModuleDiagnostics.",
+        "Added interactive VS Code Status Bar Item and LanguageStatusItem for the active module with QuickPick menu supporting active module switching, full workspace selection, and manual workspace rescan, with 1:1 bilingual English/Spanish localization parity.",
+        "Resolved GitHub Issue #3: Private members in completion filtered out for non-defining classes and derived classes; protected members suggested strictly within class inheritance hierarchies (IsDerivedFrom).",
+        "Resolved GitHub Issue #4: Equalized ranking tiers for competing list-constructible types (array vs dictionary) on initializer list arguments, emitting as-err-call-ambiguous (E118) with compiler oracle parity.",
+        "Resolved GitHub Issue #7: Flagged const handle to mutable handle conversions (const A@ to A@) with as-err-no-implicit-conversion across variable declarations, assignments, and call returns, providing an automated 'Add const qualifier' Quick Fix. Flagged passing null to value references (A&in) with as-err-call-no-matching-signature (E119).",
+        "Resolved GitHub Issues #8 and #9: Permitted private member access via this inside mixin class declarations without false E113 diagnostics; resolved virtual property setters (set_b) across inheritance hierarchies when derived classes override get_b(), allowing property assignment this.b = false;.",
+        "Created UnifiedFeatureAuditHarness providing 3-way verification (Good, Bad, Boundary) with dynamic randomized symbol generation (GenerateRandomSymbolName()) and strict latency telemetry budgets (Hover <= 1.0ms, Completion <= 5.0ms, Definition/References <= 5.0ms, Code Actions <= 5.0ms, Semantic Tokens <= 20.0ms, Module Analysis <= 100ms).",
+        "Verified full test suite (2,608 unit tests, 35,000+ assertions passing), 12/12 static quality gates passing, and 74/74 client integration tests passing.",
+        "Merged develop branch into main, pushed main, and published annotated git tag v1.1.7 with official release notes."
+      ]
     }
   ],
   "identifiedGaps": [
@@ -1511,9 +1560,9 @@
     "GAP-I18N-01: Hardcoded English text in HoverHandler.cpp for unresolved includes, primitive types, typedefs, and named arguments. (RESOLVED in Phase 44 with i18n::FormatMessage and 100% EN/ES dictionary parity)."
   ],
   "nextActions": [
-    "Official v1.1.6 stable release completed and published."
+    "Official v1.1.7 stable release completed and published."
   ],
-  "lastMilestone": "Phase 49 completed: official v1.1.6 stable release merged to main with 2,567 unit tests passing, all 12 quality gates passing, and 100% release compare links synchronized.",
+  "lastMilestone": "Phase 50 completed: official v1.1.7 stable release merged to main with 2,608 unit tests passing, all 12 quality gates passing, sub-100ms module analysis, sub-1.0ms warm hover, sub-5.0ms completion/definition/references/code actions, sub-20ms semantic tokens, 0 clones, and 100% release compare links synchronized.",
   "gaps": [
     "GAP-AST-01: False-positive W108 on synthetic properties and member variables in deep block structures due to low max climb depth. (RESOLVED in Phase 45 with k_maxAstClimbDepth = 256 and include closure expansion).",
     "GAP-PERF-08: Ad-hoc depth < 64 loops and full-text searches in isolation checking. (RESOLVED in Phase 46 with NodeIndex binary intervals, ASTUtils centralized climbs, and O(1) token isolation checks).",
@@ -1521,6 +1570,14 @@
     "GAP-RESOLV-01: Hardcoded keywords (self, BaseClass) and const-laundering bypassing generic symbol lookup. (RESOLVED in Phase 48 with generic mixin host hierarchies, dynamic delegate properties from EngineRuleConfig, and check-ast-traversal ban).",
     "GAP-INLAY-02: Duplicate hover tooltips rendered on inlay hints when location is resolved. (RESOLVED in Phase 48 by omitting part.tooltip when part.location has value).",
     "GAP-ENUM-02: Homonymous enum members across different namespaces colliding in definition and references. (RESOLVED in Phase 48 with strict containerName and namespace isolation).",
-    "GAP-REL-01: GitHub Releases missing Full Changelog compare links on GitHub. (RESOLVED in Phase 49 with sync-github-releases and extract-release-notes compare link automation and backfill)."
+    "GAP-REL-01: GitHub Releases missing Full Changelog compare links on GitHub. (RESOLVED in Phase 49 with sync-github-releases and extract-release-notes compare link automation and backfill).",
+    "GAP-VAR-01: Empty-parentheses variable declarations (Type var();) registered as bodyless function prototypes. (RESOLVED in Phase 50 with SymbolCollector and LocalScopeCollector disambiguation).",
+    "GAP-MODULE-01: Background analysis and diagnostics leaking across unconfigured workspace scripts when angelscript.modules is defined. (RESOLVED in Phase 50 with ServerAnalysis claim bounding and WithdrawStaleModuleDiagnostics).",
+    "GAP-UI-01: Missing active module visual indicator and module switching action in VS Code client. (RESOLVED in Phase 50 with LanguageStatusItem, status bar item, and switchActiveModule QuickPick).",
+    "GAP-ISSUE-03: Private and protected members suggested in completion outside their valid access scopes. (RESOLVED in Phase 50 with IsMemberAccessibleForCompletion).",
+    "GAP-ISSUE-04: Initializer list argument passing to overloaded functions selecting arbitrary candidate instead of flagging ambiguity E118. (RESOLVED in Phase 50 with equal user-defined ranking tiers in ConversionRankingEngine).",
+    "GAP-ISSUE-07: Const handle to mutable handle initialization unflagged and passing null to A&in failing with incorrect error. (RESOLVED in Phase 50 with CheckHandleConstAssignment, CodeActionConstQualifier, and CallChecker E119).",
+    "GAP-ISSUE-08: Accessing private members via this inside mixin class emitting false E113. (RESOLVED in Phase 50 with AccessChecker mixin container matching).",
+    "GAP-ISSUE-09: Overridden property getter in derived class blocking access to inherited property setter. (RESOLVED in Phase 50 with TypeConversionChecker and LValueChecker inheritance traversal)."
   ]
 }

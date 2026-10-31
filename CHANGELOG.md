@@ -2,6 +2,44 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.7] - 2026-10-31
+
+### Official 1.1.7 Release: Empty-Parentheses Variables, Workspace Module Isolation & UI Status, GitHub Issues (#3, #4, #7, #8, #9) & Unified Feature Parity Harness
+
+- Empty-Parentheses Variable Declarations (`Type var();`) (`SymbolCollector.cpp`, `LocalScopeCollector.cpp`, `SemanticTokensHandler.cpp`):
+  - Supported empty-parentheses variable declarations initialized via default constructor across class members (`class Logger { ASErrorLogger error(); }`), global variables, namespace variables, and local variables in function bodies (`void main() { A a(); }`).
+  - Disambiguated `gs.symFunctionDeclaration` nodes without bodies in AST traversal, registering them as `SymbolType::Variable` with `VariableSignature` rather than phantom function prototypes.
+  - Corrected semantic tokens classification to highlight empty-parentheses declarations as variables/properties instead of functions.
+- Workspace Module Isolation & Interactive Module UI (`ServerAnalysis.cpp`, `ServerModules.cpp`, `WorkspaceHandlers.cpp`, `extension.ts`):
+  - When `angelscript.modules` is configured, semantic analysis and diagnostic publication are strictly restricted to scripts within the active module's `#include` closure.
+  - Automatically suppresses diagnostics for scripts outside the active module partition and withdraws stale diagnostics upon configuration updates or active module switches via `WithdrawStaleModuleDiagnostics`.
+  - Added an interactive VS Code Status Bar Item and `LanguageStatusItem` showing the active module with QuickPick menu support for switching active modules, selecting "All Modules / Workspace", or triggering a manual workspace rescan.
+  - 100% synchronized bilingual localization strings across English (`bundle.l10n.json`) and Spanish (`bundle.l10n.es.json`).
+- GitHub Issue #3 Resolution: Private & Protected Member Autocompletion Filtering (`CompletionHandler.cpp`):
+  - Enforced strict member visibility checking in `IsMemberAccessibleForCompletion`: private members are suggested only when the cursor resides within the exact defining class (or applied mixin).
+  - Protected members are filtered out for external callers and free functions like `main()`, only appearing when the calling context inherits from the defining class (`IsDerivedFrom`).
+- GitHub Issue #4 Resolution: Initializer List `{ ... }` Overload Ambiguity (E118) (`CallChecker.cpp`, `ConversionRankingEngine.cpp`):
+  - Ranked initializer list arguments (`gs.symInitializerList` or `"init_list"`) equally across competing list-constructible parameter overloads (e.g. `array` vs `dictionary`).
+  - Correctly emits `as-err-call-ambiguous` (E118) in parity with native `angelscript_oracle.exe`.
+- GitHub Issue #7 Resolution: Const Handle Assignment Diagnostics, Quick Fix & `null` on `A&in` (`TypeConversionChecker.cpp`, `CodeActionConstQualifier.cpp`, `CallChecker.cpp`):
+  - Detected and diagnosed implicit conversions from `const A@` to mutable `A@` across variable initializers, assignment expressions, and function call returns with `as-err-no-implicit-conversion`.
+  - Added an automated Quick Fix code action ("Add 'const' qualifier" / "Añadir calificador 'const'") via `CodeActionConstQualifier.cpp`.
+  - Fixed passing `<null handle>` to non-handle value references (`A&in`), emitting `as-err-call-no-matching-signature` (E119) with compiler parity.
+- GitHub Issues #8 & #9 Resolution: Mixin Private Access (E113) & Overridden Virtual Properties (E230) (`AccessChecker.cpp`, `TypeConversionChecker.cpp`, `LValueChecker.cpp`):
+  - Enabled unrestricted access to private members declared in `mixin class A` via `this.` inside `A` without emitting false `as-err-private-member-access` (E113).
+  - Resolved virtual property setters (`set_b`) through inheritance hierarchy traversal when a derived class overrides only `get_b()`, allowing property assignment `this.b = false;`.
+- Unified Feature Parity & Telemetry Harness (`UnifiedFeatureAuditHarness.h/.cpp`, `GitHubIssuesOracleParityTest.cpp`, `EmptyParenAndTelemetryParityTest.cpp`):
+  - Created a unified audit harness providing automated 3-way verification (Good, Bad, Boundary paths) with randomized symbol generation (`GenerateRandomSymbolName()`).
+  - Implemented strict performance and latency telemetry assertions: Hover $\le 1.0\text{ ms}$, Completion $\le 5.0\text{ ms}$, Definition/References $\le 5.0\text{ ms}$, Code Actions $\le 5.0\text{ ms}$, Semantic Tokens $\le 20.0\text{ ms}$, Module Analysis $\le 100\text{ ms}$.
+- Verification & Test Coverage:
+  - 100% of 2,608 CTest test cases passing in Release mode under `/W4 /WX /we4100 /permissive-`.
+  - 12/12 active static quality gates passing with 0 warnings (`check-quality.py`).
+  - 74/74 VS Code client extension integration tests passing.
+
+---
+**Full Changelog**: https://github.com/Gaftherman/angelscript-lsp/compare/v1.1.6...v1.1.7
+
+
 ## [1.1.6] - 2026-10-31
 
 ### Official 1.1.6 Release: 100% AST-First Architecture, Sub-30ms Incremental Analysis, Generic Mixin Host Context & Delegate Properties, Isolated Enum Navigation & Compiler-Grade Stability
