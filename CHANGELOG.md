@@ -2,6 +2,37 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.6-exp.7] - 2026-10-30
+
+### Experimental Release 1.1.6-exp.7: ForEachDescendantNode Eradication, RuleIndex Incrementalization, Sub-30ms Analysis & Predefined Navigation Hardening
+
+- Complete Eradication of `ForEachDescendantNode` & AST Traversal Gate Enforcement (`ClassRules.cpp`, `CodeActionExtractMethodOutputs.cpp`, `ASTUtils.h`, `check-ast-traversal.py`):
+  - Cached an owned `NodeIndex` inside `MixinFileCacheEntry` on initial parse, converting full AST walks in `CollectLocalNames` and `CheckFuncBodyStatements` into bounded $O(\log K)$ searches via `std::lower_bound` over pre-indexed nodes using `std::string_view` with zero heap allocations.
+  - Replaced descendant searches in `CodeActionExtractMethodOutputs` with direct child AST inspection.
+  - Completely deleted `ForEachDescendantNode` from `parser/ASTUtils.h` and instituted a repository-wide prohibition in `server/scripts/check-ast-traversal.py`.
+- Analysis Performance Hardening & Sub-30ms Incremental Rule Indexing (`SymbolTable.cpp`, `ServerAnalysis.cpp`, `Server.h`, `SemanticAnalyzer.cpp`):
+  - Incrementalized `RuleIndex`: analysis snapshots now clone the pre-built `.as.predefined` index and incrementally apply cached `RuleIndexPartial`s, cutting `EnsureRuleIndex()` execution time from ~75 ms to under 0.5 ms.
+  - Corrected `AnalysisTimingProfile` field mapping via designated initializers so checker execution times are accurately reported instead of displaying `0.00 ms`.
+  - Added dedicated profiling for module closure indexing (`closureMs`) and decomposed `AnalyzeNormalDocument` into `PrepareWorkerDocument`, `AnalyzeWorkerSemantics`, and `LogAnalysisProfileAndClosure` (CCN $\le 8$, NLOC $\le 55$).
+  - Shared a single `ExpressionTypeCache` across all semantic checkers (`CallChecker`, `BinaryOperatorChecker`, `ComparisonOperatorChecker`, `LValueChecker`, `ConstChecker`, `TypeConversionChecker`).
+  - Persisted `m_workerMixinCache` and `m_serverMixinCache` across analysis requests with thread-safe lock-free cache invalidation via atomic exchange.
+- Inlay Hints Parameter Signature Tooltip & Ctrl+Click Navigation (`InlayHintHandler.cpp`, `InlayHintTest.cpp`):
+  - Ensured `part.tooltip` unconditionally formats parameter type and name in an AngelScript markdown code block (`(parameter) Type name`), eliminating redundant "Go to Definition" tooltip overwrites.
+  - Normalized target URIs in `ResolveParameterLocation` to match canonical `DefinitionHandler` paths and added fallback to `ctx.callee.selectionRange` for predefined symbols with zero-offset parameter locations.
+- Block Virtual Property Hover & Binary Condition Operand Resolution (`HoverHandler.cpp`, `SemanticHelpers.cpp`, `HoverTest.cpp`):
+  - Resolved `SymbolType::Property` declarations carrying `VariableSignature`, stripping handle (`@`) and `const` modifiers via `MemberOwnerType` to traverse nested member accesses (`m_pPlayer.IsOnLadder()`, `m_pPlayer.pev.flags`).
+  - Corrected child member expression matching inside nested binary condition trees (`||`, `&`, `==`), accurately resolving identifiers under cursor.
+  - Added randomized unit test coverage in `HoverTest.cpp` validating hover across all operands in complex compound conditions.
+- Predefined Document Editor Capabilities (`DocumentStore.cpp`, `TextDocumentSyncHandlers.cpp`, `ServerHarnessTest.cpp`):
+  - Preserved AST trees in `DocumentStore` during `LinkDocument` and `GetTree` via `ts_tree_copy` when `.as.predefined` stubs are opened.
+  - Parsed and indexed opened `.as.predefined` stubs so that `SemanticTokensHandler`, `HoverHandler`, and `CodeLensHandler` function immediately when viewed in editor tabs.
+  - Added integration harness test asserting valid Semantic Tokens and Hover responses on opened predefined stubs.
+- CI Workflow Infrastructure (`ci.yml`):
+  - Upgraded GitHub Actions macOS runners from deprecated `macos-14` to `macos-15`.
+- Verification & Test Coverage:
+  - 100% of 2,628 test assertions passing in Release mode under `/W4 /WX /we4100 /permissive-`.
+  - 12/12 active static quality gates passing with 0 warnings (`check-quality.py`).
+
 ## [1.1.6-exp.6] - 2026-10-30
 
 ### Experimental Release 1.1.6-exp.6: O(log K) Interval Lookups, AST Traversal Hardening, Qualified Enum Hover & Zero-Allocation Keyword Centralization
