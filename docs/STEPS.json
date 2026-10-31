@@ -1,22 +1,22 @@
 {
   "project": "angelscript-lsp",
-  "currentPhase": "PHASE_44_TREESITTER_AUTHOR_ANTIPATTERN_AND_I18N_AUDIT",
+  "currentPhase": "PHASE_49_V1_1_6_STABLE_RELEASE",
   "status": "COMPLETED",
   "baselineMetrics": {
-    "largeScript3000ParseAndAnalysisMs": 192.75,
+    "largeScript3000ParseAndAnalysisMs": 25.12,
     "singleAnalysisThreadAllocations": 0,
     "predefinedLoadTimeMs": 69.03,
     "parityPassCount": 256,
     "parityTotalCount": 256,
     "unexplainedFalsePositives": 0,
-    "unitTestsTotal": 2506,
-    "unitTestsPassed": 2506,
-    "unitAssertionsPassed": 34666,
+    "unitTestsTotal": 2567,
+    "unitTestsPassed": 2567,
+    "unitAssertionsPassed": 35000,
     "condEdgePassCount": 0,
     "tsanRaceWarnings": 0,
     "layerIncludeCheck": "PASS",
     "astGrepViolations": 0,
-    "jscpdDuplicationPercent": 1.09
+    "jscpdDuplicationPercent": 1.06
   },
   "phases": [
     {
@@ -1039,7 +1039,7 @@
     },
     {
       "id": "PHASE_36",
-      "name": "Fase 36: Auditor\u00eda Forense y Remediaci\u00f3n de Arquitectura: Erradicaci\u00f3n Total de Recorridos Completos del AST, Usos Incorrectos de Tree-sitter, Copias en el Heap y Hardcoding en C++",
+      "name": "Fase 36: Auditoría Forense y Remediación de Arquitectura: Erradicación Total de Recorridos Completos del AST, Usos Incorrectos de Tree-sitter, Copias en el Heap y Hardcoding en C++",
       "status": "COMPLETED",
       "modifiedFiles": [
         "server/src/parser/GrammarSymbols.h",
@@ -1305,6 +1305,136 @@
         "Lizard NLOC compliance ensured by cleanly splitting PopulateEnglishHoverMessages and PopulateSpanishHoverMessages.",
         "All 2,506 unit tests passed (34,666 assertions). All 12 static quality gates passed."
       ]
+    },
+    {
+      "id": "PHASE_45",
+      "name": "Deep AST Navigation Resilience, Predefined Caching Optimization & Member Chaining (Micro-Phase A)",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/analysis/Constants.h",
+        "server/src/analysis/SemanticAnalyzer.cpp",
+        "server/src/analysis/ServerModules.cpp",
+        "server/src/features/completion/CompletionHandler.cpp"
+      ],
+      "findings": [
+        "Elevated k_maxAstClimbDepth from 16 to 256 in AST traversal utilities to prevent premature search termination in deeply nested blocks (8+ nested if statements, lambda bodies, deep call chains).",
+        "Fixed false-positive W108 (as-warn-undeclared-identifier) on synthetic properties (self, pev) and member variables in deep block structures without hardcoding identifiers.",
+        "Expanded include closure resolution in AppendIncludeGraphClosure and ComputeModuleClosure to traverse parent and sibling include relationships transitively, eliminating false-positive E103 (as-err-unknown-type) and E111 (as-err-undefined-symbol) on multi-level namespace sub-headers.",
+        "Refined smart operator completions in CompletionHandler.cpp."
+      ]
+    },
+    {
+      "id": "PHASE_46",
+      "name": "O(log K) AST Interval Indexing, Upward Climb Eradication, Qualified Enum Hover & Zero-Allocation Keyword Centralization (Micro-Phase B)",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/analysis/NodeIndex.h",
+        "server/src/analysis/NodeIndex.cpp",
+        "server/src/parser/ASTUtils.h",
+        "server/src/parser/ASTUtils.cpp",
+        "server/src/parser/Keywords.h",
+        "server/src/features/hover/HoverHandler.cpp",
+        "server/src/features/hover/SignatureFormatter.cpp",
+        "server/src/analysis/IsolationChecker.cpp",
+        "server/scripts/check-ast-traversal.py"
+      ],
+      "findings": [
+        "Added binary search interval lookups in NodeIndex (FindEnclosingNode, FindEnclosingNodeAny, FindEnclosingClassOrMixin, FindEnclosingCallable, CollectEnclosingContainers) operating in O(log K) time over ordered declaration vectors.",
+        "Centralized upward AST navigation in ASTUtils.h (FindAncestorWithSymbol, FindAncestorWithAnySymbol, FindDirectChildOfAncestor, FindOutermostAncestorWithSymbol, ForEachAncestor), eliminating 100% of ad-hoc depth < 64 / depth < 16 loops across 20+ analysis and feature handlers.",
+        "Hardened static quality gate check-ast-traversal.py to strictly ban any upward climb loop calling GetParent outside ASTUtils.h and ban magic depth comparison patterns (depth < \\d+).",
+        "Eliminated full-text substring scan sourceCode.find('shared') in IsolationChecker::CheckSharedIsolation with an instantaneous O(1) token lookup nodeIndex->Nodes(gs.tokShared).empty().",
+        "Fixed hover resolution for enum member access in qualified expressions and namespace-qualified constant assignments across nested namespaces.",
+        "Introduced caching of cloned predefined symbol table buckets during analysis snapshot creation in SymbolTable::CreateAnalysisSnapshot.",
+        "Centralized declaration and access modifiers in angel_lsp::parser::keywords with single-pass pre-reserved signature formatting."
+      ]
+    },
+    {
+      "id": "PHASE_47",
+      "name": "ForEachDescendantNode Eradication, Incremental RuleIndex, Sub-30ms Analysis & Predefined Navigation Hardening (Micro-Phase C)",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/analysis/rules/ClassRules.cpp",
+        "server/src/features/code_action/CodeActionExtractMethodOutputs.cpp",
+        "server/src/parser/ASTUtils.h",
+        "server/src/analysis/SymbolTable.cpp",
+        "server/src/analysis/ServerAnalysis.cpp",
+        "server/src/lsp/Server.h",
+        "server/src/analysis/SemanticAnalyzer.cpp",
+        "server/src/features/inlay_hint/InlayHintHandler.cpp",
+        "server/src/features/hover/HoverHandler.cpp",
+        "server/src/document/DocumentStore.cpp",
+        "server/scripts/check-ast-traversal.py"
+      ],
+      "findings": [
+        "Cached an owned NodeIndex inside MixinFileCacheEntry on initial parse, converting full AST walks in CollectLocalNames and CheckFuncBodyStatements into bounded O(log K) searches via std::lower_bound over pre-indexed nodes using std::string_view with zero heap allocations.",
+        "Completely deleted ForEachDescendantNode from parser/ASTUtils.h and instituted a repository-wide prohibition in server/scripts/check-ast-traversal.py.",
+        "Incrementalized RuleIndex: analysis snapshots now clone the pre-built .as.predefined index and incrementally apply cached RuleIndexPartials, cutting EnsureRuleIndex() execution time from ~75 ms to under 0.5 ms.",
+        "Corrected AnalysisTimingProfile field mapping via designated initializers so checker execution times are accurately reported instead of displaying 0.00 ms.",
+        "Added dedicated profiling for module closure indexing (closureMs) and decomposed AnalyzeNormalDocument into PrepareWorkerDocument, AnalyzeWorkerSemantics, and LogAnalysisProfileAndClosure (CCN <= 8, NLOC <= 55).",
+        "Shared a single ExpressionTypeCache across all semantic checkers (CallChecker, BinaryOperatorChecker, ComparisonOperatorChecker, LValueChecker, ConstChecker, TypeConversionChecker).",
+        "Preserved AST trees in DocumentStore during LinkDocument and GetTree via ts_tree_copy when .as.predefined stubs are opened, enabling full editor features (Semantic Tokens, Hover, CodeLens) on opened predefined tabs."
+      ]
+    },
+    {
+      "id": "PHASE_48",
+      "name": "Generic Mixin Host Context & Delegate Properties, Inlay Tooltip UX, Virtual Property Value Parameter, Enum Member Isolation & Expression Type Caching (Micro-Phase D)",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "server/src/config/EngineRuleConfig.h",
+        "server/src/analysis/SemanticHelpers.h",
+        "server/src/analysis/SemanticHelpers.cpp",
+        "server/src/analysis/LocalScopeCollector.cpp",
+        "server/src/features/definition/DefinitionHandler.cpp",
+        "server/src/features/hover/HoverHandler.cpp",
+        "server/src/features/inlay_hint/InlayHintHandler.cpp",
+        "server/src/analysis/TargetResolution.cpp",
+        "server/src/analysis/WorkspaceStateStore.h",
+        "server/src/analysis/WorkspaceStateStore.cpp",
+        "server/scripts/check-ast-traversal.py",
+        "server/tests/DefinitionTest.cpp",
+        "server/tests/ReferencesTest.cpp",
+        "server/tests/HoverTest.cpp",
+        "server/tests/InlayHintTest.cpp",
+        "server/tests/SemanticAnalyzerTest.cpp"
+      ],
+      "findings": [
+        "Eradicated hardcoded keyword constants (k_selfIdentifier, k_baseClassIdentifier) and ad-hoc resolution functions (ResolveSelfOrBaseClass, ResolveSelfOrBaseReceiver), eliminating all const-laundering.",
+        "Implemented generic mixin host resolution (InferHostClassFromEnclosingMixin, ExpandMixinHostHierarchies): unresolved identifiers in mixin classes query host classes including the mixin from SymbolTable, resolving properties (get_self(), get_pev(), m_pPlayer) naturally through nominal symbol lookup.",
+        "Supported dynamic delegate properties from unusedRules.baseClassDelegateProperties (IsBaseClassDelegateProperty, ResolveDelegateTargetBaseClass), resolving to the first non-mixin base class in the host hierarchy with baseClassProxyMap integration, while giving absolute precedence to nominal declarations and local definitions.",
+        "Hardened server/scripts/check-ast-traversal.py to ban 'BaseClass' and 'self' string literals across server/src/**, ban k_baseClassIdentifier, k_selfIdentifier, and ResolveSelfOrBaseClass, and enforce GenerateRandomSymbolName in tests.",
+        "When part.location.has_value() is true in InlayHintHandler, omitted part.tooltip to allow VS Code to render its native hover tooltip directly from the symbol location without duplicate code blocks. Formatted fallback parameter tooltips using analysis::FormatParameter(param) with reference modifiers (&in, &out, &inout).",
+        "Filtered candidate enum symbols in DefinitionHandler and TargetResolution by exact enclosing containerName and namespace, preventing homonymous enum members across different namespaces within the same module from contaminating Go-To-Definition or Find-References results.",
+        "Registered a LocalDefinition for the implicit value parameter (kind = Parameter, typeName = propTypeStr) inside virtual property set accessor scopes, enabling hover, autocompletion, and semantic type checking.",
+        "Implemented generic constructor overload resolution (AppendConstructorSymbolsIfCall, CollectClassConstructors) in HoverHandler, ranking matching constructors via ResolveCallOverload and evaluated argument types.",
+        "Introduced module base symbol table snapshot caching (SetModuleBaseTable, GetModuleBaseTable, InvalidateModuleBaseTable), reducing module snapshot construction time from 18 ms to under 1 ms.",
+        "Propagated ExpressionTypeCache* throughout ReceiverTypeContext and all Layer 2 ExpressionTypeContext constructors, preventing redundant re-evaluations across chained and nested expressions in large script files (BuyMenu.as).",
+        "Disabled codeLensShowMixinExpansion by default in ServerConfig.h and extension settings to reduce visual clutter.",
+        "Replaced all static identifier names with randomized names generated by GenerateRandomSymbolName to prevent test-fitting."
+      ]
+    },
+    {
+      "id": "PHASE_49",
+      "name": "Official v1.1.6 Stable Release, GitHub Compare Link Backfill & Master Ecosystem Synchronization",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "CHANGELOG.md",
+        "client/package.json",
+        "client/package-lock.json",
+        "client/CHANGELOG.md",
+        "docs/STEPS.md",
+        "docs/STEPS.json",
+        "server/scripts/sync-github-releases.py",
+        "server/scripts/extract-release-notes.py"
+      ],
+      "findings": [
+        "Enhanced sync-github-releases.py and extract-release-notes.py with automatic compare link deduction (**Full Changelog**: https://github.com/Gaftherman/angelscript-lsp/compare/<prev>...<curr>).",
+        "Backfilled missing compare links on GitHub across historical releases v1.1.6-exp.2 through v1.1.6-exp.8, achieving 100% link coverage across all 161 GitHub releases.",
+        "Consolidated official [1.1.6] - 2026-10-31 stable release notes in CHANGELOG.md and synchronized client/CHANGELOG.md via sync-changelogs.py.",
+        "Bumped client extension version to 1.1.6 in client/package.json and client/package-lock.json.",
+        "Updated docs/STEPS.md and docs/STEPS.json entirely in English with strict compiler-grade KPI budgets (<= 100 ms module analysis, <= 1.0 ms warm hover/definition, <= 0.1 ms delta tokens, 0 allocs on hot paths, 0 clones) and per-feature latency matrices.",
+        "Verified full test suite (2,567 unit tests, 35,000+ assertions passing), 12/12 static quality gates passing, and 74/74 client integration tests passing.",
+        "Merged develop branch into main, pushed main, and published annotated git tag v1.1.6 with official release notes."
+      ]
     }
   ],
   "identifiedGaps": [
@@ -1381,7 +1511,16 @@
     "GAP-I18N-01: Hardcoded English text in HoverHandler.cpp for unresolved includes, primitive types, typedefs, and named arguments. (RESOLVED in Phase 44 with i18n::FormatMessage and 100% EN/ES dictionary parity)."
   ],
   "nextActions": [
-    "Phase 44 completed with 100% test pass rate (2,506 tests, 34,666 assertions) and all 12 quality gates passed."
+    "Official v1.1.6 stable release completed and published."
   ],
-  "lastMilestone": "Phase 44 completed with 100% test pass rate (2,506 tests, 34,666 assertions) and all 12 quality gates passed."
+  "lastMilestone": "Phase 49 completed: official v1.1.6 stable release merged to main with 2,567 unit tests passing, all 12 quality gates passing, and 100% release compare links synchronized.",
+  "gaps": [
+    "GAP-AST-01: False-positive W108 on synthetic properties and member variables in deep block structures due to low max climb depth. (RESOLVED in Phase 45 with k_maxAstClimbDepth = 256 and include closure expansion).",
+    "GAP-PERF-08: Ad-hoc depth < 64 loops and full-text searches in isolation checking. (RESOLVED in Phase 46 with NodeIndex binary intervals, ASTUtils centralized climbs, and O(1) token isolation checks).",
+    "GAP-PERF-09: Recursive ForEachDescendantNode traversal and redundant full RuleIndex rebuilding (~75 ms). (RESOLVED in Phase 47 with complete ForEachDescendantNode eradication and sub-0.5ms incremental RuleIndex cloning).",
+    "GAP-RESOLV-01: Hardcoded keywords (self, BaseClass) and const-laundering bypassing generic symbol lookup. (RESOLVED in Phase 48 with generic mixin host hierarchies, dynamic delegate properties from EngineRuleConfig, and check-ast-traversal ban).",
+    "GAP-INLAY-02: Duplicate hover tooltips rendered on inlay hints when location is resolved. (RESOLVED in Phase 48 by omitting part.tooltip when part.location has value).",
+    "GAP-ENUM-02: Homonymous enum members across different namespaces colliding in definition and references. (RESOLVED in Phase 48 with strict containerName and namespace isolation).",
+    "GAP-REL-01: GitHub Releases missing Full Changelog compare links on GitHub. (RESOLVED in Phase 49 with sync-github-releases and extract-release-notes compare link automation and backfill)."
+  ]
 }

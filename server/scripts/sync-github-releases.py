@@ -94,6 +94,40 @@ def fetch_all_releases(token: str) -> list[dict]:
     return releases
 
 
+def deduce_prev_tag(tag_name: str, all_releases: list[dict]) -> str | None:
+    # 1. Experimental tag (e.g., v1.1.6-exp.8 -> v1.1.6-exp.7; v1.1.6-exp.1 -> v1.1.5)
+    m = re.match(r"^v?(\d+\.\d+\.\d+)-exp\.(\d+)$", tag_name)
+    if m:
+        base_ver = m.group(1)
+        exp_num = int(m.group(2))
+        if exp_num > 1:
+            return f"v{base_ver}-exp.{exp_num - 1}"
+        parts = [int(p) for p in base_ver.split(".")]
+        if len(parts) == 3 and parts[2] > 0:
+            return f"v{parts[0]}.{parts[1]}.{parts[2] - 1}"
+        elif len(parts) == 3 and parts[1] > 0:
+            return f"v{parts[0]}.{parts[1] - 1}.0"
+
+    # 2. Stable release (e.g., v1.1.6 -> v1.1.5)
+    m_stable = re.match(r"^v?(\d+\.\d+\.\d+)$", tag_name)
+    if m_stable:
+        base_ver = m_stable.group(1)
+        parts = [int(p) for p in base_ver.split(".")]
+        if len(parts) == 3 and parts[2] > 0:
+            return f"v{parts[0]}.{parts[1]}.{parts[2] - 1}"
+        elif len(parts) == 3 and parts[1] > 0:
+            return f"v{parts[0]}.{parts[1] - 1}.0"
+
+    # 3. Fallback: find chronological predecessor in all_releases
+    for i, r in enumerate(all_releases):
+        if r.get("tag_name") == tag_name:
+            if i + 1 < len(all_releases):
+                return all_releases[i + 1].get("tag_name")
+            break
+
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Sync CHANGELOG.md notes into GitHub Releases.")
     parser.add_argument("--dry-run", action="store_true", help="Print updates without modifying GitHub Releases")
@@ -112,11 +146,12 @@ def main() -> int:
     print(f"Loaded {len(notes_by_ver)} versions from {args.changelog}")
 
     print("Fetching releases from GitHub...")
-    releases = fetch_all_releases(token)
-    print(f"Found {len(releases)} releases on GitHub.")
+    all_releases = fetch_all_releases(token)
+    print(f"Found {len(all_releases)} releases on GitHub.")
 
+    releases = all_releases
     if args.tag:
-        releases = [r for r in releases if r.get("tag_name") == args.tag or r.get("tag_name") == f"v{args.tag.lstrip('v')}"]
+        releases = [r for r in all_releases if r.get("tag_name") == args.tag or r.get("tag_name") == f"v{args.tag.lstrip('v')}"]
         if not releases:
             print(f"Error: Release with tag '{args.tag}' not found on GitHub.", file=sys.stderr)
             return 1
@@ -138,12 +173,17 @@ def main() -> int:
 
         changelog_content = notes_by_ver[clean_ver]
 
-        # Preserve existing compare link if present
+        # Preserve existing compare link if present, or deduce from predecessor tag
         compare_match = re.search(r"(\*\*Full Changelog\*\*:\s*https://github\.com/\S+)", current_body)
         if compare_match:
             full_body = f"{changelog_content}\n\n---\n{compare_match.group(1)}"
         else:
-            full_body = changelog_content
+            prev_tag = deduce_prev_tag(tag_name, all_releases)
+            if prev_tag:
+                compare_link = f"**Full Changelog**: https://github.com/{REPO_NAME}/compare/{prev_tag}...{tag_name}"
+                full_body = f"{changelog_content}\n\n---\n{compare_link}"
+            else:
+                full_body = changelog_content
 
         if full_body.strip() == current_body.strip() and not args.force:
             print(f"[UNCHANGED] {tag_name} already matches changelog.")

@@ -12,6 +12,34 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+REPO_NAME = "Gaftherman/angelscript-lsp"
+
+
+def deduce_prev_tag(tag: str) -> str | None:
+    # 1. Experimental tag (e.g., v1.1.6-exp.8 -> v1.1.6-exp.7; v1.1.6-exp.1 -> v1.1.5)
+    m = re.match(r"^v?(\d+\.\d+\.\d+)-exp\.(\d+)$", tag)
+    if m:
+        base_ver = m.group(1)
+        exp_num = int(m.group(2))
+        if exp_num > 1:
+            return f"v{base_ver}-exp.{exp_num - 1}"
+        parts = [int(p) for p in base_ver.split(".")]
+        if len(parts) == 3 and parts[2] > 0:
+            return f"v{parts[0]}.{parts[1]}.{parts[2] - 1}"
+        elif len(parts) == 3 and parts[1] > 0:
+            return f"v{parts[0]}.{parts[1] - 1}.0"
+
+    # 2. Stable release (e.g., v1.1.6 -> v1.1.5)
+    m_stable = re.match(r"^v?(\d+\.\d+\.\d+)$", tag)
+    if m_stable:
+        base_ver = m_stable.group(1)
+        parts = [int(p) for p in base_ver.split(".")]
+        if len(parts) == 3 and parts[2] > 0:
+            return f"v{parts[0]}.{parts[1]}.{parts[2] - 1}"
+        elif len(parts) == 3 and parts[1] > 0:
+            return f"v{parts[0]}.{parts[1] - 1}.0"
+
+    return None
 
 
 def extract_notes(changelog_path: Path, tag: str) -> tuple[str, str] | None:
@@ -33,6 +61,14 @@ def extract_notes(changelog_path: Path, tag: str) -> tuple[str, str] | None:
             start = m.end()
             end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
             body = text[start:end].strip()
+
+            # Ensure Full Changelog link is present
+            if "**Full Changelog**:" not in body:
+                prev_tag = deduce_prev_tag(tag)
+                clean_tag = f"v{target_ver}" if not tag.startswith("v") else tag
+                if prev_tag:
+                    body = f"{body}\n\n---\n**Full Changelog**: https://github.com/{REPO_NAME}/compare/{prev_tag}...{clean_tag}"
+
             return date, body
 
     return None

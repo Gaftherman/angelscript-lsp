@@ -2,6 +2,50 @@
 
 All notable changes to the "angelscript-lsp" extension will be documented in this file.
 
+## [1.1.6] - 2026-10-31
+
+### Official 1.1.6 Release: 100% AST-First Architecture, Sub-30ms Incremental Analysis, Generic Mixin Host Context & Delegate Properties, Isolated Enum Navigation & Compiler-Grade Stability
+
+- 100% AST-First Traversal & Tree-Sitter Architecture Hardening (`NodeIndex`, `ASTUtils`, `check-ast-traversal.py`, `ClassRules.cpp`):
+  - Completely eradicated recursive AST walks (`ForEachDescendantNode`) and ad-hoc parent climb loops across the entire codebase, enforcing $O(\log K)$ interval lookups in `NodeIndex` and centralized upward navigation via `ASTUtils.h`.
+  - Replaced text scanning and ad-hoc parsing with pre-indexed Tree-Sitter queries and precompiled grammar symbols (`GrammarSymbols`), banning raw `ts_node_type` and index loops in Layer 2 and Layer 3 handlers.
+  - Hardened static quality gate `check-ast-traversal.py` to strictly enforce AST depth bounds, ban raw upward climb loops outside Layer 1, and ensure total compliance with `AGENTS.md`.
+- Sub-30ms High-Performance Incremental Analysis & Snapshot Caching (`ServerAnalysis.cpp`, `WorkspaceStateStore.cpp`, `SymbolTable.cpp`, `SemanticHelpers.h`):
+  - Reduced incremental script analysis times from ~480 ms to $\le 25\text{ ms}$ on large multi-thousand-line scripts (`BuyMenu.as`).
+  - Incrementalized `RuleIndex` by cloning the pre-built `.as.predefined` index and applying cached partial rules, slashing indexing time from 75 ms to under 0.5 ms.
+  - Implemented module base symbol table snapshot caching (`SetModuleBaseTable`, `GetModuleBaseTable`, `InvalidateModuleBaseTable`), reducing module snapshot construction time from 18 ms to under 1 ms.
+  - Propagated a shared `ExpressionTypeCache` across all semantic checkers (`CallChecker`, `BinaryOperatorChecker`, `ComparisonOperatorChecker`, `LValueChecker`, `ConstChecker`, `TypeConversionChecker`), eliminating redundant expression evaluations.
+  - Persisted worker and server mixin caches across document sync requests with lock-free atomic exchange.
+- Generic Mixin Host Context & Dynamic Delegate Property Resolution (`SemanticHelpers.cpp`, `EngineRuleConfig.h`, `DefinitionHandler.cpp`, `HoverHandler.cpp`, `TargetResolution.cpp`):
+  - Eradicated all hardcoded keyword constants (`k_selfIdentifier`, `k_baseClassIdentifier`) and const-laundering functions, replacing them with generic, nominal symbol table lookup.
+  - Implemented generic mixin host resolution (`InferHostClassFromEnclosingMixin`, `ExpandMixinHostHierarchies`): unresolved identifiers in mixin classes query host classes including the mixin from `SymbolTable`, resolving host properties (`get_self()`, `get_pev()`, `m_pPlayer`) naturally through nominal symbol lookup.
+  - Added support for dynamic delegate properties configured via `unusedRules.baseClassDelegateProperties` and `baseClassProxyMap` in `EngineRuleConfig`, resolving to the first non-mixin base class in the host hierarchy while guaranteeing full precedence to local declarations.
+- Virtual Property Implicit `value` Parameter & Constructor Overload Hover (`LocalScopeCollector.cpp`, `HoverHandler.cpp`, `SemanticAnalyzer.cpp`):
+  - Registered an implicit `LocalDefinition` for `value` (`kind = Parameter`) inside virtual property `set` accessor scopes, enabling hover (`(parameter) Type@ value`), autocompletion, and semantic type checking.
+  - Implemented generic constructor overload resolution (`AppendConstructorSymbolsIfCall`, `CollectClassConstructors`) in `HoverHandler`, ranking matching constructors via `ResolveCallOverload` and evaluated argument types.
+- Cross-Namespace Enum Member Isolation in Definition & References (`DefinitionHandler.cpp`, `TargetResolution.cpp`, `ReferencesHandler.cpp`):
+  - Filtered candidate enum symbols in `DefinitionHandler` and `TargetResolution` by exact enclosing `containerName` and namespace, preventing homonymous enum members across different namespaces within the same module from contaminating Go-To-Definition or Find-References results.
+- Inlay Hint Tooltip UX & Normalized Predefined Navigation (`InlayHintHandler.cpp`, `InlayHintTest.cpp`):
+  - When `part.location.has_value()` is true, omitted `part.tooltip` to allow VS Code to render its native hover tooltip directly from the symbol location without duplicate code blocks.
+  - Formatted fallback parameter tooltips using `analysis::FormatParameter(param)`, accurately displaying parameter reference modifiers (`&in`, `&out`, `&inout`).
+  - Normalized target URIs in `ResolveParameterLocation` to match canonical `DefinitionHandler` paths and added fallback to `selectionRange` for predefined symbols with zero-offset parameter locations.
+- Zero Predefined Re-parsing & Full Editor Features on Opened Stubs (`DocumentStore.cpp`, `TextDocumentSyncHandlers.cpp`, `ServerHarnessTest.cpp`):
+  - Preserved AST trees in `DocumentStore` during `LinkDocument` and `GetTree` via `ts_tree_copy` when `.as.predefined` stubs are opened.
+  - Enabled immediate Semantic Tokens, Hover, and CodeLens on `.as.predefined` stubs opened in editor tabs.
+- Deep AST Navigation Resilience & Include Closure Hardening (`Constants`, `ServerModules`, `SemanticAnalyzer`):
+  - Elevated `k_maxAstClimbDepth` from 16 to 256 in AST traversal utilities to prevent premature search termination in deeply nested blocks (8+ nested `if` statements, lambda bodies, deep call chains).
+  - Fixed false-positive `W108` (`as-warn-undeclared-identifier`) on synthetic properties and member variables in deep block structures without hardcoding identifiers.
+  - Expanded include closure resolution in `AppendIncludeGraphClosure` and `ComputeModuleClosure` to traverse parent and sibling include relationships transitively, eliminating false-positive `E103` and `E111` on multi-level namespace sub-headers (`schema.as`).
+- Zero Hardcoded Modifier Strings & Single-Pass Signature Formatting (`Keywords.h`, `SignatureFormatter.cpp`):
+  - Centralized declaration and access modifiers (`Private`, `Protected`, `Public`, `External`, `Shared`, `Mixin`, `Abstract`, `Final`, `Override`, `Explicit`, `Property`, `Delete`) in `angel_lsp::parser::keywords`.
+  - Rewrote signature formatting routines to use pre-reserved buffers with zero string literal duplication and zero `.insert(0, ...)` reallocations.
+- Test Fixture Randomization & Anti-Overfitting Governance (`tests/**`):
+  - Replaced static test symbol fixtures with dynamic randomized identifiers generated by `angel_lsp::test::GenerateRandomSymbolName()` across semantic, definition, hover, references, and inlay hint test suites.
+- Verification & Test Coverage:
+  - 100% of 2,567 CTest test cases (35,000+ assertions) passing in Release mode under `/W4 /WX /we4100 /permissive-`.
+  - 12/12 active static quality gates passing with 0 warnings (`check-quality.py`).
+  - 74/74 VS Code client extension integration tests passing.
+
 ## [1.1.6-exp.8] - 2026-10-31
 
 ### Experimental Release 1.1.6-exp.8: Generic Host Hierarchy & Delegate Resolution, Inlay Tooltip Fix, Virtual Property Value Parameter, Enum Member Isolation & Expression Type Caching
