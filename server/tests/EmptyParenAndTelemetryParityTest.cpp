@@ -40,6 +40,36 @@ TEST_SUITE("EmptyParenAndTelemetryParity")
                                            "    const int& GetRef();\n"
                                            "}\n";
         harness.VerifyGoodPath("scripts/" + GenerateRandomSymbolName("ep_ref") + ".as", boundaryScript);
+
+        // Global scope empty paren variable
+        const std::string globCls = GenerateRandomSymbolName("GlobalCls");
+        const std::string globVar = GenerateRandomSymbolName("g_instance");
+        const std::string globalScript = "class " + globCls + " { int val = 10; }\n" + globCls + " " + globVar +
+                                         "();\n"
+                                         "void main() {\n"
+                                         "    " +
+                                         globVar +
+                                         ".val = 42;\n"
+                                         "}\n";
+        harness.VerifyGoodPath("scripts/" + GenerateRandomSymbolName("ep_glob") + ".as", globalScript);
+
+        // Namespace scope empty paren variable
+        const std::string nsName = GenerateRandomSymbolName("NS");
+        const std::string nsScript = "class " + globCls +
+                                     " { int val = 10; }\n"
+                                     "namespace " +
+                                     nsName +
+                                     " {\n"
+                                     "    " +
+                                     globCls + " " + globVar +
+                                     "();\n"
+                                     "}\n"
+                                     "void main() {\n"
+                                     "    " +
+                                     nsName + "::" + globVar +
+                                     ".val = 42;\n"
+                                     "}\n";
+        harness.VerifyGoodPath("scripts/" + GenerateRandomSymbolName("ep_ns") + ".as", nsScript);
     }
 
     TEST_CASE("Feature telemetry latency budget audit across all LSP capabilities")

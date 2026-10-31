@@ -1477,6 +1477,33 @@ static bool ShouldCompleteParens(const CompletionCollector& collector)
 
 std::string FindEnclosingClassName(const CompletionRequest& request);
 
+static bool IsMixinIncluded(std::string_view hostClass, std::string_view mixinName, const analysis::SymbolTable& table)
+{
+    if (hostClass.empty() || mixinName.empty())
+    {
+        return false;
+    }
+    auto symsPtr = table.FindSymbolsPtr(std::string(hostClass));
+    if (!symsPtr)
+    {
+        return false;
+    }
+    for (const auto& sym : *symsPtr)
+    {
+        if (sym.type == analysis::SymbolType::Class && std::holds_alternative<analysis::ClassSignature>(sym.signature))
+        {
+            for (const auto& m : sym.GetClass().includedMixins)
+            {
+                if (m == mixinName || utils::LastScopeSegment(m) == mixinName)
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
 /**
  * @brief Checks if a member symbol is accessible in completion from the cursor context.
  * @param[in] sym Target member symbol.
@@ -1505,14 +1532,19 @@ static bool IsMemberAccessibleForCompletion(const analysis::Symbol& sym, const s
     {
         return false;
     }
-    if (enclosingClass == typeName || enclosingClass == sym.containerName)
+    const std::string_view memberOwner = !sym.containerName.empty() ? sym.containerName : typeName;
+    if (access == analysis::AccessModifier::Private)
     {
-        return true;
+        return enclosingClass == memberOwner ||
+               IsMixinIncluded(enclosingClass, memberOwner, collector.request.symbolTable) ||
+               IsMixinIncluded(memberOwner, enclosingClass, collector.request.symbolTable);
     }
     if (access == analysis::AccessModifier::Protected)
     {
-        return analysis::IsDerivedFrom(enclosingClass, sym.containerName, collector.request.symbolTable) ||
-               analysis::IsDerivedFrom(enclosingClass, typeName, collector.request.symbolTable);
+        return enclosingClass == memberOwner ||
+               analysis::IsDerivedFrom(enclosingClass, memberOwner, collector.request.symbolTable) ||
+               IsMixinIncluded(enclosingClass, memberOwner, collector.request.symbolTable) ||
+               IsMixinIncluded(memberOwner, enclosingClass, collector.request.symbolTable);
     }
     return false;
 }

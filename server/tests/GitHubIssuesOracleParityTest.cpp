@@ -32,6 +32,27 @@ TEST_SUITE("GitHubIssuesOracleParity")
         harness.AssertCompletionExcludes(uri, 7, 8, "m_priv");
         harness.AssertCompletionExcludes(uri, 7, 8, "m_prot");
         harness.AssertCompletionContains(uri, 7, 8, "m_pub", lsp::CompletionItemKind::Field);
+
+        const std::string derivedCls = GenerateRandomSymbolName("Derived");
+        const std::string derivedScript = "class " + cls +
+                                          " {\n"
+                                          "    private int m_priv;\n"
+                                          "    protected int m_prot;\n"
+                                          "    public int m_pub;\n"
+                                          "}\n"
+                                          "class " +
+                                          derivedCls + " : " + cls +
+                                          " {\n"
+                                          "    void Inspect() {\n"
+                                          "        this.\n"
+                                          "    }\n"
+                                          "}\n";
+        const std::string derivedUri = harness.SandboxUri("scripts/" + GenerateRandomSymbolName("derived") + ".as");
+        harness.AddVirtualDocument(derivedUri, derivedScript);
+
+        harness.AssertCompletionExcludes(derivedUri, 7, 13, "m_priv");
+        harness.AssertCompletionContains(derivedUri, 7, 13, "m_prot", lsp::CompletionItemKind::Field);
+        harness.AssertCompletionContains(derivedUri, 7, 13, "m_pub", lsp::CompletionItemKind::Field);
     }
 
     TEST_CASE("Issue #4 - Overload ambiguity on initializer list arguments reports error")
@@ -140,6 +161,21 @@ TEST_SUITE("GitHubIssuesOracleParity")
             }
         }
         CHECK(foundFix);
+
+        const std::string badAssignScript = "class " + cls +
+                                            " {}\n"
+                                            "const " +
+                                            cls + "@ " + fnGet +
+                                            "() { return null; }\n"
+                                            "void " +
+                                            fnTest + "2(" + cls +
+                                            "@ res) {\n"
+                                            "    @res = " +
+                                            fnGet +
+                                            "();\n"
+                                            "}\n";
+        harness.VerifyBadPath("scripts/" + GenerateRandomSymbolName("const_assign") + ".as", badAssignScript,
+                              "as-err-no-implicit-conversion");
     }
 
     TEST_CASE("Issue #7 - Null handle passed to reference parameter reports E119")

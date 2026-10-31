@@ -1004,7 +1004,7 @@ static bool IsDisqualifyingReturnType(const TypeExtractionResult& retInfo, std::
 bool SymbolCollector::TryProcessEmptyParenVariable(TSNode funcNode, const SymbolModifiers& modifiers,
                                                    SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
-    if (ctx.containerKind != ContainerKind::Class || sCtx.isPredefined)
+    if (ctx.containerKind == ContainerKind::Interface || ctx.containerKind == ContainerKind::Enum || sCtx.isPredefined)
     {
         return false;
     }

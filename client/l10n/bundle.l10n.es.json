@@ -107,5 +107,6 @@
   "Activate all {0} workspace modules": "Activar los {0} módulos del espacio de trabajo",
   "Select an AngelScript module to isolate, or activate all modules": "Seleccione un módulo AngelScript para aislar, o active todos los módulos",
   "Activated all workspace modules.": "Todos los módulos del espacio de trabajo han sido activados.",
-  "Isolated active module: {0}": "Módulo activo aislado: {0}"
+  "Isolated active module: {0}": "Módulo activo aislado: {0}",
+  "Reload and rescan module files": "Recargar y re-escanear archivos del módulo"
 }

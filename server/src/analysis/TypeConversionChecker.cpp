@@ -3409,10 +3409,10 @@ void CheckHandleConstAssignment(AssignmentOperands operands, const ConversionTyp
         return;
     }
 
-    const std::string leftFull = GetVariableOrPropertyType(actualLeft, scope, ctx);
-    const std::string rightFull = GetVariableOrPropertyType(actualRight, scope, ctx);
-    const bool rightConstTarget = rightFull.starts_with("const ");
-    const bool leftConstTarget = leftFull.starts_with("const ");
+    ExpressionType leftVal = ResolveValueType(actualLeft, scope, ctx);
+    ExpressionType rightVal = ResolveValueType(actualRight, scope, ctx);
+    const bool rightConstTarget = rightVal.isConst;
+    const bool leftConstTarget = leftVal.isConst;
     if (rightConstTarget && !leftConstTarget && !types.from.empty() && !types.to.empty())
     {
         EmitAtNode(operands.right, ctx, "as-err-no-implicit-conversion", {"const " + types.from + "@", types.to + "@"});

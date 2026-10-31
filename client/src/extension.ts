@@ -2938,9 +2938,15 @@ export async function switchActiveModule(): Promise<void> {
     interface ModuleQuickPickItem extends QuickPickItem {
         module?: ModuleConfig;
         isAll?: boolean;
+        isRescan?: boolean;
     }
 
     const items: ModuleQuickPickItem[] = [
+        {
+            label: `$(sync) ${l10n.t('Rescan Workspace')}`,
+            description: l10n.t('Reload and rescan module files'),
+            isRescan: true
+        },
         {
             label: `$(layers) ${l10n.t('All Modules')}`,
             description: l10n.t('Activate all {0} workspace modules', allModules.length),
@@ -2962,6 +2968,11 @@ export async function switchActiveModule(): Promise<void> {
     });
 
     if (!selected) {
+        return;
+    }
+
+    if (selected.isRescan) {
+        await commands.executeCommand(RESCAN_WORKSPACE_COMMAND);
         return;
     }
 

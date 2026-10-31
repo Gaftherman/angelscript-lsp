@@ -757,7 +757,12 @@ bool Server::UpdateModulesConfiguration(const lsp::LSPObject& section)
     {
         m_config.modules = std::move(parsed);
         LogInfo(fmt::format("Modules changed ({} configured); rescanning", m_config.modules.size()));
+        WithdrawStaleModuleDiagnostics();
         return true;
+    }
+    if (entryPointChanged)
+    {
+        WithdrawStaleModuleDiagnostics();
     }
     return entryPointChanged;
 }

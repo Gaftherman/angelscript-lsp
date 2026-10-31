@@ -1970,9 +1970,16 @@ void CheckCallOverloads(std::span<const Symbol* const> matchingArity, const Call
     {
         const std::string_view prioritySig =
             match.priorityCandidate != nullptr ? match.priorityCandidate->GetDisplaySignature() : std::string_view{};
-        const bool hasInitList = std::any_of(
-            args.argNodes.begin(), args.argNodes.end(), [](TSNode n)
-            { return !ts_node_is_null(n) && ts_node_symbol(n) == parser::GetGrammarSymbols().symInitializerList; });
+        const bool hasInitList =
+            std::any_of(args.argTypes.begin(), args.argTypes.end(),
+                        [](const std::string& t) { return t == "init_list"; }) ||
+            std::any_of(args.argNodes.begin(), args.argNodes.end(),
+                        [](TSNode n)
+                        {
+                            TSNode unwrapped = UnwrapParenNode(n);
+                            return !ts_node_is_null(unwrapped) &&
+                                   ts_node_symbol(unwrapped) == parser::GetGrammarSymbols().symInitializerList;
+                        });
         valCtx.ctx.EmitAtRange(GetCalleeDiagnosticRange(valCtx.callee), "as-err-call-ambiguous",
                                {std::string_view(calleeRes.reportedName), prioritySig},
                                hasInitList ? DiagnosticSeverity::Error : DiagnosticSeverity::Warning);

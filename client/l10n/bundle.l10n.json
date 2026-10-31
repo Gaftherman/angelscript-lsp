@@ -107,5 +107,6 @@
   "Activate all {0} workspace modules": "Activate all {0} workspace modules",
   "Select an AngelScript module to isolate, or activate all modules": "Select an AngelScript module to isolate, or activate all modules",
   "Activated all workspace modules.": "Activated all workspace modules.",
-  "Isolated active module: {0}": "Isolated active module: {0}"
+  "Isolated active module: {0}": "Isolated active module: {0}",
+  "Reload and rescan module files": "Reload and rescan module files"
 }

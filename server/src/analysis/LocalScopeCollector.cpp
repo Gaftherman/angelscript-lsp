@@ -276,18 +276,12 @@ static bool HasReferenceOrHandleReturnType(TSNode funcNode, TSNode typeNode, con
  * @param funcNode Function declaration AST node.
  * @param gs Grammar symbols.
  * @param sourceCode Document source text.
- * @param currentScopeKind Enclosing scope kind.
  * @return True if empty-parentheses bodyless declaration.
  */
-static bool IsEmptyParenFuncDeclaration(TSNode funcNode, const parser::GrammarSymbols& gs, std::string_view sourceCode,
-                                        ScopeKind currentScopeKind) noexcept
+static bool IsEmptyParenFuncDeclaration(TSNode funcNode, const parser::GrammarSymbols& gs,
+                                        std::string_view sourceCode) noexcept
 {
     if (ts_node_is_null(funcNode) || ts_node_symbol(funcNode) != gs.symFuncDeclaration)
-    {
-        return false;
-    }
-    if (currentScopeKind != ScopeKind::Class && currentScopeKind != ScopeKind::Function &&
-        currentScopeKind != ScopeKind::Block)
     {
         return false;
     }
@@ -321,8 +315,7 @@ static bool IsEmptyParenFuncDeclaration(TSNode funcNode, const parser::GrammarSy
  * @brief Resolves ScopeKind and function scope flag for a scope AST node.
  */
 static std::optional<std::pair<ScopeKind, bool>> DetermineScopeKind(TSNode node, const parser::GrammarSymbols& gs,
-                                                                    std::string_view sourceCode,
-                                                                    ScopeKind parentKind) noexcept
+                                                                    std::string_view sourceCode) noexcept
 {
     TSSymbol sym = ts_node_symbol(node);
     if (sym == gs.symLambdaExpression)
@@ -331,7 +324,7 @@ static std::optional<std::pair<ScopeKind, bool>> DetermineScopeKind(TSNode node,
     }
     if (sym == gs.symFuncDeclaration)
     {
-        if (IsEmptyParenFuncDeclaration(node, gs, sourceCode, parentKind))
+        if (IsEmptyParenFuncDeclaration(node, gs, sourceCode))
         {
             return std::nullopt;
         }
@@ -355,8 +348,7 @@ static std::optional<std::pair<ScopeKind, bool>> DetermineScopeKind(TSNode node,
 void LocalScopeCollector::ProcessScopeCapture(const RawCapture& capture, std::vector<OpenScope>& stack,
                                               std::unique_ptr<Scope>& root, const std::string& sourceCode) const
 {
-    const ScopeKind parentKind = stack.empty() ? ScopeKind::Global : stack.back().scope->kind;
-    auto kindInfo = DetermineScopeKind(capture.node, m_gs, sourceCode, parentKind);
+    auto kindInfo = DetermineScopeKind(capture.node, m_gs, sourceCode);
     if (!kindInfo)
     {
         return;
@@ -440,7 +432,7 @@ static LocalDefinitionKind DetermineDefinitionKind(LocalDefinitionKind rawKind, 
                                                    ScopeKind currentScopeKind, std::string_view sourceCode) noexcept
 {
     if ((rawKind == LocalDefinitionKind::Function || rawKind == LocalDefinitionKind::Method) &&
-        IsEmptyParenFuncDeclaration(parentNode, parser::GetGrammarSymbols(), sourceCode, currentScopeKind))
+        IsEmptyParenFuncDeclaration(parentNode, parser::GetGrammarSymbols(), sourceCode))
     {
         return (currentScopeKind == ScopeKind::Class) ? LocalDefinitionKind::Field : LocalDefinitionKind::Variable;
     }
