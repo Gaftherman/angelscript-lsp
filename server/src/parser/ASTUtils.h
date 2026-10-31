@@ -246,53 +246,6 @@ struct NodeTextResult
 }
 
 /**
- * @brief Performs a flat, non-recursive preorder traversal over all AST descendants.
- * @tparam Callback Callable with signature void(TSNode).
- * @param[in] root Root AST node to traverse.
- * @param[in] callback Visitor callback invoked for each node.
- */
-template <typename Callback> void ForEachDescendantNode(TSNode root, Callback&& callback)
-{
-    if (ts_node_is_null(root))
-    {
-        return;
-    }
-    TSTreeCursor cursor = ts_tree_cursor_new(root);
-    bool visiting = true;
-
-    while (visiting)
-    {
-        const TSNode current = ts_tree_cursor_current_node(&cursor);
-        callback(current);
-
-        if (ts_tree_cursor_goto_first_child(&cursor))
-        {
-            continue;
-        }
-        if (ts_tree_cursor_goto_next_sibling(&cursor))
-        {
-            continue;
-        }
-
-        bool backtracked = false;
-        while (ts_tree_cursor_goto_parent(&cursor))
-        {
-            if (ts_tree_cursor_goto_next_sibling(&cursor))
-            {
-                backtracked = true;
-                break;
-            }
-        }
-        if (!backtracked)
-        {
-            visiting = false;
-        }
-    }
-
-    ts_tree_cursor_delete(&cursor);
-}
-
-/**
  * @brief Iterates over direct child nodes of an AST node using a flat TSTreeCursor.
  * @tparam Callback Callable with signature void(TSNode).
  * @param[in] parent Parent AST node.
@@ -978,7 +931,6 @@ inline void SkipLiteral(std::string_view sourceCode, size_t& i, int& currentLine
 namespace angel_lsp::analysis
 {
 using parser::ForEachChildNode;
-using parser::ForEachDescendantNode;
 using parser::ForEachNamedChildNode;
 using parser::ForEachNamedChildNodeUntil;
 using parser::GetNodeText;

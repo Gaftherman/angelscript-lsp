@@ -1,4 +1,4 @@
-﻿#include "analysis/ConstChecker.h"
+#include "analysis/ConstChecker.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
 #include "parser/ASTUtils.h"
@@ -127,6 +127,7 @@ struct ConstContext
     const Scope* scope = nullptr;
     const SymbolTable& table;
     std::string_view sourceCode;
+    ExpressionTypeCache* cache = nullptr;
 };
 
 Constness ResolveConstness(TSNode node, const ConstContext& ctx);
@@ -248,13 +249,13 @@ EnclosingMethodInfo FindEnclosingMethod(TSNode node, std::string_view sourceCode
  * @return Pointer to VariableSignature if found, nullptr otherwise.
  */
 const VariableSignature* FindClassMemberVariable(const std::string& className, const std::string& memberName,
-                                                 const SymbolTable& table)
+                                                 const SymbolTable& table, ExpressionTypeCache* cache = nullptr)
 {
     if (className.empty() || memberName.empty())
     {
         return nullptr;
     }
-    for (const auto& owner : GetInheritedTypeHierarchy(className, table))
+    for (const auto& owner : GetInheritedTypeHierarchy(className, table, cache))
     {
         if (const auto candidates = table.FindMemberSymbolPtr(owner, memberName))
         {
@@ -306,7 +307,7 @@ bool IsIdentifierMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo,
             return false;
         }
     }
-    if (FindClassMemberVariable(encInfo.className, name, ctx.table))
+    if (FindClassMemberVariable(encInfo.className, name, ctx.table, ctx.cache))
     {
         outMemberName = name;
         return true;
@@ -346,7 +347,7 @@ bool IsMemberExprOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const
     if (IsMemberOfThis(obj, encInfo, ctx, parentMember))
     {
         bool isHandle = false;
-        if (const auto* var = FindClassMemberVariable(encInfo.className, parentMember, ctx.table))
+        if (const auto* var = FindClassMemberVariable(encInfo.className, parentMember, ctx.table, ctx.cache))
         {
             isHandle = var->modifiers.isHandle;
         }
@@ -505,7 +506,8 @@ bool IsSelfReferenceReturn(const FunctionSignature& fn, const std::string& owner
  * failed overload lookup, not a refusal of the call, so one const member in the set makes
  * the call legal and this pass silent.
  */
-MethodLookup FindMethod(const std::string& typeName, const std::string& methodName, const SymbolTable& table)
+MethodLookup FindMethod(const std::string& typeName, const std::string& methodName, const SymbolTable& table,
+                        ExpressionTypeCache* cache = nullptr)
 {
     MethodLookup result;
     if (typeName.empty() || methodName.empty())
@@ -513,7 +515,7 @@ MethodLookup FindMethod(const std::string& typeName, const std::string& methodNa
         return result;
     }
 
-    for (const auto& owner : GetInheritedTypeHierarchy(typeName, table))
+    for (const auto& owner : GetInheritedTypeHierarchy(typeName, table, cache))
     {
         const auto candidates = table.FindMemberSymbolPtr(owner, methodName);
         if (!candidates)
@@ -625,7 +627,7 @@ void CheckAssignment(TSNode node, const ConstCheckRequest& request, const Scope*
         }
     }
 
-    const ConstContext constCtx{scope, ctx.request.symbolTable, request.sourceCode};
+    const ConstContext constCtx{scope, ctx.request.symbolTable, request.sourceCode, ctx.request.exprCache};
     const auto encInfo = FindEnclosingMethod(node, request.sourceCode);
 
     std::string memberName;
@@ -669,7 +671,7 @@ void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const Scope*
     }
 
     const SymbolTable& table = ctx.request.symbolTable;
-    const ConstContext constCtx{scope, table, request.sourceCode};
+    const ConstContext constCtx{scope, table, request.sourceCode, ctx.request.exprCache};
     if (ResolveConstness(objectNode, constCtx) != Constness::Const)
     {
         return;
@@ -682,7 +684,7 @@ void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const Scope*
     }
 
     const std::string methodName = NodeText(memberNode, request.sourceCode);
-    const MethodLookup method = FindMethod(objectType, methodName, table);
+    const MethodLookup method = FindMethod(objectType, methodName, table, ctx.request.exprCache);
     if (!method.found || method.hasConstOverload || method.returnsSelfReference)
     {
         return;

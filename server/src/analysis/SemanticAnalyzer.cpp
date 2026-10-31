@@ -1,4 +1,4 @@
-﻿#include "analysis/SemanticAnalyzer.h"
+#include "analysis/SemanticAnalyzer.h"
 #include "analysis/AccessChecker.h"
 #include "analysis/CallChecker.h"
 #include "analysis/ConstChecker.h"
@@ -665,7 +665,8 @@ static void DispatchDeclarationRule(const Symbol& sym, DiagnosticContext& ctx,
 
 void SemanticAnalyzer::CheckDeclarationRules(const SymbolTable& symbolTable, DiagnosticContext& ctx) const
 {
-    rules::MixinFileCache documentMixinCache;
+    rules::MixinFileCache localMixinCache;
+    rules::MixinFileCache* effectiveMixinCache = ctx.request.mixinCache ? ctx.request.mixinCache : &localMixinCache;
     symbolTable.ForEachSymbolInFile(
         ctx.request.fileUri,
         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
@@ -675,7 +676,7 @@ void SemanticAnalyzer::CheckDeclarationRules(const SymbolTable& symbolTable, Dia
             {
                 if (sym.fileUri == ctx.request.fileUri)
                 {
-                    DispatchDeclarationRule(sym, ctx, &documentMixinCache);
+                    DispatchDeclarationRule(sym, ctx, effectiveMixinCache);
                 }
             }
         });

@@ -1,4 +1,4 @@
-﻿#include "analysis/rules/ClassRules.h"
+#include "analysis/rules/ClassRules.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/OverloadResolver.h"
@@ -786,21 +786,24 @@ struct InstantiationRange
     uint32_t endChar = 0;
 };
 
+using TransparentStringSet = ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>;
+
 /** @brief Context bundled for inspecting mixin statement resolutions. */
 struct MixinCheckContext
 {
     std::string hostClassName;
     const Symbol* mixinSym = nullptr;
     InstantiationRange hostRange;
-    const ankerl::unordered_dense::set<std::string>& hostMembers;
-    const ankerl::unordered_dense::set<std::string>& mixinSelfMembers;
-    ankerl::unordered_dense::set<std::string>& reported;
+    const TransparentStringSet& hostMembers;
+    const TransparentStringSet& mixinSelfMembers;
+    TransparentStringSet& reported;
+    const NodeIndex* nodeIndex = nullptr;
 };
 
 /** @brief Execution state for checking inside a mixin function body. */
 struct FunctionCheckState
 {
-    const ankerl::unordered_dense::set<std::string>& localNames;
+    const ankerl::unordered_dense::set<std::string_view>& localNames;
     MixinCheckContext& mctx;
 };
 
@@ -808,7 +811,7 @@ struct FunctionCheckState
 struct MixinHierarchyMembers
 {
     std::string hostClassName;
-    ankerl::unordered_dense::set<std::string> hostMembers;
+    TransparentStringSet hostMembers;
 };
 
 /** @brief Collects all mixins included via includedMixins or bases. */
@@ -831,7 +834,7 @@ std::vector<std::string> CollectIncludedMixins(const ClassSignature& sig, const 
 
 /** @brief Collects member names for a container and its qualified/short variants. */
 void CollectContainerMembers(const std::string& containerName, const RuleIndex& ruleIndex,
-                             ankerl::unordered_dense::set<std::string>& outMembers)
+                             TransparentStringSet& outMembers)
 {
     const auto insertMembers = [&](const auto& members)
     {
@@ -858,7 +861,7 @@ void CollectContainerMembers(const std::string& containerName, const RuleIndex& 
 
 /** @brief Collects all members across an inheritance hierarchy. */
 void CollectHierarchyMembers(const std::vector<std::string>& hierarchy, const RuleIndex& ruleIndex,
-                             ankerl::unordered_dense::set<std::string>& outMembers)
+                             TransparentStringSet& outMembers)
 {
     for (const auto& ancestor : hierarchy)
     {
@@ -1122,20 +1125,18 @@ bool IsBuiltinOrKeyword(std::string_view name, std::string_view effectiveStringT
 
 struct AccessorLookupContext
 {
-    const std::string& name;
+    std::string_view name;
     std::string_view getView;
     std::string_view setView;
 };
 
 bool HasSelfOrHostPropertyAccessor(std::string_view getView, std::string_view setView, const FunctionCheckState& state)
 {
-    return state.mctx.mixinSelfMembers.contains(std::string(getView)) ||
-           state.mctx.mixinSelfMembers.contains(std::string(setView)) ||
-           state.mctx.hostMembers.contains(std::string(getView)) ||
-           state.mctx.hostMembers.contains(std::string(setView));
+    return state.mctx.mixinSelfMembers.contains(getView) || state.mctx.mixinSelfMembers.contains(setView) ||
+           state.mctx.hostMembers.contains(getView) || state.mctx.hostMembers.contains(setView);
 }
 
-bool HasGlobalPropertyAccessor(const std::string& name, std::string_view getView, std::string_view setView,
+bool HasGlobalPropertyAccessor(std::string_view name, std::string_view getView, std::string_view setView,
                                const DiagnosticContext& ctx)
 {
     const auto& ruleIndex = ctx.request.GetRuleIndex();
@@ -1177,7 +1178,7 @@ bool HasNamespacePropertyAccessor(const AccessorLookupContext& actx, std::string
 }
 
 /** @brief Checks if a name matches getter/setter property accessors in mixin, host, global, or namespaces. */
-bool HasPropertyAccessorMatch(const std::string& name, const FunctionCheckState& state, const DiagnosticContext& ctx)
+bool HasPropertyAccessorMatch(std::string_view name, const FunctionCheckState& state, const DiagnosticContext& ctx)
 {
     if (name.size() > 120)
     {
@@ -1217,7 +1218,7 @@ bool HasPropertyAccessorMatch(const std::string& name, const FunctionCheckState&
     return false;
 }
 
-bool HasNamespaceMember(const std::string& name, std::string_view ns, const DiagnosticContext& ctx)
+bool HasNamespaceMember(std::string_view name, std::string_view ns, const DiagnosticContext& ctx)
 {
     if (ns.empty())
     {
@@ -1240,7 +1241,7 @@ bool HasNamespaceMember(const std::string& name, std::string_view ns, const Diag
     return false;
 }
 
-bool IsEngineOrGlobalIdentifier(const std::string& name, const DiagnosticContext& ctx)
+bool IsEngineOrGlobalIdentifier(std::string_view name, const DiagnosticContext& ctx)
 {
     if (ctx.request.engineRules)
     {
@@ -1255,7 +1256,7 @@ bool IsEngineOrGlobalIdentifier(const std::string& name, const DiagnosticContext
            ctx.request.symbolTable.FindSymbolsPtr(name) != nullptr;
 }
 
-bool IsValidInEnclosingOrUsingNamespaces(const std::string& name, const FunctionCheckState& state,
+bool IsValidInEnclosingOrUsingNamespaces(std::string_view name, const FunctionCheckState& state,
                                          const DiagnosticContext& ctx)
 {
     if (state.mctx.mixinSym && HasNamespaceMember(name, state.mctx.mixinSym->containerName, ctx))
@@ -1278,7 +1279,7 @@ bool IsValidInEnclosingOrUsingNamespaces(const std::string& name, const Function
 }
 
 /** @brief Checks if an identifier resolves in local, mixin, host, or global scopes. */
-bool IsValidMixinIdentifier(const std::string& name, const FunctionCheckState& state, const DiagnosticContext& ctx)
+bool IsValidMixinIdentifier(std::string_view name, const FunctionCheckState& state, const DiagnosticContext& ctx)
 {
     if (IsBuiltinOrKeyword(name, ctx.request.GetEffectiveStringTypeName()))
     {
@@ -1312,12 +1313,15 @@ void CheckCallMember(TSNode cur, std::string_view mixinSource, FunctionCheckStat
         return;
     }
 
-    std::string fnName = GetNodeText(fnNode, mixinSource);
-    if (!utils::ContainsScopeSeparator(fnName) && !fnName.empty() && !IsValidMixinIdentifier(fnName, state, ctx) &&
-        !state.mctx.reported.contains(fnName))
+    std::string_view fnName = parser::GetNodeTextView(fnNode, mixinSource);
+    if (!utils::ContainsScopeSeparator(fnName) && !fnName.empty() && !IsValidMixinIdentifier(fnName, state, ctx))
     {
-        state.mctx.reported.insert(fnName);
-        EmitMixinMemberNotFound(state.mctx, fnName, fnNode, ctx);
+        std::string fnNameStr(fnName);
+        if (!state.mctx.reported.contains(fnNameStr))
+        {
+            state.mctx.reported.insert(fnNameStr);
+            EmitMixinMemberNotFound(state.mctx, fnNameStr, fnNode, ctx);
+        }
     }
 }
 
@@ -1330,17 +1334,21 @@ void CheckIdentifierMember(TSNode cur, std::string_view mixinSource, FunctionChe
         return;
     }
 
-    std::string name = GetNodeText(cur, mixinSource);
-    if (!IsValidMixinIdentifier(name, state, ctx) && !state.mctx.reported.contains(name))
+    std::string_view name = parser::GetNodeTextView(cur, mixinSource);
+    if (!IsValidMixinIdentifier(name, state, ctx))
     {
-        state.mctx.reported.insert(name);
-        EmitMixinMemberNotFound(state.mctx, name, cur, ctx);
+        std::string nameStr(name);
+        if (!state.mctx.reported.contains(nameStr))
+        {
+            state.mctx.reported.insert(nameStr);
+            EmitMixinMemberNotFound(state.mctx, nameStr, cur, ctx);
+        }
     }
 }
 
 /** @brief Collects parameter and local variable names within a mixin function. */
-void CollectLocalNames(TSNode memNode, TSNode funcBody, std::string_view mixinSource,
-                       ankerl::unordered_dense::set<std::string>& localNames)
+void CollectLocalNames(TSNode memNode, std::string_view mixinSource, const MixinCheckContext& mctx,
+                       ankerl::unordered_dense::set<std::string_view>& localNames)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode paramsNode = parser::GetChildByField(memNode, gs.fieldParameters);
@@ -1352,49 +1360,79 @@ void CollectLocalNames(TSNode memNode, TSNode funcBody, std::string_view mixinSo
                                           TSNode pName = parser::GetChildByField(paramChild, gs.fieldName);
                                           if (!ts_node_is_null(pName))
                                           {
-                                              localNames.insert(GetNodeText(pName, mixinSource));
+                                              localNames.insert(parser::GetNodeTextView(pName, mixinSource));
                                           }
                                       });
     }
 
-    parser::ForEachDescendantNode(funcBody,
-                                  [&](TSNode cur)
-                                  {
-                                      const TSSymbol curSym = ts_node_symbol(cur);
-                                      if (curSym == gs.symVariableDeclarator || curSym == gs.symForeachVariable)
-                                      {
-                                          TSNode vdName = parser::GetChildByField(cur, gs.fieldName);
-                                          if (!ts_node_is_null(vdName))
-                                          {
-                                              localNames.insert(GetNodeText(vdName, mixinSource));
-                                          }
-                                      }
-                                  });
+    if (!mctx.nodeIndex)
+    {
+        return;
+    }
+
+    TSNode funcBody = parser::GetChildByField(memNode, gs.fieldBody);
+    if (ts_node_is_null(funcBody))
+    {
+        return;
+    }
+
+    const uint32_t startByte = ts_node_start_byte(funcBody);
+    const uint32_t endByte = ts_node_end_byte(funcBody);
+
+    const auto collectForSymbol = [&](TSSymbol sym)
+    {
+        const auto nodes = mctx.nodeIndex->Nodes(sym);
+        auto it = std::lower_bound(nodes.begin(), nodes.end(), startByte,
+                                   [](const TSNode& n, uint32_t b) { return ts_node_start_byte(n) < b; });
+        for (; it != nodes.end() && ts_node_start_byte(*it) < endByte; ++it)
+        {
+            if (ts_node_end_byte(*it) <= endByte)
+            {
+                TSNode vdName = parser::GetChildByField(*it, gs.fieldName);
+                if (!ts_node_is_null(vdName))
+                {
+                    localNames.insert(parser::GetNodeTextView(vdName, mixinSource));
+                }
+            }
+        }
+    };
+
+    collectForSymbol(gs.symVariableDeclarator);
+    collectForSymbol(gs.symForeachVariable);
 }
 
-/** @brief Walks statements in a mixin function body using flat TSTreeCursor. */
+/** @brief Walks statements in a mixin function body using bounded NodeIndex scans. */
 void CheckFuncBodyStatements(TSNode funcBody, std::string_view mixinSource, FunctionCheckState& state,
                              const DiagnosticContext& ctx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    parser::ForEachDescendantNode(funcBody,
-                                  [&](TSNode cur)
-                                  {
-                                      const TSSymbol curSym = ts_node_symbol(cur);
+    if (!state.mctx.nodeIndex)
+    {
+        return;
+    }
 
-                                      if (curSym == gs.symMemberExpression)
-                                      {
-                                          CheckThisMember(cur, mixinSource, state.mctx, ctx);
-                                      }
-                                      else if (curSym == gs.symCallExpression)
-                                      {
-                                          CheckCallMember(cur, mixinSource, state, ctx);
-                                      }
-                                      else if (curSym == gs.symIdentifier)
-                                      {
-                                          CheckIdentifierMember(cur, mixinSource, state, ctx);
-                                      }
-                                  });
+    const auto& gs = parser::GetGrammarSymbols();
+    const uint32_t startByte = ts_node_start_byte(funcBody);
+    const uint32_t endByte = ts_node_end_byte(funcBody);
+
+    const auto checkNodes = [&](std::span<const TSNode> nodes, auto&& action)
+    {
+        auto it = std::lower_bound(nodes.begin(), nodes.end(), startByte,
+                                   [](const TSNode& n, uint32_t b) { return ts_node_start_byte(n) < b; });
+        for (; it != nodes.end() && ts_node_start_byte(*it) < endByte; ++it)
+        {
+            if (ts_node_end_byte(*it) <= endByte)
+            {
+                action(*it);
+            }
+        }
+    };
+
+    checkNodes(state.mctx.nodeIndex->Nodes(gs.symMemberExpression),
+               [&](TSNode n) { CheckThisMember(n, mixinSource, state.mctx, ctx); });
+    checkNodes(state.mctx.nodeIndex->Nodes(gs.symCallExpression),
+               [&](TSNode n) { CheckCallMember(n, mixinSource, state, ctx); });
+    checkNodes(state.mctx.nodeIndex->Nodes(gs.symIdentifier),
+               [&](TSNode n) { CheckIdentifierMember(n, mixinSource, state, ctx); });
 }
 
 /** @brief Checks member declarations inside a mixin body. */
@@ -1416,16 +1454,15 @@ void CheckMixinBody(TSNode bodyNode, std::string_view mixinSource, MixinCheckCon
                                      return;
                                  }
 
-                                 ankerl::unordered_dense::set<std::string> localNames;
-                                 CollectLocalNames(mem, funcBody, mixinSource, localNames);
+                                 ankerl::unordered_dense::set<std::string_view> localNames;
+                                 CollectLocalNames(mem, mixinSource, mctx, localNames);
                                  FunctionCheckState state{localNames, mctx};
                                  CheckFuncBodyStatements(funcBody, mixinSource, state, ctx);
                              });
 }
 
 /** @brief Collects direct members of a mixin symbol. */
-void CollectMixinSelfMembers(const Symbol& mixinSym, const RuleIndex& ruleIndex,
-                             ankerl::unordered_dense::set<std::string>& outMembers)
+void CollectMixinSelfMembers(const Symbol& mixinSym, const RuleIndex& ruleIndex, TransparentStringSet& outMembers)
 {
     CollectContainerMembers(mixinSym.qualifiedName, ruleIndex, outMembers);
     if (mixinSym.name != mixinSym.qualifiedName)
@@ -1443,6 +1480,57 @@ struct MixinInstantiationCheckRequest
     ankerl::unordered_dense::map<std::string, MixinFileCacheEntry>& fileCache;
 };
 
+struct MixinAstTarget
+{
+    std::string_view source;
+    const TSTree* tree = nullptr;
+    const NodeIndex* nodeIndex = nullptr;
+    std::unique_ptr<NodeIndex> localIndex;
+};
+
+/** @brief Resolves AST tree, source text, and NodeIndex for a mixin symbol. */
+MixinAstTarget ResolveMixinAstTarget(const Symbol& mixinSym, MixinInstantiationCheckRequest& req)
+{
+    MixinAstTarget target;
+    if (mixinSym.fileUri == req.ctx.request.fileUri && req.ctx.request.tree)
+    {
+        target.source = req.ctx.request.sourceCode;
+        target.tree = req.ctx.request.tree;
+        target.nodeIndex = req.ctx.request.GetNodeIndex();
+        if (!target.nodeIndex && target.tree)
+        {
+            target.localIndex = std::make_unique<NodeIndex>(ts_tree_root_node(target.tree));
+            target.nodeIndex = target.localIndex.get();
+        }
+        return target;
+    }
+
+    auto it = req.fileCache.find(mixinSym.fileUri);
+    if (it == req.fileCache.end())
+    {
+        std::string src = ReadMixinSource(mixinSym, req.ctx);
+        if (src.empty())
+        {
+            return target;
+        }
+        auto parser = std::make_unique<parser::AngelScriptParser>();
+        auto allocatedTree = document::MakeTreePtr(parser->Parse(src));
+        std::unique_ptr<NodeIndex> idx;
+        if (allocatedTree)
+        {
+            idx = std::make_unique<NodeIndex>(ts_tree_root_node(allocatedTree.get()));
+        }
+        it = req.fileCache
+                 .emplace(mixinSym.fileUri, MixinFileCacheEntry{std::move(src), std::move(parser),
+                                                                std::move(allocatedTree), std::move(idx)})
+                 .first;
+    }
+    target.source = it->second.source;
+    target.tree = it->second.tree.get();
+    target.nodeIndex = it->second.nodeIndex.get();
+    return target;
+}
+
 /** @brief Validates a single mixin instantiation against host class. */
 void CheckSingleMixinInstantiation(MixinInstantiationCheckRequest& req)
 {
@@ -1453,45 +1541,16 @@ void CheckSingleMixinInstantiation(MixinInstantiationCheckRequest& req)
         return;
     }
 
-    ankerl::unordered_dense::set<std::string> mixinSelfMembers;
+    TransparentStringSet mixinSelfMembers;
     CollectMixinSelfMembers(*mixinSym, req.ctx.request.GetRuleIndex(), mixinSelfMembers);
 
-    const bool isCurrentDoc = mixinSym->fileUri == req.ctx.request.fileUri && req.ctx.request.tree;
-    std::string_view mixinSource;
-    const TSTree* tree = nullptr;
-
-    if (isCurrentDoc)
-    {
-        mixinSource = req.ctx.request.sourceCode;
-        tree = req.ctx.request.tree;
-    }
-    else
-    {
-        auto it = req.fileCache.find(mixinSym->fileUri);
-        if (it == req.fileCache.end())
-        {
-            std::string src = ReadMixinSource(*mixinSym, req.ctx);
-            if (src.empty())
-            {
-                return;
-            }
-            auto parser = std::make_unique<parser::AngelScriptParser>();
-            auto allocatedTree = document::MakeTreePtr(parser->Parse(src));
-            it = req.fileCache
-                     .emplace(mixinSym->fileUri,
-                              MixinFileCacheEntry{std::move(src), std::move(parser), std::move(allocatedTree)})
-                     .first;
-        }
-        mixinSource = it->second.source;
-        tree = it->second.tree.get();
-    }
-
-    if (!tree || mixinSource.empty())
+    MixinAstTarget target = ResolveMixinAstTarget(*mixinSym, req);
+    if (!target.tree || target.source.empty() || !target.nodeIndex)
     {
         return;
     }
 
-    TSNode mixinNode = FindMixinAstNode(tree, *mixinSym);
+    TSNode mixinNode = FindMixinAstNode(target.tree, *mixinSym);
     if (ts_node_is_null(mixinNode))
     {
         return;
@@ -1501,10 +1560,11 @@ void CheckSingleMixinInstantiation(MixinInstantiationCheckRequest& req)
     TSNode bodyNode = parser::GetChildByField(mixinNode, parser::GetGrammarSymbols().fieldBody);
     if (!ts_node_is_null(bodyNode))
     {
-        ankerl::unordered_dense::set<std::string> reportedMissingMembers;
-        MixinCheckContext mctx{req.baseMembers.hostClassName, mixinSym,         hostRange,
-                               req.baseMembers.hostMembers,   mixinSelfMembers, reportedMissingMembers};
-        CheckMixinBody(bodyNode, mixinSource, mctx, req.ctx);
+        TransparentStringSet reportedMissingMembers;
+        MixinCheckContext mctx{
+            req.baseMembers.hostClassName, mixinSym,        hostRange, req.baseMembers.hostMembers, mixinSelfMembers,
+            reportedMissingMembers,        target.nodeIndex};
+        CheckMixinBody(bodyNode, target.source, mctx, req.ctx);
     }
 }
 

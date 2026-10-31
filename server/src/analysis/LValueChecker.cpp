@@ -1,4 +1,4 @@
-﻿#include "analysis/LValueChecker.h"
+#include "analysis/LValueChecker.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
@@ -251,7 +251,9 @@ bool IsIdentifierAssignable(std::string_view name, const Scope* scope, const Sym
     return true;
 }
 
-bool IsAssignableMember(TSNode node, const Scope* scope, const SymbolTable& table, std::string_view sourceCode)
+bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const DiagnosticContext& ctx);
+
+bool IsAssignableMember(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
     TSNode objNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldObject);
     TSNode memNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldMember);
@@ -259,20 +261,20 @@ bool IsAssignableMember(TSNode node, const Scope* scope, const SymbolTable& tabl
     {
         return true;
     }
-    std::string memName = NodeText(memNode, sourceCode);
+    std::string memName = NodeText(memNode, ctx.request.sourceCode);
     if (memName.empty())
     {
         return true;
     }
-    std::string objType = ResolveExpressionType(objNode, ExpressionTypeContext(scope, table, sourceCode));
+    std::string objType = ResolveExpressionType(objNode, ExpressionTypeContext(scope, ctx));
     std::string cleanObj = CleanBaseType(objType);
     if (cleanObj.empty())
     {
         return true;
     }
-    for (const auto& typeName : GetInheritedTypeHierarchy(cleanObj, table))
+    for (const auto& typeName : GetInheritedTypeHierarchy(cleanObj, ctx.request.symbolTable, ctx.request.exprCache))
     {
-        if (auto found = table.FindMemberSymbolPtr(typeName, memName))
+        if (auto found = ctx.request.symbolTable.FindMemberSymbolPtr(typeName, memName))
         {
             bool hasAssignable = false;
             for (const auto& sym : *found)
@@ -286,9 +288,10 @@ bool IsAssignableMember(TSNode node, const Scope* scope, const SymbolTable& tabl
             if (!hasAssignable)
             {
                 bool hasSetter = false;
-                for (const auto& ancestor : GetInheritedTypeHierarchy(cleanObj, table))
+                for (const auto& ancestor :
+                     GetInheritedTypeHierarchy(cleanObj, ctx.request.symbolTable, ctx.request.exprCache))
                 {
-                    auto setters = table.FindSymbolsPtr(ancestor + "::set_" + memName);
+                    auto setters = ctx.request.symbolTable.FindSymbolsPtr(ancestor + "::set_" + memName);
                     if (setters && !setters->empty())
                     {
                         hasSetter = true;
@@ -305,9 +308,7 @@ bool IsAssignableMember(TSNode node, const Scope* scope, const SymbolTable& tabl
     return true;
 }
 
-bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const SymbolTable& table, std::string_view sourceCode);
-
-bool IsTernaryAssignable(TSNode node, const Scope* scope, const SymbolTable& table, std::string_view sourceCode)
+bool IsTernaryAssignable(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
     TSNode consequence = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldConsequence);
     TSNode alternative = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldAlternative);
@@ -319,13 +320,12 @@ bool IsTernaryAssignable(TSNode node, const Scope* scope, const SymbolTable& tab
             alternative = ts_node_named_child(node, 2);
         }
     }
-    if (!IsAssignableLValueNode(consequence, scope, table, sourceCode) ||
-        !IsAssignableLValueNode(alternative, scope, table, sourceCode))
+    if (!IsAssignableLValueNode(consequence, scope, ctx) || !IsAssignableLValueNode(alternative, scope, ctx))
     {
         return false;
     }
-    const std::string type1 = ResolveExpressionType(consequence, {scope, table, sourceCode});
-    const std::string type2 = ResolveExpressionType(alternative, {scope, table, sourceCode});
+    const std::string type1 = ResolveExpressionType(consequence, ExpressionTypeContext(scope, ctx));
+    const std::string type2 = ResolveExpressionType(alternative, ExpressionTypeContext(scope, ctx));
     if (!type1.empty() && !type2.empty() && CleanBaseType(type1) != CleanBaseType(type2))
     {
         return false;
@@ -333,19 +333,19 @@ bool IsTernaryAssignable(TSNode node, const Scope* scope, const SymbolTable& tab
     return true;
 }
 
-bool IsUnaryAssignable(TSNode node, const Scope* scope, const SymbolTable& table, std::string_view sourceCode)
+bool IsUnaryAssignable(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
     if (!ts_node_is_null(opNode) && ts_node_symbol(opNode) == gs.tokAt)
     {
         TSNode operand = parser::GetChildByField(node, gs.fieldOperand);
-        return IsAssignableLValueNode(operand, scope, table, sourceCode);
+        return IsAssignableLValueNode(operand, scope, ctx);
     }
     return false;
 }
 
-bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const SymbolTable& table, std::string_view sourceCode)
+bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const DiagnosticContext& ctx)
 {
     if (ts_node_is_null(rawNode))
     {
@@ -362,15 +362,15 @@ bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const SymbolTabl
     const TSSymbol sym = ts_node_symbol(node);
     if (sym == gs.symTernaryExpression)
     {
-        return IsTernaryAssignable(node, scope, table, sourceCode);
+        return IsTernaryAssignable(node, scope, ctx);
     }
     if (sym == gs.symUnaryExpression)
     {
-        return IsUnaryAssignable(node, scope, table, sourceCode);
+        return IsUnaryAssignable(node, scope, ctx);
     }
     if (sym == gs.symMemberExpression)
     {
-        return IsAssignableMember(node, scope, table, sourceCode);
+        return IsAssignableMember(node, scope, ctx);
     }
     if (sym == gs.symIndexExpression)
     {
@@ -378,7 +378,8 @@ bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const SymbolTabl
     }
     if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier || sym == gs.tokFunction)
     {
-        return IsIdentifierAssignable(NodeText(node, sourceCode), scope, table, ts_node_start_byte(node));
+        return IsIdentifierAssignable(NodeText(node, ctx.request.sourceCode), scope, ctx.request.symbolTable,
+                                      ts_node_start_byte(node));
     }
     return false;
 }
@@ -412,7 +413,7 @@ void CheckAssignmentTarget(TSNode node, const LValueCheckRequest& request, const
         return;
     }
 
-    if (!IsAssignableLValueNode(target, scope, ctx.request.symbolTable, request.sourceCode))
+    if (!IsAssignableLValueNode(target, scope, ctx))
     {
         if (const auto dt = IsBareDataType(target, scope, ctx.request.symbolTable, request.sourceCode))
         {

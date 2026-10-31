@@ -479,6 +479,27 @@ def check_no_duplicate_to_source_range():
                     violations.append((file_path, line_num, stripped))
     return violations
 
+def check_no_for_each_descendant_node():
+    """
+    Enforces that ForEachDescendantNode is eradicated across the entire server/src/ codebase.
+    """
+    violations = []
+    pattern = re.compile(r"\bForEachDescendantNode\b")
+    for file_path in SERVER_SRC.rglob("*.[ch]*"):
+        if not file_path.is_file():
+            continue
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for line_num, line in enumerate(content.splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                continue
+            if pattern.search(line):
+                violations.append((file_path, line_num, stripped))
+    return violations
+
 def check_no_analysis_ast_utils():
     """Enforces that analysis/ASTUtils.h does not exist (unified into parser/ASTUtils.h)."""
     target = SERVER_SRC / "analysis" / "ASTUtils.h"
@@ -641,6 +662,14 @@ def main():
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
 
+    descendant_violations = check_no_for_each_descendant_node()
+    if descendant_violations:
+        has_errors = True
+        print("[ERROR] ForEachDescendantNode detected in server/src/ (eradicated in favor of NodeIndex and flat cursors):")
+        for f, line_num, line in descendant_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
     analysis_ast_utils_violations = check_no_analysis_ast_utils()
     if analysis_ast_utils_violations:
         has_errors = True
@@ -652,7 +681,7 @@ def main():
     if has_errors:
         sys.exit(1)
 
-    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 engine hardcodings, 0 type hardcodings).")
+    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 ForEachDescendantNode, 0 engine hardcodings, 0 type hardcodings).")
 
 if __name__ == "__main__":
     main()

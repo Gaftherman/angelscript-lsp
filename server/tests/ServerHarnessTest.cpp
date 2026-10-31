@@ -79,6 +79,11 @@ struct WorkspaceFixture
     {
         return angel_lsp::utils::PathToUri(dir.string());
     }
+
+    std::string Path(const std::string& name) const
+    {
+        return (dir / name).string();
+    }
 };
 
 /** @brief Waits deterministically until a needle has appeared at least `times` times. */
@@ -1076,6 +1081,45 @@ TEST_CASE("Server - An opened predefined stub is not judged as a script")
 
     RunScript(serverConfig, scriptStream);
     CHECK(PublishedFrames(scriptStream.Output()).find("\"as-err-missing-body\"") != std::string::npos);
+}
+
+TEST_CASE("Server - Opened predefined stub supports semantic tokens and hover")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("CPredefEntity");
+    const std::string methodName = angel_lsp::test::GenerateRandomSymbolName("DoPredefAction");
+    const std::string stub = fmt::format("class {}\n"
+                                         "{{\n"
+                                         "    void {}();\n"
+                                         "}}\n",
+                                         className, methodName);
+
+    WorkspaceFixture fixture;
+    fixture.Write("engine.as.predefined", stub);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(fixture.Uri("engine.as.predefined"), stub));
+
+    stream.Push(
+        R"({"jsonrpc":"2.0","id":2,"method":"textDocument/semanticTokens/full","params":{"textDocument":{"uri":")" +
+        fixture.Uri("engine.as.predefined") + R"("}}})");
+
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"textDocument/hover","params":{"textDocument":{"uri":")" +
+                fixture.Uri("engine.as.predefined") + R"("},"position":{"line":0,"character":6}}})");
+
+    stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.activePredefined = fixture.Path("engine.as.predefined");
+    RunScript(serverConfig, stream);
+
+    const std::string r2 = stream.ResponseFor(2);
+    CHECK(r2.find("\"data\"") != std::string::npos);
+    CHECK(r2.find("\"data\":[]") == std::string::npos);
+
+    const std::string r3 = stream.ResponseFor(3);
+    CHECK(r3.find(className) != std::string::npos);
 }
 
 // =====================================================================================

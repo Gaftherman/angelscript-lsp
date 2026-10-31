@@ -51,13 +51,13 @@ jobs:
             cmake_flags: '-DCMAKE_CXX_FLAGS="-m32" -DCMAKE_C_FLAGS="-m32"'
           # macOS x64 (Intel)
           - os: macos
-            runner: macos-14
+            runner: macos-15
             arch: x64
             msvc_arch: ""
             cmake_flags: "-DCMAKE_OSX_ARCHITECTURES=x86_64"
           # macOS arm64 (Apple Silicon)
           - os: macos
-            runner: macos-14
+            runner: macos-15
             arch: arm64
             msvc_arch: ""
             cmake_flags: "-DCMAKE_OSX_ARCHITECTURES=arm64"

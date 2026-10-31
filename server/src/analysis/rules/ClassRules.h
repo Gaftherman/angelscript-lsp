@@ -1,6 +1,6 @@
 #pragma once
 
-#include "analysis/DiagnosticContext.h"
+#include "analysis/NodeIndex.h"
 #include "document/Document.h"
 #include "parser/AngelScriptParser.h"
 
@@ -8,7 +8,14 @@
 #include <memory>
 #include <string>
 
-namespace angel_lsp::analysis::rules
+namespace angel_lsp::analysis
+{
+struct DiagnosticContext;
+class NodeIndex;
+struct Symbol;
+class SymbolTable;
+
+namespace rules
 {
 /**
  * @brief Cache entry for parsed mixin source and AST tree.
@@ -18,6 +25,7 @@ struct MixinFileCacheEntry
     std::string source;
     std::unique_ptr<parser::AngelScriptParser> parser;
     document::TreePtr tree;
+    std::unique_ptr<NodeIndex> nodeIndex;
 };
 
 using MixinFileCache = ankerl::unordered_dense::map<std::string, MixinFileCacheEntry>;
@@ -46,4 +54,5 @@ void ValidateClass(const Symbol& sym, const DiagnosticContext& ctx, MixinFileCac
  *       interface hierarchies - as a cycle.
  */
 bool HasInheritanceCycle(const std::string& typeName, const SymbolTable& table);
-} // namespace angel_lsp::analysis::rules
+} // namespace rules
+} // namespace angel_lsp::analysis

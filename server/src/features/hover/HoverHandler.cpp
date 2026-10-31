@@ -1,4 +1,4 @@
-﻿#include "features/hover/HoverHandler.h"
+#include "features/hover/HoverHandler.h"
 #include "analysis/DocComment.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
@@ -1411,7 +1411,7 @@ std::optional<lsp::Hover> FormatMemberHover(std::vector<analysis::Symbol>& membe
 std::optional<lsp::Hover> TryHoverMemberAccess(const HoverQueryContext& ctx)
 {
     utils::HighResTimer symTimer;
-    if (ts_node_is_null(ctx.parent) || ts_node_symbol(ctx.parent) != parser::GetGrammarSymbols().symMemberExpression)
+    if (!IsMemberChildOfExpression(ctx.node, ctx.parent))
     {
         ctx.profiler.symMs += symTimer.ElapsedMs();
         return std::nullopt;
@@ -2480,8 +2480,7 @@ std::optional<lsp::Hover> TryHoverExpressionOrLocal(const HoverQueryContext& ctx
         return autoHover;
     }
 
-    bool isMemberChild = IsMemberChildOfExpression(ctx.node, ctx.parent);
-    if (isMemberChild)
+    if (IsMemberChildOfExpression(ctx.node, ctx.parent))
     {
         if (auto memberHover = TryHoverMemberAccess(ctx))
         {
@@ -2504,13 +2503,6 @@ std::optional<lsp::Hover> TryHoverExpressionOrLocal(const HoverQueryContext& ctx
         return namedArgHover;
     }
 
-    if (!isMemberChild)
-    {
-        if (auto memberHover = TryHoverMemberAccess(ctx))
-        {
-            return memberHover;
-        }
-    }
     return std::nullopt;
 }
 

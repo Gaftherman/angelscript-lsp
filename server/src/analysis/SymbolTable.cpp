@@ -797,14 +797,22 @@ void SymbolTable::CopyActiveModuleSymbolsLocked(SymbolTable& snapshot, const Sna
             }
         }
         std::lock_guard<std::mutex> ruleGuard(m_ruleIndexMutex);
-        if (m_ruleIndexPartials && snapshot.m_ruleIndex && snapshot.m_ruleIndexPartials)
+        if (snapshot.m_ruleIndex && snapshot.m_ruleIndexPartials)
         {
-            const auto itPartial = m_ruleIndexPartials->find(modUri);
-            if (itPartial != m_ruleIndexPartials->end())
+            if (!m_ruleIndexPartials)
             {
-                snapshot.m_ruleIndex->ApplyPartial(itPartial->second);
-                (*snapshot.m_ruleIndexPartials)[modUri] = itPartial->second;
+                m_ruleIndexPartials =
+                    std::make_unique<ankerl::unordered_dense::map<std::string, rules::RuleIndexPartial>>();
             }
+            auto itPartial = m_ruleIndexPartials->find(modUri);
+            if (itPartial == m_ruleIndexPartials->end())
+            {
+                auto docSymbols = GetDocumentSymbolPointersLocked(modUri);
+                rules::RuleIndexPartial partial = rules::RuleIndex::BuildPartial(modUri, docSymbols);
+                itPartial = m_ruleIndexPartials->emplace(modUri, std::move(partial)).first;
+            }
+            snapshot.m_ruleIndex->ApplyPartial(itPartial->second);
+            (*snapshot.m_ruleIndexPartials)[modUri] = itPartial->second;
         }
     }
 }

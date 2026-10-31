@@ -452,6 +452,7 @@ struct CalleeResolutionResult
     std::string fileUri;
     std::string calleeName;
     std::vector<analysis::ParameterInformation> parameters;
+    std::optional<lsp::Range> selectionRange;
 };
 
 /**
@@ -466,7 +467,19 @@ CalleeResolutionResult ExtractCalleeFromSymbol(const analysis::Symbol* sym)
         return {};
     }
     const auto* params = GetParametersIfCallable(*sym);
-    return {sym->fileUri, sym->name, params ? *params : std::vector<analysis::ParameterInformation>{}};
+    std::optional<lsp::Range> selRange;
+    if (sym->selectionRange.startLine != sym->selectionRange.endLine ||
+        sym->selectionRange.startCharacter != sym->selectionRange.endCharacter)
+    {
+        selRange = lsp::Range{lsp::Position{sym->selectionRange.startLine, sym->selectionRange.startCharacter},
+                              lsp::Position{sym->selectionRange.endLine, sym->selectionRange.endCharacter}};
+    }
+    else if (sym->startLine != sym->endLine || sym->startCharacter != sym->endCharacter)
+    {
+        selRange = lsp::Range{lsp::Position{sym->startLine, sym->startCharacter},
+                              lsp::Position{sym->endLine, sym->endCharacter}};
+    }
+    return {sym->fileUri, sym->name, params ? *params : std::vector<analysis::ParameterInformation>{}, selRange};
 }
 
 /**
@@ -1285,10 +1298,12 @@ struct ParamHintContext
  * @param[in] fallbackUri Fallback document URI.
  * @param[in] calleeUri Declared URI of the callee.
  * @param[in] param Callee parameter information.
+ * @param[in] fallbackRange Optional fallback location range if parameter has no valid range.
  * @return Resolved Location if parameter has valid range, std::nullopt otherwise.
  */
 std::optional<lsp::Location> ResolveParameterLocation(const std::string& fallbackUri, const std::string& calleeUri,
-                                                      const analysis::ParameterInformation& param)
+                                                      const analysis::ParameterInformation& param,
+                                                      const std::optional<lsp::Range>& fallbackRange = std::nullopt)
 {
     const std::string& targetUri = calleeUri.empty() ? fallbackUri : calleeUri;
     if (targetUri.empty())
@@ -1301,6 +1316,10 @@ std::optional<lsp::Location> ResolveParameterLocation(const std::string& fallbac
         hasNameLoc || (param.startLine != param.endLine || param.startCharacter != param.endCharacter);
     if (!hasValidLoc)
     {
+        if (fallbackRange.has_value())
+        {
+            return lsp::Location{ParseOrConvertUri(targetUri), *fallbackRange};
+        }
         return std::nullopt;
     }
     const uint32_t sL = hasNameLoc ? param.nameStartLine : param.startLine;
@@ -1362,14 +1381,12 @@ lsp::InlayHint BuildParameterHint(const ParamHintContext& ctx, const analysis::P
     part.value = prefix + label + ":";
     if (enableLocation)
     {
-        part.location = ResolveParameterLocation(ctx.request.uri, ctx.callee.fileUri, param);
+        part.location = ResolveParameterLocation(ctx.request.uri, ctx.callee.fileUri, param, ctx.callee.selectionRange);
     }
     if (enableTooltip)
     {
-        const std::string tooltipMd = part.location.has_value()
-                                          ? FormatGoToDefinitionLink(*part.location, ctx.request.i18n)
-                                          : FormatParameterTooltip(param, label);
-        part.tooltip = lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), tooltipMd};
+        part.tooltip =
+            lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), FormatParameterTooltip(param, label)};
     }
     hint.label = std::vector<lsp::InlayHintLabelPart>{std::move(part)};
     hint.kind = lsp::InlayHintKindEnum(lsp::InlayHintKind::Parameter);

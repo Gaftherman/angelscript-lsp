@@ -212,6 +212,7 @@ std::vector<angel_lsp::analysis::Diagnostic> Server::CollectScopesAndAnalyze(con
     analysisReq.scopeRoot = scopeRoot;
     analysisReq.mutableScopeRoot = scopeRoot.get();
     analysisReq.nodeIndex = nodeIndex;
+    analysisReq.mixinCache = &m_serverMixinCache;
 
     utils::HighResTimer checkTimer;
     auto diagnostics = m_semanticAnalyzer->Analyze(analysisReq);
@@ -555,7 +556,32 @@ const analysis::SymbolTable* Server::PrepareAnalysisSnapshot(const std::string& 
     return outSnapshot.get();
 }
 
-void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer)
+void Server::LogAnalysisProfileAndClosure(const std::string& uriStr, double closureMs,
+                                          const AnalysisTimingProfile& profile) const
+{
+    LogAnalysisProfile("[Analysis]", uriStr, profile);
+    if (closureMs > 0.05)
+    {
+        LogInfo(fmt::format("[Analysis Breakdown] File: {} | Closure: {}", uriStr, utils::FormatDuration(closureMs)));
+    }
+}
+
+std::vector<analysis::Diagnostic> Server::AnalyzeWorkerSemantics(angel_lsp::analysis::SemanticAnalysisRequest baseReq,
+                                                                 double& outCheckMs)
+{
+    utils::HighResTimer checkTimer;
+    if (m_clearWorkerMixinCache.exchange(false, std::memory_order_acq_rel))
+    {
+        m_workerMixinCache.clear();
+    }
+    baseReq.mixinCache = &m_workerMixinCache;
+    auto diagnostics = m_semanticAnalyzer->Analyze(baseReq);
+    outCheckMs = checkTimer.ElapsedMs();
+    return diagnostics;
+}
+
+std::optional<Server::ParseAndCollectResult> Server::PrepareWorkerDocument(AnalyzeDocumentRequest& req,
+                                                                           angel_lsp::analysis::SymbolTable& staging)
 {
     LogInfo(fmt::format("[Analysis] Starting background analysis for file: {}", req.uriStr));
 
@@ -564,27 +590,46 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
         WaitForPredefinedReady(std::chrono::milliseconds(5000));
     }
 
-    angel_lsp::analysis::SymbolTable staging;
     auto parsed = ParseAndCollectSymbols(req, staging);
     if (!parsed.tree)
-        return;
+    {
+        return std::nullopt;
+    }
 
     if (m_config.features.enablePredefinedLoader && !IsPredefinedReady())
     {
         CommitSyntaxOnlyResults(req, std::move(parsed.diagnostics));
-        return;
+        return std::nullopt;
     }
 
     if (IsAnalysisRequestStale(req))
+    {
+        return std::nullopt;
+    }
+
+    return parsed;
+}
+
+void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer)
+{
+    angel_lsp::analysis::SymbolTable staging;
+    auto parsedOpt = PrepareWorkerDocument(req, staging);
+    if (!parsedOpt)
+    {
         return;
+    }
+    auto parsed = std::move(*parsedOpt);
 
     const TSNode root = ts_tree_root_node(parsed.tree.get());
     analysis::NodeIndex nodeIndex(root);
     const bool unchangedClosedFile = IsUnchangedClosedDocument(req.uriStr, req.generation, staging);
+    utils::HighResTimer closureTimer;
     if (!unchangedClosedFile)
     {
         IndexModuleClosure(req.uriStr);
     }
+    const double closureMs = closureTimer.ElapsedMs();
+
     utils::HighResTimer snapshotTimer;
     std::unique_ptr<analysis::SymbolTable> analysisSnapshot;
     const analysis::SymbolTable* activeTable =
@@ -597,22 +642,26 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     std::vector<analysis::CallSite> calls;
     if (!unchangedClosedFile)
         calls = analysis::CollectCalls(root, req.text);
-    double scopeMs = scopeTimer.ElapsedMs();
+    const double scopeMs = scopeTimer.ElapsedMs();
 
-    utils::HighResTimer checkTimer;
     auto request = BuildAnalysisRequest(req.uriStr, req.text, parsed.tree.get(), activeTable);
     request.scopeRoot = scopeRoot;
     request.mutableScopeRoot = scopeRoot.get();
     request.nodeIndex = &nodeIndex;
 
-    auto semanticDiagnostics = m_semanticAnalyzer->Analyze(request);
-    double checkMs = checkTimer.ElapsedMs();
+    double checkMs = 0.0;
+    auto semanticDiagnostics = AnalyzeWorkerSemantics(std::move(request), checkMs);
 
     parsed.diagnostics.insert(parsed.diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
     AppendIncludeDiagnostics(req.uriStr, req.text, parsed.diagnostics);
 
-    const double totalMs = totalTimer.ElapsedMs();
-    LogAnalysisProfile("[Analysis]", req.uriStr, {totalMs, snapshotMs, parsed.parseMs, parsed.colMs, scopeMs, checkMs});
+    LogAnalysisProfileAndClosure(req.uriStr, closureMs,
+                                 AnalysisTimingProfile{.totalMs = totalTimer.ElapsedMs(),
+                                                       .snapshotMs = snapshotMs,
+                                                       .parseMs = parsed.parseMs,
+                                                       .colMs = parsed.colMs,
+                                                       .scopeMs = scopeMs,
+                                                       .checkMs = checkMs});
 
     CommitAnalysisResults({.uriStr = req.uriStr,
                            .version = req.version,

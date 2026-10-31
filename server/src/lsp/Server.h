@@ -7,6 +7,7 @@
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/SymbolCollector.h"
 #include "analysis/SymbolTable.h"
+#include "analysis/rules/ClassRules.h"
 #include "config/ServerConfig.h"
 #include "document/Document.h"
 #include "features/definition/DefinitionHandler.h"
@@ -250,6 +251,30 @@ class Server
     // actually changed the document's exported interface, avoiding false-negatives when
     // background keystrokes already committed newer symbols to the live table before didSave.
     ankerl::unordered_dense::map<std::string, uint64_t> m_lastSavedInterfaceHash;
+
+    /**
+     * @brief Memoization cache for parsed mixin file ASTs during background analysis worker tasks.
+     */
+    angel_lsp::analysis::rules::MixinFileCache m_workerMixinCache;
+
+    /**
+     * @brief Memoization cache for parsed mixin file ASTs during synchronous server-thread analysis.
+     */
+    angel_lsp::analysis::rules::MixinFileCache m_serverMixinCache;
+
+    /**
+     * @brief Atomic signal indicating that the background analysis worker should clear its mixin cache.
+     */
+    std::atomic<bool> m_clearWorkerMixinCache{false};
+
+    /**
+     * @brief Invalidates parsed mixin AST memoization caches across server and worker contexts.
+     */
+    void ClearMixinCaches()
+    {
+        m_serverMixinCache.clear();
+        m_clearWorkerMixinCache.store(true, std::memory_order_release);
+    }
 
     // Negotiated in HandleRequestsInitialized. UTF-16 is the protocol default and the only
     // value a server may assume when the client stays silent; UTF-8 makes every conversion in
@@ -2244,6 +2269,15 @@ class Server
     ParseAndCollectResult ParseAndCollectSymbols(AnalyzeDocumentRequest& req,
                                                  angel_lsp::analysis::SymbolTable& staging);
 
+    /**
+     * @brief Prepares and parses a worker analysis request, verifying stales and predefined status.
+     * @param[in,out] req Analysis request bundle.
+     * @param[out] staging Staging table populated with document symbols.
+     * @return Parse result if document should proceed to semantic analysis, or std::nullopt.
+     */
+    std::optional<ParseAndCollectResult> PrepareWorkerDocument(AnalyzeDocumentRequest& req,
+                                                               angel_lsp::analysis::SymbolTable& staging);
+
     struct AnalysisTimingProfile
     {
         double totalMs = 0.0;
@@ -2262,6 +2296,24 @@ class Server
      */
     void LogAnalysisProfile(std::string_view prefix, const std::string& uriStr,
                             const AnalysisTimingProfile& profile) const;
+
+    /**
+     * @brief Logs analysis profiling timings and module closure duration if non-trivial.
+     * @param[in] uriStr Document URI being reported.
+     * @param[in] closureMs Elapsed time for module closure indexing.
+     * @param[in] profile Aggregated phase timings.
+     */
+    void LogAnalysisProfileAndClosure(const std::string& uriStr, double closureMs,
+                                      const AnalysisTimingProfile& profile) const;
+
+    /**
+     * @brief Executes semantic analysis passes using worker-thread mixin memoization caches.
+     * @param[in] baseReq Fully prepared analysis request payload.
+     * @param[out] outCheckMs Output duration of the semantic analyzer run in milliseconds.
+     * @return Semantic diagnostics emitted for the document.
+     */
+    std::vector<analysis::Diagnostic> AnalyzeWorkerSemantics(angel_lsp::analysis::SemanticAnalysisRequest baseReq,
+                                                             double& outCheckMs);
 
     /**
      * @brief Analyzes a normal AngelScript document and commits its symbols, scopes, and diagnostics.

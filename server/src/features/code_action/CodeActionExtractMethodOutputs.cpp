@@ -260,6 +260,46 @@ void CollectInternalDefinitionsUsedAfter(const ExtractMethodStatements& stmts, c
     }
 }
 
+void TraverseSubtreeMutations(TSNode root, std::string_view sourceCode,
+                              ankerl::unordered_dense::set<std::string>& mutatedVars)
+{
+    if (ts_node_is_null(root))
+    {
+        return;
+    }
+    TSTreeCursor cursor = ts_tree_cursor_new(root);
+    bool visiting = true;
+    while (visiting)
+    {
+        const TSNode current = ts_tree_cursor_current_node(&cursor);
+        CheckNodeMutations(current, sourceCode, mutatedVars);
+
+        if (ts_tree_cursor_goto_first_child(&cursor))
+        {
+            continue;
+        }
+        if (ts_tree_cursor_goto_next_sibling(&cursor))
+        {
+            continue;
+        }
+
+        bool backtracked = false;
+        while (ts_tree_cursor_goto_parent(&cursor))
+        {
+            if (ts_tree_cursor_goto_next_sibling(&cursor))
+            {
+                backtracked = true;
+                break;
+            }
+        }
+        if (!backtracked)
+        {
+            visiting = false;
+        }
+    }
+    ts_tree_cursor_delete(&cursor);
+}
+
 } // namespace
 
 ankerl::unordered_dense::set<std::string> CollectMutatedVariables(const std::vector<TSNode>& stmts,
@@ -268,11 +308,7 @@ ankerl::unordered_dense::set<std::string> CollectMutatedVariables(const std::vec
     ankerl::unordered_dense::set<std::string> mutatedVars;
     for (const auto& stmt : stmts)
     {
-        if (ts_node_is_null(stmt))
-        {
-            continue;
-        }
-        parser::ForEachDescendantNode(stmt, [&](TSNode curr) { CheckNodeMutations(curr, sourceCode, mutatedVars); });
+        TraverseSubtreeMutations(stmt, sourceCode, mutatedVars);
     }
     return mutatedVars;
 }

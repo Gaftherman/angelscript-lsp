@@ -2314,3 +2314,79 @@ TEST_CASE("Hover - Type in qualified path and namespace global variable formatti
         CHECK(text.find(nsName + "::" + globalVar) != std::string::npos);
     }
 }
+
+TEST_CASE("HoverHandler - Virtual Property and Member Access Chain in Binary Condition")
+{
+    const std::string playerClass = angel_lsp::test::GenerateRandomSymbolName("CBasePlayer");
+    const std::string entvarsClass = angel_lsp::test::GenerateRandomSymbolName("entvars_t");
+    const std::string hostClass = angel_lsp::test::GenerateRandomSymbolName("CBaseEntity");
+    const std::string propName = angel_lsp::test::GenerateRandomSymbolName("m_pPlayer");
+    const std::string flOnGround = angel_lsp::test::GenerateRandomSymbolName("FL_ONGROUND");
+    const std::string waterlevelFeet = angel_lsp::test::GenerateRandomSymbolName("WATERLEVEL_FEET");
+    const std::string waterlevelField = angel_lsp::test::GenerateRandomSymbolName("waterlevel");
+    const std::string flagsField = angel_lsp::test::GenerateRandomSymbolName("flags");
+    const std::string ladderMethod = angel_lsp::test::GenerateRandomSymbolName("IsOnLadder");
+    const std::string pevField = angel_lsp::test::GenerateRandomSymbolName("pev");
+
+    const std::string code =
+        fmt::format("const int {} = 1;\n"
+                    "const int {} = 2;\n"
+                    "class {}\n"
+                    "{{\n"
+                    "    int {};\n"
+                    "    int {};\n"
+                    "}}\n"
+                    "class {}\n"
+                    "{{\n"
+                    "    {}@ {};\n"
+                    "    bool {}() {{ return false; }}\n"
+                    "}}\n"
+                    "class {}\n"
+                    "{{\n"
+                    "    {}@ {}\n"
+                    "    {{\n"
+                    "        get const {{ return null; }}\n"
+                    "    }}\n"
+                    "    void CheckPlayer()\n"
+                    "    {{\n"
+                    "        if ({}.{}.{} > {} || {}.{}() || {}.{}.{} & {} == 0)\n"
+                    "        {{\n"
+                    "        }}\n"
+                    "    }}\n"
+                    "}}\n",
+                    flOnGround, waterlevelFeet, entvarsClass, waterlevelField, flagsField, playerClass, entvarsClass,
+                    pevField, ladderMethod, hostClass, playerClass, propName, propName, pevField, waterlevelField,
+                    waterlevelFeet, propName, ladderMethod, propName, pevField, flagsField, flOnGround);
+
+    TestEnvironment env(code);
+
+    const auto checkHover = [&](std::string_view targetText, std::string_view expectedContains)
+    {
+        const size_t pos = code.rfind(targetText);
+        REQUIRE(pos != std::string::npos);
+        uint32_t line = 0;
+        size_t lineStart = 0;
+        for (size_t i = 0; i < pos; ++i)
+        {
+            if (code[i] == '\n')
+            {
+                ++line;
+                lineStart = i + 1;
+            }
+        }
+        auto hover = env.HoverAt(line, static_cast<uint32_t>(pos - lineStart));
+        REQUIRE(hover.has_value());
+        const std::string text = std::get<lsp::MarkupContent>(hover->contents).value;
+        CHECK(text.find(expectedContains) != std::string::npos);
+    };
+
+    checkHover(propName, propName);
+    checkHover(propName, playerClass);
+    checkHover(pevField, pevField);
+    checkHover(pevField, entvarsClass);
+    checkHover(waterlevelField, waterlevelField);
+    checkHover(ladderMethod, ladderMethod);
+    checkHover(flagsField, flagsField);
+    checkHover(flOnGround, flOnGround);
+    checkHover(waterlevelFeet, waterlevelFeet);
+}

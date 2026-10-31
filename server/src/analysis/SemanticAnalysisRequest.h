@@ -4,6 +4,7 @@
 #include "analysis/ExpressionTypeCache.h"
 #include "analysis/ScopeTree.h"
 #include "analysis/SymbolTable.h"
+#include "analysis/rules/ClassRules.h"
 #include "analysis/rules/RuleIndex.h"
 #include "config/ServerConfig.h"
 #include "i18n/i18n.h"
@@ -136,6 +137,9 @@ struct SemanticAnalysisRequest
 
     /** @brief Optional memoization cache for resolved expression types across analysis passes. */
     mutable ExpressionTypeCache* exprCache = nullptr;
+
+    /** @brief Optional memoization cache for resolved mixin ASTs across class checks. */
+    mutable rules::MixinFileCache* mixinCache = nullptr;
 
     /** @brief Kill-switch for the conversion rules (see TypeConversionChecker.h). */
     bool enableTypeConversionChecks = true;

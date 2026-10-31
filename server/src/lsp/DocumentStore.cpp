@@ -32,16 +32,21 @@ void DocumentStore::LinkDocument(const std::string& uri, std::shared_ptr<const d
         m_clientUriByKey[uri] = clientUri;
     }
     const uint64_t gen = m_nextGeneration++;
-    if (document && document->version != version)
+    if (document)
     {
+        document::TreePtr treeCopy =
+            document->tree ? document::MakeTreePtr(ts_tree_copy(document->tree.get())) : document::MakeTreePtr(nullptr);
+        if (!treeCopy)
+        {
+            if (auto ast = document->getAST())
+            {
+                treeCopy = document::MakeTreePtr(ts_tree_copy(ast.get()));
+            }
+        }
         auto docWithVersion = std::make_shared<document::Document>(
-            document::DocumentSnapshot{uri, document->text, version, gen}, document::MakeTreePtr(nullptr));
+            document::DocumentSnapshot{uri, document->text, version, gen}, std::move(treeCopy));
         docWithVersion->setAST(document->getAST());
         m_documents.insert_or_assign(uri, std::move(docWithVersion));
-    }
-    else
-    {
-        m_documents.insert_or_assign(uri, std::move(document));
     }
 }
 
@@ -110,9 +115,16 @@ void DocumentStore::SetVersion(const std::string& uri, int version)
 document::TreePtr DocumentStore::GetTree(const std::string& uri) const
 {
     std::shared_lock<std::shared_mutex> lock(m_mutex);
-    if (auto it = m_documents.find(uri); it != m_documents.end() && it->second && it->second->tree)
+    if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
     {
-        return document::MakeTreePtr(ts_tree_copy(it->second->tree.get()));
+        if (it->second->tree)
+        {
+            return document::MakeTreePtr(ts_tree_copy(it->second->tree.get()));
+        }
+        if (auto sharedAst = it->second->getAST())
+        {
+            return document::MakeTreePtr(ts_tree_copy(sharedAst.get()));
+        }
     }
     return document::MakeTreePtr(nullptr);
 }

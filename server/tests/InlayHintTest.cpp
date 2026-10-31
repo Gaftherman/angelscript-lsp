@@ -1256,7 +1256,7 @@ TEST_CASE("InlayHintHandler - Nameless wildcard parameter ?& in generates fallba
             REQUIRE_FALSE(parts.empty());
             REQUIRE(parts[0].location.has_value());
             REQUIRE(parts[0].tooltip.has_value());
-            CHECK(GetTooltipText(parts[0].tooltip).find("[Go to Definition](") != std::string::npos);
+            CHECK(GetTooltipText(parts[0].tooltip).find("(parameter)") != std::string::npos);
             CHECK_FALSE(hint.tooltip.has_value());
         }
     }
@@ -1314,7 +1314,8 @@ TEST_CASE("InlayHintHandler - Parameter hint label part location navigates to ca
                 CHECK(range.start.line == 4);
                 CHECK(range.end.line == 4);
                 REQUIRE(part.tooltip.has_value());
-                CHECK(GetTooltipText(part.tooltip).find("[Go to Definition](file:///test.as#L5,") != std::string::npos);
+                CHECK(GetTooltipText(part.tooltip).find("(parameter) " + nsName + "::Type " + typeParam) !=
+                      std::string::npos);
                 CHECK_FALSE(hint.tooltip.has_value());
                 foundTypeHintWithDeclLocation = true;
             }
@@ -1341,7 +1342,7 @@ TEST_CASE("InlayHintHandler - Tooltip uses angelscript code block and respects c
 
     TestEnvironment env(code);
 
-    // 1. Default config: tooltip contains clickable Go to Definition link without duplicating signature card
+    // 1. Default config: tooltip contains parameter code block card
     auto defaultHints = env.InlayHints();
     REQUIRE(defaultHints.has_value());
     REQUIRE_FALSE(defaultHints->empty());
@@ -1362,8 +1363,8 @@ TEST_CASE("InlayHintHandler - Tooltip uses angelscript code block and respects c
                 CHECK(part.location.has_value());
                 REQUIRE(part.tooltip.has_value());
                 const std::string tip = GetTooltipText(part.tooltip);
-                CHECK(tip.find("[Go to Definition](file:///test.as#L2,") != std::string::npos);
-                CHECK(tip.find("(parameter)") == std::string::npos);
+                CHECK(tip.find("(parameter) CBaseEntity@ " + paramName) != std::string::npos);
+                CHECK(tip.find("[Go to Definition](") == std::string::npos);
             }
         }
     }

@@ -252,6 +252,7 @@ void Server::HandleSavedInterfaceChange(const std::string& uriStr, bool interfac
 
     if (interfaceChanged)
     {
+        ClearMixinCaches();
         ReanalyzeDependentsOnSave(uriStr);
     }
     else
@@ -331,8 +332,11 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
         return;
     }
 
+    TSTree* tree = m_parser->Parse(analysisText);
+    ReplaceSymbolsFromTree(req.uriStr, analysisText, tree);
+    CommitPredefinedIndex(req.uriStr, analysisText, document::MakeTreePtr(ts_tree_copy(tree)));
     m_documentStore.OpenDocument(DocumentStore::OpenDocumentRequest{req.uriStr, req.text, req.version,
-                                                                    document::MakeTreePtr(nullptr), req.clientUri});
+                                                                    document::MakeTreePtr(tree), req.clientUri});
 
     ScheduleAnalysisImmediate(ScheduleAnalysisRequest{
         .uriStr = req.uriStr,
@@ -343,9 +347,7 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
     });
 
     const double totalMs = req.totalTimer.ElapsedMs();
-    LogInfo(fmt::format("[File Open] Predefined file offloaded to analysis worker: {} in {}", req.uriStr,
-                        utils::FormatDuration(totalMs)));
-    LogInfo(fmt::format("[Predefined Offload Fast Path] File: {} reparse offloaded to worker in {}", req.uriStr,
+    LogInfo(fmt::format("[File Open] Predefined file opened and indexed: {} in {}", req.uriStr,
                         utils::FormatDuration(totalMs)));
 }
 
@@ -412,7 +414,7 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
 
     const double totalMs = totalTimer.ElapsedMs();
     LogInfo(fmt::format("[File Open] Finished opening document: {} in {}", uriStr, utils::FormatDuration(totalMs)));
-    LogAnalysisProfile("[File Open]", uriStr, {totalMs, parseMs, colMs, scopeMs, checkMs});
+    LogAnalysisProfile("[File Open]", uriStr, AnalysisTimingProfile{totalMs, 0.0, parseMs, colMs, scopeMs, checkMs});
 }
 
 void Server::ApplyContentChange(std::string& buffer, document::TreePtr& workingTree,
@@ -566,6 +568,7 @@ void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDo
     }
 
     ReleaseModuleClosure(uriStr);
+    ClearMixinCaches();
 
     m_symbolTable.ClearDocumentSymbols(uriStr);
     m_scopeIndex.ClearDocument(uriStr);
