@@ -270,6 +270,10 @@ static void FilterSuppressedDiagnostics(std::vector<Diagnostic>& diagnostics, co
     }
 }
 
+/**
+ * @brief Represents Analysis context guards.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct AnalysisContextGuards
 {
     const SemanticAnalysisRequest& req;
@@ -961,6 +965,10 @@ bool IsAccessorPropertyOrKeyword(const LocalReference& ref, const DiagnosticCont
     return false;
 }
 
+/**
+ * @brief Represents Undefined identifier context.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct UndefinedIdentifierContext
 {
     const ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>>& knownGlobalNames;
@@ -1077,6 +1085,14 @@ void SemanticAnalyzer::CheckUndefinedIdentifiers(
     CheckUndefinedIdentifiersIterative(scope, uCtx);
 }
 
+/**
+ * @brief Semantic analyzer collect used definitions.
+ * @param[in] rootScope Parameter rootScope.
+ * @param[in] used Parameter used.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with CollectUsedLocals in
+ * server/src/analysis/rules/UnusedSymbolChecker.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 void SemanticAnalyzer::CollectUsedDefinitions(const Scope* rootScope,
                                               ankerl::unordered_dense::set<const LocalDefinition*>& used) const
 {
@@ -1118,6 +1134,14 @@ void SemanticAnalyzer::CollectUsedDefinitions(const Scope* rootScope,
     }
 }
 
+/**
+ * @brief Semantic analyzer check unused variables.
+ * @param[in] rootScope Parameter rootScope.
+ * @param[in] used Parameter used.
+ * @param[in,out] ctx Parameter ctx.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (93%) with CheckNullAssignedToNonHandleInScope in
+ * server/src/analysis/SemanticAnalyzer.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void SemanticAnalyzer::CheckUnusedVariables(const Scope* rootScope,
                                             const ankerl::unordered_dense::set<const LocalDefinition*>& used,
                                             DiagnosticContext& ctx) const
@@ -1178,6 +1202,12 @@ namespace
  *        corpus's SvenCoop "EHandle eView = null;" - confirmed by corpus audit and by
  *        reading the real declaration: EHandle(pView) is a registered converting
  *        constructor, invisible to this analyzer since no predefined stub exists for it).
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsValueOnlyKind in
+ * server/src/analysis/rules/FunctionRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (92%) with IsUnaryPrecedingTokenType in server/src/features/formatting/FormattingTokens.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (79%) with
+ * IsClosingOrSeparatorPunctuation in server/src/features/formatting/FormattingSpacing.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 bool IsUnconditionallyNonNullablePrimitive(TypeKind kind)
 {
@@ -1227,6 +1257,13 @@ void SemanticAnalyzer::CheckNullAssignedToNonHandle(const SymbolTable& symbolTab
         });
 }
 
+/**
+ * @brief Semantic analyzer check null assigned to non handle in scope.
+ * @param[in] rootScope Parameter rootScope.
+ * @param[in,out] ctx Parameter ctx.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (93%) with CheckUnusedVariables in
+ * server/src/analysis/SemanticAnalyzer.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void SemanticAnalyzer::CheckNullAssignedToNonHandleInScope(const Scope* rootScope, DiagnosticContext& ctx) const
 {
     if (!rootScope)

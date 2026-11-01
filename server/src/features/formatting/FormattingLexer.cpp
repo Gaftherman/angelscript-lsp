@@ -18,6 +18,10 @@ static const std::unordered_set<std::string_view> kKeywords = []
 static constexpr std::string_view kTwoCharOperators[] = {
     "==", "!=", "<=", ">=", "&&", "||", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<", ">>", "^^"};
 
+/**
+ * @brief Represents Scan state.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct ScanState
 {
     explicit ScanState(std::string_view source) : src(source)
@@ -75,6 +79,14 @@ bool TryConsumeLineComment(ScanState& state)
     return false;
 }
 
+/**
+ * @brief Try consume block comment.
+ * @param[in,out] state Parameter state.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (73%) with TryConsumeRawString in
+ * server/src/features/formatting/FormattingLexer.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 bool TryConsumeBlockComment(ScanState& state)
 {
     char c = state.src[state.i];
@@ -142,6 +154,14 @@ bool TryConsumePreprocessor(ScanState& state)
     return false;
 }
 
+/**
+ * @brief Try consume raw string.
+ * @param[in,out] state Parameter state.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (73%) with TryConsumeBlockComment in
+ * server/src/features/formatting/FormattingLexer.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 bool TryConsumeRawString(ScanState& state)
 {
     char c = state.src[state.i];

@@ -293,6 +293,7 @@ inline SymbolProximity DetermineSymbolProximity(const analysis::Symbol& sym, con
 
 /**
  * @brief Candidate completion item metadata for deduplication and insertion.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct CompletionCandidate
 {
@@ -308,6 +309,7 @@ struct CompletionCandidate
 
 /**
  * @brief Context bundling destination collection vectors and request state.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct CompletionCollector
 {
@@ -508,6 +510,9 @@ bool SkipLineComment(std::string_view source, size_t& i, size_t end)
  * @param[in,out] i Scanner index.
  * @param[in] end Maximum scan offset.
  * @return True if offset falls inside this comment.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with SkipHeredoc in
+ * server/src/features/completion/CompletionHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 bool SkipBlockComment(std::string_view source, size_t& i, size_t end)
 {
@@ -526,6 +531,9 @@ bool SkipBlockComment(std::string_view source, size_t& i, size_t end)
  * @param[in,out] i Scanner index.
  * @param[in] end Maximum scan offset.
  * @return True if offset falls inside this string.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with SkipBlockComment in
+ * server/src/features/completion/CompletionHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 bool SkipHeredoc(std::string_view source, size_t& i, size_t end)
 {
@@ -1230,6 +1238,10 @@ std::string GetBackwardDeclarationText(std::string_view sourceCode, uint32_t lin
     return std::string(sourceCode.substr(start, offset - start));
 }
 
+/**
+ * @brief Represents Inheritance context.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct InheritanceContext
 {
     analysis::SymbolType declKind = analysis::SymbolType::Class;
@@ -1429,6 +1441,7 @@ std::string SubstituteTypeParameters(std::string text, const analysis::TemplateB
 
 /**
  * @brief Template binding and argument context for member completion.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct MemberTemplateContext
 {
@@ -1994,6 +2007,10 @@ std::string ResolveReceiverNodeType(TSNode receiverNode, const CompletionRequest
                                          {innermostScope, "", request.uri});
 }
 
+/**
+ * @brief Represents Index peel result.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct IndexPeelResult
 {
     size_t count = 0;
@@ -2054,6 +2071,15 @@ static size_t SkipInlineWhitespaceBackward(const std::string& text, size_t pos)
     return pos;
 }
 
+/**
+ * @brief Extract identifier backward.
+ * @param[in,out] text Parameter text.
+ * @param[in] end Parameter end.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with ExtractQueryPrefix in
+ * server/src/features/completion/CompletionHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 static size_t ExtractIdentifierBackward(const std::string& text, size_t end)
 {
     size_t s = end;
@@ -2680,6 +2706,9 @@ void CollectGlobalSymbolItem(const analysis::Symbol& sym, bool accessorsArePrope
  * @brief Extracts the trailing identifier query prefix from a line prefix.
  * @param[in] linePrefix Line text up to the cursor position.
  * @return Extracted identifier query prefix, or empty if none.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with ExtractIdentifierBackward in
+ * server/src/features/completion/CompletionHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 std::string_view ExtractQueryPrefix(std::string_view linePrefix)
 {
@@ -2835,6 +2864,10 @@ static void CollectClassOperatorSnippets(const analysis::Scope* innermostScope, 
         return;
     }
 
+    /**
+     * @brief Represents Operator snippet.
+     * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+     */
     struct OperatorSnippet
     {
         const char* label;
@@ -3240,6 +3273,8 @@ std::string ExtractAssignmentTargetType(std::string_view prefix)
  * @brief Checks whether a type name represents a numeric primitive.
  * @param[in] t Type name to inspect.
  * @return True if type is a numeric primitive.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (75%) with IsSignedNumericPrimitive in
+ * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 bool IsNumericTypeName(std::string_view t)
 {

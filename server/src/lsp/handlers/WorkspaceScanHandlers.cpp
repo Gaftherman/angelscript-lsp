@@ -27,6 +27,7 @@ namespace
  *
  * Info level, so it is in the log a user is already asked to attach to a report, and off
  * the wire otherwise.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 class PhaseTimer
 {
@@ -355,6 +356,10 @@ void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
         BeginWorkspaceProgress("AngelScript: indexing workspace");
         ReportWorkspaceProgress("Building the include graph", 0);
 
+        /**
+         * @brief Represents Reanalyse on exit.
+         * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+         */
         const PhaseTimer scanTimer(m_logger.get(), "workspace scan (total)");
 
         struct ReanalyseOnExit

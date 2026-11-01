@@ -33,6 +33,10 @@ bool IsTypeLikeSymbol(analysis::SymbolType type)
            type == analysis::SymbolType::Funcdef;
 }
 
+/**
+ * @brief Represents Typo candidate suggestion.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct TypoCandidateSuggestion
 {
     std::string name;
@@ -111,6 +115,10 @@ std::vector<TypoCandidateSuggestion> RankTypoSuggestions(const std::string& type
     return ranked;
 }
 
+/**
+ * @brief Represents Typo fix context.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct TypoFixContext
 {
     const CodeActionRequest& request;
@@ -123,6 +131,9 @@ struct TypoFixContext
  * @param[in] ctx Typo fix context.
  * @param[in] ranked Ranked suggestions list.
  * @param[out] actions Destination actions vector.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (69%) with EmitIncludeSuggestions in
+ * server/src/features/code_action/CodeActionIncludes.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void EmitTypoCodeActions(const TypoFixContext& ctx, const std::vector<TypoCandidateSuggestion>& ranked,
                          std::vector<lsp::CodeAction>& actions)

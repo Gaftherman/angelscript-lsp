@@ -21,6 +21,18 @@ SymbolTable::~SymbolTable() = default;
 
 namespace
 {
+/**
+ * @brief Access modifier to string.
+ * @param[in] access Parameter access.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with ParameterModifierToString in
+ * server/src/analysis/SymbolTable.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural
+ * overlap (68%) with ContainerKindMatches in server/src/features/definition/DefinitionHandler.cpp. Candidate for
+ * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (65%) with RawProfileStub in
+ * server/src/analysis/EngineProfiles.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (62%) with IsOpeningOrMemberPunctuation in server/src/features/formatting/FormattingSpacing.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 std::string AccessModifierToString(AccessModifier access)
 {
     switch (access)
@@ -36,6 +48,16 @@ std::string AccessModifierToString(AccessModifier access)
     }
 }
 
+/**
+ * @brief Parameter modifier to string.
+ * @param[in] mod Parameter mod.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with AccessModifierToString in
+ * server/src/analysis/SymbolTable.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural
+ * overlap (85%) with FormatParameterReference in server/src/analysis/SignatureFormatter.cpp. Candidate for unification
+ * in server/src/analysis/SemanticHelpers.h. Structural overlap (72%) with KindWord in
+ * server/src/analysis/rules/TypeRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 std::string ParameterModifierToString(ParameterModifier mod)
 {
     switch (mod)
@@ -1284,6 +1306,13 @@ std::string SymbolTable::BuildVirtualMixinUri(std::string_view hostClass, std::s
     return fmt::format("angelscript-virtual://{}/{}.as", hostClass, mixinClean);
 }
 
+/**
+ * @brief Symbol table extract virtual host class.
+ * @param[in] uri Parameter uri.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (85%) with ExtractVirtualMixinName in
+ * server/src/analysis/SymbolTable.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 std::string SymbolTable::ExtractVirtualHostClass(std::string_view uri)
 {
     const auto colonPos = uri.find(':');
@@ -1313,6 +1342,13 @@ std::string SymbolTable::ExtractVirtualHostClass(std::string_view uri)
     return utils::UrlDecode(rest.substr(0, slashPos));
 }
 
+/**
+ * @brief Symbol table extract virtual mixin name.
+ * @param[in] uri Parameter uri.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (85%) with ExtractVirtualHostClass in
+ * server/src/analysis/SymbolTable.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 std::string SymbolTable::ExtractVirtualMixinName(std::string_view uri)
 {
     const auto colonPos = uri.find(':');
@@ -1357,6 +1393,14 @@ bool SymbolTable::HasSymbol(std::string_view qualifiedName) const
     return m_symbols.contains(search);
 }
 
+/**
+ * @brief Symbol table has scoped symbol.
+ * @param[in] scope Parameter scope.
+ * @param[in] name Parameter name.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (91%) with FindMemberSymbolPtr in server/src/analysis/SymbolTable.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 bool SymbolTable::HasScopedSymbol(std::string_view scope, std::string_view name) const
 {
     if (name.empty())
@@ -1410,6 +1454,14 @@ std::shared_ptr<const std::vector<Symbol>> SymbolTable::FindSymbolsPtr(std::stri
     return it != m_symbols.end() ? it->second : nullptr;
 }
 
+/**
+ * @brief Symbol table find member symbol ptr.
+ * @param[in] scope Parameter scope.
+ * @param[in] member Parameter member.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (91%) with HasScopedSymbol in server/src/analysis/SymbolTable.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 std::shared_ptr<const std::vector<Symbol>> SymbolTable::FindMemberSymbolPtr(std::string_view scope,
                                                                             std::string_view member) const
 {
@@ -1840,6 +1892,15 @@ void PrintFunctionSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym,
         logger->LogInfo(line);
 }
 
+/**
+ * @brief Print variable symbol.
+ * @param[in] logger Parameter logger.
+ * @param[in,out] sym Parameter sym.
+ * @param[in,out] typeStr Parameter typeStr.
+ * @param[in,out] range Parameter range.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with PrintClassSymbol in server/src/analysis/SymbolTable.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void PrintVariableSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const std::string& typeStr,
                          const std::string& range)
 {
@@ -1860,6 +1921,17 @@ void PrintVariableSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym,
                                 JoinFlags(flags), range));
 }
 
+/**
+ * @brief Print class symbol.
+ * @param[in] logger Parameter logger.
+ * @param[in,out] sym Parameter sym.
+ * @param[in,out] typeStr Parameter typeStr.
+ * @param[in,out] range Parameter range.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with PrintVariableSymbol in server/src/analysis/SymbolTable.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (78%) with
+ * PrintInterfaceSymbol in server/src/analysis/SymbolTable.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 void PrintClassSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const std::string& typeStr,
                       const std::string& range)
 {
@@ -1882,6 +1954,15 @@ void PrintClassSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, co
                                 range));
 }
 
+/**
+ * @brief Print interface symbol.
+ * @param[in] logger Parameter logger.
+ * @param[in,out] sym Parameter sym.
+ * @param[in,out] typeStr Parameter typeStr.
+ * @param[in,out] range Parameter range.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (78%) with PrintClassSymbol in server/src/analysis/SymbolTable.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void PrintInterfaceSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const std::string& typeStr,
                           const std::string& range)
 {

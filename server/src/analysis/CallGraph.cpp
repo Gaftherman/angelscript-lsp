@@ -56,6 +56,10 @@ TSNode CalleeNameNode(TSNode callNode)
     return TSNode{};
 }
 
+/**
+ * @brief Represents Traversal item.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct TraversalItem
 {
     TSNode node{};
@@ -63,6 +67,13 @@ struct TraversalItem
     uint32_t callerIndex = 0;
 };
 
+/**
+ * @brief Is container symbol.
+ * @param[in] sym Parameter sym.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (68%) with IsDeclarationSymbol in
+ * server/src/analysis/SymbolCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 bool IsContainerSymbol(TSSymbol sym)
 {
     const auto& gs = parser::GetGrammarSymbols();
@@ -70,6 +81,10 @@ bool IsContainerSymbol(TSSymbol sym)
            sym == gs.symNamespaceDeclaration;
 }
 
+/**
+ * @brief Represents Naming context.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct NamingContext
 {
     std::vector<std::string> containers{""};

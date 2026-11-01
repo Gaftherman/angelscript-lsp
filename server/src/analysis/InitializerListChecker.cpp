@@ -38,6 +38,10 @@ std::string Trimmed(std::string text)
  *
  * These three are language syntax rather than configuration: AngelScript spells them this
  * way and no host can change it.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst. Manually re-evaluates AST for isHandle; candidate for
+ * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle /
+ * LocalDefinition::isHandleType.
  */
 std::string StripDecorations(std::string_view raw)
 {
@@ -83,7 +87,10 @@ std::string StripDecorations(std::string_view raw)
     return compact;
 }
 
-/** @brief `Name<A, B>` split into its name and its arguments; arguments empty if none. */
+/**
+ * @brief `Name<A, B>` split into its name and its arguments; arguments empty if none.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct TemplateSpelling
 {
     std::string name;
@@ -131,6 +138,22 @@ TemplateSpelling ReadTemplateSpelling(const std::string& type)
     return spelling;
 }
 
+/**
+ * @brief Emit at node.
+ * @param[in] node Parameter node.
+ * @param[in,out] ctx Parameter ctx.
+ * @param[in] code Parameter code.
+ * @param[in] arg Parameter arg.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with EmitAtNode in server/src/analysis/ControlFlowChecker.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with EmitAtNode in
+ * server/src/analysis/IsolationChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (89%) with EmitWarningAtNode in server/src/analysis/TypeConversionChecker.cpp. Candidate for
+ * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (88%) with EmitAtNode in
+ * server/src/analysis/ConstChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural
+ * overlap (77%) with EmitPrivacyViolation in server/src/analysis/AccessChecker.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (71%) with EmitAtNode in
+ * server/src/analysis/LValueChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, std::string_view arg)
 {
     const TSPoint start = ts_node_start_point(node);
@@ -212,6 +235,7 @@ void CheckElementValue(TSNode element, const std::string& wanted, DiagnosticCont
 
 /**
  * @brief Container structure and dimensionality information.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct ContainerInfo
 {
@@ -222,6 +246,7 @@ struct ContainerInfo
 
 /**
  * @brief Intermediate container member inspection state.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct ContainerMemberInspection
 {
@@ -382,6 +407,7 @@ ContainerInfo InspectContainer(const std::string& type, const TemplateSpelling& 
 
 /**
  * @brief Dictionary container key and value type information.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct DictInfo
 {
@@ -392,6 +418,7 @@ struct DictInfo
 
 /**
  * @brief State tracking for dictionary container inspection.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct DictTypeState
 {
@@ -556,6 +583,7 @@ DictInfo InspectDictionary(const TemplateSpelling& spelling, const DiagnosticCon
 
 /**
  * @brief Field information for aggregate struct member properties.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct StructFieldInfo
 {
@@ -567,6 +595,7 @@ struct StructFieldInfo
 
 /**
  * @brief Aggregate struct fields and list initialization capability.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct AggregateStructInfo
 {
@@ -742,6 +771,7 @@ AggregateStructInfo InspectAggregateStruct(const TemplateSpelling& spelling, con
 
 /**
  * @brief Context for recursive initializer list validation.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct ListValidationContext
 {
@@ -1139,6 +1169,7 @@ void ValidateList(TSNode listNode, const std::string& targetType, const ListVali
 
 /**
  * @brief Traversal context for walking documents and validating initializer lists.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct InitializerListContext
 {
@@ -1329,6 +1360,8 @@ void DispatchIndexedInitializerLists(const InitializerListContext& initCtx)
  * @brief Falls back to flat worklist traversal when NodeIndex is unavailable.
  *
  * @param[in] initCtx Initializer traversal context.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (93%) with CheckFromASTTraversal in
+ * server/src/analysis/NamespaceChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 void DispatchTreeWalkInitializerLists(const InitializerListContext& initCtx)
 {

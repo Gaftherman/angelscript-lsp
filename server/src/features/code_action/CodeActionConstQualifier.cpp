@@ -42,6 +42,17 @@ TSNode FindFunctionParametersNode(TSNode fnNode)
     return parser::FindFirstChildOfType(fnNode, "parameter_list");
 }
 
+/**
+ * @brief Try build missing const fix for symbol.
+ * @param[in,out] request Parameter request.
+ * @param[in] rootNode Parameter rootNode.
+ * @param[in,out] diag Parameter diag.
+ * @param[in,out] sym Parameter sym.
+ * @return Found item if present; std::nullopt otherwise.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (78%) with BuildAddConstAction in
+ * server/src/features/code_action/CodeActionConstQualifier.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 std::optional<lsp::CodeAction> TryBuildMissingConstFixForSymbol(const CodeActionRequest& request, TSNode rootNode,
                                                                 const lsp::Diagnostic& diag,
                                                                 const analysis::Symbol& sym)
@@ -111,6 +122,16 @@ void TryAddMissingConstDiagnosticFix(const CodeActionRequest& request, TSNode ro
         });
 }
 
+/**
+ * @brief Has const qualifier between.
+ * @param[in] sourceCode Parameter sourceCode.
+ * @param[in] paramList Parameter paramList.
+ * @param[in] bodyNode Parameter bodyNode.
+ * @param[in] fnNode Parameter fnNode.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
+ */
 bool HasConstQualifierBetween(std::string_view sourceCode, TSNode paramList, TSNode bodyNode, TSNode fnNode)
 {
     uint32_t pEndByte = ts_node_end_byte(paramList);
@@ -136,6 +157,17 @@ static bool FindEnclosingMethodAndClass(TSNode leaf, TSNode& outFn, TSNode& outC
     return true;
 }
 
+/**
+ * @brief Build add const action.
+ * @param[in] paramList Parameter paramList.
+ * @param[in,out] request Parameter request.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (78%) with CreateAccessorAction in
+ * server/src/features/code_action/CodeActionAccessors.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (78%) with TryBuildMissingConstFixForSymbol in
+ * server/src/features/code_action/CodeActionConstQualifier.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 static lsp::CodeAction BuildAddConstAction(TSNode paramList, const CodeActionRequest& request)
 {
     TSPoint insertPt = ts_node_end_point(paramList);
@@ -197,6 +229,15 @@ void TryAddIntentionalConstAction(const CodeActionRequest& request, TSNode rootN
     }
 }
 
+/**
+ * @brief Try add const handle diagnostic fix.
+ * @param[in,out] request Parameter request.
+ * @param[in] rootNode Parameter rootNode.
+ * @param[in,out] diag Parameter diag.
+ * @param[in,out] actions Parameter actions.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
+ */
 void TryAddConstHandleDiagnosticFix(const CodeActionRequest& request, TSNode rootNode, const lsp::Diagnostic& diag,
                                     std::vector<lsp::CodeAction>& actions)
 {

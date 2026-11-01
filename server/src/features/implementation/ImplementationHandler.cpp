@@ -21,7 +21,12 @@ using analysis::SymbolTable;
 using analysis::SymbolType;
 using analysis::rules::RuleIndex;
 
-/** @brief The identifier the cursor sits on, or empty when it is not on one. */
+/**
+ * @brief The identifier the cursor sits on, or empty when it is not on one.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (94%) with IdentifierAt in
+ * server/src/features/type_hierarchy/TypeHierarchyHandler.cpp. Candidate for unification in
+ * server/src/features/common/FeatureSharedUtils.h.
+ */
 std::string IdentifierAt(const ImplementationRequest& request, TSNode& outNode)
 {
     outNode = TSNode{};
@@ -51,6 +56,7 @@ std::string IdentifierAt(const ImplementationRequest& request, TSNode& outNode)
 
 /**
  * @brief Accumulator for subtype collection passes.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct SubtypeAccumulator
 {
@@ -253,7 +259,11 @@ lsp::Location ToLocation(const Symbol& sym)
                          lsp::Range{lsp::Position{sL, sC}, lsp::Position{eL, eC}}};
 }
 
-/** @brief The type whose body the cursor sits in, or empty when it sits in none. */
+/**
+ * @brief The type whose body the cursor sits in, or empty when it sits in none.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (94%) with FindEnclosingClassOrInterface in
+ * server/src/analysis/CallChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 std::string EnclosingType(TSNode node, std::string_view sourceCode)
 {
     for (const auto& container : analysis::GetEnclosingContainers(node, sourceCode))
@@ -266,7 +276,11 @@ std::string EnclosingType(TSNode node, std::string_view sourceCode)
     return "";
 }
 
-/** @brief True when a name is declared as a class or an interface anywhere in the table. */
+/**
+ * @brief True when a name is declared as a class or an interface anywhere in the table.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (82%) with IsScalarCastTarget in
+ * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 bool IsTypeName(const std::string& name, const SymbolTable& table)
 {
     const auto symbols = table.FindSymbolsPtr(name);
@@ -485,6 +499,7 @@ bool CheckMixinOwner(const std::string& owner, const std::string& bareOwner, con
 
 /**
  * @brief Accumulator for deduplicated LSP locations.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct LocationCollector
 {
@@ -513,6 +528,7 @@ struct LocationCollector
 
 /**
  * @brief Context required to resolve subtype overrides.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct MemberImplementationContext
 {

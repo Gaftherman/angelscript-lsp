@@ -46,6 +46,7 @@ bool IsForbiddenClosureCapture(const LocalDefinition& def, const Scope* defScope
 
 /**
  * @brief Context data bundled for lexical definition resolution.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct ResolutionContext
 {

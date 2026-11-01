@@ -32,6 +32,10 @@ UniqueTSQuery CompileQuery(const char* source)
     return UniqueTSQuery(query);
 }
 
+/**
+ * @brief Represents Cursor holder.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct CursorHolder
 {
     TSQueryCursor* cursor = nullptr;

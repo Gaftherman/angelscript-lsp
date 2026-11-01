@@ -12,6 +12,15 @@ using analysis::LocalDefinitionKind;
 using analysis::LocalReference;
 using analysis::Scope;
 
+/**
+ * @brief Contains.
+ * @param[in,out] scope Parameter scope.
+ * @param[in,out] position Parameter position.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (92%) with Covers in
+ * server/src/features/linked_editing/LinkedEditingRangeHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 bool Contains(const Scope& scope, const lsp::Position& position)
 {
     if (position.line < scope.startLine || position.line > scope.endLine)
@@ -54,6 +63,15 @@ const Scope* InnermostScope(const Scope* root, const lsp::Position& position)
     return current;
 }
 
+/**
+ * @brief Covers.
+ * @param[in,out] item Parameter item.
+ * @param[in,out] position Parameter position.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (92%) with Contains in
+ * server/src/features/linked_editing/LinkedEditingRangeHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 template <typename T> bool Covers(const T& item, const lsp::Position& position)
 {
     if (position.line < item.startLine || position.line > item.endLine)
@@ -145,6 +163,15 @@ bool IsInsideFunction(const Scope* scope)
     return false;
 }
 
+/**
+ * @brief Same range.
+ * @param[in,out] a Parameter a.
+ * @param[in,out] b Parameter b.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with SameRange in
+ * server/src/features/selection_range/SelectionRangeHandler.cpp. Candidate for unification in
+ * server/src/features/common/FeatureSharedUtils.h.
+ */
 bool SameRange(const lsp::Range& a, const lsp::Range& b)
 {
     return a.start.line == b.start.line && a.start.character == b.start.character && a.end.line == b.end.line &&

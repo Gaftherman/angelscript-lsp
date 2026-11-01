@@ -74,6 +74,10 @@ bool IsConstructorCall(std::string_view fnName, TSNode typeNode, std::string_vie
     return ctx.diagCtx.request.IsRegisteredSymbol(shortName);
 }
 
+/**
+ * @brief Represents Nullable eval request.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct NullableEvalRequest
 {
     TSNode val;

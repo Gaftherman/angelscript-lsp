@@ -17,7 +17,10 @@ namespace angel_lsp::analysis::rules
 {
 namespace
 {
-/** @brief Everything about the declaration's surroundings that more than one rule needs. */
+/**
+ * @brief Everything about the declaration's surroundings that more than one rule needs.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct FunctionContext
 {
     bool isMember = false;    ///< Declared inside a class or an interface.
@@ -77,7 +80,15 @@ FunctionContext BuildFunctionContext(const Symbol& sym, const DiagnosticContext&
     return fctx;
 }
 
-/** @brief True for the kinds that can never be passed or returned by reference. */
+/**
+ * @brief True for the kinds that can never be passed or returned by reference.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsUnconditionallyNonNullablePrimitive in
+ * server/src/analysis/SemanticAnalyzer.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (92%) with IsUnaryPrecedingTokenType in server/src/features/formatting/FormattingTokens.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (79%) with
+ * IsClosingOrSeparatorPunctuation in server/src/features/formatting/FormattingSpacing.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 bool IsValueOnlyKind(TypeKind kind)
 {
     switch (kind)
@@ -214,6 +225,16 @@ void CheckVoidReturnType(const Symbol& sym, const FunctionSignature& sig, const 
     }
 }
 
+/**
+ * @brief Check return type legality.
+ * @param[in,out] sym Parameter sym.
+ * @param[in,out] sig Parameter sig.
+ * @param[in,out] ctx Parameter ctx.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType. Manually re-evaluates
+ * AST for isRef; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo /
+ * ParameterInformation::isReference / isReturnReference.
+ */
 void CheckReturnTypeLegality(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
 {
     if (sig.returnHasPrimitiveHandle && !sig.returnIsArray)

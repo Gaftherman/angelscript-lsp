@@ -44,6 +44,10 @@ std::string GetSimpleIdentifierName(TSNode node, std::string_view sourceCode)
     return "";
 }
 
+/**
+ * @brief Represents Flow state.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct FlowState
 {
     ankerl::unordered_dense::set<std::string> assignedVars;
@@ -81,12 +85,20 @@ ankerl::unordered_dense::set<std::string> MergeBranchStates(const ankerl::unorde
     return result;
 }
 
+/**
+ * @brief Represents Call candidate info.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct CallCandidateInfo
 {
     const std::vector<Symbol>& candidates;
     const FunctionSignature* sig = nullptr;
 };
 
+/**
+ * @brief Represents Definite assignment visitor.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 class DefiniteAssignmentVisitor
 {
   public:

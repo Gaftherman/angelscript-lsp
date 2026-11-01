@@ -14,6 +14,22 @@ namespace angel_lsp::analysis
 {
 namespace
 {
+/**
+ * @brief Emit at node.
+ * @param[in] node Parameter node.
+ * @param[in,out] ctx Parameter ctx.
+ * @param[in] code Parameter code.
+ * @param[in,out] arg Parameter arg.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with EmitAtNode in server/src/analysis/ControlFlowChecker.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with EmitAtNode in
+ * server/src/analysis/InitializerListChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (89%) with EmitWarningAtNode in server/src/analysis/TypeConversionChecker.cpp. Candidate for
+ * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (88%) with EmitAtNode in
+ * server/src/analysis/ConstChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural
+ * overlap (77%) with EmitPrivacyViolation in server/src/analysis/AccessChecker.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (71%) with EmitAtNode in
+ * server/src/analysis/LValueChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, const std::string& arg)
 {
     const TSPoint start = ts_node_start_point(node);
@@ -26,6 +42,15 @@ std::string TrimWhitespace(std::string_view text)
     return std::string(utils::TrimView(text));
 }
 
+/**
+ * @brief Clean shared type name.
+ * @param[in] raw Parameter raw.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with TrimNodeText in
+ * server/src/features/inlay_hint/InlayHintHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read
+ * via TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
+ */
 std::string CleanSharedTypeName(std::string_view raw)
 {
     std::string text(raw);
@@ -317,6 +342,10 @@ bool IsDeclarationNameNode(TSNode p, TSNode node, TSSymbol pSym)
     return false;
 }
 
+/**
+ * @brief Represents Isolation visitor.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct IsolationVisitor
 {
     const IsolationCheckRequest& request;
@@ -537,6 +566,10 @@ struct IsolationVisitor
         }
     }
 
+    /**
+     * @brief Represents Iso item.
+     * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+     */
     struct IsoItem
     {
         TSNode node;

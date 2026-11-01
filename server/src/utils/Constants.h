@@ -17,6 +17,11 @@ inline constexpr std::string_view k_diagnosticSource = "AngelScript";
 inline constexpr std::string_view k_poisonTypeSentinel = "<poison>";
 
 /**
+ * @brief Sentinel type name used to represent an initializer list expression.
+ */
+inline constexpr std::string_view k_initializerListTypeSentinel = "<init_list>";
+
+/**
  * @brief Default file extension for predefined API stub files.
  */
 inline constexpr std::string_view k_defaultPredefinedExt = ".as.predefined";

@@ -25,6 +25,10 @@ namespace angel_lsp::analysis::rules
 namespace
 {
 
+/**
+ * @brief Represents Unused check context.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct UnusedCheckContext
 {
     const ankerl::unordered_dense::set<std::string>& refNames;
@@ -62,6 +66,10 @@ void CollectDefLocations(const Scope* rootScope, ankerl::unordered_dense::set<ui
     }
 }
 
+/**
+ * @brief Represents Doc ref collect context.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct DocRefCollectContext
 {
     const ankerl::unordered_dense::set<uint64_t>& defLocs;
@@ -105,6 +113,13 @@ void CollectDocReferences(const Scope* rootScope, const DocRefCollectContext& do
     }
 }
 
+/**
+ * @brief Collect used locals.
+ * @param[in] rootScope Parameter rootScope.
+ * @param[in] usedLocals Parameter usedLocals.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with CollectUsedDefinitions in
+ * server/src/analysis/SemanticAnalyzer.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void CollectUsedLocals(const Scope* rootScope, ankerl::unordered_dense::set<const LocalDefinition*>& usedLocals)
 {
     if (!rootScope)
@@ -293,6 +308,14 @@ void MatchConfiguredReflectionCallees(TSNode callNode, const SemanticAnalysisReq
     }
 }
 
+/**
+ * @brief Collect scope string literal refs.
+ * @param[in] root Parameter root.
+ * @param[in,out] result Parameter result.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (92%) with ForEachScopeReference in
+ * server/src/features/document_highlight/DocumentHighlightHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 void CollectScopeStringLiteralRefs(const Scope* root, ankerl::unordered_dense::set<std::string>& result)
 {
     if (!root)
@@ -353,6 +376,14 @@ ankerl::unordered_dense::set<std::string> CollectStringReflection(const Semantic
     return result;
 }
 
+/**
+ * @brief Normalize param type.
+ * @param[in] type Parameter type.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst. Manually re-evaluates AST for isRef; candidate for
+ * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
+ */
 std::string NormalizeParamType(std::string_view type)
 {
     std::string res;

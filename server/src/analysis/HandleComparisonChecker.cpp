@@ -20,12 +20,20 @@ enum class ComparisonCategory
     Relational
 };
 
+/**
+ * @brief Represents Comparison operator info.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct ComparisonOperatorInfo
 {
     ComparisonCategory category = ComparisonCategory::None;
     std::string_view identityEquivalent;
 };
 
+/**
+ * @brief Represents Comparison dispatch context.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct ComparisonDispatchContext
 {
     TSNode opNode;
@@ -33,6 +41,10 @@ struct ComparisonDispatchContext
     ComparisonOperatorInfo opInfo;
 };
 
+/**
+ * @brief Represents Relational check operands.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct RelationalCheckOperands
 {
     bool hasNull = false;
@@ -40,6 +52,10 @@ struct RelationalCheckOperands
     std::string leftType;
 };
 
+/**
+ * @brief Represents Comparison operands state.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct ComparisonOperandsState
 {
     bool isLeftNull = false;

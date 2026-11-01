@@ -238,6 +238,14 @@ void CheckFromNodeIndex(const NamespaceCheckRequest& request, DiagnosticContext&
         [&](TSNode node) { ProcessNamespaceNode(node, request, ctx); });
 }
 
+/**
+ * @brief Check from ast traversal.
+ * @param[in] root Parameter root.
+ * @param[in,out] request Parameter request.
+ * @param[in,out] ctx Parameter ctx.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (93%) with DispatchTreeWalkInitializerLists in
+ * server/src/analysis/InitializerListChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void CheckFromASTTraversal(TSNode root, const NamespaceCheckRequest& request, DiagnosticContext& ctx)
 {
     if (ts_node_is_null(root))

@@ -25,6 +25,10 @@ namespace
  * keep the type's source text, so this is what a declaration's constness looks like from
  * here. `const Entity@` counts: in AngelScript that is a handle to a read-only object,
  * which is exactly the case the engine refuses a mutation through.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (68%) with TypeTextIsHandleConst in
+ * server/src/analysis/ConstChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Manually
+ * re-evaluates AST for isConst; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo /
+ * Symbol::modifiers.isConst.
  */
 bool TypeTextIsConst(std::string_view typeText)
 {
@@ -37,6 +41,8 @@ bool TypeTextIsConst(std::string_view typeText)
 
 /**
  * @brief True when a handle type is declared const itself (e.g. `Type@ const`).
+ * @note [REFACTOR-CANDIDATE] Structural overlap (68%) with TypeTextIsConst in server/src/analysis/ConstChecker.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 bool TypeTextIsHandleConst(std::string_view typeText)
 {
@@ -121,6 +127,8 @@ enum class Constness
 
 /**
  * @brief Context bundled for constness resolution queries.
+ * @note [REFACTOR-CANDIDATE] Clustered under Member Access & Scope Lookup Context. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 struct ConstContext
 {
@@ -179,7 +187,10 @@ Constness ResolveNameConstness(std::string_view name, TSNode node, const ConstCo
     return Constness::Unknown;
 }
 
-/** @brief Class and const qualification for enclosing method or accessor. */
+/**
+ * @brief Class and const qualification for enclosing method or accessor.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct EnclosingMethodInfo
 {
     bool inClass = false;
@@ -193,6 +204,8 @@ struct EnclosingMethodInfo
  * @param[in] node AST node inside the method.
  * @param[in] sourceCode Source text.
  * @return EnclosingMethodInfo containing class membership and const qualification.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
 EnclosingMethodInfo FindEnclosingMethod(TSNode node, std::string_view sourceCode)
 {
@@ -323,6 +336,8 @@ bool IsIdentifierMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo,
  * @param[in] ctx Const context.
  * @param[out] outMemberName Resolved member name if matched.
  * @return True if target represents a member of 'this'.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 bool IsMemberExprOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const ConstContext& ctx,
                         std::string& outMemberName)
@@ -471,7 +486,11 @@ Constness ResolveConstness(TSNode node, const ConstContext& ctx)
     return Constness::Unknown;
 }
 
-/** @brief What the pass concluded about a method name looked up on a type. */
+/**
+ * @brief What the pass concluded about a method name looked up on a type.
+ * @note [REFACTOR-CANDIDATE] Clustered under Member Access & Scope Lookup Context. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 struct MethodLookup
 {
     bool found = false; ///< False means no declaration was visible. Stay silent.
@@ -491,6 +510,8 @@ struct MethodLookup
  * @param[in] fn Function signature being inspected.
  * @param[in] owner Name of the owning class.
  * @return True if the method returns a reference to the owning class.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
  */
 bool IsSelfReferenceReturn(const FunctionSignature& fn, const std::string& owner)
 {
@@ -545,6 +566,7 @@ MethodLookup FindMethod(const std::string& typeName, const std::string& methodNa
 
 /**
  * @brief Arguments for constness diagnostic emission.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct DiagArgs
 {
@@ -553,6 +575,18 @@ struct DiagArgs
     std::string arg2 = "";
 };
 
+/**
+ * @brief Emit at node.
+ * @param[in] node Parameter node.
+ * @param[in,out] ctx Parameter ctx.
+ * @param[in,out] diag Parameter diag.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with EmitAtNode in server/src/analysis/ControlFlowChecker.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (88%) with EmitAtNode in
+ * server/src/analysis/InitializerListChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (88%) with EmitAtNode in server/src/analysis/IsolationChecker.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (84%) with EmitWarningAtNode in
+ * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void EmitAtNode(TSNode node, DiagnosticContext& ctx, const DiagArgs& diag)
 {
     const TSPoint start = ts_node_start_point(node);
@@ -725,6 +759,16 @@ void CheckConstCorrectnessIndexed(const ConstCheckRequest& request, DiagnosticCo
 }
 } // namespace
 
+/**
+ * @brief Check const correctness.
+ * @param[in,out] request Parameter request.
+ * @param[in,out] ctx Parameter ctx.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (97%) with CheckMemberAccess in server/src/analysis/AccessChecker.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (97%) with CheckCallArguments
+ * in server/src/analysis/CallChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (97%) with CheckLValues in server/src/analysis/LValueChecker.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 void CheckConstCorrectness(const ConstCheckRequest& request, DiagnosticContext& ctx)
 {
     if (ts_node_is_null(request.root) || request.sourceCode.empty())

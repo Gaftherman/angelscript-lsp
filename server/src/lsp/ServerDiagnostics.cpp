@@ -73,6 +73,10 @@ std::string_view GetDiagnosticSettingsUri(std::string_view code)
         return {};
     }
     namespace codes = angel_lsp::diagnostics::codes;
+    /**
+     * @brief Represents Code setting pair.
+     * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+     */
     struct CodeSettingPair
     {
         std::string_view code;

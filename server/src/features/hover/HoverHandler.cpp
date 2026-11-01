@@ -12,6 +12,7 @@
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
 #include "parser/Primitives.h"
+#include "utils/Constants.h"
 #include "utils/IncludeResolver.h"
 #include "utils/LspLogger.h"
 #include "utils/MultiFileLogger.h"
@@ -429,6 +430,10 @@ void RemoveDuplicateSymbols(std::vector<analysis::Symbol>& symbols)
 
 namespace
 {
+/**
+ * @brief Represents Hover target.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct HoverTarget
 {
     TSNode node = {};
@@ -576,6 +581,10 @@ std::pair<size_t, size_t> FindLineSpan(const std::string& sourceCode, uint32_t t
     return {start, end == std::string::npos ? sourceCode.size() : end};
 }
 
+/**
+ * @brief Represents Include directive info.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct IncludeDirectiveInfo
 {
     size_t hash = 0;
@@ -758,6 +767,10 @@ std::optional<analysis::Symbol> ResolveCallOverload(TSNode node, const std::vect
     return std::nullopt;
 }
 
+/**
+ * @brief Represents Hover profiler.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct HoverProfiler
 {
     utils::HighResTimer totalTimer;
@@ -809,6 +822,10 @@ struct HoverProfiler
     }
 };
 
+/**
+ * @brief Represents Hover query context.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct HoverQueryContext
 {
     const HoverRequest& request;
@@ -2476,7 +2493,7 @@ static std::string DeduceAutoDeclaratorType(TSNode declarator, const HoverQueryC
                                                 ctx.request.uri,
                                                 ctx.request.tree ? ts_tree_root_node(ctx.request.tree) : TSNode{});
         std::string res = analysis::ResolveExpressionType(valNode, exprCtx);
-        if (!res.empty() && res != "void" && res != "null" && res != "init_list" &&
+        if (!res.empty() && res != "void" && res != "null" && res != constants::k_initializerListTypeSentinel &&
             !analysis::ExpressionTypeCache::IsPoisonType(res))
         {
             return res;
@@ -2489,6 +2506,8 @@ static std::string DeduceAutoDeclaratorType(TSNode declarator, const HoverQueryC
  * @brief Attempts to produce hover documentation for 'auto' keyword showing the deduced type.
  * @param[in] ctx Hover query context.
  * @return Populated Hover if node is 'auto' in an auto declaration, std::nullopt otherwise.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static std::optional<lsp::Hover> TryHoverAutoType(const HoverQueryContext& ctx)
 {

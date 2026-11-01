@@ -66,6 +66,7 @@ enum TokenModifierBit : uint32_t
 
 /**
  * @brief Metadata associated with a classified semantic token.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct TokenMeta
 {
@@ -119,6 +120,7 @@ void CollectReferenceKinds(const analysis::Scope* scope,
 
 /**
  * @brief Represents an intermediate, non-delta-encoded semantic token item.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct RawToken
 {
@@ -200,6 +202,13 @@ using parser::GrammarSymbols;
  * @brief Trims leading and trailing ASCII whitespace from a string view.
  * @param[in] text String view to trim.
  * @return Trimmed string view.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with TrimWhitespace in
+ * server/src/analysis/overload/OverloadTypeConversions.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (90%) with TrimNodeText in
+ * server/src/features/inlay_hint/InlayHintHandler.cpp. Candidate for unification in
+ * server/src/features/common/FeatureSharedUtils.h. Structural overlap (88%) with Trim in
+ * server/src/features/formatting/ClangFormatReader.cpp. Candidate for unification in
+ * server/src/features/common/FeatureSharedUtils.h.
  */
 [[nodiscard]] inline std::string_view TrimWhitespace(std::string_view text) noexcept
 {
@@ -317,6 +326,7 @@ ClassifyOperatorOrPunctuation(TSNode node, std::string_view sourceCode, const Gr
 
 /**
  * @brief Classification rule for a single tree-sitter query capture pattern.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct CaptureRule
 {
@@ -332,6 +342,9 @@ struct CaptureRule
  * @param[in] name Capture name.
  * @param[out] rule Output classification rule.
  * @return True if pattern matched.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (83%) with MatchKeywordOrConstantRule in
+ * server/src/features/semantic_tokens/SemanticTokensHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 bool MatchSpecialCaptureRule(std::string_view name, CaptureRule& rule)
 {
@@ -377,6 +390,11 @@ bool MatchSpecialCaptureRule(std::string_view name, CaptureRule& rule)
  * @param[in] name Capture name.
  * @param[out] rule Output classification rule.
  * @return True if pattern matched.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (83%) with MatchSpecialCaptureRule in
+ * server/src/features/semantic_tokens/SemanticTokensHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (63%) with MatchCallableOrPropertyRule in
+ * server/src/features/semantic_tokens/SemanticTokensHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 bool MatchKeywordOrConstantRule(std::string_view name, CaptureRule& rule)
 {
@@ -417,6 +435,11 @@ bool MatchKeywordOrConstantRule(std::string_view name, CaptureRule& rule)
  * @param[in] name Capture name.
  * @param[out] rule Output classification rule.
  * @return True if pattern matched.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (68%) with MatchEntityCaptureRule in
+ * server/src/features/semantic_tokens/SemanticTokensHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (63%) with MatchKeywordOrConstantRule in
+ * server/src/features/semantic_tokens/SemanticTokensHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 bool MatchCallableOrPropertyRule(std::string_view name, CaptureRule& rule)
 {
@@ -450,6 +473,9 @@ bool MatchCallableOrPropertyRule(std::string_view name, CaptureRule& rule)
  * @param[in] name Capture name.
  * @param[out] rule Output classification rule.
  * @return True if pattern matched.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (68%) with MatchCallableOrPropertyRule in
+ * server/src/features/semantic_tokens/SemanticTokensHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 bool MatchEntityCaptureRule(std::string_view name, CaptureRule& rule)
 {
@@ -502,6 +528,7 @@ CaptureRule MakeCaptureRule(std::string_view name)
 
 /**
  * @brief Holds precompiled highlights query and per-capture classification rules.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct HighlightsQueryData
 {
@@ -544,6 +571,8 @@ const HighlightsQueryData& GetHighlightsQueryData()
 
 /**
  * @brief Records a byte-range span of an enclosing class.
+ * @note [REFACTOR-CANDIDATE] Clustered under AST Byte Intervals & Node Spans. Candidate for unification in
+ * server/src/analysis/NodeIndex.h.
  */
 struct ClassSpan
 {
@@ -555,6 +584,7 @@ struct ClassSpan
 
 /**
  * @brief Index of enclosing class spans for fast byte-offset hierarchy lookup.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 class ClassSpanIndex
 {
@@ -858,6 +888,7 @@ PrecalculateScopedEnumUpgrades(const analysis::NodeIndex* nodeIndex, std::string
 
 /**
  * @brief Context bundling precomputed indices and request references for token refinement.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct TokenRefinementContext
 {

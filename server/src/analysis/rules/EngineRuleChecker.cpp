@@ -72,6 +72,16 @@ bool MatchesTypeName(const std::string& baseType, const config::StorageRule& rul
     return false;
 }
 
+/**
+ * @brief Is class member.
+ * @param[in,out] sym Parameter sym.
+ * @param[in,out] table Parameter table.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsInterfaceMember in
+ * server/src/analysis/rules/VariableRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (93%) with IsMixinMember in server/src/analysis/rules/VariableRules.cpp. Candidate for unification
+ * in server/src/analysis/SemanticHelpers.h.
+ */
 bool IsClassMember(const Symbol& sym, const SymbolTable& table)
 {
     if (sym.containerName.empty())
@@ -83,6 +93,14 @@ bool IsClassMember(const Symbol& sym, const SymbolTable& table)
                                     [](const Symbol& owner) { return owner.type == SymbolType::Class; });
 }
 
+/**
+ * @brief Is enum type.
+ * @param[in,out] typeName Parameter typeName.
+ * @param[in,out] table Parameter table.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsInterfaceSymbol in
+ * server/src/analysis/rules/ClassRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 bool IsEnumType(const std::string& typeName, const SymbolTable& table)
 {
     const auto syms = table.FindSymbolsPtr(typeName);
@@ -123,6 +141,15 @@ void ReportStorageViolation(const Symbol& sym, const config::StorageRule& rule, 
     ctx.Emit(sym, diagnostics::codes::EngineStorageRule, msg, ResolveSeverity(rule.severity));
 }
 
+/**
+ * @brief Evaluate storage rule.
+ * @param[in,out] sym Parameter sym.
+ * @param[in,out] sig Parameter sig.
+ * @param[in,out] rule Parameter rule.
+ * @param[in,out] ctx Parameter ctx.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
+ */
 void EvaluateStorageRule(const Symbol& sym, const VariableSignature& sig, const config::StorageRule& rule,
                          const DiagnosticContext& ctx)
 {
@@ -153,6 +180,15 @@ void EvaluateStorageRule(const Symbol& sym, const VariableSignature& sig, const 
     }
 }
 
+/**
+ * @brief Check scheduler arg safety.
+ * @param[in,out] req Parameter req.
+ * @param[in] index Parameter index.
+ * @param[in,out] rule Parameter rule.
+ * @param[in,out] ctx Parameter ctx.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
+ */
 void CheckSchedulerArgSafety(const SchedulerCallRequest& req, size_t index, const config::SchedulerRule& rule,
                              const DiagnosticContext& ctx)
 {

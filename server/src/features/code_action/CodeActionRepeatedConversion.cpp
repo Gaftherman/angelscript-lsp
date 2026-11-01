@@ -13,6 +13,10 @@ namespace angel_lsp::features
 {
 namespace
 {
+/**
+ * @brief Represents Extracted diag info.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct ExtractedDiagInfo
 {
     std::string exprText;

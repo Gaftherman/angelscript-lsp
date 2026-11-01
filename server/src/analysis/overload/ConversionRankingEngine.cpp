@@ -2,6 +2,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeSanitization.h"
 #include "analysis/overload/OverloadTypeConversions.h"
+#include "utils/Constants.h"
 
 #include <algorithm>
 #include <cmath>
@@ -57,6 +58,15 @@ static bool ParamAcceptsHandleConversion(const ParameterInformation& param, cons
     return false;
 }
 
+/**
+ * @brief Evaluate special argument match.
+ * @param[in,out] argType Parameter argType.
+ * @param[in,out] param Parameter param.
+ * @param[in,out] symbolTable Parameter symbolTable.
+ * @return Found item if present; std::nullopt otherwise.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
+ */
 std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(const std::string& argType,
                                                                const ParameterInformation& param,
                                                                const SymbolTable& symbolTable)
@@ -96,7 +106,7 @@ std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(const std::string
         return ArgumentConversion{ConversionRank::Incompatible, 255, 0, false,
                                   static_cast<int>(OverloadMatchPenalty::Incompatible)};
     }
-    if (argType == "init_list")
+    if (argType == constants::k_initializerListTypeSentinel)
     {
         if (ParameterAcceptsInitializerList(param, &symbolTable, symbolTable.GetDefaultArrayType()))
         {
@@ -536,6 +546,10 @@ bool MatchesCallArity(const FunctionSignature& sig, uint32_t argCount) noexcept
 
 namespace
 {
+/**
+ * @brief Represents Fallback candidate rank.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct FallbackCandidateRank
 {
     bool arityMatches = false;

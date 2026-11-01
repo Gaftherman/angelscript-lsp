@@ -27,6 +27,7 @@ using FileReader = WorkspaceIncludeGraph::FileReader;
 
 /**
  * @brief Bundled parameters for include resolution.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct IncludeContext
 {
@@ -37,6 +38,7 @@ struct IncludeContext
 
 /**
  * @brief Resolved environment containing normalized roots and file reader.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct ResolvedIncludeEnv
 {
@@ -93,12 +95,20 @@ std::vector<std::string> ResolveDirectives(const std::string& normalizedPath, st
     return resolved;
 }
 
+/**
+ * @brief Represents File directives.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct FileDirectives
 {
     std::string path;
     std::vector<std::string> targets;
 };
 
+/**
+ * @brief Represents Directives worker context.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct DirectivesWorkerContext
 {
     const std::vector<std::string>& scriptFiles;

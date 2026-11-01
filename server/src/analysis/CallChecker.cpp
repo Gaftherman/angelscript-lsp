@@ -117,7 +117,10 @@ SourceRange GetCalleeDiagnosticRange(TSNode callee)
     return {start.row, start.column, end.row, end.column};
 }
 
-/** @brief What one declaration will accept, in argument counts. */
+/**
+ * @brief What one declaration will accept, in argument counts.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct Arity
 {
     uint32_t required = 0;
@@ -130,6 +133,9 @@ struct Arity
  *
  * @param[in] sig Function signature to inspect.
  * @return Calculated Arity boundaries.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (94%) with InspectFunctionArity in
+ * server/src/analysis/overload/AmbiguityDetector.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 Arity ArityOf(const FunctionSignature& sig)
 {
@@ -204,7 +210,10 @@ bool IsFunctionSymbol(const Symbol& sym)
     return sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature);
 }
 
-/** @brief What the pass concluded about one call's candidates. */
+/**
+ * @brief What the pass concluded about one call's candidates.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct CandidateSet
 {
     bool decided = false; ///< False means stay silent: nothing visible to judge against.
@@ -311,7 +320,10 @@ std::vector<Symbol> FindMethodCandidates(const std::string& typeName, const std:
     return candidates;
 }
 
-/** @brief Context bundled for free candidate lookup. */
+/**
+ * @brief Context bundled for free candidate lookup.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct FreeLookupContext
 {
     TSNode callNode;
@@ -437,7 +449,10 @@ std::vector<Symbol> FindFreeCandidates(const std::string& name, const FreeLookup
     return candidates;
 }
 
-/** @brief Context bundled for lambda argument verification. */
+/**
+ * @brief Context bundled for lambda argument verification.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct LambdaCheckContext
 {
     TSNode callee;
@@ -581,7 +596,10 @@ void CheckLambdaArguments(std::span<const Symbol* const> candidates, const Lambd
     ReportLambdaDiagnostics(acceptedShapes, firstAccepted, lctx, ctx);
 }
 
-/** @brief Context bundled for overall call validation. */
+/**
+ * @brief Context bundled for overall call validation.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct CallValidationContext
 {
     TSNode callNode;
@@ -592,7 +610,10 @@ struct CallValidationContext
     DiagnosticContext& ctx;
 };
 
-/** @brief Result of callee resolution stage. */
+/**
+ * @brief Result of callee resolution stage.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct CalleeResolution
 {
     std::vector<Symbol> candidates;
@@ -603,7 +624,10 @@ struct CalleeResolution
     bool shouldCheck = true;
 };
 
-/** @brief Resolved object type and template arguments for member calls. */
+/**
+ * @brief Resolved object type and template arguments for member calls.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct ObjectTypeInfo
 {
     std::string objectType;
@@ -659,6 +683,8 @@ bool IsObjectNodeConst(TSNode objectNode, const CallValidationContext& valCtx)
  * @param[in] objectNode AST node of object expression.
  * @param[in] valCtx Call validation context.
  * @return Resolved ObjectTypeInfo.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
 ObjectTypeInfo ResolveMemberObjectType(TSNode objectNode, const CallValidationContext& valCtx)
 {
@@ -817,6 +843,9 @@ void FilterMethodCandidatesConstness(std::vector<Symbol>& candidates, bool isRec
  * @param[in] node AST node.
  * @param[in] sourceCode Document source text.
  * @return True if enclosed within a const method.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
+ * Symbol::modifiers.isConst / ParameterInformation::isConst. Manually re-evaluates AST for isConst; candidate for
+ * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
 bool IsEnclosingMethodConst(TSNode node, std::string_view sourceCode)
 {
@@ -1119,6 +1148,9 @@ static std::vector<Symbol> CollectScopedFunctionCandidates(std::string_view writ
  * @param[in] node AST node.
  * @param[in] sourceCode Document source text.
  * @return Enclosing class name or empty string.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (94%) with EnclosingType in
+ * server/src/features/implementation/ImplementationHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 std::string FindEnclosingClassOrInterface(TSNode node, std::string_view sourceCode)
 {
@@ -1353,7 +1385,10 @@ bool ValidateArgumentOrdering(TSNode arguments, bool& sawNamedArg, DiagnosticCon
 
 bool CheckArgIsLValue(TSNode argNode, std::string_view sourceCode, const Scope* scope, const SymbolTable& table);
 
-/** @brief Argument nodes and resolved types for a call expression. */
+/**
+ * @brief Argument nodes and resolved types for a call expression.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct CallArgTypes
 {
     std::vector<TSNode> argNodes;
@@ -1432,7 +1467,7 @@ CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
             }
             else if (ts_node_symbol(unwrapped) == gs.symInitializerList)
             {
-                argType = "init_list";
+                argType = constants::k_initializerListTypeSentinel;
             }
             else
             {
@@ -1520,6 +1555,8 @@ void CheckInitializerListArgs(const CallArgTypes& args, const FunctionSignature&
  * @param[in] branchType Resolved branch type.
  * @param[in] expected Expected parameter type name.
  * @return True if compatible.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static bool IsTernaryBranchCompatible(const std::string& branchType, const std::string& expected)
 {
@@ -1972,7 +2009,7 @@ void CheckCallOverloads(std::span<const Symbol* const> matchingArity, const Call
             match.priorityCandidate != nullptr ? match.priorityCandidate->GetDisplaySignature() : std::string_view{};
         const bool hasInitList =
             std::any_of(args.argTypes.begin(), args.argTypes.end(),
-                        [](const std::string& t) { return t == "init_list"; }) ||
+                        [](const std::string& t) { return t == constants::k_initializerListTypeSentinel; }) ||
             std::any_of(args.argNodes.begin(), args.argNodes.end(),
                         [](TSNode n)
                         {
@@ -2218,7 +2255,10 @@ std::string FormatSignatureAttempt(const std::string& targetType, const std::vec
     return sig;
 }
 
-/** @brief Context bundled for variable direct initialization verification. */
+/**
+ * @brief Context bundled for variable direct initialization verification.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct VarInitContext
 {
     std::string declaredType;
@@ -2633,6 +2673,16 @@ void CheckCallArgumentsIndexed(const CallCheckRequest& request, DiagnosticContex
 }
 } // namespace
 
+/**
+ * @brief Check call arguments.
+ * @param[in,out] request Parameter request.
+ * @param[in,out] ctx Parameter ctx.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with CheckMemberAccess in server/src/analysis/AccessChecker.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (98%) with CheckLValues in
+ * server/src/analysis/LValueChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural
+ * overlap (97%) with CheckConstCorrectness in server/src/analysis/ConstChecker.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 void CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx)
 {
     if (ts_node_is_null(request.root) || request.sourceCode.empty())

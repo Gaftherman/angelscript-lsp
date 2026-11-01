@@ -41,7 +41,11 @@ std::vector<std::string_view> SplitLinesUpTo(std::string_view str, size_t maxLin
     return lines;
 }
 
-/** @brief Strips leading and trailing whitespace. */
+/**
+ * @brief Strips leading and trailing whitespace.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Trim in server/src/analysis/DoxygenMarkdown.cpp. Candidate
+ * for unification in server/src/analysis/SemanticHelpers.h.
+ */
 std::string_view Trim(std::string_view str)
 {
     size_t first = str.find_first_not_of(" \t\r\n");

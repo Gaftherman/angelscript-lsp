@@ -94,7 +94,16 @@ bool IsIntegerLiteral(std::string_view text)
     return text.find_first_not_of("0123456789") == std::string_view::npos;
 }
 
-/** @brief Formats a symbol type into the noun the compiler uses in as-err-name-conflict. */
+/**
+ * @brief Formats a symbol type into the noun the compiler uses in as-err-name-conflict.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with EngineProfileKindToString in
+ * server/src/analysis/EngineProfiles.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (88%) with RawProfileStub in server/src/analysis/EngineProfiles.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (72%) with ParameterModifierToString in
+ * server/src/analysis/SymbolTable.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural
+ * overlap (63%) with MapSymbolTypeToKind in server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate
+ * for unification in server/src/analysis/SemanticHelpers.h.
+ */
 std::string KindWord(SymbolType type)
 {
     switch (type)
@@ -263,6 +272,14 @@ void ValidateFuncdef(const Symbol& sym, const DiagnosticContext& ctx)
 
 namespace
 {
+/**
+ * @brief Check enum modifiers and body.
+ * @param[in,out] sym Parameter sym.
+ * @param[in,out] sig Parameter sig.
+ * @param[in,out] ctx Parameter ctx.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (71%) with CheckExternalClass in
+ * server/src/analysis/rules/ClassRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void CheckEnumModifiersAndBody(const Symbol& sym, const EnumSignature& sig, const DiagnosticContext& ctx)
 {
     if (!sig.hasBraces && !sig.modifiers.isExternal)

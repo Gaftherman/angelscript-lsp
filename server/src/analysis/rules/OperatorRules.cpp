@@ -55,6 +55,14 @@ bool IsDeclaredInAClass(const Symbol& sym, const DiagnosticContext& ctx)
     return container && std::any_of(container->begin(), container->end(), [](const Symbol& owner)
                                     { return owner.type == SymbolType::Class || owner.type == SymbolType::Interface; });
 }
+/**
+ * @brief Validate op cmp.
+ * @param[in,out] sym Parameter sym.
+ * @param[in,out] sig Parameter sig.
+ * @param[in,out] ctx Parameter ctx.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ValidateOpEquals in
+ * server/src/analysis/rules/OperatorRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void ValidateOpCmp(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
 {
     if (sig.returnTypeKind != TypeKind::Int32 || sig.returnIsArray || sig.modifiers.isHandle)
@@ -69,6 +77,14 @@ void ValidateOpCmp(const Symbol& sym, const FunctionSignature& sig, const Diagno
     }
 }
 
+/**
+ * @brief Validate op equals.
+ * @param[in,out] sym Parameter sym.
+ * @param[in,out] sig Parameter sig.
+ * @param[in,out] ctx Parameter ctx.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ValidateOpCmp in
+ * server/src/analysis/rules/OperatorRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void ValidateOpEquals(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
 {
     if (sig.returnTypeKind != TypeKind::Bool || sig.returnIsArray || sig.modifiers.isHandle)
@@ -83,6 +99,14 @@ void ValidateOpEquals(const Symbol& sym, const FunctionSignature& sig, const Dia
     }
 }
 
+/**
+ * @brief Validate op index.
+ * @param[in,out] sym Parameter sym.
+ * @param[in,out] sig Parameter sig.
+ * @param[in,out] ctx Parameter ctx.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with CheckModifiers in
+ * server/src/analysis/rules/VariableRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void ValidateOpIndex(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
 {
     if (sig.parameters.empty())

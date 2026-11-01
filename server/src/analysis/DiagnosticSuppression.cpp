@@ -12,6 +12,10 @@ namespace angel_lsp::analysis
 {
 namespace
 {
+/**
+ * @brief Represents Code alias entry.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct CodeAliasEntry
 {
     std::string_view alias;

@@ -14,6 +14,17 @@ namespace angel_lsp::analysis
 {
 namespace
 {
+/**
+ * @brief Emit at node.
+ * @param[in] node Parameter node.
+ * @param[in,out] ctx Parameter ctx.
+ * @param[in] code Parameter code.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (71%) with EmitAtNode in server/src/analysis/ControlFlowChecker.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (71%) with EmitAtNode in
+ * server/src/analysis/InitializerListChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (71%) with EmitAtNode in server/src/analysis/IsolationChecker.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, std::string_view arg = {})
 {
     const TSPoint start = ts_node_start_point(node);
@@ -28,6 +39,10 @@ void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, std:
     }
 }
 
+/**
+ * @brief Represents Call candidate context.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct CallCandidateContext
 {
     const LValueCheckRequest& request;
@@ -118,6 +133,14 @@ void CollectIdentifierCandidates(TSNode funcNode, const CallCandidateContext& cc
     }
 }
 
+/**
+ * @brief Validate candidate return types.
+ * @param[in] callNode Parameter callNode.
+ * @param[in,out] candidates Parameter candidates.
+ * @param[in,out] ctx Parameter ctx.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
+ */
 void ValidateCandidateReturnTypes(TSNode callNode, const std::vector<Symbol>& candidates, DiagnosticContext& ctx)
 {
     if (candidates.empty())
@@ -446,6 +469,16 @@ void CheckLValuesIndexed(const LValueCheckRequest& request, DiagnosticContext& c
 }
 } // namespace
 
+/**
+ * @brief Check l values.
+ * @param[in,out] request Parameter request.
+ * @param[in,out] ctx Parameter ctx.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with CheckMemberAccess in server/src/analysis/AccessChecker.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (98%) with CheckCallArguments
+ * in server/src/analysis/CallChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (97%) with CheckConstCorrectness in server/src/analysis/ConstChecker.cpp. Candidate for
+ * unification in server/src/analysis/SemanticHelpers.h.
+ */
 void CheckLValues(const LValueCheckRequest& request, DiagnosticContext& ctx)
 {
     if (ts_node_is_null(request.root) || request.sourceCode.empty())

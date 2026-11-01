@@ -195,6 +195,14 @@ std::optional<bool> ParseClangBool(std::string_view val)
     return std::nullopt;
 }
 
+/**
+ * @brief Parse clang u int.
+ * @param[in] val Parameter val.
+ * @return Found item if present; std::nullopt otherwise.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ParseClangInt in
+ * server/src/features/formatting/ClangFormatPresets.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 std::optional<uint32_t> ParseClangUInt(std::string_view val)
 {
     uint32_t result = 0;
@@ -206,6 +214,14 @@ std::optional<uint32_t> ParseClangUInt(std::string_view val)
     return std::nullopt;
 }
 
+/**
+ * @brief Parse clang int.
+ * @param[in] val Parameter val.
+ * @return Found item if present; std::nullopt otherwise.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ParseClangUInt in
+ * server/src/features/formatting/ClangFormatPresets.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 std::optional<int32_t> ParseClangInt(std::string_view val)
 {
     int32_t result = 0;
@@ -217,6 +233,14 @@ std::optional<int32_t> ParseClangInt(std::string_view val)
     return std::nullopt;
 }
 
+/**
+ * @brief Parse clang brace style.
+ * @param[in] val Parameter val.
+ * @return Found item if present; std::nullopt otherwise.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (91%) with ParseClangShortFunctionStyle in
+ * server/src/features/formatting/ClangFormatPresets.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 std::optional<BraceStyle> ParseClangBraceStyle(std::string_view val)
 {
     if (val.rfind("BS_", 0) == 0)
@@ -264,6 +288,14 @@ std::optional<ReferenceAlignment> ParseClangReferenceAlignment(std::string_view 
     return std::nullopt;
 }
 
+/**
+ * @brief Parse clang space before parens.
+ * @param[in] val Parameter val.
+ * @return Found item if present; std::nullopt otherwise.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (82%) with ParseClangUseTab in
+ * server/src/features/formatting/ClangFormatPresets.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 std::optional<SpaceBeforeParensStyle> ParseClangSpaceBeforeParens(std::string_view val)
 {
     if (val == "Never" || val == "never" || val == "false" || val == "SBPO_Never")
@@ -277,6 +309,14 @@ std::optional<SpaceBeforeParensStyle> ParseClangSpaceBeforeParens(std::string_vi
     return std::nullopt;
 }
 
+/**
+ * @brief Parse clang use tab.
+ * @param[in] val Parameter val.
+ * @return Found item if present; std::nullopt otherwise.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (82%) with ParseClangSpaceBeforeParens in
+ * server/src/features/formatting/ClangFormatPresets.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 std::optional<UseTabStyle> ParseClangUseTab(std::string_view val)
 {
     if (val == "Never" || val == "never" || val == "false" || val == "UT_Never")
@@ -303,6 +343,14 @@ std::optional<ShortBlockStyle> ParseClangShortBlockStyle(std::string_view val)
     return std::nullopt;
 }
 
+/**
+ * @brief Parse clang short function style.
+ * @param[in] val Parameter val.
+ * @return Found item if present; std::nullopt otherwise.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (91%) with ParseClangBraceStyle in
+ * server/src/features/formatting/ClangFormatPresets.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 std::optional<ShortFunctionStyle> ParseClangShortFunctionStyle(std::string_view val)
 {
     if (val.rfind("SFS_", 0) == 0)

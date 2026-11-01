@@ -70,7 +70,13 @@ bool IsClassOrInterfaceMember(const Symbol& sym, const SymbolTable& table)
                                     { return owner.type == SymbolType::Class || owner.type == SymbolType::Interface; });
 }
 
-/** @brief True when the symbol's container is an interface, where members carry no body. */
+/**
+ * @brief True when the symbol's container is an interface, where members carry no body.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsClassMember in
+ * server/src/analysis/rules/EngineRuleChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (93%) with IsMixinMember in server/src/analysis/rules/VariableRules.cpp. Candidate for unification
+ * in server/src/analysis/SemanticHelpers.h.
+ */
 bool IsInterfaceMember(const Symbol& sym, const SymbolTable& table)
 {
     if (sym.containerName.empty())
@@ -82,7 +88,13 @@ bool IsInterfaceMember(const Symbol& sym, const SymbolTable& table)
                                     [](const Symbol& owner) { return owner.type == SymbolType::Interface; });
 }
 
-/** @brief True when the symbol's container is a mixin class. */
+/**
+ * @brief True when the symbol's container is a mixin class.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (93%) with IsClassMember in
+ * server/src/analysis/rules/EngineRuleChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (93%) with IsInterfaceMember in server/src/analysis/rules/VariableRules.cpp. Candidate for
+ * unification in server/src/analysis/SemanticHelpers.h.
+ */
 bool IsMixinMember(const Symbol& sym, const SymbolTable& table)
 {
     if (sym.containerName.empty())
@@ -317,6 +329,14 @@ void CheckVirtualProperty(const Symbol& sym, const VariableSignature& sig, const
     }
 }
 
+/**
+ * @brief Check modifiers.
+ * @param[in,out] sym Parameter sym.
+ * @param[in,out] sig Parameter sig.
+ * @param[in,out] ctx Parameter ctx.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with ValidateOpIndex in
+ * server/src/analysis/rules/OperatorRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void CheckModifiers(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
 {
     if (sig.modifiers.isShared)

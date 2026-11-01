@@ -12,6 +12,10 @@ namespace angel_lsp
 {
 namespace
 {
+/**
+ * @brief Represents Cached tokens snapshot.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct CachedTokensSnapshot
 {
     bool canDiff{false};

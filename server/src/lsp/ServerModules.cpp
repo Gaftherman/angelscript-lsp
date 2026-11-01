@@ -287,6 +287,10 @@ bool Server::PathIsInside(const std::string& normalizedPath, const std::string& 
 
 Server::ModuleClaim Server::ClaimFor(const std::string& normalizedPath) const
 {
+    /**
+     * @brief Represents Candidate.
+     * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+     */
     struct Candidate
     {
         const ModuleView* view;

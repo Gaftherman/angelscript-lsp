@@ -17,6 +17,10 @@ enum class ScopeKind
     Value
 };
 
+/**
+ * @brief Represents Scope entry.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct ScopeEntry
 {
     ScopeKind kind = ScopeKind::Generic;
@@ -26,6 +30,10 @@ struct ScopeEntry
     bool didIncrement = true;
 };
 
+/**
+ * @brief Represents Line builder state.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct LineBuilderState
 {
     std::vector<LineInfo> lines;

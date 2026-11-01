@@ -25,12 +25,28 @@ bool IsTypeSymbol(const Symbol& sym)
     return sym.type == SymbolType::Class || sym.type == SymbolType::Interface;
 }
 
+/**
+ * @brief To range.
+ * @param[in,out] range Parameter range.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ToRange in
+ * server/src/features/call_hierarchy/CallHierarchyHandler.cpp. Candidate for unification in
+ * server/src/features/common/FeatureSharedUtils.h.
+ */
 lsp::Range ToRange(const analysis::SourceRange& range)
 {
     return lsp::Range{lsp::Position{range.startLine, range.startCharacter},
                       lsp::Position{range.endLine, range.endCharacter}};
 }
 
+/**
+ * @brief To item.
+ * @param[in,out] sym Parameter sym.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (67%) with ToItem in
+ * server/src/features/call_hierarchy/CallHierarchyHandler.cpp. Candidate for unification in
+ * server/src/features/common/FeatureSharedUtils.h.
+ */
 lsp::TypeHierarchyItem ToItem(const Symbol& sym)
 {
     lsp::TypeHierarchyItem item;
@@ -79,7 +95,12 @@ std::vector<Symbol> FindTypeDeclarations(std::string_view name, const SymbolTabl
     return found;
 }
 
-/** @brief The identifier the cursor sits on, or empty when it is not on one. */
+/**
+ * @brief The identifier the cursor sits on, or empty when it is not on one.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (94%) with IdentifierAt in
+ * server/src/features/implementation/ImplementationHandler.cpp. Candidate for unification in
+ * server/src/features/common/FeatureSharedUtils.h.
+ */
 std::string IdentifierAt(const TypeHierarchyPrepareRequest& request, TSNode& outNode)
 {
     outNode = TSNode{};
@@ -396,6 +417,7 @@ void CollectSupertypesForDeclaration(const Symbol& declaration, const SymbolTabl
 
 /**
  * @brief Context for subtype search queries.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct SubtypeQueryContext
 {

@@ -16,12 +16,26 @@ namespace angel_lsp::analysis
 {
 namespace
 {
+/**
+ * @brief Is bitwise op.
+ * @param[in] op Parameter op.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsArithmeticOp in
+ * server/src/analysis/BinaryOperatorChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 [[nodiscard]] constexpr bool IsBitwiseOp(std::string_view op) noexcept
 {
     using namespace parser::keywords::operators;
     return op == Pipe || op == Amp || op == Caret || op == LtLt || op == GtGt || op == GtGtGt;
 }
 
+/**
+ * @brief Is arithmetic op.
+ * @param[in] op Parameter op.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsBitwiseOp in
+ * server/src/analysis/BinaryOperatorChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 [[nodiscard]] constexpr bool IsArithmeticOp(std::string_view op) noexcept
 {
     using namespace parser::keywords::operators;
@@ -220,6 +234,15 @@ bool AreBinaryOperandsCompatible(std::string_view op, const BinaryOperandTypes& 
 }
 } // namespace
 
+/**
+ * @brief Check binary operator compatibility.
+ * @param[in] node Parameter node.
+ * @param[in] scope Parameter scope.
+ * @param[in,out] ctx Parameter ctx.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with CheckComparisonOperatorCompatibility in
+ * server/src/analysis/ComparisonOperatorChecker.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 void CheckBinaryOperatorCompatibility(TSNode node, const Scope* scope, DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();

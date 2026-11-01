@@ -1,5 +1,7 @@
 #pragma once
 
+#include "utils/Constants.h"
+
 #include <ankerl/unordered_dense.h>
 #include <cstdint>
 #include <string>
@@ -8,6 +10,11 @@
 
 namespace angel_lsp::analysis
 {
+/**
+ * @brief Sentinel type representing an initializer list expression.
+ */
+inline constexpr std::string_view k_initializerListTypeSentinel = constants::k_initializerListTypeSentinel;
+
 /**
  * @brief Sentinel type representing a poisoned / broken expression type.
  *

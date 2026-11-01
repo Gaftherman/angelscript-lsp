@@ -21,6 +21,16 @@
 
 namespace angel_lsp::analysis
 {
+/**
+ * @brief Clean expression type.
+ * @param[in] typeName Parameter typeName.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (68%) with StripModifiers in
+ * server/src/analysis/BinaryOperatorHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo /
+ * Symbol::modifiers.isConst. Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
+ */
 std::string CleanExpressionType(std::string_view typeName)
 {
     while (!typeName.empty() && (typeName.front() == ' ' || typeName.front() == '\t'))
@@ -325,6 +335,13 @@ bool AreAllSymbolsPureTypes(const std::vector<Symbol>& syms)
     return false;
 }
 
+/**
+ * @brief Unwrap parens.
+ * @param[in] node Parameter node.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with UnwrapParentheses in
+ * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 static TSNode UnwrapParens(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
@@ -1073,6 +1090,12 @@ std::string ResolveIndexedType(std::string_view typeName, size_t indexCount, con
     return current;
 }
 
+/**
+ * @brief Strip template decorations.
+ * @param[in,out] typeName Parameter typeName.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
+ */
 void StripTemplateDecorations(std::string_view& typeName)
 {
     TrimTypeWhitespace(typeName);
@@ -1329,6 +1352,10 @@ std::string PropertyTypeFromAccessors(const std::vector<Symbol>& accessors)
     return {};
 }
 
+/**
+ * @brief Represents Hierarchy classified base.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct HierarchyClassifiedBase
 {
     std::string name;
@@ -1743,6 +1770,15 @@ void TraverseAncestorsAndInterfaces(const std::string& rootType, const SymbolTab
     }
 }
 
+/**
+ * @brief Traverse derived classes.
+ * @param[in,out] initialFrontier Parameter initialFrontier.
+ * @param[in,out] symbolTable Parameter symbolTable.
+ * @param[in,out] visited Parameter visited.
+ * @param[in,out] related Parameter related.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (80%) with GetDerivedClasses in
+ * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void TraverseDerivedClasses(const std::vector<std::string>& initialFrontier, const SymbolTable& symbolTable,
                             ankerl::unordered_dense::set<std::string>& visited, std::vector<std::string>& related)
 {
@@ -1800,6 +1836,14 @@ std::vector<std::string> GetAllRelatedClasses(const std::string& className, cons
     return related;
 }
 
+/**
+ * @brief Get derived classes.
+ * @param[in,out] className Parameter className.
+ * @param[in,out] symbolTable Parameter symbolTable.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (80%) with TraverseDerivedClasses in
+ * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 std::vector<std::string> GetDerivedClasses(const std::string& className, const SymbolTable& symbolTable)
 {
     std::vector<std::string> derivedClasses;
@@ -1914,6 +1958,10 @@ std::string FindDeclaringRootClass(const std::string& cleanClass, const std::str
     return rootClass;
 }
 
+/**
+ * @brief Represents Mixin expansion context.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct MixinExpansionContext
 {
     const std::string& cleanClass;
@@ -2147,6 +2195,13 @@ TSNode AdjustStartNodeIfDeclarationName(TSNode node)
     return result;
 }
 
+/**
+ * @brief Classify container kind.
+ * @param[in] sym Parameter sym.
+ * @return Found item if present; std::nullopt otherwise.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ClassifyIndexContainerKind in
+ * server/src/analysis/NodeIndex.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 std::optional<ContainerKind> ClassifyContainerKind(TSSymbol sym)
 {
     const auto& gs = parser::GetGrammarSymbols();
@@ -2165,6 +2220,12 @@ std::optional<ContainerKind> ClassifyContainerKind(TSSymbol sym)
     return std::nullopt;
 }
 
+/**
+ * @brief Compute container qualified names.
+ * @param[in,out] containers Parameter containers.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ComputeIndexContainerQualifiedNames in
+ * server/src/analysis/NodeIndex.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void ComputeContainerQualifiedNames(std::vector<ContainerInfo>& containers)
 {
     for (size_t i = 0; i < containers.size(); ++i)
@@ -2182,6 +2243,15 @@ void ComputeContainerQualifiedNames(std::vector<ContainerInfo>& containers)
     }
 }
 
+/**
+ * @brief Append raw containers.
+ * @param[in] nameNode Parameter nameNode.
+ * @param[in] kind Parameter kind.
+ * @param[in] sourceCode Parameter sourceCode.
+ * @param[in,out] rawContainers Parameter rawContainers.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with AppendIndexRawContainers in
+ * server/src/analysis/NodeIndex.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 static void AppendRawContainers(TSNode nameNode, ContainerKind kind, std::string_view sourceCode,
                                 std::vector<ContainerInfo>& rawContainers)
 {
@@ -2880,6 +2950,14 @@ static std::string ResolveScopedEnumMember(std::string_view whole, TSNode exprNo
     return "";
 }
 
+/**
+ * @brief Extract variable or property type.
+ * @param[in] syms Parameter syms.
+ * @param[in,out] table Parameter table.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (73%) with ExtractMemberSymbolType in
+ * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 static std::string ExtractVariableOrPropertyType(std::span<const Symbol> syms, const SymbolTable& table)
 {
     for (const auto& sym : syms)
@@ -3204,6 +3282,10 @@ static std::pair<std::string_view, std::string_view> GetBinaryOpMethods(std::str
     return {"", ""};
 }
 
+/**
+ * @brief Represents Binary overload result.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct BinaryOverloadResult
 {
     bool hasMatch = false;
@@ -3351,6 +3433,8 @@ static std::string ResolveBinaryShiftBitwise(std::string_view op, const std::str
  * @param[in] cleanLeft Cleaned left operand type.
  * @param[in] cleanRight Cleaned right operand type.
  * @return Widened type name, or empty string.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (85%) with ResolveTernaryNumericPromotion in
+ * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 static std::string ResolveBinary64OrFloat(const std::string& cleanLeft, const std::string& cleanRight)
 {
@@ -3452,6 +3536,15 @@ static std::string ResolveBinaryPrimitivePromotion(std::string_view op, const st
     return ResolveBinary32OrLess(cleanLeft, cleanRight);
 }
 
+/**
+ * @brief Is boolean binary op sym.
+ * @param[in] sym Parameter sym.
+ * @param[in,out] gs Parameter gs.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (84%) with IsBooleanBinaryOperator in
+ * server/src/features/inlay_hint/InlayHintHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 static bool IsBooleanBinaryOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
 {
     return sym == gs.tokEqEq || sym == gs.tokBangEq || sym == gs.tokLt || sym == gs.tokLtEq || sym == gs.tokGt ||
@@ -3664,6 +3757,10 @@ static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContex
     return currentType;
 }
 
+/**
+ * @brief Represents Ternary branch types.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct TernaryBranchTypes
 {
     std::string t1;
@@ -3704,6 +3801,14 @@ static std::string ResolveTernaryHierarchy(const TernaryBranchTypes& types, cons
     return "";
 }
 
+/**
+ * @brief Resolve ternary numeric promotion.
+ * @param[in,out] c1 Parameter c1.
+ * @param[in,out] c2 Parameter c2.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (85%) with ResolveBinary64OrFloat in
+ * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 static std::string ResolveTernaryNumericPromotion(const std::string& c1, const std::string& c2)
 {
     if (c1 == "double" || c2 == "double")
@@ -3736,6 +3841,8 @@ static std::string ResolveTernaryEnumPromotion(const std::string& c1, const std:
  * @param[in] c1 Cleaned consequence base type.
  * @param[in] c2 Cleaned alternative base type.
  * @return Resolved handle type or "null", or empty string if not applicable.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static std::string ResolveTernaryNullBranch(const std::string& t1, const std::string& t2, const std::string& c1,
                                             const std::string& c2)
@@ -3753,6 +3860,8 @@ static std::string ResolveTernaryNullBranch(const std::string& t1, const std::st
 
 /**
  * @brief Resolves result type between ternary consequence and alternative branch types.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static std::string ResolveTernaryBranchTypes(std::string_view t1, std::string_view t2, const SymbolTable& symbolTable)
 {
@@ -3947,6 +4056,8 @@ static std::string ExtractAccessorMemberType(const Symbol& sym)
  * @brief Extracts the resolved type of a member symbol.
  * @param[in] sym Member symbol to inspect.
  * @return Cleaned member type, or empty string if unresolved.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (73%) with ExtractVariableOrPropertyType in
+ * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 static std::string ExtractMemberSymbolType(const Symbol& sym, const SymbolTable& table)
 {
@@ -4441,6 +4552,15 @@ static bool IsFunctionHandleTarget(TSNode target, TSNode exprNode, const Express
     return false;
 }
 
+/**
+ * @brief Resolve unary handle.
+ * @param[in] operandNode Parameter operandNode.
+ * @param[in] exprNode Parameter exprNode.
+ * @param[in,out] ctx Parameter ctx.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
+ */
 static std::string ResolveUnaryHandle(TSNode operandNode, TSNode exprNode, const ExpressionTypeContext& ctx)
 {
     if (IsFunctionHandleTarget(operandNode, exprNode, ctx))
@@ -4574,7 +4694,7 @@ static std::optional<std::string> ResolveLambdaOrInitExpr(TSSymbol sym, TSNode e
     const auto& gs = parser::GetGrammarSymbols();
     if (sym == gs.symInitializerList)
     {
-        return "init_list";
+        return std::string(constants::k_initializerListTypeSentinel);
     }
     if (sym == gs.symLambdaExpression)
     {
@@ -4926,6 +5046,10 @@ std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& 
     return ResolveExpressionTypeUncached(sym, exprNode, ctx);
 }
 
+/**
+ * @brief Represents Active local def key.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct ActiveLocalDefKey
 {
     std::string_view name;
@@ -4935,6 +5059,10 @@ struct ActiveLocalDefKey
 
 thread_local std::vector<ActiveLocalDefKey> s_activeLocalDefs;
 
+/**
+ * @brief Represents Active local def guard.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct ActiveLocalDefGuard
 {
     bool pushed = false;
@@ -4993,10 +5121,18 @@ static std::string FindFallbackSymbolType(std::string_view name, const SymbolTab
 
 static bool IsValidDeducedRhsType(std::string_view rhsType)
 {
-    return !rhsType.empty() && rhsType != "void" && rhsType != "null" && rhsType != "init_list" &&
-           !ExpressionTypeCache::IsPoisonType(rhsType);
+    return !rhsType.empty() && rhsType != "void" && rhsType != "null" &&
+           rhsType != constants::k_initializerListTypeSentinel && !ExpressionTypeCache::IsPoisonType(rhsType);
 }
 
+/**
+ * @brief Format deduced type.
+ * @param[in,out] def Parameter def.
+ * @param[in] rhsType Parameter rhsType.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
+ */
 static std::string FormatDeducedType(const LocalDefinition& def, std::string rhsType)
 {
     if ((def.isHandleType || def.typeName.find('@') != std::string::npos) && !rhsType.ends_with('@'))
@@ -5257,6 +5393,10 @@ std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourc
     return "";
 }
 
+/**
+ * @brief Represents Delegate property receiver context.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct DelegatePropertyReceiverContext
 {
     TSNode objNode;
@@ -5510,6 +5650,14 @@ void ProcessCallArgumentChild(TSNode child, TSFieldId fieldId, std::string_view 
     current.exprNode = child;
 }
 
+/**
+ * @brief Extract call arguments.
+ * @param[in] argumentList Parameter argumentList.
+ * @param[in] sourceCode Parameter sourceCode.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (74%) with ExtractLambdaParameters in
+ * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 std::vector<CallArgumentInfo> ExtractCallArguments(TSNode argumentList, std::string_view sourceCode)
 {
     TSNode targetList = ResolveArgumentListNode(argumentList);
@@ -5693,6 +5841,10 @@ std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, TS
     return candidateSymbols;
 }
 
+/**
+ * @brief Represents Call delimiter state.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct CallDelimiterState
 {
     int parenDepth = 0;
@@ -5928,6 +6080,17 @@ static TSNode ResolveLambdaParameterListNode(TSNode node)
     return TSNode{};
 }
 
+/**
+ * @brief Apply lambda param child.
+ * @param[in] child Parameter child.
+ * @param[in] fieldId Parameter fieldId.
+ * @param[in] sourceCode Parameter sourceCode.
+ * @param[in,out] current Parameter current.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst. Manually re-evaluates AST for isHandle; candidate for
+ * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle /
+ * LocalDefinition::isHandleType.
+ */
 void ApplyLambdaParamChild(TSNode child, TSFieldId fieldId, std::string_view sourceCode, LambdaParamASTInfo& current)
 {
     const auto& gs = parser::GetGrammarSymbols();
@@ -5958,6 +6121,14 @@ void ApplyLambdaParamChild(TSNode child, TSFieldId fieldId, std::string_view sou
     }
 }
 
+/**
+ * @brief Extract lambda parameters.
+ * @param[in] lambdaParamList Parameter lambdaParamList.
+ * @param[in] sourceCode Parameter sourceCode.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (74%) with ExtractCallArguments in
+ * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 std::vector<LambdaParamASTInfo> ExtractLambdaParameters(TSNode lambdaParamList, std::string_view sourceCode)
 {
     TSNode targetList = ResolveLambdaParameterListNode(lambdaParamList);
@@ -6141,6 +6312,14 @@ std::optional<Symbol> FindFuncdefSymbol(std::string_view typeName, const SymbolT
     return std::nullopt;
 }
 
+/**
+ * @brief Is handle type.
+ * @param[in] typeName Parameter typeName.
+ * @param[in,out] symbolTable Parameter symbolTable.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
+ */
 bool IsHandleType(std::string_view typeName, const SymbolTable& symbolTable) noexcept
 {
     if (typeName.empty())
@@ -6217,6 +6396,10 @@ static TSNode ExtractCallCalleeNode(TSNode call)
     return parser::GetCallCallee(call);
 }
 
+/**
+ * @brief Represents Funcdef agreement.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct FuncdefAgreement
 {
     std::optional<Symbol> agreed;

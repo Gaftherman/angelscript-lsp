@@ -163,6 +163,10 @@ bool ApplyNumericEngineProperty(EngineProperties& engine, std::string_view name,
     return false;
 }
 
+/**
+ * @brief Represents Bool engine prop.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct BoolEngineProp
 {
     using PropMember = bool EngineProperties::*;
@@ -362,6 +366,10 @@ void PrintVersion()
 
 namespace
 {
+/**
+ * @brief Represents Arg parse context.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct ArgParseContext
 {
     int& i;
@@ -421,6 +429,10 @@ bool TryParseHelpOrVersion(ServerConfig& config, const ArgParseContext& ctx)
     return false;
 }
 
+/**
+ * @brief Represents Feature flag mapping.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct FeatureFlagMapping
 {
     using FeatureMember = bool FeatureFlags::*;
@@ -623,6 +635,10 @@ bool TryParseFeatureFlag(ServerConfig& config, ArgParseContext& ctx)
     return TryParseInlayHintFlag(config, ctx);
 }
 
+/**
+ * @brief Represents Diagnostic flag mapping.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct DiagnosticFlagMapping
 {
     using DiagMember = bool DiagnosticsConfig::*;
@@ -1070,6 +1086,10 @@ bool TryParseDiagnosticSeverity(ServerConfig& config, ArgParseContext& ctx)
     return true;
 }
 
+/**
+ * @brief Represents Engine bool flag.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct EngineBoolFlag
 {
     using FlagMember = bool EngineProperties::*;

@@ -110,6 +110,13 @@ struct ArgumentConversion
     int legacyScore = 999;           ///< Legacy scalar score for backwards compatibility
     bool isLossy = false;            ///< Conversion loses precision (narrowing / truncation)
 
+    /**
+     * @brief Argument conversion.
+     * @param[in] t Parameter t.
+     * @param[in] r Parameter r.
+     * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
+     * Symbol::modifiers.isConst / ParameterInformation::isConst.
+     */
     constexpr ArgumentConversion() noexcept = default;
 
     constexpr ArgumentConversion(MatchTier t, ConversionRank r, uint8_t sub = 0, uint8_t dist = 0, bool isConst = false,
@@ -119,6 +126,12 @@ struct ArgumentConversion
     {
     }
 
+    /**
+     * @brief Argument conversion.
+     * @param[in] r Parameter r.
+     * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
+     * Symbol::modifiers.isConst / ParameterInformation::isConst.
+     */
     constexpr ArgumentConversion(ConversionRank r, uint8_t sub = 0, uint8_t dist = 0, bool isConst = false,
                                  int score = 999, bool lossy = false) noexcept
         : tier(RankToTier(r, sub, isConst, lossy)), rank(r), subRank(sub), inheritanceDistance(dist),

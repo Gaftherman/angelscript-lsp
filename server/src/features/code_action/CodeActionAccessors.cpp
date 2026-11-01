@@ -131,6 +131,10 @@ std::vector<std::pair<std::string, std::string>> CollectFieldsForGetterSetter(TS
     return {};
 }
 
+/**
+ * @brief Represents Getter setter context.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct GetterSetterContext
 {
     std::string className;
@@ -145,6 +149,9 @@ struct GetterSetterContext
  * @param[in] text Method code to insert.
  * @param[in] insertPt Class body insertion point.
  * @return Constructed CodeAction.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (78%) with BuildAddConstAction in
+ * server/src/features/code_action/CodeActionConstQualifier.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 lsp::CodeAction CreateAccessorAction(const std::string& uri, const std::string& title, const std::string& text,
                                      TSPoint insertPt)
@@ -190,6 +197,8 @@ std::pair<bool, bool> CheckFieldAccessors(const analysis::SymbolTable& table, co
  * @param[in] request Code action request.
  * @param[in] ctx Getter and setter context.
  * @param[out] actions Destination code actions vector.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 void EmitGetterSetterActionsForField(const CodeActionRequest& request, const GetterSetterContext& ctx,
                                      std::vector<lsp::CodeAction>& actions)

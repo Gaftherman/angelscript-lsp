@@ -105,6 +105,10 @@ enum class ModifierPlacement : uint8_t
     Trailing ///< Placed after parameter list (e.g., 'void Bar() final', 'void Bar() override')
 };
 
+/**
+ * @brief Declaration modifiers and syntactic attributes attached to symbols.
+ * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (pack 14 bools into uint16_t in Phase R1).
+ */
 struct SymbolModifiers
 {
     AccessModifier access = AccessModifier::Public;
@@ -156,6 +160,11 @@ struct SymbolModifiers
     }
 };
 
+/**
+ * @brief Signature metadata and semantic type qualifiers for a function parameter.
+ * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (eliminate rawText, pack 9 bools into uint16_t
+ * qualifiers in Phase R1).
+ */
 struct ParameterInformation
 {
     ParameterInformation() = default;
@@ -234,6 +243,10 @@ struct TypeExtractionResult
     std::vector<TypeExtractionResult> templateArguments;
 };
 
+/**
+ * @brief Signature metadata and parameter list for callable symbols.
+ * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (pack return qualifiers in Phase R1).
+ */
 struct FunctionSignature
 {
     std::string returnType;
@@ -254,6 +267,10 @@ struct FunctionSignature
     std::string displaySignature; ///< Canonical pre-formatted declaration for zero-copy std::string_view diagnostics.
 };
 
+/**
+ * @brief Signature and accessor metadata for variables and virtual properties.
+ * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (pack 19 bools into uint32_t flags in Phase R1).
+ */
 struct VariableSignature
 {
     std::string typeName;
@@ -292,6 +309,10 @@ struct EnumMemberInformation
     std::string valueNodeType;
 };
 
+/**
+ * @brief Enum declaration metadata and member constant listings.
+ * @note [REFACTOR-CANDIDATE] Target for memory layout compaction in Phase R1.
+ */
 struct EnumSignature
 {
     SymbolModifiers modifiers;
@@ -299,6 +320,10 @@ struct EnumSignature
     bool hasBraces = false;
 };
 
+/**
+ * @brief Class inheritance, included mixins, and template parameter metadata.
+ * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (pack bool flags in Phase R1).
+ */
 struct ClassSignature
 {
     std::vector<std::string> bases;
@@ -310,12 +335,20 @@ struct ClassSignature
     bool hasListPattern = false;
 };
 
+/**
+ * @brief Interface inheritance and modifier metadata.
+ * @note [REFACTOR-CANDIDATE] Target for memory layout compaction in Phase R1.
+ */
 struct InterfaceSignature
 {
     std::vector<std::string> inheritedInterfaces;
     SymbolModifiers modifiers;
 };
 
+/**
+ * @brief Typedef alias declaration metadata and source position ranges.
+ * @note [REFACTOR-CANDIDATE] Target for memory layout compaction in Phase R1.
+ */
 struct TypedefSignature
 {
     std::string baseType;
@@ -327,6 +360,10 @@ struct TypedefSignature
     uint32_t baseTypeEndCharacter = 0;
 };
 
+/**
+ * @brief Function definition pointer signature and parameter metadata.
+ * @note [REFACTOR-CANDIDATE] Target for memory layout compaction in Phase R1.
+ */
 struct FuncdefSignature
 {
     std::string returnType;
@@ -354,6 +391,10 @@ struct CallReferenceSignature
     std::string objectExpression;
 };
 
+/**
+ * @brief Core symbol descriptor containing name, scope, container, and polymorphic signature variant.
+ * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (compact variant, pack bool flags in Phase R1).
+ */
 struct Symbol
 {
     SymbolType type;

@@ -32,6 +32,7 @@ bool IsSpaceOrTab(char c)
 
 /**
  * @brief One `#if <word>` that has been opened and is waiting for its `#endif`.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct OpenDirective
 {
@@ -40,7 +41,10 @@ struct OpenDirective
     bool takenAlready = false; ///< True once some branch of this `#if` has been live.
 };
 
-/** @brief One `#name argument` found at the start of a line. */
+/**
+ * @brief One `#name argument` found at the start of a line.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct DirectiveHit
 {
     uint32_t line = 0;
@@ -54,6 +58,7 @@ struct DirectiveHit
 
 /**
  * @brief State tracking for scanning lines and directives.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct LineScanState
 {
@@ -303,6 +308,7 @@ template <typename Fn> uint32_t ForEachDirective(std::string_view sourceCode, Fn
 
 /**
  * @brief Context state for preprocessor scanning and conditional evaluation.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct PreprocessorScanContext
 {

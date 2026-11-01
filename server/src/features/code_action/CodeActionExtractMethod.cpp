@@ -9,6 +9,9 @@ namespace
  * @brief Finds the insertion point for adding a method definition inside a class.
  * @param[in] classNode Class declaration node.
  * @return Insertion point.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (95%) with FindFunctionBodyBlock in
+ * server/src/features/code_action/CodeActionExtractMethodStatements.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 TSPoint FindClassBodyInsertionPoint(TSNode classNode)
 {

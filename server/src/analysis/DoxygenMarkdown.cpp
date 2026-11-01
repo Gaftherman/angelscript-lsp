@@ -16,7 +16,11 @@ namespace angel_lsp::analysis
 {
 namespace
 {
-/** @brief Strips leading and trailing ASCII whitespace. */
+/**
+ * @brief Strips leading and trailing ASCII whitespace.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Trim in server/src/analysis/DocComment.cpp. Candidate for
+ * unification in server/src/analysis/SemanticHelpers.h.
+ */
 std::string Trim(const std::string& str)
 {
     size_t first = str.find_first_not_of(" \t\r\n");
@@ -362,7 +366,10 @@ bool IsTrailingPunctuation(char c)
     return c == '.' || c == ',' || c == ';' || c == ':' || c == '!' || c == '?' || c == ')' || c == ']' || c == '}';
 }
 
-/** @brief Result of matching an inline formatting command. */
+/**
+ * @brief Result of matching an inline formatting command.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct MatchedInlineCommand
 {
     size_t cmdLen = 0;
@@ -391,7 +398,11 @@ MatchedInlineCommand MatchInlineCommandName(std::string_view text, size_t i)
     return {0, {}};
 }
 
-/** @brief Formats an inline command and its argument into Markdown. */
+/**
+ * @brief Formats an inline command and its argument into Markdown.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (84%) with FormatInlineWord in server/src/analysis/DoxygenMarkdown.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 std::string FormatInlineCommand(std::string_view cmd, std::string_view arg)
 {
     if (cmd == "c" || cmd == "p" || cmd == "ref")
@@ -730,6 +741,10 @@ enum class CommentSegmentKind
     VerbatimCode
 };
 
+/**
+ * @brief Represents Comment segment.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct CommentSegment
 {
     CommentSegmentKind kind = CommentSegmentKind::Text;
@@ -1047,7 +1062,10 @@ std::string ExtractBrief(std::vector<std::string>& lines)
     return ExtractImplicitBrief(lines, firstContentIdx);
 }
 
-/** @brief State for comment line segmentation. */
+/**
+ * @brief State for comment line segmentation.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct SegmenterState
 {
     CommentSegment currentSeg;
@@ -1278,7 +1296,11 @@ TSNode FindChildByType(TSNode node, const char* typeName)
     return TSNode{};
 }
 
-/** @brief Renders a code_word inline node to Markdown. */
+/**
+ * @brief Renders a code_word inline node to Markdown.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (97%) with RenderEmphasisNode in
+ * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 std::string RenderCodeWordNode(TSNode node, const std::string& sourceCode)
 {
     TSNode codeChild = FindChildByType(node, "code");
@@ -1298,7 +1320,11 @@ std::string RenderCodeWordNode(TSNode node, const std::string& sourceCode)
     return "`" + std::string(full) + "`";
 }
 
-/** @brief Renders an emphasis inline node to Markdown. */
+/**
+ * @brief Renders an emphasis inline node to Markdown.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (97%) with RenderCodeWordNode in
+ * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 std::string RenderEmphasisNode(TSNode node, const std::string& sourceCode)
 {
     TSNode textChild = FindChildByType(node, "text");
@@ -1487,6 +1513,10 @@ std::string ProcessCodeBlock(TSNode blockNode, const std::string& sourceCode)
     return "```" + lang + "\n" + joined + "\n```";
 }
 
+/**
+ * @brief Represents Param item.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct ParamItem
 {
     std::vector<std::string> names;
@@ -1494,12 +1524,20 @@ struct ParamItem
     std::string description;
 };
 
+/**
+ * @brief Represents T param item.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct TParamItem
 {
     std::string name;
     std::string description;
 };
 
+/**
+ * @brief Represents Ret val item.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct RetValItem
 {
     std::string value;
@@ -1518,6 +1556,10 @@ enum class DocBlockKind
     Admonition
 };
 
+/**
+ * @brief Represents Doc block.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct DocBlock
 {
     DocBlockKind kind;
@@ -1527,6 +1569,17 @@ struct DocBlock
     ParamItem param;
     RetValItem retval;
 
+    /**
+     * @brief Make brief.
+     * @param[in] t Parameter t.
+     * @return Result of the operation.
+     * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with MakeBody in server/src/analysis/DoxygenMarkdown.cpp.
+     * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with MakeCodeBlock
+     * in server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+     * Structural overlap (100%) with MakeReturn in server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification
+     * in server/src/analysis/SemanticHelpers.h. Structural overlap (83%) with MakeAdmonition in
+     * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+     */
     static DocBlock MakeBrief(std::string t)
     {
         DocBlock b;
@@ -1535,6 +1588,17 @@ struct DocBlock
         return b;
     }
 
+    /**
+     * @brief Make body.
+     * @param[in] t Parameter t.
+     * @return Result of the operation.
+     * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with MakeBrief in server/src/analysis/DoxygenMarkdown.cpp.
+     * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with MakeCodeBlock
+     * in server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+     * Structural overlap (100%) with MakeReturn in server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification
+     * in server/src/analysis/SemanticHelpers.h. Structural overlap (83%) with MakeAdmonition in
+     * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+     */
     static DocBlock MakeBody(std::string t)
     {
         DocBlock b;
@@ -1543,6 +1607,17 @@ struct DocBlock
         return b;
     }
 
+    /**
+     * @brief Make code block.
+     * @param[in] t Parameter t.
+     * @return Result of the operation.
+     * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with MakeBrief in server/src/analysis/DoxygenMarkdown.cpp.
+     * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with MakeBody in
+     * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+     * Structural overlap (100%) with MakeReturn in server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification
+     * in server/src/analysis/SemanticHelpers.h. Structural overlap (83%) with MakeAdmonition in
+     * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+     */
     static DocBlock MakeCodeBlock(std::string t)
     {
         DocBlock b;
@@ -1567,6 +1642,17 @@ struct DocBlock
         return b;
     }
 
+    /**
+     * @brief Make return.
+     * @param[in] t Parameter t.
+     * @return Result of the operation.
+     * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with MakeBrief in server/src/analysis/DoxygenMarkdown.cpp.
+     * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with MakeBody in
+     * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+     * Structural overlap (100%) with MakeCodeBlock in server/src/analysis/DoxygenMarkdown.cpp. Candidate for
+     * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (83%) with MakeAdmonition in
+     * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+     */
     static DocBlock MakeReturn(std::string t)
     {
         DocBlock b;
@@ -1583,6 +1669,18 @@ struct DocBlock
         return b;
     }
 
+    /**
+     * @brief Make admonition.
+     * @param[in] l Parameter l.
+     * @param[in] t Parameter t.
+     * @return Result of the operation.
+     * @note [REFACTOR-CANDIDATE] Structural overlap (83%) with MakeBrief in server/src/analysis/DoxygenMarkdown.cpp.
+     * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (83%) with MakeBody in
+     * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+     * Structural overlap (83%) with MakeCodeBlock in server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification
+     * in server/src/analysis/SemanticHelpers.h. Structural overlap (83%) with MakeReturn in
+     * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+     */
     static DocBlock MakeAdmonition(std::string l, std::string t)
     {
         DocBlock b;
@@ -1679,6 +1777,8 @@ ParamItem ProcessParamTag(TSNode tagNode, const std::string& sourceCode)
 
 /**
  * @brief Splits the template parameter name from the description for a @tparam tag.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (99%) with ProcessRetValTag in server/src/analysis/DoxygenMarkdown.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 TParamItem ProcessTParamTag(TSNode tagNode, const std::string& sourceCode)
 {
@@ -1819,6 +1919,8 @@ DocBlock ProcessAdmonitionTag(const std::string& cleanedTag, TSNode tagNode, con
 
 /**
  * @brief Extracts value and description from a @retval tag.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (99%) with ProcessTParamTag in server/src/analysis/DoxygenMarkdown.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 RetValItem ProcessRetValTag(TSNode tagNode, const std::string& sourceCode)
 {
@@ -2027,7 +2129,11 @@ std::pair<std::string, std::string> SplitInlineTagWord(std::string_view desc)
     return {std::move(X), std::move(remainder)};
 }
 
-/** @brief Formats an inline word into Markdown depending on tag command. */
+/**
+ * @brief Formats an inline word into Markdown depending on tag command.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (84%) with FormatInlineCommand in
+ * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 std::string FormatInlineWord(std::string_view cmd, std::string_view word)
 {
     if (cmd == "c" || cmd == "p" || cmd == "ref")

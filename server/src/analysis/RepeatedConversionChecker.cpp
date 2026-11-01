@@ -15,6 +15,10 @@ namespace angel_lsp::analysis
 {
 namespace
 {
+/**
+ * @brief Represents Conversion occurrence.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct ConversionOccurrence
 {
     TSNode node;
@@ -35,6 +39,10 @@ bool IsExtractableCandidate(TSNode node)
            sym == gs.symIndexExpression || sym == gs.symScopedIdentifier;
 }
 
+/**
+ * @brief Represents Conversion type pair.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct ConversionTypePair
 {
     std::string fromType;

@@ -57,6 +57,7 @@ FORBIDDEN_TYPE_PATTERNS = [
     (re.compile(r'param\.baseTypeName\s*==\s*"string"'), 'hardcoded "string" check on param (use param.isOutRef / isInOutRef / isStandaloneRef)'),
     (re.compile(r'IsWeakrefToConstWeakref'), 'IsWeakrefToConstWeakref is banned (use generic template constructors)'),
     (re.compile(r'(?:,|\()\s*(?:const\s+)?std::string_view\s+\w+\s*=\s*"(?:string|array)"'), 'forbidden default parameter ="string" or ="array" in function signature'),
+    (re.compile(r'"init_list"'), 'hardcoded "init_list" literal (use constants::k_initializerListTypeSentinel)'),
 ]
 
 SYMBOL_LOOKUP_CONCAT_PATTERNS = [

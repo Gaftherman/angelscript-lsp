@@ -993,12 +993,20 @@ Server::HandleRequestsTextDocument_WillSaveWaitUntil(lsp::requests::TextDocument
 
 namespace
 {
+/**
+ * @brief Represents Virtual mixin target.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct VirtualMixinTarget
 {
     std::string hostClass;
     std::string mixinName;
 };
 
+/**
+ * @brief Represents Mixin symbol location.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct MixinSymbolLocation
 {
     std::string fileUri;

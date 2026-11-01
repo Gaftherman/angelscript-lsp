@@ -147,12 +147,24 @@ lsp::WorkspaceEdit BuildWorkspaceEdit(const std::vector<OccurrenceLocation>& occ
     return workspaceEdit;
 }
 
+/**
+ * @brief Represents Rename target result.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct RenameTargetResult
 {
     analysis::TargetDescriptor target;
     TSNode node{};
 };
 
+/**
+ * @brief Resolve valid rename target.
+ * @param[in,out] request Parameter request.
+ * @return Found item if present; std::nullopt otherwise.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (76%) with GetReferences in
+ * server/src/features/references/ReferencesHandler.cpp. Candidate for unification in
+ * server/src/features/common/FeatureSharedUtils.h.
+ */
 template <typename RequestT> std::optional<RenameTargetResult> ResolveValidRenameTarget(const RequestT& request)
 {
     if (!request.tree || request.sourceCode.empty() || request.predefinedUris.contains(request.uri))

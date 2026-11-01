@@ -198,6 +198,14 @@ TSPoint FindClassClosingBracePoint(TSNode classBody)
     return closingPt;
 }
 
+/**
+ * @brief Make disable diagnostic action.
+ * @param[in,out] options Parameter options.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (84%) with MakeDisableDiagnosticAction in
+ * server/src/features/code_action/CodeActionCommon.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 lsp::CodeAction MakeDisableDiagnosticAction(const DisableDiagnosticActionOptions& options)
 {
     std::string title = i18n::FormatMessage(options.i18n, "action-disable-in-workspace-settings",
@@ -225,6 +233,19 @@ lsp::CodeAction MakeDisableDiagnosticAction(const DisableDiagnosticActionOptions
     return action;
 }
 
+/**
+ * @brief Make disable diagnostic action.
+ * @param[in,out] diag Parameter diag.
+ * @param[in] title Parameter title.
+ * @param[in] settingKey Parameter settingKey.
+ * @param[in] code Parameter code.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (84%) with MakeDisableDiagnosticAction in
+ * server/src/features/code_action/CodeActionCommon.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (70%) with MakeIgnoreUnusedSymbolAction in
+ * server/src/features/code_action/CodeActionUnusedVariables.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 lsp::CodeAction MakeDisableDiagnosticAction(const lsp::Diagnostic& diag, std::string title, std::string settingKey,
                                             std::string code)
 {

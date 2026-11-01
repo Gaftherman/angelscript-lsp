@@ -468,6 +468,7 @@ std::optional<std::vector<lsp::Location>> TryResolveIncludeDirective(const Defin
 
 /**
  * @brief Context bundling definition lookup parameters and virtual document state.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct DefinitionContext
 {
@@ -740,6 +741,9 @@ bool IsDefinitionInsideFunction(const analysis::Scope* rootScope, const analysis
  * @param[in] nodeText Symbol name.
  * @param[in] ctx Definition context.
  * @return Resolved local definition location, or nullopt.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with TryResolveLocalDefinitionFallback in
+ * server/src/features/definition/DefinitionHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 std::optional<std::vector<lsp::Location>> TryResolveLocalDefinition(TSNode node, const std::string& nodeText,
                                                                     const DefinitionContext& ctx)
@@ -961,6 +965,9 @@ std::vector<analysis::Symbol> ResolveCandidateSymbols(TSNode node, const std::st
  * @param[in] nodeText Symbol name.
  * @param[in] ctx Definition context.
  * @return Resolved definition locations, or nullopt.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with TryResolveLocalDefinition in
+ * server/src/features/definition/DefinitionHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 std::optional<std::vector<lsp::Location>> TryResolveLocalDefinitionFallback(TSNode node, const std::string& nodeText,
                                                                             const DefinitionContext& ctx)
@@ -1071,6 +1078,8 @@ TryResolveDelegatePropertyDefinition(TSNode node, const std::string& nodeText, c
  * @brief Checks if a tree-sitter node symbol corresponds to an entity declaration.
  * @param[in] sym Tree-sitter grammar symbol.
  * @return True if symbol is a recognized declaration node.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (75%) with IsDeclarationNodeType in
+ * server/src/analysis/AccessChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 bool IsDeclarationNode(TSSymbol sym)
 {
@@ -1495,6 +1504,16 @@ void FilterAndPrioritizeLocalSymbols(std::vector<analysis::Symbol>& symbols, TSN
     DeduplicateEnumMemberSymbols(symbols);
 }
 
+/**
+ * @brief Container kind matches.
+ * @param[in] containerType Parameter containerType.
+ * @param[in] memberContainerKind Parameter memberContainerKind.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (68%) with AccessModifierToString in
+ * server/src/analysis/SymbolTable.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural
+ * overlap (62%) with IsOpeningOrMemberPunctuation in server/src/features/formatting/FormattingSpacing.cpp. Candidate
+ * for unification in server/src/features/common/FeatureSharedUtils.h.
+ */
 static bool ContainerKindMatches(analysis::SymbolType containerType, analysis::ContainerKind memberContainerKind)
 {
     switch (containerType)

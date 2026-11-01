@@ -128,6 +128,9 @@ std::string GetNodeTextAt(const std::string& sourceCode, TSTree* tree, TargetPos
  * @brief Checks whether a definition's declaring scope is inside any function/method/lambda body.
  * @param[in] defScope Definition declaring scope.
  * @return True if enclosed in a function scope.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsDeclaredInFunctionScope in
+ * server/src/features/document_highlight/DocumentHighlightHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 bool IsDeclaredInFunctionScope(const analysis::Scope* defScope)
 {
@@ -211,6 +214,7 @@ namespace
 
 /**
  * @brief Call argument constraint information inferred from cursor position.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct FunctionArgConstraints
 {
@@ -663,6 +667,14 @@ bool ResolveEnumTarget(TSNode outNode, const std::string& nodeText, const Resolv
     return false;
 }
 
+/**
+ * @brief Assign target from container kind.
+ * @param[in,out] sym Parameter sym.
+ * @param[in,out] target Parameter target.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with AssignTargetFromContainerLookup in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 bool AssignTargetFromContainerKind(const analysis::Symbol& sym, TargetDescriptor& target)
 {
     if (sym.containerKind == analysis::ContainerKind::Class || sym.containerKind == analysis::ContainerKind::Interface)
@@ -688,6 +700,15 @@ bool AssignTargetFromContainerKind(const analysis::Symbol& sym, TargetDescriptor
     return false;
 }
 
+/**
+ * @brief Assign target from container lookup.
+ * @param[in,out] sym Parameter sym.
+ * @param[in,out] table Parameter table.
+ * @param[in,out] target Parameter target.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with AssignTargetFromContainerKind in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 bool AssignTargetFromContainerLookup(const analysis::Symbol& sym, const SymbolTable& table, TargetDescriptor& target)
 {
     auto containerSyms = table.FindSymbols(sym.containerName);
@@ -1118,6 +1139,7 @@ namespace
 
 /**
  * @brief Accumulator and deduplication state for occurrence locations.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct OccurrenceCollector
 {
@@ -1151,6 +1173,7 @@ struct OccurrenceCollector
 
 /**
  * @brief Start and end coordinates for a symbol.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct SymbolSpan
 {
@@ -1162,6 +1185,7 @@ struct SymbolSpan
 
 /**
  * @brief Context for scanning documents during occurrence collection.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct OccurrenceScanContext
 {
@@ -1261,6 +1285,9 @@ void CollectScopeReferences(const analysis::Scope* scope, const TargetDescriptor
  * @param[in] target Target descriptor.
  * @param[in] includeDeclaration True to include declaration site.
  * @param[in,out] collector Occurrence accumulator.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (62%) with CollectLocalHighlightRanges in
+ * server/src/features/document_highlight/DocumentHighlightHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void CollectLocalOccurrences(const TargetDescriptor& target, bool includeDeclaration, OccurrenceCollector& collector)
 {
@@ -1395,6 +1422,9 @@ std::string ResolveReceiverFromAst(const analysis::LocalReference& ref, const an
  * @param[in] scope Lexical scope.
  * @param[in] ctx Occurrence scan context.
  * @return Cleaned receiver type or empty string.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (78%) with ResolveReceiverFromScope in
+ * server/src/features/code_lens/CodeLensHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 std::string ResolveReceiverFromScope(const analysis::LocalReference& ref, const analysis::Scope* scope,
                                      const OccurrenceScanContext& ctx)
@@ -1547,6 +1577,8 @@ bool ShouldIncludeClassDecl(const std::string& clsName, const std::string& decla
  * @param[in] request Occurrences request.
  * @param[out] allDeclRanges Set of all declaration coordinate tuples.
  * @param[in,out] collector Occurrence accumulator.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with CollectDeclarations in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 void CollectClassMemberDeclarations(const ankerl::unordered_dense::set<std::string>& relatedSet,
                                     const CollectOccurrencesRequest& request,
@@ -1586,6 +1618,9 @@ void CollectClassMemberDeclarations(const ankerl::unordered_dense::set<std::stri
  * @param[in] ref Reference to check.
  * @param[in] target Target descriptor.
  * @return True if argument count matches.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (91%) with MatchesCallArguments in
+ * server/src/features/code_lens/CodeLensHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 bool MatchesCallArguments(const analysis::LocalReference& ref, const TargetDescriptor& target)
 {
@@ -1631,6 +1666,11 @@ bool IsClassMemberReferenceMatch(const analysis::LocalReference& ref, const anal
  * @param[in] root Document root scope.
  * @param[in] relatedSet Set of related class names.
  * @param[in,out] ctx Occurrence scan context.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (78%) with ScanDocumentForGlobal in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (74%) with ScanDocumentForEnumMember in server/src/analysis/TargetResolution.cpp. Candidate for
+ * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (69%) with ScanDocumentForNamespace in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 void ScanDocumentForClassMember(const analysis::Scope* root,
                                 const ankerl::unordered_dense::set<std::string>& relatedSet, OccurrenceScanContext& ctx)
@@ -1746,6 +1786,8 @@ bool IsShadowedInFunctionScope(const analysis::Scope* scope, const std::string& 
  * @param[in] request Occurrences request.
  * @param[out] allDeclRanges Declaration coordinate tuples.
  * @param[in,out] collector Accumulator.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with CollectClassMemberDeclarations in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 void CollectDeclarations(const std::string& symQuery, const CollectOccurrencesRequest& request,
                          std::set<std::tuple<std::string, uint32_t, uint32_t>>& allDeclRanges,
@@ -1780,6 +1822,8 @@ void CollectDeclarations(const std::string& symQuery, const CollectOccurrencesRe
  * @param[in] scope Lexical scope.
  * @param[in] targetNs Declaring namespace name.
  * @return True if qualified by target namespace.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (76%) with HasPrecedingEnumQualifier in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 bool MatchesScopeNamespaceQualifier(const analysis::LocalReference& ref, const analysis::Scope* scope,
                                     std::string_view targetNs)
@@ -1851,6 +1895,11 @@ bool IsRefInsideNamespace(const analysis::LocalReference& ref,
  * @param[in] root Document root scope.
  * @param[in] nsRanges Namespace line spans in fileUri.
  * @param[in,out] ctx Occurrence scan context.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (94%) with ScanDocumentForGlobal in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (87%) with ScanDocumentForEnumMember in server/src/analysis/TargetResolution.cpp. Candidate for
+ * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (69%) with ScanDocumentForClassMember in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 void ScanDocumentForNamespace(const analysis::Scope* root, const std::vector<std::pair<uint32_t, uint32_t>>& nsRanges,
                               OccurrenceScanContext& ctx)
@@ -1901,6 +1950,8 @@ void ScanDocumentForNamespace(const analysis::Scope* root, const std::vector<std
  * @brief Collects occurrences of a namespace-scoped symbol across documents.
  * @param[in] request Occurrences request.
  * @param[in,out] collector Accumulator.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (91%) with CollectGlobalOccurrences in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 void CollectNamespaceOccurrences(const CollectOccurrencesRequest& request, OccurrenceCollector& collector)
 {
@@ -1933,6 +1984,11 @@ void CollectNamespaceOccurrences(const CollectOccurrencesRequest& request, Occur
  * @brief Scans a document scope tree for global symbol references.
  * @param[in] root Document root scope.
  * @param[in,out] ctx Occurrence scan context.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (94%) with ScanDocumentForNamespace in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (90%) with ScanDocumentForEnumMember in server/src/analysis/TargetResolution.cpp. Candidate for
+ * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (78%) with ScanDocumentForClassMember in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 void ScanDocumentForGlobal(const analysis::Scope* root, OccurrenceScanContext& ctx)
 {
@@ -1978,6 +2034,8 @@ void ScanDocumentForGlobal(const analysis::Scope* root, OccurrenceScanContext& c
  * @brief Collects occurrences of a global symbol across documents.
  * @param[in] request Occurrences request.
  * @param[in,out] collector Accumulator.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (91%) with CollectNamespaceOccurrences in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 void CollectGlobalOccurrences(const CollectOccurrencesRequest& request, OccurrenceCollector& collector)
 {
@@ -2051,6 +2109,8 @@ std::optional<bool> CheckAstEnumMemberMatch(const analysis::LocalReference& ref,
  * @param[in] scope Scope containing candidate references.
  * @param[in] declaringEnum Declaring enum qualified name.
  * @return True if qualified by the declaring enum.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (76%) with MatchesScopeNamespaceQualifier in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 bool HasPrecedingEnumQualifier(const analysis::LocalReference& ref, const analysis::Scope* scope,
                                std::string_view declaringEnum)
@@ -2168,6 +2228,11 @@ bool IsEnumMemberReferenceMatch(const analysis::LocalReference& ref, const analy
  * @brief Scans a document scope tree for enum member occurrences.
  * @param[in] root Document root scope.
  * @param[in,out] ctx Occurrence scan context.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with ScanDocumentForGlobal in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (87%) with ScanDocumentForNamespace in server/src/analysis/TargetResolution.cpp. Candidate for
+ * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (74%) with ScanDocumentForClassMember in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 void ScanDocumentForEnumMember(const analysis::Scope* root, OccurrenceScanContext& ctx)
 {

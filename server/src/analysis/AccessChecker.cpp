@@ -49,7 +49,11 @@ bool TryReadAccess(const Symbol& sym, AccessModifier& access)
     return false;
 }
 
-/** @brief What the pass concluded about one `object.member` pair. */
+/**
+ * @brief What the pass concluded about one `object.member` pair.
+ * @note [REFACTOR-CANDIDATE] Clustered under Member Access & Scope Lookup Context. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 struct MemberAccess
 {
     bool found = false;   ///< True if any member of this name exists in the hierarchy.
@@ -104,6 +108,8 @@ bool AccessorStandsForProperty(const Symbol& sym, bool keywordRequired)
 
 /**
  * @brief Context bundled for member lookup across type hierarchies.
+ * @note [REFACTOR-CANDIDATE] Clustered under Member Access & Scope Lookup Context. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 struct MemberLookupContext
 {
@@ -399,6 +405,11 @@ bool IsMemberAccessAllowed(const MemberAccess& member, std::string_view accessin
  * @param[in] member Member resolution outcome.
  * @param[in] memberName Name of the member being accessed.
  * @param[in,out] ctx Diagnostic context.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (77%) with EmitAtNode in server/src/analysis/ControlFlowChecker.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (77%) with EmitAtNode in
+ * server/src/analysis/InitializerListChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (77%) with EmitAtNode in server/src/analysis/IsolationChecker.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void EmitPrivacyViolation(TSNode memberNode, const MemberAccess& member, std::string_view memberName,
                           DiagnosticContext& ctx)
@@ -543,6 +554,9 @@ void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const
  *
  * @param[in] type AST node type name.
  * @return True if node type defines a declared symbol name.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (75%) with IsDeclarationNode in
+ * server/src/features/definition/DefinitionHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 bool IsDeclarationNodeType(TSSymbol sym)
 {
@@ -911,6 +925,16 @@ void CheckMemberAccessIndexed(const AccessCheckRequest& request, DiagnosticConte
 }
 } // namespace
 
+/**
+ * @brief Check member access.
+ * @param[in,out] request Parameter request.
+ * @param[in,out] ctx Parameter ctx.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with CheckCallArguments in server/src/analysis/CallChecker.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (98%) with CheckLValues in
+ * server/src/analysis/LValueChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural
+ * overlap (97%) with CheckConstCorrectness in server/src/analysis/ConstChecker.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 void CheckMemberAccess(const AccessCheckRequest& request, DiagnosticContext& ctx)
 {
     if (ts_node_is_null(request.root) || request.sourceCode.empty())

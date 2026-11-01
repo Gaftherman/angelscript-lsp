@@ -24,6 +24,8 @@ namespace
  * @brief Checks whether a definition's declaring scope is inside any function/method/lambda body.
  * @param[in] defScope Definition declaring scope.
  * @return True if enclosed within a function scope.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsDeclaredInFunctionScope in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 bool IsDeclaredInFunctionScope(const analysis::Scope* defScope)
 {
@@ -273,6 +275,10 @@ std::optional<uint32_t> FindArgumentIndex(TSNode argList, TSNode leaf) noexcept
     return std::nullopt;
 }
 
+/**
+ * @brief Represents Callee info.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct CalleeInfo
 {
     std::string calleeName;
@@ -518,6 +524,7 @@ lsp::DocumentHighlightKind ClassifyOccurrence(const DocumentHighlightRequest& re
 
 /**
  * @brief Accumulator for highlight coordinate ranges.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct HighlightRangeCollector
 {
@@ -544,6 +551,8 @@ struct HighlightRangeCollector
  * @brief Collects highlight ranges for a local variable or parameter.
  * @param[in] target Target descriptor.
  * @param[in,out] collector Coordinate accumulator.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (62%) with CollectLocalOccurrences in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 void CollectLocalHighlightRanges(const TargetDescriptor& target, HighlightRangeCollector& collector)
 {
@@ -607,6 +616,9 @@ void CollectLocalHighlightRanges(const TargetDescriptor& target, HighlightRangeC
  * @param[in] target Target descriptor.
  * @param[in] request Highlight request.
  * @param[in,out] collector Coordinate accumulator.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with CollectDeclarationsByName in
+ * server/src/features/document_highlight/DocumentHighlightHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void CollectClassMemberDeclarations(const std::unordered_set<std::string>& relatedSet, const TargetDescriptor& target,
                                     const DocumentHighlightRequest& request, HighlightRangeCollector& collector)
@@ -906,6 +918,7 @@ bool IsMemberAccessNode(const analysis::LocalReference& ref, [[maybe_unused]] TS
 
 /**
  * @brief Context for class member reference matching.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct MemberHighlightContext
 {
@@ -951,6 +964,9 @@ bool IsClassMemberReferenceMatch(const analysis::LocalReference& ref, const anal
  * @param[in] request Highlight request.
  * @param[in] rootScope Root scope.
  * @param[in,out] collector Coordinate accumulator.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (67%) with CollectEnumMemberScopeReferences in
+ * server/src/features/document_highlight/DocumentHighlightHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void CollectClassMemberHighlightRanges(const TargetDescriptor& target, const DocumentHighlightRequest& request,
                                        const analysis::Scope* rootScope, HighlightRangeCollector& collector)
@@ -1055,6 +1071,9 @@ bool IsShadowedByFunctionLocal(const analysis::Scope* scope, const std::string& 
  * @param[in] name Symbol name or qualified name to look up.
  * @param[in] request Highlight request.
  * @param[in,out] collector Coordinate accumulator.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with CollectClassMemberDeclarations in
+ * server/src/features/document_highlight/DocumentHighlightHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void CollectDeclarationsByName(std::string_view name, const DocumentHighlightRequest& request,
                                HighlightRangeCollector& collector)
@@ -1079,6 +1098,11 @@ void CollectDeclarationsByName(std::string_view name, const DocumentHighlightReq
  * @tparam Callback Functor accepting (const analysis::Scope*, const analysis::LocalReference&).
  * @param[in] rootScope Root lexical scope.
  * @param[in] callback Callback invoked for each reference.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (92%) with CollectScopeStringLiteralRefs in
+ * server/src/analysis/rules/UnusedSymbolChecker.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (85%) with CollectReferencesInScopeTreeBatch in
+ * server/src/features/code_lens/CodeLensHandler.cpp. Candidate for unification in
+ * server/src/features/common/FeatureSharedUtils.h.
  */
 template <typename Callback> inline void ForEachScopeReference(const analysis::Scope* rootScope, Callback&& callback)
 {
@@ -1138,6 +1162,9 @@ std::vector<std::pair<uint32_t, uint32_t>> GetNamespaceSpans(const TargetDescrip
  * @param[in] request Highlight request.
  * @param[in] rootScope Root scope.
  * @param[in,out] collector Coordinate accumulator.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with CollectGlobalHighlightRanges in
+ * server/src/features/document_highlight/DocumentHighlightHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void CollectNamespaceHighlightRanges(const TargetDescriptor& target, const DocumentHighlightRequest& request,
                                      const analysis::Scope* rootScope, HighlightRangeCollector& collector)
@@ -1174,6 +1201,9 @@ void CollectGlobalDeclarations(const TargetDescriptor& target, const DocumentHig
  * @param[in] request Highlight request.
  * @param[in] rootScope Root scope.
  * @param[in,out] collector Coordinate accumulator.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with CollectNamespaceHighlightRanges in
+ * server/src/features/document_highlight/DocumentHighlightHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void CollectGlobalHighlightRanges(const TargetDescriptor& target, const DocumentHighlightRequest& request,
                                   const analysis::Scope* rootScope, HighlightRangeCollector& collector)
@@ -1237,6 +1267,9 @@ bool IsEnumMemberHighlightMatch(const analysis::LocalReference& ref, const Targe
  * @param[in] request Document highlight request.
  * @param[in] rootScope Root scope.
  * @param[in,out] collector Coordinate accumulator.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (67%) with CollectClassMemberHighlightRanges in
+ * server/src/features/document_highlight/DocumentHighlightHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void CollectEnumMemberScopeReferences(const TargetDescriptor& target, const DocumentHighlightRequest& request,
                                       const analysis::Scope* rootScope, HighlightRangeCollector& collector)

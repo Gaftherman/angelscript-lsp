@@ -13,6 +13,7 @@
 #include "analysis/overload/OverloadTypeConversions.h"
 #include "config/ServerConfig.h"
 #include "helpers/TestUtils.h"
+#include "utils/Constants.h"
 
 #include <doctest/doctest.h>
 #include <ostream>
@@ -187,11 +188,13 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
         const auto anyConv = EvaluateArgumentConversion("int", anyParam, table);
         CHECK_FALSE(anyConv.rank == ConversionRank::Exact);
 
-        // Passing "init_list" to a dynamically declared template container with list pattern should match as Exact
+        // Passing k_initializerListTypeSentinel to a dynamically declared template container with list pattern should
+        // match as Exact
         ParameterInformation containerParam;
         containerParam.typeName = templateName + "<" + elemType + ">";
         containerParam.name = "c";
-        const auto containerConv = EvaluateArgumentConversion("init_list", containerParam, table);
+        const auto containerConv =
+            EvaluateArgumentConversion(std::string(constants::k_initializerListTypeSentinel), containerParam, table);
         CHECK(containerConv.rank == ConversionRank::Exact);
 
         // Untagged template (like optional<T>) must reject init_list as Incompatible
@@ -209,7 +212,8 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
         ParameterInformation untaggedParam;
         untaggedParam.typeName = untaggedName + "<" + elemType + ">";
         untaggedParam.name = "opt";
-        const auto untaggedConv = EvaluateArgumentConversion("init_list", untaggedParam, table);
+        const auto untaggedConv =
+            EvaluateArgumentConversion(std::string(constants::k_initializerListTypeSentinel), untaggedParam, table);
         CHECK(untaggedConv.rank == ConversionRank::Incompatible);
     }
 

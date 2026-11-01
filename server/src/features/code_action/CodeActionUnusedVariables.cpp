@@ -71,6 +71,10 @@ void CollectUnusedVariables(const analysis::Scope* rootScope,
     {
         return;
     }
+    /**
+     * @brief Represents Scope item.
+     * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+     */
     struct ScopeItem
     {
         const analysis::Scope* scope;
@@ -256,6 +260,16 @@ std::string ExtractSymbolNameFromDiag(const lsp::Diagnostic& diag, TSNode rootNo
     return {};
 }
 
+/**
+ * @brief Make ignore unused symbol action.
+ * @param[in,out] diag Parameter diag.
+ * @param[in] symbolName Parameter symbolName.
+ * @param[in] i18n Parameter i18n.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (70%) with MakeDisableDiagnosticAction in
+ * server/src/features/code_action/CodeActionCommon.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 lsp::CodeAction MakeIgnoreUnusedSymbolAction(const lsp::Diagnostic& diag, std::string_view symbolName,
                                              const i18n::I18n* i18n)
 {

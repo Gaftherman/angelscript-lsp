@@ -65,6 +65,23 @@ uint32_t FirstStatementIndex(TSNode clause)
     return IsDefaultClause(clause) ? 0u : 1u;
 }
 
+/**
+ * @brief Emit at node.
+ * @param[in] node Parameter node.
+ * @param[in,out] ctx Parameter ctx.
+ * @param[in] code Parameter code.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with EmitAtNode in server/src/analysis/ControlFlowChecker.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with EmitAtNode in
+ * server/src/analysis/InitializerListChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (100%) with EmitAtNode in server/src/analysis/IsolationChecker.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (89%) with EmitWarningAtNode in
+ * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (88%) with EmitAtNode in server/src/analysis/ConstChecker.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (77%) with EmitPrivacyViolation in
+ * server/src/analysis/AccessChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural
+ * overlap (71%) with EmitAtNode in server/src/analysis/LValueChecker.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code,
                 DiagnosticSeverity severity = DiagnosticSeverity::Error)
 {
@@ -73,6 +90,24 @@ void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code,
     ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code, severity);
 }
 
+/**
+ * @brief Emit at node.
+ * @param[in] node Parameter node.
+ * @param[in,out] ctx Parameter ctx.
+ * @param[in] code Parameter code.
+ * @param[in,out] arg Parameter arg.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with EmitAtNode in server/src/analysis/ControlFlowChecker.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with EmitAtNode in
+ * server/src/analysis/InitializerListChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (100%) with EmitAtNode in server/src/analysis/IsolationChecker.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (89%) with EmitWarningAtNode in
+ * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (88%) with EmitAtNode in server/src/analysis/ConstChecker.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (77%) with EmitPrivacyViolation in
+ * server/src/analysis/AccessChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural
+ * overlap (71%) with EmitAtNode in server/src/analysis/LValueChecker.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, const std::string& arg)
 {
     const TSPoint start = ts_node_start_point(node);
@@ -706,6 +741,10 @@ void CheckSwitch(TSNode node, std::string_view sourceCode, DiagnosticContext& ct
 // Traversal
 // =====================================================================
 
+/**
+ * @brief Represents Flow state.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct FlowState
 {
     uint32_t loopDepth = 0;
@@ -793,6 +832,10 @@ void CheckUnreachable(TSNode block, DiagnosticContext& ctx)
     }
 }
 
+/**
+ * @brief Represents Control flow visitor.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 class ControlFlowVisitor
 {
   public:
@@ -809,6 +852,13 @@ class ControlFlowVisitor
     std::string_view m_sourceCode;
     DiagnosticContext& m_ctx;
 
+    /**
+     * @brief Check return statement.
+     * @param[in] node Parameter node.
+     * @param[in,out] state Parameter state.
+     * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+     * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
+     */
     void CheckReturnStatement(TSNode node, const FlowState& state)
     {
         // A bare `return;` in a function that owes a value. Measured: the compiler answers
@@ -936,6 +986,10 @@ class ControlFlowVisitor
         }
     }
 
+    /**
+     * @brief Represents Flow item.
+     * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+     */
     struct FlowItem
     {
         TSNode node;

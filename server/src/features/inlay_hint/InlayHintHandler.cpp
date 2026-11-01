@@ -27,6 +27,10 @@ using parser::GetNodeText;
  * @brief Trims surrounding whitespace, parentheses, and semicolons from node text.
  * @param[in] text Raw text to trim.
  * @return Trimmed string.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with CleanSharedTypeName in
+ * server/src/analysis/IsolationChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (90%) with TrimWhitespace in server/src/features/semantic_tokens/SemanticTokensHandler.cpp.
+ * Candidate for unification in server/src/features/common/FeatureSharedUtils.h.
  */
 std::string TrimNodeText(std::string text)
 {
@@ -447,6 +451,7 @@ const analysis::Symbol* SelectFallbackCandidate(const std::vector<analysis::Symb
 
 /**
  * @brief Bundles callee document URI, callee name, and extracted parameter information.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct CalleeResolutionResult
 {
@@ -537,6 +542,7 @@ CalleeResolutionResult ResolveCalleeParameters(TSNode callNode, const InlayHintR
 
 /**
  * @brief Holds parsed information for an argument AST node in a call or constructor.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct ArgInfo
 {
@@ -1008,6 +1014,8 @@ std::string DeduceIdentifierType(TSNode exprNode, const InlayHintRequest& reques
  * @param[in] sym Operator grammar symbol.
  * @param[in] gs Pre-resolved grammar symbols reference.
  * @return True if operator is comparison or logical.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (84%) with IsBooleanBinaryOpSym in
+ * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 bool IsBooleanBinaryOperator(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
 {
@@ -1088,6 +1096,8 @@ std::string DeduceBinaryExpressionType(TSNode exprNode, const InlayHintRequest& 
  * @param[in] exprNode Unary expression AST node.
  * @param[in] request Inlay hint request context.
  * @return Deduced type string.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 std::string DeduceUnaryExpressionType(TSNode exprNode, const InlayHintRequest& request)
 {
@@ -1268,6 +1278,7 @@ std::string FormatParameterTooltip(const analysis::ParameterInformation& param, 
 
 /**
  * @brief Context bundle for parameter inlay hint construction.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct ParamHintContext
 {
@@ -1473,6 +1484,7 @@ void AddParameterHints(const CalleeResolutionResult& callee, const std::vector<A
 
 /**
  * @brief Context bundling immutable request and mutable output hints vector.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct OmittedHintContext
 {
@@ -1482,6 +1494,7 @@ struct OmittedHintContext
 
 /**
  * @brief Position and bound parameter information for a call argument.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct CallArgPosition
 {
@@ -1492,6 +1505,7 @@ struct CallArgPosition
 
 /**
  * @brief Bundles formatted label text and hover tooltip for an omitted parameter hint.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct OmittedParamHint
 {
@@ -1748,6 +1762,9 @@ void ProcessCallExpression(TSNode node, const InlayHintRequest& request, std::ve
  * @param[in] node AST construct_call_expression node.
  * @param[in] request Inlay hint request context.
  * @param[in,out] hints Hint vector receiving generated parameter hints.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (85%) with ProcessConstructorInitDeclarator in
+ * server/src/features/inlay_hint/InlayHintHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void ProcessConstructorCallExpression(TSNode node, const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
 {
@@ -1777,6 +1794,8 @@ void ProcessConstructorCallExpression(TSNode node, const InlayHintRequest& reque
  * @param[in] request Inlay hint request context.
  * @param[in,out] hints Hint vector receiving generated type hints.
  * @param[in] isHandle Whether the auto declaration explicitly carries a handle modifier.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 void ProcessAutoVariableDeclarator(TSNode declarator, const InlayHintRequest& request,
                                    std::vector<lsp::InlayHint>& hints, bool isHandle)
@@ -1861,6 +1880,9 @@ TSNode FindDeclaratorArgumentList(TSNode declarator)
  * @param[in] declarator AST variable_declarator node.
  * @param[in] request Inlay hint request context.
  * @param[in,out] hints Hint vector receiving generated parameter hints.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (85%) with ProcessConstructorCallExpression in
+ * server/src/features/inlay_hint/InlayHintHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void ProcessConstructorInitDeclarator(const std::string& typeText, TSNode declarator, const InlayHintRequest& request,
                                       std::vector<lsp::InlayHint>& hints)
@@ -1908,6 +1930,8 @@ TSNode FindVariableTypeNode(TSNode varDeclNode)
  * @param[in] node AST variable_declaration node.
  * @param[in] request Inlay hint request context.
  * @param[in,out] hints Hint vector receiving generated inlay hints.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 void ProcessVariableDeclaration(TSNode node, const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
 {

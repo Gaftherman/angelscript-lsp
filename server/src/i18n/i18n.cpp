@@ -1012,6 +1012,7 @@ void PopulateSpanishMessages(MessageMap& m_messages)
 
 /**
  * @brief Entry mapping a primary language subtag to its localization overlay populator.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct LocaleOverlayEntry
 {

@@ -9,6 +9,19 @@ namespace
 static const std::unordered_set<std::string_view> kControlKeywords = {"if",    "for",    "foreach",
                                                                       "while", "switch", "catch"};
 
+/**
+ * @brief Is closing or separator punctuation.
+ * @param[in] type Parameter type.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with IsOpeningOrMemberPunctuation in
+ * server/src/features/formatting/FormattingSpacing.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (86%) with IsUnaryPrecedingTokenType in
+ * server/src/features/formatting/FormattingTokens.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (79%) with IsValueOnlyKind in
+ * server/src/analysis/rules/FunctionRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (79%) with IsUnconditionallyNonNullablePrimitive in server/src/analysis/SemanticAnalyzer.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 bool IsClosingOrSeparatorPunctuation(TokenType type)
 {
     switch (type)
@@ -25,6 +38,19 @@ bool IsClosingOrSeparatorPunctuation(TokenType type)
     }
 }
 
+/**
+ * @brief Is opening or member punctuation.
+ * @param[in] type Parameter type.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with IsClosingOrSeparatorPunctuation in
+ * server/src/features/formatting/FormattingSpacing.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (74%) with IsUnaryPrecedingTokenType in
+ * server/src/features/formatting/FormattingTokens.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (62%) with ContainerKindMatches in
+ * server/src/features/definition/DefinitionHandler.cpp. Candidate for unification in
+ * server/src/features/common/FeatureSharedUtils.h. Structural overlap (62%) with AccessModifierToString in
+ * server/src/analysis/SymbolTable.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 bool IsOpeningOrMemberPunctuation(TokenType type)
 {
     switch (type)

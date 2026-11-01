@@ -30,6 +30,9 @@ TSNode FindEnclosingFunctionNode(TSNode rootNode, const lsp::Range& range)
  * @brief Finds the statement block body of a function node.
  * @param[in] fnNode Function declaration node.
  * @return Statement block node or null node.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (95%) with FindClassBodyInsertionPoint in
+ * server/src/features/code_action/CodeActionExtractMethod.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 TSNode FindFunctionBodyBlock(TSNode fnNode)
 {

@@ -29,6 +29,7 @@ namespace
 
 /**
  * @brief Range key for deduplicating code lenses covering the same span.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct RangeKey
 {
@@ -61,6 +62,7 @@ struct RangeKeyHash
 
 /**
  * @brief Enclosing class span data.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct EnclosingClassSpan
 {
@@ -195,6 +197,7 @@ bool IsInsideNamespace(const std::string& fileUri, uint32_t line, const std::str
 
 /**
  * @brief Criteria bundle for filtering and collecting symbol references across scopes.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct ReferenceCollectionCriteria
 {
@@ -501,6 +504,8 @@ std::string ResolveReceiverFromAst(const std::string& fileUri, const analysis::L
  * @param[in] scope Lexical scope.
  * @param[in] criteria Active search criteria.
  * @return Cleaned receiver type name, or empty string if not resolvable.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (78%) with ResolveReceiverFromScope in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 std::string ResolveReceiverFromScope(const std::string& fileUri, const analysis::LocalReference& ref,
                                      const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
@@ -574,6 +579,8 @@ bool IsCompatibleMemberAccess(const std::string& fileUri, const analysis::LocalR
  * @param[in] ref Reference to check.
  * @param[in] criteria Active search criteria.
  * @return True if argument count is within valid bounds.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (91%) with MatchesCallArguments in
+ * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 bool MatchesCallArguments(const analysis::LocalReference& ref, const ReferenceCollectionCriteria& criteria)
 {
@@ -591,6 +598,9 @@ bool MatchesCallArguments(const analysis::LocalReference& ref, const ReferenceCo
  * @param[in] scope Lexical scope.
  * @param[in] criteria Active search criteria.
  * @return True if reference is qualified by the target namespace.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (80%) with IsValidEnumMemberAccess in
+ * server/src/features/code_lens/CodeLensHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 bool MatchesTargetNamespaceQualifier(const std::string& fileUri, const analysis::LocalReference& ref,
                                      const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
@@ -655,6 +665,9 @@ bool QualifierMatchesEnumContainer(std::string_view q, std::string_view targetEn
  * @param[in] scope Lexical scope.
  * @param[in] criteria Active search criteria.
  * @return True if member qualifier matches target enum container.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (80%) with MatchesTargetNamespaceQualifier in
+ * server/src/features/code_lens/CodeLensHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 bool IsValidEnumMemberAccess(const std::string& fileUri, const analysis::LocalReference& ref,
                              const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
@@ -817,6 +830,7 @@ bool IsValidAccess(const std::string& fileUri, const analysis::LocalReference& r
 
 /**
  * @brief Target item for batched reference counting across workspace scopes.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct SymbolLensTarget
 {
@@ -840,6 +854,7 @@ using TargetIndexMap =
 
 /**
  * @brief Context bundle for batched reference counting across scope trees.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct BatchReferenceContext
 {
@@ -929,6 +944,9 @@ void ProcessScopeReferencesBatch(const std::string& fileUri, const analysis::Sco
  * @param[in] fileUri URI of document owning scope tree.
  * @param[in] root Root scope of document.
  * @param[in,out] ctx Batched reference context.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (85%) with ForEachScopeReference in
+ * server/src/features/document_highlight/DocumentHighlightHandler.cpp. Candidate for unification in
+ * server/src/features/common/FeatureSharedUtils.h.
  */
 void CollectReferencesInScopeTreeBatch(const std::string& fileUri, const analysis::Scope* root,
                                        const BatchReferenceContext& ctx)
@@ -1093,6 +1111,7 @@ using GroupMap = ankerl::unordered_dense::map<RangeKey, std::vector<analysis::Sy
 
 /**
  * @brief Grouped symbols and their sorted document order.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct SymbolGroups
 {
@@ -1320,6 +1339,7 @@ using MixinInclusionMap = ankerl::unordered_dense::map<std::string, std::vector<
 
 /**
  * @brief Context bundling mixin inclusion map and symbol table for compatible class resolution.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct CompatibleClassContext
 {
@@ -1725,6 +1745,7 @@ void CollectReferenceTargets(const SymbolGroups& symGroups, const CompatibleClas
 
 /**
  * @brief Context bundle holding assembled targets and the active request.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct AssembledLensContext
 {

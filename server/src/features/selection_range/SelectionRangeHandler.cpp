@@ -8,6 +8,14 @@ namespace angel_lsp::features
 {
 namespace
 {
+/**
+ * @brief To range.
+ * @param[in] node Parameter node.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with ToLspRange in
+ * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
+ * server/src/features/common/FeatureSharedUtils.h.
+ */
 lsp::Range ToRange(TSNode node)
 {
     const TSPoint start = ts_node_start_point(node);
@@ -15,6 +23,15 @@ lsp::Range ToRange(TSNode node)
     return lsp::Range{lsp::Position{start.row, start.column}, lsp::Position{end.row, end.column}};
 }
 
+/**
+ * @brief Same range.
+ * @param[in,out] a Parameter a.
+ * @param[in,out] b Parameter b.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with SameRange in
+ * server/src/features/linked_editing/LinkedEditingRangeHandler.cpp. Candidate for unification in
+ * server/src/features/common/FeatureSharedUtils.h.
+ */
 bool SameRange(const lsp::Range& a, const lsp::Range& b)
 {
     return a.start.line == b.start.line && a.start.character == b.start.character && a.end.line == b.end.line &&

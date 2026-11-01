@@ -47,7 +47,11 @@ void CheckBodyPresence(const Symbol& sym, const ClassSignature& sig, const Diagn
     }
 }
 
-/** @brief Validates external and shared rules on a class declaration. */
+/**
+ * @brief Validates external and shared rules on a class declaration.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (71%) with CheckEnumModifiersAndBody in
+ * server/src/analysis/rules/TypeRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void CheckExternalClass(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
 {
     if (!sig.modifiers.isExternal)
@@ -151,6 +155,14 @@ CollectImplementedMethodNames(const std::string& typeName, const SymbolTable& ta
     return names;
 }
 
+/**
+ * @brief Is interface symbol.
+ * @param[in,out] table Parameter table.
+ * @param[in] typeName Parameter typeName.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsEnumType in
+ * server/src/analysis/rules/EngineRuleChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 static bool IsInterfaceSymbol(const SymbolTable& table, std::string_view typeName) noexcept
 {
     const auto syms = table.FindSymbolsPtr(typeName);
@@ -418,7 +430,10 @@ void CheckFinalOverrides(const Symbol& sym, const ClassSignature& sig, const Dia
     }
 }
 
-/** @brief Input parameters bundled for checking base classes. */
+/**
+ * @brief Input parameters bundled for checking base classes.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct BaseCheckRequest
 {
     const Symbol& sym;
@@ -777,7 +792,10 @@ void CheckPropertyAccessors(const Symbol& sym, const DiagnosticContext& ctx)
     ValidatePropertyAccessorPairs(getters, setters, ctx);
 }
 
-/** @brief Range bounds within the host document. */
+/**
+ * @brief Range bounds within the host document.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct InstantiationRange
 {
     uint32_t startLine = 0;
@@ -788,7 +806,10 @@ struct InstantiationRange
 
 using TransparentStringSet = ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>;
 
-/** @brief Context bundled for inspecting mixin statement resolutions. */
+/**
+ * @brief Context bundled for inspecting mixin statement resolutions.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct MixinCheckContext
 {
     std::string hostClassName;
@@ -800,14 +821,20 @@ struct MixinCheckContext
     const NodeIndex* nodeIndex = nullptr;
 };
 
-/** @brief Execution state for checking inside a mixin function body. */
+/**
+ * @brief Execution state for checking inside a mixin function body.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct FunctionCheckState
 {
     const ankerl::unordered_dense::set<std::string_view>& localNames;
     MixinCheckContext& mctx;
 };
 
-/** @brief Base context for host class hierarchies. */
+/**
+ * @brief Base context for host class hierarchies.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct MixinHierarchyMembers
 {
     std::string hostClassName;
@@ -1123,6 +1150,10 @@ bool IsBuiltinOrKeyword(std::string_view name, std::string_view effectiveStringT
     return IsKeyword(name) || IsPrimitiveTypeName(name);
 }
 
+/**
+ * @brief Represents Accessor lookup context.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct AccessorLookupContext
 {
     std::string_view name;
@@ -1471,6 +1502,10 @@ void CollectMixinSelfMembers(const Symbol& mixinSym, const RuleIndex& ruleIndex,
     }
 }
 
+/**
+ * @brief Represents Mixin instantiation check request.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct MixinInstantiationCheckRequest
 {
     const std::string& mixinName;
@@ -1480,6 +1515,10 @@ struct MixinInstantiationCheckRequest
     ankerl::unordered_dense::map<std::string, MixinFileCacheEntry>& fileCache;
 };
 
+/**
+ * @brief Represents Mixin ast target.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct MixinAstTarget
 {
     std::string_view source;

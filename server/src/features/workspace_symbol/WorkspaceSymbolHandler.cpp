@@ -32,6 +32,9 @@ inline std::string ToLower(std::string_view str)
  * @param type Internal SymbolType enum.
  * @param containerName Enclosing container name.
  * @return Equivalent LSP SymbolKind.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (80%) with MapSymbolTypeToKind in
+ * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
+ * server/src/features/common/FeatureSharedUtils.h.
  */
 inline lsp::SymbolKind ToSymbolKind(analysis::SymbolType type, const std::string& containerName)
 {
@@ -62,6 +65,7 @@ inline lsp::SymbolKind ToSymbolKind(analysis::SymbolType type, const std::string
 
 /**
  * @brief Container for a scored search match candidate.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct ScoredSymbol
 {
@@ -71,6 +75,7 @@ struct ScoredSymbol
 
 /**
  * @brief Result of matching a symbol against a search query.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct MatchResult
 {

@@ -16,6 +16,7 @@ namespace
 {
 /**
  * @brief Context for document symbol AST traversal.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct TraversalContext
 {
@@ -28,6 +29,9 @@ struct TraversalContext
  * @brief Converts a Tree-Sitter TSNode range to an LSP Range.
  * @param node Tree-Sitter AST node.
  * @return Enclosing LSP Range.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with ToRange in
+ * server/src/features/selection_range/SelectionRangeHandler.cpp. Candidate for unification in
+ * server/src/features/common/FeatureSharedUtils.h.
  */
 inline lsp::Range ToLspRange(TSNode node)
 {
@@ -202,6 +206,9 @@ std::vector<lsp::DocumentSymbol> CollectEnumMembers(TSNode enumNode, std::string
  * @param[in] node AST node.
  * @param[in] ctx Traversal context.
  * @param[in,out] outSymbols Symbol list to append to.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (77%) with ProcessImport in
+ * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void ProcessEnum(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
 {
@@ -269,6 +276,7 @@ std::string BuildFunctionDetail(std::string_view retStr, std::string_view params
 
 /**
  * @brief Extracted components of a function or method AST node.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct FunctionComponents
 {
@@ -333,6 +341,9 @@ void ProcessFunction(TSNode node, const TraversalContext& ctx, std::vector<lsp::
  * @param[in] node AST node.
  * @param[in] ctx Traversal context.
  * @param[in,out] outSymbols Symbol list to append to.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (82%) with ProcessFuncdef in
+ * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void ProcessInterfaceMethod(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
 {
@@ -356,6 +367,13 @@ void ProcessInterfaceMethod(TSNode node, const TraversalContext& ctx, std::vecto
  * @param[in] node AST node.
  * @param[in] ctx Traversal context.
  * @param[in,out] outSymbols Symbol list to append to.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (82%) with ProcessTypedef in
+ * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (82%) with ProcessVirtualProperty in
+ * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (77%) with ProcessEnum in
+ * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void ProcessImport(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
 {
@@ -422,6 +440,11 @@ void ProcessVariable(TSNode node, const TraversalContext& ctx, std::vector<lsp::
  * @param[in] node AST node.
  * @param[in] ctx Traversal context.
  * @param[in,out] outSymbols Symbol list to append to.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with ProcessTypedef in
+ * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (82%) with ProcessImport in
+ * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void ProcessVirtualProperty(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
 {
@@ -443,6 +466,11 @@ void ProcessVirtualProperty(TSNode node, const TraversalContext& ctx, std::vecto
  * @param[in] node AST node.
  * @param[in] ctx Traversal context.
  * @param[in,out] outSymbols Symbol list to append to.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with ProcessVirtualProperty in
+ * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (82%) with ProcessImport in
+ * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void ProcessTypedef(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
 {
@@ -464,6 +492,9 @@ void ProcessTypedef(TSNode node, const TraversalContext& ctx, std::vector<lsp::D
  * @param[in] node AST node.
  * @param[in] ctx Traversal context.
  * @param[in,out] outSymbols Symbol list to append to.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (82%) with ProcessInterfaceMethod in
+ * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void ProcessFuncdef(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
 {
@@ -583,6 +614,17 @@ std::vector<lsp::DocumentSymbol> ProcessChildren(TSNode containerNode, const Tra
     return symbols;
 }
 
+/**
+ * @brief Map symbol type to kind.
+ * @param[in] type Parameter type.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (80%) with ToSymbolKind in
+ * server/src/features/workspace_symbol/WorkspaceSymbolHandler.cpp. Candidate for unification in
+ * server/src/features/common/FeatureSharedUtils.h. Structural overlap (66%) with RawProfileStub in
+ * server/src/analysis/EngineProfiles.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (63%) with KindWord in server/src/analysis/rules/TypeRules.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 inline lsp::SymbolKind MapSymbolTypeToKind(analysis::SymbolType type) noexcept
 {
     switch (type)

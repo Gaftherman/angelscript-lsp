@@ -244,6 +244,10 @@ std::optional<size_t> FindMatchingBrace(std::string_view text, size_t openBrace)
     return std::nullopt;
 }
 
+/**
+ * @brief Represents Pattern span.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct PatternSpan
 {
     size_t openBrace{0};

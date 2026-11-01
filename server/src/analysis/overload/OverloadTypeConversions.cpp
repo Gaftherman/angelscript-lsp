@@ -12,6 +12,16 @@ namespace angel_lsp::analysis
 {
 namespace
 {
+/**
+ * @brief Trim whitespace.
+ * @param[in] s Parameter s.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Trim in
+ * server/src/features/formatting/ClangFormatReader.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (90%) with TrimWhitespace in
+ * server/src/features/semantic_tokens/SemanticTokensHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 std::string_view TrimWhitespace(std::string_view s)
 {
     while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r' || s.front() == '\n'))
@@ -104,6 +114,14 @@ bool CheckConstructorList(const std::shared_ptr<const std::vector<Symbol>>& syms
     return false;
 }
 
+/**
+ * @brief Are template arguments equal.
+ * @param[in] aInner Parameter aInner.
+ * @param[in] bInner Parameter bInner.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with AreTemplateArgumentsEqual in
+ * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner)
 {
     const auto aArgs = SplitTemplateArguments(aInner);
@@ -127,6 +145,13 @@ bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner)
 }
 } // namespace
 
+/**
+ * @brief Strip type decorations.
+ * @param[in] result Parameter result.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
+ */
 std::string StripTypeDecorations(std::string result)
 {
     bool modified = true;
@@ -166,6 +191,14 @@ std::string DesugarArrayBrackets(std::string result, std::string_view arrayTypeN
     return result;
 }
 
+/**
+ * @brief Normalize type.
+ * @param[in] typeName Parameter typeName.
+ * @param[in] arrayTypeName Parameter arrayTypeName.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
+ */
 std::string NormalizeType(std::string_view typeName, std::string_view arrayTypeName)
 {
     typeName = TrimWhitespace(typeName);
@@ -185,6 +218,13 @@ std::string NormalizeType(std::string_view typeName, std::string_view arrayTypeN
     return DesugarArrayBrackets(std::move(result), arrayTypeName);
 }
 
+/**
+ * @brief Has handle modifier.
+ * @param[in] typeName Parameter typeName.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
+ */
 bool HasHandleModifier(std::string_view typeName)
 {
     return typeName.find('@') != std::string_view::npos;
@@ -424,6 +464,13 @@ bool IsPrimitiveNarrowing(const std::string& fromType, const std::string& toType
     return false;
 }
 
+/**
+ * @brief Has const modifier.
+ * @param[in] typeName Parameter typeName.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
+ */
 bool HasConstModifier(std::string_view typeName)
 {
     return typeName.starts_with("const ") || typeName.ends_with(" const") ||
@@ -443,6 +490,13 @@ bool IsOutParameter(const ParameterInformation& param)
            param.typeName.find("& out") != std::string::npos;
 }
 
+/**
+ * @brief Extract template base name.
+ * @param[in] typeName Parameter typeName.
+ * @return Found item if present; std::nullopt otherwise.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
+ */
 static std::optional<std::string_view> ExtractTemplateBaseName(std::string_view typeName)
 {
     const size_t openBracket = typeName.find('<');

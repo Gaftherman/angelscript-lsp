@@ -20,6 +20,16 @@ bool HasSameSignature(const Symbol& left, const Symbol& right)
     return HasSameSignature(left, right, {});
 }
 
+/**
+ * @brief Has same parameter list.
+ * @param[in,out] left Parameter left.
+ * @param[in,out] right Parameter right.
+ * @param[in] arrayTypeName Parameter arrayTypeName.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (87%) with HasSameSignature in
+ * server/src/analysis/overload/AmbiguityDetector.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 bool HasSameParameterList(const Symbol& left, const Symbol& right, std::string_view arrayTypeName)
 {
     if (!std::holds_alternative<FunctionSignature>(left.signature) ||
@@ -54,6 +64,16 @@ bool HasSameParameterList(const Symbol& left, const Symbol& right, std::string_v
     return true;
 }
 
+/**
+ * @brief Has same signature.
+ * @param[in,out] left Parameter left.
+ * @param[in,out] right Parameter right.
+ * @param[in] arrayTypeName Parameter arrayTypeName.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (87%) with HasSameParameterList in
+ * server/src/analysis/overload/AmbiguityDetector.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 bool HasSameSignature(const Symbol& left, const Symbol& right, std::string_view arrayTypeName)
 {
     if (!std::holds_alternative<FunctionSignature>(left.signature) ||
@@ -104,6 +124,13 @@ bool HasSameSignature(const Symbol& left, const Symbol& right, std::string_view 
     return true;
 }
 
+/**
+ * @brief Inspect function arity.
+ * @param[in,out] sig Parameter sig.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (94%) with ArityOf in server/src/analysis/CallChecker.cpp. Candidate
+ * for unification in server/src/analysis/SemanticHelpers.h.
+ */
 ArityInfo InspectFunctionArity(const FunctionSignature& sig)
 {
     ArityInfo info;

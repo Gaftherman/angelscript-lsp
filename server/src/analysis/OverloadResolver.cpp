@@ -108,6 +108,10 @@ std::string FindRejectionReason(const Symbol& sym, const std::vector<std::string
     return "Type conversion incompatible";
 }
 
+/**
+ * @brief Represents Overload log request.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct OverloadLogRequest
 {
     std::span<const Symbol* const> candidates;

@@ -16,6 +16,7 @@ namespace
 
 /**
  * @brief Parsed parameters for breakpoint locations requests.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct BreakpointLocationsParams
 {

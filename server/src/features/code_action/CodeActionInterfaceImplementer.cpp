@@ -16,6 +16,8 @@ namespace
  * @brief Returns default literal return string for a return type.
  * @param[in] returnType Return type text.
  * @return Default literal return text ("null", "false", "0", "\"\"").
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 std::string GetDefaultReturnValue(std::string_view returnType, std::string_view stringTypeName)
 {
@@ -42,6 +44,8 @@ std::string GetDefaultReturnValue(std::string_view returnType, std::string_view 
  * @param[in] missingMethods List of missing method symbols.
  * @param[in] stringTypeName Workspace-configured string type name.
  * @return Formatted stub code string.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
  */
 std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis::Symbol>& missingMethods,
                                               std::string_view stringTypeName)

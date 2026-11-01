@@ -67,6 +67,7 @@ std::string FormatFuncdefDeclarationText(const analysis::FunctionSignature& sign
 
 /**
  * @brief Item information for generating a funcdef quick-fix action.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct FuncdefFixItem
 {
@@ -115,6 +116,14 @@ void EmitFuncdefCodeAction(const CodeActionRequest& request, const lsp::Diagnost
 
 } // namespace
 
+/**
+ * @brief Try add handle on primitive fix.
+ * @param[in,out] request Parameter request.
+ * @param[in] rootNode Parameter rootNode.
+ * @param[in,out] actions Parameter actions.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
+ */
 void TryAddHandleOnPrimitiveFix(const CodeActionRequest& request, TSNode rootNode,
                                 std::vector<lsp::CodeAction>& actions)
 {

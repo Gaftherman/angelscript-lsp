@@ -7,12 +7,20 @@ namespace angel_lsp::analysis
 {
 namespace
 {
+/**
+ * @brief Represents Enum entry.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct EnumEntry
 {
     std::string name;
     std::vector<std::pair<std::string, std::string>> values;
 };
 
+/**
+ * @brief Represents Class entry.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct ClassEntry
 {
     std::string name;
@@ -22,12 +30,20 @@ struct ClassEntry
     std::vector<std::string> methods;
 };
 
+/**
+ * @brief Represents Interface entry.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct InterfaceEntry
 {
     std::string name;
     std::vector<std::string> methods;
 };
 
+/**
+ * @brief Represents Namespace data.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct NamespaceData
 {
     std::string name;
@@ -153,6 +169,16 @@ NamespaceData& FindOrCreateScope(std::vector<NamespaceData>& scopes, const std::
     return scopes.back();
 }
 
+/**
+ * @brief Find or create class.
+ * @param[in,out] scope Parameter scope.
+ * @param[in,out] name Parameter name.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (92%) with FindOrCreateEnum in
+ * server/src/analysis/EngineConfigConverter.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (92%) with FindOrCreateInterface in server/src/analysis/EngineConfigConverter.cpp. Candidate for
+ * unification in server/src/analysis/SemanticHelpers.h.
+ */
 ClassEntry& FindOrCreateClass(NamespaceData& scope, const std::string& name)
 {
     for (auto& c : scope.classes)
@@ -164,6 +190,16 @@ ClassEntry& FindOrCreateClass(NamespaceData& scope, const std::string& name)
     return scope.classes.back();
 }
 
+/**
+ * @brief Find or create enum.
+ * @param[in,out] scope Parameter scope.
+ * @param[in,out] name Parameter name.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (92%) with FindOrCreateClass in
+ * server/src/analysis/EngineConfigConverter.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (92%) with FindOrCreateInterface in server/src/analysis/EngineConfigConverter.cpp. Candidate for
+ * unification in server/src/analysis/SemanticHelpers.h.
+ */
 EnumEntry& FindOrCreateEnum(NamespaceData& scope, const std::string& name)
 {
     for (auto& e : scope.enums)
@@ -175,6 +211,16 @@ EnumEntry& FindOrCreateEnum(NamespaceData& scope, const std::string& name)
     return scope.enums.back();
 }
 
+/**
+ * @brief Find or create interface.
+ * @param[in,out] scope Parameter scope.
+ * @param[in,out] name Parameter name.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (92%) with FindOrCreateClass in
+ * server/src/analysis/EngineConfigConverter.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (92%) with FindOrCreateEnum in server/src/analysis/EngineConfigConverter.cpp. Candidate for
+ * unification in server/src/analysis/SemanticHelpers.h.
+ */
 InterfaceEntry& FindOrCreateInterface(NamespaceData& scope, const std::string& name)
 {
     for (auto& in : scope.interfaces)
@@ -326,6 +372,14 @@ void ProcessDeclarationDirective(const std::vector<std::string>& tok, NamespaceD
         ProcessEntityDirective(tok, scope);
 }
 
+/**
+ * @brief Format enums.
+ * @param[in,out] enums Parameter enums.
+ * @param[in,out] indent Parameter indent.
+ * @param[in,out] out Parameter out.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (65%) with FormatClasses in
+ * server/src/analysis/EngineConfigConverter.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void FormatEnums(const std::vector<EnumEntry>& enums, const std::string& indent, std::string& out)
 {
     for (const auto& en : enums)
@@ -337,6 +391,14 @@ void FormatEnums(const std::vector<EnumEntry>& enums, const std::string& indent,
     }
 }
 
+/**
+ * @brief Format classes.
+ * @param[in,out] classes Parameter classes.
+ * @param[in,out] indent Parameter indent.
+ * @param[in,out] out Parameter out.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (65%) with FormatEnums in
+ * server/src/analysis/EngineConfigConverter.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void FormatClasses(const std::vector<ClassEntry>& classes, const std::string& indent, std::string& out)
 {
     for (const auto& cls : classes)

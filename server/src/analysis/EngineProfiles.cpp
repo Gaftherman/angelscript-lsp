@@ -751,6 +751,10 @@ OOTPContext g_OOTP;
 
 EngineProfileKind ParseEngineProfileKind(std::string_view name)
 {
+    /**
+     * @brief Represents Profile mapping.
+     * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+     */
     const std::string lower = ToLowerString(name);
     struct ProfileMapping
     {
@@ -801,6 +805,14 @@ bool IsKnownEngineProfileName(std::string_view name)
     return false;
 }
 
+/**
+ * @brief Engine profile kind to string.
+ * @param[in] kind Parameter kind.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with KindWord in server/src/analysis/rules/TypeRules.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (90%) with RawProfileStub in
+ * server/src/analysis/EngineProfiles.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 std::string_view EngineProfileKindToString(EngineProfileKind kind)
 {
     switch (kind)
@@ -830,7 +842,16 @@ std::vector<std::string_view> GetAvailableEngineProfiles()
 
 namespace
 {
-/** @brief The raw literal, before the list-factory rewrite. See GetProfileStubText. */
+/**
+ * @brief The raw literal, before the list-factory rewrite. See GetProfileStubText.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with EngineProfileKindToString in
+ * server/src/analysis/EngineProfiles.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (88%) with KindWord in server/src/analysis/rules/TypeRules.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (66%) with MapSymbolTypeToKind in
+ * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (65%) with AccessModifierToString in
+ * server/src/analysis/SymbolTable.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 std::string_view RawProfileStub(EngineProfileKind kind)
 {
     switch (kind)
@@ -853,6 +874,16 @@ std::string_view RawProfileStub(EngineProfileKind kind)
     return "";
 }
 
+/**
+ * @brief Matches sven coop.
+ * @param[in] lower Parameter lower.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with MatchesUrho3D in server/src/analysis/EngineProfiles.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with MatchesOpenXRay in
+ * server/src/analysis/EngineProfiles.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (76%) with MatchesOOTP in server/src/analysis/EngineProfiles.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 bool MatchesSvenCoop(std::string_view lower)
 {
     return lower.find("svencoop") != std::string_view::npos || lower.find("sven") != std::string_view::npos ||
@@ -861,6 +892,16 @@ bool MatchesSvenCoop(std::string_view lower)
            lower.find("g_enginefuncs") != std::string_view::npos;
 }
 
+/**
+ * @brief Matches urho3 d.
+ * @param[in] lower Parameter lower.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with MatchesSvenCoop in server/src/analysis/EngineProfiles.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with MatchesOpenXRay in
+ * server/src/analysis/EngineProfiles.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (76%) with MatchesOOTP in server/src/analysis/EngineProfiles.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 bool MatchesUrho3D(std::string_view lower)
 {
     return lower.find("urho3d") != std::string_view::npos || lower.find("urho") != std::string_view::npos ||
@@ -868,6 +909,16 @@ bool MatchesUrho3D(std::string_view lower)
            lower.find("variantmap") != std::string_view::npos;
 }
 
+/**
+ * @brief Matches open x ray.
+ * @param[in] lower Parameter lower.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with MatchesSvenCoop in server/src/analysis/EngineProfiles.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with MatchesUrho3D in
+ * server/src/analysis/EngineProfiles.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (76%) with MatchesOOTP in server/src/analysis/EngineProfiles.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 bool MatchesOpenXRay(std::string_view lower)
 {
     return lower.find("openxray") != std::string_view::npos || lower.find("xray") != std::string_view::npos ||
@@ -875,6 +926,16 @@ bool MatchesOpenXRay(std::string_view lower)
            lower.find("alife_simulator") != std::string_view::npos;
 }
 
+/**
+ * @brief Matches ootp.
+ * @param[in] lower Parameter lower.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (76%) with MatchesSvenCoop in server/src/analysis/EngineProfiles.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (76%) with MatchesUrho3D in
+ * server/src/analysis/EngineProfiles.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (76%) with MatchesOpenXRay in server/src/analysis/EngineProfiles.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 bool MatchesOOTP(std::string_view lower)
 {
     return lower.find("ootp") != std::string_view::npos || lower.find("ootpplayer") != std::string_view::npos ||

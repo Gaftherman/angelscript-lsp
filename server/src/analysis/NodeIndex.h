@@ -27,6 +27,7 @@ struct ContainerInfo
 
 /**
  * @brief Precalculated byte interval and metadata for an AST container declaration.
+ * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (pack isMixin with symbol in Phase R1).
  */
 struct IndexedContainerSpan
 {
@@ -44,6 +45,7 @@ struct IndexedContainerSpan
  * Traverses an AST once in preorder, bucketing nodes by their Tree-Sitter TSSymbol id
  * and storing a flat preorder list of all nodes. Checkers query this index instead of
  * recursively traversing the full AST tree multiple times per document analysis.
+ * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (eliminate struct padding in Phase R1).
  */
 class NodeIndex
 {

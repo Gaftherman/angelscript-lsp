@@ -258,6 +258,19 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, Diagnosti
     Append(CreateDiagnostic(range, sym.fileUri, code, severity));
 }
 
+/**
+ * @brief Diagnostic context emit.
+ * @param[in,out] sym Parameter sym.
+ * @param[in] code Parameter code.
+ * @param[in] arg1 Parameter arg1.
+ * @param[in] severity Parameter severity.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
+ * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (96%) with Emit in
+ * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (88%) with EmitAtRange in server/src/analysis/DiagnosticContext.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (85%) with EmitAtRange in
+ * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::string_view arg1,
                              DiagnosticSeverity severity) const
 {
@@ -267,6 +280,19 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri
     Append(std::move(diag));
 }
 
+/**
+ * @brief Diagnostic context emit.
+ * @param[in,out] sym Parameter sym.
+ * @param[in] code Parameter code.
+ * @param[in] arg1 Parameter arg1.
+ * @param[in] arg2 Parameter arg2.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
+ * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (94%) with Emit in
+ * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (89%) with EmitAtRange in server/src/analysis/DiagnosticContext.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (85%) with EmitAtRange in
+ * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::string_view arg1,
                              std::string_view arg2) const
 {
@@ -276,6 +302,18 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri
     Append(std::move(diag));
 }
 
+/**
+ * @brief Diagnostic context emit.
+ * @param[in,out] sym Parameter sym.
+ * @param[in] code Parameter code.
+ * @param[in] args Parameter args.
+ * @param[in] severity Parameter severity.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
+ * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (94%) with Emit in
+ * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (88%) with EmitAtRange in server/src/analysis/DiagnosticContext.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::initializer_list<std::string_view> args,
                              DiagnosticSeverity severity) const
 {
@@ -287,6 +325,16 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::init
 
 // --- Diagnostic Emission for ParameterInformation ---
 
+/**
+ * @brief Diagnostic context emit.
+ * @param[in,out] param Parameter param.
+ * @param[in,out] parentSym Parameter parentSym.
+ * @param[in] code Parameter code.
+ * @param[in] severity Parameter severity.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (71%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
+ * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (70%) with Emit in
+ * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& parentSym, std::string_view code,
                              DiagnosticSeverity severity) const
 {
@@ -294,6 +342,18 @@ void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& pa
     Append(CreateDiagnostic(range, parentSym.fileUri, code, severity));
 }
 
+/**
+ * @brief Diagnostic context emit.
+ * @param[in,out] param Parameter param.
+ * @param[in,out] parentSym Parameter parentSym.
+ * @param[in] code Parameter code.
+ * @param[in] arg1 Parameter arg1.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
+ * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (78%) with EmitAtRange in
+ * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (70%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& parentSym, std::string_view code,
                              std::string_view arg1) const
 {
@@ -303,6 +363,16 @@ void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& pa
     Append(std::move(diag));
 }
 
+/**
+ * @brief Diagnostic context emit.
+ * @param[in,out] param Parameter param.
+ * @param[in,out] parentSym Parameter parentSym.
+ * @param[in] code Parameter code.
+ * @param[in] args Parameter args.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
+ * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (71%) with Emit in
+ * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& parentSym, std::string_view code,
                              std::initializer_list<std::string_view> args) const
 {
@@ -325,6 +395,21 @@ void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, Di
     Append(CreateDiagnostic(range, request.fileUri, code, severity));
 }
 
+/**
+ * @brief Diagnostic context emit at range.
+ * @param[in] range Parameter range.
+ * @param[in] code Parameter code.
+ * @param[in] arg1 Parameter arg1.
+ * @param[in] severity Parameter severity.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with EmitAtRange in server/src/analysis/DiagnosticContext.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (96%) with EmitAtRange in
+ * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (88%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (85%) with Emit in
+ * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (78%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, std::string_view arg1,
                                     DiagnosticSeverity severity) const
 {
@@ -333,6 +418,19 @@ void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, st
     Append(std::move(diag));
 }
 
+/**
+ * @brief Diagnostic context emit at range.
+ * @param[in] range Parameter range.
+ * @param[in] code Parameter code.
+ * @param[in] arg1 Parameter arg1.
+ * @param[in] arg2 Parameter arg2.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with EmitAtRange in server/src/analysis/DiagnosticContext.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (93%) with EmitAtRange in
+ * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (89%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (85%) with Emit in
+ * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, std::string_view arg1,
                                     std::string_view arg2) const
 {
@@ -341,6 +439,18 @@ void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, st
     Append(std::move(diag));
 }
 
+/**
+ * @brief Diagnostic context emit at range.
+ * @param[in] range Parameter range.
+ * @param[in] code Parameter code.
+ * @param[in] args Parameter args.
+ * @param[in] severity Parameter severity.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with EmitAtRange in server/src/analysis/DiagnosticContext.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (93%) with EmitAtRange in
+ * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (88%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,
                                     std::initializer_list<std::string_view> args, DiagnosticSeverity severity) const
 {

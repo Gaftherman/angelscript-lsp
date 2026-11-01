@@ -27,6 +27,10 @@ ankerl::unordered_dense::set<std::string> CollectIndexedFileUris(const analysis:
     return indexedUris;
 }
 
+/**
+ * @brief Represents Include candidate.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct IncludeCandidate
 {
     std::string spelling;
@@ -105,6 +109,10 @@ std::vector<IncludeCandidate> RankIncludeCandidates(const std::string& includerP
     return ranked;
 }
 
+/**
+ * @brief Represents Include fix context.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct IncludeFixContext
 {
     const CodeActionRequest& request;
@@ -117,6 +125,9 @@ struct IncludeFixContext
  * @param[in] ctx Include fix context.
  * @param[in] ranked Ranked include candidates.
  * @param[out] actions Destination actions vector.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (69%) with EmitTypoCodeActions in
+ * server/src/features/code_action/CodeActionTypos.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vector<IncludeCandidate>& ranked,
                             std::vector<lsp::CodeAction>& actions)
@@ -168,6 +179,10 @@ void EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vector<Incl
     }
 }
 
+/**
+ * @brief Represents Include ref check context.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct IncludeRefCheckContext
 {
     std::string currentUri;

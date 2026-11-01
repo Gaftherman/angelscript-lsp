@@ -8,6 +8,16 @@ namespace angel_lsp::features
 {
 namespace
 {
+/**
+ * @brief Trim.
+ * @param[in] s Parameter s.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with TrimWhitespace in
+ * server/src/analysis/overload/OverloadTypeConversions.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (88%) with TrimWhitespace in
+ * server/src/features/semantic_tokens/SemanticTokensHandler.cpp. Candidate for unification in
+ * server/src/features/common/FeatureSharedUtils.h.
+ */
 std::string_view Trim(std::string_view s)
 {
     while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r' || s.front() == '\n'))

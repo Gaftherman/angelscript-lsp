@@ -13,7 +13,10 @@ namespace angel_lsp::features::formatting
 {
 namespace
 {
-/** @brief One namespace declaration found at the top level, in source order. */
+/**
+ * @brief One namespace declaration found at the top level, in source order.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct Occurrence
 {
     /// Text between the previous top-level declaration and this one: its comments, and any
@@ -24,6 +27,10 @@ struct Occurrence
     std::string body;
 };
 
+/**
+ * @brief Represents Group.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct Group
 {
     std::string name;
@@ -159,6 +166,10 @@ std::string_view TrimBlankEdges(std::string_view text)
     return text;
 }
 
+/**
+ * @brief Represents Slot.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct Slot
 {
     bool isGroup = false;
@@ -166,6 +177,10 @@ struct Slot
     std::string groupName; ///< used when isGroup is true
 };
 
+/**
+ * @brief Represents Formatting plan.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct FormattingPlan
 {
     std::vector<Slot> slots;

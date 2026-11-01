@@ -21,12 +21,28 @@ using analysis::Symbol;
 using analysis::SymbolTable;
 using analysis::SymbolType;
 
+/**
+ * @brief To range.
+ * @param[in,out] range Parameter range.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ToRange in
+ * server/src/features/type_hierarchy/TypeHierarchyHandler.cpp. Candidate for unification in
+ * server/src/features/common/FeatureSharedUtils.h.
+ */
 lsp::Range ToRange(const analysis::SourceRange& range)
 {
     return lsp::Range{lsp::Position{range.startLine, range.startCharacter},
                       lsp::Position{range.endLine, range.endCharacter}};
 }
 
+/**
+ * @brief To item.
+ * @param[in,out] sym Parameter sym.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (67%) with ToItem in
+ * server/src/features/type_hierarchy/TypeHierarchyHandler.cpp. Candidate for unification in
+ * server/src/features/common/FeatureSharedUtils.h.
+ */
 lsp::CallHierarchyItem ToItem(const Symbol& sym)
 {
     lsp::CallHierarchyItem item;

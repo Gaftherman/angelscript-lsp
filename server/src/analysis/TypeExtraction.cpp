@@ -10,6 +10,10 @@ namespace angel_lsp::analysis
 {
 #define SYM_NAME(str) str, static_cast<uint32_t>(sizeof(str) - 1)
 
+/**
+ * @brief Represents Type extraction symbols.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct TypeExtractionSymbols
 {
     TSSymbol symPrimitiveType = 0;

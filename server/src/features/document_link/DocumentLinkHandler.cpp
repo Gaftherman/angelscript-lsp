@@ -47,6 +47,14 @@ std::string DocumentPath(const std::string& uriStr)
 }
 } // namespace
 
+/**
+ * @brief Get document links.
+ * @param[in,out] request Parameter request.
+ * @return Found item if present; std::nullopt otherwise.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (74%) with GetUnresolvedIncludeDiagnostics in
+ * server/src/features/document_link/DocumentLinkHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 std::optional<DocumentLinkResult> GetDocumentLinks(const DocumentLinkRequest& request)
 {
     // Deliberately not filtered by the excluded ranges, unlike the diagnostics below. A link is
@@ -94,6 +102,14 @@ std::optional<DocumentLinkResult> GetDocumentLinks(const DocumentLinkRequest& re
     return links;
 }
 
+/**
+ * @brief Get unresolved include diagnostics.
+ * @param[in,out] request Parameter request.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (74%) with GetDocumentLinks in
+ * server/src/features/document_link/DocumentLinkHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 std::vector<analysis::Diagnostic> GetUnresolvedIncludeDiagnostics(const DocumentLinkRequest& request)
 {
     std::vector<analysis::Diagnostic> diagnostics;

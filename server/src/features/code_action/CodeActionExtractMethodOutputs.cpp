@@ -158,6 +158,10 @@ const analysis::LocalDefinition* FindDefinitionInScopeTree(const analysis::Scope
     return nullptr;
 }
 
+/**
+ * @brief Represents Method output context.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct MethodOutputContext
 {
     const ExtractMethodStatements& stmts;
@@ -260,6 +264,14 @@ void CollectInternalDefinitionsUsedAfter(const ExtractMethodStatements& stmts, c
     }
 }
 
+/**
+ * @brief Traverse subtree mutations.
+ * @param[in] root Parameter root.
+ * @param[in] sourceCode Parameter sourceCode.
+ * @param[in,out] mutatedVars Parameter mutatedVars.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (93%) with TraverseTree in server/src/analysis/NodeIndex.cpp. Candidate
+ * for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void TraverseSubtreeMutations(TSNode root, std::string_view sourceCode,
                               ankerl::unordered_dense::set<std::string>& mutatedVars)
 {

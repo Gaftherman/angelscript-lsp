@@ -99,6 +99,9 @@ bool IsSyntaxFoldingSymbol(TSSymbol sym, const parser::GrammarSymbols& gs) noexc
  * @param[in] node AST node.
  * @param[out] outFr Resulting folding range if applicable.
  * @return True if a multi-line syntax folding range was extracted.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (79%) with TryExtractCommentFoldingRange in
+ * server/src/features/folding_range/FoldingRangeHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 bool TryExtractSyntaxFoldingRange(TSNode node, lsp::FoldingRange& outFr)
 {
@@ -129,6 +132,9 @@ bool TryExtractSyntaxFoldingRange(TSNode node, lsp::FoldingRange& outFr)
  * @param[in] sourceCode Document source text.
  * @param[out] outFr Resulting comment folding range if applicable.
  * @return True if a multi-line block comment folding range was extracted.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (79%) with TryExtractSyntaxFoldingRange in
+ * server/src/features/folding_range/FoldingRangeHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 bool TryExtractCommentFoldingRange(TSNode node, std::string_view sourceCode, lsp::FoldingRange& outFr)
 {
@@ -215,6 +221,9 @@ void CollectAstFoldingRanges(TSNode rootNode, std::string_view sourceCode, std::
  * @brief Collects folding ranges for contiguous single-line comments (// ...).
  * @param[in] lines Splitted document lines.
  * @param[in,out] outRanges Output accumulator for folding ranges.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (97%) with CollectImportAndIncludeRanges in
+ * server/src/features/folding_range/FoldingRangeHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void CollectSingleLineCommentRanges(const std::vector<std::string_view>& lines,
                                     std::vector<lsp::FoldingRange>& outRanges)
@@ -261,6 +270,9 @@ void CollectSingleLineCommentRanges(const std::vector<std::string_view>& lines,
  * @brief Collects folding ranges for contiguous imports and #include directives.
  * @param[in] lines Splitted document lines.
  * @param[in,out] outRanges Output accumulator for folding ranges.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (97%) with CollectSingleLineCommentRanges in
+ * server/src/features/folding_range/FoldingRangeHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 void CollectImportAndIncludeRanges(const std::vector<std::string_view>& lines,
                                    std::vector<lsp::FoldingRange>& outRanges)

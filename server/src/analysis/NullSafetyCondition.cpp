@@ -9,12 +9,20 @@ namespace angel_lsp::analysis
 {
 namespace
 {
+/**
+ * @brief Represents Assertion sink.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct AssertionSink
 {
     std::vector<NullAssertion>& positive;
     std::vector<NullAssertion>& negative;
 };
 
+/**
+ * @brief Represents Binary condition params.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct BinaryConditionParams
 {
     TSNode left;
@@ -23,6 +31,16 @@ struct BinaryConditionParams
     std::string_view sourceCode;
 };
 
+/**
+ * @brief Handle equality null check.
+ * @param[in] left Parameter left.
+ * @param[in] right Parameter right.
+ * @param[in] sourceCode Parameter sourceCode.
+ * @param[in,out] sink Parameter sink.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with HandleInequalityNullCheck in
+ * server/src/analysis/NullSafetyCondition.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 bool HandleEqualityNullCheck(TSNode left, TSNode right, std::string_view sourceCode, AssertionSink& sink)
 {
     std::string name;
@@ -44,6 +62,16 @@ bool HandleEqualityNullCheck(TSNode left, TSNode right, std::string_view sourceC
     return false;
 }
 
+/**
+ * @brief Handle inequality null check.
+ * @param[in] left Parameter left.
+ * @param[in] right Parameter right.
+ * @param[in] sourceCode Parameter sourceCode.
+ * @param[in,out] sink Parameter sink.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with HandleEqualityNullCheck in
+ * server/src/analysis/NullSafetyCondition.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 bool HandleInequalityNullCheck(TSNode left, TSNode right, std::string_view sourceCode, AssertionSink& sink)
 {
     std::string name;

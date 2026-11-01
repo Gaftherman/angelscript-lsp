@@ -18,6 +18,12 @@ void TrimTypeWhitespace(std::string_view& typeName)
     }
 }
 
+/**
+ * @brief Strip leading const.
+ * @param[in,out] typeName Parameter typeName.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
+ */
 void StripLeadingConst(std::string_view& typeName)
 {
     if (typeName.starts_with("const "))
@@ -26,6 +32,12 @@ void StripLeadingConst(std::string_view& typeName)
     }
 }
 
+/**
+ * @brief Strip trailing decorations view.
+ * @param[in,out] result Parameter result.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
+ */
 void StripTrailingDecorationsView(std::string_view& result) noexcept
 {
     bool modified = true;
@@ -99,6 +111,16 @@ std::string CleanBaseType(std::string_view typeName, std::string_view arrayTypeN
     return std::string(CleanBaseTypeView(typeName, arrayTypeName));
 }
 
+/**
+ * @brief Canonicalize array type.
+ * @param[in] typeName Parameter typeName.
+ * @param[in] arrayTypeName Parameter arrayTypeName.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType. Manually re-evaluates
+ * AST for isConst; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo /
+ * Symbol::modifiers.isConst.
+ */
 std::string CanonicalizeArrayType(std::string_view typeName, std::string_view arrayTypeName)
 {
     std::string s(typeName);

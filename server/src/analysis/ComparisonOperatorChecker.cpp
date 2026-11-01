@@ -195,6 +195,14 @@ void EmitComparisonDiagnostics(TSNode opNode, std::string_view op, const BinaryO
 }
 } // namespace
 
+/**
+ * @brief Check comparison operator compatibility.
+ * @param[in] node Parameter node.
+ * @param[in] scope Parameter scope.
+ * @param[in,out] ctx Parameter ctx.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with CheckBinaryOperatorCompatibility in
+ * server/src/analysis/BinaryOperatorChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void CheckComparisonOperatorCompatibility(TSNode node, const Scope* scope, DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();

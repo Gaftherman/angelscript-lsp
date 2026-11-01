@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0",
+  "branch": "refactor/architecture-deduplication-and-ram",
+  "description": "Mandatory immutable ledger tracking every deleted, unified, moved, or compacted function and struct.",
+  "entries": [
+    {
+      "id": "REF-0001",
+      "phase": "R0",
+      "action": "CLEAN_SENTINEL",
+      "sourceFile": "server/src/analysis/CallChecker.cpp",
+      "deletedLineRange": "1435, 1975",
+      "originalSymbolOrCode": "\"init_list\"",
+      "whatItDidAndWhyInThatFile": "Hardcoded string literal representing an initializer list expression type in CallChecker, ConversionRankingEngine, SemanticHelpers, and HoverHandler.",
+      "whyChangedOrDeleted": "Replaced hardcoded literal string with canonical constants::k_initializerListTypeSentinel in Constants.h and ExpressionTypeCache.h to eliminate type-name hardcoding and maintain compiler parity.",
+      "replacedByCanonicalFile": "server/src/utils/Constants.h",
+      "replacedByCanonicalSymbol": "k_initializerListTypeSentinel",
+      "ramOrCpuImpact": "Zero heap allocations; constexpr string_view sentinel comparison.",
+      "verifiedByTests": [
+        "ConfiguredTypesAndAntiPatternsTest",
+        "SemanticAnalyzerTest",
+        "EmptyParenAndTelemetryParityTest",
+        "GitHubIssuesOracleParityTest"
+      ]
+    }
+  ]
+}

@@ -38,6 +38,11 @@ struct LocalTypeArgPosition
     uint32_t endCharacter = 0;
 };
 
+/**
+ * @brief Lexical definition occurrence (variable, parameter, loop variable) within a Scope.
+ * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (pack flags, bundle positions into SourceRange in
+ * Phase R1).
+ */
 struct LocalDefinition
 {
     LocalDefinition() = default;
@@ -211,6 +216,8 @@ enum class ScopeKind
  *        tree built from a document's LOCALS_QUERY matches. Scopes nest by source range: every
  *        definition/reference is attached to the innermost scope whose range contains it, and
  *        every child scope's range is contained within its parent's.
+ * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (pack ScopeKind and isFunctionScope into uint8_t in
+ * Phase R1).
  */
 struct Scope
 {

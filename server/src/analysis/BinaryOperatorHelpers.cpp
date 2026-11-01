@@ -114,6 +114,16 @@ bool IsNullOperand(TSNode node, std::string_view type)
     return !ts_node_is_null(node) && ts_node_symbol(node) == parser::GetGrammarSymbols().symNullLiteral;
 }
 
+/**
+ * @brief Strip modifiers.
+ * @param[in] type Parameter type.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (68%) with CleanExpressionType in
+ * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Manually
+ * re-evaluates AST for isConst; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo /
+ * Symbol::modifiers.isConst. Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
+ */
 static std::string StripModifiers(std::string_view type)
 {
     while (!type.empty() && (type.front() == ' ' || type.front() == '\t'))

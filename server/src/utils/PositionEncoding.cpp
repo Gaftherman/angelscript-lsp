@@ -9,6 +9,7 @@ namespace
 {
 /**
  * @brief Bytes consumed and UTF-16 code units produced by one UTF-8 sequence.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct Utf8Step
 {

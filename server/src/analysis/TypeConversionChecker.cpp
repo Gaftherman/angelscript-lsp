@@ -28,7 +28,10 @@ namespace angel_lsp::analysis
 {
 namespace
 {
-/** @brief What a resolved expression is worth to this pass. */
+/**
+ * @brief What a resolved expression is worth to this pass.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct ExpressionType
 {
     std::string baseName;   ///< Cleaned base type name, e.g. "Money" or "int".
@@ -40,7 +43,9 @@ struct ExpressionType
 /** @brief The little a rule needs to know about a type declaration.
  *  @note Deliberately not the Symbol itself: this is looked up for practically every call
  *        expression in a document, and copying a Symbol (strings, parameter vectors, a
- *        variant) that many times dominated the pass. */
+ *        variant) that many times dominated the pass.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct TypeDeclarationInfo
 {
     bool found = false;
@@ -48,6 +53,10 @@ struct TypeDeclarationInfo
     bool isTemplate = false;
 };
 
+/**
+ * @brief Represents Conversion types.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct ConversionTypes
 {
     std::string from{};
@@ -56,6 +65,15 @@ struct ConversionTypes
 
 bool IsSameType(const std::string& a, const std::string& b);
 
+/**
+ * @brief Are template arguments equal.
+ * @param[in] aInner Parameter aInner.
+ * @param[in] bInner Parameter bInner.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with AreTemplateArgumentsEqual in
+ * server/src/analysis/overload/OverloadTypeConversions.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner)
 {
     const auto aArgs = SplitTemplateArguments(aInner);
@@ -472,6 +490,9 @@ bool DeclaresOperatorMethod(const std::string& typeName, std::string_view method
  * `cast<int>(obj)`, `cast<int>(n)`, `cast<int>(enumValue)` and `cast<E>(n)` are all
  * "Illegal target type for reference cast", and `cast<A@>(n)` is "No conversion from 'int'
  * to 'A@' available". A reference cast is between reference types, and nothing else.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (82%) with IsTypeName in
+ * server/src/features/implementation/ImplementationHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
  */
 bool IsScalarCastTarget(const std::string& typeName, const SymbolTable& table)
 {
@@ -622,6 +643,8 @@ bool IsPoisonOrEmptyType(std::string_view from, std::string_view to)
  *              matching a constructor parameter cannot recurse into another constructor.
  * @return True whenever a route exists - and also whenever this analyzer cannot see enough
  *         to rule one out.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 bool CanTriviallyConvert(const std::string& from, const std::string& to, const DiagnosticContext& ctx)
 {
@@ -708,6 +731,10 @@ bool CanConvertEnumTarget(const std::string& from, const std::string& to, const 
     return false;
 }
 
+/**
+ * @brief Represents Conversion state.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct ConversionState
 {
     size_t depth = 0;
@@ -811,6 +838,10 @@ bool CanConvertUserTypes(const ConversionTypes& types, const DiagnosticContext& 
     return CanConvertClasses(types.from, types.to, ctx, state);
 }
 
+/**
+ * @brief Represents Edge guard.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct EdgeGuard
 {
     ankerl::unordered_dense::set<std::string>& edges;
@@ -928,7 +959,12 @@ std::string EnclosingClassName(TSNode node, std::string_view sourceCode)
 
 ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx);
 
-/** @brief Resolves the type a bare (possibly scope-qualified) name denotes as a value. */
+/**
+ * @brief Resolves the type a bare (possibly scope-qualified) name denotes as a value.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
+ * Symbol::modifiers.isConst / ParameterInformation::isConst. Manually re-evaluates AST for isConst; candidate for
+ * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
+ */
 ExpressionType ResolveIdentifierValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
     const std::string name = NodeText(node, ctx.request.sourceCode);
@@ -972,7 +1008,11 @@ ExpressionType ResolveIdentifierValueType(TSNode node, const Scope* scope, const
     return result;
 }
 
-/** @brief Resolves what a call expression evaluates to: a constructed type, or a return type. */
+/**
+ * @brief Resolves what a call expression evaluates to: a constructed type, or a return type.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
+ */
 ExpressionType ResolveCallValueType(TSNode node, const DiagnosticContext& ctx)
 {
     TSNode callee = parser::GetCallCallee(node);
@@ -1064,6 +1104,14 @@ static ExpressionType ResolveUnaryValueType(TSNode node, const Scope* scope, con
     return val;
 }
 
+/**
+ * @brief Resolve cast value type.
+ * @param[in] node Parameter node.
+ * @param[in,out] ctx Parameter ctx.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
+ */
 static ExpressionType ResolveCastValueType(TSNode node, const DiagnosticContext& ctx)
 {
     const std::string rawText =
@@ -1073,6 +1121,15 @@ static ExpressionType ResolveCastValueType(TSNode node, const DiagnosticContext&
     return typeText.empty() ? ExpressionType{} : ExpressionType{typeText, true, false, isConst};
 }
 
+/**
+ * @brief Resolve compound value type.
+ * @param[in] node Parameter node.
+ * @param[in] scope Parameter scope.
+ * @param[in,out] ctx Parameter ctx.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
+ */
 ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
@@ -1155,6 +1212,10 @@ ExpressionType ResolveValueType(TSNode node, const Scope* scope, const Diagnosti
     return ResolveCompoundValueType(node, scope, ctx);
 }
 
+/**
+ * @brief Represents Property access info.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct PropertyAccessInfo
 {
     bool isProperty = false;
@@ -1384,6 +1445,10 @@ static bool IsFunctionReference(TSNode expr, const Scope* scope, const Diagnosti
     return IsFunctionReference(expr, scope, ctx.request.symbolTable, ctx.request.sourceCode);
 }
 
+/**
+ * @brief Represents Diagnostic args.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct DiagnosticArgs
 {
     std::string first{};
@@ -1449,6 +1514,18 @@ void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, cons
                     DiagnosticSeverity::Error);
 }
 
+/**
+ * @brief Emit warning at node.
+ * @param[in] node Parameter node.
+ * @param[in,out] ctx Parameter ctx.
+ * @param[in] code Parameter code.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (89%) with EmitAtNode in server/src/analysis/ControlFlowChecker.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (89%) with EmitAtNode in
+ * server/src/analysis/InitializerListChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * Structural overlap (89%) with EmitAtNode in server/src/analysis/IsolationChecker.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h. Structural overlap (84%) with EmitAtNode in
+ * server/src/analysis/ConstChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 void EmitWarningAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, const DiagnosticArgs& args = {})
 {
     const TSPoint start = ts_node_start_point(node);
@@ -1495,7 +1572,12 @@ bool IsUnsignedIntegerPrimitive(std::string_view typeName) noexcept
            typeName == "uint64";
 }
 
-/** @brief Signed for the purpose of the mismatch warning, which counts float and double. */
+/**
+ * @brief Signed for the purpose of the mismatch warning, which counts float and double.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (75%) with IsNumericTypeName in
+ * server/src/features/completion/CompletionHandler.cpp. Candidate for unification in
+ * server/src/analysis/SemanticHelpers.h.
+ */
 bool IsSignedNumericPrimitive(std::string_view typeName) noexcept
 {
     return typeName == "int" || typeName == "int8" || typeName == "int16" || typeName == "int32" ||
@@ -1547,6 +1629,8 @@ bool IsNumericLiteralExpression(TSNode node)
  *
  * An unrecognised shape answers false, which is the emitting side. That is what the
  * corpus audit in TypeConversionTest.cpp exists to hold honest.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
 bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
@@ -1664,7 +1748,11 @@ void CheckFloatTruncation(TSNode valueNode, const ConversionTypes& types, const 
     EmitWarningAtNode(valueNode, ctx, "as-warn-float-truncation", {types.from, types.to});
 }
 
-/** @brief Everything one declared type text says that the rules below need to know. */
+/**
+ * @brief Everything one declared type text says that the rules below need to know.
+ * @note [REFACTOR-CANDIDATE] Clustered under Type Qualification & Modifiers. Candidate for unification in
+ * server/src/analysis/SymbolTable.h.
+ */
 struct DeclaredType
 {
     std::string baseName;
@@ -1702,7 +1790,12 @@ bool IsDeclaredTypeUsable(const std::string& baseName, const DiagnosticContext& 
 
 /** @brief Reads a 'type' node into the shape the conversion rules can act on.
  *  @note Arrays, templates and anything that does not resolve to a plain class are marked
- *        unusable: their conversion rules depend on element types this pass does not track. */
+ *        unusable: their conversion rules depend on element types this pass does not track.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType. Manually re-evaluates
+ * AST for isConst; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo /
+ * Symbol::modifiers.isConst.
+ */
 DeclaredType ReadDeclaredType(TSNode typeNode, const DiagnosticContext& ctx)
 {
     DeclaredType result;
@@ -2027,6 +2120,10 @@ void CheckConstruction(TSNode argumentListNode, const std::string& targetType, c
     }
 }
 
+/**
+ * @brief Represents Zero arg constructor status.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct ZeroArgConstructorStatus
 {
     bool hasZeroArg = false;
@@ -2554,6 +2651,10 @@ void CollectBooleanOperands(TSNode rootExpr, std::vector<TSNode>& operands)
     }
 }
 
+/**
+ * @brief Represents Assignment operands.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct AssignmentOperands
 {
     TSNode left;
@@ -2656,6 +2757,10 @@ void CheckBooleanOperands(TSNode condition, const Scope* scope, DiagnosticContex
  * @param[in] condNode Condition syntax node.
  * @param[in] scope Lexical scope at the condition node.
  * @param[in,out] ctx Diagnostic collection context.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * Symbol::modifiers.isHandle / LocalDefinition::isHandleType. Manually re-evaluates AST for isHandle; candidate for
+ * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle /
+ * LocalDefinition::isHandleType.
  */
 void CheckRefTypeBoolConversion(TSNode condNode, const Scope* scope, DiagnosticContext& ctx)
 {
@@ -2754,6 +2859,15 @@ static bool IsIncompleteOrIgnoredBranchType(std::string_view type)
     return type.empty() || type == "auto";
 }
 
+/**
+ * @brief Are ternary branches incompatible.
+ * @param[in,out] clean1 Parameter clean1.
+ * @param[in,out] clean2 Parameter clean2.
+ * @param[in,out] ctx Parameter ctx.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
+ */
 static bool AreTernaryBranchesIncompatible(const std::string& clean1, const std::string& clean2, DiagnosticContext& ctx)
 {
     if ((clean1 == "null" && clean2.ends_with("@")) || (clean2 == "null" && clean1.ends_with("@")))
@@ -3106,6 +3220,8 @@ static bool IsCyclicAutoDependency(TSNode valueNode, TSNode nameNode, const Scop
  * @param[in] child Variable declarator node.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 void ProcessAutoDeclarator(TSNode child, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
@@ -3285,6 +3401,8 @@ void ProcessVariableDeclarationNode(TSNode node, const TypeConversionCheckReques
  * @param[in] node Full assignment node.
  * @param[in] scope Enclosing lexical scope.
  * @param[in,out] ctx Diagnostic collection context.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 void CheckAssignmentPropertyAccess(TSNode node, const Scope* scope, DiagnosticContext& ctx)
 {
@@ -3467,6 +3585,8 @@ void CheckAssignmentOperatorConversion(TSNode node, TSNode right, const Conversi
  * @param[in] typeName Name of target data type.
  * @param[in] table Symbol table.
  * @return True if type declares converting constructor or opAssign taking a handle.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static bool HasHandleOpAssign(std::string_view clean, const SymbolTable& table)
 {
@@ -3488,6 +3608,14 @@ static bool HasHandleOpAssign(std::string_view clean, const SymbolTable& table)
     return table.FindMemberSymbolPtr(clean, "opHndlAssign") != nullptr;
 }
 
+/**
+ * @brief Has handle converting ctor.
+ * @param[in] clean Parameter clean.
+ * @param[in,out] table Parameter table.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
+ */
 static bool HasHandleConvertingCtor(std::string_view clean, const SymbolTable& table)
 {
     if (auto ctorSyms = table.FindMemberSymbolPtr(clean, clean))
@@ -3518,6 +3646,13 @@ static bool TypeAcceptsNullHandle(std::string_view typeName, const SymbolTable& 
     return HasHandleOpAssign(clean, table) || HasHandleConvertingCtor(clean, table);
 }
 
+/**
+ * @brief Unwrap parentheses.
+ * @param[in] node Parameter node.
+ * @return Result of the operation.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with UnwrapParens in server/src/analysis/SemanticHelpers.cpp.
+ * Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ */
 static TSNode UnwrapParentheses(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
@@ -3536,6 +3671,8 @@ static TSNode UnwrapParentheses(TSNode node)
  * @param[in] rawLeftType Unstripped expression type of left-hand side.
  * @param[in,out] ctx Diagnostic context.
  * @return True if right-hand side is null literal and was processed.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static bool CheckNullAssignmentToNonHandle(TSNode node, TSNode right, const std::string& rawLeftType,
                                            DiagnosticContext& ctx)
@@ -3812,6 +3949,8 @@ void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& re
  * @param[in] node Member expression syntax node.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (80%) with ProcessIndexExpressionNode in
+ * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 void ProcessMemberExpressionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
@@ -3860,6 +3999,8 @@ void ProcessMemberExpressionNode(TSNode node, const TypeConversionCheckRequest& 
  * @param[in] node Index expression syntax node.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (80%) with ProcessMemberExpressionNode in
+ * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 void ProcessIndexExpressionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
@@ -3918,6 +4059,8 @@ void ProcessCastNode(TSNode node, const TypeConversionCheckRequest& request, Dia
  * @param[in] lambdaNode Parent lambda expression node.
  * @param[in] scope Enclosing lexical scope.
  * @param[in,out] ctx Diagnostic collection context.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (72%) with CheckFuncDeclarationReturnStatement in
+ * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Scope* scope, DiagnosticContext& ctx)
 {
@@ -3963,6 +4106,8 @@ void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Scope* sco
  * @param[in] retTypeNode Return type specifier AST node.
  * @param[in] sourceCode Document source text.
  * @return True if return type is by-reference; false otherwise.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
  */
 bool IsFunctionReturnRef(TSNode funcNode, TSNode retTypeNode, std::string_view sourceCode)
 {
@@ -4031,6 +4176,8 @@ void CheckReturnReference(TSNode expr, TSNode funcNode, const Scope* scope, Diag
  * @param[in] funcNode Parent function declaration syntax node.
  * @param[in] scope Enclosing lexical scope.
  * @param[in,out] ctx Diagnostic collection context.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (72%) with CheckLambdaReturnStatement in
+ * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Scope* scope, DiagnosticContext& ctx)
 {
@@ -4304,6 +4451,8 @@ void ProcessNode(TSNode node, const TypeConversionCheckRequest& request, Diagnos
  * @param[in] root Root node of syntax tree or subtree.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
+ * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with TraverseTree in server/src/analysis/NodeIndex.cpp. Candidate
+ * for unification in server/src/analysis/SemanticHelpers.h.
  */
 void VisitNode(TSNode root, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
@@ -4339,6 +4488,14 @@ void VisitNode(TSNode root, const TypeConversionCheckRequest& request, Diagnosti
 }
 } // namespace
 
+/**
+ * @brief Is truthy condition.
+ * @param[in,out] typeName Parameter typeName.
+ * @param[in,out] table Parameter table.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
+ */
 bool IsTruthyCondition(const std::string& typeName, const SymbolTable& table)
 {
     if (typeName.empty())

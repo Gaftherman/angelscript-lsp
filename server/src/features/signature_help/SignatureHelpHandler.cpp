@@ -114,6 +114,7 @@ std::string FormatSignatureLabel(const analysis::Symbol& sym)
 
 /**
  * @brief Enclosing call expression and argument list nodes.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct CallNodes
 {

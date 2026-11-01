@@ -132,6 +132,10 @@ bool IsIncludeQuote(char c)
     return c == '"' || c == '\'' || c == '<';
 }
 
+/**
+ * @brief Represents Include scan state.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
 struct IncludeScanState
 {
     size_t index{0};
