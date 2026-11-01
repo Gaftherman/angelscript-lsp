@@ -6,23 +6,14 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
-using analysis::LocalDefinition;
-using analysis::LocalDefinitionKind;
-using analysis::LocalReference;
-using analysis::Scope;
 
 /**
  * @brief Contains.
- * @param[in] scope Parameter scope.
- * @param[in] position Parameter position.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (92%) with Covers in
- * server/src/features/linked_editing/LinkedEditingRangeHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @param[in] scope Enclosing lexical scope.
+ * @param[in] position Target document position.
+ * @return True if the condition is satisfied; false otherwise.
  */
-bool Contains(const Scope& scope, const lsp::Position& position)
+static bool Contains(const analysis::Scope& scope, const lsp::Position& position)
 {
     if (position.line < scope.startLine || position.line > scope.endLine)
     {
@@ -40,14 +31,14 @@ bool Contains(const Scope& scope, const lsp::Position& position)
 }
 
 /** @brief Innermost scope containing a position, or nullptr when the tree does not cover it. */
-const Scope* InnermostScope(const Scope* root, const lsp::Position& position)
+static const analysis::Scope* InnermostScope(const analysis::Scope* root, const lsp::Position& position)
 {
     if (!root || !Contains(*root, position))
     {
         return nullptr;
     }
 
-    const Scope* current = root;
+    const analysis::Scope* current = root;
     for (bool descended = true; descended;)
     {
         descended = false;
@@ -66,14 +57,11 @@ const Scope* InnermostScope(const Scope* root, const lsp::Position& position)
 
 /**
  * @brief Covers.
- * @param[in] item Parameter item.
- * @param[in] position Parameter position.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (92%) with Contains in
- * server/src/features/linked_editing/LinkedEditingRangeHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @param[in] item AST node or document range item.
+ * @param[in] position Target document position.
+ * @return True if the condition is satisfied; false otherwise.
  */
-template <typename T> bool Covers(const T& item, const lsp::Position& position)
+template <typename T> static bool Covers(const T& item, const lsp::Position& position)
 {
     if (position.line < item.startLine || position.line > item.endLine)
     {
@@ -96,9 +84,10 @@ template <typename T> bool Covers(const T& item, const lsp::Position& position)
  * A member access is skipped: the `y` in `x.y` is spelled like a local and is not one, and
  * retyping it together with an unrelated local of the same name would corrupt both.
  */
-const LocalDefinition* DefinitionAt(const Scope* scope, const lsp::Position& position, const Scope** owningScope)
+static const analysis::LocalDefinition* DefinitionAt(const analysis::Scope* scope, const lsp::Position& position,
+                                                     const analysis::Scope** owningScope)
 {
-    for (const Scope* current = scope; current != nullptr; current = current->parent)
+    for (const analysis::Scope* current = scope; current != nullptr; current = current->parent)
     {
         for (const auto& definition : current->definitions)
         {
@@ -111,7 +100,7 @@ const LocalDefinition* DefinitionAt(const Scope* scope, const lsp::Position& pos
     }
 
     // Not on the declaration, so look for a use and resolve it back.
-    for (const Scope* current = scope; current != nullptr; current = current->parent)
+    for (const analysis::Scope* current = scope; current != nullptr; current = current->parent)
     {
         for (const auto& reference : current->references)
         {
@@ -120,7 +109,7 @@ const LocalDefinition* DefinitionAt(const Scope* scope, const lsp::Position& pos
                 continue;
             }
 
-            for (const Scope* owner = scope; owner != nullptr; owner = owner->parent)
+            for (const analysis::Scope* owner = scope; owner != nullptr; owner = owner->parent)
             {
                 for (const auto& definition : owner->definitions)
                 {
@@ -141,14 +130,14 @@ const LocalDefinition* DefinitionAt(const Scope* scope, const lsp::Position& pos
  * @brief True when a scope is a function body, or sits inside one.
  *
  * The scope tree captures a module-scope global and a function-body local under the very
- * same LocalDefinitionKind::Variable - the query cannot tell them apart, and says so. What
+ * same analysis::LocalDefinitionKind::Variable - the query cannot tell them apart, and says so. What
  * does tell them apart is where the scope owning the definition sits, and this is the only
  * thing standing between offering linked editing on a local and offering it on a global
  * that half the workspace refers to.
  */
-bool IsInsideFunction(const Scope* scope)
+static bool IsInsideFunction(const analysis::Scope* scope)
 {
-    for (const Scope* current = scope; current != nullptr; current = current->parent)
+    for (const analysis::Scope* current = scope; current != nullptr; current = current->parent)
     {
         if (current->isFunctionScope)
         {
@@ -159,7 +148,7 @@ bool IsInsideFunction(const Scope* scope)
 }
 
 /** @brief Collects every occurrence of a name inside one scope and its children. */
-void CollectIn(const Scope& scope, const std::string& name, std::vector<lsp::Range>& out)
+static void CollectIn(const analysis::Scope& scope, const std::string& name, std::vector<lsp::Range>& out)
 {
     for (const auto& definition : scope.definitions)
     {
@@ -188,14 +177,13 @@ void CollectIn(const Scope& scope, const std::string& name, std::vector<lsp::Ran
         // a shadowed variable wrong.
         const bool shadowed =
             std::any_of(child->definitions.begin(), child->definitions.end(),
-                        [&name](const LocalDefinition& definition) { return definition.name == name; });
+                        [&name](const analysis::LocalDefinition& definition) { return definition.name == name; });
         if (!shadowed)
         {
             CollectIn(*child, name, out);
         }
     }
 }
-} // namespace
 
 std::optional<lsp::LinkedEditingRanges> GetLinkedEditingRanges(const LinkedEditingRangeRequest& request)
 {
@@ -204,14 +192,14 @@ std::optional<lsp::LinkedEditingRanges> GetLinkedEditingRanges(const LinkedEditi
         return std::nullopt;
     }
 
-    const Scope* innermost = InnermostScope(request.scopeRoot, request.position);
+    const analysis::Scope* innermost = InnermostScope(request.scopeRoot, request.position);
     if (!innermost)
     {
         return std::nullopt;
     }
 
-    const Scope* owningScope = nullptr;
-    const LocalDefinition* definition = DefinitionAt(innermost, request.position, &owningScope);
+    const analysis::Scope* owningScope = nullptr;
+    const analysis::LocalDefinition* definition = DefinitionAt(innermost, request.position, &owningScope);
     if (!definition || !owningScope)
     {
         return std::nullopt;
@@ -219,7 +207,8 @@ std::optional<lsp::LinkedEditingRanges> GetLinkedEditingRanges(const LinkedEditi
 
     // Only a local or a parameter, which a lexical scope keeps inside this document. See the
     // header for why anything at file scope has to go through rename instead.
-    if (definition->kind != LocalDefinitionKind::Variable && definition->kind != LocalDefinitionKind::Parameter)
+    if (definition->kind != analysis::LocalDefinitionKind::Variable &&
+        definition->kind != analysis::LocalDefinitionKind::Parameter)
     {
         return std::nullopt;
     }

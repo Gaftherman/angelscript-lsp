@@ -14,11 +14,6 @@
 
 namespace angel_lsp::features
 {
-using analysis::TargetDescriptor;
-using analysis::TargetKind;
-
-namespace
-{
 
 /**
  * @brief Resolves the enclosing class name for a given source position.
@@ -28,13 +23,11 @@ namespace
  * @param[in] excludeName Optional class name to exclude.
  * @return Enclosing class name or empty string if not in a class.
  */
-std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, const std::string& uri, uint32_t line,
-                                  const std::string& excludeName = "")
+static std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, const std::string& uri,
+                                         uint32_t line, const std::string& excludeName = "")
 {
     return symbolTable.FindEnclosingClassName(uri, line, excludeName);
 }
-
-using parser::GetNodeText;
 
 /**
  * @brief Checks if an AST node is contained within another AST node range.
@@ -42,7 +35,7 @@ using parser::GetNodeText;
  * @param[in] outer Enclosing boundary node.
  * @return True if inner node is within outer node bounds.
  */
-bool IsNodeContained(TSNode inner, TSNode outer) noexcept
+static bool IsNodeContained(TSNode inner, TSNode outer) noexcept
 {
     if (ts_node_is_null(inner) || ts_node_is_null(outer))
     {
@@ -61,7 +54,7 @@ bool IsNodeContained(TSNode inner, TSNode outer) noexcept
  * @param[in] pType Parent node type.
  * @return True if declarator node.
  */
-bool IsVariableOrParamDeclarator(TSSymbol pType, const parser::GrammarSymbols& gs) noexcept
+static bool IsVariableOrParamDeclarator(TSSymbol pType, const parser::GrammarSymbols& gs) noexcept
 {
     return pType == gs.symVariableDeclarator || pType == gs.symParameter || pType == gs.symForeachVariable;
 }
@@ -71,7 +64,7 @@ bool IsVariableOrParamDeclarator(TSSymbol pType, const parser::GrammarSymbols& g
  * @param[in] pType Parent node symbol.
  * @return True if callable or type declaration node.
  */
-bool IsCallableOrTypeDeclaration(TSSymbol pType, const parser::GrammarSymbols& gs) noexcept
+static bool IsCallableOrTypeDeclaration(TSSymbol pType, const parser::GrammarSymbols& gs) noexcept
 {
     return pType == gs.symFuncDeclaration || pType == gs.symInterfaceMethod || pType == gs.symFuncdefDeclaration ||
            pType == gs.symClassDeclaration || pType == gs.symMixinDeclaration || pType == gs.symInterfaceDeclaration ||
@@ -84,7 +77,7 @@ bool IsCallableOrTypeDeclaration(TSSymbol pType, const parser::GrammarSymbols& g
  * @param[in] leaf AST leaf node.
  * @return DocumentHighlightKind if leaf is a declaration identifier.
  */
-std::optional<lsp::DocumentHighlightKind> ClassifyDeclarationNode(TSNode leaf)
+static std::optional<lsp::DocumentHighlightKind> ClassifyDeclarationNode(TSNode leaf)
 {
     TSNode parent = parser::GetParent(leaf);
     if (ts_node_is_null(parent))
@@ -117,7 +110,7 @@ std::optional<lsp::DocumentHighlightKind> ClassifyDeclarationNode(TSNode leaf)
  * @param[in] leaf AST leaf node.
  * @return True if node is in a type annotation.
  */
-bool IsTypeAnnotationNode(TSNode leaf)
+static bool IsTypeAnnotationNode(TSNode leaf)
 {
     const auto& gs = parser::GetGrammarSymbols();
     bool result = false;
@@ -150,7 +143,8 @@ bool IsTypeAnnotationNode(TSNode leaf)
  * @param[in] sourceCode Source text.
  * @return Write highlight kind if mutated, nullopt otherwise.
  */
-std::optional<lsp::DocumentHighlightKind> CheckUnaryMutation(TSNode cur, TSNode leaf, std::string_view sourceCode)
+static std::optional<lsp::DocumentHighlightKind> CheckUnaryMutation(TSNode cur, TSNode leaf,
+                                                                    std::string_view sourceCode)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol cType = ts_node_symbol(cur);
@@ -192,7 +186,7 @@ std::optional<lsp::DocumentHighlightKind> CheckUnaryMutation(TSNode cur, TSNode 
  * @param[in] leaf Target node.
  * @return Highlight kind if inside assignment expression, nullopt otherwise.
  */
-std::optional<lsp::DocumentHighlightKind> CheckAssignmentMutation(TSNode cur, TSNode leaf)
+static std::optional<lsp::DocumentHighlightKind> CheckAssignmentMutation(TSNode cur, TSNode leaf)
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (ts_node_symbol(cur) != gs.symAssignmentExpression)
@@ -236,7 +230,7 @@ std::optional<lsp::DocumentHighlightKind> CheckAssignmentMutation(TSNode cur, TS
  * @param[in] leaf Target identifier leaf node.
  * @return Argument index or nullopt if not an argument.
  */
-std::optional<uint32_t> FindArgumentIndex(TSNode argList, TSNode leaf) noexcept
+static std::optional<uint32_t> FindArgumentIndex(TSNode argList, TSNode leaf) noexcept
 {
     auto callArgs = analysis::ExtractCallArguments(argList, "");
     for (const auto& a : callArgs)
@@ -250,6 +244,8 @@ std::optional<uint32_t> FindArgumentIndex(TSNode argList, TSNode leaf) noexcept
     return std::nullopt;
 }
 
+namespace document_highlight_handler_detail
+{
 /**
  * @brief Represents Callee info.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -259,6 +255,9 @@ struct CalleeInfo
     std::string calleeName;
     std::string receiverType;
 };
+} // namespace document_highlight_handler_detail
+
+using CalleeInfo = document_highlight_handler_detail::CalleeInfo;
 
 /**
  * @brief Resolves receiver type of an object expression text.
@@ -267,7 +266,8 @@ struct CalleeInfo
  * @param[in] line 0-based source line.
  * @return Receiver type name.
  */
-std::string ResolveCallReceiverType(const std::string& oText, const DocumentHighlightRequest& request, uint32_t line)
+static std::string ResolveCallReceiverType(const std::string& oText, const DocumentHighlightRequest& request,
+                                           uint32_t line)
 {
     if (oText == "this")
     {
@@ -304,7 +304,7 @@ std::string ResolveCallReceiverType(const std::string& oText, const DocumentHigh
  * @param[in] line 0-based line number.
  * @param[out] info Callee and receiver descriptor.
  */
-void ResolveCalleeInfo(TSNode funcNode, const DocumentHighlightRequest& request, uint32_t line, CalleeInfo& info)
+static void ResolveCalleeInfo(TSNode funcNode, const DocumentHighlightRequest& request, uint32_t line, CalleeInfo& info)
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (ts_node_symbol(funcNode) == gs.symMemberExpression)
@@ -313,17 +313,17 @@ void ResolveCalleeInfo(TSNode funcNode, const DocumentHighlightRequest& request,
         TSNode objNode = parser::GetChildByField(funcNode, gs.fieldObject);
         if (!ts_node_is_null(memNode))
         {
-            info.calleeName = GetNodeText(memNode, request.sourceCode);
+            info.calleeName = parser::GetNodeText(memNode, request.sourceCode);
         }
         if (!ts_node_is_null(objNode))
         {
-            std::string oText = GetNodeText(objNode, request.sourceCode);
+            std::string oText = parser::GetNodeText(objNode, request.sourceCode);
             info.receiverType = ResolveCallReceiverType(oText, request, line);
         }
     }
     else
     {
-        info.calleeName = GetNodeText(funcNode, request.sourceCode);
+        info.calleeName = parser::GetNodeText(funcNode, request.sourceCode);
     }
 }
 
@@ -334,7 +334,7 @@ void ResolveCalleeInfo(TSNode funcNode, const DocumentHighlightRequest& request,
  * @param[in] symbolTable Global symbol table.
  * @return True if parameter has out or non-const reference semantics.
  */
-bool IsOutOrInOutParameter(const CalleeInfo& info, uint32_t argIndex, const analysis::SymbolTable& symbolTable)
+static bool IsOutOrInOutParameter(const CalleeInfo& info, uint32_t argIndex, const analysis::SymbolTable& symbolTable)
 {
     std::vector<analysis::Symbol> matches;
     if (!info.receiverType.empty())
@@ -382,7 +382,7 @@ bool IsOutOrInOutParameter(const CalleeInfo& info, uint32_t argIndex, const anal
  * @param[in] line 0-based source line.
  * @return Write highlight kind if out/inout argument, nullopt otherwise.
  */
-std::optional<lsp::DocumentHighlightKind>
+static std::optional<lsp::DocumentHighlightKind>
 CheckCallArgumentMutation(TSNode cur, TSNode leaf, const DocumentHighlightRequest& request, uint32_t line)
 {
     const auto& gs = parser::GetGrammarSymbols();
@@ -421,8 +421,8 @@ CheckCallArgumentMutation(TSNode cur, TSNode leaf, const DocumentHighlightReques
  * @param[in] line Source line.
  * @return Classified highlight kind.
  */
-lsp::DocumentHighlightKind ClassifyAncestorExpressions(TSNode leaf, const DocumentHighlightRequest& request,
-                                                       uint32_t line)
+static lsp::DocumentHighlightKind ClassifyAncestorExpressions(TSNode leaf, const DocumentHighlightRequest& request,
+                                                              uint32_t line)
 {
     lsp::DocumentHighlightKind result = lsp::DocumentHighlightKind::Read;
     bool found = false;
@@ -462,7 +462,7 @@ lsp::DocumentHighlightKind ClassifyAncestorExpressions(TSNode leaf, const Docume
  * @param[in] range Occurrence source range.
  * @return Document highlight kind.
  */
-lsp::DocumentHighlightKind ClassifyOccurrence(const DocumentHighlightRequest& request, const lsp::Range& range)
+static lsp::DocumentHighlightKind ClassifyOccurrence(const DocumentHighlightRequest& request, const lsp::Range& range)
 {
     if (!request.tree || request.sourceCode.empty())
     {
@@ -497,6 +497,8 @@ lsp::DocumentHighlightKind ClassifyOccurrence(const DocumentHighlightRequest& re
     return ClassifyAncestorExpressions(leaf, request, range.start.line);
 }
 
+namespace document_highlight_handler_detail
+{
 /**
  * @brief Accumulator for highlight coordinate ranges.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -521,15 +523,16 @@ struct HighlightRangeCollector
         }
     }
 };
+} // namespace document_highlight_handler_detail
+
+using HighlightRangeCollector = document_highlight_handler_detail::HighlightRangeCollector;
 
 /**
  * @brief Collects highlight ranges for a local variable or parameter.
  * @param[in] target Target descriptor.
  * @param[in,out] collector Coordinate accumulator.
- * @note [REFACTOR-CANDIDATE] Structural overlap (62%) with CollectLocalOccurrences in
- * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-void CollectLocalHighlightRanges(const TargetDescriptor& target, HighlightRangeCollector& collector)
+static void CollectLocalHighlightRanges(const analysis::TargetDescriptor& target, HighlightRangeCollector& collector)
 {
     collector.Add(target.localDef.startLine, target.localDef.startCharacter, target.localDef.endLine,
                   target.localDef.endCharacter);
@@ -591,12 +594,10 @@ void CollectLocalHighlightRanges(const TargetDescriptor& target, HighlightRangeC
  * @param[in] target Target descriptor.
  * @param[in] request Highlight request.
  * @param[in,out] collector Coordinate accumulator.
- * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with CollectDeclarationsByName in
- * server/src/features/document_highlight/DocumentHighlightHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-void CollectClassMemberDeclarations(const std::unordered_set<std::string>& relatedSet, const TargetDescriptor& target,
-                                    const DocumentHighlightRequest& request, HighlightRangeCollector& collector)
+static void CollectClassMemberDeclarations(const std::unordered_set<std::string>& relatedSet,
+                                           const analysis::TargetDescriptor& target,
+                                           const DocumentHighlightRequest& request, HighlightRangeCollector& collector)
 {
     for (const auto& clsName : relatedSet)
     {
@@ -622,7 +623,7 @@ void CollectClassMemberDeclarations(const std::unordered_set<std::string>& relat
  * @param[in] oText Dotted expression text.
  * @return Vector of component strings.
  */
-std::vector<std::string> SplitDottedParts(const std::string& oText)
+static std::vector<std::string> SplitDottedParts(const std::string& oText)
 {
     std::vector<std::string> parts;
     size_t startPos = 0;
@@ -648,8 +649,8 @@ std::vector<std::string> SplitDottedParts(const std::string& oText)
  * @param[in] request Highlight request.
  * @return Cleaned base type name or empty string.
  */
-std::string ResolveChainRootType(const std::string& part, const analysis::Scope* scope,
-                                 const analysis::Scope* activeScope, const DocumentHighlightRequest& request)
+static std::string ResolveChainRootType(const std::string& part, const analysis::Scope* scope,
+                                        const analysis::Scope* activeScope, const DocumentHighlightRequest& request)
 {
     const analysis::LocalDefinition* pDef = analysis::ResolveInScope(scope, part);
     if (!pDef && activeScope)
@@ -678,8 +679,8 @@ std::string ResolveChainRootType(const std::string& part, const analysis::Scope*
  * @param[in] request Highlight request.
  * @return Cleaned base type name or empty string.
  */
-std::string ResolveChainMemberType(const std::string& curType, const std::string& part,
-                                   const DocumentHighlightRequest& request)
+static std::string ResolveChainMemberType(const std::string& curType, const std::string& part,
+                                          const DocumentHighlightRequest& request)
 {
     std::string qMem = utils::JoinScopedName(curType, part);
     auto mSyms = request.symbolTable.FindSymbols(qMem);
@@ -710,8 +711,8 @@ std::string ResolveChainMemberType(const std::string& curType, const std::string
  * @param[in] request Highlight request.
  * @return Resolved type name or empty string.
  */
-std::string ResolveDottedChainType(const std::string& oText, const analysis::Scope* scope,
-                                   const analysis::Scope* activeScope, const DocumentHighlightRequest& request)
+static std::string ResolveDottedChainType(const std::string& oText, const analysis::Scope* scope,
+                                          const analysis::Scope* activeScope, const DocumentHighlightRequest& request)
 {
     auto parts = SplitDottedParts(oText);
     std::string curType;
@@ -737,8 +738,9 @@ std::string ResolveDottedChainType(const std::string& oText, const analysis::Sco
  * @param[in] request Highlight request.
  * @return Cleaned base type name or empty string.
  */
-std::string ResolveIdentifierReceiverType(const std::string& oText, const analysis::Scope* scope,
-                                          const analysis::Scope* activeScope, const DocumentHighlightRequest& request)
+static std::string ResolveIdentifierReceiverType(const std::string& oText, const analysis::Scope* scope,
+                                                 const analysis::Scope* activeScope,
+                                                 const DocumentHighlightRequest& request)
 {
     const analysis::LocalDefinition* oDef = analysis::ResolveInScope(scope, oText);
     if (!oDef && activeScope)
@@ -765,7 +767,7 @@ std::string ResolveIdentifierReceiverType(const std::string& oText, const analys
  * @param[in] refNode Leaf node.
  * @return Parent member_expression node or null node.
  */
-TSNode FindMemberExpressionParent(TSNode refNode) noexcept
+static TSNode FindMemberExpressionParent(TSNode refNode) noexcept
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode result{};
@@ -791,7 +793,8 @@ TSNode FindMemberExpressionParent(TSNode refNode) noexcept
  * @param[in] sourceCode Source text.
  * @return Matching identifier node or null node.
  */
-TSNode ResolveRefNodeLeaf(TSNode rootNode, const analysis::LocalReference& ref, std::string_view sourceCode) noexcept
+static TSNode ResolveRefNodeLeaf(TSNode rootNode, const analysis::LocalReference& ref,
+                                 std::string_view sourceCode) noexcept
 {
     TSPoint pt = {ref.startLine, ref.startCharacter};
     TSNode refNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
@@ -807,7 +810,7 @@ TSNode ResolveRefNodeLeaf(TSNode rootNode, const analysis::LocalReference& ref, 
         {
             TSNode ch = ts_node_child(refNode, c);
             if (!ts_node_is_null(ch) && ts_node_symbol(ch) == gs.symIdentifier &&
-                GetNodeText(ch, sourceCode) == ref.name)
+                parser::GetNodeText(ch, sourceCode) == ref.name)
             {
                 return ch;
             }
@@ -824,8 +827,9 @@ TSNode ResolveRefNodeLeaf(TSNode rootNode, const analysis::LocalReference& ref, 
  * @param[in] request Highlight request.
  * @return Receiver type name or empty string.
  */
-std::string ResolveMemberRefReceiverType(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                                         const analysis::Scope* activeScope, const DocumentHighlightRequest& request)
+static std::string ResolveMemberRefReceiverType(const analysis::LocalReference& ref, const analysis::Scope* scope,
+                                                const analysis::Scope* activeScope,
+                                                const DocumentHighlightRequest& request)
 {
     if (!request.tree)
     {
@@ -886,22 +890,27 @@ std::string ResolveMemberRefReceiverType(const analysis::LocalReference& ref, co
  * @param[in] tree AST tree.
  * @return True if reference is a member access.
  */
-bool IsMemberAccessNode(const analysis::LocalReference& ref, [[maybe_unused]] TSTree* tree) noexcept
+static bool IsMemberAccessNode(const analysis::LocalReference& ref, [[maybe_unused]] TSTree* tree) noexcept
 {
     return ref.isMemberAccess;
 }
 
+namespace document_highlight_handler_detail
+{
 /**
  * @brief Context for class member reference matching.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct MemberHighlightContext
 {
-    const TargetDescriptor& target;
+    const analysis::TargetDescriptor& target;
     const std::unordered_set<std::string>& relatedSet;
     const DocumentHighlightRequest& request;
     const analysis::Scope* rootScope = nullptr;
 };
+} // namespace document_highlight_handler_detail
+
+using MemberHighlightContext = document_highlight_handler_detail::MemberHighlightContext;
 
 /**
  * @brief Evaluates whether a reference matches target class member.
@@ -910,8 +919,8 @@ struct MemberHighlightContext
  * @param[in] ctx Member highlight context.
  * @return True if reference is a match.
  */
-bool IsClassMemberReferenceMatch(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                                 const MemberHighlightContext& ctx)
+static bool IsClassMemberReferenceMatch(const analysis::LocalReference& ref, const analysis::Scope* scope,
+                                        const MemberHighlightContext& ctx)
 {
     const analysis::Scope* activeScope = FindInnermostScope(ctx.rootScope, ref.startLine, ref.startCharacter);
     if (!activeScope)
@@ -939,12 +948,10 @@ bool IsClassMemberReferenceMatch(const analysis::LocalReference& ref, const anal
  * @param[in] request Highlight request.
  * @param[in] rootScope Root scope.
  * @param[in,out] collector Coordinate accumulator.
- * @note [REFACTOR-CANDIDATE] Structural overlap (67%) with CollectEnumMemberScopeReferences in
- * server/src/features/document_highlight/DocumentHighlightHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-void CollectClassMemberHighlightRanges(const TargetDescriptor& target, const DocumentHighlightRequest& request,
-                                       const analysis::Scope* rootScope, HighlightRangeCollector& collector)
+static void CollectClassMemberHighlightRanges(const analysis::TargetDescriptor& target,
+                                              const DocumentHighlightRequest& request, const analysis::Scope* rootScope,
+                                              HighlightRangeCollector& collector)
 {
     std::unordered_set<std::string> relatedSet(target.relatedClasses.begin(), target.relatedClasses.end());
     if (!target.declaringClass.empty())
@@ -994,9 +1001,9 @@ void CollectClassMemberHighlightRanges(const TargetDescriptor& target, const Doc
  * @param[in] request Highlight request.
  * @return True if reference is inside namespace.
  */
-bool IsRefInsideNamespaceScope(const analysis::LocalReference& ref,
-                               const std::vector<std::pair<uint32_t, uint32_t>>& nsRanges,
-                               const TargetDescriptor& target, const DocumentHighlightRequest& request)
+static bool IsRefInsideNamespaceScope(const analysis::LocalReference& ref,
+                                      const std::vector<std::pair<uint32_t, uint32_t>>& nsRanges,
+                                      const analysis::TargetDescriptor& target, const DocumentHighlightRequest& request)
 {
     for (const auto& nr : nsRanges)
     {
@@ -1025,7 +1032,8 @@ bool IsRefInsideNamespaceScope(const analysis::LocalReference& ref,
  * @param[in] rootScope Root scope.
  * @return True if shadowed by a function-local variable or parameter.
  */
-bool IsShadowedByFunctionLocal(const analysis::Scope* scope, const std::string& name, const analysis::Scope* rootScope)
+static bool IsShadowedByFunctionLocal(const analysis::Scope* scope, const std::string& name,
+                                      const analysis::Scope* rootScope)
 {
     const analysis::LocalDefinition* localDef = analysis::ResolveInScope(scope, name);
     if (!localDef)
@@ -1046,12 +1054,9 @@ bool IsShadowedByFunctionLocal(const analysis::Scope* scope, const std::string& 
  * @param[in] name Symbol name or qualified name to look up.
  * @param[in] request Highlight request.
  * @param[in,out] collector Coordinate accumulator.
- * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with CollectClassMemberDeclarations in
- * server/src/features/document_highlight/DocumentHighlightHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-void CollectDeclarationsByName(std::string_view name, const DocumentHighlightRequest& request,
-                               HighlightRangeCollector& collector)
+static void CollectDeclarationsByName(std::string_view name, const DocumentHighlightRequest& request,
+                                      HighlightRangeCollector& collector)
 {
     auto syms = request.symbolTable.FindSymbols(name);
     for (const auto& sym : syms)
@@ -1073,13 +1078,9 @@ void CollectDeclarationsByName(std::string_view name, const DocumentHighlightReq
  * @tparam Callback Functor accepting (const analysis::Scope*, const analysis::LocalReference&).
  * @param[in] rootScope Root lexical scope.
  * @param[in] callback Callback invoked for each reference.
- * @note [REFACTOR-CANDIDATE] Structural overlap (92%) with CollectScopeStringLiteralRefs in
- * server/src/analysis/rules/UnusedSymbolChecker.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (85%) with CollectReferencesInScopeTreeBatch in
- * server/src/features/code_lens/CodeLensHandler.cpp. Candidate for unification in
- * server/src/features/common/FeatureSharedUtils.h.
  */
-template <typename Callback> inline void ForEachScopeReference(const analysis::Scope* rootScope, Callback&& callback)
+template <typename Callback>
+static inline void ForEachScopeReference(const analysis::Scope* rootScope, Callback&& callback)
 {
     if (!rootScope)
     {
@@ -1112,8 +1113,8 @@ template <typename Callback> inline void ForEachScopeReference(const analysis::S
  * @param[in] request Highlight request.
  * @param[in,out] collector Coordinate accumulator.
  */
-void CollectNamespaceDeclarations(const TargetDescriptor& target, const DocumentHighlightRequest& request,
-                                  HighlightRangeCollector& collector)
+static void CollectNamespaceDeclarations(const analysis::TargetDescriptor& target,
+                                         const DocumentHighlightRequest& request, HighlightRangeCollector& collector)
 {
     CollectDeclarationsByName(target.qualifiedName, request, collector);
 }
@@ -1124,8 +1125,8 @@ void CollectNamespaceDeclarations(const TargetDescriptor& target, const Document
  * @param[in] request Highlight request.
  * @return Vector of line range pairs.
  */
-std::vector<std::pair<uint32_t, uint32_t>> GetNamespaceSpans(const TargetDescriptor& target,
-                                                             const DocumentHighlightRequest& request)
+static std::vector<std::pair<uint32_t, uint32_t>> GetNamespaceSpans(const analysis::TargetDescriptor& target,
+                                                                    const DocumentHighlightRequest& request)
 {
     return analysis::CollectNamespaceAndContainerLineRanges(request.symbolTable, request.uri,
                                                             target.declaringNamespace);
@@ -1137,12 +1138,10 @@ std::vector<std::pair<uint32_t, uint32_t>> GetNamespaceSpans(const TargetDescrip
  * @param[in] request Highlight request.
  * @param[in] rootScope Root scope.
  * @param[in,out] collector Coordinate accumulator.
- * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with CollectGlobalHighlightRanges in
- * server/src/features/document_highlight/DocumentHighlightHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-void CollectNamespaceHighlightRanges(const TargetDescriptor& target, const DocumentHighlightRequest& request,
-                                     const analysis::Scope* rootScope, HighlightRangeCollector& collector)
+static void CollectNamespaceHighlightRanges(const analysis::TargetDescriptor& target,
+                                            const DocumentHighlightRequest& request, const analysis::Scope* rootScope,
+                                            HighlightRangeCollector& collector)
 {
     CollectNamespaceDeclarations(target, request, collector);
     auto nsRanges = GetNamespaceSpans(target, request);
@@ -1164,8 +1163,8 @@ void CollectNamespaceHighlightRanges(const TargetDescriptor& target, const Docum
  * @param[in] request Highlight request.
  * @param[in,out] collector Coordinate accumulator.
  */
-void CollectGlobalDeclarations(const TargetDescriptor& target, const DocumentHighlightRequest& request,
-                               HighlightRangeCollector& collector)
+static void CollectGlobalDeclarations(const analysis::TargetDescriptor& target, const DocumentHighlightRequest& request,
+                                      HighlightRangeCollector& collector)
 {
     CollectDeclarationsByName(target.name, request, collector);
 }
@@ -1176,12 +1175,10 @@ void CollectGlobalDeclarations(const TargetDescriptor& target, const DocumentHig
  * @param[in] request Highlight request.
  * @param[in] rootScope Root scope.
  * @param[in,out] collector Coordinate accumulator.
- * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with CollectNamespaceHighlightRanges in
- * server/src/features/document_highlight/DocumentHighlightHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-void CollectGlobalHighlightRanges(const TargetDescriptor& target, const DocumentHighlightRequest& request,
-                                  const analysis::Scope* rootScope, HighlightRangeCollector& collector)
+static void CollectGlobalHighlightRanges(const analysis::TargetDescriptor& target,
+                                         const DocumentHighlightRequest& request, const analysis::Scope* rootScope,
+                                         HighlightRangeCollector& collector)
 {
     CollectGlobalDeclarations(target, request, collector);
     ForEachScopeReference(rootScope,
@@ -1201,8 +1198,8 @@ void CollectGlobalHighlightRanges(const TargetDescriptor& target, const Document
  * @param[in] request Document highlight request.
  * @param[in,out] collector Coordinate accumulator.
  */
-void CollectEnumMemberDeclarations(const TargetDescriptor& target, const DocumentHighlightRequest& request,
-                                   HighlightRangeCollector& collector)
+static void CollectEnumMemberDeclarations(const analysis::TargetDescriptor& target,
+                                          const DocumentHighlightRequest& request, HighlightRangeCollector& collector)
 {
     CollectDeclarationsByName(target.qualifiedName, request, collector);
 }
@@ -1214,8 +1211,8 @@ void CollectEnumMemberDeclarations(const TargetDescriptor& target, const Documen
  * @param[in] request Document highlight request.
  * @return True if reference matches the qualified enum member.
  */
-bool IsEnumMemberHighlightMatch(const analysis::LocalReference& ref, const TargetDescriptor& target,
-                                const DocumentHighlightRequest& request)
+static bool IsEnumMemberHighlightMatch(const analysis::LocalReference& ref, const analysis::TargetDescriptor& target,
+                                       const DocumentHighlightRequest& request)
 {
     if (!ref.isScopedIdentifier || ref.qualifierStartByte >= ref.qualifierEndByte ||
         ref.qualifierEndByte > request.sourceCode.size())
@@ -1242,12 +1239,10 @@ bool IsEnumMemberHighlightMatch(const analysis::LocalReference& ref, const Targe
  * @param[in] request Document highlight request.
  * @param[in] rootScope Root scope.
  * @param[in,out] collector Coordinate accumulator.
- * @note [REFACTOR-CANDIDATE] Structural overlap (67%) with CollectClassMemberHighlightRanges in
- * server/src/features/document_highlight/DocumentHighlightHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-void CollectEnumMemberScopeReferences(const TargetDescriptor& target, const DocumentHighlightRequest& request,
-                                      const analysis::Scope* rootScope, HighlightRangeCollector& collector)
+static void CollectEnumMemberScopeReferences(const analysis::TargetDescriptor& target,
+                                             const DocumentHighlightRequest& request, const analysis::Scope* rootScope,
+                                             HighlightRangeCollector& collector)
 {
     if (!rootScope)
     {
@@ -1291,8 +1286,9 @@ void CollectEnumMemberScopeReferences(const TargetDescriptor& target, const Docu
  * @param[in] rootScope Root scope.
  * @param[in,out] collector Coordinate accumulator.
  */
-void CollectEnumMemberHighlightRanges(const TargetDescriptor& target, const DocumentHighlightRequest& request,
-                                      const analysis::Scope* rootScope, HighlightRangeCollector& collector)
+static void CollectEnumMemberHighlightRanges(const analysis::TargetDescriptor& target,
+                                             const DocumentHighlightRequest& request, const analysis::Scope* rootScope,
+                                             HighlightRangeCollector& collector)
 {
     CollectEnumMemberDeclarations(target, request, collector);
     CollectEnumMemberScopeReferences(target, request, rootScope, collector);
@@ -1305,22 +1301,22 @@ void CollectEnumMemberHighlightRanges(const TargetDescriptor& target, const Docu
  * @param[in] rootScope Root scope.
  * @param[in,out] collector Coordinate accumulator.
  */
-void DispatchTargetHighlights(const TargetDescriptor& target, const DocumentHighlightRequest& request,
-                              const analysis::Scope* rootScope, HighlightRangeCollector& collector)
+static void DispatchTargetHighlights(const analysis::TargetDescriptor& target, const DocumentHighlightRequest& request,
+                                     const analysis::Scope* rootScope, HighlightRangeCollector& collector)
 {
-    if (target.kind == TargetKind::Local)
+    if (target.kind == analysis::TargetKind::Local)
     {
         CollectLocalHighlightRanges(target, collector);
     }
-    else if (target.kind == TargetKind::ClassMember)
+    else if (target.kind == analysis::TargetKind::ClassMember)
     {
         CollectClassMemberHighlightRanges(target, request, rootScope, collector);
     }
-    else if (target.kind == TargetKind::NamespaceSymbol)
+    else if (target.kind == analysis::TargetKind::NamespaceSymbol)
     {
         CollectNamespaceHighlightRanges(target, request, rootScope, collector);
     }
-    else if (target.kind == TargetKind::EnumMember)
+    else if (target.kind == analysis::TargetKind::EnumMember)
     {
         CollectEnumMemberHighlightRanges(target, request, rootScope, collector);
     }
@@ -1336,8 +1332,8 @@ void DispatchTargetHighlights(const TargetDescriptor& target, const DocumentHigh
  * @param[in] request Document highlight request.
  * @return Sorted highlight results.
  */
-DocumentHighlightResult BuildSortedHighlights(const HighlightRangeCollector& collector,
-                                              const DocumentHighlightRequest& request)
+static DocumentHighlightResult BuildSortedHighlights(const HighlightRangeCollector& collector,
+                                                     const DocumentHighlightRequest& request)
 {
     DocumentHighlightResult results;
     results.reserve(collector.ranges.size());
@@ -1359,8 +1355,6 @@ DocumentHighlightResult BuildSortedHighlights(const HighlightRangeCollector& col
               });
     return results;
 }
-
-} // namespace
 
 std::optional<DocumentHighlightResult> GetDocumentHighlights(const DocumentHighlightRequest& request)
 {

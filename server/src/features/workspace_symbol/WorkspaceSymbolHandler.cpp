@@ -9,14 +9,12 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 /**
  * @brief Converts a string_view to a lowercase std::string.
  * @param str Input string view.
  * @return Lowercase copy of input.
  */
-inline std::string ToLower(std::string_view str)
+static inline std::string ToLower(std::string_view str)
 {
     std::string result;
     result.reserve(str.size());
@@ -32,11 +30,8 @@ inline std::string ToLower(std::string_view str)
  * @param type Internal SymbolType enum.
  * @param containerName Enclosing container name.
  * @return Equivalent LSP SymbolKind.
- * @note [REFACTOR-CANDIDATE] Structural overlap (80%) with MapSymbolTypeToKind in
- * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
- * server/src/features/common/FeatureSharedUtils.h.
  */
-inline lsp::SymbolKind ToSymbolKind(analysis::SymbolType type, const std::string& containerName)
+static inline lsp::SymbolKind ToSymbolKind(analysis::SymbolType type, const std::string& containerName)
 {
     switch (type)
     {
@@ -63,6 +58,8 @@ inline lsp::SymbolKind ToSymbolKind(analysis::SymbolType type, const std::string
     }
 }
 
+namespace workspace_symbol_handler_detail
+{
 /**
  * @brief Container for a scored search match candidate.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -72,7 +69,12 @@ struct ScoredSymbol
     int score = 0;
     lsp::SymbolInformation info;
 };
+} // namespace workspace_symbol_handler_detail
 
+using ScoredSymbol = workspace_symbol_handler_detail::ScoredSymbol;
+
+namespace workspace_symbol_handler_detail
+{
 /**
  * @brief Result of matching a symbol against a search query.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -82,6 +84,9 @@ struct MatchResult
     bool matched = false;
     int score = 0;
 };
+} // namespace workspace_symbol_handler_detail
+
+using MatchResult = workspace_symbol_handler_detail::MatchResult;
 
 /**
  * @brief Computes match ranking score between query and symbol.
@@ -90,7 +95,7 @@ struct MatchResult
  * @param sym Candidate symbol.
  * @return MatchResult indicating if matched and the ranking score.
  */
-MatchResult MatchSymbol(std::string_view queryLower, std::string_view queryOriginal, const analysis::Symbol& sym)
+static MatchResult MatchSymbol(std::string_view queryLower, std::string_view queryOriginal, const analysis::Symbol& sym)
 {
     if (queryLower.empty())
     {
@@ -142,7 +147,6 @@ MatchResult MatchSymbol(std::string_view queryLower, std::string_view queryOrigi
 
     return {false, 0};
 }
-} // namespace
 
 std::optional<WorkspaceSymbolResult> GetWorkspaceSymbols(const WorkspaceSymbolRequest& request)
 {

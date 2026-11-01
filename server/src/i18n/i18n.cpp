@@ -5,8 +5,6 @@
 
 namespace angel_lsp::i18n
 {
-namespace
-{
 /**
  * @brief Reduces a locale tag to its lowercased primary language subtag.
  *
@@ -16,7 +14,7 @@ namespace
  * the whole tag meant every one of those fell through to English, so a Spanish user got
  * Spanish only by asking for exactly "es".
  */
-std::string PrimaryLanguageSubtag(const std::string& locale)
+static std::string PrimaryLanguageSubtag(const std::string& locale)
 {
     std::string language;
     for (const char c : locale)
@@ -29,7 +27,6 @@ std::string PrimaryLanguageSubtag(const std::string& locale)
     }
     return language;
 }
-} // namespace
 
 // ---------------------------------------------------------------------------------
 // Six of the codes below are deliberately never emitted. They are kept because each names a
@@ -104,15 +101,13 @@ std::string PrimaryLanguageSubtag(const std::string& locale)
 // scripts/check-diagnostic-codes.py holds this list too and fails the build when the two drift
 // apart, in either direction. It is what found the two entries corrected above.
 // ---------------------------------------------------------------------------------
-namespace
-{
 using MessageMap = ankerl::unordered_dense::map<std::string, std::string, I18nStringHash, std::equal_to<>>;
 
 /**
  * @brief Populates English diagnostic messages (batch 1).
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateEnglishMessages1(MessageMap& m_messages)
+static void PopulateEnglishMessages1(MessageMap& m_messages)
 {
     m_messages["diag-fallback-unknown-code"] = "[{}] Diagnostic code: {}";
     m_messages["as-err-duplicate-symbol"] = "Duplicate symbol declaration '{}' in the same scope.";
@@ -152,7 +147,7 @@ void PopulateEnglishMessages1(MessageMap& m_messages)
  * @brief Populates English diagnostic messages (batch 2).
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateEnglishMessages2(MessageMap& m_messages)
+static void PopulateEnglishMessages2(MessageMap& m_messages)
 {
     m_messages["as-err-unknown-directive"] =
         "'#{}' is not a directive. CScriptBuilder leaves anything it does not recognise in the source, and the "
@@ -200,7 +195,7 @@ void PopulateEnglishMessages2(MessageMap& m_messages)
  * @brief Populates English diagnostic messages (batch 3).
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateEnglishMessages3(MessageMap& m_messages)
+static void PopulateEnglishMessages3(MessageMap& m_messages)
 {
     m_messages["as-err-class-member-const"] = "Class member '{}' cannot be declared as const.";
     m_messages["as-err-delete-with-body"] = "Deleted function '{}' cannot have a body.";
@@ -244,7 +239,7 @@ void PopulateEnglishMessages3(MessageMap& m_messages)
  * @brief Populates English diagnostic messages (batch 4).
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateEnglishMessages4(MessageMap& m_messages)
+static void PopulateEnglishMessages4(MessageMap& m_messages)
 {
     m_messages["as-err-external-not-found"] = "External shared entity '{}' not found.";
     m_messages["as-err-shared-not-allowed-on-entity"] = "Variables cannot be declared as 'shared' ('{}').";
@@ -280,7 +275,7 @@ void PopulateEnglishMessages4(MessageMap& m_messages)
  * @brief Populates English diagnostic messages (batch 5).
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateEnglishMessages5(MessageMap& m_messages)
+static void PopulateEnglishMessages5(MessageMap& m_messages)
 {
     m_messages["as-err-const-assignment"] = "Expression is not an l-value: '{}' is declared const.";
     m_messages["as-err-const-method-required"] =
@@ -339,7 +334,7 @@ void PopulateEnglishMessages5(MessageMap& m_messages)
  * @brief Populates English diagnostic messages (batch 6).
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateEnglishMessages6(MessageMap& m_messages)
+static void PopulateEnglishMessages6(MessageMap& m_messages)
 {
     m_messages["as-hint-funcdef-missing"] = "'{}' is a function, not a type. A function handle needs a funcdef naming "
                                             "its signature; the compiler reports such a name as not being a data type.";
@@ -397,7 +392,7 @@ void PopulateEnglishMessages6(MessageMap& m_messages)
  * @brief Populates English diagnostic messages (batch 7).
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateEnglishMessages7(MessageMap& m_messages)
+static void PopulateEnglishMessages7(MessageMap& m_messages)
 {
     m_messages["as-err-auto-requires-initializer"] = "'auto' variable requires an initializer.";
     m_messages["as-err-cannot-infer-void"] = "Cannot deduce 'auto' type from expression of type 'void'.";
@@ -451,7 +446,7 @@ void PopulateEnglishMessages7(MessageMap& m_messages)
  * @brief Populates English code action and quick-fix messages.
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateEnglishActionMessages(MessageMap& m_messages)
+static void PopulateEnglishActionMessages(MessageMap& m_messages)
 {
     m_messages["action-disable-in-workspace-settings"] = "Disable in workspace settings (angelscript.{})";
     m_messages["action-disable-in-settings"] = "Disable in settings";
@@ -494,7 +489,7 @@ void PopulateEnglishActionMessages(MessageMap& m_messages)
  * @brief Populates English hover and documentation messages.
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateEnglishHoverMessages(MessageMap& m_messages)
+static void PopulateEnglishHoverMessages(MessageMap& m_messages)
 {
     m_messages["hover-more-overloads-singular"] = "1 more overload";
     m_messages["hover-more-overloads-plural"] = "{} more overloads";
@@ -535,7 +530,7 @@ void PopulateEnglishHoverMessages(MessageMap& m_messages)
  * @brief Populates all English diagnostic messages.
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateEnglishMessages(MessageMap& m_messages)
+static void PopulateEnglishMessages(MessageMap& m_messages)
 {
     PopulateEnglishMessages1(m_messages);
     PopulateEnglishMessages2(m_messages);
@@ -552,7 +547,7 @@ void PopulateEnglishMessages(MessageMap& m_messages)
  * @brief Populates Spanish diagnostic messages (batch 1).
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateSpanishMessages1(MessageMap& m_messages)
+static void PopulateSpanishMessages1(MessageMap& m_messages)
 {
     m_messages["as-err-duplicate-symbol"] = "Redeclaración de símbolo '{}' en el mismo ámbito.";
     m_messages["as-err-mixin-final"] = "Un mixin ('{}') no puede ser declarado como 'final'.";
@@ -593,7 +588,7 @@ void PopulateSpanishMessages1(MessageMap& m_messages)
  * @brief Populates Spanish diagnostic messages (batch 2).
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateSpanishMessages2(MessageMap& m_messages)
+static void PopulateSpanishMessages2(MessageMap& m_messages)
 {
     m_messages["as-err-unknown-directive"] =
         "'#{}' no es una directiva. CScriptBuilder deja en el código todo lo que no reconoce, y entonces el "
@@ -642,7 +637,7 @@ void PopulateSpanishMessages2(MessageMap& m_messages)
  * @brief Populates Spanish diagnostic messages (batch 3).
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateSpanishMessages3(MessageMap& m_messages)
+static void PopulateSpanishMessages3(MessageMap& m_messages)
 {
     m_messages["as-err-class-member-const"] = "El miembro de clase '{}' no puede ser declarado como 'const'.";
     m_messages["as-err-delete-with-body"] = "La función eliminada con '= delete' ('{}') no puede tener un cuerpo.";
@@ -689,7 +684,7 @@ void PopulateSpanishMessages3(MessageMap& m_messages)
  * @brief Populates Spanish diagnostic messages (batch 4).
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateSpanishMessages4(MessageMap& m_messages)
+static void PopulateSpanishMessages4(MessageMap& m_messages)
 {
     m_messages["as-err-external-not-found"] = "Entidad compartida externa ('{}') no encontrada.";
     m_messages["as-err-shared-not-allowed-on-entity"] = "Las variables no pueden declararse como 'shared' ('{}').";
@@ -730,7 +725,7 @@ void PopulateSpanishMessages4(MessageMap& m_messages)
  * @brief Populates Spanish diagnostic messages (batch 5).
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateSpanishMessages5(MessageMap& m_messages)
+static void PopulateSpanishMessages5(MessageMap& m_messages)
 {
     m_messages["as-err-const-assignment"] = "La expresión no es un l-value: '{}' está declarado const.";
     m_messages["as-err-const-method-required"] = "No hay firmas que coincidan con '{}::{}() const'. El objeto es "
@@ -791,7 +786,7 @@ void PopulateSpanishMessages5(MessageMap& m_messages)
  * @brief Populates Spanish diagnostic messages (batch 6).
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateSpanishMessages6(MessageMap& m_messages)
+static void PopulateSpanishMessages6(MessageMap& m_messages)
 {
     m_messages["as-hint-funcdef-missing"] =
         "'{}' es una función, no un tipo. Un handle de función necesita un funcdef que nombre su firma; el "
@@ -854,7 +849,7 @@ void PopulateSpanishMessages6(MessageMap& m_messages)
  * @brief Populates Spanish diagnostic messages (batch 7).
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateSpanishMessages7(MessageMap& m_messages)
+static void PopulateSpanishMessages7(MessageMap& m_messages)
 {
     m_messages["as-err-auto-requires-initializer"] = "La variable 'auto' requiere un inicializador.";
     m_messages["as-err-cannot-infer-void"] = "No se puede deducir el tipo 'auto' de una expresión de tipo 'void'.";
@@ -911,7 +906,7 @@ void PopulateSpanishMessages7(MessageMap& m_messages)
  * @brief Populates Spanish code action and quick-fix messages.
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateSpanishActionMessages(MessageMap& m_messages)
+static void PopulateSpanishActionMessages(MessageMap& m_messages)
 {
     m_messages["action-disable-in-workspace-settings"] =
         "Deshabilitar en la configuración del espacio de trabajo (angelscript.{})";
@@ -956,7 +951,7 @@ void PopulateSpanishActionMessages(MessageMap& m_messages)
  * @brief Populates Spanish hover and documentation messages.
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateSpanishHoverMessages(MessageMap& m_messages)
+static void PopulateSpanishHoverMessages(MessageMap& m_messages)
 {
     m_messages["hover-more-overloads-singular"] = "1 sobrecarga más";
     m_messages["hover-more-overloads-plural"] = "{} sobrecargas más";
@@ -997,7 +992,7 @@ void PopulateSpanishHoverMessages(MessageMap& m_messages)
  * @brief Populates all Spanish diagnostic messages.
  * @param[out] m_messages Target message map to populate.
  */
-void PopulateSpanishMessages(MessageMap& m_messages)
+static void PopulateSpanishMessages(MessageMap& m_messages)
 {
     PopulateSpanishMessages1(m_messages);
     PopulateSpanishMessages2(m_messages);
@@ -1010,6 +1005,8 @@ void PopulateSpanishMessages(MessageMap& m_messages)
     PopulateSpanishHoverMessages(m_messages);
 }
 
+namespace i18n_detail
+{
 /**
  * @brief Entry mapping a primary language subtag to its localization overlay populator.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1019,11 +1016,13 @@ struct LocaleOverlayEntry
     std::string_view languageSubtag;
     void (*populate)(MessageMap&);
 };
+} // namespace i18n_detail
+
+using LocaleOverlayEntry = i18n_detail::LocaleOverlayEntry;
 
 constexpr std::array<LocaleOverlayEntry, 1> kLocaleOverlays = {{
     {"es", &PopulateSpanishMessages},
 }};
-} // namespace
 
 I18n::I18n(const std::string& localeTag) : m_locale(PrimaryLanguageSubtag(localeTag))
 {

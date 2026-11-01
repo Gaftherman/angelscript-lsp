@@ -8,9 +8,7 @@
 
 namespace angel_lsp::config
 {
-namespace
-{
-std::string ToLower(std::string_view str)
+static std::string ToLower(std::string_view str)
 {
     std::string result;
     result.reserve(str.size());
@@ -21,7 +19,7 @@ std::string ToLower(std::string_view str)
     return result;
 }
 
-bool ParseBoolValue(std::string_view val, bool defaultIfEmpty = true)
+static bool ParseBoolValue(std::string_view val, bool defaultIfEmpty = true)
 {
     if (val.empty())
     {
@@ -39,7 +37,7 @@ bool ParseBoolValue(std::string_view val, bool defaultIfEmpty = true)
     return defaultIfEmpty;
 }
 
-bool IsBoolLiteral(std::string_view val)
+static bool IsBoolLiteral(std::string_view val)
 {
     std::string lower = ToLower(val);
     return lower == "true" || lower == "1" || lower == "yes" || lower == "on" || lower == "false" || lower == "0" ||
@@ -50,7 +48,7 @@ bool IsBoolLiteral(std::string_view val)
  *  @note Validated here rather than at use: an unrecognised name silently dropped at
  *        startup is far easier to diagnose than one that reaches the analyzer and picks a
  *        severity by accident. */
-bool IsDiagnosticSeverityName(std::string_view val)
+static bool IsDiagnosticSeverityName(std::string_view val)
 {
     return val == "error" || val == "warning" || val == "information" || val == "hint";
 }
@@ -76,7 +74,7 @@ bool IsDiagnosticSeverityName(std::string_view val)
  *
  * @return False for an unknown name or an unparsable value, so a typo is not silently on.
  */
-bool ApplyPreprocessorFeature(ServerConfig& config, std::string_view name, std::string_view raw)
+static bool ApplyPreprocessorFeature(ServerConfig& config, std::string_view name, std::string_view raw)
 {
     if (name == "pragmaMode")
     {
@@ -128,7 +126,7 @@ bool ApplyPreprocessorFeature(ServerConfig& config, std::string_view name, std::
     return false;
 }
 
-bool ParseDigitInRange(std::string_view raw, char minDigit, char maxDigit, int& out)
+static bool ParseDigitInRange(std::string_view raw, char minDigit, char maxDigit, int& out)
 {
     if (raw.size() == 1 && raw[0] >= minDigit && raw[0] <= maxDigit)
     {
@@ -138,7 +136,7 @@ bool ParseDigitInRange(std::string_view raw, char minDigit, char maxDigit, int& 
     return false;
 }
 
-bool ApplyNumericEngineProperty(EngineProperties& engine, std::string_view name, std::string_view raw)
+static bool ApplyNumericEngineProperty(EngineProperties& engine, std::string_view name, std::string_view raw)
 {
     if (name == "propertyAccessorMode")
     {
@@ -163,6 +161,8 @@ bool ApplyNumericEngineProperty(EngineProperties& engine, std::string_view name,
     return false;
 }
 
+namespace server_config_detail
+{
 /**
  * @brief Represents Bool engine prop.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -174,6 +174,9 @@ struct BoolEngineProp
     std::string_view alias;
     PropMember member;
 };
+} // namespace server_config_detail
+
+using BoolEngineProp = server_config_detail::BoolEngineProp;
 
 static constexpr BoolEngineProp kBoolEngineProps[] = {
     {"allowUnsafeReferences", "allow-unsafe-references", &EngineProperties::allowUnsafeReferences},
@@ -190,7 +193,7 @@ static constexpr BoolEngineProp kBoolEngineProps[] = {
     {"ignoreDuplicateSharedIntf", "ignore-duplicate-shared-intf", &EngineProperties::ignoreDuplicateSharedIntf},
 };
 
-bool ApplyBoolEngineProperty(EngineProperties& engine, std::string_view name, std::string_view raw)
+static bool ApplyBoolEngineProperty(EngineProperties& engine, std::string_view name, std::string_view raw)
 {
     if (!IsBoolLiteral(raw))
     {
@@ -215,7 +218,7 @@ bool ApplyBoolEngineProperty(EngineProperties& engine, std::string_view name, st
  * @param[in] raw Text value to parse and assign.
  * @return False when the name is unrecognised or value is invalid.
  */
-bool ApplyEngineProperty(EngineProperties& engine, std::string_view name, std::string_view raw)
+static bool ApplyEngineProperty(EngineProperties& engine, std::string_view name, std::string_view raw)
 {
     if (ApplyNumericEngineProperty(engine, name, raw))
     {
@@ -223,7 +226,6 @@ bool ApplyEngineProperty(EngineProperties& engine, std::string_view name, std::s
     }
     return ApplyBoolEngineProperty(engine, name, raw);
 }
-} // namespace
 
 void PrintFeatureFlagsHelp()
 {
@@ -364,7 +366,7 @@ void PrintVersion()
     std::cout << "AngelScript Language Server (AngelLSP) version " ANGELLSP_VERSION "\n";
 }
 
-namespace
+namespace server_config_detail
 {
 /**
  * @brief Represents Arg parse context.
@@ -411,8 +413,11 @@ struct ArgParseContext
         return defaultVal;
     }
 };
+} // namespace server_config_detail
 
-bool TryParseHelpOrVersion(ServerConfig& config, const ArgParseContext& ctx)
+using ArgParseContext = server_config_detail::ArgParseContext;
+
+static bool TryParseHelpOrVersion(ServerConfig& config, const ArgParseContext& ctx)
 {
     if (ctx.key == "--help" || ctx.key == "-h")
     {
@@ -429,6 +434,8 @@ bool TryParseHelpOrVersion(ServerConfig& config, const ArgParseContext& ctx)
     return false;
 }
 
+namespace server_config_detail
+{
 /**
  * @brief Represents Feature flag mapping.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -442,6 +449,9 @@ struct FeatureFlagMapping
     std::string_view disableAlias;
     FeatureMember member;
 };
+} // namespace server_config_detail
+
+using FeatureFlagMapping = server_config_detail::FeatureFlagMapping;
 
 static constexpr FeatureFlagMapping kFeatureFlags[] = {
     {"--enable-hover", "", "--disable-hover", "", &FeatureFlags::enableHover},
@@ -541,7 +551,7 @@ static constexpr FeatureFlagMapping kFeatureFlags[] = {
      &FeatureFlags::enableMetadata},
 };
 
-bool TryParseInlayHintOmittedDefaultsFlag(ServerConfig& config, ArgParseContext& ctx)
+static bool TryParseInlayHintOmittedDefaultsFlag(ServerConfig& config, ArgParseContext& ctx)
 {
     if (ctx.key == "--inlay-hints-omitted-defaults" || ctx.key == "--inlay-hints-omitted-default-arguments")
     {
@@ -566,7 +576,7 @@ bool TryParseInlayHintOmittedDefaultsFlag(ServerConfig& config, ArgParseContext&
     return false;
 }
 
-bool TryParseInlayHintFlag(ServerConfig& config, ArgParseContext& ctx)
+static bool TryParseInlayHintFlag(ServerConfig& config, ArgParseContext& ctx)
 {
     if (TryParseInlayHintOmittedDefaultsFlag(config, ctx))
     {
@@ -617,7 +627,7 @@ bool TryParseInlayHintFlag(ServerConfig& config, ArgParseContext& ctx)
     return false;
 }
 
-bool TryParseFeatureFlag(ServerConfig& config, ArgParseContext& ctx)
+static bool TryParseFeatureFlag(ServerConfig& config, ArgParseContext& ctx)
 {
     for (const auto& entry : kFeatureFlags)
     {
@@ -635,6 +645,8 @@ bool TryParseFeatureFlag(ServerConfig& config, ArgParseContext& ctx)
     return TryParseInlayHintFlag(config, ctx);
 }
 
+namespace server_config_detail
+{
 /**
  * @brief Represents Diagnostic flag mapping.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -646,6 +658,9 @@ struct DiagnosticFlagMapping
     std::string_view disableKey;
     DiagMember member;
 };
+} // namespace server_config_detail
+
+using DiagnosticFlagMapping = server_config_detail::DiagnosticFlagMapping;
 
 static constexpr DiagnosticFlagMapping kDiagFlags[] = {
     {"--report-unknown-types", "--no-report-unknown-types", &DiagnosticsConfig::reportUnknownTypes},
@@ -708,7 +723,7 @@ static bool TryParseUnusedFunctionExclusion(ServerConfig& config, ArgParseContex
     return false;
 }
 
-void MarkExplicitDiagnosticFlag(DiagnosticsConfig& diag, DiagnosticFlagMapping::DiagMember member)
+static void MarkExplicitDiagnosticFlag(DiagnosticsConfig& diag, DiagnosticFlagMapping::DiagMember member)
 {
     if (member == &DiagnosticsConfig::reportUnusedFunctions)
     {
@@ -728,7 +743,7 @@ void MarkExplicitDiagnosticFlag(DiagnosticsConfig& diag, DiagnosticFlagMapping::
     }
 }
 
-bool TryParseTableDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
+static bool TryParseTableDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
 {
     for (const auto& entry : kDiagFlags)
     {
@@ -749,7 +764,7 @@ bool TryParseTableDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
     return false;
 }
 
-bool TryParseDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
+static bool TryParseDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
 {
     if (TryParseTableDiagnosticFlag(config, ctx))
     {
@@ -782,7 +797,7 @@ bool TryParseDiagnosticFlag(ServerConfig& config, ArgParseContext& ctx)
     return TryParseUnusedFunctionExclusion(config, ctx);
 }
 
-bool TryParseModuleOption(ServerConfig& config, ArgParseContext& ctx)
+static bool TryParseModuleOption(ServerConfig& config, ArgParseContext& ctx)
 {
     if (ctx.key == "--module")
     {
@@ -827,7 +842,7 @@ bool TryParseModuleOption(ServerConfig& config, ArgParseContext& ctx)
     return false;
 }
 
-bool TryParseStubOptions(ServerConfig& config, ArgParseContext& ctx)
+static bool TryParseStubOptions(ServerConfig& config, ArgParseContext& ctx)
 {
     if (ctx.key == "--predefined-active")
     {
@@ -850,7 +865,7 @@ bool TryParseStubOptions(ServerConfig& config, ArgParseContext& ctx)
     return false;
 }
 
-bool TryParsePredefinedOptions(ServerConfig& config, ArgParseContext& ctx)
+static bool TryParsePredefinedOptions(ServerConfig& config, ArgParseContext& ctx)
 {
     if (ctx.key == "--predefined-ext" || ctx.key == "--predefined-extension")
     {
@@ -882,7 +897,7 @@ bool TryParsePredefinedOptions(ServerConfig& config, ArgParseContext& ctx)
     return TryParseStubOptions(config, ctx);
 }
 
-bool TryParseModuleIncludeOptions(ServerConfig& config, ArgParseContext& ctx)
+static bool TryParseModuleIncludeOptions(ServerConfig& config, ArgParseContext& ctx)
 {
     if (ctx.key == "--force-include" || ctx.key == "--force-include-file")
     {
@@ -905,7 +920,7 @@ bool TryParseModuleIncludeOptions(ServerConfig& config, ArgParseContext& ctx)
     return false;
 }
 
-bool TryParseDirectoryOptions(ServerConfig& config, ArgParseContext& ctx, bool& sawExclude)
+static bool TryParseDirectoryOptions(ServerConfig& config, ArgParseContext& ctx, bool& sawExclude)
 {
     if (ctx.key == "--exclude")
     {
@@ -942,7 +957,7 @@ bool TryParseDirectoryOptions(ServerConfig& config, ArgParseContext& ctx, bool& 
     return false;
 }
 
-bool TryParsePathAndLocaleOptions(ServerConfig& config, ArgParseContext& ctx)
+static bool TryParsePathAndLocaleOptions(ServerConfig& config, ArgParseContext& ctx)
 {
     if (ctx.key == "--locale")
     {
@@ -993,7 +1008,7 @@ bool TryParsePathAndLocaleOptions(ServerConfig& config, ArgParseContext& ctx)
     return false;
 }
 
-bool TryParseFormattingOptions(ServerConfig& config, ArgParseContext& ctx)
+static bool TryParseFormattingOptions(ServerConfig& config, ArgParseContext& ctx)
 {
     if (ctx.key == "--format-brace-style" || ctx.key == "--brace-style")
     {
@@ -1031,7 +1046,7 @@ bool TryParseFormattingOptions(ServerConfig& config, ArgParseContext& ctx)
     return false;
 }
 
-bool TryParseToolOptions(ServerConfig& config, ArgParseContext& ctx)
+static bool TryParseToolOptions(ServerConfig& config, ArgParseContext& ctx)
 {
     if (TryParseFormattingOptions(config, ctx))
     {
@@ -1063,7 +1078,7 @@ bool TryParseToolOptions(ServerConfig& config, ArgParseContext& ctx)
     return false;
 }
 
-bool TryParseDiagnosticSeverity(ServerConfig& config, ArgParseContext& ctx)
+static bool TryParseDiagnosticSeverity(ServerConfig& config, ArgParseContext& ctx)
 {
     if (ctx.key != "--diagnostic-severity" && ctx.key != "--severity")
     {
@@ -1086,6 +1101,8 @@ bool TryParseDiagnosticSeverity(ServerConfig& config, ArgParseContext& ctx)
     return true;
 }
 
+namespace server_config_detail
+{
 /**
  * @brief Represents Engine bool flag.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1097,6 +1114,9 @@ struct EngineBoolFlag
     std::string_view disableFlag;
     FlagMember member;
 };
+} // namespace server_config_detail
+
+using EngineBoolFlag = server_config_detail::EngineBoolFlag;
 
 static constexpr EngineBoolFlag kEngineBoolFlags[] = {
     {"--require-enum-scope", "--no-require-enum-scope", &EngineProperties::requireEnumScope},
@@ -1107,7 +1127,7 @@ static constexpr EngineBoolFlag kEngineBoolFlags[] = {
      &EngineProperties::ignoreDuplicateSharedIntf},
 };
 
-bool TryParseEngineFlags(ServerConfig& config, ArgParseContext& ctx)
+static bool TryParseEngineFlags(ServerConfig& config, ArgParseContext& ctx)
 {
     for (const auto& entry : kEngineBoolFlags)
     {
@@ -1135,7 +1155,7 @@ bool TryParseEngineFlags(ServerConfig& config, ArgParseContext& ctx)
     return false;
 }
 
-bool TryParseEnginePropertiesAndPreproc(ServerConfig& config, ArgParseContext& ctx)
+static bool TryParseEnginePropertiesAndPreproc(ServerConfig& config, ArgParseContext& ctx)
 {
     if (ctx.key == "--engine-property" || ctx.key == "--engine-prop")
     {
@@ -1170,20 +1190,19 @@ bool TryParseEnginePropertiesAndPreproc(ServerConfig& config, ArgParseContext& c
     return false;
 }
 
-bool TryParseArg(ServerConfig& config, ArgParseContext& ctx)
+static bool TryParseArg(ServerConfig& config, ArgParseContext& ctx)
 {
     return TryParseHelpOrVersion(config, ctx) || TryParseFeatureFlag(config, ctx) ||
            TryParseDiagnosticFlag(config, ctx) || TryParseModuleOption(config, ctx) ||
            TryParsePredefinedOptions(config, ctx) || TryParseModuleIncludeOptions(config, ctx);
 }
 
-bool TryParseArgExtended(ServerConfig& config, ArgParseContext& ctx, bool& sawExclude)
+static bool TryParseArgExtended(ServerConfig& config, ArgParseContext& ctx, bool& sawExclude)
 {
     return TryParsePathAndLocaleOptions(config, ctx) || TryParseDirectoryOptions(config, ctx, sawExclude) ||
            TryParseToolOptions(config, ctx) || TryParseDiagnosticSeverity(config, ctx) ||
            TryParseEngineFlags(config, ctx) || TryParseEnginePropertiesAndPreproc(config, ctx);
 }
-} // namespace
 
 ServerConfig FromArgs(int argc, char** argv)
 {
@@ -1229,16 +1248,13 @@ ServerConfig FromArgs(int argc, char** argv)
     return config;
 }
 
-namespace
-{
-template <typename T> void AssignIfPresent(const std::optional<T>& opt, T& target)
+template <typename T> static void AssignIfPresent(const std::optional<T>& opt, T& target)
 {
     if (opt.has_value())
     {
         target = *opt;
     }
 }
-} // namespace
 
 void ApplyEngineProperties(const NativeEngineProperties& props, EngineProperties& engine)
 {

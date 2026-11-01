@@ -1,4 +1,4 @@
-﻿#include "analysis/NamespaceChecker.h"
+#include "analysis/NamespaceChecker.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
 #include "parser/ASTUtils.h"
@@ -11,15 +11,13 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
 /**
  * @brief Whether a node sits inside a `mixin class` body.
  *
  * A mixin is compiled into the class that includes it, so an unqualified name in its body
  * may name a member of a class this file has never seen. See the note at the caller.
  */
-bool IsInsideMixinBody(TSNode node)
+static bool IsInsideMixinBody(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode mixinNode = parser::FindAncestorWithSymbol(parser::GetParent(node), gs.symMixinDeclaration);
@@ -28,7 +26,8 @@ bool IsInsideMixinBody(TSNode node)
 /**
  * @brief Checks if a scoped identifier refers to a known namespace or type prefix.
  */
-void CheckScopedIdentifier(TSNode node, std::string_view sourceCode, const SymbolTable& table, DiagnosticContext& ctx)
+static void CheckScopedIdentifier(TSNode node, std::string_view sourceCode, const SymbolTable& table,
+                                  DiagnosticContext& ctx)
 {
     const uint32_t childCount = ts_node_child_count(node);
     if (childCount < 3)
@@ -40,7 +39,7 @@ void CheckScopedIdentifier(TSNode node, std::string_view sourceCode, const Symbo
     {
         return;
     }
-    std::string prefix = GetNodeText(firstChild, sourceCode);
+    std::string prefix = parser::GetNodeText(firstChild, sourceCode);
     while (!prefix.empty() && isspace(static_cast<unsigned char>(prefix.front())))
     {
         prefix.erase(prefix.begin());
@@ -62,21 +61,21 @@ void CheckScopedIdentifier(TSNode node, std::string_view sourceCode, const Symbo
 /**
  * @brief Extracts and trims the callee name from a call expression node.
  */
-std::string_view ExtractCalleeName(TSNode node, std::string_view sourceCode)
+static std::string_view ExtractCalleeName(TSNode node, std::string_view sourceCode)
 {
     TSNode funcNode = parser::GetCallCallee(node);
     if (ts_node_is_null(funcNode))
     {
         return {};
     }
-    return Trim(GetNodeTextView(funcNode, sourceCode));
+    return parser::Trim(parser::GetNodeTextView(funcNode, sourceCode));
 }
 
 /**
  * @brief Checks if a callee name is known in scope, registered, or excused by context.
  */
-bool IsKnownCallee(std::string_view name, TSNode node, const NamespaceCheckRequest& request,
-                   const DiagnosticContext& ctx)
+static bool IsKnownCallee(std::string_view name, TSNode node, const NamespaceCheckRequest& request,
+                          const DiagnosticContext& ctx)
 {
     if (name == "super")
     {
@@ -145,7 +144,7 @@ static bool IsKnownDirectGlobalCallee(std::string_view identView, const Diagnost
 /**
  * @brief Checks if an unqualified function call resolves to an in-scope symbol.
  */
-void CheckCallExpression(TSNode node, const NamespaceCheckRequest& request, DiagnosticContext& ctx)
+static void CheckCallExpression(TSNode node, const NamespaceCheckRequest& request, DiagnosticContext& ctx)
 {
     std::string_view calleeName = ExtractCalleeName(node, request.sourceCode);
     if (calleeName.empty() || calleeName.find('.') != std::string_view::npos)
@@ -191,9 +190,9 @@ void CheckCallExpression(TSNode node, const NamespaceCheckRequest& request, Diag
 /**
  * @brief Checks if an import declaration mistakenly specifies a body block.
  */
-void CheckImportBody(TSNode node, std::string_view sourceCode, DiagnosticContext& ctx)
+static void CheckImportBody(TSNode node, std::string_view sourceCode, DiagnosticContext& ctx)
 {
-    std::string nodeText = GetNodeText(node, sourceCode);
+    std::string nodeText = parser::GetNodeText(node, sourceCode);
     size_t importPos = nodeText.find("import ");
     if (importPos == std::string::npos)
     {
@@ -212,7 +211,7 @@ void CheckImportBody(TSNode node, std::string_view sourceCode, DiagnosticContext
 /**
  * @brief Dispatches node inspection to category-specific checks.
  */
-void ProcessNamespaceNode(TSNode node, const NamespaceCheckRequest& request, DiagnosticContext& ctx)
+static void ProcessNamespaceNode(TSNode node, const NamespaceCheckRequest& request, DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol sym = ts_node_symbol(node);
@@ -230,7 +229,7 @@ void ProcessNamespaceNode(TSNode node, const NamespaceCheckRequest& request, Dia
     }
 }
 
-void CheckFromNodeIndex(const NamespaceCheckRequest& request, DiagnosticContext& ctx)
+static void CheckFromNodeIndex(const NamespaceCheckRequest& request, DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     request.nodeIndex->ForEachNodeOrdered(
@@ -240,13 +239,11 @@ void CheckFromNodeIndex(const NamespaceCheckRequest& request, DiagnosticContext&
 
 /**
  * @brief Check from ast traversal.
- * @param[in] root Parameter root.
- * @param[in] request Parameter request.
- * @param[in,out] ctx Parameter ctx.
- * @note [REFACTOR-CANDIDATE] Structural overlap (93%) with DispatchTreeWalkInitializerLists in
- * server/src/analysis/InitializerListChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] root Root AST node of the document or tree.
+ * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
+ * @param[in,out] ctx Diagnostic collection and analysis context.
  */
-void CheckFromASTTraversal(TSNode root, const NamespaceCheckRequest& request, DiagnosticContext& ctx)
+static void CheckFromASTTraversal(TSNode root, const NamespaceCheckRequest& request, DiagnosticContext& ctx)
 {
     if (ts_node_is_null(root))
     {
@@ -279,7 +276,6 @@ void CheckFromASTTraversal(TSNode root, const NamespaceCheckRequest& request, Di
     }
     ts_tree_cursor_delete(&cursor);
 }
-} // namespace
 
 void CheckNamespacesAndScopes(const NamespaceCheckRequest& request, DiagnosticContext& ctx)
 {

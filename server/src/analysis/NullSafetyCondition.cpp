@@ -7,7 +7,7 @@
 
 namespace angel_lsp::analysis
 {
-namespace
+namespace null_safety_condition_detail
 {
 /**
  * @brief Represents Assertion sink.
@@ -18,7 +18,12 @@ struct AssertionSink
     std::vector<NullAssertion>& positive;
     std::vector<NullAssertion>& negative;
 };
+} // namespace null_safety_condition_detail
 
+using AssertionSink = null_safety_condition_detail::AssertionSink;
+
+namespace null_safety_condition_detail
+{
 /**
  * @brief Represents Binary condition params.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -30,6 +35,9 @@ struct BinaryConditionParams
     TSSymbol opSym;
     std::string_view sourceCode;
 };
+} // namespace null_safety_condition_detail
+
+using BinaryConditionParams = null_safety_condition_detail::BinaryConditionParams;
 
 /**
  * @brief Extracts identifier name if one side is null initializer and the other is an identifier.
@@ -38,7 +46,7 @@ struct BinaryConditionParams
  * @param[in] sourceCode Document source code.
  * @return Extracted identifier name, or empty string if not a null comparison.
  */
-std::string ExtractNullComparedIdentifier(TSNode left, TSNode right, std::string_view sourceCode)
+static std::string ExtractNullComparedIdentifier(TSNode left, TSNode right, std::string_view sourceCode)
 {
     if (IsNullInitializer(right))
     {
@@ -57,7 +65,7 @@ std::string ExtractNullComparedIdentifier(TSNode left, TSNode right, std::string
  * @param[in,out] sink Positive and negative null assertion targets.
  * @param[in] isEquality True if comparison is '==' or 'is'; false if '!=' or '!is'.
  */
-void ApplyNullComparison(const std::string& name, AssertionSink& sink, bool isEquality)
+static void ApplyNullComparison(const std::string& name, AssertionSink& sink, bool isEquality)
 {
     if (name.empty())
     {
@@ -67,7 +75,7 @@ void ApplyNullComparison(const std::string& name, AssertionSink& sink, bool isEq
     sink.negative.push_back({name, isEquality ? Nullability::NonNull : Nullability::DefinitelyNull});
 }
 
-void ProcessLogicalBinary(const BinaryConditionParams& params, AssertionSink& sink)
+static void ProcessLogicalBinary(const BinaryConditionParams& params, AssertionSink& sink)
 {
     std::vector<NullAssertion> posL;
     std::vector<NullAssertion> negL;
@@ -103,7 +111,7 @@ void ProcessLogicalBinary(const BinaryConditionParams& params, AssertionSink& si
     }
 }
 
-void ProcessBinaryCondition(TSNode condition, std::string_view sourceCode, AssertionSink& sink)
+static void ProcessBinaryCondition(TSNode condition, std::string_view sourceCode, AssertionSink& sink)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode left = parser::GetChildByField(condition, gs.fieldLeft);
@@ -129,7 +137,7 @@ void ProcessBinaryCondition(TSNode condition, std::string_view sourceCode, Asser
     }
 }
 
-void ProcessUnaryCondition(TSNode condition, std::string_view sourceCode, AssertionSink& sink)
+static void ProcessUnaryCondition(TSNode condition, std::string_view sourceCode, AssertionSink& sink)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode opNode = parser::GetChildByField(condition, gs.fieldOperator);
@@ -149,7 +157,6 @@ void ProcessUnaryCondition(TSNode condition, std::string_view sourceCode, Assert
         sink.negative.insert(sink.negative.end(), innerPos.begin(), innerPos.end());
     }
 }
-} // namespace
 
 TSNode UnwrapNullExpression(TSNode expr)
 {
@@ -200,11 +207,11 @@ std::string GetIdentifierName(TSNode node, std::string_view sourceCode)
     const TSSymbol sym = ts_node_symbol(unwrapped);
     if (sym == gs.symIdentifier)
     {
-        return std::string(NodeText(unwrapped, sourceCode));
+        return std::string(parser::NodeText(unwrapped, sourceCode));
     }
     if (sym == gs.symScopedIdentifier)
     {
-        std::string text = NodeText(unwrapped, sourceCode);
+        std::string text = parser::NodeText(unwrapped, sourceCode);
         if (!utils::ContainsScopeSeparator(text))
         {
             return text;

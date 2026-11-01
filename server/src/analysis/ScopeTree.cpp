@@ -2,12 +2,10 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
 /**
  * @brief Checks if a scope is contained within a function or closure body.
  */
-bool IsFunctionLocal(const Scope* defScope)
+static bool IsFunctionLocal(const Scope* defScope)
 {
     size_t depth = 0;
     for (const Scope* s = defScope; s != nullptr; s = s->parent)
@@ -31,7 +29,7 @@ bool IsFunctionLocal(const Scope* defScope)
 /**
  * @brief Checks if capturing def across a closure boundary is forbidden.
  */
-bool IsForbiddenClosureCapture(const LocalDefinition& def, const Scope* defScope)
+static bool IsForbiddenClosureCapture(const LocalDefinition& def, const Scope* defScope)
 {
     if (def.kind == LocalDefinitionKind::Parameter)
     {
@@ -44,6 +42,8 @@ bool IsForbiddenClosureCapture(const LocalDefinition& def, const Scope* defScope
     return false;
 }
 
+namespace scope_tree_detail
+{
 /**
  * @brief Context data bundled for lexical definition resolution.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -54,6 +54,9 @@ struct ResolutionContext
     bool crossedClosure = false;
     bool respectClosureBarrier = false;
 };
+} // namespace scope_tree_detail
+
+using ResolutionContext = scope_tree_detail::ResolutionContext;
 
 /**
  * @brief Evaluates whether a local definition is visible at the current resolution point.
@@ -83,7 +86,6 @@ static bool IsVisibleDefinition(const LocalDefinition& def, const Scope* current
 
     return true;
 }
-} // namespace
 
 const LocalDefinition* ResolveInScopeAt(const Scope* scope, std::string_view name, uint32_t refByte,
                                         const Scope** owner, bool respectClosureBarrier)

@@ -10,16 +10,14 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 
 /**
  * @brief Traverses scopes with a worklist to collect referenced definitions.
  * @param[in] rootScope Root of scope subtree.
  * @param[out] used Destination set of referenced definitions.
  */
-void CollectUsedDefinitions(const analysis::Scope* rootScope,
-                            ankerl::unordered_dense::set<const analysis::LocalDefinition*>& used)
+static void CollectUsedDefinitions(const analysis::Scope* rootScope,
+                                   ankerl::unordered_dense::set<const analysis::LocalDefinition*>& used)
 {
     if (!rootScope)
     {
@@ -63,9 +61,9 @@ void CollectUsedDefinitions(const analysis::Scope* rootScope,
  * @param[in] used Set of referenced definitions.
  * @param[out] unused Destination vector for unused variable definitions.
  */
-void CollectUnusedVariables(const analysis::Scope* rootScope,
-                            const ankerl::unordered_dense::set<const analysis::LocalDefinition*>& used,
-                            std::vector<const analysis::LocalDefinition*>& unused)
+static void CollectUnusedVariables(const analysis::Scope* rootScope,
+                                   const ankerl::unordered_dense::set<const analysis::LocalDefinition*>& used,
+                                   std::vector<const analysis::LocalDefinition*>& unused)
 {
     if (!rootScope)
     {
@@ -111,7 +109,7 @@ void CollectUnusedVariables(const analysis::Scope* rootScope,
  * @param[in] sourceCode Source text.
  * @return TextEdit deleting the line range.
  */
-lsp::TextEdit BuildRemoveSingleDeclaratorLine(const analysis::LocalDefinition* def, std::string_view sourceCode)
+static lsp::TextEdit BuildRemoveSingleDeclaratorLine(const analysis::LocalDefinition* def, std::string_view sourceCode)
 {
     lsp::TextEdit edit;
     uint32_t lineCount = 1;
@@ -145,7 +143,7 @@ lsp::TextEdit BuildRemoveSingleDeclaratorLine(const analysis::LocalDefinition* d
  * @param[in] declarator Target declarator node.
  * @return TextEdit deleting the declarator.
  */
-lsp::TextEdit BuildRemoveMultiDeclaratorItem(const std::vector<TSNode>& declarators, TSNode declarator)
+static lsp::TextEdit BuildRemoveMultiDeclaratorItem(const std::vector<TSNode>& declarators, TSNode declarator)
 {
     lsp::TextEdit edit;
     size_t targetIdx = 0;
@@ -183,8 +181,8 @@ lsp::TextEdit BuildRemoveMultiDeclaratorItem(const std::vector<TSNode>& declarat
  * @param[in] def Target local definition.
  * @return TextEdit deleting the unused variable.
  */
-lsp::TextEdit BuildRemoveUnusedVariableEdit(TSNode rootNode, std::string_view sourceCode,
-                                            const analysis::LocalDefinition* def)
+static lsp::TextEdit BuildRemoveUnusedVariableEdit(TSNode rootNode, std::string_view sourceCode,
+                                                   const analysis::LocalDefinition* def)
 {
     TSPoint pt = {def->startLine, def->startCharacter};
     TSNode leaf = ts_node_descendant_for_point_range(rootNode, pt, pt);
@@ -224,7 +222,7 @@ lsp::TextEdit BuildRemoveUnusedVariableEdit(TSNode rootNode, std::string_view so
     return BuildRemoveMultiDeclaratorItem(declarators, declarator);
 }
 
-std::string ExtractSymbolNameFromDiag(const lsp::Diagnostic& diag, TSNode rootNode, std::string_view sourceCode)
+static std::string ExtractSymbolNameFromDiag(const lsp::Diagnostic& diag, TSNode rootNode, std::string_view sourceCode)
 {
     if (!ts_node_is_null(rootNode) && !sourceCode.empty())
     {
@@ -262,16 +260,13 @@ std::string ExtractSymbolNameFromDiag(const lsp::Diagnostic& diag, TSNode rootNo
 
 /**
  * @brief Make ignore unused symbol action.
- * @param[in] diag Parameter diag.
- * @param[in] symbolName Parameter symbolName.
- * @param[in] i18n Parameter i18n.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (70%) with MakeDisableDiagnosticAction in
- * server/src/features/code_action/CodeActionCommon.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @param[in] diag Input diag for the operation.
+ * @param[in] symbolName Symbol or grammar symbol.
+ * @param[in] i18n Input i18n for the operation.
+ * @return Calculated or extracted result of the operation.
  */
-lsp::CodeAction MakeIgnoreUnusedSymbolAction(const lsp::Diagnostic& diag, std::string_view symbolName,
-                                             const i18n::I18n* i18n)
+static lsp::CodeAction MakeIgnoreUnusedSymbolAction(const lsp::Diagnostic& diag, std::string_view symbolName,
+                                                    const i18n::I18n* i18n)
 {
     std::string title = i18n::FormatMessage(i18n, "action-ignore-unused-symbol",
                                             "Ignore unused symbol '{}' (mark as entry point / callback)", symbolName);
@@ -296,7 +291,8 @@ lsp::CodeAction MakeIgnoreUnusedSymbolAction(const lsp::Diagnostic& diag, std::s
     return action;
 }
 
-void AppendUnusedSymbolActions(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions)
+static void AppendUnusedSymbolActions(const CodeActionRequest& request, TSNode rootNode,
+                                      std::vector<lsp::CodeAction>& actions)
 {
     for (const auto& diag : request.context.diagnostics)
     {
@@ -350,8 +346,6 @@ void AppendUnusedSymbolActions(const CodeActionRequest& request, TSNode rootNode
         }
     }
 }
-
-} // namespace
 
 void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, TSNode rootNode,
                                      std::vector<lsp::CodeAction>& actions)

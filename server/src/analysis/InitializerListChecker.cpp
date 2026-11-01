@@ -17,9 +17,7 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
-std::string Trimmed(std::string text)
+static std::string Trimmed(std::string text)
 {
     while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())))
         text.erase(text.begin());
@@ -44,7 +42,7 @@ std::string Trimmed(std::string text)
  * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle /
  * LocalDefinition::isHandleType.
  */
-std::string StripDecorations(std::string_view raw)
+static std::string StripDecorations(std::string_view raw)
 {
     std::string_view sv = raw;
     for (;;)
@@ -68,6 +66,8 @@ std::string StripDecorations(std::string_view raw)
     return compact;
 }
 
+namespace initializer_list_checker_detail
+{
 /**
  * @brief `Name<A, B>` split into its name and its arguments; arguments empty if none.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -77,8 +77,11 @@ struct TemplateSpelling
     std::string name;
     std::vector<std::string> arguments;
 };
+} // namespace initializer_list_checker_detail
 
-TemplateSpelling ReadTemplateSpelling(const std::string& type)
+using TemplateSpelling = initializer_list_checker_detail::TemplateSpelling;
+
+static TemplateSpelling ReadTemplateSpelling(const std::string& type)
 {
     TemplateSpelling spelling;
 
@@ -122,7 +125,7 @@ TemplateSpelling ReadTemplateSpelling(const std::string& type)
 /**
  * @brief The declared return type of the function a `return` sits in, or "" when unknown.
  */
-std::string EnclosingReturnType(TSNode returnNode, std::string_view sourceCode)
+static std::string EnclosingReturnType(TSNode returnNode, std::string_view sourceCode)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const std::array<TSSymbol, 2> targets = {gs.symLambdaExpression, gs.symFuncDeclaration};
@@ -134,7 +137,7 @@ std::string EnclosingReturnType(TSNode returnNode, std::string_view sourceCode)
         {
             returnType = parser::GetChildByField(enclosing, gs.fieldType);
         }
-        return ts_node_is_null(returnType) ? std::string() : GetNodeText(returnType, sourceCode);
+        return ts_node_is_null(returnType) ? std::string() : parser::GetNodeText(returnType, sourceCode);
     }
     return "";
 }
@@ -142,7 +145,7 @@ std::string EnclosingReturnType(TSNode returnNode, std::string_view sourceCode)
 /**
  * @brief How many values a list writes, counting the ones that were left out.
  */
-uint32_t ListValueCount(TSNode listNode)
+static uint32_t ListValueCount(TSNode listNode)
 {
     const auto& gs = parser::GetGrammarSymbols();
     uint32_t separators = 0;
@@ -168,8 +171,8 @@ uint32_t ListValueCount(TSNode listNode)
     return written > 0 ? 1 : 0;
 }
 
-void CheckElementValue(TSNode element, const std::string& wanted, DiagnosticContext& ctx,
-                       const ElementContext& elements)
+static void CheckElementValue(TSNode element, const std::string& wanted, DiagnosticContext& ctx,
+                              const ElementContext& elements)
 {
     if (wanted.empty() || wanted == "?")
     {
@@ -191,17 +194,24 @@ void CheckElementValue(TSNode element, const std::string& wanted, DiagnosticCont
     }
 }
 
+namespace initializer_list_checker_detail
+{
 /**
  * @brief Container structure and dimensionality information.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
-struct ContainerInfo
+struct ListContainerInfo
 {
     bool isContainer = false;
     uint32_t dimensions = 1;
     std::string elementType;
 };
+} // namespace initializer_list_checker_detail
 
+using ListContainerInfo = initializer_list_checker_detail::ListContainerInfo;
+
+namespace initializer_list_checker_detail
+{
 /**
  * @brief Intermediate container member inspection state.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -212,6 +222,9 @@ struct ContainerMemberInspection
     std::string indexReturnType;
     bool hasListConstructor = false;
 };
+} // namespace initializer_list_checker_detail
+
+using ContainerMemberInspection = initializer_list_checker_detail::ContainerMemberInspection;
 
 /**
  * @brief Inspects container member functions for multi-index operators and list constructors.
@@ -221,8 +234,8 @@ struct ContainerMemberInspection
  * @param[in]  ctx          Diagnostic context.
  * @param[out] out          Inspection state sink.
  */
-void InspectContainerMembers(const std::string& containerKey, const std::string& className,
-                             const DiagnosticContext& ctx, ContainerMemberInspection& out)
+static void InspectContainerMembers(const std::string& containerKey, const std::string& className,
+                                    const DiagnosticContext& ctx, ContainerMemberInspection& out)
 {
     const auto& members = ctx.request.GetRuleIndex().Members(containerKey);
     for (const auto& key : members.memberKeys)
@@ -262,7 +275,7 @@ void InspectContainerMembers(const std::string& containerKey, const std::string&
  * @param[in] fallbackName Fallback type name.
  * @return Ordered list of unique candidate container keys.
  */
-std::vector<std::string> CandidateContainerKeys(const Symbol& sym, std::string_view fallbackName)
+static std::vector<std::string> CandidateContainerKeys(const Symbol& sym, std::string_view fallbackName)
 {
     std::vector<std::string> containers;
     if (!sym.qualifiedName.empty())
@@ -288,8 +301,8 @@ std::vector<std::string> CandidateContainerKeys(const Symbol& sym, std::string_v
  * @param[in] ctx      Diagnostic context.
  * @return Container info if class behaves as a container, std::nullopt otherwise.
  */
-std::optional<ContainerInfo> InspectClassContainer(const Symbol& sym, const TemplateSpelling& spelling,
-                                                   const DiagnosticContext& ctx)
+static std::optional<ListContainerInfo> InspectClassContainer(const Symbol& sym, const TemplateSpelling& spelling,
+                                                              const DiagnosticContext& ctx)
 {
     ContainerMemberInspection inspection;
     const auto containers = CandidateContainerKeys(sym, spelling.name);
@@ -306,11 +319,11 @@ std::optional<ContainerInfo> InspectClassContainer(const Symbol& sym, const Temp
 
     if (inspection.maxIndexParams >= 2)
     {
-        return ContainerInfo{true, inspection.maxIndexParams, resolveElem(inspection.indexReturnType)};
+        return ListContainerInfo{true, inspection.maxIndexParams, resolveElem(inspection.indexReturnType)};
     }
     if (inspection.hasListConstructor && (!spelling.arguments.empty() || inspection.maxIndexParams == 1))
     {
-        return ContainerInfo{true, 1, resolveElem(inspection.indexReturnType)};
+        return ListContainerInfo{true, 1, resolveElem(inspection.indexReturnType)};
     }
     return std::nullopt;
 }
@@ -329,8 +342,9 @@ std::optional<ContainerInfo> InspectClassContainer(const Symbol& sym, const Temp
  * @param[in] arrayLikeTemplates Custom array-like template names.
  * @return Resolved container dimensionality and element type.
  */
-ContainerInfo InspectContainer(const std::string& type, const TemplateSpelling& spelling, const DiagnosticContext& ctx,
-                               const std::unordered_set<std::string>& arrayLikeTemplates)
+static ListContainerInfo InspectContainer(const std::string& type, const TemplateSpelling& spelling,
+                                          const DiagnosticContext& ctx,
+                                          const std::unordered_set<std::string>& arrayLikeTemplates)
 {
     if (type.ends_with("[]"))
     {
@@ -363,6 +377,8 @@ ContainerInfo InspectContainer(const std::string& type, const TemplateSpelling& 
     return {false, 1, ""};
 }
 
+namespace initializer_list_checker_detail
+{
 /**
  * @brief Dictionary container key and value type information.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -373,7 +389,12 @@ struct DictInfo
     std::string keyType;
     std::string valType;
 };
+} // namespace initializer_list_checker_detail
 
+using DictInfo = initializer_list_checker_detail::DictInfo;
+
+namespace initializer_list_checker_detail
+{
 /**
  * @brief State tracking for dictionary container inspection.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -384,6 +405,9 @@ struct DictTypeState
     std::string valType;
     bool isAssociative = false;
 };
+} // namespace initializer_list_checker_detail
+
+using DictTypeState = initializer_list_checker_detail::DictTypeState;
 
 /**
  * @brief Inspects a function symbol for associative dictionary signatures (`set`, `get`, `exists`).
@@ -391,7 +415,7 @@ struct DictTypeState
  * @param[in]     m     Candidate function symbol.
  * @param[in,out] state Dictionary type state sink.
  */
-void UpdateDictValType(const ParameterInformation& param, DictTypeState& state)
+static void UpdateDictValType(const ParameterInformation& param, DictTypeState& state)
 {
     const std::string& paramVal = param.baseTypeName.empty() ? param.typeName : param.baseTypeName;
     if (paramVal == "?" || param.typeName.find('?') != std::string::npos)
@@ -408,7 +432,7 @@ void UpdateDictValType(const ParameterInformation& param, DictTypeState& state)
     }
 }
 
-void InspectDictFunctionSignature(const Symbol& m, DictTypeState& state)
+static void InspectDictFunctionSignature(const Symbol& m, DictTypeState& state)
 {
     if (m.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(m.signature))
     {
@@ -441,8 +465,8 @@ void InspectDictFunctionSignature(const Symbol& m, DictTypeState& state)
  * @param[in]     ctx          Diagnostic context.
  * @param[in,out] state        Dictionary type state sink.
  */
-void InspectClassDictMembers(const std::string& containerKey, size_t argCount, const DiagnosticContext& ctx,
-                             DictTypeState& state)
+static void InspectClassDictMembers(const std::string& containerKey, size_t argCount, const DiagnosticContext& ctx,
+                                    DictTypeState& state)
 {
     const auto& members = ctx.request.GetRuleIndex().Members(containerKey);
     if (members.methodNames.contains("exists"))
@@ -475,8 +499,8 @@ void InspectClassDictMembers(const std::string& containerKey, size_t argCount, c
  * @param[in]     ctx      Diagnostic context.
  * @param[in,out] state    Dictionary type state sink.
  */
-void InspectClassDict(const Symbol& sym, const TemplateSpelling& spelling, const DiagnosticContext& ctx,
-                      DictTypeState& state)
+static void InspectClassDict(const Symbol& sym, const TemplateSpelling& spelling, const DiagnosticContext& ctx,
+                             DictTypeState& state)
 {
     if (sym.type != SymbolType::Class)
     {
@@ -496,7 +520,7 @@ void InspectClassDict(const Symbol& sym, const TemplateSpelling& spelling, const
  * @param[in] ctx      Diagnostic context.
  * @return Resolved dictionary info.
  */
-DictInfo InspectDictionary(const TemplateSpelling& spelling, const DiagnosticContext& ctx)
+static DictInfo InspectDictionary(const TemplateSpelling& spelling, const DiagnosticContext& ctx)
 {
     if (spelling.name.empty())
     {
@@ -539,6 +563,8 @@ DictInfo InspectDictionary(const TemplateSpelling& spelling, const DiagnosticCon
     return {true, StripDecorations(state.keyType), StripDecorations(state.valType)};
 }
 
+namespace initializer_list_checker_detail
+{
 /**
  * @brief Field information for aggregate struct member properties.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -550,7 +576,12 @@ struct StructFieldInfo
     uint32_t line = 0;
     uint32_t col = 0;
 };
+} // namespace initializer_list_checker_detail
 
+using StructFieldInfo = initializer_list_checker_detail::StructFieldInfo;
+
+namespace initializer_list_checker_detail
+{
 /**
  * @brief Aggregate struct fields and list initialization capability.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -560,6 +591,9 @@ struct AggregateStructInfo
     bool hasListSupport = false;
     std::vector<StructFieldInfo> fields;
 };
+} // namespace initializer_list_checker_detail
+
+using AggregateStructInfo = initializer_list_checker_detail::AggregateStructInfo;
 
 using StructLayoutCache = ankerl::unordered_dense::map<std::string, AggregateStructInfo>;
 
@@ -570,7 +604,7 @@ using StructLayoutCache = ankerl::unordered_dense::map<std::string, AggregateStr
  * @param[in]     classSym Containing class symbol.
  * @param[in,out] info     Aggregate struct info sink.
  */
-void InspectStructMemberSymbol(const Symbol& s, const Symbol& classSym, AggregateStructInfo& info)
+static void InspectStructMemberSymbol(const Symbol& s, const Symbol& classSym, AggregateStructInfo& info)
 {
     if (s.type == SymbolType::Variable || s.type == SymbolType::Property)
     {
@@ -601,8 +635,8 @@ void InspectStructMemberSymbol(const Symbol& s, const Symbol& classSym, Aggregat
  * @param[in]     ctx       Diagnostic context.
  * @param[in,out] info      Aggregate struct info sink.
  */
-void CollectStructContainerMembers(const std::string& container, const Symbol& classSym, const DiagnosticContext& ctx,
-                                   AggregateStructInfo& info)
+static void CollectStructContainerMembers(const std::string& container, const Symbol& classSym,
+                                          const DiagnosticContext& ctx, AggregateStructInfo& info)
 {
     const auto& members = ctx.request.GetRuleIndex().Members(container);
     for (const auto& key : members.memberKeys)
@@ -622,7 +656,7 @@ void CollectStructContainerMembers(const std::string& container, const Symbol& c
  *
  * @param[in,out] fields Vector of struct fields to finalize.
  */
-void FinalizeStructFields(std::vector<StructFieldInfo>& fields)
+static void FinalizeStructFields(std::vector<StructFieldInfo>& fields)
 {
     std::sort(fields.begin(), fields.end(),
               [](const StructFieldInfo& a, const StructFieldInfo& b)
@@ -651,8 +685,8 @@ void FinalizeStructFields(std::vector<StructFieldInfo>& fields)
  * @param[in]     ctx      Diagnostic context.
  * @param[in,out] info     Aggregate struct info sink.
  */
-void InspectClassAggregate(const Symbol& sym, const TemplateSpelling& spelling, const DiagnosticContext& ctx,
-                           AggregateStructInfo& info)
+static void InspectClassAggregate(const Symbol& sym, const TemplateSpelling& spelling, const DiagnosticContext& ctx,
+                                  AggregateStructInfo& info)
 {
     if (sym.type != SymbolType::Class)
     {
@@ -681,8 +715,8 @@ void InspectClassAggregate(const Symbol& sym, const TemplateSpelling& spelling, 
  * @param[in,out] cache    Layout cache across inspections.
  * @return Aggregate struct field layout and list initialization support.
  */
-AggregateStructInfo InspectAggregateStruct(const TemplateSpelling& spelling, const DiagnosticContext& ctx,
-                                           StructLayoutCache& cache)
+static AggregateStructInfo InspectAggregateStruct(const TemplateSpelling& spelling, const DiagnosticContext& ctx,
+                                                  StructLayoutCache& cache)
 {
     if (spelling.name.empty())
     {
@@ -727,6 +761,8 @@ AggregateStructInfo InspectAggregateStruct(const TemplateSpelling& spelling, con
     return info;
 }
 
+namespace initializer_list_checker_detail
+{
 /**
  * @brief Context for recursive initializer list validation.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -739,8 +775,11 @@ struct ListValidationContext
     StructLayoutCache& cache;
     int depth = 0;
 };
+} // namespace initializer_list_checker_detail
 
-void ValidateList(TSNode listNode, const std::string& targetType, const ListValidationContext& valCtx);
+using ListValidationContext = initializer_list_checker_detail::ListValidationContext;
+
+static void ValidateList(TSNode listNode, const std::string& targetType, const ListValidationContext& valCtx);
 
 /**
  * @brief Validates elements of a sequence or multi-dimensional container recursively.
@@ -750,8 +789,8 @@ void ValidateList(TSNode listNode, const std::string& targetType, const ListVali
  * @param[in] elemType  Expected element type.
  * @param[in] valCtx    Validation context.
  */
-void ValidateMultiDimensionalContainer(TSNode node, uint32_t dimension, const std::string& elemType,
-                                       const ListValidationContext& valCtx)
+static void ValidateMultiDimensionalContainer(TSNode node, uint32_t dimension, const std::string& elemType,
+                                              const ListValidationContext& valCtx)
 {
     if (ts_node_is_null(node))
     {
@@ -801,7 +840,7 @@ void ValidateMultiDimensionalContainer(TSNode node, uint32_t dimension, const st
  * @param[in] dictInfo Dictionary key and value type information.
  * @param[in] valCtx   Validation context.
  */
-void ValidateDictionaryPair(TSNode child, const DictInfo& dictInfo, const ListValidationContext& valCtx)
+static void ValidateDictionaryPair(TSNode child, const DictInfo& dictInfo, const ListValidationContext& valCtx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode keyNode{};
@@ -857,7 +896,7 @@ void ValidateDictionaryPair(TSNode child, const DictInfo& dictInfo, const ListVa
  * @param[in] dictInfo Dictionary key and value type information.
  * @param[in] valCtx   Validation context.
  */
-void ValidateDictionaryList(TSNode listNode, const DictInfo& dictInfo, const ListValidationContext& valCtx)
+static void ValidateDictionaryList(TSNode listNode, const DictInfo& dictInfo, const ListValidationContext& valCtx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     parser::ForEachChildNode(listNode,
@@ -895,8 +934,8 @@ void ValidateDictionaryList(TSNode listNode, const DictInfo& dictInfo, const Lis
  * @param[in] structInfo Struct layout information.
  * @param[in] valCtx     Validation context.
  */
-void ValidateStructAggregateList(TSNode listNode, const std::string& type, const AggregateStructInfo& structInfo,
-                                 const ListValidationContext& valCtx)
+static void ValidateStructAggregateList(TSNode listNode, const std::string& type, const AggregateStructInfo& structInfo,
+                                        const ListValidationContext& valCtx)
 {
     if (!structInfo.hasListSupport)
     {
@@ -956,7 +995,7 @@ void ValidateStructAggregateList(TSNode listNode, const std::string& type, const
 /**
  * @brief Checks if a type is a universal variant proxy class with opAssign(?&in) and zero fields.
  */
-bool IsUniversalProxyClass(const std::string& type, const ListValidationContext& valCtx)
+static bool IsUniversalProxyClass(const std::string& type, const ListValidationContext& valCtx)
 {
     const auto opAssignSyms = valCtx.ctx.request.symbolTable.FindMemberSymbolPtr(type, "opAssign");
     if (!opAssignSyms)
@@ -1011,7 +1050,7 @@ static bool HasStringIndex(TSNode left)
 /**
  * @brief Checks if an initializer list is being assigned to a subscript on an associative container.
  */
-bool IsAssociativeSubscriptTarget(TSNode listNode, const std::string& type, const ListValidationContext& valCtx)
+static bool IsAssociativeSubscriptTarget(TSNode listNode, const std::string& type, const ListValidationContext& valCtx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode parent = parser::GetParent(listNode);
@@ -1077,7 +1116,7 @@ static void CheckUnknownListPattern(TSNode listNode, const std::string& type, co
     }
 }
 
-void ValidateList(TSNode listNode, const std::string& targetType, const ListValidationContext& valCtx)
+static void ValidateList(TSNode listNode, const std::string& targetType, const ListValidationContext& valCtx)
 {
     if (ts_node_is_null(listNode))
     {
@@ -1107,7 +1146,7 @@ void ValidateList(TSNode listNode, const std::string& targetType, const ListVali
     }
 
     // 2. Sequence & multi-dimensional container types
-    const ContainerInfo containerInfo = InspectContainer(type, spelling, valCtx.ctx, valCtx.arrayLikeTemplates);
+    const ListContainerInfo containerInfo = InspectContainer(type, spelling, valCtx.ctx, valCtx.arrayLikeTemplates);
     if (containerInfo.isContainer)
     {
         ValidateMultiDimensionalContainer(listNode, containerInfo.dimensions, containerInfo.elementType, valCtx);
@@ -1125,6 +1164,8 @@ void ValidateList(TSNode listNode, const std::string& targetType, const ListVali
     CheckUnknownListPattern(listNode, type, valCtx);
 }
 
+namespace initializer_list_checker_detail
+{
 /**
  * @brief Traversal context for walking documents and validating initializer lists.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1136,6 +1177,9 @@ struct InitializerListContext
     const std::unordered_set<std::string>& arrayLikeTemplates;
     StructLayoutCache& structCache;
 };
+} // namespace initializer_list_checker_detail
+
+using InitializerListContext = initializer_list_checker_detail::InitializerListContext;
 
 /**
  * @brief Computes the element context at the position of an initializer list node.
@@ -1144,7 +1188,7 @@ struct InitializerListContext
  * @param[in] request Analysis request.
  * @return ElementContext with enclosing scope.
  */
-ElementContext ElementsAt(TSNode node, const InitializerListCheckRequest& request)
+static ElementContext ElementsAt(TSNode node, const InitializerListCheckRequest& request)
 {
     const TSPoint start = ts_node_start_point(node);
     return ElementContext{request.sourceCode,
@@ -1157,7 +1201,7 @@ ElementContext ElementsAt(TSNode node, const InitializerListCheckRequest& reques
  * @param[in] node    Typed initializer list AST node.
  * @param[in] initCtx Initializer traversal context.
  */
-void ProcessTypedInitializerList(TSNode node, const InitializerListContext& initCtx)
+static void ProcessTypedInitializerList(TSNode node, const InitializerListContext& initCtx)
 {
     TSNode typeNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldType);
     TSNode valueNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldValue);
@@ -1165,7 +1209,7 @@ void ProcessTypedInitializerList(TSNode node, const InitializerListContext& init
     {
         const ElementContext elements = ElementsAt(valueNode, initCtx.request);
         const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.arrayLikeTemplates, initCtx.structCache, 0};
-        ValidateList(valueNode, GetNodeText(typeNode, initCtx.request.sourceCode), valCtx);
+        ValidateList(valueNode, parser::GetNodeText(typeNode, initCtx.request.sourceCode), valCtx);
     }
 }
 
@@ -1175,7 +1219,7 @@ void ProcessTypedInitializerList(TSNode node, const InitializerListContext& init
  * @param[in] node    Assignment expression AST node.
  * @param[in] initCtx Initializer traversal context.
  */
-void ProcessAssignmentExpression(TSNode node, const InitializerListContext& initCtx)
+static void ProcessAssignmentExpression(TSNode node, const InitializerListContext& initCtx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode value = parser::GetChildByField(node, gs.fieldRight);
@@ -1206,7 +1250,7 @@ void ProcessAssignmentExpression(TSNode node, const InitializerListContext& init
  * @param[in] node    Return statement AST node.
  * @param[in] initCtx Initializer traversal context.
  */
-void ProcessReturnStatement(TSNode node, const InitializerListContext& initCtx)
+static void ProcessReturnStatement(TSNode node, const InitializerListContext& initCtx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode value{};
@@ -1239,7 +1283,7 @@ void ProcessReturnStatement(TSNode node, const InitializerListContext& initCtx)
  * @param[in] node    Variable declaration AST node.
  * @param[in] initCtx Initializer traversal context.
  */
-void ProcessVariableDeclaration(TSNode node, const InitializerListContext& initCtx)
+static void ProcessVariableDeclaration(TSNode node, const InitializerListContext& initCtx)
 {
     TSNode typeNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldVarType);
     if (ts_node_is_null(typeNode))
@@ -1252,7 +1296,7 @@ void ProcessVariableDeclaration(TSNode node, const InitializerListContext& initC
     }
 
     const auto& gs = parser::GetGrammarSymbols();
-    const std::string declaredType = GetNodeText(typeNode, initCtx.request.sourceCode);
+    const std::string declaredType = parser::GetNodeText(typeNode, initCtx.request.sourceCode);
     parser::ForEachChildNode(
         node,
         [&](TSNode declarator)
@@ -1279,7 +1323,7 @@ void ProcessVariableDeclaration(TSNode node, const InitializerListContext& initC
  * @param[in] node    AST node to process.
  * @param[in] initCtx Initializer traversal context.
  */
-void DispatchInitListNode(TSNode node, const InitializerListContext& initCtx)
+static void DispatchInitListNode(TSNode node, const InitializerListContext& initCtx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol sym = ts_node_symbol(node);
@@ -1306,7 +1350,7 @@ void DispatchInitListNode(TSNode node, const InitializerListContext& initCtx)
  *
  * @param[in] initCtx Initializer traversal context.
  */
-void DispatchIndexedInitializerLists(const InitializerListContext& initCtx)
+static void DispatchIndexedInitializerLists(const InitializerListContext& initCtx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     initCtx.request.nodeIndex->ForEachNodeOrdered(std::array{gs.symTypedInitializerList, gs.symAssignmentExpression,
@@ -1318,10 +1362,8 @@ void DispatchIndexedInitializerLists(const InitializerListContext& initCtx)
  * @brief Falls back to flat worklist traversal when NodeIndex is unavailable.
  *
  * @param[in] initCtx Initializer traversal context.
- * @note [REFACTOR-CANDIDATE] Structural overlap (93%) with CheckFromASTTraversal in
- * server/src/analysis/NamespaceChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-void DispatchTreeWalkInitializerLists(const InitializerListContext& initCtx)
+static void DispatchTreeWalkInitializerLists(const InitializerListContext& initCtx)
 {
     if (ts_node_is_null(initCtx.request.root))
     {
@@ -1354,7 +1396,6 @@ void DispatchTreeWalkInitializerLists(const InitializerListContext& initCtx)
     }
     ts_tree_cursor_delete(&cursor);
 }
-} // namespace
 
 void CheckInitializerListAgainstType(TSNode listNode, const std::string& targetType, const ElementContext& elements,
                                      DiagnosticContext& ctx)

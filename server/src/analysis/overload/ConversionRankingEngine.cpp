@@ -11,8 +11,6 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
 static bool IsFuncdefParam(const ParameterInformation& param, const SymbolTable& symbolTable)
 {
     const std::string_view clean = CleanBaseTypeView(param.typeName);
@@ -60,16 +58,16 @@ static bool ParamAcceptsHandleConversion(const ParameterInformation& param, cons
 
 /**
  * @brief Evaluate special argument match.
- * @param[in] argType Parameter argType.
- * @param[in] param Parameter param.
- * @param[in] symbolTable Parameter symbolTable.
+ * @param[in] argType Type name or descriptor.
+ * @param[in] param Function parameter information.
+ * @param[in] symbolTable Symbol or grammar symbol.
  * @return Found item if present; std::nullopt otherwise.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
-std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(const std::string& argType,
-                                                               const ParameterInformation& param,
-                                                               const SymbolTable& symbolTable)
+static std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(const std::string& argType,
+                                                                      const ParameterInformation& param,
+                                                                      const SymbolTable& symbolTable)
 {
     if (IsWildcardParameter(param))
     {
@@ -118,7 +116,7 @@ std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(const std::string
     return std::nullopt;
 }
 
-uint8_t IntegerBitWidth(std::string_view typeName)
+static uint8_t IntegerBitWidth(std::string_view typeName)
 {
     if (typeName == "int8" || typeName == "uint8")
     {
@@ -135,12 +133,12 @@ uint8_t IntegerBitWidth(std::string_view typeName)
     return 32;
 }
 
-bool IsMutableRefParam(const ParameterInformation& param)
+static bool IsMutableRefParam(const ParameterInformation& param)
 {
     return param.isReference || param.modifier == ParameterModifier::InOut || param.modifier == ParameterModifier::Out;
 }
 
-std::optional<ArgumentConversion> EvaluateNumericMutableRef(const MatchContext& ctx)
+static std::optional<ArgumentConversion> EvaluateNumericMutableRef(const MatchContext& ctx)
 {
     if (!IsNumericPrimitive(ctx.cleanArg) || !IsNumericPrimitive(ctx.cleanParam))
     {
@@ -198,7 +196,8 @@ std::optional<ArgumentConversion> EvaluateNumericMutableRef(const MatchContext& 
         ConversionRank::StandardConv, 45, 0, false, static_cast<int>(OverloadMatchPenalty::Narrowing), true};
 }
 
-std::optional<ArgumentConversion> EvaluateMutableRefMatch(const ParameterInformation& param, const MatchContext& ctx)
+static std::optional<ArgumentConversion> EvaluateMutableRefMatch(const ParameterInformation& param,
+                                                                 const MatchContext& ctx)
 {
     if (!ctx.isMutableRef)
     {
@@ -252,15 +251,15 @@ std::optional<ArgumentConversion> EvaluateMutableRefMatch(const ParameterInforma
                               static_cast<int>(OverloadMatchPenalty::Incompatible)};
 }
 
-bool IsHandleToReferenceBinding(bool argIsHandle, bool paramIsHandle, const ParameterInformation& param)
+static bool IsHandleToReferenceBinding(bool argIsHandle, bool paramIsHandle, const ParameterInformation& param)
 {
     return argIsHandle && !paramIsHandle &&
            (param.isReference || param.modifier == ParameterModifier::In ||
             param.modifier == ParameterModifier::InOut || param.modifier == ParameterModifier::Out);
 }
 
-std::optional<ArgumentConversion> EvaluateSameTypeMatch(const MatchContext& ctx, bool isHandleToRef,
-                                                        bool isValueToHandle)
+static std::optional<ArgumentConversion> EvaluateSameTypeMatch(const MatchContext& ctx, bool isHandleToRef,
+                                                               bool isValueToHandle)
 {
     if (!IsSameType(ctx.cleanArg, ctx.cleanParam))
     {
@@ -286,8 +285,8 @@ std::optional<ArgumentConversion> EvaluateSameTypeMatch(const MatchContext& ctx,
     return ArgumentConversion{ConversionRank::Exact, 0, 0, true, static_cast<int>(OverloadMatchPenalty::ConstRef)};
 }
 
-std::optional<ArgumentConversion> EvaluateInheritedSubtypeMatch(const MatchContext& ctx, bool isValueToHandle,
-                                                                bool isHandleToRef)
+static std::optional<ArgumentConversion> EvaluateInheritedSubtypeMatch(const MatchContext& ctx, bool isValueToHandle,
+                                                                       bool isHandleToRef)
 {
     if (ctx.argIsHandle != ctx.paramIsHandle && !isValueToHandle && !isHandleToRef)
     {
@@ -308,8 +307,8 @@ std::optional<ArgumentConversion> EvaluateInheritedSubtypeMatch(const MatchConte
     return std::nullopt;
 }
 
-std::optional<ArgumentConversion> EvaluateSameTypeOrSubtypeMatch(const ParameterInformation& param,
-                                                                 const MatchContext& ctx)
+static std::optional<ArgumentConversion> EvaluateSameTypeOrSubtypeMatch(const ParameterInformation& param,
+                                                                        const MatchContext& ctx)
 {
     const bool isHandleToRef = IsHandleToReferenceBinding(ctx.argIsHandle, ctx.paramIsHandle, param);
     const bool isValueToHandle = !ctx.argIsHandle && ctx.paramIsHandle;
@@ -321,7 +320,7 @@ std::optional<ArgumentConversion> EvaluateSameTypeOrSubtypeMatch(const Parameter
     return EvaluateInheritedSubtypeMatch(ctx, isValueToHandle, isHandleToRef);
 }
 
-std::optional<ArgumentConversion> EvaluateEnumArgumentConversion(const MatchContext& ctx)
+static std::optional<ArgumentConversion> EvaluateEnumArgumentConversion(const MatchContext& ctx)
 {
     const auto symbols = ctx.table.FindSymbolsPtr(ctx.cleanArg);
     const bool namesAnEnum = symbols && std::any_of(symbols->begin(), symbols->end(),
@@ -343,7 +342,7 @@ std::optional<ArgumentConversion> EvaluateEnumArgumentConversion(const MatchCont
     return std::nullopt;
 }
 
-std::optional<ArgumentConversion> EvaluateNarrowingConversion(const MatchContext& ctx)
+static std::optional<ArgumentConversion> EvaluateNarrowingConversion(const MatchContext& ctx)
 {
     if (!IsPrimitiveNarrowing(ctx.cleanArg, ctx.cleanParam))
     {
@@ -360,7 +359,7 @@ std::optional<ArgumentConversion> EvaluateNarrowingConversion(const MatchContext
         ConversionRank::StandardConv, 10, 0, false, static_cast<int>(OverloadMatchPenalty::Narrowing), true};
 }
 
-std::optional<ArgumentConversion> EvaluatePrimitiveOrEnumConversion(const MatchContext& ctx)
+static std::optional<ArgumentConversion> EvaluatePrimitiveOrEnumConversion(const MatchContext& ctx)
 {
     if (auto enumConv = EvaluateEnumArgumentConversion(ctx))
     {
@@ -386,7 +385,7 @@ std::optional<ArgumentConversion> EvaluatePrimitiveOrEnumConversion(const MatchC
     return EvaluateNarrowingConversion(ctx);
 }
 
-ArgumentConversion EvaluateCustomOrUnresolvedConversion(const MatchContext& ctx)
+static ArgumentConversion EvaluateCustomOrUnresolvedConversion(const MatchContext& ctx)
 {
     const auto userConv = CheckUserConversion(ctx.cleanArg, ctx.cleanParam, ctx.table);
     if (userConv.viable)
@@ -421,7 +420,7 @@ ArgumentConversion EvaluateCustomOrUnresolvedConversion(const MatchContext& ctx)
                               static_cast<int>(OverloadMatchPenalty::Incompatible)};
 }
 
-ArgumentConversion EvaluateConversionMatch(const MatchContext& ctx)
+static ArgumentConversion EvaluateConversionMatch(const MatchContext& ctx)
 {
     if (ctx.cleanArg == "auto" || ctx.cleanParam == "auto")
     {
@@ -435,12 +434,12 @@ ArgumentConversion EvaluateConversionMatch(const MatchContext& ctx)
     return EvaluateCustomOrUnresolvedConversion(ctx);
 }
 
-bool IsMutableReferenceParam(const ParameterInformation& param, bool paramIsConst)
+static bool IsMutableReferenceParam(const ParameterInformation& param, bool paramIsConst)
 {
     return !paramIsConst && (param.isOutRef || param.isInOutRef || param.isStandaloneRef);
 }
 
-ArgumentConversion EvaluateCandidateTypeMatch(const ParameterInformation& param, const MatchContext& ctx)
+static ArgumentConversion EvaluateCandidateTypeMatch(const ParameterInformation& param, const MatchContext& ctx)
 {
     if (auto refScore = EvaluateMutableRefMatch(param, ctx))
     {
@@ -457,13 +456,13 @@ ArgumentConversion EvaluateCandidateTypeMatch(const ParameterInformation& param,
     }
     return EvaluateConversionMatch(ctx);
 }
-bool IsPoisonOrEmptyArg(std::string_view cleanArg, std::string_view cleanParam)
+static bool IsPoisonOrEmptyArg(std::string_view cleanArg, std::string_view cleanParam)
 {
     return cleanArg.empty() || cleanParam.empty() || ExpressionTypeCache::IsPoisonType(cleanArg) ||
            ExpressionTypeCache::IsPoisonType(cleanParam);
 }
 
-ArgumentConversion AdjustForLValueConstraint(ArgumentConversion conv, bool isOutOrRef, bool argIsLValue)
+static ArgumentConversion AdjustForLValueConstraint(ArgumentConversion conv, bool isOutOrRef, bool argIsLValue)
 {
     if (!argIsLValue && isOutOrRef && conv.IsViable())
     {
@@ -472,7 +471,6 @@ ArgumentConversion AdjustForLValueConstraint(ArgumentConversion conv, bool isOut
     }
     return conv;
 }
-} // namespace
 
 ArgumentConversion EvaluateArgumentConversion(const std::string& argType, const ParameterInformation& param,
                                               const SymbolTable& symbolTable, bool argIsLValue)
@@ -543,7 +541,7 @@ bool MatchesCallArity(const FunctionSignature& sig, uint32_t argCount) noexcept
     return (argCount >= requiredParams) && (isVariadic || argCount <= maxParams);
 }
 
-namespace
+namespace conversion_ranking_engine_detail
 {
 /**
  * @brief Represents Fallback candidate rank.
@@ -578,9 +576,13 @@ struct FallbackCandidateRank
         return other.incompatibleArgs <=> incompatibleArgs;
     }
 };
+} // namespace conversion_ranking_engine_detail
 
-FallbackCandidateRank RankCandidateFallback(const FunctionSignature& sig, const std::vector<std::string>& argTypes,
-                                            const SymbolTable& symbolTable)
+using FallbackCandidateRank = conversion_ranking_engine_detail::FallbackCandidateRank;
+
+static FallbackCandidateRank RankCandidateFallback(const FunctionSignature& sig,
+                                                   const std::vector<std::string>& argTypes,
+                                                   const SymbolTable& symbolTable)
 {
     const uint32_t argCount = static_cast<uint32_t>(argTypes.size());
     FallbackCandidateRank rank;
@@ -606,7 +608,6 @@ FallbackCandidateRank RankCandidateFallback(const FunctionSignature& sig, const 
     }
     return rank;
 }
-} // namespace
 
 const Symbol* FindBestFallbackOverload(const std::vector<Symbol>& candidates, const std::vector<std::string>& argTypes,
                                        const SymbolTable& symbolTable)

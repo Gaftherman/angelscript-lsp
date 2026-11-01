@@ -41,8 +41,6 @@
 
 namespace angel_lsp
 {
-namespace
-{
 /**
  * @brief How many message errors in a row are tolerated before the session is closed.
  *
@@ -60,7 +58,7 @@ constexpr unsigned k_maxConsecutiveMessageErrors = 64;
  * setting nobody can misspell into a surprise is worth more here than a diagnostic about
  * a formatter option.
  */
-bool BraceStyleIsKR(std::string_view name)
+static bool BraceStyleIsKR(std::string_view name)
 {
     std::string lowered;
     lowered.reserve(name.size());
@@ -78,8 +76,8 @@ bool BraceStyleIsKR(std::string_view name)
  * @param[in] name Setting property name.
  * @return Value of the boolean setting if present.
  */
-std::optional<bool> FindSectionBool(const lsp::LSPObject* initSection, const lsp::LSPObject* engineObj,
-                                    std::string_view name)
+static std::optional<bool> FindSectionBool(const lsp::LSPObject* initSection, const lsp::LSPObject* engineObj,
+                                           std::string_view name)
 {
     if (engineObj)
     {
@@ -108,8 +106,8 @@ std::optional<bool> FindSectionBool(const lsp::LSPObject* initSection, const lsp
  * @param[in] name Setting property name.
  * @return Value of the integer setting if present.
  */
-std::optional<int> FindSectionInt(const lsp::LSPObject* initSection, const lsp::LSPObject* engineObj,
-                                  std::string_view name)
+static std::optional<int> FindSectionInt(const lsp::LSPObject* initSection, const lsp::LSPObject* engineObj,
+                                         std::string_view name)
 {
     if (engineObj)
     {
@@ -130,7 +128,6 @@ std::optional<int> FindSectionInt(const lsp::LSPObject* initSection, const lsp::
     }
     return std::nullopt;
 }
-} // namespace
 
 Server::Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& stream)
 {

@@ -9,10 +9,8 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
 /** @brief Splits text into line views up to maxLines, dropping a trailing carriage return from each. */
-std::vector<std::string_view> SplitLinesUpTo(std::string_view str, size_t maxLines)
+static std::vector<std::string_view> SplitLinesUpTo(std::string_view str, size_t maxLines)
 {
     std::vector<std::string_view> lines;
     lines.reserve(std::min(maxLines, size_t{256}));
@@ -46,7 +44,7 @@ std::vector<std::string_view> SplitLinesUpTo(std::string_view str, size_t maxLin
  * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Trim in server/src/analysis/DoxygenMarkdown.cpp. Candidate
  * for unification in server/src/analysis/SemanticHelpers.h.
  */
-std::string_view Trim(std::string_view str)
+static std::string_view Trim(std::string_view str)
 {
     size_t first = str.find_first_not_of(" \t\r\n");
     if (first == std::string_view::npos)
@@ -57,7 +55,7 @@ std::string_view Trim(std::string_view str)
     return str.substr(first, (last - first + 1));
 }
 
-std::string ExtractLineComment(std::string_view rem)
+static std::string ExtractLineComment(std::string_view rem)
 {
     const size_t lpPos = rem.find("//@listpattern");
     if (lpPos != std::string_view::npos)
@@ -75,7 +73,7 @@ std::string ExtractLineComment(std::string_view rem)
     return std::string(rem);
 }
 
-std::string ExtractBlockComment(std::string_view line, size_t startPos)
+static std::string ExtractBlockComment(std::string_view line, size_t startPos)
 {
     const size_t close = line.find("*/", startPos + 2);
     if (close != std::string_view::npos)
@@ -85,7 +83,7 @@ std::string ExtractBlockComment(std::string_view line, size_t startPos)
     return std::string(line.substr(startPos));
 }
 
-bool UpdateQuoteState(char c, bool& inString, bool& inChar)
+static bool UpdateQuoteState(char c, bool& inString, bool& inChar)
 {
     if (c == '"' && !inChar)
     {
@@ -105,7 +103,7 @@ bool UpdateQuoteState(char c, bool& inString, bool& inChar)
  *
  * Skips string and character literals. Ignores synthetic internal `//@listpattern`.
  */
-std::string ExtractTrailingComment(std::string_view line)
+static std::string ExtractTrailingComment(std::string_view line)
 {
     bool inString = false;
     bool inChar = false;
@@ -136,7 +134,7 @@ std::string ExtractTrailingComment(std::string_view line)
     return "";
 }
 
-std::vector<std::string_view> CollectBlockComment(const std::vector<std::string_view>& lines, int endLine)
+static std::vector<std::string_view> CollectBlockComment(const std::vector<std::string_view>& lines, int endLine)
 {
     std::vector<std::string_view> commentLines;
     for (int line = endLine; line >= 0; --line)
@@ -152,7 +150,7 @@ std::vector<std::string_view> CollectBlockComment(const std::vector<std::string_
     return commentLines;
 }
 
-std::vector<std::string_view> CollectLineComments(const std::vector<std::string_view>& lines, int endLine)
+static std::vector<std::string_view> CollectLineComments(const std::vector<std::string_view>& lines, int endLine)
 {
     std::vector<std::string_view> commentLines;
     for (int line = endLine; line >= 0; --line)
@@ -170,12 +168,12 @@ std::vector<std::string_view> CollectLineComments(const std::vector<std::string_
     return commentLines;
 }
 
-bool IsMetadataBlockLine(std::string_view trimmed)
+static bool IsMetadataBlockLine(std::string_view trimmed)
 {
     return trimmed.size() >= 2 && trimmed.front() == '[' && trimmed.back() == ']';
 }
 
-int FindPrecedingCommentLine(const std::vector<std::string_view>& lines, int startLine)
+static int FindPrecedingCommentLine(const std::vector<std::string_view>& lines, int startLine)
 {
     int line = startLine;
     while (line >= 0 && IsMetadataBlockLine(Trim(lines[line])))
@@ -189,8 +187,8 @@ int FindPrecedingCommentLine(const std::vector<std::string_view>& lines, int sta
     return line;
 }
 
-std::vector<std::string_view> CollectPrecedingDocComments(const std::vector<std::string_view>& lines,
-                                                          uint32_t declStartLine)
+static std::vector<std::string_view> CollectPrecedingDocComments(const std::vector<std::string_view>& lines,
+                                                                 uint32_t declStartLine)
 {
     if (declStartLine == 0)
     {
@@ -212,7 +210,6 @@ std::vector<std::string_view> CollectPrecedingDocComments(const std::vector<std:
     }
     return {};
 }
-} // namespace
 
 std::string ExtractDocComment(const std::string& sourceCode, uint32_t declStartLine)
 {

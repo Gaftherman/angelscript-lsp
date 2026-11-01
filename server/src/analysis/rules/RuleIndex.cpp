@@ -5,6 +5,11 @@
 
 namespace angel_lsp::analysis::rules
 {
+/**
+ * @brief Retrieves member symbols for a given container name.
+ * @param[in] containerName Name or qualified path of the container.
+ * @return Reference to ContainerMembers, or an empty member set if not found.
+ */
 const ContainerMembers& RuleIndex::Members(std::string_view containerName) const
 {
     static const ContainerMembers empty;
@@ -12,11 +17,21 @@ const ContainerMembers& RuleIndex::Members(std::string_view containerName) const
     return it == byContainer.end() ? empty : it->second;
 }
 
+/**
+ * @brief Retrieves member symbols for a given container name (std::string overload).
+ * @param[in] containerName Name or qualified path of the container.
+ * @return Reference to ContainerMembers, or an empty member set if not found.
+ */
 const ContainerMembers& RuleIndex::Members(const std::string& containerName) const
 {
     return Members(std::string_view(containerName));
 }
 
+/**
+ * @brief Retrieves member symbols for a given class name.
+ * @param[in] className Name or qualified path of the class.
+ * @return Reference to ContainerMembers, or an empty member set if not found.
+ */
 const ContainerMembers& RuleIndex::ClassMembers(std::string_view className) const
 {
     static const ContainerMembers empty;
@@ -24,11 +39,21 @@ const ContainerMembers& RuleIndex::ClassMembers(std::string_view className) cons
     return it == byClass.end() ? empty : it->second;
 }
 
+/**
+ * @brief Retrieves member symbols for a given class name (std::string overload).
+ * @param[in] className Name or qualified path of the class.
+ * @return Reference to ContainerMembers, or an empty member set if not found.
+ */
 const ContainerMembers& RuleIndex::ClassMembers(const std::string& className) const
 {
     return ClassMembers(std::string_view(className));
 }
 
+/**
+ * @brief Retrieves member symbols for a given namespace name.
+ * @param[in] nsName Name or qualified path of the namespace.
+ * @return Reference to ContainerMembers, or an empty member set if not found.
+ */
 const ContainerMembers& RuleIndex::NamespaceMembers(std::string_view nsName) const
 {
     static const ContainerMembers empty;
@@ -36,6 +61,11 @@ const ContainerMembers& RuleIndex::NamespaceMembers(std::string_view nsName) con
     return it == byNamespace.end() ? empty : it->second;
 }
 
+/**
+ * @brief Retrieves member symbols for a given namespace name (std::string overload).
+ * @param[in] nsName Name or qualified path of the namespace.
+ * @return Reference to ContainerMembers, or an empty member set if not found.
+ */
 const ContainerMembers& RuleIndex::NamespaceMembers(const std::string& nsName) const
 {
     return NamespaceMembers(std::string_view(nsName));
@@ -101,10 +131,8 @@ void RuleIndexPartial::Merge(RuleIndexPartial&& other)
     mergeContribMap(byNamespace, other.byNamespace);
 }
 
-namespace
-{
 /** @brief Extracts and records template parameters and namespace segments. */
-void ProcessSymbolNames(RuleIndexPartial& partial, const Symbol& sym)
+static void ProcessSymbolNames(RuleIndexPartial& partial, const Symbol& sym)
 {
     partial.allNames.push_back(sym.name);
 
@@ -133,7 +161,7 @@ void ProcessSymbolNames(RuleIndexPartial& partial, const Symbol& sym)
  * @param[in,out] partial Target partial rule index.
  * @param[in] sym Symbol to inspect.
  */
-void ProcessGlobalNames(RuleIndexPartial& partial, const Symbol& sym)
+static void ProcessGlobalNames(RuleIndexPartial& partial, const Symbol& sym)
 {
     if (!sym.containerName.empty())
     {
@@ -163,7 +191,7 @@ void ProcessGlobalNames(RuleIndexPartial& partial, const Symbol& sym)
 }
 
 /** @brief Records enum members. */
-void ProcessEnumSymbol(RuleIndexPartial& partial, const Symbol& sym)
+static void ProcessEnumSymbol(RuleIndexPartial& partial, const Symbol& sym)
 {
     if (sym.type == SymbolType::Enum && std::holds_alternative<EnumSignature>(sym.signature))
     {
@@ -175,7 +203,7 @@ void ProcessEnumSymbol(RuleIndexPartial& partial, const Symbol& sym)
 }
 
 /** @brief Records qualified type names for types. */
-void ProcessTypeSymbol(RuleIndexPartial& partial, const Symbol& sym)
+static void ProcessTypeSymbol(RuleIndexPartial& partial, const Symbol& sym)
 {
     if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface || sym.type == SymbolType::Enum ||
         sym.type == SymbolType::Typedef || sym.type == SymbolType::Funcdef)
@@ -186,7 +214,7 @@ void ProcessTypeSymbol(RuleIndexPartial& partial, const Symbol& sym)
 }
 
 /** @brief Helper to record a base type in derivedByBase. */
-void RecordBase(RuleIndexPartial& partial, const DerivedType& derived, const std::string& base)
+static void RecordBase(RuleIndexPartial& partial, const DerivedType& derived, const std::string& base)
 {
     const std::string cleanBase = CleanBaseType(base);
     if (!cleanBase.empty())
@@ -200,7 +228,7 @@ void RecordBase(RuleIndexPartial& partial, const DerivedType& derived, const std
 }
 
 /** @brief Records inheritance and mixin relationships. */
-void ProcessInheritanceSymbol(RuleIndexPartial& partial, const Symbol& sym)
+static void ProcessInheritanceSymbol(RuleIndexPartial& partial, const Symbol& sym)
 {
     if (sym.type != SymbolType::Class && sym.type != SymbolType::Interface)
     {
@@ -241,7 +269,7 @@ void ProcessInheritanceSymbol(RuleIndexPartial& partial, const Symbol& sym)
 }
 
 /** @brief Records accessor property names from getter/setter functions. */
-void RecordAccessorProperty(RuleIndexPartial& partial, const Symbol& sym)
+static void RecordAccessorProperty(RuleIndexPartial& partial, const Symbol& sym)
 {
     std::string_view accessor = sym.name;
     if (accessor.starts_with("get_") || accessor.starts_with("set_"))
@@ -285,7 +313,7 @@ void RecordAccessorProperty(RuleIndexPartial& partial, const Symbol& sym)
 }
 
 /** @brief Populates member contribution details according to symbol type. */
-void PopulateContainerContribution(RuleIndexPartial::ContainerContribution& members, const Symbol& sym)
+static void PopulateContainerContribution(RuleIndexPartial::ContainerContribution& members, const Symbol& sym)
 {
     members.allMemberNames.push_back(sym.name);
     members.memberKeys.push_back(sym.qualifiedName.empty() ? sym.name : sym.qualifiedName);
@@ -326,7 +354,7 @@ void PopulateContainerContribution(RuleIndexPartial::ContainerContribution& memb
 }
 
 /** @brief Records container members and their nested types. */
-void ProcessContainerMember(RuleIndexPartial& partial, const Symbol& sym)
+static void ProcessContainerMember(RuleIndexPartial& partial, const Symbol& sym)
 {
     if (sym.containerName.empty())
     {
@@ -350,7 +378,7 @@ void ProcessContainerMember(RuleIndexPartial& partial, const Symbol& sym)
 }
 
 /** @brief Records template parameters of a class as members of that class container. */
-void ProcessClassTemplateParams(RuleIndexPartial& partial, const Symbol& sym)
+static void ProcessClassTemplateParams(RuleIndexPartial& partial, const Symbol& sym)
 {
     if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
     {
@@ -376,7 +404,7 @@ void ProcessClassTemplateParams(RuleIndexPartial& partial, const Symbol& sym)
 }
 
 /** @brief Records non-external shared class or function declarations. */
-void ProcessSharedDeclaration(RuleIndexPartial& partial, const Symbol& sym)
+static void ProcessSharedDeclaration(RuleIndexPartial& partial, const Symbol& sym)
 {
     bool declaresShared = false;
     if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
@@ -397,7 +425,7 @@ void ProcessSharedDeclaration(RuleIndexPartial& partial, const Symbol& sym)
 }
 
 /** @brief Processes a single symbol and extracts its contributions to the partial index. */
-void ProcessSymbol(RuleIndexPartial& partial, const Symbol& sym)
+static void ProcessSymbol(RuleIndexPartial& partial, const Symbol& sym)
 {
     if (sym.type == SymbolType::CallReference)
     {
@@ -421,7 +449,7 @@ void ProcessSymbol(RuleIndexPartial& partial, const Symbol& sym)
 }
 
 /** @brief Populates partial index from range of symbols. */
-template <typename SymbolRange> void PopulatePartial(RuleIndexPartial& partial, const SymbolRange& symbols)
+template <typename SymbolRange> static void PopulatePartial(RuleIndexPartial& partial, const SymbolRange& symbols)
 {
     for (const auto& symRef : symbols)
     {
@@ -447,7 +475,7 @@ template <typename SymbolRange> void PopulatePartial(RuleIndexPartial& partial, 
 }
 
 /** @brief Applies symbol names and enum members from partial index. */
-void ApplyNamesAndEnums(RuleIndex& index, const RuleIndexPartial& partial)
+static void ApplyNamesAndEnums(RuleIndex& index, const RuleIndexPartial& partial)
 {
     for (const auto& name : partial.allNames)
     {
@@ -470,7 +498,7 @@ void ApplyNamesAndEnums(RuleIndex& index, const RuleIndexPartial& partial)
 }
 
 /** @brief Applies qualified types and property accessors from partial index. */
-void ApplyTypesAndAccessors(RuleIndex& index, const RuleIndexPartial& partial)
+static void ApplyTypesAndAccessors(RuleIndex& index, const RuleIndexPartial& partial)
 {
     for (const auto& [shortName, qName] : partial.qualifiedTypes)
     {
@@ -499,7 +527,7 @@ void ApplyTypesAndAccessors(RuleIndex& index, const RuleIndexPartial& partial)
 }
 
 /** @brief Applies inheritance and mixin relations from partial index. */
-void ApplyHierarchy(RuleIndex& index, const RuleIndexPartial& partial)
+static void ApplyHierarchy(RuleIndex& index, const RuleIndexPartial& partial)
 {
     for (const auto& [base, derived] : partial.derivedByBase)
     {
@@ -518,7 +546,7 @@ void ApplyHierarchy(RuleIndex& index, const RuleIndexPartial& partial)
 }
 
 /** @brief Applies contributions for a single container. */
-void ApplyContainerContribution(ContainerMembers& cm, const RuleIndexPartial::ContainerContribution& contrib)
+static void ApplyContainerContribution(ContainerMembers& cm, const RuleIndexPartial::ContainerContribution& contrib)
 {
     for (const auto& m : contrib.methodNames)
     {
@@ -568,7 +596,7 @@ void ApplyContainerContribution(ContainerMembers& cm, const RuleIndexPartial::Co
 }
 
 /** @brief Applies container contributions from partial index. */
-void ApplyContainers(RuleIndex& index, const RuleIndexPartial& partial)
+static void ApplyContainers(RuleIndex& index, const RuleIndexPartial& partial)
 {
     for (const auto& [containerName, contrib] : partial.byContainer)
     {
@@ -585,7 +613,7 @@ void ApplyContainers(RuleIndex& index, const RuleIndexPartial& partial)
 }
 
 /** @brief Removes symbol names and enum members of a partial index. */
-void RemoveNamesAndEnums(RuleIndex& index, const RuleIndexPartial& partial)
+static void RemoveNamesAndEnums(RuleIndex& index, const RuleIndexPartial& partial)
 {
     for (const auto& name : partial.allNames)
     {
@@ -627,7 +655,7 @@ void RemoveNamesAndEnums(RuleIndex& index, const RuleIndexPartial& partial)
 }
 
 /** @brief Removes qualified types and property accessors of a partial index. */
-void RemoveTypesAndAccessors(RuleIndex& index, const RuleIndexPartial& partial)
+static void RemoveTypesAndAccessors(RuleIndex& index, const RuleIndexPartial& partial)
 {
     for (const auto& [shortName, qName] : partial.qualifiedTypes)
     {
@@ -676,7 +704,7 @@ void RemoveTypesAndAccessors(RuleIndex& index, const RuleIndexPartial& partial)
 }
 
 /** @brief Removes inheritance and mixin relations of a partial index. */
-void RemoveHierarchy(RuleIndex& index, const RuleIndexPartial& partial)
+static void RemoveHierarchy(RuleIndex& index, const RuleIndexPartial& partial)
 {
     for (const auto& [base, derived] : partial.derivedByBase)
     {
@@ -725,7 +753,7 @@ void RemoveHierarchy(RuleIndex& index, const RuleIndexPartial& partial)
 }
 
 /** @brief Removes contributions for a single container. */
-void RemoveContainerContribution(ContainerMembers& cm, const RuleIndexPartial::ContainerContribution& contrib)
+static void RemoveContainerContribution(ContainerMembers& cm, const RuleIndexPartial::ContainerContribution& contrib)
 {
     auto removeCountedMember = [](auto& counts, auto& set, const std::string& item)
     {
@@ -784,7 +812,7 @@ void RemoveContainerContribution(ContainerMembers& cm, const RuleIndexPartial::C
 }
 
 /** @brief Removes container contributions of a partial index. */
-void RemoveContainers(RuleIndex& index, const RuleIndexPartial& partial)
+static void RemoveContainers(RuleIndex& index, const RuleIndexPartial& partial)
 {
     auto removeContainerMap = [](auto& map, const auto& contribMap)
     {
@@ -808,7 +836,6 @@ void RemoveContainers(RuleIndex& index, const RuleIndexPartial& partial)
     removeContainerMap(index.byClass, partial.byClass);
     removeContainerMap(index.byNamespace, partial.byNamespace);
 }
-} // namespace
 
 /**
  * @brief Helper template to construct and populate a RuleIndexPartial.

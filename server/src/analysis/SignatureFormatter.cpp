@@ -6,13 +6,11 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
 /** @brief Re-attaches a modifier the captured type text may already carry.
  *  @note TypeExtraction normally folds 'const' and '@' into typeName, but the flags are the
  *        authority. Appending unconditionally would produce "const const string", so each
  *        marker is only added when the text does not already show it. */
-std::string ApplyConstAndHandle(const std::string& typeName, bool isConst, bool isHandle)
+static std::string ApplyConstAndHandle(const std::string& typeName, bool isConst, bool isHandle)
 {
     const bool hasConst =
         typeName.starts_with(parser::keywords::Const) &&
@@ -45,7 +43,6 @@ std::string ApplyConstAndHandle(const std::string& typeName, bool isConst, bool 
     }
     return result;
 }
-} // namespace
 
 std::string FormatAccessPrefix(const SymbolModifiers& modifiers)
 {
@@ -61,14 +58,11 @@ std::string FormatAccessPrefix(const SymbolModifiers& modifiers)
     }
 }
 
-namespace
-{
-void AppendModifier(std::string& result, std::string_view mod)
+static void AppendModifier(std::string& result, std::string_view mod)
 {
     result.append(mod);
     result.push_back(' ');
 }
-} // namespace
 
 std::string FormatDeclarationPrefix(const SymbolModifiers& modifiers)
 {
@@ -99,10 +93,8 @@ std::string FormatDeclarationPrefix(const SymbolModifiers& modifiers)
 
 /**
  * @brief Format parameter reference.
- * @param[in] param Parameter param.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (85%) with ParameterModifierToString in
- * server/src/analysis/SymbolTable.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] param Function parameter information.
+ * @return Calculated or extracted result of the operation.
  */
 std::string FormatParameterReference(const ParameterInformation& param)
 {

@@ -5,8 +5,6 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 static const std::unordered_set<std::string_view> kKeywords = []
 {
     std::unordered_set<std::string_view> all;
@@ -18,6 +16,8 @@ static const std::unordered_set<std::string_view> kKeywords = []
 static constexpr std::string_view kTwoCharOperators[] = {
     "==", "!=", "<=", ">=", "&&", "||", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<", ">>", "^^"};
 
+namespace formatting_lexer_detail
+{
 /**
  * @brief Represents Scan state.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -35,8 +35,11 @@ struct ScanState
     uint32_t newlines = 0;
     std::vector<Token> tokens;
 };
+} // namespace formatting_lexer_detail
 
-bool TryConsumeWhitespace(ScanState& state)
+using ScanState = formatting_lexer_detail::ScanState;
+
+static bool TryConsumeWhitespace(ScanState& state)
 {
     char c = state.src[state.i];
     if (c == '\r' || c == '\n')
@@ -59,7 +62,7 @@ bool TryConsumeWhitespace(ScanState& state)
     return false;
 }
 
-bool TryConsumeLineComment(ScanState& state)
+static bool TryConsumeLineComment(ScanState& state)
 {
     char c = state.src[state.i];
     if (c == '/' && state.i + 1 < state.src.size() && state.src[state.i + 1] == '/')
@@ -81,13 +84,10 @@ bool TryConsumeLineComment(ScanState& state)
 
 /**
  * @brief Try consume block comment.
- * @param[in,out] state Parameter state.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (73%) with TryConsumeRawString in
- * server/src/features/formatting/FormattingLexer.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @param[in,out] state Parser or lexer scan state.
+ * @return True if the condition is satisfied; false otherwise.
  */
-bool TryConsumeBlockComment(ScanState& state)
+static bool TryConsumeBlockComment(ScanState& state)
 {
     char c = state.src[state.i];
     if (c == '/' && state.i + 1 < state.src.size() && state.src[state.i + 1] == '*')
@@ -123,7 +123,7 @@ bool TryConsumeBlockComment(ScanState& state)
     return false;
 }
 
-bool TryConsumePreprocessor(ScanState& state)
+static bool TryConsumePreprocessor(ScanState& state)
 {
     char c = state.src[state.i];
     if (c == '#' && (state.curCol == 0 || state.tokens.empty() || state.newlines > 0))
@@ -156,13 +156,10 @@ bool TryConsumePreprocessor(ScanState& state)
 
 /**
  * @brief Try consume raw string.
- * @param[in,out] state Parameter state.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (73%) with TryConsumeBlockComment in
- * server/src/features/formatting/FormattingLexer.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @param[in,out] state Parser or lexer scan state.
+ * @return True if the condition is satisfied; false otherwise.
  */
-bool TryConsumeRawString(ScanState& state)
+static bool TryConsumeRawString(ScanState& state)
 {
     char c = state.src[state.i];
     if (c == '"' && state.i + 2 < state.src.size() && state.src[state.i + 1] == '"' && state.src[state.i + 2] == '"')
@@ -198,7 +195,7 @@ bool TryConsumeRawString(ScanState& state)
     return false;
 }
 
-bool TryConsumeQuotedLiteral(ScanState& state, char quoteChar, TokenType tokenType)
+static bool TryConsumeQuotedLiteral(ScanState& state, char quoteChar, TokenType tokenType)
 {
     if (state.src[state.i] != quoteChar)
         return false;
@@ -233,7 +230,7 @@ bool TryConsumeQuotedLiteral(ScanState& state, char quoteChar, TokenType tokenTy
     return true;
 }
 
-bool TryConsumeIdentifierOrNonAscii(ScanState& state)
+static bool TryConsumeIdentifierOrNonAscii(ScanState& state)
 {
     char c = state.src[state.i];
     if (static_cast<unsigned char>(c) >= 0x80)
@@ -269,7 +266,7 @@ bool TryConsumeIdentifierOrNonAscii(ScanState& state)
     return false;
 }
 
-void ConsumeExponent(ScanState& state)
+static void ConsumeExponent(ScanState& state)
 {
     if (state.i < state.src.size() && (state.src[state.i] == 'e' || state.src[state.i] == 'E'))
     {
@@ -288,7 +285,7 @@ void ConsumeExponent(ScanState& state)
     }
 }
 
-void ConsumeDecimalNumber(ScanState& state)
+static void ConsumeDecimalNumber(ScanState& state)
 {
     while (state.i < state.src.size() && std::isdigit(static_cast<unsigned char>(state.src[state.i])))
     {
@@ -309,7 +306,7 @@ void ConsumeDecimalNumber(ScanState& state)
     ConsumeExponent(state);
 }
 
-bool TryConsumeNumber(ScanState& state)
+static bool TryConsumeNumber(ScanState& state)
 {
     char c = state.src[state.i];
     if (!std::isdigit(static_cast<unsigned char>(c)))
@@ -348,7 +345,7 @@ bool TryConsumeNumber(ScanState& state)
     return true;
 }
 
-TokenType ClassifyTwoCharOperator(std::string_view op2)
+static TokenType ClassifyTwoCharOperator(std::string_view op2)
 {
     if (op2 == "++")
         return TokenType::Increment;
@@ -364,7 +361,7 @@ TokenType ClassifyTwoCharOperator(std::string_view op2)
     return TokenType::EndOfFile;
 }
 
-bool TryConsumeMultiCharOperator(ScanState& state)
+static bool TryConsumeMultiCharOperator(ScanState& state)
 {
     if (state.i + 3 < state.src.size() && state.src.substr(state.i, 4) == ">>>=")
     {
@@ -407,7 +404,7 @@ bool TryConsumeMultiCharOperator(ScanState& state)
     return false;
 }
 
-TokenType ClassifySingleChar(char c)
+static TokenType ClassifySingleChar(char c)
 {
     switch (c)
     {
@@ -440,7 +437,7 @@ TokenType ClassifySingleChar(char c)
     }
 }
 
-void ConsumeSingleCharToken(ScanState& state)
+static void ConsumeSingleCharToken(ScanState& state)
 {
     char c = state.src[state.i];
     TokenType tt = ClassifySingleChar(c);
@@ -449,7 +446,6 @@ void ConsumeSingleCharToken(ScanState& state)
     state.curCol++;
     state.newlines = 0;
 }
-} // namespace
 
 std::vector<Token> ScanRawTokens(std::string_view src)
 {

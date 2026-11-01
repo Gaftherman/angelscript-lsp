@@ -59,9 +59,7 @@ std::span<const FunctionSymbol> OverloadResolver::findCandidates(std::string_vie
     return {};
 }
 
-namespace
-{
-std::string FormatCandidateSignature(const Symbol& sym)
+static std::string FormatCandidateSignature(const Symbol& sym)
 {
     if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
     {
@@ -85,7 +83,7 @@ std::string FormatCandidateSignature(const Symbol& sym)
     return res;
 }
 
-std::string FindRejectionReason(const Symbol& sym, const std::vector<std::string>& argumentTypes)
+static std::string FindRejectionReason(const Symbol& sym, const std::vector<std::string>& argumentTypes)
 {
     if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
     {
@@ -108,6 +106,8 @@ std::string FindRejectionReason(const Symbol& sym, const std::vector<std::string
     return "Type conversion incompatible";
 }
 
+namespace overload_resolver_detail
+{
 /**
  * @brief Represents Overload log request.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -119,8 +119,11 @@ struct OverloadLogRequest
     const OverloadMatchResult& result;
     const std::vector<EvaluatedCandidate>& evaluated;
 };
+} // namespace overload_resolver_detail
 
-void LogOverloadTelemetry(const OverloadLogRequest& req)
+using OverloadLogRequest = overload_resolver_detail::OverloadLogRequest;
+
+static void LogOverloadTelemetry(const OverloadLogRequest& req)
 {
     if (!utils::MultiFileLogger::Instance().IsInitialized() || req.candidates.empty())
     {
@@ -219,7 +222,6 @@ static void PopulateWinner(OverloadMatchResult& result, EvaluatedCandidate cand)
     }
     result.bestConversions = std::move(cand.conversions);
 }
-} // namespace
 
 OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidates,
                                         const std::vector<std::string>& argumentTypes, const SymbolTable& symbolTable,

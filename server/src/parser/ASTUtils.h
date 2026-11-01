@@ -600,6 +600,19 @@ template <typename Callback> inline void ForEachAncestor(TSNode node, Callback&&
 }
 
 /**
+ * @brief Represents a named node span within source text.
+ */
+struct AstNodeSpan
+{
+    uint32_t startByte = 0;
+    uint32_t endByte = 0;
+    uint32_t startLine = 0;
+    uint32_t endLine = 0;
+    std::string name;
+    int parentIndex = -1;
+};
+
+/**
  * @brief Represents the global scope qualification of an AST node.
  */
 struct GlobalScopeQualifier
@@ -946,31 +959,6 @@ inline void SkipLiteral(std::string_view sourceCode, size_t& i, int& currentLine
 
 namespace angel_lsp::analysis
 {
-using parser::ForEachChildNode;
-using parser::ForEachNamedChildNode;
-using parser::ForEachNamedChildNodeUntil;
-using parser::GetNodeText;
-using parser::GetParent;
-using parser::GetRootNode;
-using parser::NodeText;
-using parser::NodeTextResult;
-using parser::NodeTextString;
-using parser::UnquoteStringView;
-
-using parser::BraceBalance;
-using parser::ComputeBraceBalance;
-using parser::FindDeclaratorValueNode;
-using parser::GetGlobalScopeQualifier;
-using parser::GlobalScopeQualifier;
-using parser::IsGlobalScopedNode;
-using parser::IsHandleAssignmentTarget;
-using parser::SkipComment;
-using parser::SkipHeredocLiteral;
-using parser::SkipLiteral;
-using parser::Trim;
-
-using parser::CountNamedNodes;
-
 /**
  * @brief Exception thrown when an AST traversal or checker exceeds its node visit budget.
  */
@@ -1018,7 +1006,8 @@ class TraversalBudget
     {
     }
 
-    explicit TraversalBudget(TSNode root, double multiplier = 3.0) : TraversalBudget(CountNamedNodes(root), multiplier)
+    explicit TraversalBudget(TSNode root, double multiplier = 3.0)
+        : TraversalBudget(parser::CountNamedNodes(root), multiplier)
     {
     }
 
@@ -1063,7 +1052,7 @@ class TraversalBudget
 
     void SetRoot(TSNode root, double multiplier = 3.0)
     {
-        m_namedNodeCount = CountNamedNodes(root);
+        m_namedNodeCount = parser::CountNamedNodes(root);
         m_maxAllowed = static_cast<size_t>(static_cast<double>(m_namedNodeCount) * multiplier);
         m_currentVisits = 0;
     }

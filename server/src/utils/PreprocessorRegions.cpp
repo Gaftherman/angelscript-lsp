@@ -8,14 +8,12 @@
 
 namespace angel_lsp::utils
 {
-namespace
-{
 /**
  * @brief Checks if character is a valid identifier character (alnum or underscore).
  * @param[in] c Character to test.
  * @return True if valid identifier char.
  */
-bool IsIdentifierChar(char c)
+static bool IsIdentifierChar(char c)
 {
     return std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_';
 }
@@ -25,11 +23,13 @@ bool IsIdentifierChar(char c)
  * @param[in] c Character to test.
  * @return True if space or tab.
  */
-bool IsSpaceOrTab(char c)
+static bool IsSpaceOrTab(char c)
 {
     return c == ' ' || c == '\t';
 }
 
+namespace preprocessor_regions_detail
+{
 /**
  * @brief One `#if <word>` that has been opened and is waiting for its `#endif`.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -40,7 +40,12 @@ struct OpenDirective
     bool excluded = false;     ///< True when the current branch is the dropped one.
     bool takenAlready = false; ///< True once some branch of this `#if` has been live.
 };
+} // namespace preprocessor_regions_detail
 
+using OpenDirective = preprocessor_regions_detail::OpenDirective;
+
+namespace preprocessor_regions_detail
+{
 /**
  * @brief One `#name argument` found at the start of a line.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -55,7 +60,12 @@ struct DirectiveHit
     bool touchesHash = true;
     char firstArgChar = 0;
 };
+} // namespace preprocessor_regions_detail
 
+using DirectiveHit = preprocessor_regions_detail::DirectiveHit;
+
+namespace preprocessor_regions_detail
+{
 /**
  * @brief State tracking for scanning lines and directives.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -67,13 +77,16 @@ struct LineScanState
     size_t lineStart{0};
     bool atLineStart{true};
 };
+} // namespace preprocessor_regions_detail
+
+using LineScanState = preprocessor_regions_detail::LineScanState;
 
 /**
  * @brief Advances index past spaces and tabs.
  * @param[in] sourceCode Document text.
  * @param[in,out] state Line scanner state.
  */
-void SkipSpacesAndTabs(std::string_view sourceCode, LineScanState& state)
+static void SkipSpacesAndTabs(std::string_view sourceCode, LineScanState& state)
 {
     const size_t n = sourceCode.size();
     while (state.index < n && IsSpaceOrTab(sourceCode[state.index]))
@@ -85,7 +98,7 @@ void SkipSpacesAndTabs(std::string_view sourceCode, LineScanState& state)
  * @param[in] sourceCode Document text.
  * @param[in,out] state Line scanner state.
  */
-void SkipUntilNewline(std::string_view sourceCode, LineScanState& state)
+static void SkipUntilNewline(std::string_view sourceCode, LineScanState& state)
 {
     const size_t n = sourceCode.size();
     while (state.index < n && sourceCode[state.index] != '\n' && sourceCode[state.index] != '\r')
@@ -98,7 +111,7 @@ void SkipUntilNewline(std::string_view sourceCode, LineScanState& state)
  * @param[in,out] state Line scanner state.
  * @return True if a newline was consumed.
  */
-bool HandleNewline(std::string_view sourceCode, LineScanState& state)
+static bool HandleNewline(std::string_view sourceCode, LineScanState& state)
 {
     const char c = sourceCode[state.index];
     if (c == '\r')
@@ -127,7 +140,7 @@ bool HandleNewline(std::string_view sourceCode, LineScanState& state)
  * @param[in] sourceCode Document text.
  * @param[in,out] state Line scanner state.
  */
-void SkipLineComment(std::string_view sourceCode, LineScanState& state)
+static void SkipLineComment(std::string_view sourceCode, LineScanState& state)
 {
     state.index += 2;
     SkipUntilNewline(sourceCode, state);
@@ -138,7 +151,7 @@ void SkipLineComment(std::string_view sourceCode, LineScanState& state)
  * @param[in] sourceCode Document text.
  * @param[in,out] state Line scanner state.
  */
-void SkipBlockComment(std::string_view sourceCode, LineScanState& state)
+static void SkipBlockComment(std::string_view sourceCode, LineScanState& state)
 {
     state.index += 2;
     const size_t n = sourceCode.size();
@@ -165,7 +178,7 @@ void SkipBlockComment(std::string_view sourceCode, LineScanState& state)
  * @param[in,out] state Line scanner state.
  * @return True if a comment was encountered and skipped.
  */
-bool TrySkipComment(std::string_view sourceCode, LineScanState& state)
+static bool TrySkipComment(std::string_view sourceCode, LineScanState& state)
 {
     return TrySkipCommentDispatch(sourceCode, state, SkipLineComment, SkipBlockComment);
 }
@@ -175,7 +188,7 @@ bool TrySkipComment(std::string_view sourceCode, LineScanState& state)
  * @param[in] sourceCode Document text.
  * @param[in,out] state Line scanner state.
  */
-void SkipHeredocLiteral(std::string_view sourceCode, LineScanState& state)
+static void SkipHeredocLiteral(std::string_view sourceCode, LineScanState& state)
 {
     state.index += 3;
     const size_t n = sourceCode.size();
@@ -207,7 +220,7 @@ void SkipHeredocLiteral(std::string_view sourceCode, LineScanState& state)
     }
 }
 
-void SkipStringLiteral(std::string_view sourceCode, LineScanState& state)
+static void SkipStringLiteral(std::string_view sourceCode, LineScanState& state)
 {
     if (sourceCode.substr(state.index).starts_with("\"\"\""))
     {
@@ -224,7 +237,7 @@ void SkipStringLiteral(std::string_view sourceCode, LineScanState& state)
  * @param[in,out] state Line scanner state.
  * @return DirectiveHit if a valid directive candidate was found.
  */
-std::optional<DirectiveHit> ParseDirectiveHit(std::string_view sourceCode, LineScanState& state)
+static std::optional<DirectiveHit> ParseDirectiveHit(std::string_view sourceCode, LineScanState& state)
 {
     const size_t n = sourceCode.size();
     DirectiveHit hit;
@@ -269,7 +282,7 @@ std::optional<DirectiveHit> ParseDirectiveHit(std::string_view sourceCode, LineS
  * @param[in] fn Callback invoked for each found directive.
  * @return The 0-based number of the last line scanned.
  */
-template <typename Fn> uint32_t ForEachDirective(std::string_view sourceCode, Fn&& fn)
+template <typename Fn> static uint32_t ForEachDirective(std::string_view sourceCode, Fn&& fn)
 {
     const size_t n = sourceCode.size();
     LineScanState state;
@@ -306,6 +319,8 @@ template <typename Fn> uint32_t ForEachDirective(std::string_view sourceCode, Fn
     return state.currentLine;
 }
 
+namespace preprocessor_regions_detail
+{
 /**
  * @brief Context state for preprocessor scanning and conditional evaluation.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -346,13 +361,16 @@ struct PreprocessorScanContext
             UnsupportedDirective{hit.line, hit.startColumn, hit.endColumn, problem, std::string(hit.name)});
     }
 };
+} // namespace preprocessor_regions_detail
+
+using PreprocessorScanContext = preprocessor_regions_detail::PreprocessorScanContext;
 
 /**
  * @brief Checks if a directive name is one of the recognized preprocessor directives.
  * @param[in] candidate Name to test.
  * @return True if recognized.
  */
-bool IsKnownDirectiveName(std::string_view candidate)
+static bool IsKnownDirectiveName(std::string_view candidate)
 {
     return candidate == "include" || candidate == "if" || candidate == "endif" || candidate == "pragma" ||
            candidate == "else" || candidate == "elif" || candidate == "ifdef" || candidate == "ifndef" ||
@@ -366,7 +384,7 @@ bool IsKnownDirectiveName(std::string_view candidate)
  * @param[in] reaches True if the directive is in a live code block.
  * @return True if syntax is valid, false otherwise.
  */
-bool ValidateDirectiveSyntax(PreprocessorScanContext& ctx, const DirectiveHit& hit, bool reaches)
+static bool ValidateDirectiveSyntax(PreprocessorScanContext& ctx, const DirectiveHit& hit, bool reaches)
 {
     if (!hit.touchesHash || !IsKnownDirectiveName(hit.name))
     {
@@ -391,7 +409,7 @@ bool ValidateDirectiveSyntax(PreprocessorScanContext& ctx, const DirectiveHit& h
  * @param[in] ifdefSupport Whether host supports #ifdef/#ifndef.
  * @return True if opens region.
  */
-bool IsRegionOpener(std::string_view name, bool ifdefSupport)
+static bool IsRegionOpener(std::string_view name, bool ifdefSupport)
 {
     if (name == "if")
         return true;
@@ -404,7 +422,7 @@ bool IsRegionOpener(std::string_view name, bool ifdefSupport)
  * @param[in] features Configured host features.
  * @return True if supported branch directive.
  */
-bool IsBranchDirective(std::string_view name, const PreprocessorFeatures& features)
+static bool IsBranchDirective(std::string_view name, const PreprocessorFeatures& features)
 {
     return (features.elseSupport && name == "else") || (features.elifSupport && name == "elif");
 }
@@ -415,7 +433,7 @@ bool IsBranchDirective(std::string_view name, const PreprocessorFeatures& featur
  * @param[in] hit Found directive.
  * @param[in] atExcludedTop True if top of stack is excluded.
  */
-void ProcessOpenRegion(PreprocessorScanContext& ctx, const DirectiveHit& hit, bool atExcludedTop)
+static void ProcessOpenRegion(PreprocessorScanContext& ctx, const DirectiveHit& hit, bool atExcludedTop)
 {
     if (atExcludedTop)
     {
@@ -444,7 +462,7 @@ void ProcessOpenRegion(PreprocessorScanContext& ctx, const DirectiveHit& hit, bo
  * @param[in,out] ctx Preprocessor scan context.
  * @param[in] word Word to define.
  */
-void ProcessDefine(PreprocessorScanContext& ctx, std::string_view word)
+static void ProcessDefine(PreprocessorScanContext& ctx, std::string_view word)
 {
     if (!ctx.usingLocalWords)
     {
@@ -461,7 +479,7 @@ void ProcessDefine(PreprocessorScanContext& ctx, std::string_view word)
  * @param[in] reaches True if the directive is in a live code block.
  * @return True if unsupported and reported.
  */
-bool CheckUnsupportedDirective(PreprocessorScanContext& ctx, const DirectiveHit& hit, bool reaches)
+static bool CheckUnsupportedDirective(PreprocessorScanContext& ctx, const DirectiveHit& hit, bool reaches)
 {
     if (!reaches)
         return false;
@@ -483,7 +501,7 @@ bool CheckUnsupportedDirective(PreprocessorScanContext& ctx, const DirectiveHit&
  * @param[in,out] ctx Preprocessor scan context.
  * @param[in] hit Found directive.
  */
-void ProcessBranch(PreprocessorScanContext& ctx, const DirectiveHit& hit)
+static void ProcessBranch(PreprocessorScanContext& ctx, const DirectiveHit& hit)
 {
     if (ctx.excludedNesting > 0 || ctx.stack.empty())
         return;
@@ -501,7 +519,7 @@ void ProcessBranch(PreprocessorScanContext& ctx, const DirectiveHit& hit)
  * @param[in,out] ctx Preprocessor scan context.
  * @param[in] hit Found directive.
  */
-void ProcessEndif(PreprocessorScanContext& ctx, const DirectiveHit& hit)
+static void ProcessEndif(PreprocessorScanContext& ctx, const DirectiveHit& hit)
 {
     if (ctx.excludedNesting > 0)
     {
@@ -528,7 +546,7 @@ void ProcessEndif(PreprocessorScanContext& ctx, const DirectiveHit& hit)
  * @param[in,out] ctx Preprocessor scan context.
  * @param[in] hit Found directive.
  */
-void ProcessDirectiveHit(PreprocessorScanContext& ctx, const DirectiveHit& hit)
+static void ProcessDirectiveHit(PreprocessorScanContext& ctx, const DirectiveHit& hit)
 {
     const bool atExcludedTop = !ctx.stack.empty() && ctx.stack.back().excluded;
     const bool reaches = !atExcludedTop && ctx.excludedNesting == 0;
@@ -557,7 +575,6 @@ void ProcessDirectiveHit(PreprocessorScanContext& ctx, const DirectiveHit& hit)
         ProcessEndif(ctx, hit);
     }
 }
-} // namespace
 
 PreprocessorScan ScanPreprocessor(std::string_view sourceCode,
                                   const ankerl::unordered_dense::set<std::string>& definedWords,

@@ -15,12 +15,10 @@
 
 namespace angel_lsp::analysis::rules
 {
-namespace
-{
 /**
  * @brief Searches for the enum_declaration AST node matching the symbol's start point or name.
  */
-TSNode FindEnumDeclarationNode(const NodeIndex& nodeIndex, const Symbol& sym, std::string_view sourceCode)
+static TSNode FindEnumDeclarationNode(const NodeIndex& nodeIndex, const Symbol& sym, std::string_view sourceCode)
 {
     const auto& gs = parser::GetGrammarSymbols();
     for (TSNode node : nodeIndex.Nodes(gs.symEnumDeclaration))
@@ -40,13 +38,13 @@ TSNode FindEnumDeclarationNode(const NodeIndex& nodeIndex, const Symbol& sym, st
 }
 
 /** @brief True when the name collides with a keyword or a built-in type name. */
-bool IsUnusableName(const std::string& name, const DiagnosticContext& ctx)
+static bool IsUnusableName(const std::string& name, const DiagnosticContext& ctx)
 {
     return IsReservedKeyword(name) || IsPrimitiveTypeName(name) || name == ctx.request.GetEffectiveStringTypeName() ||
            name == ctx.request.GetEffectiveArrayTypeName();
 }
 
-bool IsPrefixedIntegerLiteral(std::string_view text, size_t i)
+static bool IsPrefixedIntegerLiteral(std::string_view text, size_t i)
 {
     char prefix = text[i + 1];
     if (prefix == 'x' || prefix == 'X')
@@ -65,7 +63,7 @@ bool IsPrefixedIntegerLiteral(std::string_view text, size_t i)
 }
 
 /** @brief True for an integer literal, including signed forms like `-1`. */
-bool IsIntegerLiteral(std::string_view text)
+static bool IsIntegerLiteral(std::string_view text)
 {
     while (!text.empty() && (text.front() == ' ' || text.front() == '\t'))
     {
@@ -96,15 +94,13 @@ bool IsIntegerLiteral(std::string_view text)
 
 /**
  * @brief Formats a symbol type into the noun the compiler uses in as-err-name-conflict.
- * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with EngineProfileKindToString in
- * server/src/analysis/EngineProfiles.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  * Structural overlap (88%) with RawProfileStub in server/src/analysis/EngineProfiles.cpp. Candidate for unification in
  * server/src/analysis/SemanticHelpers.h. Structural overlap (72%) with ParameterModifierToString in
  * server/src/analysis/SymbolTable.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural
  * overlap (63%) with MapSymbolTypeToKind in server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate
  * for unification in server/src/analysis/SemanticHelpers.h.
  */
-std::string KindWord(SymbolType type)
+static std::string KindWord(SymbolType type)
 {
     switch (type)
     {
@@ -126,7 +122,6 @@ std::string KindWord(SymbolType type)
         return "variable";
     }
 }
-} // namespace
 
 void ValidateTypedef(const Symbol& sym, const DiagnosticContext& ctx)
 {
@@ -167,9 +162,7 @@ void ValidateTypedef(const Symbol& sym, const DiagnosticContext& ctx)
     }
 }
 
-namespace
-{
-void ValidateFuncdefReturnType(const Symbol& sym, const FuncdefSignature& sig, const DiagnosticContext& ctx)
+static void ValidateFuncdefReturnType(const Symbol& sym, const FuncdefSignature& sig, const DiagnosticContext& ctx)
 {
     if (sig.returnHasPrimitiveHandle)
     {
@@ -202,7 +195,7 @@ void ValidateFuncdefReturnType(const Symbol& sym, const FuncdefSignature& sig, c
     }
 }
 
-void ValidateFuncdefParameter(const Symbol& sym, const ParameterInformation& param, const DiagnosticContext& ctx)
+static void ValidateFuncdefParameter(const Symbol& sym, const ParameterInformation& param, const DiagnosticContext& ctx)
 {
     if (param.hasPrimitiveHandle)
     {
@@ -233,15 +226,14 @@ void ValidateFuncdefParameter(const Symbol& sym, const ParameterInformation& par
     }
 }
 
-void ValidateFuncdefParameters(const Symbol& sym, const std::vector<ParameterInformation>& params,
-                               const DiagnosticContext& ctx)
+static void ValidateFuncdefParameters(const Symbol& sym, const std::vector<ParameterInformation>& params,
+                                      const DiagnosticContext& ctx)
 {
     for (const auto& param : params)
     {
         ValidateFuncdefParameter(sym, param, ctx);
     }
 }
-} // namespace
 
 void ValidateFuncdef(const Symbol& sym, const DiagnosticContext& ctx)
 {
@@ -270,17 +262,13 @@ void ValidateFuncdef(const Symbol& sym, const DiagnosticContext& ctx)
     ValidateFuncdefParameters(sym, sig.parameters, ctx);
 }
 
-namespace
-{
 /**
  * @brief Check enum modifiers and body.
- * @param[in] sym Parameter sym.
- * @param[in] sig Parameter sig.
- * @param[in] ctx Parameter ctx.
- * @note [REFACTOR-CANDIDATE] Structural overlap (71%) with CheckExternalClass in
- * server/src/analysis/rules/ClassRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @param[in] sig Input sig for the operation.
+ * @param[in] ctx Diagnostic collection and analysis context.
  */
-void CheckEnumModifiersAndBody(const Symbol& sym, const EnumSignature& sig, const DiagnosticContext& ctx)
+static void CheckEnumModifiersAndBody(const Symbol& sym, const EnumSignature& sig, const DiagnosticContext& ctx)
 {
     if (!sig.hasBraces && !sig.modifiers.isExternal)
     {
@@ -317,7 +305,7 @@ void CheckEnumModifiersAndBody(const Symbol& sym, const EnumSignature& sig, cons
     }
 }
 
-void CheckEnumMemberInitializers(const Symbol& sym, const EnumSignature& sig, const DiagnosticContext& ctx)
+static void CheckEnumMemberInitializers(const Symbol& sym, const EnumSignature& sig, const DiagnosticContext& ctx)
 {
     for (const auto& member : sig.members)
     {
@@ -340,7 +328,7 @@ void CheckEnumMemberInitializers(const Symbol& sym, const EnumSignature& sig, co
     }
 }
 
-void CheckDuplicateEnumMembers(TSNode enumNode, const Symbol& sym, const DiagnosticContext& ctx)
+static void CheckDuplicateEnumMembers(TSNode enumNode, const Symbol& sym, const DiagnosticContext& ctx)
 {
     ankerl::unordered_dense::set<std::string> seenMemberNames;
     TSTreeCursor cursor = ts_tree_cursor_new(enumNode);
@@ -362,7 +350,7 @@ void CheckDuplicateEnumMembers(TSNode enumNode, const Symbol& sym, const Diagnos
         {
             continue;
         }
-        const std::string memberName(NodeText(memberNameNode, ctx.request.sourceCode));
+        const std::string memberName(parser::NodeText(memberNameNode, ctx.request.sourceCode));
         if (memberName.empty())
         {
             continue;
@@ -380,7 +368,7 @@ void CheckDuplicateEnumMembers(TSNode enumNode, const Symbol& sym, const Diagnos
     ts_tree_cursor_delete(&cursor);
 }
 
-void CheckDuplicateEnumFallback(const Symbol& sym, const EnumSignature& sig, const DiagnosticContext& ctx)
+static void CheckDuplicateEnumFallback(const Symbol& sym, const EnumSignature& sig, const DiagnosticContext& ctx)
 {
     ankerl::unordered_dense::set<std::string> seenMemberNames;
     for (const auto& member : sig.members)
@@ -396,7 +384,6 @@ void CheckDuplicateEnumFallback(const Symbol& sym, const EnumSignature& sig, con
         }
     }
 }
-} // namespace
 
 void ValidateEnum(const Symbol& sym, const DiagnosticContext& ctx)
 {
@@ -463,10 +450,8 @@ void ValidateInterfaceMembers(const Symbol& sym, const DiagnosticContext& ctx)
     }
 }
 
-namespace
-{
-void CollectDuplicateCandidates(const std::vector<Symbol>& symbols, const DiagnosticContext& ctx,
-                                std::vector<const Symbol*>& local, std::vector<const Symbol*>& moduleMates)
+static void CollectDuplicateCandidates(const std::vector<Symbol>& symbols, const DiagnosticContext& ctx,
+                                       std::vector<const Symbol*>& local, std::vector<const Symbol*>& moduleMates)
 {
     const bool currentIsPredefined = utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
 
@@ -505,7 +490,7 @@ void CollectDuplicateCandidates(const std::vector<Symbol>& symbols, const Diagno
     }
 }
 
-bool AreIdenticalFunctionSignatures(const Symbol& first, const Symbol& other)
+static bool AreIdenticalFunctionSignatures(const Symbol& first, const Symbol& other)
 {
     const auto& firstParams = first.GetFunction().parameters;
     const auto& otherParams = other.GetFunction().parameters;
@@ -545,7 +530,7 @@ bool AreIdenticalFunctionSignatures(const Symbol& first, const Symbol& other)
  * @param[in] ifaces Candidate interface symbols matching the container name.
  * @return Pointer to enclosing shared interface symbol, or nullptr if none matched.
  */
-const Symbol* FindEnclosingSharedInterface(const Symbol& method, const std::vector<Symbol>& ifaces)
+static const Symbol* FindEnclosingSharedInterface(const Symbol& method, const std::vector<Symbol>& ifaces)
 {
     for (const auto& sym : ifaces)
     {
@@ -565,7 +550,7 @@ const Symbol* FindEnclosingSharedInterface(const Symbol& method, const std::vect
  * @param[in] ctx Diagnostic context holding symbol table and options.
  * @return True when duplicate is permissible under asEP_IGNORE_DUPLICATE_SHARED_INTF.
  */
-bool IsSharedInterfaceDuplicateMethod(const Symbol& first, const Symbol& other, const DiagnosticContext& ctx)
+static bool IsSharedInterfaceDuplicateMethod(const Symbol& first, const Symbol& other, const DiagnosticContext& ctx)
 {
     if (!ctx.request.IgnoresDuplicateSharedInterface() || !first.GetFunction().isInterfaceMethod ||
         !other.GetFunction().isInterfaceMethod || first.containerName.empty() ||
@@ -597,7 +582,7 @@ bool IsSharedInterfaceDuplicateMethod(const Symbol& first, const Symbol& other, 
  * @param[in] other Other variable symbol.
  * @return True if either symbol is a virtual property.
  */
-bool IsAllowedDuplicateVariable(const Symbol& first, const Symbol& other)
+static bool IsAllowedDuplicateVariable(const Symbol& first, const Symbol& other)
 {
     return first.type == SymbolType::Variable &&
            (first.GetVariable().isVirtualProperty || other.GetVariable().isVirtualProperty);
@@ -609,7 +594,7 @@ bool IsAllowedDuplicateVariable(const Symbol& first, const Symbol& other)
  * @param[in] other Other class symbol.
  * @return True if either class declaration lacks braces.
  */
-bool IsAllowedDuplicateClass(const Symbol& first, const Symbol& other)
+static bool IsAllowedDuplicateClass(const Symbol& first, const Symbol& other)
 {
     return first.type == SymbolType::Class && other.type == SymbolType::Class &&
            (!first.GetClass().hasBraces || !other.GetClass().hasBraces);
@@ -622,7 +607,7 @@ bool IsAllowedDuplicateClass(const Symbol& first, const Symbol& other)
  * @param[in] ctx Diagnostic context.
  * @return True if both are shared interfaces and duplicate shared interfaces are ignored.
  */
-bool IsAllowedDuplicateInterface(const Symbol& first, const Symbol& other, const DiagnosticContext& ctx)
+static bool IsAllowedDuplicateInterface(const Symbol& first, const Symbol& other, const DiagnosticContext& ctx)
 {
     return ctx.request.IgnoresDuplicateSharedInterface() && first.type == SymbolType::Interface &&
            other.type == SymbolType::Interface && first.GetInterface().modifiers.isShared &&
@@ -636,7 +621,7 @@ bool IsAllowedDuplicateInterface(const Symbol& first, const Symbol& other, const
  * @param[in] ctx Diagnostic context.
  * @return True if duplicate is allowed; false otherwise.
  */
-bool IsAllowedDuplicate(const Symbol& first, const Symbol& other, const DiagnosticContext& ctx)
+static bool IsAllowedDuplicate(const Symbol& first, const Symbol& other, const DiagnosticContext& ctx)
 {
     if (IsAllowedDuplicateVariable(first, other) || IsAllowedDuplicateClass(first, other))
     {
@@ -658,7 +643,7 @@ bool IsAllowedDuplicate(const Symbol& first, const Symbol& other, const Diagnost
  * @param[in] other Other symbol.
  * @return True if symbols are allowed to coexist.
  */
-bool IsCompatibleNamespaceOrHomonym(const Symbol& first, const Symbol& other) noexcept
+static bool IsCompatibleNamespaceOrHomonym(const Symbol& first, const Symbol& other) noexcept
 {
     if (first.type == SymbolType::Namespace && other.type == SymbolType::Namespace)
     {
@@ -672,7 +657,7 @@ bool IsCompatibleNamespaceOrHomonym(const Symbol& first, const Symbol& other) no
     return first.containerName == other.containerName && first.containerKind != other.containerKind;
 }
 
-bool CheckDuplicatePair(const Symbol& first, const Symbol& other, const DiagnosticContext& ctx)
+static bool CheckDuplicatePair(const Symbol& first, const Symbol& other, const DiagnosticContext& ctx)
 {
     if (first.fileUri == other.fileUri && first.startLine == other.startLine &&
         first.startCharacter == other.startCharacter)
@@ -718,7 +703,6 @@ bool CheckDuplicatePair(const Symbol& first, const Symbol& other, const Diagnost
     ctx.EmitAtRange(other.selectionRange, "as-err-duplicate-symbol", other.name);
     return true;
 }
-} // namespace
 
 void ValidateDuplicates(const std::vector<Symbol>& symbols, const DiagnosticContext& ctx)
 {

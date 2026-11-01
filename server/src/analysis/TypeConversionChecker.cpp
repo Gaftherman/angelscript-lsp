@@ -27,7 +27,7 @@
 
 namespace angel_lsp::analysis
 {
-namespace
+namespace type_conversion_checker_detail
 {
 /**
  * @brief What a resolved expression is worth to this pass.
@@ -40,7 +40,12 @@ struct ExpressionType
     bool isLiteral = false; ///< A literal's type is exact, so it can be judged strictly.
     bool isConst = false;   ///< True if expression has const-qualified type.
 };
+} // namespace type_conversion_checker_detail
 
+using ExpressionType = type_conversion_checker_detail::ExpressionType;
+
+namespace type_conversion_checker_detail
+{
 /** @brief The little a rule needs to know about a type declaration.
  *  @note Deliberately not the Symbol itself: this is looked up for practically every call
  *        expression in a document, and copying a Symbol (strings, parameter vectors, a
@@ -53,7 +58,12 @@ struct TypeDeclarationInfo
     bool isClass = false;
     bool isTemplate = false;
 };
+} // namespace type_conversion_checker_detail
 
+using TypeDeclarationInfo = type_conversion_checker_detail::TypeDeclarationInfo;
+
+namespace type_conversion_checker_detail
+{
 /**
  * @brief Represents Conversion types.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -63,11 +73,14 @@ struct ConversionTypes
     std::string from{};
     std::string to{};
 };
+} // namespace type_conversion_checker_detail
+
+using ConversionTypes = type_conversion_checker_detail::ConversionTypes;
 
 /** @brief Visits every symbol registered under a qualified name without copying the bucket.
  *  @param visitor Returns true to stop the walk. */
-void ForEachSymbolNamed(std::string_view qualifiedName, const SymbolTable& table,
-                        const std::function<bool(const Symbol&)>& visitor)
+static void ForEachSymbolNamed(std::string_view qualifiedName, const SymbolTable& table,
+                               const std::function<bool(const Symbol&)>& visitor)
 {
     const auto bucket = table.FindSymbolsPtr(qualifiedName);
     if (!bucket)
@@ -85,8 +98,8 @@ void ForEachSymbolNamed(std::string_view qualifiedName, const SymbolTable& table
 
 /** @brief Visits every symbol registered under a member of a scope without copying the bucket.
  *  @param visitor Returns true to stop the walk. */
-void ForEachMemberSymbolNamed(std::string_view scope, std::string_view member, const SymbolTable& table,
-                              const std::function<bool(const Symbol&)>& visitor)
+static void ForEachMemberSymbolNamed(std::string_view scope, std::string_view member, const SymbolTable& table,
+                                     const std::function<bool(const Symbol&)>& visitor)
 {
     const auto bucket = table.FindMemberSymbolPtr(scope, member);
     if (!bucket)
@@ -151,12 +164,12 @@ static std::vector<Symbol> CollectFunctionCandidates(const std::string& funcName
     return candidates;
 }
 
-std::optional<Symbol> FindFuncdef(const std::string& name, const SymbolTable& table);
+static std::optional<Symbol> FindFuncdef(const std::string& name, const SymbolTable& table);
 
 /** @brief Looks up what a type name denotes.
  *  @return found == false when the name resolves to nothing this analyzer can see - which
  *          is the signal to stay silent about anything involving it. */
-TypeDeclarationInfo FindTypeDeclaration(const std::string& typeName, const SymbolTable& table)
+static TypeDeclarationInfo FindTypeDeclaration(const std::string& typeName, const SymbolTable& table)
 {
     TypeDeclarationInfo info;
     if (typeName.empty())
@@ -199,7 +212,7 @@ TypeDeclarationInfo FindTypeDeclaration(const std::string& typeName, const Symbo
 }
 
 /** @brief True when a name resolves to an enum declared somewhere the analyzer can see. */
-bool ResolvesToEnum(const std::string& typeName, const SymbolTable& table)
+static bool ResolvesToEnum(const std::string& typeName, const SymbolTable& table)
 {
     bool found = false;
     const std::string_view bare = LastScopeSegment(typeName);
@@ -228,7 +241,7 @@ bool ResolvesToEnum(const std::string& typeName, const SymbolTable& table)
 /** @brief True when a name resolves to an enum, typedef, funcdef or namespace.
  *  @note Keeps those out of the class-shaped rules below rather than letting them fall
  *        through to "not a class, therefore suspicious". */
-bool ResolvesToNonClassDeclaration(const std::string& typeName, const SymbolTable& table)
+static bool ResolvesToNonClassDeclaration(const std::string& typeName, const SymbolTable& table)
 {
     bool found = false;
     const std::string_view bare = LastScopeSegment(typeName);
@@ -257,8 +270,8 @@ bool ResolvesToNonClassDeclaration(const std::string& typeName, const SymbolTabl
 
 /** @brief Visits every overload of a named method visible on a type, base types included.
  *  @param visitor Returns true to stop the walk. */
-void ForEachMethod(const std::string& typeName, const std::string& memberName, const SymbolTable& table,
-                   const std::function<bool(const Symbol&)>& visitor)
+static void ForEachMethod(const std::string& typeName, const std::string& memberName, const SymbolTable& table,
+                          const std::function<bool(const Symbol&)>& visitor)
 {
     bool stopped = false;
     for (const auto& cls : GetInheritedTypeHierarchy(typeName, table))
@@ -284,8 +297,8 @@ void ForEachMethod(const std::string& typeName, const std::string& memberName, c
 /** @brief Visits the constructors declared directly on a type.
  *  @note Deliberately not hierarchy-wide: AngelScript does not inherit constructors. */
 
-void ForEachConstructor(const std::string& typeName, const SymbolTable& table,
-                        const std::function<bool(const Symbol&)>& visitor)
+static void ForEachConstructor(const std::string& typeName, const SymbolTable& table,
+                               const std::function<bool(const Symbol&)>& visitor)
 {
     // The arguments come off before the key is built. A constructor is stored under the
     // class's own name - `weakref::weakref` - so looking up `weakref<Node>` produced the key
@@ -349,7 +362,7 @@ void ForEachConstructor(const std::string& typeName, const SymbolTable& table,
  *       isStatic = false)` is a one-argument converting constructor, and treating it as a
  *       two-argument one is what made the first corpus run flag a legitimate conversion.
  */
-bool AcceptsSingleArgument(const std::vector<ParameterInformation>& parameters)
+static bool AcceptsSingleArgument(const std::vector<ParameterInformation>& parameters)
 {
     if (parameters.empty())
     {
@@ -360,7 +373,7 @@ bool AcceptsSingleArgument(const std::vector<ParameterInformation>& parameters)
 }
 
 /** @brief The declared type of the single argument such an overload converts from. */
-std::string SingleArgumentType(const std::vector<ParameterInformation>& parameters)
+static std::string SingleArgumentType(const std::vector<ParameterInformation>& parameters)
 {
     return parameters.empty() ? "" : CanonicalizeType(parameters[0].typeName);
 }
@@ -374,40 +387,39 @@ std::string SingleArgumentType(const std::vector<ParameterInformation>& paramete
  * a script class, measured, and opHndlAssign is a behaviour of application-registered
  * types.
  */
-std::string_view AssignmentOverloadName(std::string_view op)
+static std::string_view AssignmentOverloadName(std::string_view op)
 {
-    using namespace parser::keywords::operators;
-    if (op == Assign)
+    if (op == parser::keywords::operators::Assign)
         return "opAssign";
-    if (op == PlusAssign)
+    if (op == parser::keywords::operators::PlusAssign)
         return "opAddAssign";
-    if (op == MinusAssign)
+    if (op == parser::keywords::operators::MinusAssign)
         return "opSubAssign";
-    if (op == StarAssign)
+    if (op == parser::keywords::operators::StarAssign)
         return "opMulAssign";
-    if (op == SlashAssign)
+    if (op == parser::keywords::operators::SlashAssign)
         return "opDivAssign";
-    if (op == PercentAssign)
+    if (op == parser::keywords::operators::PercentAssign)
         return "opModAssign";
-    if (op == StarStarAssign)
+    if (op == parser::keywords::operators::StarStarAssign)
         return "opPowAssign";
-    if (op == AmpAssign)
+    if (op == parser::keywords::operators::AmpAssign)
         return "opAndAssign";
-    if (op == PipeAssign)
+    if (op == parser::keywords::operators::PipeAssign)
         return "opOrAssign";
-    if (op == CaretAssign)
+    if (op == parser::keywords::operators::CaretAssign)
         return "opXorAssign";
-    if (op == LtLtAssign)
+    if (op == parser::keywords::operators::LtLtAssign)
         return "opShlAssign";
-    if (op == GtGtAssign)
+    if (op == parser::keywords::operators::GtGtAssign)
         return "opShrAssign";
-    if (op == GtGtGtAssign)
+    if (op == parser::keywords::operators::GtGtGtAssign)
         return "opUShrAssign";
     return {};
 }
 
 /** @brief Whether `typeName` declares the operator method `methodName` at all. */
-bool DeclaresOperatorMethod(const std::string& typeName, std::string_view methodName, const SymbolTable& table)
+static bool DeclaresOperatorMethod(const std::string& typeName, std::string_view methodName, const SymbolTable& table)
 {
     if (typeName.empty() || methodName.empty())
     {
@@ -423,11 +435,8 @@ bool DeclaresOperatorMethod(const std::string& typeName, std::string_view method
  * `cast<int>(obj)`, `cast<int>(n)`, `cast<int>(enumValue)` and `cast<E>(n)` are all
  * "Illegal target type for reference cast", and `cast<A@>(n)` is "No conversion from 'int'
  * to 'A@' available". A reference cast is between reference types, and nothing else.
- * @note [REFACTOR-CANDIDATE] Structural overlap (82%) with IsTypeName in
- * server/src/features/implementation/ImplementationHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-bool IsScalarCastTarget(const std::string& typeName, const SymbolTable& table)
+static bool IsScalarCastTarget(const std::string& typeName, const SymbolTable& table)
 {
     if (parser::primitives::IsPrimitive(typeName))
     {
@@ -443,7 +452,7 @@ bool IsScalarCastTarget(const std::string& typeName, const SymbolTable& table)
  *  @note Deliberately coarse. Matching a cast operator to its result type means resolving
  *        the engine's template-ish opCast, which no declaration in the source states
  *        precisely enough to bet a diagnostic on. */
-bool DeclaresAnyCastOperator(const std::string& typeName, const SymbolTable& table)
+static bool DeclaresAnyCastOperator(const std::string& typeName, const SymbolTable& table)
 {
     bool found = false;
     const auto mark = [&found](const Symbol&)
@@ -461,8 +470,8 @@ bool DeclaresAnyCastOperator(const std::string& typeName, const SymbolTable& tab
 }
 
 /** @brief True when a type declares a conversion operator producing the target type. */
-bool DeclaresConversionTo(const std::string& fromType, const std::string& toType, const SymbolTable& table,
-                          bool implicitOnly)
+static bool DeclaresConversionTo(const std::string& fromType, const std::string& toType, const SymbolTable& table,
+                                 bool implicitOnly)
 {
     bool found = false;
     TemplateBinding binding;
@@ -512,7 +521,7 @@ bool DeclaresConversionTo(const std::string& fromType, const std::string& toType
 }
 
 /** @brief True when derived is derived from base (valid implicit upcast). */
-bool IsDerivedFrom(const std::string& derived, const std::string& base, const SymbolTable& table)
+static bool IsDerivedFrom(const std::string& derived, const std::string& base, const SymbolTable& table)
 {
     const std::string cleanDerived = CleanBaseType(derived);
     const std::string cleanBase = CleanBaseType(base);
@@ -529,7 +538,7 @@ bool IsDerivedFrom(const std::string& derived, const std::string& base, const Sy
 /** @brief True when one type appears in the other's inheritance chain, either direction.
  *  @note Both directions count: an upcast is implicit, and a downcast is what cast<> is
  *        for, so neither is worth a diagnostic here. */
-bool AreHierarchyRelated(const std::string& a, const std::string& b, const SymbolTable& table)
+static bool AreHierarchyRelated(const std::string& a, const std::string& b, const SymbolTable& table)
 {
     const std::string cleanA = CleanBaseType(a);
     const std::string cleanB = CleanBaseType(b);
@@ -554,17 +563,17 @@ bool AreHierarchyRelated(const std::string& a, const std::string& b, const Symbo
  *  @note Conversions among these are the engine's business, not a declaration's, so the
  *        rules below let every primitive-to-primitive pair through. */
 /** @brief The workspace's string type, which defaults to `string` when unconfigured. */
-bool IsStringType(const std::string& typeName, const DiagnosticContext& ctx)
+static bool IsStringType(const std::string& typeName, const DiagnosticContext& ctx)
 {
     return typeName == ctx.request.GetEffectiveStringTypeName();
 }
 
-bool IsBuiltInValueType(const std::string& typeName, const DiagnosticContext& ctx)
+static bool IsBuiltInValueType(const std::string& typeName, const DiagnosticContext& ctx)
 {
     return IsPrimitiveTypeName(typeName) || IsStringType(typeName, ctx);
 }
 
-bool IsPoisonOrEmptyType(std::string_view from, std::string_view to)
+static bool IsPoisonOrEmptyType(std::string_view from, std::string_view to)
 {
     return from.empty() || to.empty() || ExpressionTypeCache::IsPoisonType(from) ||
            ExpressionTypeCache::IsPoisonType(to);
@@ -579,7 +588,7 @@ bool IsPoisonOrEmptyType(std::string_view from, std::string_view to)
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
-bool CanTriviallyConvert(const std::string& from, const std::string& to, const DiagnosticContext& ctx)
+static bool CanTriviallyConvert(const std::string& from, const std::string& to, const DiagnosticContext& ctx)
 {
     if (IsPoisonOrEmptyType(from, to) || IsSameType(from, to))
     {
@@ -615,7 +624,7 @@ bool CanTriviallyConvert(const std::string& from, const std::string& to, const D
     return CanonicalizeType(from) == CanonicalizeType(to);
 }
 
-bool CanConvertBuiltins(const std::string& from, const std::string& to, const DiagnosticContext& ctx)
+static bool CanConvertBuiltins(const std::string& from, const std::string& to, const DiagnosticContext& ctx)
 {
     if (from == to)
     {
@@ -642,8 +651,8 @@ bool CanConvertBuiltins(const std::string& from, const std::string& to, const Di
     return false;
 }
 
-bool CanConvertEnumTarget(const std::string& from, const std::string& to, const SymbolTable& table,
-                          const DiagnosticContext& ctx)
+static bool CanConvertEnumTarget(const std::string& from, const std::string& to, const SymbolTable& table,
+                                 const DiagnosticContext& ctx)
 {
     const bool fromBuiltIn = IsBuiltInValueType(from, ctx);
     const TypeDeclarationInfo fromDecl = FindTypeDeclaration(from, table);
@@ -664,6 +673,8 @@ bool CanConvertEnumTarget(const std::string& from, const std::string& to, const 
     return false;
 }
 
+namespace type_conversion_checker_detail
+{
 /**
  * @brief Represents Conversion state.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -673,12 +684,15 @@ struct ConversionState
     size_t depth = 0;
     ankerl::unordered_dense::set<std::string> visitedEdges;
 };
+} // namespace type_conversion_checker_detail
 
-bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx,
-                   ConversionState& state);
+using ConversionState = type_conversion_checker_detail::ConversionState;
 
-bool CanConvertClasses(const std::string& from, const std::string& to, const DiagnosticContext& ctx,
-                       ConversionState& state)
+static bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx,
+                          ConversionState& state);
+
+static bool CanConvertClasses(const std::string& from, const std::string& to, const DiagnosticContext& ctx,
+                              ConversionState& state)
 {
     const SymbolTable& table = ctx.request.symbolTable;
     if (state.depth >= TypeConversionChecker::MAX_CONVERSION_DEPTH)
@@ -738,7 +752,7 @@ bool CanConvertClasses(const std::string& from, const std::string& to, const Dia
  * @param[in] table Document and global symbol table.
  * @return True if the type should be assumed convertible without warning; false otherwise.
  */
-bool IsUnresolvedOrExternalType(const std::string& typeName, bool isBuiltIn, const SymbolTable& table)
+static bool IsUnresolvedOrExternalType(const std::string& typeName, bool isBuiltIn, const SymbolTable& table)
 {
     if (!isBuiltIn && !FindTypeDeclaration(typeName, table).found && !ResolvesToEnum(typeName, table))
     {
@@ -754,7 +768,7 @@ bool IsUnresolvedOrExternalType(const std::string& typeName, bool isBuiltIn, con
  * @param[in,out] state Active conversion depth and cycle tracking state.
  * @return True if a conversion route exists; false otherwise.
  */
-bool CanConvertUserTypes(const ConversionTypes& types, const DiagnosticContext& ctx, ConversionState& state)
+static bool CanConvertUserTypes(const ConversionTypes& types, const DiagnosticContext& ctx, ConversionState& state)
 {
     const bool fromBuiltIn = IsBuiltInValueType(types.from, ctx);
     const bool toBuiltIn = IsBuiltInValueType(types.to, ctx);
@@ -771,6 +785,8 @@ bool CanConvertUserTypes(const ConversionTypes& types, const DiagnosticContext& 
     return CanConvertClasses(types.from, types.to, ctx, state);
 }
 
+namespace type_conversion_checker_detail
+{
 /**
  * @brief Represents Edge guard.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -784,8 +800,12 @@ struct EdgeGuard
         edges.erase(key);
     }
 };
+} // namespace type_conversion_checker_detail
 
-bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx, ConversionState& state)
+using EdgeGuard = type_conversion_checker_detail::EdgeGuard;
+
+static bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx,
+                          ConversionState& state)
 {
     if (IsPoisonOrEmptyType(from, to))
     {
@@ -853,7 +873,8 @@ bool IsConvertible(const std::string& from, const std::string& to, const Diagnos
     return false;
 }
 
-bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx, size_t depth = 0)
+static bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx,
+                          size_t depth = 0)
 {
     ConversionState state;
     state.depth = depth;
@@ -861,7 +882,7 @@ bool IsConvertible(const std::string& from, const std::string& to, const Diagnos
 }
 
 /** @brief Classifies a numeric literal as integral or floating point. */
-std::string ClassifyNumberLiteral(std::string_view text)
+static std::string ClassifyNumberLiteral(std::string_view text)
 {
     const bool isHex = text.size() > 1 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X');
     if (!isHex)
@@ -878,7 +899,7 @@ std::string ClassifyNumberLiteral(std::string_view text)
 }
 
 /** @brief Finds the class a 'this' expression refers to at a given node. */
-std::string EnclosingClassName(TSNode node, std::string_view sourceCode)
+static std::string EnclosingClassName(TSNode node, std::string_view sourceCode)
 {
     for (const auto& container : GetEnclosingContainers(node, sourceCode))
     {
@@ -890,7 +911,7 @@ std::string EnclosingClassName(TSNode node, std::string_view sourceCode)
     return "";
 }
 
-ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx);
+static ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx);
 
 /**
  * @brief Resolves the type a bare (possibly scope-qualified) name denotes as a value.
@@ -898,9 +919,9 @@ ExpressionType ResolveValueType(TSNode node, const Scope* scope, const Diagnosti
  * Symbol::modifiers.isConst / ParameterInformation::isConst. Manually re-evaluates AST for isConst; candidate for
  * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
-ExpressionType ResolveIdentifierValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
+static ExpressionType ResolveIdentifierValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
-    const std::string name = NodeText(node, ctx.request.sourceCode);
+    const std::string name = parser::NodeText(node, ctx.request.sourceCode);
     if (name == "this")
     {
         const std::string className = EnclosingClassName(node, ctx.request.sourceCode);
@@ -944,7 +965,7 @@ ExpressionType ResolveIdentifierValueType(TSNode node, const Scope* scope, const
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
-ExpressionType ResolveCallValueType(TSNode node, const DiagnosticContext& ctx)
+static ExpressionType ResolveCallValueType(TSNode node, const DiagnosticContext& ctx)
 {
     TSNode callee = parser::GetCallCallee(node);
     if (ts_node_is_null(callee))
@@ -952,7 +973,7 @@ ExpressionType ResolveCallValueType(TSNode node, const DiagnosticContext& ctx)
         return ExpressionType{};
     }
 
-    const std::string calleeName = CleanBaseType(NodeText(callee, ctx.request.sourceCode));
+    const std::string calleeName = CleanBaseType(parser::NodeText(callee, ctx.request.sourceCode));
     if (calleeName.empty())
     {
         return ExpressionType{};
@@ -984,13 +1005,13 @@ ExpressionType ResolveCallValueType(TSNode node, const DiagnosticContext& ctx)
     return result;
 }
 
-ExpressionType ResolveLiteralValueType(TSNode node, const DiagnosticContext& ctx)
+static ExpressionType ResolveLiteralValueType(TSNode node, const DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol sym = ts_node_symbol(node);
     if (sym == gs.symNumberLiteral)
     {
-        return ExpressionType{ClassifyNumberLiteral(NodeText(node, ctx.request.sourceCode)), true, true};
+        return ExpressionType{ClassifyNumberLiteral(parser::NodeText(node, ctx.request.sourceCode)), true, true};
     }
     if (sym == gs.symStringLiteral)
     {
@@ -1005,8 +1026,8 @@ ExpressionType ResolveLiteralValueType(TSNode node, const DiagnosticContext& ctx
 
 static ExpressionType ResolveUnaryValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
-    const std::string op =
-        NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator), ctx.request.sourceCode);
+    const std::string op = parser::NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator),
+                                            ctx.request.sourceCode);
     if (op == "!" || op == "not")
     {
         return ExpressionType{"bool", true, false};
@@ -1036,16 +1057,16 @@ static ExpressionType ResolveUnaryValueType(TSNode node, const Scope* scope, con
 
 /**
  * @brief Resolve cast value type.
- * @param[in] node Parameter node.
- * @param[in] ctx Parameter ctx.
- * @return Result of the operation.
+ * @param[in] node AST node under evaluation.
+ * @param[in] ctx Diagnostic collection and analysis context.
+ * @return Calculated or extracted result of the operation.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
 static ExpressionType ResolveCastValueType(TSNode node, const DiagnosticContext& ctx)
 {
     const std::string rawText =
-        NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldType), ctx.request.sourceCode);
+        parser::NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldType), ctx.request.sourceCode);
     const bool isConst = IsConstTypeView(rawText);
     const std::string typeText = CleanBaseType(rawText);
     return typeText.empty() ? ExpressionType{} : ExpressionType{typeText, true, false, isConst};
@@ -1053,14 +1074,14 @@ static ExpressionType ResolveCastValueType(TSNode node, const DiagnosticContext&
 
 /**
  * @brief Resolve compound value type.
- * @param[in] node Parameter node.
- * @param[in] scope Parameter scope.
- * @param[in] ctx Parameter ctx.
- * @return Result of the operation.
+ * @param[in] node AST node under evaluation.
+ * @param[in] scope Enclosing lexical scope.
+ * @param[in] ctx Diagnostic collection and analysis context.
+ * @return Calculated or extracted result of the operation.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
-ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
+static ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     while (!ts_node_is_null(node) && ts_node_symbol(node) == gs.symParenthesizedExpression)
@@ -1107,7 +1128,7 @@ ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const D
     return ExpressionType{};
 }
 
-ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
+static ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     while (!ts_node_is_null(node) && ts_node_symbol(node) == gs.symParenthesizedExpression)
@@ -1142,6 +1163,8 @@ ExpressionType ResolveValueType(TSNode node, const Scope* scope, const Diagnosti
     return ResolveCompoundValueType(node, scope, ctx);
 }
 
+namespace type_conversion_checker_detail
+{
 /**
  * @brief Represents Property access info.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1155,9 +1178,12 @@ struct PropertyAccessInfo
     std::string propName;
     std::string receiverType;
 };
+} // namespace type_conversion_checker_detail
 
-bool CheckVirtualPropertySymbol(const std::string& typeName, const std::string& propName, const SymbolTable& table,
-                                PropertyAccessInfo& info)
+using PropertyAccessInfo = type_conversion_checker_detail::PropertyAccessInfo;
+
+static bool CheckVirtualPropertySymbol(const std::string& typeName, const std::string& propName,
+                                       const SymbolTable& table, PropertyAccessInfo& info)
 {
     if (auto propSyms = table.FindMemberSymbolPtr(typeName, propName))
     {
@@ -1185,8 +1211,8 @@ bool CheckVirtualPropertySymbol(const std::string& typeName, const std::string& 
     return false;
 }
 
-void CheckAccessorMethods(const std::string& typeName, const std::string& propName, const SymbolTable& table,
-                          PropertyAccessInfo& info)
+static void CheckAccessorMethods(const std::string& typeName, const std::string& propName, const SymbolTable& table,
+                                 PropertyAccessInfo& info)
 {
     if (!info.hasGet)
     {
@@ -1251,7 +1277,7 @@ static void PopulateAccessorInfo(const std::vector<Symbol>& accessors, PropertyA
 static PropertyAccessInfo InspectBareOrScopedProperty(TSNode exprNode, const Scope* scope, const DiagnosticContext& ctx)
 {
     PropertyAccessInfo info;
-    std::string text = TrimString(NodeText(exprNode, ctx.request.sourceCode));
+    std::string text = TrimString(parser::NodeText(exprNode, ctx.request.sourceCode));
     const auto [scopeNameView, propNameView] = utils::SplitScopedName(text);
     if (!scopeNameView.empty())
     {
@@ -1312,7 +1338,7 @@ static PropertyAccessInfo InspectBareOrScopedProperty(TSNode exprNode, const Sco
     return info;
 }
 
-PropertyAccessInfo InspectPropertyAccess(TSNode exprNode, const Scope* scope, const DiagnosticContext& ctx)
+static PropertyAccessInfo InspectPropertyAccess(TSNode exprNode, const Scope* scope, const DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol sym = ts_node_symbol(exprNode);
@@ -1342,7 +1368,7 @@ PropertyAccessInfo InspectPropertyAccess(TSNode exprNode, const Scope* scope, co
         return info;
     }
 
-    info.propName = NodeText(memNode, ctx.request.sourceCode);
+    info.propName = parser::NodeText(memNode, ctx.request.sourceCode);
     info.receiverType = ResolveExpressionType(objNode, ExpressionTypeContext(scope, ctx));
     const std::string cleanObj = CleanBaseType(info.receiverType);
     if (cleanObj.empty())
@@ -1444,7 +1470,7 @@ static void EmitExpressionIsDataType(TSNode node, const DiagnosticContext& ctx, 
 // produced real false positives on `array<int> a(1)`. The compiler warns on exactly the
 // pairs that table calls safe, so the two questions need two tables.
 
-bool IsUnsignedIntegerPrimitive(std::string_view typeName) noexcept
+static bool IsUnsignedIntegerPrimitive(std::string_view typeName) noexcept
 {
     return typeName == "uint" || typeName == "uint8" || typeName == "uint16" || typeName == "uint32" ||
            typeName == "uint64";
@@ -1452,23 +1478,15 @@ bool IsUnsignedIntegerPrimitive(std::string_view typeName) noexcept
 
 /**
  * @brief Signed for the purpose of the mismatch warning, which counts float and double.
- * @note [REFACTOR-CANDIDATE] Structural overlap (75%) with IsNumericTypeName in
- * server/src/features/completion/CompletionHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-bool IsSignedNumericPrimitive(std::string_view typeName) noexcept
+static bool IsSignedNumericPrimitive(std::string_view typeName) noexcept
 {
     return typeName == "int" || typeName == "int8" || typeName == "int16" || typeName == "int32" ||
            typeName == "int64" || typeName == "float" || typeName == "double";
 }
 
-bool IsComparisonOperator(std::string_view op) noexcept
-{
-    return op == "<" || op == ">" || op == "<=" || op == ">=" || op == "==" || op == "!=";
-}
-
 /** @brief True for a written-out number, through any parentheses and unary sign. */
-bool IsNumericLiteralExpression(TSNode node)
+static bool IsNumericLiteralExpression(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode current = node;
@@ -1510,7 +1528,7 @@ bool IsNumericLiteralExpression(TSNode node)
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
-bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
+static bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode current = node;
@@ -1545,7 +1563,7 @@ bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const DiagnosticCo
         return false;
     }
 
-    const std::string name = NodeText(current, ctx.request.sourceCode);
+    const std::string name = parser::NodeText(current, ctx.request.sourceCode);
     if (scope)
     {
         if (const LocalDefinition* def = ResolveInScopeAt(scope, LastScopeSegment(name), ts_node_start_byte(current)))
@@ -1573,7 +1591,7 @@ bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const DiagnosticCo
  * @brief `as-warn-signed-unsigned-mismatch`, anchored on the operator the way the compiler
  *        anchors it.
  */
-void CheckSignedUnsignedComparison(TSNode node, const Scope* scope, DiagnosticContext& ctx)
+static void CheckSignedUnsignedComparison(TSNode node, const Scope* scope, DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
@@ -1610,7 +1628,8 @@ void CheckSignedUnsignedComparison(TSNode node, const Scope* scope, DiagnosticCo
 /**
  * @brief `as-warn-float-truncation` where a float value implicitly becomes an integer.
  */
-void CheckFloatTruncation(TSNode valueNode, const ConversionTypes& types, const Scope* scope, DiagnosticContext& ctx)
+static void CheckFloatTruncation(TSNode valueNode, const ConversionTypes& types, const Scope* scope,
+                                 DiagnosticContext& ctx)
 {
     if (ts_node_is_null(valueNode))
     {
@@ -1627,6 +1646,8 @@ void CheckFloatTruncation(TSNode valueNode, const ConversionTypes& types, const 
     ctx.EmitAtNode(valueNode, "as-warn-float-truncation", {types.from, types.to}, DiagnosticSeverity::Warning);
 }
 
+namespace type_conversion_checker_detail
+{
 /**
  * @brief Everything one declared type text says that the rules below need to know.
  * @note [REFACTOR-CANDIDATE] Clustered under Type Qualification & Modifiers. Candidate for unification in
@@ -1650,8 +1671,11 @@ struct DeclaredType
      */
     bool isTemplateOrArray = false;
 };
+} // namespace type_conversion_checker_detail
 
-bool IsDeclaredTypeUsable(const std::string& baseName, const DiagnosticContext& ctx)
+using DeclaredType = type_conversion_checker_detail::DeclaredType;
+
+static bool IsDeclaredTypeUsable(const std::string& baseName, const DiagnosticContext& ctx)
 {
     if (IsBuiltInValueType(baseName, ctx) || ResolvesToEnum(baseName, ctx.request.symbolTable))
     {
@@ -1674,7 +1698,7 @@ bool IsDeclaredTypeUsable(const std::string& baseName, const DiagnosticContext& 
  * AST for isConst; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo /
  * Symbol::modifiers.isConst.
  */
-DeclaredType ReadDeclaredType(TSNode typeNode, const DiagnosticContext& ctx)
+static DeclaredType ReadDeclaredType(TSNode typeNode, const DiagnosticContext& ctx)
 {
     DeclaredType result;
     if (ts_node_is_null(typeNode))
@@ -1682,7 +1706,7 @@ DeclaredType ReadDeclaredType(TSNode typeNode, const DiagnosticContext& ctx)
         return result;
     }
 
-    const std::string raw = NodeText(typeNode, ctx.request.sourceCode);
+    const std::string raw = parser::NodeText(typeNode, ctx.request.sourceCode);
     if (raw.empty())
     {
         return result;
@@ -1707,10 +1731,10 @@ DeclaredType ReadDeclaredType(TSNode typeNode, const DiagnosticContext& ctx)
     return result;
 }
 
-void CheckUnknownInitializerSource(TSNode valueNode, const DeclaredType& declared, const Scope* scope,
-                                   DiagnosticContext& ctx)
+static void CheckUnknownInitializerSource(TSNode valueNode, const DeclaredType& declared, const Scope* scope,
+                                          DiagnosticContext& ctx)
 {
-    const std::string identName = TrimString(NodeText(valueNode, ctx.request.sourceCode));
+    const std::string identName = TrimString(parser::NodeText(valueNode, ctx.request.sourceCode));
     if (identName.empty())
     {
         return;
@@ -1751,8 +1775,8 @@ void CheckUnknownInitializerSource(TSNode valueNode, const DeclaredType& declare
     }
 }
 
-void CheckHandleInitializer(TSNode valueNode, const ExpressionType& source, const DeclaredType& declared,
-                            DiagnosticContext& ctx)
+static void CheckHandleInitializer(TSNode valueNode, const ExpressionType& source, const DeclaredType& declared,
+                                   DiagnosticContext& ctx)
 {
     if (source.baseName == "null")
     {
@@ -1790,7 +1814,8 @@ void CheckHandleInitializer(TSNode valueNode, const ExpressionType& source, cons
 }
 
 /** @brief Rule for `T v = expr;` - the implicit conversion route. */
-void CheckInitializer(TSNode declaratorNode, const DeclaredType& declared, const Scope* scope, DiagnosticContext& ctx)
+static void CheckInitializer(TSNode declaratorNode, const DeclaredType& declared, const Scope* scope,
+                             DiagnosticContext& ctx)
 {
     TSNode valueNode = parser::GetChildByField(declaratorNode, parser::GetGrammarSymbols().fieldValue);
     if (ts_node_is_null(valueNode) || ts_node_symbol(valueNode) == parser::GetGrammarSymbols().symInitializerList)
@@ -1844,7 +1869,8 @@ void CheckInitializer(TSNode declaratorNode, const DeclaredType& declared, const
  * Returns empty when the container declares no such method, which leaves the variable's
  * written `auto` in place rather than guessing at it.
  */
-std::string ForeachValueType(const std::string& containerType, uint32_t variableIndex, const DiagnosticContext& ctx)
+static std::string ForeachValueType(const std::string& containerType, uint32_t variableIndex,
+                                    const DiagnosticContext& ctx)
 {
     const std::string cleaned = CleanExpressionType(containerType);
     if (cleaned.empty())
@@ -1893,8 +1919,8 @@ std::string ForeachValueType(const std::string& containerType, uint32_t variable
     return {};
 }
 
-bool CheckEnumConstruction(TSNode argument, const std::string& sourceBase, const std::string& targetType,
-                           DiagnosticContext& ctx)
+static bool CheckEnumConstruction(TSNode argument, const std::string& sourceBase, const std::string& targetType,
+                                  DiagnosticContext& ctx)
 {
     const SymbolTable& table = ctx.request.symbolTable;
     if (!ResolvesToEnum(targetType, table))
@@ -1908,8 +1934,8 @@ bool CheckEnumConstruction(TSNode argument, const std::string& sourceBase, const
     return true;
 }
 
-bool IsConstructibleFrom(const std::string& sourceBase, const std::string& targetType, const TemplateBinding& binding,
-                         const DiagnosticContext& ctx)
+static bool IsConstructibleFrom(const std::string& sourceBase, const std::string& targetType,
+                                const TemplateBinding& binding, const DiagnosticContext& ctx)
 {
     const SymbolTable& table = ctx.request.symbolTable;
     bool constructible = false;
@@ -1957,8 +1983,8 @@ static bool IsSourceCompatibleWithTarget(const std::string& sourceBaseName, cons
            DeclaresConversionTo(sourceBaseName, targetType, table, false);
 }
 
-void CheckConstruction(TSNode argumentListNode, const std::string& targetType, const Scope* scope,
-                       DiagnosticContext& ctx)
+static void CheckConstruction(TSNode argumentListNode, const std::string& targetType, const Scope* scope,
+                              DiagnosticContext& ctx)
 {
     // Only single-argument constructions are conversions. Anything else is overload
     // resolution over a full argument list, which this pass does not attempt.
@@ -1998,6 +2024,8 @@ void CheckConstruction(TSNode argumentListNode, const std::string& targetType, c
     }
 }
 
+namespace type_conversion_checker_detail
+{
 /**
  * @brief Represents Zero arg constructor status.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -2007,13 +2035,16 @@ struct ZeroArgConstructorStatus
     bool hasZeroArg = false;
     bool isDeleted = false;
 };
+} // namespace type_conversion_checker_detail
+
+using ZeroArgConstructorStatus = type_conversion_checker_detail::ZeroArgConstructorStatus;
 
 /**
  * @brief Inspects constructors to determine whether a zero-argument default constructor exists.
  * @param[in] constructors List of candidate constructor symbols.
  * @return ZeroArgConstructorStatus indicating existence and deleted status.
  */
-ZeroArgConstructorStatus InspectZeroArgConstructor(const std::vector<Symbol>& constructors)
+static ZeroArgConstructorStatus InspectZeroArgConstructor(const std::vector<Symbol>& constructors)
 {
     ZeroArgConstructorStatus status;
     for (const auto& ctor : constructors)
@@ -2035,7 +2066,7 @@ ZeroArgConstructorStatus InspectZeroArgConstructor(const std::vector<Symbol>& co
     return status;
 }
 
-void CheckDefaultConstructor(TSNode declaratorNode, const std::string& typeName, DiagnosticContext& ctx)
+static void CheckDefaultConstructor(TSNode declaratorNode, const std::string& typeName, DiagnosticContext& ctx)
 {
     if (utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
     {
@@ -2082,7 +2113,7 @@ void CheckDefaultConstructor(TSNode declaratorNode, const std::string& typeName,
     }
 }
 
-std::optional<Symbol> FindFuncdef(const std::string& name, const SymbolTable& table)
+static std::optional<Symbol> FindFuncdef(const std::string& name, const SymbolTable& table)
 {
     std::optional<Symbol> result;
     ForEachSymbolNamed(name, table,
@@ -2111,7 +2142,7 @@ std::optional<Symbol> FindFuncdef(const std::string& name, const SymbolTable& ta
     return result;
 }
 
-bool MatchesFuncdefSignature(const FunctionSignature& fn, const FuncdefSignature& fd)
+static bool MatchesFuncdefSignature(const FunctionSignature& fn, const FuncdefSignature& fd)
 {
     if (CleanBaseType(fn.returnType) != CleanBaseType(fd.returnType))
     {
@@ -2180,13 +2211,13 @@ bool MatchesFuncdefSignature(const FunctionSignature& fn, const FuncdefSignature
 // typedefs alias primitives only (see as-err-typedef-non-primitive), and a namespace
 // qualifies a name without changing whether it is a handle.
 
-TSNode UnwrapAddressOfOperator(TSNode valueNode, std::string_view sourceCode)
+static TSNode UnwrapAddressOfOperator(TSNode valueNode, std::string_view sourceCode)
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (ts_node_symbol(valueNode) == gs.symUnaryExpression)
     {
         TSNode op = parser::GetChildByField(valueNode, gs.fieldOperator);
-        if (!ts_node_is_null(op) && (ts_node_symbol(op) == gs.tokAt || NodeText(op, sourceCode) == "@"))
+        if (!ts_node_is_null(op) && (ts_node_symbol(op) == gs.tokAt || parser::NodeText(op, sourceCode) == "@"))
         {
             TSNode operand = parser::GetChildByField(valueNode, gs.fieldOperand);
             if (!ts_node_is_null(operand))
@@ -2198,8 +2229,8 @@ TSNode UnwrapAddressOfOperator(TSNode valueNode, std::string_view sourceCode)
     return valueNode;
 }
 
-bool CheckLambdaFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSig, TSNode actualVal,
-                                  DiagnosticContext& ctx)
+static bool CheckLambdaFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSig, TSNode actualVal,
+                                         DiagnosticContext& ctx)
 {
     if (ts_node_symbol(actualVal) != parser::GetGrammarSymbols().symLambdaExpression)
     {
@@ -2226,10 +2257,10 @@ static bool HasMatchingFuncdefCandidate(const std::vector<Symbol>& candidates, c
     return false;
 }
 
-void CheckNamedFunctionFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSig, TSNode actualVal,
-                                         DiagnosticContext& ctx)
+static void CheckNamedFunctionFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSig, TSNode actualVal,
+                                                DiagnosticContext& ctx)
 {
-    const std::string funcName = TrimString(NodeText(actualVal, ctx.request.sourceCode));
+    const std::string funcName = TrimString(parser::NodeText(actualVal, ctx.request.sourceCode));
     if (funcName.empty() || funcName == "null")
     {
         return;
@@ -2247,8 +2278,8 @@ void CheckNamedFunctionFuncdefAssignment(TSNode targetNode, const FuncdefSignatu
     }
 }
 
-void CheckFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSig, TSNode valueNode,
-                            DiagnosticContext& ctx)
+static void CheckFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSig, TSNode valueNode,
+                                   DiagnosticContext& ctx)
 {
     if (ts_node_is_null(valueNode))
     {
@@ -2264,7 +2295,7 @@ void CheckFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSi
     CheckNamedFunctionFuncdefAssignment(targetNode, funcdefSig, actualVal, ctx);
 }
 
-void CheckConstructorDelegationStatement(TSNode stmt, const std::string& className, DiagnosticContext& ctx)
+static void CheckConstructorDelegationStatement(TSNode stmt, const std::string& className, DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (ts_node_symbol(stmt) != gs.symExpressionStatement || ts_node_named_child_count(stmt) == 0)
@@ -2277,14 +2308,14 @@ void CheckConstructorDelegationStatement(TSNode stmt, const std::string& classNa
     if (exprSym == gs.symCallExpression || exprSym == gs.symConstructCallExpression)
     {
         TSNode callee = parser::GetCallCallee(expr);
-        if (!ts_node_is_null(callee) && NodeText(callee, ctx.request.sourceCode) == className)
+        if (!ts_node_is_null(callee) && parser::NodeText(callee, ctx.request.sourceCode) == className)
         {
             ctx.EmitAtNode(expr, "as-err-constructor-delegation-disallowed");
         }
     }
 }
 
-void CheckConstructorDelegation(TSNode funcNode, DiagnosticContext& ctx)
+static void CheckConstructorDelegation(TSNode funcNode, DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode parent = parser::FindAncestorWithSymbol(parser::GetParent(funcNode), gs.symClassDeclaration);
@@ -2298,10 +2329,10 @@ void CheckConstructorDelegation(TSNode funcNode, DiagnosticContext& ctx)
     {
         return;
     }
-    const std::string className = NodeText(classNameNode, ctx.request.sourceCode);
+    const std::string className = parser::NodeText(classNameNode, ctx.request.sourceCode);
 
     TSNode funcNameNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldName);
-    if (ts_node_is_null(funcNameNode) || NodeText(funcNameNode, ctx.request.sourceCode) != className)
+    if (ts_node_is_null(funcNameNode) || parser::NodeText(funcNameNode, ctx.request.sourceCode) != className)
     {
         return;
     }
@@ -2327,8 +2358,8 @@ void CheckConstructorDelegation(TSNode funcNode, DiagnosticContext& ctx)
  * @param[in] ctx Diagnostic collection context.
  * @return True if cast should be evaluated further; false if conversion should be silently assumed.
  */
-bool CheckCastVisibilityGuards(const ConversionTypes& types, bool sourceIsScalar, bool targetIsScalar,
-                               const DiagnosticContext& ctx)
+static bool CheckCastVisibilityGuards(const ConversionTypes& types, bool sourceIsScalar, bool targetIsScalar,
+                                      const DiagnosticContext& ctx)
 {
     const SymbolTable& table = ctx.request.symbolTable;
     if (!targetIsScalar && !FindTypeDeclaration(types.to, table).found)
@@ -2347,10 +2378,10 @@ bool CheckCastVisibilityGuards(const ConversionTypes& types, bool sourceIsScalar
 }
 
 /** @brief Rule for `cast<T>(expr)` - the reinterpreting route. */
-void CheckCast(TSNode castNode, const Scope* scope, DiagnosticContext& ctx)
+static void CheckCast(TSNode castNode, const Scope* scope, DiagnosticContext& ctx)
 {
-    const std::string targetName = CleanBaseType(
-        NodeText(parser::GetChildByField(castNode, parser::GetGrammarSymbols().fieldType), ctx.request.sourceCode));
+    const std::string targetName = CleanBaseType(parser::NodeText(
+        parser::GetChildByField(castNode, parser::GetGrammarSymbols().fieldType), ctx.request.sourceCode));
 
     TSNode valueNode = parser::GetChildByField(castNode, parser::GetGrammarSymbols().fieldValue);
     if (ts_node_is_null(valueNode) || targetName.empty())
@@ -2391,7 +2422,8 @@ void CheckCast(TSNode castNode, const Scope* scope, DiagnosticContext& ctx)
     ctx.EmitAtNode(castNode, "as-err-invalid-cast", {source.baseName, targetName});
 }
 
-bool ClassDeclaresMethodReturningBool(const std::string& cls, const std::string& method, const SymbolTable& table)
+static bool ClassDeclaresMethodReturningBool(const std::string& cls, const std::string& method,
+                                             const SymbolTable& table)
 {
     if (auto ptr = table.FindMemberSymbolPtr(cls, method))
     {
@@ -2409,7 +2441,7 @@ bool ClassDeclaresMethodReturningBool(const std::string& cls, const std::string&
     return false;
 }
 
-std::string FindVisibleClassQualifiedName(const std::string& typeName, const SymbolTable& table)
+static std::string FindVisibleClassQualifiedName(const std::string& typeName, const SymbolTable& table)
 {
     if (auto ptr = table.FindSymbolsPtr(typeName))
     {
@@ -2432,7 +2464,7 @@ std::string FindVisibleClassQualifiedName(const std::string& typeName, const Sym
     return {};
 }
 
-const std::string* BoolConversionOperator(const std::string& typeName, const SymbolTable& table)
+static const std::string* BoolConversionOperator(const std::string& typeName, const SymbolTable& table)
 {
     if (typeName.empty())
     {
@@ -2481,7 +2513,7 @@ static bool IsLogicalUnaryOperator(TSSymbol sym, const parser::GrammarSymbols& g
     return sym == gs.tokBang || sym == gs.tokNot;
 }
 
-void CollectBooleanOperands(TSNode rootExpr, std::vector<TSNode>& operands)
+static void CollectBooleanOperands(TSNode rootExpr, std::vector<TSNode>& operands)
 {
     if (ts_node_is_null(rootExpr))
     {
@@ -2529,6 +2561,8 @@ void CollectBooleanOperands(TSNode rootExpr, std::vector<TSNode>& operands)
     }
 }
 
+namespace type_conversion_checker_detail
+{
 /**
  * @brief Represents Assignment operands.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -2538,6 +2572,9 @@ struct AssignmentOperands
     TSNode left;
     TSNode right;
 };
+} // namespace type_conversion_checker_detail
+
+using AssignmentOperands = type_conversion_checker_detail::AssignmentOperands;
 
 /**
  * @brief Resolves the lexical scope enclosing a syntax tree node.
@@ -2545,7 +2582,7 @@ struct AssignmentOperands
  * @param[in] request Analysis request carrying the scope root.
  * @return Enclosing scope pointer, or nullptr if none found.
  */
-const Scope* ResolveNodeScope(TSNode node, const TypeConversionCheckRequest& request)
+static const Scope* ResolveNodeScope(TSNode node, const TypeConversionCheckRequest& request)
 {
     const TSPoint start = ts_node_start_point(node);
     return FindInnermostScope(request.scopeRoot, start.row, start.column);
@@ -2557,7 +2594,7 @@ const Scope* ResolveNodeScope(TSNode node, const TypeConversionCheckRequest& req
  * @param[in] sym Tree-Sitter grammar symbol of the node.
  * @return Extracted condition node, or a null node if absent.
  */
-TSNode ExtractConditionNode(TSNode node, TSSymbol sym)
+static TSNode ExtractConditionNode(TSNode node, TSSymbol sym)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode condition = parser::GetChildByField(node, gs.fieldCondition);
@@ -2578,7 +2615,7 @@ TSNode ExtractConditionNode(TSNode node, TSSymbol sym)
  * @param[in] operandType Resolved base type of the operand.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void ValidateConditionOperand(TSNode operand, const std::string& operandType, DiagnosticContext& ctx)
+static void ValidateConditionOperand(TSNode operand, const std::string& operandType, DiagnosticContext& ctx)
 {
     const bool isKnown = IsKnownType(operandType, ctx);
 
@@ -2611,7 +2648,7 @@ void ValidateConditionOperand(TSNode operand, const std::string& operandType, Di
  * @param[in] scope Lexical scope at the condition node.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void CheckBooleanOperands(TSNode condition, const Scope* scope, DiagnosticContext& ctx)
+static void CheckBooleanOperands(TSNode condition, const Scope* scope, DiagnosticContext& ctx)
 {
     std::vector<TSNode> operands;
     CollectBooleanOperands(condition, operands);
@@ -2640,7 +2677,7 @@ void CheckBooleanOperands(TSNode condition, const Scope* scope, DiagnosticContex
  * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle /
  * LocalDefinition::isHandleType.
  */
-void CheckRefTypeBoolConversion(TSNode condNode, const Scope* scope, DiagnosticContext& ctx)
+static void CheckRefTypeBoolConversion(TSNode condNode, const Scope* scope, DiagnosticContext& ctx)
 {
     TSNode current = condNode;
     const auto& gs = parser::GetGrammarSymbols();
@@ -2658,7 +2695,7 @@ void CheckRefTypeBoolConversion(TSNode condNode, const Scope* scope, DiagnosticC
     bool isHandle = false;
     if (scope)
     {
-        const std::string name = NodeText(current, ctx.request.sourceCode);
+        const std::string name = parser::NodeText(current, ctx.request.sourceCode);
         const LocalDefinition* def = ResolveInScopeAt(scope, name, ts_node_start_byte(current));
         if (def)
         {
@@ -2698,7 +2735,7 @@ void CheckRefTypeBoolConversion(TSNode condNode, const Scope* scope, DiagnosticC
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void ProcessConditionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static void ProcessConditionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol sym = ts_node_symbol(node);
@@ -2739,10 +2776,10 @@ static bool IsIncompleteOrIgnoredBranchType(std::string_view type)
 
 /**
  * @brief Are ternary branches incompatible.
- * @param[in] clean1 Parameter clean1.
- * @param[in] clean2 Parameter clean2.
- * @param[in,out] ctx Parameter ctx.
- * @return True if condition met; otherwise false.
+ * @param[in] clean1 Input clean1 for the operation.
+ * @param[in] clean2 Input clean2 for the operation.
+ * @param[in,out] ctx Diagnostic collection and analysis context.
+ * @return True if the condition is satisfied; false otherwise.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
@@ -2764,7 +2801,7 @@ static bool AreTernaryBranchesIncompatible(const std::string& clean1, const std:
     return !IsConvertible(clean1, clean2, ctx) && !IsConvertible(clean2, clean1, ctx);
 }
 
-void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     TSNode consequence = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldConsequence);
     TSNode alternative = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldAlternative);
@@ -2794,13 +2831,13 @@ void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, 
     if (IsFunctionReference(consequence, scope, ctx))
     {
         ctx.EmitAtNode(consequence, "as-err-no-implicit-conversion",
-                       {TrimString(NodeText(consequence, request.sourceCode)), clean2});
+                       {TrimString(parser::NodeText(consequence, request.sourceCode)), clean2});
         return;
     }
     if (IsFunctionReference(alternative, scope, ctx))
     {
         ctx.EmitAtNode(alternative, "as-err-no-implicit-conversion",
-                       {TrimString(NodeText(alternative, request.sourceCode)), clean1});
+                       {TrimString(parser::NodeText(alternative, request.sourceCode)), clean1});
         return;
     }
 
@@ -2821,7 +2858,8 @@ void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, 
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void ProcessExpressionStatementNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static void ProcessExpressionStatementNode(TSNode node, const TypeConversionCheckRequest& request,
+                                           DiagnosticContext& ctx)
 {
     TSNode expr = ts_node_named_child(node, 0);
     if (ts_node_is_null(expr))
@@ -2842,7 +2880,7 @@ void ProcessExpressionStatementNode(TSNode node, const TypeConversionCheckReques
         return;
     }
 
-    const std::string text = TrimString(NodeText(expr, request.sourceCode));
+    const std::string text = TrimString(parser::NodeText(expr, request.sourceCode));
     if (!text.empty())
     {
         if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(text))
@@ -2871,8 +2909,8 @@ void ProcessExpressionStatementNode(TSNode node, const TypeConversionCheckReques
  * @param[in] request Analysis request.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void InferForeachVariables(TSNode node, const std::string& containerType, const TypeConversionCheckRequest& request,
-                           DiagnosticContext& ctx)
+static void InferForeachVariables(TSNode node, const std::string& containerType,
+                                  const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     uint32_t variableIndex = 0;
     const uint32_t childCount = ts_node_named_child_count(node);
@@ -2897,7 +2935,7 @@ void InferForeachVariables(TSNode node, const std::string& containerType, const 
         const Scope* bodyScope = FindEnclosingScope(request.scopeRoot, namePoint.row, namePoint.column);
         const LocalDefinition* def = ResolveInScope(
             bodyScope ? bodyScope : FindInnermostScope(request.scopeRoot, namePoint.row, namePoint.column),
-            NodeText(nameNode, request.sourceCode));
+            parser::NodeText(nameNode, request.sourceCode));
 
         if (def && CleanBaseType(def->typeName) == "auto")
         {
@@ -2912,7 +2950,7 @@ void InferForeachVariables(TSNode node, const std::string& containerType, const 
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void ProcessForeachNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static void ProcessForeachNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     TSNode collection = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldCollection);
     if (ts_node_is_null(collection))
@@ -3050,7 +3088,7 @@ static bool IsCyclicAutoDependency(TSNode valueNode, TSNode nameNode, const Scop
     {
         return false;
     }
-    const std::string varName = NodeText(nameNode, sourceCode);
+    const std::string varName = parser::NodeText(nameNode, sourceCode);
     if (varName.empty())
     {
         return false;
@@ -3074,7 +3112,7 @@ static bool IsCyclicAutoDependency(TSNode valueNode, TSNode nameNode, const Scop
             continue;
         }
 
-        if (sym == gs.symIdentifier && NodeText(node, sourceCode) == varName &&
+        if (sym == gs.symIdentifier && parser::NodeText(node, sourceCode) == varName &&
             !IsQualifiedOrMemberIdentifier(node, sourceCode))
         {
             if (scope == nullptr || IsMatchingLocalDefinition(scope, varName, nameStart))
@@ -3101,11 +3139,11 @@ static bool IsCyclicAutoDependency(TSNode valueNode, TSNode nameNode, const Scop
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
-void ProcessAutoDeclarator(TSNode child, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static void ProcessAutoDeclarator(TSNode child, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     TSNode nameNode = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldName);
-    const std::string varName = NodeText(nameNode, request.sourceCode);
-    TSNode valueNode = FindDeclaratorValueNode(child, request.sourceCode);
+    const std::string varName = parser::NodeText(nameNode, request.sourceCode);
+    TSNode valueNode = parser::FindDeclaratorValueNode(child, request.sourceCode);
 
     if (ts_node_is_null(valueNode))
     {
@@ -3157,7 +3195,8 @@ void ProcessAutoDeclarator(TSNode child, const TypeConversionCheckRequest& reque
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void ProcessAutoVariableDeclarators(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static void ProcessAutoVariableDeclarators(TSNode node, const TypeConversionCheckRequest& request,
+                                           DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const uint32_t count = ts_node_named_child_count(node);
@@ -3178,7 +3217,8 @@ void ProcessAutoVariableDeclarators(TSNode node, const TypeConversionCheckReques
  * @param[in] scope Enclosing lexical scope.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void CheckDeclaratorConstruction(TSNode child, const DeclaredType& declared, const Scope* scope, DiagnosticContext& ctx)
+static void CheckDeclaratorConstruction(TSNode child, const DeclaredType& declared, const Scope* scope,
+                                        DiagnosticContext& ctx)
 {
     const NonInstantiableKind nonInst = ClassifyNonInstantiable(declared.baseName, ctx.request.symbolTable);
     if (nonInst == NonInstantiableKind::Abstract)
@@ -3206,10 +3246,10 @@ void CheckDeclaratorConstruction(TSNode child, const DeclaredType& declared, con
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void ProcessDeclaredVariableDeclarators(TSNode node, TSNode typeNode, const TypeConversionCheckRequest& request,
-                                        DiagnosticContext& ctx)
+static void ProcessDeclaredVariableDeclarators(TSNode node, TSNode typeNode, const TypeConversionCheckRequest& request,
+                                               DiagnosticContext& ctx)
 {
-    const std::string fullType = NodeText(typeNode, request.sourceCode);
+    const std::string fullType = parser::NodeText(typeNode, request.sourceCode);
     const std::string baseType = CleanBaseType(fullType);
     auto funcdefSym = FindFuncdef(baseType, ctx.request.symbolTable);
 
@@ -3255,7 +3295,8 @@ void ProcessDeclaredVariableDeclarators(TSNode node, TSNode typeNode, const Type
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void ProcessVariableDeclarationNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static void ProcessVariableDeclarationNode(TSNode node, const TypeConversionCheckRequest& request,
+                                           DiagnosticContext& ctx)
 {
     TSNode typeNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldVarType);
     if (ts_node_is_null(typeNode))
@@ -3263,7 +3304,7 @@ void ProcessVariableDeclarationNode(TSNode node, const TypeConversionCheckReques
         typeNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldType);
     }
 
-    const std::string rawType = CleanBaseType(NodeText(typeNode, request.sourceCode));
+    const std::string rawType = CleanBaseType(parser::NodeText(typeNode, request.sourceCode));
     if (rawType == "auto")
     {
         ProcessAutoVariableDeclarators(node, request, ctx);
@@ -3282,7 +3323,7 @@ void ProcessVariableDeclarationNode(TSNode node, const TypeConversionCheckReques
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
-void CheckAssignmentPropertyAccess(TSNode node, const Scope* scope, DiagnosticContext& ctx)
+static void CheckAssignmentPropertyAccess(TSNode node, const Scope* scope, DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode left = parser::GetChildByField(node, gs.fieldLeft);
@@ -3332,42 +3373,12 @@ void CheckAssignmentPropertyAccess(TSNode node, const Scope* scope, DiagnosticCo
 }
 
 /**
- * @brief Resolves variable or property type from scope or symbol table.
- * @param[in] node Expression node representing identifier or property.
- * @param[in] scope Enclosing lexical scope.
- * @param[in] ctx Diagnostic collection context.
- * @return Type string if found; empty otherwise.
- */
-std::string GetVariableOrPropertyType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
-{
-    const std::string name = NodeText(node, ctx.request.sourceCode);
-    if (scope)
-    {
-        if (const auto* def = ResolveInScopeAt(scope, LastScopeSegment(name), ts_node_start_byte(node)))
-        {
-            return def->typeName;
-        }
-    }
-    if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(name))
-    {
-        for (const auto& s : *syms)
-        {
-            if (s.type == SymbolType::Variable || s.type == SymbolType::Property)
-            {
-                return s.GetVariable().typeName;
-            }
-        }
-    }
-    return {};
-}
-
-/**
  * @brief Unwraps handle operator `@` from an expression node.
  * @param[in] expr Expression node.
  * @param[in,out] isHandleAssignment Flag set to true if `@` operator is encountered.
  * @return Unwrapped operand node if handle operator was present; expr otherwise.
  */
-TSNode UnwrapHandleOperand(TSNode expr, bool& isHandleAssignment)
+static TSNode UnwrapHandleOperand(TSNode expr, bool& isHandleAssignment)
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (ts_node_symbol(expr) == gs.symUnaryExpression)
@@ -3393,8 +3404,8 @@ TSNode UnwrapHandleOperand(TSNode expr, bool& isHandleAssignment)
  * @param[in] scope Enclosing lexical scope.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void CheckHandleConstAssignment(AssignmentOperands operands, const ConversionTypes& types, const Scope* scope,
-                                DiagnosticContext& ctx)
+static void CheckHandleConstAssignment(AssignmentOperands operands, const ConversionTypes& types, const Scope* scope,
+                                       DiagnosticContext& ctx)
 {
     bool isHandleAssignment = false;
     TSNode actualLeft = UnwrapHandleOperand(operands.left, isHandleAssignment);
@@ -3422,7 +3433,8 @@ void CheckHandleConstAssignment(AssignmentOperands operands, const ConversionTyp
  * @param[in] types Left and right base types.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void CheckAssignmentOperatorConversion(TSNode node, TSNode right, const ConversionTypes& types, DiagnosticContext& ctx)
+static void CheckAssignmentOperatorConversion(TSNode node, TSNode right, const ConversionTypes& types,
+                                              DiagnosticContext& ctx)
 {
     if (types.to.empty())
     {
@@ -3446,9 +3458,9 @@ void CheckAssignmentOperatorConversion(TSNode node, TSNode right, const Conversi
     if (!types.from.empty() && types.to != types.from)
     {
         const TSNode assignOp = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
-        const std::string_view overload = ts_node_is_null(assignOp)
-                                              ? std::string_view()
-                                              : AssignmentOverloadName(NodeText(assignOp, ctx.request.sourceCode));
+        const std::string_view overload =
+            ts_node_is_null(assignOp) ? std::string_view()
+                                      : AssignmentOverloadName(parser::NodeText(assignOp, ctx.request.sourceCode));
 
         const bool operatorHandlesIt = DeclaresOperatorMethod(types.to, overload, ctx.request.symbolTable);
         if (!operatorHandlesIt && !IsConvertible(types.from, types.to, ctx))
@@ -3488,9 +3500,9 @@ static bool HasHandleOpAssign(std::string_view clean, const SymbolTable& table)
 
 /**
  * @brief Has handle converting ctor.
- * @param[in] clean Parameter clean.
- * @param[in] table Parameter table.
- * @return True if condition met; otherwise false.
+ * @param[in] clean Input clean for the operation.
+ * @param[in] table Symbol table containing resolved symbols.
+ * @return True if the condition is satisfied; false otherwise.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
@@ -3538,7 +3550,7 @@ static bool CheckNullAssignmentToNonHandle(TSNode node, TSNode right, const std:
                                            DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode unwrappedRight = UnwrapParentheses(right);
+    TSNode unwrappedRight = parser::UnwrapParentheses(right);
     if (ts_node_symbol(unwrappedRight) != gs.symNullLiteral)
     {
         return false;
@@ -3547,7 +3559,7 @@ static bool CheckNullAssignmentToNonHandle(TSNode node, TSNode right, const std:
     const TSNode assignOp = ts_node_child_by_field_id(node, gs.fieldOperator);
     const std::string_view opText = ts_node_is_null(assignOp)
                                         ? std::string_view("=")
-                                        : std::string_view(NodeText(assignOp, ctx.request.sourceCode));
+                                        : std::string_view(parser::NodeText(assignOp, ctx.request.sourceCode));
     if (opText != "=")
     {
         return false;
@@ -3559,7 +3571,7 @@ static bool CheckNullAssignmentToNonHandle(TSNode node, TSNode right, const std:
     }
 
     const TSNode left = ts_node_child_by_field_id(node, gs.fieldLeft);
-    if (IsHandleAssignmentTarget(left))
+    if (parser::IsHandleAssignmentTarget(left))
     {
         if (IsHandleTypeView(rawLeftType) || rawLeftType == "auto" || rawLeftType == "?" || rawLeftType == "any")
         {
@@ -3582,7 +3594,7 @@ static bool CheckNullAssignmentToNonHandle(TSNode node, TSNode right, const std:
 
 static bool CheckRightSideNamespaceOnly(TSNode right, DiagnosticContext& ctx)
 {
-    const std::string rightIdent = TrimString(NodeText(right, ctx.request.sourceCode));
+    const std::string rightIdent = TrimString(parser::NodeText(right, ctx.request.sourceCode));
     if (rightIdent.empty())
     {
         return false;
@@ -3608,7 +3620,7 @@ static bool CheckRightSideNamespaceOnly(TSNode right, DiagnosticContext& ctx)
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     TSNode left = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
     TSNode right = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldRight);
@@ -3659,7 +3671,7 @@ void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& reques
     else if (types.from.empty() && IsFunctionReference(right, scope, ctx))
     {
         ctx.EmitAtNode(right, "as-err-no-implicit-conversion",
-                       {TrimString(NodeText(right, ctx.request.sourceCode)), types.to});
+                       {TrimString(parser::NodeText(right, ctx.request.sourceCode)), types.to});
     }
 
     CheckHandleConstAssignment({left, right}, types, scope, ctx);
@@ -3672,7 +3684,7 @@ void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& reques
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     TSNode opNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
     if (ts_node_is_null(opNode))
@@ -3757,7 +3769,7 @@ static bool CheckUnaryInvalidOperand(TSNode node, TSNode operand, const Scope* s
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     const Scope* scope = ResolveNodeScope(node, request);
     TSNode operand = FindUnaryOperand(node);
@@ -3776,7 +3788,7 @@ void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& re
 
     if (!ts_node_is_null(operand))
     {
-        TSNode unwrapped = UnwrapParentheses(operand);
+        TSNode unwrapped = parser::UnwrapParentheses(operand);
         if (ts_node_symbol(unwrapped) == gs.symIndexExpression)
         {
             TSNode arrayNode = parser::GetChildByField(unwrapped, gs.fieldObject);
@@ -3808,10 +3820,8 @@ void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& re
  * @param[in] node Member expression syntax node.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
- * @note [REFACTOR-CANDIDATE] Structural overlap (80%) with ProcessIndexExpressionNode in
- * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-void ProcessMemberExpressionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static void ProcessMemberExpressionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     TSNode parent = parser::GetParent(node);
     bool isLhsAssignment = false;
@@ -3858,10 +3868,8 @@ void ProcessMemberExpressionNode(TSNode node, const TypeConversionCheckRequest& 
  * @param[in] node Index expression syntax node.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
- * @note [REFACTOR-CANDIDATE] Structural overlap (80%) with ProcessMemberExpressionNode in
- * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-void ProcessIndexExpressionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static void ProcessIndexExpressionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     TSNode parent = parser::GetParent(node);
     bool isLhsAssignment = false;
@@ -3906,7 +3914,7 @@ void ProcessIndexExpressionNode(TSNode node, const TypeConversionCheckRequest& r
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void ProcessCastNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static void ProcessCastNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     const Scope* scope = ResolveNodeScope(node, request);
     CheckCast(node, scope, ctx);
@@ -3918,10 +3926,8 @@ void ProcessCastNode(TSNode node, const TypeConversionCheckRequest& request, Dia
  * @param[in] lambdaNode Parent lambda expression node.
  * @param[in] scope Enclosing lexical scope.
  * @param[in,out] ctx Diagnostic collection context.
- * @note [REFACTOR-CANDIDATE] Structural overlap (72%) with CheckFuncDeclarationReturnStatement in
- * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Scope* scope, DiagnosticContext& ctx)
+static void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Scope* scope, DiagnosticContext& ctx)
 {
     const auto target = FuncdefTargetOfLambda(lambdaNode, ctx.request.symbolTable, ctx.request.sourceCode);
     if (!target)
@@ -3946,7 +3952,7 @@ void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Scope* sco
         if (IsFunctionReference(expr, scope, ctx))
         {
             ctx.EmitAtNode(expr, "as-err-no-implicit-conversion",
-                           {TrimString(NodeText(expr, ctx.request.sourceCode)), expected});
+                           {TrimString(parser::NodeText(expr, ctx.request.sourceCode)), expected});
             return;
         }
 
@@ -3968,7 +3974,7 @@ void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Scope* sco
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
  */
-bool IsFunctionReturnRef(TSNode funcNode, TSNode retTypeNode, std::string_view sourceCode)
+static bool IsFunctionReturnRef(TSNode funcNode, TSNode retTypeNode, std::string_view sourceCode)
 {
     const std::string_view rawRetText = parser::NodeText(retTypeNode, sourceCode);
     if (IsReferenceTypeView(rawRetText))
@@ -3993,14 +3999,14 @@ bool IsFunctionReturnRef(TSNode funcNode, TSNode retTypeNode, std::string_view s
  * @param[in] scope Enclosing lexical scope.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void CheckReturnReference(TSNode expr, TSNode funcNode, const Scope* scope, DiagnosticContext& ctx)
+static void CheckReturnReference(TSNode expr, TSNode funcNode, const Scope* scope, DiagnosticContext& ctx)
 {
     if (!scope)
     {
         return;
     }
 
-    std::string exprText = NodeText(expr, ctx.request.sourceCode);
+    std::string exprText = parser::NodeText(expr, ctx.request.sourceCode);
     while (!exprText.empty() && isspace(static_cast<unsigned char>(exprText.front())))
     {
         exprText.erase(exprText.begin());
@@ -4041,10 +4047,9 @@ void CheckReturnReference(TSNode expr, TSNode funcNode, const Scope* scope, Diag
  * @param[in] funcNode Parent function declaration syntax node.
  * @param[in] scope Enclosing lexical scope.
  * @param[in,out] ctx Diagnostic collection context.
- * @note [REFACTOR-CANDIDATE] Structural overlap (72%) with CheckLambdaReturnStatement in
- * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Scope* scope, DiagnosticContext& ctx)
+static void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Scope* scope,
+                                                DiagnosticContext& ctx)
 {
     TSNode retTypeNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldReturnType);
     if (ts_node_is_null(retTypeNode))
@@ -4061,7 +4066,7 @@ void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Sco
         CheckReturnReference(expr, funcNode, scope, ctx);
     }
 
-    const std::string rawRetText = NodeText(retTypeNode, ctx.request.sourceCode);
+    const std::string rawRetText = parser::NodeText(retTypeNode, ctx.request.sourceCode);
     const std::string expected = CleanBaseType(rawRetText);
     if (expected == "void")
     {
@@ -4079,7 +4084,7 @@ void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Sco
         if (IsFunctionReference(expr, scope, ctx))
         {
             ctx.EmitAtNode(expr, "as-err-no-implicit-conversion",
-                           {TrimString(NodeText(expr, ctx.request.sourceCode)), expected});
+                           {TrimString(parser::NodeText(expr, ctx.request.sourceCode)), expected});
             return;
         }
 
@@ -4103,7 +4108,7 @@ void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Sco
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void ProcessReturnStatementNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static void ProcessReturnStatementNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     TSNode expr = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldValue);
     if (ts_node_is_null(expr))
@@ -4137,7 +4142,7 @@ void ProcessReturnStatementNode(TSNode node, const TypeConversionCheckRequest& r
  * @param[in] node Call or construct expression node.
  * @return Callee node, or null node if none found.
  */
-TSNode ResolveCalleeNode(TSNode node)
+static TSNode ResolveCalleeNode(TSNode node)
 {
     return parser::GetCallCallee(node);
 }
@@ -4148,10 +4153,10 @@ TSNode ResolveCalleeNode(TSNode node)
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void ProcessCallOrConstructNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static void ProcessCallOrConstructNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     TSNode callee = ResolveCalleeNode(node);
-    const std::string calleeName = CleanBaseType(NodeText(callee, request.sourceCode));
+    const std::string calleeName = CleanBaseType(parser::NodeText(callee, request.sourceCode));
 
     TSNode argsNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldArguments);
     TSNode soleArgument = {};
@@ -4200,7 +4205,8 @@ void ProcessCallOrConstructNode(TSNode node, const TypeConversionCheckRequest& r
  * @param[in,out] ctx Diagnostic collection context.
  * @return True if node was handled as a statement; false otherwise.
  */
-bool ProcessStatementNode(TSSymbol sym, TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static bool ProcessStatementNode(TSSymbol sym, TSNode node, const TypeConversionCheckRequest& request,
+                                 DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (sym == gs.symExpressionStatement)
@@ -4238,7 +4244,8 @@ bool ProcessStatementNode(TSSymbol sym, TSNode node, const TypeConversionCheckRe
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void ProcessExpressionNode(TSSymbol sym, TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static void ProcessExpressionNode(TSSymbol sym, TSNode node, const TypeConversionCheckRequest& request,
+                                  DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (sym == gs.symAssignmentExpression)
@@ -4277,13 +4284,13 @@ void ProcessExpressionNode(TSSymbol sym, TSNode node, const TypeConversionCheckR
  * @param[in] gs Pre-resolved grammar symbols reference.
  * @return True if conversion analysis applies to the node type.
  */
-bool IsConversionRelevantSymbol(TSSymbol sym, const parser::GrammarSymbols& gs)
+static bool IsConversionRelevantSymbol(TSSymbol sym, const parser::GrammarSymbols& gs)
 {
     return std::find(gs.conversionTargetSymbols.begin(), gs.conversionTargetSymbols.end(), sym) !=
            gs.conversionTargetSymbols.end();
 }
 
-void ProcessNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static void ProcessNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol sym = ts_node_symbol(node);
@@ -4319,7 +4326,7 @@ void ProcessNode(TSNode node, const TypeConversionCheckRequest& request, Diagnos
  * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with TraverseTree in server/src/analysis/NodeIndex.cpp. Candidate
  * for unification in server/src/analysis/SemanticHelpers.h.
  */
-void VisitNode(TSNode root, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static void VisitNode(TSNode root, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     TSTreeCursor cursor = ts_tree_cursor_new(root);
     bool hasChild = true;
@@ -4351,13 +4358,12 @@ void VisitNode(TSNode root, const TypeConversionCheckRequest& request, Diagnosti
     }
     ts_tree_cursor_delete(&cursor);
 }
-} // namespace
 
 /**
  * @brief Is truthy condition.
- * @param[in] typeName Parameter typeName.
- * @param[in] table Parameter table.
- * @return True if condition met; otherwise false.
+ * @param[in] typeName Type name to inspect or resolve.
+ * @param[in] table Symbol table containing resolved symbols.
+ * @return True if the condition is satisfied; false otherwise.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */

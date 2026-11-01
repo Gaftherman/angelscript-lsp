@@ -11,9 +11,9 @@
 
 namespace angel_lsp
 {
-namespace
-{
 
+namespace breakpoint_handlers_detail
+{
 /**
  * @brief Parsed parameters for breakpoint locations requests.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -24,13 +24,16 @@ struct BreakpointLocationsParams
     uint32_t startLine = 0;
     uint32_t endLine = std::numeric_limits<uint32_t>::max();
 };
+} // namespace breakpoint_handlers_detail
+
+using BreakpointLocationsParams = breakpoint_handlers_detail::BreakpointLocationsParams;
 
 /**
  * @brief Extracts the document URI from JSON-RPC parameters.
- * @param[in] obj Parameter object.
+ * @param[in] obj Input obj for the operation.
  * @return Extracted URI string or empty if missing.
  */
-std::string ExtractDocumentUri(const lsp::json::Object& obj)
+static std::string ExtractDocumentUri(const lsp::json::Object& obj)
 {
     if (const auto* docVal = obj.find("textDocument"); docVal && docVal->isObject())
     {
@@ -44,11 +47,11 @@ std::string ExtractDocumentUri(const lsp::json::Object& obj)
 
 /**
  * @brief Parses line numbers safely from the optional range parameter.
- * @param[in] obj Parameter object.
+ * @param[in] obj Input obj for the operation.
  * @param[out] startLine Starting line number.
  * @param[out] endLine Ending line number.
  */
-void ExtractRangeLines(const lsp::json::Object& obj, uint32_t& startLine, uint32_t& endLine)
+static void ExtractRangeLines(const lsp::json::Object& obj, uint32_t& startLine, uint32_t& endLine)
 {
     const auto* rangeVal = obj.find("range");
     if (!rangeVal || !rangeVal->isObject())
@@ -86,7 +89,7 @@ void ExtractRangeLines(const lsp::json::Object& obj, uint32_t& startLine, uint32
  * @param[in] params Raw JSON value.
  * @return Populated parameter struct.
  */
-BreakpointLocationsParams ParseBreakpointParams(const lsp::json::Value& params)
+static BreakpointLocationsParams ParseBreakpointParams(const lsp::json::Value& params)
 {
     BreakpointLocationsParams parsed;
     if (!params.isObject())
@@ -108,8 +111,8 @@ BreakpointLocationsParams ParseBreakpointParams(const lsp::json::Value& params)
  * @param[in] enc Client position encoding.
  * @return LSP-compliant BreakpointLocation JSON object.
  */
-lsp::json::Object FormatBreakpointLocation(const features::BreakpointLocationItem& item, std::string_view text,
-                                           const utils::LineIndex* lineIndex, utils::PositionEncoding enc)
+static lsp::json::Object FormatBreakpointLocation(const features::BreakpointLocationItem& item, std::string_view text,
+                                                  const utils::LineIndex* lineIndex, utils::PositionEncoding enc)
 {
     lsp::Range range;
     range.start.line = item.line;
@@ -142,8 +145,6 @@ lsp::json::Object FormatBreakpointLocation(const features::BreakpointLocationIte
     locObj["range"] = lsp::json::Value(std::move(rangeObj));
     return locObj;
 }
-
-} // namespace
 
 lsp::json::Value Server::HandleRequestsTextDocument_BreakpointLocations(lsp::json::Value&& params)
 {

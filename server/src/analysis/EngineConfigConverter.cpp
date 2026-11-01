@@ -5,7 +5,7 @@
 
 namespace angel_lsp::analysis
 {
-namespace
+namespace engine_config_converter_detail
 {
 /**
  * @brief Represents Enum entry.
@@ -16,7 +16,12 @@ struct EnumEntry
     std::string name;
     std::vector<std::pair<std::string, std::string>> values;
 };
+} // namespace engine_config_converter_detail
 
+using EnumEntry = engine_config_converter_detail::EnumEntry;
+
+namespace engine_config_converter_detail
+{
 /**
  * @brief Represents Class entry.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -29,7 +34,12 @@ struct ClassEntry
     std::vector<std::string> properties;
     std::vector<std::string> methods;
 };
+} // namespace engine_config_converter_detail
 
+using ClassEntry = engine_config_converter_detail::ClassEntry;
+
+namespace engine_config_converter_detail
+{
 /**
  * @brief Represents Interface entry.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -39,7 +49,12 @@ struct InterfaceEntry
     std::string name;
     std::vector<std::string> methods;
 };
+} // namespace engine_config_converter_detail
 
+using InterfaceEntry = engine_config_converter_detail::InterfaceEntry;
+
+namespace engine_config_converter_detail
+{
 /**
  * @brief Represents Namespace data.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -55,8 +70,11 @@ struct NamespaceData
     std::vector<std::string> functions;
     std::vector<std::string> properties;
 };
+} // namespace engine_config_converter_detail
 
-std::string ConsumeQuotedToken(std::string_view line, size_t& i)
+using NamespaceData = engine_config_converter_detail::NamespaceData;
+
+static std::string ConsumeQuotedToken(std::string_view line, size_t& i)
 {
     const size_t len = line.size();
     ++i;
@@ -78,7 +96,7 @@ std::string ConsumeQuotedToken(std::string_view line, size_t& i)
     return tok;
 }
 
-std::string_view ConsumeWordToken(std::string_view line, size_t& i)
+static std::string_view ConsumeWordToken(std::string_view line, size_t& i)
 {
     const size_t start = i;
     const size_t len = line.size();
@@ -87,7 +105,7 @@ std::string_view ConsumeWordToken(std::string_view line, size_t& i)
     return line.substr(start, i - start);
 }
 
-std::vector<std::string> TokenizeLine(std::string_view line)
+static std::vector<std::string> TokenizeLine(std::string_view line)
 {
     std::vector<std::string> tokens;
     size_t i = 0;
@@ -107,7 +125,7 @@ std::vector<std::string> TokenizeLine(std::string_view line)
     return tokens;
 }
 
-void ApplyEngineProperty(int id, long long val, config::EngineProperties& props)
+static void ApplyEngineProperty(int id, long long val, config::EngineProperties& props)
 {
     switch (id)
     {
@@ -158,7 +176,7 @@ void ApplyEngineProperty(int id, long long val, config::EngineProperties& props)
     }
 }
 
-NamespaceData& FindOrCreateScope(std::vector<NamespaceData>& scopes, const std::string& name)
+static NamespaceData& FindOrCreateScope(std::vector<NamespaceData>& scopes, const std::string& name)
 {
     for (auto& s : scopes)
     {
@@ -171,15 +189,13 @@ NamespaceData& FindOrCreateScope(std::vector<NamespaceData>& scopes, const std::
 
 /**
  * @brief Find or create class.
- * @param[in,out] scope Parameter scope.
- * @param[in] name Parameter name.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (92%) with FindOrCreateEnum in
- * server/src/analysis/EngineConfigConverter.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in,out] scope Enclosing lexical scope.
+ * @param[in] name Symbol or identifier name.
+ * @return Calculated or extracted result of the operation.
  * Structural overlap (92%) with FindOrCreateInterface in server/src/analysis/EngineConfigConverter.cpp. Candidate for
  * unification in server/src/analysis/SemanticHelpers.h.
  */
-ClassEntry& FindOrCreateClass(NamespaceData& scope, const std::string& name)
+static ClassEntry& FindOrCreateClass(NamespaceData& scope, const std::string& name)
 {
     for (auto& c : scope.classes)
     {
@@ -192,15 +208,13 @@ ClassEntry& FindOrCreateClass(NamespaceData& scope, const std::string& name)
 
 /**
  * @brief Find or create enum.
- * @param[in,out] scope Parameter scope.
- * @param[in] name Parameter name.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (92%) with FindOrCreateClass in
- * server/src/analysis/EngineConfigConverter.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in,out] scope Enclosing lexical scope.
+ * @param[in] name Symbol or identifier name.
+ * @return Calculated or extracted result of the operation.
  * Structural overlap (92%) with FindOrCreateInterface in server/src/analysis/EngineConfigConverter.cpp. Candidate for
  * unification in server/src/analysis/SemanticHelpers.h.
  */
-EnumEntry& FindOrCreateEnum(NamespaceData& scope, const std::string& name)
+static EnumEntry& FindOrCreateEnum(NamespaceData& scope, const std::string& name)
 {
     for (auto& e : scope.enums)
     {
@@ -213,15 +227,13 @@ EnumEntry& FindOrCreateEnum(NamespaceData& scope, const std::string& name)
 
 /**
  * @brief Find or create interface.
- * @param[in,out] scope Parameter scope.
- * @param[in] name Parameter name.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (92%) with FindOrCreateClass in
- * server/src/analysis/EngineConfigConverter.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in,out] scope Enclosing lexical scope.
+ * @param[in] name Symbol or identifier name.
+ * @return Calculated or extracted result of the operation.
  * Structural overlap (92%) with FindOrCreateEnum in server/src/analysis/EngineConfigConverter.cpp. Candidate for
  * unification in server/src/analysis/SemanticHelpers.h.
  */
-InterfaceEntry& FindOrCreateInterface(NamespaceData& scope, const std::string& name)
+static InterfaceEntry& FindOrCreateInterface(NamespaceData& scope, const std::string& name)
 {
     for (auto& in : scope.interfaces)
     {
@@ -232,7 +244,7 @@ InterfaceEntry& FindOrCreateInterface(NamespaceData& scope, const std::string& n
     return scope.interfaces.back();
 }
 
-void ProcessBehaviour(ClassEntry& cls, int behId, std::string decl)
+static void ProcessBehaviour(ClassEntry& cls, int behId, std::string decl)
 {
     if (decl.empty())
         return;
@@ -264,13 +276,13 @@ void ProcessBehaviour(ClassEntry& cls, int behId, std::string decl)
         cls.methods.push_back(std::move(decl));
 }
 
-void EnsureSemicolon(std::string& s)
+static void EnsureSemicolon(std::string& s)
 {
     if (!s.empty() && s.back() != ';')
         s += ';';
 }
 
-void ProcessMemberDirective(const std::vector<std::string>& tok, NamespaceData& scope)
+static void ProcessMemberDirective(const std::vector<std::string>& tok, NamespaceData& scope)
 {
     if (tok.size() < 3)
         return;
@@ -304,7 +316,7 @@ void ProcessMemberDirective(const std::vector<std::string>& tok, NamespaceData& 
     }
 }
 
-bool ProcessTypeDirective(const std::vector<std::string>& tok, NamespaceData& scope)
+static bool ProcessTypeDirective(const std::vector<std::string>& tok, NamespaceData& scope)
 {
     if (tok[0] == "objtype" && tok.size() >= 2)
     {
@@ -324,7 +336,7 @@ bool ProcessTypeDirective(const std::vector<std::string>& tok, NamespaceData& sc
     return false;
 }
 
-bool ProcessEnumDirective(const std::vector<std::string>& tok, NamespaceData& scope)
+static bool ProcessEnumDirective(const std::vector<std::string>& tok, NamespaceData& scope)
 {
     if (tok[0] == "enum" && tok.size() >= 2)
     {
@@ -340,7 +352,7 @@ bool ProcessEnumDirective(const std::vector<std::string>& tok, NamespaceData& sc
     return false;
 }
 
-void ProcessEntityDirective(const std::vector<std::string>& tok, NamespaceData& scope)
+static void ProcessEntityDirective(const std::vector<std::string>& tok, NamespaceData& scope)
 {
     if (tok.size() < 2)
         return;
@@ -364,7 +376,7 @@ void ProcessEntityDirective(const std::vector<std::string>& tok, NamespaceData& 
     }
 }
 
-void ProcessDeclarationDirective(const std::vector<std::string>& tok, NamespaceData& scope)
+static void ProcessDeclarationDirective(const std::vector<std::string>& tok, NamespaceData& scope)
 {
     if (tok.empty())
         return;
@@ -374,13 +386,11 @@ void ProcessDeclarationDirective(const std::vector<std::string>& tok, NamespaceD
 
 /**
  * @brief Format enums.
- * @param[in] enums Parameter enums.
- * @param[in] indent Parameter indent.
- * @param[in,out] out Parameter out.
- * @note [REFACTOR-CANDIDATE] Structural overlap (65%) with FormatClasses in
- * server/src/analysis/EngineConfigConverter.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] enums Count of elements or operations.
+ * @param[in] indent Input indent for the operation.
+ * @param[in,out] out Output accumulator or result sink.
  */
-void FormatEnums(const std::vector<EnumEntry>& enums, const std::string& indent, std::string& out)
+static void FormatEnums(const std::vector<EnumEntry>& enums, const std::string& indent, std::string& out)
 {
     for (const auto& en : enums)
     {
@@ -393,13 +403,11 @@ void FormatEnums(const std::vector<EnumEntry>& enums, const std::string& indent,
 
 /**
  * @brief Format classes.
- * @param[in] classes Parameter classes.
- * @param[in] indent Parameter indent.
- * @param[in,out] out Parameter out.
- * @note [REFACTOR-CANDIDATE] Structural overlap (65%) with FormatEnums in
- * server/src/analysis/EngineConfigConverter.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] classes Input classes for the operation.
+ * @param[in] indent Input indent for the operation.
+ * @param[in,out] out Output accumulator or result sink.
  */
-void FormatClasses(const std::vector<ClassEntry>& classes, const std::string& indent, std::string& out)
+static void FormatClasses(const std::vector<ClassEntry>& classes, const std::string& indent, std::string& out)
 {
     for (const auto& cls : classes)
     {
@@ -416,7 +424,7 @@ void FormatClasses(const std::vector<ClassEntry>& classes, const std::string& in
     }
 }
 
-void FormatScopeEntities(const NamespaceData& scope, const std::string& indent, std::string& out)
+static void FormatScopeEntities(const NamespaceData& scope, const std::string& indent, std::string& out)
 {
     FormatEnums(scope.enums, indent, out);
     for (const auto& td : scope.typedefs)
@@ -437,7 +445,7 @@ void FormatScopeEntities(const NamespaceData& scope, const std::string& indent, 
         out += indent + f + "\n";
 }
 
-void FormatNamespace(const NamespaceData& scope, std::string& out)
+static void FormatNamespace(const NamespaceData& scope, std::string& out)
 {
     if (scope.name.empty())
     {
@@ -450,7 +458,6 @@ void FormatNamespace(const NamespaceData& scope, std::string& out)
         out += "}\n\n";
     }
 }
-} // namespace
 
 bool IsOfficialEngineConfig(std::string_view content)
 {

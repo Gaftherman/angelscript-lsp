@@ -19,21 +19,17 @@ SymbolTable::SymbolTable() = default;
 
 SymbolTable::~SymbolTable() = default;
 
-namespace
-{
 /**
  * @brief Access modifier to string.
- * @param[in] access Parameter access.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with ParameterModifierToString in
- * server/src/analysis/SymbolTable.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural
+ * @param[in] access Input access for the operation.
+ * @return Calculated or extracted result of the operation.
  * overlap (68%) with ContainerKindMatches in server/src/features/definition/DefinitionHandler.cpp. Candidate for
  * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (65%) with RawProfileStub in
  * server/src/analysis/EngineProfiles.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  * Structural overlap (62%) with IsOpeningOrMemberPunctuation in server/src/features/formatting/FormattingSpacing.cpp.
  * Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-std::string AccessModifierToString(AccessModifier access)
+static std::string AccessModifierToString(AccessModifier access)
 {
     switch (access)
     {
@@ -50,15 +46,13 @@ std::string AccessModifierToString(AccessModifier access)
 
 /**
  * @brief Parameter modifier to string.
- * @param[in] mod Parameter mod.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with AccessModifierToString in
- * server/src/analysis/SymbolTable.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural
+ * @param[in] mod Input mod for the operation.
+ * @return Calculated or extracted result of the operation.
  * overlap (85%) with FormatParameterReference in server/src/analysis/SignatureFormatter.cpp. Candidate for unification
  * in server/src/analysis/SemanticHelpers.h. Structural overlap (72%) with KindWord in
  * server/src/analysis/rules/TypeRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-std::string ParameterModifierToString(ParameterModifier mod)
+static std::string ParameterModifierToString(ParameterModifier mod)
 {
     switch (mod)
     {
@@ -75,7 +69,7 @@ std::string ParameterModifierToString(ParameterModifier mod)
     }
 }
 
-std::string JoinStrings(const std::vector<std::string>& items, const char* sep = ", ")
+static std::string JoinStrings(const std::vector<std::string>& items, const char* sep = ", ")
 {
     std::string result;
     for (size_t i = 0; i < items.size(); ++i)
@@ -87,14 +81,14 @@ std::string JoinStrings(const std::vector<std::string>& items, const char* sep =
     return result;
 }
 
-std::string JoinFlags(const std::vector<std::string>& flags)
+static std::string JoinFlags(const std::vector<std::string>& flags)
 {
     if (flags.empty())
         return "[]";
     return "[" + JoinStrings(flags) + "]";
 }
 
-std::vector<Symbol>& MutableBucket(std::shared_ptr<std::vector<Symbol>>& bucket)
+static std::vector<Symbol>& MutableBucket(std::shared_ptr<std::vector<Symbol>>& bucket)
 {
     if (!bucket)
         bucket = std::make_shared<std::vector<Symbol>>();
@@ -103,8 +97,8 @@ std::vector<Symbol>& MutableBucket(std::shared_ptr<std::vector<Symbol>>& bucket)
     return *bucket;
 }
 
-void BuildParamStrings(const std::vector<ParameterInformation>& params, std::string& outParamsStr,
-                       std::vector<std::string>& outParamLines)
+static void BuildParamStrings(const std::vector<ParameterInformation>& params, std::string& outParamsStr,
+                              std::vector<std::string>& outParamLines)
 {
     outParamsStr = "(";
     for (size_t i = 0; i < params.size(); ++i)
@@ -142,7 +136,6 @@ void BuildParamStrings(const std::vector<ParameterInformation>& params, std::str
     }
     outParamsStr += ")";
 }
-} // namespace
 
 void SymbolTable::IndexKeyForFileLocked(const std::string& fileUri, const std::string& key)
 {
@@ -566,10 +559,8 @@ void SymbolTable::ReplaceDocumentSymbols(const std::string& fileUri, SymbolTable
     PublishDocumentSymbols(fileUri, std::move(fresh));
 }
 
-namespace
-{
-bool ShouldRetainSymbol(const Symbol& sym, const std::string& fileUri,
-                        const ankerl::unordered_dense::set<std::string>& stagingTypeNames)
+static bool ShouldRetainSymbol(const Symbol& sym, const std::string& fileUri,
+                               const ankerl::unordered_dense::set<std::string>& stagingTypeNames)
 {
     if (sym.fileUri != fileUri)
         return false;
@@ -584,7 +575,6 @@ bool ShouldRetainSymbol(const Symbol& sym, const std::string& fileUri,
 
     return false;
 }
-} // namespace
 
 void SymbolTable::RetainLastKnownGoodTypes(const std::string& fileUri, SymbolTable& staging) const
 {
@@ -701,18 +691,16 @@ void SymbolTable::CopyFilteredSymbolsLocked(SymbolTable& target, const SnapshotF
     }
 }
 
-namespace
-{
 using SymbolBucketMap = ankerl::unordered_dense::map<std::string, std::shared_ptr<std::vector<Symbol>>,
                                                      TransparentStringHash, std::equal_to<>>;
 
-bool IsPredefinedOrBuiltinUri(std::string_view fileUri, std::string_view effectiveExt) noexcept
+static bool IsPredefinedOrBuiltinUri(std::string_view fileUri, std::string_view effectiveExt) noexcept
 {
     return utils::IsPredefinedFile(fileUri, effectiveExt);
 }
 
-void CopyPredefinedBucket(const std::string& key, const std::shared_ptr<std::vector<Symbol>>& bucket,
-                          std::string_view effectiveExt, SymbolBucketMap& dest)
+static void CopyPredefinedBucket(const std::string& key, const std::shared_ptr<std::vector<Symbol>>& bucket,
+                                 std::string_view effectiveExt, SymbolBucketMap& dest)
 {
     if (!bucket)
     {
@@ -745,7 +733,6 @@ void CopyPredefinedBucket(const std::string& key, const std::shared_ptr<std::vec
         dest.emplace(key, std::move(filtered));
     }
 }
-} // namespace
 
 void SymbolTable::ClonePredefinedBaseFrom(const SymbolTable& source, std::string_view predefinedExtension)
 {
@@ -1308,10 +1295,8 @@ std::string SymbolTable::BuildVirtualMixinUri(std::string_view hostClass, std::s
 
 /**
  * @brief Symbol table extract virtual host class.
- * @param[in] uri Parameter uri.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (85%) with ExtractVirtualMixinName in
- * server/src/analysis/SymbolTable.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] uri File path or URI.
+ * @return Calculated or extracted result of the operation.
  */
 std::string SymbolTable::ExtractVirtualHostClass(std::string_view uri)
 {
@@ -1344,10 +1329,8 @@ std::string SymbolTable::ExtractVirtualHostClass(std::string_view uri)
 
 /**
  * @brief Symbol table extract virtual mixin name.
- * @param[in] uri Parameter uri.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (85%) with ExtractVirtualHostClass in
- * server/src/analysis/SymbolTable.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] uri File path or URI.
+ * @return Calculated or extracted result of the operation.
  */
 std::string SymbolTable::ExtractVirtualMixinName(std::string_view uri)
 {
@@ -1395,11 +1378,9 @@ bool SymbolTable::HasSymbol(std::string_view qualifiedName) const
 
 /**
  * @brief Symbol table has scoped symbol.
- * @param[in] scope Parameter scope.
- * @param[in] name Parameter name.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (91%) with FindMemberSymbolPtr in server/src/analysis/SymbolTable.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] scope Enclosing lexical scope.
+ * @param[in] name Symbol or identifier name.
+ * @return True if the condition is satisfied; false otherwise.
  */
 bool SymbolTable::HasScopedSymbol(std::string_view scope, std::string_view name) const
 {
@@ -1456,11 +1437,9 @@ std::shared_ptr<const std::vector<Symbol>> SymbolTable::FindSymbolsPtr(std::stri
 
 /**
  * @brief Symbol table find member symbol ptr.
- * @param[in] scope Parameter scope.
- * @param[in] member Parameter member.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (91%) with HasScopedSymbol in server/src/analysis/SymbolTable.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] scope Enclosing lexical scope.
+ * @param[in] member Member symbol or access information.
+ * @return Calculated or extracted result of the operation.
  */
 std::shared_ptr<const std::vector<Symbol>> SymbolTable::FindMemberSymbolPtr(std::string_view scope,
                                                                             std::string_view member) const
@@ -1857,10 +1836,8 @@ const std::vector<std::string>& SymbolTable::GetBaseClassDelegateProperties() co
     return m_baseClassDelegateProperties;
 }
 
-namespace
-{
-void PrintFunctionSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const std::string& typeStr,
-                         const std::string& range)
+static void PrintFunctionSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const std::string& typeStr,
+                                const std::string& range)
 {
     const auto& sig = sym.GetFunction();
     const std::string nameStr = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
@@ -1894,15 +1871,13 @@ void PrintFunctionSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym,
 
 /**
  * @brief Print variable symbol.
- * @param[in] logger Parameter logger.
- * @param[in] sym Parameter sym.
- * @param[in] typeStr Parameter typeStr.
- * @param[in] range Parameter range.
- * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with PrintClassSymbol in server/src/analysis/SymbolTable.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] logger Input logger for the operation.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @param[in] typeStr Type name or descriptor.
+ * @param[in] range Source range or LSP range.
  */
-void PrintVariableSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const std::string& typeStr,
-                         const std::string& range)
+static void PrintVariableSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const std::string& typeStr,
+                                const std::string& range)
 {
     const auto& sig = sym.GetVariable();
     const std::string nameStr = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
@@ -1923,17 +1898,15 @@ void PrintVariableSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym,
 
 /**
  * @brief Print class symbol.
- * @param[in] logger Parameter logger.
- * @param[in] sym Parameter sym.
- * @param[in] typeStr Parameter typeStr.
- * @param[in] range Parameter range.
- * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with PrintVariableSymbol in server/src/analysis/SymbolTable.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (78%) with
+ * @param[in] logger Input logger for the operation.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @param[in] typeStr Type name or descriptor.
+ * @param[in] range Source range or LSP range.
  * PrintInterfaceSymbol in server/src/analysis/SymbolTable.cpp. Candidate for unification in
  * server/src/analysis/SemanticHelpers.h.
  */
-void PrintClassSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const std::string& typeStr,
-                      const std::string& range)
+static void PrintClassSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const std::string& typeStr,
+                             const std::string& range)
 {
     const auto& sig = sym.GetClass();
     const std::string nameStr = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
@@ -1956,15 +1929,13 @@ void PrintClassSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, co
 
 /**
  * @brief Print interface symbol.
- * @param[in] logger Parameter logger.
- * @param[in] sym Parameter sym.
- * @param[in] typeStr Parameter typeStr.
- * @param[in] range Parameter range.
- * @note [REFACTOR-CANDIDATE] Structural overlap (78%) with PrintClassSymbol in server/src/analysis/SymbolTable.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] logger Input logger for the operation.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @param[in] typeStr Type name or descriptor.
+ * @param[in] range Source range or LSP range.
  */
-void PrintInterfaceSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const std::string& typeStr,
-                          const std::string& range)
+static void PrintInterfaceSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const std::string& typeStr,
+                                 const std::string& range)
 {
     const auto& sig = sym.GetInterface();
     const std::string nameStr = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
@@ -1979,8 +1950,8 @@ void PrintInterfaceSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym
                                 JoinFlags(flags), range));
 }
 
-void PrintOtherSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const std::string& typeStr,
-                      const std::string& range)
+static void PrintOtherSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const std::string& typeStr,
+                             const std::string& range)
 {
     const std::string nameStr = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
     switch (sym.type)
@@ -2009,7 +1980,7 @@ void PrintOtherSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, co
     }
 }
 
-void PrintSingleSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym)
+static void PrintSingleSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym)
 {
     const std::string typeStr = SymbolTypeToString(sym.type);
     const std::string range = fmt::format("[L{}:C{}-L{}:C{}]", sym.startLine + 1, sym.startCharacter + 1,
@@ -2034,7 +2005,6 @@ void PrintSingleSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym)
         break;
     }
 }
-} // namespace
 
 void SymbolTable::PrintSymbols(angel_lsp::utils::LspLogger* logger) const
 {
@@ -2053,20 +2023,18 @@ void SymbolTable::PrintSymbols(angel_lsp::utils::LspLogger* logger) const
     }
 }
 
-namespace
-{
-inline void HashCombine(uint64_t& h, uint64_t val)
+static inline void HashCombine(uint64_t& h, uint64_t val)
 {
     h ^= val + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
 }
 
-inline void HashString(uint64_t& h, std::string_view s)
+static inline void HashString(uint64_t& h, std::string_view s)
 {
     uint64_t strHash = ankerl::unordered_dense::hash<std::string_view>{}(s);
     HashCombine(h, strHash);
 }
 
-inline void HashModifiers(uint64_t& h, const SymbolModifiers& m)
+static inline void HashModifiers(uint64_t& h, const SymbolModifiers& m)
 {
     uint32_t flags = static_cast<uint32_t>(m.access) | (static_cast<uint32_t>(m.isConst) << 2) |
                      (static_cast<uint32_t>(m.isHandle) << 3) | (static_cast<uint32_t>(m.isShared) << 4) |
@@ -2078,7 +2046,7 @@ inline void HashModifiers(uint64_t& h, const SymbolModifiers& m)
     HashCombine(h, flags);
 }
 
-inline void HashParameter(uint64_t& h, const ParameterInformation& p)
+static inline void HashParameter(uint64_t& h, const ParameterInformation& p)
 {
     HashString(h, p.name);
     HashString(h, p.typeName);
@@ -2089,7 +2057,7 @@ inline void HashParameter(uint64_t& h, const ParameterInformation& p)
     HashString(h, p.defaultValue);
 }
 
-void HashFunctionSignature(uint64_t& h, const FunctionSignature& fn)
+static void HashFunctionSignature(uint64_t& h, const FunctionSignature& fn)
 {
     HashString(h, fn.returnType);
     HashCombine(h, static_cast<uint64_t>(fn.returnTypeKind));
@@ -2104,7 +2072,7 @@ void HashFunctionSignature(uint64_t& h, const FunctionSignature& fn)
     }
 }
 
-void HashVariableSignature(uint64_t& h, const VariableSignature& v)
+static void HashVariableSignature(uint64_t& h, const VariableSignature& v)
 {
     HashString(h, v.typeName);
     HashCombine(h, static_cast<uint64_t>(v.typeKind));
@@ -2114,7 +2082,7 @@ void HashVariableSignature(uint64_t& h, const VariableSignature& v)
     HashModifiers(h, v.modifiers);
 }
 
-void HashClassSignature(uint64_t& h, const ClassSignature& cls)
+static void HashClassSignature(uint64_t& h, const ClassSignature& cls)
 {
     HashModifiers(h, cls.modifiers);
     for (const auto& b : cls.bases)
@@ -2132,7 +2100,7 @@ void HashClassSignature(uint64_t& h, const ClassSignature& cls)
     h = h * 1099511628211ULL ^ (cls.hasListPattern ? 1ULL : 0ULL);
 }
 
-void HashInterfaceSignature(uint64_t& h, const InterfaceSignature& iface)
+static void HashInterfaceSignature(uint64_t& h, const InterfaceSignature& iface)
 {
     HashModifiers(h, iface.modifiers);
     for (const auto& b : iface.inheritedInterfaces)
@@ -2141,7 +2109,7 @@ void HashInterfaceSignature(uint64_t& h, const InterfaceSignature& iface)
     }
 }
 
-void HashEnumSignature(uint64_t& h, const EnumSignature& enm)
+static void HashEnumSignature(uint64_t& h, const EnumSignature& enm)
 {
     HashModifiers(h, enm.modifiers);
     for (const auto& m : enm.members)
@@ -2151,7 +2119,7 @@ void HashEnumSignature(uint64_t& h, const EnumSignature& enm)
     }
 }
 
-void HashFuncdefSignature(uint64_t& h, const FuncdefSignature& fd)
+static void HashFuncdefSignature(uint64_t& h, const FuncdefSignature& fd)
 {
     HashString(h, fd.returnType);
     HashCombine(h, static_cast<uint64_t>(fd.returnTypeKind));
@@ -2163,7 +2131,7 @@ void HashFuncdefSignature(uint64_t& h, const FuncdefSignature& fd)
     }
 }
 
-void HashSymbolInterface(uint64_t& h, const Symbol& sym)
+static void HashSymbolInterface(uint64_t& h, const Symbol& sym)
 {
     HashCombine(h, static_cast<uint64_t>(sym.type));
     HashString(h, sym.name);
@@ -2201,7 +2169,6 @@ void HashSymbolInterface(uint64_t& h, const Symbol& sym)
         HashFuncdefSignature(h, std::get<FuncdefSignature>(sym.signature));
     }
 }
-} // namespace
 
 uint64_t SymbolTable::ComputeDocumentInterfaceHash(const std::string& fileUri) const
 {

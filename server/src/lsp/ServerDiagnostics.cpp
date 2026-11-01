@@ -9,9 +9,7 @@
 
 namespace angel_lsp
 {
-namespace
-{
-lsp::DiagnosticSeverity ToProtocolSeverity(angel_lsp::analysis::DiagnosticSeverity severity)
+static lsp::DiagnosticSeverity ToProtocolSeverity(angel_lsp::analysis::DiagnosticSeverity severity)
 {
     switch (severity)
     {
@@ -34,8 +32,8 @@ lsp::DiagnosticSeverity ToProtocolSeverity(angel_lsp::analysis::DiagnosticSeveri
  * @param[in] rawMessage Original diagnostic message.
  * @return Prefixed message string.
  */
-std::string FormatPrefixedDiagnosticMessage(angel_lsp::analysis::DiagnosticSeverity severity,
-                                            std::string_view displayCode, std::string_view rawMessage)
+static std::string FormatPrefixedDiagnosticMessage(angel_lsp::analysis::DiagnosticSeverity severity,
+                                                   std::string_view displayCode, std::string_view rawMessage)
 {
     if (displayCode.empty() || rawMessage.starts_with("["))
     {
@@ -66,7 +64,7 @@ std::string FormatPrefixedDiagnosticMessage(angel_lsp::analysis::DiagnosticSever
  * @param[in] code Canonical or alias diagnostic code.
  * @return Settings deep-link URI string or empty string when no code is present.
  */
-std::string_view GetDiagnosticSettingsUri(std::string_view code)
+static std::string_view GetDiagnosticSettingsUri(std::string_view code)
 {
     if (code.empty())
     {
@@ -120,7 +118,6 @@ std::string_view GetDiagnosticSettingsUri(std::string_view code)
     }
     return "vscode://settings/angelscript.diagnosticSeverity";
 }
-} // namespace
 
 void Server::EncodeIn(std::string_view text, lsp::Range& range) const
 {
@@ -135,10 +132,8 @@ void Server::EncodeIn(std::string_view text, lsp::Hover& hover) const
     codec::Encode(text, m_positionEncoding, hover.range.value());
 }
 
-namespace
-{
-void EncodeSymbolsRecursive(const utils::LineIndex& lineIndex, std::string_view text, utils::PositionEncoding enc,
-                            std::vector<lsp::DocumentSymbol>& symbols)
+static void EncodeSymbolsRecursive(const utils::LineIndex& lineIndex, std::string_view text,
+                                   utils::PositionEncoding enc, std::vector<lsp::DocumentSymbol>& symbols)
 {
     for (auto& symbol : symbols)
     {
@@ -151,7 +146,6 @@ void EncodeSymbolsRecursive(const utils::LineIndex& lineIndex, std::string_view 
         }
     }
 }
-} // namespace
 
 void Server::EncodeIn(std::string_view text, std::vector<lsp::TextEdit>& edits) const
 {

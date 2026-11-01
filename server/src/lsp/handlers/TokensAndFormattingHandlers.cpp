@@ -10,7 +10,7 @@
 
 namespace angel_lsp
 {
-namespace
+namespace tokens_and_formatting_handlers_detail
 {
 /**
  * @brief Represents Cached tokens snapshot.
@@ -23,8 +23,11 @@ struct CachedTokensSnapshot
     int cachedVersion{-1};
     std::vector<lsp::uint> previous;
 };
+} // namespace tokens_and_formatting_handlers_detail
 
-bool AreSemanticTokensEditsValid(const std::vector<lsp::SemanticTokensEdit>& edits)
+using CachedTokensSnapshot = tokens_and_formatting_handlers_detail::CachedTokensSnapshot;
+
+static bool AreSemanticTokensEditsValid(const std::vector<lsp::SemanticTokensEdit>& edits)
 {
     for (const auto& edit : edits)
     {
@@ -35,7 +38,6 @@ bool AreSemanticTokensEditsValid(const std::vector<lsp::SemanticTokensEdit>& edi
     }
     return true;
 }
-} // namespace
 
 lsp::requests::TextDocument_LinkedEditingRange::Result
 Server::HandleRequestsTextDocument_LinkedEditingRange(lsp::requests::TextDocument_LinkedEditingRange::Params&& req)

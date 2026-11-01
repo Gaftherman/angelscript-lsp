@@ -13,10 +13,8 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
 
-bool IsHandleAddressOperand(TSNode node)
+static bool IsHandleAddressOperand(TSNode node)
 {
     if (ts_node_is_null(node))
     {
@@ -31,13 +29,13 @@ bool IsHandleAddressOperand(TSNode node)
     return !ts_node_is_null(op) && ts_node_symbol(op) == gs.tokAt;
 }
 
-bool ShouldSkipAddressComparison(TSNode left, TSNode right, bool isRelational)
+static bool ShouldSkipAddressComparison(TSNode left, TSNode right, bool isRelational)
 {
     return !isRelational && (IsHandleAddressOperand(left) || IsHandleAddressOperand(right));
 }
 
-bool AreCustomTypesCompatible(std::string_view op, const std::string& left, const std::string& right,
-                              const SymbolTable& table)
+static bool AreCustomTypesCompatible(std::string_view op, const std::string& left, const std::string& right,
+                                     const SymbolTable& table)
 {
     if (TypeHasOpImplConvTo(left, right, table) || TypeHasOpImplConvTo(right, left, table))
     {
@@ -51,8 +49,8 @@ bool AreCustomTypesCompatible(std::string_view op, const std::string& left, cons
            TypeHasOperator(left, "opCmp", right, table) || TypeHasOperator(right, "opCmp", left, table);
 }
 
-bool CheckBoolCompatibility(bool isRelational, const std::string& other, const SymbolTable& table,
-                            std::string_view stringTypeName)
+static bool CheckBoolCompatibility(bool isRelational, const std::string& other, const SymbolTable& table,
+                                   std::string_view stringTypeName)
 {
     if (parser::primitives::IsNumeric(other) || other == stringTypeName || ResolvesToEnum(other, table))
     {
@@ -65,8 +63,8 @@ bool CheckBoolCompatibility(bool isRelational, const std::string& other, const S
     return false;
 }
 
-bool CheckStringCompatibility(bool isRelational, const std::string& other, const SymbolTable& table,
-                              std::string_view stringTypeName)
+static bool CheckStringCompatibility(bool isRelational, const std::string& other, const SymbolTable& table,
+                                     std::string_view stringTypeName)
 {
     if (parser::primitives::IsNumeric(other) || other == "bool" || ResolvesToEnum(other, table))
     {
@@ -84,7 +82,7 @@ bool CheckStringCompatibility(bool isRelational, const std::string& other, const
     return TypeHasOperator(strTarget, "opEquals", other, table) || TypeHasOperator(other, "opEquals", strTarget, table);
 }
 
-bool IsEnumComparisonCompatible(const std::string& left, const std::string& right, const SymbolTable& table)
+static bool IsEnumComparisonCompatible(const std::string& left, const std::string& right, const SymbolTable& table)
 {
     const std::string unwrappedLeft = UnwrapTypedef(left, table);
     const std::string unwrappedRight = UnwrapTypedef(right, table);
@@ -98,8 +96,8 @@ bool IsEnumComparisonCompatible(const std::string& left, const std::string& righ
            (rightEnum && parser::primitives::IsNumeric(unwrappedLeft));
 }
 
-bool CheckIdenticalTypes(std::string_view op, const std::string& type, const SymbolTable& table,
-                         std::string_view stringTypeName)
+static bool CheckIdenticalTypes(std::string_view op, const std::string& type, const SymbolTable& table,
+                                std::string_view stringTypeName)
 {
     if (type == stringTypeName || ResolvesToEnum(type, table))
     {
@@ -108,8 +106,8 @@ bool CheckIdenticalTypes(std::string_view op, const std::string& type, const Sym
     return AreCustomTypesCompatible(op, type, type, table);
 }
 
-bool CheckBoolBranch(bool isRelational, const BinaryOperandTypes& types, const SymbolTable& table,
-                     std::string_view stringTypeName)
+static bool CheckBoolBranch(bool isRelational, const BinaryOperandTypes& types, const SymbolTable& table,
+                            std::string_view stringTypeName)
 {
     if (types.left == types.right)
     {
@@ -119,13 +117,13 @@ bool CheckBoolBranch(bool isRelational, const BinaryOperandTypes& types, const S
                                   stringTypeName);
 }
 
-[[nodiscard]] bool IsStringOperand(const std::string& type, std::string_view stringTypeName) noexcept
+[[nodiscard]] static bool IsStringOperand(const std::string& type, std::string_view stringTypeName) noexcept
 {
     return type == stringTypeName;
 }
 
-bool CheckStringBranch(bool isRelational, const BinaryOperandTypes& types, const SymbolTable& table,
-                       std::string_view stringTypeName)
+static bool CheckStringBranch(bool isRelational, const BinaryOperandTypes& types, const SymbolTable& table,
+                              std::string_view stringTypeName)
 {
     const bool leftStr = IsStringOperand(types.left, stringTypeName);
     const bool rightStr = IsStringOperand(types.right, stringTypeName);
@@ -137,8 +135,8 @@ bool CheckStringBranch(bool isRelational, const BinaryOperandTypes& types, const
     return CheckStringCompatibility(isRelational, other, table, stringTypeName);
 }
 
-bool AreComparisonTypesCompatible(std::string_view op, const BinaryOperandTypes& types, const SymbolTable& table,
-                                  std::string_view stringTypeName)
+static bool AreComparisonTypesCompatible(std::string_view op, const BinaryOperandTypes& types, const SymbolTable& table,
+                                         std::string_view stringTypeName)
 {
     if (types.left == "void" || types.right == "void")
     {
@@ -174,8 +172,8 @@ bool AreComparisonTypesCompatible(std::string_view op, const BinaryOperandTypes&
     return AreCustomTypesCompatible(op, types.left, types.right, table);
 }
 
-void EmitComparisonDiagnostics(TSNode opNode, std::string_view op, const BinaryOperandTypes& types,
-                               DiagnosticContext& ctx)
+static void EmitComparisonDiagnostics(TSNode opNode, std::string_view op, const BinaryOperandTypes& types,
+                                      DiagnosticContext& ctx)
 {
     const TSPoint start = ts_node_start_point(opNode);
     const TSPoint end = ts_node_end_point(opNode);
@@ -193,15 +191,12 @@ void EmitComparisonDiagnostics(TSNode opNode, std::string_view op, const BinaryO
                         {std::string(op), types.left, types.right}, DiagnosticSeverity::Error);
     }
 }
-} // namespace
 
 /**
  * @brief Check comparison operator compatibility.
- * @param[in] node Parameter node.
- * @param[in] scope Parameter scope.
- * @param[in,out] ctx Parameter ctx.
- * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with CheckBinaryOperatorCompatibility in
- * server/src/analysis/BinaryOperatorChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] node AST node under evaluation.
+ * @param[in] scope Enclosing lexical scope.
+ * @param[in,out] ctx Diagnostic collection and analysis context.
  */
 void CheckComparisonOperatorCompatibility(TSNode node, const Scope* scope, DiagnosticContext& ctx)
 {

@@ -16,10 +16,7 @@
 namespace angel_lsp::analysis::rules
 {
 
-namespace
-{
-
-DiagnosticSeverity ResolveSeverity(std::string_view sev)
+static DiagnosticSeverity ResolveSeverity(std::string_view sev)
 {
     if (sev == "error")
     {
@@ -36,7 +33,7 @@ DiagnosticSeverity ResolveSeverity(std::string_view sev)
     return DiagnosticSeverity::Warning;
 }
 
-bool MatchesTypeName(const std::string& baseType, const config::StorageRule& rule, const SymbolTable& table)
+static bool MatchesTypeName(const std::string& baseType, const config::StorageRule& rule, const SymbolTable& table)
 {
     if (std::find(rule.types.begin(), rule.types.end(), baseType) != rule.types.end())
     {
@@ -72,7 +69,7 @@ bool MatchesTypeName(const std::string& baseType, const config::StorageRule& rul
     return false;
 }
 
-std::string ExtractArrayElement(const VariableSignature& sig, const SemanticAnalysisRequest& request)
+static std::string ExtractArrayElement(const VariableSignature& sig, const SemanticAnalysisRequest& request)
 {
     if (!sig.templateName.empty() && request.IsArrayLikeTemplate(sig.templateName))
     {
@@ -89,7 +86,7 @@ std::string ExtractArrayElement(const VariableSignature& sig, const SemanticAnal
     return {};
 }
 
-void ReportStorageViolation(const Symbol& sym, const config::StorageRule& rule, const DiagnosticContext& ctx)
+static void ReportStorageViolation(const Symbol& sym, const config::StorageRule& rule, const DiagnosticContext& ctx)
 {
     std::string msg = rule.message;
     if (msg.empty())
@@ -108,15 +105,15 @@ void ReportStorageViolation(const Symbol& sym, const config::StorageRule& rule, 
 
 /**
  * @brief Evaluate storage rule.
- * @param[in] sym Parameter sym.
- * @param[in] sig Parameter sig.
- * @param[in] rule Parameter rule.
- * @param[in] ctx Parameter ctx.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @param[in] sig Input sig for the operation.
+ * @param[in] rule Input rule for the operation.
+ * @param[in] ctx Diagnostic collection and analysis context.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
-void EvaluateStorageRule(const Symbol& sym, const VariableSignature& sig, const config::StorageRule& rule,
-                         const DiagnosticContext& ctx)
+static void EvaluateStorageRule(const Symbol& sym, const VariableSignature& sig, const config::StorageRule& rule,
+                                const DiagnosticContext& ctx)
 {
     const SymbolTable& table = ctx.request.symbolTable;
     const bool isMember = HasContainerOfType(sym, table, SymbolType::Class);
@@ -147,15 +144,15 @@ void EvaluateStorageRule(const Symbol& sym, const VariableSignature& sig, const 
 
 /**
  * @brief Check scheduler arg safety.
- * @param[in] req Parameter req.
- * @param[in] index Parameter index.
- * @param[in] rule Parameter rule.
- * @param[in] ctx Parameter ctx.
+ * @param[in] req Analysis or feature execution context.
+ * @param[in] index Zero-based element index.
+ * @param[in] rule Input rule for the operation.
+ * @param[in] ctx Diagnostic collection and analysis context.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
-void CheckSchedulerArgSafety(const SchedulerCallRequest& req, size_t index, const config::SchedulerRule& rule,
-                             const DiagnosticContext& ctx)
+static void CheckSchedulerArgSafety(const SchedulerCallRequest& req, size_t index, const config::SchedulerRule& rule,
+                                    const DiagnosticContext& ctx)
 {
     if (rule.disallowArgInheritsFrom.empty() && rule.disallowArgRegex.empty())
     {
@@ -196,8 +193,8 @@ void CheckSchedulerArgSafety(const SchedulerCallRequest& req, size_t index, cons
     }
 }
 
-void CheckSchedulerEnumDiscriminant(const SchedulerCallRequest& req, size_t index, const config::SchedulerRule& rule,
-                                    const DiagnosticContext& ctx)
+static void CheckSchedulerEnumDiscriminant(const SchedulerCallRequest& req, size_t index,
+                                           const config::SchedulerRule& rule, const DiagnosticContext& ctx)
 {
     if (!rule.requireExplicitEnumConstruct)
     {
@@ -238,8 +235,8 @@ void CheckSchedulerEnumDiscriminant(const SchedulerCallRequest& req, size_t inde
     }
 }
 
-void CheckSingleSchedulerArg(const SchedulerCallRequest& req, size_t index, const config::SchedulerRule& rule,
-                             const DiagnosticContext& ctx)
+static void CheckSingleSchedulerArg(const SchedulerCallRequest& req, size_t index, const config::SchedulerRule& rule,
+                                    const DiagnosticContext& ctx)
 {
     const std::string& argType = req.argTypes[index];
     const TSNode argNode = req.argNodes[index];
@@ -252,8 +249,8 @@ void CheckSingleSchedulerArg(const SchedulerCallRequest& req, size_t index, cons
     CheckSchedulerEnumDiscriminant(req, index, rule, ctx);
 }
 
-std::string FormatTypeSuggestionMessage(std::string_view varName, const config::TypeSuggestionRule& suggestion,
-                                        const DiagnosticContext& ctx)
+static std::string FormatTypeSuggestionMessage(std::string_view varName, const config::TypeSuggestionRule& suggestion,
+                                               const DiagnosticContext& ctx)
 {
     if (!suggestion.message.empty())
     {
@@ -263,8 +260,6 @@ std::string FormatTypeSuggestionMessage(std::string_view varName, const config::
                                "Variable '{}' uses '{}'. Consider using '{}'.", varName, suggestion.fromType,
                                suggestion.toType);
 }
-
-} // namespace
 
 void CheckEngineStorageRules(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
 {

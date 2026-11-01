@@ -28,8 +28,9 @@ struct BinaryOperandTypes
  */
 [[nodiscard]] constexpr bool IsComparisonOp(std::string_view op) noexcept
 {
-    using namespace parser::keywords::operators;
-    return op == EqEq || op == BangEq || op == Lt || op == LtEq || op == Gt || op == GtEq;
+    return op == parser::keywords::operators::EqEq || op == parser::keywords::operators::BangEq ||
+           op == parser::keywords::operators::Lt || op == parser::keywords::operators::LtEq ||
+           op == parser::keywords::operators::Gt || op == parser::keywords::operators::GtEq;
 }
 
 /**
@@ -39,8 +40,32 @@ struct BinaryOperandTypes
  */
 [[nodiscard]] constexpr bool IsRelationalOp(std::string_view op) noexcept
 {
-    using namespace parser::keywords::operators;
-    return op == Lt || op == LtEq || op == Gt || op == GtEq;
+    return op == parser::keywords::operators::Lt || op == parser::keywords::operators::LtEq ||
+           op == parser::keywords::operators::Gt || op == parser::keywords::operators::GtEq;
+}
+
+/**
+ * @brief Checks if an operator string represents a bitwise operator (|, &, ^, <<, >>, >>>).
+ * @param[in] op Operator token text.
+ * @return True if operator is a bitwise operator.
+ */
+[[nodiscard]] constexpr bool IsBitwiseOp(std::string_view op) noexcept
+{
+    return op == parser::keywords::operators::Pipe || op == parser::keywords::operators::Amp ||
+           op == parser::keywords::operators::Caret || op == parser::keywords::operators::LtLt ||
+           op == parser::keywords::operators::GtGt || op == parser::keywords::operators::GtGtGt;
+}
+
+/**
+ * @brief Checks if an operator string represents an arithmetic operator (+, -, *, /, %, **).
+ * @param[in] op Operator token text.
+ * @return True if operator is an arithmetic operator.
+ */
+[[nodiscard]] constexpr bool IsArithmeticOp(std::string_view op) noexcept
+{
+    return op == parser::keywords::operators::Plus || op == parser::keywords::operators::Minus ||
+           op == parser::keywords::operators::Star || op == parser::keywords::operators::Slash ||
+           op == parser::keywords::operators::Percent || op == parser::keywords::operators::StarStar;
 }
 
 /**
@@ -64,6 +89,30 @@ struct BinaryOperandTypes
 [[nodiscard]] inline bool IsRelationalOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
 {
     return sym == gs.tokLt || sym == gs.tokLtEq || sym == gs.tokGt || sym == gs.tokGtEq;
+}
+
+/**
+ * @brief Checks if a grammar symbol represents a bitwise operator.
+ * @param[in] sym Tree-Sitter grammar symbol.
+ * @param[in] gs Pre-resolved grammar symbols.
+ * @return True if symbol is a bitwise operator.
+ */
+[[nodiscard]] inline bool IsBitwiseOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
+{
+    return sym == gs.tokPipe || sym == gs.tokAmp || sym == gs.tokCaret || sym == gs.tokLtLt || sym == gs.tokGtGt ||
+           sym == gs.tokGtGtGt;
+}
+
+/**
+ * @brief Checks if a grammar symbol represents an arithmetic operator.
+ * @param[in] sym Tree-Sitter grammar symbol.
+ * @param[in] gs Pre-resolved grammar symbols.
+ * @return True if symbol is an arithmetic operator.
+ */
+[[nodiscard]] inline bool IsArithmeticOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
+{
+    return sym == gs.tokPlus || sym == gs.tokDash || sym == gs.tokStar || sym == gs.tokSlash || sym == gs.tokPercent ||
+           sym == gs.tokStarStar;
 }
 
 /**

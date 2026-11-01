@@ -8,9 +8,7 @@
 
 namespace angel_lsp
 {
-namespace
-{
-bool BraceStyleIsKR(std::string_view name)
+static bool BraceStyleIsKR(std::string_view name)
 {
     std::string lowered;
     lowered.reserve(name.size());
@@ -21,8 +19,8 @@ bool BraceStyleIsKR(std::string_view name)
     return lowered == "kr" || lowered == "k&r" || lowered == "kandr" || lowered == "onetbs";
 }
 
-std::optional<bool> FindSectionBool(const lsp::LSPObject& section, const lsp::LSPObject* engineObj,
-                                    std::string_view name, std::string_view prefix = "engine")
+static std::optional<bool> FindSectionBool(const lsp::LSPObject& section, const lsp::LSPObject* engineObj,
+                                           std::string_view name, std::string_view prefix = "engine")
 {
     if (engineObj)
     {
@@ -44,8 +42,8 @@ std::optional<bool> FindSectionBool(const lsp::LSPObject& section, const lsp::LS
     return std::nullopt;
 }
 
-std::optional<int> FindSectionInt(const lsp::LSPObject& section, const lsp::LSPObject* engineObj, std::string_view name,
-                                  std::string_view prefix = "engine")
+static std::optional<int> FindSectionInt(const lsp::LSPObject& section, const lsp::LSPObject* engineObj,
+                                         std::string_view name, std::string_view prefix = "engine")
 {
     if (engineObj)
     {
@@ -67,8 +65,8 @@ std::optional<int> FindSectionInt(const lsp::LSPObject& section, const lsp::LSPO
     return std::nullopt;
 }
 
-std::optional<std::string> FindSectionString(const lsp::LSPObject& section, const lsp::LSPObject* obj,
-                                             std::string_view name, std::string_view prefix = "engine")
+static std::optional<std::string> FindSectionString(const lsp::LSPObject& section, const lsp::LSPObject* obj,
+                                                    std::string_view name, std::string_view prefix = "engine")
 {
     if (obj)
     {
@@ -90,8 +88,9 @@ std::optional<std::string> FindSectionString(const lsp::LSPObject& section, cons
     return std::nullopt;
 }
 
-std::optional<std::vector<std::string>> FindSectionStringArray(const lsp::LSPObject& section, const lsp::LSPObject* obj,
-                                                               std::string_view name, std::string_view prefix)
+static std::optional<std::vector<std::string>> FindSectionStringArray(const lsp::LSPObject& section,
+                                                                      const lsp::LSPObject* obj, std::string_view name,
+                                                                      std::string_view prefix)
 {
     const lsp::json::Value* arrayVal = nullptr;
     if (obj)
@@ -131,7 +130,6 @@ std::optional<std::vector<std::string>> FindSectionStringArray(const lsp::LSPObj
     }
     return items;
 }
-} // namespace
 
 lsp::requests::Workspace_TextDocumentContent::Result
 Server::HandleRequestsWorkspace_TextDocumentContent(lsp::requests::Workspace_TextDocumentContent::Params&& req)
@@ -803,9 +801,7 @@ bool Server::UpdateIncludeConfiguration(const lsp::LSPObject& section)
     return changed;
 }
 
-namespace
-{
-bool UpdateActiveStubFiles(angel_lsp::config::ServerConfig& config, const lsp::LSPObject& section)
+static bool UpdateActiveStubFiles(angel_lsp::config::ServerConfig& config, const lsp::LSPObject& section)
 {
     const auto* stubsVal = section.find("stubs");
     if (!stubsVal || !stubsVal->isObject())
@@ -832,7 +828,6 @@ bool UpdateActiveStubFiles(angel_lsp::config::ServerConfig& config, const lsp::L
     }
     return false;
 }
-} // namespace
 
 bool Server::UpdatePredefinedAndProfileConfiguration(const lsp::LSPObject& section)
 {

@@ -8,8 +8,6 @@
 
 namespace angel_lsp::analysis::rules
 {
-namespace
-{
 /**
  * @brief The binary operator methods, each of which takes exactly one argument.
  *
@@ -30,13 +28,13 @@ constexpr std::array<std::string_view, 6> k_unaryOperators = {"opNeg",    "opCom
 /** @brief The conversion operators, whose shape TypeConversionChecker already knows about. */
 constexpr std::array<std::string_view, 4> k_conversionOperators = {"opConv", "opImplConv", "opCast", "opImplCast"};
 
-bool Contains(const auto& names, const std::string& name)
+static bool Contains(const auto& names, const std::string& name)
 {
     return std::find(names.begin(), names.end(), name) != names.end();
 }
 
 /** @brief True when the name is one AngelScript gives a fixed meaning to. */
-bool IsOperatorName(const std::string& name)
+static bool IsOperatorName(const std::string& name)
 {
     return Contains(k_binaryOperators, name) || Contains(k_unaryOperators, name) ||
            Contains(k_conversionOperators, name) || name == "opCmp" || name == "opEquals" || name == "opIndex" ||
@@ -45,7 +43,7 @@ bool IsOperatorName(const std::string& name)
 }
 
 /** @brief True when the container resolves to a class or an interface this analyzer can read. */
-bool IsDeclaredInAClass(const Symbol& sym, const DiagnosticContext& ctx)
+static bool IsDeclaredInAClass(const Symbol& sym, const DiagnosticContext& ctx)
 {
     if (sym.containerName.empty())
     {
@@ -55,6 +53,8 @@ bool IsDeclaredInAClass(const Symbol& sym, const DiagnosticContext& ctx)
     return container && std::any_of(container->begin(), container->end(), [](const Symbol& owner)
                                     { return owner.type == SymbolType::Class || owner.type == SymbolType::Interface; });
 }
+namespace operator_rules_detail
+{
 /**
  * @brief Expected return type and diagnostic code for comparison operator validation.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -64,6 +64,9 @@ struct ExpectedOperatorShape
     TypeKind expectedReturnKind;
     std::string_view returnDiagCode;
 };
+} // namespace operator_rules_detail
+
+using ExpectedOperatorShape = operator_rules_detail::ExpectedOperatorShape;
 
 /**
  * @brief Validates a comparison operator method shape and return type.
@@ -72,8 +75,8 @@ struct ExpectedOperatorShape
  * @param[in] ctx Diagnostic context.
  * @param[in] shape Expected return type kind and diagnostic code.
  */
-void ValidateBinaryComparisonOperator(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx,
-                                      ExpectedOperatorShape shape)
+static void ValidateBinaryComparisonOperator(const Symbol& sym, const FunctionSignature& sig,
+                                             const DiagnosticContext& ctx, ExpectedOperatorShape shape)
 {
     if (sig.returnTypeKind != shape.expectedReturnKind || sig.returnIsArray || sig.modifiers.isHandle)
     {
@@ -89,13 +92,11 @@ void ValidateBinaryComparisonOperator(const Symbol& sym, const FunctionSignature
 
 /**
  * @brief Validate op index.
- * @param[in] sym Parameter sym.
- * @param[in] sig Parameter sig.
- * @param[in] ctx Parameter ctx.
- * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with CheckModifiers in
- * server/src/analysis/rules/VariableRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @param[in] sig Input sig for the operation.
+ * @param[in] ctx Diagnostic collection and analysis context.
  */
-void ValidateOpIndex(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
+static void ValidateOpIndex(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
 {
     if (sig.parameters.empty())
     {
@@ -103,7 +104,6 @@ void ValidateOpIndex(const Symbol& sym, const FunctionSignature& sig, const Diag
         ctx.Emit(sym, "as-err-opindex-no-params");
     }
 }
-} // namespace
 
 void ValidateOperator(const Symbol& sym, const DiagnosticContext& ctx)
 {

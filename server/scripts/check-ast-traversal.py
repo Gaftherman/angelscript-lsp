@@ -597,6 +597,76 @@ def check_no_manual_type_qualifier_parsing():
                         break
     return violations
 
+def check_no_anonymous_namespaces():
+    """
+    Enforces that zero anonymous namespaces (namespace {) exist across server/src/.
+    All internal helpers must be file-scope static or placed in <module>_detail sub-namespaces.
+    """
+    violations = []
+    for file_path in SERVER_SRC.rglob("*.[ch]*"):
+        if not file_path.is_file():
+            continue
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for idx, line in enumerate(content.splitlines(), 1):
+            if re.search(r"\bnamespace\s*\{", line):
+                violations.append((file_path, idx, line.strip()))
+    return violations
+
+
+def check_no_using_directives_or_declarations():
+    """
+    Enforces that zero 'using namespace' directives and zero 'using <ns>::<symbol>;'
+    declarations exist across server/src/. All namespace access must be fully qualified.
+    Only type aliases ('using Alias = Type;') are permitted.
+    """
+    violations = []
+    for file_path in SERVER_SRC.rglob("*.[ch]*"):
+        if not file_path.is_file():
+            continue
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for idx, line in enumerate(content.splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                continue
+            if re.search(r"^\s*using\s+namespace\b", stripped) or re.search(r"^\s*using\s+[a-zA-Z0-9_:]+\s*;", stripped):
+                violations.append((file_path, idx, stripped))
+    return violations
+
+
+def check_no_doxygen_slop():
+    """
+    Enforces that zero mechanical or robotic AI slop filler templates exist in Doxygen comments across server/src/.
+    Specifically checks for:
+    1. 'True if condition met; otherwise false.'
+    2. 'Result of the operation.'
+    3. '@param... Parameter <name>.'
+    """
+    violations = []
+    slop_param_re = re.compile(r"@param(\[[^\]]*\])?\s+(\w+)\s+Parameter\s+\2\.")
+    for file_path in SERVER_SRC.rglob("*.[ch]*"):
+        if not file_path.is_file():
+            continue
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for idx, line in enumerate(content.splitlines(), 1):
+            stripped = line.strip()
+            if "True if condition met; otherwise false" in stripped:
+                violations.append((file_path, idx, stripped, "Mechanical filler return description"))
+            elif "Result of the operation." in stripped:
+                violations.append((file_path, idx, stripped, "Mechanical filler return description"))
+            elif slop_param_re.search(stripped):
+                violations.append((file_path, idx, stripped, "Mechanical filler parameter description"))
+    return violations
+
+
 def main():
     has_errors = False
     
@@ -792,10 +862,34 @@ def main():
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line} -> {reason}")
 
+    anon_violations = check_no_anonymous_namespaces()
+    if anon_violations:
+        has_errors = True
+        print("[ERROR] Anonymous namespace(s) detected in server/src/ (use file-scope static or <module>_detail):")
+        for f, line_num, line in anon_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
+    using_violations = check_no_using_directives_or_declarations()
+    if using_violations:
+        has_errors = True
+        print("[ERROR] 'using namespace' or 'using <ns>::<symbol>;' detected in server/src/ (fully qualify namespaces or use type aliases):")
+        for f, line_num, line in using_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
+    slop_violations = check_no_doxygen_slop()
+    if slop_violations:
+        has_errors = True
+        print("[ERROR] Mechanical/robotic Doxygen slop template detected in server/src/:")
+        for f, line_num, line, reason in slop_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line} -> {reason}")
+
     if has_errors:
         sys.exit(1)
 
-    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 ForEachDescendantNode, 0 engine hardcodings, 0 type hardcodings, 0 banned identifiers, 0 unrandomized test BaseClass, 0 manual qualifier reparsing).")
+    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 ForEachDescendantNode, 0 engine hardcodings, 0 type hardcodings, 0 banned identifiers, 0 unrandomized test BaseClass, 0 manual qualifier reparsing, 0 anonymous namespaces, 0 using directives, 0 doxygen slop templates).")
 
 if __name__ == "__main__":
     main()

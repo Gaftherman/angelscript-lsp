@@ -5,17 +5,17 @@
 
 namespace angel_lsp::utils
 {
-namespace
+namespace position_encoding_detail
 {
 /**
  * @brief Bytes consumed and UTF-16 code units produced by one UTF-8 sequence.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct Utf8Step
 {
     uint32_t bytes = 1;
     uint32_t units = 1;
 };
+} // namespace position_encoding_detail
 
 /**
  * @brief Classifies a UTF-8 lead byte.
@@ -24,20 +24,18 @@ struct Utf8Step
  * one-byte, one-unit character so that malformed input still advances instead of looping
  * forever - the columns it produces are meaningless, but so was the input.
  */
-Utf8Step StepAt(unsigned char lead)
+static position_encoding_detail::Utf8Step StepAt(unsigned char lead)
 {
-    using namespace angel_lsp::constants::utf8;
-    if (lead < AsciiMask)
+    if (lead < constants::utf8::AsciiMask)
         return {1, 1};
-    if ((lead & TwoByteMask) == TwoByteExpected)
+    if ((lead & constants::utf8::TwoByteMask) == constants::utf8::TwoByteExpected)
         return {2, 1};
-    if ((lead & ThreeByteMask) == ThreeByteExpected)
+    if ((lead & constants::utf8::ThreeByteMask) == constants::utf8::ThreeByteExpected)
         return {3, 1};
-    if ((lead & FourByteMask) == FourByteExpected)
+    if ((lead & constants::utf8::FourByteMask) == constants::utf8::FourByteExpected)
         return {4, 2}; // Astral plane: one codepoint, two UTF-16 surrogates.
     return {1, 1};
 }
-} // namespace
 
 LineIndex LineIndex::Build(std::string_view text)
 {
@@ -125,7 +123,7 @@ uint32_t LspCharToByteColumn(std::string_view line, uint32_t lspChar, PositionEn
 
     while (byteIndex < lineBytes && units < lspChar)
     {
-        const Utf8Step step = StepAt(static_cast<unsigned char>(line[byteIndex]));
+        const auto step = StepAt(static_cast<unsigned char>(line[byteIndex]));
         if (byteIndex + step.bytes > lineBytes)
             break; // Truncated sequence at end of line - stop rather than read past it.
 
@@ -149,7 +147,7 @@ uint32_t ByteToLspCharColumn(std::string_view line, uint32_t byteColumn, Positio
 
     while (byteIndex < limit)
     {
-        const Utf8Step step = StepAt(static_cast<unsigned char>(line[byteIndex]));
+        const auto step = StepAt(static_cast<unsigned char>(line[byteIndex]));
         if (byteIndex + step.bytes > lineBytes)
             break;
 

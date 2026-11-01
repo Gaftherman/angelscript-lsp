@@ -24,8 +24,6 @@
 namespace angel_lsp::features
 {
 
-using parser::GetNodeText;
-
 /**
  * @brief Extracts leading whitespace indentation of a given 0-indexed line.
  * @param[in] sourceCode Source document text.

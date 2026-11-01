@@ -21,11 +21,9 @@ extern "C" const TSLanguage* tree_sitter_angelscript();
 
 namespace angel_lsp::analysis
 {
-namespace
-{
 #define SYM_NAME(str) str, static_cast<uint32_t>(sizeof(str) - 1)
 
-std::string_view TrimView(std::string_view sv)
+static std::string_view TrimView(std::string_view sv)
 {
     while (!sv.empty() && isspace(static_cast<unsigned char>(sv.front())))
     {
@@ -38,7 +36,7 @@ std::string_view TrimView(std::string_view sv)
     return sv;
 }
 
-void SkipWhitespaceAndComments(std::string_view text, size_t& i)
+static void SkipWhitespaceAndComments(std::string_view text, size_t& i)
 {
     while (i < text.size())
     {
@@ -63,7 +61,7 @@ void SkipWhitespaceAndComments(std::string_view text, size_t& i)
     }
 }
 
-std::string ExtractFirstToken(std::string_view rawErrText)
+static std::string ExtractFirstToken(std::string_view rawErrText)
 {
     size_t i = 0;
     SkipWhitespaceAndComments(rawErrText, i);
@@ -79,6 +77,8 @@ std::string ExtractFirstToken(std::string_view rawErrText)
     return firstToken;
 }
 
+namespace symbol_collector_detail
+{
 /**
  * @brief Represents Member nodes.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -88,9 +88,14 @@ struct MemberNodes
     TSNode declNode;
     TSNode nameNode;
 };
+} // namespace symbol_collector_detail
+
+using MemberNodes = symbol_collector_detail::MemberNodes;
 
 using RecoveredClassContainer = SymbolCollector::RecoveredClassContainer;
 
+namespace symbol_collector_detail
+{
 /**
  * @brief Represents Recover class context.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -104,7 +109,12 @@ struct RecoverClassContext
     std::vector<RecoveredClassContainer>& outContainers;
     std::vector<Symbol>& outSymbols;
 };
+} // namespace symbol_collector_detail
 
+using RecoverClassContext = symbol_collector_detail::RecoverClassContext;
+
+namespace symbol_collector_detail
+{
 /**
  * @brief Represents Scanned class header.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -116,8 +126,11 @@ struct ScannedClassHeader
     bool isClass{false};
     bool isInterface{false};
 };
+} // namespace symbol_collector_detail
 
-ScannedClassHeader FindClassHeaderInError(TSNode node, const parser::GrammarSymbols& gs)
+using ScannedClassHeader = symbol_collector_detail::ScannedClassHeader;
+
+static ScannedClassHeader FindClassHeaderInError(TSNode node, const parser::GrammarSymbols& gs)
 {
     ScannedClassHeader result;
     TSTreeCursor inner = ts_tree_cursor_new(node);
@@ -223,7 +236,6 @@ static void ScanRecoverableClasses(TSNode rootNode, RecoverClassContext& ctx)
 
     ts_tree_cursor_delete(&cursor);
 }
-} // namespace
 
 // =========================================================================================
 // Public API & Lifecycle
@@ -308,12 +320,10 @@ SymbolCollector::~SymbolCollector() = default;
 
 /**
  * @brief Symbol collector collect symbols.
- * @param[in] request Parameter request.
- * @param[in,out] parser Parameter parser.
- * @param[in,out] symbolTable Parameter symbolTable.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (89%) with CollectSymbolsWithTree in
- * server/src/analysis/SymbolCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
+ * @param[in,out] parser Input parser for the operation.
+ * @param[in,out] symbolTable Symbol or grammar symbol.
+ * @return Calculated or extracted result of the operation.
  */
 std::vector<Diagnostic> SymbolCollector::CollectSymbols(const SymbolCollectRequest& request,
                                                         angel_lsp::parser::AngelScriptParser& parser,
@@ -348,12 +358,10 @@ std::vector<Diagnostic> SymbolCollector::CollectSymbols(const std::string& fileU
 
 /**
  * @brief Symbol collector collect symbols with tree.
- * @param[in] request Parameter request.
- * @param[in] tree Parameter tree.
- * @param[in,out] symbolTable Parameter symbolTable.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (89%) with CollectSymbols in server/src/analysis/SymbolCollector.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
+ * @param[in] tree Input tree for the operation.
+ * @param[in,out] symbolTable Symbol or grammar symbol.
+ * @return Calculated or extracted result of the operation.
  */
 std::vector<Diagnostic> SymbolCollector::CollectSymbolsWithTree(const SymbolCollectRequest& request, TSTree* tree,
                                                                 SymbolTable& symbolTable)
@@ -396,7 +404,7 @@ void SymbolCollector::PushClassContainer(TSNode node, const SymbolCollectContext
         return;
     }
     TSNode nameNode = GetChildByFieldName(node, "name");
-    std::string className = GetNodeText(nameNode, sCtx.request.sourceCode);
+    std::string className = parser::GetNodeText(nameNode, sCtx.request.sourceCode);
     const size_t angle = className.find('<');
     if (angle != std::string::npos)
     {
@@ -431,7 +439,7 @@ void SymbolCollector::PushInterfaceContainer(TSNode node, const SymbolCollectCon
         return;
     }
     TSNode nameNode = GetChildByFieldName(node, "name");
-    std::string ifaceName = GetNodeText(nameNode, sCtx.request.sourceCode);
+    std::string ifaceName = parser::GetNodeText(nameNode, sCtx.request.sourceCode);
     if (ifaceName.empty())
     {
         return;
@@ -461,7 +469,7 @@ void SymbolCollector::PushNamespaceContainer(TSNode node, const SymbolCollectCon
         return;
     }
     TSNode nameNode = GetChildByFieldName(node, "name");
-    std::string nsName = GetNodeText(nameNode, sCtx.request.sourceCode);
+    std::string nsName = parser::GetNodeText(nameNode, sCtx.request.sourceCode);
     if (nsName.empty())
     {
         return;
@@ -687,12 +695,10 @@ void SymbolCollector::ProcessLambda([[maybe_unused]] TSNode node, [[maybe_unused
 
 /**
  * @brief Symbol collector apply accessor tokens.
- * @param[in] accNode Parameter accNode.
- * @param[in] isGet Parameter isGet.
- * @param[in] isSet Parameter isSet.
- * @param[in,out] varSig Parameter varSig.
- * @note [REFACTOR-CANDIDATE] Structural overlap (73%) with ApplyFuncAttributeTokens in
- * server/src/analysis/SymbolCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] accNode AST node under evaluation.
+ * @param[in] isGet Input isGet for the operation.
+ * @param[in] isSet Input isSet for the operation.
+ * @param[in,out] varSig Input varSig for the operation.
  */
 void SymbolCollector::ApplyAccessorTokens(TSNode accNode, bool isGet, bool isSet, VariableSignature& varSig) const
 {
@@ -732,12 +738,10 @@ void SymbolCollector::ApplyAccessorTokens(TSNode accNode, bool isGet, bool isSet
 
 /**
  * @brief Symbol collector apply func attribute tokens.
- * @param[in] attrNode Parameter attrNode.
- * @param[in] isGet Parameter isGet.
- * @param[in] isSet Parameter isSet.
- * @param[in,out] varSig Parameter varSig.
- * @note [REFACTOR-CANDIDATE] Structural overlap (73%) with ApplyAccessorTokens in
- * server/src/analysis/SymbolCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] attrNode AST node under evaluation.
+ * @param[in] isGet Input isGet for the operation.
+ * @param[in] isSet Input isSet for the operation.
+ * @param[in,out] varSig Input varSig for the operation.
  */
 void SymbolCollector::ApplyFuncAttributeTokens(TSNode attrNode, bool isGet, bool isSet, VariableSignature& varSig) const
 {
@@ -798,10 +802,8 @@ void SymbolCollector::ParseSingleAccessor(TSNode accNode, VariableSignature& var
 
 /**
  * @brief Symbol collector parse accessor nodes.
- * @param[in] node Parameter node.
- * @param[in,out] varSig Parameter varSig.
- * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with CountVariableDeclarators in
- * server/src/analysis/LocalScopeCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] node AST node under evaluation.
+ * @param[in,out] varSig Input varSig for the operation.
  */
 void SymbolCollector::ParseAccessorNodes(TSNode node, VariableSignature& varSig) const
 {
@@ -822,18 +824,16 @@ void SymbolCollector::ParseAccessorNodes(TSNode node, VariableSignature& varSig)
 
 /**
  * @brief Symbol collector process virtual property variable.
- * @param[in] varDeclNode Parameter varDeclNode.
- * @param[in,out] sCtx Parameter sCtx.
- * @param[in] ctx Parameter ctx.
- * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with ProcessProperty in server/src/analysis/SymbolCollector.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] varDeclNode AST node under evaluation.
+ * @param[in,out] sCtx Analysis or feature execution context.
+ * @param[in] ctx Diagnostic collection and analysis context.
  */
 void SymbolCollector::ProcessVirtualPropertyVariable(TSNode varDeclNode, SymbolCollectContext& sCtx,
                                                      const CollectionContext& ctx)
 {
     TSNode typeNode = GetChildByFieldName(varDeclNode, "prop_type");
     TSNode nameNode = GetChildByFieldName(varDeclNode, "name");
-    std::string typeStr = GetNodeText(typeNode, sCtx.request.sourceCode);
+    std::string typeStr = parser::GetNodeText(typeNode, sCtx.request.sourceCode);
     TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
     SymbolModifiers modifiers = ExtractModifiers(varDeclNode, sCtx.request.sourceCode);
     modifiers.isHandle = typeInfo.isHandle || modifiers.isHandle;
@@ -849,7 +849,7 @@ void SymbolCollector::ProcessVirtualPropertyVariable(TSNode varDeclNode, SymbolC
     varSig.isArray = typeInfo.isArray;
     varSig.hasPrimitiveHandle = typeInfo.hasPrimitiveHandle;
     varSig.arrayDepth = typeInfo.arrayDepth;
-    varSig.defaultValue = GetNodeText(varDeclNode, sCtx.request.sourceCode);
+    varSig.defaultValue = parser::GetNodeText(varDeclNode, sCtx.request.sourceCode);
     varSig.modifiers = modifiers;
     varSig.isVirtualProperty = true;
 
@@ -864,7 +864,7 @@ void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const Varia
 {
     TSNode varDeclNode = header.varDeclNode;
     TSNode nameNode = GetChildByFieldName(declaratorNode, "name");
-    TSNode valueNode = FindDeclaratorValueNode(declaratorNode, sCtx.request.sourceCode);
+    TSNode valueNode = parser::FindDeclaratorValueNode(declaratorNode, sCtx.request.sourceCode);
 
     SymbolLocationContext loc{sCtx, ctx.containerPath, ctx.containerKind};
     Symbol sym = CreateSymbol(SymbolType::Variable, varDeclNode, nameNode, loc);
@@ -881,7 +881,7 @@ void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const Varia
     varSig.isArray = header.typeInfo.isArray;
     varSig.hasPrimitiveHandle = header.typeInfo.hasPrimitiveHandle;
     varSig.arrayDepth = header.typeInfo.arrayDepth;
-    varSig.defaultValue = GetNodeText(valueNode, sCtx.request.sourceCode);
+    varSig.defaultValue = parser::GetNodeText(valueNode, sCtx.request.sourceCode);
     varSig.hasNullInitializer = IsNullInitializer(valueNode);
     varSig.hasSemicolon = header.hasSemicolon;
     varSig.modifiers = header.modifiers;
@@ -923,7 +923,7 @@ void SymbolCollector::ProcessRegularVariable(TSNode varDeclNode, SymbolCollectCo
                                              const CollectionContext& ctx)
 {
     TSNode typeNode = GetChildByFieldName(varDeclNode, "var_type");
-    std::string typeStr = GetNodeText(typeNode, sCtx.request.sourceCode);
+    std::string typeStr = parser::GetNodeText(typeNode, sCtx.request.sourceCode);
     TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
     if (IsReservedKeyword(typeInfo.baseTypeName) && !IsPrimitiveTypeName(typeInfo.baseTypeName) &&
         typeInfo.baseTypeName != "auto")
@@ -1021,7 +1021,7 @@ void SymbolCollector::ProcessEmptyParenVariable(TSNode funcNode, SymbolCollectCo
     Symbol sym = CreateSymbol(SymbolType::Variable, funcNode, nameNode, loc);
 
     VariableSignature varSig;
-    varSig.typeName = GetNodeText(typeNode, sCtx.request.sourceCode);
+    varSig.typeName = parser::GetNodeText(typeNode, sCtx.request.sourceCode);
     varSig.baseTypeName = retInfo.baseTypeName;
     varSig.templateName = retInfo.templateName;
     for (const auto& tArg : retInfo.templateArguments)
@@ -1046,7 +1046,7 @@ void SymbolCollector::ProcessEmptyParenVariable(TSNode funcNode, SymbolCollectCo
     if (!ts_node_is_null(typeNode))
     {
         CallReferenceSignature callSig;
-        callSig.calleeName = GetNodeText(typeNode, sCtx.request.sourceCode);
+        callSig.calleeName = parser::GetNodeText(typeNode, sCtx.request.sourceCode);
         Symbol callSym = CreateSymbol(SymbolType::CallReference, typeNode, typeNode, loc);
         callSym.signature = std::move(callSig);
         sCtx.collectedSymbols.push_back(std::move(callSym));
@@ -1087,14 +1087,14 @@ bool SymbolCollector::TryProcessEmptyParenVariable(TSNode funcNode, const Symbol
         return false;
     }
     TSNode nameNode = GetChildByFieldId(funcNode, m_gs.fieldName);
-    const std::string nameText = GetNodeText(nameNode, sCtx.request.sourceCode);
+    const std::string nameText = parser::GetNodeText(nameNode, sCtx.request.sourceCode);
     if (nameText == ctx.containerPath || nameText.starts_with('~'))
     {
         return false;
     }
     TSNode typeNode = GetChildByFieldId(funcNode, m_gs.fieldReturnType);
     TypeExtractionResult retInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
-    if (IsDisqualifyingReturnType(retInfo, GetNodeText(typeNode, sCtx.request.sourceCode)))
+    if (IsDisqualifyingReturnType(retInfo, parser::GetNodeText(typeNode, sCtx.request.sourceCode)))
     {
         return false;
     }
@@ -1129,7 +1129,7 @@ void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCt
     Symbol sym = CreateSymbol(SymbolType::Function, funcNode, nameNode, loc);
 
     FunctionSignature funcSig;
-    funcSig.returnType = GetNodeText(typeNode, sCtx.request.sourceCode);
+    funcSig.returnType = parser::GetNodeText(typeNode, sCtx.request.sourceCode);
     funcSig.returnBaseTypeName = retInfo.baseTypeName;
     funcSig.returnTemplateName = retInfo.templateName;
     funcSig.returnTypeKind = retInfo.kind;
@@ -1178,7 +1178,7 @@ static bool ClassHasExplicitConstructor(TSNode bodyNode, std::string_view classN
             if (ts_node_symbol(child) == symFuncDeclaration)
             {
                 TSNode nameNode = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldName);
-                if (GetNodeText(nameNode, sourceCode) == className)
+                if (parser::GetNodeText(nameNode, sourceCode) == className)
                 {
                     found = true;
                     break;
@@ -1248,7 +1248,7 @@ void SymbolCollector::ProcessClass(TSNode classNode, SymbolCollectContext& sCtx,
                 TSNode child = ts_tree_cursor_current_node(&cursor);
                 if (ts_node_is_named(child))
                 {
-                    std::string paramName = GetNodeText(child, sCtx.request.sourceCode);
+                    std::string paramName = parser::GetNodeText(child, sCtx.request.sourceCode);
                     if (!paramName.empty())
                     {
                         classSig.isTemplate = true;
@@ -1367,7 +1367,7 @@ void SymbolCollector::ProcessFuncdef(TSNode node, SymbolCollectContext& sCtx, co
     Symbol sym = CreateSymbol(SymbolType::Funcdef, node, nameNode, loc);
 
     FuncdefSignature funcdefSig;
-    funcdefSig.returnType = GetNodeText(typeNode, sCtx.request.sourceCode);
+    funcdefSig.returnType = parser::GetNodeText(typeNode, sCtx.request.sourceCode);
     funcdefSig.returnBaseTypeName = retInfo.baseTypeName;
     funcdefSig.returnTemplateName = retInfo.templateName;
     funcdefSig.returnTypeKind = retInfo.kind;
@@ -1422,8 +1422,8 @@ void SymbolCollector::CollectEnumMembers(TSNode node, std::string_view sourceCod
                 TSNode memberValue = parser::GetChildByField(child, m_gs.fieldValue);
 
                 EnumMemberInformation member;
-                member.name = GetNodeText(memberName, sourceCode);
-                member.value = GetNodeText(memberValue, sourceCode);
+                member.name = parser::GetNodeText(memberName, sourceCode);
+                member.value = parser::GetNodeText(memberValue, sourceCode);
                 if (!ts_node_is_null(memberValue))
                 {
                     member.valueNodeType = std::string(parser::GetNodeType(memberValue));
@@ -1515,7 +1515,7 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
                                          const CollectionContext& ctx)
 {
     TSNode nameNode = parser::GetChildByField(node, m_gs.fieldName);
-    std::string enumName = GetNodeText(nameNode, sCtx.request.sourceCode);
+    std::string enumName = parser::GetNodeText(nameNode, sCtx.request.sourceCode);
     const auto memberNodeMap =
         BuildEnumMemberNodeMap(node, m_gs.symEnumMember, m_gs.fieldName, sCtx.request.sourceCode);
 
@@ -1564,11 +1564,9 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
 
 /**
  * @brief Symbol collector process enum.
- * @param[in] node Parameter node.
- * @param[in,out] sCtx Parameter sCtx.
- * @param[in] ctx Parameter ctx.
- * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with ProcessInterface in server/src/analysis/SymbolCollector.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] node AST node under evaluation.
+ * @param[in,out] sCtx Analysis or feature execution context.
+ * @param[in] ctx Diagnostic collection and analysis context.
  */
 void SymbolCollector::ProcessEnum(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
@@ -1590,11 +1588,9 @@ void SymbolCollector::ProcessEnum(TSNode node, SymbolCollectContext& sCtx, const
 
 /**
  * @brief Symbol collector process property.
- * @param[in] node Parameter node.
- * @param[in,out] sCtx Parameter sCtx.
- * @param[in] ctx Parameter ctx.
- * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with ProcessVirtualPropertyVariable in
- * server/src/analysis/SymbolCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] node AST node under evaluation.
+ * @param[in,out] sCtx Analysis or feature execution context.
+ * @param[in] ctx Diagnostic collection and analysis context.
  */
 void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
@@ -1608,7 +1604,7 @@ void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, c
     Symbol sym = CreateSymbol(SymbolType::Property, node, nameNode, loc);
 
     VariableSignature varSig;
-    varSig.typeName = GetNodeText(typeNode, sCtx.request.sourceCode);
+    varSig.typeName = parser::GetNodeText(typeNode, sCtx.request.sourceCode);
     varSig.baseTypeName = typeInfo.baseTypeName;
     varSig.templateName = typeInfo.templateName;
     varSig.typeKind = typeInfo.kind;
@@ -1616,7 +1612,7 @@ void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, c
     varSig.hasPrimitiveHandle = typeInfo.hasPrimitiveHandle;
     varSig.arrayDepth = typeInfo.arrayDepth;
     varSig.modifiers = modifiers;
-    varSig.defaultValue = GetNodeText(node, sCtx.request.sourceCode);
+    varSig.defaultValue = parser::GetNodeText(node, sCtx.request.sourceCode);
     varSig.isVirtualProperty = true;
 
     ParseAccessorNodes(node, varSig);
@@ -1627,11 +1623,9 @@ void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, c
 
 /**
  * @brief Symbol collector process interface.
- * @param[in] node Parameter node.
- * @param[in,out] sCtx Parameter sCtx.
- * @param[in] ctx Parameter ctx.
- * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with ProcessEnum in server/src/analysis/SymbolCollector.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] node AST node under evaluation.
+ * @param[in,out] sCtx Analysis or feature execution context.
+ * @param[in] ctx Diagnostic collection and analysis context.
  */
 void SymbolCollector::ProcessInterface(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
@@ -1672,7 +1666,8 @@ void SymbolCollector::ProcessCallReference(TSNode callNode, SymbolCollectContext
             return;
 
         callSig.isMethodCall = true;
-        callSig.objectExpression = GetNodeText(GetChildByFieldName(functionNode, "object"), sCtx.request.sourceCode);
+        callSig.objectExpression =
+            parser::GetNodeText(GetChildByFieldName(functionNode, "object"), sCtx.request.sourceCode);
         nameNode = memberNode;
     }
     else if (functionNodeSym != m_gs.symScopedIdentifier)
@@ -1680,7 +1675,7 @@ void SymbolCollector::ProcessCallReference(TSNode callNode, SymbolCollectContext
         return;
     }
 
-    callSig.calleeName = GetNodeText(nameNode, sCtx.request.sourceCode);
+    callSig.calleeName = parser::GetNodeText(nameNode, sCtx.request.sourceCode);
     if (callSig.calleeName.empty())
         return;
 
@@ -1696,15 +1691,13 @@ void SymbolCollector::ProcessCallReference(TSNode callNode, SymbolCollectContext
 
 /**
  * @brief Symbol collector check using declaration capture.
- * @param[in] usingNode Parameter usingNode.
- * @param[in,out] sCtx Parameter sCtx.
- * @note [REFACTOR-CANDIDATE] Structural overlap (67%) with CheckDuplicateModifierGroup in
- * server/src/analysis/SymbolCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] usingNode AST node under evaluation.
+ * @param[in,out] sCtx Analysis or feature execution context.
  */
 void SymbolCollector::CheckUsingDeclarationCapture(TSNode usingNode, SymbolCollectContext& sCtx) const
 {
     TSNode nameNode = GetChildByFieldName(usingNode, "name");
-    std::string nameText = GetNodeText(nameNode, sCtx.request.sourceCode);
+    std::string nameText = parser::GetNodeText(nameNode, sCtx.request.sourceCode);
     if (nameText.empty() || !IsReservedKeyword(nameText))
         return;
 
@@ -1729,10 +1722,8 @@ void SymbolCollector::CheckUsingDeclarationCapture(TSNode usingNode, SymbolColle
 
 /**
  * @brief Symbol collector check duplicate modifier group.
- * @param[in] declNode Parameter declNode.
- * @param[in,out] sCtx Parameter sCtx.
- * @note [REFACTOR-CANDIDATE] Structural overlap (67%) with CheckUsingDeclarationCapture in
- * server/src/analysis/SymbolCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] declNode AST node under evaluation.
+ * @param[in,out] sCtx Analysis or feature execution context.
  */
 void SymbolCollector::CheckDuplicateModifierGroup(TSNode declNode, SymbolCollectContext& sCtx) const
 {
@@ -1753,7 +1744,7 @@ void SymbolCollector::CheckDuplicateModifierGroup(TSNode declNode, SymbolCollect
                 do
                 {
                     TSNode modTokNode = ts_tree_cursor_current_node(&modCursor);
-                    std::string modText(GetNodeText(modTokNode, sCtx.request.sourceCode));
+                    std::string modText(parser::GetNodeText(modTokNode, sCtx.request.sourceCode));
                     if (seenModifiers.contains(modText))
                     {
                         TSPoint startPt = ts_node_start_point(modTokNode);
@@ -1789,14 +1780,12 @@ void SymbolCollector::CheckDuplicateModifierGroup(TSNode declNode, SymbolCollect
 // Diagnostics & Error Recovery
 // =========================================================================================
 
-namespace
-{
 /**
  * @brief Checks whether an AST node contains nested ERROR or MISSING child nodes.
  * @param[in] node Node to inspect.
  * @return True if any child is missing, error, or has error.
  */
-bool HasNestedErrorOrMissing(TSNode node)
+static bool HasNestedErrorOrMissing(TSNode node)
 {
     TSTreeCursor cursor = ts_tree_cursor_new(node);
     if (!ts_tree_cursor_goto_first_child(&cursor))
@@ -1820,19 +1809,17 @@ bool HasNestedErrorOrMissing(TSNode node)
 
 /**
  * @brief Is declaration symbol.
- * @param[in] sym Parameter sym.
- * @param[in] gs Parameter gs.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (68%) with IsContainerSymbol in server/src/analysis/CallGraph.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @param[in] gs Precompiled grammar symbols.
+ * @return True if the condition is satisfied; false otherwise.
  */
-bool IsDeclarationSymbol(TSSymbol sym, const parser::GrammarSymbols& gs)
+static bool IsDeclarationSymbol(TSSymbol sym, const parser::GrammarSymbols& gs)
 {
     return sym == gs.symFuncDeclaration || sym == gs.symVariableDeclaration || sym == gs.symClassDeclaration ||
            sym == gs.symInterfaceDeclaration || sym == gs.symEnumDeclaration || sym == gs.symNamespaceDeclaration;
 }
 
-TSNode ResolveOpeningBraceTarget(TSNode classOpeningBrace, const parser::GrammarSymbols& gs)
+static TSNode ResolveOpeningBraceTarget(TSNode classOpeningBrace, const parser::GrammarSymbols& gs)
 {
     TSNode next = ts_node_next_sibling(classOpeningBrace);
     while (!ts_node_is_null(next) && ts_node_symbol(next) == gs.symComment)
@@ -1842,6 +1829,8 @@ TSNode ResolveOpeningBraceTarget(TSNode classOpeningBrace, const parser::Grammar
     return !ts_node_is_null(next) ? next : classOpeningBrace;
 }
 
+namespace symbol_collector_detail
+{
 /**
  * @brief Represents Offending scan state.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1854,8 +1843,11 @@ struct OffendingScanState
     TSNode classOpeningBrace{TSNode{}};
     bool seenClassOrIface{false};
 };
+} // namespace symbol_collector_detail
 
-void ScanOffendingChild(TSNode child, const parser::GrammarSymbols& gs, OffendingScanState& state)
+using OffendingScanState = symbol_collector_detail::OffendingScanState;
+
+static void ScanOffendingChild(TSNode child, const parser::GrammarSymbols& gs, OffendingScanState& state)
 {
     TSSymbol sym = ts_node_symbol(child);
     if (sym == gs.symComment)
@@ -1895,7 +1887,7 @@ void ScanOffendingChild(TSNode child, const parser::GrammarSymbols& gs, Offendin
  * @param[in] gs Pre-resolved grammar symbols.
  * @return Pinpointed node representing the error location.
  */
-TSNode PinpointOffendingNode(TSNode errorNode, const parser::GrammarSymbols& gs)
+static TSNode PinpointOffendingNode(TSNode errorNode, const parser::GrammarSymbols& gs)
 {
     TSNode parent = parser::GetParent(errorNode);
     if (!ts_node_is_null(parent) && ts_node_symbol(parent) == gs.symArgumentList)
@@ -1933,7 +1925,7 @@ TSNode PinpointOffendingNode(TSNode errorNode, const parser::GrammarSymbols& gs)
     return errorNode;
 }
 
-bool AdvanceCursorAfterError(TSTreeCursor& cursor)
+static bool AdvanceCursorAfterError(TSTreeCursor& cursor)
 {
     if (ts_tree_cursor_goto_next_sibling(&cursor))
     {
@@ -1949,7 +1941,7 @@ bool AdvanceCursorAfterError(TSTreeCursor& cursor)
     return false;
 }
 
-TSPoint ComputeLocalPoint(std::string_view sourceCode, TSNode baseNode, size_t targetOffset)
+static TSPoint ComputeLocalPoint(std::string_view sourceCode, TSNode baseNode, size_t targetOffset)
 {
     TSPoint pt = ts_node_start_point(baseNode);
     const size_t limit = std::min(targetOffset, sourceCode.size());
@@ -1968,12 +1960,12 @@ TSPoint ComputeLocalPoint(std::string_view sourceCode, TSNode baseNode, size_t t
     return pt;
 }
 
-bool IsIdentChar(char c)
+static bool IsIdentChar(char c)
 {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
 }
 
-void SkipStringLiteral(std::string_view text, size_t& idx)
+static void SkipStringLiteral(std::string_view text, size_t& idx)
 {
     if (idx >= text.size())
     {
@@ -2008,14 +2000,12 @@ void SkipStringLiteral(std::string_view text, size_t& idx)
 
 /**
  * @brief Find next clause boundary.
- * @param[in] text Parameter text.
- * @param[in] start Parameter start.
- * @param[in] limit Parameter limit.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (74%) with ScanSwitchStatementCaseColons in
- * server/src/analysis/SymbolCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] text Source code or text buffer.
+ * @param[in] start Start point or byte offset.
+ * @param[in] limit Input limit for the operation.
+ * @return Calculated or extracted result of the operation.
  */
-size_t FindNextClauseBoundary(std::string_view text, size_t start, size_t limit)
+static size_t FindNextClauseBoundary(std::string_view text, size_t start, size_t limit)
 {
     size_t i = start;
     while (i < limit)
@@ -2048,7 +2038,7 @@ size_t FindNextClauseBoundary(std::string_view text, size_t start, size_t limit)
     return limit;
 }
 
-bool IsStatementStart(std::string_view word)
+static bool IsStatementStart(std::string_view word)
 {
     static constexpr std::string_view k_keywords[] = {
         "bool",  "break", "case",   "continue", "default", "double", "float",  "for",    "if",    "int",  "int16",
@@ -2056,12 +2046,14 @@ bool IsStatementStart(std::string_view word)
     return std::binary_search(std::begin(k_keywords), std::end(k_keywords), word);
 }
 
-bool IsContinuationChar(char ch) noexcept
+static bool IsContinuationChar(char ch) noexcept
 {
     constexpr std::string_view k_ops = "+-*/%&|^?:,=";
     return k_ops.find(ch) != std::string_view::npos;
 }
 
+namespace symbol_collector_detail
+{
 /**
  * @brief Represents Case expression state.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -2072,8 +2064,11 @@ struct CaseExpressionState
     uint32_t ternaryDepth = 0;
     size_t exprEnd = 0;
 };
+} // namespace symbol_collector_detail
 
-bool HandleCaseContinuation(std::string_view text, size_t idx, CaseExpressionState& state)
+using CaseExpressionState = symbol_collector_detail::CaseExpressionState;
+
+static bool HandleCaseContinuation(std::string_view text, size_t idx, CaseExpressionState& state)
 {
     if (state.parenDepth != 0 || state.ternaryDepth != 0)
     {
@@ -2094,7 +2089,7 @@ bool HandleCaseContinuation(std::string_view text, size_t idx, CaseExpressionSta
     return false;
 }
 
-void HandleParenToken(char ch, CaseExpressionState& state, size_t& idx)
+static void HandleParenToken(char ch, CaseExpressionState& state, size_t& idx)
 {
     if (ch == '(' || ch == '[')
     {
@@ -2108,14 +2103,19 @@ void HandleParenToken(char ch, CaseExpressionState& state, size_t& idx)
     state.exprEnd = idx;
 }
 
+namespace symbol_collector_detail
+{
 enum class ColonResult
 {
     ScopeResolution,
     TernaryMatched,
     CaseColonFound
 };
+} // namespace symbol_collector_detail
 
-ColonResult HandleColonToken(std::string_view text, size_t limit, CaseExpressionState& state, size_t& idx)
+using ColonResult = symbol_collector_detail::ColonResult;
+
+static ColonResult HandleColonToken(std::string_view text, size_t limit, CaseExpressionState& state, size_t& idx)
 {
     if (idx + 1 < limit && text[idx + 1] == ':')
     {
@@ -2143,7 +2143,7 @@ ColonResult HandleColonToken(std::string_view text, size_t limit, CaseExpression
     return ColonResult::TernaryMatched;
 }
 
-bool HandleIdentOrAssignment(std::string_view text, size_t limit, CaseExpressionState& state, size_t& idx)
+static bool HandleIdentOrAssignment(std::string_view text, size_t limit, CaseExpressionState& state, size_t& idx)
 {
     const char ch = text[idx];
     if (IsIdentChar(ch))
@@ -2172,7 +2172,7 @@ bool HandleIdentOrAssignment(std::string_view text, size_t limit, CaseExpression
     return true;
 }
 
-void SkipCaseWhitespace(std::string_view text, size_t& idx, size_t limit)
+static void SkipCaseWhitespace(std::string_view text, size_t& idx, size_t limit)
 {
     while (idx < limit && (text[idx] == ' ' || text[idx] == '\t' || text[idx] == '\r'))
     {
@@ -2180,14 +2180,19 @@ void SkipCaseWhitespace(std::string_view text, size_t& idx, size_t limit)
     }
 }
 
+namespace symbol_collector_detail
+{
 enum class CaseTokenAction
 {
     Continue,
     Break,
     CaseColonFound
 };
+} // namespace symbol_collector_detail
 
-CaseTokenAction HandleNewlineToken(std::string_view text, size_t& idx, CaseExpressionState& state)
+using CaseTokenAction = symbol_collector_detail::CaseTokenAction;
+
+static CaseTokenAction HandleNewlineToken(std::string_view text, size_t& idx, CaseExpressionState& state)
 {
     if (HandleCaseContinuation(text, idx, state))
     {
@@ -2197,23 +2202,24 @@ CaseTokenAction HandleNewlineToken(std::string_view text, size_t& idx, CaseExpre
     return CaseTokenAction::Continue;
 }
 
-void HandleStringToken(std::string_view text, size_t& idx, CaseExpressionState& state)
+static void HandleStringToken(std::string_view text, size_t& idx, CaseExpressionState& state)
 {
     SkipStringLiteral(text, idx);
     state.exprEnd = idx;
 }
 
-bool IsParenOrBracket(char ch) noexcept
+static bool IsParenOrBracket(char ch) noexcept
 {
     return ch == '(' || ch == '[' || ch == ')' || ch == ']';
 }
 
-bool IsCaseTerminator(char ch, uint32_t parenDepth) noexcept
+static bool IsCaseTerminator(char ch, uint32_t parenDepth) noexcept
 {
     return parenDepth == 0 && (ch == ';' || ch == '}');
 }
 
-CaseTokenAction HandleColonOrQuestion(std::string_view text, size_t limit, CaseExpressionState& state, size_t& idx)
+static CaseTokenAction HandleColonOrQuestion(std::string_view text, size_t limit, CaseExpressionState& state,
+                                             size_t& idx)
 {
     const char ch = text[idx];
     if (ch == '?')
@@ -2230,7 +2236,8 @@ CaseTokenAction HandleColonOrQuestion(std::string_view text, size_t limit, CaseE
                                                                                       : CaseTokenAction::Continue;
 }
 
-CaseTokenAction ProcessCaseExpressionChar(std::string_view text, size_t limit, CaseExpressionState& state, size_t& idx)
+static CaseTokenAction ProcessCaseExpressionChar(std::string_view text, size_t limit, CaseExpressionState& state,
+                                                 size_t& idx)
 {
     const char ch = text[idx];
     if (ch == '\n')
@@ -2258,7 +2265,7 @@ CaseTokenAction ProcessCaseExpressionChar(std::string_view text, size_t limit, C
     return HandleIdentOrAssignment(text, limit, state, idx) ? CaseTokenAction::Continue : CaseTokenAction::Break;
 }
 
-bool ScanCaseExpression(std::string_view text, size_t& idx, size_t limit, size_t& outExprEnd)
+static bool ScanCaseExpression(std::string_view text, size_t& idx, size_t limit, size_t& outExprEnd)
 {
     CaseExpressionState state{0, 0, idx};
 
@@ -2286,6 +2293,8 @@ bool ScanCaseExpression(std::string_view text, size_t& idx, size_t limit, size_t
     return false;
 }
 
+namespace symbol_collector_detail
+{
 /**
  * @brief Represents Switch scan context.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -2296,16 +2305,17 @@ struct SwitchScanContext
     std::string_view sourceCode;
     size_t closeBraceByte = 0;
 };
+} // namespace symbol_collector_detail
+
+using SwitchScanContext = symbol_collector_detail::SwitchScanContext;
 
 /**
  * @brief Scan default clause colon.
- * @param[in] sCtx Parameter sCtx.
- * @param[in,out] idx Parameter idx.
- * @param[in,out] outColons Parameter outColons.
- * @note [REFACTOR-CANDIDATE] Structural overlap (87%) with ScanCaseClauseColon in
- * server/src/analysis/SymbolCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] sCtx Analysis or feature execution context.
+ * @param[in,out] idx Zero-based element index.
+ * @param[in,out] outColons Input outColons for the operation.
  */
-void ScanDefaultClauseColon(const SwitchScanContext& sCtx, size_t& idx, std::vector<MissingCaseColon>& outColons)
+static void ScanDefaultClauseColon(const SwitchScanContext& sCtx, size_t& idx, std::vector<MissingCaseColon>& outColons)
 {
     const size_t defStart = idx;
     idx += 7;
@@ -2333,13 +2343,11 @@ void ScanDefaultClauseColon(const SwitchScanContext& sCtx, size_t& idx, std::vec
 
 /**
  * @brief Scan case clause colon.
- * @param[in] sCtx Parameter sCtx.
- * @param[in,out] idx Parameter idx.
- * @param[in,out] outColons Parameter outColons.
- * @note [REFACTOR-CANDIDATE] Structural overlap (87%) with ScanDefaultClauseColon in
- * server/src/analysis/SymbolCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] sCtx Analysis or feature execution context.
+ * @param[in,out] idx Zero-based element index.
+ * @param[in,out] outColons Input outColons for the operation.
  */
-void ScanCaseClauseColon(const SwitchScanContext& sCtx, size_t& idx, std::vector<MissingCaseColon>& outColons)
+static void ScanCaseClauseColon(const SwitchScanContext& sCtx, size_t& idx, std::vector<MissingCaseColon>& outColons)
 {
     const size_t caseStart = idx;
     idx += 4;
@@ -2364,8 +2372,8 @@ void ScanCaseClauseColon(const SwitchScanContext& sCtx, size_t& idx, std::vector
     }
 }
 
-bool FindSwitchBraceOffsets(TSNode switchNode, uint32_t& openByte, uint32_t& closeByte,
-                            const parser::GrammarSymbols& gs)
+static bool FindSwitchBraceOffsets(TSNode switchNode, uint32_t& openByte, uint32_t& closeByte,
+                                   const parser::GrammarSymbols& gs)
 {
     openByte = UINT32_MAX;
     closeByte = ts_node_end_byte(switchNode);
@@ -2392,15 +2400,13 @@ bool FindSwitchBraceOffsets(TSNode switchNode, uint32_t& openByte, uint32_t& clo
 
 /**
  * @brief Scan switch statement case colons.
- * @param[in] switchNode Parameter switchNode.
- * @param[in] sourceCode Parameter sourceCode.
- * @param[in] gs Parameter gs.
- * @param[in,out] outColons Parameter outColons.
- * @note [REFACTOR-CANDIDATE] Structural overlap (74%) with FindNextClauseBoundary in
- * server/src/analysis/SymbolCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] switchNode AST node under evaluation.
+ * @param[in] sourceCode Document source text.
+ * @param[in] gs Precompiled grammar symbols.
+ * @param[in,out] outColons Input outColons for the operation.
  */
-void ScanSwitchStatementCaseColons(TSNode switchNode, std::string_view sourceCode, const parser::GrammarSymbols& gs,
-                                   std::vector<MissingCaseColon>& outColons)
+static void ScanSwitchStatementCaseColons(TSNode switchNode, std::string_view sourceCode,
+                                          const parser::GrammarSymbols& gs, std::vector<MissingCaseColon>& outColons)
 {
     uint32_t openByte = 0;
     uint32_t closeByte = 0;
@@ -2441,8 +2447,6 @@ void ScanSwitchStatementCaseColons(TSNode switchNode, std::string_view sourceCod
         }
     }
 }
-
-} // namespace
 
 /**
  * @brief Represents Symbol collector parse error report context.
@@ -2512,7 +2516,7 @@ void SymbolCollector::ReportParseErrors(TSNode rootNode, SymbolCollectContext& s
         return;
     }
 
-    const auto braceBalance = ComputeBraceBalance(sCtx.request.sourceCode);
+    const auto braceBalance = parser::ComputeBraceBalance(sCtx.request.sourceCode);
     ParseErrorReportContext errCtx{sCtx, braceBalance.HasMissingOpenBrace(), UINT32_MAX, {}};
 
     TSTreeCursor cursor = ts_tree_cursor_new(rootNode);
@@ -2987,9 +2991,9 @@ static void AssignParamLocations(ParameterInformation& paramInfo, TSNode paramNo
 
 /**
  * @brief Symbol collector extract parameter info.
- * @param[in] paramNode Parameter paramNode.
- * @param[in] sourceCode Parameter sourceCode.
- * @return Result of the operation.
+ * @param[in] paramNode AST node under evaluation.
+ * @param[in] sourceCode Document source text.
+ * @return Calculated or extracted result of the operation.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst. Manually re-evaluates AST for isRef; candidate for
  * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
@@ -3003,8 +3007,8 @@ ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, std
     TypeExtractionResult pInfo = ExtractTypeInfoFromAST(pTypeNode, sourceCode);
 
     ParameterInformation paramInfo;
-    paramInfo.name = GetNodeText(pNameNode, sourceCode);
-    paramInfo.typeName = GetNodeText(pTypeNode, sourceCode);
+    paramInfo.name = parser::GetNodeText(pNameNode, sourceCode);
+    paramInfo.typeName = parser::GetNodeText(pTypeNode, sourceCode);
     const std::string_view paramText = GetNodeTextView(paramNode, sourceCode);
     paramInfo.baseTypeName = pInfo.baseTypeName;
     paramInfo.templateName = pInfo.templateName;
@@ -3012,7 +3016,7 @@ ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, std
     paramInfo.isArray = pInfo.isArray;
     paramInfo.hasPrimitiveHandle = pInfo.hasPrimitiveHandle;
     paramInfo.arrayDepth = pInfo.arrayDepth;
-    paramInfo.defaultValue = GetNodeText(pDefaultNode, sourceCode);
+    paramInfo.defaultValue = parser::GetNodeText(pDefaultNode, sourceCode);
     if (paramInfo.defaultValue.empty())
     {
         paramInfo.defaultValue = ExtractFallbackDefaultValue(paramText);
@@ -3110,7 +3114,7 @@ Symbol SymbolCollector::CreateSymbol(SymbolType type, TSNode node, TSNode nameNo
 
     Symbol sym;
     sym.type = type;
-    sym.name = GetNodeText(nameNode, loc.sourceCode);
+    sym.name = parser::GetNodeText(nameNode, loc.sourceCode);
     sym.containerName = loc.containerPath;
     sym.containerKind = loc.containerKind;
     appendQualifiedName(sym.qualifiedName, loc.containerPath, sym.name);
@@ -3133,7 +3137,7 @@ Symbol SymbolCollector::CreateSymbol(SymbolType type, TSNode node, TSNode nameNo
             std::vector<std::string> metaBlocks;
             while (!ts_node_is_null(prev) && ts_node_symbol(prev) == m_gs.symMetadata)
             {
-                metaBlocks.push_back(GetNodeText(prev, loc.sourceCode));
+                metaBlocks.push_back(parser::GetNodeText(prev, loc.sourceCode));
                 prev = ts_node_prev_named_sibling(prev);
             }
             if (!metaBlocks.empty())
@@ -3167,7 +3171,7 @@ std::vector<std::string> SymbolCollector::ExtractBases(TSNode classNode, std::st
                         TSNode baseChild = ts_tree_cursor_current_node(&baseCursor);
                         if (ts_node_is_named(baseChild))
                         {
-                            std::string text = GetNodeText(baseChild, sourceCode);
+                            std::string text = parser::GetNodeText(baseChild, sourceCode);
                             if (!text.empty())
                                 bases.push_back(std::move(text));
                         }

@@ -11,7 +11,7 @@
 
 namespace angel_lsp::features::formatting
 {
-namespace
+namespace predefined_stub_formatter_detail
 {
 /**
  * @brief One namespace declaration found at the top level, in source order.
@@ -26,7 +26,12 @@ struct Occurrence
     /// Everything between the body's braces, exactly as written.
     std::string body;
 };
+} // namespace predefined_stub_formatter_detail
 
+using Occurrence = predefined_stub_formatter_detail::Occurrence;
+
+namespace predefined_stub_formatter_detail
+{
 /**
  * @brief Represents Group.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -40,8 +45,11 @@ struct Group
     /// rather than being sorted somewhere new.
     size_t firstSlot = 0;
 };
+} // namespace predefined_stub_formatter_detail
 
-std::string_view Slice(const std::string& source, uint32_t from, uint32_t to)
+using Group = predefined_stub_formatter_detail::Group;
+
+static std::string_view Slice(const std::string& source, uint32_t from, uint32_t to)
 {
     if (from > to || to > source.size())
     {
@@ -51,7 +59,7 @@ std::string_view Slice(const std::string& source, uint32_t from, uint32_t to)
 }
 
 /** @brief Iterates over each line in text view, invoking consumer with the line slice and last flag. */
-template <typename LineConsumer> void ForEachLine(std::string_view text, LineConsumer&& consumer)
+template <typename LineConsumer> static void ForEachLine(std::string_view text, LineConsumer&& consumer)
 {
     size_t lineStart = 0;
     while (lineStart <= text.size())
@@ -74,7 +82,7 @@ template <typename LineConsumer> void ForEachLine(std::string_view text, LineCon
 }
 
 /** @brief Drops trailing spaces and tabs from every line, leaving the line breaks alone. */
-std::string TrimTrailingSpaceOnEachLine(std::string_view text)
+static std::string TrimTrailingSpaceOnEachLine(std::string_view text)
 {
     std::string out;
     out.reserve(text.size());
@@ -103,7 +111,7 @@ std::string TrimTrailingSpaceOnEachLine(std::string_view text)
  * line stays blank rather than becoming a line of whitespace, which is what a formatter
  * that only prepended would produce.
  */
-std::string Reindent(std::string_view text, const std::string& indent)
+static std::string Reindent(std::string_view text, const std::string& indent)
 {
     std::string out;
     out.reserve(text.size() + text.size() / 8);
@@ -141,7 +149,7 @@ std::string Reindent(std::string_view text, const std::string& indent)
 }
 
 /** @brief Whether a string is entirely whitespace. */
-bool IsBlank(std::string_view text)
+static bool IsBlank(std::string_view text)
 {
     return std::all_of(text.begin(), text.end(), [](unsigned char c) { return std::isspace(c) != 0; });
 }
@@ -153,7 +161,7 @@ bool IsBlank(std::string_view text)
  * them. Carried into a block unchanged those become blank lines around every member, so a
  * merged namespace would grow a gap for each occurrence it absorbed.
  */
-std::string_view TrimBlankEdges(std::string_view text)
+static std::string_view TrimBlankEdges(std::string_view text)
 {
     while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())))
     {
@@ -166,6 +174,8 @@ std::string_view TrimBlankEdges(std::string_view text)
     return text;
 }
 
+namespace predefined_stub_formatter_detail
+{
 /**
  * @brief Represents Slot.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -176,7 +186,12 @@ struct Slot
     std::string literal;   ///< used when isGroup is false
     std::string groupName; ///< used when isGroup is true
 };
+} // namespace predefined_stub_formatter_detail
 
+using Slot = predefined_stub_formatter_detail::Slot;
+
+namespace predefined_stub_formatter_detail
+{
 /**
  * @brief Represents Formatting plan.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -187,8 +202,11 @@ struct FormattingPlan
     std::map<std::string, Group> groups;
     std::string tail;
 };
+} // namespace predefined_stub_formatter_detail
 
-void ProcessNamespaceChild(TSNode child, std::string_view lead, const std::string& source, FormattingPlan& plan)
+using FormattingPlan = predefined_stub_formatter_detail::FormattingPlan;
+
+static void ProcessNamespaceChild(TSNode child, std::string_view lead, const std::string& source, FormattingPlan& plan)
 {
     const TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
     const TSNode bodyNode = ts_node_child_by_field_name(child, "body", 4);
@@ -214,7 +232,7 @@ void ProcessNamespaceChild(TSNode child, std::string_view lead, const std::strin
     entry->second.occurrences.push_back(Occurrence{std::string(lead), std::string(Slice(source, bodyStart, bodyEnd))});
 }
 
-FormattingPlan BuildFormattingPlan(TSNode root, const std::string& source)
+static FormattingPlan BuildFormattingPlan(TSNode root, const std::string& source)
 {
     FormattingPlan plan;
     uint32_t cursor = 0;
@@ -248,7 +266,7 @@ FormattingPlan BuildFormattingPlan(TSNode root, const std::string& source)
     return plan;
 }
 
-void EmitGroup(const Group& group, const std::string& indent, std::string& out)
+static void EmitGroup(const Group& group, const std::string& indent, std::string& out)
 {
     const std::string& firstLead = group.occurrences.front().lead;
     out.append(TrimTrailingSpaceOnEachLine(firstLead));
@@ -278,7 +296,7 @@ void EmitGroup(const Group& group, const std::string& indent, std::string& out)
     out.append("}");
 }
 
-std::string EmitFormattedStub(const FormattingPlan& plan, const std::string& indent, size_t initialCapacity)
+static std::string EmitFormattedStub(const FormattingPlan& plan, const std::string& indent, size_t initialCapacity)
 {
     std::string out;
     out.reserve(initialCapacity);
@@ -298,7 +316,6 @@ std::string EmitFormattedStub(const FormattingPlan& plan, const std::string& ind
     out.append(plan.tail);
     return out;
 }
-} // namespace
 
 std::string FormatPredefinedStub(const std::string& source, angel_lsp::parser::AngelScriptParser& parser,
                                  const std::string& indent)

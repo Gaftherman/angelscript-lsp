@@ -10,8 +10,6 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 
 /**
  * @brief Returns default literal return string for a return type.
@@ -20,7 +18,7 @@ namespace
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
-std::string GetDefaultReturnValue(std::string_view returnType, std::string_view stringTypeName)
+static std::string GetDefaultReturnValue(std::string_view returnType, std::string_view stringTypeName)
 {
     std::string cleanRet = analysis::CleanBaseType(returnType);
     if (analysis::IsHandleTypeView(returnType))
@@ -48,8 +46,8 @@ std::string GetDefaultReturnValue(std::string_view returnType, std::string_view 
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
  */
-std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis::Symbol>& missingMethods,
-                                              std::string_view stringTypeName)
+static std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis::Symbol>& missingMethods,
+                                                     std::string_view stringTypeName)
 {
     std::string stubs;
     for (const auto& m : missingMethods)
@@ -100,9 +98,9 @@ std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis::Symbol
  * @param[in] table Symbol table.
  * @return Vector of missing interface method symbols.
  */
-std::vector<analysis::Symbol> CollectMissingInterfaceMethods(const std::string& className,
-                                                             const std::string& cleanIface,
-                                                             const analysis::SymbolTable& table)
+static std::vector<analysis::Symbol> CollectMissingInterfaceMethods(const std::string& className,
+                                                                    const std::string& cleanIface,
+                                                                    const analysis::SymbolTable& table)
 {
     auto ifaceHierarchy = analysis::GetInheritedTypeHierarchy(cleanIface, table);
     if (ifaceHierarchy.empty())
@@ -160,7 +158,7 @@ std::vector<analysis::Symbol> CollectMissingInterfaceMethods(const std::string& 
  * @param[in] clsSym Class symbol.
  * @return LSP position for method stub insertion.
  */
-lsp::Position FindClassInterfaceInsertionPosition(TSNode rootNode, const analysis::Symbol& clsSym)
+static lsp::Position FindClassInterfaceInsertionPosition(TSNode rootNode, const analysis::Symbol& clsSym)
 {
     lsp::Position insertPos{clsSym.endLine, clsSym.endCharacter};
     TSPoint cPt = {clsSym.startLine, clsSym.startCharacter};
@@ -218,8 +216,9 @@ lsp::Position FindClassInterfaceInsertionPosition(TSNode rootNode, const analysi
  * @param[in] clsSym Class symbol to filter diagnostics by line range.
  * @return Vector of matching diagnostics.
  */
-std::vector<lsp::Diagnostic> CollectMatchingInterfaceDiagnostics(const std::vector<lsp::Diagnostic>& contextDiagnostics,
-                                                                 const analysis::Symbol& clsSym)
+static std::vector<lsp::Diagnostic>
+CollectMatchingInterfaceDiagnostics(const std::vector<lsp::Diagnostic>& contextDiagnostics,
+                                    const analysis::Symbol& clsSym)
 {
     std::vector<lsp::Diagnostic> matching;
     for (const auto& diag : contextDiagnostics)
@@ -232,8 +231,6 @@ std::vector<lsp::Diagnostic> CollectMatchingInterfaceDiagnostics(const std::vect
     }
     return matching;
 }
-
-} // namespace
 
 void TryAddImplementInterfaceFixes(const CodeActionRequest& request, TSNode rootNode,
                                    std::vector<lsp::CodeAction>& actions)

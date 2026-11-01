@@ -2,15 +2,13 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 
 /**
  * @brief Collects all indexed document URIs known to the symbol table.
  * @param[in] table Symbol table.
  * @return Set of known document URIs.
  */
-ankerl::unordered_dense::set<std::string> CollectIndexedFileUris(const analysis::SymbolTable& table)
+static ankerl::unordered_dense::set<std::string> CollectIndexedFileUris(const analysis::SymbolTable& table)
 {
     ankerl::unordered_dense::set<std::string> indexedUris;
     table.ForEachSymbol(
@@ -27,6 +25,8 @@ ankerl::unordered_dense::set<std::string> CollectIndexedFileUris(const analysis:
     return indexedUris;
 }
 
+namespace code_action_includes_detail
+{
 /**
  * @brief Represents Include candidate.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -36,6 +36,9 @@ struct IncludeCandidate
     std::string spelling;
     size_t distance = 0;
 };
+} // namespace code_action_includes_detail
+
+using IncludeCandidate = code_action_includes_detail::IncludeCandidate;
 
 /**
  * @brief Searches indexed document URIs for filenames similar to the unresolved include.
@@ -45,9 +48,9 @@ struct IncludeCandidate
  * @param[in] currentUri Current document URI.
  * @return Ranked candidates list sorted by edit distance.
  */
-std::vector<IncludeCandidate> RankIncludeCandidates(const std::string& includerPath, const std::string& rawPath,
-                                                    const ankerl::unordered_dense::set<std::string>& indexedUris,
-                                                    const std::string& currentUri)
+static std::vector<IncludeCandidate> RankIncludeCandidates(const std::string& includerPath, const std::string& rawPath,
+                                                           const ankerl::unordered_dense::set<std::string>& indexedUris,
+                                                           const std::string& currentUri)
 {
     const std::string typedName = std::filesystem::path(rawPath).filename().generic_string();
     if (typedName.empty())
@@ -109,6 +112,8 @@ std::vector<IncludeCandidate> RankIncludeCandidates(const std::string& includerP
     return ranked;
 }
 
+namespace code_action_includes_detail
+{
 /**
  * @brief Represents Include fix context.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -119,18 +124,18 @@ struct IncludeFixContext
     const lsp::Diagnostic& diag;
     const angel_lsp::utils::IncludeDirective& directive;
 };
+} // namespace code_action_includes_detail
+
+using IncludeFixContext = code_action_includes_detail::IncludeFixContext;
 
 /**
  * @brief Emits quick-fix code actions for unresolved include suggestions.
  * @param[in] ctx Include fix context.
  * @param[in] ranked Ranked include candidates.
  * @param[out] actions Destination actions vector.
- * @note [REFACTOR-CANDIDATE] Structural overlap (69%) with EmitTypoCodeActions in
- * server/src/features/code_action/CodeActionTypos.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-void EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vector<IncludeCandidate>& ranked,
-                            std::vector<lsp::CodeAction>& actions)
+static void EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vector<IncludeCandidate>& ranked,
+                                   std::vector<lsp::CodeAction>& actions)
 {
     const std::string_view line =
         angel_lsp::utils::GetLine(ctx.request.sourceCode, static_cast<uint32_t>(ctx.directive.line));
@@ -179,6 +184,8 @@ void EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vector<Incl
     }
 }
 
+namespace code_action_includes_detail
+{
 /**
  * @brief Represents Include ref check context.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -190,6 +197,9 @@ struct IncludeRefCheckContext
     const ankerl::unordered_dense::set<std::string>& docReferences;
     const std::vector<std::string>& allowedRoots;
 };
+} // namespace code_action_includes_detail
+
+using IncludeRefCheckContext = code_action_includes_detail::IncludeRefCheckContext;
 
 /**
  * @brief Checks whether an include directive is referenced by symbols used in the file.
@@ -197,7 +207,8 @@ struct IncludeRefCheckContext
  * @param[in] ctx Include reference checking context.
  * @return True if include is referenced or has unknown symbols.
  */
-bool IsIncludeDirectiveReferenced(const angel_lsp::utils::IncludeDirective& inc, const IncludeRefCheckContext& ctx)
+static bool IsIncludeDirectiveReferenced(const angel_lsp::utils::IncludeDirective& inc,
+                                         const IncludeRefCheckContext& ctx)
 {
     std::string resolved =
         utils::IncludeResolver::ResolveIncludePath(inc.rawPath, ctx.currentUri, {}, ctx.allowedRoots);
@@ -235,8 +246,8 @@ bool IsIncludeDirectiveReferenced(const angel_lsp::utils::IncludeDirective& inc,
  * @param[in] quotedIncludes Sorted vector of quoted include paths.
  * @return Formatted include header block text.
  */
-std::string FormatSortedIncludesBlock(const std::vector<std::string>& angledIncludes,
-                                      const std::vector<std::string>& quotedIncludes)
+static std::string FormatSortedIncludesBlock(const std::vector<std::string>& angledIncludes,
+                                             const std::vector<std::string>& quotedIncludes)
 {
     std::string newHeaderBlock;
     for (const auto& p : angledIncludes)
@@ -253,8 +264,6 @@ std::string FormatSortedIncludesBlock(const std::vector<std::string>& angledIncl
     }
     return newHeaderBlock;
 }
-
-} // namespace
 
 void TryAddUnresolvedIncludeSuggestions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
 {

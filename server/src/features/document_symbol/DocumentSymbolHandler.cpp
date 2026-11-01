@@ -13,10 +13,9 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
-using common::ToLspRange;
 
+namespace document_symbol_handler_detail
+{
 /**
  * @brief Context for document symbol AST traversal.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -27,8 +26,9 @@ struct TraversalContext
     bool isInsideClass = false;
     std::string_view enclosingClassName;
 };
+} // namespace document_symbol_handler_detail
 
-using parser::GetNodeText;
+using TraversalContext = document_symbol_handler_detail::TraversalContext;
 
 /**
  * @brief Helper to query a child node by its grammar field name.
@@ -36,7 +36,7 @@ using parser::GetNodeText;
  * @param fieldName Field name in grammar.
  * @return Child TSNode.
  */
-inline TSNode GetChildByField(TSNode node, TSFieldId fieldId) noexcept
+static inline TSNode GetChildByField(TSNode node, TSFieldId fieldId) noexcept
 {
     return parser::GetChildByField(node, fieldId);
 }
@@ -49,13 +49,14 @@ inline TSNode GetChildByField(TSNode node, TSFieldId fieldId) noexcept
  * @param[in] nameNode AST name identifier node for the selection range.
  * @return Initialized DocumentSymbol.
  */
-inline lsp::DocumentSymbol MakeDocumentSymbol(std::string name, lsp::SymbolKind kind, TSNode node, TSNode nameNode)
+static inline lsp::DocumentSymbol MakeDocumentSymbol(std::string name, lsp::SymbolKind kind, TSNode node,
+                                                     TSNode nameNode)
 {
     lsp::DocumentSymbol sym;
     sym.name = std::move(name);
     sym.kind = kind;
-    sym.range = ToLspRange(node);
-    sym.selectionRange = ts_node_is_null(nameNode) ? sym.range : ToLspRange(nameNode);
+    sym.range = common::ToLspRange(node);
+    sym.selectionRange = ts_node_is_null(nameNode) ? sym.range : common::ToLspRange(nameNode);
     return sym;
 }
 
@@ -68,15 +69,15 @@ inline lsp::DocumentSymbol MakeDocumentSymbol(std::string name, lsp::SymbolKind 
  * @param[out] outNameNode Optional output pointer to receive the name TSNode.
  * @return Initialized DocumentSymbol if name is non-empty; nullopt otherwise.
  */
-inline std::optional<lsp::DocumentSymbol> CreateDeclarationSymbol(TSNode node, lsp::SymbolKind kind,
-                                                                  const TraversalContext& ctx, TSFieldId fieldId = 0)
+static inline std::optional<lsp::DocumentSymbol>
+CreateDeclarationSymbol(TSNode node, lsp::SymbolKind kind, const TraversalContext& ctx, TSFieldId fieldId = 0)
 {
     if (fieldId == 0)
     {
         fieldId = parser::GetGrammarSymbols().fieldName;
     }
     TSNode nameNode = GetChildByField(node, fieldId);
-    std::string name = GetNodeText(nameNode, ctx.sourceCode);
+    std::string name = parser::GetNodeText(nameNode, ctx.sourceCode);
     if (name.empty())
     {
         return std::nullopt;
@@ -84,8 +85,8 @@ inline std::optional<lsp::DocumentSymbol> CreateDeclarationSymbol(TSNode node, l
     return MakeDocumentSymbol(std::move(name), kind, node, nameNode);
 }
 
-std::vector<lsp::DocumentSymbol> ProcessChildren(TSNode containerNode, const TraversalContext& ctx);
-void ProcessNode(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols);
+static std::vector<lsp::DocumentSymbol> ProcessChildren(TSNode containerNode, const TraversalContext& ctx);
+static void ProcessNode(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols);
 
 /**
  * @brief Processes a namespace_declaration AST node.
@@ -93,7 +94,7 @@ void ProcessNode(TSNode node, const TraversalContext& ctx, std::vector<lsp::Docu
  * @param[in] ctx Traversal context.
  * @param[in,out] outSymbols Symbol list to append to.
  */
-void ProcessNamespace(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
+static void ProcessNamespace(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
 {
     auto symOpt = CreateDeclarationSymbol(node, lsp::SymbolKind::Namespace, ctx);
     if (!symOpt)
@@ -125,8 +126,8 @@ void ProcessNamespace(TSNode node, const TraversalContext& ctx, std::vector<lsp:
  * @param[in] ctx Traversal context.
  * @param[in,out] outSymbols Symbol list to append to.
  */
-void ProcessClassLike(TSNode node, TSSymbol sym, const TraversalContext& ctx,
-                      std::vector<lsp::DocumentSymbol>& outSymbols)
+static void ProcessClassLike(TSNode node, TSSymbol sym, const TraversalContext& ctx,
+                             std::vector<lsp::DocumentSymbol>& outSymbols)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const bool isInterface = (sym == gs.symInterfaceDeclaration);
@@ -161,7 +162,7 @@ void ProcessClassLike(TSNode node, TSSymbol sym, const TraversalContext& ctx,
  * @param[in] sourceCode Source text.
  * @return Vector of enum member document symbols.
  */
-std::vector<lsp::DocumentSymbol> CollectEnumMembers(TSNode enumNode, std::string_view sourceCode)
+static std::vector<lsp::DocumentSymbol> CollectEnumMembers(TSNode enumNode, std::string_view sourceCode)
 {
     const auto& gs = parser::GetGrammarSymbols();
     std::vector<lsp::DocumentSymbol> members;
@@ -171,7 +172,7 @@ std::vector<lsp::DocumentSymbol> CollectEnumMembers(TSNode enumNode, std::string
                                       if (ts_node_symbol(child) == gs.symEnumMember)
                                       {
                                           TSNode mNameNode = GetChildByField(child, gs.fieldName);
-                                          std::string mName = GetNodeText(mNameNode, sourceCode);
+                                          std::string mName = parser::GetNodeText(mNameNode, sourceCode);
                                           if (!mName.empty())
                                           {
                                               auto mSym = MakeDocumentSymbol(
@@ -180,7 +181,7 @@ std::vector<lsp::DocumentSymbol> CollectEnumMembers(TSNode enumNode, std::string
                                               TSNode valNode = GetChildByField(child, gs.fieldValue);
                                               if (!ts_node_is_null(valNode))
                                               {
-                                                  mSym.detail = "= " + GetNodeText(valNode, sourceCode);
+                                                  mSym.detail = "= " + parser::GetNodeText(valNode, sourceCode);
                                               }
                                               members.push_back(std::move(mSym));
                                           }
@@ -194,11 +195,8 @@ std::vector<lsp::DocumentSymbol> CollectEnumMembers(TSNode enumNode, std::string
  * @param[in] node AST node.
  * @param[in] ctx Traversal context.
  * @param[in,out] outSymbols Symbol list to append to.
- * @note [REFACTOR-CANDIDATE] Structural overlap (77%) with ProcessImport in
- * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-void ProcessEnum(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
+static void ProcessEnum(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
 {
     auto symOpt = CreateDeclarationSymbol(node, lsp::SymbolKind::Enum, ctx);
     if (!symOpt)
@@ -223,7 +221,7 @@ void ProcessEnum(TSNode node, const TraversalContext& ctx, std::vector<lsp::Docu
  * @param[in] node AST node.
  * @return True if node contains a tilde token child.
  */
-bool IsDestructorNode(TSNode node)
+static bool IsDestructorNode(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const uint32_t cCount = ts_node_child_count(node);
@@ -245,7 +243,7 @@ bool IsDestructorNode(TSNode node)
  * @param[in] isCtorOrDtor True if constructor or destructor.
  * @return Formatted detail string.
  */
-std::string BuildFunctionDetail(std::string_view retStr, std::string_view paramsStr, bool isCtorOrDtor)
+static std::string BuildFunctionDetail(std::string_view retStr, std::string_view paramsStr, bool isCtorOrDtor)
 {
     if (!retStr.empty() && !paramsStr.empty())
     {
@@ -262,6 +260,8 @@ std::string BuildFunctionDetail(std::string_view retStr, std::string_view params
     return "";
 }
 
+namespace document_symbol_handler_detail
+{
 /**
  * @brief Extracted components of a function or method AST node.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -273,6 +273,9 @@ struct FunctionComponents
     TSNode retNode;
     TSNode paramsNode;
 };
+} // namespace document_symbol_handler_detail
+
+using FunctionComponents = document_symbol_handler_detail::FunctionComponents;
 
 /**
  * @brief Extracts standard function components (name, return type, parameters) from an AST node.
@@ -280,11 +283,11 @@ struct FunctionComponents
  * @param[in] sourceCode Document text.
  * @return Extracted components if a non-empty name is present.
  */
-std::optional<FunctionComponents> ExtractFunctionComponents(TSNode node, std::string_view sourceCode)
+static std::optional<FunctionComponents> ExtractFunctionComponents(TSNode node, std::string_view sourceCode)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode nameNode = GetChildByField(node, gs.fieldName);
-    std::string name = GetNodeText(nameNode, sourceCode);
+    std::string name = parser::GetNodeText(nameNode, sourceCode);
     if (name.empty())
     {
         return std::nullopt;
@@ -300,7 +303,7 @@ std::optional<FunctionComponents> ExtractFunctionComponents(TSNode node, std::st
  * @param[in] ctx Traversal context.
  * @param[in,out] outSymbols Symbol list to append to.
  */
-void ProcessFunction(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
+static void ProcessFunction(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
 {
     auto comps = ExtractFunctionComponents(node, ctx.sourceCode);
     if (!comps)
@@ -317,8 +320,8 @@ void ProcessFunction(TSNode node, const TraversalContext& ctx, std::vector<lsp::
     std::string symName = isDestructor ? ("~" + comps->name) : std::move(comps->name);
     auto sym = MakeDocumentSymbol(std::move(symName), kind, node, comps->nameNode);
 
-    const std::string retStr = GetNodeText(comps->retNode, ctx.sourceCode);
-    const std::string paramsStr = GetNodeText(comps->paramsNode, ctx.sourceCode);
+    const std::string retStr = parser::GetNodeText(comps->retNode, ctx.sourceCode);
+    const std::string paramsStr = parser::GetNodeText(comps->paramsNode, ctx.sourceCode);
 
     sym.detail = BuildFunctionDetail(retStr, paramsStr, isDestructor || isConstructor);
     outSymbols.push_back(std::move(sym));
@@ -329,11 +332,9 @@ void ProcessFunction(TSNode node, const TraversalContext& ctx, std::vector<lsp::
  * @param[in] node AST node.
  * @param[in] ctx Traversal context.
  * @param[in,out] outSymbols Symbol list to append to.
- * @note [REFACTOR-CANDIDATE] Structural overlap (82%) with ProcessFuncdef in
- * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-void ProcessInterfaceMethod(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
+static void ProcessInterfaceMethod(TSNode node, const TraversalContext& ctx,
+                                   std::vector<lsp::DocumentSymbol>& outSymbols)
 {
     auto comps = ExtractFunctionComponents(node, ctx.sourceCode);
     if (!comps)
@@ -343,8 +344,8 @@ void ProcessInterfaceMethod(TSNode node, const TraversalContext& ctx, std::vecto
 
     auto sym = MakeDocumentSymbol(std::move(comps->name), lsp::SymbolKind::Method, node, comps->nameNode);
 
-    const std::string retStr = GetNodeText(comps->retNode, ctx.sourceCode);
-    const std::string paramsStr = GetNodeText(comps->paramsNode, ctx.sourceCode);
+    const std::string retStr = parser::GetNodeText(comps->retNode, ctx.sourceCode);
+    const std::string paramsStr = parser::GetNodeText(comps->paramsNode, ctx.sourceCode);
     sym.detail = BuildFunctionDetail(retStr, paramsStr, false);
 
     outSymbols.push_back(std::move(sym));
@@ -355,15 +356,8 @@ void ProcessInterfaceMethod(TSNode node, const TraversalContext& ctx, std::vecto
  * @param[in] node AST node.
  * @param[in] ctx Traversal context.
  * @param[in,out] outSymbols Symbol list to append to.
- * @note [REFACTOR-CANDIDATE] Structural overlap (82%) with ProcessTypedef in
- * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (82%) with ProcessVirtualProperty in
- * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (77%) with ProcessEnum in
- * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-void ProcessImport(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
+static void ProcessImport(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
 {
     auto symOpt = CreateDeclarationSymbol(node, lsp::SymbolKind::Function, ctx);
     if (!symOpt)
@@ -383,11 +377,11 @@ void ProcessImport(TSNode node, const TraversalContext& ctx, std::vector<lsp::Do
  * @param[in] ctx Traversal context.
  * @param[in,out] outSymbols Symbol list to append to.
  */
-void ProcessVariable(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
+static void ProcessVariable(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode typeNode = GetChildByField(node, gs.fieldVarType);
-    const std::string typeStr = GetNodeText(typeNode, ctx.sourceCode);
+    const std::string typeStr = parser::GetNodeText(typeNode, ctx.sourceCode);
 
     uint32_t declaratorCount = 0;
     parser::ForEachNamedChildNode(node,
@@ -411,7 +405,7 @@ void ProcessVariable(TSNode node, const TraversalContext& ctx, std::vector<lsp::
                                               auto sym = std::move(*symOpt);
                                               if (declaratorCount == 1)
                                               {
-                                                  sym.range = ToLspRange(node);
+                                                  sym.range = common::ToLspRange(node);
                                               }
                                               if (!typeStr.empty())
                                               {
@@ -428,13 +422,9 @@ void ProcessVariable(TSNode node, const TraversalContext& ctx, std::vector<lsp::
  * @param[in] node AST node.
  * @param[in] ctx Traversal context.
  * @param[in,out] outSymbols Symbol list to append to.
- * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with ProcessTypedef in
- * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (82%) with ProcessImport in
- * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-void ProcessVirtualProperty(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
+static void ProcessVirtualProperty(TSNode node, const TraversalContext& ctx,
+                                   std::vector<lsp::DocumentSymbol>& outSymbols)
 {
     auto symOpt = CreateDeclarationSymbol(node, lsp::SymbolKind::Property, ctx);
     if (!symOpt)
@@ -444,7 +434,7 @@ void ProcessVirtualProperty(TSNode node, const TraversalContext& ctx, std::vecto
 
     auto sym = std::move(*symOpt);
     TSNode typeNode = GetChildByField(node, parser::GetGrammarSymbols().fieldPropType);
-    sym.detail = GetNodeText(typeNode, ctx.sourceCode);
+    sym.detail = parser::GetNodeText(typeNode, ctx.sourceCode);
 
     outSymbols.push_back(std::move(sym));
 }
@@ -454,13 +444,8 @@ void ProcessVirtualProperty(TSNode node, const TraversalContext& ctx, std::vecto
  * @param[in] node AST node.
  * @param[in] ctx Traversal context.
  * @param[in,out] outSymbols Symbol list to append to.
- * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with ProcessVirtualProperty in
- * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (82%) with ProcessImport in
- * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-void ProcessTypedef(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
+static void ProcessTypedef(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
 {
     auto symOpt = CreateDeclarationSymbol(node, lsp::SymbolKind::Class, ctx);
     if (!symOpt)
@@ -470,7 +455,7 @@ void ProcessTypedef(TSNode node, const TraversalContext& ctx, std::vector<lsp::D
 
     auto sym = std::move(*symOpt);
     TSNode baseTypeNode = GetChildByField(node, parser::GetGrammarSymbols().fieldBaseType);
-    sym.detail = "typedef " + GetNodeText(baseTypeNode, ctx.sourceCode);
+    sym.detail = "typedef " + parser::GetNodeText(baseTypeNode, ctx.sourceCode);
 
     outSymbols.push_back(std::move(sym));
 }
@@ -480,11 +465,8 @@ void ProcessTypedef(TSNode node, const TraversalContext& ctx, std::vector<lsp::D
  * @param[in] node AST node.
  * @param[in] ctx Traversal context.
  * @param[in,out] outSymbols Symbol list to append to.
- * @note [REFACTOR-CANDIDATE] Structural overlap (82%) with ProcessInterfaceMethod in
- * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-void ProcessFuncdef(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
+static void ProcessFuncdef(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
 {
     auto comps = ExtractFunctionComponents(node, ctx.sourceCode);
     if (!comps)
@@ -493,8 +475,8 @@ void ProcessFuncdef(TSNode node, const TraversalContext& ctx, std::vector<lsp::D
     }
 
     auto sym = MakeDocumentSymbol(std::move(comps->name), lsp::SymbolKind::Function, node, comps->nameNode);
-    sym.detail =
-        "funcdef " + GetNodeText(comps->retNode, ctx.sourceCode) + " " + GetNodeText(comps->paramsNode, ctx.sourceCode);
+    sym.detail = "funcdef " + parser::GetNodeText(comps->retNode, ctx.sourceCode) + " " +
+                 parser::GetNodeText(comps->paramsNode, ctx.sourceCode);
 
     outSymbols.push_back(std::move(sym));
 }
@@ -505,7 +487,8 @@ void ProcessFuncdef(TSNode node, const TraversalContext& ctx, std::vector<lsp::D
  * @param[in] ctx Traversal context.
  * @param[in,out] outSymbols Output accumulator for created symbols.
  */
-bool ProcessStructuralNode(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
+static bool ProcessStructuralNode(TSNode node, const TraversalContext& ctx,
+                                  std::vector<lsp::DocumentSymbol>& outSymbols)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol sym = ts_node_symbol(node);
@@ -527,7 +510,7 @@ bool ProcessStructuralNode(TSNode node, const TraversalContext& ctx, std::vector
     return false;
 }
 
-bool ProcessCallableNode(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
+static bool ProcessCallableNode(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol sym = ts_node_symbol(node);
@@ -549,7 +532,7 @@ bool ProcessCallableNode(TSNode node, const TraversalContext& ctx, std::vector<l
     return false;
 }
 
-void ProcessNode(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
+static void ProcessNode(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
 {
     if (ts_node_is_null(node))
     {
@@ -587,7 +570,7 @@ void ProcessNode(TSNode node, const TraversalContext& ctx, std::vector<lsp::Docu
  * @param[in] ctx Traversal context.
  * @return Vector of extracted child DocumentSymbol instances.
  */
-std::vector<lsp::DocumentSymbol> ProcessChildren(TSNode containerNode, const TraversalContext& ctx)
+static std::vector<lsp::DocumentSymbol> ProcessChildren(TSNode containerNode, const TraversalContext& ctx)
 {
     std::vector<lsp::DocumentSymbol> symbols;
     uint32_t count = ts_node_named_child_count(containerNode);
@@ -604,16 +587,12 @@ std::vector<lsp::DocumentSymbol> ProcessChildren(TSNode containerNode, const Tra
 
 /**
  * @brief Map symbol type to kind.
- * @param[in] type Parameter type.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (80%) with ToSymbolKind in
- * server/src/features/workspace_symbol/WorkspaceSymbolHandler.cpp. Candidate for unification in
- * server/src/features/common/FeatureSharedUtils.h. Structural overlap (66%) with RawProfileStub in
- * server/src/analysis/EngineProfiles.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] type Token type or semantic type.
+ * @return Calculated or extracted result of the operation.
  * Structural overlap (63%) with KindWord in server/src/analysis/rules/TypeRules.cpp. Candidate for unification in
  * server/src/analysis/SemanticHelpers.h.
  */
-inline lsp::SymbolKind MapSymbolTypeToKind(analysis::SymbolType type) noexcept
+static inline lsp::SymbolKind MapSymbolTypeToKind(analysis::SymbolType type) noexcept
 {
     switch (type)
     {
@@ -635,7 +614,6 @@ inline lsp::SymbolKind MapSymbolTypeToKind(analysis::SymbolType type) noexcept
         return lsp::SymbolKind::Variable;
     }
 }
-} // namespace
 
 std::optional<DocumentSymbolResult> GetDocumentSymbols(const DocumentSymbolRequest& request)
 {

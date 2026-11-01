@@ -22,13 +22,10 @@ bool HasSameSignature(const Symbol& left, const Symbol& right)
 
 /**
  * @brief Has same parameter list.
- * @param[in] left Parameter left.
- * @param[in] right Parameter right.
- * @param[in] arrayTypeName Parameter arrayTypeName.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (87%) with HasSameSignature in
- * server/src/analysis/overload/AmbiguityDetector.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @param[in] left Left operand or candidate symbol.
+ * @param[in] right Right operand or candidate symbol.
+ * @param[in] arrayTypeName Array type name for specialization.
+ * @return True if the condition is satisfied; false otherwise.
  */
 bool HasSameParameterList(const Symbol& left, const Symbol& right, std::string_view arrayTypeName)
 {
@@ -66,13 +63,10 @@ bool HasSameParameterList(const Symbol& left, const Symbol& right, std::string_v
 
 /**
  * @brief Has same signature.
- * @param[in] left Parameter left.
- * @param[in] right Parameter right.
- * @param[in] arrayTypeName Parameter arrayTypeName.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (87%) with HasSameParameterList in
- * server/src/analysis/overload/AmbiguityDetector.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @param[in] left Left operand or candidate symbol.
+ * @param[in] right Right operand or candidate symbol.
+ * @param[in] arrayTypeName Array type name for specialization.
+ * @return True if the condition is satisfied; false otherwise.
  */
 bool HasSameSignature(const Symbol& left, const Symbol& right, std::string_view arrayTypeName)
 {
@@ -126,8 +120,8 @@ bool HasSameSignature(const Symbol& left, const Symbol& right, std::string_view 
 
 /**
  * @brief Inspect function arity.
- * @param[in] sig Parameter sig.
- * @return Result of the operation.
+ * @param[in] sig Input sig for the operation.
+ * @return Calculated or extracted result of the operation.
  * @note [REFACTOR-CANDIDATE] Structural overlap (94%) with ArityOf in server/src/analysis/CallChecker.cpp. Candidate
  * for unification in server/src/analysis/SemanticHelpers.h.
  */
@@ -159,9 +153,7 @@ bool IsArityCompatible(const ArityInfo& arity, uint32_t argCount)
     return argCount >= arity.requiredParams;
 }
 
-namespace
-{
-std::optional<std::vector<ArgumentConversion>>
+static std::optional<std::vector<ArgumentConversion>>
 EvaluateCandidateConversions(const FunctionSignature& sig, const std::vector<std::string>& argumentTypes,
                              const SymbolTable& symbolTable, const std::vector<bool>& argIsLValue)
 {
@@ -188,7 +180,6 @@ EvaluateCandidateConversions(const FunctionSignature& sig, const std::vector<std
     }
     return conversions;
 }
-} // namespace
 
 std::optional<EvaluatedCandidate> EvaluateCandidate(const Symbol& sym, const std::vector<std::string>& argumentTypes,
                                                     const SymbolTable& symbolTable,

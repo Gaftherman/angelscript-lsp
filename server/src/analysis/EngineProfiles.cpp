@@ -5,9 +5,7 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
-std::string ToLowerString(std::string_view str)
+static std::string ToLowerString(std::string_view str)
 {
     std::string result;
     result.reserve(str.size());
@@ -747,7 +745,6 @@ class OOTPContext
 
 OOTPContext g_OOTP;
 )angelscript";
-} // namespace
 
 EngineProfileKind ParseEngineProfileKind(std::string_view name)
 {
@@ -807,11 +804,8 @@ bool IsKnownEngineProfileName(std::string_view name)
 
 /**
  * @brief Engine profile kind to string.
- * @param[in] kind Parameter kind.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with KindWord in server/src/analysis/rules/TypeRules.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (90%) with RawProfileStub in
- * server/src/analysis/EngineProfiles.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] kind Input kind for the operation.
+ * @return Calculated or extracted result of the operation.
  */
 std::string_view EngineProfileKindToString(EngineProfileKind kind)
 {
@@ -840,19 +834,15 @@ std::vector<std::string_view> GetAvailableEngineProfiles()
     return {"none", "standard", "svencoop", "urho3d", "openxray", "ootp", "auto"};
 }
 
-namespace
-{
 /**
  * @brief The raw literal, before the list-factory rewrite. See GetProfileStubText.
- * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with EngineProfileKindToString in
- * server/src/analysis/EngineProfiles.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  * Structural overlap (88%) with KindWord in server/src/analysis/rules/TypeRules.cpp. Candidate for unification in
  * server/src/analysis/SemanticHelpers.h. Structural overlap (66%) with MapSymbolTypeToKind in
  * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
  * server/src/analysis/SemanticHelpers.h. Structural overlap (65%) with AccessModifierToString in
  * server/src/analysis/SymbolTable.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-std::string_view RawProfileStub(EngineProfileKind kind)
+static std::string_view RawProfileStub(EngineProfileKind kind)
 {
     switch (kind)
     {
@@ -880,13 +870,13 @@ std::string_view RawProfileStub(EngineProfileKind kind)
  * @param[in] keywords List of candidate substrings.
  * @return True if at least one keyword is found.
  */
-bool MatchesAnyKeyword(std::string_view text, std::initializer_list<std::string_view> keywords) noexcept
+static bool MatchesAnyKeyword(std::string_view text, std::initializer_list<std::string_view> keywords) noexcept
 {
     return std::any_of(keywords.begin(), keywords.end(),
                        [text](std::string_view kw) { return text.find(kw) != std::string_view::npos; });
 }
 
-std::optional<EngineProfileKind> MatchProfileSample(std::string_view sample)
+static std::optional<EngineProfileKind> MatchProfileSample(std::string_view sample)
 {
     const std::string lower = ToLowerString(sample);
     if (MatchesAnyKeyword(lower, {"svencoop", "sven", "cbaseplayer", "g_playerfuncs", "g_enginefuncs"}))
@@ -907,7 +897,6 @@ std::optional<EngineProfileKind> MatchProfileSample(std::string_view sample)
     }
     return std::nullopt;
 }
-} // namespace
 
 std::string GetProfileStubText(EngineProfileKind kind)
 {

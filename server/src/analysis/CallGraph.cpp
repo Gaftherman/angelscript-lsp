@@ -9,11 +9,9 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
 
 /** @brief The node naming what a call reaches, or a null node when it names nothing stable. */
-TSNode CalleeNameNode(TSNode callNode)
+static TSNode CalleeNameNode(TSNode callNode)
 {
     TSNode callee = parser::GetChildByField(callNode, parser::GetGrammarSymbols().fieldFunction);
     if (ts_node_is_null(callee))
@@ -56,6 +54,8 @@ TSNode CalleeNameNode(TSNode callNode)
     return TSNode{};
 }
 
+namespace call_graph_detail
+{
 /**
  * @brief Represents Traversal item.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -66,21 +66,24 @@ struct TraversalItem
     uint32_t containerIndex = 0;
     uint32_t callerIndex = 0;
 };
+} // namespace call_graph_detail
+
+using TraversalItem = call_graph_detail::TraversalItem;
 
 /**
  * @brief Is container symbol.
- * @param[in] sym Parameter sym.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (68%) with IsDeclarationSymbol in
- * server/src/analysis/SymbolCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @return True if the condition is satisfied; false otherwise.
  */
-bool IsContainerSymbol(TSSymbol sym)
+static bool IsContainerSymbol(TSSymbol sym)
 {
     const auto& gs = parser::GetGrammarSymbols();
     return sym == gs.symClassDeclaration || sym == gs.symInterfaceDeclaration || sym == gs.symMixinDeclaration ||
            sym == gs.symNamespaceDeclaration;
 }
 
+namespace call_graph_detail
+{
 /**
  * @brief Represents Naming context.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -93,7 +96,7 @@ struct NamingContext
     uint32_t NextContainer(TSNode node, std::string_view sourceCode, uint32_t current)
     {
         const std::string name =
-            NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName), sourceCode);
+            parser::NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName), sourceCode);
         if (name.empty())
         {
             return current;
@@ -106,7 +109,7 @@ struct NamingContext
     uint32_t NextCaller(TSNode node, std::string_view sourceCode, uint32_t containerIdx, uint32_t current)
     {
         const std::string name =
-            NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName), sourceCode);
+            parser::NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName), sourceCode);
         if (name.empty())
         {
             return current;
@@ -116,15 +119,19 @@ struct NamingContext
         return static_cast<uint32_t>(callers.size() - 1);
     }
 };
+} // namespace call_graph_detail
 
-void RecordCallSite(TSNode node, std::string_view sourceCode, const std::string& caller, std::vector<CallSite>& out)
+using NamingContext = call_graph_detail::NamingContext;
+
+static void RecordCallSite(TSNode node, std::string_view sourceCode, const std::string& caller,
+                           std::vector<CallSite>& out)
 {
     const TSNode nameNode = CalleeNameNode(node);
     if (ts_node_is_null(nameNode))
     {
         return;
     }
-    std::string callee = NodeText(nameNode, sourceCode);
+    std::string callee = parser::NodeText(nameNode, sourceCode);
     if (!callee.empty())
     {
         out.push_back(CallSite{caller, std::move(callee), ToSourceRange(nameNode)});
@@ -138,7 +145,7 @@ void RecordCallSite(TSNode node, std::string_view sourceCode, const std::string&
  * @param[in] sourceCode Source text.
  * @param[out] out Vector receiving collected call sites.
  */
-void CollectCallsInto(TSNode root, std::string_view sourceCode, std::vector<CallSite>& out)
+static void CollectCallsInto(TSNode root, std::string_view sourceCode, std::vector<CallSite>& out)
 {
     NamingContext ctx;
     std::vector<TraversalItem> worklist;
@@ -174,7 +181,6 @@ void CollectCallsInto(TSNode root, std::string_view sourceCode, std::vector<Call
         }
     }
 }
-} // namespace
 
 std::vector<CallSite> CollectCalls(TSNode root, std::string_view sourceCode)
 {

@@ -9,8 +9,6 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 
 /**
  * @brief Locates a unique global function symbol by name.
@@ -18,7 +16,8 @@ namespace
  * @param[in] functionName Name of global function.
  * @return Unique function symbol pointer or nullptr if ambiguous/missing.
  */
-const analysis::Symbol* FindUniqueGlobalFunction(const analysis::SymbolTable& table, const std::string& functionName)
+static const analysis::Symbol* FindUniqueGlobalFunction(const analysis::SymbolTable& table,
+                                                        const std::string& functionName)
 {
     const analysis::Symbol* target = nullptr;
     size_t globalOverloads = 0;
@@ -48,7 +47,8 @@ const analysis::Symbol* FindUniqueGlobalFunction(const analysis::SymbolTable& ta
  * @param[in] funcdefName Target funcdef type name.
  * @return Formatted funcdef declaration line.
  */
-std::string FormatFuncdefDeclarationText(const analysis::FunctionSignature& signature, const std::string& funcdefName)
+static std::string FormatFuncdefDeclarationText(const analysis::FunctionSignature& signature,
+                                                const std::string& funcdefName)
 {
     std::string declaration = "funcdef ";
     declaration += signature.returnType.empty() ? "void" : signature.returnType;
@@ -65,6 +65,8 @@ std::string FormatFuncdefDeclarationText(const analysis::FunctionSignature& sign
     return declaration;
 }
 
+namespace code_action_quick_fixes_detail
+{
 /**
  * @brief Item information for generating a funcdef quick-fix action.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -76,6 +78,9 @@ struct FuncdefFixItem
     std::string funcdefName;
     std::string declaration;
 };
+} // namespace code_action_quick_fixes_detail
+
+using FuncdefFixItem = code_action_quick_fixes_detail::FuncdefFixItem;
 
 /**
  * @brief Emits a quick fix that prepends a funcdef declaration and renames the type reference.
@@ -84,8 +89,8 @@ struct FuncdefFixItem
  * @param[in] item Funcdef fix metadata item.
  * @param[out] actions Destination actions vector.
  */
-void EmitFuncdefCodeAction(const CodeActionRequest& request, const lsp::Diagnostic& diag, const FuncdefFixItem& item,
-                           std::vector<lsp::CodeAction>& actions)
+static void EmitFuncdefCodeAction(const CodeActionRequest& request, const lsp::Diagnostic& diag,
+                                  const FuncdefFixItem& item, std::vector<lsp::CodeAction>& actions)
 {
     std::vector<lsp::TextEdit> edits;
     lsp::TextEdit insertion;
@@ -114,13 +119,11 @@ void EmitFuncdefCodeAction(const CodeActionRequest& request, const lsp::Diagnost
     }));
 }
 
-} // namespace
-
 /**
  * @brief Try add handle on primitive fix.
- * @param[in] request Parameter request.
- * @param[in] rootNode Parameter rootNode.
- * @param[in,out] actions Parameter actions.
+ * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
+ * @param[in] rootNode AST node under evaluation.
+ * @param[in,out] actions Input actions for the operation.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
@@ -185,7 +188,7 @@ void TryAddGenerateFuncdefFix(const CodeActionRequest& request, TSNode rootNode,
             continue;
         }
 
-        const std::string functionName = GetNodeText(typeNode, request.sourceCode);
+        const std::string functionName = parser::GetNodeText(typeNode, request.sourceCode);
         if (functionName.empty())
         {
             continue;

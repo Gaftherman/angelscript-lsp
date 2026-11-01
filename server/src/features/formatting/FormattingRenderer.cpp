@@ -4,9 +4,7 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
-std::string MakeIndent(int level, const FormatCodeOptions& options)
+static std::string MakeIndent(int level, const FormatCodeOptions& options)
 {
     if (level <= 0)
         return "";
@@ -16,7 +14,7 @@ std::string MakeIndent(int level, const FormatCodeOptions& options)
     return std::string(static_cast<size_t>(level), '\t');
 }
 
-std::string RenderClangFormatOffLine(const LineInfo& line, const std::vector<Token>& tokens)
+static std::string RenderClangFormatOffLine(const LineInfo& line, const std::vector<Token>& tokens)
 {
     if (line.tokenIndices.empty())
         return "";
@@ -38,7 +36,6 @@ std::string RenderClangFormatOffLine(const LineInfo& line, const std::vector<Tok
     }
     return lineStr;
 }
-} // namespace
 
 std::vector<std::string> RenderLines(const std::vector<LineInfo>& lines, const std::vector<Token>& tokens,
                                      const FormatCodeOptions& options)

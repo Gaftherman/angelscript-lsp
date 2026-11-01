@@ -19,8 +19,6 @@
 
 namespace angel_lsp::analysis
 {
-using parser::UnwrapParentheses;
-
 namespace node_types
 {
 constexpr std::string_view StringLiteral = "string_literal";
@@ -43,8 +41,6 @@ enum class InitializerItemKind
     NullLiteral,
     NestedInitializer
 };
-
-using parser::GetNodeText;
 
 /**
  * @brief Checks if a symbol with the specified type exists in the symbol table.
@@ -956,6 +952,27 @@ struct CallArgumentInfo
 };
 
 /**
+ * @brief Enclosing call expression and argument list AST nodes.
+ */
+struct CallNodes
+{
+    TSNode callNode{};
+    TSNode argListNode{};
+};
+
+/**
+ * @brief Context and resolved argument information for call and overload resolution.
+ */
+struct CallResolutionContext
+{
+    std::vector<TSNode> argNodes;
+    std::vector<std::string> argTypes;
+    std::vector<std::string> argNames;
+    std::vector<bool> argIsLValue;
+    bool allArgsResolved = true;
+};
+
+/**
  * @brief Resolves argument_list node from either argument_list or call_expression.
  * @param[in] node AST node representing call_expression, construct_call_expression, or argument_list.
  * @return argument_list node or null node.
@@ -1033,6 +1050,16 @@ struct LambdaParamASTInfo
  * @return Ordered vector of LambdaParamASTInfo structs.
  */
 std::vector<LambdaParamASTInfo> ExtractLambdaParameters(TSNode lambdaParamList, std::string_view sourceCode);
+
+/**
+ * @brief Context bundled for member lookup across type hierarchies.
+ */
+struct MemberLookupContext
+{
+    std::string typeName;
+    const SymbolTable& table;
+    bool accessorKeywordRequired = false;
+};
 
 /**
  * @brief Context bundled for receiver type resolution.

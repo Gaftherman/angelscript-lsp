@@ -47,9 +47,9 @@ std::string CleanBaseType(std::string_view typeName, std::string_view arrayTypeN
 
 /**
  * @brief Canonicalize array type.
- * @param[in] typeName Parameter typeName.
- * @param[in] arrayTypeName Parameter arrayTypeName.
- * @return Result of the operation.
+ * @param[in] typeName Type name to inspect or resolve.
+ * @param[in] arrayTypeName Array type name for specialization.
+ * @return Calculated or extracted result of the operation.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType. Manually re-evaluates
  * AST for isConst; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo /

@@ -12,9 +12,7 @@ extern "C" __declspec(dllimport) unsigned long __stdcall GetCurrentThreadId(void
 
 namespace angel_lsp::utils
 {
-namespace
-{
-std::string GetCurrentDateString(std::chrono::system_clock::time_point time)
+static std::string GetCurrentDateString(std::chrono::system_clock::time_point time)
 {
     const std::time_t tt = std::chrono::system_clock::to_time_t(time);
     std::tm tmBuf{};
@@ -28,7 +26,7 @@ std::string GetCurrentDateString(std::chrono::system_clock::time_point time)
     return std::string(buf);
 }
 
-std::string_view ChannelToString(LogChannel channel)
+static std::string_view ChannelToString(LogChannel channel)
 {
     switch (channel)
     {
@@ -48,7 +46,7 @@ std::string_view ChannelToString(LogChannel channel)
     return "UNKNOWN";
 }
 
-std::string_view LevelToString(MultiFileLogLevel level)
+static std::string_view LevelToString(MultiFileLogLevel level)
 {
     switch (level)
     {
@@ -65,7 +63,6 @@ std::string_view LevelToString(MultiFileLogLevel level)
     }
     return "UNKNOWN";
 }
-} // namespace
 
 MultiFileLogger::MultiFileLogger() : m_running(false)
 {
@@ -102,9 +99,8 @@ MultiFileLogger& MultiFileLogger::Instance()
 
 std::string MultiFileLogger::FormatTimestamp(std::chrono::system_clock::time_point time)
 {
-    using namespace std::chrono;
-    const auto ms = duration_cast<milliseconds>(time.time_since_epoch()) % 1000;
-    const std::time_t tt = system_clock::to_time_t(time);
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(time.time_since_epoch()) % 1000;
+    const std::time_t tt = std::chrono::system_clock::to_time_t(time);
     std::tm tmBuf{};
 #if defined(_WIN32)
     localtime_s(&tmBuf, &tt);

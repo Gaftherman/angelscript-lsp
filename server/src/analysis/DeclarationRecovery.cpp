@@ -6,10 +6,8 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
 
-bool SkipComment(std::string_view source, size_t& pos)
+static bool SkipComment(std::string_view source, size_t& pos)
 {
     const size_t n = source.size();
     if (pos >= n || source[pos] != '/' || pos + 1 >= n)
@@ -32,7 +30,7 @@ bool SkipComment(std::string_view source, size_t& pos)
     return false;
 }
 
-bool SkipHeredoc(std::string_view source, size_t& pos)
+static bool SkipHeredoc(std::string_view source, size_t& pos)
 {
     const size_t n = source.size();
     if (pos + 2 < n && source[pos] == '"' && source[pos + 1] == '"' && source[pos + 2] == '"')
@@ -44,7 +42,7 @@ bool SkipHeredoc(std::string_view source, size_t& pos)
     return false;
 }
 
-bool SkipQuotedLiteral(std::string_view source, size_t& pos)
+static bool SkipQuotedLiteral(std::string_view source, size_t& pos)
 {
     const size_t n = source.size();
     if (pos >= n || (source[pos] != '"' && source[pos] != '\''))
@@ -69,17 +67,17 @@ bool SkipQuotedLiteral(std::string_view source, size_t& pos)
     return true;
 }
 
-bool SkipString(std::string_view source, size_t& pos)
+static bool SkipString(std::string_view source, size_t& pos)
 {
     return SkipHeredoc(source, pos) || SkipQuotedLiteral(source, pos);
 }
 
-bool SkipCommentsAndStrings(std::string_view source, size_t& pos)
+static bool SkipCommentsAndStrings(std::string_view source, size_t& pos)
 {
     return SkipComment(source, pos) || SkipString(source, pos);
 }
 
-size_t FindBraceBlockEnd(std::string_view sourceCode, size_t braceStart)
+static size_t FindBraceBlockEnd(std::string_view sourceCode, size_t braceStart)
 {
     int depth = 1;
     size_t pos = braceStart + 1;
@@ -110,24 +108,21 @@ size_t FindBraceBlockEnd(std::string_view sourceCode, size_t braceStart)
     return n;
 }
 
-using utils::MatchKeywordPrefix;
-
-size_t SkipModifiers(std::string_view line, size_t pos)
+static size_t SkipModifiers(std::string_view line, size_t pos)
 {
-    namespace kw = parser::keywords;
     while (pos < line.size())
     {
         const std::string_view rest = line.substr(pos);
-        if (MatchKeywordPrefix(rest, kw::Abstract))
-            pos += kw::Abstract.size();
-        else if (MatchKeywordPrefix(rest, kw::Final))
-            pos += kw::Final.size();
-        else if (MatchKeywordPrefix(rest, kw::Shared))
-            pos += kw::Shared.size();
-        else if (MatchKeywordPrefix(rest, kw::External))
-            pos += kw::External.size();
-        else if (MatchKeywordPrefix(rest, kw::Mixin))
-            pos += kw::Mixin.size();
+        if (utils::MatchKeywordPrefix(rest, parser::keywords::Abstract))
+            pos += parser::keywords::Abstract.size();
+        else if (utils::MatchKeywordPrefix(rest, parser::keywords::Final))
+            pos += parser::keywords::Final.size();
+        else if (utils::MatchKeywordPrefix(rest, parser::keywords::Shared))
+            pos += parser::keywords::Shared.size();
+        else if (utils::MatchKeywordPrefix(rest, parser::keywords::External))
+            pos += parser::keywords::External.size();
+        else if (utils::MatchKeywordPrefix(rest, parser::keywords::Mixin))
+            pos += parser::keywords::Mixin.size();
         else
             break;
 
@@ -137,33 +132,32 @@ size_t SkipModifiers(std::string_view line, size_t pos)
     return pos;
 }
 
-std::string_view MatchKeyword(std::string_view rest, size_t& pos)
+static std::string_view MatchKeyword(std::string_view rest, size_t& pos)
 {
-    namespace kw = parser::keywords;
-    if (MatchKeywordPrefix(rest, kw::Class))
+    if (utils::MatchKeywordPrefix(rest, parser::keywords::Class))
     {
-        pos += kw::Class.size();
-        return kw::Class;
+        pos += parser::keywords::Class.size();
+        return parser::keywords::Class;
     }
-    if (MatchKeywordPrefix(rest, kw::Interface))
+    if (utils::MatchKeywordPrefix(rest, parser::keywords::Interface))
     {
-        pos += kw::Interface.size();
-        return kw::Interface;
+        pos += parser::keywords::Interface.size();
+        return parser::keywords::Interface;
     }
-    if (MatchKeywordPrefix(rest, kw::Enum))
+    if (utils::MatchKeywordPrefix(rest, parser::keywords::Enum))
     {
-        pos += kw::Enum.size();
-        return kw::Enum;
+        pos += parser::keywords::Enum.size();
+        return parser::keywords::Enum;
     }
-    if (MatchKeywordPrefix(rest, kw::Funcdef))
+    if (utils::MatchKeywordPrefix(rest, parser::keywords::Funcdef))
     {
-        pos += kw::Funcdef.size();
-        return kw::Funcdef;
+        pos += parser::keywords::Funcdef.size();
+        return parser::keywords::Funcdef;
     }
     return {};
 }
 
-std::string_view ExtractFuncdefName(std::string_view line, size_t pos)
+static std::string_view ExtractFuncdefName(std::string_view line, size_t pos)
 {
     const size_t lparen = line.find('(', pos);
     if (lparen == std::string_view::npos)
@@ -180,7 +174,7 @@ std::string_view ExtractFuncdefName(std::string_view line, size_t pos)
     return (start < end) ? line.substr(start, end - start) : std::string_view{};
 }
 
-std::string_view ExtractDeclarationName(std::string_view line, size_t pos, std::string_view kw)
+static std::string_view ExtractDeclarationName(std::string_view line, size_t pos, std::string_view kw)
 {
     if (kw == "funcdef")
     {
@@ -196,12 +190,12 @@ std::string_view ExtractDeclarationName(std::string_view line, size_t pos, std::
     return line.substr(nameStart, pos - nameStart);
 }
 
-bool IsControlKeyword(std::string_view name) noexcept
+static bool IsControlKeyword(std::string_view name) noexcept
 {
     return name == "if" || name == "for" || name == "while" || name == "switch" || name == "catch" || name == "return";
 }
 
-bool TryParseFunctionHeader(std::string_view line, size_t pos, std::string_view& outName) noexcept
+static bool TryParseFunctionHeader(std::string_view line, size_t pos, std::string_view& outName) noexcept
 {
     const size_t lparen = line.find('(', pos);
     if (lparen == std::string_view::npos || lparen <= pos)
@@ -244,7 +238,7 @@ bool TryParseFunctionHeader(std::string_view line, size_t pos, std::string_view&
     return true;
 }
 
-bool ParseCandidateHeader(std::string_view line, std::string_view& outKw, std::string_view& outName)
+static bool ParseCandidateHeader(std::string_view line, std::string_view& outKw, std::string_view& outName)
 {
     size_t pos = 0;
     while (pos < line.size() && (line[pos] == ' ' || line[pos] == '\t' || line[pos] == '\r'))
@@ -279,7 +273,7 @@ bool ParseCandidateHeader(std::string_view line, std::string_view& outKw, std::s
     return false;
 }
 
-void ComputeLineAndColumn(std::string_view source, size_t targetByte, size_t& outLine, size_t& outCol)
+static void ComputeLineAndColumn(std::string_view source, size_t targetByte, size_t& outLine, size_t& outCol)
 {
     outLine = 0;
     size_t lineStart = 0;
@@ -293,8 +287,6 @@ void ComputeLineAndColumn(std::string_view source, size_t targetByte, size_t& ou
     }
     outCol = targetByte >= lineStart ? (targetByte - lineStart) : 0;
 }
-
-} // namespace
 
 size_t FindBalancedDeclarationEnd(std::string_view sourceCode, size_t declStartByte, std::string_view keyword)
 {

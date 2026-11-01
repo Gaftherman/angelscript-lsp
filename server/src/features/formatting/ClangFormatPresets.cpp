@@ -4,9 +4,7 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
-void SetPresetStyle(ClangFormatStyle& style, uint32_t indent, BraceStyle brace, PointerAlignment ptr)
+static void SetPresetStyle(ClangFormatStyle& style, uint32_t indent, BraceStyle brace, PointerAlignment ptr)
 {
     style.indentWidth = indent;
     style.tabWidth = 8;
@@ -18,7 +16,7 @@ void SetPresetStyle(ClangFormatStyle& style, uint32_t indent, BraceStyle brace, 
     style.spaceBeforeParens = SpaceBeforeParensStyle::ControlStatements;
 }
 
-void ApplyClangIndentationAndBraces(FormatCodeOptions& options, const ClangFormatStyle& style)
+static void ApplyClangIndentationAndBraces(FormatCodeOptions& options, const ClangFormatStyle& style)
 {
     if (style.indentWidth.has_value())
     {
@@ -58,7 +56,7 @@ void ApplyClangIndentationAndBraces(FormatCodeOptions& options, const ClangForma
     }
 }
 
-void ApplyClangSpacingAndShortBlocks(FormatCodeOptions& options, const ClangFormatStyle& style)
+static void ApplyClangSpacingAndShortBlocks(FormatCodeOptions& options, const ClangFormatStyle& style)
 {
     if (style.spacesInsideParentheses.has_value())
     {
@@ -90,7 +88,7 @@ void ApplyClangSpacingAndShortBlocks(FormatCodeOptions& options, const ClangForm
     }
 }
 
-void ApplyClangBlockAndLimits(FormatCodeOptions& options, const ClangFormatStyle& style)
+static void ApplyClangBlockAndLimits(FormatCodeOptions& options, const ClangFormatStyle& style)
 {
     if (style.allowShortBlocksOnASingleLine.has_value())
     {
@@ -130,7 +128,6 @@ void ApplyClangBlockAndLimits(FormatCodeOptions& options, const ClangFormatStyle
         options.disableFormat = *style.disableFormat;
     }
 }
-} // namespace
 
 void ApplyBasedOnStylePreset(ClangFormatStyle& style, std::string_view preset)
 {
@@ -214,7 +211,7 @@ template <typename T> std::optional<T> ParseClangInteger(std::string_view val)
 
 /**
  * @brief Parse clang uint.
- * @param[in] val Parameter val.
+ * @param[in] val Input val for the operation.
  * @return Found item if present; std::nullopt otherwise.
  */
 std::optional<uint32_t> ParseClangUInt(std::string_view val)
@@ -224,7 +221,7 @@ std::optional<uint32_t> ParseClangUInt(std::string_view val)
 
 /**
  * @brief Parse clang int.
- * @param[in] val Parameter val.
+ * @param[in] val Input val for the operation.
  * @return Found item if present; std::nullopt otherwise.
  */
 std::optional<int32_t> ParseClangInt(std::string_view val)
@@ -234,11 +231,8 @@ std::optional<int32_t> ParseClangInt(std::string_view val)
 
 /**
  * @brief Parse clang brace style.
- * @param[in] val Parameter val.
+ * @param[in] val Input val for the operation.
  * @return Found item if present; std::nullopt otherwise.
- * @note [REFACTOR-CANDIDATE] Structural overlap (91%) with ParseClangShortFunctionStyle in
- * server/src/features/formatting/ClangFormatPresets.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
 std::optional<BraceStyle> ParseClangBraceStyle(std::string_view val)
 {
@@ -289,11 +283,8 @@ std::optional<ReferenceAlignment> ParseClangReferenceAlignment(std::string_view 
 
 /**
  * @brief Parse clang space before parens.
- * @param[in] val Parameter val.
+ * @param[in] val Input val for the operation.
  * @return Found item if present; std::nullopt otherwise.
- * @note [REFACTOR-CANDIDATE] Structural overlap (82%) with ParseClangUseTab in
- * server/src/features/formatting/ClangFormatPresets.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
 std::optional<SpaceBeforeParensStyle> ParseClangSpaceBeforeParens(std::string_view val)
 {
@@ -310,11 +301,8 @@ std::optional<SpaceBeforeParensStyle> ParseClangSpaceBeforeParens(std::string_vi
 
 /**
  * @brief Parse clang use tab.
- * @param[in] val Parameter val.
+ * @param[in] val Input val for the operation.
  * @return Found item if present; std::nullopt otherwise.
- * @note [REFACTOR-CANDIDATE] Structural overlap (82%) with ParseClangSpaceBeforeParens in
- * server/src/features/formatting/ClangFormatPresets.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
 std::optional<UseTabStyle> ParseClangUseTab(std::string_view val)
 {
@@ -344,11 +332,8 @@ std::optional<ShortBlockStyle> ParseClangShortBlockStyle(std::string_view val)
 
 /**
  * @brief Parse clang short function style.
- * @param[in] val Parameter val.
+ * @param[in] val Input val for the operation.
  * @return Found item if present; std::nullopt otherwise.
- * @note [REFACTOR-CANDIDATE] Structural overlap (91%) with ParseClangBraceStyle in
- * server/src/features/formatting/ClangFormatPresets.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
 std::optional<ShortFunctionStyle> ParseClangShortFunctionStyle(std::string_view val)
 {

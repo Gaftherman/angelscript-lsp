@@ -11,9 +11,7 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
-void CheckMemberDereference(TSNode obj, FlowState& state, NullCheckContext& ctx)
+static void CheckMemberDereference(TSNode obj, FlowState& state, NullCheckContext& ctx)
 {
     if (ts_node_is_null(obj))
     {
@@ -49,13 +47,15 @@ void CheckMemberDereference(TSNode obj, FlowState& state, NullCheckContext& ctx)
         const auto typeInfo = ExtractTypeInfoFromAST(typeNode, ctx.sourceCode);
         if (typeInfo.isHandle)
         {
-            std::string typeText = NodeText(typeNode, ctx.sourceCode);
+            std::string typeText = parser::NodeText(typeNode, ctx.sourceCode);
             ctx.diagCtx.EmitAtRange(ToSourceRange(obj), diagnostics::codes::PossibleNullDereference, typeText,
                                     DiagnosticSeverity::Warning);
         }
     }
 }
 
+namespace null_safety_expr_detail
+{
 enum class ExprActionKind : uint8_t
 {
     Eval,
@@ -63,7 +63,12 @@ enum class ExprActionKind : uint8_t
     AfterLeftOr,
     RestoreVars
 };
+} // namespace null_safety_expr_detail
 
+using ExprActionKind = null_safety_expr_detail::ExprActionKind;
+
+namespace null_safety_expr_detail
+{
 /**
  * @brief Represents Expr stack frame.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -74,9 +79,12 @@ struct ExprStackFrame
     TSNode node;
     decltype(FlowState::vars) savedVars;
 };
+} // namespace null_safety_expr_detail
 
-void DispatchNonBinaryExpr(TSNode expr, TSSymbol sym, const parser::GrammarSymbols& gs,
-                           std::vector<ExprStackFrame>& stack, FlowState& state, NullCheckContext& ctx)
+using ExprStackFrame = null_safety_expr_detail::ExprStackFrame;
+
+static void DispatchNonBinaryExpr(TSNode expr, TSSymbol sym, const parser::GrammarSymbols& gs,
+                                  std::vector<ExprStackFrame>& stack, FlowState& state, NullCheckContext& ctx)
 {
     if (sym == gs.symMemberExpression)
     {
@@ -117,7 +125,7 @@ void DispatchNonBinaryExpr(TSNode expr, TSSymbol sym, const parser::GrammarSymbo
     }
 }
 
-void DispatchBinaryExpr(TSNode expr, const parser::GrammarSymbols& gs, std::vector<ExprStackFrame>& stack)
+static void DispatchBinaryExpr(TSNode expr, const parser::GrammarSymbols& gs, std::vector<ExprStackFrame>& stack)
 {
     TSNode opNode = parser::GetChildByField(expr, gs.fieldOperator);
     const TSSymbol opSym = ts_node_symbol(opNode);
@@ -141,8 +149,8 @@ void DispatchBinaryExpr(TSNode expr, const parser::GrammarSymbols& gs, std::vect
     }
 }
 
-void ProcessAfterLeft(const ExprStackFrame& frame, bool isAnd, const parser::GrammarSymbols& gs,
-                      std::vector<ExprStackFrame>& stack, FlowState& state, NullCheckContext& ctx)
+static void ProcessAfterLeft(const ExprStackFrame& frame, bool isAnd, const parser::GrammarSymbols& gs,
+                             std::vector<ExprStackFrame>& stack, FlowState& state, NullCheckContext& ctx)
 {
     TSNode left = parser::GetChildByField(frame.node, gs.fieldLeft);
     TSNode right = parser::GetChildByField(frame.node, gs.fieldRight);
@@ -157,7 +165,6 @@ void ProcessAfterLeft(const ExprStackFrame& frame, bool isAnd, const parser::Gra
     stack.push_back({ExprActionKind::RestoreVars, TSNode{}, std::move(savedVars)});
     stack.push_back({ExprActionKind::Eval, right, {}});
 }
-} // namespace
 
 void CheckNullExpression(TSNode expr, FlowState& state, NullCheckContext& ctx)
 {

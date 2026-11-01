@@ -7,11 +7,9 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 
-void InsertIfIdentifier(TSNode node, std::string_view sourceCode,
-                        ankerl::unordered_dense::set<std::string>& mutatedVars)
+static void InsertIfIdentifier(TSNode node, std::string_view sourceCode,
+                               ankerl::unordered_dense::set<std::string>& mutatedVars)
 {
     if (ts_node_is_null(node))
     {
@@ -21,23 +19,23 @@ void InsertIfIdentifier(TSNode node, std::string_view sourceCode,
     const TSSymbol t = ts_node_symbol(node);
     if (t == gs.symIdentifier || t == gs.symScopedIdentifier)
     {
-        if (std::string varName = GetNodeText(node, sourceCode); !varName.empty())
+        if (std::string varName = parser::GetNodeText(node, sourceCode); !varName.empty())
         {
             mutatedVars.insert(std::move(varName));
         }
     }
 }
 
-void CheckAssignmentMutation(TSNode curr, std::string_view sourceCode,
-                             ankerl::unordered_dense::set<std::string>& mutatedVars)
+static void CheckAssignmentMutation(TSNode curr, std::string_view sourceCode,
+                                    ankerl::unordered_dense::set<std::string>& mutatedVars)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode left = parser::GetChildByField(curr, gs.fieldLeft);
     InsertIfIdentifier(left, sourceCode, mutatedVars);
 }
 
-void CheckIncDecMutation(TSNode curr, std::string_view sourceCode,
-                         ankerl::unordered_dense::set<std::string>& mutatedVars)
+static void CheckIncDecMutation(TSNode curr, std::string_view sourceCode,
+                                ankerl::unordered_dense::set<std::string>& mutatedVars)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode opNode = parser::GetChildByField(curr, gs.fieldOperator);
@@ -51,14 +49,15 @@ void CheckIncDecMutation(TSNode curr, std::string_view sourceCode,
 
 /**
  * @brief Check call mutation.
- * @param[in] curr Parameter curr.
+ * @param[in] curr Input curr for the operation.
  * @param[in] sourceCode Script source code view.
- * @param[in,out] mutatedVars Parameter mutatedVars.
+ * @param[in,out] mutatedVars Input mutatedVars for the operation.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier /
  * Symbol::modifiers.isReturnReference.
  */
-void CheckCallMutation(TSNode curr, std::string_view sourceCode, ankerl::unordered_dense::set<std::string>& mutatedVars)
+static void CheckCallMutation(TSNode curr, std::string_view sourceCode,
+                              ankerl::unordered_dense::set<std::string>& mutatedVars)
 {
     TSNode argsNode = parser::GetChildByField(curr, parser::GetGrammarSymbols().fieldArguments);
     if (ts_node_is_null(argsNode))
@@ -83,8 +82,8 @@ void CheckCallMutation(TSNode curr, std::string_view sourceCode, ankerl::unorder
     }
 }
 
-void CheckNodeMutations(TSNode curr, std::string_view sourceCode,
-                        ankerl::unordered_dense::set<std::string>& mutatedVars)
+static void CheckNodeMutations(TSNode curr, std::string_view sourceCode,
+                               ankerl::unordered_dense::set<std::string>& mutatedVars)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol type = ts_node_symbol(curr);
@@ -102,7 +101,8 @@ void CheckNodeMutations(TSNode curr, std::string_view sourceCode,
     }
 }
 
-bool IsVariableReferencedAfter(const analysis::Scope* fnScope, const std::string& name, uint32_t line, uint32_t col = 0)
+static bool IsVariableReferencedAfter(const analysis::Scope* fnScope, const std::string& name, uint32_t line,
+                                      uint32_t col = 0)
 {
     if (!fnScope)
     {
@@ -136,7 +136,7 @@ bool IsVariableReferencedAfter(const analysis::Scope* fnScope, const std::string
     return false;
 }
 
-const analysis::LocalDefinition* FindDefinitionInScopeTree(const analysis::Scope* root, const std::string& name)
+static const analysis::LocalDefinition* FindDefinitionInScopeTree(const analysis::Scope* root, const std::string& name)
 {
     if (!root)
     {
@@ -167,6 +167,8 @@ const analysis::LocalDefinition* FindDefinitionInScopeTree(const analysis::Scope
     return nullptr;
 }
 
+namespace code_action_extract_method_outputs_detail
+{
 /**
  * @brief Represents Method output context.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -177,8 +179,11 @@ struct MethodOutputContext
     const analysis::Scope* fnScope;
     const analysis::Scope* stmtScope;
 };
+} // namespace code_action_extract_method_outputs_detail
 
-const analysis::LocalDefinition* FindVariableDefinition(const MethodOutputContext& ctx, const std::string& name)
+using MethodOutputContext = code_action_extract_method_outputs_detail::MethodOutputContext;
+
+static const analysis::LocalDefinition* FindVariableDefinition(const MethodOutputContext& ctx, const std::string& name)
 {
     if (ctx.stmtScope)
     {
@@ -198,7 +203,7 @@ const analysis::LocalDefinition* FindVariableDefinition(const MethodOutputContex
     return nullptr;
 }
 
-bool IsValidMutatedOutput(const MethodOutputContext& ctx, const analysis::LocalDefinition* def)
+static bool IsValidMutatedOutput(const MethodOutputContext& ctx, const analysis::LocalDefinition* def)
 {
     if (!def)
     {
@@ -220,8 +225,10 @@ bool IsValidMutatedOutput(const MethodOutputContext& ctx, const analysis::LocalD
            IsVariableReferencedAfter(ctx.fnScope, def->name, ctx.stmts.lastEnd.row, ctx.stmts.lastEnd.column);
 }
 
-void CollectMutatedOutputs(const MethodOutputContext& ctx, const ankerl::unordered_dense::set<std::string>& mutatedVars,
-                           ankerl::unordered_dense::set<std::string>& seenOutputs, std::vector<VarInfo>& outputVars)
+static void CollectMutatedOutputs(const MethodOutputContext& ctx,
+                                  const ankerl::unordered_dense::set<std::string>& mutatedVars,
+                                  ankerl::unordered_dense::set<std::string>& seenOutputs,
+                                  std::vector<VarInfo>& outputVars)
 {
     for (const auto& mName : mutatedVars)
     {
@@ -235,9 +242,9 @@ void CollectMutatedOutputs(const MethodOutputContext& ctx, const ankerl::unorder
     }
 }
 
-void CollectInternalDefinitionsUsedAfter(const ExtractMethodStatements& stmts, const analysis::Scope* fnScope,
-                                         ankerl::unordered_dense::set<std::string>& seenOutputs,
-                                         std::vector<VarInfo>& outputVars)
+static void CollectInternalDefinitionsUsedAfter(const ExtractMethodStatements& stmts, const analysis::Scope* fnScope,
+                                                ankerl::unordered_dense::set<std::string>& seenOutputs,
+                                                std::vector<VarInfo>& outputVars)
 {
     if (!fnScope)
     {
@@ -275,14 +282,14 @@ void CollectInternalDefinitionsUsedAfter(const ExtractMethodStatements& stmts, c
 
 /**
  * @brief Traverse subtree mutations.
- * @param[in] root Parameter root.
- * @param[in] sourceCode Parameter sourceCode.
- * @param[in,out] mutatedVars Parameter mutatedVars.
+ * @param[in] root Root AST node of the document or tree.
+ * @param[in] sourceCode Document source text.
+ * @param[in,out] mutatedVars Input mutatedVars for the operation.
  * @note [REFACTOR-CANDIDATE] Structural overlap (93%) with TraverseTree in server/src/analysis/NodeIndex.cpp. Candidate
  * for unification in server/src/analysis/SemanticHelpers.h.
  */
-void TraverseSubtreeMutations(TSNode root, std::string_view sourceCode,
-                              ankerl::unordered_dense::set<std::string>& mutatedVars)
+static void TraverseSubtreeMutations(TSNode root, std::string_view sourceCode,
+                                     ankerl::unordered_dense::set<std::string>& mutatedVars)
 {
     if (ts_node_is_null(root))
     {
@@ -320,8 +327,6 @@ void TraverseSubtreeMutations(TSNode root, std::string_view sourceCode,
     }
     ts_tree_cursor_delete(&cursor);
 }
-
-} // namespace
 
 ankerl::unordered_dense::set<std::string> CollectMutatedVariables(const std::vector<TSNode>& stmts,
                                                                   std::string_view sourceCode)

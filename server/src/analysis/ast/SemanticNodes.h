@@ -87,7 +87,9 @@ class AstNodeView
 class IfStatementView : public AstNodeView
 {
   public:
-    using AstNodeView::AstNodeView;
+    constexpr IfStatementView(TSNode rawNode, std::string_view sourceCode) noexcept : AstNodeView(rawNode, sourceCode)
+    {
+    }
 
     /** @brief Evaluates condition AST node. */
     [[nodiscard]] TSNode Condition() const noexcept;
@@ -108,7 +110,10 @@ class IfStatementView : public AstNodeView
 class ReturnStatementView : public AstNodeView
 {
   public:
-    using AstNodeView::AstNodeView;
+    constexpr ReturnStatementView(TSNode rawNode, std::string_view sourceCode) noexcept
+        : AstNodeView(rawNode, sourceCode)
+    {
+    }
 
     /** @brief Evaluates the returned expression value node if present. */
     [[nodiscard]] TSNode Value() const noexcept;
@@ -123,7 +128,10 @@ class ReturnStatementView : public AstNodeView
 class CallExpressionView : public AstNodeView
 {
   public:
-    using AstNodeView::AstNodeView;
+    constexpr CallExpressionView(TSNode rawNode, std::string_view sourceCode) noexcept
+        : AstNodeView(rawNode, sourceCode)
+    {
+    }
 
     /** @brief Returns the callee expression or function identifier node. */
     [[nodiscard]] TSNode Callee() const noexcept;

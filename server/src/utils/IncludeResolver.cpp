@@ -13,9 +13,7 @@
 
 namespace angel_lsp::utils
 {
-namespace
-{
-std::atomic<bool> s_isolatedHarnessMode{false};
+static std::atomic<bool> s_isolatedHarnessMode{false};
 
 /**
  * @brief Canonical form of a directory, remembered so a workspace walk pays for it once.
@@ -44,19 +42,19 @@ std::atomic<bool> s_isolatedHarnessMode{false};
  * answer stays the path that directory had when it was first seen, which is also what every
  * document already indexed is keyed by.
  */
-std::mutex& CanonicalDirectoryMutex()
+static std::mutex& CanonicalDirectoryMutex()
 {
     static std::mutex mutex;
     return mutex;
 }
 
-std::unordered_map<std::string, std::string>& CanonicalDirectoryCache()
+static std::unordered_map<std::string, std::string>& CanonicalDirectoryCache()
 {
     static std::unordered_map<std::string, std::string> cache;
     return cache;
 }
 
-std::string CanonicalDirectory(const std::filesystem::path& directory)
+static std::string CanonicalDirectory(const std::filesystem::path& directory)
 {
     std::mutex& mutex = CanonicalDirectoryMutex();
     std::unordered_map<std::string, std::string>& cache = CanonicalDirectoryCache();
@@ -90,7 +88,7 @@ std::string CanonicalDirectory(const std::filesystem::path& directory)
  * @param p The path to normalize.
  * @return Normalized path string with forward slashes.
  */
-std::string TrimAndSlash(std::string s)
+static std::string TrimAndSlash(std::string s)
 {
 #if defined(_WIN32)
     if (s.rfind("\\\\?\\", 0) == 0)
@@ -102,7 +100,7 @@ std::string TrimAndSlash(std::string s)
     return s;
 }
 
-std::string NormalizePathString(const std::filesystem::path& p)
+static std::string NormalizePathString(const std::filesystem::path& p)
 {
     std::error_code ec;
     std::filesystem::path canonicalPath = std::filesystem::weakly_canonical(p, ec);
@@ -122,16 +120,18 @@ std::string NormalizePathString(const std::filesystem::path& p)
     return s;
 }
 
-bool IsSpaceOrTab(char c)
+static bool IsSpaceOrTab(char c)
 {
     return c == ' ' || c == '\t';
 }
 
-bool IsIncludeQuote(char c)
+static bool IsIncludeQuote(char c)
 {
     return c == '"' || c == '\'' || c == '<';
 }
 
+namespace include_resolver_detail
+{
 /**
  * @brief Represents Include scan state.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -142,8 +142,11 @@ struct IncludeScanState
     size_t currentLine{0};
     bool atLineStart{true};
 };
+} // namespace include_resolver_detail
 
-bool HandleIncludeNewline(std::string_view sourceCode, IncludeScanState& state)
+using IncludeScanState = include_resolver_detail::IncludeScanState;
+
+static bool HandleIncludeNewline(std::string_view sourceCode, IncludeScanState& state)
 {
     const char c = sourceCode[state.index];
     if (c == '\r')
@@ -167,7 +170,7 @@ bool HandleIncludeNewline(std::string_view sourceCode, IncludeScanState& state)
     return false;
 }
 
-void SkipLineComment(std::string_view sourceCode, IncludeScanState& state)
+static void SkipLineComment(std::string_view sourceCode, IncludeScanState& state)
 {
     state.index += 2;
     const size_t n = sourceCode.size();
@@ -177,7 +180,7 @@ void SkipLineComment(std::string_view sourceCode, IncludeScanState& state)
     }
 }
 
-void SkipBlockComment(std::string_view sourceCode, IncludeScanState& state)
+static void SkipBlockComment(std::string_view sourceCode, IncludeScanState& state)
 {
     state.index += 2;
     const size_t n = sourceCode.size();
@@ -206,7 +209,7 @@ void SkipBlockComment(std::string_view sourceCode, IncludeScanState& state)
     }
 }
 
-bool TrySkipComment(std::string_view sourceCode, IncludeScanState& state)
+static bool TrySkipComment(std::string_view sourceCode, IncludeScanState& state)
 {
     return TrySkipCommentDispatch(sourceCode, state, SkipLineComment, SkipBlockComment);
 }
@@ -217,7 +220,7 @@ bool TrySkipComment(std::string_view sourceCode, IncludeScanState& state)
  * @param[in,out] state Include scan state.
  * @return True if a line break was consumed.
  */
-inline bool TryAdvanceLineBreak(std::string_view sourceCode, IncludeScanState& state) noexcept
+static inline bool TryAdvanceLineBreak(std::string_view sourceCode, IncludeScanState& state) noexcept
 {
     const size_t n = sourceCode.size();
     if (sourceCode[state.index] == '\r')
@@ -237,7 +240,7 @@ inline bool TryAdvanceLineBreak(std::string_view sourceCode, IncludeScanState& s
     return false;
 }
 
-void SkipVerbatimString(std::string_view sourceCode, IncludeScanState& state)
+static void SkipVerbatimString(std::string_view sourceCode, IncludeScanState& state)
 {
     state.atLineStart = false;
     state.index += 2;
@@ -262,7 +265,7 @@ void SkipVerbatimString(std::string_view sourceCode, IncludeScanState& state)
     }
 }
 
-void SkipMultilineString(std::string_view sourceCode, IncludeScanState& state)
+static void SkipMultilineString(std::string_view sourceCode, IncludeScanState& state)
 {
     state.index += 3;
     const size_t n = sourceCode.size();
@@ -282,12 +285,12 @@ void SkipMultilineString(std::string_view sourceCode, IncludeScanState& state)
     }
 }
 
-void SkipEscapedString(std::string_view sourceCode, IncludeScanState& state, char quote)
+static void SkipEscapedString(std::string_view sourceCode, IncludeScanState& state, char quote)
 {
     SkipEscapedStringLiteral(sourceCode, state.index, quote);
 }
 
-bool TrySkipString(std::string_view sourceCode, IncludeScanState& state)
+static bool TrySkipString(std::string_view sourceCode, IncludeScanState& state)
 {
     const char c = sourceCode[state.index];
     const size_t n = sourceCode.size();
@@ -318,7 +321,7 @@ bool TrySkipString(std::string_view sourceCode, IncludeScanState& state)
     return false;
 }
 
-void SkipSpacesAndTabs(std::string_view sourceCode, IncludeScanState& state)
+static void SkipSpacesAndTabs(std::string_view sourceCode, IncludeScanState& state)
 {
     const size_t n = sourceCode.size();
     while (state.index < n && IsSpaceOrTab(sourceCode[state.index]))
@@ -327,7 +330,7 @@ void SkipSpacesAndTabs(std::string_view sourceCode, IncludeScanState& state)
     }
 }
 
-void SkipDirectiveRemainder(std::string_view sourceCode, IncludeScanState& state)
+static void SkipDirectiveRemainder(std::string_view sourceCode, IncludeScanState& state)
 {
     const size_t n = sourceCode.size();
     while (state.index < n && sourceCode[state.index] != '\n' && sourceCode[state.index] != '\r')
@@ -336,7 +339,7 @@ void SkipDirectiveRemainder(std::string_view sourceCode, IncludeScanState& state
     }
 }
 
-std::optional<IncludeDirective> TryExtractDirective(std::string_view sourceCode, IncludeScanState& state)
+static std::optional<IncludeDirective> TryExtractDirective(std::string_view sourceCode, IncludeScanState& state)
 {
     const size_t directiveLine = state.currentLine;
     const size_t n = sourceCode.size();
@@ -399,8 +402,8 @@ std::optional<IncludeDirective> TryExtractDirective(std::string_view sourceCode,
     return result;
 }
 
-std::filesystem::path FirstExisting(const std::filesystem::path& directory, const std::filesystem::path& name,
-                                    std::string_view implicitExtension)
+static std::filesystem::path FirstExisting(const std::filesystem::path& directory, const std::filesystem::path& name,
+                                           std::string_view implicitExtension)
 {
 #if defined(_WIN32)
     const std::string nameStr = name.string();
@@ -432,7 +435,7 @@ std::filesystem::path FirstExisting(const std::filesystem::path& directory, cons
     return {};
 }
 
-std::filesystem::path GetParentDirectory(std::string_view currentFilePath)
+static std::filesystem::path GetParentDirectory(std::string_view currentFilePath)
 {
     std::error_code ec;
     std::filesystem::path currentPath(currentFilePath);
@@ -447,9 +450,9 @@ std::filesystem::path GetParentDirectory(std::string_view currentFilePath)
     return std::filesystem::current_path(ec);
 }
 
-std::filesystem::path SearchInDirectories(const std::filesystem::path& inc,
-                                          std::span<const std::string> searchDirectories,
-                                          std::string_view implicitExtension)
+static std::filesystem::path SearchInDirectories(const std::filesystem::path& inc,
+                                                 std::span<const std::string> searchDirectories,
+                                                 std::string_view implicitExtension)
 {
     for (const auto& dir : searchDirectories)
     {
@@ -466,7 +469,6 @@ std::filesystem::path SearchInDirectories(const std::filesystem::path& inc,
     }
     return {};
 }
-} // namespace
 
 std::string IncludeResolver::NormalizePath(const std::filesystem::path& path)
 {

@@ -7,8 +7,6 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 /**
  * @brief Byte span of the path inside an `#include` directive, excluding its delimiters.
  *
@@ -18,7 +16,7 @@ namespace
  *
  * @return Start and end byte columns, or std::nullopt when the line holds no delimited path.
  */
-std::optional<std::pair<uint32_t, uint32_t>> FindPathSpan(std::string_view line, bool isAngled)
+static std::optional<std::pair<uint32_t, uint32_t>> FindPathSpan(std::string_view line, bool isAngled)
 {
     const char open = isAngled ? '<' : '"';
     const char close = isAngled ? '>' : '"';
@@ -37,7 +35,7 @@ std::optional<std::pair<uint32_t, uint32_t>> FindPathSpan(std::string_view line,
 /**
  * @brief Filesystem path of the document being inspected, or empty for a non-file URI.
  */
-std::string DocumentPath(const std::string& uriStr)
+static std::string DocumentPath(const std::string& uriStr)
 {
     const lsp::Uri uri = lsp::Uri::parse(uriStr);
     if (!uri.isValid() || !uri.isFileUri())
@@ -45,15 +43,11 @@ std::string DocumentPath(const std::string& uriStr)
 
     return utils::IncludeResolver::NormalizePath(uri.fsPath());
 }
-} // namespace
 
 /**
  * @brief Get document links.
- * @param[in] request Parameter request.
+ * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
  * @return Found item if present; std::nullopt otherwise.
- * @note [REFACTOR-CANDIDATE] Structural overlap (74%) with GetUnresolvedIncludeDiagnostics in
- * server/src/features/document_link/DocumentLinkHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
 std::optional<DocumentLinkResult> GetDocumentLinks(const DocumentLinkRequest& request)
 {
@@ -104,11 +98,8 @@ std::optional<DocumentLinkResult> GetDocumentLinks(const DocumentLinkRequest& re
 
 /**
  * @brief Get unresolved include diagnostics.
- * @param[in] request Parameter request.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (74%) with GetDocumentLinks in
- * server/src/features/document_link/DocumentLinkHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
+ * @return Calculated or extracted result of the operation.
  */
 std::vector<analysis::Diagnostic> GetUnresolvedIncludeDiagnostics(const DocumentLinkRequest& request)
 {

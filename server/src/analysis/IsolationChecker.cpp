@@ -13,24 +13,19 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
 
-std::string TrimWhitespace(std::string_view text)
+static std::string TrimWhitespace(std::string_view text)
 {
     return std::string(utils::TrimView(text));
 }
 
 /**
  * @brief Clean shared type name.
- * @param[in] raw Parameter raw.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with TrimNodeText in
- * server/src/features/inlay_hint/InlayHintHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read
+ * @param[in] raw Input raw for the operation.
+ * @return Calculated or extracted result of the operation.
  * via TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
-std::string CleanSharedTypeName(std::string_view raw)
+static std::string CleanSharedTypeName(std::string_view raw)
 {
     std::string_view sv = raw;
     TrimTypeWhitespace(sv);
@@ -38,7 +33,7 @@ std::string CleanSharedTypeName(std::string_view raw)
     return std::string(sv);
 }
 
-bool IsSymbolShared(const Symbol& s)
+static bool IsSymbolShared(const Symbol& s)
 {
     switch (s.type)
     {
@@ -55,7 +50,7 @@ bool IsSymbolShared(const Symbol& s)
     }
 }
 
-bool IsCoreOrRegisteredType(std::string_view typeName, const SemanticAnalysisRequest& request)
+static bool IsCoreOrRegisteredType(std::string_view typeName, const SemanticAnalysisRequest& request)
 {
     return typeName.empty() || IsCorePrimitive(typeName) || typeName == request.GetStringTypeName() ||
            typeName == request.GetArrayTypeName() || request.IsRegisteredSymbol(std::string(typeName));
@@ -68,7 +63,7 @@ bool IsCoreOrRegisteredType(std::string_view typeName, const SemanticAnalysisReq
  * when the point lies outside the root, this one hands back the root. The shared-isolation
  * walk needs a scope for every node it visits, so the fallback is the behaviour it wants.
  */
-const Scope* FindEnclosingScopeOrRoot(const Scope* root, uint32_t line, uint32_t character)
+static const Scope* FindEnclosingScopeOrRoot(const Scope* root, uint32_t line, uint32_t character)
 {
     if (!root)
     {
@@ -99,7 +94,7 @@ const Scope* FindEnclosingScopeOrRoot(const Scope* root, uint32_t line, uint32_t
     }
 }
 
-bool IsLocalVariableOrParameter(const Scope* startScope, std::string_view name)
+static bool IsLocalVariableOrParameter(const Scope* startScope, std::string_view name)
 {
     const Scope* cur = startScope;
     while (cur)
@@ -125,7 +120,7 @@ bool IsLocalVariableOrParameter(const Scope* startScope, std::string_view name)
     return false;
 }
 
-bool NodeHasModifierToken(TSNode node, TSSymbol targetSym)
+static bool NodeHasModifierToken(TSNode node, TSSymbol targetSym)
 {
     if (ts_node_is_null(node))
     {
@@ -162,7 +157,7 @@ bool NodeHasModifierToken(TSNode node, TSSymbol targetSym)
     return found;
 }
 
-bool ContainsSymbolDescendant(TSNode root, TSSymbol targetSym) noexcept
+static bool ContainsSymbolDescendant(TSNode root, TSSymbol targetSym) noexcept
 {
     if (ts_node_is_null(root))
     {
@@ -201,13 +196,13 @@ bool ContainsSymbolDescendant(TSNode root, TSSymbol targetSym) noexcept
     return found;
 }
 
-bool IsAllowedSharedSymbol(TSSymbol declSym, const parser::GrammarSymbols& gs) noexcept
+static bool IsAllowedSharedSymbol(TSSymbol declSym, const parser::GrammarSymbols& gs) noexcept
 {
     return declSym == gs.symClassDeclaration || declSym == gs.symInterfaceDeclaration ||
            declSym == gs.symFuncdefDeclaration || declSym == gs.symFuncDeclaration;
 }
 
-bool IsValidEnumSharedModifier(TSNode parent, const parser::GrammarSymbols& gs) noexcept
+static bool IsValidEnumSharedModifier(TSNode parent, const parser::GrammarSymbols& gs) noexcept
 {
     TSNode next = ts_node_next_sibling(parent);
     while (!ts_node_is_null(next))
@@ -227,7 +222,7 @@ bool IsValidEnumSharedModifier(TSNode parent, const parser::GrammarSymbols& gs) 
     return true;
 }
 
-bool IsValidSharedNode(TSNode sharedNode)
+static bool IsValidSharedNode(TSNode sharedNode)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode parent = parser::GetParent(sharedNode);
@@ -260,7 +255,7 @@ bool IsValidSharedNode(TSNode sharedNode)
     return false;
 }
 
-void CheckSharedEntityEligibility(const IsolationCheckRequest& request, DiagnosticContext& ctx)
+static void CheckSharedEntityEligibility(const IsolationCheckRequest& request, DiagnosticContext& ctx)
 {
     if (!request.nodeIndex)
     {
@@ -286,13 +281,13 @@ void CheckSharedEntityEligibility(const IsolationCheckRequest& request, Diagnost
     }
 }
 
-bool IsCallFunctionNode(TSNode p, TSNode node)
+static bool IsCallFunctionNode(TSNode p, TSNode node)
 {
     TSNode fn = parser::GetCallCallee(p);
     return !ts_node_is_null(fn) && (fn.id == node.id || parser::GetParent(node).id == fn.id);
 }
 
-bool IsDeclarationNameNode(TSNode p, TSNode node, TSSymbol pSym)
+static bool IsDeclarationNameNode(TSNode p, TSNode node, TSSymbol pSym)
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (pSym == gs.symVariableDeclarator)
@@ -315,6 +310,8 @@ bool IsDeclarationNameNode(TSNode p, TSNode node, TSSymbol pSym)
     return false;
 }
 
+namespace isolation_checker_detail
+{
 /**
  * @brief Represents Isolation visitor.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -357,7 +354,7 @@ struct IsolationVisitor
         }
 
         TSNode nameNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName);
-        std::string funcName = GetNodeText(nameNode, request.sourceCode);
+        std::string funcName = parser::GetNodeText(nameNode, request.sourceCode);
         if (!funcName.empty())
         {
             auto syms = currentClassName.empty()
@@ -380,7 +377,7 @@ struct IsolationVisitor
 
     void CheckSharedDatatype(TSNode node)
     {
-        std::string typeName = CleanSharedTypeName(GetNodeText(node, request.sourceCode));
+        std::string typeName = CleanSharedTypeName(parser::GetNodeText(node, request.sourceCode));
         if (IsCoreOrRegisteredType(typeName, ctx.request))
         {
             return;
@@ -436,7 +433,7 @@ struct IsolationVisitor
             return;
         }
 
-        std::string calleeName = TrimWhitespace(GetNodeText(funcNode, request.sourceCode));
+        std::string calleeName = TrimWhitespace(parser::GetNodeText(funcNode, request.sourceCode));
         if (calleeName.empty() || IsAllowedCallee(calleeName))
         {
             return;
@@ -516,7 +513,7 @@ struct IsolationVisitor
             return;
         }
 
-        std::string varName = TrimWhitespace(GetNodeText(node, request.sourceCode));
+        std::string varName = TrimWhitespace(parser::GetNodeText(node, request.sourceCode));
         if (varName.empty() || IsAllowedVariable(varName, node))
         {
             return;
@@ -591,7 +588,7 @@ struct IsolationVisitor
             if (nodeSym == gs.symClassDeclaration)
             {
                 TSNode nameNode = parser::GetChildByField(node, gs.fieldName);
-                std::string className = GetNodeText(nameNode, request.sourceCode);
+                std::string className = parser::GetNodeText(nameNode, request.sourceCode);
                 bool classShared = IsClassShared(node, className);
                 PushChildren(node, className, classShared, classShared, worklist);
                 continue;
@@ -624,7 +621,9 @@ struct IsolationVisitor
         }
     }
 };
-} // namespace
+} // namespace isolation_checker_detail
+
+using IsolationVisitor = isolation_checker_detail::IsolationVisitor;
 
 void CheckSharedIsolation(const IsolationCheckRequest& request, DiagnosticContext& ctx)
 {

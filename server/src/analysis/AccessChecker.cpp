@@ -19,22 +19,20 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
 /** @brief Compares two type names by their last segment, so a qualification cannot hide a match. */
-bool IsSameType(std::string_view a, std::string_view b)
+static bool IsSameType(std::string_view a, std::string_view b)
 {
     return !a.empty() && (a == b || LastScopeSegment(a) == LastScopeSegment(b));
 }
 
 /** @brief True when derived is base, or reaches it through its declared base chain. */
-bool DerivesFrom(std::string_view derived, std::string_view base, const SymbolTable& table)
+static bool DerivesFrom(std::string_view derived, std::string_view base, const SymbolTable& table)
 {
     return IsDerivedFrom(derived, base, table);
 }
 
 /** @brief The access modifier a declaration carries, whatever kind of declaration it is. */
-bool TryReadAccess(const Symbol& sym, AccessModifier& access)
+static bool TryReadAccess(const Symbol& sym, AccessModifier& access)
 {
     if (std::holds_alternative<FunctionSignature>(sym.signature))
     {
@@ -49,10 +47,10 @@ bool TryReadAccess(const Symbol& sym, AccessModifier& access)
     return false;
 }
 
+namespace access_checker_detail
+{
 /**
  * @brief What the pass concluded about one `object.member` pair.
- * @note [REFACTOR-CANDIDATE] Clustered under Member Access & Scope Lookup Context. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
 struct MemberAccess
 {
@@ -72,6 +70,9 @@ struct MemberAccess
      */
     bool viaAccessor = false;
 };
+} // namespace access_checker_detail
+
+using MemberAccess = access_checker_detail::MemberAccess;
 
 /**
  * @brief Finds the declaration a member name reaches through a type's inheritance chain.
@@ -97,7 +98,7 @@ struct MemberAccess
  * `c.V` is answered with "'V' is not a member of 'C'". Under mode 3, accessors require
  * the explicit 'property' keyword decoration, whereas mode 2 accepts implicit accessor methods.
  */
-bool AccessorStandsForProperty(const Symbol& sym, bool keywordRequired)
+static bool AccessorStandsForProperty(const Symbol& sym, bool keywordRequired)
 {
     if (!keywordRequired)
     {
@@ -105,18 +106,6 @@ bool AccessorStandsForProperty(const Symbol& sym, bool keywordRequired)
     }
     return std::holds_alternative<FunctionSignature>(sym.signature) && sym.GetFunction().modifiers.isProperty;
 }
-
-/**
- * @brief Context bundled for member lookup across type hierarchies.
- * @note [REFACTOR-CANDIDATE] Clustered under Member Access & Scope Lookup Context. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
- */
-struct MemberLookupContext
-{
-    std::string typeName;
-    const SymbolTable& table;
-    bool accessorKeywordRequired = false;
-};
 
 /**
  * @brief Collects symbols matching the member name directly on the specified owner type.
@@ -127,8 +116,8 @@ struct MemberLookupContext
  * @param[out] viaAccessor Set to true if match was via getter/setter accessor.
  * @return Vector of matched symbols.
  */
-std::vector<Symbol> CollectDirectCandidates(const std::string& owner, const std::string& memberName,
-                                            const MemberLookupContext& ctx, bool& viaAccessor)
+static std::vector<Symbol> CollectDirectCandidates(const std::string& owner, const std::string& memberName,
+                                                   const MemberLookupContext& ctx, bool& viaAccessor)
 {
     std::vector<Symbol> candidates;
     auto candidatesPtr = ctx.table.FindMemberSymbolPtr(owner, memberName);
@@ -190,8 +179,8 @@ std::vector<Symbol> CollectDirectCandidates(const std::string& owner, const std:
  * @param[out] viaAccessor Set to true if match was via getter/setter accessor.
  * @return Vector of matched symbols.
  */
-std::vector<Symbol> CollectContainerCandidates(const std::string& owner, const std::string& memberName,
-                                               const MemberLookupContext& ctx, bool& viaAccessor)
+static std::vector<Symbol> CollectContainerCandidates(const std::string& owner, const std::string& memberName,
+                                                      const MemberLookupContext& ctx, bool& viaAccessor)
 {
     std::vector<Symbol> candidates;
     if (auto memberSyms = ctx.table.FindSymbolsPtr(memberName))
@@ -235,8 +224,8 @@ std::vector<Symbol> CollectContainerCandidates(const std::string& owner, const s
  * @param[out] viaAccessor Set to true if match was via getter/setter accessor.
  * @return Vector of candidate symbols.
  */
-std::vector<Symbol> CollectOwnerCandidates(const std::string& owner, const std::string& memberName,
-                                           const MemberLookupContext& ctx, bool& viaAccessor)
+static std::vector<Symbol> CollectOwnerCandidates(const std::string& owner, const std::string& memberName,
+                                                  const MemberLookupContext& ctx, bool& viaAccessor)
 {
     auto candidates = CollectDirectCandidates(owner, memberName, ctx, viaAccessor);
     if (candidates.empty())
@@ -255,8 +244,8 @@ std::vector<Symbol> CollectOwnerCandidates(const std::string& owner, const std::
  * @param[in,out] result Member access state to update.
  * @return True if resolution concluded (public access reached).
  */
-bool ApplyCandidatesAccess(const std::vector<Symbol>& candidates, const std::string& owner,
-                           const MemberLookupContext& ctx, MemberAccess& result)
+static bool ApplyCandidatesAccess(const std::vector<Symbol>& candidates, const std::string& owner,
+                                  const MemberLookupContext& ctx, MemberAccess& result)
 {
     for (const auto& sym : candidates)
     {
@@ -286,8 +275,8 @@ bool ApplyCandidatesAccess(const std::vector<Symbol>& candidates, const std::str
     return false;
 }
 
-MemberAccess FindMember(const std::string& typeName, const std::string& memberName, const SymbolTable& table,
-                        bool accessorKeywordRequired)
+static MemberAccess FindMember(const std::string& typeName, const std::string& memberName, const SymbolTable& table,
+                               bool accessorKeywordRequired)
 {
     MemberAccess result;
     if (typeName.empty() || memberName.empty())
@@ -321,7 +310,8 @@ MemberAccess FindMember(const std::string& typeName, const std::string& memberNa
 }
 
 /** @brief Innermost class body enclosing a node, or empty when the node sits outside one. */
-std::string_view EnclosingClass(TSNode node, std::string_view sourceCode, bool& insideMixin, const NodeIndex* nodeIndex)
+static std::string_view EnclosingClass(TSNode node, std::string_view sourceCode, bool& insideMixin,
+                                       const NodeIndex* nodeIndex)
 {
     insideMixin = false;
     if (ts_node_is_null(node) || !nodeIndex)
@@ -350,7 +340,7 @@ std::string_view EnclosingClass(TSNode node, std::string_view sourceCode, bool& 
  * @param[in] ctx Diagnostic context.
  * @return Normalized owner type name.
  */
-std::string ResolveObjectOwnerType(TSNode objectNode, const Scope* scope, const DiagnosticContext& ctx)
+static std::string ResolveObjectOwnerType(TSNode objectNode, const Scope* scope, const DiagnosticContext& ctx)
 {
     const std::string_view arrayContainer = ctx.request.GetEffectiveArrayTypeName();
     return MemberOwnerType(ResolveExpressionType(objectNode, ExpressionTypeContext(scope, ctx)), arrayContainer);
@@ -364,8 +354,8 @@ std::string ResolveObjectOwnerType(TSNode objectNode, const Scope* scope, const 
  * @param[in] objectType Object type name.
  * @param[in,out] ctx Diagnostic context.
  */
-void MaybeEmitAccessorHint(TSNode memberNode, const MemberAccess& member, const std::string& objectType,
-                           DiagnosticContext& ctx)
+static void MaybeEmitAccessorHint(TSNode memberNode, const MemberAccess& member, const std::string& objectType,
+                                  DiagnosticContext& ctx)
 {
     if (member.viaAccessor && !ctx.request.ScriptAccessorsAreProperties() && ctx.request.diagnostics &&
         ctx.request.diagnostics->reportAccessorDisabled)
@@ -373,7 +363,8 @@ void MaybeEmitAccessorHint(TSNode memberNode, const MemberAccess& member, const 
         const TSPoint hintStart = ts_node_start_point(memberNode);
         const TSPoint hintEnd = ts_node_end_point(memberNode);
         ctx.EmitAtRange({hintStart.row, hintStart.column, hintEnd.row, hintEnd.column}, "as-hint-accessor-disabled",
-                        {objectType, NodeTextString(memberNode, ctx.request.sourceCode)}, DiagnosticSeverity::Hint);
+                        {objectType, parser::NodeTextString(memberNode, ctx.request.sourceCode)},
+                        DiagnosticSeverity::Hint);
     }
 }
 
@@ -386,8 +377,8 @@ void MaybeEmitAccessorHint(TSNode memberNode, const MemberAccess& member, const 
  * @param[in] ctx Diagnostic context.
  * @return True if member access is allowed, false if access violation.
  */
-bool IsMemberAccessAllowed(const MemberAccess& member, std::string_view accessingClass, std::string_view objectType,
-                           const DiagnosticContext& ctx)
+static bool IsMemberAccessAllowed(const MemberAccess& member, std::string_view accessingClass,
+                                  std::string_view objectType, const DiagnosticContext& ctx)
 {
     const bool declaredPrivate = member.access == AccessModifier::Private;
     if (declaredPrivate && !ctx.request.TreatsPrivateAsProtected())
@@ -405,14 +396,11 @@ bool IsMemberAccessAllowed(const MemberAccess& member, std::string_view accessin
  * @param[in] member Member resolution outcome.
  * @param[in] memberName Name of the member being accessed.
  * @param[in,out] ctx Diagnostic context.
- * @note [REFACTOR-CANDIDATE] Structural overlap (77%) with EmitAtNode in server/src/analysis/ControlFlowChecker.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (77%) with EmitAtNode in
- * server/src/analysis/InitializerListChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  * Structural overlap (77%) with EmitAtNode in server/src/analysis/IsolationChecker.cpp. Candidate for unification in
  * server/src/analysis/SemanticHelpers.h.
  */
-void EmitPrivacyViolation(TSNode memberNode, const MemberAccess& member, std::string_view memberName,
-                          DiagnosticContext& ctx)
+static void EmitPrivacyViolation(TSNode memberNode, const MemberAccess& member, std::string_view memberName,
+                                 DiagnosticContext& ctx)
 {
     const TSPoint start = ts_node_start_point(memberNode);
     const TSPoint end = ts_node_end_point(memberNode);
@@ -478,19 +466,20 @@ static void ValidateMemberPrivacy(TSNode node, const MemberAccess& member, const
     bool insideMixin = false;
     const std::string_view accessingClass =
         EnclosingClass(node, ctx.request.sourceCode, insideMixin, ctx.request.nodeIndex);
-    const bool isThisAccess = GetNodeTextView(objectNode, ctx.request.sourceCode) == "this";
+    const bool isThisAccess = parser::GetNodeTextView(objectNode, ctx.request.sourceCode) == "this";
     if (insideMixin && (isThisAccess || IsSameType(accessingClass, member.declaringClass)))
     {
         return;
     }
     if (!IsMemberAccessAllowed(member, accessingClass, objectType, ctx))
     {
-        const std::string memberName = NodeText(memberNode, ctx.request.sourceCode);
+        const std::string memberName = parser::NodeText(memberNode, ctx.request.sourceCode);
         EmitPrivacyViolation(memberNode, member, memberName, ctx);
     }
 }
 
-void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
+static void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const Scope* scope,
+                                  DiagnosticContext& ctx)
 {
     TSNode objectNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldObject);
     TSNode memberNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldMember);
@@ -506,7 +495,7 @@ void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const
         return;
     }
 
-    const std::string memberName = NodeText(memberNode, request.sourceCode);
+    const std::string memberName = parser::NodeText(memberNode, request.sourceCode);
     if (memberName.empty())
     {
         return;
@@ -554,11 +543,8 @@ void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const
  *
  * @param[in] type AST node type name.
  * @return True if node type defines a declared symbol name.
- * @note [REFACTOR-CANDIDATE] Structural overlap (75%) with IsDeclarationNode in
- * server/src/features/definition/DefinitionHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-bool IsDeclarationNodeType(TSSymbol sym)
+static bool IsDeclarationNodeType(TSSymbol sym)
 {
     const auto& gs = parser::GetGrammarSymbols();
     return sym == gs.symVariableDeclarator || sym == gs.symParameter || sym == gs.symFuncDeclaration ||
@@ -573,7 +559,7 @@ bool IsDeclarationNodeType(TSSymbol sym)
  * @param[in] sym Grammar symbol ID.
  * @return True if node is a type reference or comment.
  */
-bool IsTypeRefOrComment(TSSymbol sym)
+static bool IsTypeRefOrComment(TSSymbol sym)
 {
     const auto& gs = parser::GetGrammarSymbols();
     return sym == gs.symDatatype || sym == gs.symPrimitiveType || sym == gs.symBaseClassList || sym == gs.symComment;
@@ -586,7 +572,7 @@ bool IsTypeRefOrComment(TSSymbol sym)
  * @param[in] parent Parent AST node.
  * @return True if the node is a declaration, type reference or irrelevant context.
  */
-bool ShouldSkipIdentifierNode(TSNode node, TSNode parent)
+static bool ShouldSkipIdentifierNode(TSNode node, TSNode parent)
 {
     if (ts_node_is_null(parent))
     {
@@ -622,9 +608,9 @@ bool ShouldSkipIdentifierNode(TSNode node, TSNode parent)
  * @param[in] sourceCode Document source text.
  * @return Clean trimmed identifier string_view.
  */
-std::string_view ExtractCleanIdentifier(TSNode node, std::string_view sourceCode)
+static std::string_view ExtractCleanIdentifier(TSNode node, std::string_view sourceCode)
 {
-    std::string_view idText = GetNodeTextView(node, sourceCode);
+    std::string_view idText = parser::GetNodeTextView(node, sourceCode);
     while (!idText.empty() && isspace(static_cast<unsigned char>(idText.front())))
     {
         idText.remove_prefix(1);
@@ -644,7 +630,7 @@ std::string_view ExtractCleanIdentifier(TSNode node, std::string_view sourceCode
  * @param[in] idText Name to check.
  * @return True if declared within closure.
  */
-bool IsDeclaredInClosure(const Scope* scope, const Scope* enclosingClosure, std::string_view idText)
+static bool IsDeclaredInClosure(const Scope* scope, const Scope* enclosingClosure, std::string_view idText)
 {
     for (const Scope* s = scope; s != nullptr; s = s->parent)
     {
@@ -670,7 +656,7 @@ bool IsDeclaredInClosure(const Scope* scope, const Scope* enclosingClosure, std:
  * @param[in] idText Name to check.
  * @return True if declared in an outer function scope.
  */
-bool IsOuterLocalOrParameter(const Scope* enclosingClosure, std::string_view idText)
+static bool IsOuterLocalOrParameter(const Scope* enclosingClosure, std::string_view idText)
 {
     for (const Scope* s = enclosingClosure->parent; s != nullptr; s = s->parent)
     {
@@ -698,7 +684,7 @@ bool IsOuterLocalOrParameter(const Scope* enclosingClosure, std::string_view idT
  * @param[in] nodeIndex Optional pre-indexed node index.
  * @return Name of the outer class enclosing the lambda, or empty if none.
  */
-std::string_view EnclosingClassOfLambda(TSNode node, std::string_view sourceCode, const NodeIndex* nodeIndex)
+static std::string_view EnclosingClassOfLambda(TSNode node, std::string_view sourceCode, const NodeIndex* nodeIndex)
 {
     if (ts_node_is_null(node) || !nodeIndex)
     {
@@ -726,7 +712,8 @@ std::string_view EnclosingClassOfLambda(TSNode node, std::string_view sourceCode
  * @param[in,out] ctx Diagnostic context.
  * @return True if an error diagnostic was emitted, false otherwise.
  */
-bool CheckClosureDisallowedAccess(TSNode node, const Scope* scope, std::string_view idText, DiagnosticContext& ctx)
+static bool CheckClosureDisallowedAccess(TSNode node, const Scope* scope, std::string_view idText,
+                                         DiagnosticContext& ctx)
 {
     const Scope* enclosingClosure = FindEnclosingClosure(scope);
     if (!enclosingClosure)
@@ -780,7 +767,7 @@ bool CheckClosureDisallowedAccess(TSNode node, const Scope* scope, std::string_v
  * @param[in] scope Lexical scope to inspect.
  * @return True if scope is null (unknown) or has an enclosing ScopeKind::Class.
  */
-bool HasEnclosingClassScope(const Scope* scope)
+static bool HasEnclosingClassScope(const Scope* scope)
 {
     if (!scope)
     {
@@ -804,7 +791,7 @@ bool HasEnclosingClassScope(const Scope* scope)
  * @param[in] idText Identifier name.
  * @param[in,out] ctx Diagnostic context.
  */
-void CheckImplicitMemberAccess(TSNode node, const Scope* scope, std::string_view idText, DiagnosticContext& ctx)
+static void CheckImplicitMemberAccess(TSNode node, const Scope* scope, std::string_view idText, DiagnosticContext& ctx)
 {
     if (!HasEnclosingClassScope(scope))
     {
@@ -853,7 +840,7 @@ void CheckImplicitMemberAccess(TSNode node, const Scope* scope, std::string_view
     }
 }
 
-void CheckIdentifierNode(TSNode node, const AccessCheckRequest& request, DiagnosticContext& ctx)
+static void CheckIdentifierNode(TSNode node, const AccessCheckRequest& request, DiagnosticContext& ctx)
 {
     TSNode parent = parser::GetParent(node);
     if (ShouldSkipIdentifierNode(node, parent))
@@ -883,7 +870,7 @@ void CheckIdentifierNode(TSNode node, const AccessCheckRequest& request, Diagnos
     CheckImplicitMemberAccess(node, scope, idText, ctx);
 }
 
-void CheckMemberAccessIndexed(const AccessCheckRequest& request, DiagnosticContext& ctx)
+static void CheckMemberAccessIndexed(const AccessCheckRequest& request, DiagnosticContext& ctx)
 {
     if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
     {
@@ -923,15 +910,11 @@ void CheckMemberAccessIndexed(const AccessCheckRequest& request, DiagnosticConte
             }
         });
 }
-} // namespace
 
 /**
  * @brief Check member access.
- * @param[in] request Parameter request.
- * @param[in,out] ctx Parameter ctx.
- * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with CheckCallArguments in server/src/analysis/CallChecker.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (98%) with CheckLValues in
- * server/src/analysis/LValueChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural
+ * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
+ * @param[in,out] ctx Diagnostic collection and analysis context.
  * overlap (97%) with CheckConstCorrectness in server/src/analysis/ConstChecker.cpp. Candidate for unification in
  * server/src/analysis/SemanticHelpers.h.
  */

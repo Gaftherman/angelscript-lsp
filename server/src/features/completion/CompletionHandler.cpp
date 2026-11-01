@@ -25,10 +25,6 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
-
-using analysis::CanonicalizeArrayType;
 
 /**
  * @brief True when a member is its class's constructor or destructor.
@@ -36,7 +32,7 @@ using analysis::CanonicalizeArrayType;
  * @param[in] typeName Container type name.
  * @return True if symbol is a constructor or destructor.
  */
-bool IsConstructorOrDestructor(const analysis::Symbol& sym, const std::string& typeName)
+static bool IsConstructorOrDestructor(const analysis::Symbol& sym, const std::string& typeName)
 {
     if (sym.type != analysis::SymbolType::Function)
     {
@@ -60,8 +56,8 @@ bool IsConstructorOrDestructor(const analysis::Symbol& sym, const std::string& t
  * @param[in] templateArgs Explicit template argument names.
  * @return Formatted declaration string.
  */
-std::string FormatMethodDetail(const analysis::Symbol& sym, const analysis::TemplateBinding& binding,
-                               const std::vector<std::string>& templateArgs)
+static std::string FormatMethodDetail(const analysis::Symbol& sym, const analysis::TemplateBinding& binding,
+                                      const std::vector<std::string>& templateArgs)
 {
     if (sym.type != analysis::SymbolType::Function)
     {
@@ -102,8 +98,8 @@ std::string FormatMethodDetail(const analysis::Symbol& sym, const analysis::Temp
  * @param[in] currentTypeName Type name to inspect.
  * @return Vector of base type names.
  */
-std::vector<std::string> CollectDirectBases(const analysis::SymbolTable& symbolTable,
-                                            const std::string& currentTypeName)
+static std::vector<std::string> CollectDirectBases(const analysis::SymbolTable& symbolTable,
+                                                   const std::string& currentTypeName)
 {
     std::vector<std::string> bases;
     auto symsPtr = symbolTable.FindSymbolsPtr(currentTypeName);
@@ -151,8 +147,8 @@ std::vector<std::string> CollectDirectBases(const analysis::SymbolTable& symbolT
  * @param[in] initialTypeName Starting type name.
  * @return Vector of type names in the hierarchy.
  */
-std::vector<std::string> GetInheritedTypeHierarchy(const analysis::SymbolTable& symbolTable,
-                                                   const std::string& initialTypeName)
+static std::vector<std::string> GetInheritedTypeHierarchy(const analysis::SymbolTable& symbolTable,
+                                                          const std::string& initialTypeName)
 {
     if (initialTypeName.empty())
     {
@@ -194,7 +190,7 @@ std::vector<std::string> GetInheritedTypeHierarchy(const analysis::SymbolTable& 
  * @param[in] character 0-indexed column character.
  * @return Substring preceding cursor on that line.
  */
-std::string GetLinePrefix(const std::string& sourceCode, uint32_t line, uint32_t character)
+static std::string GetLinePrefix(const std::string& sourceCode, uint32_t line, uint32_t character)
 {
     size_t currentLine = 0;
     size_t lineStart = 0;
@@ -227,6 +223,8 @@ std::string GetLinePrefix(const std::string& sourceCode, uint32_t line, uint32_t
     return sourceCode.substr(lineStart, prefixLen);
 }
 
+namespace completion_handler_detail
+{
 /**
  * @brief Categorization proximity for deterministic scope- and file-aware completion sorting.
  */
@@ -239,6 +237,9 @@ enum class SymbolProximity : uint8_t
     Snippet = 4,
     Keyword = 5
 };
+} // namespace completion_handler_detail
+
+using SymbolProximity = completion_handler_detail::SymbolProximity;
 
 /**
  * @brief Formats sort text prefix for a symbol proximity tier.
@@ -246,7 +247,7 @@ enum class SymbolProximity : uint8_t
  * @param[in] label Symbol display label.
  * @return Formatted sort text string.
  */
-inline std::string FormatProximitySortText(SymbolProximity prox, std::string_view label)
+static inline std::string FormatProximitySortText(SymbolProximity prox, std::string_view label)
 {
     static constexpr std::array<std::string_view, 6> k_proxPrefixes = {"0_", "1_", "2_", "3_", "4_", "5_"};
     std::string_view underscoreTier = "0_";
@@ -277,8 +278,8 @@ inline std::string FormatProximitySortText(SymbolProximity prox, std::string_vie
  * @param[in] predefinedExt Predefined file extension.
  * @return Computed SymbolProximity.
  */
-inline SymbolProximity DetermineSymbolProximity(const analysis::Symbol& sym, const std::string& currentUri,
-                                                std::string_view predefinedExt)
+static inline SymbolProximity DetermineSymbolProximity(const analysis::Symbol& sym, const std::string& currentUri,
+                                                       std::string_view predefinedExt)
 {
     if (!currentUri.empty() && sym.fileUri == currentUri)
     {
@@ -291,6 +292,8 @@ inline SymbolProximity DetermineSymbolProximity(const analysis::Symbol& sym, con
     return SymbolProximity::ExternalFile;
 }
 
+namespace completion_handler_detail
+{
 /**
  * @brief Candidate completion item metadata for deduplication and insertion.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -306,7 +309,12 @@ struct CompletionCandidate
     std::string sortText = {};
     std::string insertText = {};
 };
+} // namespace completion_handler_detail
 
+using CompletionCandidate = completion_handler_detail::CompletionCandidate;
+
+namespace completion_handler_detail
+{
 /**
  * @brief Context bundling destination collection vectors and request state.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -317,13 +325,16 @@ struct CompletionCollector
     std::unordered_set<std::string>& seenLabels;
     const CompletionRequest& request;
 };
+} // namespace completion_handler_detail
+
+using CompletionCollector = completion_handler_detail::CompletionCollector;
 
 /**
  * @brief Retrieves configured predefined file extension from completion request.
  * @param[in] request Completion request.
  * @return Predefined file extension string view.
  */
-inline std::string_view GetPredefinedExtension(const CompletionRequest& request)
+static inline std::string_view GetPredefinedExtension(const CompletionRequest& request)
 {
     return request.config ? std::string_view(request.config->info.predefinedFileExtension)
                           : std::string_view(".as.predefined");
@@ -334,7 +345,7 @@ inline std::string_view GetPredefinedExtension(const CompletionRequest& request)
  * @param[in,out] collector Completion collector context.
  * @param[in] candidate Completion item candidate attributes.
  */
-void AddItemIfNew(CompletionCollector& collector, CompletionCandidate candidate)
+static void AddItemIfNew(CompletionCollector& collector, CompletionCandidate candidate)
 {
     std::string dedupeKey = candidate.label;
     if (candidate.kind == lsp::CompletionItemKind::EnumMember && !candidate.detail.empty())
@@ -389,7 +400,7 @@ void AddItemIfNew(CompletionCollector& collector, CompletionCandidate candidate)
  * @param[in] params Function parameter list.
  * @return Formatted snippet string.
  */
-std::string CallSnippet(const std::string& name, const std::vector<analysis::ParameterInformation>& params)
+static std::string CallSnippet(const std::string& name, const std::vector<analysis::ParameterInformation>& params)
 {
     if (name.empty())
     {
@@ -450,7 +461,7 @@ static std::vector<std::string> GetPrimitiveTypeNames()
  * @param[in] sym Candidate class symbol.
  * @return Formatted snippet with placeholders, or empty string.
  */
-std::string TemplateInsertSnippet(const analysis::Symbol& sym)
+static std::string TemplateInsertSnippet(const analysis::Symbol& sym)
 {
     if (sym.type != analysis::SymbolType::Class || !std::holds_alternative<analysis::ClassSignature>(sym.signature))
     {
@@ -476,6 +487,8 @@ std::string TemplateInsertSnippet(const analysis::Symbol& sym)
     return snippet;
 }
 
+namespace completion_handler_detail
+{
 /**
  * @brief Where in the source's lexical structure a byte offset falls.
  */
@@ -485,6 +498,9 @@ enum class LexicalContext
     Comment,
     StringLiteral,
 };
+} // namespace completion_handler_detail
+
+using LexicalContext = completion_handler_detail::LexicalContext;
 
 /**
  * @brief Skips single-line comment.
@@ -493,7 +509,7 @@ enum class LexicalContext
  * @param[in] end Maximum scan offset.
  * @return True if offset falls inside this comment.
  */
-bool SkipLineComment(std::string_view source, size_t& i, size_t end)
+static bool SkipLineComment(std::string_view source, size_t& i, size_t end)
 {
     const size_t close = source.find('\n', i + 2);
     if (close == std::string_view::npos || close >= end)
@@ -510,11 +526,8 @@ bool SkipLineComment(std::string_view source, size_t& i, size_t end)
  * @param[in,out] i Scanner index.
  * @param[in] end Maximum scan offset.
  * @return True if offset falls inside this comment.
- * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with SkipHeredoc in
- * server/src/features/completion/CompletionHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-bool SkipBlockComment(std::string_view source, size_t& i, size_t end)
+static bool SkipBlockComment(std::string_view source, size_t& i, size_t end)
 {
     const size_t close = source.find("*/", i + 2);
     if (close == std::string_view::npos || close + 2 > end)
@@ -531,11 +544,8 @@ bool SkipBlockComment(std::string_view source, size_t& i, size_t end)
  * @param[in,out] i Scanner index.
  * @param[in] end Maximum scan offset.
  * @return True if offset falls inside this string.
- * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with SkipBlockComment in
- * server/src/features/completion/CompletionHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-bool SkipHeredoc(std::string_view source, size_t& i, size_t end)
+static bool SkipHeredoc(std::string_view source, size_t& i, size_t end)
 {
     const size_t close = source.find("\"\"\"", i + 3);
     if (close == std::string_view::npos || close + 3 > end)
@@ -553,7 +563,7 @@ bool SkipHeredoc(std::string_view source, size_t& i, size_t end)
  * @param[in] end Maximum scan offset.
  * @return True if offset falls inside this string.
  */
-bool SkipQuotedString(std::string_view source, size_t& i, size_t end)
+static bool SkipQuotedString(std::string_view source, size_t& i, size_t end)
 {
     const char c = source[i];
     size_t j = i + 1;
@@ -581,7 +591,7 @@ bool SkipQuotedString(std::string_view source, size_t& i, size_t end)
  * @param[out] outContext Resulting lexical context if inside a token.
  * @return True if offset falls inside scanned comment or string.
  */
-bool TryScanCommentOrString(std::string_view source, size_t& i, size_t end, LexicalContext& outContext)
+static bool TryScanCommentOrString(std::string_view source, size_t& i, size_t end, LexicalContext& outContext)
 {
     const char c = source[i];
     if (c == '/' && i + 1 < source.size())
@@ -616,7 +626,7 @@ bool TryScanCommentOrString(std::string_view source, size_t& i, size_t end, Lexi
  * @param[in] offset Target byte offset.
  * @return LexicalContext category.
  */
-LexicalContext ContextAtOffset(std::string_view source, size_t offset)
+static LexicalContext ContextAtOffset(std::string_view source, size_t offset)
 {
     const size_t end = std::min(offset, source.size());
     size_t i = 0;
@@ -639,7 +649,7 @@ LexicalContext ContextAtOffset(std::string_view source, size_t offset)
  * @param[in] prefix Prefix string.
  * @return True if after case label colon.
  */
-bool IsAfterCaseLabelColon(const std::string& prefix)
+static bool IsAfterCaseLabelColon(const std::string& prefix)
 {
     if (prefix.empty() || prefix.back() != ':')
     {
@@ -659,7 +669,7 @@ bool IsAfterCaseLabelColon(const std::string& prefix)
  * @param[in] prefix Prefix string view.
  * @return True if cursor is inside template argument brackets.
  */
-bool IsInsideTemplateArguments(std::string_view prefix)
+static bool IsInsideTemplateArguments(std::string_view prefix)
 {
     int depth = 0;
     for (size_t i = prefix.size(); i-- > 0;)
@@ -697,7 +707,7 @@ bool IsInsideTemplateArguments(std::string_view prefix)
  * @param[in] table Global symbol table.
  * @return Call snippet string, or empty.
  */
-std::string CallSnippetForName(const std::string& name, const analysis::SymbolTable& table)
+static std::string CallSnippetForName(const std::string& name, const analysis::SymbolTable& table)
 {
     const auto symbols = table.FindSymbolsPtr(name);
     if (!symbols)
@@ -727,7 +737,7 @@ std::string CallSnippetForName(const std::string& name, const analysis::SymbolTa
  * @param[in] table Global symbol table.
  * @return Snippet string, or empty.
  */
-std::string TemplateSnippetForName(const std::string& name, const analysis::SymbolTable& table)
+static std::string TemplateSnippetForName(const std::string& name, const analysis::SymbolTable& table)
 {
     if (const auto symbols = table.FindSymbolsPtr(name))
     {
@@ -747,7 +757,7 @@ std::string TemplateSnippetForName(const std::string& name, const analysis::Symb
  * @brief Returns list of AngelScript reserved and contextual keywords.
  * @return Reference to static keyword vector.
  */
-const std::vector<std::string>& GetKeywords()
+static const std::vector<std::string>& GetKeywords()
 {
     static const std::vector<std::string> keywords = []
     {
@@ -775,9 +785,10 @@ const std::vector<std::string>& GetKeywords()
  * @param[in] quoteColumn 0-indexed column of opening quote.
  * @return Constructed completion item, or nullopt if invalid.
  */
-std::optional<lsp::CompletionItem> CreateIncludeCompletionItem(const std::string& candidate,
-                                                               const std::filesystem::path& fromDirectory,
-                                                               const CompletionRequest& request, uint32_t quoteColumn)
+static std::optional<lsp::CompletionItem> CreateIncludeCompletionItem(const std::string& candidate,
+                                                                      const std::filesystem::path& fromDirectory,
+                                                                      const CompletionRequest& request,
+                                                                      uint32_t quoteColumn)
 {
     if (candidate.empty() ||
         utils::IncludeResolver::NormalizePath(candidate) == utils::IncludeResolver::NormalizePath(request.documentPath))
@@ -822,8 +833,8 @@ std::optional<lsp::CompletionItem> CreateIncludeCompletionItem(const std::string
  * @param[in] linePrefix Line text preceding the cursor.
  * @return Optional vector of include file completion items.
  */
-std::optional<std::vector<lsp::CompletionItem>> CompleteIncludePath(const CompletionRequest& request,
-                                                                    const std::string& linePrefix)
+static std::optional<std::vector<lsp::CompletionItem>> CompleteIncludePath(const CompletionRequest& request,
+                                                                           const std::string& linePrefix)
 {
     if (request.documentPath.empty() || !request.listIncludeCandidates)
     {
@@ -862,8 +873,8 @@ std::optional<std::vector<lsp::CompletionItem>> CompleteIncludePath(const Comple
  * @param[in] prefix Prefix text before cursor.
  * @return Optional vector of completion items (may be empty if suppressed).
  */
-std::optional<std::vector<lsp::CompletionItem>> HandleIncludeOrLexicalSuppression(const CompletionRequest& request,
-                                                                                  const std::string& prefix)
+static std::optional<std::vector<lsp::CompletionItem>>
+HandleIncludeOrLexicalSuppression(const CompletionRequest& request, const std::string& prefix)
 {
     if (auto includeItems = CompleteIncludePath(request, prefix))
     {
@@ -882,7 +893,7 @@ std::optional<std::vector<lsp::CompletionItem>> HandleIncludeOrLexicalSuppressio
  * @param[in] qualifier Qualifier type name.
  * @param[in,out] collector Completion collector context.
  */
-void CollectEnumMembersUnderQualifier(const std::string& qualifier, CompletionCollector& collector)
+static void CollectEnumMembersUnderQualifier(const std::string& qualifier, CompletionCollector& collector)
 {
     const std::string_view predefinedExt = GetPredefinedExtension(collector.request);
     auto enumMatches = collector.request.symbolTable.FindSymbolsPtr(qualifier);
@@ -940,7 +951,7 @@ void CollectEnumMembersUnderQualifier(const std::string& qualifier, CompletionCo
  * @param[in] request Completion request context.
  * @return Qualified namespace path, or empty string if at global scope.
  */
-std::string BuildScopeNamespacePath(const analysis::Scope* scope, const CompletionRequest& request)
+static std::string BuildScopeNamespacePath(const analysis::Scope* scope, const CompletionRequest& request)
 {
     if (!scope || !request.tree)
     {
@@ -964,7 +975,7 @@ std::string BuildScopeNamespacePath(const analysis::Scope* scope, const Completi
  * @param[in,out] out Target namespace list.
  * @param[in] ns Candidate namespace string.
  */
-void AppendUniqueNamespace(std::vector<std::string>& out, const std::string& ns)
+static void AppendUniqueNamespace(std::vector<std::string>& out, const std::string& ns)
 {
     if (!ns.empty() && std::find(out.begin(), out.end(), ns) == out.end())
     {
@@ -978,8 +989,8 @@ void AppendUniqueNamespace(std::vector<std::string>& out, const std::string& ns)
  * @param[in] innermostScope Innermost lexical scope at cursor, if available.
  * @return Ordered list of unique visible namespace names.
  */
-std::vector<std::string> CollectVisibleNamespaces(const CompletionRequest& request,
-                                                  const analysis::Scope* innermostScope)
+static std::vector<std::string> CollectVisibleNamespaces(const CompletionRequest& request,
+                                                         const analysis::Scope* innermostScope)
 {
     std::vector<std::string> visible;
     std::vector<std::string> enclosing;
@@ -1027,7 +1038,8 @@ std::vector<std::string> CollectVisibleNamespaces(const CompletionRequest& reque
  * @param[out] kind Computed LSP completion item kind.
  * @param[out] detail Computed detail string.
  */
-void ResolveContainerMemberItemDetails(const analysis::Symbol& sym, lsp::CompletionItemKind& kind, std::string& detail)
+static void ResolveContainerMemberItemDetails(const analysis::Symbol& sym, lsp::CompletionItemKind& kind,
+                                              std::string& detail)
 {
     kind = lsp::CompletionItemKind::Variable;
     switch (sym.type)
@@ -1073,8 +1085,8 @@ void ResolveContainerMemberItemDetails(const analysis::Symbol& sym, lsp::Complet
  * @param[in] ruleIndex Pre-indexed rule information.
  * @param[in,out] collector Completion collector context.
  */
-void AddContainerMembers(const std::string& container, const std::string& qualifier,
-                         const analysis::rules::RuleIndex* ruleIndex, CompletionCollector& collector)
+static void AddContainerMembers(const std::string& container, const std::string& qualifier,
+                                const analysis::rules::RuleIndex* ruleIndex, CompletionCollector& collector)
 {
     const auto& cm = ruleIndex->Members(container);
     for (const auto& key : cm.memberKeys)
@@ -1105,7 +1117,7 @@ void AddContainerMembers(const std::string& container, const std::string& qualif
     }
 }
 
-void CollectContainerMembersUnderQualifier(const std::string& qualifier, CompletionCollector& collector)
+static void CollectContainerMembersUnderQualifier(const std::string& qualifier, CompletionCollector& collector)
 {
     const auto ruleIndex = collector.request.symbolTable.GetRuleIndex();
     if (!ruleIndex)
@@ -1138,7 +1150,7 @@ void CollectContainerMembersUnderQualifier(const std::string& qualifier, Complet
  * @param[in,out] collector Completion collector context.
  * @return True if scope resolution completed.
  */
-bool TryCompleteScopeResolution(const std::string& prefix, CompletionCollector& collector)
+static bool TryCompleteScopeResolution(const std::string& prefix, CompletionCollector& collector)
 {
     static const std::regex scopeResolutionRegex(R"(((?:[a-zA-Z_][a-zA-Z0-9_]*::)+)([a-zA-Z_][a-zA-Z0-9_]*)?$)");
     std::smatch scopeMatch;
@@ -1162,7 +1174,7 @@ bool TryCompleteScopeResolution(const std::string& prefix, CompletionCollector& 
  * @param[in,out] collector Completion collector context.
  * @return True if template arguments completed.
  */
-bool TryCompleteTemplateArguments(const std::string& prefix, CompletionCollector& collector)
+static bool TryCompleteTemplateArguments(const std::string& prefix, CompletionCollector& collector)
 {
     if (!IsInsideTemplateArguments(prefix))
     {
@@ -1205,7 +1217,7 @@ bool TryCompleteTemplateArguments(const std::string& prefix, CompletionCollector
 /**
  * @brief Retrieves backward declaration text before cursor up to opening brace or semicolon.
  */
-std::string GetBackwardDeclarationText(std::string_view sourceCode, uint32_t line, uint32_t character)
+static std::string GetBackwardDeclarationText(std::string_view sourceCode, uint32_t line, uint32_t character)
 {
     uint32_t curLine = 0;
     size_t offset = 0;
@@ -1238,6 +1250,8 @@ std::string GetBackwardDeclarationText(std::string_view sourceCode, uint32_t lin
     return std::string(sourceCode.substr(start, offset - start));
 }
 
+namespace completion_handler_detail
+{
 /**
  * @brief Represents Inheritance context.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1248,11 +1262,15 @@ struct InheritanceContext
     std::string declaringClassName;
     std::string qualifier;
 };
+} // namespace completion_handler_detail
+
+using InheritanceContext = completion_handler_detail::InheritanceContext;
 
 /**
  * @brief Detects if completion was invoked inside a class or interface base inheritance list.
  */
-std::optional<InheritanceContext> DetectInheritanceContext(const CompletionRequest& request, const std::string& prefix)
+static std::optional<InheritanceContext> DetectInheritanceContext(const CompletionRequest& request,
+                                                                  const std::string& prefix)
 {
     const std::string text =
         GetBackwardDeclarationText(request.sourceCode, request.position.line, request.position.character);
@@ -1279,7 +1297,7 @@ std::optional<InheritanceContext> DetectInheritanceContext(const CompletionReque
 /**
  * @brief Completes container members matching class/interface inheritance rules under a scope qualifier.
  */
-void CompleteInheritanceUnderQualifier(const InheritanceContext& ctx, CompletionCollector& collector)
+static void CompleteInheritanceUnderQualifier(const InheritanceContext& ctx, CompletionCollector& collector)
 {
     const auto ruleIndex = collector.request.symbolTable.GetRuleIndex();
     if (!ruleIndex)
@@ -1326,8 +1344,8 @@ void CompleteInheritanceUnderQualifier(const InheritanceContext& ctx, Completion
     }
 }
 
-void CompleteGlobalInheritanceTypes(const InheritanceContext& ctx, CompletionCollector& collector,
-                                    std::string_view predefinedExt)
+static void CompleteGlobalInheritanceTypes(const InheritanceContext& ctx, CompletionCollector& collector,
+                                           std::string_view predefinedExt)
 {
     collector.request.symbolTable.ForEachGlobalTypeSymbol(
         [&](const analysis::Symbol& sym)
@@ -1350,7 +1368,7 @@ void CompleteGlobalInheritanceTypes(const InheritanceContext& ctx, CompletionCol
         });
 }
 
-void CompleteInheritanceNamespaces(CompletionCollector& collector)
+static void CompleteInheritanceNamespaces(CompletionCollector& collector)
 {
     for (const auto& ns : CollectVisibleNamespaces(collector.request, nullptr))
     {
@@ -1381,7 +1399,7 @@ void CompleteInheritanceNamespaces(CompletionCollector& collector)
 /**
  * @brief Attempts to complete strictly allowed inheritance base classes, interfaces, and namespaces.
  */
-bool TryCompleteInheritance(const std::string& prefix, CompletionCollector& collector)
+static bool TryCompleteInheritance(const std::string& prefix, CompletionCollector& collector)
 {
     auto ctxOpt = DetectInheritanceContext(collector.request, prefix);
     if (!ctxOpt.has_value())
@@ -1408,7 +1426,8 @@ bool TryCompleteInheritance(const std::string& prefix, CompletionCollector& coll
  * @param[in] symbolTable Global symbol table.
  * @return Fully qualified base container name.
  */
-std::string FindCanonicalBaseContainer(const std::string& canonicalType, const analysis::SymbolTable& symbolTable)
+static std::string FindCanonicalBaseContainer(const std::string& canonicalType,
+                                              const analysis::SymbolTable& symbolTable)
 {
     auto targetTemplate = analysis::ParseTemplateType(canonicalType);
     return symbolTable.QualifyShortTypeName(targetTemplate.containerName);
@@ -1421,8 +1440,8 @@ std::string FindCanonicalBaseContainer(const std::string& canonicalType, const a
  * @param[in] templateArgs Explicit template arguments.
  * @return Substituted type string.
  */
-std::string SubstituteTypeParameters(std::string text, const analysis::TemplateBinding& binding,
-                                     const std::vector<std::string>& templateArgs)
+static std::string SubstituteTypeParameters(std::string text, const analysis::TemplateBinding& binding,
+                                            const std::vector<std::string>& templateArgs)
 {
     if (binding.usable)
     {
@@ -1439,6 +1458,8 @@ std::string SubstituteTypeParameters(std::string text, const analysis::TemplateB
     return text;
 }
 
+namespace completion_handler_detail
+{
 /**
  * @brief Template binding and argument context for member completion.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1449,6 +1470,9 @@ struct MemberTemplateContext
     const std::vector<std::string>& templateArgs;
     std::string_view memberPrefix = "";
 };
+} // namespace completion_handler_detail
+
+using MemberTemplateContext = completion_handler_detail::MemberTemplateContext;
 
 /**
  * @brief Checks if an open parenthesis immediately follows the cursor position.
@@ -1488,7 +1512,7 @@ static bool ShouldCompleteParens(const CompletionCollector& collector)
     return configEnabled && !HasTrailingOpenParen(collector.request.sourceCode, collector.request.position);
 }
 
-std::string FindEnclosingClassName(const CompletionRequest& request);
+static std::string FindEnclosingClassName(const CompletionRequest& request);
 
 static bool IsMixinIncluded(std::string_view hostClass, std::string_view mixinName, const analysis::SymbolTable& table)
 {
@@ -1569,8 +1593,8 @@ static bool IsMemberAccessibleForCompletion(const analysis::Symbol& sym, const s
  * @param[in] tCtx Template context bundling bindings and args.
  * @param[in,out] collector Completion collector context.
  */
-void PopulateMemberSymbolCandidate(const analysis::Symbol& sym, const std::string& typeName,
-                                   const MemberTemplateContext& tCtx, CompletionCollector& collector)
+static void PopulateMemberSymbolCandidate(const analysis::Symbol& sym, const std::string& typeName,
+                                          const MemberTemplateContext& tCtx, CompletionCollector& collector)
 {
     if (!IsMemberAccessibleForCompletion(sym, typeName, collector))
     {
@@ -1630,8 +1654,8 @@ void PopulateMemberSymbolCandidate(const analysis::Symbol& sym, const std::strin
  * @param[in] templateArgs Explicit template arguments.
  * @param[in,out] collector Completion collector context.
  */
-void PopulateMembersForType(const std::string& typeName, const MemberTemplateContext& tCtx,
-                            CompletionCollector& collector)
+static void PopulateMembersForType(const std::string& typeName, const MemberTemplateContext& tCtx,
+                                   CompletionCollector& collector)
 {
     const auto ruleIndex = collector.request.symbolTable.GetRuleIndex();
     if (!ruleIndex)
@@ -1669,7 +1693,7 @@ void PopulateMembersForType(const std::string& typeName, const MemberTemplateCon
  * @param[in] request Completion request.
  * @return Enclosing class name, or empty string.
  */
-std::string FindEnclosingClassName(const CompletionRequest& request)
+static std::string FindEnclosingClassName(const CompletionRequest& request)
 {
     std::string fromTable = request.symbolTable.FindEnclosingClassName(request.uri, request.position.line);
     if (!fromTable.empty())
@@ -1699,7 +1723,7 @@ std::string FindEnclosingClassName(const CompletionRequest& request)
  * @param[in] dotPos Index of the dot character.
  * @return True if dot is part of a number literal.
  */
-bool IsNumericLiteralDot(std::string_view prefix, size_t dotPos)
+static bool IsNumericLiteralDot(std::string_view prefix, size_t dotPos)
 {
     if (dotPos == 0 || !std::isdigit(static_cast<unsigned char>(prefix[dotPos - 1])))
     {
@@ -1811,7 +1835,7 @@ static TSNode FindReceiverPrecedingDot(TSNode rootNode, std::string_view sourceC
  * @param[in] dotByteOffset Byte offset of the member access delimiter ('.').
  * @return AST node representing the receiver expression, or a null node if unresolvable.
  */
-TSNode FindReceiverNodeAtDot(TSNode rootNode, std::string_view sourceCode, size_t dotByteOffset)
+static TSNode FindReceiverNodeAtDot(TSNode rootNode, std::string_view sourceCode, size_t dotByteOffset)
 {
     if (ts_node_is_null(rootNode) || dotByteOffset == 0)
     {
@@ -1978,14 +2002,14 @@ static std::string ResolveNamedReceiverType(std::string_view nodeText, const Com
  * @param[in] innermostScope Innermost lexical scope at cursor.
  * @return Resolved raw type name string, or empty string.
  */
-std::string ResolveReceiverNodeType(TSNode receiverNode, const CompletionRequest& request,
-                                    const analysis::Scope* innermostScope)
+static std::string ResolveReceiverNodeType(TSNode receiverNode, const CompletionRequest& request,
+                                           const analysis::Scope* innermostScope)
 {
     if (ts_node_is_null(receiverNode))
     {
         return "";
     }
-    std::string nodeText = analysis::GetNodeText(receiverNode, request.sourceCode);
+    std::string nodeText = parser::GetNodeText(receiverNode, request.sourceCode);
     if (std::string named = ResolveNamedReceiverType(nodeText, request, innermostScope); !named.empty())
     {
         return named;
@@ -2007,6 +2031,8 @@ std::string ResolveReceiverNodeType(TSNode receiverNode, const CompletionRequest
                                          {innermostScope, "", request.uri});
 }
 
+namespace completion_handler_detail
+{
 /**
  * @brief Represents Index peel result.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -2016,6 +2042,9 @@ struct IndexPeelResult
     size_t count = 0;
     std::string lastIndexExpr;
 };
+} // namespace completion_handler_detail
+
+using IndexPeelResult = completion_handler_detail::IndexPeelResult;
 
 /**
  * @brief Peels index bracket sequences preceding a dot access, capturing the last inner index argument.
@@ -2062,6 +2091,12 @@ static IndexPeelResult PeelIndexBracketsWithExpr(const std::string& prefix, size
     return res;
 }
 
+/**
+ * @brief Skips spaces and horizontal tabs backward from a given position.
+ * @param[in] text Input string containing the source line or expression.
+ * @param[in] pos Starting character offset.
+ * @return Adjusted offset positioned at the first non-whitespace character or zero.
+ */
 static size_t SkipInlineWhitespaceBackward(const std::string& text, size_t pos)
 {
     while (pos > 0 && (text[pos - 1] == ' ' || text[pos - 1] == '\t'))
@@ -2073,12 +2108,9 @@ static size_t SkipInlineWhitespaceBackward(const std::string& text, size_t pos)
 
 /**
  * @brief Extract identifier backward.
- * @param[in] text Parameter text.
- * @param[in] end Parameter end.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with ExtractQueryPrefix in
- * server/src/features/completion/CompletionHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @param[in] text Source code or text buffer.
+ * @param[in] end End point or byte offset.
+ * @return Calculated or extracted result of the operation.
  */
 static size_t ExtractIdentifierBackward(const std::string& text, size_t end)
 {
@@ -2289,7 +2321,7 @@ static void PopulateHierarchicalMembers(const std::string& rawTypeName, std::str
                                         CompletionCollector& collector)
 {
     const auto& arrayContainer = collector.request.symbolTable.GetDefaultArrayType();
-    std::string canonicalType = CanonicalizeArrayType(rawTypeName, arrayContainer);
+    std::string canonicalType = analysis::CanonicalizeArrayType(rawTypeName, arrayContainer);
     std::string baseContainer = FindCanonicalBaseContainer(canonicalType, collector.request.symbolTable);
     auto targetTemplate = analysis::ParseTemplateType(canonicalType);
     const auto binding = analysis::BindTemplateArguments(canonicalType, collector.request.symbolTable);
@@ -2309,8 +2341,8 @@ static void PopulateHierarchicalMembers(const std::string& rawTypeName, std::str
  * @param[in,out] collector Completion collector context.
  * @return True if member completion completed.
  */
-bool TryCompleteMemberAccess(const std::string& prefix, const analysis::Scope* innermostScope,
-                             CompletionCollector& collector)
+static bool TryCompleteMemberAccess(const std::string& prefix, const analysis::Scope* innermostScope,
+                                    CompletionCollector& collector)
 {
     auto dotCol = FindAccessDotCol(prefix);
     if (!dotCol)
@@ -2385,8 +2417,8 @@ static void AddEnumConstantCandidate(CompletionCollector& collector, const analy
  * @param[in,out] collector Completion collector context.
  * @param[in] prox Symbol proximity tier.
  */
-void ProcessScopeConstantDefinition(const analysis::LocalDefinition& def, const std::string& scopeNs,
-                                    CompletionCollector& collector, SymbolProximity prox)
+static void ProcessScopeConstantDefinition(const analysis::LocalDefinition& def, const std::string& scopeNs,
+                                           CompletionCollector& collector, SymbolProximity prox)
 {
     const std::string symbolKey = utils::JoinScopedName(scopeNs, def.name);
     auto syms = collector.request.symbolTable.FindSymbols(symbolKey);
@@ -2418,8 +2450,8 @@ void ProcessScopeConstantDefinition(const analysis::LocalDefinition& def, const 
  * @param[in,out] collector Completion collector context.
  * @param[in] prox Symbol proximity tier.
  */
-void ProcessScopeDefinition(const analysis::LocalDefinition& def, const std::string& scopeNs,
-                            CompletionCollector& collector, SymbolProximity prox)
+static void ProcessScopeDefinition(const analysis::LocalDefinition& def, const std::string& scopeNs,
+                                   CompletionCollector& collector, SymbolProximity prox)
 {
     if (def.kind == analysis::LocalDefinitionKind::Constant)
     {
@@ -2466,7 +2498,7 @@ void ProcessScopeDefinition(const analysis::LocalDefinition& def, const std::str
  * @param[in] innermostScope Lexical scope at cursor.
  * @param[in,out] collector Completion collector context.
  */
-void CollectScopeDefinitions(const analysis::Scope* innermostScope, CompletionCollector& collector)
+static void CollectScopeDefinitions(const analysis::Scope* innermostScope, CompletionCollector& collector)
 {
     if (!innermostScope)
     {
@@ -2580,7 +2612,7 @@ static void CollectEnclosingMemberCandidate(const analysis::Symbol& sym, const s
  * @brief Collects member methods and fields of the enclosing class.
  * @param[in,out] collector Completion collector context.
  */
-void CollectEnclosingClassMembers(CompletionCollector& collector)
+static void CollectEnclosingClassMembers(CompletionCollector& collector)
 {
     std::string enclosingClassName = FindEnclosingClassName(collector.request);
     if (enclosingClassName.empty())
@@ -2647,8 +2679,8 @@ static void CollectGlobalFunctionSymbol(const analysis::Symbol& sym, bool access
  * @param[in] accessorKeywordRequired Whether property keyword is required.
  * @param[in,out] collector Completion collector context.
  */
-void CollectGlobalSymbolItem(const analysis::Symbol& sym, bool accessorsAreProperties, bool accessorKeywordRequired,
-                             CompletionCollector& collector)
+static void CollectGlobalSymbolItem(const analysis::Symbol& sym, bool accessorsAreProperties,
+                                    bool accessorKeywordRequired, CompletionCollector& collector)
 {
     lsp::CompletionItemKind kind = lsp::CompletionItemKind::Variable;
     std::string detail;
@@ -2706,11 +2738,8 @@ void CollectGlobalSymbolItem(const analysis::Symbol& sym, bool accessorsArePrope
  * @brief Extracts the trailing identifier query prefix from a line prefix.
  * @param[in] linePrefix Line text up to the cursor position.
  * @return Extracted identifier query prefix, or empty if none.
- * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with ExtractIdentifierBackward in
- * server/src/features/completion/CompletionHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-std::string_view ExtractQueryPrefix(std::string_view linePrefix)
+static std::string_view ExtractQueryPrefix(std::string_view linePrefix)
 {
     size_t i = linePrefix.size();
     while (i > 0 && (std::isalnum(static_cast<unsigned char>(linePrefix[i - 1])) || linePrefix[i - 1] == '_'))
@@ -2727,7 +2756,8 @@ std::string_view ExtractQueryPrefix(std::string_view linePrefix)
  * @param[in] accessorsAreProperties Whether get_/set_ accessors can synthesize properties.
  * @return True if bucket should be inspected.
  */
-bool BucketMatchesPrefix(const std::string& qualifiedName, std::string_view queryPrefix, bool accessorsAreProperties)
+static bool BucketMatchesPrefix(const std::string& qualifiedName, std::string_view queryPrefix,
+                                bool accessorsAreProperties)
 {
     if (queryPrefix.empty() || angel_lsp::utils::CaseInsensitiveStartsWith(qualifiedName, queryPrefix))
     {
@@ -2756,8 +2786,8 @@ bool BucketMatchesPrefix(const std::string& qualifiedName, std::string_view quer
  * @param[in] queryPrefix Prefix to filter symbol table buckets by.
  * @param[in,out] collector Completion collector context.
  */
-void CollectGlobalSymbols(bool accessorsAreProperties, bool accessorKeywordRequired, std::string_view queryPrefix,
-                          CompletionCollector& collector)
+static void CollectGlobalSymbols(bool accessorsAreProperties, bool accessorKeywordRequired,
+                                 std::string_view queryPrefix, CompletionCollector& collector)
 {
     collector.request.symbolTable.ForEachSymbolWithPrefix(
         queryPrefix,
@@ -2791,8 +2821,8 @@ void CollectGlobalSymbols(bool accessorsAreProperties, bool accessorKeywordRequi
  * @param[in] queryPrefix Prefix to filter candidate symbol names by.
  * @param[in,out] collector Completion collector context.
  */
-void CollectVisibleNamespaceSymbols(const analysis::Scope* innermostScope, std::string_view queryPrefix,
-                                    CompletionCollector& collector)
+static void CollectVisibleNamespaceSymbols(const analysis::Scope* innermostScope, std::string_view queryPrefix,
+                                           CompletionCollector& collector)
 {
     const auto ruleIndex = collector.request.symbolTable.GetRuleIndex();
     if (!ruleIndex)
@@ -2908,7 +2938,7 @@ static void CollectClassOperatorSnippets(const analysis::Scope* innermostScope, 
  * @brief Inserts statement and declaration snippet completions.
  * @param[in,out] collector Completion collector context.
  */
-void CollectDeclarationSnippets(CompletionCollector& collector)
+static void CollectDeclarationSnippets(CompletionCollector& collector)
 {
     if (!collector.request.snippetSupport)
     {
@@ -2972,7 +3002,7 @@ void CollectDeclarationSnippets(CompletionCollector& collector)
  * @brief Inserts keyword completions into collector.
  * @param[in,out] collector Completion collector context.
  */
-void CollectKeywords(CompletionCollector& collector)
+static void CollectKeywords(CompletionCollector& collector)
 {
     const std::string enclosingClassName = FindEnclosingClassName(collector.request);
     const bool inClass = !enclosingClassName.empty();
@@ -3091,7 +3121,7 @@ static std::string ExtractCalleeName(std::string_view prefix, size_t openParenPo
     return std::string(prefix.substr(startCallee, endCallee - startCallee));
 }
 
-bool ExtractCallContext(std::string_view prefix, std::string& outCallee, size_t& outArgIndex)
+static bool ExtractCallContext(std::string_view prefix, std::string& outCallee, size_t& outArgIndex)
 {
     if (prefix.empty())
     {
@@ -3161,8 +3191,8 @@ static std::vector<analysis::Symbol> ResolveUnqualifiedCalleeCandidates(const st
  * @param[in] scope Lexical scope at cursor.
  * @return Resolved parameter type name, or empty string.
  */
-std::string FindCalleeParameterType(const std::string& callee, size_t argIndex, const CompletionRequest& request,
-                                    const analysis::Scope* scope)
+static std::string FindCalleeParameterType(const std::string& callee, size_t argIndex, const CompletionRequest& request,
+                                           const analysis::Scope* scope)
 {
     auto candidates = (callee.find('.') != std::string::npos)
                           ? ResolveMemberCalleeCandidates(callee, request, scope)
@@ -3238,7 +3268,7 @@ static size_t FindTypeStart(std::string_view s, size_t end)
  * @param[in] prefix Text before cursor on current line.
  * @return Extracted target type name, or empty string.
  */
-std::string ExtractAssignmentTargetType(std::string_view prefix)
+static std::string ExtractAssignmentTargetType(std::string_view prefix)
 {
     size_t eqPos = prefix.rfind('=');
     if (eqPos == std::string_view::npos || eqPos == 0)
@@ -3273,15 +3303,15 @@ std::string ExtractAssignmentTargetType(std::string_view prefix)
  * @brief Checks whether a type name represents a numeric primitive.
  * @param[in] t Type name to inspect.
  * @return True if type is a numeric primitive.
- * @note [REFACTOR-CANDIDATE] Structural overlap (75%) with IsSignedNumericPrimitive in
- * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-bool IsNumericTypeName(std::string_view t)
+static bool IsNumericTypeName(std::string_view t)
 {
     return t == "int" || t == "int8" || t == "int16" || t == "int32" || t == "int64" || t == "uint" || t == "uint8" ||
            t == "uint16" || t == "uint32" || t == "uint64" || t == "float" || t == "double";
 }
 
+namespace completion_handler_detail
+{
 /**
  * @brief Categorization rank for contextual type-aware completion sorting.
  */
@@ -3291,6 +3321,9 @@ enum class TypeMatchRank : uint8_t
     Convertible = 1,
     Other = 2
 };
+} // namespace completion_handler_detail
+
+using TypeMatchRank = completion_handler_detail::TypeMatchRank;
 
 /**
  * @brief Formats sort text prefix for a given type match rank.
@@ -3298,7 +3331,7 @@ enum class TypeMatchRank : uint8_t
  * @param[in] baseSort Base sort key or label.
  * @return Formatted sortText string with bucket prefix.
  */
-inline std::string FormatRankedSortText(TypeMatchRank rank, std::string_view baseSort)
+static inline std::string FormatRankedSortText(TypeMatchRank rank, std::string_view baseSort)
 {
     static constexpr std::array<std::string_view, 3> k_rankPrefixes = {"0000_", "0001_", "0002_"};
     const size_t idx = static_cast<size_t>(rank);
@@ -3316,8 +3349,8 @@ inline std::string FormatRankedSortText(TypeMatchRank rank, std::string_view bas
  * @param[in] symbolTable Global symbol table.
  * @return TypeMatchRank tier.
  */
-TypeMatchRank ComputeTypeRank(const lsp::CompletionItem& item, const std::string& expectedType,
-                              const analysis::SymbolTable& symbolTable)
+static TypeMatchRank ComputeTypeRank(const lsp::CompletionItem& item, const std::string& expectedType,
+                                     const analysis::SymbolTable& symbolTable)
 {
     std::string cleanExpected = analysis::StripTypeDecorations(expectedType);
     std::string itemType = item.detail.has_value() ? *item.detail : "";
@@ -3362,8 +3395,8 @@ TypeMatchRank ComputeTypeRank(const lsp::CompletionItem& item, const std::string
  * @param[in] scope Innermost scope at cursor.
  * @param[in] request Completion request context.
  */
-void ApplySmartTypeRanking(std::vector<lsp::CompletionItem>& items, std::string_view prefix,
-                           const analysis::Scope* scope, const CompletionRequest& request)
+static void ApplySmartTypeRanking(std::vector<lsp::CompletionItem>& items, std::string_view prefix,
+                                  const analysis::Scope* scope, const CompletionRequest& request)
 {
     std::string callee;
     size_t argIndex = 0;
@@ -3393,7 +3426,7 @@ void ApplySmartTypeRanking(std::vector<lsp::CompletionItem>& items, std::string_
  * @brief Sorts completion items deterministically according to their sortText and label.
  * @param[in,out] items Vector of completion items to sort.
  */
-inline void SortCompletionItemsByProximity(std::vector<lsp::CompletionItem>& items)
+static inline void SortCompletionItemsByProximity(std::vector<lsp::CompletionItem>& items)
 {
     std::stable_sort(items.begin(), items.end(),
                      [](const lsp::CompletionItem& a, const lsp::CompletionItem& b)
@@ -3403,8 +3436,6 @@ inline void SortCompletionItemsByProximity(std::vector<lsp::CompletionItem>& ite
                          return sa < sb;
                      });
 }
-
-} // namespace
 
 void CollectUnscopedSymbols(const CompletionRequest& request, const analysis::Scope* innermostScope,
                             std::string_view prefix, CompletionCollector& collector)

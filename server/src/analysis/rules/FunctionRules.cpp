@@ -16,7 +16,7 @@
 
 namespace angel_lsp::analysis::rules
 {
-namespace
+namespace function_rules_detail
 {
 /**
  * @brief Everything about the declaration's surroundings that more than one rule needs.
@@ -32,8 +32,11 @@ struct FunctionContext
     std::string ownerName;         ///< Container's last segment, i.e. the bare class name.
     bool containerIsKnown = false; ///< False means nothing may be concluded from the container.
 };
+} // namespace function_rules_detail
 
-FunctionContext BuildFunctionContext(const Symbol& sym, const DiagnosticContext& ctx)
+using FunctionContext = function_rules_detail::FunctionContext;
+
+static FunctionContext BuildFunctionContext(const Symbol& sym, const DiagnosticContext& ctx)
 {
     FunctionContext fctx;
     if (sym.containerName.empty() || sym.containerKind == ContainerKind::Namespace)
@@ -82,7 +85,7 @@ FunctionContext BuildFunctionContext(const Symbol& sym, const DiagnosticContext&
 }
 
 /** @brief True when the type cannot be passed as &inout without unsafe references. */
-bool IsDisallowedInOutType(const ParameterInformation& param, const SymbolTable& table)
+static bool IsDisallowedInOutType(const ParameterInformation& param, const SymbolTable& table)
 {
     if (IsValueOnlyKind(param.typeKind) || param.typeKind == TypeKind::String)
     {
@@ -122,7 +125,7 @@ bool IsDisallowedInOutType(const ParameterInformation& param, const SymbolTable&
  * Without one of those, staying silent is the only correct answer: the corpus declares
  * globals and fields this way throughout, and every one of them is ordinary AngelScript.
  */
-bool IsUnmistakablyAPrototype(const FunctionSignature& sig)
+static bool IsUnmistakablyAPrototype(const FunctionSignature& sig)
 {
     if (sig.returnTypeKind == TypeKind::Void)
     {
@@ -132,13 +135,13 @@ bool IsUnmistakablyAPrototype(const FunctionSignature& sig)
                        { return !param.name.empty() || param.typeKind == TypeKind::Void; });
 }
 
-bool MayOmitBody(const FunctionSignature& sig, const FunctionContext& fctx)
+static bool MayOmitBody(const FunctionSignature& sig, const FunctionContext& fctx)
 {
     return sig.isInterfaceMethod || fctx.isInterface || sig.modifiers.isExternal || sig.modifiers.isDelete ||
            fctx.isConstructor || fctx.isDestructor || sig.isImported;
 }
 
-void CheckDeleteModifiers(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
+static void CheckDeleteModifiers(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
 {
     if (sig.hasBody && sig.modifiers.isDelete)
     {
@@ -153,8 +156,8 @@ void CheckDeleteModifiers(const Symbol& sym, const FunctionSignature& sig, const
     }
 }
 
-void CheckBody(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
-               const DiagnosticContext& ctx)
+static void CheckBody(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
+                      const DiagnosticContext& ctx)
 {
     if (sig.isImported && sig.hasBody)
     {
@@ -176,7 +179,7 @@ void CheckBody(const Symbol& sym, const FunctionSignature& sig, const FunctionCo
 // Return type
 // =============================================================================
 
-void CheckVoidReturnType(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
+static void CheckVoidReturnType(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
 {
     if (sig.returnTypeKind != TypeKind::Void)
     {
@@ -198,15 +201,15 @@ void CheckVoidReturnType(const Symbol& sym, const FunctionSignature& sig, const 
 
 /**
  * @brief Check return type legality.
- * @param[in] sym Parameter sym.
- * @param[in] sig Parameter sig.
- * @param[in] ctx Parameter ctx.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @param[in] sig Input sig for the operation.
+ * @param[in] ctx Diagnostic collection and analysis context.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType. Manually re-evaluates
  * AST for isRef; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo /
  * ParameterInformation::isReference / isReturnReference.
  */
-void CheckReturnTypeLegality(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
+static void CheckReturnTypeLegality(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
 {
     if (sig.returnHasPrimitiveHandle && !sig.returnIsArray)
     {
@@ -230,7 +233,7 @@ void CheckReturnTypeLegality(const Symbol& sym, const FunctionSignature& sig, co
     }
 }
 
-void CheckReturnTypeResolution(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
+static void CheckReturnTypeResolution(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
 {
     const bool isPredefined =
         angel_lsp::utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension);
@@ -248,8 +251,8 @@ void CheckReturnTypeResolution(const Symbol& sym, const FunctionSignature& sig, 
     }
 }
 
-void CheckReturnType(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
-                     const DiagnosticContext& ctx)
+static void CheckReturnType(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
+                            const DiagnosticContext& ctx)
 {
     // A constructor and a destructor have no return type to judge, and what the collector
     // put in returnType for them is whatever preceded the name.
@@ -267,8 +270,8 @@ void CheckReturnType(const Symbol& sym, const FunctionSignature& sig, const Func
 // Modifiers and placement
 // =============================================================================
 
-void CheckModifiers(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
-                    const DiagnosticContext& ctx)
+static void CheckModifiers(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
+                           const DiagnosticContext& ctx)
 {
     // Only judged when the container is known not to be a class: an unresolved container
     // means the analyzer cannot tell what this declaration is.
@@ -327,7 +330,7 @@ void CheckModifiers(const Symbol& sym, const FunctionSignature& sig, const Funct
  * constructor, and `void opAssign(const A &inout)` is accepted despite returning void. What
  * decides it is the arity and the parameter's type.
  */
-bool IsAutoGeneratedFunction(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx)
+static bool IsAutoGeneratedFunction(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx)
 {
     const bool takesOwnTypeOnce =
         sig.parameters.size() == 1 && CleanBaseType(sig.parameters.front().baseTypeName) == fctx.ownerName;
@@ -340,7 +343,7 @@ bool IsAutoGeneratedFunction(const Symbol& sym, const FunctionSignature& sig, co
 }
 
 /** @brief True when a virtual property accessor's signature is one the engine accepts. */
-bool IsValidAccessorSignature(std::string_view name, const FunctionSignature& sig)
+static bool IsValidAccessorSignature(std::string_view name, const FunctionSignature& sig)
 {
     // An accessor may carry a leading index parameter, which is how `a[i].prop` and the
     // corpus's own `get_stringArray(int idx)` are written. That is the only reason a getter
@@ -360,8 +363,8 @@ bool IsValidAccessorSignature(std::string_view name, const FunctionSignature& si
     return false;
 }
 
-void CheckAttributes(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
-                     const DiagnosticContext& ctx)
+static void CheckAttributes(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
+                            const DiagnosticContext& ctx)
 {
     // An interface declares a contract, not an implementation, and the engine rejects every
     // one of the five attributes on a method of one. The grammar parses them so this can
@@ -407,8 +410,8 @@ void CheckAttributes(const Symbol& sym, const FunctionSignature& sig, const Func
 // Constructors and destructors
 // =============================================================================
 
-void CheckConstructorDestructor(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
-                                const DiagnosticContext& ctx)
+static void CheckConstructorDestructor(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
+                                       const DiagnosticContext& ctx)
 {
     if (fctx.isMixin && fctx.isConstructor && !sym.isSynthesized)
     {
@@ -450,8 +453,8 @@ void CheckConstructorDestructor(const Symbol& sym, const FunctionSignature& sig,
 // Override
 // =============================================================================
 
-void CheckOverride(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
-                   const DiagnosticContext& ctx)
+static void CheckOverride(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
+                          const DiagnosticContext& ctx)
 {
     if (!sig.modifiers.isOverride || !fctx.isMember || fctx.isDestructor)
     {
@@ -503,7 +506,7 @@ void CheckOverride(const Symbol& sym, const FunctionSignature& sig, const Functi
     }
 }
 
-void CheckImportedFunction(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
+static void CheckImportedFunction(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
 {
     if (ctx.request.moduleContext.has_value() && !sig.originModule.empty())
     {
@@ -516,7 +519,7 @@ void CheckImportedFunction(const Symbol& sym, const FunctionSignature& sig, cons
     }
 }
 
-bool HasFullSharedFunctionDefinition(const std::string& name, const DiagnosticContext& ctx)
+static bool HasFullSharedFunctionDefinition(const std::string& name, const DiagnosticContext& ctx)
 {
     const bool knowsModules = ctx.request.moduleContext.has_value() && !ctx.request.moduleContext->name.empty();
     if (knowsModules)
@@ -538,7 +541,7 @@ bool HasFullSharedFunctionDefinition(const std::string& name, const DiagnosticCo
     return false;
 }
 
-void CheckExternal(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
+static void CheckExternal(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
 {
     if (sig.isImported)
     {
@@ -590,11 +593,10 @@ inline constexpr std::string_view k_reservedParameterNames[] = {
 };
 
 /** @brief True when the word is in the 53-word measured rejected list for parameter names. */
-[[nodiscard]] bool IsReservedParameterName(std::string_view name) noexcept
+[[nodiscard]] static bool IsReservedParameterName(std::string_view name) noexcept
 {
     return std::binary_search(std::begin(k_reservedParameterNames), std::end(k_reservedParameterNames), name);
 }
-} // namespace
 
 void CheckParamModifiers(const Symbol& sym, const ParameterInformation& param, const DiagnosticContext& ctx)
 {

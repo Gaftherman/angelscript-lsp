@@ -6,19 +6,12 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 /**
  * @brief Trim.
- * @param[in] s Parameter s.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with TrimWhitespace in
- * server/src/analysis/overload/OverloadTypeConversions.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (88%) with TrimWhitespace in
- * server/src/features/semantic_tokens/SemanticTokensHandler.cpp. Candidate for unification in
- * server/src/features/common/FeatureSharedUtils.h.
+ * @param[in] s Input string or text span.
+ * @return Calculated or extracted result of the operation.
  */
-std::string_view Trim(std::string_view s)
+static std::string_view Trim(std::string_view s)
 {
     while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r' || s.front() == '\n'))
         s.remove_prefix(1);
@@ -27,7 +20,7 @@ std::string_view Trim(std::string_view s)
     return s;
 }
 
-void ApplyBraceWrappingSubKey(std::string_view key, std::string_view val, BraceWrappingOptions& wrap)
+static void ApplyBraceWrappingSubKey(std::string_view key, std::string_view val, BraceWrappingOptions& wrap)
 {
     auto b = ParseClangBool(val);
     if (!b)
@@ -52,7 +45,7 @@ void ApplyBraceWrappingSubKey(std::string_view key, std::string_view val, BraceW
         wrap.splitEmptyRecord = *b;
 }
 
-void ApplyIndentationKey(std::string_view key, std::string_view val, ClangFormatStyle& style)
+static void ApplyIndentationKey(std::string_view key, std::string_view val, ClangFormatStyle& style)
 {
     if (key == "IndentWidth")
         style.indentWidth = ParseClangUInt(val);
@@ -68,7 +61,7 @@ void ApplyIndentationKey(std::string_view key, std::string_view val, ClangFormat
         style.namespaceIndentation = ParseClangNamespaceIndentation(val);
 }
 
-void ApplyAlignmentAndBraceKey(std::string_view key, std::string_view val, ClangFormatStyle& style)
+static void ApplyAlignmentAndBraceKey(std::string_view key, std::string_view val, ClangFormatStyle& style)
 {
     if (key == "BreakBeforeBraces")
         style.braceStyle = ParseClangBraceStyle(val);
@@ -82,7 +75,7 @@ void ApplyAlignmentAndBraceKey(std::string_view key, std::string_view val, Clang
     }
 }
 
-void ApplySpacingKey(std::string_view key, std::string_view val, ClangFormatStyle& style)
+static void ApplySpacingKey(std::string_view key, std::string_view val, ClangFormatStyle& style)
 {
     if (key == "SpacesInParentheses" || key == "SpacesInParens")
         style.spacesInsideParentheses = ParseClangBool(val);
@@ -102,7 +95,7 @@ void ApplySpacingKey(std::string_view key, std::string_view val, ClangFormatStyl
         style.spacesBeforeTrailingComments = ParseClangUInt(val);
 }
 
-void ApplyBlockAndLimitsKey(std::string_view key, std::string_view val, ClangFormatStyle& style)
+static void ApplyBlockAndLimitsKey(std::string_view key, std::string_view val, ClangFormatStyle& style)
 {
     if (key == "AllowShortBlocksOnASingleLine" || key == "KeepEmptyBlocksOnSingleLine")
         style.allowShortBlocksOnASingleLine = ParseClangShortBlockStyle(val);
@@ -122,7 +115,7 @@ void ApplyBlockAndLimitsKey(std::string_view key, std::string_view val, ClangFor
         style.disableFormat = ParseClangBool(val);
 }
 
-void ParseYamlSection(std::string_view section, ClangFormatStyle& style, std::string& langOut)
+static void ParseYamlSection(std::string_view section, ClangFormatStyle& style, std::string& langOut)
 {
     size_t pos = 0;
     bool inBraceWrapping = false;
@@ -179,7 +172,7 @@ void ParseYamlSection(std::string_view section, ClangFormatStyle& style, std::st
     }
 }
 
-std::string NormalizePath(std::string_view uriOrPath)
+static std::string NormalizePath(std::string_view uriOrPath)
 {
     std::string path(uriOrPath);
     if (path.rfind("file:///", 0) == 0)
@@ -188,7 +181,6 @@ std::string NormalizePath(std::string_view uriOrPath)
         path = path.substr(7);
     return path;
 }
-} // namespace
 
 std::optional<ClangFormatStyle> ParseClangFormat(std::string_view content)
 {

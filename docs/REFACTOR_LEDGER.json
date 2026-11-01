@@ -630,6 +630,72 @@
         "ImplementationTest",
         "TypeHierarchyTest"
       ]
+    },
+    {
+      "id": "REF-0038",
+      "phase": "R3",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/BinaryOperatorChecker.cpp",
+      "deletedLineRange": "67-85",
+      "originalSymbolOrCode": "bool IsBitwiseOp(std::string_view op), bool IsArithmeticOp(std::string_view op)",
+      "whatItDidAndWhyInThatFile": "Checked whether an operator string matches bitwise or arithmetic operator keywords.",
+      "whyChangedOrDeleted": "Moved and unified with explicit qualification into canonical BinaryOperatorHelpers.h.",
+      "replacedByCanonicalFile": "server/src/analysis/BinaryOperatorHelpers.h",
+      "replacedByCanonicalSymbol": "IsBitwiseOp",
+      "ramOrCpuImpact": "Zero allocation; constexpr keyword comparisons.",
+      "verifiedByTests": [
+        "BinaryOperatorCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0039",
+      "phase": "R3",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
+      "deletedLineRange": "570-582",
+      "originalSymbolOrCode": "ClassSpan, EnclosingClassSpan",
+      "whatItDidAndWhyInThatFile": "Held byte or line span intervals for enclosing class indexing in SemanticTokensHandler and CodeLensHandler.",
+      "whyChangedOrDeleted": "Consolidated into canonical AstNodeSpan structure in parser/ASTUtils.h.",
+      "replacedByCanonicalFile": "server/src/parser/ASTUtils.h",
+      "replacedByCanonicalSymbol": "AstNodeSpan",
+      "ramOrCpuImpact": "Unified span representation; zero duplicated layout overhead.",
+      "verifiedByTests": [
+        "SemanticTokensTest",
+        "CodeLensTest"
+      ]
+    },
+    {
+      "id": "REF-0040",
+      "phase": "R3",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/AccessChecker.cpp",
+      "deletedLineRange": "109-120",
+      "originalSymbolOrCode": "MemberLookupContext",
+      "whatItDidAndWhyInThatFile": "Held type name, SymbolTable reference, and accessor requirement flag for member lookup.",
+      "whyChangedOrDeleted": "Consolidated canonical MemberLookupContext into analysis/SemanticHelpers.h.",
+      "replacedByCanonicalFile": "server/src/analysis/SemanticHelpers.h",
+      "replacedByCanonicalSymbol": "MemberLookupContext",
+      "ramOrCpuImpact": "Deduplicated member lookup context definition.",
+      "verifiedByTests": [
+        "AccessCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0041",
+      "phase": "R3",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/signature_help/SignatureHelpHandler.cpp",
+      "deletedLineRange": "115-124",
+      "originalSymbolOrCode": "CallNodes, CallArgTypes",
+      "whatItDidAndWhyInThatFile": "Held call expression AST nodes and argument types for call and signature resolution.",
+      "whyChangedOrDeleted": "Consolidated canonical CallNodes and CallResolutionContext into analysis/SemanticHelpers.h.",
+      "replacedByCanonicalFile": "server/src/analysis/SemanticHelpers.h",
+      "replacedByCanonicalSymbol": "CallResolutionContext",
+      "ramOrCpuImpact": "Unified call expression and resolution context structures across features and analysis checkers.",
+      "verifiedByTests": [
+        "SignatureHelpTest",
+        "CallCheckerTest"
+      ]
     }
   ]
 }

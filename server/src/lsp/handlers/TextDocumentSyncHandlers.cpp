@@ -13,10 +13,8 @@
 
 namespace angel_lsp
 {
-namespace
-{
-TSInputEdit ComputeTsInputEdit(const std::string& buffer, const lsp::TextDocumentContentChangePartial& rt,
-                               angel_lsp::utils::PositionEncoding encoding)
+static TSInputEdit ComputeTsInputEdit(const std::string& buffer, const lsp::TextDocumentContentChangePartial& rt,
+                                      angel_lsp::utils::PositionEncoding encoding)
 {
     uint32_t startLine = rt.range.start.line;
     // rt.range is expressed in the negotiated encoding, while TSPoint::column and every
@@ -69,7 +67,6 @@ TSInputEdit ComputeTsInputEdit(const std::string& buffer, const lsp::TextDocumen
     edit.new_end_point = new_end_point;
     return edit;
 }
-} // namespace
 
 void Server::HandleNotificationsTextDocument_WillSave(
     [[maybe_unused]] lsp::notifications::TextDocument_WillSave::Params&& params)

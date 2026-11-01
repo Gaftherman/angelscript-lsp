@@ -10,32 +10,7 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
-/**
- * @brief Trim whitespace.
- * @param[in] s Parameter s.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Trim in
- * server/src/features/formatting/ClangFormatReader.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (90%) with TrimWhitespace in
- * server/src/features/semantic_tokens/SemanticTokensHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
- */
-std::string_view TrimWhitespace(std::string_view s)
-{
-    while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r' || s.front() == '\n'))
-    {
-        s.remove_prefix(1);
-    }
-    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r' || s.back() == '\n'))
-    {
-        s.remove_suffix(1);
-    }
-    return s;
-}
-
-bool StripReferenceSuffix(std::string& s)
+static bool StripReferenceSuffix(std::string& s)
 {
     static constexpr std::string_view kRefSuffixes[] = {"&in", "&out", "&inout", "& in", "& out", "& inout"};
     for (const auto& suffix : kRefSuffixes)
@@ -53,28 +28,8 @@ bool StripReferenceSuffix(std::string& s)
     return false;
 }
 
-bool IsViableConvertingConstructor(const Symbol& sym, const std::string& fromType, std::string_view arrayTypeName = {})
-{
-    if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
-    {
-        return false;
-    }
-    const auto& sig = sym.GetFunction();
-    if (sig.modifiers.isExplicit || sig.modifiers.isDelete || sig.parameters.empty())
-    {
-        return false;
-    }
-    const std::string paramType = NormalizeType(sig.parameters[0].typeName, arrayTypeName);
-    if (paramType != fromType && !IsPrimitiveWidening(fromType, paramType))
-    {
-        return false;
-    }
-    return std::all_of(sig.parameters.begin() + 1, sig.parameters.end(),
-                       [](const auto& p) { return !p.defaultValue.empty(); });
-}
-
-bool MatchesConstructorParameter(const FunctionSignature& sig, const TemplateBinding& binding,
-                                 const std::string& fromType, std::string_view arrayTypeName = {})
+static bool MatchesConstructorParameter(const FunctionSignature& sig, const TemplateBinding& binding,
+                                        const std::string& fromType, std::string_view arrayTypeName = {})
 {
     if (sig.modifiers.isExplicit || sig.modifiers.isDelete || sig.parameters.empty())
     {
@@ -94,8 +49,8 @@ bool MatchesConstructorParameter(const FunctionSignature& sig, const TemplateBin
                        [](const auto& p) { return !p.defaultValue.empty(); });
 }
 
-bool CheckConstructorList(const std::shared_ptr<const std::vector<Symbol>>& syms, const TemplateBinding& binding,
-                          const std::string& fromType, std::string_view arrayTypeName = {})
+static bool CheckConstructorList(const std::shared_ptr<const std::vector<Symbol>>& syms, const TemplateBinding& binding,
+                                 const std::string& fromType, std::string_view arrayTypeName = {})
 {
     if (!syms)
     {
@@ -113,7 +68,6 @@ bool CheckConstructorList(const std::shared_ptr<const std::vector<Symbol>>& syms
     }
     return false;
 }
-} // namespace
 
 /**
  * @brief Checks if two comma-separated template argument lists have identical types.
@@ -145,8 +99,8 @@ bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner)
 
 /**
  * @brief Strip type decorations.
- * @param[in] result Parameter result.
- * @return Result of the operation.
+ * @param[in] result Input result for the operation.
+ * @return Calculated or extracted result of the operation.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
@@ -186,9 +140,9 @@ std::string DesugarArrayBrackets(std::string result, std::string_view arrayTypeN
 
 /**
  * @brief Normalize type.
- * @param[in] typeName Parameter typeName.
- * @param[in] arrayTypeName Parameter arrayTypeName.
- * @return Result of the operation.
+ * @param[in] typeName Type name to inspect or resolve.
+ * @param[in] arrayTypeName Array type name for specialization.
+ * @return Calculated or extracted result of the operation.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
@@ -209,8 +163,8 @@ std::string NormalizeType(std::string_view typeName, std::string_view arrayTypeN
 
 /**
  * @brief Has handle modifier.
- * @param[in] typeName Parameter typeName.
- * @return True if condition met; otherwise false.
+ * @param[in] typeName Type name to inspect or resolve.
+ * @return True if the condition is satisfied; false otherwise.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
@@ -455,8 +409,8 @@ bool IsPrimitiveNarrowing(const std::string& fromType, const std::string& toType
 
 /**
  * @brief Has const modifier.
- * @param[in] typeName Parameter typeName.
- * @return True if condition met; otherwise false.
+ * @param[in] typeName Type name to inspect or resolve.
+ * @return True if the condition is satisfied; false otherwise.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
@@ -472,8 +426,8 @@ bool IsWildcardParameter(const ParameterInformation& param)
 
 /**
  * @brief Is out parameter.
- * @param[in] param Parameter param.
- * @return True if condition met; otherwise false.
+ * @param[in] param Function parameter information.
+ * @return True if the condition is satisfied; false otherwise.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier /
  * Symbol::modifiers.isReturnReference.
@@ -486,7 +440,7 @@ bool IsOutParameter(const ParameterInformation& param)
 
 /**
  * @brief Extract template base name.
- * @param[in] typeName Parameter typeName.
+ * @param[in] typeName Type name to inspect or resolve.
  * @return Found item if present; std::nullopt otherwise.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.

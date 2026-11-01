@@ -15,9 +15,7 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
-std::string GetSimpleIdentifierName(TSNode node, std::string_view sourceCode)
+static std::string GetSimpleIdentifierName(TSNode node, std::string_view sourceCode)
 {
     if (ts_node_is_null(node))
     {
@@ -27,7 +25,7 @@ std::string GetSimpleIdentifierName(TSNode node, std::string_view sourceCode)
     const TSSymbol sym = ts_node_symbol(node);
     if (sym == gs.symIdentifier)
     {
-        return NodeText(node, sourceCode);
+        return parser::NodeText(node, sourceCode);
     }
     if (sym == gs.symScopedIdentifier)
     {
@@ -37,13 +35,15 @@ std::string GetSimpleIdentifierName(TSNode node, std::string_view sourceCode)
             TSNode child = ts_node_named_child(node, 0);
             if (ts_node_symbol(child) == gs.symIdentifier)
             {
-                return NodeText(child, sourceCode);
+                return parser::NodeText(child, sourceCode);
             }
         }
     }
     return "";
 }
 
+namespace definite_assignment_checker_detail
+{
 /**
  * @brief Represents Flow state.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -54,6 +54,9 @@ struct FlowState
     bool hasReturned = false;
     bool isTerminated = false;
 };
+} // namespace definite_assignment_checker_detail
+
+using FlowState = definite_assignment_checker_detail::FlowState;
 
 /**
  * @brief Merges two branch states by UNION, which is AngelScript's rule and not C#'s.
@@ -74,8 +77,8 @@ struct FlowState
  * both arms to agree. Intersecting produced 400 findings over the corpus against the
  * compiler's own 7, on the ordinary shape of assigning inside a loop and reading after it.
  */
-ankerl::unordered_dense::set<std::string> MergeBranchStates(const ankerl::unordered_dense::set<std::string>& a,
-                                                            const ankerl::unordered_dense::set<std::string>& b)
+static ankerl::unordered_dense::set<std::string> MergeBranchStates(const ankerl::unordered_dense::set<std::string>& a,
+                                                                   const ankerl::unordered_dense::set<std::string>& b)
 {
     ankerl::unordered_dense::set<std::string> result = a;
     for (const auto& item : b)
@@ -85,6 +88,8 @@ ankerl::unordered_dense::set<std::string> MergeBranchStates(const ankerl::unorde
     return result;
 }
 
+namespace definite_assignment_checker_detail
+{
 /**
  * @brief Represents Call candidate info.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -94,7 +99,12 @@ struct CallCandidateInfo
     const std::vector<Symbol>& candidates;
     const FunctionSignature* sig = nullptr;
 };
+} // namespace definite_assignment_checker_detail
 
+using CallCandidateInfo = definite_assignment_checker_detail::CallCandidateInfo;
+
+namespace definite_assignment_checker_detail
+{
 /**
  * @brief Represents Definite assignment visitor.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -204,7 +214,7 @@ class DefiniteAssignmentVisitor
                 std::string objType = ResolveExpressionType(
                     objNode, ExpressionTypeContext(callScope ? callScope : m_request.scopeRoot, m_ctx));
                 std::string cleanObj = CleanBaseType(objType);
-                std::string memName = NodeText(memNode, m_request.sourceCode);
+                std::string memName = parser::NodeText(memNode, m_request.sourceCode);
                 auto hierarchy = GetInheritedTypeHierarchy(cleanObj, m_ctx.request.symbolTable);
                 for (const auto& typeName : hierarchy)
                 {
@@ -224,7 +234,7 @@ class DefiniteAssignmentVisitor
         }
         else
         {
-            std::string funcName = NodeText(funcNode, m_request.sourceCode);
+            std::string funcName = parser::NodeText(funcNode, m_request.sourceCode);
             auto inScope = FindSymbolsInScope(funcName, callNode, m_request.sourceCode, m_ctx.request.symbolTable);
             for (const auto& sym : inScope)
             {
@@ -269,9 +279,9 @@ class DefiniteAssignmentVisitor
 
     /**
      * @brief Is out parameter.
-     * @param[in] i Parameter i.
-     * @param[in] info Parameter info.
-     * @return True if condition met; otherwise false.
+     * @param[in] i Iteration index or parameter position.
+     * @param[in] info Candidate symbol or call information.
+     * @return True if the condition is satisfied; false otherwise.
      * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
      * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier /
      * Symbol::modifiers.isReturnReference.
@@ -441,7 +451,7 @@ class DefiniteAssignmentVisitor
             return;
         }
 
-        std::string varName = NodeText(nameNode, m_request.sourceCode);
+        std::string varName = parser::NodeText(nameNode, m_request.sourceCode);
         TSNode initNode = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldValue);
         if (ts_node_is_null(initNode))
         {
@@ -564,7 +574,7 @@ class DefiniteAssignmentVisitor
 
         state.assignedVars = MergeBranchStates(state.assignedVars, bodyState.assignedVars);
 
-        std::string condText = NodeText(cond, m_request.sourceCode);
+        std::string condText = parser::NodeText(cond, m_request.sourceCode);
         if (condText == "true" && !bodyState.hasReturned && !bodyState.isTerminated)
         {
             state = bodyState;
@@ -612,8 +622,8 @@ class DefiniteAssignmentVisitor
 
         state.assignedVars = MergeBranchStates(state.assignedVars, bodyState.assignedVars);
 
-        std::string rawCond = NodeText(cond, m_request.sourceCode);
-        std::string_view condText = Trim(rawCond);
+        std::string rawCond = parser::NodeText(cond, m_request.sourceCode);
+        std::string_view condText = parser::Trim(rawCond);
         if ((condText.empty() || condText == "true" || condText == ";") && !bodyState.hasReturned &&
             !bodyState.isTerminated)
         {
@@ -797,8 +807,11 @@ class DefiniteAssignmentVisitor
         CheckExpressionReads(node, state);
     }
 };
+} // namespace definite_assignment_checker_detail
 
-void TraverseFunctions(TSNode root, DefiniteAssignmentVisitor& visitor)
+using DefiniteAssignmentVisitor = definite_assignment_checker_detail::DefiniteAssignmentVisitor;
+
+static void TraverseFunctions(TSNode root, DefiniteAssignmentVisitor& visitor)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSTreeCursor cursor = ts_tree_cursor_new(root);
@@ -835,7 +848,6 @@ void TraverseFunctions(TSNode root, DefiniteAssignmentVisitor& visitor)
     }
     ts_tree_cursor_delete(&cursor);
 }
-} // namespace
 
 void CheckDefiniteAssignment(const DefiniteAssignmentCheckRequest& request, DiagnosticContext& ctx)
 {

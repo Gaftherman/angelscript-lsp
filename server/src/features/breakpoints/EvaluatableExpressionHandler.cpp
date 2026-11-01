@@ -8,12 +8,9 @@
 namespace angel_lsp::features
 {
 
-namespace
-{
-
 constexpr uint32_t k_maxClimbDepth = 16;
 
-bool IsNodeInsideCallFunction(TSNode memberExpr, const parser::GrammarSymbols& gs)
+static bool IsNodeInsideCallFunction(TSNode memberExpr, const parser::GrammarSymbols& gs)
 {
     TSNode parent = parser::GetParent(memberExpr);
     if (ts_node_is_null(parent) || ts_node_symbol(parent) != gs.symCallExpression)
@@ -24,7 +21,7 @@ bool IsNodeInsideCallFunction(TSNode memberExpr, const parser::GrammarSymbols& g
     return !ts_node_is_null(fnChild) && ts_node_eq(fnChild, memberExpr);
 }
 
-EvaluatableExpressionItem MakeItem(TSNode node, std::string_view sourceCode)
+static EvaluatableExpressionItem MakeItem(TSNode node, std::string_view sourceCode)
 {
     TSPoint start = ts_node_start_point(node);
     TSPoint end = ts_node_end_point(node);
@@ -43,8 +40,8 @@ EvaluatableExpressionItem MakeItem(TSNode node, std::string_view sourceCode)
     return item;
 }
 
-std::optional<EvaluatableExpressionItem> HandleMemberExpression(TSNode leaf, TSNode parent, std::string_view sourceCode,
-                                                                const parser::GrammarSymbols& gs)
+static std::optional<EvaluatableExpressionItem>
+HandleMemberExpression(TSNode leaf, TSNode parent, std::string_view sourceCode, const parser::GrammarSymbols& gs)
 {
     TSNode objNode = ts_node_child_by_field_id(parent, gs.fieldObject);
     if (!ts_node_is_null(objNode) && ts_node_eq(objNode, leaf))
@@ -65,8 +62,8 @@ std::optional<EvaluatableExpressionItem> HandleMemberExpression(TSNode leaf, TSN
     return MakeItem(leaf, sourceCode);
 }
 
-std::optional<EvaluatableExpressionItem> HandleIndexExpression(TSNode leaf, TSNode parent, std::string_view sourceCode,
-                                                               const parser::GrammarSymbols& gs)
+static std::optional<EvaluatableExpressionItem>
+HandleIndexExpression(TSNode leaf, TSNode parent, std::string_view sourceCode, const parser::GrammarSymbols& gs)
 {
     TSNode objNode = ts_node_child_by_field_id(parent, gs.fieldObject);
     if (!ts_node_is_null(objNode) && ts_node_eq(objNode, leaf))
@@ -76,7 +73,7 @@ std::optional<EvaluatableExpressionItem> HandleIndexExpression(TSNode leaf, TSNo
     return MakeItem(parent, sourceCode);
 }
 
-bool IsIgnoredNode(TSNode node, const parser::GrammarSymbols& gs)
+static bool IsIgnoredNode(TSNode node, const parser::GrammarSymbols& gs)
 {
     if (ts_node_is_null(node))
     {
@@ -85,8 +82,6 @@ bool IsIgnoredNode(TSNode node, const parser::GrammarSymbols& gs)
     const TSSymbol sym = ts_node_symbol(node);
     return sym == gs.symComment || sym == gs.symStringLiteral || sym == gs.tokOpenBrace || sym == gs.tokCloseBrace;
 }
-
-} // namespace
 
 std::optional<EvaluatableExpressionItem>
 EvaluatableExpressionHandler::Extract(const EvaluatableExpressionRequest& request)

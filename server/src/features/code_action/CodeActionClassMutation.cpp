@@ -8,15 +8,13 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 
 /**
  * @brief Checks if a node type represents a method or constructor declaration that should not be recursed into.
  * @param[in] nodeType Tree-sitter node type.
  * @return True if subtree should be skipped for field collection.
  */
-bool IsSubtreeSkippable(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
+static bool IsSubtreeSkippable(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
 {
     return sym == gs.symFuncDeclaration;
 }
@@ -27,7 +25,7 @@ bool IsSubtreeSkippable(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
  * @param[in] rootNode Enclosing root node boundary.
  * @return True if a next sibling was found, false if root was reached.
  */
-bool StepUpCursor(TSTreeCursor& cursor, TSNode rootNode)
+static bool StepUpCursor(TSTreeCursor& cursor, TSNode rootNode)
 {
     while (true)
     {
@@ -52,8 +50,8 @@ bool StepUpCursor(TSTreeCursor& cursor, TSNode rootNode)
  * @param[in] sourceCode Document source text.
  * @param[in,out] classFields Set of member field names to populate.
  */
-void CollectAstClassFields(TSNode classNode, std::string_view sourceCode,
-                           ankerl::unordered_dense::set<std::string>& classFields)
+static void CollectAstClassFields(TSNode classNode, std::string_view sourceCode,
+                                  ankerl::unordered_dense::set<std::string>& classFields)
 {
     if (ts_node_is_null(classNode))
     {
@@ -71,7 +69,7 @@ void CollectAstClassFields(TSNode classNode, std::string_view sourceCode,
         if (sym == gs.symVariableDeclarator)
         {
             TSNode vNameNode = parser::GetChildByField(curr, gs.fieldName);
-            std::string fName = GetNodeText(vNameNode, sourceCode);
+            std::string fName = parser::GetNodeText(vNameNode, sourceCode);
             if (!fName.empty())
             {
                 classFields.insert(std::move(fName));
@@ -100,7 +98,7 @@ void CollectAstClassFields(TSNode classNode, std::string_view sourceCode,
  * @param[in] context Mutation check context.
  * @return Set of member field names for the active class.
  */
-ankerl::unordered_dense::set<std::string> CollectClassFields(const ClassMutationContext& context)
+static ankerl::unordered_dense::set<std::string> CollectClassFields(const ClassMutationContext& context)
 {
     ankerl::unordered_dense::set<std::string> classFields;
     if (const auto ruleIndex = context.table.GetRuleIndex())
@@ -136,9 +134,9 @@ ankerl::unordered_dense::set<std::string> CollectClassFields(const ClassMutation
  * @param[in] varName Variable name.
  * @return True if target refers to a class field.
  */
-bool IsFieldOrOuterVar(const ClassMutationContext& context,
-                       const ankerl::unordered_dense::set<std::string>& classFields, TSNode idNode,
-                       const std::string& varName)
+static bool IsFieldOrOuterVar(const ClassMutationContext& context,
+                              const ankerl::unordered_dense::set<std::string>& classFields, TSNode idNode,
+                              const std::string& varName)
 {
     TSPoint pt = ts_node_start_point(idNode);
     const analysis::Scope* inner = FindScopeByLineOrRoot(context.scope, pt.row);
@@ -171,8 +169,8 @@ bool IsFieldOrOuterVar(const ClassMutationContext& context,
  * @param[in] curr Candidate assignment AST node.
  * @return True if assignment modifies a class field.
  */
-bool CheckAssignmentMutatesClassState(const ClassMutationContext& context,
-                                      const ankerl::unordered_dense::set<std::string>& classFields, TSNode curr)
+static bool CheckAssignmentMutatesClassState(const ClassMutationContext& context,
+                                             const ankerl::unordered_dense::set<std::string>& classFields, TSNode curr)
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (ts_node_symbol(curr) != gs.symAssignmentExpression)
@@ -187,7 +185,7 @@ bool CheckAssignmentMutatesClassState(const ClassMutationContext& context,
     const TSSymbol lSym = ts_node_symbol(left);
     if (lSym == gs.symIdentifier || lSym == gs.symScopedIdentifier)
     {
-        std::string varName = GetNodeText(left, context.sourceCode);
+        std::string varName = parser::GetNodeText(left, context.sourceCode);
         return IsFieldOrOuterVar(context, classFields, left, varName);
     }
     if (lSym == gs.symMemberExpression)
@@ -196,7 +194,7 @@ bool CheckAssignmentMutatesClassState(const ClassMutationContext& context,
         TSNode mem = parser::GetChildByField(left, gs.fieldMember);
         if (!ts_node_is_null(obj) && ts_node_symbol(obj) == gs.symThisExpression)
         {
-            std::string memName = GetNodeText(mem, context.sourceCode);
+            std::string memName = parser::GetNodeText(mem, context.sourceCode);
             return classFields.contains(memName);
         }
     }
@@ -210,8 +208,8 @@ bool CheckAssignmentMutatesClassState(const ClassMutationContext& context,
  * @param[in] curr Candidate increment/decrement AST node.
  * @return True if operator mutates a class field.
  */
-bool CheckIncDecMutatesClassState(const ClassMutationContext& context,
-                                  const ankerl::unordered_dense::set<std::string>& classFields, TSNode curr)
+static bool CheckIncDecMutatesClassState(const ClassMutationContext& context,
+                                         const ankerl::unordered_dense::set<std::string>& classFields, TSNode curr)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol type = ts_node_symbol(curr);
@@ -233,7 +231,7 @@ bool CheckIncDecMutatesClassState(const ClassMutationContext& context,
     const TSSymbol aType = ts_node_symbol(arg);
     if (aType == gs.symIdentifier || aType == gs.symScopedIdentifier)
     {
-        std::string varName = GetNodeText(arg, context.sourceCode);
+        std::string varName = parser::GetNodeText(arg, context.sourceCode);
         return IsFieldOrOuterVar(context, classFields, arg, varName);
     }
     return false;
@@ -245,7 +243,7 @@ bool CheckIncDecMutatesClassState(const ClassMutationContext& context,
  * @param[in] sourceCode Document source text.
  * @return Method identifier text if invoked on `this`, or empty string.
  */
-std::string ExtractThisCallMethodName(TSNode callee, std::string_view sourceCode)
+static std::string ExtractThisCallMethodName(TSNode callee, std::string_view sourceCode)
 {
     if (ts_node_is_null(callee))
     {
@@ -255,7 +253,7 @@ std::string ExtractThisCallMethodName(TSNode callee, std::string_view sourceCode
     const TSSymbol cType = ts_node_symbol(callee);
     if (cType == gs.symIdentifier || cType == gs.symScopedIdentifier)
     {
-        return GetNodeText(callee, sourceCode);
+        return parser::GetNodeText(callee, sourceCode);
     }
     if (cType == gs.symMemberExpression)
     {
@@ -263,7 +261,7 @@ std::string ExtractThisCallMethodName(TSNode callee, std::string_view sourceCode
         TSNode mem = parser::GetChildByField(callee, gs.fieldMember);
         if (!ts_node_is_null(obj) && ts_node_symbol(obj) == gs.symThisExpression)
         {
-            return GetNodeText(mem, sourceCode);
+            return parser::GetNodeText(mem, sourceCode);
         }
     }
     return {};
@@ -275,7 +273,7 @@ std::string ExtractThisCallMethodName(TSNode callee, std::string_view sourceCode
  * @param[in] curr Candidate call expression AST node.
  * @return True if method call mutates class state.
  */
-bool CheckMethodCallMutatesClassState(const ClassMutationContext& context, TSNode curr)
+static bool CheckMethodCallMutatesClassState(const ClassMutationContext& context, TSNode curr)
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (ts_node_symbol(curr) != gs.symCallExpression)
@@ -304,8 +302,6 @@ bool CheckMethodCallMutatesClassState(const ClassMutationContext& context, TSNod
     }
     return false;
 }
-
-} // namespace
 
 bool MethodBodyMutatesClassState(const ClassMutationContext& context)
 {

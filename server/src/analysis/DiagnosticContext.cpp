@@ -11,10 +11,8 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
-std::string_view ResolveDiagnosticTemplate(const i18n::I18n* i18n, std::string_view code,
-                                           std::span<const std::string_view> args) noexcept
+static std::string_view ResolveDiagnosticTemplate(const i18n::I18n* i18n, std::string_view code,
+                                                  std::span<const std::string_view> args) noexcept
 {
     if (!i18n)
     {
@@ -33,7 +31,7 @@ std::string_view ResolveDiagnosticTemplate(const i18n::I18n* i18n, std::string_v
     return i18n->GetMessageView(code);
 }
 
-std::string FormatFallbackMessage(std::string_view code, std::span<const std::string_view> args)
+static std::string FormatFallbackMessage(std::string_view code, std::span<const std::string_view> args)
 {
     std::string fallback = "[";
     fallback.append(code);
@@ -52,8 +50,8 @@ std::string FormatFallbackMessage(std::string_view code, std::span<const std::st
     return fallback;
 }
 
-void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std::string_view code,
-                            std::span<const std::string_view> args)
+static void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std::string_view code,
+                                   std::span<const std::string_view> args)
 {
     if (args.empty())
     {
@@ -96,14 +94,14 @@ void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std::strin
     }
 }
 
-void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std::string_view code,
-                            std::initializer_list<std::string_view> args)
+static void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std::string_view code,
+                                   std::initializer_list<std::string_view> args)
 {
     ApplyMessageFormatting(diag, i18n, code, std::span<const std::string_view>(args.begin(), args.size()));
 }
 
-void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std::string_view code,
-                            const std::vector<std::string>& args)
+static void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std::string_view code,
+                                   const std::vector<std::string>& args)
 {
     std::vector<std::string_view> views;
     views.reserve(args.size());
@@ -121,7 +119,8 @@ void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std::strin
  * name is not on it - a declaration split across lines, or a type spelled differently from
  * the base name the rule is complaining about.
  */
-size_t ColumnOfTypeName(std::string_view sourceCode, uint32_t line, uint32_t fromColumn, std::string_view typeName)
+static size_t ColumnOfTypeName(std::string_view sourceCode, uint32_t line, uint32_t fromColumn,
+                               std::string_view typeName)
 {
     if (typeName.empty())
         return std::string_view::npos;
@@ -157,7 +156,6 @@ size_t ColumnOfTypeName(std::string_view sourceCode, uint32_t line, uint32_t fro
 
     return (leftClear && rightClear) ? found : std::string_view::npos;
 }
-} // namespace
 
 void DiagnosticContext::Append(Diagnostic&& diag) const
 {
@@ -260,10 +258,10 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, Diagnosti
 
 /**
  * @brief Diagnostic context emit.
- * @param[in] sym Parameter sym.
- * @param[in] code Parameter code.
- * @param[in] arg1 Parameter arg1.
- * @param[in] severity Parameter severity.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @param[in] code Input code for the operation.
+ * @param[in] arg1 Input arg1 for the operation.
+ * @param[in] severity Input severity for the operation.
  * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
  * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (96%) with Emit in
  * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -282,10 +280,10 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri
 
 /**
  * @brief Diagnostic context emit.
- * @param[in] sym Parameter sym.
- * @param[in] code Parameter code.
- * @param[in] arg1 Parameter arg1.
- * @param[in] arg2 Parameter arg2.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @param[in] code Input code for the operation.
+ * @param[in] arg1 Input arg1 for the operation.
+ * @param[in] arg2 Input arg2 for the operation.
  * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
  * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (94%) with Emit in
  * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -304,10 +302,10 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri
 
 /**
  * @brief Diagnostic context emit.
- * @param[in] sym Parameter sym.
- * @param[in] code Parameter code.
- * @param[in] args Parameter args.
- * @param[in] severity Parameter severity.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @param[in] code Input code for the operation.
+ * @param[in] args List of argument nodes.
+ * @param[in] severity Input severity for the operation.
  * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
  * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (94%) with Emit in
  * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -327,10 +325,10 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::init
 
 /**
  * @brief Diagnostic context emit.
- * @param[in] param Parameter param.
- * @param[in] parentSym Parameter parentSym.
- * @param[in] code Parameter code.
- * @param[in] severity Parameter severity.
+ * @param[in] param Function parameter information.
+ * @param[in] parentSym Symbol or grammar symbol.
+ * @param[in] code Input code for the operation.
+ * @param[in] severity Input severity for the operation.
  * @note [REFACTOR-CANDIDATE] Structural overlap (71%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
  * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (70%) with Emit in
  * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -344,10 +342,10 @@ void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& pa
 
 /**
  * @brief Diagnostic context emit.
- * @param[in] param Parameter param.
- * @param[in] parentSym Parameter parentSym.
- * @param[in] code Parameter code.
- * @param[in] arg1 Parameter arg1.
+ * @param[in] param Function parameter information.
+ * @param[in] parentSym Symbol or grammar symbol.
+ * @param[in] code Input code for the operation.
+ * @param[in] arg1 Input arg1 for the operation.
  * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
  * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (78%) with EmitAtRange in
  * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -365,10 +363,10 @@ void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& pa
 
 /**
  * @brief Diagnostic context emit.
- * @param[in] param Parameter param.
- * @param[in] parentSym Parameter parentSym.
- * @param[in] code Parameter code.
- * @param[in] args Parameter args.
+ * @param[in] param Function parameter information.
+ * @param[in] parentSym Symbol or grammar symbol.
+ * @param[in] code Input code for the operation.
+ * @param[in] args List of argument nodes.
  * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
  * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (71%) with Emit in
  * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -397,13 +395,10 @@ void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, Di
 
 /**
  * @brief Diagnostic context emit at range.
- * @param[in] range Parameter range.
- * @param[in] code Parameter code.
- * @param[in] arg1 Parameter arg1.
- * @param[in] severity Parameter severity.
- * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with EmitAtRange in server/src/analysis/DiagnosticContext.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (96%) with EmitAtRange in
- * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] range Source range or LSP range.
+ * @param[in] code Input code for the operation.
+ * @param[in] arg1 Input arg1 for the operation.
+ * @param[in] severity Input severity for the operation.
  * Structural overlap (88%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate for unification in
  * server/src/analysis/SemanticHelpers.h. Structural overlap (85%) with Emit in
  * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -420,13 +415,10 @@ void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, st
 
 /**
  * @brief Diagnostic context emit at range.
- * @param[in] range Parameter range.
- * @param[in] code Parameter code.
- * @param[in] arg1 Parameter arg1.
- * @param[in] arg2 Parameter arg2.
- * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with EmitAtRange in server/src/analysis/DiagnosticContext.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (93%) with EmitAtRange in
- * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] range Source range or LSP range.
+ * @param[in] code Input code for the operation.
+ * @param[in] arg1 Input arg1 for the operation.
+ * @param[in] arg2 Input arg2 for the operation.
  * Structural overlap (89%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate for unification in
  * server/src/analysis/SemanticHelpers.h. Structural overlap (85%) with Emit in
  * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -441,13 +433,10 @@ void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, st
 
 /**
  * @brief Diagnostic context emit at range.
- * @param[in] range Parameter range.
- * @param[in] code Parameter code.
- * @param[in] args Parameter args.
- * @param[in] severity Parameter severity.
- * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with EmitAtRange in server/src/analysis/DiagnosticContext.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (93%) with EmitAtRange in
- * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] range Source range or LSP range.
+ * @param[in] code Input code for the operation.
+ * @param[in] args List of argument nodes.
+ * @param[in] severity Input severity for the operation.
  * Structural overlap (88%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate for unification in
  * server/src/analysis/SemanticHelpers.h.
  */
@@ -459,15 +448,12 @@ void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,
     Append(std::move(diag));
 }
 
-namespace
-{
-SourceRange NodeToRange(TSNode node) noexcept
+static SourceRange NodeToRange(TSNode node) noexcept
 {
     const TSPoint start = ts_node_start_point(node);
     const TSPoint end = ts_node_end_point(node);
     return {start.row, start.column, end.row, end.column};
 }
-} // namespace
 
 void DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, DiagnosticSeverity severity) const
 {

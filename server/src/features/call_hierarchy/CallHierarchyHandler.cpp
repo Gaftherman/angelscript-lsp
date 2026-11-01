@@ -12,25 +12,13 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
-using analysis::CallGraphIndex;
-using analysis::CallSite;
-using analysis::DocumentCalls;
-using analysis::NodeText;
-using analysis::Symbol;
-using analysis::SymbolTable;
-using analysis::SymbolType;
 
 /**
  * @brief To item.
- * @param[in] sym Parameter sym.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (67%) with ToItem in
- * server/src/features/type_hierarchy/TypeHierarchyHandler.cpp. Candidate for unification in
- * server/src/features/common/FeatureSharedUtils.h.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @return Calculated or extracted result of the operation.
  */
-lsp::CallHierarchyItem ToItem(const Symbol& sym)
+static lsp::CallHierarchyItem ToItem(const analysis::Symbol& sym)
 {
     lsp::CallHierarchyItem item;
     item.name = std::string(analysis::LastScopeSegment(sym.name));
@@ -57,7 +45,7 @@ lsp::CallHierarchyItem ToItem(const Symbol& sym)
 }
 
 /** @brief The qualified name a follow-up request is about, from the item it was handed. */
-std::string QualifiedNameOf(const lsp::CallHierarchyItem& item)
+static std::string QualifiedNameOf(const lsp::CallHierarchyItem& item)
 {
     if (item.data.has_value() && item.data->isString())
     {
@@ -67,15 +55,17 @@ std::string QualifiedNameOf(const lsp::CallHierarchyItem& item)
     return item.name;
 }
 
-bool IsFunctionSymbol(const Symbol& sym)
+static bool IsFunctionSymbol(const analysis::Symbol& sym)
 {
-    return sym.type == SymbolType::Function && std::holds_alternative<analysis::FunctionSignature>(sym.signature);
+    return sym.type == analysis::SymbolType::Function &&
+           std::holds_alternative<analysis::FunctionSignature>(sym.signature);
 }
 
 /** @brief Function declarations whose qualified name is exactly this. */
-std::vector<Symbol> FindByQualifiedName(const std::string& qualifiedName, const SymbolTable& table)
+static std::vector<analysis::Symbol> FindByQualifiedName(const std::string& qualifiedName,
+                                                         const analysis::SymbolTable& table)
 {
-    std::vector<Symbol> found;
+    std::vector<analysis::Symbol> found;
     const auto symbols = table.FindSymbolsPtr(qualifiedName);
     if (!symbols)
     {
@@ -99,16 +89,16 @@ std::vector<Symbol> FindByQualifiedName(const std::string& qualifiedName, const 
  * for once, not work done on every keystroke; the per-edit passes all read the RuleIndex
  * instead, which is built for exactly that reason.
  */
-std::vector<Symbol> FindByBareName(const std::string& bareName, const SymbolTable& table)
+static std::vector<analysis::Symbol> FindByBareName(const std::string& bareName, const analysis::SymbolTable& table)
 {
-    std::vector<Symbol> found;
+    std::vector<analysis::Symbol> found;
     if (bareName.empty())
     {
         return found;
     }
 
     table.ForEachSymbol(
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& sym : symbols)
             {
@@ -122,7 +112,7 @@ std::vector<Symbol> FindByBareName(const std::string& bareName, const SymbolTabl
 }
 
 /** @brief The function whose body a node sits in, qualified, or empty when it sits in none. */
-std::string EnclosingFunction(TSNode node, std::string_view sourceCode)
+static std::string EnclosingFunction(TSNode node, std::string_view sourceCode)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode owner = parser::FindAncestorWithSymbol(node, gs.symFuncDeclaration);
@@ -131,7 +121,7 @@ std::string EnclosingFunction(TSNode node, std::string_view sourceCode)
         return "";
     }
 
-    const std::string name = NodeText(parser::GetChildByField(owner, gs.fieldName), sourceCode);
+    const std::string name = parser::NodeText(parser::GetChildByField(owner, gs.fieldName), sourceCode);
     if (name.empty())
     {
         return "";
@@ -146,7 +136,7 @@ std::string EnclosingFunction(TSNode node, std::string_view sourceCode)
 }
 
 /** @brief The identifier the cursor sits on, or empty when it is not on one. */
-std::string IdentifierAt(const CallHierarchyPrepareRequest& request, TSNode& outNode)
+static std::string IdentifierAt(const CallHierarchyPrepareRequest& request, TSNode& outNode)
 {
     outNode = TSNode{};
     if (!request.tree)
@@ -164,18 +154,20 @@ std::string IdentifierAt(const CallHierarchyPrepareRequest& request, TSNode& out
 
     outNode = node;
     const auto& gs = parser::GetGrammarSymbols();
-    return ts_node_symbol(node) == gs.symIdentifier ? std::string(NodeText(node, request.sourceCode)) : std::string();
+    return ts_node_symbol(node) == gs.symIdentifier ? std::string(parser::NodeText(node, request.sourceCode))
+                                                    : std::string();
 }
 
 /**
  * @brief Locate outgoing calls from a caller, falling back to synthesized host class origin mixin.
  * @param[in] caller Qualified name of the caller.
  * @param[in] callGraph Call graph to query.
- * @param[in] symbolTable Symbol table to look up synthesized symbols.
+ * @param[in] symbolTable analysis::Symbol table to look up synthesized symbols.
  * @return List of call documents matching caller.
  */
-std::vector<DocumentCalls> FindCallsFromCaller(const std::string& caller, const CallGraphIndex& callGraph,
-                                               const SymbolTable& symbolTable)
+static std::vector<analysis::DocumentCalls> FindCallsFromCaller(const std::string& caller,
+                                                                const analysis::CallGraphIndex& callGraph,
+                                                                const analysis::SymbolTable& symbolTable)
 {
     auto calls = callGraph.FindCallsFrom(caller);
     if (!calls.empty())
@@ -210,7 +202,8 @@ std::vector<DocumentCalls> FindCallsFromCaller(const std::string& caller, const 
  * @param[in] calls List of call documents.
  * @return Vector of pairs mapping callee name to their call ranges.
  */
-std::vector<std::pair<std::string, std::vector<lsp::Range>>> GroupCallsByCallee(const std::vector<DocumentCalls>& calls)
+static std::vector<std::pair<std::string, std::vector<lsp::Range>>>
+GroupCallsByCallee(const std::vector<analysis::DocumentCalls>& calls)
 {
     std::vector<std::pair<std::string, std::vector<lsp::Range>>> byCallee;
     for (const auto& document : calls)
@@ -238,7 +231,7 @@ std::vector<std::pair<std::string, std::vector<lsp::Range>>> GroupCallsByCallee(
  * @param[in] sym Candidate symbol to check.
  * @return True if an outgoing call item already exists for this symbol.
  */
-bool OutgoingCallExists(const std::vector<lsp::CallHierarchyOutgoingCall>& outgoing, const Symbol& sym)
+static bool OutgoingCallExists(const std::vector<lsp::CallHierarchyOutgoingCall>& outgoing, const analysis::Symbol& sym)
 {
     for (const auto& out : outgoing)
     {
@@ -255,11 +248,12 @@ bool OutgoingCallExists(const std::vector<lsp::CallHierarchyOutgoingCall>& outgo
  * @brief Append outgoing call entries for a specific callee.
  * @param[in] callee Callee bare name.
  * @param[in] ranges Ranges where callee was invoked.
- * @param[in] symbolTable Symbol table to look up callee declarations.
+ * @param[in] symbolTable analysis::Symbol table to look up callee declarations.
  * @param[in,out] outgoing List of outgoing calls to append to.
  */
-void AppendOutgoingCallsForCallee(const std::string& callee, const std::vector<lsp::Range>& ranges,
-                                  const SymbolTable& symbolTable, std::vector<lsp::CallHierarchyOutgoingCall>& outgoing)
+static void AppendOutgoingCallsForCallee(const std::string& callee, const std::vector<lsp::Range>& ranges,
+                                         const analysis::SymbolTable& symbolTable,
+                                         std::vector<lsp::CallHierarchyOutgoingCall>& outgoing)
 {
     // A callee that resolves to no declaration is an engine-registered function. There is
     // nowhere to navigate to, so it is left out rather than offered as a dead entry.
@@ -281,11 +275,10 @@ void AppendOutgoingCallsForCallee(const std::string& callee, const std::vector<l
  * @param[in] b Second symbol.
  * @return True if file URI, start line and start character match.
  */
-bool SameDeclarationLocation(const Symbol& a, const Symbol& b)
+static bool SameDeclarationLocation(const analysis::Symbol& a, const analysis::Symbol& b)
 {
     return a.fileUri == b.fileUri && a.startLine == b.startLine && a.startCharacter == b.startCharacter;
 }
-} // namespace
 
 std::optional<std::vector<lsp::CallHierarchyItem>> PrepareCallHierarchy(const CallHierarchyPrepareRequest& request)
 {
@@ -297,7 +290,7 @@ std::optional<std::vector<lsp::CallHierarchyItem>> PrepareCallHierarchy(const Ca
     TSNode node{};
     const std::string name = IdentifierAt(request, node);
 
-    std::vector<Symbol> declarations;
+    std::vector<analysis::Symbol> declarations;
     if (!name.empty())
     {
         declarations = FindByBareName(name, request.symbolTable);
@@ -320,11 +313,11 @@ std::optional<std::vector<lsp::CallHierarchyItem>> PrepareCallHierarchy(const Ca
     }
 
     // Deduplicate declarations that point to the exact same source range (e.g. mixin origin vs synthesized symbols)
-    std::vector<Symbol> uniqueDeclarations;
+    std::vector<analysis::Symbol> uniqueDeclarations;
     for (const auto& sym : declarations)
     {
         auto it = std::find_if(uniqueDeclarations.begin(), uniqueDeclarations.end(),
-                               [&sym](const Symbol& u) { return SameDeclarationLocation(u, sym); });
+                               [&sym](const analysis::Symbol& u) { return SameDeclarationLocation(u, sym); });
         if (it == uniqueDeclarations.end())
         {
             uniqueDeclarations.push_back(sym);

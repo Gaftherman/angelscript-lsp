@@ -9,9 +9,7 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
-FormatCodeOptions ResolveEffectiveFormatOptions(std::string_view uri, FormatCodeOptions opts)
+static FormatCodeOptions ResolveEffectiveFormatOptions(std::string_view uri, FormatCodeOptions opts)
 {
     if (auto clangStyle = LoadClangFormatForFile(uri))
     {
@@ -20,7 +18,7 @@ FormatCodeOptions ResolveEffectiveFormatOptions(std::string_view uri, FormatCode
     return opts;
 }
 
-std::string ExtractMatchedRangeText(const std::vector<std::string>& outputLines, size_t firstIdx, size_t lastIdx)
+static std::string ExtractMatchedRangeText(const std::vector<std::string>& outputLines, size_t firstIdx, size_t lastIdx)
 {
     std::vector<std::string> rangeLines;
     rangeLines.reserve(lastIdx - firstIdx + 1);
@@ -30,7 +28,6 @@ std::string ExtractMatchedRangeText(const std::vector<std::string>& outputLines,
     }
     return rangeLines.empty() ? "" : JoinLines(rangeLines, 0, static_cast<uint32_t>(rangeLines.size() - 1));
 }
-} // namespace
 
 std::string FormatSourceCode(std::string_view sourceCode, const FormatCodeOptions& formatOptions)
 {

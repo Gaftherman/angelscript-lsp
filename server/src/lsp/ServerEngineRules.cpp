@@ -7,9 +7,7 @@
 
 namespace angel_lsp
 {
-namespace
-{
-std::string FindWildcardRulesInDir(const std::filesystem::path& dir)
+static std::string FindWildcardRulesInDir(const std::filesystem::path& dir)
 {
     std::error_code ec;
     if (!std::filesystem::is_directory(dir, ec))
@@ -37,7 +35,7 @@ std::string FindWildcardRulesInDir(const std::filesystem::path& dir)
     return matches.front();
 }
 
-std::string TryResolveSiblingRulesForStub(const std::string& stubFilePath)
+static std::string TryResolveSiblingRulesForStub(const std::string& stubFilePath)
 {
     if (stubFilePath.empty())
     {
@@ -68,8 +66,9 @@ std::string TryResolveSiblingRulesForStub(const std::string& stubFilePath)
     return {};
 }
 
-std::string ResolveRulesPath(const std::string& configuredPath, const std::vector<std::string>& workspaceRoots,
-                             const std::string& effectivePredefined, const std::vector<std::string>& fallbackStubs)
+static std::string ResolveRulesPath(const std::string& configuredPath, const std::vector<std::string>& workspaceRoots,
+                                    const std::string& effectivePredefined,
+                                    const std::vector<std::string>& fallbackStubs)
 {
     std::error_code ec;
     if (!configuredPath.empty())
@@ -121,8 +120,6 @@ std::string ResolveRulesPath(const std::string& configuredPath, const std::vecto
 
     return {};
 }
-
-} // namespace
 
 void Server::LoadWorkspaceEngineRules(const std::vector<std::string>& workspaceRoots)
 {

@@ -991,7 +991,7 @@ Server::HandleRequestsTextDocument_WillSaveWaitUntil(lsp::requests::TextDocument
     return lsp::Array<lsp::TextEdit>{};
 }
 
-namespace
+namespace text_document_handlers_detail
 {
 /**
  * @brief Represents Virtual mixin target.
@@ -1002,7 +1002,12 @@ struct VirtualMixinTarget
     std::string hostClass;
     std::string mixinName;
 };
+} // namespace text_document_handlers_detail
 
+using VirtualMixinTarget = text_document_handlers_detail::VirtualMixinTarget;
+
+namespace text_document_handlers_detail
+{
 /**
  * @brief Represents Mixin symbol location.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1015,8 +1020,11 @@ struct MixinSymbolLocation
     std::string resolvedBaseClass;
     bool found{false};
 };
+} // namespace text_document_handlers_detail
 
-VirtualMixinTarget ParseVirtualMixinUri(std::string_view uri)
+using MixinSymbolLocation = text_document_handlers_detail::MixinSymbolLocation;
+
+static VirtualMixinTarget ParseVirtualMixinUri(std::string_view uri)
 {
     std::string_view s = uri;
     static constexpr std::string_view kVirtualSchemeFull = "angelscript-virtual://";
@@ -1050,9 +1058,9 @@ VirtualMixinTarget ParseVirtualMixinUri(std::string_view uri)
     return target;
 }
 
-const angel_lsp::analysis::Symbol* FindMixinClassSymbol(const angel_lsp::analysis::SymbolTable& symTable,
-                                                        const std::string& mixinName,
-                                                        std::vector<angel_lsp::analysis::Symbol>& outCandidates)
+static const angel_lsp::analysis::Symbol* FindMixinClassSymbol(const angel_lsp::analysis::SymbolTable& symTable,
+                                                               const std::string& mixinName,
+                                                               std::vector<angel_lsp::analysis::Symbol>& outCandidates)
 {
     outCandidates = symTable.FindSymbols(mixinName);
     for (const auto& cand : outCandidates)
@@ -1075,7 +1083,7 @@ const angel_lsp::analysis::Symbol* FindMixinClassSymbol(const angel_lsp::analysi
     return nullptr;
 }
 
-MixinSymbolLocation ResolveMixinLocation(const angel_lsp::analysis::Symbol* mixinSym)
+static MixinSymbolLocation ResolveMixinLocation(const angel_lsp::analysis::Symbol* mixinSym)
 {
     MixinSymbolLocation loc;
     if (!mixinSym)
@@ -1099,7 +1107,7 @@ MixinSymbolLocation ResolveMixinLocation(const angel_lsp::analysis::Symbol* mixi
     return loc;
 }
 
-void AppendMixinSourceLines(std::string_view sourceText, uint32_t startLine, uint32_t endLine, std::string& out)
+static void AppendMixinSourceLines(std::string_view sourceText, uint32_t startLine, uint32_t endLine, std::string& out)
 {
     std::vector<std::string_view> lines;
     size_t start = 0;
@@ -1132,8 +1140,8 @@ void AppendMixinSourceLines(std::string_view sourceText, uint32_t startLine, uin
     }
 }
 
-void AppendFallbackMixin(std::string_view mixinName, const std::vector<angel_lsp::analysis::Symbol>& candidates,
-                         std::string& out)
+static void AppendFallbackMixin(std::string_view mixinName, const std::vector<angel_lsp::analysis::Symbol>& candidates,
+                                std::string& out)
 {
     out += fmt::format("mixin class {}\n{{\n", mixinName);
     for (const auto& cand : candidates)
@@ -1145,7 +1153,6 @@ void AppendFallbackMixin(std::string_view mixinName, const std::vector<angel_lsp
     }
     out += "}\n";
 }
-} // namespace
 
 std::string Server::GenerateVirtualMixinDocument(std::string_view uri)
 {

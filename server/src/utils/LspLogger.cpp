@@ -7,17 +7,14 @@
 
 namespace angel_lsp::utils
 {
-namespace
-{
 /** @brief Sends one record, or does nothing when the level is below the threshold. */
-void Send(lsp::MessageHandler* handler, lsp::MessageType type, std::string_view message)
+static void Send(lsp::MessageHandler* handler, lsp::MessageType type, std::string_view message)
 {
     lsp::notifications::Window_LogMessage::Params logParams;
     logParams.type = type;
     logParams.message = message;
     handler->sendNotification<lsp::notifications::Window_LogMessage>(std::move(logParams));
 }
-} // namespace
 
 LspLogger::LspLogger(lsp::MessageHandler* messageHandler) : m_messageHandler(messageHandler)
 {

@@ -4,9 +4,7 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
-std::vector<Token> SplitShiftOperators(const std::vector<Token>& tokens)
+static std::vector<Token> SplitShiftOperators(const std::vector<Token>& tokens)
 {
     std::vector<Token> splitTokens;
     splitTokens.reserve(tokens.size());
@@ -31,17 +29,17 @@ std::vector<Token> SplitShiftOperators(const std::vector<Token>& tokens)
     return splitTokens;
 }
 
-bool CanPrecedeTemplate(const Token& prev)
+static bool CanPrecedeTemplate(const Token& prev)
 {
     return prev.type == TokenType::Identifier || prev.text == "cast" || prev.isTemplateCloser;
 }
 
-bool IsTemplateTerminator(TokenType type)
+static bool IsTemplateTerminator(TokenType type)
 {
     return type == TokenType::Semicolon || type == TokenType::OpenBrace || type == TokenType::CloseBrace;
 }
 
-void TryIdentifyTemplateAt(std::vector<Token>& tokens, size_t t)
+static void TryIdentifyTemplateAt(std::vector<Token>& tokens, size_t t)
 {
     if (t == 0 || tokens[t].text != "<" || !CanPrecedeTemplate(tokens[t - 1]))
         return;
@@ -79,7 +77,7 @@ void TryIdentifyTemplateAt(std::vector<Token>& tokens, size_t t)
     }
 }
 
-void MarkClangFormatPragmas(std::vector<Token>& tokens)
+static void MarkClangFormatPragmas(std::vector<Token>& tokens)
 {
     bool off = false;
     for (auto& tok : tokens)
@@ -101,7 +99,7 @@ void MarkClangFormatPragmas(std::vector<Token>& tokens)
     }
 }
 
-bool IsBuiltInTypeKeyword(std::string_view text)
+static bool IsBuiltInTypeKeyword(std::string_view text)
 {
     static const std::unordered_set<std::string_view> kTypeKeywords = {
         "auto", "void",  "bool",   "int",    "int8",   "int16", "int32",  "int64",
@@ -109,11 +107,10 @@ bool IsBuiltInTypeKeyword(std::string_view text)
     return kTypeKeywords.contains(text);
 }
 
-bool IsDirectionKeyword(const Token& tok)
+static bool IsDirectionKeyword(const Token& tok)
 {
     return tok.type == TokenType::Keyword && (tok.text == "in" || tok.text == "out" || tok.text == "inout");
 }
-} // namespace
 
 std::vector<Token> Tokenize(std::string_view src)
 {
@@ -188,10 +185,8 @@ bool IsReferenceTypeDeclarator(const std::vector<Token>& tokens, size_t ampIdx)
 
 /**
  * @brief Is unary preceding token type.
- * @param[in] type Parameter type.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (92%) with IsValueOnlyKind in
- * server/src/analysis/rules/FunctionRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] type Token type or semantic type.
+ * @return True if the condition is satisfied; false otherwise.
  * Structural overlap (92%) with IsUnconditionallyNonNullablePrimitive in server/src/analysis/SemanticAnalyzer.cpp.
  * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (86%) with
  * IsClosingOrSeparatorPunctuation in server/src/features/formatting/FormattingSpacing.cpp. Candidate for unification in

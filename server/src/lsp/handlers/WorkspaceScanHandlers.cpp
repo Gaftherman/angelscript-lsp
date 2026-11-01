@@ -14,7 +14,7 @@
 
 namespace angel_lsp
 {
-namespace
+namespace workspace_scan_handlers_detail
 {
 /**
  * @brief Logs how long a startup phase took, when it ends.
@@ -58,6 +58,9 @@ class PhaseTimer
     std::string m_phase;
     std::chrono::steady_clock::time_point m_start;
 };
+} // namespace workspace_scan_handlers_detail
+
+using PhaseTimer = workspace_scan_handlers_detail::PhaseTimer;
 
 /**
  * @brief Constructs a TextEdit for replacing an include directive's path substring.
@@ -66,9 +69,9 @@ class PhaseTimer
  * @param[in] replacement The new relative path replacement string.
  * @return TextEdit if opening and closing delimiters are matched, or std::nullopt otherwise.
  */
-std::optional<lsp::TextEdit> TryBuildDirectiveEdit(std::string_view line,
-                                                   const angel_lsp::utils::IncludeDirective& directive,
-                                                   std::string_view replacement)
+static std::optional<lsp::TextEdit> TryBuildDirectiveEdit(std::string_view line,
+                                                          const angel_lsp::utils::IncludeDirective& directive,
+                                                          std::string_view replacement)
 {
     const char open = directive.isAngled ? '<' : '"';
     const char close = directive.isAngled ? '>' : '"';
@@ -91,7 +94,6 @@ std::optional<lsp::TextEdit> TryBuildDirectiveEdit(std::string_view line,
     edit.newText = std::string(replacement);
     return edit;
 }
-} // namespace
 
 void Server::BeginWorkspaceProgress(const std::string& title)
 {
@@ -324,9 +326,7 @@ bool Server::LoadAndProcessPredefinedStubs(const std::vector<std::string>& disco
     return !stopToken.stop_requested();
 }
 
-namespace
-{
-std::vector<std::string> ConvertWorkspaceRootsToPaths(const std::vector<std::string>& workspaceRoots)
+static std::vector<std::string> ConvertWorkspaceRootsToPaths(const std::vector<std::string>& workspaceRoots)
 {
     std::vector<std::string> roots;
     roots.reserve(workspaceRoots.size());
@@ -336,7 +336,6 @@ std::vector<std::string> ConvertWorkspaceRootsToPaths(const std::vector<std::str
     }
     return roots;
 }
-} // namespace
 
 void Server::RecoverFromScanFailure(const std::string& err)
 {
@@ -678,17 +677,16 @@ void Server::HandleNotificationsSetTrace(lsp::notifications::SetTrace::Params&& 
     if (!m_logger)
         return;
 
-    using angel_lsp::utils::LogLevel;
     switch (params.value)
     {
     case lsp::TraceValue::Off:
-        m_logger->SetLevel(LogLevel::Error);
+        m_logger->SetLevel(utils::LogLevel::Error);
         break;
     case lsp::TraceValue::Messages:
-        m_logger->SetLevel(LogLevel::Info);
+        m_logger->SetLevel(utils::LogLevel::Info);
         break;
     case lsp::TraceValue::Verbose:
-        m_logger->SetLevel(LogLevel::Debug);
+        m_logger->SetLevel(utils::LogLevel::Debug);
         break;
 
     // Not a value any client sends: the generator appends MAX_VALUE to every enum it writes,

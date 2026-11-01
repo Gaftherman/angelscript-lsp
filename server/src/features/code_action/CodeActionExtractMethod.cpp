@@ -2,18 +2,13 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 
 /**
  * @brief Finds the insertion point for adding a method definition inside a class.
  * @param[in] classNode Class declaration node.
  * @return Insertion point.
- * @note [REFACTOR-CANDIDATE] Structural overlap (95%) with FindFunctionBodyBlock in
- * server/src/features/code_action/CodeActionExtractMethodStatements.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-TSPoint FindClassBodyInsertionPoint(TSNode classNode)
+static TSPoint FindClassBodyInsertionPoint(TSNode classNode)
 {
     TSNode classBody = parser::GetChildByField(classNode, parser::GetGrammarSymbols().fieldBody);
     if (ts_node_is_null(classBody))
@@ -44,8 +39,8 @@ TSPoint FindClassBodyInsertionPoint(TSNode classNode)
  * @param[in] plan Extracted method plan.
  * @return Constructed WorkspaceEdit.
  */
-lsp::WorkspaceEdit BuildExtractMethodEdits(const CodeActionRequest& request, const ExtractMethodStatements& stmts,
-                                           const ExtractedMethodPlan& plan)
+static lsp::WorkspaceEdit BuildExtractMethodEdits(const CodeActionRequest& request,
+                                                  const ExtractMethodStatements& stmts, const ExtractedMethodPlan& plan)
 {
     const std::string methodName = "NewMethod";
     lsp::TextEdit methodDefEdit;
@@ -78,8 +73,6 @@ lsp::WorkspaceEdit BuildExtractMethodEdits(const CodeActionRequest& request, con
     wsEdit.changes = std::move(changes);
     return wsEdit;
 }
-
-} // namespace
 
 void TryAddExtractMethodAction(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions)
 {

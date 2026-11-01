@@ -13,7 +13,7 @@
 
 namespace angel_lsp::analysis
 {
-namespace
+namespace repeated_conversion_checker_detail
 {
 /**
  * @brief Represents Conversion occurrence.
@@ -26,8 +26,11 @@ struct ConversionOccurrence
     std::string fromType;
     std::string toType;
 };
+} // namespace repeated_conversion_checker_detail
 
-bool IsExtractableCandidate(TSNode node)
+using ConversionOccurrence = repeated_conversion_checker_detail::ConversionOccurrence;
+
+static bool IsExtractableCandidate(TSNode node)
 {
     if (ts_node_is_null(node))
     {
@@ -39,6 +42,8 @@ bool IsExtractableCandidate(TSNode node)
            sym == gs.symIndexExpression || sym == gs.symScopedIdentifier;
 }
 
+namespace repeated_conversion_checker_detail
+{
 /**
  * @brief Represents Conversion type pair.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -48,9 +53,12 @@ struct ConversionTypePair
     std::string fromType;
     std::string toType;
 };
+} // namespace repeated_conversion_checker_detail
 
-void TryRecordOccurrence(TSNode operand, const ConversionTypePair& types, const DiagnosticContext& ctx,
-                         std::vector<ConversionOccurrence>& out)
+using ConversionTypePair = repeated_conversion_checker_detail::ConversionTypePair;
+
+static void TryRecordOccurrence(TSNode operand, const ConversionTypePair& types, const DiagnosticContext& ctx,
+                                std::vector<ConversionOccurrence>& out)
 {
     if (!IsExtractableCandidate(operand))
     {
@@ -58,12 +66,12 @@ void TryRecordOccurrence(TSNode operand, const ConversionTypePair& types, const 
     }
     if (TypeHasOpImplConvTo(types.fromType, types.toType, ctx.request.symbolTable))
     {
-        out.push_back({operand, GetNodeText(operand, ctx.request.sourceCode), types.fromType, types.toType});
+        out.push_back({operand, parser::GetNodeText(operand, ctx.request.sourceCode), types.fromType, types.toType});
     }
 }
 
-void InspectComparisonNode(TSNode binNode, const Scope* scope, DiagnosticContext& ctx,
-                           std::vector<ConversionOccurrence>& out)
+static void InspectComparisonNode(TSNode binNode, const Scope* scope, DiagnosticContext& ctx,
+                                  std::vector<ConversionOccurrence>& out)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode opNode = parser::GetChildByField(binNode, gs.fieldOperator);
@@ -96,8 +104,8 @@ void InspectComparisonNode(TSNode binNode, const Scope* scope, DiagnosticContext
     TryRecordOccurrence(right, {cleanRight, cleanLeft}, ctx, out);
 }
 
-void CollectConditionConversions(TSNode condNode, const Scope* scope, DiagnosticContext& ctx,
-                                 std::vector<ConversionOccurrence>& out)
+static void CollectConditionConversions(TSNode condNode, const Scope* scope, DiagnosticContext& ctx,
+                                        std::vector<ConversionOccurrence>& out)
 {
     if (ts_node_is_null(condNode))
     {
@@ -122,7 +130,7 @@ void CollectConditionConversions(TSNode condNode, const Scope* scope, Diagnostic
     }
 }
 
-TSNode GetIfCondition(TSNode ifNode)
+static TSNode GetIfCondition(TSNode ifNode)
 {
     TSNode cond = parser::GetChildByField(ifNode, parser::GetGrammarSymbols().fieldCondition);
     if (!ts_node_is_null(cond))
@@ -132,7 +140,7 @@ TSNode GetIfCondition(TSNode ifNode)
     return (ts_node_named_child_count(ifNode) > 0) ? ts_node_named_child(ifNode, 0) : TSNode{};
 }
 
-TSNode GetIfAlternative(TSNode ifNode)
+static TSNode GetIfAlternative(TSNode ifNode)
 {
     TSNode alt = parser::GetChildByField(ifNode, parser::GetGrammarSymbols().fieldAlternative);
     if (!ts_node_is_null(alt))
@@ -142,7 +150,7 @@ TSNode GetIfAlternative(TSNode ifNode)
     return (ts_node_named_child_count(ifNode) >= 3) ? ts_node_named_child(ifNode, 2) : TSNode{};
 }
 
-std::vector<TSNode> CollectLadderIfNodes(TSNode rootIfNode)
+static std::vector<TSNode> CollectLadderIfNodes(TSNode rootIfNode)
 {
     std::vector<TSNode> ifNodes;
     TSNode curr = rootIfNode;
@@ -155,7 +163,7 @@ std::vector<TSNode> CollectLadderIfNodes(TSNode rootIfNode)
     return ifNodes;
 }
 
-void EmitRepeatedHints(const std::vector<ConversionOccurrence>& occurrences, DiagnosticContext& ctx)
+static void EmitRepeatedHints(const std::vector<ConversionOccurrence>& occurrences, DiagnosticContext& ctx)
 {
     if (occurrences.size() < 2)
     {
@@ -179,7 +187,6 @@ void EmitRepeatedHints(const std::vector<ConversionOccurrence>& occurrences, Dia
         }
     }
 }
-} // namespace
 
 void CheckRepeatedConversions(TSNode rootIfNode, const Scope* scope, DiagnosticContext& ctx)
 {

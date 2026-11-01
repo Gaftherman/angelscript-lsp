@@ -10,15 +10,13 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 
 /**
  * @brief Finds the statement block body of a function node.
  * @param[in] fnNode Function declaration node.
  * @return Statement block node or null node.
  */
-TSNode FindFunctionBodyBlock(TSNode fnNode)
+static TSNode FindFunctionBodyBlock(TSNode fnNode)
 {
     TSNode bodyNode = parser::GetChildByField(fnNode, parser::GetGrammarSymbols().fieldBody);
     if (!ts_node_is_null(bodyNode))
@@ -33,7 +31,7 @@ TSNode FindFunctionBodyBlock(TSNode fnNode)
  * @param[in] fnNode Function declaration node.
  * @return Parameter list node or null node.
  */
-TSNode FindFunctionParametersNode(TSNode fnNode)
+static TSNode FindFunctionParametersNode(TSNode fnNode)
 {
     TSNode paramList = parser::GetChildByField(fnNode, parser::GetGrammarSymbols().fieldParameters);
     if (!ts_node_is_null(paramList))
@@ -45,18 +43,15 @@ TSNode FindFunctionParametersNode(TSNode fnNode)
 
 /**
  * @brief Try build missing const fix for symbol.
- * @param[in] request Parameter request.
- * @param[in] rootNode Parameter rootNode.
- * @param[in] diag Parameter diag.
- * @param[in] sym Parameter sym.
+ * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
+ * @param[in] rootNode AST node under evaluation.
+ * @param[in] diag Input diag for the operation.
+ * @param[in] sym Tree-sitter grammar symbol.
  * @return Found item if present; std::nullopt otherwise.
- * @note [REFACTOR-CANDIDATE] Structural overlap (78%) with BuildAddConstAction in
- * server/src/features/code_action/CodeActionConstQualifier.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-std::optional<lsp::CodeAction> TryBuildMissingConstFixForSymbol(const CodeActionRequest& request, TSNode rootNode,
-                                                                const lsp::Diagnostic& diag,
-                                                                const analysis::Symbol& sym)
+static std::optional<lsp::CodeAction> TryBuildMissingConstFixForSymbol(const CodeActionRequest& request,
+                                                                       TSNode rootNode, const lsp::Diagnostic& diag,
+                                                                       const analysis::Symbol& sym)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSPoint fnPt = {sym.startLine, sym.startCharacter};
@@ -91,12 +86,12 @@ std::optional<lsp::CodeAction> TryBuildMissingConstFixForSymbol(const CodeAction
     return action;
 }
 
-void TryAddMissingConstDiagnosticFix(const CodeActionRequest& request, TSNode rootNode, const lsp::Diagnostic& diag,
-                                     std::vector<lsp::CodeAction>& actions)
+static void TryAddMissingConstDiagnosticFix(const CodeActionRequest& request, TSNode rootNode,
+                                            const lsp::Diagnostic& diag, std::vector<lsp::CodeAction>& actions)
 {
     TSPoint dPt = {diag.range.start.line, diag.range.start.character};
     TSNode memberNode = ts_node_descendant_for_point_range(rootNode, dPt, dPt);
-    std::string methodName = GetNodeText(memberNode, request.sourceCode);
+    std::string methodName = parser::GetNodeText(memberNode, request.sourceCode);
 
     TSNode callee = parser::GetParent(memberNode);
     TSNode objNode = parser::GetChildByField(callee, parser::GetGrammarSymbols().fieldObject);
@@ -125,15 +120,15 @@ void TryAddMissingConstDiagnosticFix(const CodeActionRequest& request, TSNode ro
 
 /**
  * @brief Has const qualifier between.
- * @param[in] sourceCode Parameter sourceCode.
- * @param[in] paramList Parameter paramList.
- * @param[in] bodyNode Parameter bodyNode.
- * @param[in] fnNode Parameter fnNode.
- * @return True if condition met; otherwise false.
+ * @param[in] sourceCode Document source text.
+ * @param[in] paramList Input paramList for the operation.
+ * @param[in] bodyNode AST node under evaluation.
+ * @param[in] fnNode AST node under evaluation.
+ * @return True if the condition is satisfied; false otherwise.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
-bool HasConstQualifierBetween(std::string_view sourceCode, TSNode paramList, TSNode bodyNode, TSNode fnNode)
+static bool HasConstQualifierBetween(std::string_view sourceCode, TSNode paramList, TSNode bodyNode, TSNode fnNode)
 {
     uint32_t pEndByte = ts_node_end_byte(paramList);
     uint32_t bStartByte = !ts_node_is_null(bodyNode) ? ts_node_start_byte(bodyNode) : ts_node_end_byte(fnNode);
@@ -160,14 +155,9 @@ static bool FindEnclosingMethodAndClass(TSNode leaf, TSNode& outFn, TSNode& outC
 
 /**
  * @brief Build add const action.
- * @param[in] paramList Parameter paramList.
- * @param[in] request Parameter request.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (78%) with CreateAccessorAction in
- * server/src/features/code_action/CodeActionAccessors.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (78%) with TryBuildMissingConstFixForSymbol in
- * server/src/features/code_action/CodeActionConstQualifier.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @param[in] paramList Input paramList for the operation.
+ * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
+ * @return Calculated or extracted result of the operation.
  */
 static lsp::CodeAction BuildAddConstAction(TSNode paramList, const CodeActionRequest& request)
 {
@@ -188,8 +178,8 @@ static lsp::CodeAction BuildAddConstAction(TSNode paramList, const CodeActionReq
     return action;
 }
 
-void TryAddIntentionalConstAction(const CodeActionRequest& request, TSNode rootNode,
-                                  std::vector<lsp::CodeAction>& actions)
+static void TryAddIntentionalConstAction(const CodeActionRequest& request, TSNode rootNode,
+                                         std::vector<lsp::CodeAction>& actions)
 {
     TSPoint pt = {request.range.start.line, request.range.start.character};
     TSNode leaf = ts_node_descendant_for_point_range(rootNode, pt, pt);
@@ -218,7 +208,7 @@ void TryAddIntentionalConstAction(const CodeActionRequest& request, TSNode rootN
     }
 
     TSNode classNameNode = parser::GetChildByField(classNode, parser::GetGrammarSymbols().fieldName);
-    std::string className = GetNodeText(classNameNode, request.sourceCode);
+    std::string className = parser::GetNodeText(classNameNode, request.sourceCode);
 
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
     const analysis::Scope* scope = FindScopeByLineOrRoot(rootScope.get(), ts_node_start_point(fnNode).row);
@@ -232,15 +222,15 @@ void TryAddIntentionalConstAction(const CodeActionRequest& request, TSNode rootN
 
 /**
  * @brief Try add const handle diagnostic fix.
- * @param[in] request Parameter request.
- * @param[in] rootNode Parameter rootNode.
- * @param[in] diag Parameter diag.
- * @param[in,out] actions Parameter actions.
+ * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
+ * @param[in] rootNode AST node under evaluation.
+ * @param[in] diag Input diag for the operation.
+ * @param[in,out] actions Input actions for the operation.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
-void TryAddConstHandleDiagnosticFix(const CodeActionRequest& request, TSNode rootNode, const lsp::Diagnostic& diag,
-                                    std::vector<lsp::CodeAction>& actions)
+static void TryAddConstHandleDiagnosticFix(const CodeActionRequest& request, TSNode rootNode,
+                                           const lsp::Diagnostic& diag, std::vector<lsp::CodeAction>& actions)
 {
     const TSPoint dPt = {diag.range.start.line, diag.range.start.character};
     TSNode node = ts_node_descendant_for_point_range(rootNode, dPt, dPt);
@@ -266,7 +256,7 @@ void TryAddConstHandleDiagnosticFix(const CodeActionRequest& request, TSNode roo
         return;
     }
 
-    const std::string typeText = GetNodeText(typeNode, request.sourceCode);
+    const std::string typeText = parser::GetNodeText(typeNode, request.sourceCode);
     if (!analysis::IsHandleTypeView(typeText) || analysis::IsConstTypeView(typeText))
     {
         return;
@@ -290,8 +280,6 @@ void TryAddConstHandleDiagnosticFix(const CodeActionRequest& request, TSNode roo
     action.edit = std::move(wsEdit);
     actions.push_back(std::move(action));
 }
-
-} // namespace
 
 void TryAddConstQualifierActions(const CodeActionRequest& request, TSNode rootNode,
                                  std::vector<lsp::CodeAction>& actions)

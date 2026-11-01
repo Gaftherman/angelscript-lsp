@@ -154,9 +154,7 @@ Server::ResolveModuleDefinition(const config::ServerConfig::ModuleDefinition& de
     return view;
 }
 
-namespace
-{
-bool NormalizedPathsEqual(std::string_view a, std::string_view b)
+static bool NormalizedPathsEqual(std::string_view a, std::string_view b)
 {
     if (a == b)
     {
@@ -180,7 +178,7 @@ bool NormalizedPathsEqual(std::string_view a, std::string_view b)
 #endif
 }
 
-void AppendUniqueDirectory(std::vector<std::string>& dirs, const std::string& dir, bool& added)
+static void AppendUniqueDirectory(std::vector<std::string>& dirs, const std::string& dir, bool& added)
 {
     if (dir.empty())
     {
@@ -194,7 +192,6 @@ void AppendUniqueDirectory(std::vector<std::string>& dirs, const std::string& di
         added = true;
     }
 }
-} // namespace
 
 void Server::AugmentSearchDirectoriesFromModules()
 {
@@ -678,9 +675,7 @@ void Server::IndexConfiguredModules(angel_lsp::parser::AngelScriptParser& parser
     SyncModuleIndexSymbols();
 }
 
-namespace
-{
-bool SymbolDeclaresShared(const angel_lsp::analysis::Symbol& symbol)
+static bool SymbolDeclaresShared(const angel_lsp::analysis::Symbol& symbol)
 {
     if (symbol.type == angel_lsp::analysis::SymbolType::Class)
     {
@@ -694,7 +689,6 @@ bool SymbolDeclaresShared(const angel_lsp::analysis::Symbol& symbol)
     }
     return false;
 }
-} // namespace
 
 void Server::SyncModuleIndexSymbols()
 {

@@ -20,8 +20,6 @@ extern "C" const TSLanguage* tree_sitter_angelscript();
 
 namespace angel_lsp::features
 {
-namespace
-{
 enum TokenTypeIndex : uint32_t
 {
     Type_Namespace = 0,
@@ -64,6 +62,8 @@ enum TokenModifierBit : uint32_t
     Mod_DefaultLibrary = 1 << 9
 };
 
+namespace semantic_tokens_handler_detail
+{
 /**
  * @brief Metadata associated with a classified semantic token.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -74,6 +74,9 @@ struct TokenMeta
     uint32_t tokenMod = 0;
     int priority = 0;
 };
+} // namespace semantic_tokens_handler_detail
+
+using TokenMeta = semantic_tokens_handler_detail::TokenMeta;
 
 /**
  * @brief Packs a line and character into a 64-bit coordinate key.
@@ -81,7 +84,7 @@ struct TokenMeta
  * @param[in] character Zero-based column offset.
  * @return 64-bit position key.
  */
-constexpr uint64_t PositionKey(uint32_t line, uint32_t character)
+static constexpr uint64_t PositionKey(uint32_t line, uint32_t character)
 {
     return (static_cast<uint64_t>(line) << 32) | character;
 }
@@ -91,8 +94,8 @@ constexpr uint64_t PositionKey(uint32_t line, uint32_t character)
  * @param[in] scope Scope root or child node.
  * @param[in,out] out Map from position key to resolved LocalDefinitionKind.
  */
-void CollectReferenceKinds(const analysis::Scope* scope,
-                           ankerl::unordered_dense::map<uint64_t, analysis::LocalDefinitionKind>& out)
+static void CollectReferenceKinds(const analysis::Scope* scope,
+                                  ankerl::unordered_dense::map<uint64_t, analysis::LocalDefinitionKind>& out)
 {
     for (const auto& def : scope->definitions)
     {
@@ -118,6 +121,8 @@ void CollectReferenceKinds(const analysis::Scope* scope,
     }
 }
 
+namespace semantic_tokens_handler_detail
+{
 /**
  * @brief Represents an intermediate, non-delta-encoded semantic token item.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -131,13 +136,16 @@ struct RawToken
     uint32_t tokenModifiers = 0;
     int priority = 0;
 };
+} // namespace semantic_tokens_handler_detail
+
+using RawToken = semantic_tokens_handler_detail::RawToken;
 
 /**
  * @brief Splits source code into views of individual lines without trailing carriage returns.
  * @param[in] str Full source buffer.
  * @return Vector of line views.
  */
-std::vector<std::string_view> SplitLinesView(std::string_view str)
+static std::vector<std::string_view> SplitLinesView(std::string_view str)
 {
     std::vector<std::string_view> lines;
     size_t start = 0;
@@ -166,9 +174,6 @@ std::vector<std::string_view> SplitLinesView(std::string_view str)
     return lines;
 }
 
-using parser::GetGrammarSymbols;
-using parser::GrammarSymbols;
-
 /**
  * @brief Fast-path check using pre-resolved TSSymbols for template brackets.
  * @param[in] parentSym Grammar symbol of parent node.
@@ -176,8 +181,8 @@ using parser::GrammarSymbols;
  * @param[in] syms Cached grammar symbols.
  * @return True if symbols match template punctuation patterns.
  */
-[[nodiscard]] inline bool IsTemplatePunctuation(TSSymbol parentSym, TSSymbol grandParentSym,
-                                                const GrammarSymbols& syms) noexcept
+[[nodiscard]] static inline bool IsTemplatePunctuation(TSSymbol parentSym, TSSymbol grandParentSym,
+                                                       const parser::GrammarSymbols& syms) noexcept
 {
     if (parentSym == syms.symTemplateTypeList || parentSym == syms.symCastExpression ||
         parentSym == syms.symTemplateParameterList)
@@ -202,15 +207,8 @@ using parser::GrammarSymbols;
  * @brief Trims leading and trailing ASCII whitespace from a string view.
  * @param[in] text String view to trim.
  * @return Trimmed string view.
- * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with TrimWhitespace in
- * server/src/analysis/overload/OverloadTypeConversions.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (90%) with TrimNodeText in
- * server/src/features/inlay_hint/InlayHintHandler.cpp. Candidate for unification in
- * server/src/features/common/FeatureSharedUtils.h. Structural overlap (88%) with Trim in
- * server/src/features/formatting/ClangFormatReader.cpp. Candidate for unification in
- * server/src/features/common/FeatureSharedUtils.h.
  */
-[[nodiscard]] inline std::string_view TrimWhitespace(std::string_view text) noexcept
+[[nodiscard]] static inline std::string_view TrimWhitespace(std::string_view text) noexcept
 {
     while (!text.empty() &&
            (text.front() == ' ' || text.front() == '\t' || text.front() == '\r' || text.front() == '\n'))
@@ -229,7 +227,7 @@ using parser::GrammarSymbols;
  * @param[in] text Token text.
  * @return True if token is punctuation or bracket.
  */
-[[nodiscard]] inline bool IsPunctuationOrBracket(std::string_view text) noexcept
+[[nodiscard]] static inline bool IsPunctuationOrBracket(std::string_view text) noexcept
 {
     text = TrimWhitespace(text);
     if (text.empty())
@@ -245,7 +243,7 @@ using parser::GrammarSymbols;
  * @param[in] text Token text.
  * @return True if token is genuine operator.
  */
-[[nodiscard]] inline bool IsGenuineOperator(std::string_view text) noexcept
+[[nodiscard]] static inline bool IsGenuineOperator(std::string_view text) noexcept
 {
     text = TrimWhitespace(text);
     static const ankerl::unordered_dense::set<std::string_view> s_operators = {
@@ -262,8 +260,8 @@ using parser::GrammarSymbols;
  * @param[in] syms Cached grammar symbols.
  * @return True if symbols match reference modifier patterns.
  */
-[[nodiscard]] inline bool IsReferenceModifier(TSSymbol parentSym, TSSymbol grandParentSym,
-                                              const GrammarSymbols& syms) noexcept
+[[nodiscard]] static inline bool IsReferenceModifier(TSSymbol parentSym, TSSymbol grandParentSym,
+                                                     const parser::GrammarSymbols& syms) noexcept
 {
     if (parentSym == syms.symParameter || parentSym == syms.symType || parentSym == syms.symDatatype ||
         parentSym == syms.symTemplateTypeList || parentSym == syms.symCastExpression)
@@ -279,7 +277,7 @@ using parser::GrammarSymbols;
  * @param[in] syms Cached grammar symbols.
  * @return True if node is enclosed in a type or parameter modifier construct.
  */
-[[nodiscard]] inline bool IsReferenceModifierNode(TSNode node, const GrammarSymbols& syms) noexcept
+[[nodiscard]] static inline bool IsReferenceModifierNode(TSNode node, const parser::GrammarSymbols& syms) noexcept
 {
     TSNode parent = parser::GetParent(node);
     if (ts_node_is_null(parent))
@@ -299,8 +297,8 @@ using parser::GrammarSymbols;
  * @param[in] syms Cached grammar symbols.
  * @return Optional pair of (tokenType, priority), or nullopt if ignored.
  */
-[[nodiscard]] inline std::optional<std::pair<uint32_t, int>>
-ClassifyOperatorOrPunctuation(TSNode node, std::string_view sourceCode, const GrammarSymbols& syms) noexcept
+[[nodiscard]] static inline std::optional<std::pair<uint32_t, int>>
+ClassifyOperatorOrPunctuation(TSNode node, std::string_view sourceCode, const parser::GrammarSymbols& syms) noexcept
 {
     const uint32_t sb = ts_node_start_byte(node);
     const uint32_t eb = ts_node_end_byte(node);
@@ -324,6 +322,8 @@ ClassifyOperatorOrPunctuation(TSNode node, std::string_view sourceCode, const Gr
     return std::make_pair(Type_Operator, 4);
 }
 
+namespace semantic_tokens_handler_detail
+{
 /**
  * @brief Classification rule for a single tree-sitter query capture pattern.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -336,17 +336,17 @@ struct CaptureRule
     bool isOperatorOrPunctuation = false;
     bool valid = false;
 };
+} // namespace semantic_tokens_handler_detail
+
+using CaptureRule = semantic_tokens_handler_detail::CaptureRule;
 
 /**
  * @brief Matches special syntactic capture patterns like comments, literals, or punctuation.
  * @param[in] name Capture name.
  * @param[out] rule Output classification rule.
  * @return True if pattern matched.
- * @note [REFACTOR-CANDIDATE] Structural overlap (83%) with MatchKeywordOrConstantRule in
- * server/src/features/semantic_tokens/SemanticTokensHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-bool MatchSpecialCaptureRule(std::string_view name, CaptureRule& rule)
+static bool MatchSpecialCaptureRule(std::string_view name, CaptureRule& rule)
 {
     if (name == "comment" || name == "string")
     {
@@ -390,13 +390,8 @@ bool MatchSpecialCaptureRule(std::string_view name, CaptureRule& rule)
  * @param[in] name Capture name.
  * @param[out] rule Output classification rule.
  * @return True if pattern matched.
- * @note [REFACTOR-CANDIDATE] Structural overlap (83%) with MatchSpecialCaptureRule in
- * server/src/features/semantic_tokens/SemanticTokensHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (63%) with MatchCallableOrPropertyRule in
- * server/src/features/semantic_tokens/SemanticTokensHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-bool MatchKeywordOrConstantRule(std::string_view name, CaptureRule& rule)
+static bool MatchKeywordOrConstantRule(std::string_view name, CaptureRule& rule)
 {
     if (name == "keyword" || name == "keyword.control" || name == "keyword.operator" || name == "boolean")
     {
@@ -435,13 +430,8 @@ bool MatchKeywordOrConstantRule(std::string_view name, CaptureRule& rule)
  * @param[in] name Capture name.
  * @param[out] rule Output classification rule.
  * @return True if pattern matched.
- * @note [REFACTOR-CANDIDATE] Structural overlap (68%) with MatchEntityCaptureRule in
- * server/src/features/semantic_tokens/SemanticTokensHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (63%) with MatchKeywordOrConstantRule in
- * server/src/features/semantic_tokens/SemanticTokensHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-bool MatchCallableOrPropertyRule(std::string_view name, CaptureRule& rule)
+static bool MatchCallableOrPropertyRule(std::string_view name, CaptureRule& rule)
 {
     if (name == "function" || name == "function.method")
     {
@@ -473,11 +463,8 @@ bool MatchCallableOrPropertyRule(std::string_view name, CaptureRule& rule)
  * @param[in] name Capture name.
  * @param[out] rule Output classification rule.
  * @return True if pattern matched.
- * @note [REFACTOR-CANDIDATE] Structural overlap (68%) with MatchCallableOrPropertyRule in
- * server/src/features/semantic_tokens/SemanticTokensHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-bool MatchEntityCaptureRule(std::string_view name, CaptureRule& rule)
+static bool MatchEntityCaptureRule(std::string_view name, CaptureRule& rule)
 {
     if (name == "type.builtin")
     {
@@ -514,7 +501,7 @@ bool MatchEntityCaptureRule(std::string_view name, CaptureRule& rule)
  * @param[in] name Capture identifier string.
  * @return Configured CaptureRule.
  */
-CaptureRule MakeCaptureRule(std::string_view name)
+static CaptureRule MakeCaptureRule(std::string_view name)
 {
     CaptureRule rule;
     if (MatchSpecialCaptureRule(name, rule) || MatchKeywordOrConstantRule(name, rule) ||
@@ -526,6 +513,8 @@ CaptureRule MakeCaptureRule(std::string_view name)
     return rule;
 }
 
+namespace semantic_tokens_handler_detail
+{
 /**
  * @brief Holds precompiled highlights query and per-capture classification rules.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -535,12 +524,15 @@ struct HighlightsQueryData
     TSQuery* query = nullptr;
     std::vector<CaptureRule> rules;
 };
+} // namespace semantic_tokens_handler_detail
+
+using HighlightsQueryData = semantic_tokens_handler_detail::HighlightsQueryData;
 
 /**
  * @brief Returns precompiled highlights TSQuery and cached capture rules.
  * @return Reference to static HighlightsQueryData.
  */
-const HighlightsQueryData& GetHighlightsQueryData()
+static const HighlightsQueryData& GetHighlightsQueryData()
 {
     static const HighlightsQueryData s_data = []() -> HighlightsQueryData
     {
@@ -569,22 +561,10 @@ const HighlightsQueryData& GetHighlightsQueryData()
     return s_data;
 }
 
-/**
- * @brief Records a byte-range span of an enclosing class.
- * @note [REFACTOR-CANDIDATE] Clustered under AST Byte Intervals & Node Spans. Candidate for unification in
- * server/src/analysis/NodeIndex.h.
- */
-struct ClassSpan
+namespace semantic_tokens_handler_detail
 {
-    uint32_t startByte = 0;
-    uint32_t endByte = 0;
-    std::string name;
-    int parent = -1;
-};
-
 /**
  * @brief Index of enclosing class spans for fast byte-offset hierarchy lookup.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 class ClassSpanIndex
 {
@@ -597,7 +577,7 @@ class ClassSpanIndex
      * @return Initialized ClassSpanIndex.
      */
     static ClassSpanIndex Build(const analysis::NodeIndex* nodeIndex, std::string_view sourceCode,
-                                const GrammarSymbols& syms)
+                                const parser::GrammarSymbols& syms)
     {
         ClassSpanIndex index;
         if (!nodeIndex)
@@ -618,14 +598,14 @@ class ClassSpanIndex
                     const std::string qName = (!containers.empty() && !containers.front().qualifiedName.empty())
                                                   ? utils::JoinScopedName(containers.front().qualifiedName, bareName)
                                                   : std::string(bareName);
-                    index.m_spans.push_back(
-                        ClassSpan{ts_node_start_byte(classDecl), ts_node_end_byte(classDecl), std::move(qName), -1});
+                    index.m_spans.push_back(parser::AstNodeSpan{
+                        ts_node_start_byte(classDecl), ts_node_end_byte(classDecl), 0, 0, std::move(qName), -1});
                 }
             }
         }
 
         std::sort(index.m_spans.begin(), index.m_spans.end(),
-                  [](const ClassSpan& a, const ClassSpan& b)
+                  [](const parser::AstNodeSpan& a, const parser::AstNodeSpan& b)
                   {
                       if (a.startByte != b.startByte)
                       {
@@ -643,7 +623,7 @@ class ClassSpanIndex
             }
             if (!spanStack.empty() && index.m_spans[spanStack.back()].endByte >= index.m_spans[i].endByte)
             {
-                index.m_spans[i].parent = spanStack.back();
+                index.m_spans[i].parentIndex = spanStack.back();
             }
             spanStack.push_back(static_cast<int>(i));
         }
@@ -662,8 +642,9 @@ class ClassSpanIndex
             return {};
         }
 
-        auto it = std::upper_bound(m_spans.begin(), m_spans.end(), byteOffset,
-                                   [](uint32_t offset, const ClassSpan& span) { return offset < span.startByte; });
+        auto it =
+            std::upper_bound(m_spans.begin(), m_spans.end(), byteOffset,
+                             [](uint32_t offset, const parser::AstNodeSpan& span) { return offset < span.startByte; });
 
         if (it == m_spans.begin())
         {
@@ -671,7 +652,7 @@ class ClassSpanIndex
         }
 
         const int cand = static_cast<int>(std::distance(m_spans.begin(), it)) - 1;
-        for (int cur = cand; cur != -1; cur = m_spans[cur].parent)
+        for (int cur = cand; cur != -1; cur = m_spans[cur].parentIndex)
         {
             if (byteOffset >= m_spans[cur].startByte && byteOffset < m_spans[cur].endByte)
             {
@@ -682,15 +663,18 @@ class ClassSpanIndex
     }
 
   private:
-    std::vector<ClassSpan> m_spans;
+    std::vector<parser::AstNodeSpan> m_spans;
 };
+} // namespace semantic_tokens_handler_detail
+
+using ClassSpanIndex = semantic_tokens_handler_detail::ClassSpanIndex;
 
 /**
  * @brief Checks if any symbol in a list is an enum constant.
  * @param[in] symbols Symbol vector to inspect.
  * @return True if at least one symbol is an enum constant.
  */
-bool ContainsEnumConstant(const std::shared_ptr<const std::vector<analysis::Symbol>>& symbols)
+static bool ContainsEnumConstant(const std::shared_ptr<const std::vector<analysis::Symbol>>& symbols)
 {
     if (!symbols || symbols->empty())
     {
@@ -705,7 +689,7 @@ bool ContainsEnumConstant(const std::shared_ptr<const std::vector<analysis::Symb
  * @param[in] symbols Symbol vector to inspect.
  * @return True if all symbols have SymbolType::Enum.
  */
-bool AreAllEnumTypes(const std::shared_ptr<const std::vector<analysis::Symbol>>& symbols)
+static bool AreAllEnumTypes(const std::shared_ptr<const std::vector<analysis::Symbol>>& symbols)
 {
     return symbols && !symbols->empty() &&
            std::all_of(symbols->begin(), symbols->end(),
@@ -719,17 +703,17 @@ bool AreAllEnumTypes(const std::shared_ptr<const std::vector<analysis::Symbol>>&
  * @param[in] ruleIndex Pre-indexed workspace symbol metadata.
  * @param[in,out] upgrades Map from start byte to upgraded token type.
  */
-void ApplyRuleIndexEnumUpgrades(TSNode scopedNode, std::string_view sourceCode,
-                                const analysis::rules::RuleIndex& ruleIndex,
-                                ankerl::unordered_dense::map<uint32_t, uint32_t>& upgrades)
+static void ApplyRuleIndexEnumUpgrades(TSNode scopedNode, std::string_view sourceCode,
+                                       const analysis::rules::RuleIndex& ruleIndex,
+                                       ankerl::unordered_dense::map<uint32_t, uint32_t>& upgrades)
 {
     const uint32_t namedCount = ts_node_named_child_count(scopedNode);
     TSNode leftNode = ts_node_named_child(scopedNode, 0);
     TSNode rightNode = ts_node_named_child(scopedNode, namedCount - 1);
     TSNode prevNode = ts_node_named_child(scopedNode, namedCount - 2);
-    const std::string_view leftText = analysis::GetNodeTextView(leftNode, sourceCode);
-    const std::string_view rightText = analysis::GetNodeTextView(rightNode, sourceCode);
-    const std::string_view prevText = analysis::GetNodeTextView(prevNode, sourceCode);
+    const std::string_view leftText = parser::GetNodeTextView(leftNode, sourceCode);
+    const std::string_view rightText = parser::GetNodeTextView(rightNode, sourceCode);
+    const std::string_view prevText = parser::GetNodeTextView(prevNode, sourceCode);
     auto enumIt = ruleIndex.enumSymbolsByMemberName.find(std::string(rightText));
     if (enumIt == ruleIndex.enumSymbolsByMemberName.end())
     {
@@ -759,9 +743,9 @@ void ApplyRuleIndexEnumUpgrades(TSNode scopedNode, std::string_view sourceCode,
  * @param[in] symbolTable Global symbol table.
  * @param[in,out] upgrades Map from start byte to upgraded token type.
  */
-void UpgradeScopedIdentifierEnumTokens(TSNode scopedNode, std::string_view sourceCode,
-                                       const analysis::SymbolTable& symbolTable,
-                                       ankerl::unordered_dense::map<uint32_t, uint32_t>& upgrades)
+static void UpgradeScopedIdentifierEnumTokens(TSNode scopedNode, std::string_view sourceCode,
+                                              const analysis::SymbolTable& symbolTable,
+                                              ankerl::unordered_dense::map<uint32_t, uint32_t>& upgrades)
 {
     const uint32_t namedCount = ts_node_named_child_count(scopedNode);
     if (namedCount < 2)
@@ -770,8 +754,8 @@ void UpgradeScopedIdentifierEnumTokens(TSNode scopedNode, std::string_view sourc
     }
     TSNode leftNode = ts_node_named_child(scopedNode, 0);
     TSNode rightNode = ts_node_named_child(scopedNode, namedCount - 1);
-    const std::string_view leftText = analysis::GetNodeTextView(leftNode, sourceCode);
-    const std::string_view rightText = analysis::GetNodeTextView(rightNode, sourceCode);
+    const std::string_view leftText = parser::GetNodeTextView(leftNode, sourceCode);
+    const std::string_view rightText = parser::GetNodeTextView(rightNode, sourceCode);
     if (leftText.empty() || rightText.empty())
     {
         return;
@@ -785,7 +769,7 @@ void UpgradeScopedIdentifierEnumTokens(TSNode scopedNode, std::string_view sourc
         upgrades[rightStart] = Type_EnumMember;
         return;
     }
-    if (ContainsEnumConstant(symbolTable.FindSymbolsPtr(analysis::GetNodeTextView(scopedNode, sourceCode))))
+    if (ContainsEnumConstant(symbolTable.FindSymbolsPtr(parser::GetNodeTextView(scopedNode, sourceCode))))
     {
         upgrades[rightStart] = Type_EnumMember;
     }
@@ -802,14 +786,15 @@ void UpgradeScopedIdentifierEnumTokens(TSNode scopedNode, std::string_view sourc
  * @param[in] symbolTable Global symbol table.
  * @param[in,out] upgrades Map from start byte to upgraded token type.
  */
-void UpgradeScopedTypeEnumTokens(TSNode typeNode, std::string_view sourceCode, const analysis::SymbolTable& symbolTable,
-                                 ankerl::unordered_dense::map<uint32_t, uint32_t>& upgrades)
+static void UpgradeScopedTypeEnumTokens(TSNode typeNode, std::string_view sourceCode,
+                                        const analysis::SymbolTable& symbolTable,
+                                        ankerl::unordered_dense::map<uint32_t, uint32_t>& upgrades)
 {
     if (ts_node_named_child_count(typeNode) < 2)
     {
         return;
     }
-    const auto& syms = GetGrammarSymbols();
+    const auto& syms = parser::GetGrammarSymbols();
     TSNode firstChild = ts_node_named_child(typeNode, 0);
     TSNode secondChild = ts_node_named_child(typeNode, 1);
     if (ts_node_symbol(firstChild) != syms.symScope || ts_node_symbol(secondChild) != syms.symDatatype)
@@ -818,12 +803,12 @@ void UpgradeScopedTypeEnumTokens(TSNode typeNode, std::string_view sourceCode, c
     }
 
     std::string_view scopeText =
-        utils::StripGlobalPrefix(utils::StripTrailingScopeSeparator(analysis::GetNodeTextView(firstChild, sourceCode)));
+        utils::StripGlobalPrefix(utils::StripTrailingScopeSeparator(parser::GetNodeTextView(firstChild, sourceCode)));
     while (scopeText.ends_with(':'))
     {
         scopeText.remove_suffix(1);
     }
-    const std::string_view memberText = analysis::GetNodeTextView(secondChild, sourceCode);
+    const std::string_view memberText = parser::GetNodeTextView(secondChild, sourceCode);
     if (scopeText.empty() || memberText.empty())
     {
         return;
@@ -861,9 +846,9 @@ void UpgradeScopedTypeEnumTokens(TSNode typeNode, std::string_view sourceCode, c
  * @param[in] syms Grammar symbols.
  * @return Map from start byte to upgraded token type.
  */
-ankerl::unordered_dense::map<uint32_t, uint32_t>
+static ankerl::unordered_dense::map<uint32_t, uint32_t>
 PrecalculateScopedEnumUpgrades(const analysis::NodeIndex* nodeIndex, std::string_view sourceCode,
-                               const analysis::SymbolTable& symbolTable, const GrammarSymbols& syms)
+                               const analysis::SymbolTable& symbolTable, const parser::GrammarSymbols& syms)
 {
     ankerl::unordered_dense::map<uint32_t, uint32_t> upgrades;
     if (!nodeIndex)
@@ -886,6 +871,8 @@ PrecalculateScopedEnumUpgrades(const analysis::NodeIndex* nodeIndex, std::string
     return upgrades;
 }
 
+namespace semantic_tokens_handler_detail
+{
 /**
  * @brief Context bundling precomputed indices and request references for token refinement.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -908,6 +895,9 @@ struct TokenRefinementContext
     std::shared_ptr<const analysis::rules::RuleIndex> ruleIndex;
     mutable ankerl::unordered_dense::map<std::string_view, std::vector<std::string>> classHierarchyCache;
 };
+} // namespace semantic_tokens_handler_detail
+
+using TokenRefinementContext = semantic_tokens_handler_detail::TokenRefinementContext;
 
 /**
  * @brief Checks whether an identifier is an unqualified member of the enclosing class.
@@ -917,8 +907,8 @@ struct TokenRefinementContext
  * @param[in] ctx Refinement context.
  * @return Upgraded token type (Type_Property, Type_Method, or unchanged).
  */
-uint32_t RefineEnclosingClassMember(std::string_view tokenText, uint32_t startByte, uint32_t tokenType,
-                                    const TokenRefinementContext& ctx)
+static uint32_t RefineEnclosingClassMember(std::string_view tokenText, uint32_t startByte, uint32_t tokenType,
+                                           const TokenRefinementContext& ctx)
 {
     std::string_view className = ctx.classSpans.FindEnclosingClass(startByte);
     if (className.empty() || !ctx.ruleIndex)
@@ -954,7 +944,7 @@ uint32_t RefineEnclosingClassMember(std::string_view tokenText, uint32_t startBy
  * @param[in] isEnumConstant True if symbol is an enum constant.
  * @return Refined token type.
  */
-[[nodiscard]] inline uint32_t MatchAgreedTypeToken(analysis::SymbolType agreedType, bool isEnumConstant) noexcept
+[[nodiscard]] static inline uint32_t MatchAgreedTypeToken(analysis::SymbolType agreedType, bool isEnumConstant) noexcept
 {
     if (agreedType == analysis::SymbolType::Class)
         return Type_Class;
@@ -972,7 +962,7 @@ uint32_t RefineEnclosingClassMember(std::string_view tokenText, uint32_t startBy
  * @param[in] agreedType Consensus symbol type.
  * @return Refined token type.
  */
-[[nodiscard]] inline uint32_t MatchAgreedNamespaceToken(analysis::SymbolType agreedType) noexcept
+[[nodiscard]] static inline uint32_t MatchAgreedNamespaceToken(analysis::SymbolType agreedType) noexcept
 {
     if (agreedType == analysis::SymbolType::Enum)
         return Type_Enum;
@@ -987,7 +977,7 @@ uint32_t RefineEnclosingClassMember(std::string_view tokenText, uint32_t startBy
  * @param[in] hasContainer True if symbol belongs to a container.
  * @return Refined token type.
  */
-[[nodiscard]] inline uint32_t MatchAgreedVariableToken(bool isEnumConstant, bool hasContainer) noexcept
+[[nodiscard]] static inline uint32_t MatchAgreedVariableToken(bool isEnumConstant, bool hasContainer) noexcept
 {
     if (isEnumConstant)
     {
@@ -1008,8 +998,8 @@ uint32_t RefineEnclosingClassMember(std::string_view tokenText, uint32_t startBy
  * @param[in] isEnumConstant True if symbol is an enum constant.
  * @return Refined token type.
  */
-uint32_t MatchAgreedSymbolType(analysis::SymbolType agreedType, uint32_t tokenType, bool hasContainer,
-                               bool isEnumConstant)
+static uint32_t MatchAgreedSymbolType(analysis::SymbolType agreedType, uint32_t tokenType, bool hasContainer,
+                                      bool isEnumConstant)
 {
     if (tokenType == Type_Type)
     {
@@ -1038,7 +1028,8 @@ uint32_t MatchAgreedSymbolType(analysis::SymbolType agreedType, uint32_t tokenTy
  * @param[in] ctx Refinement context.
  * @return Refined token type.
  */
-uint32_t RefineRuleIndexFallback(std::string_view tokenText, uint32_t tokenType, const TokenRefinementContext& ctx)
+static uint32_t RefineRuleIndexFallback(std::string_view tokenText, uint32_t tokenType,
+                                        const TokenRefinementContext& ctx)
 {
     if (!ctx.ruleIndex)
     {
@@ -1075,7 +1066,8 @@ uint32_t RefineRuleIndexFallback(std::string_view tokenText, uint32_t tokenType,
  * @param[in] ctx Refinement context.
  * @return Refined token type.
  */
-uint32_t RefineSymbolTableMatch(std::string_view tokenText, uint32_t tokenType, const TokenRefinementContext& ctx)
+static uint32_t RefineSymbolTableMatch(std::string_view tokenText, uint32_t tokenType,
+                                       const TokenRefinementContext& ctx)
 {
     const auto symbols = ctx.request.symbolTable.FindSymbolsPtr(tokenText);
     if (!symbols || symbols->empty())
@@ -1129,7 +1121,7 @@ uint32_t RefineSymbolTableMatch(std::string_view tokenText, uint32_t tokenType, 
  * @param[in] defaultType Default token type if not found.
  * @return Resolved token type.
  */
-uint32_t
+static uint32_t
 ResolveReferenceTokenType(TSPoint point,
                           const ankerl::unordered_dense::map<uint64_t, analysis::LocalDefinitionKind>& referenceKinds,
                           uint32_t defaultType)
@@ -1168,8 +1160,8 @@ ResolveReferenceTokenType(TSPoint point,
  * @param[in] ctx Refinement context.
  * @return Refined token type.
  */
-uint32_t RefineSyntaxContext(std::string_view tokenText, uint32_t startByte, uint32_t tokenType,
-                             const TokenRefinementContext& ctx)
+static uint32_t RefineSyntaxContext(std::string_view tokenText, uint32_t startByte, uint32_t tokenType,
+                                    const TokenRefinementContext& ctx)
 {
     if (auto it = ctx.scopedEnumUpgrades.find(startByte); it != ctx.scopedEnumUpgrades.end())
     {
@@ -1195,7 +1187,7 @@ uint32_t RefineSyntaxContext(std::string_view tokenText, uint32_t startByte, uin
  * @return Final refined token type index.
  */
 /** @brief Checks if an AST node is the trailing leaf identifier of a scoped_identifier. */
-bool IsScopedIdentifierLeaf(TSNode node, const GrammarSymbols& syms)
+static bool IsScopedIdentifierLeaf(TSNode node, const parser::GrammarSymbols& syms)
 {
     TSNode parent = parser::GetParent(node);
     if (ts_node_is_null(parent) || ts_node_symbol(parent) != syms.symScopedIdentifier)
@@ -1212,8 +1204,8 @@ bool IsScopedIdentifierLeaf(TSNode node, const GrammarSymbols& syms)
 }
 
 /** @brief Suppresses semantic token emission if a scoped_identifier leaf does not exist or has invalid qualifier. */
-bool ShouldSuppressScopedLeafToken(TSNode node, std::string_view tokenText, const TokenRefinementContext& ctx,
-                                   const GrammarSymbols& syms)
+static bool ShouldSuppressScopedLeafToken(TSNode node, std::string_view tokenText, const TokenRefinementContext& ctx,
+                                          const parser::GrammarSymbols& syms)
 {
     if (!IsScopedIdentifierLeaf(node, syms))
     {
@@ -1226,7 +1218,7 @@ bool ShouldSuppressScopedLeafToken(TSNode node, std::string_view tokenText, cons
         return false;
     }
     TSNode firstChild = ts_node_named_child(parent, 0);
-    const std::string_view qualText = analysis::GetNodeTextView(firstChild, ctx.request.sourceCode);
+    const std::string_view qualText = parser::GetNodeTextView(firstChild, ctx.request.sourceCode);
     if (qualText.empty())
     {
         return false;
@@ -1274,7 +1266,7 @@ static std::optional<uint32_t> ClassifyReservedKeywordOrModifier(std::string_vie
     return std::nullopt;
 }
 
-uint32_t RefineCapturedTokenType(TSNode node, uint32_t tokenType, const TokenRefinementContext& ctx)
+static uint32_t RefineCapturedTokenType(TSNode node, uint32_t tokenType, const TokenRefinementContext& ctx)
 {
     const uint32_t startByte = ts_node_start_byte(node);
     const uint32_t endByte = ts_node_end_byte(node);
@@ -1301,7 +1293,7 @@ uint32_t RefineCapturedTokenType(TSNode node, uint32_t tokenType, const TokenRef
             std::string_view tokenText(ctx.request.sourceCode.data() + startByte, endByte - startByte);
             if (!tokenText.empty())
             {
-                if (ShouldSuppressScopedLeafToken(node, tokenText, ctx, GetGrammarSymbols()))
+                if (ShouldSuppressScopedLeafToken(node, tokenText, ctx, parser::GetGrammarSymbols()))
                 {
                     return UINT32_MAX;
                 }
@@ -1320,8 +1312,8 @@ uint32_t RefineCapturedTokenType(TSNode node, uint32_t tokenType, const TokenRef
  * @param[in] sourceLines Views of source code lines.
  * @param[in,out] rawTokens Token collection receiving items.
  */
-void EmitTemplatePunctuationTokens(TSNode node, TokenMeta meta, const std::vector<std::string_view>& sourceLines,
-                                   std::vector<RawToken>& rawTokens)
+static void EmitTemplatePunctuationTokens(TSNode node, TokenMeta meta, const std::vector<std::string_view>& sourceLines,
+                                          std::vector<RawToken>& rawTokens)
 {
     TSPoint startPoint = ts_node_start_point(node);
     TSPoint endPoint = ts_node_end_point(node);
@@ -1346,8 +1338,8 @@ void EmitTemplatePunctuationTokens(TSNode node, TokenMeta meta, const std::vecto
  * @param[in] sourceLines Views of source code lines.
  * @param[in,out] rawTokens Token collection receiving items.
  */
-void EmitTokenOrSplitLines(TSNode node, TokenMeta meta, const std::vector<std::string_view>& sourceLines,
-                           std::vector<RawToken>& rawTokens)
+static void EmitTokenOrSplitLines(TSNode node, TokenMeta meta, const std::vector<std::string_view>& sourceLines,
+                                  std::vector<RawToken>& rawTokens)
 {
     if (meta.tokenType == Type_TemplatePunctuation)
     {
@@ -1398,13 +1390,13 @@ void EmitTokenOrSplitLines(TSNode node, TokenMeta meta, const std::vector<std::s
  * @param[in] sourceLines Views of source code lines.
  * @param[in,out] rawTokens Output token collection.
  */
-void CollectHighlightsTokens(const HighlightsQueryData& highlights, const TokenRefinementContext& ctx,
-                             const std::vector<std::string_view>& sourceLines, std::vector<RawToken>& rawTokens)
+static void CollectHighlightsTokens(const HighlightsQueryData& highlights, const TokenRefinementContext& ctx,
+                                    const std::vector<std::string_view>& sourceLines, std::vector<RawToken>& rawTokens)
 {
     TSQueryCursor* cursor = parser::QueryRegistry::GetThreadLocalCursor();
     ts_query_cursor_exec(cursor, highlights.query, ts_tree_root_node(ctx.request.tree));
 
-    const auto& syms = GetGrammarSymbols();
+    const auto& syms = parser::GetGrammarSymbols();
     TSQueryMatch match;
     uint32_t captureIndex = 0;
 
@@ -1457,7 +1449,7 @@ void CollectHighlightsTokens(const HighlightsQueryData& highlights, const TokenR
  * @param[in,out] rawTokens Raw token vector to sort and filter.
  * @return Deduplicated and sorted vector of raw tokens.
  */
-std::vector<RawToken> DeduplicateTokens(std::vector<RawToken>& rawTokens)
+static std::vector<RawToken> DeduplicateTokens(std::vector<RawToken>& rawTokens)
 {
     std::sort(rawTokens.begin(), rawTokens.end(),
               [](const RawToken& a, const RawToken& b)
@@ -1499,7 +1491,7 @@ std::vector<RawToken> DeduplicateTokens(std::vector<RawToken>& rawTokens)
  * @param[in,out] tokens Filtered tokens vector.
  * @param[in] range Target LSP query range.
  */
-void NarrowTokensToRange(std::vector<RawToken>& tokens, const lsp::Range& range)
+static void NarrowTokensToRange(std::vector<RawToken>& tokens, const lsp::Range& range)
 {
     if (tokens.empty())
     {
@@ -1552,7 +1544,7 @@ void NarrowTokensToRange(std::vector<RawToken>& tokens, const lsp::Range& range)
  * @param[in,out] tokens Tokens vector to filter.
  * @param[in] sourceLines Views of source code lines.
  */
-void FilterInvalidOperators(std::vector<RawToken>& tokens, const std::vector<std::string_view>& sourceLines)
+static void FilterInvalidOperators(std::vector<RawToken>& tokens, const std::vector<std::string_view>& sourceLines)
 {
     std::erase_if(tokens,
                   [&sourceLines](const RawToken& tok)
@@ -1579,7 +1571,7 @@ void FilterInvalidOperators(std::vector<RawToken>& tokens, const std::vector<std
  * @param[in] tokens Tokens to encode.
  * @return SemanticTokens struct containing delta-encoded data stream.
  */
-lsp::SemanticTokens DeltaEncodeTokens(const std::vector<RawToken>& tokens)
+static lsp::SemanticTokens DeltaEncodeTokens(const std::vector<RawToken>& tokens)
 {
     std::vector<lsp::uint> data;
     data.reserve(tokens.size() * 5);
@@ -1604,7 +1596,6 @@ lsp::SemanticTokens DeltaEncodeTokens(const std::vector<RawToken>& tokens)
 
     return lsp::SemanticTokens{std::move(data)};
 }
-} // namespace
 
 bool IsTemplatePunctuationNode(TSNode node) noexcept
 {
@@ -1616,7 +1607,7 @@ bool IsTemplatePunctuationNode(TSNode node) noexcept
     TSNode grandParent = parser::GetParent(parent);
     TSSymbol parentSym = ts_node_symbol(parent);
     TSSymbol grandParentSym = !ts_node_is_null(grandParent) ? ts_node_symbol(grandParent) : 0;
-    return IsTemplatePunctuation(parentSym, grandParentSym, GetGrammarSymbols());
+    return IsTemplatePunctuation(parentSym, grandParentSym, parser::GetGrammarSymbols());
 }
 
 const lsp::SemanticTokensLegend& GetSemanticTokensLegend()
@@ -1644,7 +1635,7 @@ lsp::SemanticTokens GetSemanticTokens(const SemanticTokensRequest& request)
         return lsp::SemanticTokens{};
     }
 
-    const auto& syms = GetGrammarSymbols();
+    const auto& syms = parser::GetGrammarSymbols();
     std::optional<analysis::NodeIndex> localIndex;
     const analysis::NodeIndex* nodeIndex = request.nodeIndex;
     if (!nodeIndex && request.tree)

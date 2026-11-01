@@ -420,10 +420,8 @@ void Server::ParserPredefined(const std::string& filePath, angel_lsp::parser::An
     ParserPredefinedInternal(filePath, parser, forceReload, visited);
 }
 
-namespace
-{
-std::optional<std::string> ReadPredefinedFile(const std::string& normPath, const std::string& filePath,
-                                              angel_lsp::utils::LspLogger* logger)
+static std::optional<std::string> ReadPredefinedFile(const std::string& normPath, const std::string& filePath,
+                                                     angel_lsp::utils::LspLogger* logger)
 {
     if (logger)
     {
@@ -453,7 +451,6 @@ std::optional<std::string> ReadPredefinedFile(const std::string& normPath, const
     }
     return sanitized;
 }
-} // namespace
 
 void Server::CommitPredefinedIndex(const std::string& uri, const std::string& content, document::TreePtr tree)
 {

@@ -3,7 +3,7 @@
 
 namespace angel_lsp::features
 {
-namespace
+namespace formatting_line_builder_detail
 {
 enum class ScopeKind
 {
@@ -16,7 +16,12 @@ enum class ScopeKind
     Control,
     Value
 };
+} // namespace formatting_line_builder_detail
 
+using ScopeKind = formatting_line_builder_detail::ScopeKind;
+
+namespace formatting_line_builder_detail
+{
 /**
  * @brief Represents Scope entry.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -29,7 +34,12 @@ struct ScopeEntry
     bool paddedBrace = false;
     bool didIncrement = true;
 };
+} // namespace formatting_line_builder_detail
 
+using ScopeEntry = formatting_line_builder_detail::ScopeEntry;
+
+namespace formatting_line_builder_detail
+{
 /**
  * @brief Represents Line builder state.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -76,8 +86,11 @@ struct LineBuilderState
         }
     }
 };
+} // namespace formatting_line_builder_detail
 
-void HandleBlankLines(LineBuilderState& state, const Token& tok)
+using LineBuilderState = formatting_line_builder_detail::LineBuilderState;
+
+static void HandleBlankLines(LineBuilderState& state, const Token& tok)
 {
     if (tok.newlinesBefore >= 2 && !state.lines.empty() && !state.lines.back().isBlankLine)
     {
@@ -93,7 +106,7 @@ void HandleBlankLines(LineBuilderState& state, const Token& tok)
     }
 }
 
-void UpdatePendingScopeFromKeyword(LineBuilderState& state, std::string_view text)
+static void UpdatePendingScopeFromKeyword(LineBuilderState& state, std::string_view text)
 {
     static constexpr std::pair<std::string_view, ScopeKind> kTable[] = {
         {"switch", ScopeKind::Switch},   {"enum", ScopeKind::Enum},           {"class", ScopeKind::Class},
@@ -111,7 +124,7 @@ void UpdatePendingScopeFromKeyword(LineBuilderState& state, std::string_view tex
     }
 }
 
-void UpdateBracketNesting(LineBuilderState& state, const Token& tok)
+static void UpdateBracketNesting(LineBuilderState& state, const Token& tok)
 {
     if (tok.type == TokenType::Keyword)
     {
@@ -137,7 +150,7 @@ void UpdateBracketNesting(LineBuilderState& state, const Token& tok)
     }
 }
 
-void UpdateValueContext(LineBuilderState& state, const Token& tok)
+static void UpdateValueContext(LineBuilderState& state, const Token& tok)
 {
     const int baseParen = state.scopeStack.empty() ? 0 : state.scopeStack.back().parenDepthAtOpen;
     const int baseBracket = state.scopeStack.empty() ? 0 : state.scopeStack.back().bracketDepthAtOpen;
@@ -156,7 +169,7 @@ void UpdateValueContext(LineBuilderState& state, const Token& tok)
     }
 }
 
-bool HandlePreprocessorOrMetadata(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i)
+static bool HandlePreprocessorOrMetadata(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i)
 {
     const auto& tok = tokens[i];
     if (tok.type == TokenType::Preprocessor)
@@ -196,7 +209,7 @@ bool HandlePreprocessorOrMetadata(LineBuilderState& state, const std::vector<Tok
     return false;
 }
 
-bool ShouldAttachCustomBrace(ScopeKind kind, const BraceWrappingOptions& wrap)
+static bool ShouldAttachCustomBrace(ScopeKind kind, const BraceWrappingOptions& wrap)
 {
     if (kind == ScopeKind::Class)
         return !wrap.afterClass;
@@ -209,7 +222,7 @@ bool ShouldAttachCustomBrace(ScopeKind kind, const BraceWrappingOptions& wrap)
     return !wrap.afterControlStatement;
 }
 
-bool ShouldAttachOpenBrace(ScopeKind kind, const FormatCodeOptions& opts)
+static bool ShouldAttachOpenBrace(ScopeKind kind, const FormatCodeOptions& opts)
 {
     switch (opts.braceStyle)
     {
@@ -231,7 +244,7 @@ bool ShouldAttachOpenBrace(ScopeKind kind, const FormatCodeOptions& opts)
     return false;
 }
 
-void HandleOpenBrace(LineBuilderState& state, std::vector<Token>& tokens, size_t i)
+static void HandleOpenBrace(LineBuilderState& state, std::vector<Token>& tokens, size_t i)
 {
     const int baseParen = state.scopeStack.empty() ? 0 : state.scopeStack.back().parenDepthAtOpen;
     const int baseBracket = state.scopeStack.empty() ? 0 : state.scopeStack.back().bracketDepthAtOpen;
@@ -273,7 +286,7 @@ void HandleOpenBrace(LineBuilderState& state, std::vector<Token>& tokens, size_t
         state.braceLevel++;
 }
 
-void HandleCloseBrace(LineBuilderState& state, std::vector<Token>& tokens, size_t& i)
+static void HandleCloseBrace(LineBuilderState& state, std::vector<Token>& tokens, size_t& i)
 {
     if (state.CurrentScopeKind() == ScopeKind::Value)
     {
@@ -306,7 +319,7 @@ void HandleCloseBrace(LineBuilderState& state, std::vector<Token>& tokens, size_
     state.lines.push_back(std::move(braceLine));
 }
 
-bool ShouldAttachElse(const FormatCodeOptions& opts)
+static bool ShouldAttachElse(const FormatCodeOptions& opts)
 {
     if (opts.braceStyle == BraceStyle::KAndR || opts.braceStyle == BraceStyle::Linux ||
         opts.braceStyle == BraceStyle::Mozilla || opts.braceStyle == BraceStyle::WebKit)
@@ -318,7 +331,7 @@ bool ShouldAttachElse(const FormatCodeOptions& opts)
     return false;
 }
 
-bool HandleElseKeyword(LineBuilderState& state, const std::vector<Token>& tokens, size_t i)
+static bool HandleElseKeyword(LineBuilderState& state, const std::vector<Token>& tokens, size_t i)
 {
     if (tokens[i].type != TokenType::Keyword || tokens[i].text != "else")
         return false;
@@ -336,7 +349,7 @@ bool HandleElseKeyword(LineBuilderState& state, const std::vector<Token>& tokens
     return true;
 }
 
-bool HandleCaseOrDefault(LineBuilderState& state, const Token& tok, size_t i)
+static bool HandleCaseOrDefault(LineBuilderState& state, const Token& tok, size_t i)
 {
     if (tok.type == TokenType::Keyword && (tok.text == "case" || tok.text == "default"))
     {
@@ -350,7 +363,7 @@ bool HandleCaseOrDefault(LineBuilderState& state, const Token& tok, size_t i)
     return false;
 }
 
-bool HandleAccessSpecifier(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i)
+static bool HandleAccessSpecifier(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i)
 {
     const auto& tok = tokens[i];
     if (tok.type == TokenType::Keyword && (tok.text == "public" || tok.text == "private" || tok.text == "protected") &&
@@ -368,13 +381,13 @@ bool HandleAccessSpecifier(LineBuilderState& state, const std::vector<Token>& to
     return false;
 }
 
-bool HandleKeywordsAndLabels(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i)
+static bool HandleKeywordsAndLabels(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i)
 {
     return HandleElseKeyword(state, tokens, i) || HandleCaseOrDefault(state, tokens[i], i) ||
            HandleAccessSpecifier(state, tokens, i);
 }
 
-void ConsumeTrailingComment(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i)
+static void ConsumeTrailingComment(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i)
 {
     if (i + 1 < tokens.size() && tokens[i + 1].newlinesBefore == 0 &&
         (tokens[i + 1].type == TokenType::LineComment || tokens[i + 1].type == TokenType::BlockComment))
@@ -384,7 +397,7 @@ void ConsumeTrailingComment(LineBuilderState& state, const std::vector<Token>& t
     }
 }
 
-void HandleStatementOrCommentEnd(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i)
+static void HandleStatementOrCommentEnd(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i)
 {
     const auto& tok = tokens[i];
     if (tok.isUnterminated || tok.type == TokenType::LineComment)
@@ -409,7 +422,7 @@ void HandleStatementOrCommentEnd(LineBuilderState& state, const std::vector<Toke
     }
 }
 
-bool TryHandleEmptyOrShortBlock(LineBuilderState& state, std::vector<Token>& tokens, size_t& i)
+static bool TryHandleEmptyOrShortBlock(LineBuilderState& state, std::vector<Token>& tokens, size_t& i)
 {
     const bool allowEmpty =
         state.opts.keepEmptyBlocksOnSingleLine || state.opts.allowShortBlocksOnASingleLine != ShortBlockStyle::Never;
@@ -436,7 +449,6 @@ bool TryHandleEmptyOrShortBlock(LineBuilderState& state, std::vector<Token>& tok
     }
     return false;
 }
-} // namespace
 
 std::vector<LineInfo> BuildFormattedLines(std::vector<Token>& tokens, const FormatCodeOptions& options)
 {

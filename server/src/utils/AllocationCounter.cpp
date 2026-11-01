@@ -10,14 +10,12 @@
 
 namespace angel_lsp::utils
 {
-namespace
-{
-thread_local bool t_trackingActive = false;
-thread_local size_t t_allocCount = 0;
-thread_local size_t t_deallocCount = 0;
-thread_local size_t t_allocBytes = 0;
+static thread_local bool t_trackingActive = false;
+static thread_local size_t t_allocCount = 0;
+static thread_local size_t t_deallocCount = 0;
+static thread_local size_t t_allocBytes = 0;
 
-std::atomic<ScopedAllocationCounter::TableCloneProvider> s_tableCloneProvider{nullptr};
+static std::atomic<ScopedAllocationCounter::TableCloneProvider> s_tableCloneProvider{nullptr};
 
 #if defined(_MSC_VER) && defined(_DEBUG)
 /**
@@ -35,7 +33,7 @@ std::atomic<ScopedAllocationCounter::TableCloneProvider> s_tableCloneProvider{nu
     int allocType, void *userData, size_t size, int blockType, long requestNumber, const unsigned char *filename,      \
         int lineNumber
 
-int __cdecl CrtAllocationHook(CRT_HOOK_ARGS)
+static int __cdecl CrtAllocationHook(CRT_HOOK_ARGS)
 {
     (void)userData;
     (void)requestNumber;
@@ -58,16 +56,15 @@ int __cdecl CrtAllocationHook(CRT_HOOK_ARGS)
     return 1;
 }
 
-std::atomic<int> s_hookRefCount{0};
-_CRT_ALLOC_HOOK s_previousHook = nullptr;
+static std::atomic<int> s_hookRefCount{0};
+static _CRT_ALLOC_HOOK s_previousHook = nullptr;
 #endif
 
-uint64_t QueryTableClones() noexcept
+static uint64_t QueryTableClones() noexcept
 {
     auto provider = s_tableCloneProvider.load(std::memory_order_relaxed);
     return provider ? provider() : 0;
 }
-} // namespace
 
 ScopedAllocationCounter::ScopedAllocationCounter(bool enable)
     : m_wasActive(t_trackingActive), m_startAllocations(t_allocCount), m_startDeallocations(t_deallocCount),

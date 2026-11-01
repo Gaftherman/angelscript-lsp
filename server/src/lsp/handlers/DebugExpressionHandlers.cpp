@@ -12,10 +12,7 @@
 namespace angel_lsp
 {
 
-namespace
-{
-
-std::string ExtractDocumentUri(const lsp::json::Object& obj)
+static std::string ExtractDocumentUri(const lsp::json::Object& obj)
 {
     if (const auto* docVal = obj.find("textDocument"); docVal && docVal->isObject())
     {
@@ -27,7 +24,7 @@ std::string ExtractDocumentUri(const lsp::json::Object& obj)
     return {};
 }
 
-lsp::Position ExtractPosition(const lsp::json::Object& obj)
+static lsp::Position ExtractPosition(const lsp::json::Object& obj)
 {
     lsp::Position pos{0, 0};
     if (const auto* posVal = obj.find("position"); posVal && posVal->isObject())
@@ -45,8 +42,8 @@ lsp::Position ExtractPosition(const lsp::json::Object& obj)
     return pos;
 }
 
-lsp::json::Object FormatEvaluatableResponse(const features::EvaluatableExpressionItem& item, std::string_view text,
-                                            utils::PositionEncoding enc)
+static lsp::json::Object FormatEvaluatableResponse(const features::EvaluatableExpressionItem& item,
+                                                   std::string_view text, utils::PositionEncoding enc)
 {
     lsp::Range outRange;
     outRange.start.line = item.line;
@@ -75,8 +72,6 @@ lsp::json::Object FormatEvaluatableResponse(const features::EvaluatableExpressio
     }
     return resp;
 }
-
-} // namespace
 
 lsp::json::Value Server::HandleRequestsTextDocument_EvaluatableExpression(lsp::json::Value&& params)
 {

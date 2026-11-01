@@ -10,9 +10,7 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
-bool IsTargetVariableTypeMatch(std::string_view targetVarName, std::string_view typeName, NullCheckContext& ctx)
+static bool IsTargetVariableTypeMatch(std::string_view targetVarName, std::string_view typeName, NullCheckContext& ctx)
 {
     if (targetVarName.empty() || typeName.empty())
     {
@@ -36,7 +34,8 @@ bool IsTargetVariableTypeMatch(std::string_view targetVarName, std::string_view 
     return false;
 }
 
-bool IsConstructorCall(std::string_view fnName, TSNode typeNode, std::string_view targetVarName, NullCheckContext& ctx)
+static bool IsConstructorCall(std::string_view fnName, TSNode typeNode, std::string_view targetVarName,
+                              NullCheckContext& ctx)
 {
     if (fnName.empty())
     {
@@ -74,6 +73,8 @@ bool IsConstructorCall(std::string_view fnName, TSNode typeNode, std::string_vie
     return ctx.diagCtx.request.IsRegisteredSymbol(shortName);
 }
 
+namespace null_safety_decl_detail
+{
 /**
  * @brief Represents Nullable eval request.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -84,8 +85,12 @@ struct NullableEvalRequest
     TSNode typeNode{};
     std::string_view targetVarName = "";
 };
+} // namespace null_safety_decl_detail
 
-Nullability EvaluateExpressionNullability(const NullableEvalRequest& req, const FlowState& state, NullCheckContext& ctx)
+using NullableEvalRequest = null_safety_decl_detail::NullableEvalRequest;
+
+static Nullability EvaluateExpressionNullability(const NullableEvalRequest& req, const FlowState& state,
+                                                 NullCheckContext& ctx)
 {
     if (ts_node_is_null(req.val))
     {
@@ -120,7 +125,7 @@ Nullability EvaluateExpressionNullability(const NullableEvalRequest& req, const 
         std::string fnName = GetIdentifierName(fn, ctx.sourceCode);
         if (fnName.empty() && !ts_node_is_null(fn))
         {
-            fnName = NodeText(fn, ctx.sourceCode);
+            fnName = parser::NodeText(fn, ctx.sourceCode);
         }
         if (IsConstructorCall(fnName, req.typeNode, req.targetVarName, ctx))
         {
@@ -130,7 +135,6 @@ Nullability EvaluateExpressionNullability(const NullableEvalRequest& req, const 
 
     return Nullability::Nullable;
 }
-} // namespace
 
 void CheckVarDeclaration(TSNode stmt, FlowState& state, NullCheckContext& ctx)
 {
@@ -151,7 +155,7 @@ void CheckVarDeclaration(TSNode stmt, FlowState& state, NullCheckContext& ctx)
             continue;
         }
         std::string name =
-            NodeText(parser::GetChildByField(child, parser::GetGrammarSymbols().fieldName), ctx.sourceCode);
+            parser::NodeText(parser::GetChildByField(child, parser::GetGrammarSymbols().fieldName), ctx.sourceCode);
         TSNode val = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldValue);
         if (ts_node_is_null(val))
         {

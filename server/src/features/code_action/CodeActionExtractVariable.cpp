@@ -9,15 +9,13 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 
 /**
  * @brief Checks whether an AST node is an extractable expression.
  * @param[in] node AST node.
  * @return True if candidate node can be extracted into a variable or method.
  */
-bool IsExtractableExpression(TSNode node)
+static bool IsExtractableExpression(TSNode node)
 {
     if (ts_node_is_null(node))
     {
@@ -52,7 +50,7 @@ bool IsExtractableExpression(TSNode node)
  * @param[in] node Candidate expression AST node.
  * @return True if node is on the LHS of an assignment.
  */
-bool IsLhsOfAssignment(TSNode node)
+static bool IsLhsOfAssignment(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode assign = parser::FindAncestorWithSymbol(node, gs.symAssignmentExpression);
@@ -122,7 +120,7 @@ static bool IsNonExtractableStatementOrContainer(TSSymbol nodeSym, const parser:
  * @param[in] range Selected text range.
  * @return Valid extractable node or null node if none matches.
  */
-TSNode FindExtractableExpression(TSNode rootNode, const lsp::Range& range)
+static TSNode FindExtractableExpression(TSNode rootNode, const lsp::Range& range)
 {
     TSPoint startPt = {range.start.line, range.start.character};
     TSPoint endPt = {range.end.line, range.end.character};
@@ -168,13 +166,13 @@ TSNode FindExtractableExpression(TSNode rootNode, const lsp::Range& range)
  * @param[in] node AST node.
  * @return Enclosing statement AST node.
  */
-TSNode FindEnclosingBlockStatement(TSNode node)
+static TSNode FindEnclosingBlockStatement(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
     return parser::FindDirectChildOfAncestor(node, gs.symStatementBlock);
 }
 
-std::string ToLowerFirst(std::string_view str)
+static std::string ToLowerFirst(std::string_view str)
 {
     if (str.empty())
     {
@@ -185,7 +183,7 @@ std::string ToLowerFirst(std::string_view str)
     return result;
 }
 
-std::string SuggestNameFromCall(TSNode targetNode, std::string_view sourceCode)
+static std::string SuggestNameFromCall(TSNode targetNode, std::string_view sourceCode)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode funcNode = parser::GetChildByField(targetNode, gs.fieldFunction);
@@ -197,11 +195,11 @@ std::string SuggestNameFromCall(TSNode targetNode, std::string_view sourceCode)
     if (ts_node_symbol(funcNode) == gs.symMemberExpression)
     {
         TSNode nameNode = parser::GetChildByField(funcNode, gs.fieldMember);
-        fnNameText = GetNodeText(nameNode, sourceCode);
+        fnNameText = parser::GetNodeText(nameNode, sourceCode);
     }
     else
     {
-        fnNameText = GetNodeText(funcNode, sourceCode);
+        fnNameText = parser::GetNodeText(funcNode, sourceCode);
     }
     if (fnNameText.starts_with("Get") && fnNameText.size() > 3)
     {
@@ -222,14 +220,14 @@ std::string SuggestNameFromCall(TSNode targetNode, std::string_view sourceCode)
     return "";
 }
 
-std::string SuggestNameFromMemberOrConstruct(TSNode targetNode, std::string_view sourceCode)
+static std::string SuggestNameFromMemberOrConstruct(TSNode targetNode, std::string_view sourceCode)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol type = ts_node_symbol(targetNode);
     if (type == gs.symMemberExpression)
     {
         TSNode nameNode = parser::GetChildByField(targetNode, gs.fieldMember);
-        std::string memText = GetNodeText(nameNode, sourceCode);
+        std::string memText = parser::GetNodeText(nameNode, sourceCode);
         if (memText.starts_with("m_") && memText.size() > 2)
         {
             return ToLowerFirst(memText.substr(2));
@@ -242,7 +240,7 @@ std::string SuggestNameFromMemberOrConstruct(TSNode targetNode, std::string_view
     if (type == gs.symConstructCallExpression)
     {
         TSNode typeNode = parser::GetChildByField(targetNode, gs.fieldType);
-        std::string tText = GetNodeText(typeNode, sourceCode);
+        std::string tText = parser::GetNodeText(typeNode, sourceCode);
         if (!tText.empty())
         {
             return ToLowerFirst(tText);
@@ -251,8 +249,8 @@ std::string SuggestNameFromMemberOrConstruct(TSNode targetNode, std::string_view
     return "";
 }
 
-std::string SuggestCandidateName(TSNode targetNode, std::string_view varType, std::string_view sourceCode,
-                                 const analysis::SymbolTable* symbolTable)
+static std::string SuggestCandidateName(TSNode targetNode, std::string_view varType, std::string_view sourceCode,
+                                        const analysis::SymbolTable* symbolTable)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol type = ts_node_symbol(targetNode);
@@ -280,7 +278,7 @@ std::string SuggestCandidateName(TSNode targetNode, std::string_view varType, st
     return "newVar";
 }
 
-bool IsNameInScope(const analysis::Scope* scope, std::string_view name)
+static bool IsNameInScope(const analysis::Scope* scope, std::string_view name)
 {
     const analysis::Scope* curr = scope;
     while (curr)
@@ -297,8 +295,8 @@ bool IsNameInScope(const analysis::Scope* scope, std::string_view name)
     return false;
 }
 
-std::string SuggestVariableName(TSNode targetNode, std::string_view varType, std::string_view sourceCode,
-                                const analysis::Scope* scope, const analysis::SymbolTable* symbolTable)
+static std::string SuggestVariableName(TSNode targetNode, std::string_view varType, std::string_view sourceCode,
+                                       const analysis::Scope* scope, const analysis::SymbolTable* symbolTable)
 {
     std::string candidate = SuggestCandidateName(targetNode, varType, sourceCode, symbolTable);
     if (!scope)
@@ -321,8 +319,8 @@ std::string SuggestVariableName(TSNode targetNode, std::string_view varType, std
  * @param[in] stmtNode Statement node above which declaration is inserted.
  * @return Code action if construction succeeds, std::nullopt otherwise.
  */
-std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActionRequest& request, TSNode targetNode,
-                                                          TSNode stmtNode)
+static std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActionRequest& request, TSNode targetNode,
+                                                                 TSNode stmtNode)
 {
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
     TSPoint exprStart = ts_node_start_point(targetNode);
@@ -341,7 +339,7 @@ std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActionReques
     }
 
     std::string varName = SuggestVariableName(targetNode, varType, request.sourceCode, scope, &request.symbolTable);
-    std::string exprText = GetNodeText(targetNode, request.sourceCode);
+    std::string exprText = parser::GetNodeText(targetNode, request.sourceCode);
     if (exprText.empty())
     {
         return std::nullopt;
@@ -381,8 +379,6 @@ std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActionReques
 
     return action;
 }
-
-} // namespace
 
 void TryAddExtractVariableAction(const CodeActionRequest& request, TSNode rootNode,
                                  std::vector<lsp::CodeAction>& actions)

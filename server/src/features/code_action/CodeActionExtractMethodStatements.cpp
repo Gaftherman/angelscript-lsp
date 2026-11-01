@@ -8,8 +8,6 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 
 /**
  * @brief Finds the enclosing function node for a selection range.
@@ -17,7 +15,7 @@ namespace
  * @param[in] range Selection range.
  * @return Function declaration node or null node.
  */
-TSNode FindEnclosingFunctionNode(TSNode rootNode, const lsp::Range& range)
+static TSNode FindEnclosingFunctionNode(TSNode rootNode, const lsp::Range& range)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSPoint startPt{static_cast<uint32_t>(range.start.line), static_cast<uint32_t>(range.start.character)};
@@ -30,11 +28,8 @@ TSNode FindEnclosingFunctionNode(TSNode rootNode, const lsp::Range& range)
  * @brief Finds the statement block body of a function node.
  * @param[in] fnNode Function declaration node.
  * @return Statement block node or null node.
- * @note [REFACTOR-CANDIDATE] Structural overlap (95%) with FindClassBodyInsertionPoint in
- * server/src/features/code_action/CodeActionExtractMethod.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-TSNode FindFunctionBodyBlock(TSNode fnNode)
+static TSNode FindFunctionBodyBlock(TSNode fnNode)
 {
     TSNode bodyNode = parser::GetChildByField(fnNode, parser::GetGrammarSymbols().fieldBody);
     if (!ts_node_is_null(bodyNode))
@@ -64,7 +59,7 @@ TSNode FindFunctionBodyBlock(TSNode fnNode)
  * @param[in] range Selection range.
  * @return Vector of intersecting statement nodes.
  */
-std::vector<TSNode> CollectStatementsInRange(TSNode bodyNode, const lsp::Range& range)
+static std::vector<TSNode> CollectStatementsInRange(TSNode bodyNode, const lsp::Range& range)
 {
     std::vector<TSNode> selectedStmts;
     TSTreeCursor cursor = ts_tree_cursor_new(bodyNode);
@@ -101,7 +96,7 @@ std::vector<TSNode> CollectStatementsInRange(TSNode bodyNode, const lsp::Range& 
  * @param[in] stmts Selected statement information.
  * @return True if declared inside the selection.
  */
-bool IsDeclaredInsideRange(const analysis::LocalDefinition* def, const ExtractMethodStatements& stmts)
+static bool IsDeclaredInsideRange(const analysis::LocalDefinition* def, const ExtractMethodStatements& stmts)
 {
     bool afterStart = def->startLine > stmts.firstStart.row ||
                       (def->startLine == stmts.firstStart.row && def->startCharacter >= stmts.firstStart.column);
@@ -118,8 +113,8 @@ bool IsDeclaredInsideRange(const analysis::LocalDefinition* def, const ExtractMe
  * @param[out] outInfo Discovered VarInfo.
  * @return True if reference is a valid extracted method input.
  */
-bool IsValidMethodInputRef(const analysis::LocalReference& ref, const analysis::Scope* sc,
-                           const ExtractMethodStatements& stmts, VarInfo& outInfo)
+static bool IsValidMethodInputRef(const analysis::LocalReference& ref, const analysis::Scope* sc,
+                                  const ExtractMethodStatements& stmts, VarInfo& outInfo)
 {
     if (ref.isMemberAccess || ref.startLine < stmts.firstStart.row || ref.endLine > stmts.lastEnd.row)
     {
@@ -153,13 +148,13 @@ bool IsValidMethodInputRef(const analysis::LocalReference& ref, const analysis::
  * @param[in] fnNode Function declaration node.
  * @return Class declaration node or null node.
  */
-TSNode FindEnclosingClassNode(TSNode fnNode)
+static TSNode FindEnclosingClassNode(TSNode fnNode)
 {
     const auto& gs = parser::GetGrammarSymbols();
     return parser::FindAncestorWithSymbol(fnNode, gs.symClassDeclaration);
 }
 
-TSNode FindInnermostStatementBlock(TSNode rootNode, const lsp::Range& range, TSNode fnNode)
+static TSNode FindInnermostStatementBlock(TSNode rootNode, const lsp::Range& range, TSNode fnNode)
 {
     TSPoint startPt{static_cast<uint32_t>(range.start.line), static_cast<uint32_t>(range.start.character)};
     TSPoint endPt{static_cast<uint32_t>(range.end.line), static_cast<uint32_t>(range.end.character)};
@@ -182,8 +177,6 @@ TSNode FindInnermostStatementBlock(TSNode rootNode, const lsp::Range& range, TSN
                             });
     return !ts_node_is_null(result) ? result : FindFunctionBodyBlock(fnNode);
 }
-
-} // namespace
 
 std::optional<ExtractMethodStatements> FindSelectedStatements(TSNode rootNode, const CodeActionRequest& request)
 {

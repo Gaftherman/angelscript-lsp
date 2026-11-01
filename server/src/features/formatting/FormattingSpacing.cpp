@@ -4,25 +4,17 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 static const std::unordered_set<std::string_view> kControlKeywords = {"if",    "for",    "foreach",
                                                                       "while", "switch", "catch"};
 
 /**
  * @brief Is closing or separator punctuation.
- * @param[in] type Parameter type.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with IsOpeningOrMemberPunctuation in
- * server/src/features/formatting/FormattingSpacing.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (86%) with IsUnaryPrecedingTokenType in
- * server/src/features/formatting/FormattingTokens.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (79%) with IsValueOnlyKind in
- * server/src/analysis/rules/FunctionRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] type Token type or semantic type.
+ * @return True if the condition is satisfied; false otherwise.
  * Structural overlap (79%) with IsUnconditionallyNonNullablePrimitive in server/src/analysis/SemanticAnalyzer.cpp.
  * Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-bool IsClosingOrSeparatorPunctuation(TokenType type)
+static bool IsClosingOrSeparatorPunctuation(TokenType type)
 {
     switch (type)
     {
@@ -40,18 +32,10 @@ bool IsClosingOrSeparatorPunctuation(TokenType type)
 
 /**
  * @brief Is opening or member punctuation.
- * @param[in] type Parameter type.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with IsClosingOrSeparatorPunctuation in
- * server/src/features/formatting/FormattingSpacing.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (74%) with IsUnaryPrecedingTokenType in
- * server/src/features/formatting/FormattingTokens.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (62%) with ContainerKindMatches in
- * server/src/features/definition/DefinitionHandler.cpp. Candidate for unification in
- * server/src/features/common/FeatureSharedUtils.h. Structural overlap (62%) with AccessModifierToString in
- * server/src/analysis/SymbolTable.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] type Token type or semantic type.
+ * @return True if the condition is satisfied; false otherwise.
  */
-bool IsOpeningOrMemberPunctuation(TokenType type)
+static bool IsOpeningOrMemberPunctuation(TokenType type)
 {
     switch (type)
     {
@@ -65,7 +49,7 @@ bool IsOpeningOrMemberPunctuation(TokenType type)
     }
 }
 
-std::optional<bool> CheckPunctuationSpacing(const Token& prev, const Token& curr, const FormatCodeOptions& opts)
+static std::optional<bool> CheckPunctuationSpacing(const Token& prev, const Token& curr, const FormatCodeOptions& opts)
 {
     if (curr.type == TokenType::Comma && (prev.type == TokenType::Comma || prev.type == TokenType::OpenBrace))
         return true;
@@ -92,7 +76,8 @@ std::optional<bool> CheckPunctuationSpacing(const Token& prev, const Token& curr
     return std::nullopt;
 }
 
-std::optional<bool> CheckUnaryAndIncrementSpacing(const std::vector<Token>& tokens, size_t prevIdx, size_t currIdx)
+static std::optional<bool> CheckUnaryAndIncrementSpacing(const std::vector<Token>& tokens, size_t prevIdx,
+                                                         size_t currIdx)
 {
     const auto& prev = tokens[prevIdx];
     const auto& curr = tokens[currIdx];
@@ -112,7 +97,7 @@ std::optional<bool> CheckUnaryAndIncrementSpacing(const std::vector<Token>& toke
     return std::nullopt;
 }
 
-PointerAlignment EffectiveRefAlignment(const FormatCodeOptions& opts)
+static PointerAlignment EffectiveRefAlignment(const FormatCodeOptions& opts)
 {
     if (opts.referenceAlignment == ReferenceAlignment::Left)
         return PointerAlignment::Left;
@@ -123,7 +108,7 @@ PointerAlignment EffectiveRefAlignment(const FormatCodeOptions& opts)
     return opts.pointerAlignment;
 }
 
-std::optional<bool> CheckRightAtSpacing(const Token& prev, PointerAlignment pointerAlignment)
+static std::optional<bool> CheckRightAtSpacing(const Token& prev, PointerAlignment pointerAlignment)
 {
     if (prev.type == TokenType::At)
         return false;
@@ -134,8 +119,8 @@ std::optional<bool> CheckRightAtSpacing(const Token& prev, PointerAlignment poin
     return std::nullopt;
 }
 
-std::optional<bool> CheckLeftAtSpacing(const std::vector<Token>& tokens, size_t prevIdx, const Token& curr,
-                                       const FormatCodeOptions& opts)
+static std::optional<bool> CheckLeftAtSpacing(const std::vector<Token>& tokens, size_t prevIdx, const Token& curr,
+                                              const FormatCodeOptions& opts)
 {
     if (curr.type == TokenType::At || curr.isTemplateCloser || curr.type == TokenType::OpenParen ||
         curr.type == TokenType::OpenBrace)
@@ -156,8 +141,8 @@ std::optional<bool> CheckLeftAtSpacing(const std::vector<Token>& tokens, size_t 
     return std::nullopt;
 }
 
-std::optional<bool> CheckReferenceSpacing(const std::vector<Token>& tokens, size_t prevIdx, size_t currIdx,
-                                          const FormatCodeOptions& opts)
+static std::optional<bool> CheckReferenceSpacing(const std::vector<Token>& tokens, size_t prevIdx, size_t currIdx,
+                                                 const FormatCodeOptions& opts)
 {
     const auto& prev = tokens[prevIdx];
     const auto& curr = tokens[currIdx];
@@ -180,7 +165,7 @@ std::optional<bool> CheckReferenceSpacing(const std::vector<Token>& tokens, size
     return std::nullopt;
 }
 
-std::optional<bool> CheckTemplateBracketSpacing(const Token& prev, const Token& curr, bool spacesInAngles)
+static std::optional<bool> CheckTemplateBracketSpacing(const Token& prev, const Token& curr, bool spacesInAngles)
 {
     if (curr.isTemplateOpener)
         return false;
@@ -198,8 +183,8 @@ std::optional<bool> CheckTemplateBracketSpacing(const Token& prev, const Token& 
     return std::nullopt;
 }
 
-std::optional<bool> CheckAtRefAndTemplateSpacing(const std::vector<Token>& tokens, size_t prevIdx, size_t currIdx,
-                                                 const FormatCodeOptions& opts)
+static std::optional<bool> CheckAtRefAndTemplateSpacing(const std::vector<Token>& tokens, size_t prevIdx,
+                                                        size_t currIdx, const FormatCodeOptions& opts)
 {
     const auto& prev = tokens[prevIdx];
     const auto& curr = tokens[currIdx];
@@ -213,14 +198,14 @@ std::optional<bool> CheckAtRefAndTemplateSpacing(const std::vector<Token>& token
     return CheckTemplateBracketSpacing(prev, curr, opts.spacesInAngles);
 }
 
-bool IsCallLikePrecedingToken(const Token& tok)
+static bool IsCallLikePrecedingToken(const Token& tok)
 {
     return tok.type == TokenType::Identifier || tok.text == "super" || tok.text == "this" || tok.text == "cast" ||
            tok.text == "function";
 }
 
-std::optional<bool> CheckParenAndBracketSpacing(const std::vector<Token>& tokens, size_t prevIdx, size_t currIdx,
-                                                const FormatCodeOptions& opts)
+static std::optional<bool> CheckParenAndBracketSpacing(const std::vector<Token>& tokens, size_t prevIdx, size_t currIdx,
+                                                       const FormatCodeOptions& opts)
 {
     const auto& prev = tokens[prevIdx];
     const auto& curr = tokens[currIdx];
@@ -251,20 +236,20 @@ std::optional<bool> CheckParenAndBracketSpacing(const std::vector<Token>& tokens
     return std::nullopt;
 }
 
-bool IsAssignmentOperator(std::string_view op)
+static bool IsAssignmentOperator(std::string_view op)
 {
     static const std::unordered_set<std::string_view> kAssignOps = {
         "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=", ">>>="};
     return kAssignOps.contains(op);
 }
 
-bool IsStandardBinaryOperator(const Token& tok)
+static bool IsStandardBinaryOperator(const Token& tok)
 {
     return tok.type == TokenType::Operator && !tok.isTemplateOpener && !tok.isTemplateCloser;
 }
 
-std::optional<bool> CheckBinaryAndColonSpacing(const std::vector<Token>& tokens, size_t prevIdx, size_t currIdx,
-                                               const FormatCodeOptions& opts)
+static std::optional<bool> CheckBinaryAndColonSpacing(const std::vector<Token>& tokens, size_t prevIdx, size_t currIdx,
+                                                      const FormatCodeOptions& opts)
 {
     const auto& prev = tokens[prevIdx];
     const auto& curr = tokens[currIdx];
@@ -282,17 +267,17 @@ std::optional<bool> CheckBinaryAndColonSpacing(const std::vector<Token>& tokens,
     return std::nullopt;
 }
 
-bool IsWordOrLiteralType(TokenType type)
+static bool IsWordOrLiteralType(TokenType type)
 {
     return type == TokenType::Identifier || type == TokenType::Number || type == TokenType::StringLiteral;
 }
 
-bool IsWordOrKeywordType(TokenType type)
+static bool IsWordOrKeywordType(TokenType type)
 {
     return type == TokenType::Identifier || type == TokenType::Keyword;
 }
 
-bool CheckWordAndLiteralSpacing(const Token& prev, const Token& curr)
+static bool CheckWordAndLiteralSpacing(const Token& prev, const Token& curr)
 {
     if (prev.type == TokenType::Keyword || curr.type == TokenType::Keyword)
         return true;
@@ -306,7 +291,6 @@ bool CheckWordAndLiteralSpacing(const Token& prev, const Token& curr)
         return true;
     return (prev.type == TokenType::Number || prev.type == TokenType::StringLiteral) && IsWordOrLiteralType(curr.type);
 }
-} // namespace
 
 bool NeedsSpaceBetween(const std::vector<Token>& tokens, size_t prevIdx, size_t currIdx,
                        const FormatCodeOptions& options)

@@ -10,7 +10,7 @@
 
 namespace angel_lsp::analysis
 {
-namespace
+namespace diagnostic_suppression_detail
 {
 /**
  * @brief Represents Code alias entry.
@@ -21,6 +21,9 @@ struct CodeAliasEntry
     std::string_view alias;
     std::string_view code;
 };
+} // namespace diagnostic_suppression_detail
+
+using CodeAliasEntry = diagnostic_suppression_detail::CodeAliasEntry;
 
 inline constexpr CodeAliasEntry k_codeAliases[] = {
     // Warnings
@@ -210,12 +213,12 @@ inline constexpr CodeAliasEntry k_codeAliases[] = {
     {"E250", diagnostics::codes::VariableInSwitchCase},
 };
 
-bool EqualsCaseInsensitive(std::string_view a, std::string_view b) noexcept
+static bool EqualsCaseInsensitive(std::string_view a, std::string_view b) noexcept
 {
     return angel_lsp::utils::CaseInsensitiveEquals(a, b);
 }
 
-std::string_view StripCommentDelimiters(std::string_view text) noexcept
+static std::string_view StripCommentDelimiters(std::string_view text) noexcept
 {
     if (text.starts_with("//"))
         text.remove_prefix(2);
@@ -232,7 +235,7 @@ std::string_view StripCommentDelimiters(std::string_view text) noexcept
     return text;
 }
 
-std::vector<std::string_view> TokenizeDirective(std::string_view text)
+static std::vector<std::string_view> TokenizeDirective(std::string_view text)
 {
     std::vector<std::string_view> tokens;
     size_t i = 0;
@@ -251,7 +254,6 @@ std::vector<std::string_view> TokenizeDirective(std::string_view text)
     }
     return tokens;
 }
-} // namespace
 
 std::string_view GetDiagnosticAlias(std::string_view canonicalCode) noexcept
 {
@@ -298,10 +300,8 @@ bool DiagnosticSuppressionMap::IsSuppressed(std::string_view code, uint32_t line
     return false;
 }
 
-namespace
-{
-void ProcessCommentDirective(std::string_view rawText, uint32_t line, DiagnosticSuppressionMap& map,
-                             std::unordered_map<std::string, std::vector<uint32_t>>& openRanges)
+static void ProcessCommentDirective(std::string_view rawText, uint32_t line, DiagnosticSuppressionMap& map,
+                                    std::unordered_map<std::string, std::vector<uint32_t>>& openRanges)
 {
     std::string_view content = StripCommentDelimiters(rawText);
     auto tokens = TokenizeDirective(content);
@@ -346,8 +346,8 @@ void ProcessCommentDirective(std::string_view rawText, uint32_t line, Diagnostic
     }
 }
 
-void ScanFallbackComments(std::string_view sourceCode, DiagnosticSuppressionMap& map,
-                          std::unordered_map<std::string, std::vector<uint32_t>>& openRanges)
+static void ScanFallbackComments(std::string_view sourceCode, DiagnosticSuppressionMap& map,
+                                 std::unordered_map<std::string, std::vector<uint32_t>>& openRanges)
 {
     uint32_t line = 0;
     size_t pos = 0;
@@ -364,7 +364,6 @@ void ScanFallbackComments(std::string_view sourceCode, DiagnosticSuppressionMap&
         ++line;
     }
 }
-} // namespace
 
 DiagnosticSuppressionMap ParseDiagnosticSuppressions(std::string_view sourceCode, const NodeIndex* nodeIndex)
 {

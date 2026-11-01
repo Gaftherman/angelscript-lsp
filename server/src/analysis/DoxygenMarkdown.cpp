@@ -14,14 +14,12 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
 /**
  * @brief Strips leading and trailing ASCII whitespace.
  * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Trim in server/src/analysis/DocComment.cpp. Candidate for
  * unification in server/src/analysis/SemanticHelpers.h.
  */
-std::string Trim(const std::string& str)
+static std::string Trim(const std::string& str)
 {
     size_t first = str.find_first_not_of(" \t\r\n");
     if (first == std::string::npos)
@@ -33,7 +31,7 @@ std::string Trim(const std::string& str)
 }
 
 /** @brief Strips leading ASCII whitespace. */
-std::string TrimLeading(const std::string& str)
+static std::string TrimLeading(const std::string& str)
 {
     size_t first = str.find_first_not_of(" \t\r\n");
     if (first == std::string::npos)
@@ -44,7 +42,7 @@ std::string TrimLeading(const std::string& str)
 }
 
 /** @brief Strips trailing ASCII whitespace in place. */
-void TrimTrailing(std::string& str)
+static void TrimTrailing(std::string& str)
 {
     size_t last = str.find_last_not_of(" \t\r\n");
     if (last == std::string::npos)
@@ -58,7 +56,7 @@ void TrimTrailing(std::string& str)
 }
 
 /** @brief Converts ASCII string to lowercase. */
-std::string ToLower(const std::string& str)
+static std::string ToLower(const std::string& str)
 {
     std::string out = str;
     std::transform(out.begin(), out.end(), out.begin(),
@@ -67,13 +65,13 @@ std::string ToLower(const std::string& str)
 }
 
 /** @brief Returns true if string contains at least one ASCII alphanumeric character. */
-bool HasAlphanumeric(std::string_view text)
+static bool HasAlphanumeric(std::string_view text)
 {
     return std::any_of(text.begin(), text.end(), [](unsigned char c) { return std::isalnum(c); });
 }
 
 /** @brief Strips trailing stray semicolons from stub comments outside verbatim blocks. */
-std::string StripTrailingStubSemicolon(std::string_view line)
+static std::string StripTrailingStubSemicolon(std::string_view line)
 {
     std::string s(line);
     size_t last = s.find_last_not_of(" \t\r\n");
@@ -95,7 +93,7 @@ std::string StripTrailingStubSemicolon(std::string_view line)
 }
 
 /** @brief Splits text into lines, stripping trailing carriage returns. */
-std::vector<std::string> SplitLines(const std::string& str)
+static std::vector<std::string> SplitLines(const std::string& str)
 {
     std::vector<std::string> lines;
     std::string line;
@@ -116,7 +114,7 @@ std::vector<std::string> SplitLines(const std::string& str)
  *
  * Required for lines after the first in multi-line descriptions and code blocks.
  */
-std::string StripLineLeadingStar(const std::string& line)
+static std::string StripLineLeadingStar(const std::string& line)
 {
     size_t i = 0;
     while (i < line.size() && (line[i] == ' ' || line[i] == '\t'))
@@ -135,7 +133,7 @@ std::string StripLineLeadingStar(const std::string& line)
 }
 
 /** @brief Checks if a line defines a key-value or option assignment item. */
-bool IsOptionOrAssignmentLine(std::string_view line)
+static bool IsOptionOrAssignmentLine(std::string_view line)
 {
     if (!line.empty() && (line.front() == '\'' || line.front() == '"' || line.front() == '`' || line.front() == '['))
     {
@@ -147,7 +145,7 @@ bool IsOptionOrAssignmentLine(std::string_view line)
 }
 
 /** @brief Checks if a line starts with a parenthesized list prefix like (1) or (a). */
-bool IsParenthesizedListPrefix(std::string_view line)
+static bool IsParenthesizedListPrefix(std::string_view line)
 {
     if (line.size() < 4 || !line.starts_with('('))
     {
@@ -162,7 +160,7 @@ bool IsParenthesizedListPrefix(std::string_view line)
 }
 
 /** @brief Checks if a line starts with a digit-prefixed item like 1. or 1). */
-bool IsDigitsListPrefix(std::string_view line)
+static bool IsDigitsListPrefix(std::string_view line)
 {
     if (line.size() < 3 || !std::isdigit(static_cast<unsigned char>(line[0])))
     {
@@ -185,13 +183,13 @@ bool IsDigitsListPrefix(std::string_view line)
 }
 
 /** @brief Checks if a line starts with a numbered list prefix. */
-bool IsNumberedListLine(std::string_view line)
+static bool IsNumberedListLine(std::string_view line)
 {
     return IsDigitsListPrefix(line) || IsParenthesizedListPrefix(line);
 }
 
 /** @brief Checks if a cleaned line represents a Markdown bullet, numbered item, or option definition. */
-bool IsMarkdownListLine(std::string_view line)
+static bool IsMarkdownListLine(std::string_view line)
 {
     if (line.starts_with("* ") || line.starts_with("- ") || line.starts_with("+ ") || line.starts_with("> ") ||
         line.starts_with("\xe2\x80\xa2 "))
@@ -202,7 +200,7 @@ bool IsMarkdownListLine(std::string_view line)
 }
 
 /** @brief Transforms `-# ` Doxygen numbered list items into numbered Markdown list items. */
-void ProcessNumberedListItem(std::string& line, int& listNum)
+static void ProcessNumberedListItem(std::string& line, int& listNum)
 {
     if (line.starts_with("-# ") || line.starts_with("-#\t"))
     {
@@ -215,7 +213,7 @@ void ProcessNumberedListItem(std::string& line, int& listNum)
 }
 
 /** @brief Determines whether a newline should be preserved between two consecutive description lines. */
-bool ShouldKeepDescriptionNewline(std::string_view prev, std::string_view curr)
+static bool ShouldKeepDescriptionNewline(std::string_view prev, std::string_view curr)
 {
     if (IsMarkdownListLine(curr) || IsMarkdownListLine(prev))
     {
@@ -237,7 +235,7 @@ bool ShouldKeepDescriptionNewline(std::string_view prev, std::string_view curr)
  * @brief Cleans description lines by stripping line decorations, converting `-#` list items,
  * and joining lines with single spaces or linebreaks (for lists and punctuated clauses).
  */
-std::string CleanDescriptionLines(const std::string& raw)
+static std::string CleanDescriptionLines(const std::string& raw)
 {
     auto lines = SplitLines(raw);
     if (lines.empty())
@@ -277,7 +275,7 @@ std::string CleanDescriptionLines(const std::string& raw)
 /**
  * @brief Converts common inline HTML tags (<code>, <tt>, <b>, <strong>, <i>, <em>) to Markdown.
  */
-std::string RewriteInlineHtml(const std::string& text)
+static std::string RewriteInlineHtml(const std::string& text)
 {
     if (text.find('<') == std::string::npos)
     {
@@ -325,13 +323,13 @@ std::string RewriteInlineHtml(const std::string& text)
 }
 
 /** @brief Checks if character is a Doxygen escaped character. */
-bool IsDoxygenEscapedChar(char c)
+static bool IsDoxygenEscapedChar(char c)
 {
     return c == '@' || c == '\\' || c == '$' || c == '&' || c == '#' || c == '%' || c == '<' || c == '>';
 }
 
 /** @brief Tries to consume a Doxygen escape sequence (\@, \\, @@, etc.). */
-bool TryConsumeInlineEscape(std::string_view text, size_t& i, std::string& result)
+static bool TryConsumeInlineEscape(std::string_view text, size_t& i, std::string& result)
 {
     if (text[i] == '\\' && i + 1 < text.size() && IsDoxygenEscapedChar(text[i + 1]))
     {
@@ -349,7 +347,7 @@ bool TryConsumeInlineEscape(std::string_view text, size_t& i, std::string& resul
 }
 
 /** @brief Checks if a character precedes an inline command as whitespace or opening punctuation. */
-bool IsInlineCommandPrefix(std::string_view text, size_t i)
+static bool IsInlineCommandPrefix(std::string_view text, size_t i)
 {
     if (i == 0)
     {
@@ -361,11 +359,13 @@ bool IsInlineCommandPrefix(std::string_view text, size_t i)
 }
 
 /** @brief Checks if trailing character is punctuation that should remain outside formatting. */
-bool IsTrailingPunctuation(char c)
+static bool IsTrailingPunctuation(char c)
 {
     return c == '.' || c == ',' || c == ';' || c == ':' || c == '!' || c == '?' || c == ')' || c == ']' || c == '}';
 }
 
+namespace doxygen_markdown_detail
+{
 /**
  * @brief Result of matching an inline formatting command.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -375,9 +375,12 @@ struct MatchedInlineCommand
     size_t cmdLen = 0;
     std::string_view cmd;
 };
+} // namespace doxygen_markdown_detail
+
+using MatchedInlineCommand = doxygen_markdown_detail::MatchedInlineCommand;
 
 /** @brief Matches known inline commands (ref, em, c, p, b, a, e) at position i. */
-MatchedInlineCommand MatchInlineCommandName(std::string_view text, size_t i)
+static MatchedInlineCommand MatchInlineCommandName(std::string_view text, size_t i)
 {
     if (i + 4 <= text.size() && text.substr(i + 1, 3) == "ref")
     {
@@ -400,10 +403,8 @@ MatchedInlineCommand MatchInlineCommandName(std::string_view text, size_t i)
 
 /**
  * @brief Formats an inline command and its argument into Markdown.
- * @note [REFACTOR-CANDIDATE] Structural overlap (84%) with FormatInlineWord in server/src/analysis/DoxygenMarkdown.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-std::string FormatInlineCommand(std::string_view cmd, std::string_view arg)
+static std::string FormatInlineCommand(std::string_view cmd, std::string_view arg)
 {
     if (cmd == "c" || cmd == "p" || cmd == "ref")
     {
@@ -417,7 +418,7 @@ std::string FormatInlineCommand(std::string_view cmd, std::string_view arg)
 }
 
 /** @brief Trims trailing punctuation from argument slice [argStart, argEnd). */
-size_t TrimArgTrailingPunctuation(std::string_view text, size_t argStart, size_t argEnd)
+static size_t TrimArgTrailingPunctuation(std::string_view text, size_t argStart, size_t argEnd)
 {
     size_t trailingStart = argEnd;
     while (trailingStart > argStart && IsTrailingPunctuation(text[trailingStart - 1]))
@@ -428,7 +429,7 @@ size_t TrimArgTrailingPunctuation(std::string_view text, size_t argStart, size_t
 }
 
 /** @brief Tries to rewrite an inline command at position i. */
-bool TryRewriteInlineCommand(const std::string& text, size_t& i, std::string& result)
+static bool TryRewriteInlineCommand(const std::string& text, size_t& i, std::string& result)
 {
     if (text[i] != '@' && text[i] != '\\')
     {
@@ -472,7 +473,7 @@ bool TryRewriteInlineCommand(const std::string& text, size_t& i, std::string& re
 /**
  * @brief Rewrites at-form inline formatting commands (@c, @p, @b, @a, @e, @em, @ref) in verbatim text.
  */
-std::string RewriteAtInlineCommands(const std::string& input)
+static std::string RewriteAtInlineCommands(const std::string& input)
 {
     if (input.empty())
     {
@@ -502,7 +503,7 @@ std::string RewriteAtInlineCommands(const std::string& input)
 /**
  * @brief Checks if a token is a known Doxygen command starting with 'n'.
  */
-bool IsKnownDoxygenCommandStartingWithN(std::string_view text)
+static bool IsKnownDoxygenCommandStartingWithN(std::string_view text)
 {
     auto matchesCmd = [&](std::string_view cmd)
     {
@@ -528,7 +529,7 @@ bool IsKnownDoxygenCommandStartingWithN(std::string_view text)
 }
 
 /** @brief Checks whether position i in line is an unescaped literal newline command. */
-bool IsEscapedNewline(const std::string& line, size_t i)
+static bool IsEscapedNewline(const std::string& line, size_t i)
 {
     if ((line[i] != '\\' && line[i] != '@') || i + 1 >= line.size() || line[i + 1] != 'n')
     {
@@ -544,7 +545,7 @@ bool IsEscapedNewline(const std::string& line, size_t i)
 /**
  * @brief Splits a comment line into multiple lines at literal \n or @n escapes.
  */
-std::vector<std::string> SplitCommentLineOnNewlines(const std::string& line)
+static std::vector<std::string> SplitCommentLineOnNewlines(const std::string& line)
 {
     std::vector<std::string> result;
     size_t start = 0;
@@ -580,7 +581,7 @@ std::vector<std::string> SplitCommentLineOnNewlines(const std::string& line)
 }
 
 /** @brief Tries to process opening line of a C-style block comment. Returns true if block remains open. */
-bool TryProcessFirstBlockLine(const std::string& line, std::vector<std::string>& contents)
+static bool TryProcessFirstBlockLine(const std::string& line, std::vector<std::string>& contents)
 {
     size_t openPos = line.find("/*");
     if (openPos == std::string::npos)
@@ -620,7 +621,7 @@ bool TryProcessFirstBlockLine(const std::string& line, std::vector<std::string>&
 }
 
 /** @brief Extracts content lines from a multi-line C-style comment block. */
-std::vector<std::string> ExtractBlockCommentLines(const std::vector<std::string>& rawLines)
+static std::vector<std::string> ExtractBlockCommentLines(const std::vector<std::string>& rawLines)
 {
     std::vector<std::string> contents;
     bool inBlock = false;
@@ -650,7 +651,7 @@ std::vector<std::string> ExtractBlockCommentLines(const std::vector<std::string>
 }
 
 /** @brief Extracts content lines from single-line C++ comment runs. */
-std::vector<std::string> ExtractLineCommentLines(const std::vector<std::string>& rawLines)
+static std::vector<std::string> ExtractLineCommentLines(const std::vector<std::string>& rawLines)
 {
     std::vector<std::string> contents;
     for (const auto& line : rawLines)
@@ -675,7 +676,7 @@ std::vector<std::string> ExtractLineCommentLines(const std::vector<std::string>&
 }
 
 /** @brief Splits comment contents on newline escapes outside verbatim blocks. */
-std::vector<std::string> SplitCommentVerbatimAndNewlines(const std::vector<std::string>& contents)
+static std::vector<std::string> SplitCommentVerbatimAndNewlines(const std::vector<std::string>& contents)
 {
     std::vector<std::string> finalContents;
     finalContents.reserve(contents.size());
@@ -721,7 +722,7 @@ std::vector<std::string> SplitCommentVerbatimAndNewlines(const std::vector<std::
 /**
  * @brief Extracts the content lines of a raw comment, whichever way it was written.
  */
-std::vector<std::string> ExtractCommentLines(const std::string& rawComment)
+static std::vector<std::string> ExtractCommentLines(const std::string& rawComment)
 {
     std::string trimmed = Trim(rawComment);
     if (trimmed.empty())
@@ -734,13 +735,20 @@ std::vector<std::string> ExtractCommentLines(const std::string& rawComment)
     return SplitCommentVerbatimAndNewlines(contents);
 }
 
+namespace doxygen_markdown_detail
+{
 enum class CommentSegmentKind
 {
     Tag,
     Text,
     VerbatimCode
 };
+} // namespace doxygen_markdown_detail
 
+using CommentSegmentKind = doxygen_markdown_detail::CommentSegmentKind;
+
+namespace doxygen_markdown_detail
+{
 /**
  * @brief Represents Comment segment.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -751,15 +759,18 @@ struct CommentSegment
     std::vector<std::string> lines;
     std::string language;
 };
+} // namespace doxygen_markdown_detail
+
+using CommentSegment = doxygen_markdown_detail::CommentSegment;
 
 /** @brief Checks if a command name is an inline formatting command. */
-bool IsDoxygenInlineCommandName(std::string_view cmd)
+static bool IsDoxygenInlineCommandName(std::string_view cmd)
 {
     return cmd == "b" || cmd == "e" || cmd == "em" || cmd == "a" || cmd == "c" || cmd == "p" || cmd == "n";
 }
 
 /** @brief Checks if a command name is a verbatim code block boundary command. */
-bool IsDoxygenVerbatimCommandName(std::string_view cmd)
+static bool IsDoxygenVerbatimCommandName(std::string_view cmd)
 {
     return cmd == "code" || cmd == "endcode" || cmd == "verbatim" || cmd == "endverbatim";
 }
@@ -767,7 +778,7 @@ bool IsDoxygenVerbatimCommandName(std::string_view cmd)
 /**
  * @brief Checks if a line begins with a Doxygen block command (@name or \name).
  */
-bool IsBlockCommand(std::string_view line, size_t& cmdEnd)
+static bool IsBlockCommand(std::string_view line, size_t& cmdEnd)
 {
     if (line.size() < 2 || (line[0] != '@' && line[0] != '\\') || !std::isalpha(static_cast<unsigned char>(line[1])))
     {
@@ -791,13 +802,13 @@ bool IsBlockCommand(std::string_view line, size_t& cmdEnd)
 }
 
 /** @brief Checks if a character is a closing quotation mark or bracket. */
-bool IsClosingQuoteOrBracket(char c)
+static bool IsClosingQuoteOrBracket(char c)
 {
     return c == '"' || c == '\'' || c == ')' || c == ']' || c == '}';
 }
 
 /** @brief Checks if dot at position i marks a sentence boundary. */
-bool IsDotSentenceBoundary(std::string_view line, size_t i)
+static bool IsDotSentenceBoundary(std::string_view line, size_t i)
 {
     if (i > 0 && (line[i - 1] == '.' || std::isdigit(static_cast<unsigned char>(line[i - 1]))))
     {
@@ -817,7 +828,7 @@ bool IsDotSentenceBoundary(std::string_view line, size_t i)
 }
 
 /** @brief Finds the first sentence-ending dot in a line not part of numbers or ellipsis. */
-size_t FindSentenceEndingDot(std::string_view line)
+static size_t FindSentenceEndingDot(std::string_view line)
 {
     for (size_t i = 0; i < line.size(); ++i)
     {
@@ -830,7 +841,7 @@ size_t FindSentenceEndingDot(std::string_view line)
 }
 
 /** @brief Checks if a line starts with an explicit brief command. */
-bool IsExplicitBriefStart(std::string_view trimmed)
+static bool IsExplicitBriefStart(std::string_view trimmed)
 {
     if (trimmed.starts_with("@brief") || trimmed.starts_with("\\brief") || trimmed.starts_with("@short") ||
         trimmed.starts_with("\\short"))
@@ -841,7 +852,7 @@ bool IsExplicitBriefStart(std::string_view trimmed)
 }
 
 /** @brief Checks if a continuation line should terminate brief absorption. */
-bool ShouldStopBriefContinuation(std::string_view nextTrimmed)
+static bool ShouldStopBriefContinuation(std::string_view nextTrimmed)
 {
     if (nextTrimmed.empty() || nextTrimmed.starts_with("@code") || nextTrimmed.starts_with("\\code") ||
         nextTrimmed.starts_with("@verbatim") || nextTrimmed.starts_with("\\verbatim"))
@@ -853,7 +864,7 @@ bool ShouldStopBriefContinuation(std::string_view nextTrimmed)
 }
 
 /** @brief Extracts an explicit brief command from lines. */
-std::string ExtractExplicitBrief(std::vector<std::string>& lines)
+static std::string ExtractExplicitBrief(std::vector<std::string>& lines)
 {
     size_t explicitBriefIdx = std::string::npos;
     for (size_t i = 0; i < lines.size(); ++i)
@@ -901,7 +912,7 @@ std::string ExtractExplicitBrief(std::vector<std::string>& lines)
 }
 
 /** @brief Checks whether a line cannot serve as an implicit brief candidate. */
-bool IsIneligibleImplicitBriefLine(std::string_view line)
+static bool IsIneligibleImplicitBriefLine(std::string_view line)
 {
     if (line.starts_with("@code") || line.starts_with("\\code") || line.starts_with("@verbatim") ||
         line.starts_with("\\verbatim") || line.starts_with("-# ") || line.starts_with("-#\t") ||
@@ -914,7 +925,7 @@ bool IsIneligibleImplicitBriefLine(std::string_view line)
 }
 
 /** @brief Splits first content line at sentence-ending dot into brief and remainder. */
-std::string SplitFirstLineAtDot(std::string& firstLine, size_t dotPos)
+static std::string SplitFirstLineAtDot(std::string& firstLine, size_t dotPos)
 {
     size_t cutPos = dotPos + 1;
     while (cutPos < firstLine.size() && IsClosingQuoteOrBracket(firstLine[cutPos]))
@@ -939,7 +950,7 @@ std::string SplitFirstLineAtDot(std::string& firstLine, size_t dotPos)
 }
 
 /** @brief Finds the index of the first non-empty line in a comment lines collection. */
-size_t FindFirstNonEmptyLine(const std::vector<std::string>& lines)
+static size_t FindFirstNonEmptyLine(const std::vector<std::string>& lines)
 {
     for (size_t i = 0; i < lines.size(); ++i)
     {
@@ -959,7 +970,7 @@ size_t FindFirstNonEmptyLine(const std::vector<std::string>& lines)
  * 2. The first line is followed by an empty line (explicit paragraph break), OR
  * 3. The first line is followed by a Doxygen block tag (e.g. @param, @return).
  */
-bool ShouldExtractImplicitBrief(const std::vector<std::string>& lines, size_t firstContentIdx)
+static bool ShouldExtractImplicitBrief(const std::vector<std::string>& lines, size_t firstContentIdx)
 {
     if (firstContentIdx >= lines.size())
     {
@@ -1001,7 +1012,7 @@ bool ShouldExtractImplicitBrief(const std::vector<std::string>& lines, size_t fi
 }
 
 /** @brief Extracts an implicit brief from the first content line. */
-std::string ExtractImplicitBrief(std::vector<std::string>& lines, size_t firstContentIdx)
+static std::string ExtractImplicitBrief(std::vector<std::string>& lines, size_t firstContentIdx)
 {
     std::string firstLine = TrimLeading(lines[firstContentIdx]);
     if (IsIneligibleImplicitBriefLine(firstLine))
@@ -1045,7 +1056,7 @@ std::string ExtractImplicitBrief(std::vector<std::string>& lines, size_t firstCo
 /**
  * @brief Extracts the brief description in the pre-pass and removes it from lines.
  */
-std::string ExtractBrief(std::vector<std::string>& lines)
+static std::string ExtractBrief(std::vector<std::string>& lines)
 {
     std::string brief = ExtractExplicitBrief(lines);
     if (!brief.empty())
@@ -1062,6 +1073,8 @@ std::string ExtractBrief(std::vector<std::string>& lines)
     return ExtractImplicitBrief(lines, firstContentIdx);
 }
 
+namespace doxygen_markdown_detail
+{
 /**
  * @brief State for comment line segmentation.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1073,9 +1086,12 @@ struct SegmenterState
     bool inCode = false;
     CommentSegment currentCode;
 };
+} // namespace doxygen_markdown_detail
+
+using SegmenterState = doxygen_markdown_detail::SegmenterState;
 
 /** @brief Flushes any active segment in the segmenter state. */
-void FlushActiveSegment(SegmenterState& state, std::vector<CommentSegment>& segments)
+static void FlushActiveSegment(SegmenterState& state, std::vector<CommentSegment>& segments)
 {
     if (state.hasActiveSeg && !state.currentSeg.lines.empty())
     {
@@ -1086,7 +1102,7 @@ void FlushActiveSegment(SegmenterState& state, std::vector<CommentSegment>& segm
 }
 
 /** @brief Checks if a line starts a verbatim code block and determines its command length. */
-bool IsVerbatimCodeStart(std::string_view line, size_t& cmdLen, bool& isVerbatim)
+static bool IsVerbatimCodeStart(std::string_view line, size_t& cmdLen, bool& isVerbatim)
 {
     if (line.starts_with("@verbatim") || line.starts_with("\\verbatim"))
     {
@@ -1104,7 +1120,7 @@ bool IsVerbatimCodeStart(std::string_view line, size_t& cmdLen, bool& isVerbatim
 }
 
 /** @brief Checks if a line ends a verbatim code block. */
-bool IsVerbatimCodeEnd(std::string_view line)
+static bool IsVerbatimCodeEnd(std::string_view line)
 {
     std::string_view trimmed = line;
     while (!trimmed.empty() && std::isspace(static_cast<unsigned char>(trimmed.front())))
@@ -1116,7 +1132,7 @@ bool IsVerbatimCodeEnd(std::string_view line)
 }
 
 /** @brief Parses language identifier from code block command arguments. */
-std::string ParseCodeLanguage(std::string_view afterCmd)
+static std::string ParseCodeLanguage(std::string_view afterCmd)
 {
     std::string lang = Trim(std::string(afterCmd));
     if (lang.starts_with('{') && lang.ends_with('}'))
@@ -1132,7 +1148,7 @@ std::string ParseCodeLanguage(std::string_view afterCmd)
 }
 
 /** @brief Processes a line when parser is inside a verbatim code block. Returns true if handled. */
-bool TryProcessCodeLine(const std::string& line, SegmenterState& state, std::vector<CommentSegment>& segments)
+static bool TryProcessCodeLine(const std::string& line, SegmenterState& state, std::vector<CommentSegment>& segments)
 {
     if (!state.inCode)
     {
@@ -1151,7 +1167,8 @@ bool TryProcessCodeLine(const std::string& line, SegmenterState& state, std::vec
 }
 
 /** @brief Checks and initiates a verbatim code block segment if line matches code start syntax. */
-bool TryStartCodeBlock(std::string_view trimmedLeading, SegmenterState& state, std::vector<CommentSegment>& segments)
+static bool TryStartCodeBlock(std::string_view trimmedLeading, SegmenterState& state,
+                              std::vector<CommentSegment>& segments)
 {
     size_t cmdLen = 0;
     bool isVerbatim = false;
@@ -1178,7 +1195,7 @@ bool TryStartCodeBlock(std::string_view trimmedLeading, SegmenterState& state, s
 }
 
 /** @brief Appends content line to active tag or text segment. */
-void AppendTextOrTagLine(const std::string& line, SegmenterState& state, std::vector<CommentSegment>& segments)
+static void AppendTextOrTagLine(const std::string& line, SegmenterState& state, std::vector<CommentSegment>& segments)
 {
     if (state.hasActiveSeg && state.currentSeg.kind == CommentSegmentKind::Tag)
     {
@@ -1197,7 +1214,7 @@ void AppendTextOrTagLine(const std::string& line, SegmenterState& state, std::ve
 }
 
 /** @brief Processes a single line inside the segmenter loop. */
-void ProcessSegmentLine(const std::string& line, SegmenterState& state, std::vector<CommentSegment>& segments)
+static void ProcessSegmentLine(const std::string& line, SegmenterState& state, std::vector<CommentSegment>& segments)
 {
     if (TryProcessCodeLine(line, state, segments))
     {
@@ -1239,7 +1256,7 @@ void ProcessSegmentLine(const std::string& line, SegmenterState& state, std::vec
 /**
  * @brief Segments comment lines into Tag, Text, and VerbatimCode blocks.
  */
-std::vector<CommentSegment> SegmentCommentLines(const std::vector<std::string>& lines)
+static std::vector<CommentSegment> SegmentCommentLines(const std::vector<std::string>& lines)
 {
     std::vector<CommentSegment> segments;
     SegmenterState state;
@@ -1263,7 +1280,7 @@ std::vector<CommentSegment> SegmentCommentLines(const std::vector<std::string>& 
 }
 
 /** @brief Wraps lines into a synthetic block comment for parsing. */
-std::string WrapInSyntheticComment(const std::vector<std::string>& lines)
+static std::string WrapInSyntheticComment(const std::vector<std::string>& lines)
 {
     std::string synthetic = "/**\n";
     for (const auto& l : lines)
@@ -1282,7 +1299,7 @@ std::string WrapInSyntheticComment(const std::vector<std::string>& lines)
 }
 
 /** @brief Helper to find a child node with a matching type name. */
-TSNode FindChildByType(TSNode node, const char* typeName)
+static TSNode FindChildByType(TSNode node, const char* typeName)
 {
     uint32_t count = ts_node_child_count(node);
     for (uint32_t i = 0; i < count; ++i)
@@ -1298,10 +1315,8 @@ TSNode FindChildByType(TSNode node, const char* typeName)
 
 /**
  * @brief Renders a code_word inline node to Markdown.
- * @note [REFACTOR-CANDIDATE] Structural overlap (97%) with RenderEmphasisNode in
- * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-std::string RenderCodeWordNode(TSNode node, const std::string& sourceCode)
+static std::string RenderCodeWordNode(TSNode node, const std::string& sourceCode)
 {
     TSNode codeChild = FindChildByType(node, "code");
     if (!ts_node_is_null(codeChild))
@@ -1322,10 +1337,8 @@ std::string RenderCodeWordNode(TSNode node, const std::string& sourceCode)
 
 /**
  * @brief Renders an emphasis inline node to Markdown.
- * @note [REFACTOR-CANDIDATE] Structural overlap (97%) with RenderCodeWordNode in
- * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-std::string RenderEmphasisNode(TSNode node, const std::string& sourceCode)
+static std::string RenderEmphasisNode(TSNode node, const std::string& sourceCode)
 {
     TSNode textChild = FindChildByType(node, "text");
     if (!ts_node_is_null(textChild))
@@ -1345,7 +1358,7 @@ std::string RenderEmphasisNode(TSNode node, const std::string& sourceCode)
 }
 
 /** @brief Renders a link inline node to Markdown. */
-std::string RenderLinkNode(TSNode node, const std::string& sourceCode)
+static std::string RenderLinkNode(TSNode node, const std::string& sourceCode)
 {
     std::string nodeText = std::string(parser::DoxygenParser::GetNodeText(node, sourceCode));
     std::string linkText;
@@ -1380,7 +1393,7 @@ std::string RenderLinkNode(TSNode node, const std::string& sourceCode)
 /**
  * @brief Renders an inline syntax node (code_word, emphasis, link, function_link) to Markdown.
  */
-std::string RenderInlineNode(TSNode node, const std::string& sourceCode)
+static std::string RenderInlineNode(TSNode node, const std::string& sourceCode)
 {
     const char* type = ts_node_type(node);
     if (std::strcmp(type, "code_word") == 0)
@@ -1406,7 +1419,7 @@ std::string RenderInlineNode(TSNode node, const std::string& sourceCode)
 /**
  * @brief Renders a description node by walking its byte range and substituting named children.
  */
-std::string RenderDescription(TSNode descNode, const std::string& sourceCode)
+static std::string RenderDescription(TSNode descNode, const std::string& sourceCode)
 {
     uint32_t startByte = ts_node_start_byte(descNode);
     uint32_t endByte = ts_node_end_byte(descNode);
@@ -1447,7 +1460,7 @@ std::string RenderDescription(TSNode descNode, const std::string& sourceCode)
 /**
  * @brief Extracts the brief text from a brief_header node.
  */
-std::string ProcessBriefHeader(TSNode briefNode, const std::string& sourceCode)
+static std::string ProcessBriefHeader(TSNode briefNode, const std::string& sourceCode)
 {
     TSNode descChild = FindChildByType(briefNode, "brief_description");
     if (!ts_node_is_null(descChild))
@@ -1469,7 +1482,7 @@ std::string ProcessBriefHeader(TSNode briefNode, const std::string& sourceCode)
 /**
  * @brief Formats a code_block node into a Markdown fenced block.
  */
-std::string ProcessCodeBlock(TSNode blockNode, const std::string& sourceCode)
+static std::string ProcessCodeBlock(TSNode blockNode, const std::string& sourceCode)
 {
     TSNode langNode = FindChildByType(blockNode, "code_block_language");
     std::string lang;
@@ -1513,6 +1526,8 @@ std::string ProcessCodeBlock(TSNode blockNode, const std::string& sourceCode)
     return "```" + lang + "\n" + joined + "\n```";
 }
 
+namespace doxygen_markdown_detail
+{
 /**
  * @brief Represents Param item.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1523,7 +1538,12 @@ struct ParamItem
     std::string direction; // "in", "out", "in,out", or empty
     std::string description;
 };
+} // namespace doxygen_markdown_detail
 
+using ParamItem = doxygen_markdown_detail::ParamItem;
+
+namespace doxygen_markdown_detail
+{
 /**
  * @brief Represents T param item.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1533,7 +1553,12 @@ struct TParamItem
     std::string name;
     std::string description;
 };
+} // namespace doxygen_markdown_detail
 
+using TParamItem = doxygen_markdown_detail::TParamItem;
+
+namespace doxygen_markdown_detail
+{
 /**
  * @brief Represents Ret val item.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1543,7 +1568,12 @@ struct RetValItem
     std::string value;
     std::string description;
 };
+} // namespace doxygen_markdown_detail
 
+using RetValItem = doxygen_markdown_detail::RetValItem;
+
+namespace doxygen_markdown_detail
+{
 enum class DocBlockKind
 {
     Brief,
@@ -1555,7 +1585,12 @@ enum class DocBlockKind
     RetVal,
     Admonition
 };
+} // namespace doxygen_markdown_detail
 
+using DocBlockKind = doxygen_markdown_detail::DocBlockKind;
+
+namespace doxygen_markdown_detail
+{
 /**
  * @brief Represents Doc block.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1571,10 +1606,8 @@ struct DocBlock
 
     /**
      * @brief Make brief.
-     * @param[in] t Parameter t.
-     * @return Result of the operation.
-     * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with MakeBody in server/src/analysis/DoxygenMarkdown.cpp.
-     * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with MakeCodeBlock
+     * @param[in] t Input t for the operation.
+     * @return Calculated or extracted result of the operation.
      * in server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
      * Structural overlap (100%) with MakeReturn in server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification
      * in server/src/analysis/SemanticHelpers.h. Structural overlap (83%) with MakeAdmonition in
@@ -1634,12 +1667,9 @@ struct DocBlock
 
     /**
      * @brief Make admonition.
-     * @param[in] l Parameter l.
-     * @param[in] t Parameter t.
-     * @return Result of the operation.
-     * @note [REFACTOR-CANDIDATE] Structural overlap (83%) with MakeBrief in server/src/analysis/DoxygenMarkdown.cpp.
-     * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (83%) with MakeBody in
-     * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+     * @param[in] l Input l for the operation.
+     * @param[in] t Input t for the operation.
+     * @return Calculated or extracted result of the operation.
      * Structural overlap (83%) with MakeCodeBlock in server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification
      * in server/src/analysis/SemanticHelpers.h. Structural overlap (83%) with MakeReturn in
      * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -1653,9 +1683,12 @@ struct DocBlock
         return b;
     }
 };
+} // namespace doxygen_markdown_detail
+
+using DocBlock = doxygen_markdown_detail::DocBlock;
 
 /** @brief Normalizes storageclass bracketed parameter direction text. */
-std::string NormalizeParamDirection(std::string_view rawSc)
+static std::string NormalizeParamDirection(std::string_view rawSc)
 {
     size_t open = rawSc.find('[');
     size_t close = rawSc.rfind(']');
@@ -1686,7 +1719,7 @@ std::string NormalizeParamDirection(std::string_view rawSc)
 }
 
 /** @brief Extracts parameter direction, names, and description from tag children. */
-void ProcessParamTagChildren(TSNode tagNode, const std::string& sourceCode, ParamItem& item)
+static void ProcessParamTagChildren(TSNode tagNode, const std::string& sourceCode, ParamItem& item)
 {
     uint32_t childCount = ts_node_child_count(tagNode);
     for (uint32_t i = 0; i < childCount; ++i)
@@ -1715,7 +1748,7 @@ void ProcessParamTagChildren(TSNode tagNode, const std::string& sourceCode, Para
 /**
  * @brief Extracts parameter names, optional direction, and description from a @param tag.
  */
-ParamItem ProcessParamTag(TSNode tagNode, const std::string& sourceCode)
+static ParamItem ProcessParamTag(TSNode tagNode, const std::string& sourceCode)
 {
     ParamItem item;
     ProcessParamTagChildren(tagNode, sourceCode, item);
@@ -1740,10 +1773,8 @@ ParamItem ProcessParamTag(TSNode tagNode, const std::string& sourceCode)
 
 /**
  * @brief Splits the template parameter name from the description for a @tparam tag.
- * @note [REFACTOR-CANDIDATE] Structural overlap (99%) with ProcessRetValTag in server/src/analysis/DoxygenMarkdown.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-TParamItem ProcessTParamTag(TSNode tagNode, const std::string& sourceCode)
+static TParamItem ProcessTParamTag(TSNode tagNode, const std::string& sourceCode)
 {
     TParamItem item;
     TSNode descChild = FindChildByType(tagNode, "description");
@@ -1779,7 +1810,7 @@ TParamItem ProcessTParamTag(TSNode tagNode, const std::string& sourceCode)
 }
 
 /** @brief Extracts the description string for return tags. */
-std::string ProcessReturnTag(TSNode tagNode, const std::string& sourceCode)
+static std::string ProcessReturnTag(TSNode tagNode, const std::string& sourceCode)
 {
     TSNode descChild = FindChildByType(tagNode, "description");
     if (!ts_node_is_null(descChild))
@@ -1790,7 +1821,7 @@ std::string ProcessReturnTag(TSNode tagNode, const std::string& sourceCode)
 }
 
 /** @brief Extracts description text from an admonition tag node. */
-std::string ExtractAdmonitionDescription(TSNode tagNode, const std::string& sourceCode)
+static std::string ExtractAdmonitionDescription(TSNode tagNode, const std::string& sourceCode)
 {
     TSNode descChild = FindChildByType(tagNode, "description");
     if (!ts_node_is_null(descChild))
@@ -1835,7 +1866,7 @@ std::string ExtractAdmonitionDescription(TSNode tagNode, const std::string& sour
 }
 
 /** @brief Maps a cleaned Doxygen admonition tag name to its canonical Markdown label. */
-std::string MapAdmonitionLabel(std::string_view cleanedTag)
+static std::string MapAdmonitionLabel(std::string_view cleanedTag)
 {
     static constexpr std::pair<std::string_view, std::string_view> kKnownLabels[] = {
         {"note", "Note"},
@@ -1873,7 +1904,7 @@ std::string MapAdmonitionLabel(std::string_view cleanedTag)
 /**
  * @brief Maps tag name and description to an Admonition block.
  */
-DocBlock ProcessAdmonitionTag(const std::string& cleanedTag, TSNode tagNode, const std::string& sourceCode)
+static DocBlock ProcessAdmonitionTag(const std::string& cleanedTag, TSNode tagNode, const std::string& sourceCode)
 {
     std::string desc = Trim(ExtractAdmonitionDescription(tagNode, sourceCode));
     std::string label = MapAdmonitionLabel(cleanedTag);
@@ -1882,10 +1913,8 @@ DocBlock ProcessAdmonitionTag(const std::string& cleanedTag, TSNode tagNode, con
 
 /**
  * @brief Extracts value and description from a @retval tag.
- * @note [REFACTOR-CANDIDATE] Structural overlap (99%) with ProcessTParamTag in server/src/analysis/DoxygenMarkdown.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-RetValItem ProcessRetValTag(TSNode tagNode, const std::string& sourceCode)
+static RetValItem ProcessRetValTag(TSNode tagNode, const std::string& sourceCode)
 {
     RetValItem item;
     TSNode descChild = FindChildByType(tagNode, "description");
@@ -1923,7 +1952,7 @@ RetValItem ProcessRetValTag(TSNode tagNode, const std::string& sourceCode)
 /**
  * @brief Checks whether a Doxygen tag is a structural declaration command.
  */
-bool IsStructuralTag(std::string_view tag)
+static bool IsStructuralTag(std::string_view tag)
 {
     static const char* const kStructuralTags[] = {
         "class",     "struct",     "union",     "enum",     "typedef",  "typealias",  "interface",
@@ -1941,7 +1970,7 @@ bool IsStructuralTag(std::string_view tag)
 }
 
 /** @brief Extracts documentation lines from multi-line structural tags. */
-std::string ExtractMultiLineStructuralDescription(const std::vector<std::string>& lines)
+static std::string ExtractMultiLineStructuralDescription(const std::vector<std::string>& lines)
 {
     std::string subDesc;
     for (size_t i = 1; i < lines.size(); ++i)
@@ -1960,7 +1989,7 @@ std::string ExtractMultiLineStructuralDescription(const std::vector<std::string>
 }
 
 /** @brief Extracts descriptive text after single-line structural entity identifier. */
-std::string ExtractSingleLineStructuralDescription(std::string_view raw)
+static std::string ExtractSingleLineStructuralDescription(std::string_view raw)
 {
     size_t sp = raw.find_first_of(" \t");
     if (sp != std::string_view::npos)
@@ -1977,7 +2006,7 @@ std::string ExtractSingleLineStructuralDescription(std::string_view raw)
 /**
  * @brief Extracts attached body description following a structural tag, if any.
  */
-std::string ProcessStructuralTagDescription(TSNode tagNode, const std::string& sourceCode)
+static std::string ProcessStructuralTagDescription(TSNode tagNode, const std::string& sourceCode)
 {
     TSNode descChild = FindChildByType(tagNode, "description");
     std::string raw;
@@ -2018,7 +2047,7 @@ std::string ProcessStructuralTagDescription(TSNode tagNode, const std::string& s
 }
 
 /** @brief Appends text to a string block with proper spacing. */
-void AppendToBlockText(std::string& target, const std::string& addition)
+static void AppendToBlockText(std::string& target, const std::string& addition)
 {
     if (addition.empty())
     {
@@ -2038,7 +2067,7 @@ void AppendToBlockText(std::string& target, const std::string& addition)
 }
 
 /** @brief Appends text to a DocBlock target. */
-void AppendToDocBlock(DocBlock& block, const std::string& text)
+static void AppendToDocBlock(DocBlock& block, const std::string& text)
 {
     switch (block.kind)
     {
@@ -2063,7 +2092,7 @@ void AppendToDocBlock(DocBlock& block, const std::string& text)
 }
 
 /** @brief Splits an inline tag description into target word and trailing remainder. */
-std::pair<std::string, std::string> SplitInlineTagWord(std::string_view desc)
+static std::pair<std::string, std::string> SplitInlineTagWord(std::string_view desc)
 {
     std::string trimmedDesc = TrimLeading(std::string(desc));
     std::string X;
@@ -2094,10 +2123,8 @@ std::pair<std::string, std::string> SplitInlineTagWord(std::string_view desc)
 
 /**
  * @brief Formats an inline word into Markdown depending on tag command.
- * @note [REFACTOR-CANDIDATE] Structural overlap (84%) with FormatInlineCommand in
- * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-std::string FormatInlineWord(std::string_view cmd, std::string_view word)
+static std::string FormatInlineWord(std::string_view cmd, std::string_view word)
 {
     if (cmd == "c" || cmd == "p" || cmd == "ref")
     {
@@ -2117,8 +2144,8 @@ std::string FormatInlineWord(std::string_view cmd, std::string_view word)
 /**
  * @brief Merges an inline formatting tag (\b, \e, \em, \a, \c, \p, \ref) into the preceding block.
  */
-void MergeInlineTag(const std::string& cmd, TSNode tagNode, const std::string& sourceCode,
-                    std::vector<DocBlock>& blocks)
+static void MergeInlineTag(const std::string& cmd, TSNode tagNode, const std::string& sourceCode,
+                           std::vector<DocBlock>& blocks)
 {
     TSNode descChild = FindChildByType(tagNode, "description");
     std::string desc;
@@ -2151,7 +2178,7 @@ void MergeInlineTag(const std::string& cmd, TSNode tagNode, const std::string& s
 }
 
 /** @brief Extracts raw tag name from a tag AST node. */
-std::string ExtractRawTagName(TSNode child, const std::string& syntheticDoc)
+static std::string ExtractRawTagName(TSNode child, const std::string& syntheticDoc)
 {
     TSNode nameNode = FindChildByType(child, "tag_name");
     std::string rawTagName;
@@ -2175,8 +2202,8 @@ std::string ExtractRawTagName(TSNode child, const std::string& syntheticDoc)
 }
 
 /** @brief Tries to dispatch common inline, parameter, return, or retval tags. Returns true if handled. */
-bool TryDispatchCommonTag(std::string_view lowerTag, TSNode child, const std::string& syntheticDoc,
-                          std::vector<DocBlock>& blocks)
+static bool TryDispatchCommonTag(std::string_view lowerTag, TSNode child, const std::string& syntheticDoc,
+                                 std::vector<DocBlock>& blocks)
 {
     if (lowerTag == "b" || lowerTag == "e" || lowerTag == "em" || lowerTag == "a" || lowerTag == "c" ||
         lowerTag == "p" || lowerTag == "ref")
@@ -2208,7 +2235,7 @@ bool TryDispatchCommonTag(std::string_view lowerTag, TSNode child, const std::st
 }
 
 /** @brief Dispatches tag AST nodes to corresponding block builders. */
-void DispatchSegmentTagNode(TSNode child, const std::string& syntheticDoc, std::vector<DocBlock>& blocks)
+static void DispatchSegmentTagNode(TSNode child, const std::string& syntheticDoc, std::vector<DocBlock>& blocks)
 {
     std::string rawTagName = ExtractRawTagName(child, syntheticDoc);
     std::string lowerTag = ToLower(rawTagName);
@@ -2257,7 +2284,7 @@ void DispatchSegmentTagNode(TSNode child, const std::string& syntheticDoc, std::
 }
 
 /** @brief Appends or merges rendered description AST node into doc blocks. */
-void DispatchDescriptionChildNode(TSNode child, const std::string& syntheticDoc, std::vector<DocBlock>& blocks)
+static void DispatchDescriptionChildNode(TSNode child, const std::string& syntheticDoc, std::vector<DocBlock>& blocks)
 {
     std::string body = RenderDescription(child, syntheticDoc);
     if (body.empty() || !HasAlphanumeric(body))
@@ -2276,7 +2303,7 @@ void DispatchDescriptionChildNode(TSNode child, const std::string& syntheticDoc,
 }
 
 /** @brief Appends raw text line child node into doc blocks. */
-void DispatchTextLineChildNode(TSNode child, const std::string& syntheticDoc, std::vector<DocBlock>& blocks)
+static void DispatchTextLineChildNode(TSNode child, const std::string& syntheticDoc, std::vector<DocBlock>& blocks)
 {
     std::string line = std::string(parser::DoxygenParser::GetNodeText(child, syntheticDoc));
     line = CleanDescriptionLines(RewriteAtInlineCommands(line));
@@ -2295,7 +2322,7 @@ void DispatchTextLineChildNode(TSNode child, const std::string& syntheticDoc, st
 }
 
 /** @brief Dispatches a child AST node of a parsed segment. */
-void DispatchSegmentChildNode(TSNode child, const std::string& syntheticDoc, std::vector<DocBlock>& blocks)
+static void DispatchSegmentChildNode(TSNode child, const std::string& syntheticDoc, std::vector<DocBlock>& blocks)
 {
     const char* type = ts_node_type(child);
     if (std::strcmp(type, "brief_header") == 0)
@@ -2331,7 +2358,7 @@ void DispatchSegmentChildNode(TSNode child, const std::string& syntheticDoc, std
 /**
  * @brief Parses a single synthetic document segment and collects AST DocBlocks.
  */
-void ParseDocSegment(const std::string& syntheticDoc, std::vector<DocBlock>& blocks)
+static void ParseDocSegment(const std::string& syntheticDoc, std::vector<DocBlock>& blocks)
 {
     if (Trim(syntheticDoc).empty())
     {
@@ -2359,8 +2386,8 @@ void ParseDocSegment(const std::string& syntheticDoc, std::vector<DocBlock>& blo
 }
 
 /** @brief Assembles brief and general body paragraphs/code blocks into output sections. */
-void AssembleBriefAndBody(std::string briefText, const std::vector<DocBlock>& blocks,
-                          std::vector<std::string>& sections)
+static void AssembleBriefAndBody(std::string briefText, const std::vector<DocBlock>& blocks,
+                                 std::vector<std::string>& sections)
 {
     size_t firstBriefBlockIdx = std::string::npos;
     if (!briefText.empty() && HasAlphanumeric(briefText))
@@ -2400,7 +2427,7 @@ void AssembleBriefAndBody(std::string briefText, const std::vector<DocBlock>& bl
 }
 
 /** @brief Assembles template parameter bullets into output sections. */
-void AssembleTParamBullets(const std::vector<DocBlock>& blocks, std::vector<std::string>& sections)
+static void AssembleTParamBullets(const std::vector<DocBlock>& blocks, std::vector<std::string>& sections)
 {
     std::vector<std::string> tparamBullets;
     for (const auto& b : blocks)
@@ -2431,7 +2458,7 @@ void AssembleTParamBullets(const std::vector<DocBlock>& blocks, std::vector<std:
 }
 
 /** @brief Assembles parameter bullets into output sections. */
-void AssembleParamBullets(const std::vector<DocBlock>& blocks, std::vector<std::string>& sections)
+static void AssembleParamBullets(const std::vector<DocBlock>& blocks, std::vector<std::string>& sections)
 {
     std::vector<std::string> paramBullets;
     for (const auto& b : blocks)
@@ -2469,7 +2496,7 @@ void AssembleParamBullets(const std::vector<DocBlock>& blocks, std::vector<std::
 }
 
 /** @brief Assembles return and retval sections into output sections. */
-void AssembleReturnSection(const std::vector<DocBlock>& blocks, std::vector<std::string>& sections)
+static void AssembleReturnSection(const std::vector<DocBlock>& blocks, std::vector<std::string>& sections)
 {
     std::string returnSection;
     for (const auto& b : blocks)
@@ -2516,7 +2543,7 @@ void AssembleReturnSection(const std::vector<DocBlock>& blocks, std::vector<std:
 }
 
 /** @brief Assembles admonitions in source order into output sections. */
-void AssembleAdmonitions(const std::vector<DocBlock>& blocks, std::vector<std::string>& sections)
+static void AssembleAdmonitions(const std::vector<DocBlock>& blocks, std::vector<std::string>& sections)
 {
     for (const auto& b : blocks)
     {
@@ -2535,7 +2562,7 @@ void AssembleAdmonitions(const std::vector<DocBlock>& blocks, std::vector<std::s
 /**
  * @brief Assembles extracted blocks and brief into canonical clangd Markdown format.
  */
-std::string AssembleMarkdown(std::string briefText, const std::vector<DocBlock>& blocks)
+static std::string AssembleMarkdown(std::string briefText, const std::vector<DocBlock>& blocks)
 {
     std::vector<std::string> outputSections;
     AssembleBriefAndBody(std::move(briefText), blocks, outputSections);
@@ -2558,7 +2585,7 @@ std::string AssembleMarkdown(std::string briefText, const std::vector<DocBlock>&
 }
 
 /** @brief Processes a verbatim code comment segment and appends a code block. */
-void ProcessVerbatimCodeSegment(CommentSegment& seg, std::vector<DocBlock>& allBlocks)
+static void ProcessVerbatimCodeSegment(CommentSegment& seg, std::vector<DocBlock>& allBlocks)
 {
     while (!seg.lines.empty() && Trim(seg.lines.front()).empty())
     {
@@ -2589,7 +2616,7 @@ void ProcessVerbatimCodeSegment(CommentSegment& seg, std::vector<DocBlock>& allB
 }
 
 /** @brief Processes a parsed doc segment and handles fallback text segments. */
-void ProcessParsedDocSegment(const CommentSegment& seg, std::vector<DocBlock>& allBlocks)
+static void ProcessParsedDocSegment(const CommentSegment& seg, std::vector<DocBlock>& allBlocks)
 {
     if (seg.lines.empty())
     {
@@ -2618,7 +2645,6 @@ void ProcessParsedDocSegment(const CommentSegment& seg, std::vector<DocBlock>& a
         }
     }
 }
-} // namespace
 
 std::string RenderDoxygenMarkdown(const std::string& rawComment)
 {

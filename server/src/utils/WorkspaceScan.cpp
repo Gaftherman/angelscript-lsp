@@ -5,13 +5,11 @@
 
 namespace angel_lsp::utils
 {
-namespace
-{
 constexpr int k_maxScanDepth = 32;
 
-bool ShouldSkipEntry(const std::filesystem::directory_entry& entry, const std::vector<std::string>& excludeGlobs,
-                     ankerl::unordered_dense::set<std::string>& visitedSymlinks,
-                     std::filesystem::recursive_directory_iterator& scan)
+static bool ShouldSkipEntry(const std::filesystem::directory_entry& entry, const std::vector<std::string>& excludeGlobs,
+                            ankerl::unordered_dense::set<std::string>& visitedSymlinks,
+                            std::filesystem::recursive_directory_iterator& scan)
 {
     if (scan.depth() > k_maxScanDepth)
     {
@@ -42,7 +40,6 @@ bool ShouldSkipEntry(const std::filesystem::directory_entry& entry, const std::v
     }
     return false;
 }
-} // namespace
 
 bool ForEachWorkspaceFile(const std::vector<std::string>& roots, const std::vector<std::string>& excludeGlobs,
                           const std::function<bool()>& shouldStop,

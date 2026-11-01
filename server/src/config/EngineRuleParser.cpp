@@ -7,15 +7,13 @@
 namespace angel_lsp::config
 {
 
-namespace
-{
-
 /**
  * @brief Safely parses native engine properties from JSON.
  * @param[in] j JSON object containing engineProperties.
  * @param[out] props Output structure to populate.
  */
-template <typename T> void ReadOptionalField(const nlohmann::json& j, const std::string& key, std::optional<T>& target)
+template <typename T>
+static void ReadOptionalField(const nlohmann::json& j, const std::string& key, std::optional<T>& target)
 {
     if (j.contains(key) && !j[key].is_null())
     {
@@ -30,8 +28,8 @@ template <typename T> void ReadOptionalField(const nlohmann::json& j, const std:
 }
 
 template <typename T>
-void ReadPropertyWithFallback(const nlohmann::json& j, const std::string& camelKey, const std::string& epKey,
-                              std::optional<T>& target)
+static void ReadPropertyWithFallback(const nlohmann::json& j, const std::string& camelKey, const std::string& epKey,
+                                     std::optional<T>& target)
 {
     ReadOptionalField(j, camelKey, target);
     if (!target.has_value())
@@ -40,7 +38,7 @@ void ReadPropertyWithFallback(const nlohmann::json& j, const std::string& camelK
     }
 }
 
-void ParseNativeProperties(const nlohmann::json& j, NativeEngineProperties& props)
+static void ParseNativeProperties(const nlohmann::json& j, NativeEngineProperties& props)
 {
     if (!j.contains("engineProperties") || !j["engineProperties"].is_object())
     {
@@ -86,7 +84,7 @@ void ParseNativeProperties(const nlohmann::json& j, NativeEngineProperties& prop
  * @param[in] item JSON object representing one rule.
  * @param[out] rule Output StorageRule structure.
  */
-void ParseSingleStorageRule(const nlohmann::json& item, StorageRule& rule)
+static void ParseSingleStorageRule(const nlohmann::json& item, StorageRule& rule)
 {
     rule.id = item.value("id", "");
     rule.inheritsFrom = item.value("inheritsFrom", "");
@@ -116,7 +114,7 @@ void ParseSingleStorageRule(const nlohmann::json& item, StorageRule& rule)
  * @param[in] j JSON object containing storageRules.
  * @param[out] rules Destination vector for parsed rules.
  */
-void ParseStorageRules(const nlohmann::json& j, std::vector<StorageRule>& rules)
+static void ParseStorageRules(const nlohmann::json& j, std::vector<StorageRule>& rules)
 {
     if (!j.contains("storageRules") || !j["storageRules"].is_array())
     {
@@ -140,7 +138,7 @@ void ParseStorageRules(const nlohmann::json& j, std::vector<StorageRule>& rules)
  * @param[in] j JSON object containing typeSuggestions.
  * @param[out] suggestions Destination vector for parsed suggestions.
  */
-void ParseTypeSuggestions(const nlohmann::json& j, std::vector<TypeSuggestionRule>& suggestions)
+static void ParseTypeSuggestions(const nlohmann::json& j, std::vector<TypeSuggestionRule>& suggestions)
 {
     if (!j.contains("typeSuggestions") || !j["typeSuggestions"].is_array())
     {
@@ -180,7 +178,7 @@ void ParseTypeSuggestions(const nlohmann::json& j, std::vector<TypeSuggestionRul
  * @param[in] key Key name to look up.
  * @param[out] target Destination vector.
  */
-void ParseStringArray(const nlohmann::json& item, const std::string& key, std::vector<std::string>& target)
+static void ParseStringArray(const nlohmann::json& item, const std::string& key, std::vector<std::string>& target)
 {
     if (item.contains(key) && item[key].is_array())
     {
@@ -199,7 +197,7 @@ void ParseStringArray(const nlohmann::json& item, const std::string& key, std::v
  * @param[in] item JSON object representing one scheduler rule.
  * @param[out] rule Output SchedulerRule structure.
  */
-void ParseSingleSchedulerRule(const nlohmann::json& item, SchedulerRule& rule)
+static void ParseSingleSchedulerRule(const nlohmann::json& item, SchedulerRule& rule)
 {
     rule.id = item.value("id", "");
     rule.disallowParamInheritsFrom = item.value("disallowParamInheritsFrom", "");
@@ -230,7 +228,7 @@ void ParseSingleSchedulerRule(const nlohmann::json& item, SchedulerRule& rule)
  * @param[in] j JSON object containing callRules or schedulerRules.
  * @param[out] rules Destination vector for parsed rules.
  */
-void ParseSchedulerRules(const nlohmann::json& j, std::vector<SchedulerRule>& rules)
+static void ParseSchedulerRules(const nlohmann::json& j, std::vector<SchedulerRule>& rules)
 {
     auto parseArray = [&](const char* key)
     {
@@ -257,7 +255,7 @@ void ParseSchedulerRules(const nlohmann::json& j, std::vector<SchedulerRule>& ru
     }
 }
 
-void ParseReflectionCallees(const nlohmann::json& obj, std::vector<StringReflectionCallee>& callees)
+static void ParseReflectionCallees(const nlohmann::json& obj, std::vector<StringReflectionCallee>& callees)
 {
     if (!obj.contains("stringReflectionCallees") || !obj["stringReflectionCallees"].is_array())
     {
@@ -284,7 +282,7 @@ void ParseReflectionCallees(const nlohmann::json& obj, std::vector<StringReflect
     }
 }
 
-void ParseBaseClassLifecycleMethods(const nlohmann::json& obj, StringVectorMap& map)
+static void ParseBaseClassLifecycleMethods(const nlohmann::json& obj, StringVectorMap& map)
 {
     if (!obj.contains("baseClassLifecycleMethods") || !obj["baseClassLifecycleMethods"].is_object())
     {
@@ -303,7 +301,7 @@ void ParseBaseClassLifecycleMethods(const nlohmann::json& obj, StringVectorMap& 
     }
 }
 
-void ParseBaseClassProxyMap(const nlohmann::json& obj, StringVectorMap& map)
+static void ParseBaseClassProxyMap(const nlohmann::json& obj, StringVectorMap& map)
 {
     if (!obj.contains("baseClassProxyMap") || !obj["baseClassProxyMap"].is_object())
     {
@@ -329,7 +327,7 @@ void ParseBaseClassProxyMap(const nlohmann::json& obj, StringVectorMap& map)
     }
 }
 
-void ParseEngineCallbackSignatures(const nlohmann::json& obj, std::vector<std::vector<std::string>>& signatures)
+static void ParseEngineCallbackSignatures(const nlohmann::json& obj, std::vector<std::vector<std::string>>& signatures)
 {
     if (!obj.contains("engineCallbackSignatures") || !obj["engineCallbackSignatures"].is_array())
     {
@@ -352,7 +350,7 @@ void ParseEngineCallbackSignatures(const nlohmann::json& obj, std::vector<std::v
     }
 }
 
-void ParseUnusedSymbolRules(const nlohmann::json& j, UnusedSymbolRules& rules)
+static void ParseUnusedSymbolRules(const nlohmann::json& j, UnusedSymbolRules& rules)
 {
     if (!j.contains("unusedSymbolRules") || !j["unusedSymbolRules"].is_object())
     {
@@ -377,8 +375,6 @@ void ParseUnusedSymbolRules(const nlohmann::json& j, UnusedSymbolRules& rules)
     ParseStringArray(u, "unusedGlobalExemptTypes", rules.unusedGlobalExemptTypes);
     ParseEngineCallbackSignatures(u, rules.engineCallbackSignatures);
 }
-
-} // namespace
 
 std::optional<EngineRuleConfig> ParseEngineRuleConfigJson(std::string_view jsonText)
 {

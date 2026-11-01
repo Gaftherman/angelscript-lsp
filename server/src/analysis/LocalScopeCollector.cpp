@@ -497,7 +497,7 @@ void LocalScopeCollector::ProcessDefinitionCapture(const RawCapture& capture, co
         current = stack[stack.size() - 2].scope;
     }
 
-    LocalDefinition def{GetNodeText(capture.node, sourceCode), defKind,
+    LocalDefinition def{parser::GetNodeText(capture.node, sourceCode), defKind,
                         SourceRange{startPt.row, startPt.column, endPt.row, endPt.column}};
     def.fullStartLine = startPt.row;
     def.fullStartCharacter = startPt.column;
@@ -750,7 +750,7 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
     TSPoint endPt = ts_node_end_point(capture.node);
 
     LocalReference ref;
-    ref.name = GetNodeText(capture.node, sourceCode);
+    ref.name = parser::GetNodeText(capture.node, sourceCode);
     ref.startLine = startPt.row;
     ref.startCharacter = startPt.column;
     ref.endLine = endPt.row;
@@ -817,7 +817,7 @@ void LocalScopeCollector::ProcessStringCallRefCapture(const RawCapture& capture,
     {
         return;
     }
-    std::string_view text = analysis::GetNodeTextView(capture.node, sourceCode);
+    std::string_view text = parser::GetNodeTextView(capture.node, sourceCode);
     text = parser::UnquoteStringView(text);
     if (text.empty() || text.size() > 128)
     {
@@ -921,7 +921,7 @@ void LocalScopeCollector::PopulateTypeRanges(TSNode tNode, const std::string& so
                         {
                             TSPoint argStart = ts_node_start_point(innerType);
                             TSPoint argEnd = ts_node_end_point(innerType);
-                            std::string argText = GetNodeText(innerType, sourceCode);
+                            std::string argText = parser::GetNodeText(innerType, sourceCode);
                             def.templateArgPositions.push_back(
                                 {CleanBaseType(argText), argStart.row, argStart.column, argEnd.row, argEnd.column});
                         }
@@ -934,6 +934,12 @@ void LocalScopeCollector::PopulateTypeRanges(TSNode tNode, const std::string& so
     ts_tree_cursor_delete(&cursor);
 }
 
+/**
+ * @brief Reads type information and source ranges for a parameter AST node.
+ * @param[in] declaratorNode Parameter AST declarator node.
+ * @param[in] sourceCode Source text of the document.
+ * @param[out] def LocalDefinition receiving extracted type info and default value.
+ */
 void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std::string& sourceCode,
                                                 LocalDefinition& def) const
 {
@@ -952,7 +958,7 @@ void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std
         def.isConst = typeInfo.isConst;
         def.isReference = typeInfo.isReference;
         def.typeKind = typeInfo.kind;
-        def.typeName = GetNodeText(paramTypeNode, sourceCode);
+        def.typeName = parser::GetNodeText(paramTypeNode, sourceCode);
         PopulateTypeRanges(paramTypeNode, sourceCode, def);
     }
 
@@ -965,10 +971,10 @@ void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std
             TSNode child = ts_tree_cursor_current_node(&cursor);
             if (foundEq)
             {
-                def.defaultValue = GetNodeText(child, sourceCode);
+                def.defaultValue = parser::GetNodeText(child, sourceCode);
                 break;
             }
-            if (GetNodeText(child, sourceCode) == "=")
+            if (parser::GetNodeText(child, sourceCode) == "=")
             {
                 foundEq = true;
             }
@@ -979,11 +985,9 @@ void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std
 
 /**
  * @brief Local scope collector read foreach variable type info.
- * @param[in] declaratorNode Parameter declaratorNode.
- * @param[in] sourceCode Parameter sourceCode.
- * @param[in,out] def Parameter def.
- * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with ReadEmptyParenVariableTypeInfo in
- * server/src/analysis/LocalScopeCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] declaratorNode AST node under evaluation.
+ * @param[in] sourceCode Document source text.
+ * @param[in,out] def Input def for the operation.
  * Structural overlap (88%) with ReadVirtualPropertyTypeInfo in server/src/analysis/LocalScopeCollector.cpp. Candidate
  * for unification in server/src/analysis/SemanticHelpers.h.
  */
@@ -1005,11 +1009,18 @@ void LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, con
         def.isConst = typeInfo.isConst;
         def.isReference = typeInfo.isReference;
         def.typeKind = typeInfo.kind;
-        def.typeName = GetNodeText(foreachTypeNode, sourceCode);
+        def.typeName = parser::GetNodeText(foreachTypeNode, sourceCode);
         PopulateTypeRanges(foreachTypeNode, sourceCode, def);
     }
 }
 
+/**
+ * @brief Reads declared type information and bounds for lambda parameters.
+ * @param[in] nameNode AST node of the lambda parameter identifier.
+ * @param[in] declaratorNode AST node of the enclosing lambda_parameter_list.
+ * @param[in] sourceCode Source text buffer of the document.
+ * @param[out] def LocalDefinition receiving extracted type info.
+ */
 void LocalScopeCollector::ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode declaratorNode,
                                                       const std::string& sourceCode, LocalDefinition& def) const
 {
@@ -1045,18 +1056,16 @@ void LocalScopeCollector::ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode de
         def.isConst = typeInfo.isConst;
         def.isReference = typeInfo.isReference;
         def.typeKind = typeInfo.kind;
-        def.typeName = GetNodeText(typeNode, sourceCode);
+        def.typeName = parser::GetNodeText(typeNode, sourceCode);
         PopulateTypeRanges(typeNode, sourceCode, def);
     }
 }
 
 /**
  * @brief Count variable declarators.
- * @param[in] declarationNode Parameter declarationNode.
- * @param[in] declaratorSym Parameter declaratorSym.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with ParseAccessorNodes in
- * server/src/analysis/SymbolCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] declarationNode AST node under evaluation.
+ * @param[in] declaratorSym Symbol or grammar symbol.
+ * @return Calculated or extracted result of the operation.
  */
 static uint32_t CountVariableDeclarators(TSNode declarationNode, TSSymbol declaratorSym)
 {
@@ -1104,46 +1113,12 @@ static TSNode FindDeclarationTypeNode(TSNode declarationNode, TSNode declaratorN
     return typeNode;
 }
 
-static TSNode FindDeclaratorValueNode(TSNode declaratorNode, const std::string& sourceCode)
-{
-    TSNode valueNode = parser::GetChildByField(declaratorNode, parser::GetGrammarSymbols().fieldValue);
-    if (!ts_node_is_null(valueNode))
-    {
-        return valueNode;
-    }
-
-    TSTreeCursor valCursor = ts_tree_cursor_new(declaratorNode);
-    if (ts_tree_cursor_goto_first_child(&valCursor))
-    {
-        bool foundEq = false;
-        do
-        {
-            TSNode child = ts_tree_cursor_current_node(&valCursor);
-            if (foundEq)
-            {
-                valueNode = child;
-                break;
-            }
-            uint32_t start = ts_node_start_byte(child);
-            uint32_t end = ts_node_end_byte(child);
-            if (start < end && end <= sourceCode.size() && sourceCode.substr(start, end - start) == "=")
-            {
-                foundEq = true;
-            }
-        } while (ts_tree_cursor_goto_next_sibling(&valCursor));
-    }
-    ts_tree_cursor_delete(&valCursor);
-    return valueNode;
-}
-
 /**
  * @brief Local scope collector read variable declarator type info.
- * @param[in] declaratorNode Parameter declaratorNode.
- * @param[in] declarationNode Parameter declarationNode.
- * @param[in] sourceCode Parameter sourceCode.
- * @param[in,out] def Parameter def.
- * @note [REFACTOR-CANDIDATE] Structural overlap (69%) with ReadEmptyParenVariableTypeInfo in
- * server/src/analysis/LocalScopeCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] declaratorNode AST node under evaluation.
+ * @param[in] declarationNode AST node under evaluation.
+ * @param[in] sourceCode Document source text.
+ * @param[in,out] def Input def for the operation.
  * Structural overlap (64%) with ReadVirtualPropertyTypeInfo in server/src/analysis/LocalScopeCollector.cpp. Candidate
  * for unification in server/src/analysis/SemanticHelpers.h.
  */
@@ -1174,14 +1149,14 @@ void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, 
         def.isConst = typeInfo.isConst;
         def.isReference = typeInfo.isReference;
         def.typeKind = typeInfo.kind;
-        def.typeName = GetNodeText(typeNode, sourceCode);
+        def.typeName = parser::GetNodeText(typeNode, sourceCode);
         PopulateTypeRanges(typeNode, sourceCode, def);
     }
 
-    TSNode valueNode = FindDeclaratorValueNode(declaratorNode, sourceCode);
+    TSNode valueNode = parser::FindDeclaratorValueNode(declaratorNode, sourceCode);
     if (!ts_node_is_null(valueNode))
     {
-        def.defaultValue = GetNodeText(valueNode, sourceCode);
+        def.defaultValue = parser::GetNodeText(valueNode, sourceCode);
     }
     def.hasNullInitializer = IsNullInitializer(valueNode);
 }
@@ -1191,8 +1166,6 @@ void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, 
  * @param funcNode Function AST node.
  * @param sourceCode Source text.
  * @param def Local definition to populate.
- * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with ReadForeachVariableTypeInfo in
- * server/src/analysis/LocalScopeCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  * Structural overlap (90%) with ReadVirtualPropertyTypeInfo in server/src/analysis/LocalScopeCollector.cpp. Candidate
  * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (69%) with
  * ReadVariableDeclaratorTypeInfo in server/src/analysis/LocalScopeCollector.cpp. Candidate for unification in
@@ -1215,7 +1188,7 @@ void LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const 
         def.isConst = typeInfo.isConst;
         def.isReference = typeInfo.isReference;
         def.typeKind = typeInfo.kind;
-        def.typeName = GetNodeText(typeNode, sourceCode);
+        def.typeName = parser::GetNodeText(typeNode, sourceCode);
         PopulateTypeRanges(typeNode, sourceCode, def);
     }
 }
@@ -1269,11 +1242,9 @@ void LocalScopeCollector::ReadVariableTypeInfo(const RawCapture& capture, const 
 
 /**
  * @brief Local scope collector read virtual property type info.
- * @param[in] propertyNode Parameter propertyNode.
- * @param[in] sourceCode Parameter sourceCode.
- * @param[in,out] def Parameter def.
- * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with ReadEmptyParenVariableTypeInfo in
- * server/src/analysis/LocalScopeCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] propertyNode AST node under evaluation.
+ * @param[in] sourceCode Document source text.
+ * @param[in,out] def Input def for the operation.
  * Structural overlap (88%) with ReadForeachVariableTypeInfo in server/src/analysis/LocalScopeCollector.cpp. Candidate
  * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (64%) with
  * ReadVariableDeclaratorTypeInfo in server/src/analysis/LocalScopeCollector.cpp. Candidate for unification in
@@ -1301,14 +1272,12 @@ void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const
         def.isConst = typeInfo.isConst;
         def.isReference = typeInfo.isReference;
         def.typeKind = typeInfo.kind;
-        def.typeName = GetNodeText(typeNode, sourceCode);
+        def.typeName = parser::GetNodeText(typeNode, sourceCode);
         PopulateTypeRanges(typeNode, sourceCode, def);
     }
 }
 
-namespace
-{
-Scope* FindInnermostScopeMut(Scope* root, uint32_t line, uint32_t character)
+static Scope* FindInnermostScopeMut(Scope* root, uint32_t line, uint32_t character)
 {
     if (!root)
         return nullptr;
@@ -1326,7 +1295,7 @@ Scope* FindInnermostScopeMut(Scope* root, uint32_t line, uint32_t character)
     return root;
 }
 
-void InsertRecoveredDefinition(Scope* targetScope, LocalDefinition&& def)
+static void InsertRecoveredDefinition(Scope* targetScope, LocalDefinition&& def)
 {
     if (!targetScope)
         return;
@@ -1338,8 +1307,8 @@ void InsertRecoveredDefinition(Scope* targetScope, LocalDefinition&& def)
     targetScope->definitions.push_back(std::move(def));
 }
 
-bool ExtractAssignmentLeftVar(TSNode leftNode, const parser::GrammarSymbols& gs, std::string_view sourceCode,
-                              std::string& outName, bool& outIsHandle, TSNode& outIdentNode)
+static bool ExtractAssignmentLeftVar(TSNode leftNode, const parser::GrammarSymbols& gs, std::string_view sourceCode,
+                                     std::string& outName, bool& outIsHandle, TSNode& outIdentNode)
 {
     TSSymbol sym = ts_node_symbol(leftNode);
     if (sym == gs.symIdentifier)
@@ -1377,16 +1346,16 @@ bool ExtractAssignmentLeftVar(TSNode leftNode, const parser::GrammarSymbols& gs,
 
 /**
  * @brief Register recovered variable.
- * @param[in] rootScope Parameter rootScope.
- * @param[in] identNode Parameter identNode.
- * @param[in] varName Parameter varName.
- * @param[in] typeName Parameter typeName.
- * @param[in] isHandle Parameter isHandle.
+ * @param[in] rootScope Lexical scope for symbol lookup.
+ * @param[in] identNode AST node under evaluation.
+ * @param[in] varName Identifier name or string value.
+ * @param[in] typeName Type name to inspect or resolve.
+ * @param[in] isHandle Input isHandle for the operation.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
-void RegisterRecoveredVariable(Scope* rootScope, TSNode identNode, std::string varName, std::string typeName,
-                               bool isHandle)
+static void RegisterRecoveredVariable(Scope* rootScope, TSNode identNode, std::string varName, std::string typeName,
+                                      bool isHandle)
 {
     if (isHandle && !IsHandleTypeView(typeName))
     {
@@ -1409,16 +1378,16 @@ void RegisterRecoveredVariable(Scope* rootScope, TSNode identNode, std::string v
 
 /**
  * @brief Try recover split if declaration.
- * @param[in] node Parameter node.
- * @param[in] rootScope Parameter rootScope.
- * @param[in] sourceCode Parameter sourceCode.
- * @param[in] gs Parameter gs.
- * @return True if condition met; otherwise false.
+ * @param[in] node AST node under evaluation.
+ * @param[in] rootScope Lexical scope for symbol lookup.
+ * @param[in] sourceCode Document source text.
+ * @param[in] gs Precompiled grammar symbols.
+ * @return True if the condition is satisfied; false otherwise.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
-bool TryRecoverSplitIfDeclaration(TSNode node, Scope* rootScope, const std::string& sourceCode,
-                                  const parser::GrammarSymbols& gs)
+static bool TryRecoverSplitIfDeclaration(TSNode node, Scope* rootScope, const std::string& sourceCode,
+                                         const parser::GrammarSymbols& gs)
 {
     TSNode nextStmt = ts_node_next_sibling(node);
     if (ts_node_is_null(nextStmt) || ts_node_symbol(nextStmt) != gs.symExpressionStatement)
@@ -1463,15 +1432,15 @@ bool TryRecoverSplitIfDeclaration(TSNode node, Scope* rootScope, const std::stri
 
 /**
  * @brief Try recover error if declaration.
- * @param[in] node Parameter node.
- * @param[in] rootScope Parameter rootScope.
- * @param[in] sourceCode Parameter sourceCode.
- * @param[in] gs Parameter gs.
+ * @param[in] node AST node under evaluation.
+ * @param[in] rootScope Lexical scope for symbol lookup.
+ * @param[in] sourceCode Document source text.
+ * @param[in] gs Precompiled grammar symbols.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
-void TryRecoverErrorIfDeclaration(TSNode node, Scope* rootScope, const std::string& sourceCode,
-                                  const parser::GrammarSymbols& gs)
+static void TryRecoverErrorIfDeclaration(TSNode node, Scope* rootScope, const std::string& sourceCode,
+                                         const parser::GrammarSymbols& gs)
 {
     TSTreeCursor cursor = ts_tree_cursor_new(node);
     if (!ts_tree_cursor_goto_first_child(&cursor))
@@ -1520,8 +1489,8 @@ void TryRecoverErrorIfDeclaration(TSNode node, Scope* rootScope, const std::stri
     }
 }
 
-void TryRecoverUnbracedIfDeclaration(TSNode node, Scope* rootScope, const std::string& sourceCode,
-                                     const parser::GrammarSymbols& gs)
+static void TryRecoverUnbracedIfDeclaration(TSNode node, Scope* rootScope, const std::string& sourceCode,
+                                            const parser::GrammarSymbols& gs)
 {
     if (TryRecoverSplitIfDeclaration(node, rootScope, sourceCode, gs))
     {
@@ -1530,6 +1499,8 @@ void TryRecoverUnbracedIfDeclaration(TSNode node, Scope* rootScope, const std::s
     TryRecoverErrorIfDeclaration(node, rootScope, sourceCode, gs);
 }
 
+namespace local_scope_collector_detail
+{
 /**
  * @brief Represents Virtual property context.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1542,8 +1513,11 @@ struct VirtualPropertyContext
     const parser::GrammarSymbols& gs;
     std::string_view sourceCode;
 };
+} // namespace local_scope_collector_detail
 
-void ProcessVirtualPropertySetAccessor(TSNode accNode, const VirtualPropertyContext& ctx)
+using VirtualPropertyContext = local_scope_collector_detail::VirtualPropertyContext;
+
+static void ProcessVirtualPropertySetAccessor(TSNode accNode, const VirtualPropertyContext& ctx)
 {
     TSNode kindNode = parser::GetChildByField(accNode, ctx.gs.fieldKind);
     if (ts_node_is_null(kindNode))
@@ -1594,8 +1568,8 @@ void ProcessVirtualPropertySetAccessor(TSNode accNode, const VirtualPropertyCont
     setScope->definitions.push_back(std::move(def));
 }
 
-void ProcessVirtualPropertyNode(TSNode propNode, Scope* root, const parser::GrammarSymbols& gs,
-                                std::string_view sourceCode)
+static void ProcessVirtualPropertyNode(TSNode propNode, Scope* root, const parser::GrammarSymbols& gs,
+                                       std::string_view sourceCode)
 {
     TSNode propTypeNode = parser::GetChildByField(propNode, gs.fieldPropType);
     if (ts_node_is_null(propTypeNode))
@@ -1624,7 +1598,6 @@ void ProcessVirtualPropertyNode(TSNode propNode, Scope* root, const parser::Gram
     }
     ts_tree_cursor_delete(&cursor);
 }
-} // namespace
 
 void LocalScopeCollector::RecoverDeclarationsFromErrorNodes(TSNode rootNode, Scope* rootScope,
                                                             const std::string& sourceCode) const

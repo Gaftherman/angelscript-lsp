@@ -2,15 +2,13 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 
 /**
  * @brief Collects all local definition names visible at the given scope chain.
  * @param[in] scope Starting lexical scope.
  * @param[out] names Destination names vector.
  */
-void CollectVisibleLocalNames(const analysis::Scope* scope, std::vector<std::string>& names)
+static void CollectVisibleLocalNames(const analysis::Scope* scope, std::vector<std::string>& names)
 {
     for (const analysis::Scope* walk = scope; walk != nullptr; walk = walk->parent)
     {
@@ -26,13 +24,15 @@ void CollectVisibleLocalNames(const analysis::Scope* scope, std::vector<std::str
  * @param[in] type Symbol type.
  * @return True if symbol is class, interface, enum, typedef, or funcdef.
  */
-bool IsTypeLikeSymbol(analysis::SymbolType type)
+static bool IsTypeLikeSymbol(analysis::SymbolType type)
 {
     return type == analysis::SymbolType::Class || type == analysis::SymbolType::Interface ||
            type == analysis::SymbolType::Enum || type == analysis::SymbolType::Typedef ||
            type == analysis::SymbolType::Funcdef;
 }
 
+namespace code_action_typos_detail
+{
 /**
  * @brief Represents Typo candidate suggestion.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -42,6 +42,9 @@ struct TypoCandidateSuggestion
     std::string name;
     size_t distance = 0;
 };
+} // namespace code_action_typos_detail
+
+using TypoCandidateSuggestion = code_action_typos_detail::TypoCandidateSuggestion;
 
 /**
  * @brief Collects candidate names for typo suggestions from local scopes and symbols.
@@ -51,8 +54,8 @@ struct TypoCandidateSuggestion
  * @param[in] isType True if unresolved target is a type.
  * @return Vector of candidate names.
  */
-std::vector<std::string> CollectTypoCandidates(const CodeActionRequest& request, TSPoint point, bool isIdentifier,
-                                               bool isType)
+static std::vector<std::string> CollectTypoCandidates(const CodeActionRequest& request, TSPoint point,
+                                                      bool isIdentifier, bool isType)
 {
     std::vector<std::string> candidates;
     if (isIdentifier)
@@ -82,8 +85,8 @@ std::vector<std::string> CollectTypoCandidates(const CodeActionRequest& request,
  * @param[in] candidates Available candidate names.
  * @return Sorted vector of suggestions within distance limit.
  */
-std::vector<TypoCandidateSuggestion> RankTypoSuggestions(const std::string& typed,
-                                                         const std::vector<std::string>& candidates)
+static std::vector<TypoCandidateSuggestion> RankTypoSuggestions(const std::string& typed,
+                                                                const std::vector<std::string>& candidates)
 {
     const std::string typedFolded = FoldCase(typed);
     const size_t limit = SuggestionLimit(typed.size());
@@ -115,6 +118,8 @@ std::vector<TypoCandidateSuggestion> RankTypoSuggestions(const std::string& type
     return ranked;
 }
 
+namespace code_action_typos_detail
+{
 /**
  * @brief Represents Typo fix context.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -125,18 +130,18 @@ struct TypoFixContext
     const lsp::Diagnostic& diag;
     TSNode identifier;
 };
+} // namespace code_action_typos_detail
+
+using TypoFixContext = code_action_typos_detail::TypoFixContext;
 
 /**
  * @brief Emits quick-fix code actions for typo suggestions.
  * @param[in] ctx Typo fix context.
  * @param[in] ranked Ranked suggestions list.
  * @param[out] actions Destination actions vector.
- * @note [REFACTOR-CANDIDATE] Structural overlap (69%) with EmitIncludeSuggestions in
- * server/src/features/code_action/CodeActionIncludes.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-void EmitTypoCodeActions(const TypoFixContext& ctx, const std::vector<TypoCandidateSuggestion>& ranked,
-                         std::vector<lsp::CodeAction>& actions)
+static void EmitTypoCodeActions(const TypoFixContext& ctx, const std::vector<TypoCandidateSuggestion>& ranked,
+                                std::vector<lsp::CodeAction>& actions)
 {
     const size_t offered = std::min<size_t>(ranked.size(), 3);
     const bool hasClearWinner = ranked.size() == 1 || ranked[0].distance < ranked[1].distance;
@@ -171,8 +176,6 @@ void EmitTypoCodeActions(const TypoFixContext& ctx, const std::vector<TypoCandid
     }
 }
 
-} // namespace
-
 void TryAddUndefinedIdentifierSuggestions(const CodeActionRequest& request, TSNode rootNode,
                                           std::vector<lsp::CodeAction>& actions)
 {
@@ -197,7 +200,7 @@ void TryAddUndefinedIdentifierSuggestions(const CodeActionRequest& request, TSNo
             continue;
         }
 
-        const std::string typed = GetNodeText(identifier, request.sourceCode);
+        const std::string typed = parser::GetNodeText(identifier, request.sourceCode);
         if (typed.empty())
         {
             continue;

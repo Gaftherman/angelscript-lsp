@@ -4,10 +4,8 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 
-bool IsConstantLiteralNode(TSNode node, const parser::GrammarSymbols& gs) noexcept
+static bool IsConstantLiteralNode(TSNode node, const parser::GrammarSymbols& gs) noexcept
 {
     if (ts_node_is_null(node))
     {
@@ -30,7 +28,7 @@ bool IsConstantLiteralNode(TSNode node, const parser::GrammarSymbols& gs) noexce
     return false;
 }
 
-bool IsPureConstantDeclaration(TSNode node, TSNode typeNode, const parser::GrammarSymbols& gs) noexcept
+static bool IsPureConstantDeclaration(TSNode node, TSNode typeNode, const parser::GrammarSymbols& gs) noexcept
 {
     if (ts_node_is_null(typeNode) || !IsBarePrimitiveOrHandleType(typeNode, gs))
     {
@@ -68,7 +66,7 @@ bool IsPureConstantDeclaration(TSNode node, TSNode typeNode, const parser::Gramm
     return declaratorCount > 0;
 }
 
-bool HasVariableInitialization(TSNode varDecl, const parser::GrammarSymbols& gs) noexcept
+static bool HasVariableInitialization(TSNode varDecl, const parser::GrammarSymbols& gs) noexcept
 {
     const uint32_t count = ts_node_child_count(varDecl);
     for (uint32_t i = 0; i < count; ++i)
@@ -86,7 +84,7 @@ bool HasVariableInitialization(TSNode varDecl, const parser::GrammarSymbols& gs)
     return false;
 }
 
-void ProcessCompoundHeader(TSNode node, TSSymbol sym, CollectorContext& ctx)
+static void ProcessCompoundHeader(TSNode node, TSSymbol sym, CollectorContext& ctx)
 {
     TSPoint start = ts_node_start_point(node);
     TSPoint end = start;
@@ -107,7 +105,7 @@ void ProcessCompoundHeader(TSNode node, TSSymbol sym, CollectorContext& ctx)
     EmitLocationIfInRange(start, end, ctx.req, ctx.out);
 }
 
-void ProcessClosingBrace(TSNode node, CollectorContext& ctx)
+static void ProcessClosingBrace(TSNode node, CollectorContext& ctx)
 {
     TSNode body = ts_node_child_by_field_id(node, ctx.gs.fieldBody);
     if (ts_node_is_null(body) || ts_node_symbol(body) != ctx.gs.symStatementBlock)
@@ -119,7 +117,7 @@ void ProcessClosingBrace(TSNode node, CollectorContext& ctx)
     EmitLocationIfInRange(TSPoint{endPt.row, startCol}, endPt, ctx.req, ctx.out);
 }
 
-void ProcessDoWhileStatement(TSNode node, CollectorContext& ctx)
+static void ProcessDoWhileStatement(TSNode node, CollectorContext& ctx)
 {
     TSPoint start = ts_node_start_point(node);
     TSNode body = ts_node_child_by_field_id(node, ctx.gs.fieldBody);
@@ -133,7 +131,7 @@ void ProcessDoWhileStatement(TSNode node, CollectorContext& ctx)
     }
 }
 
-void ProcessForStatementColumns(TSNode node, CollectorContext& ctx)
+static void ProcessForStatementColumns(TSNode node, CollectorContext& ctx)
 {
     const uint32_t count = ts_node_child_count(node);
     for (uint32_t i = 0; i < count; ++i)
@@ -155,8 +153,6 @@ void ProcessForStatementColumns(TSNode node, CollectorContext& ctx)
         }
     }
 }
-
-} // namespace
 
 bool ShouldSkipSubtree(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
 {
@@ -196,9 +192,9 @@ void EmitLocationIfInRange(TSPoint start, TSPoint end, const BreakpointLocations
 
 /**
  * @brief Is bare primitive or handle type.
- * @param[in] typeNode Parameter typeNode.
- * @param[in] gs Parameter gs.
- * @return True if condition met; otherwise false.
+ * @param[in] typeNode AST node under evaluation.
+ * @param[in] gs Precompiled grammar symbols.
+ * @return True if the condition is satisfied; false otherwise.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */

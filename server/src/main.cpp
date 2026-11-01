@@ -15,9 +15,7 @@
 #include <io.h>
 #endif
 
-namespace
-{
-int RunConvertConfig(const char* inputPath, const char* outputPath)
+static int RunConvertConfig(const char* inputPath, const char* outputPath)
 {
     std::ifstream inFile(inputPath, std::ios::binary);
     if (!inFile.is_open())
@@ -45,7 +43,6 @@ int RunConvertConfig(const char* inputPath, const char* outputPath)
     }
     return 0;
 }
-} // namespace
 
 int main(int argc, char** argv)
 {

@@ -7,11 +7,9 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 
-void BuildMethodParamsAndArgs(const std::vector<VarInfo>& inputParams, const std::vector<VarInfo>& outputVars,
-                              std::string& paramsStr, std::string& argsStr)
+static void BuildMethodParamsAndArgs(const std::vector<VarInfo>& inputParams, const std::vector<VarInfo>& outputVars,
+                                     std::string& paramsStr, std::string& argsStr)
 {
     std::vector<VarInfo> effectiveInputs;
     for (const auto& inp : inputParams)
@@ -43,8 +41,8 @@ void BuildMethodParamsAndArgs(const std::vector<VarInfo>& inputParams, const std
     }
 }
 
-void DeduceReturnAndCallSite(const ExtractedMethodVariables& vars, const ExtractMethodStatements& stmts,
-                             const CodeActionRequest& request, ExtractedMethodPlan& plan)
+static void DeduceReturnAndCallSite(const ExtractedMethodVariables& vars, const ExtractMethodStatements& stmts,
+                                    const CodeActionRequest& request, ExtractedMethodPlan& plan)
 {
     const std::string methodName = "NewMethod";
     plan.returnType = "void";
@@ -76,7 +74,7 @@ void DeduceReturnAndCallSite(const ExtractedMethodVariables& vars, const Extract
             TSNode retTypeNode = parser::GetChildByField(stmts.fnNode, gs.fieldType);
             if (!ts_node_is_null(retTypeNode))
             {
-                plan.returnType = GetNodeText(retTypeNode, request.sourceCode);
+                plan.returnType = parser::GetNodeText(retTypeNode, request.sourceCode);
             }
         }
         plan.callSiteText = methodName + "(" + plan.argsStr + ");";
@@ -109,8 +107,6 @@ void DeduceReturnAndCallSite(const ExtractedMethodVariables& vars, const Extract
         }
     }
 }
-
-} // namespace
 
 ExtractedMethodPlan DeduceExtractedMethodSignature(const ExtractedMethodVariables& vars,
                                                    const ExtractMethodStatements& stmts,

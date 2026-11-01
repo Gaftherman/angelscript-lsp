@@ -19,15 +19,13 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
 
 /**
  * @brief Checks if a node type represents an identifier or type token.
  * @param[in] nodeType Tree-Sitter node type.
  * @return True if valid identifier, primitive type, or scoped identifier.
  */
-bool IsIdentifierOrType(TSSymbol sym) noexcept
+static bool IsIdentifierOrType(TSSymbol sym) noexcept
 {
     const auto& gs = parser::GetGrammarSymbols();
     return sym == gs.symIdentifier || sym == gs.symPrimitiveType || sym == gs.symScopedIdentifier;
@@ -39,7 +37,7 @@ bool IsIdentifierOrType(TSSymbol sym) noexcept
  * @param[in] position Cursor position.
  * @return Preceding identifier node or null node.
  */
-TSNode FindPrecedingIdentifierNode(TSNode rootNode, TargetPosition position)
+static TSNode FindPrecedingIdentifierNode(TSNode rootNode, TargetPosition position)
 {
     if (position.character == 0)
     {
@@ -60,7 +58,7 @@ TSNode FindPrecedingIdentifierNode(TSNode rootNode, TargetPosition position)
  * @param[in] point Cursor point coordinates.
  * @return Leaf identifier node or original node.
  */
-TSNode ResolveIdentifierLeaf(TSNode node, TSPoint point)
+static TSNode ResolveIdentifierLeaf(TSNode node, TSPoint point)
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (ts_node_symbol(node) == gs.symScopedIdentifier)
@@ -82,7 +80,7 @@ TSNode ResolveIdentifierLeaf(TSNode node, TSPoint point)
  * @param[out] outNode Output TSNode.
  * @return Token text or empty string if not an identifier.
  */
-std::string GetNodeTextAt(const std::string& sourceCode, TSTree* tree, TargetPosition position, TSNode& outNode)
+static std::string GetNodeTextAt(const std::string& sourceCode, TSTree* tree, TargetPosition position, TSNode& outNode)
 {
     if (!tree || sourceCode.empty())
     {
@@ -131,7 +129,8 @@ std::string GetNodeTextAt(const std::string& sourceCode, TSTree* tree, TargetPos
  * @param[in] line 0-based line number.
  * @return Enclosing class name or empty string if not in a class.
  */
-std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, const std::string& uri, uint32_t line)
+static std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, const std::string& uri,
+                                         uint32_t line)
 {
     return symbolTable.FindEnclosingClassName(uri, line);
 }
@@ -142,7 +141,8 @@ std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, cons
  * @param[in] currentUri Current document URI.
  * @return Unique list of file URIs.
  */
-std::vector<std::string> GetAllIndexedFileUris(const analysis::SymbolTable& symbolTable, const std::string& currentUri)
+static std::vector<std::string> GetAllIndexedFileUris(const analysis::SymbolTable& symbolTable,
+                                                      const std::string& currentUri)
 {
     std::vector<std::string> uris = symbolTable.GetIndexedFileUris();
     if (!currentUri.empty() && std::find(uris.begin(), uris.end(), currentUri) == uris.end())
@@ -151,8 +151,6 @@ std::vector<std::string> GetAllIndexedFileUris(const analysis::SymbolTable& symb
     }
     return uris;
 }
-
-} // namespace
 
 bool IsValidIdentifier(std::string_view name)
 {
@@ -183,9 +181,8 @@ bool IsValidIdentifier(std::string_view name)
     return true;
 }
 
-namespace
+namespace target_resolution_detail
 {
-
 /**
  * @brief Call argument constraint information inferred from cursor position.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -195,6 +192,9 @@ struct FunctionArgConstraints
     bool cursorOnCall = false;
     size_t callArgCount = 0;
 };
+} // namespace target_resolution_detail
+
+using FunctionArgConstraints = target_resolution_detail::FunctionArgConstraints;
 
 /**
  * @brief Resolves receiver type name from explicit object text.
@@ -203,8 +203,8 @@ struct FunctionArgConstraints
  * @param[in] rootScope Document root scope.
  * @return Cleaned base type name or empty string.
  */
-std::string ResolveExplicitReceiverType(const std::string& objText, const ResolveTargetRequest& request,
-                                        const std::shared_ptr<const analysis::Scope>& rootScope)
+static std::string ResolveExplicitReceiverType(const std::string& objText, const ResolveTargetRequest& request,
+                                               const std::shared_ptr<const analysis::Scope>& rootScope)
 {
     if (objText == "this")
     {
@@ -258,8 +258,9 @@ std::string ResolveExplicitReceiverType(const std::string& objText, const Resolv
  * @param[out] target Target descriptor to populate.
  * @return True if cursor is on an explicit member access expression.
  */
-bool ResolveExplicitMemberAccess(TSNode outNode, const ResolveTargetRequest& request,
-                                 const std::shared_ptr<const analysis::Scope>& rootScope, TargetDescriptor& target)
+static bool ResolveExplicitMemberAccess(TSNode outNode, const ResolveTargetRequest& request,
+                                        const std::shared_ptr<const analysis::Scope>& rootScope,
+                                        TargetDescriptor& target)
 {
     TSNode parent = parser::GetParent(outNode);
     if (ts_node_is_null(parent) || ts_node_symbol(parent) != parser::GetGrammarSymbols().symMemberExpression)
@@ -301,9 +302,9 @@ bool ResolveExplicitMemberAccess(TSNode outNode, const ResolveTargetRequest& req
  * @param[out] outDeclScope Scope where definition was found.
  * @return Pointer to definition if found, nullptr otherwise.
  */
-const analysis::LocalDefinition* FindLocalDefinitionAtLine(const analysis::Scope* innerScope,
-                                                           const std::string& nodeText, uint32_t line,
-                                                           const analysis::Scope*& outDeclScope)
+static const analysis::LocalDefinition* FindLocalDefinitionAtLine(const analysis::Scope* innerScope,
+                                                                  const std::string& nodeText, uint32_t line,
+                                                                  const analysis::Scope*& outDeclScope)
 {
     size_t depth = 0;
     ankerl::unordered_dense::set<const analysis::Scope*> visited;
@@ -358,8 +359,8 @@ static void PopulateLocalTargetDescriptor(const analysis::LocalDefinition& match
     }
 }
 
-void ResolveLocalTarget(const std::shared_ptr<const analysis::Scope>& rootScope, const std::string& nodeText,
-                        const ResolveTargetRequest& request, TargetDescriptor& target)
+static void ResolveLocalTarget(const std::shared_ptr<const analysis::Scope>& rootScope, const std::string& nodeText,
+                               const ResolveTargetRequest& request, TargetDescriptor& target)
 {
     if (!rootScope)
     {
@@ -481,8 +482,8 @@ static bool TryResolveNamespaceEnumMember(const std::string& containerQualifiedN
  * @param[in] request Original resolve target request.
  * @param[out] target Target descriptor to populate.
  */
-void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const ResolveTargetRequest& request,
-                            TargetDescriptor& target)
+static void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const ResolveTargetRequest& request,
+                                   TargetDescriptor& target)
 {
     if (IsContainerDeclarationName(outNode))
     {
@@ -532,8 +533,8 @@ void ResolveContainerTarget(TSNode outNode, const std::string& nodeText, const R
  * @param[out] target Target descriptor to populate.
  * @return True if successfully resolved as an enum member.
  */
-bool TryResolveEnumMemberDeclaration(TSNode memberNode, const std::string& nodeText, std::string_view sourceCode,
-                                     TargetDescriptor& target)
+static bool TryResolveEnumMemberDeclaration(TSNode memberNode, const std::string& nodeText, std::string_view sourceCode,
+                                            TargetDescriptor& target)
 {
     TSNode enumDecl = parser::GetParent(memberNode);
     if (ts_node_is_null(enumDecl) || ts_node_symbol(enumDecl) != parser::GetGrammarSymbols().symEnumDeclaration)
@@ -571,8 +572,8 @@ bool TryResolveEnumMemberDeclaration(TSNode memberNode, const std::string& nodeT
  * @param[out] target Target descriptor to populate.
  * @return True if successfully resolved as an enum member.
  */
-bool TryResolveScopedEnumAccess(TSNode scopedNode, const std::string& nodeText, const ResolveTargetRequest& request,
-                                TargetDescriptor& target)
+static bool TryResolveScopedEnumAccess(TSNode scopedNode, const std::string& nodeText,
+                                       const ResolveTargetRequest& request, TargetDescriptor& target)
 {
     uint32_t pStart = ts_node_start_byte(scopedNode);
     uint32_t pEnd = ts_node_end_byte(scopedNode);
@@ -620,8 +621,8 @@ bool TryResolveScopedEnumAccess(TSNode scopedNode, const std::string& nodeText, 
  * @param[out] target Target descriptor to populate.
  * @return True if successfully resolved as an enum member.
  */
-bool ResolveEnumTarget(TSNode outNode, const std::string& nodeText, const ResolveTargetRequest& request,
-                       TargetDescriptor& target)
+static bool ResolveEnumTarget(TSNode outNode, const std::string& nodeText, const ResolveTargetRequest& request,
+                              TargetDescriptor& target)
 {
     TSNode parent = parser::GetParent(outNode);
     if (ts_node_is_null(parent))
@@ -643,13 +644,11 @@ bool ResolveEnumTarget(TSNode outNode, const std::string& nodeText, const Resolv
 
 /**
  * @brief Assign target from container kind.
- * @param[in] sym Parameter sym.
- * @param[in,out] target Parameter target.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with AssignTargetFromContainerLookup in
- * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @param[in,out] target Target node or symbol descriptor.
+ * @return True if the condition is satisfied; false otherwise.
  */
-bool AssignTargetFromContainerKind(const analysis::Symbol& sym, TargetDescriptor& target)
+static bool AssignTargetFromContainerKind(const analysis::Symbol& sym, TargetDescriptor& target)
 {
     if (sym.containerKind == analysis::ContainerKind::Class || sym.containerKind == analysis::ContainerKind::Interface)
     {
@@ -676,14 +675,13 @@ bool AssignTargetFromContainerKind(const analysis::Symbol& sym, TargetDescriptor
 
 /**
  * @brief Assign target from container lookup.
- * @param[in] sym Parameter sym.
- * @param[in] table Parameter table.
- * @param[in,out] target Parameter target.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with AssignTargetFromContainerKind in
- * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @param[in] table Symbol table containing resolved symbols.
+ * @param[in,out] target Target node or symbol descriptor.
+ * @return True if the condition is satisfied; false otherwise.
  */
-bool AssignTargetFromContainerLookup(const analysis::Symbol& sym, const SymbolTable& table, TargetDescriptor& target)
+static bool AssignTargetFromContainerLookup(const analysis::Symbol& sym, const SymbolTable& table,
+                                            TargetDescriptor& target)
 {
     auto containerSyms = table.FindSymbols(sym.containerName);
     for (const auto& csym : containerSyms)
@@ -718,8 +716,8 @@ bool AssignTargetFromContainerLookup(const analysis::Symbol& sym, const SymbolTa
  * @param[in] request Resolution request.
  * @param[out] target Target descriptor to populate.
  */
-void ResolveGlobalFallbackTarget(const std::string& nodeText, const ResolveTargetRequest& request,
-                                 TargetDescriptor& target)
+static void ResolveGlobalFallbackTarget(const std::string& nodeText, const ResolveTargetRequest& request,
+                                        TargetDescriptor& target)
 {
     request.symbolTable.ForEachSymbolInFile(
         request.uri,
@@ -749,21 +747,11 @@ void ResolveGlobalFallbackTarget(const std::string& nodeText, const ResolveTarge
 }
 
 /**
- * @brief Counts call arguments from an argument_list AST node.
- * @param[in] argsChild Argument list AST node.
- * @return Number of call argument expressions.
- */
-size_t CountCallArguments(TSNode argsChild)
-{
-    return analysis::CountCallArguments(argsChild);
-}
-
-/**
  * @brief Finds argument_list node from a call_expression node.
  * @param[in] callNode Call expression AST node.
  * @return Argument list node or null node.
  */
-TSNode FindArgumentListNode(TSNode callNode)
+static TSNode FindArgumentListNode(TSNode callNode)
 {
     TSNode argsChild = parser::GetChildByField(callNode, parser::GetGrammarSymbols().fieldArguments);
     if (!ts_node_is_null(argsChild))
@@ -778,7 +766,7 @@ TSNode FindArgumentListNode(TSNode callNode)
  * @param[in] outNode Identifier AST node.
  * @return Function argument constraints.
  */
-FunctionArgConstraints GetCallArgumentConstraints(TSNode outNode)
+static FunctionArgConstraints GetCallArgumentConstraints(TSNode outNode)
 {
     const auto& gs = parser::GetGrammarSymbols();
     FunctionArgConstraints info;
@@ -821,9 +809,9 @@ FunctionArgConstraints GetCallArgumentConstraints(TSNode outNode)
  * @param[in] callInfo Call arguments info.
  * @return Optional matching FunctionSignature.
  */
-std::optional<analysis::FunctionSignature> MatchFunctionSignature(const std::vector<analysis::Symbol>& symbols,
-                                                                  const std::string& uri, uint32_t line,
-                                                                  const FunctionArgConstraints& callInfo)
+static std::optional<analysis::FunctionSignature> MatchFunctionSignature(const std::vector<analysis::Symbol>& symbols,
+                                                                         const std::string& uri, uint32_t line,
+                                                                         const FunctionArgConstraints& callInfo)
 {
     for (const auto& s : symbols)
     {
@@ -870,7 +858,7 @@ std::optional<analysis::FunctionSignature> MatchFunctionSignature(const std::vec
  * @param[out] target Target descriptor to update.
  * @param[in] fn Matched function signature.
  */
-void ApplyFunctionSignature(TargetDescriptor& target, const analysis::FunctionSignature& fn)
+static void ApplyFunctionSignature(TargetDescriptor& target, const analysis::FunctionSignature& fn)
 {
     target.isFunction = true;
     target.maxArgs = fn.parameters.size();
@@ -891,8 +879,8 @@ void ApplyFunctionSignature(TargetDescriptor& target, const analysis::FunctionSi
  * @param[out] resolvedAccess Access modifier if found.
  * @return True if direct member symbol was found.
  */
-bool ResolveDirectClassMember(TargetDescriptor& target, const ResolveTargetRequest& request,
-                              analysis::AccessModifier& resolvedAccess)
+static bool ResolveDirectClassMember(TargetDescriptor& target, const ResolveTargetRequest& request,
+                                     analysis::AccessModifier& resolvedAccess)
 {
     std::string qMember = utils::JoinScopedName(target.declaringClass, target.name);
     auto localSyms = request.symbolTable.FindSymbols(qMember);
@@ -927,8 +915,9 @@ bool ResolveDirectClassMember(TargetDescriptor& target, const ResolveTargetReque
  * @param[in] callInfo Call argument constraints.
  * @param[out] resolvedAccess Access modifier if found.
  */
-void ResolveInheritedClassMember(TargetDescriptor& target, const ResolveTargetRequest& request,
-                                 const FunctionArgConstraints& callInfo, analysis::AccessModifier& resolvedAccess)
+static void ResolveInheritedClassMember(TargetDescriptor& target, const ResolveTargetRequest& request,
+                                        const FunctionArgConstraints& callInfo,
+                                        analysis::AccessModifier& resolvedAccess)
 {
     auto hier = analysis::GetInheritedTypeHierarchy(target.declaringClass, request.symbolTable);
     for (const auto& owner : hier)
@@ -961,8 +950,8 @@ void ResolveInheritedClassMember(TargetDescriptor& target, const ResolveTargetRe
  * @param[in] request Resolution request.
  * @param[in] callInfo Call argument constraints.
  */
-void ResolveClassMemberDetails(TargetDescriptor& target, const ResolveTargetRequest& request,
-                               const FunctionArgConstraints& callInfo)
+static void ResolveClassMemberDetails(TargetDescriptor& target, const ResolveTargetRequest& request,
+                                      const FunctionArgConstraints& callInfo)
 {
     analysis::AccessModifier resolvedAccess = analysis::AccessModifier::Public;
     if (!ResolveDirectClassMember(target, request, resolvedAccess))
@@ -980,8 +969,8 @@ void ResolveClassMemberDetails(TargetDescriptor& target, const ResolveTargetRequ
  * @param[in] request Resolution request.
  * @param[in] callInfo Call argument constraints.
  */
-void ResolveTargetSignature(TargetDescriptor& target, const ResolveTargetRequest& request,
-                            const FunctionArgConstraints& callInfo)
+static void ResolveTargetSignature(TargetDescriptor& target, const ResolveTargetRequest& request,
+                                   const FunctionArgConstraints& callInfo)
 {
     if (target.kind == TargetKind::ClassMember)
     {
@@ -1002,8 +991,8 @@ void ResolveTargetSignature(TargetDescriptor& target, const ResolveTargetRequest
     }
 }
 
-bool ResolveGlobalScopedTarget(const ResolveTargetRequest& request, const GlobalScopeQualifier& gsq,
-                               TargetDescriptor& target)
+static bool ResolveGlobalScopedTarget(const ResolveTargetRequest& request, const parser::GlobalScopeQualifier& gsq,
+                                      TargetDescriptor& target)
 {
     if (gsq.isDirectRoot)
     {
@@ -1052,8 +1041,6 @@ bool ResolveGlobalScopedTarget(const ResolveTargetRequest& request, const Global
     return false;
 }
 
-} // namespace
-
 std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& request)
 {
     if (request.logger && request.logger->IsDebugEnabled())
@@ -1073,7 +1060,7 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& reques
     TargetDescriptor target;
     target.name = nodeText;
 
-    const auto gsq = analysis::GetGlobalScopeQualifier(request.outNode, request.sourceCode);
+    const auto gsq = parser::GetGlobalScopeQualifier(request.outNode, request.sourceCode);
     if (gsq.isGlobal)
     {
         if (ResolveGlobalScopedTarget(request, gsq, target))
@@ -1108,9 +1095,8 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& reques
     return target;
 }
 
-namespace
+namespace target_resolution_detail
 {
-
 /**
  * @brief Accumulator and deduplication state for occurrence locations.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1144,7 +1130,12 @@ struct OccurrenceCollector
         Add(uri, SourceRange{ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter});
     }
 };
+} // namespace target_resolution_detail
 
+using OccurrenceCollector = target_resolution_detail::OccurrenceCollector;
+
+namespace target_resolution_detail
+{
 /**
  * @brief Start and end coordinates for a symbol.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1156,7 +1147,12 @@ struct SymbolSpan
     uint32_t eL = 0;
     uint32_t eC = 0;
 };
+} // namespace target_resolution_detail
 
+using SymbolSpan = target_resolution_detail::SymbolSpan;
+
+namespace target_resolution_detail
+{
 /**
  * @brief Context for scanning documents during occurrence collection.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1168,13 +1164,16 @@ struct OccurrenceScanContext
     const std::set<std::tuple<std::string, uint32_t, uint32_t>>& declRanges;
     OccurrenceCollector& collector;
 };
+} // namespace target_resolution_detail
+
+using OccurrenceScanContext = target_resolution_detail::OccurrenceScanContext;
 
 /**
  * @brief Extracts effective selection or full range span for a symbol.
  * @param[in] sym Target symbol.
  * @return Coordinate span.
  */
-SymbolSpan GetSymbolSpan(const analysis::Symbol& sym) noexcept
+static SymbolSpan GetSymbolSpan(const analysis::Symbol& sym) noexcept
 {
     bool hasSel = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0);
     return SymbolSpan{
@@ -1191,7 +1190,7 @@ SymbolSpan GetSymbolSpan(const analysis::Symbol& sym) noexcept
  * @param[in] target Target descriptor.
  * @return True if function parameters are compatible.
  */
-bool FunctionMatchesTarget(const analysis::Symbol& sym, const TargetDescriptor& target)
+static bool FunctionMatchesTarget(const analysis::Symbol& sym, const TargetDescriptor& target)
 {
     if (!target.isFunction)
     {
@@ -1220,7 +1219,7 @@ bool FunctionMatchesTarget(const analysis::Symbol& sym, const TargetDescriptor& 
  * @param[in] name Symbol name.
  * @return True if shadowed.
  */
-bool IsSymbolShadowedInScope(const analysis::Scope* scope, std::string_view name)
+static bool IsSymbolShadowedInScope(const analysis::Scope* scope, std::string_view name)
 {
     return std::any_of(scope->definitions.begin(), scope->definitions.end(),
                        [name](const auto& def) { return def.name == name; });
@@ -1233,8 +1232,8 @@ bool IsSymbolShadowedInScope(const analysis::Scope* scope, std::string_view name
  * @param[in] includeDeclaration True to include declaration site.
  * @param[in,out] collector Occurrence accumulator.
  */
-void CollectScopeReferences(const analysis::Scope* scope, const TargetDescriptor& target, bool includeDeclaration,
-                            OccurrenceCollector& collector)
+static void CollectScopeReferences(const analysis::Scope* scope, const TargetDescriptor& target,
+                                   bool includeDeclaration, OccurrenceCollector& collector)
 {
     for (const auto& ref : scope->references)
     {
@@ -1259,11 +1258,9 @@ void CollectScopeReferences(const analysis::Scope* scope, const TargetDescriptor
  * @param[in] target Target descriptor.
  * @param[in] includeDeclaration True to include declaration site.
  * @param[in,out] collector Occurrence accumulator.
- * @note [REFACTOR-CANDIDATE] Structural overlap (62%) with CollectLocalHighlightRanges in
- * server/src/features/document_highlight/DocumentHighlightHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-void CollectLocalOccurrences(const TargetDescriptor& target, bool includeDeclaration, OccurrenceCollector& collector)
+static void CollectLocalOccurrences(const TargetDescriptor& target, bool includeDeclaration,
+                                    OccurrenceCollector& collector)
 {
     if (includeDeclaration)
     {
@@ -1308,9 +1305,9 @@ void CollectLocalOccurrences(const TargetDescriptor& target, bool includeDeclara
  * @param[in] line Source line number.
  * @return Cleaned base type name or empty string.
  */
-std::string ResolveNamedIdentifierType(std::string_view name, const analysis::Scope* scope,
-                                       const CollectOccurrencesRequest& request, uint32_t line,
-                                       std::string_view fileUri = {})
+static std::string ResolveNamedIdentifierType(std::string_view name, const analysis::Scope* scope,
+                                              const CollectOccurrencesRequest& request, uint32_t line,
+                                              std::string_view fileUri = {})
 {
     if (name == "this")
     {
@@ -1348,8 +1345,8 @@ std::string ResolveNamedIdentifierType(std::string_view name, const analysis::Sc
  * @param[in] ctx Occurrence scan context.
  * @return Cleaned receiver type or empty string.
  */
-std::string ResolveReceiverFromAst(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                                   const OccurrenceScanContext& ctx)
+static std::string ResolveReceiverFromAst(const analysis::LocalReference& ref, const analysis::Scope* scope,
+                                          const OccurrenceScanContext& ctx)
 {
     if (ctx.fileUri != ctx.request.currentUri || !ctx.request.tree)
     {
@@ -1396,12 +1393,9 @@ std::string ResolveReceiverFromAst(const analysis::LocalReference& ref, const an
  * @param[in] scope Lexical scope.
  * @param[in] ctx Occurrence scan context.
  * @return Cleaned receiver type or empty string.
- * @note [REFACTOR-CANDIDATE] Structural overlap (78%) with ResolveReceiverFromScope in
- * server/src/features/code_lens/CodeLensHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-std::string ResolveReceiverFromScope(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                                     const OccurrenceScanContext& ctx)
+static std::string ResolveReceiverFromScope(const analysis::LocalReference& ref, const analysis::Scope* scope,
+                                            const OccurrenceScanContext& ctx)
 {
     std::string currentReceiverType;
     for (const auto& candRef : scope->references)
@@ -1450,8 +1444,8 @@ std::string ResolveReceiverFromScope(const analysis::LocalReference& ref, const 
  * @param[in] ctx Occurrence scan context.
  * @return Cleaned receiver type or empty string.
  */
-std::string ResolveReceiverType(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                                const OccurrenceScanContext& ctx)
+static std::string ResolveReceiverType(const analysis::LocalReference& ref, const analysis::Scope* scope,
+                                       const OccurrenceScanContext& ctx)
 {
     std::string astType = ResolveReceiverFromAst(ref, scope, ctx);
     if (!astType.empty())
@@ -1468,8 +1462,8 @@ std::string ResolveReceiverType(const analysis::LocalReference& ref, const analy
  * @param[in] symbolTable Global symbol table.
  * @return True if enclosing class is compatible with declaring class hierarchy.
  */
-bool IsInTargetHierarchy(std::string_view cleanEnc, std::string_view cleanDecl,
-                         const analysis::SymbolTable& symbolTable)
+static bool IsInTargetHierarchy(std::string_view cleanEnc, std::string_view cleanDecl,
+                                const analysis::SymbolTable& symbolTable)
 {
     if (cleanDecl.empty() || analysis::MatchesDeclOrScope(cleanEnc, cleanDecl) ||
         analysis::IsMixinClass(cleanEnc, symbolTable) || analysis::IsMixinClass(cleanDecl, symbolTable))
@@ -1495,9 +1489,9 @@ bool IsInTargetHierarchy(std::string_view cleanEnc, std::string_view cleanDecl,
  * @param[in] ctx Occurrence scan context.
  * @return True if implicit member access is a valid match.
  */
-bool CheckImplicitMemberAccess(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                               const ankerl::unordered_dense::set<std::string>& relatedSet,
-                               const OccurrenceScanContext& ctx)
+static bool CheckImplicitMemberAccess(const analysis::LocalReference& ref, const analysis::Scope* scope,
+                                      const ankerl::unordered_dense::set<std::string>& relatedSet,
+                                      const OccurrenceScanContext& ctx)
 {
     std::string encClass = GetEnclosingClassName(ctx.request.symbolTable, ctx.fileUri, ref.startLine);
     if (encClass.empty() ||
@@ -1525,8 +1519,8 @@ bool CheckImplicitMemberAccess(const analysis::LocalReference& ref, const analys
  * @param[in] symbolTable Global symbol table.
  * @return True if declaration belongs to the target's hierarchy.
  */
-bool ShouldIncludeClassDecl(const std::string& clsName, const std::string& declaringClass,
-                            const analysis::SymbolTable& symbolTable)
+static bool ShouldIncludeClassDecl(const std::string& clsName, const std::string& declaringClass,
+                                   const analysis::SymbolTable& symbolTable)
 {
     std::string cleanCls = analysis::CleanBaseType(clsName);
     std::string cleanDecl = analysis::CleanBaseType(declaringClass);
@@ -1551,13 +1545,11 @@ bool ShouldIncludeClassDecl(const std::string& clsName, const std::string& decla
  * @param[in] request Occurrences request.
  * @param[out] allDeclRanges Set of all declaration coordinate tuples.
  * @param[in,out] collector Occurrence accumulator.
- * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with CollectDeclarations in
- * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-void CollectClassMemberDeclarations(const ankerl::unordered_dense::set<std::string>& relatedSet,
-                                    const CollectOccurrencesRequest& request,
-                                    std::set<std::tuple<std::string, uint32_t, uint32_t>>& allDeclRanges,
-                                    OccurrenceCollector& collector)
+static void CollectClassMemberDeclarations(const ankerl::unordered_dense::set<std::string>& relatedSet,
+                                           const CollectOccurrencesRequest& request,
+                                           std::set<std::tuple<std::string, uint32_t, uint32_t>>& allDeclRanges,
+                                           OccurrenceCollector& collector)
 {
     for (const auto& clsName : relatedSet)
     {
@@ -1592,11 +1584,8 @@ void CollectClassMemberDeclarations(const ankerl::unordered_dense::set<std::stri
  * @param[in] ref Reference to check.
  * @param[in] target Target descriptor.
  * @return True if argument count matches.
- * @note [REFACTOR-CANDIDATE] Structural overlap (91%) with MatchesCallArguments in
- * server/src/features/code_lens/CodeLensHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-bool MatchesCallArguments(const analysis::LocalReference& ref, const TargetDescriptor& target)
+static bool MatchesCallArguments(const analysis::LocalReference& ref, const TargetDescriptor& target)
 {
     if (target.isFunction && ref.isCall)
     {
@@ -1613,9 +1602,9 @@ bool MatchesCallArguments(const analysis::LocalReference& ref, const TargetDescr
  * @param[in] ctx Occurrence scan context.
  * @return True if reference is a match.
  */
-bool IsClassMemberReferenceMatch(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                                 const ankerl::unordered_dense::set<std::string>& relatedSet,
-                                 const OccurrenceScanContext& ctx)
+static bool IsClassMemberReferenceMatch(const analysis::LocalReference& ref, const analysis::Scope* scope,
+                                        const ankerl::unordered_dense::set<std::string>& relatedSet,
+                                        const OccurrenceScanContext& ctx)
 {
     if (ref.isMemberAccess)
     {
@@ -1640,14 +1629,13 @@ bool IsClassMemberReferenceMatch(const analysis::LocalReference& ref, const anal
  * @param[in] root Document root scope.
  * @param[in] relatedSet Set of related class names.
  * @param[in,out] ctx Occurrence scan context.
- * @note [REFACTOR-CANDIDATE] Structural overlap (78%) with ScanDocumentForGlobal in
- * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  * Structural overlap (74%) with ScanDocumentForEnumMember in server/src/analysis/TargetResolution.cpp. Candidate for
  * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (69%) with ScanDocumentForNamespace in
  * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-void ScanDocumentForClassMember(const analysis::Scope* root,
-                                const ankerl::unordered_dense::set<std::string>& relatedSet, OccurrenceScanContext& ctx)
+static void ScanDocumentForClassMember(const analysis::Scope* root,
+                                       const ankerl::unordered_dense::set<std::string>& relatedSet,
+                                       OccurrenceScanContext& ctx)
 {
     if (!root)
     {
@@ -1701,7 +1689,7 @@ void ScanDocumentForClassMember(const analysis::Scope* root,
  * @param[in] request Occurrences request.
  * @param[in,out] collector Occurrence accumulator.
  */
-void CollectClassMemberOccurrences(const CollectOccurrencesRequest& request, OccurrenceCollector& collector)
+static void CollectClassMemberOccurrences(const CollectOccurrencesRequest& request, OccurrenceCollector& collector)
 {
     ankerl::unordered_dense::set<std::string> relatedSet(request.target.relatedClasses.begin(),
                                                          request.target.relatedClasses.end());
@@ -1738,7 +1726,8 @@ void CollectClassMemberOccurrences(const CollectOccurrencesRequest& request, Occ
  * @param[in] root Root scope of document.
  * @return True if shadowed by a function-local variable or parameter.
  */
-bool IsShadowedInFunctionScope(const analysis::Scope* scope, const std::string& name, const analysis::Scope* root)
+static bool IsShadowedInFunctionScope(const analysis::Scope* scope, const std::string& name,
+                                      const analysis::Scope* root)
 {
     const analysis::LocalDefinition* localDef = analysis::ResolveInScope(scope, name);
     if (!localDef)
@@ -1760,12 +1749,10 @@ bool IsShadowedInFunctionScope(const analysis::Scope* scope, const std::string& 
  * @param[in] request Occurrences request.
  * @param[out] allDeclRanges Declaration coordinate tuples.
  * @param[in,out] collector Accumulator.
- * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with CollectClassMemberDeclarations in
- * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-void CollectDeclarations(const std::string& symQuery, const CollectOccurrencesRequest& request,
-                         std::set<std::tuple<std::string, uint32_t, uint32_t>>& allDeclRanges,
-                         OccurrenceCollector& collector)
+static void CollectDeclarations(const std::string& symQuery, const CollectOccurrencesRequest& request,
+                                std::set<std::tuple<std::string, uint32_t, uint32_t>>& allDeclRanges,
+                                OccurrenceCollector& collector)
 {
     auto syms = request.symbolTable.FindSymbols(symQuery);
     for (const auto& sym : syms)
@@ -1796,11 +1783,9 @@ void CollectDeclarations(const std::string& symQuery, const CollectOccurrencesRe
  * @param[in] scope Lexical scope.
  * @param[in] targetNs Declaring namespace name.
  * @return True if qualified by target namespace.
- * @note [REFACTOR-CANDIDATE] Structural overlap (76%) with HasPrecedingEnumQualifier in
- * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-bool MatchesScopeNamespaceQualifier(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                                    std::string_view targetNs)
+static bool MatchesScopeNamespaceQualifier(const analysis::LocalReference& ref, const analysis::Scope* scope,
+                                           std::string_view targetNs)
 {
     if (!scope || targetNs.empty())
     {
@@ -1826,7 +1811,7 @@ bool MatchesScopeNamespaceQualifier(const analysis::LocalReference& ref, const a
  * @param[in] ctx Occurrence scan context.
  * @return True if qualified name matches target.
  */
-bool MatchesAstScopedIdentifier(const analysis::LocalReference& ref, const OccurrenceScanContext& ctx)
+static bool MatchesAstScopedIdentifier(const analysis::LocalReference& ref, const OccurrenceScanContext& ctx)
 {
     if (ctx.fileUri != ctx.request.currentUri || !ref.isScopedIdentifier ||
         ref.qualifierStartByte >= ref.qualifierEndByte || ref.qualifierEndByte > ctx.request.sourceCode.size())
@@ -1846,9 +1831,9 @@ bool MatchesAstScopedIdentifier(const analysis::LocalReference& ref, const Occur
  * @param[in] scope Lexical scope.
  * @return True if reference is inside declaring namespace.
  */
-bool IsRefInsideNamespace(const analysis::LocalReference& ref,
-                          const std::vector<std::pair<uint32_t, uint32_t>>& nsRanges, const OccurrenceScanContext& ctx,
-                          const analysis::Scope* scope)
+static bool IsRefInsideNamespace(const analysis::LocalReference& ref,
+                                 const std::vector<std::pair<uint32_t, uint32_t>>& nsRanges,
+                                 const OccurrenceScanContext& ctx, const analysis::Scope* scope)
 {
     for (const auto& nr : nsRanges)
     {
@@ -1869,14 +1854,13 @@ bool IsRefInsideNamespace(const analysis::LocalReference& ref,
  * @param[in] root Document root scope.
  * @param[in] nsRanges Namespace line spans in fileUri.
  * @param[in,out] ctx Occurrence scan context.
- * @note [REFACTOR-CANDIDATE] Structural overlap (94%) with ScanDocumentForGlobal in
- * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  * Structural overlap (87%) with ScanDocumentForEnumMember in server/src/analysis/TargetResolution.cpp. Candidate for
  * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (69%) with ScanDocumentForClassMember in
  * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-void ScanDocumentForNamespace(const analysis::Scope* root, const std::vector<std::pair<uint32_t, uint32_t>>& nsRanges,
-                              OccurrenceScanContext& ctx)
+static void ScanDocumentForNamespace(const analysis::Scope* root,
+                                     const std::vector<std::pair<uint32_t, uint32_t>>& nsRanges,
+                                     OccurrenceScanContext& ctx)
 {
     if (!root)
     {
@@ -1924,10 +1908,8 @@ void ScanDocumentForNamespace(const analysis::Scope* root, const std::vector<std
  * @brief Collects occurrences of a namespace-scoped symbol across documents.
  * @param[in] request Occurrences request.
  * @param[in,out] collector Accumulator.
- * @note [REFACTOR-CANDIDATE] Structural overlap (91%) with CollectGlobalOccurrences in
- * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-void CollectNamespaceOccurrences(const CollectOccurrencesRequest& request, OccurrenceCollector& collector)
+static void CollectNamespaceOccurrences(const CollectOccurrencesRequest& request, OccurrenceCollector& collector)
 {
     std::set<std::tuple<std::string, uint32_t, uint32_t>> allDeclRanges;
     CollectDeclarations(request.target.qualifiedName, request, allDeclRanges, collector);
@@ -1958,13 +1940,11 @@ void CollectNamespaceOccurrences(const CollectOccurrencesRequest& request, Occur
  * @brief Scans a document scope tree for global symbol references.
  * @param[in] root Document root scope.
  * @param[in,out] ctx Occurrence scan context.
- * @note [REFACTOR-CANDIDATE] Structural overlap (94%) with ScanDocumentForNamespace in
- * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  * Structural overlap (90%) with ScanDocumentForEnumMember in server/src/analysis/TargetResolution.cpp. Candidate for
  * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (78%) with ScanDocumentForClassMember in
  * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-void ScanDocumentForGlobal(const analysis::Scope* root, OccurrenceScanContext& ctx)
+static void ScanDocumentForGlobal(const analysis::Scope* root, OccurrenceScanContext& ctx)
 {
     if (!root)
     {
@@ -2008,10 +1988,8 @@ void ScanDocumentForGlobal(const analysis::Scope* root, OccurrenceScanContext& c
  * @brief Collects occurrences of a global symbol across documents.
  * @param[in] request Occurrences request.
  * @param[in,out] collector Accumulator.
- * @note [REFACTOR-CANDIDATE] Structural overlap (91%) with CollectNamespaceOccurrences in
- * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-void CollectGlobalOccurrences(const CollectOccurrencesRequest& request, OccurrenceCollector& collector)
+static void CollectGlobalOccurrences(const CollectOccurrencesRequest& request, OccurrenceCollector& collector)
 {
     std::set<std::tuple<std::string, uint32_t, uint32_t>> allDeclRanges;
     CollectDeclarations(request.target.name, request, allDeclRanges, collector);
@@ -2040,7 +2018,8 @@ void CollectGlobalOccurrences(const CollectOccurrencesRequest& request, Occurren
  * @param[in] ctx Occurrence scan context.
  * @return True/false if definitive AST match/mismatch determined, or std::nullopt.
  */
-std::optional<bool> CheckAstEnumMemberMatch(const analysis::LocalReference& ref, const OccurrenceScanContext& ctx)
+static std::optional<bool> CheckAstEnumMemberMatch(const analysis::LocalReference& ref,
+                                                   const OccurrenceScanContext& ctx)
 {
     if (ctx.fileUri != ctx.request.currentUri)
     {
@@ -2083,11 +2062,9 @@ std::optional<bool> CheckAstEnumMemberMatch(const analysis::LocalReference& ref,
  * @param[in] scope Scope containing candidate references.
  * @param[in] declaringEnum Declaring enum qualified name.
  * @return True if qualified by the declaring enum.
- * @note [REFACTOR-CANDIDATE] Structural overlap (76%) with MatchesScopeNamespaceQualifier in
- * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-bool HasPrecedingEnumQualifier(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                               std::string_view declaringEnum)
+static bool HasPrecedingEnumQualifier(const analysis::LocalReference& ref, const analysis::Scope* scope,
+                                      std::string_view declaringEnum)
 {
     for (const auto& candRef : scope->references)
     {
@@ -2134,8 +2111,8 @@ static bool MatchesDeclaringNamespace(const analysis::LocalReference& ref, std::
  * @param[in] ctx Occurrence scan context.
  * @return True if the unscoped reference safely resolves to the target enum member.
  */
-bool IsUnscopedEnumMemberMatch(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                               const OccurrenceScanContext& ctx)
+static bool IsUnscopedEnumMemberMatch(const analysis::LocalReference& ref, const analysis::Scope* scope,
+                                      const OccurrenceScanContext& ctx)
 {
     auto docScopeRoot = ctx.request.scopeIndex.GetRoot(ctx.fileUri);
     if (docScopeRoot && IsShadowedInFunctionScope(scope, ctx.request.target.name, docScopeRoot.get()))
@@ -2179,8 +2156,8 @@ bool IsUnscopedEnumMemberMatch(const analysis::LocalReference& ref, const analys
  * @param[in] ctx Occurrence scan context.
  * @return True if reference belongs to the declaring enum.
  */
-bool IsEnumMemberReferenceMatch(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                                const OccurrenceScanContext& ctx)
+static bool IsEnumMemberReferenceMatch(const analysis::LocalReference& ref, const analysis::Scope* scope,
+                                       const OccurrenceScanContext& ctx)
 {
     if (ref.isScopedIdentifier && !ref.scopeQualifier.empty())
     {
@@ -2202,13 +2179,11 @@ bool IsEnumMemberReferenceMatch(const analysis::LocalReference& ref, const analy
  * @brief Scans a document scope tree for enum member occurrences.
  * @param[in] root Document root scope.
  * @param[in,out] ctx Occurrence scan context.
- * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with ScanDocumentForGlobal in
- * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  * Structural overlap (87%) with ScanDocumentForNamespace in server/src/analysis/TargetResolution.cpp. Candidate for
  * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (74%) with ScanDocumentForClassMember in
  * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-void ScanDocumentForEnumMember(const analysis::Scope* root, OccurrenceScanContext& ctx)
+static void ScanDocumentForEnumMember(const analysis::Scope* root, OccurrenceScanContext& ctx)
 {
     if (!root)
     {
@@ -2248,7 +2223,7 @@ void ScanDocumentForEnumMember(const analysis::Scope* root, OccurrenceScanContex
  * @param[in] request Occurrences request.
  * @param[in,out] collector Occurrence accumulator.
  */
-void CollectEnumMemberOccurrences(const CollectOccurrencesRequest& request, OccurrenceCollector& collector)
+static void CollectEnumMemberOccurrences(const CollectOccurrencesRequest& request, OccurrenceCollector& collector)
 {
     std::set<std::tuple<std::string, uint32_t, uint32_t>> allDeclRanges;
     CollectDeclarations(request.target.qualifiedName, request, allDeclRanges, collector);
@@ -2288,8 +2263,6 @@ void CollectEnumMemberOccurrences(const CollectOccurrencesRequest& request, Occu
         ScanDocumentForEnumMember(docScopeRoot.get(), ctx);
     }
 }
-
-} // namespace
 
 std::vector<OccurrenceLocation> CollectOccurrences(const CollectOccurrencesRequest& request)
 {

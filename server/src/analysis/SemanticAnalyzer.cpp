@@ -260,7 +260,7 @@ static void FilterSuppressedDiagnostics(std::vector<Diagnostic>& diagnostics, co
 
     if (request.tree && ts_node_has_error(ts_tree_root_node(request.tree)) && !request.sourceCode.empty())
     {
-        const auto braceBalance = ComputeBraceBalance(request.sourceCode);
+        const auto braceBalance = parser::ComputeBraceBalance(request.sourceCode);
         if (braceBalance.HasMissingOpenBrace() && braceBalance.firstUnmatchedCloseLine >= 0)
         {
             const int cutoffLine = braceBalance.firstUnmatchedCloseLine;
@@ -422,7 +422,7 @@ static void CheckDialectVariableDeclarationNode(TSNode node, DiagnosticContext& 
         return;
     }
 
-    const std::string declared = CleanBaseType(GetNodeText(typeNode, ctx.request.sourceCode));
+    const std::string declared = CleanBaseType(parser::GetNodeText(typeNode, ctx.request.sourceCode));
     if (!IsPrimitiveTypeName(declared) || declared == "auto" || declared == "void")
     {
         return;
@@ -458,7 +458,7 @@ static bool IsIntegerLiteral(TSNode candidate, std::string_view sourceCode)
     {
         return false;
     }
-    const std::string text = GetNodeText(candidate, sourceCode);
+    const std::string text = parser::GetNodeText(candidate, sourceCode);
     return text.find_first_of(".eEfF") == std::string::npos;
 }
 
@@ -528,7 +528,7 @@ static void CheckDialectNamedArguments(const NodeIndex& nodeIndex, DiagnosticCon
 
                 const TSPoint start = ts_node_start_point(argument);
                 const TSPoint end = ts_node_end_point(argument);
-                const std::string name = GetNodeText(target, ctx.request.sourceCode);
+                const std::string name = parser::GetNodeText(target, ctx.request.sourceCode);
 
                 ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-named-argument-syntax", name,
                                 ctx.request.NamedArgumentSyntaxMode() == 1 ? DiagnosticSeverity::Warning
@@ -564,7 +564,7 @@ static void CheckDialectAssignmentExpressionNode(TSNode node, DiagnosticContext&
         return;
     }
 
-    if (IsHandleAssignmentTarget(target))
+    if (parser::IsHandleAssignmentTarget(target))
     {
         return;
     }
@@ -686,11 +686,9 @@ void SemanticAnalyzer::CheckDeclarationRules(const SymbolTable& symbolTable, Dia
         });
 }
 
-namespace
-{
 using MixinRanges = std::vector<std::pair<uint32_t, uint32_t>>;
 
-MixinRanges CollectMixinRanges(const SymbolTable& symbolTable, const std::string& fileUri)
+static MixinRanges CollectMixinRanges(const SymbolTable& symbolTable, const std::string& fileUri)
 {
     MixinRanges mixinRanges;
     symbolTable.ForEachSymbolInFile(
@@ -708,7 +706,7 @@ MixinRanges CollectMixinRanges(const SymbolTable& symbolTable, const std::string
     return mixinRanges;
 }
 
-bool ShouldIgnoreReference(const LocalReference& ref, const DiagnosticContext& ctx)
+static bool ShouldIgnoreReference(const LocalReference& ref, const DiagnosticContext& ctx)
 {
     if (ref.isMemberAccess || ref.isTypeSpecifier || ref.isNamedArgument)
         return true;
@@ -750,7 +748,7 @@ bool ShouldIgnoreReference(const LocalReference& ref, const DiagnosticContext& c
     return false;
 }
 
-bool IsReferenceInMixin(const LocalReference& ref, const MixinRanges& mixinRanges)
+static bool IsReferenceInMixin(const LocalReference& ref, const MixinRanges& mixinRanges)
 {
     for (const auto& r : mixinRanges)
     {
@@ -766,7 +764,7 @@ bool IsReferenceInMixin(const LocalReference& ref, const MixinRanges& mixinRange
  * @param[in] ctx Diagnostic context holding AST tree and source code.
  * @return True when the reference is preceded by a scope resolution operator.
  */
-bool IsEnumReferenceQualified(const LocalReference& ref, const DiagnosticContext& ctx)
+static bool IsEnumReferenceQualified(const LocalReference& ref, const DiagnosticContext& ctx)
 {
     if (!ctx.request.tree)
     {
@@ -806,7 +804,7 @@ bool IsEnumReferenceQualified(const LocalReference& ref, const DiagnosticContext
  * @param[in,out] ctx Diagnostic context to emit into.
  * @return True when a diagnostic was emitted or reference should be skipped.
  */
-bool CheckEnumScopeDiagnostic(const LocalReference& ref, const LocalDefinition* resolved, DiagnosticContext& ctx)
+static bool CheckEnumScopeDiagnostic(const LocalReference& ref, const LocalDefinition* resolved, DiagnosticContext& ctx)
 {
     // asEP_REQUIRE_ENUM_SCOPE, checked before the resolution is acted on, because an
     // enumerator DOES resolve from the scope tree - LOCALS_QUERY captures `enum_member` as
@@ -837,7 +835,7 @@ bool CheckEnumScopeDiagnostic(const LocalReference& ref, const LocalDefinition* 
     return true;
 }
 
-bool IsContainerAccessorProperty(const TSNode node, std::string_view refName, const DiagnosticContext& ctx)
+static bool IsContainerAccessorProperty(const TSNode node, std::string_view refName, const DiagnosticContext& ctx)
 {
     if (ts_node_is_null(node))
     {
@@ -886,8 +884,8 @@ bool IsContainerAccessorProperty(const TSNode node, std::string_view refName, co
  * @param[in] ctx Diagnostic context.
  * @return True if refName is a declared member in the enclosing scope hierarchy.
  */
-bool IsEnclosingScopeMember(TSNode node, const std::string& refName, const std::vector<std::string>& usingNamespaces,
-                            const DiagnosticContext& ctx)
+static bool IsEnclosingScopeMember(TSNode node, const std::string& refName,
+                                   const std::vector<std::string>& usingNamespaces, const DiagnosticContext& ctx)
 {
     if (ts_node_is_null(node))
     {
@@ -932,7 +930,7 @@ bool IsEnclosingScopeMember(TSNode node, const std::string& refName, const std::
     return false;
 }
 
-bool IsAccessorPropertyOrKeyword(const LocalReference& ref, const DiagnosticContext& ctx)
+static bool IsAccessorPropertyOrKeyword(const LocalReference& ref, const DiagnosticContext& ctx)
 {
     if (IsReservedKeyword(ref.name))
     {
@@ -965,6 +963,8 @@ bool IsAccessorPropertyOrKeyword(const LocalReference& ref, const DiagnosticCont
     return false;
 }
 
+namespace semantic_analyzer_detail
+{
 /**
  * @brief Represents Undefined identifier context.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -976,6 +976,9 @@ struct UndefinedIdentifierContext
     const std::vector<std::string>& usingNamespaces;
     DiagnosticContext& ctx;
 };
+} // namespace semantic_analyzer_detail
+
+using UndefinedIdentifierContext = semantic_analyzer_detail::UndefinedIdentifierContext;
 
 static bool IsReferenceInSyntaxErrorOrMetadata(TSNode root, const LocalReference& ref, const NodeIndex* nodeIndex)
 {
@@ -1005,7 +1008,7 @@ static bool IsReferenceInSyntaxErrorOrMetadata(TSNode root, const LocalReference
     return inErrorOrMeta;
 }
 
-void CheckScopeReferences(const Scope* scope, const UndefinedIdentifierContext& uCtx)
+static void CheckScopeReferences(const Scope* scope, const UndefinedIdentifierContext& uCtx)
 {
     for (const auto& ref : scope->references)
     {
@@ -1039,7 +1042,7 @@ void CheckScopeReferences(const Scope* scope, const UndefinedIdentifierContext& 
     }
 }
 
-void CheckUndefinedIdentifiersIterative(const Scope* rootScope, const UndefinedIdentifierContext& uCtx)
+static void CheckUndefinedIdentifiersIterative(const Scope* rootScope, const UndefinedIdentifierContext& uCtx)
 {
     if (!rootScope)
     {
@@ -1063,7 +1066,6 @@ void CheckUndefinedIdentifiersIterative(const Scope* rootScope, const UndefinedI
         }
     }
 }
-} // namespace
 
 void SemanticAnalyzer::CheckUndefinedIdentifiers(
     const Scope* scope,
@@ -1087,11 +1089,8 @@ void SemanticAnalyzer::CheckUndefinedIdentifiers(
 
 /**
  * @brief Semantic analyzer collect used definitions.
- * @param[in] rootScope Parameter rootScope.
- * @param[in] used Parameter used.
- * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with CollectUsedLocals in
- * server/src/analysis/rules/UnusedSymbolChecker.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @param[in] rootScope Lexical scope for symbol lookup.
+ * @param[in] used Input used for the operation.
  */
 void SemanticAnalyzer::CollectUsedDefinitions(const Scope* rootScope,
                                               ankerl::unordered_dense::set<const LocalDefinition*>& used) const
@@ -1136,11 +1135,9 @@ void SemanticAnalyzer::CollectUsedDefinitions(const Scope* rootScope,
 
 /**
  * @brief Semantic analyzer check unused variables.
- * @param[in] rootScope Parameter rootScope.
- * @param[in] used Parameter used.
- * @param[in,out] ctx Parameter ctx.
- * @note [REFACTOR-CANDIDATE] Structural overlap (93%) with CheckNullAssignedToNonHandleInScope in
- * server/src/analysis/SemanticAnalyzer.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] rootScope Lexical scope for symbol lookup.
+ * @param[in] used Input used for the operation.
+ * @param[in,out] ctx Diagnostic collection and analysis context.
  */
 void SemanticAnalyzer::CheckUnusedVariables(const Scope* rootScope,
                                             const ankerl::unordered_dense::set<const LocalDefinition*>& used,
@@ -1220,10 +1217,8 @@ void SemanticAnalyzer::CheckNullAssignedToNonHandle(const SymbolTable& symbolTab
 
 /**
  * @brief Semantic analyzer check null assigned to non handle in scope.
- * @param[in] rootScope Parameter rootScope.
- * @param[in,out] ctx Parameter ctx.
- * @note [REFACTOR-CANDIDATE] Structural overlap (93%) with CheckUnusedVariables in
- * server/src/analysis/SemanticAnalyzer.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] rootScope Lexical scope for symbol lookup.
+ * @param[in,out] ctx Diagnostic collection and analysis context.
  */
 void SemanticAnalyzer::CheckNullAssignedToNonHandleInScope(const Scope* rootScope, DiagnosticContext& ctx) const
 {
@@ -1276,9 +1271,7 @@ void SemanticAnalyzer::CheckNullAssignedToNonHandleInScope(const Scope* rootScop
     }
 }
 
-namespace
-{
-SourceRange GetDefinitionTypeRange(const LocalDefinition& def)
+static SourceRange GetDefinitionTypeRange(const LocalDefinition& def)
 {
     const bool hasExplicitType = (def.typeEndCharacter > def.typeStartCharacter || def.typeEndLine > def.typeStartLine);
     return SourceRange{
@@ -1289,8 +1282,8 @@ SourceRange GetDefinitionTypeRange(const LocalDefinition& def)
     };
 }
 
-void ValidateTemplateArguments(const LocalDefinition& def, const TemplateTypeInfo& tmplInfo,
-                               std::string_view enclosingNs, DiagnosticContext& ctx)
+static void ValidateTemplateArguments(const LocalDefinition& def, const TemplateTypeInfo& tmplInfo,
+                                      std::string_view enclosingNs, DiagnosticContext& ctx)
 {
     const SourceRange range = GetDefinitionTypeRange(def);
     if (!IsKnownType(tmplInfo.containerName, ctx, enclosingNs))
@@ -1321,7 +1314,7 @@ void ValidateTemplateArguments(const LocalDefinition& def, const TemplateTypeInf
     }
 }
 
-bool CheckMissingFuncdefHint(const std::string& base, const SourceRange& range, DiagnosticContext& ctx)
+static bool CheckMissingFuncdefHint(const std::string& base, const SourceRange& range, DiagnosticContext& ctx)
 {
     if (ctx.request.diagnostics && ctx.request.diagnostics->reportMissingFuncdef && base != "auto" &&
         NamesAFunctionNotAType(base, ctx.request.symbolTable))
@@ -1332,8 +1325,8 @@ bool CheckMissingFuncdefHint(const std::string& base, const SourceRange& range, 
     return false;
 }
 
-bool CheckIllegalHandleOnPrimitive(const LocalDefinition& def, const std::string& base, const SourceRange& range,
-                                   DiagnosticContext& ctx)
+static bool CheckIllegalHandleOnPrimitive(const LocalDefinition& def, const std::string& base, const SourceRange& range,
+                                          DiagnosticContext& ctx)
 {
     if (def.isHandleType && def.typeKind != TypeKind::Array && base != "auto" && IsPrimitiveTypeName(base))
     {
@@ -1343,7 +1336,7 @@ bool CheckIllegalHandleOnPrimitive(const LocalDefinition& def, const std::string
     return false;
 }
 
-std::string ResolveEnclosingNamespaceForDefinition(const LocalDefinition& def, const DiagnosticContext& ctx)
+static std::string ResolveEnclosingNamespaceForDefinition(const LocalDefinition& def, const DiagnosticContext& ctx)
 {
     if (!ctx.request.tree || ctx.request.sourceCode.empty())
     {
@@ -1365,7 +1358,7 @@ std::string ResolveEnclosingNamespaceForDefinition(const LocalDefinition& def, c
     return "";
 }
 
-void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& ctx)
+static void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& ctx)
 {
     const SourceRange range = GetDefinitionTypeRange(def);
     const std::string base = CleanBaseType(def.typeName);
@@ -1405,7 +1398,6 @@ void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& ctx)
 
     rules::CheckEngineLocalTypeSuggestions(def, ctx);
 }
-} // namespace
 
 void SemanticAnalyzer::CheckLocalNames(const Scope* scope, DiagnosticContext& ctx) const
 {

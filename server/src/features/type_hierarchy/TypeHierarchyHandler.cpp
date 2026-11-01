@@ -14,31 +14,22 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
-using analysis::Symbol;
-using analysis::SymbolTable;
-using analysis::SymbolType;
-using analysis::rules::RuleIndex;
 
-bool IsTypeSymbol(const Symbol& sym)
+static bool IsTypeSymbol(const analysis::Symbol& sym)
 {
-    return sym.type == SymbolType::Class || sym.type == SymbolType::Interface;
+    return sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface;
 }
 
 /**
  * @brief To item.
- * @param[in] sym Parameter sym.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (67%) with ToItem in
- * server/src/features/call_hierarchy/CallHierarchyHandler.cpp. Candidate for unification in
- * server/src/features/common/FeatureSharedUtils.h.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @return Calculated or extracted result of the operation.
  */
-lsp::TypeHierarchyItem ToItem(const Symbol& sym)
+static lsp::TypeHierarchyItem ToItem(const analysis::Symbol& sym)
 {
     lsp::TypeHierarchyItem item;
     item.name = std::string(analysis::LastScopeSegment(sym.name));
-    item.kind = sym.type == SymbolType::Interface ? lsp::SymbolKind::Interface : lsp::SymbolKind::Class;
+    item.kind = sym.type == analysis::SymbolType::Interface ? lsp::SymbolKind::Interface : lsp::SymbolKind::Class;
     item.uri = lsp::DocumentUri::parse(sym.fileUri);
     std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
     item.data = lsp::json::Value(std::move(qName));
@@ -64,9 +55,9 @@ lsp::TypeHierarchyItem ToItem(const Symbol& sym)
 }
 
 /** @brief The type declarations a bare name resolves to, if any. */
-std::vector<Symbol> FindTypeDeclarations(std::string_view name, const SymbolTable& table)
+static std::vector<analysis::Symbol> FindTypeDeclarations(std::string_view name, const analysis::SymbolTable& table)
 {
-    std::vector<Symbol> found;
+    std::vector<analysis::Symbol> found;
     const auto symbols = table.FindSymbolsPtr(name);
     if (!symbols)
     {
@@ -88,13 +79,14 @@ std::vector<Symbol> FindTypeDeclarations(std::string_view name, const SymbolTabl
  * @param[out] outNode AST node matching the identifier under the cursor.
  * @return Extracted identifier text or empty string if not on an identifier.
  */
-std::string IdentifierAt(const TypeHierarchyPrepareRequest& request, TSNode& outNode)
+static std::string IdentifierAt(const TypeHierarchyPrepareRequest& request, TSNode& outNode)
 {
     return common::FindIdentifierAtPosition(request.tree, request.position, request.sourceCode, outNode);
 }
 
-static std::vector<Symbol> FindTypeInEnclosingNamespaces(TSNode node, std::string_view text,
-                                                         std::string_view sourceCode, const SymbolTable& symbolTable)
+static std::vector<analysis::Symbol> FindTypeInEnclosingNamespaces(TSNode node, std::string_view text,
+                                                                   std::string_view sourceCode,
+                                                                   const analysis::SymbolTable& symbolTable)
 {
     for (const auto& container : analysis::GetEnclosingContainers(node, sourceCode))
     {
@@ -114,14 +106,14 @@ static std::vector<Symbol> FindTypeInEnclosingNamespaces(TSNode node, std::strin
  * @brief Attempts to find type declarations from a qualified type under the cursor.
  * @param[in] node AST node at cursor.
  * @param[in] sourceCode Document source text.
- * @param[in] symbolTable Symbol table to look up types.
+ * @param[in] symbolTable analysis::Symbol table to look up types.
  * @return List of matching type symbols if found.
  */
-std::vector<Symbol> FindQualifiedTypeUnderCursor(TSNode node, std::string_view sourceCode,
-                                                 const SymbolTable& symbolTable)
+static std::vector<analysis::Symbol> FindQualifiedTypeUnderCursor(TSNode node, std::string_view sourceCode,
+                                                                  const analysis::SymbolTable& symbolTable)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    std::vector<Symbol> result;
+    std::vector<analysis::Symbol> result;
     parser::ForEachAncestor(node,
                             [&](TSNode p) -> bool
                             {
@@ -129,7 +121,7 @@ std::vector<Symbol> FindQualifiedTypeUnderCursor(TSNode node, std::string_view s
                                 if (pType == gs.symType || pType == gs.symScopedIdentifier)
                                 {
                                     const std::string text =
-                                        analysis::CleanBaseType(analysis::GetNodeText(p, sourceCode));
+                                        analysis::CleanBaseType(parser::GetNodeText(p, sourceCode));
                                     if (!text.empty() && utils::ContainsScopeSeparator(text))
                                     {
                                         auto declarations = FindTypeDeclarations(text, symbolTable);
@@ -160,11 +152,12 @@ std::vector<Symbol> FindQualifiedTypeUnderCursor(TSNode node, std::string_view s
  * @param[in] name Identifier name.
  * @param[in] node AST node.
  * @param[in] sourceCode Document source text.
- * @param[in] symbolTable Symbol table.
+ * @param[in] symbolTable analysis::Symbol table.
  * @return List of matching type symbols.
  */
-std::vector<Symbol> FindTypeFromIdentifier(std::string_view name, TSNode node, std::string_view sourceCode,
-                                           const SymbolTable& symbolTable)
+static std::vector<analysis::Symbol> FindTypeFromIdentifier(std::string_view name, TSNode node,
+                                                            std::string_view sourceCode,
+                                                            const analysis::SymbolTable& symbolTable)
 {
     const std::string nameStr(name);
     auto declarations = FindTypeDeclarations(nameStr, symbolTable);
@@ -200,12 +193,13 @@ std::vector<Symbol> FindTypeFromIdentifier(std::string_view name, TSNode node, s
  * @brief Resolves the enclosing class or interface type containing the cursor node.
  * @param[in] node AST node.
  * @param[in] sourceCode Document source text.
- * @param[in] symbolTable Symbol table.
+ * @param[in] symbolTable analysis::Symbol table.
  * @return List of matching type symbols.
  */
-std::vector<Symbol> FindEnclosingType(TSNode node, std::string_view sourceCode, const SymbolTable& symbolTable)
+static std::vector<analysis::Symbol> FindEnclosingType(TSNode node, std::string_view sourceCode,
+                                                       const analysis::SymbolTable& symbolTable)
 {
-    std::vector<Symbol> declarations;
+    std::vector<analysis::Symbol> declarations;
     for (const auto& container : analysis::GetEnclosingContainers(node, sourceCode))
     {
         if (container.kind != analysis::ContainerKind::Class && container.kind != analysis::ContainerKind::Interface)
@@ -237,7 +231,7 @@ std::vector<Symbol> FindEnclosingType(TSNode node, std::string_view sourceCode, 
  * @param[in] sym Target symbol.
  * @return Effective LSP Range.
  */
-lsp::Range GetSymbolEffectiveRange(const Symbol& sym)
+static lsp::Range GetSymbolEffectiveRange(const analysis::Symbol& sym)
 {
     if (sym.selectionRange.endLine != 0 || sym.selectionRange.endCharacter != 0)
     {
@@ -257,7 +251,8 @@ lsp::Range GetSymbolEffectiveRange(const Symbol& sym)
  * @param[in] itemUri Serialized document URI of the item.
  * @return True if the symbol matches.
  */
-bool MatchesItemLocation(const Symbol& sym, const lsp::TypeHierarchyItem& item, const std::string& itemUri)
+static bool MatchesItemLocation(const analysis::Symbol& sym, const lsp::TypeHierarchyItem& item,
+                                const std::string& itemUri)
 {
     if (sym.fileUri != itemUri && angel_lsp::utils::PathToUri(sym.fileUri) != itemUri)
     {
@@ -269,12 +264,13 @@ bool MatchesItemLocation(const Symbol& sym, const lsp::TypeHierarchyItem& item, 
 /**
  * @brief Resolves type declarations for an LSP TypeHierarchyItem, filtering by URI/range if needed.
  * @param[in] item Target type hierarchy item.
- * @param[in] symbolTable Symbol table.
+ * @param[in] symbolTable analysis::Symbol table.
  * @return Filtered declaration symbols.
  */
-std::vector<Symbol> ResolveItemDeclarations(const lsp::TypeHierarchyItem& item, const SymbolTable& symbolTable)
+static std::vector<analysis::Symbol> ResolveItemDeclarations(const lsp::TypeHierarchyItem& item,
+                                                             const analysis::SymbolTable& symbolTable)
 {
-    std::vector<Symbol> declarations;
+    std::vector<analysis::Symbol> declarations;
     if (item.data.has_value() && item.data->isString() && !item.data->string().empty())
     {
         declarations = FindTypeDeclarations(item.data->string(), symbolTable);
@@ -297,7 +293,7 @@ std::vector<Symbol> ResolveItemDeclarations(const lsp::TypeHierarchyItem& item, 
     {
         const std::string itemUri = item.uri.toString();
         auto it = std::find_if(declarations.begin(), declarations.end(),
-                               [&](const Symbol& sym) { return MatchesItemLocation(sym, item, itemUri); });
+                               [&](const analysis::Symbol& sym) { return MatchesItemLocation(sym, item, itemUri); });
         if (it != declarations.end())
         {
             declarations = {*it};
@@ -310,13 +306,13 @@ std::vector<Symbol> ResolveItemDeclarations(const lsp::TypeHierarchyItem& item, 
  * @brief Resolves candidate base type symbols in search order.
  * @param[in] cleanBase Normalized base type name.
  * @param[in] declPrefix Namespace prefix of the declaring type.
- * @param[in] symbolTable Symbol table.
+ * @param[in] symbolTable analysis::Symbol table.
  * @return Resolved base type symbols.
  */
-std::vector<Symbol> ResolveBaseSymbols(const std::string& cleanBase, std::string_view declPrefix,
-                                       const SymbolTable& symbolTable)
+static std::vector<analysis::Symbol> ResolveBaseSymbols(const std::string& cleanBase, std::string_view declPrefix,
+                                                        const analysis::SymbolTable& symbolTable)
 {
-    std::vector<Symbol> baseSymbols;
+    std::vector<analysis::Symbol> baseSymbols;
     if (utils::ContainsScopeSeparator(cleanBase))
     {
         baseSymbols = FindTypeDeclarations(cleanBase, symbolTable);
@@ -346,12 +342,13 @@ std::vector<Symbol> ResolveBaseSymbols(const std::string& cleanBase, std::string
 /**
  * @brief Collects supertype items for a single declaration, tracking seen types to avoid duplicates.
  * @param[in] declaration Declaring type symbol.
- * @param[in] symbolTable Symbol table.
+ * @param[in] symbolTable analysis::Symbol table.
  * @param[in,out] seen Set of already emitted type keys.
  * @param[in,out] items Output list of supertype items.
  */
-void CollectSupertypesForDeclaration(const Symbol& declaration, const SymbolTable& symbolTable,
-                                     std::vector<std::string>& seen, std::vector<lsp::TypeHierarchyItem>& items)
+static void CollectSupertypesForDeclaration(const analysis::Symbol& declaration,
+                                            const analysis::SymbolTable& symbolTable, std::vector<std::string>& seen,
+                                            std::vector<lsp::TypeHierarchyItem>& items)
 {
     const std::string& declPrefix = declaration.containerName;
 
@@ -376,6 +373,8 @@ void CollectSupertypesForDeclaration(const Symbol& declaration, const SymbolTabl
     }
 }
 
+namespace type_hierarchy_handler_detail
+{
 /**
  * @brief Context for subtype search queries.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -385,8 +384,11 @@ struct SubtypeQueryContext
     std::string target;
     std::string qualifiedTarget;
     std::string itemName;
-    const SymbolTable& symbolTable;
+    const analysis::SymbolTable& symbolTable;
 };
+} // namespace type_hierarchy_handler_detail
+
+using SubtypeQueryContext = type_hierarchy_handler_detail::SubtypeQueryContext;
 
 /**
  * @brief Queries rule index for derived subtypes of target and qualifiedTarget.
@@ -394,8 +396,8 @@ struct SubtypeQueryContext
  * @param[in] ctx Subtype query context.
  * @param[in,out] items Output list of subtype items.
  */
-void CollectSubtypesFromRuleIndex(const RuleIndex& ruleIndex, const SubtypeQueryContext& ctx,
-                                  std::vector<lsp::TypeHierarchyItem>& items)
+static void CollectSubtypesFromRuleIndex(const analysis::rules::RuleIndex& ruleIndex, const SubtypeQueryContext& ctx,
+                                         std::vector<lsp::TypeHierarchyItem>& items)
 {
     ankerl::unordered_dense::set<std::string> seen;
     auto collectFrom = [&](const std::string& baseKey)
@@ -442,10 +444,10 @@ void CollectSubtypesFromRuleIndex(const RuleIndex& ruleIndex, const SubtypeQuery
  * @param[in] ctx Subtype query context.
  * @param[in,out] items Output list of subtype items.
  */
-void CollectSubtypesByScan(const SubtypeQueryContext& ctx, std::vector<lsp::TypeHierarchyItem>& items)
+static void CollectSubtypesByScan(const SubtypeQueryContext& ctx, std::vector<lsp::TypeHierarchyItem>& items)
 {
     ctx.symbolTable.ForEachSymbol(
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& sym : symbols)
             {
@@ -467,7 +469,6 @@ void CollectSubtypesByScan(const SubtypeQueryContext& ctx, std::vector<lsp::Type
             }
         });
 }
-} // namespace
 
 std::optional<std::vector<lsp::TypeHierarchyItem>> PrepareTypeHierarchy(const TypeHierarchyPrepareRequest& request)
 {
@@ -479,7 +480,7 @@ std::optional<std::vector<lsp::TypeHierarchyItem>> PrepareTypeHierarchy(const Ty
     TSNode node{};
     const std::string name = IdentifierAt(request, node);
 
-    std::vector<Symbol> declarations;
+    std::vector<analysis::Symbol> declarations;
     if (!ts_node_is_null(node))
     {
         declarations = FindQualifiedTypeUnderCursor(node, request.sourceCode, request.symbolTable);

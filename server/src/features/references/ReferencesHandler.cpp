@@ -6,14 +6,13 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 /**
  * @brief Converts occurrences into sorted LSP location objects.
  * @param[in] occurrences Raw occurrences collected across documents.
  * @return Stable sorted list of LSP locations.
  */
-std::vector<lsp::Location> ConvertAndSortOccurrences(const std::vector<analysis::OccurrenceLocation>& occurrences)
+static std::vector<lsp::Location>
+ConvertAndSortOccurrences(const std::vector<analysis::OccurrenceLocation>& occurrences)
 {
     std::vector<lsp::Location> results;
     results.reserve(occurrences.size());
@@ -46,15 +45,11 @@ std::vector<lsp::Location> ConvertAndSortOccurrences(const std::vector<analysis:
 
     return results;
 }
-} // namespace
 
 /**
  * @brief Get references.
- * @param[in] request Parameter request.
+ * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
  * @return Found item if present; std::nullopt otherwise.
- * @note [REFACTOR-CANDIDATE] Structural overlap (76%) with ResolveValidRenameTarget in
- * server/src/features/rename/RenameHandler.cpp. Candidate for unification in
- * server/src/features/common/FeatureSharedUtils.h.
  */
 std::optional<ReferencesResult> GetReferences(const ReferencesRequest& request)
 {

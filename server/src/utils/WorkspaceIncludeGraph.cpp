@@ -11,9 +11,7 @@
 
 namespace angel_lsp::utils
 {
-namespace
-{
-std::string ReadFileFromDisk(const std::string& path)
+static std::string ReadFileFromDisk(const std::string& path)
 {
     std::ifstream file(path, std::ios::binary);
     if (!file.is_open())
@@ -25,6 +23,8 @@ std::string ReadFileFromDisk(const std::string& path)
 }
 using FileReader = WorkspaceIncludeGraph::FileReader;
 
+namespace workspace_include_graph_detail
+{
 /**
  * @brief Bundled parameters for include resolution.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -35,7 +35,12 @@ struct IncludeContext
     const std::vector<std::string>& allowedRoots;
     std::string_view implicitExtension;
 };
+} // namespace workspace_include_graph_detail
 
+using IncludeContext = workspace_include_graph_detail::IncludeContext;
+
+namespace workspace_include_graph_detail
+{
 /**
  * @brief Resolved environment containing normalized roots and file reader.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -51,8 +56,11 @@ struct ResolvedIncludeEnv
         return IncludeContext{searchDirectories, allowedRoots, implicitExtension};
     }
 };
+} // namespace workspace_include_graph_detail
 
-template <typename TRequest> ResolvedIncludeEnv PrepareIncludeEnv(const TRequest& request)
+using ResolvedIncludeEnv = workspace_include_graph_detail::ResolvedIncludeEnv;
+
+template <typename TRequest> static ResolvedIncludeEnv PrepareIncludeEnv(const TRequest& request)
 {
     std::vector<std::string> allowedRoots =
         !request.allowedRoots.empty() ? request.allowedRoots : request.workspaceRoots;
@@ -68,8 +76,8 @@ template <typename TRequest> ResolvedIncludeEnv PrepareIncludeEnv(const TRequest
  * @brief Resolves every `#include` in one file to a normalized path, dropping directives
  *        that point nowhere.
  */
-std::vector<std::string> ResolveDirectives(const std::string& normalizedPath, std::string_view sourceCode,
-                                           const IncludeContext& ctx)
+static std::vector<std::string> ResolveDirectives(const std::string& normalizedPath, std::string_view sourceCode,
+                                                  const IncludeContext& ctx)
 {
     std::vector<std::string> resolved;
 
@@ -95,6 +103,8 @@ std::vector<std::string> ResolveDirectives(const std::string& normalizedPath, st
     return resolved;
 }
 
+namespace workspace_include_graph_detail
+{
 /**
  * @brief Represents File directives.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -104,7 +114,12 @@ struct FileDirectives
     std::string path;
     std::vector<std::string> targets;
 };
+} // namespace workspace_include_graph_detail
 
+using FileDirectives = workspace_include_graph_detail::FileDirectives;
+
+namespace workspace_include_graph_detail
+{
 /**
  * @brief Represents Directives worker context.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -116,9 +131,12 @@ struct DirectivesWorkerContext
     const WorkspaceIncludeGraph::FileReader& read;
     const std::function<bool()>& shouldStop;
 };
+} // namespace workspace_include_graph_detail
 
-void ProcessDirectivesRange(const DirectivesWorkerContext& dctx, size_t start, size_t end,
-                            std::vector<FileDirectives>& results)
+using DirectivesWorkerContext = workspace_include_graph_detail::DirectivesWorkerContext;
+
+static void ProcessDirectivesRange(const DirectivesWorkerContext& dctx, size_t start, size_t end,
+                                   std::vector<FileDirectives>& results)
 {
     try
     {
@@ -137,9 +155,9 @@ void ProcessDirectivesRange(const DirectivesWorkerContext& dctx, size_t start, s
     }
 }
 
-void CollectFileDirectives(const WorkspaceIncludeGraph::BuildFromFilesRequest& request,
-                           const IncludeContext& includeCtx, const WorkspaceIncludeGraph::FileReader& read,
-                           std::vector<FileDirectives>& results)
+static void CollectFileDirectives(const WorkspaceIncludeGraph::BuildFromFilesRequest& request,
+                                  const IncludeContext& includeCtx, const WorkspaceIncludeGraph::FileReader& read,
+                                  std::vector<FileDirectives>& results)
 {
     const size_t totalFiles = request.scriptFiles.size();
     const unsigned int hwThreads = std::thread::hardware_concurrency();
@@ -195,7 +213,6 @@ void CollectFileDirectives(const WorkspaceIncludeGraph::BuildFromFilesRequest& r
         ProcessDirectivesRange(dctx, 0, totalFiles, results);
     }
 }
-} // namespace
 
 void WorkspaceIncludeGraph::SetIncludesLocked(const std::string& normalizedPath, std::vector<std::string> includes)
 {
@@ -368,12 +385,10 @@ std::vector<std::string> WorkspaceIncludeGraph::GetFilesIncluding(const std::str
     return found == m_includedBy.end() ? std::vector<std::string>{} : found->second;
 }
 
-namespace
-{
 /**
  * @brief Collects all reachable reverse dependencies starting from direct includers.
  */
-ankerl::unordered_dense::set<std::string>
+static ankerl::unordered_dense::set<std::string>
 CollectReachableDependents(const std::string& startNode,
                            const ankerl::unordered_dense::map<std::string, std::vector<std::string>>& includedBy)
 {
@@ -403,7 +418,7 @@ CollectReachableDependents(const std::string& startNode,
     return reachable;
 }
 
-ankerl::unordered_dense::set<std::string>
+static ankerl::unordered_dense::set<std::string>
 CollectReachableIncludes(const std::string& root,
                          const ankerl::unordered_dense::map<std::string, std::vector<std::string>>& includes)
 {
@@ -430,7 +445,7 @@ CollectReachableIncludes(const std::string& root,
 /**
  * @brief Performs topological sorting via Kahn's algorithm over a reachable dependency subgraph.
  */
-std::vector<std::string>
+static std::vector<std::string>
 SortReachableTopological(const ankerl::unordered_dense::set<std::string>& reachable,
                          const ankerl::unordered_dense::map<std::string, std::vector<std::string>>& includes,
                          const ankerl::unordered_dense::map<std::string, std::vector<std::string>>& includedBy)
@@ -484,7 +499,6 @@ SortReachableTopological(const ankerl::unordered_dense::set<std::string>& reacha
     }
     return result;
 }
-} // namespace
 
 std::vector<std::string> WorkspaceIncludeGraph::GetForwardClosure(const std::string& entryFilePath) const
 {

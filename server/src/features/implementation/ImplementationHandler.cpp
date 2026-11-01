@@ -15,12 +15,6 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
-using analysis::Symbol;
-using analysis::SymbolTable;
-using analysis::SymbolType;
-using analysis::rules::RuleIndex;
 
 /**
  * @brief The identifier the cursor sits on, or empty when it is not on one.
@@ -28,11 +22,13 @@ using analysis::rules::RuleIndex;
  * @param[out] outNode AST node matching the identifier under the cursor.
  * @return Extracted identifier text or empty string if not on an identifier.
  */
-std::string IdentifierAt(const ImplementationRequest& request, TSNode& outNode)
+static std::string IdentifierAt(const ImplementationRequest& request, TSNode& outNode)
 {
     return common::FindIdentifierAtPosition(request.tree, request.position, request.sourceCode, outNode);
 }
 
+namespace implementation_handler_detail
+{
 /**
  * @brief Accumulator for subtype collection passes.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -41,17 +37,20 @@ struct SubtypeAccumulator
 {
     ankerl::unordered_dense::set<std::string>& seen;
     std::vector<std::string>& next;
-    std::vector<Symbol>& subtypes;
+    std::vector<analysis::Symbol>& subtypes;
 };
+} // namespace implementation_handler_detail
+
+using SubtypeAccumulator = implementation_handler_detail::SubtypeAccumulator;
 
 /**
  * @brief Expands derived types from a list of records and records matches in the accumulator.
  * @param[in] derivedList List of derived type records.
- * @param[in] table Symbol table.
+ * @param[in] table analysis::Symbol table.
  * @param[in,out] acc Subtype accumulator.
  */
 template <typename TList>
-void ExpandDerivedFromList(const TList& derivedList, const SymbolTable& table, SubtypeAccumulator& acc)
+static void ExpandDerivedFromList(const TList& derivedList, const analysis::SymbolTable& table, SubtypeAccumulator& acc)
 {
     for (const auto& derived : derivedList)
     {
@@ -74,9 +73,9 @@ void ExpandDerivedFromList(const TList& derivedList, const SymbolTable& table, S
         const auto symList = table.FindSymbolsPtr(derived.qualifiedName.empty() ? derived.name : derived.qualifiedName);
         if (symList)
         {
-            for (const Symbol& s : *symList)
+            for (const analysis::Symbol& s : *symList)
             {
-                if (s.type == SymbolType::Class || s.type == SymbolType::Interface)
+                if (s.type == analysis::SymbolType::Class || s.type == analysis::SymbolType::Interface)
                 {
                     acc.subtypes.push_back(s);
                 }
@@ -88,12 +87,13 @@ void ExpandDerivedFromList(const TList& derivedList, const SymbolTable& table, S
 /**
  * @brief Collects subtypes using precomputed rule index derived maps.
  * @param[in] rootType Root type name.
- * @param[in] table Symbol table.
+ * @param[in] table analysis::Symbol table.
  * @param[in] ruleIndex Precomputed rule index.
  * @return List of subtype symbols.
  */
-std::vector<Symbol> CollectSubtypesFromRuleIndex(const std::string& rootType, const SymbolTable& table,
-                                                 const RuleIndex& ruleIndex)
+static std::vector<analysis::Symbol> CollectSubtypesFromRuleIndex(const std::string& rootType,
+                                                                  const analysis::SymbolTable& table,
+                                                                  const analysis::rules::RuleIndex& ruleIndex)
 {
     const std::string bareRoot{analysis::LastScopeSegment(rootType)};
     std::vector<std::string> frontier{bareRoot};
@@ -102,7 +102,7 @@ std::vector<Symbol> CollectSubtypesFromRuleIndex(const std::string& rootType, co
         frontier.push_back(rootType);
     }
     ankerl::unordered_dense::set<std::string> seen{bareRoot, rootType};
-    std::vector<Symbol> subtypes;
+    std::vector<analysis::Symbol> subtypes;
 
     while (!frontier.empty())
     {
@@ -135,7 +135,7 @@ std::vector<Symbol> CollectSubtypesFromRuleIndex(const std::string& rootType, co
  * @param[in] frontier Current frontier of base names.
  * @return True if sym matches the frontier.
  */
-bool MatchesDeclaredBasesOrMixins(const Symbol& sym, const std::vector<std::string>& frontier)
+static bool MatchesDeclaredBasesOrMixins(const analysis::Symbol& sym, const std::vector<std::string>& frontier)
 {
     for (const auto& base : analysis::GetDeclaredBases(sym))
     {
@@ -145,7 +145,7 @@ bool MatchesDeclaredBasesOrMixins(const Symbol& sym, const std::vector<std::stri
             return true;
         }
     }
-    if (sym.type == SymbolType::Class && std::holds_alternative<analysis::ClassSignature>(sym.signature))
+    if (sym.type == analysis::SymbolType::Class && std::holds_alternative<analysis::ClassSignature>(sym.signature))
     {
         for (const auto& m : sym.GetClass().includedMixins)
         {
@@ -162,25 +162,26 @@ bool MatchesDeclaredBasesOrMixins(const Symbol& sym, const std::vector<std::stri
 /**
  * @brief Linear table scan fallback to collect subtypes.
  * @param[in] rootType Root type name.
- * @param[in] table Symbol table.
+ * @param[in] table analysis::Symbol table.
  * @return List of subtype symbols.
  */
-std::vector<Symbol> CollectSubtypesByScan(const std::string& rootType, const SymbolTable& table)
+static std::vector<analysis::Symbol> CollectSubtypesByScan(const std::string& rootType,
+                                                           const analysis::SymbolTable& table)
 {
     std::vector<std::string> frontier{std::string(analysis::LastScopeSegment(rootType))};
     std::vector<std::string> seen{frontier.front()};
-    std::vector<Symbol> subtypes;
+    std::vector<analysis::Symbol> subtypes;
 
     while (!frontier.empty())
     {
         std::vector<std::string> next;
 
         table.ForEachSymbol(
-            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
+            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
             {
                 for (const auto& sym : symbols)
                 {
-                    if (sym.type != SymbolType::Class && sym.type != SymbolType::Interface)
+                    if (sym.type != analysis::SymbolType::Class && sym.type != analysis::SymbolType::Interface)
                     {
                         continue;
                     }
@@ -208,10 +209,10 @@ std::vector<Symbol> CollectSubtypesByScan(const std::string& rootType, const Sym
 /**
  * @brief Collects every type that reaches the given one through its declared bases.
  * @param[in] rootType Base type name.
- * @param[in] table Symbol table.
+ * @param[in] table analysis::Symbol table.
  * @return List of subtype symbols.
  */
-std::vector<Symbol> CollectSubtypes(const std::string& rootType, const SymbolTable& table)
+static std::vector<analysis::Symbol> CollectSubtypes(const std::string& rootType, const analysis::SymbolTable& table)
 {
     const auto ruleIndex = table.GetRuleIndex();
     if (ruleIndex)
@@ -221,7 +222,7 @@ std::vector<Symbol> CollectSubtypes(const std::string& rootType, const SymbolTab
     return CollectSubtypesByScan(rootType, table);
 }
 
-lsp::Location ToLocation(const Symbol& sym)
+static lsp::Location ToLocation(const analysis::Symbol& sym)
 {
     uint32_t sL = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0) ? sym.selectionRange.startLine
                                                                                           : sym.startLine;
@@ -240,10 +241,8 @@ lsp::Location ToLocation(const Symbol& sym)
 
 /**
  * @brief The type whose body the cursor sits in, or empty when it sits in none.
- * @note [REFACTOR-CANDIDATE] Structural overlap (94%) with FindEnclosingClassOrInterface in
- * server/src/analysis/CallChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-std::string EnclosingType(TSNode node, std::string_view sourceCode)
+static std::string EnclosingType(TSNode node, std::string_view sourceCode)
 {
     for (const auto& container : analysis::GetEnclosingContainers(node, sourceCode))
     {
@@ -257,23 +256,24 @@ std::string EnclosingType(TSNode node, std::string_view sourceCode)
 
 /**
  * @brief True when a name is declared as a class or an interface anywhere in the table.
- * @note [REFACTOR-CANDIDATE] Structural overlap (82%) with IsScalarCastTarget in
- * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-bool IsTypeName(const std::string& name, const SymbolTable& table)
+static bool IsTypeName(const std::string& name, const analysis::SymbolTable& table)
 {
     const auto symbols = table.FindSymbolsPtr(name);
-    return symbols && std::any_of(symbols->begin(), symbols->end(), [](const Symbol& sym)
-                                  { return sym.type == SymbolType::Class || sym.type == SymbolType::Interface; });
+    return symbols &&
+           std::any_of(
+               symbols->begin(), symbols->end(), [](const analysis::Symbol& sym)
+               { return sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface; });
 }
 
 /**
  * @brief Resolves implementations for a type symbol under cursor.
  * @param[in] name Type name.
- * @param[in] table Symbol table.
+ * @param[in] table analysis::Symbol table.
  * @return Locations of derived types or fallback definition.
  */
-std::optional<std::vector<lsp::Location>> ResolveTypeImplementations(const std::string& name, const SymbolTable& table)
+static std::optional<std::vector<lsp::Location>> ResolveTypeImplementations(const std::string& name,
+                                                                            const analysis::SymbolTable& table)
 {
     std::vector<lsp::Location> locations;
     for (const auto& sym : CollectSubtypes(name, table))
@@ -287,7 +287,7 @@ std::optional<std::vector<lsp::Location>> ResolveTypeImplementations(const std::
         {
             for (const auto& sym : *typeSyms)
             {
-                if (sym.type == SymbolType::Class || sym.type == SymbolType::Interface)
+                if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface)
                 {
                     locations.push_back(ToLocation(sym));
                 }
@@ -302,10 +302,11 @@ std::optional<std::vector<lsp::Location>> ResolveTypeImplementations(const std::
  * @param[in] node AST node.
  * @param[in] sourceCode Document source text.
  * @param[in] uri Document URI.
- * @param[in] table Symbol table.
+ * @param[in] table analysis::Symbol table.
  * @return Resolved owner type name.
  */
-std::string ResolveOwnerType(TSNode node, std::string_view sourceCode, const std::string& uri, const SymbolTable& table)
+static std::string ResolveOwnerType(TSNode node, std::string_view sourceCode, const std::string& uri,
+                                    const analysis::SymbolTable& table)
 {
     std::string owner = EnclosingType(node, sourceCode);
     if (!owner.empty())
@@ -329,11 +330,11 @@ std::string ResolveOwnerType(TSNode node, std::string_view sourceCode, const std
  * @brief Finds a member directly declared in a class or its bare alias.
  * @param[in] clsName Qualified class name.
  * @param[in] name Member name.
- * @param[in] table Symbol table.
+ * @param[in] table analysis::Symbol table.
  * @return Member symbols pointer if found.
  */
-std::shared_ptr<const std::vector<Symbol>> FindMemberInClass(const std::string& clsName, const std::string& name,
-                                                             const SymbolTable& table)
+static std::shared_ptr<const std::vector<analysis::Symbol>>
+FindMemberInClass(const std::string& clsName, const std::string& name, const analysis::SymbolTable& table)
 {
     auto memberSyms = table.FindMemberSymbolPtr(clsName, name);
     if (memberSyms && !memberSyms->empty())
@@ -356,13 +357,13 @@ std::shared_ptr<const std::vector<Symbol>> FindMemberInClass(const std::string& 
  * @brief Searches for a member symbol inside mixins and bases of a class symbol.
  * @param[in] os Class symbol to inspect.
  * @param[in] name Member name.
- * @param[in] table Symbol table.
+ * @param[in] table analysis::Symbol table.
  * @return Member symbols pointer if found.
  */
-std::shared_ptr<const std::vector<Symbol>> FindMemberInMixinsAndBases(const Symbol& os, const std::string& name,
-                                                                      const SymbolTable& table)
+static std::shared_ptr<const std::vector<analysis::Symbol>>
+FindMemberInMixinsAndBases(const analysis::Symbol& os, const std::string& name, const analysis::SymbolTable& table)
 {
-    if (os.type != SymbolType::Class || !std::holds_alternative<analysis::ClassSignature>(os.signature))
+    if (os.type != analysis::SymbolType::Class || !std::holds_alternative<analysis::ClassSignature>(os.signature))
     {
         return nullptr;
     }
@@ -391,11 +392,11 @@ std::shared_ptr<const std::vector<Symbol>> FindMemberInMixinsAndBases(const Symb
  * @brief Finds a member inside the mixins or bases of an owner class.
  * @param[in] clsName Qualified class name.
  * @param[in] name Member name.
- * @param[in] table Symbol table.
+ * @param[in] table analysis::Symbol table.
  * @return Member symbols pointer if found.
  */
-std::shared_ptr<const std::vector<Symbol>>
-FindMemberInOwnerMixinsAndBases(const std::string& clsName, const std::string& name, const SymbolTable& table)
+static std::shared_ptr<const std::vector<analysis::Symbol>>
+FindMemberInOwnerMixinsAndBases(const std::string& clsName, const std::string& name, const analysis::SymbolTable& table)
 {
     const std::string bareCls{analysis::LastScopeSegment(clsName)};
     auto ownerSyms = table.FindSymbolsPtr(clsName);
@@ -422,11 +423,11 @@ FindMemberInOwnerMixinsAndBases(const std::string& clsName, const std::string& n
  * @brief Searches for a member declaration within the hierarchy of an owner type.
  * @param[in] owner Owner type name.
  * @param[in] name Member name.
- * @param[in] table Symbol table.
+ * @param[in] table analysis::Symbol table.
  * @return Member symbols pointer if found.
  */
-std::shared_ptr<const std::vector<Symbol>> FindMemberInHierarchy(const std::string& owner, const std::string& name,
-                                                                 const SymbolTable& table)
+static std::shared_ptr<const std::vector<analysis::Symbol>>
+FindMemberInHierarchy(const std::string& owner, const std::string& name, const analysis::SymbolTable& table)
 {
     if (auto syms = FindMemberInClass(owner, name, table))
     {
@@ -462,10 +463,10 @@ std::shared_ptr<const std::vector<Symbol>> FindMemberInHierarchy(const std::stri
  * @brief Checks whether a class is a mixin or registered in hostClassesByMixin.
  * @param[in] owner Full owner name.
  * @param[in] bareOwner Bare owner name.
- * @param[in] table Symbol table.
+ * @param[in] table analysis::Symbol table.
  * @return True if owner represents a mixin class.
  */
-bool CheckMixinOwner(const std::string& owner, const std::string& bareOwner, const SymbolTable& table)
+static bool CheckMixinOwner(const std::string& owner, const std::string& bareOwner, const analysis::SymbolTable& table)
 {
     if (analysis::IsMixinClass(owner, table) || (bareOwner != owner && analysis::IsMixinClass(bareOwner, table)))
     {
@@ -476,6 +477,8 @@ bool CheckMixinOwner(const std::string& owner, const std::string& bareOwner, con
            (ruleIndex->hostClassesByMixin.contains(owner) || ruleIndex->hostClassesByMixin.contains(bareOwner));
 }
 
+namespace implementation_handler_detail
+{
 /**
  * @brief Accumulator for deduplicated LSP locations.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -487,9 +490,9 @@ struct LocationCollector
 
     /**
      * @brief Adds a symbol location if not already collected.
-     * @param[in] sym Symbol whose location should be captured.
+     * @param[in] sym analysis::Symbol whose location should be captured.
      */
-    void Add(const Symbol& sym)
+    void Add(const analysis::Symbol& sym)
     {
         const uint32_t sL = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0)
                                 ? sym.selectionRange.startLine
@@ -504,7 +507,12 @@ struct LocationCollector
         }
     }
 };
+} // namespace implementation_handler_detail
 
+using LocationCollector = implementation_handler_detail::LocationCollector;
+
+namespace implementation_handler_detail
+{
 /**
  * @brief Context required to resolve subtype overrides.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -513,16 +521,19 @@ struct MemberImplementationContext
 {
     std::string name;
     bool isMixinOwner;
-    const SymbolTable& table;
+    const analysis::SymbolTable& table;
     LocationCollector& collector;
 };
+} // namespace implementation_handler_detail
+
+using MemberImplementationContext = implementation_handler_detail::MemberImplementationContext;
 
 /**
  * @brief Inspects a subtype for explicit overrides or mixin inclusion.
  * @param[in] subtype Subtype symbol.
  * @param[in,out] ctx Resolution context.
  */
-void CollectSubtypeOverrides(const Symbol& subtype, MemberImplementationContext& ctx)
+static void CollectSubtypeOverrides(const analysis::Symbol& subtype, MemberImplementationContext& ctx)
 {
     const auto members = ctx.table.FindMemberSymbolPtr(analysis::LastScopeSegment(subtype.name), ctx.name);
     bool hasExplicitOverride = false;
@@ -547,11 +558,11 @@ void CollectSubtypeOverrides(const Symbol& subtype, MemberImplementationContext&
  * @brief Resolves implementations/overrides of a member method or field.
  * @param[in] owner Enclosing or receiver owner type name.
  * @param[in] name Member name.
- * @param[in] table Symbol table.
+ * @param[in] table analysis::Symbol table.
  * @return Locations of overrides or definitions.
  */
-std::optional<std::vector<lsp::Location>>
-ResolveMemberImplementations(const std::string& owner, const std::string& name, const SymbolTable& table)
+static std::optional<std::vector<lsp::Location>>
+ResolveMemberImplementations(const std::string& owner, const std::string& name, const analysis::SymbolTable& table)
 {
     auto memberSyms = FindMemberInHierarchy(owner, name, table);
     if (!memberSyms || memberSyms->empty())
@@ -588,11 +599,11 @@ ResolveMemberImplementations(const std::string& owner, const std::string& name, 
 /**
  * @brief Resolves implementations for a free function declaration.
  * @param[in] name Function name.
- * @param[in] table Symbol table.
+ * @param[in] table analysis::Symbol table.
  * @return List of matching function locations.
  */
-std::optional<std::vector<lsp::Location>> ResolveFunctionImplementations(const std::string& name,
-                                                                         const SymbolTable& table)
+static std::optional<std::vector<lsp::Location>> ResolveFunctionImplementations(const std::string& name,
+                                                                                const analysis::SymbolTable& table)
 {
     const auto globalSyms = table.FindSymbolsPtr(name);
     if (!globalSyms || globalSyms->empty())
@@ -602,14 +613,13 @@ std::optional<std::vector<lsp::Location>> ResolveFunctionImplementations(const s
     std::vector<lsp::Location> locations;
     for (const auto& sym : *globalSyms)
     {
-        if (sym.type == SymbolType::Function)
+        if (sym.type == analysis::SymbolType::Function)
         {
             locations.push_back(ToLocation(sym));
         }
     }
     return locations.empty() ? std::nullopt : std::optional{locations};
 }
-} // namespace
 
 std::optional<std::vector<lsp::Location>> GetImplementations(const ImplementationRequest& request)
 {
@@ -631,7 +641,7 @@ std::optional<std::vector<lsp::Location>> GetImplementations(const Implementatio
                                              request.position.line, request.position.character, request.uri));
     }
 
-    const SymbolTable& table = request.symbolTable;
+    const analysis::SymbolTable& table = request.symbolTable;
 
     // 1. The cursor on a type's own name
     if (IsTypeName(name, table))

@@ -1,4 +1,4 @@
-﻿#include "analysis/HandleComparisonChecker.h"
+#include "analysis/HandleComparisonChecker.h"
 #include "analysis/BinaryOperatorHelpers.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticHelpers.h"
@@ -11,7 +11,7 @@
 
 namespace angel_lsp::analysis
 {
-namespace
+namespace handle_comparison_detail
 {
 enum class ComparisonCategory
 {
@@ -22,7 +22,6 @@ enum class ComparisonCategory
 
 /**
  * @brief Represents Comparison operator info.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct ComparisonOperatorInfo
 {
@@ -32,7 +31,6 @@ struct ComparisonOperatorInfo
 
 /**
  * @brief Represents Comparison dispatch context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct ComparisonDispatchContext
 {
@@ -43,7 +41,6 @@ struct ComparisonDispatchContext
 
 /**
  * @brief Represents Relational check operands.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct RelationalCheckOperands
 {
@@ -54,7 +51,6 @@ struct RelationalCheckOperands
 
 /**
  * @brief Represents Comparison operands state.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct ComparisonOperandsState
 {
@@ -64,18 +60,24 @@ struct ComparisonOperandsState
     bool isRightHandle = false;
     std::string leftType;
 };
+} // namespace handle_comparison_detail
 
-[[nodiscard]] inline ComparisonOperatorInfo ClassifyComparisonOperatorSym(TSSymbol sym,
-                                                                          const parser::GrammarSymbols& gs) noexcept
+using ComparisonCategory = handle_comparison_detail::ComparisonCategory;
+using ComparisonOperatorInfo = handle_comparison_detail::ComparisonOperatorInfo;
+using ComparisonDispatchContext = handle_comparison_detail::ComparisonDispatchContext;
+using RelationalCheckOperands = handle_comparison_detail::RelationalCheckOperands;
+using ComparisonOperandsState = handle_comparison_detail::ComparisonOperandsState;
+
+[[nodiscard]] static inline ComparisonOperatorInfo
+ClassifyComparisonOperatorSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
 {
-    using namespace parser::keywords::operators;
     if (sym == gs.tokEqEq)
     {
-        return {ComparisonCategory::ValueEquality, Is};
+        return {ComparisonCategory::ValueEquality, parser::keywords::operators::Is};
     }
     if (sym == gs.tokBangEq)
     {
-        return {ComparisonCategory::ValueEquality, BangIs};
+        return {ComparisonCategory::ValueEquality, parser::keywords::operators::BangIs};
     }
     if (IsRelationalOpSym(sym, gs))
     {
@@ -84,7 +86,7 @@ struct ComparisonOperandsState
     return {};
 }
 
-void CheckHandleEquality(TSNode opNode, std::string_view op, std::string_view preferred, DiagnosticContext& ctx)
+static void CheckHandleEquality(TSNode opNode, std::string_view op, std::string_view preferred, DiagnosticContext& ctx)
 {
     if (preferred.empty())
     {
@@ -102,7 +104,7 @@ void CheckHandleEquality(TSNode opNode, std::string_view op, std::string_view pr
                     {std::string(op), std::string(preferred)}, severity);
 }
 
-void CheckRelationalComparison(TSNode opNode, const RelationalCheckOperands& ops, DiagnosticContext& ctx)
+static void CheckRelationalComparison(TSNode opNode, const RelationalCheckOperands& ops, DiagnosticContext& ctx)
 {
     const TSPoint start = ts_node_start_point(opNode);
     const TSPoint end = ts_node_end_point(opNode);
@@ -133,8 +135,8 @@ void CheckRelationalComparison(TSNode opNode, const RelationalCheckOperands& ops
     }
 }
 
-void DispatchComparisonCheck(const ComparisonDispatchContext& dispatch, const ComparisonOperandsState& s,
-                             DiagnosticContext& ctx)
+static void DispatchComparisonCheck(const ComparisonDispatchContext& dispatch, const ComparisonOperandsState& s,
+                                    DiagnosticContext& ctx)
 {
     if (dispatch.opInfo.category == ComparisonCategory::ValueEquality)
     {
@@ -153,7 +155,6 @@ void DispatchComparisonCheck(const ComparisonDispatchContext& dispatch, const Co
     };
     CheckRelationalComparison(dispatch.opNode, ops, ctx);
 }
-} // namespace
 
 void CheckHandleComparison(TSNode node, const Scope* scope, DiagnosticContext& ctx)
 {

@@ -11,12 +11,10 @@
 
 namespace angel_lsp::analysis::rules
 {
-namespace
-{
 /** @brief Looks up what kind of declaration a type name refers to, if this analyzer sees one. */
-const Symbol* FindTypeDeclaration(std::string_view typeName, const SymbolTable& table,
-                                  std::shared_ptr<const std::vector<Symbol>>& keepAlive,
-                                  std::string_view enclosingNs = {})
+static const Symbol* FindTypeDeclaration(std::string_view typeName, const SymbolTable& table,
+                                         std::shared_ptr<const std::vector<Symbol>>& keepAlive,
+                                         std::string_view enclosingNs = {})
 {
     if (typeName.empty())
     {
@@ -55,7 +53,7 @@ const Symbol* FindTypeDeclaration(std::string_view typeName, const SymbolTable& 
  * @param[in] table Symbol table for container lookup.
  * @return True if enclosed within a class or interface.
  */
-bool IsClassOrInterfaceMember(const Symbol& sym, const SymbolTable& table)
+static bool IsClassOrInterfaceMember(const Symbol& sym, const SymbolTable& table)
 {
     if (sym.containerKind == ContainerKind::Class || sym.containerKind == ContainerKind::Interface)
     {
@@ -72,12 +70,10 @@ bool IsClassOrInterfaceMember(const Symbol& sym, const SymbolTable& table)
 
 /**
  * @brief True when the symbol's container is a mixin class.
- * @note [REFACTOR-CANDIDATE] Structural overlap (93%) with IsClassMember in
- * server/src/analysis/rules/EngineRuleChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  * Structural overlap (93%) with IsInterfaceMember in server/src/analysis/rules/VariableRules.cpp. Candidate for
  * unification in server/src/analysis/SemanticHelpers.h.
  */
-bool IsMixinMember(const Symbol& sym, const SymbolTable& table)
+static bool IsMixinMember(const Symbol& sym, const SymbolTable& table)
 {
     if (sym.containerName.empty())
     {
@@ -101,7 +97,7 @@ bool IsMixinMember(const Symbol& sym, const SymbolTable& table)
  * judging one would mean reporting every `array<CBasePlayer@>` in the corpus. `void` is the
  * one answer that needs nothing looked up.
  */
-void CheckTemplateArguments(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
+static void CheckTemplateArguments(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
 {
     if (sig.templateName.empty())
     {
@@ -120,7 +116,7 @@ void CheckTemplateArguments(const Symbol& sym, const VariableSignature& sig, con
     }
 }
 
-void CheckPrimitiveOrVoidType(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
+static void CheckPrimitiveOrVoidType(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
 {
     if (sig.typeKind == TypeKind::Void && !sig.modifiers.isHandle)
     {
@@ -135,8 +131,8 @@ void CheckPrimitiveOrVoidType(const Symbol& sym, const VariableSignature& sig, c
     }
 }
 
-void CheckNonInstantiableType(const Symbol& sym, const VariableSignature& sig, std::string_view baseType,
-                              const DiagnosticContext& ctx)
+static void CheckNonInstantiableType(const Symbol& sym, const VariableSignature& sig, std::string_view baseType,
+                                     const DiagnosticContext& ctx)
 {
     if (sig.modifiers.isHandle || !sig.templateName.empty())
     {
@@ -162,8 +158,8 @@ void CheckNonInstantiableType(const Symbol& sym, const VariableSignature& sig, s
     }
 }
 
-void CheckUnresolvedVariableType(const Symbol& sym, std::string_view baseType, std::string_view enclosingNs,
-                                 const DiagnosticContext& ctx)
+static void CheckUnresolvedVariableType(const Symbol& sym, std::string_view baseType, std::string_view enclosingNs,
+                                        const DiagnosticContext& ctx)
 {
     if (baseType.empty() || baseType == "auto" || IsReservedKeyword(std::string(baseType)))
     {
@@ -191,7 +187,7 @@ void CheckUnresolvedVariableType(const Symbol& sym, std::string_view baseType, s
 }
 
 /** @brief Rules about what the declared type may be. */
-void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
+static void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
 {
     CheckPrimitiveOrVoidType(sym, sig, ctx);
 
@@ -239,7 +235,7 @@ void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, const Di
 }
 
 /** @brief Rules about the modifiers a declaration carries where it sits. */
-void CheckPlacement(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
+static void CheckPlacement(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
 {
     const bool isClassMember = IsClassOrInterfaceMember(sym, ctx.request.symbolTable);
 
@@ -269,7 +265,7 @@ void CheckPlacement(const Symbol& sym, const VariableSignature& sig, const Diagn
 }
 
 /** @brief Rules for a virtual property's accessors. */
-void CheckVirtualProperty(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
+static void CheckVirtualProperty(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
 {
     if (!sig.isVirtualProperty)
     {
@@ -313,13 +309,11 @@ void CheckVirtualProperty(const Symbol& sym, const VariableSignature& sig, const
 
 /**
  * @brief Check modifiers.
- * @param[in] sym Parameter sym.
- * @param[in] sig Parameter sig.
- * @param[in] ctx Parameter ctx.
- * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with ValidateOpIndex in
- * server/src/analysis/rules/OperatorRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @param[in] sig Input sig for the operation.
+ * @param[in] ctx Diagnostic collection and analysis context.
  */
-void CheckModifiers(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
+static void CheckModifiers(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
 {
     if (sig.modifiers.isShared)
     {
@@ -327,7 +321,6 @@ void CheckModifiers(const Symbol& sym, const VariableSignature& sig, const Diagn
         ctx.Emit(sym, "as-err-shared-not-allowed-on-entity", sym.name);
     }
 }
-} // namespace
 
 void ValidateVariable(const Symbol& sym, const DiagnosticContext& ctx)
 {

@@ -765,7 +765,7 @@ def scan_missing_doxygen(local_structs, similar_matrix, pass1_reparse):
         lines = content.splitlines()
 
         for tline in sorted(target_lines):
-            if not has_doxygen_before(lines, tline) or not has_refactor_candidate_note(lines, tline):
+            if not has_doxygen_before(lines, tline):
                 line_idx = tline - 1
                 if 0 <= line_idx < len(lines):
                     sym_line = lines[line_idx].strip()
@@ -808,6 +808,9 @@ def main():
     print("[5/5] Auditing Doxygen coverage on refactoring targets...", flush=True)
     doxygen_audit = scan_missing_doxygen(local_structs, similar_matrix, pass1_reparse)
     print(f"      Found {doxygen_audit['missingCount']} targets missing Doxygen documentation.", flush=True)
+    if doxygen_audit['missingCount'] > 0:
+        print(f"[ERROR] Found {doxygen_audit['missingCount']} targets missing Doxygen documentation! Must be strictly 0.", file=sys.stderr)
+        sys.exit(1)
 
     report = {
         "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

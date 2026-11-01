@@ -13,9 +13,7 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
-FlowState MergeFlowStates(const FlowState& s1, const FlowState& s2)
+static FlowState MergeFlowStates(const FlowState& s1, const FlowState& s2)
 {
     FlowState result;
     result.warnedVars = s1.warnedVars;
@@ -38,9 +36,9 @@ FlowState MergeFlowStates(const FlowState& s1, const FlowState& s2)
     return result;
 }
 
-void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx);
+static void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx);
 
-void CheckIfStmt(TSNode stmt, FlowState& state, NullCheckContext& ctx)
+static void CheckIfStmt(TSNode stmt, FlowState& state, NullCheckContext& ctx)
 {
     const ast::IfStatementView ifView(stmt, ctx.sourceCode);
     const TSNode cond = ifView.Condition();
@@ -85,7 +83,7 @@ void CheckIfStmt(TSNode stmt, FlowState& state, NullCheckContext& ctx)
     }
 }
 
-void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx)
+static void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx)
 {
     if (ts_node_is_null(stmt) || state.isTerminated)
     {
@@ -129,7 +127,7 @@ void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx)
     }
 }
 
-void AnalyzeFunction(TSNode funcNode, const Scope* scopeRoot, NullCheckContext& ctx)
+static void AnalyzeFunction(TSNode funcNode, const Scope* scopeRoot, NullCheckContext& ctx)
 {
     TSNode body = FindFunctionBody(funcNode);
     if (ts_node_is_null(body))
@@ -141,7 +139,6 @@ void AnalyzeFunction(TSNode funcNode, const Scope* scopeRoot, NullCheckContext& 
     CollectParameters(funcNode, scopeRoot, ctx.sourceCode, state);
     CheckStatement(body, state, ctx);
 }
-} // namespace
 
 void CheckNullSafety(const NullSafetyCheckRequest& request, DiagnosticContext& ctx)
 {

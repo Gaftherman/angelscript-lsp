@@ -13,9 +13,9 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
 
+namespace l_value_checker_detail
+{
 /**
  * @brief Represents Call candidate context.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -26,8 +26,11 @@ struct CallCandidateContext
     const Scope* scope = nullptr;
     DiagnosticContext& ctx;
 };
+} // namespace l_value_checker_detail
 
-void CollectMemberCandidates(TSNode funcNode, const CallCandidateContext& cctx, std::vector<Symbol>& candidates)
+using CallCandidateContext = l_value_checker_detail::CallCandidateContext;
+
+static void CollectMemberCandidates(TSNode funcNode, const CallCandidateContext& cctx, std::vector<Symbol>& candidates)
 {
     TSNode objNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldObject);
     TSNode memNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldMember);
@@ -37,7 +40,7 @@ void CollectMemberCandidates(TSNode funcNode, const CallCandidateContext& cctx, 
     }
     std::string objType = ResolveExpressionType(objNode, ExpressionTypeContext(cctx.scope, cctx.ctx));
     std::string cleanObj = CleanBaseType(objType);
-    std::string memName = NodeText(memNode, cctx.request.sourceCode);
+    std::string memName = parser::NodeText(memNode, cctx.request.sourceCode);
     if (cleanObj.empty() || memName.empty())
     {
         return;
@@ -57,9 +60,9 @@ void CollectMemberCandidates(TSNode funcNode, const CallCandidateContext& cctx, 
     }
 }
 
-void CollectScopedCandidates(TSNode funcNode, const CallCandidateContext& cctx, std::vector<Symbol>& candidates)
+static void CollectScopedCandidates(TSNode funcNode, const CallCandidateContext& cctx, std::vector<Symbol>& candidates)
 {
-    std::string qName = NodeText(funcNode, cctx.request.sourceCode);
+    std::string qName = parser::NodeText(funcNode, cctx.request.sourceCode);
     if (auto found = cctx.ctx.request.symbolTable.FindSymbolsPtr(qName))
     {
         for (const auto& sym : *found)
@@ -72,9 +75,10 @@ void CollectScopedCandidates(TSNode funcNode, const CallCandidateContext& cctx, 
     }
 }
 
-void CollectIdentifierCandidates(TSNode funcNode, const CallCandidateContext& cctx, std::vector<Symbol>& candidates)
+static void CollectIdentifierCandidates(TSNode funcNode, const CallCandidateContext& cctx,
+                                        std::vector<Symbol>& candidates)
 {
-    std::string name = NodeText(funcNode, cctx.request.sourceCode);
+    std::string name = parser::NodeText(funcNode, cctx.request.sourceCode);
     for (const auto& sym : FindSymbolsInScope(name, funcNode, cctx.request.sourceCode, cctx.ctx.request.symbolTable))
     {
         if (sym.type == SymbolType::Function)
@@ -112,13 +116,13 @@ void CollectIdentifierCandidates(TSNode funcNode, const CallCandidateContext& cc
 
 /**
  * @brief Validate candidate return types.
- * @param[in] callNode Parameter callNode.
- * @param[in] candidates Parameter candidates.
- * @param[in,out] ctx Parameter ctx.
+ * @param[in] callNode Call expression AST node.
+ * @param[in] candidates Candidate symbols or overloads.
+ * @param[in,out] ctx Diagnostic collection and analysis context.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
  */
-void ValidateCandidateReturnTypes(TSNode callNode, const std::vector<Symbol>& candidates, DiagnosticContext& ctx)
+static void ValidateCandidateReturnTypes(TSNode callNode, const std::vector<Symbol>& candidates, DiagnosticContext& ctx)
 {
     if (candidates.empty())
     {
@@ -159,7 +163,8 @@ void ValidateCandidateReturnTypes(TSNode callNode, const std::vector<Symbol>& ca
     }
 }
 
-void CheckCallLValue(TSNode callNode, const LValueCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
+static void CheckCallLValue(TSNode callNode, const LValueCheckRequest& request, const Scope* scope,
+                            DiagnosticContext& ctx)
 {
     TSNode funcNode = parser::GetCallCallee(callNode);
     if (ts_node_is_null(funcNode))
@@ -188,8 +193,8 @@ void CheckCallLValue(TSNode callNode, const LValueCheckRequest& request, const S
     ValidateCandidateReturnTypes(callNode, candidates, ctx);
 }
 
-bool IsIdentifierAssignable(std::string_view name, const Scope* scope, const SymbolTable& table,
-                            uint32_t refByte = UINT32_MAX)
+static bool IsIdentifierAssignable(std::string_view name, const Scope* scope, const SymbolTable& table,
+                                   uint32_t refByte = UINT32_MAX)
 {
     if (IsPrimitiveTypeName(name))
     {
@@ -220,9 +225,9 @@ bool IsIdentifierAssignable(std::string_view name, const Scope* scope, const Sym
     return true;
 }
 
-bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const DiagnosticContext& ctx);
+static bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const DiagnosticContext& ctx);
 
-bool IsAssignableMember(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
+static bool IsAssignableMember(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
     TSNode objNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldObject);
     TSNode memNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldMember);
@@ -230,7 +235,7 @@ bool IsAssignableMember(TSNode node, const Scope* scope, const DiagnosticContext
     {
         return true;
     }
-    std::string memName = NodeText(memNode, ctx.request.sourceCode);
+    std::string memName = parser::NodeText(memNode, ctx.request.sourceCode);
     if (memName.empty())
     {
         return true;
@@ -277,7 +282,7 @@ bool IsAssignableMember(TSNode node, const Scope* scope, const DiagnosticContext
     return true;
 }
 
-bool IsTernaryAssignable(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
+static bool IsTernaryAssignable(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
     TSNode consequence = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldConsequence);
     TSNode alternative = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldAlternative);
@@ -302,7 +307,7 @@ bool IsTernaryAssignable(TSNode node, const Scope* scope, const DiagnosticContex
     return true;
 }
 
-bool IsUnaryAssignable(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
+static bool IsUnaryAssignable(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
@@ -314,14 +319,14 @@ bool IsUnaryAssignable(TSNode node, const Scope* scope, const DiagnosticContext&
     return false;
 }
 
-bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const DiagnosticContext& ctx)
+static bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const DiagnosticContext& ctx)
 {
     if (ts_node_is_null(rawNode))
     {
         return false;
     }
 
-    TSNode node = UnwrapParentheses(rawNode);
+    TSNode node = parser::UnwrapParentheses(rawNode);
     if (ts_node_is_null(node))
     {
         return false;
@@ -347,13 +352,14 @@ bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const Diagnostic
     }
     if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier || sym == gs.tokFunction)
     {
-        return IsIdentifierAssignable(NodeText(node, ctx.request.sourceCode), scope, ctx.request.symbolTable,
+        return IsIdentifierAssignable(parser::NodeText(node, ctx.request.sourceCode), scope, ctx.request.symbolTable,
                                       ts_node_start_byte(node));
     }
     return false;
 }
 
-void CheckAssignmentTarget(TSNode node, const LValueCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
+static void CheckAssignmentTarget(TSNode node, const LValueCheckRequest& request, const Scope* scope,
+                                  DiagnosticContext& ctx)
 {
     TSNode target = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
     if (ts_node_is_null(target))
@@ -370,7 +376,7 @@ void CheckAssignmentTarget(TSNode node, const LValueCheckRequest& request, const
         return;
     }
 
-    TSNode unwrapped = UnwrapParentheses(target);
+    TSNode unwrapped = parser::UnwrapParentheses(target);
     if (ts_node_symbol(unwrapped) == gs.symCallExpression)
     {
         CheckCallLValue(unwrapped, request, scope, ctx);
@@ -395,7 +401,7 @@ void CheckAssignmentTarget(TSNode node, const LValueCheckRequest& request, const
     }
 }
 
-void CheckLValuesIndexed(const LValueCheckRequest& request, DiagnosticContext& ctx)
+static void CheckLValuesIndexed(const LValueCheckRequest& request, DiagnosticContext& ctx)
 {
     if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
     {
@@ -413,14 +419,11 @@ void CheckLValuesIndexed(const LValueCheckRequest& request, DiagnosticContext& c
         CheckAssignmentTarget(node, request, scope, ctx);
     }
 }
-} // namespace
 
 /**
  * @brief Check l values.
- * @param[in] request Parameter request.
- * @param[in,out] ctx Parameter ctx.
- * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with CheckMemberAccess in server/src/analysis/AccessChecker.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (98%) with CheckCallArguments
+ * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
+ * @param[in,out] ctx Diagnostic collection and analysis context.
  * in server/src/analysis/CallChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  * Structural overlap (97%) with CheckConstCorrectness in server/src/analysis/ConstChecker.cpp. Candidate for
  * unification in server/src/analysis/SemanticHelpers.h.

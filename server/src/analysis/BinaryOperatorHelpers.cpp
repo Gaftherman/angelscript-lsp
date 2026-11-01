@@ -117,10 +117,8 @@ bool IsNullOperand(TSNode node, std::string_view type)
 
 /**
  * @brief Strip modifiers.
- * @param[in] type Parameter type.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (68%) with CleanExpressionType in
- * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Manually
+ * @param[in] type Token type or semantic type.
+ * @return Calculated or extracted result of the operation.
  * re-evaluates AST for isConst; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo /
  * Symbol::modifiers.isConst. Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.

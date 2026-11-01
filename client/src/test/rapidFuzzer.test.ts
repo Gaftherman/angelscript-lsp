@@ -86,7 +86,8 @@ async function measureFeature<T>(feature: string, fn: () => Thenable<T>): Promis
     return result;
 }
 
-suite('Live Rapid Fuzzer & Feature Reaction Benchmarks', () => {
+suite('Live Rapid Fuzzer & Feature Reaction Benchmarks', function () {
+    this.timeout(30000);
     let fixtureUri: Uri;
     let editor: TextEditor;
     let hasServerBinary = false;

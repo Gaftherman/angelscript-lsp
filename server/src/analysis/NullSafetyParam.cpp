@@ -8,9 +8,7 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
-void CollectParametersFromScope(TSNode bodyNode, const Scope* scopeRoot, FlowState& state)
+static void CollectParametersFromScope(TSNode bodyNode, const Scope* scopeRoot, FlowState& state)
 {
     if (!scopeRoot || ts_node_is_null(bodyNode))
     {
@@ -34,7 +32,7 @@ void CollectParametersFromScope(TSNode bodyNode, const Scope* scopeRoot, FlowSta
     }
 }
 
-TSNode FindParameterListNode(TSNode funcNode)
+static TSNode FindParameterListNode(TSNode funcNode)
 {
     TSNode params = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldParameters);
     if (!ts_node_is_null(params))
@@ -55,7 +53,7 @@ TSNode FindParameterListNode(TSNode funcNode)
     return TSNode{};
 }
 
-void CollectRegularParameters(TSNode params, std::string_view sourceCode, FlowState& state)
+static void CollectRegularParameters(TSNode params, std::string_view sourceCode, FlowState& state)
 {
     const uint32_t count = ts_node_named_child_count(params);
     for (uint32_t i = 0; i < count; ++i)
@@ -89,7 +87,8 @@ void CollectRegularParameters(TSNode params, std::string_view sourceCode, FlowSt
             continue;
         }
 
-        std::string name = NodeText(parser::GetChildByField(param, parser::GetGrammarSymbols().fieldName), sourceCode);
+        std::string name =
+            parser::NodeText(parser::GetChildByField(param, parser::GetGrammarSymbols().fieldName), sourceCode);
         if (name.empty())
         {
             for (uint32_t j = ts_node_named_child_count(param); j > 0; --j)
@@ -110,7 +109,7 @@ void CollectRegularParameters(TSNode params, std::string_view sourceCode, FlowSt
     }
 }
 
-void CollectParametersFromAST(TSNode funcNode, std::string_view sourceCode, FlowState& state)
+static void CollectParametersFromAST(TSNode funcNode, std::string_view sourceCode, FlowState& state)
 {
     TSNode params = FindParameterListNode(funcNode);
     if (ts_node_is_null(params))
@@ -134,7 +133,6 @@ void CollectParametersFromAST(TSNode funcNode, std::string_view sourceCode, Flow
 
     CollectRegularParameters(params, sourceCode, state);
 }
-} // namespace
 
 TSNode FindFunctionBody(TSNode funcNode)
 {

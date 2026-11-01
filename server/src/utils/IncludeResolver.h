@@ -213,8 +213,3 @@ class IncludeResolver
                        const std::vector<std::string>& allowedRoots = {});
 };
 } // namespace angel_lsp::utils
-
-namespace angel_lsp
-{
-using utils::IncludeResolver;
-} // namespace angel_lsp

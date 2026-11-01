@@ -5,15 +5,13 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 
 /**
  * @brief Cleans property name by stripping m_ or _ prefix and capitalizing the first character.
  * @param[in] fieldName Member variable name.
  * @return Cleaned property name suitable for accessor generation.
  */
-std::string CleanPropertyName(std::string_view fieldName)
+static std::string CleanPropertyName(std::string_view fieldName)
 {
     std::string prop(fieldName);
     if (prop.starts_with("m_") && prop.size() > 2)
@@ -39,7 +37,8 @@ std::string CleanPropertyName(std::string_view fieldName)
  * @param[out] classBody Extracted class body node.
  * @return True if class declaration and body were located.
  */
-bool FindEnclosingClassAndBody(TSNode leaf, std::string_view sourceCode, std::string& className, TSNode& classBody)
+static bool FindEnclosingClassAndBody(TSNode leaf, std::string_view sourceCode, std::string& className,
+                                      TSNode& classBody)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode classNode = parser::FindAncestorWithSymbol(leaf, gs.symClassDeclaration);
@@ -70,7 +69,7 @@ bool FindEnclosingClassAndBody(TSNode leaf, std::string_view sourceCode, std::st
         return false;
     }
     TSNode nameNode = parser::GetChildByField(classNode, gs.fieldName);
-    className = GetNodeText(nameNode, sourceCode);
+    className = parser::GetNodeText(nameNode, sourceCode);
     return true;
 }
 
@@ -82,7 +81,8 @@ bool FindEnclosingClassAndBody(TSNode leaf, std::string_view sourceCode, std::st
  * @param[in] className Name of enclosing class.
  * @return Vector of {fieldName, fieldType} pairs.
  */
-std::vector<std::pair<std::string, std::string>> CollectFieldsFromVarDecl(TSNode varDecl, std::string_view sourceCode)
+static std::vector<std::pair<std::string, std::string>> CollectFieldsFromVarDecl(TSNode varDecl,
+                                                                                 std::string_view sourceCode)
 {
     const auto& gs = parser::GetGrammarSymbols();
     std::vector<std::pair<std::string, std::string>> fields;
@@ -91,7 +91,7 @@ std::vector<std::pair<std::string, std::string>> CollectFieldsFromVarDecl(TSNode
     {
         typeNode = parser::GetChildByField(varDecl, gs.fieldType);
     }
-    std::string fieldType = GetNodeText(typeNode, sourceCode);
+    std::string fieldType = parser::GetNodeText(typeNode, sourceCode);
     if (fieldType.empty())
     {
         fieldType = "int";
@@ -106,7 +106,7 @@ std::vector<std::pair<std::string, std::string>> CollectFieldsFromVarDecl(TSNode
             if (ts_node_symbol(ch) == gs.symVariableDeclarator)
             {
                 TSNode vNameNode = parser::GetChildByField(ch, gs.fieldName);
-                std::string fName = GetNodeText(vNameNode, sourceCode);
+                std::string fName = parser::GetNodeText(vNameNode, sourceCode);
                 if (!fName.empty())
                 {
                     fields.push_back({fName, fieldType});
@@ -118,8 +118,8 @@ std::vector<std::pair<std::string, std::string>> CollectFieldsFromVarDecl(TSNode
     return fields;
 }
 
-std::vector<std::pair<std::string, std::string>> CollectFieldsForGetterSetter(TSNode leaf, TSNode classBody,
-                                                                              const CodeActionRequest& request)
+static std::vector<std::pair<std::string, std::string>> CollectFieldsForGetterSetter(TSNode leaf, TSNode classBody,
+                                                                                     const CodeActionRequest& request)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode varDecl = parser::FindAncestorWithSymbol(leaf, gs.symVariableDeclaration);
@@ -132,6 +132,8 @@ std::vector<std::pair<std::string, std::string>> CollectFieldsForGetterSetter(TS
     return {};
 }
 
+namespace code_action_accessors_detail
+{
 /**
  * @brief Represents Getter setter context.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -142,6 +144,9 @@ struct GetterSetterContext
     const std::pair<std::string, std::string>& field;
     TSPoint insertPt;
 };
+} // namespace code_action_accessors_detail
+
+using GetterSetterContext = code_action_accessors_detail::GetterSetterContext;
 
 /**
  * @brief Creates a CodeAction inserting an accessor text edit into the class body.
@@ -150,12 +155,9 @@ struct GetterSetterContext
  * @param[in] text Method code to insert.
  * @param[in] insertPt Class body insertion point.
  * @return Constructed CodeAction.
- * @note [REFACTOR-CANDIDATE] Structural overlap (78%) with BuildAddConstAction in
- * server/src/features/code_action/CodeActionConstQualifier.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-lsp::CodeAction CreateAccessorAction(const std::string& uri, const std::string& title, const std::string& text,
-                                     TSPoint insertPt)
+static lsp::CodeAction CreateAccessorAction(const std::string& uri, const std::string& title, const std::string& text,
+                                            TSPoint insertPt)
 {
     lsp::CodeAction action;
     action.title = title;
@@ -179,8 +181,8 @@ lsp::CodeAction CreateAccessorAction(const std::string& uri, const std::string& 
  * @param[in] propName Clean property name.
  * @return Pair of booleans {hasGetter, hasSetter}.
  */
-std::pair<bool, bool> CheckFieldAccessors(const analysis::SymbolTable& table, const std::string& className,
-                                          const std::string& propName)
+static std::pair<bool, bool> CheckFieldAccessors(const analysis::SymbolTable& table, const std::string& className,
+                                                 const std::string& propName)
 {
     const std::string getterName = "get_" + propName;
     const std::string setterName = "set_" + propName;
@@ -201,8 +203,8 @@ std::pair<bool, bool> CheckFieldAccessors(const analysis::SymbolTable& table, co
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
-void EmitGetterSetterActionsForField(const CodeActionRequest& request, const GetterSetterContext& ctx,
-                                     std::vector<lsp::CodeAction>& actions)
+static void EmitGetterSetterActionsForField(const CodeActionRequest& request, const GetterSetterContext& ctx,
+                                            std::vector<lsp::CodeAction>& actions)
 {
     const auto& [fName, fType] = ctx.field;
     std::string propName = CleanPropertyName(fName);
@@ -254,7 +256,7 @@ void EmitGetterSetterActionsForField(const CodeActionRequest& request, const Get
  * @param[in] sourceCode Source text of the document.
  * @return Insertion point coordinates.
  */
-TSPoint FindAccessorPropertyInsertionPoint(TSNode funcNode, TSNode parametersNode)
+static TSPoint FindAccessorPropertyInsertionPoint(TSNode funcNode, TSNode parametersNode)
 {
     TSPoint insertAt = ts_node_end_point(parametersNode);
     const uint32_t paramsEndByte = ts_node_end_byte(parametersNode);
@@ -278,8 +280,6 @@ TSPoint FindAccessorPropertyInsertionPoint(TSNode funcNode, TSNode parametersNod
     ts_tree_cursor_delete(&cursor);
     return insertAt;
 }
-
-} // namespace
 
 void TryAddGetterSetterActions(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions)
 {

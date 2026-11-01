@@ -176,15 +176,13 @@ bool IsPredefinedFile(const std::string_view& fileUri, const std::string_view ex
     return fileUri.ends_with(extension) || fileUri.ends_with(fmt::format("/{}", extension));
 }
 
-namespace
-{
 /**
  * @brief Advances pos past all ASCII whitespace characters.
  * @param[in] text Input string.
  * @param[in] pos Starting offset.
  * @return First non-whitespace index or text.size().
  */
-size_t SkipWhitespace(std::string_view text, size_t pos)
+static size_t SkipWhitespace(std::string_view text, size_t pos)
 {
     while (pos < text.size() && (text[pos] == ' ' || text[pos] == '\t' || text[pos] == '\r' || text[pos] == '\n'))
     {
@@ -199,7 +197,7 @@ size_t SkipWhitespace(std::string_view text, size_t pos)
  * @param[in] pos Starting offset.
  * @return Offset after 'const' and whitespace, or pos if no 'const' found.
  */
-size_t SkipConstQualifier(std::string_view text, size_t pos)
+static size_t SkipConstQualifier(std::string_view text, size_t pos)
 {
     pos = SkipWhitespace(text, pos);
     constexpr std::string_view kConst = "const";
@@ -221,7 +219,7 @@ size_t SkipConstQualifier(std::string_view text, size_t pos)
  * @param[in] openBrace Index of opening '{'.
  * @return Index of matching '}', or std::nullopt if unmatched.
  */
-std::optional<size_t> FindMatchingBrace(std::string_view text, size_t openBrace)
+static std::optional<size_t> FindMatchingBrace(std::string_view text, size_t openBrace)
 {
     int depth = 1;
     size_t k = openBrace + 1;
@@ -244,6 +242,8 @@ std::optional<size_t> FindMatchingBrace(std::string_view text, size_t openBrace)
     return std::nullopt;
 }
 
+namespace utils_detail
+{
 /**
  * @brief Represents Pattern span.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -254,6 +254,9 @@ struct PatternSpan
     size_t closeBrace{0};
     size_t nextIndex{0};
 };
+} // namespace utils_detail
+
+using PatternSpan = utils_detail::PatternSpan;
 
 /**
  * @brief Identifies an inline list pattern like '{repeat T}' following a closing paren.
@@ -261,7 +264,7 @@ struct PatternSpan
  * @param[in] closeParenPos Offset of ')'.
  * @return PatternSpan if an inline pattern followed by ';' is found, otherwise std::nullopt.
  */
-std::optional<PatternSpan> FindInlineListPattern(std::string_view text, size_t closeParenPos)
+static std::optional<PatternSpan> FindInlineListPattern(std::string_view text, size_t closeParenPos)
 {
     const size_t afterParen = SkipConstQualifier(text, closeParenPos + 1);
     if (afterParen >= text.size() || text[afterParen] != '{')
@@ -287,7 +290,7 @@ std::optional<PatternSpan> FindInlineListPattern(std::string_view text, size_t c
  * @param[in] openBrace Start offset.
  * @param[in] closeBrace End offset (inclusive).
  */
-void BlankPattern(std::string& result, size_t openBrace, size_t closeBrace)
+static void BlankPattern(std::string& result, size_t openBrace, size_t closeBrace)
 {
     for (size_t b = openBrace; b <= closeBrace; ++b)
     {
@@ -297,7 +300,6 @@ void BlankPattern(std::string& result, size_t openBrace, size_t closeBrace)
         }
     }
 }
-} // namespace
 
 std::string SanitizePredefinedContent(std::string_view source)
 {
@@ -347,10 +349,8 @@ bool IsPrimitiveType(const std::string& typeName)
     return parser::primitives::IsPrimitive(typeName);
 }
 
-namespace
-{
 /** @brief Splits a `/`-separated path into segments, dropping empties. */
-std::vector<std::string_view> PathSegments(std::string_view path)
+static std::vector<std::string_view> PathSegments(std::string_view path)
 {
     std::vector<std::string_view> segments;
     size_t start = 0;
@@ -369,7 +369,7 @@ std::vector<std::string_view> PathSegments(std::string_view path)
 }
 
 /** @brief `*` and `?` within one segment. `*` does not cross a separator. */
-bool SegmentMatches(std::string_view segment, std::string_view pattern)
+static bool SegmentMatches(std::string_view segment, std::string_view pattern)
 {
     size_t s = 0;
     size_t p = 0;
@@ -406,8 +406,8 @@ bool SegmentMatches(std::string_view segment, std::string_view pattern)
 }
 
 /** @brief Segment-wise match with `**` spanning any number of segments, including none. */
-bool SegmentsMatch(const std::vector<std::string_view>& path, size_t pi, const std::vector<std::string_view>& pattern,
-                   size_t qi)
+static bool SegmentsMatch(const std::vector<std::string_view>& path, size_t pi,
+                          const std::vector<std::string_view>& pattern, size_t qi)
 {
     while (qi < pattern.size())
     {
@@ -437,7 +437,6 @@ bool SegmentsMatch(const std::vector<std::string_view>& path, size_t pi, const s
     }
     return pi == path.size();
 }
-} // namespace
 
 bool MatchesGlob(std::string_view path, std::string_view pattern)
 {

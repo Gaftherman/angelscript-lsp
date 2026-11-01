@@ -17,8 +17,6 @@
 
 namespace angel_lsp::analysis
 {
-namespace
-{
 /**
  * @brief True when a declared type's written form begins with `const`.
  *
@@ -26,22 +24,18 @@ namespace
  * keep the type's source text, so this is what a declaration's constness looks like from
  * here. `const Entity@` counts: in AngelScript that is a handle to a read-only object,
  * which is exactly the case the engine refuses a mutation through.
- * @note [REFACTOR-CANDIDATE] Structural overlap (68%) with TypeTextIsHandleConst in
- * server/src/analysis/ConstChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Manually
  * re-evaluates AST for isConst; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo /
  * Symbol::modifiers.isConst.
  */
-bool TypeTextIsConst(std::string_view typeText)
+static bool TypeTextIsConst(std::string_view typeText)
 {
     return HasLeadingConst(typeText);
 }
 
 /**
  * @brief True when a handle type is declared const itself (e.g. `Type@ const`).
- * @note [REFACTOR-CANDIDATE] Structural overlap (68%) with TypeTextIsConst in server/src/analysis/ConstChecker.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-bool TypeTextIsHandleConst(std::string_view typeText)
+static bool TypeTextIsHandleConst(std::string_view typeText)
 {
     return HasTrailingConst(typeText);
 }
@@ -62,8 +56,8 @@ bool TypeTextIsHandleConst(std::string_view typeText)
  * @param[in] checkHandleConst True to check if handle itself is const (Type@ const).
  * @return True/false if parameter found and whether its type is const; std::nullopt if not found.
  */
-std::optional<bool> ParameterIsConst(TSNode node, std::string_view name, std::string_view sourceCode,
-                                     bool checkHandleConst = false)
+static std::optional<bool> ParameterIsConst(TSNode node, std::string_view name, std::string_view sourceCode,
+                                            bool checkHandleConst = false)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const std::array<TSSymbol, 4> ownerSyms = {gs.symFuncDeclaration, gs.symLambdaExpression, gs.symVirtualProperty,
@@ -90,7 +84,7 @@ std::optional<bool> ParameterIsConst(TSNode node, std::string_view name, std::st
         }
 
         TSNode nameNode = parser::GetChildByField(parameter, gs.fieldName);
-        if (ts_node_is_null(nameNode) || NodeText(nameNode, sourceCode) != name)
+        if (ts_node_is_null(nameNode) || parser::NodeText(nameNode, sourceCode) != name)
         {
             continue;
         }
@@ -100,12 +94,14 @@ std::optional<bool> ParameterIsConst(TSNode node, std::string_view name, std::st
         {
             return false;
         }
-        const std::string_view typeText = NodeText(typeNode, sourceCode);
+        const std::string_view typeText = parser::NodeText(typeNode, sourceCode);
         return checkHandleConst ? TypeTextIsHandleConst(typeText) : TypeTextIsConst(typeText);
     }
     return std::nullopt;
 }
 
+namespace const_checker_detail
+{
 /** @brief What one expression is, as far as constness goes. */
 enum class Constness
 {
@@ -113,11 +109,14 @@ enum class Constness
     Mutable,
     Const
 };
+} // namespace const_checker_detail
 
+using Constness = const_checker_detail::Constness;
+
+namespace const_checker_detail
+{
 /**
  * @brief Context bundled for constness resolution queries.
- * @note [REFACTOR-CANDIDATE] Clustered under Member Access & Scope Lookup Context. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
 struct ConstContext
 {
@@ -126,11 +125,14 @@ struct ConstContext
     std::string_view sourceCode;
     ExpressionTypeCache* cache = nullptr;
 };
+} // namespace const_checker_detail
 
-Constness ResolveConstness(TSNode node, const ConstContext& ctx);
+using ConstContext = const_checker_detail::ConstContext;
+
+static Constness ResolveConstness(TSNode node, const ConstContext& ctx);
 
 /** @brief Constness of a plain name, whether it is a local, a parameter or a global. */
-Constness ResolveNameConstness(std::string_view name, TSNode node, const ConstContext& ctx)
+static Constness ResolveNameConstness(std::string_view name, TSNode node, const ConstContext& ctx)
 {
     if (name.empty())
     {
@@ -176,6 +178,8 @@ Constness ResolveNameConstness(std::string_view name, TSNode node, const ConstCo
     return Constness::Unknown;
 }
 
+namespace const_checker_detail
+{
 /**
  * @brief Class and const qualification for enclosing method or accessor.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -186,6 +190,9 @@ struct EnclosingMethodInfo
     bool isConstMethod = false;
     std::string className;
 };
+} // namespace const_checker_detail
+
+using EnclosingMethodInfo = const_checker_detail::EnclosingMethodInfo;
 
 /**
  * @brief Identifies enclosing class and whether the enclosing method or accessor is const.
@@ -196,7 +203,7 @@ struct EnclosingMethodInfo
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
-EnclosingMethodInfo FindEnclosingMethod(TSNode node, std::string_view sourceCode)
+static EnclosingMethodInfo FindEnclosingMethod(TSNode node, std::string_view sourceCode)
 {
     EnclosingMethodInfo info;
     const auto& gs = parser::GetGrammarSymbols();
@@ -214,7 +221,7 @@ EnclosingMethodInfo FindEnclosingMethod(TSNode node, std::string_view sourceCode
         TSNode nameNode = parser::GetChildByField(classNode, gs.fieldName);
         if (!ts_node_is_null(nameNode))
         {
-            info.className = NodeText(nameNode, sourceCode);
+            info.className = parser::NodeText(nameNode, sourceCode);
         }
     }
 
@@ -231,7 +238,7 @@ EnclosingMethodInfo FindEnclosingMethod(TSNode node, std::string_view sourceCode
             TSNode child = ts_tree_cursor_current_node(&cursor);
             const TSSymbol sym = ts_node_symbol(child);
             if (sym == gs.tokConst ||
-                (sym == gs.symFuncAttributes && NodeText(child, sourceCode).find("const") != std::string::npos))
+                (sym == gs.symFuncAttributes && parser::NodeText(child, sourceCode).find("const") != std::string::npos))
             {
                 info.isConstMethod = true;
                 break;
@@ -250,8 +257,8 @@ EnclosingMethodInfo FindEnclosingMethod(TSNode node, std::string_view sourceCode
  * @param[in] table Workspace symbol table.
  * @return Pointer to VariableSignature if found, nullptr otherwise.
  */
-const VariableSignature* FindClassMemberVariable(const std::string& className, const std::string& memberName,
-                                                 const SymbolTable& table, ExpressionTypeCache* cache = nullptr)
+static const VariableSignature* FindClassMemberVariable(const std::string& className, const std::string& memberName,
+                                                        const SymbolTable& table, ExpressionTypeCache* cache = nullptr)
 {
     if (className.empty() || memberName.empty())
     {
@@ -273,8 +280,8 @@ const VariableSignature* FindClassMemberVariable(const std::string& className, c
     return nullptr;
 }
 
-bool IsMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const ConstContext& ctx,
-                    std::string& outMemberName);
+static bool IsMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const ConstContext& ctx,
+                           std::string& outMemberName);
 
 /**
  * @brief Checks if an identifier or scoped identifier represents a member of 'this'.
@@ -285,10 +292,10 @@ bool IsMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const Con
  * @param[out] outMemberName Resolved member name if matched.
  * @return True if target represents a member of 'this'.
  */
-bool IsIdentifierMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const ConstContext& ctx,
-                              std::string& outMemberName)
+static bool IsIdentifierMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const ConstContext& ctx,
+                                     std::string& outMemberName)
 {
-    const std::string text = NodeText(target, ctx.sourceCode);
+    const std::string text = parser::NodeText(target, ctx.sourceCode);
     const auto [prefix, baseName] = utils::SplitScopedName(text);
     if (!prefix.empty() && prefix != encInfo.className)
     {
@@ -328,8 +335,8 @@ bool IsIdentifierMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo,
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
-bool IsMemberExprOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const ConstContext& ctx,
-                        std::string& outMemberName)
+static bool IsMemberExprOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const ConstContext& ctx,
+                               std::string& outMemberName)
 {
     TSNode obj = parser::GetChildByField(target, parser::GetGrammarSymbols().fieldObject);
     TSNode member = parser::GetChildByField(target, parser::GetGrammarSymbols().fieldMember);
@@ -341,9 +348,9 @@ bool IsMemberExprOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol objSym = ts_node_symbol(obj);
     if (objSym == gs.symThisExpression ||
-        (objSym == gs.symIdentifier && NodeText(obj, ctx.sourceCode) == parser::keywords::This))
+        (objSym == gs.symIdentifier && parser::NodeText(obj, ctx.sourceCode) == parser::keywords::This))
     {
-        outMemberName = NodeText(member, ctx.sourceCode);
+        outMemberName = parser::NodeText(member, ctx.sourceCode);
         return true;
     }
 
@@ -364,7 +371,7 @@ bool IsMemberExprOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const
         }
         if (!isHandle)
         {
-            outMemberName = NodeText(member, ctx.sourceCode);
+            outMemberName = parser::NodeText(member, ctx.sourceCode);
             return true;
         }
     }
@@ -380,8 +387,8 @@ bool IsMemberExprOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const
  * @param[out] outMemberName Name of the modified member.
  * @return True if target modifies 'this' or a member of 'this' in a const context.
  */
-bool IsMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const ConstContext& ctx,
-                    std::string& outMemberName)
+static bool IsMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const ConstContext& ctx,
+                           std::string& outMemberName)
 {
     if (!encInfo.inClass || !encInfo.isConstMethod || ts_node_is_null(target))
     {
@@ -391,7 +398,7 @@ bool IsMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const Con
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol targetSym = ts_node_symbol(target);
     if (targetSym == gs.symThisExpression ||
-        (targetSym == gs.symIdentifier && NodeText(target, ctx.sourceCode) == parser::keywords::This))
+        (targetSym == gs.symIdentifier && parser::NodeText(target, ctx.sourceCode) == parser::keywords::This))
     {
         outMemberName = parser::keywords::This;
         return true;
@@ -416,7 +423,7 @@ static Constness ResolveLeafConstness(TSNode node, const ConstContext& ctx)
     const TSSymbol nodeSym = ts_node_symbol(node);
 
     if (nodeSym == gs.symThisExpression ||
-        (nodeSym == gs.symIdentifier && NodeText(node, ctx.sourceCode) == parser::keywords::This))
+        (nodeSym == gs.symIdentifier && parser::NodeText(node, ctx.sourceCode) == parser::keywords::This))
     {
         const auto encInfo = FindEnclosingMethod(node, ctx.sourceCode);
         return (encInfo.inClass && encInfo.isConstMethod) ? Constness::Const : Constness::Mutable;
@@ -424,12 +431,12 @@ static Constness ResolveLeafConstness(TSNode node, const ConstContext& ctx)
 
     if (nodeSym == gs.symIdentifier)
     {
-        return ResolveNameConstness(NodeText(node, ctx.sourceCode), node, ctx);
+        return ResolveNameConstness(parser::NodeText(node, ctx.sourceCode), node, ctx);
     }
 
     if (nodeSym == gs.symScopedIdentifier)
     {
-        const std::string whole = NodeText(node, ctx.sourceCode);
+        const std::string whole = parser::NodeText(node, ctx.sourceCode);
         const Constness qualified = ResolveNameConstness(whole, node, ctx);
         if (qualified != Constness::Unknown)
         {
@@ -441,7 +448,7 @@ static Constness ResolveLeafConstness(TSNode node, const ConstContext& ctx)
     return Constness::Unknown;
 }
 
-Constness ResolveConstness(TSNode node, const ConstContext& ctx)
+static Constness ResolveConstness(TSNode node, const ConstContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode current = node;
@@ -475,10 +482,10 @@ Constness ResolveConstness(TSNode node, const ConstContext& ctx)
     return Constness::Unknown;
 }
 
+namespace const_checker_detail
+{
 /**
  * @brief What the pass concluded about a method name looked up on a type.
- * @note [REFACTOR-CANDIDATE] Clustered under Member Access & Scope Lookup Context. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
 struct MethodLookup
 {
@@ -488,6 +495,9 @@ struct MethodLookup
         false; ///< True if a declaration returns a reference to its own type (e.g. Type& Method()).
     std::string declaringClass;
 };
+} // namespace const_checker_detail
+
+using MethodLookup = const_checker_detail::MethodLookup;
 
 /**
  * @brief Checks whether a method signature returns a reference to its owning type.
@@ -502,7 +512,7 @@ struct MethodLookup
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
  */
-bool IsSelfReferenceReturn(const FunctionSignature& fn, const std::string& owner)
+static bool IsSelfReferenceReturn(const FunctionSignature& fn, const std::string& owner)
 {
     const bool isRef = fn.modifiers.isReturnReference || IsReferenceTypeView(fn.returnType);
     return isRef && (CleanBaseType(fn.returnType) == owner || CleanBaseType(fn.returnBaseTypeName) == owner);
@@ -516,8 +526,8 @@ bool IsSelfReferenceReturn(const FunctionSignature& fn, const std::string& owner
  * failed overload lookup, not a refusal of the call, so one const member in the set makes
  * the call legal and this pass silent.
  */
-MethodLookup FindMethod(const std::string& typeName, const std::string& methodName, const SymbolTable& table,
-                        ExpressionTypeCache* cache = nullptr)
+static MethodLookup FindMethod(const std::string& typeName, const std::string& methodName, const SymbolTable& table,
+                               ExpressionTypeCache* cache = nullptr)
 {
     MethodLookup result;
     if (typeName.empty() || methodName.empty())
@@ -553,7 +563,7 @@ MethodLookup FindMethod(const std::string& typeName, const std::string& methodNa
     return result;
 }
 
-Constness ResolveHandleConstness(TSNode node, const ConstContext& ctx)
+static Constness ResolveHandleConstness(TSNode node, const ConstContext& ctx)
 {
     if (ts_node_is_null(node))
     {
@@ -564,7 +574,7 @@ Constness ResolveHandleConstness(TSNode node, const ConstContext& ctx)
     const TSSymbol nodeSym = ts_node_symbol(node);
     if (nodeSym == gs.symIdentifier || nodeSym == gs.symScopedIdentifier)
     {
-        const std::string name = NodeText(node, ctx.sourceCode);
+        const std::string name = parser::NodeText(node, ctx.sourceCode);
         if (ctx.scope)
         {
             if (const LocalDefinition* def =
@@ -595,7 +605,7 @@ Constness ResolveHandleConstness(TSNode node, const ConstContext& ctx)
     return Constness::Unknown;
 }
 
-void CheckAssignment(TSNode node, const ConstCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
+static void CheckAssignment(TSNode node, const ConstCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
 {
     TSNode target = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
     if (ts_node_is_null(target))
@@ -634,7 +644,7 @@ void CheckAssignment(TSNode node, const ConstCheckRequest& request, const Scope*
     {
         if (ResolveHandleConstness(actualTarget, constCtx) == Constness::Const)
         {
-            ctx.EmitAtNode(target, "as-err-const-assignment", NodeTextString(target, request.sourceCode));
+            ctx.EmitAtNode(target, "as-err-const-assignment", parser::NodeTextString(target, request.sourceCode));
         }
         return;
     }
@@ -644,10 +654,10 @@ void CheckAssignment(TSNode node, const ConstCheckRequest& request, const Scope*
         return;
     }
 
-    ctx.EmitAtNode(target, "as-err-const-assignment", NodeTextString(target, request.sourceCode));
+    ctx.EmitAtNode(target, "as-err-const-assignment", parser::NodeTextString(target, request.sourceCode));
 }
 
-void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
+static void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode callee = parser::GetChildByField(node, gs.fieldFunction);
@@ -676,7 +686,7 @@ void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const Scope*
         return;
     }
 
-    const std::string methodName = NodeText(memberNode, request.sourceCode);
+    const std::string methodName = parser::NodeText(memberNode, request.sourceCode);
     const MethodLookup method = FindMethod(objectType, methodName, table, ctx.request.exprCache);
     if (!method.found || method.hasConstOverload || method.returnsSelfReference)
     {
@@ -687,7 +697,7 @@ void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const Scope*
                    methodName);
 }
 
-void CheckConstCorrectnessIndexed(const ConstCheckRequest& request, DiagnosticContext& ctx)
+static void CheckConstCorrectnessIndexed(const ConstCheckRequest& request, DiagnosticContext& ctx)
 {
     if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
     {
@@ -716,14 +726,11 @@ void CheckConstCorrectnessIndexed(const ConstCheckRequest& request, DiagnosticCo
                                               }
                                           });
 }
-} // namespace
 
 /**
  * @brief Check const correctness.
- * @param[in] request Parameter request.
- * @param[in,out] ctx Parameter ctx.
- * @note [REFACTOR-CANDIDATE] Structural overlap (97%) with CheckMemberAccess in server/src/analysis/AccessChecker.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (97%) with CheckCallArguments
+ * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
+ * @param[in,out] ctx Diagnostic collection and analysis context.
  * in server/src/analysis/CallChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  * Structural overlap (97%) with CheckLValues in server/src/analysis/LValueChecker.cpp. Candidate for unification in
  * server/src/analysis/SemanticHelpers.h.

@@ -9,11 +9,9 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 
-void AddLineSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag, std::string_view aliasOrCode,
-                           std::vector<lsp::CodeAction>& actions)
+static void AddLineSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag,
+                                  std::string_view aliasOrCode, std::vector<lsp::CodeAction>& actions)
 {
     const uint32_t line = diag.range.start.line;
     const std::string_view lineStr = utils::GetLine(request.sourceCode, line);
@@ -28,8 +26,8 @@ void AddLineSuppressionFix(const CodeActionRequest& request, const lsp::Diagnost
         request.uri, {std::move(edit)}));
 }
 
-void AddRangeSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag, std::string_view aliasOrCode,
-                            std::vector<lsp::CodeAction>& actions)
+static void AddRangeSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag,
+                                   std::string_view aliasOrCode, std::vector<lsp::CodeAction>& actions)
 {
     const uint32_t startLine = diag.range.start.line;
     const uint32_t endLine = diag.range.end.line;
@@ -52,8 +50,8 @@ void AddRangeSuppressionFix(const CodeActionRequest& request, const lsp::Diagnos
                                          diag, request.uri, {std::move(startEdit), std::move(endEdit)}));
 }
 
-void AddFileSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag, std::string_view aliasOrCode,
-                           std::vector<lsp::CodeAction>& actions)
+static void AddFileSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag,
+                                  std::string_view aliasOrCode, std::vector<lsp::CodeAction>& actions)
 {
     lsp::TextEdit edit;
     edit.range.start = lsp::Position{0, 0};
@@ -64,8 +62,6 @@ void AddFileSuppressionFix(const CodeActionRequest& request, const lsp::Diagnost
         i18n::FormatMessage(request.i18n, "action-suppress-file", "Disable {} for entire file", aliasOrCode), diag,
         request.uri, {std::move(edit)}));
 }
-
-} // namespace
 
 void TryAddDiagnosticSuppressionFixes(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
 {

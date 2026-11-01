@@ -7,25 +7,23 @@ extern "C" const TSLanguage* tree_sitter_angelscript();
 
 namespace angel_lsp::parser
 {
-namespace
-{
 
-inline TSSymbol SymNamed(const TSLanguage* lang, std::string_view name) noexcept
+static inline TSSymbol SymNamed(const TSLanguage* lang, std::string_view name) noexcept
 {
     return ts_language_symbol_for_name(lang, name.data(), static_cast<uint32_t>(name.size()), true);
 }
 
-inline TSSymbol SymAnon(const TSLanguage* lang, std::string_view name) noexcept
+static inline TSSymbol SymAnon(const TSLanguage* lang, std::string_view name) noexcept
 {
     return ts_language_symbol_for_name(lang, name.data(), static_cast<uint32_t>(name.size()), false);
 }
 
-inline TSFieldId FieldId(const TSLanguage* lang, std::string_view name) noexcept
+static inline TSFieldId FieldId(const TSLanguage* lang, std::string_view name) noexcept
 {
     return ts_language_field_id_for_name(lang, name.data(), static_cast<uint32_t>(name.size()));
 }
 
-void PopulateDeclarations(const TSLanguage* lang, GrammarSymbols& gs) noexcept
+static void PopulateDeclarations(const TSLanguage* lang, GrammarSymbols& gs) noexcept
 {
     gs.symScript = SymNamed(lang, parser::nodes::Script);
     gs.symClassDeclaration = SymNamed(lang, parser::nodes::ClassDeclaration);
@@ -59,7 +57,7 @@ void PopulateDeclarations(const TSLanguage* lang, GrammarSymbols& gs) noexcept
     gs.symLambdaParameterList = SymNamed(lang, parser::nodes::LambdaParameterList);
 }
 
-void PopulateExpressionsAndLiterals(const TSLanguage* lang, GrammarSymbols& gs) noexcept
+static void PopulateExpressionsAndLiterals(const TSLanguage* lang, GrammarSymbols& gs) noexcept
 {
     gs.symIdentifier = SymNamed(lang, parser::nodes::Identifier);
     gs.symScopedIdentifier = SymNamed(lang, parser::nodes::ScopedIdentifier);
@@ -113,7 +111,7 @@ void PopulateExpressionsAndLiterals(const TSLanguage* lang, GrammarSymbols& gs) 
     gs.symExpressionStatement = SymNamed(lang, parser::nodes::ExpressionStatement);
 }
 
-void PopulateLogicalAndRelationalTokens(const TSLanguage* lang, GrammarSymbols& gs) noexcept
+static void PopulateLogicalAndRelationalTokens(const TSLanguage* lang, GrammarSymbols& gs) noexcept
 {
     gs.tokAmpAmp = SymAnon(lang, "&&");
     gs.tokAnd = SymAnon(lang, "and");
@@ -138,7 +136,7 @@ void PopulateLogicalAndRelationalTokens(const TSLanguage* lang, GrammarSymbols& 
     gs.tokGtEq = SymAnon(lang, ">=");
 }
 
-void PopulateArithmeticAndAssignmentTokens(const TSLanguage* lang, GrammarSymbols& gs) noexcept
+static void PopulateArithmeticAndAssignmentTokens(const TSLanguage* lang, GrammarSymbols& gs) noexcept
 {
     gs.tokPlus = SymAnon(lang, "+");
     gs.tokDash = SymAnon(lang, "-");
@@ -168,7 +166,7 @@ void PopulateArithmeticAndAssignmentTokens(const TSLanguage* lang, GrammarSymbol
     gs.tokAtEq = SymAnon(lang, "@=");
 }
 
-void PopulateKeywordTokens(const TSLanguage* lang, GrammarSymbols& gs) noexcept
+static void PopulateKeywordTokens(const TSLanguage* lang, GrammarSymbols& gs) noexcept
 {
     gs.tokConst = SymAnon(lang, "const");
     gs.tokIn = SymAnon(lang, "in");
@@ -198,7 +196,7 @@ void PopulateKeywordTokens(const TSLanguage* lang, GrammarSymbols& gs) noexcept
     gs.tokNull = SymAnon(lang, "null");
 }
 
-void PopulatePunctuationTokens(const TSLanguage* lang, GrammarSymbols& gs) noexcept
+static void PopulatePunctuationTokens(const TSLanguage* lang, GrammarSymbols& gs) noexcept
 {
     gs.tokAt = SymAnon(lang, "@");
     gs.tokQmark = SymAnon(lang, "?");
@@ -215,7 +213,7 @@ void PopulatePunctuationTokens(const TSLanguage* lang, GrammarSymbols& gs) noexc
     gs.tokCloseBracket = SymAnon(lang, "]");
 }
 
-void PopulateFields(const TSLanguage* lang, GrammarSymbols& gs) noexcept
+static void PopulateFields(const TSLanguage* lang, GrammarSymbols& gs) noexcept
 {
     gs.fieldName = FieldId(lang, parser::fields::Name);
     gs.fieldType = FieldId(lang, parser::fields::Type);
@@ -254,8 +252,6 @@ void PopulateFields(const TSLanguage* lang, GrammarSymbols& gs) noexcept
     gs.fieldParam = FieldId(lang, parser::fields::Param);
     gs.fieldUnderlyingType = FieldId(lang, parser::fields::UnderlyingType);
 }
-
-} // namespace
 
 const GrammarSymbols& GetGrammarSymbols() noexcept
 {

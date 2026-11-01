@@ -11,7 +11,7 @@
 
 namespace angel_lsp::features
 {
-namespace
+namespace code_action_repeated_conversion_detail
 {
 /**
  * @brief Represents Extracted diag info.
@@ -23,8 +23,11 @@ struct ExtractedDiagInfo
     std::string fromType;
     std::string toType;
 };
+} // namespace code_action_repeated_conversion_detail
 
-std::optional<ExtractedDiagInfo> ParseDiagnosticMessage(const lsp::Diagnostic& diag)
+using ExtractedDiagInfo = code_action_repeated_conversion_detail::ExtractedDiagInfo;
+
+static std::optional<ExtractedDiagInfo> ParseDiagnosticMessage(const lsp::Diagnostic& diag)
 {
     if (!MatchDiagnosticCode(diag, "as-hint-repeated-conversion") || !std::holds_alternative<lsp::String>(diag.message))
     {
@@ -46,7 +49,7 @@ std::optional<ExtractedDiagInfo> ParseDiagnosticMessage(const lsp::Diagnostic& d
                              msg.substr(q5 + 1, q6 - q5 - 1)};
 }
 
-std::string DeriveVariableName(std::string_view exprText, std::string_view toType)
+static std::string DeriveVariableName(std::string_view exprText, std::string_view toType)
 {
     const size_t lastDot = exprText.rfind('.');
     std::string candidate = (lastDot != std::string_view::npos && lastDot + 1 < exprText.size())
@@ -67,14 +70,14 @@ std::string DeriveVariableName(std::string_view exprText, std::string_view toTyp
     return candidate;
 }
 
-TSNode FindRootIfStatement(TSNode node)
+static TSNode FindRootIfStatement(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
     return parser::FindOutermostAncestorWithSymbol(node, gs.symIfStatement);
 }
 
-void BuildCodeActionEdits(TSNode rootIf, const ExtractedDiagInfo& info, const CodeActionRequest& request,
-                          std::vector<lsp::CodeAction>& actions)
+static void BuildCodeActionEdits(TSNode rootIf, const ExtractedDiagInfo& info, const CodeActionRequest& request,
+                                 std::vector<lsp::CodeAction>& actions)
 {
     const std::string varName = DeriveVariableName(info.exprText, info.toType);
     const uint32_t stmtRow = ts_node_start_point(rootIf).row;
@@ -113,7 +116,6 @@ void BuildCodeActionEdits(TSNode rootIf, const ExtractedDiagInfo& info, const Co
 
     actions.push_back(std::move(action));
 }
-} // namespace
 
 void TryAddRepeatedConversionFix(const CodeActionRequest& request, TSNode rootNode,
                                  std::vector<lsp::CodeAction>& actions)

@@ -9,14 +9,12 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 /**
  * @brief Strips leading whitespace from a string view.
  * @param[in] s Input string view.
  * @return String view without leading spaces, tabs, or carriage returns.
  */
-std::string_view TrimLeading(std::string_view s)
+static std::string_view TrimLeading(std::string_view s)
 {
     size_t start = 0;
     while (start < s.size() && (s[start] == ' ' || s[start] == '\t' || s[start] == '\r'))
@@ -31,7 +29,7 @@ std::string_view TrimLeading(std::string_view s)
  * @param[in] source Document source text.
  * @return Vector of string views representing each line.
  */
-std::vector<std::string_view> SplitLines(std::string_view source)
+static std::vector<std::string_view> SplitLines(std::string_view source)
 {
     std::vector<std::string_view> lines;
     size_t start = 0;
@@ -65,7 +63,7 @@ std::vector<std::string_view> SplitLines(std::string_view source)
  * @param[in] type AST node type string.
  * @return True if the node type is foldable.
  */
-bool IsSyntaxFoldingSymbol(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
+static bool IsSyntaxFoldingSymbol(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
 {
     const std::array<TSSymbol, 24> kSymbols = {gs.symAccessor,
                                                gs.symArgumentList,
@@ -99,11 +97,8 @@ bool IsSyntaxFoldingSymbol(TSSymbol sym, const parser::GrammarSymbols& gs) noexc
  * @param[in] node AST node.
  * @param[out] outFr Resulting folding range if applicable.
  * @return True if a multi-line syntax folding range was extracted.
- * @note [REFACTOR-CANDIDATE] Structural overlap (79%) with TryExtractCommentFoldingRange in
- * server/src/features/folding_range/FoldingRangeHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-bool TryExtractSyntaxFoldingRange(TSNode node, lsp::FoldingRange& outFr)
+static bool TryExtractSyntaxFoldingRange(TSNode node, lsp::FoldingRange& outFr)
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (!IsSyntaxFoldingSymbol(ts_node_symbol(node), gs))
@@ -132,11 +127,8 @@ bool TryExtractSyntaxFoldingRange(TSNode node, lsp::FoldingRange& outFr)
  * @param[in] sourceCode Document source text.
  * @param[out] outFr Resulting comment folding range if applicable.
  * @return True if a multi-line block comment folding range was extracted.
- * @note [REFACTOR-CANDIDATE] Structural overlap (79%) with TryExtractSyntaxFoldingRange in
- * server/src/features/folding_range/FoldingRangeHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-bool TryExtractCommentFoldingRange(TSNode node, std::string_view sourceCode, lsp::FoldingRange& outFr)
+static bool TryExtractCommentFoldingRange(TSNode node, std::string_view sourceCode, lsp::FoldingRange& outFr)
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (ts_node_symbol(node) != gs.symComment)
@@ -171,7 +163,8 @@ bool TryExtractCommentFoldingRange(TSNode node, std::string_view sourceCode, lsp
  * @param[in] sourceCode Document source text.
  * @param[in,out] outRanges Output accumulator for folding ranges.
  */
-void CollectAstFoldingRanges(TSNode rootNode, std::string_view sourceCode, std::vector<lsp::FoldingRange>& outRanges)
+static void CollectAstFoldingRanges(TSNode rootNode, std::string_view sourceCode,
+                                    std::vector<lsp::FoldingRange>& outRanges)
 {
     if (ts_node_is_null(rootNode))
     {
@@ -221,12 +214,9 @@ void CollectAstFoldingRanges(TSNode rootNode, std::string_view sourceCode, std::
  * @brief Collects folding ranges for contiguous single-line comments (// ...).
  * @param[in] lines Splitted document lines.
  * @param[in,out] outRanges Output accumulator for folding ranges.
- * @note [REFACTOR-CANDIDATE] Structural overlap (97%) with CollectImportAndIncludeRanges in
- * server/src/features/folding_range/FoldingRangeHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-void CollectSingleLineCommentRanges(const std::vector<std::string_view>& lines,
-                                    std::vector<lsp::FoldingRange>& outRanges)
+static void CollectSingleLineCommentRanges(const std::vector<std::string_view>& lines,
+                                           std::vector<lsp::FoldingRange>& outRanges)
 {
     int commentStart = -1;
     int commentEnd = -1;
@@ -270,12 +260,9 @@ void CollectSingleLineCommentRanges(const std::vector<std::string_view>& lines,
  * @brief Collects folding ranges for contiguous imports and #include directives.
  * @param[in] lines Splitted document lines.
  * @param[in,out] outRanges Output accumulator for folding ranges.
- * @note [REFACTOR-CANDIDATE] Structural overlap (97%) with CollectSingleLineCommentRanges in
- * server/src/features/folding_range/FoldingRangeHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
-void CollectImportAndIncludeRanges(const std::vector<std::string_view>& lines,
-                                   std::vector<lsp::FoldingRange>& outRanges)
+static void CollectImportAndIncludeRanges(const std::vector<std::string_view>& lines,
+                                          std::vector<lsp::FoldingRange>& outRanges)
 {
     int importStart = -1;
     int importEnd = -1;
@@ -320,8 +307,8 @@ void CollectImportAndIncludeRanges(const std::vector<std::string_view>& lines,
  * @param[in] lines Splitted document lines.
  * @param[in,out] outRanges Output accumulator for folding ranges.
  */
-void CollectPreprocessorFoldingRanges(const std::vector<std::string_view>& lines,
-                                      std::vector<lsp::FoldingRange>& outRanges)
+static void CollectPreprocessorFoldingRanges(const std::vector<std::string_view>& lines,
+                                             std::vector<lsp::FoldingRange>& outRanges)
 {
     std::vector<uint32_t> regionStack;
     std::vector<uint32_t> ifStack;
@@ -377,7 +364,7 @@ void CollectPreprocessorFoldingRanges(const std::vector<std::string_view>& lines
  * @param[in] rawRanges Unordered list of candidate folding ranges.
  * @return Deduplicated and sorted folding ranges.
  */
-FoldingRangeResult DeduplicateAndSortFoldingRanges(const std::vector<lsp::FoldingRange>& rawRanges)
+static FoldingRangeResult DeduplicateAndSortFoldingRanges(const std::vector<lsp::FoldingRange>& rawRanges)
 {
     std::map<std::pair<uint32_t, uint32_t>, lsp::FoldingRange> uniqueMap;
 
@@ -419,7 +406,6 @@ FoldingRangeResult DeduplicateAndSortFoldingRanges(const std::vector<lsp::Foldin
 
     return result;
 }
-} // namespace
 
 std::optional<FoldingRangeResult> GetFoldingRanges(const FoldingRangeRequest& request)
 {

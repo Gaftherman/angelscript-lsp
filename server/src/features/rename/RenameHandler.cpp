@@ -11,10 +11,18 @@
 
 namespace angel_lsp::features
 {
-using namespace angel_lsp::analysis;
-
-namespace
+namespace rename_detail
 {
+/**
+ * @brief Represents the resolved rename target descriptor and AST node.
+ */
+struct RenameTargetResult
+{
+    analysis::TargetDescriptor target;
+    TSNode node{};
+};
+} // namespace rename_detail
+
 /**
  * @brief Checks if all declarations of a class member across related classes reside in predefined headers.
  * @param[in] target Target symbol information.
@@ -22,8 +30,9 @@ namespace
  * @param[in] predefinedUris Set of predefined document URIs.
  * @return True if at least one declaration was found and all declarations are in predefined headers.
  */
-bool AreClassMembersPredefined(const TargetDescriptor& target, const analysis::SymbolTable& symbolTable,
-                               const std::unordered_set<std::string>& predefinedUris)
+static bool AreClassMembersPredefined(const analysis::TargetDescriptor& target,
+                                      const analysis::SymbolTable& symbolTable,
+                                      const std::unordered_set<std::string>& predefinedUris)
 {
     bool allPredefined = true;
     bool foundAny = false;
@@ -54,8 +63,8 @@ bool AreClassMembersPredefined(const TargetDescriptor& target, const analysis::S
  * @param[in] predefinedUris Set of predefined document URIs.
  * @return True if non-empty declarations were found and all reside in predefined headers.
  */
-bool AreGlobalSymbolsPredefined(const std::string& name, const analysis::SymbolTable& symbolTable,
-                                const std::unordered_set<std::string>& predefinedUris)
+static bool AreGlobalSymbolsPredefined(const std::string& name, const analysis::SymbolTable& symbolTable,
+                                       const std::unordered_set<std::string>& predefinedUris)
 {
     const auto declSyms = symbolTable.FindSymbols(name);
     if (declSyms.empty())
@@ -79,18 +88,18 @@ bool AreGlobalSymbolsPredefined(const std::string& name, const analysis::SymbolT
  * @param[in] predefinedUris Set of predefined document URIs.
  * @return True if the symbol is predefined and should not be renamed.
  */
-bool IsTargetPredefined(const TargetDescriptor& target, const analysis::SymbolTable& symbolTable,
-                        const std::unordered_set<std::string>& predefinedUris)
+static bool IsTargetPredefined(const analysis::TargetDescriptor& target, const analysis::SymbolTable& symbolTable,
+                               const std::unordered_set<std::string>& predefinedUris)
 {
-    if (target.kind == TargetKind::Local)
+    if (target.kind == analysis::TargetKind::Local)
     {
         return predefinedUris.contains(target.localUri);
     }
-    if (target.kind == TargetKind::ClassMember)
+    if (target.kind == analysis::TargetKind::ClassMember)
     {
         return AreClassMembersPredefined(target, symbolTable, predefinedUris);
     }
-    if (target.kind == TargetKind::EnumMember)
+    if (target.kind == analysis::TargetKind::EnumMember)
     {
         auto syms = symbolTable.FindSymbols(target.qualifiedName);
         for (const auto& s : syms)
@@ -111,7 +120,8 @@ bool IsTargetPredefined(const TargetDescriptor& target, const analysis::SymbolTa
  * @param[in] newName New identifier name.
  * @return Populated and ordered WorkspaceEdit.
  */
-lsp::WorkspaceEdit BuildWorkspaceEdit(const std::vector<OccurrenceLocation>& occurrences, const std::string& newName)
+static lsp::WorkspaceEdit BuildWorkspaceEdit(const std::vector<analysis::OccurrenceLocation>& occurrences,
+                                             const std::string& newName)
 {
     std::map<lsp::DocumentUri, std::vector<lsp::TextEdit>> editsByUri;
     for (const auto& loc : occurrences)
@@ -148,24 +158,13 @@ lsp::WorkspaceEdit BuildWorkspaceEdit(const std::vector<OccurrenceLocation>& occ
 }
 
 /**
- * @brief Represents Rename target result.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ * @brief Resolves a valid target for renaming under the cursor position.
+ * @tparam RequestT Request type containing document URI, position, syntax tree, and symbol table.
+ * @param[in] request Rename or PrepareRename request payload.
+ * @return Found valid rename target result if present; std::nullopt otherwise.
  */
-struct RenameTargetResult
-{
-    analysis::TargetDescriptor target;
-    TSNode node{};
-};
-
-/**
- * @brief Resolve valid rename target.
- * @param[in] request Parameter request.
- * @return Found item if present; std::nullopt otherwise.
- * @note [REFACTOR-CANDIDATE] Structural overlap (76%) with GetReferences in
- * server/src/features/references/ReferencesHandler.cpp. Candidate for unification in
- * server/src/features/common/FeatureSharedUtils.h.
- */
-template <typename RequestT> std::optional<RenameTargetResult> ResolveValidRenameTarget(const RequestT& request)
+template <typename RequestT>
+static std::optional<rename_detail::RenameTargetResult> ResolveValidRenameTarget(const RequestT& request)
 {
     if (!request.tree || request.sourceCode.empty() || request.predefinedUris.contains(request.uri))
     {
@@ -195,9 +194,8 @@ template <typename RequestT> std::optional<RenameTargetResult> ResolveValidRenam
         return std::nullopt;
     }
 
-    return RenameTargetResult{std::move(*target), node};
+    return rename_detail::RenameTargetResult{std::move(*target), node};
 }
-} // namespace
 
 std::optional<lsp::PrepareRenameResult> PrepareRename(const PrepareRenameRequest& request)
 {
@@ -219,7 +217,7 @@ std::optional<lsp::PrepareRenameResult> PrepareRename(const PrepareRenameRequest
 
 std::optional<lsp::WorkspaceEdit> Rename(const RenameRequest& request)
 {
-    if (!IsValidIdentifier(request.newName))
+    if (!analysis::IsValidIdentifier(request.newName))
     {
         return std::nullopt;
     }
@@ -230,7 +228,7 @@ std::optional<lsp::WorkspaceEdit> Rename(const RenameRequest& request)
         return std::nullopt;
     }
 
-    CollectOccurrencesRequest occReq{
+    analysis::CollectOccurrencesRequest occReq{
         .target = targetRes->target,
         .currentUri = request.uri,
         .sourceCode = request.sourceCode,
@@ -240,7 +238,7 @@ std::optional<lsp::WorkspaceEdit> Rename(const RenameRequest& request)
         .includeDeclaration = true,
         .logger = request.logger,
     };
-    const auto occurrences = CollectOccurrences(occReq);
+    const auto occurrences = analysis::CollectOccurrences(occReq);
 
     if (occurrences.empty())
     {

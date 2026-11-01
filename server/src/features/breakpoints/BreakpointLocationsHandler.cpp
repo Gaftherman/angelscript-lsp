@@ -6,12 +6,10 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 
 constexpr uint32_t k_maxCursorDepth = 64;
 
-void CollectFromNode(TSNode node, CollectorContext& ctx)
+static void CollectFromNode(TSNode node, CollectorContext& ctx)
 {
     if (IsNodeInvalid(node))
     {
@@ -27,7 +25,7 @@ void CollectFromNode(TSNode node, CollectorContext& ctx)
     HandleLeafStatement(node, sym, ctx);
 }
 
-void TraverseSubtree(TSTreeCursor& cursor, CollectorContext& ctx)
+static void TraverseSubtree(TSTreeCursor& cursor, CollectorContext& ctx)
 {
     uint32_t depth = 0;
     std::array<bool, k_maxCursorDepth + 1> blockAtDepth{};
@@ -72,8 +70,6 @@ void TraverseSubtree(TSTreeCursor& cursor, CollectorContext& ctx)
         }
     }
 }
-
-} // namespace
 
 std::vector<BreakpointLocationItem> BreakpointLocationsHandler::Collect(const BreakpointLocationsRequest& request)
 {

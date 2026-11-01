@@ -28,9 +28,6 @@ using SharedTree = std::shared_ptr<const TSTree>;
 
 namespace angel_lsp::document
 {
-using ::angel_lsp::SharedTree;
-using ::angel_lsp::TSTreeDeleter;
-
 /**
  * @brief Custom deleter for Tree-sitter ASTs using ts_tree_delete.
  */
@@ -172,8 +169,3 @@ struct Document
     SharedTree astTree_;
 };
 } // namespace angel_lsp::document
-
-namespace angel_lsp
-{
-using document::Document;
-} // namespace angel_lsp

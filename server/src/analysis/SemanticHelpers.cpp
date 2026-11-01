@@ -24,10 +24,8 @@ namespace angel_lsp::analysis
 {
 /**
  * @brief Clean expression type.
- * @param[in] typeName Parameter typeName.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (68%) with StripModifiers in
- * server/src/analysis/BinaryOperatorHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] typeName Type name to inspect or resolve.
+ * @return Calculated or extracted result of the operation.
  * Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo /
  * Symbol::modifiers.isConst. Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
@@ -171,24 +169,21 @@ bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx)
     return IsDestructorDeclaration(sym, ctx.request.sourceCode);
 }
 
-namespace
-{
 /**
  * @brief Has list constructor param.
- * @param[in] p Parameter p.
- * @return True if condition met; otherwise false.
+ * @param[in] p Parameter or path under evaluation.
+ * @return True if the condition is satisfied; false otherwise.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier /
  * Symbol::modifiers.isReturnReference.
  */
-bool HasListConstructorParam(const ParameterInformation& p)
+static bool HasListConstructorParam(const ParameterInformation& p)
 {
     const std::string norm = StripTypeDecorations(p.baseTypeName.empty() ? p.typeName : p.baseTypeName);
     const bool isInt = (norm == "int" || norm == "uint" || norm == "int64" || norm == "uint64");
     return isInt && (p.isReference || p.modifier == ParameterModifier::In || p.modifier == ParameterModifier::InOut ||
                      p.isInOutRef || IsReferenceTypeView(p.typeName));
 }
-} // namespace
 
 bool IsListConstructorSignature(const FunctionSignature& fn)
 {
@@ -343,7 +338,7 @@ static std::string ExtractTrimmedIdentifier(TSNode node, std::string_view source
     {
         return {};
     }
-    std::string name = GetNodeText(node, sourceCode);
+    std::string name = parser::GetNodeText(node, sourceCode);
     while (!name.empty() && isspace(static_cast<unsigned char>(name.front())))
     {
         name.erase(name.begin());
@@ -396,7 +391,7 @@ static bool IsMemberMethodSymbol(TSNode node, const Scope* scope, const SymbolTa
     {
         return false;
     }
-    const std::string memName = NodeText(memNode, sourceCode);
+    const std::string memName = parser::NodeText(memNode, sourceCode);
     const std::string objType = ResolveExpressionType(objNode, ExpressionTypeContext(scope, symbolTable, sourceCode));
     const std::string cleanObj = CleanBaseType(objType);
     if (cleanObj.empty() || memName.empty())
@@ -484,7 +479,7 @@ static bool HasGlobalFunctionSymbol(std::string_view name, const SymbolTable& sy
 static bool IsIdentifierFunctionSymbol(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
                                        std::string_view sourceCode)
 {
-    std::string name = GetNodeText(node, sourceCode);
+    std::string name = parser::GetNodeText(node, sourceCode);
     if (name.empty())
     {
         return false;
@@ -1070,7 +1065,7 @@ std::string ResolveIndexedType(std::string_view typeName, size_t indexCount, con
 
 /**
  * @brief Strip template decorations.
- * @param[in,out] typeName Parameter typeName.
+ * @param[in,out] typeName Type name to inspect or resolve.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
@@ -1746,12 +1741,10 @@ void TraverseAncestorsAndInterfaces(const std::string& rootType, const SymbolTab
 
 /**
  * @brief Traverse derived classes.
- * @param[in] initialFrontier Parameter initialFrontier.
- * @param[in] symbolTable Parameter symbolTable.
- * @param[in,out] visited Parameter visited.
- * @param[in,out] related Parameter related.
- * @note [REFACTOR-CANDIDATE] Structural overlap (80%) with GetDerivedClasses in
- * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] initialFrontier Input initialFrontier for the operation.
+ * @param[in] symbolTable Symbol or grammar symbol.
+ * @param[in,out] visited Input visited for the operation.
+ * @param[in,out] related Input related for the operation.
  */
 void TraverseDerivedClasses(const std::vector<std::string>& initialFrontier, const SymbolTable& symbolTable,
                             ankerl::unordered_dense::set<std::string>& visited, std::vector<std::string>& related)
@@ -1812,11 +1805,9 @@ std::vector<std::string> GetAllRelatedClasses(const std::string& className, cons
 
 /**
  * @brief Get derived classes.
- * @param[in] className Parameter className.
- * @param[in] symbolTable Parameter symbolTable.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (80%) with TraverseDerivedClasses in
- * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] className Identifier name or string value.
+ * @param[in] symbolTable Symbol or grammar symbol.
+ * @return Calculated or extracted result of the operation.
  */
 std::vector<std::string> GetDerivedClasses(const std::string& className, const SymbolTable& symbolTable)
 {
@@ -2122,7 +2113,8 @@ bool IsBaseConstructorCall(TSNode node, std::string_view sourceCode)
     }
 
     const TSNode className = parser::GetChildByField(owner, parser::GetGrammarSymbols().fieldName);
-    if (ts_node_is_null(className) || GetNodeText(className, sourceCode) != GetNodeText(functionName, sourceCode))
+    if (ts_node_is_null(className) ||
+        parser::GetNodeText(className, sourceCode) != parser::GetNodeText(functionName, sourceCode))
     {
         return false;
     }
@@ -2217,7 +2209,7 @@ std::vector<std::string> CollectUsingNamespaces(const NodeIndex& nodeIndex, std:
         TSNode nameNode = parser::GetChildByField(cur, parser::GetGrammarSymbols().fieldName);
         if (!ts_node_is_null(nameNode))
         {
-            std::string uName = GetNodeText(nameNode, sourceCode);
+            std::string uName = parser::GetNodeText(nameNode, sourceCode);
             while (!uName.empty() && isspace(static_cast<unsigned char>(uName.front())))
             {
                 uName.erase(uName.begin());
@@ -2257,7 +2249,7 @@ std::vector<std::string> CollectUsingNamespaces(TSNode root, std::string_view so
         for (uint16_t i = 0; i < match.capture_count; ++i)
         {
             TSNode nameNode = match.captures[i].node;
-            std::string uName = GetNodeText(nameNode, sourceCode);
+            std::string uName = parser::GetNodeText(nameNode, sourceCode);
             while (!uName.empty() && isspace(static_cast<unsigned char>(uName.front())))
                 uName.erase(uName.begin());
             while (!uName.empty() && isspace(static_cast<unsigned char>(uName.back())))
@@ -2360,7 +2352,7 @@ static bool IsKnownInUsingNamespaces(const SymbolTable& table, const std::string
         return false;
     }
 
-    auto usings = CollectUsingNamespaces(GetRootNode(node), sourceCode);
+    auto usings = CollectUsingNamespaces(parser::GetRootNode(node), sourceCode);
     for (const auto& ns : usings)
     {
         std::string q = utils::JoinScopedName(ns, prefix);
@@ -2624,7 +2616,7 @@ static void CollectUsingsFromAncestor(TSNode p, std::string_view sourceCode, std
                 TSNode nameNode = parser::GetChildByField(ch, gs.fieldName);
                 if (!ts_node_is_null(nameNode))
                 {
-                    std::string uName = GetNodeText(nameNode, sourceCode);
+                    std::string uName = parser::GetNodeText(nameNode, sourceCode);
                     while (!uName.empty() && isspace(static_cast<unsigned char>(uName.front())))
                         uName.erase(uName.begin());
                     while (!uName.empty() && isspace(static_cast<unsigned char>(uName.back())))
@@ -2725,7 +2717,7 @@ static std::string ResolveLiteralExpr(TSSymbol nodeSym, TSNode exprNode, std::st
     }
     if (nodeSym == gs.symNumberLiteral)
     {
-        return ResolveNumberLiteral(GetNodeText(exprNode, sourceCode));
+        return ResolveNumberLiteral(parser::GetNodeText(exprNode, sourceCode));
     }
     return "";
 }
@@ -2837,11 +2829,9 @@ static std::string ResolveScopedEnumMember(std::string_view whole, TSNode exprNo
 
 /**
  * @brief Extract variable or property type.
- * @param[in] syms Parameter syms.
- * @param[in] table Parameter table.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (73%) with ExtractMemberSymbolType in
- * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] syms Symbol or grammar symbol.
+ * @param[in] table Symbol table containing resolved symbols.
+ * @return Calculated or extracted result of the operation.
  */
 static std::string ExtractVariableOrPropertyType(std::span<const Symbol> syms, const SymbolTable& table)
 {
@@ -2873,7 +2863,7 @@ static std::string ResolveGlobalScopedExpr(TSNode exprNode, std::string_view roo
 
 static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
 {
-    const auto gsq = analysis::GetGlobalScopeQualifier(exprNode, ctx.sourceCode);
+    const auto gsq = parser::GetGlobalScopeQualifier(exprNode, ctx.sourceCode);
     if (gsq.isGlobal)
     {
         return ResolveGlobalScopedExpr(exprNode, gsq.rootPath, ctx);
@@ -2894,7 +2884,7 @@ static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const Expression
 
     if (qualified)
     {
-        const std::string whole = GetNodeText(exprNode, ctx.sourceCode);
+        const std::string whole = parser::GetNodeText(exprNode, ctx.sourceCode);
         auto wholeSyms = ctx.symbolTable.FindSymbols(whole);
         if (wholeSyms.empty())
         {
@@ -3086,7 +3076,7 @@ static std::string ResolveIdentifierDelegateProperty(std::string_view name, TSNo
  */
 static std::string ResolveIdentifierExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
 {
-    std::string name = GetNodeText(exprNode, ctx.sourceCode);
+    std::string name = parser::GetNodeText(exprNode, ctx.sourceCode);
     if (name == "this")
     {
         return ResolveThisExpr(exprNode, ctx);
@@ -3318,8 +3308,6 @@ static std::string ResolveBinaryShiftBitwise(std::string_view op, const std::str
  * @param[in] cleanLeft Cleaned left operand type.
  * @param[in] cleanRight Cleaned right operand type.
  * @return Widened type name, or empty string.
- * @note [REFACTOR-CANDIDATE] Structural overlap (85%) with ResolveTernaryNumericPromotion in
- * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 static std::string ResolveBinary64OrFloat(const std::string& cleanLeft, const std::string& cleanRight)
 {
@@ -3423,12 +3411,9 @@ static std::string ResolveBinaryPrimitivePromotion(std::string_view op, const st
 
 /**
  * @brief Is boolean binary op sym.
- * @param[in] sym Parameter sym.
- * @param[in] gs Parameter gs.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (84%) with IsBooleanBinaryOperator in
- * server/src/features/inlay_hint/InlayHintHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @param[in] gs Precompiled grammar symbols.
+ * @return True if the condition is satisfied; false otherwise.
  */
 static bool IsBooleanBinaryOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
 {
@@ -3688,11 +3673,9 @@ static std::string ResolveTernaryHierarchy(const TernaryBranchTypes& types, cons
 
 /**
  * @brief Resolve ternary numeric promotion.
- * @param[in] c1 Parameter c1.
- * @param[in] c2 Parameter c2.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (85%) with ResolveBinary64OrFloat in
- * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] c1 Input c1 for the operation.
+ * @param[in] c2 Input c2 for the operation.
+ * @return Calculated or extracted result of the operation.
  */
 static std::string ResolveTernaryNumericPromotion(const std::string& c1, const std::string& c2)
 {
@@ -3891,7 +3874,7 @@ static std::vector<Symbol> FindMemberSymbolsInType(const std::string& typeName, 
  */
 static std::string GetTrimmedNodeText(TSNode node, std::string_view sourceCode)
 {
-    std::string text = GetNodeText(node, sourceCode);
+    std::string text = parser::GetNodeText(node, sourceCode);
     while (!text.empty() && isspace(static_cast<unsigned char>(text.front())))
     {
         text.erase(text.begin());
@@ -3941,8 +3924,6 @@ static std::string ExtractAccessorMemberType(const Symbol& sym)
  * @brief Extracts the resolved type of a member symbol.
  * @param[in] sym Member symbol to inspect.
  * @return Cleaned member type, or empty string if unresolved.
- * @note [REFACTOR-CANDIDATE] Structural overlap (73%) with ExtractVariableOrPropertyType in
- * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 static std::string ExtractMemberSymbolType(const Symbol& sym, const SymbolTable& table)
 {
@@ -4439,10 +4420,10 @@ static bool IsFunctionHandleTarget(TSNode target, TSNode exprNode, const Express
 
 /**
  * @brief Resolve unary handle.
- * @param[in] operandNode Parameter operandNode.
- * @param[in] exprNode Parameter exprNode.
- * @param[in] ctx Parameter ctx.
- * @return Result of the operation.
+ * @param[in] operandNode AST node under evaluation.
+ * @param[in] exprNode AST node under evaluation.
+ * @param[in] ctx Diagnostic collection and analysis context.
+ * @return Calculated or extracted result of the operation.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
@@ -4530,14 +4511,14 @@ static std::string ResolveConstructCallExpr(TSNode exprNode, std::string_view so
     {
         return "";
     }
-    std::string written = GetNodeText(typeNode, sourceCode);
+    std::string written = parser::GetNodeText(typeNode, sourceCode);
     const uint32_t childCount = ts_node_named_child_count(exprNode);
     for (uint32_t i = 0; i < childCount; ++i)
     {
         TSNode child = ts_node_named_child(exprNode, i);
         if (ts_node_symbol(child) == parser::GetGrammarSymbols().symTemplateTypeList)
         {
-            written += GetNodeText(child, sourceCode);
+            written += parser::GetNodeText(child, sourceCode);
             break;
         }
     }
@@ -4557,7 +4538,7 @@ static std::optional<std::string> ResolveCastOrConstructExpr(TSSymbol sym, TSNod
     if (sym == gs.symCastExpression || sym == gs.symFunctionalCastExpression)
     {
         TSNode typeNode = parser::GetChildByField(exprNode, gs.fieldType);
-        return ts_node_is_null(typeNode) ? "" : CleanExpressionType(GetNodeText(typeNode, sourceCode));
+        return ts_node_is_null(typeNode) ? "" : CleanExpressionType(parser::GetNodeText(typeNode, sourceCode));
     }
     if (sym == gs.symConstructCallExpression)
     {
@@ -4807,7 +4788,7 @@ static std::optional<std::string> ResolvePrimaryExpr(TSSymbol sym, TSNode exprNo
         TSNode typeNode = parser::GetChildByField(exprNode, gs.fieldType);
         if (!ts_node_is_null(typeNode))
         {
-            return GetNodeText(typeNode, ctx.sourceCode);
+            return parser::GetNodeText(typeNode, ctx.sourceCode);
         }
     }
     if (sym == gs.symThisExpression)
@@ -4978,7 +4959,7 @@ static TSNode FindLocalDefinitionValueNode(const LocalDefinition& def, const Exp
         TSNode decl = parser::FindAncestorWithSymbol(idNode, parser::GetGrammarSymbols().symVariableDeclarator);
         if (!ts_node_is_null(decl))
         {
-            return FindDeclaratorValueNode(decl, ctx.sourceCode);
+            return parser::FindDeclaratorValueNode(decl, ctx.sourceCode);
         }
     }
     return {};
@@ -5012,9 +4993,9 @@ static bool IsValidDeducedRhsType(std::string_view rhsType)
 
 /**
  * @brief Format deduced type.
- * @param[in] def Parameter def.
- * @param[in] rhsType Parameter rhsType.
- * @return Result of the operation.
+ * @param[in] def Input def for the operation.
+ * @param[in] rhsType Type name or descriptor.
+ * @return Calculated or extracted result of the operation.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
@@ -5392,7 +5373,7 @@ std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, con
         return "";
     }
 
-    std::string objText = GetNodeText(objNode, sourceCode);
+    std::string objText = parser::GetNodeText(objNode, sourceCode);
     if (objText.empty())
     {
         return "";
@@ -5527,7 +5508,7 @@ void ProcessCallArgumentChild(TSNode child, TSFieldId fieldId, std::string_view 
         current.nameNode = child;
         if (!sourceCode.empty())
         {
-            current.name = GetNodeText(child, sourceCode);
+            current.name = parser::GetNodeText(child, sourceCode);
         }
         return;
     }
@@ -5537,11 +5518,9 @@ void ProcessCallArgumentChild(TSNode child, TSFieldId fieldId, std::string_view 
 
 /**
  * @brief Extract call arguments.
- * @param[in] argumentList Parameter argumentList.
- * @param[in] sourceCode Parameter sourceCode.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (74%) with ExtractLambdaParameters in
- * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] argumentList Input argumentList for the operation.
+ * @param[in] sourceCode Document source text.
+ * @return Calculated or extracted result of the operation.
  */
 std::vector<CallArgumentInfo> ExtractCallArguments(TSNode argumentList, std::string_view sourceCode)
 {
@@ -5967,10 +5946,10 @@ static TSNode ResolveLambdaParameterListNode(TSNode node)
 
 /**
  * @brief Apply lambda param child.
- * @param[in] child Parameter child.
- * @param[in] fieldId Parameter fieldId.
- * @param[in] sourceCode Parameter sourceCode.
- * @param[in,out] current Parameter current.
+ * @param[in] child Child AST node.
+ * @param[in] fieldId Input fieldId for the operation.
+ * @param[in] sourceCode Document source text.
+ * @param[in,out] current Input current for the operation.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst. Manually re-evaluates AST for isHandle; candidate for
  * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle /
@@ -6002,17 +5981,15 @@ void ApplyLambdaParamChild(TSNode child, TSFieldId fieldId, std::string_view sou
     else if (fieldId == gs.fieldName || sym == gs.symIdentifier)
     {
         current.nameNode = child;
-        current.name = GetNodeText(child, sourceCode);
+        current.name = parser::GetNodeText(child, sourceCode);
     }
 }
 
 /**
  * @brief Extract lambda parameters.
- * @param[in] lambdaParamList Parameter lambdaParamList.
- * @param[in] sourceCode Parameter sourceCode.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (74%) with ExtractCallArguments in
- * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] lambdaParamList Input lambdaParamList for the operation.
+ * @param[in] sourceCode Document source text.
+ * @return Calculated or extracted result of the operation.
  */
 std::vector<LambdaParamASTInfo> ExtractLambdaParameters(TSNode lambdaParamList, std::string_view sourceCode)
 {
@@ -6199,9 +6176,9 @@ std::optional<Symbol> FindFuncdefSymbol(std::string_view typeName, const SymbolT
 
 /**
  * @brief Is handle type.
- * @param[in] typeName Parameter typeName.
- * @param[in] symbolTable Parameter symbolTable.
- * @return True if condition met; otherwise false.
+ * @param[in] typeName Type name to inspect or resolve.
+ * @param[in] symbolTable Symbol or grammar symbol.
+ * @return True if the condition is satisfied; false otherwise.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
@@ -6252,7 +6229,7 @@ static std::optional<Symbol> FindDeclaratorFuncdefTarget(TSNode parent, const Sy
         }
         if (!ts_node_is_null(typeNode))
         {
-            return FindFuncdefSymbol(CleanBaseType(GetNodeText(typeNode, sourceCode)), table);
+            return FindFuncdefSymbol(CleanBaseType(parser::GetNodeText(typeNode, sourceCode)), table);
         }
     }
     return std::nullopt;
@@ -6346,7 +6323,7 @@ static std::optional<Symbol> FindAssignmentFuncdefTarget(TSNode parent, const Sy
     {
         return std::nullopt;
     }
-    std::string varName = CleanBaseType(GetNodeText(leftNode, sourceCode));
+    std::string varName = CleanBaseType(parser::GetNodeText(leftNode, sourceCode));
     const size_t dot = varName.rfind('.');
     if (dot != std::string::npos)
     {
@@ -6463,7 +6440,7 @@ std::optional<Symbol> FuncdefTargetOfLambda(TSNode lambdaNode, const SymbolTable
         return std::nullopt;
     }
 
-    const std::string calleeName = CleanBaseType(GetNodeText(callee, sourceCode));
+    const std::string calleeName = CleanBaseType(parser::GetNodeText(callee, sourceCode));
     if (*position == 0 && ts_node_named_child_count(parent) == 1)
     {
         if (auto asConversion = FindFuncdefSymbol(calleeName, table))
@@ -6661,7 +6638,7 @@ TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::
         parser::ForEachNamedChildNodeUntil(baseList,
                                            [&](TSNode baseChild)
                                            {
-                                               const std::string bText = GetNodeText(baseChild, sourceCode);
+                                               const std::string bText = parser::GetNodeText(baseChild, sourceCode);
                                                if (CleanBaseTypeView(bText) == mixinName || bText == mixinShortName ||
                                                    utils::EndsWithScopedMember(bText, mixinShortName))
                                                {
@@ -6682,7 +6659,7 @@ TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::
         parser::ForEachChildNodeUntil(bodyNode,
                                       [&](TSNode mNode)
                                       {
-                                          const std::string mText = GetNodeText(mNode, sourceCode);
+                                          const std::string mText = parser::GetNodeText(mNode, sourceCode);
                                           if (!mixinShortName.empty() &&
                                               mText.find(mixinShortName) != std::string::npos)
                                           {

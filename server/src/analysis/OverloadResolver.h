@@ -112,8 +112,8 @@ struct ArgumentConversion
 
     /**
      * @brief Argument conversion.
-     * @param[in] t Parameter t.
-     * @param[in] r Parameter r.
+     * @param[in] t Input t for the operation.
+     * @param[in] r Input r for the operation.
      * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
      * Symbol::modifiers.isConst / ParameterInformation::isConst.
      */
@@ -128,7 +128,7 @@ struct ArgumentConversion
 
     /**
      * @brief Argument conversion.
-     * @param[in] r Parameter r.
+     * @param[in] r Input r for the operation.
      * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
      * Symbol::modifiers.isConst / ParameterInformation::isConst.
      */
@@ -293,7 +293,7 @@ class OverloadResolver
     /**
      * @brief Finds candidates matching the given name and parameter count in O(1).
      * @param[in] name Function identifier.
-     * @param[in] argCount Parameter count.
+     * @param[in] argCount Count of elements or operations.
      * @return Span of matching candidate symbols.
      */
     [[nodiscard]] std::span<const FunctionSymbol> findCandidates(std::string_view name, size_t argCount) const;

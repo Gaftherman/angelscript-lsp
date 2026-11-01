@@ -7,8 +7,6 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 
 /**
  * @brief Assembles one position's chain, innermost first.
@@ -17,7 +15,7 @@ namespace
  * of, yields the root's own range - which is what the protocol asks for: every position has
  * to be answered, in order, or the client cannot line the results up with what it sent.
  */
-lsp::SelectionRange BuildChain(TSNode root, const lsp::Position& position)
+static lsp::SelectionRange BuildChain(TSNode root, const lsp::Position& position)
 {
     const TSPoint point{position.line, position.character};
     TSNode node = ts_node_descendant_for_point_range(root, point, point);
@@ -51,7 +49,6 @@ lsp::SelectionRange BuildChain(TSNode root, const lsp::Position& position)
     }
     return chain;
 }
-} // namespace
 
 std::vector<lsp::SelectionRange> GetSelectionRanges(const SelectionRangeRequest& request)
 {

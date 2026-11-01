@@ -110,12 +110,8 @@ void NodeIndex::RecordContainerSpan(TSNode node, TSSymbol sym)
 
 /**
  * @brief Node index traverse tree.
- * @param[in] root Parameter root.
- * @param[in] budget Parameter budget.
- * @note [REFACTOR-CANDIDATE] Structural overlap (93%) with TraverseSubtreeMutations in
- * server/src/features/code_action/CodeActionExtractMethodOutputs.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (88%) with VisitNode in
- * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] root Root AST node of the document or tree.
+ * @param[in] budget Input budget for the operation.
  */
 void NodeIndex::TraverseTree(TSNode root, TraversalBudget* budget)
 {
@@ -463,16 +459,11 @@ bool NodeIndex::IsInsideLambdaClosure(uint32_t byteOffset) const noexcept
     return !ts_node_is_null(callable) && ts_node_symbol(callable) == parser::GetGrammarSymbols().symLambdaExpression;
 }
 
-namespace
-{
 /**
  * @brief Classify index container kind.
- * @param[in] sym Parameter sym.
+ * @param[in] sym Tree-sitter grammar symbol.
  * @return Found item if present; std::nullopt otherwise.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ClassifyContainerKind in
- * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-} // namespace
 
 std::optional<ContainerKind> ClassifyContainerKind(TSSymbol sym) noexcept
 {
@@ -494,12 +485,10 @@ std::optional<ContainerKind> ClassifyContainerKind(TSSymbol sym) noexcept
 
 /**
  * @brief Append index raw containers.
- * @param[in] nameNode Parameter nameNode.
- * @param[in] kind Parameter kind.
- * @param[in] sourceCode Parameter sourceCode.
- * @param[in,out] rawContainers Parameter rawContainers.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with AppendRawContainers in
- * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] nameNode AST node under evaluation.
+ * @param[in] kind Input kind for the operation.
+ * @param[in] sourceCode Document source text.
+ * @param[in,out] rawContainers Input rawContainers for the operation.
  */
 void AppendRawContainers(TSNode nameNode, ContainerKind kind, std::string_view sourceCode,
                          std::vector<ContainerInfo>& rawContainers)
@@ -535,9 +524,7 @@ void AppendRawContainers(TSNode nameNode, ContainerKind kind, std::string_view s
 
 /**
  * @brief Compute index container qualified names.
- * @param[in,out] containers Parameter containers.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ComputeContainerQualifiedNames in
- * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in,out] containers Input containers for the operation.
  */
 void ComputeContainerQualifiedNames(std::vector<ContainerInfo>& containers)
 {

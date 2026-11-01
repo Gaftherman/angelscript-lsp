@@ -11,15 +11,13 @@
 
 namespace angel_lsp::features
 {
-namespace
-{
 
 /**
  * @brief Appends parameter declarations into comma-separated text in result.
  * @param[in,out] result Destination string.
  * @param[in] parameters List of parameter symbols.
  */
-void AppendParameters(std::string& result, const std::vector<analysis::ParameterInformation>& parameters)
+static void AppendParameters(std::string& result, const std::vector<analysis::ParameterInformation>& parameters)
 {
     for (size_t i = 0; i < parameters.size(); ++i)
     {
@@ -53,7 +51,7 @@ void AppendParameters(std::string& result, const std::vector<analysis::Parameter
  * @param[in] sym Symbol representing a function or funcdef.
  * @return Formatted signature string.
  */
-std::string FormatSignatureLabel(const analysis::Symbol& sym)
+static std::string FormatSignatureLabel(const analysis::Symbol& sym)
 {
     if (sym.type != analysis::SymbolType::Function && sym.type != analysis::SymbolType::Funcdef)
     {
@@ -113,23 +111,13 @@ std::string FormatSignatureLabel(const analysis::Symbol& sym)
 }
 
 /**
- * @brief Enclosing call expression and argument list nodes.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct CallNodes
-{
-    TSNode callNode{};
-    TSNode argListNode{};
-};
-
-/**
  * @brief Traverses ancestors of a node to identify enclosing call_expression and argument_list.
  * @param[in] node Starting AST descendant.
  * @return Identified CallNodes.
  */
-CallNodes FindCallNodes(TSNode node)
+static analysis::CallNodes FindCallNodes(TSNode node)
 {
-    CallNodes result;
+    analysis::CallNodes result;
     const auto& gs = parser::GetGrammarSymbols();
     parser::ForEachAncestor(node,
                             [&](TSNode cur) -> bool
@@ -172,7 +160,7 @@ CallNodes FindCallNodes(TSNode node)
  * @param[in] argListNode Argument list AST node.
  * @return Zero-based parameter index.
  */
-uint32_t DetermineActiveParameter(const SignatureHelpRequest& request, TSNode argListNode)
+static uint32_t DetermineActiveParameter(const SignatureHelpRequest& request, TSNode argListNode)
 {
     const size_t cursorByte = utils::PositionToOffset(request.sourceCode, request.position.line,
                                                       request.position.character, utils::PositionEncoding::Utf16);
@@ -184,7 +172,7 @@ uint32_t DetermineActiveParameter(const SignatureHelpRequest& request, TSNode ar
  * @param[in] callNode Call expression or variable declarator AST node.
  * @return Function AST node or null node if not found.
  */
-TSNode ExtractFunctionNode(TSNode callNode)
+static TSNode ExtractFunctionNode(TSNode callNode)
 {
     TSNode funcNode = parser::GetChildByField(callNode, parser::GetGrammarSymbols().fieldFunction);
     if (!ts_node_is_null(funcNode))
@@ -221,8 +209,9 @@ TSNode ExtractFunctionNode(TSNode callNode)
  * @param[in] table Symbol table.
  * @param[in,out] outCandidates Destination vector for candidate symbols.
  */
-void AppendMemberSymbolCandidates(const std::vector<analysis::Symbol>& symbols, const analysis::SymbolTable& table,
-                                  std::vector<analysis::Symbol>& outCandidates)
+static void AppendMemberSymbolCandidates(const std::vector<analysis::Symbol>& symbols,
+                                         const analysis::SymbolTable& table,
+                                         std::vector<analysis::Symbol>& outCandidates)
 {
     for (const auto& sym : symbols)
     {
@@ -247,7 +236,7 @@ void AppendMemberSymbolCandidates(const std::vector<analysis::Symbol>& symbols, 
  * @param[in] funcNode Member expression AST node.
  * @return Matching symbol candidates from the receiver hierarchy.
  */
-std::vector<analysis::Symbol> ResolveMemberCandidates(const SignatureHelpRequest& request, TSNode funcNode)
+static std::vector<analysis::Symbol> ResolveMemberCandidates(const SignatureHelpRequest& request, TSNode funcNode)
 {
     TSNode objNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldObject);
     TSNode memNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldMember);
@@ -299,7 +288,8 @@ std::vector<analysis::Symbol> ResolveMemberCandidates(const SignatureHelpRequest
  * @param[in] parameters List of symbol parameters.
  * @return Vector of LSP ParameterInformation.
  */
-std::vector<lsp::ParameterInformation> BuildParameterList(const std::vector<analysis::ParameterInformation>& parameters)
+static std::vector<lsp::ParameterInformation>
+BuildParameterList(const std::vector<analysis::ParameterInformation>& parameters)
 {
     std::vector<lsp::ParameterInformation> params;
     params.reserve(parameters.size());
@@ -339,7 +329,7 @@ std::vector<lsp::ParameterInformation> BuildParameterList(const std::vector<anal
  * @param[in] candidate Candidate symbol reference or pointer.
  */
 template <typename T>
-void AppendCandidateSignature(std::vector<lsp::SignatureInformation>& signatures, const T& candidate)
+static void AppendCandidateSignature(std::vector<lsp::SignatureInformation>& signatures, const T& candidate)
 {
     const analysis::Symbol* symPtr = nullptr;
     if constexpr (std::is_pointer_v<T>)
@@ -376,7 +366,8 @@ void AppendCandidateSignature(std::vector<lsp::SignatureInformation>& signatures
  * @param[in] candidateSymbols Candidate function or funcdef symbols.
  * @return List of LSP signature entries.
  */
-template <typename Range> std::vector<lsp::SignatureInformation> BuildSignatureList(const Range& candidateSymbols)
+template <typename Range>
+static std::vector<lsp::SignatureInformation> BuildSignatureList(const Range& candidateSymbols)
 {
     std::vector<lsp::SignatureInformation> signatures;
     signatures.reserve(std::size(candidateSymbols));
@@ -394,7 +385,8 @@ template <typename Range> std::vector<lsp::SignatureInformation> BuildSignatureL
  * @param[in] activeParameter Active parameter index.
  * @return Zero-based index of the matching signature.
  */
-uint32_t SelectActiveSignature(const std::vector<lsp::SignatureInformation>& signatures, uint32_t activeParameter)
+static uint32_t SelectActiveSignature(const std::vector<lsp::SignatureInformation>& signatures,
+                                      uint32_t activeParameter)
 {
     for (size_t i = 0; i < signatures.size(); ++i)
     {
@@ -454,7 +446,8 @@ static std::optional<analysis::Symbol> TryResolveEnclosingMemberCallableFuncdef(
  * @param[in] funcNode AST node for the callee expression.
  * @return Resolved list of signatures.
  */
-std::vector<lsp::SignatureInformation> ResolveDirectSignatures(const SignatureHelpRequest& request, TSNode funcNode)
+static std::vector<lsp::SignatureInformation> ResolveDirectSignatures(const SignatureHelpRequest& request,
+                                                                      TSNode funcNode)
 {
     uint32_t fStart = ts_node_start_byte(funcNode);
     uint32_t fEnd = ts_node_end_byte(funcNode);
@@ -497,8 +490,6 @@ std::vector<lsp::SignatureInformation> ResolveDirectSignatures(const SignatureHe
     return signatures;
 }
 
-} // namespace
-
 std::optional<lsp::SignatureHelp> GetSignatureHelp(const SignatureHelpRequest& request)
 {
     if (!request.tree || request.sourceCode.empty())
@@ -514,7 +505,7 @@ std::optional<lsp::SignatureHelp> GetSignatureHelp(const SignatureHelpRequest& r
         return std::nullopt;
     }
 
-    CallNodes callNodes = FindCallNodes(node);
+    analysis::CallNodes callNodes = FindCallNodes(node);
     if (ts_node_is_null(callNodes.callNode))
     {
         return std::nullopt;

@@ -1,4 +1,4 @@
-﻿#include "analysis/BinaryOperatorChecker.h"
+#include "analysis/BinaryOperatorChecker.h"
 #include "analysis/BinaryOperatorHelpers.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticHelpers.h"
@@ -14,89 +14,48 @@
 
 namespace angel_lsp::analysis
 {
-namespace
+static std::pair<std::string_view, std::string_view> GetOpMethods(std::string_view op)
 {
-/**
- * @brief Is bitwise op.
- * @param[in] op Parameter op.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsArithmeticOp in
- * server/src/analysis/BinaryOperatorChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- */
-[[nodiscard]] constexpr bool IsBitwiseOp(std::string_view op) noexcept
-{
-    using namespace parser::keywords::operators;
-    return op == Pipe || op == Amp || op == Caret || op == LtLt || op == GtGt || op == GtGtGt;
-}
-
-/**
- * @brief Is arithmetic op.
- * @param[in] op Parameter op.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsBitwiseOp in
- * server/src/analysis/BinaryOperatorChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- */
-[[nodiscard]] constexpr bool IsArithmeticOp(std::string_view op) noexcept
-{
-    using namespace parser::keywords::operators;
-    return op == Plus || op == Minus || op == Star || op == Slash || op == Percent || op == StarStar;
-}
-
-[[nodiscard]] inline bool IsBitwiseOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
-{
-    return sym == gs.tokPipe || sym == gs.tokAmp || sym == gs.tokCaret || sym == gs.tokLtLt || sym == gs.tokGtGt ||
-           sym == gs.tokGtGtGt;
-}
-
-[[nodiscard]] inline bool IsArithmeticOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
-{
-    return sym == gs.tokPlus || sym == gs.tokDash || sym == gs.tokStar || sym == gs.tokSlash || sym == gs.tokPercent ||
-           sym == gs.tokStarStar;
-}
-
-std::pair<std::string_view, std::string_view> GetOpMethods(std::string_view op)
-{
-    using namespace parser::keywords::operators;
-    if (op == Pipe)
+    if (op == parser::keywords::operators::Pipe)
         return {"opOr", "opOr_r"};
-    if (op == Amp)
+    if (op == parser::keywords::operators::Amp)
         return {"opAnd", "opAnd_r"};
-    if (op == Caret)
+    if (op == parser::keywords::operators::Caret)
         return {"opXor", "opXor_r"};
-    if (op == LtLt)
+    if (op == parser::keywords::operators::LtLt)
         return {"opShl", "opShl_r"};
-    if (op == GtGt)
+    if (op == parser::keywords::operators::GtGt)
         return {"opShr", "opShr_r"};
-    if (op == GtGtGt)
+    if (op == parser::keywords::operators::GtGtGt)
         return {"opUShr", "opUShr_r"};
-    if (op == Plus)
+    if (op == parser::keywords::operators::Plus)
         return {"opAdd", "opAdd_r"};
-    if (op == Minus)
+    if (op == parser::keywords::operators::Minus)
         return {"opSub", "opSub_r"};
-    if (op == Star)
+    if (op == parser::keywords::operators::Star)
         return {"opMul", "opMul_r"};
-    if (op == Slash)
+    if (op == parser::keywords::operators::Slash)
         return {"opDiv", "opDiv_r"};
-    if (op == Percent)
+    if (op == parser::keywords::operators::Percent)
         return {"opMod", "opMod_r"};
-    if (op == StarStar)
+    if (op == parser::keywords::operators::StarStar)
         return {"opPow", "opPow_r"};
     return {"", ""};
 }
 
-bool IsIntegerOrEnum(const std::string& type, const SymbolTable& table)
+static bool IsIntegerOrEnum(const std::string& type, const SymbolTable& table)
 {
     const std::string unwrapped = UnwrapTypedef(type, table);
     return parser::primitives::IsInteger(unwrapped) || ResolvesToEnum(unwrapped, table);
 }
 
-bool IsNumericOrEnum(const std::string& type, const SymbolTable& table)
+static bool IsNumericOrEnum(const std::string& type, const SymbolTable& table)
 {
     const std::string unwrapped = UnwrapTypedef(type, table);
     return parser::primitives::IsNumeric(unwrapped) || ResolvesToEnum(unwrapped, table);
 }
 
-bool AreBitwiseOperandsCompatible(std::string_view op, const BinaryOperandTypes& types, const SymbolTable& table)
+static bool AreBitwiseOperandsCompatible(std::string_view op, const BinaryOperandTypes& types, const SymbolTable& table)
 {
     if (IsIntegerOrEnum(types.left, table) && IsIntegerOrEnum(types.right, table))
     {
@@ -122,7 +81,7 @@ bool AreBitwiseOperandsCompatible(std::string_view op, const BinaryOperandTypes&
     return false;
 }
 
-bool AreModuloOperandsCompatible(const BinaryOperandTypes& types, const SymbolTable& table)
+static bool AreModuloOperandsCompatible(const BinaryOperandTypes& types, const SymbolTable& table)
 {
     if (IsIntegerOrEnum(types.left, table) && IsIntegerOrEnum(types.right, table))
     {
@@ -136,8 +95,8 @@ bool AreModuloOperandsCompatible(const BinaryOperandTypes& types, const SymbolTa
     return false;
 }
 
-bool IsStringConcatenationCompatible(const BinaryOperandTypes& types, const SymbolTable& table,
-                                     std::string_view stringTypeName)
+static bool IsStringConcatenationCompatible(const BinaryOperandTypes& types, const SymbolTable& table,
+                                            std::string_view stringTypeName)
 {
     const bool leftStr = (types.left == stringTypeName);
     const bool rightStr = (types.right == stringTypeName);
@@ -164,7 +123,8 @@ static bool HasClassNumericOpImplConv(const std::string& classType, const std::s
            TypeHasOpImplConvTo(classType, "float", table);
 }
 
-bool HasOverloadedArithmeticOperator(std::string_view op, const BinaryOperandTypes& types, const SymbolTable& table)
+static bool HasOverloadedArithmeticOperator(std::string_view op, const BinaryOperandTypes& types,
+                                            const SymbolTable& table)
 {
     auto [opName, revOpName] = GetOpMethods(op);
     if (!opName.empty() && TypeHasOperator(types.left, std::string(opName), types.right, table))
@@ -188,8 +148,8 @@ bool HasOverloadedArithmeticOperator(std::string_view op, const BinaryOperandTyp
     return TypeHasOpImplConvTo(types.left, types.right, table) || TypeHasOpImplConvTo(types.right, types.left, table);
 }
 
-bool AreArithmeticOperandsCompatible(std::string_view op, const BinaryOperandTypes& types, const SymbolTable& table,
-                                     std::string_view stringTypeName)
+static bool AreArithmeticOperandsCompatible(std::string_view op, const BinaryOperandTypes& types,
+                                            const SymbolTable& table, std::string_view stringTypeName)
 {
     if (op == "%")
     {
@@ -206,8 +166,8 @@ bool AreArithmeticOperandsCompatible(std::string_view op, const BinaryOperandTyp
     return HasOverloadedArithmeticOperator(op, types, table);
 }
 
-bool AreBinaryOperandsCompatible(std::string_view op, const BinaryOperandTypes& types, const SymbolTable& table,
-                                 std::string_view stringTypeName)
+static bool AreBinaryOperandsCompatible(std::string_view op, const BinaryOperandTypes& types, const SymbolTable& table,
+                                        std::string_view stringTypeName)
 {
     if (types.left == "void" || types.right == "void")
     {
@@ -232,16 +192,12 @@ bool AreBinaryOperandsCompatible(std::string_view op, const BinaryOperandTypes& 
     }
     return true;
 }
-} // namespace
 
 /**
  * @brief Check binary operator compatibility.
- * @param[in] node Parameter node.
- * @param[in] scope Parameter scope.
- * @param[in,out] ctx Parameter ctx.
- * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with CheckComparisonOperatorCompatibility in
- * server/src/analysis/ComparisonOperatorChecker.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @param[in] node AST node under evaluation.
+ * @param[in] scope Enclosing lexical scope.
+ * @param[in,out] ctx Diagnostic collection and analysis context.
  */
 void CheckBinaryOperatorCompatibility(TSNode node, const Scope* scope, DiagnosticContext& ctx)
 {

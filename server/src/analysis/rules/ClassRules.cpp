@@ -20,10 +20,8 @@
 
 namespace angel_lsp::analysis::rules
 {
-namespace
-{
 /** @brief Checks if a class declaration is missing a body. */
-void CheckBodyPresence(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
+static void CheckBodyPresence(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
 {
     if (!sig.hasBraces && !sig.modifiers.isExternal)
     {
@@ -49,10 +47,8 @@ void CheckBodyPresence(const Symbol& sym, const ClassSignature& sig, const Diagn
 
 /**
  * @brief Validates external and shared rules on a class declaration.
- * @note [REFACTOR-CANDIDATE] Structural overlap (71%) with CheckEnumModifiersAndBody in
- * server/src/analysis/rules/TypeRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-void CheckExternalClass(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
+static void CheckExternalClass(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
 {
     if (!sig.modifiers.isExternal)
     {
@@ -94,7 +90,7 @@ void CheckExternalClass(const Symbol& sym, const ClassSignature& sig, const Diag
 }
 
 /** @brief Validates mixin-specific modifier restrictions. */
-void CheckMixinModifiers(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
+static void CheckMixinModifiers(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
 {
     if (!sig.modifiers.isMixin)
     {
@@ -121,7 +117,7 @@ void CheckMixinModifiers(const Symbol& sym, const ClassSignature& sig, const Dia
 }
 
 /** @brief Modifier and shape rules a class declaration must satisfy on its own. */
-void CheckClassModifiers(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
+static void CheckClassModifiers(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
 {
     CheckBodyPresence(sym, sig, ctx);
     CheckExternalClass(sym, sig, ctx);
@@ -131,7 +127,7 @@ void CheckClassModifiers(const Symbol& sym, const ClassSignature& sig, const Dia
 /**
  * @brief Collects the method names a type actually provides, base *classes* included.
  */
-ankerl::unordered_dense::set<std::string>
+static ankerl::unordered_dense::set<std::string>
 CollectImplementedMethodNames(const std::string& typeName, const SymbolTable& table, const RuleIndex& index)
 {
     ankerl::unordered_dense::set<std::string> names;
@@ -156,8 +152,8 @@ CollectImplementedMethodNames(const std::string& typeName, const SymbolTable& ta
 }
 
 /** @brief Collects all interfaces that must be checked for implementation. */
-void CollectInterfacesToCheck(const std::vector<std::string>& bases, const SymbolTable& table,
-                              ankerl::unordered_dense::set<std::string>& interfacesToCheck)
+static void CollectInterfacesToCheck(const std::vector<std::string>& bases, const SymbolTable& table,
+                                     ankerl::unordered_dense::set<std::string>& interfacesToCheck)
 {
     for (const auto& baseName : bases)
     {
@@ -190,10 +186,10 @@ void CollectInterfacesToCheck(const std::vector<std::string>& bases, const Symbo
 }
 
 /** @brief Reports diagnostics for unimplemented interface methods. */
-void ReportMissingInterfaceMethods(const Symbol& sym,
-                                   const ankerl::unordered_dense::set<std::string>& interfacesToCheck,
-                                   const ankerl::unordered_dense::set<std::string>& implemented,
-                                   const DiagnosticContext& ctx)
+static void ReportMissingInterfaceMethods(const Symbol& sym,
+                                          const ankerl::unordered_dense::set<std::string>& interfacesToCheck,
+                                          const ankerl::unordered_dense::set<std::string>& implemented,
+                                          const DiagnosticContext& ctx)
 {
     for (const auto& cleanBase : interfacesToCheck)
     {
@@ -211,7 +207,7 @@ void ReportMissingInterfaceMethods(const Symbol& sym,
 /**
  * @brief Reports interface methods a class declares nowhere in its hierarchy.
  */
-void CheckInterfaceImplementation(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
+static void CheckInterfaceImplementation(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
 {
     if (sig.modifiers.isMixin)
     {
@@ -233,8 +229,8 @@ void CheckInterfaceImplementation(const Symbol& sym, const ClassSignature& sig, 
 }
 
 /** @brief Checks if a method symbol matches a final base function. */
-bool MatchesFinalBaseFunction(const Symbol& mSym, const std::string& cleanBase, const std::string& methodName,
-                              const SymbolTable& table)
+static bool MatchesFinalBaseFunction(const Symbol& mSym, const std::string& cleanBase, const std::string& methodName,
+                                     const SymbolTable& table)
 {
     auto basePtr = table.FindMemberSymbolPtr(cleanBase, methodName);
     if (!basePtr)
@@ -256,7 +252,8 @@ bool MatchesFinalBaseFunction(const Symbol& mSym, const std::string& cleanBase, 
 }
 
 /** @brief Checks if an accessor matches a final base property accessor. */
-bool MatchesFinalBaseProperty(const std::string& cleanBase, const std::string& methodName, const SymbolTable& table)
+static bool MatchesFinalBaseProperty(const std::string& cleanBase, const std::string& methodName,
+                                     const SymbolTable& table)
 {
     if (methodName.size() <= 4)
     {
@@ -292,16 +289,16 @@ bool MatchesFinalBaseProperty(const std::string& cleanBase, const std::string& m
 }
 
 /** @brief Checks if a method symbol matches any final base method or property accessor candidate. */
-bool MatchesFinalBaseMethod(const Symbol& mSym, const std::string& cleanBase, const std::string& methodName,
-                            const SymbolTable& table)
+static bool MatchesFinalBaseMethod(const Symbol& mSym, const std::string& cleanBase, const std::string& methodName,
+                                   const SymbolTable& table)
 {
     return MatchesFinalBaseFunction(mSym, cleanBase, methodName, table) ||
            MatchesFinalBaseProperty(cleanBase, methodName, table);
 }
 
 /** @brief Checks if a container declares a property matching a final accessor. */
-void CheckFinalPropertyOverride(const std::string& container, const std::string& methodName,
-                                const std::string& reportingBase, const DiagnosticContext& ctx)
+static void CheckFinalPropertyOverride(const std::string& container, const std::string& methodName,
+                                       const std::string& reportingBase, const DiagnosticContext& ctx)
 {
     if (methodName.size() <= 4 || (!methodName.starts_with("get_") && !methodName.starts_with("set_")))
     {
@@ -335,8 +332,8 @@ void CheckFinalPropertyOverride(const std::string& container, const std::string&
 }
 
 /** @brief Reports methods overriding final methods of a base class or its mixins. */
-void ReportFinalMethodOverrides(const std::string& container, const std::string& cleanBase,
-                                const std::string& reportingBase, const DiagnosticContext& ctx)
+static void ReportFinalMethodOverrides(const std::string& container, const std::string& cleanBase,
+                                       const std::string& reportingBase, const DiagnosticContext& ctx)
 {
     const SymbolTable& table = ctx.request.symbolTable;
     for (const auto& methodName : ctx.request.GetRuleIndex().Members(cleanBase).finalMethodNames)
@@ -362,7 +359,7 @@ void ReportFinalMethodOverrides(const std::string& container, const std::string&
 }
 
 /** @brief Reports a method that replaces one a visible base class declared final. */
-void CheckFinalOverrides(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
+static void CheckFinalOverrides(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
 {
     const SymbolTable& table = ctx.request.symbolTable;
     const std::string container = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
@@ -415,6 +412,8 @@ void CheckFinalOverrides(const Symbol& sym, const ClassSignature& sig, const Dia
     }
 }
 
+namespace class_rules_detail
+{
 /**
  * @brief Input parameters bundled for checking base classes.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -425,9 +424,12 @@ struct BaseCheckRequest
     const ClassSignature& sig;
     const DiagnosticContext& ctx;
 };
+} // namespace class_rules_detail
+
+using BaseCheckRequest = class_rules_detail::BaseCheckRequest;
 
 /** @brief Checks single base class properties (final, mixin class inherit). */
-bool CheckBaseClassSymbol(const BaseCheckRequest& req, const Symbol& base, const std::string& cleanBase)
+static bool CheckBaseClassSymbol(const BaseCheckRequest& req, const Symbol& base, const std::string& cleanBase)
 {
     if (base.type != SymbolType::Class)
     {
@@ -452,13 +454,13 @@ bool CheckBaseClassSymbol(const BaseCheckRequest& req, const Symbol& base, const
     return !base.GetClass().modifiers.isMixin;
 }
 
-[[nodiscard]] inline std::string_view ScopeQualifier(std::string_view name) noexcept
+[[nodiscard]] static inline std::string_view ScopeQualifier(std::string_view name) noexcept
 {
     return utils::ParentScopeView(name);
 }
 
 /** @brief Retrieves the base_class_list AST node for a class or interface symbol. */
-TSNode FindBaseListNode(const Symbol& sym, const DiagnosticContext& ctx)
+static TSNode FindBaseListNode(const Symbol& sym, const DiagnosticContext& ctx)
 {
     if (!ctx.request.nodeIndex)
     {
@@ -477,7 +479,7 @@ TSNode FindBaseListNode(const Symbol& sym, const DiagnosticContext& ctx)
 }
 
 /** @brief Obtains the exact AST range of the base at index in base_class_list. */
-SourceRange GetBaseRange(TSNode baseList, size_t index, const SourceRange& fallbackRange)
+static SourceRange GetBaseRange(TSNode baseList, size_t index, const SourceRange& fallbackRange)
 {
     if (ts_node_is_null(baseList))
     {
@@ -502,7 +504,7 @@ SourceRange GetBaseRange(TSNode baseList, size_t index, const SourceRange& fallb
 }
 
 /** @brief Checks if base class is synthetic or ignored by engine rules. */
-bool IsIgnoredOrProxyBase(const std::string& cleanBase, const DiagnosticContext& ctx)
+static bool IsIgnoredOrProxyBase(const std::string& cleanBase, const DiagnosticContext& ctx)
 {
     if (!ctx.request.engineRules)
     {
@@ -517,8 +519,8 @@ bool IsIgnoredOrProxyBase(const std::string& cleanBase, const DiagnosticContext&
 }
 
 /** @brief Finds candidate base symbols in qualified, container, using-namespace or global scopes. */
-std::shared_ptr<const std::vector<Symbol>> FindBaseCandidateSymbols(std::string_view cleanBase, const Symbol& sym,
-                                                                    const DiagnosticContext& ctx)
+static std::shared_ptr<const std::vector<Symbol>>
+FindBaseCandidateSymbols(std::string_view cleanBase, const Symbol& sym, const DiagnosticContext& ctx)
 {
     const auto& table = ctx.request.symbolTable;
 
@@ -555,7 +557,7 @@ std::shared_ptr<const std::vector<Symbol>> FindBaseCandidateSymbols(std::string_
 }
 
 /** @brief Checks if a qualified base's prefix is an invalid non-namespace type like a class. */
-bool IsInvalidClassScopeQualifier(std::string_view cleanBase, const Symbol& sym, const DiagnosticContext& ctx)
+static bool IsInvalidClassScopeQualifier(std::string_view cleanBase, const Symbol& sym, const DiagnosticContext& ctx)
 {
     if (!HasScopeQualifier(cleanBase))
     {
@@ -572,7 +574,7 @@ bool IsInvalidClassScopeQualifier(std::string_view cleanBase, const Symbol& sym,
 }
 
 /** @brief Validates an individual base class entry and returns true if it resolved to a concrete class base. */
-bool ValidateOneBase(const BaseCheckRequest& req, const std::string& cleanBase, const SourceRange& baseRange)
+static bool ValidateOneBase(const BaseCheckRequest& req, const std::string& cleanBase, const SourceRange& baseRange)
 {
     if (IsIgnoredOrProxyBase(cleanBase, req.ctx))
     {
@@ -622,7 +624,7 @@ bool ValidateOneBase(const BaseCheckRequest& req, const std::string& cleanBase, 
 }
 
 /** @brief Rules about the base list: existence, kind, count and finality. */
-void CheckBases(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
+static void CheckBases(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
 {
     uint32_t classBaseCount = 0;
     const BaseCheckRequest req{sym, sig, ctx};
@@ -655,7 +657,7 @@ void CheckBases(const Symbol& sym, const ClassSignature& sig, const DiagnosticCo
 }
 
 /** @brief Validates bases declared on an interface. */
-void CheckInterfaceBases(const Symbol& sym, const InterfaceSignature& sig, const DiagnosticContext& ctx)
+static void CheckInterfaceBases(const Symbol& sym, const InterfaceSignature& sig, const DiagnosticContext& ctx)
 {
     const TSNode baseListNode = FindBaseListNode(sym, ctx);
 
@@ -707,9 +709,9 @@ void CheckInterfaceBases(const Symbol& sym, const InterfaceSignature& sig, const
 }
 
 /** @brief Collects getter and setter functions declared in the specified container. */
-void CollectPropertyAccessors(const std::string& container, const DiagnosticContext& ctx,
-                              ankerl::unordered_dense::map<std::string, const Symbol*>& getters,
-                              ankerl::unordered_dense::map<std::string, const Symbol*>& setters)
+static void CollectPropertyAccessors(const std::string& container, const DiagnosticContext& ctx,
+                                     ankerl::unordered_dense::map<std::string, const Symbol*>& getters,
+                                     ankerl::unordered_dense::map<std::string, const Symbol*>& setters)
 {
     ctx.request.symbolTable.ForEachSymbolInFile(
         ctx.request.fileUri,
@@ -738,9 +740,9 @@ void CollectPropertyAccessors(const std::string& container, const DiagnosticCont
 }
 
 /** @brief Validates matching types between getter returns and setter parameter. */
-void ValidatePropertyAccessorPairs(const ankerl::unordered_dense::map<std::string, const Symbol*>& getters,
-                                   const ankerl::unordered_dense::map<std::string, const Symbol*>& setters,
-                                   const DiagnosticContext& ctx)
+static void ValidatePropertyAccessorPairs(const ankerl::unordered_dense::map<std::string, const Symbol*>& getters,
+                                          const ankerl::unordered_dense::map<std::string, const Symbol*>& setters,
+                                          const DiagnosticContext& ctx)
 {
     for (const auto& [propName, getSym] : getters)
     {
@@ -762,7 +764,7 @@ void ValidatePropertyAccessorPairs(const ankerl::unordered_dense::map<std::strin
 }
 
 /** @brief Reports property accessor get/set type mismatches within a class/interface. */
-void CheckPropertyAccessors(const Symbol& sym, const DiagnosticContext& ctx)
+static void CheckPropertyAccessors(const Symbol& sym, const DiagnosticContext& ctx)
 {
     const std::string container = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
     if (container.empty())
@@ -779,6 +781,8 @@ void CheckPropertyAccessors(const Symbol& sym, const DiagnosticContext& ctx)
 
 using TransparentStringSet = ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>;
 
+namespace class_rules_detail
+{
 /**
  * @brief Context bundled for inspecting mixin statement resolutions.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -793,7 +797,12 @@ struct MixinCheckContext
     TransparentStringSet& reported;
     const NodeIndex* nodeIndex = nullptr;
 };
+} // namespace class_rules_detail
 
+using MixinCheckContext = class_rules_detail::MixinCheckContext;
+
+namespace class_rules_detail
+{
 /**
  * @brief Execution state for checking inside a mixin function body.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -803,7 +812,12 @@ struct FunctionCheckState
     const ankerl::unordered_dense::set<std::string_view>& localNames;
     MixinCheckContext& mctx;
 };
+} // namespace class_rules_detail
 
+using FunctionCheckState = class_rules_detail::FunctionCheckState;
+
+namespace class_rules_detail
+{
 /**
  * @brief Base context for host class hierarchies.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -813,9 +827,12 @@ struct MixinHierarchyMembers
     std::string hostClassName;
     TransparentStringSet hostMembers;
 };
+} // namespace class_rules_detail
+
+using MixinHierarchyMembers = class_rules_detail::MixinHierarchyMembers;
 
 /** @brief Collects all mixins included via includedMixins or bases. */
-std::vector<std::string> CollectIncludedMixins(const ClassSignature& sig, const SymbolTable& table)
+static std::vector<std::string> CollectIncludedMixins(const ClassSignature& sig, const SymbolTable& table)
 {
     std::vector<std::string> includedMixins = sig.includedMixins;
     for (const auto& b : sig.bases)
@@ -833,8 +850,8 @@ std::vector<std::string> CollectIncludedMixins(const ClassSignature& sig, const 
 }
 
 /** @brief Collects member names for a container and its qualified/short variants. */
-void CollectContainerMembers(const std::string& containerName, const RuleIndex& ruleIndex,
-                             TransparentStringSet& outMembers)
+static void CollectContainerMembers(const std::string& containerName, const RuleIndex& ruleIndex,
+                                    TransparentStringSet& outMembers)
 {
     const auto insertMembers = [&](const auto& members)
     {
@@ -860,8 +877,8 @@ void CollectContainerMembers(const std::string& containerName, const RuleIndex& 
 }
 
 /** @brief Collects all members across an inheritance hierarchy. */
-void CollectHierarchyMembers(const std::vector<std::string>& hierarchy, const RuleIndex& ruleIndex,
-                             TransparentStringSet& outMembers)
+static void CollectHierarchyMembers(const std::vector<std::string>& hierarchy, const RuleIndex& ruleIndex,
+                                    TransparentStringSet& outMembers)
 {
     for (const auto& ancestor : hierarchy)
     {
@@ -870,7 +887,8 @@ void CollectHierarchyMembers(const std::vector<std::string>& hierarchy, const Ru
 }
 
 /** @brief Resolves the symbol representing a mixin class. */
-const Symbol* FindMixinSymbol(const std::string& mixinName, const SymbolTable& table, std::optional<Symbol>& fallback)
+static const Symbol* FindMixinSymbol(const std::string& mixinName, const SymbolTable& table,
+                                     std::optional<Symbol>& fallback)
 {
     if (auto candidates = table.FindSymbolsPtr(mixinName))
     {
@@ -897,7 +915,7 @@ const Symbol* FindMixinSymbol(const std::string& mixinName, const SymbolTable& t
 }
 
 /** @brief Reads or retrieves the source text for a mixin symbol. */
-std::string ReadMixinSource(const Symbol& mixinSym, const DiagnosticContext& ctx)
+static std::string ReadMixinSource(const Symbol& mixinSym, const DiagnosticContext& ctx)
 {
     if (mixinSym.fileUri == ctx.request.fileUri)
     {
@@ -916,7 +934,7 @@ std::string ReadMixinSource(const Symbol& mixinSym, const DiagnosticContext& ctx
 }
 
 /** @brief Finds the AST node declaring the mixin. */
-TSNode FindMixinAstNode(const TSTree* mixinTree, const Symbol& mixinSym)
+static TSNode FindMixinAstNode(const TSTree* mixinTree, const Symbol& mixinSym)
 {
     if (!mixinTree)
     {
@@ -932,8 +950,8 @@ TSNode FindMixinAstNode(const TSTree* mixinTree, const Symbol& mixinSym)
 }
 
 /** @brief Locates the point range where a mixin is included in the host class. */
-SourceRange FindHostMixinRange(const Symbol& sym, const Symbol& mixinSym, const std::string& mixinName,
-                               const DiagnosticContext& ctx)
+static SourceRange FindHostMixinRange(const Symbol& sym, const Symbol& mixinSym, const std::string& mixinName,
+                                      const DiagnosticContext& ctx)
 {
     const uint32_t startL = sym.selectionRange.endLine > sym.selectionRange.startLine ||
                                     sym.selectionRange.endCharacter > sym.selectionRange.startCharacter
@@ -974,8 +992,8 @@ SourceRange FindHostMixinRange(const Symbol& sym, const Symbol& mixinSym, const 
 }
 
 /** @brief Emits a diagnostic when a mixin refers to a member not present in the host. */
-void EmitMixinMemberNotFound(const MixinCheckContext& mctx, std::string_view memberName, TSNode node,
-                             const DiagnosticContext& ctx)
+static void EmitMixinMemberNotFound(const MixinCheckContext& mctx, std::string_view memberName, TSNode node,
+                                    const DiagnosticContext& ctx)
 {
     const TSPoint sPoint = ts_node_start_point(node);
     const TSPoint ePoint = ts_node_end_point(node);
@@ -996,7 +1014,8 @@ void EmitMixinMemberNotFound(const MixinCheckContext& mctx, std::string_view mem
 }
 
 /** @brief Checks member expressions of form this->member. */
-void CheckThisMember(TSNode cur, std::string_view mixinSource, MixinCheckContext& mctx, const DiagnosticContext& ctx)
+static void CheckThisMember(TSNode cur, std::string_view mixinSource, MixinCheckContext& mctx,
+                            const DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode objNode = parser::GetChildByField(cur, gs.fieldObject);
@@ -1006,13 +1025,13 @@ void CheckThisMember(TSNode cur, std::string_view mixinSource, MixinCheckContext
         return;
     }
 
-    std::string objName = GetNodeText(objNode, mixinSource);
+    std::string objName = parser::GetNodeText(objNode, mixinSource);
     if (objName != "this")
     {
         return;
     }
 
-    std::string propName = GetNodeText(propNode, mixinSource);
+    std::string propName = parser::GetNodeText(propNode, mixinSource);
     if (!propName.empty() && !mctx.hostMembers.contains(propName) && !mctx.mixinSelfMembers.contains(propName) &&
         !mctx.hostMembers.contains("get_" + propName) && !mctx.mixinSelfMembers.contains("get_" + propName) &&
         !mctx.hostMembers.contains("set_" + propName) && !mctx.mixinSelfMembers.contains("set_" + propName) &&
@@ -1024,14 +1043,14 @@ void CheckThisMember(TSNode cur, std::string_view mixinSource, MixinCheckContext
 }
 
 /** @brief Checks if a child node matches a named field of the parent by byte offset. */
-bool IsNamedChildMatch(TSNode parent, TSFieldId fieldId, TSNode cur)
+static bool IsNamedChildMatch(TSNode parent, TSFieldId fieldId, TSNode cur)
 {
     TSNode child = ts_node_child_by_field_id(parent, fieldId);
     return !ts_node_is_null(child) && ts_node_start_byte(child) == ts_node_start_byte(cur);
 }
 
 /** @brief Checks if a scoped_identifier context represents an external or qualified lookup. */
-bool IsScopedIdentifierIgnored(TSNode parent, const parser::GrammarSymbols& gs)
+static bool IsScopedIdentifierIgnored(TSNode parent, const parser::GrammarSymbols& gs)
 {
     if (ts_node_child_count(parent) > 1)
     {
@@ -1051,7 +1070,7 @@ bool IsScopedIdentifierIgnored(TSNode parent, const parser::GrammarSymbols& gs)
 }
 
 /** @brief Checks if an identifier is a declaration name or member field name. */
-bool IsDeclarationOrFieldChild(TSNode cur, TSNode parent, TSSymbol pSym, const parser::GrammarSymbols& gs)
+static bool IsDeclarationOrFieldChild(TSNode cur, TSNode parent, TSSymbol pSym, const parser::GrammarSymbols& gs)
 {
     if (pSym == gs.symMemberExpression)
     {
@@ -1078,7 +1097,7 @@ bool IsDeclarationOrFieldChild(TSNode cur, TSNode parent, TSSymbol pSym, const p
 }
 
 /** @brief Determines if an identifier node is in a non-reference AST context. */
-bool ShouldIgnoreMixinIdentifier(TSNode cur)
+static bool ShouldIgnoreMixinIdentifier(TSNode cur)
 {
     TSNode parent = parser::GetParent(cur);
     if (ts_node_is_null(parent))
@@ -1113,7 +1132,7 @@ bool ShouldIgnoreMixinIdentifier(TSNode cur)
 }
 
 /** @brief Checks if a name is a built-in symbol, keyword, or primitive type. */
-bool IsBuiltinOrKeyword(std::string_view name, std::string_view effectiveStringTypeName)
+static bool IsBuiltinOrKeyword(std::string_view name, std::string_view effectiveStringTypeName)
 {
     if (name.empty() || name == "this" || name == "super" || name == "cast" || name == "null" || name == "true" ||
         name == "false" || name == effectiveStringTypeName)
@@ -1123,6 +1142,8 @@ bool IsBuiltinOrKeyword(std::string_view name, std::string_view effectiveStringT
     return IsKeyword(name) || IsPrimitiveTypeName(name);
 }
 
+namespace class_rules_detail
+{
 /**
  * @brief Represents Accessor lookup context.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1133,15 +1154,19 @@ struct AccessorLookupContext
     std::string_view getView;
     std::string_view setView;
 };
+} // namespace class_rules_detail
 
-bool HasSelfOrHostPropertyAccessor(std::string_view getView, std::string_view setView, const FunctionCheckState& state)
+using AccessorLookupContext = class_rules_detail::AccessorLookupContext;
+
+static bool HasSelfOrHostPropertyAccessor(std::string_view getView, std::string_view setView,
+                                          const FunctionCheckState& state)
 {
     return state.mctx.mixinSelfMembers.contains(getView) || state.mctx.mixinSelfMembers.contains(setView) ||
            state.mctx.hostMembers.contains(getView) || state.mctx.hostMembers.contains(setView);
 }
 
-bool HasGlobalPropertyAccessor(std::string_view name, std::string_view getView, std::string_view setView,
-                               const DiagnosticContext& ctx)
+static bool HasGlobalPropertyAccessor(std::string_view name, std::string_view getView, std::string_view setView,
+                                      const DiagnosticContext& ctx)
 {
     const auto& ruleIndex = ctx.request.GetRuleIndex();
     if (ruleIndex.globalAccessorPropertyNames.contains(name) ||
@@ -1153,7 +1178,8 @@ bool HasGlobalPropertyAccessor(std::string_view name, std::string_view getView, 
     return table.FindSymbolsPtr(getView) != nullptr || table.FindSymbolsPtr(setView) != nullptr;
 }
 
-bool HasNamespacePropertyAccessor(const AccessorLookupContext& actx, std::string_view ns, const DiagnosticContext& ctx)
+static bool HasNamespacePropertyAccessor(const AccessorLookupContext& actx, std::string_view ns,
+                                         const DiagnosticContext& ctx)
 {
     if (ns.empty())
     {
@@ -1182,7 +1208,8 @@ bool HasNamespacePropertyAccessor(const AccessorLookupContext& actx, std::string
 }
 
 /** @brief Checks if a name matches getter/setter property accessors in mixin, host, global, or namespaces. */
-bool HasPropertyAccessorMatch(std::string_view name, const FunctionCheckState& state, const DiagnosticContext& ctx)
+static bool HasPropertyAccessorMatch(std::string_view name, const FunctionCheckState& state,
+                                     const DiagnosticContext& ctx)
 {
     if (name.size() > 120)
     {
@@ -1222,7 +1249,7 @@ bool HasPropertyAccessorMatch(std::string_view name, const FunctionCheckState& s
     return false;
 }
 
-bool HasNamespaceMember(std::string_view name, std::string_view ns, const DiagnosticContext& ctx)
+static bool HasNamespaceMember(std::string_view name, std::string_view ns, const DiagnosticContext& ctx)
 {
     if (ns.empty())
     {
@@ -1245,7 +1272,7 @@ bool HasNamespaceMember(std::string_view name, std::string_view ns, const Diagno
     return false;
 }
 
-bool IsEngineOrGlobalIdentifier(std::string_view name, const DiagnosticContext& ctx)
+static bool IsEngineOrGlobalIdentifier(std::string_view name, const DiagnosticContext& ctx)
 {
     if (ctx.request.engineRules)
     {
@@ -1260,8 +1287,8 @@ bool IsEngineOrGlobalIdentifier(std::string_view name, const DiagnosticContext& 
            ctx.request.symbolTable.FindSymbolsPtr(name) != nullptr;
 }
 
-bool IsValidInEnclosingOrUsingNamespaces(std::string_view name, const FunctionCheckState& state,
-                                         const DiagnosticContext& ctx)
+static bool IsValidInEnclosingOrUsingNamespaces(std::string_view name, const FunctionCheckState& state,
+                                                const DiagnosticContext& ctx)
 {
     if (state.mctx.mixinSym && HasNamespaceMember(name, state.mctx.mixinSym->containerName, ctx))
     {
@@ -1283,7 +1310,7 @@ bool IsValidInEnclosingOrUsingNamespaces(std::string_view name, const FunctionCh
 }
 
 /** @brief Checks if an identifier resolves in local, mixin, host, or global scopes. */
-bool IsValidMixinIdentifier(std::string_view name, const FunctionCheckState& state, const DiagnosticContext& ctx)
+static bool IsValidMixinIdentifier(std::string_view name, const FunctionCheckState& state, const DiagnosticContext& ctx)
 {
     if (IsBuiltinOrKeyword(name, ctx.request.GetEffectiveStringTypeName()))
     {
@@ -1302,7 +1329,8 @@ bool IsValidMixinIdentifier(std::string_view name, const FunctionCheckState& sta
 }
 
 /** @brief Checks bare function calls without qualifiers. */
-void CheckCallMember(TSNode cur, std::string_view mixinSource, FunctionCheckState& state, const DiagnosticContext& ctx)
+static void CheckCallMember(TSNode cur, std::string_view mixinSource, FunctionCheckState& state,
+                            const DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode fnNode = parser::GetChildByField(cur, gs.fieldFunction);
@@ -1330,8 +1358,8 @@ void CheckCallMember(TSNode cur, std::string_view mixinSource, FunctionCheckStat
 }
 
 /** @brief Checks bare identifier references inside mixin function bodies. */
-void CheckIdentifierMember(TSNode cur, std::string_view mixinSource, FunctionCheckState& state,
-                           const DiagnosticContext& ctx)
+static void CheckIdentifierMember(TSNode cur, std::string_view mixinSource, FunctionCheckState& state,
+                                  const DiagnosticContext& ctx)
 {
     if (ShouldIgnoreMixinIdentifier(cur))
     {
@@ -1351,8 +1379,8 @@ void CheckIdentifierMember(TSNode cur, std::string_view mixinSource, FunctionChe
 }
 
 /** @brief Collects parameter and local variable names within a mixin function. */
-void CollectLocalNames(TSNode memNode, std::string_view mixinSource, const MixinCheckContext& mctx,
-                       ankerl::unordered_dense::set<std::string_view>& localNames)
+static void CollectLocalNames(TSNode memNode, std::string_view mixinSource, const MixinCheckContext& mctx,
+                              ankerl::unordered_dense::set<std::string_view>& localNames)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode paramsNode = parser::GetChildByField(memNode, gs.fieldParameters);
@@ -1406,8 +1434,8 @@ void CollectLocalNames(TSNode memNode, std::string_view mixinSource, const Mixin
 }
 
 /** @brief Walks statements in a mixin function body using bounded NodeIndex scans. */
-void CheckFuncBodyStatements(TSNode funcBody, std::string_view mixinSource, FunctionCheckState& state,
-                             const DiagnosticContext& ctx)
+static void CheckFuncBodyStatements(TSNode funcBody, std::string_view mixinSource, FunctionCheckState& state,
+                                    const DiagnosticContext& ctx)
 {
     if (!state.mctx.nodeIndex)
     {
@@ -1440,8 +1468,8 @@ void CheckFuncBodyStatements(TSNode funcBody, std::string_view mixinSource, Func
 }
 
 /** @brief Checks member declarations inside a mixin body. */
-void CheckMixinBody(TSNode bodyNode, std::string_view mixinSource, MixinCheckContext& mctx,
-                    const DiagnosticContext& ctx)
+static void CheckMixinBody(TSNode bodyNode, std::string_view mixinSource, MixinCheckContext& mctx,
+                           const DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     parser::ForEachChildNode(bodyNode,
@@ -1466,7 +1494,8 @@ void CheckMixinBody(TSNode bodyNode, std::string_view mixinSource, MixinCheckCon
 }
 
 /** @brief Collects direct members of a mixin symbol. */
-void CollectMixinSelfMembers(const Symbol& mixinSym, const RuleIndex& ruleIndex, TransparentStringSet& outMembers)
+static void CollectMixinSelfMembers(const Symbol& mixinSym, const RuleIndex& ruleIndex,
+                                    TransparentStringSet& outMembers)
 {
     CollectContainerMembers(mixinSym.qualifiedName, ruleIndex, outMembers);
     if (mixinSym.name != mixinSym.qualifiedName)
@@ -1475,6 +1504,8 @@ void CollectMixinSelfMembers(const Symbol& mixinSym, const RuleIndex& ruleIndex,
     }
 }
 
+namespace class_rules_detail
+{
 /**
  * @brief Represents Mixin instantiation check request.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1487,7 +1518,12 @@ struct MixinInstantiationCheckRequest
     const DiagnosticContext& ctx;
     ankerl::unordered_dense::map<std::string, MixinFileCacheEntry>& fileCache;
 };
+} // namespace class_rules_detail
 
+using MixinInstantiationCheckRequest = class_rules_detail::MixinInstantiationCheckRequest;
+
+namespace class_rules_detail
+{
 /**
  * @brief Represents Mixin ast target.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1499,9 +1535,12 @@ struct MixinAstTarget
     const NodeIndex* nodeIndex = nullptr;
     std::unique_ptr<NodeIndex> localIndex;
 };
+} // namespace class_rules_detail
+
+using MixinAstTarget = class_rules_detail::MixinAstTarget;
 
 /** @brief Resolves AST tree, source text, and NodeIndex for a mixin symbol. */
-MixinAstTarget ResolveMixinAstTarget(const Symbol& mixinSym, MixinInstantiationCheckRequest& req)
+static MixinAstTarget ResolveMixinAstTarget(const Symbol& mixinSym, MixinInstantiationCheckRequest& req)
 {
     MixinAstTarget target;
     if (mixinSym.fileUri == req.ctx.request.fileUri && req.ctx.request.tree)
@@ -1544,7 +1583,7 @@ MixinAstTarget ResolveMixinAstTarget(const Symbol& mixinSym, MixinInstantiationC
 }
 
 /** @brief Validates a single mixin instantiation against host class. */
-void CheckSingleMixinInstantiation(MixinInstantiationCheckRequest& req)
+static void CheckSingleMixinInstantiation(MixinInstantiationCheckRequest& req)
 {
     std::optional<Symbol> fallbackMixin;
     const Symbol* mixinSym = FindMixinSymbol(req.mixinName, req.ctx.request.symbolTable, fallbackMixin);
@@ -1583,8 +1622,8 @@ void CheckSingleMixinInstantiation(MixinInstantiationCheckRequest& req)
 /**
  * @brief Checks that internal statements of mixins instantiated in a host class resolve against the host.
  */
-void CheckMixinInstantiations(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx,
-                              MixinFileCache* sharedCache)
+static void CheckMixinInstantiations(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx,
+                                     MixinFileCache* sharedCache)
 {
     if (sig.modifiers.isMixin)
     {
@@ -1611,7 +1650,6 @@ void CheckMixinInstantiations(const Symbol& sym, const ClassSignature& sig, cons
         CheckSingleMixinInstantiation(req);
     }
 }
-} // namespace
 
 bool WalkInheritancePath(std::vector<std::string>& path, const std::string& current, const SymbolTable& table)
 {

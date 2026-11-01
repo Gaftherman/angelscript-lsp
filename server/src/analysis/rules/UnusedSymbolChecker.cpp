@@ -1,4 +1,4 @@
-﻿#include "analysis/rules/UnusedSymbolChecker.h"
+#include "analysis/rules/UnusedSymbolChecker.h"
 
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/DiagnosticContext.h"
@@ -22,9 +22,9 @@
 
 namespace angel_lsp::analysis::rules
 {
-namespace
-{
 
+namespace unused_symbol_checker_detail
+{
 /**
  * @brief Represents Unused check context.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -40,13 +40,16 @@ struct UnusedCheckContext
         derivedClassesByBase;
     const RuleIndex& ruleIndex;
 };
+} // namespace unused_symbol_checker_detail
 
-inline uint64_t PackLoc(uint32_t line, uint32_t col) noexcept
+using UnusedCheckContext = unused_symbol_checker_detail::UnusedCheckContext;
+
+static inline uint64_t PackLoc(uint32_t line, uint32_t col) noexcept
 {
     return (static_cast<uint64_t>(line) << 32) | static_cast<uint64_t>(col);
 }
 
-void CollectDefLocations(const Scope* rootScope, ankerl::unordered_dense::set<uint64_t>& defLocs)
+static void CollectDefLocations(const Scope* rootScope, ankerl::unordered_dense::set<uint64_t>& defLocs)
 {
     if (!rootScope)
         return;
@@ -66,6 +69,8 @@ void CollectDefLocations(const Scope* rootScope, ankerl::unordered_dense::set<ui
     }
 }
 
+namespace unused_symbol_checker_detail
+{
 /**
  * @brief Represents Doc ref collect context.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -76,9 +81,12 @@ struct DocRefCollectContext
     std::string_view sourceCode;
     std::span<const std::string> delegateProps;
 };
+} // namespace unused_symbol_checker_detail
 
-void CollectDocReferences(const Scope* rootScope, const DocRefCollectContext& docCtx,
-                          ankerl::unordered_dense::set<std::string>& refNames)
+using DocRefCollectContext = unused_symbol_checker_detail::DocRefCollectContext;
+
+static void CollectDocReferences(const Scope* rootScope, const DocRefCollectContext& docCtx,
+                                 ankerl::unordered_dense::set<std::string>& refNames)
 {
     if (!rootScope)
         return;
@@ -115,12 +123,10 @@ void CollectDocReferences(const Scope* rootScope, const DocRefCollectContext& do
 
 /**
  * @brief Collect used locals.
- * @param[in] rootScope Parameter rootScope.
- * @param[in] usedLocals Parameter usedLocals.
- * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with CollectUsedDefinitions in
- * server/src/analysis/SemanticAnalyzer.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @param[in] rootScope Lexical scope for symbol lookup.
+ * @param[in] usedLocals Source location or position.
  */
-void CollectUsedLocals(const Scope* rootScope, ankerl::unordered_dense::set<const LocalDefinition*>& usedLocals)
+static void CollectUsedLocals(const Scope* rootScope, ankerl::unordered_dense::set<const LocalDefinition*>& usedLocals)
 {
     if (!rootScope)
         return;
@@ -146,7 +152,8 @@ void CollectUsedLocals(const Scope* rootScope, ankerl::unordered_dense::set<cons
     }
 }
 
-void CollectCrossFileReferences(const SemanticAnalysisRequest& req, ankerl::unordered_dense::set<std::string>& refNames)
+static void CollectCrossFileReferences(const SemanticAnalysisRequest& req,
+                                       ankerl::unordered_dense::set<std::string>& refNames)
 {
     if (!req.scopeIndex || req.moduleFileUris.empty())
         return;
@@ -164,7 +171,7 @@ void CollectCrossFileReferences(const SemanticAnalysisRequest& req, ankerl::unor
     }
 }
 
-std::string ExtractStringValue(TSNode exprNode, const SemanticAnalysisRequest& req)
+static std::string ExtractStringValue(TSNode exprNode, const SemanticAnalysisRequest& req)
 {
     if (ts_node_is_null(exprNode))
     {
@@ -205,7 +212,7 @@ std::string ExtractStringValue(TSNode exprNode, const SemanticAnalysisRequest& r
     return result;
 }
 
-bool MatchCallee(std::string_view funcText, const config::StringReflectionCallee& c)
+static bool MatchCallee(std::string_view funcText, const config::StringReflectionCallee& c)
 {
     std::string_view receiver;
     std::string_view method = funcText;
@@ -227,7 +234,7 @@ bool MatchCallee(std::string_view funcText, const config::StringReflectionCallee
     return std::any_of(c.methods.begin(), c.methods.end(), [&](const std::string& m) { return m == method; });
 }
 
-bool MatchesRegexSafe(const std::string& candidate, const std::string& pattern)
+static bool MatchesRegexSafe(const std::string& candidate, const std::string& pattern)
 {
     if (pattern.empty() || candidate.empty())
     {
@@ -253,8 +260,8 @@ bool MatchesRegexSafe(const std::string& candidate, const std::string& pattern)
     return std::regex_match(candidate, *it->second);
 }
 
-void RegisterReflectedSymbol(const std::string& str, const SemanticAnalysisRequest& req,
-                             ankerl::unordered_dense::set<std::string>& outReflections)
+static void RegisterReflectedSymbol(const std::string& str, const SemanticAnalysisRequest& req,
+                                    ankerl::unordered_dense::set<std::string>& outReflections)
 {
     if (str.empty())
         return;
@@ -279,15 +286,15 @@ void RegisterReflectedSymbol(const std::string& str, const SemanticAnalysisReque
     }
 }
 
-void MatchConfiguredReflectionCallees(TSNode callNode, const SemanticAnalysisRequest& req,
-                                      const std::vector<config::StringReflectionCallee>& callees,
-                                      ankerl::unordered_dense::set<std::string>& result)
+static void MatchConfiguredReflectionCallees(TSNode callNode, const SemanticAnalysisRequest& req,
+                                             const std::vector<config::StringReflectionCallee>& callees,
+                                             ankerl::unordered_dense::set<std::string>& result)
 {
     TSNode funcNode = parser::GetChildByField(callNode, parser::GetGrammarSymbols().fieldFunction);
     if (ts_node_is_null(funcNode))
         return;
 
-    std::string_view funcText = analysis::GetNodeTextView(funcNode, req.sourceCode);
+    std::string_view funcText = parser::GetNodeTextView(funcNode, req.sourceCode);
     std::optional<std::vector<analysis::CallArgumentInfo>> callArgs;
 
     for (const auto& c : callees)
@@ -310,13 +317,10 @@ void MatchConfiguredReflectionCallees(TSNode callNode, const SemanticAnalysisReq
 
 /**
  * @brief Collect scope string literal refs.
- * @param[in] root Parameter root.
- * @param[in,out] result Parameter result.
- * @note [REFACTOR-CANDIDATE] Structural overlap (92%) with ForEachScopeReference in
- * server/src/features/document_highlight/DocumentHighlightHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @param[in] root Root AST node of the document or tree.
+ * @param[in,out] result Input result for the operation.
  */
-void CollectScopeStringLiteralRefs(const Scope* root, ankerl::unordered_dense::set<std::string>& result)
+static void CollectScopeStringLiteralRefs(const Scope* root, ankerl::unordered_dense::set<std::string>& result)
 {
     if (!root)
     {
@@ -341,7 +345,7 @@ void CollectScopeStringLiteralRefs(const Scope* root, ankerl::unordered_dense::s
     }
 }
 
-ankerl::unordered_dense::set<std::string> CollectStringReflection(const SemanticAnalysisRequest& req)
+static ankerl::unordered_dense::set<std::string> CollectStringReflection(const SemanticAnalysisRequest& req)
 {
     ankerl::unordered_dense::set<std::string> result;
     if (req.scopeRoot)
@@ -378,13 +382,13 @@ ankerl::unordered_dense::set<std::string> CollectStringReflection(const Semantic
 
 /**
  * @brief Normalize param type.
- * @param[in] type Parameter type.
- * @return Result of the operation.
+ * @param[in] type Token type or semantic type.
+ * @return Calculated or extracted result of the operation.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst. Manually re-evaluates AST for isRef; candidate for
  * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
  */
-std::string NormalizeParamType(std::string_view type)
+static std::string NormalizeParamType(std::string_view type)
 {
     std::string res;
     res.reserve(type.size());
@@ -405,8 +409,6 @@ std::string NormalizeParamType(std::string_view type)
 
     return std::string(sv);
 }
-
-} // namespace
 
 bool MatchesEngineCallbackSignature(const Symbol& sym, const std::vector<std::vector<std::string>>& signatures)
 {
@@ -461,11 +463,8 @@ bool IsEngineEntity(const std::string& className, const SymbolTable& symbolTable
                        { return std::find(ignored.begin(), ignored.end(), b) != ignored.end(); });
 }
 
-namespace
-{
-
-bool CheckBaseClassLifecycleMethods(std::string_view className, std::string_view methodName,
-                                    const config::UnusedSymbolRules& unusedRules)
+static bool CheckBaseClassLifecycleMethods(std::string_view className, std::string_view methodName,
+                                           const config::UnusedSymbolRules& unusedRules)
 {
     auto it = unusedRules.baseClassLifecycleMethods.find(className);
     if (it == unusedRules.baseClassLifecycleMethods.end() && utils::ContainsScopeSeparator(className))
@@ -475,8 +474,6 @@ bool CheckBaseClassLifecycleMethods(std::string_view className, std::string_view
     return it != unusedRules.baseClassLifecycleMethods.end() &&
            std::find(it->second.begin(), it->second.end(), methodName) != it->second.end();
 }
-
-} // namespace
 
 bool IsLifecycleOrOverride(const Symbol& sym, const SymbolTable& symbolTable,
                            const config::UnusedSymbolRules& unusedRules)
@@ -569,10 +566,7 @@ bool IsEngineManagedFunction(const Symbol& sym, const SymbolTable& symbolTable,
     return IsLifecycleOrOverride(sym, symbolTable, unusedRules);
 }
 
-namespace
-{
-
-bool IsIgnoredByDiagnosticsConfig(const Symbol& sym, const SemanticAnalysisRequest& request)
+static bool IsIgnoredByDiagnosticsConfig(const Symbol& sym, const SemanticAnalysisRequest& request)
 {
     if (!request.diagnostics)
     {
@@ -595,8 +589,8 @@ bool IsIgnoredByDiagnosticsConfig(const Symbol& sym, const SemanticAnalysisReque
     return false;
 }
 
-bool IsIgnoredFunction(const Symbol& sym, const SemanticAnalysisRequest& request,
-                       const config::UnusedSymbolRules& rules)
+static bool IsIgnoredFunction(const Symbol& sym, const SemanticAnalysisRequest& request,
+                              const config::UnusedSymbolRules& rules)
 {
     if (IsIgnoredByDiagnosticsConfig(sym, request))
     {
@@ -625,7 +619,7 @@ static void CheckScopeDefinitions(const Scope* scope, bool isFunc, const UnusedC
     }
 }
 
-void CheckLocalsAndFields(const Scope* rootScope, const UnusedCheckContext& uCtx, DiagnosticContext& ctx)
+static void CheckLocalsAndFields(const Scope* rootScope, const UnusedCheckContext& uCtx, DiagnosticContext& ctx)
 {
     if (!rootScope)
         return;
@@ -675,9 +669,9 @@ static bool IsExemptGlobalType(const VariableSignature& var, const std::vector<s
  * @param[in] req Analysis request containing diagnostic settings.
  * @return True if symbol is a candidate global variable, false otherwise.
  */
-[[nodiscard]] bool IsCandidateGlobalVariable(const Symbol& sym, bool ignoreCallInit,
-                                             const std::vector<std::string>& exemptTypes,
-                                             const SemanticAnalysisRequest& req)
+[[nodiscard]] static bool IsCandidateGlobalVariable(const Symbol& sym, bool ignoreCallInit,
+                                                    const std::vector<std::string>& exemptTypes,
+                                                    const SemanticAnalysisRequest& req)
 {
     if (sym.type != SymbolType::Variable || !sym.containerName.empty() ||
         !std::holds_alternative<VariableSignature>(sym.signature))
@@ -699,14 +693,15 @@ static bool IsExemptGlobalType(const VariableSignature& var, const std::vector<s
  * @param[in] uCtx Context holding reference and reflection sets.
  * @return True if symbol is unreferenced, false otherwise.
  */
-[[nodiscard]] bool IsSymbolUnreferenced(const std::string& name, const std::string& qualifiedName,
-                                        const UnusedCheckContext& uCtx)
+[[nodiscard]] static bool IsSymbolUnreferenced(const std::string& name, const std::string& qualifiedName,
+                                               const UnusedCheckContext& uCtx)
 {
     return !uCtx.refNames.contains(name) && !uCtx.reflections.contains(name) &&
            !uCtx.reflections.contains(qualifiedName);
 }
 
-void CheckUnusedGlobals(const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx, DiagnosticContext& ctx)
+static void CheckUnusedGlobals(const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx,
+                               DiagnosticContext& ctx)
 {
     if (!uCtx.rules.checkGlobals)
         return;
@@ -732,25 +727,25 @@ void CheckUnusedGlobals(const SemanticAnalysisRequest& req, const UnusedCheckCon
         });
 }
 
-bool IsPropertyAccessorUsed(std::string_view name, const ankerl::unordered_dense::set<std::string>& refNames)
+static bool IsPropertyAccessorUsed(std::string_view name, const ankerl::unordered_dense::set<std::string>& refNames)
 {
     if (name.size() <= 4 || (!name.starts_with("get_") && !name.starts_with("set_")))
         return false;
     return refNames.contains(std::string(name.substr(4)));
 }
 
-bool IsExemptMethodName(std::string_view name, std::string_view containerName) noexcept
+static bool IsExemptMethodName(std::string_view name, std::string_view containerName) noexcept
 {
     return name == containerName || name.starts_with('~') || name.starts_with("op") || name.starts_with("get_") ||
            name.starts_with("set_");
 }
 
-bool IsClassInherited(std::string_view className, const UnusedCheckContext& uCtx)
+static bool IsClassInherited(std::string_view className, const UnusedCheckContext& uCtx)
 {
     return uCtx.inheritedOrMixedInClasses.contains(className);
 }
 
-bool IsMethodOverriddenInDerived(const Symbol& sym, const UnusedCheckContext& uCtx)
+static bool IsMethodOverriddenInDerived(const Symbol& sym, const UnusedCheckContext& uCtx)
 {
     if (sym.containerName.empty())
         return false;
@@ -767,7 +762,7 @@ bool IsMethodOverriddenInDerived(const Symbol& sym, const UnusedCheckContext& uC
     return false;
 }
 
-bool ShouldSkipFunction(const Symbol& sym, const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx)
+static bool ShouldSkipFunction(const Symbol& sym, const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx)
 {
     if (sym.isSynthesized)
         return true;
@@ -791,7 +786,8 @@ bool ShouldSkipFunction(const Symbol& sym, const SemanticAnalysisRequest& req, c
     return false;
 }
 
-void CheckUnusedFunctions(const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx, DiagnosticContext& ctx)
+static void CheckUnusedFunctions(const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx,
+                                 DiagnosticContext& ctx)
 {
     if (!uCtx.rules.checkFunctions && !uCtx.rules.checkMembers)
         return;
@@ -824,7 +820,8 @@ void CheckUnusedFunctions(const SemanticAnalysisRequest& req, const UnusedCheckC
         });
 }
 
-void CheckUnusedClasses(const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx, DiagnosticContext& ctx)
+static void CheckUnusedClasses(const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx,
+                               DiagnosticContext& ctx)
 {
     if (!uCtx.rules.checkClasses)
         return;
@@ -846,7 +843,7 @@ void CheckUnusedClasses(const SemanticAnalysisRequest& req, const UnusedCheckCon
         });
 }
 
-config::UnusedSymbolRules ResolveEffectiveRules(const SemanticAnalysisRequest& request)
+static config::UnusedSymbolRules ResolveEffectiveRules(const SemanticAnalysisRequest& request)
 {
     config::UnusedSymbolRules rules =
         request.engineRules ? request.engineRules->unusedRules : config::UnusedSymbolRules{};
@@ -880,8 +877,6 @@ config::UnusedSymbolRules ResolveEffectiveRules(const SemanticAnalysisRequest& r
     }
     return rules;
 }
-
-} // namespace
 
 static void BuildInheritedAndDerivedMaps(
     const RuleIndex& ruleIndex,
