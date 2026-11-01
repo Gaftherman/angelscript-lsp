@@ -616,13 +616,15 @@ def check_no_anonymous_namespaces():
     return violations
 
 
-def check_no_using_directives_or_declarations():
+def check_no_using_namespace_or_declarations():
     """
     Enforces that zero 'using namespace' directives and zero 'using <ns>::<symbol>;'
     declarations exist across server/src/. All namespace access must be fully qualified.
     Only type aliases ('using Alias = Type;') are permitted.
     """
     violations = []
+    using_ns_re = re.compile(r"\busing\s+namespace\b")
+    using_sym_re = re.compile(r"\busing\s+(?![^;=]*=)[a-zA-Z0-9_:,\s]+;")
     for file_path in SERVER_SRC.rglob("*.[ch]*"):
         if not file_path.is_file():
             continue
@@ -632,11 +634,14 @@ def check_no_using_directives_or_declarations():
             continue
         for idx, line in enumerate(content.splitlines(), 1):
             stripped = line.strip()
-            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*") or stripped.startswith(";"):
                 continue
-            if re.search(r"^\s*using\s+namespace\b", stripped) or re.search(r"^\s*using\s+[a-zA-Z0-9_:]+\s*;", stripped):
+            if using_ns_re.search(stripped) or using_sym_re.search(stripped):
                 violations.append((file_path, idx, stripped))
     return violations
+
+
+check_no_using_directives_or_declarations = check_no_using_namespace_or_declarations
 
 
 def check_no_doxygen_slop():
@@ -644,11 +649,17 @@ def check_no_doxygen_slop():
     Enforces that zero mechanical or robotic AI slop filler templates exist in Doxygen comments across server/src/.
     Specifically checks for:
     1. 'True if condition met; otherwise false.'
-    2. 'Result of the operation.'
-    3. '@param... Parameter <name>.'
+    2. 'Result of the operation.' / 'Calculated or extracted result of the operation.'
+    3. '@param... Parameter/Input <name>.'
+    4. Orphaned analysis note fragments (e.g. 'Structural overlap', 'Candidate for unification in' outside of @note).
     """
     violations = []
-    slop_param_re = re.compile(r"@param(\[[^\]]*\])?\s+(\w+)\s+Parameter\s+\2\.")
+    slop_param_re = re.compile(r"@param(\[[^\]]*\])?\s+(\w+)\s+(Parameter|Input)\s+\2\b", re.I)
+    slop_cond_re = re.compile(r"true if condition met;\s*otherwise false", re.I)
+    slop_res_re = re.compile(r"result of the operation", re.I)
+    slop_unify_re = re.compile(r"candidate for unification in", re.I)
+    slop_overlap_re = re.compile(r"structural overlap\s*\(\d+%\)", re.I)
+
     for file_path in SERVER_SRC.rglob("*.[ch]*"):
         if not file_path.is_file():
             continue
@@ -658,12 +669,17 @@ def check_no_doxygen_slop():
             continue
         for idx, line in enumerate(content.splitlines(), 1):
             stripped = line.strip()
-            if "True if condition met; otherwise false" in stripped:
-                violations.append((file_path, idx, stripped, "Mechanical filler return description"))
-            elif "Result of the operation." in stripped:
+            cleaned_tag = stripped.lstrip("* ").strip()
+            if slop_cond_re.search(stripped):
+                violations.append((file_path, idx, stripped, "Mechanical filler condition description"))
+            elif slop_res_re.search(stripped):
                 violations.append((file_path, idx, stripped, "Mechanical filler return description"))
             elif slop_param_re.search(stripped):
                 violations.append((file_path, idx, stripped, "Mechanical filler parameter description"))
+            elif slop_unify_re.search(stripped) and not cleaned_tag.startswith("@note"):
+                violations.append((file_path, idx, stripped, "Orphaned refactoring note fragment"))
+            elif slop_overlap_re.search(stripped) and not cleaned_tag.startswith("@note"):
+                violations.append((file_path, idx, stripped, "Orphaned structural overlap note"))
     return violations
 
 

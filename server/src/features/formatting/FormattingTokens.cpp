@@ -187,12 +187,6 @@ bool IsReferenceTypeDeclarator(const std::vector<Token>& tokens, size_t ampIdx)
  * @brief Is unary preceding token type.
  * @param[in] type Token type or semantic type.
  * @return True if the condition is satisfied; false otherwise.
- * Structural overlap (92%) with IsUnconditionallyNonNullablePrimitive in server/src/analysis/SemanticAnalyzer.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (86%) with
- * IsClosingOrSeparatorPunctuation in server/src/features/formatting/FormattingSpacing.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (74%) with IsOpeningOrMemberPunctuation in
- * server/src/features/formatting/FormattingSpacing.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
 bool IsUnaryPrecedingTokenType(TokenType type)
 {

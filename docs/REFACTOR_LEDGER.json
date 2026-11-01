@@ -637,7 +637,7 @@
       "action": "UNIFY_FUNCTIONS",
       "sourceFile": "server/src/analysis/BinaryOperatorChecker.cpp",
       "deletedLineRange": "67-85",
-      "originalSymbolOrCode": "bool IsBitwiseOp(std::string_view op), bool IsArithmeticOp(std::string_view op)",
+      "originalSymbolOrCode": "bool IsBitwiseOp(std::string_view op), bool IsArithmeticOp(std::string_view op), bool IsBitwiseOpSym(TSSymbol sym, const parser::GrammarSymbols& gs), bool IsArithmeticOpSym(TSSymbol sym, const parser::GrammarSymbols& gs)",
       "whatItDidAndWhyInThatFile": "Checked whether an operator string matches bitwise or arithmetic operator keywords.",
       "whyChangedOrDeleted": "Moved and unified with explicit qualification into canonical BinaryOperatorHelpers.h.",
       "replacedByCanonicalFile": "server/src/analysis/BinaryOperatorHelpers.h",
@@ -695,6 +695,119 @@
       "verifiedByTests": [
         "SignatureHelpTest",
         "CallCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0042",
+      "phase": "R3",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/InitializerListChecker.cpp",
+      "deletedLineRange": "20-40",
+      "originalSymbolOrCode": "struct ContainerInfo",
+      "whatItDidAndWhyInThatFile": "Held container inspection results in InitializerListChecker.",
+      "whyChangedOrDeleted": "Renamed to ListContainerInfo and unified with canonical ArrayContainerInfo in SemanticHelpers.h.",
+      "replacedByCanonicalFile": "server/src/analysis/InitializerListChecker.cpp",
+      "replacedByCanonicalSymbol": "ListContainerInfo",
+      "ramOrCpuImpact": "Eliminated struct name collision with NodeIndex containers.",
+      "verifiedByTests": [
+        "InitializerListCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0043",
+      "phase": "R3",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/LocalScopeCollector.cpp",
+      "deletedLineRange": "26-40",
+      "originalSymbolOrCode": "static TSNode FindDeclaratorValueNode(TSNode declaratorNode, const std::string& sourceCode)",
+      "whatItDidAndWhyInThatFile": "Extracted initializer value AST node from a variable declarator in LocalScopeCollector.",
+      "whyChangedOrDeleted": "Replaced with canonical parser::FindDeclaratorValueNode in parser/ASTUtils.h.",
+      "replacedByCanonicalFile": "server/src/parser/ASTUtils.h",
+      "replacedByCanonicalSymbol": "FindDeclaratorValueNode",
+      "ramOrCpuImpact": "Eliminated duplicate declarator AST value retrieval algorithm.",
+      "verifiedByTests": [
+        "LocalScopeCollectorTest"
+      ]
+    },
+    {
+      "id": "REF-0044",
+      "phase": "R3",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/TargetResolution.cpp",
+      "deletedLineRange": "30-45",
+      "originalSymbolOrCode": "size_t CountCallArguments(TSNode argsChild)",
+      "whatItDidAndWhyInThatFile": "Counted argument child nodes in call argument lists.",
+      "whyChangedOrDeleted": "Unified with canonical analysis::CountCallArguments in SemanticHelpers.h.",
+      "replacedByCanonicalFile": "server/src/analysis/SemanticHelpers.h",
+      "replacedByCanonicalSymbol": "CountCallArguments",
+      "ramOrCpuImpact": "Unified argument counting algorithm across analysis services.",
+      "verifiedByTests": [
+        "TargetResolutionTest"
+      ]
+    },
+    {
+      "id": "REF-0045",
+      "phase": "R3",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/TypeConversionChecker.cpp",
+      "deletedLineRange": "50-65",
+      "originalSymbolOrCode": "bool IsComparisonOperator(std::string_view op) noexcept",
+      "whatItDidAndWhyInThatFile": "Checked whether an operator token is a comparison operator in TypeConversionChecker.",
+      "whyChangedOrDeleted": "Unified with canonical analysis::IsComparisonOp in BinaryOperatorHelpers.h.",
+      "replacedByCanonicalFile": "server/src/analysis/BinaryOperatorHelpers.h",
+      "replacedByCanonicalSymbol": "IsComparisonOp",
+      "ramOrCpuImpact": "Constexpr operator classification.",
+      "verifiedByTests": [
+        "TypeConversionTest"
+      ]
+    },
+    {
+      "id": "REF-0046",
+      "phase": "R3",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/TypeConversionChecker.cpp",
+      "deletedLineRange": "80-110",
+      "originalSymbolOrCode": "std::string GetVariableOrPropertyType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)",
+      "whatItDidAndWhyInThatFile": "Extracted variable or property type from AST node in TypeConversionChecker.",
+      "whyChangedOrDeleted": "Unified with canonical analysis::ResolveExpressionType in SemanticHelpers.h.",
+      "replacedByCanonicalFile": "server/src/analysis/SemanticHelpers.h",
+      "replacedByCanonicalSymbol": "ResolveExpressionType",
+      "ramOrCpuImpact": "Unified expression type resolution.",
+      "verifiedByTests": [
+        "TypeConversionTest"
+      ]
+    },
+    {
+      "id": "REF-0047",
+      "phase": "R3",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/IsolationChecker.cpp",
+      "deletedLineRange": "17-21",
+      "originalSymbolOrCode": "std::string TrimWhitespace(std::string_view text)",
+      "whatItDidAndWhyInThatFile": "Trimmed whitespace from string views in IsolationChecker and SemanticTokensHandler.",
+      "whyChangedOrDeleted": "Replaced with canonical utils::TrimView in utils/Utils.h.",
+      "replacedByCanonicalFile": "server/src/utils/Utils.h",
+      "replacedByCanonicalSymbol": "TrimView",
+      "ramOrCpuImpact": "Zero-allocation string_view trimming.",
+      "verifiedByTests": [
+        "IsolationCheckerTest",
+        "SemanticTokensTest"
+      ]
+    },
+    {
+      "id": "REF-0048",
+      "phase": "R3",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/overload/OverloadTypeConversions.cpp",
+      "deletedLineRange": "200-240",
+      "originalSymbolOrCode": "bool IsViableConvertingConstructor(const Symbol& sym, const std::string& fromType, std::string_view arrayTypeName = {})",
+      "whatItDidAndWhyInThatFile": "Evaluated constructor converting capability during overload ranking.",
+      "whyChangedOrDeleted": "Unified with dynamic constructor inspection in SymbolTable and ConversionRankingEngine.",
+      "replacedByCanonicalFile": "server/src/analysis/SymbolTable.h",
+      "replacedByCanonicalSymbol": "FindMemberSymbols",
+      "ramOrCpuImpact": "Deduplicated converting constructor analysis.",
+      "verifiedByTests": [
+        "OverloadResolverTest"
       ]
     }
   ]

@@ -92,9 +92,9 @@ std::string FormatDeclarationPrefix(const SymbolModifiers& modifiers)
 }
 
 /**
- * @brief Format parameter reference.
- * @param[in] param Function parameter information.
- * @return Calculated or extracted result of the operation.
+ * @brief Formats the reference modifier string for a parameter (e.g. "&in", "&out", "&inout", or "&").
+ * @param[in] param ParameterInformation describing the parameter's modifier.
+ * @return Formatted reference decoration string, or empty if not a reference.
  */
 std::string FormatParameterReference(const ParameterInformation& param)
 {

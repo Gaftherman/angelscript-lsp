@@ -984,12 +984,10 @@ void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std
 }
 
 /**
- * @brief Local scope collector read foreach variable type info.
- * @param[in] declaratorNode AST node under evaluation.
- * @param[in] sourceCode Document source text.
- * @param[in,out] def Input def for the operation.
- * Structural overlap (88%) with ReadVirtualPropertyTypeInfo in server/src/analysis/LocalScopeCollector.cpp. Candidate
- * for unification in server/src/analysis/SemanticHelpers.h.
+ * @brief Populates type metadata and full source range for a foreach loop variable declaration.
+ * @param[in] declaratorNode AST declarator node of the foreach variable.
+ * @param[in] sourceCode Document source text buffer.
+ * @param[in,out] def LocalDefinition receiving type extraction and location bounds.
  */
 void LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, const std::string& sourceCode,
                                                       LocalDefinition& def) const
@@ -1062,10 +1060,10 @@ void LocalScopeCollector::ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode de
 }
 
 /**
- * @brief Count variable declarators.
- * @param[in] declarationNode AST node under evaluation.
- * @param[in] declaratorSym Symbol or grammar symbol.
- * @return Calculated or extracted result of the operation.
+ * @brief Counts the number of named variable declarator child nodes matching a symbol.
+ * @param[in] declarationNode AST declaration node to inspect.
+ * @param[in] declaratorSym Grammar symbol ID of the declarator node.
+ * @return Total number of matching declarator child nodes found.
  */
 static uint32_t CountVariableDeclarators(TSNode declarationNode, TSSymbol declaratorSym)
 {
@@ -1114,13 +1112,11 @@ static TSNode FindDeclarationTypeNode(TSNode declarationNode, TSNode declaratorN
 }
 
 /**
- * @brief Local scope collector read variable declarator type info.
- * @param[in] declaratorNode AST node under evaluation.
- * @param[in] declarationNode AST node under evaluation.
- * @param[in] sourceCode Document source text.
- * @param[in,out] def Input def for the operation.
- * Structural overlap (64%) with ReadVirtualPropertyTypeInfo in server/src/analysis/LocalScopeCollector.cpp. Candidate
- * for unification in server/src/analysis/SemanticHelpers.h.
+ * @brief Populates type metadata and full source location for a variable declarator within a declaration statement.
+ * @param[in] declaratorNode Specific AST variable declarator node being evaluated.
+ * @param[in] declarationNode Parent AST declaration node containing shared type information.
+ * @param[in] sourceCode Document source text buffer.
+ * @param[in,out] def LocalDefinition receiving type extraction and location bounds.
  */
 void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, TSNode declarationNode,
                                                          const std::string& sourceCode, LocalDefinition& def) const
@@ -1166,10 +1162,6 @@ void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, 
  * @param funcNode Function AST node.
  * @param sourceCode Source text.
  * @param def Local definition to populate.
- * Structural overlap (90%) with ReadVirtualPropertyTypeInfo in server/src/analysis/LocalScopeCollector.cpp. Candidate
- * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (69%) with
- * ReadVariableDeclaratorTypeInfo in server/src/analysis/LocalScopeCollector.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
 void LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const std::string& sourceCode,
                                                          LocalDefinition& def) const
@@ -1244,11 +1236,7 @@ void LocalScopeCollector::ReadVariableTypeInfo(const RawCapture& capture, const 
  * @brief Local scope collector read virtual property type info.
  * @param[in] propertyNode AST node under evaluation.
  * @param[in] sourceCode Document source text.
- * @param[in,out] def Input def for the operation.
- * Structural overlap (88%) with ReadForeachVariableTypeInfo in server/src/analysis/LocalScopeCollector.cpp. Candidate
- * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (64%) with
- * ReadVariableDeclaratorTypeInfo in server/src/analysis/LocalScopeCollector.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @param[in,out] def LocalDefinition being populated with variable metadata.
  */
 void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const std::string& sourceCode,
                                                       LocalDefinition& def) const
@@ -1350,7 +1338,7 @@ static bool ExtractAssignmentLeftVar(TSNode leftNode, const parser::GrammarSymbo
  * @param[in] identNode AST node under evaluation.
  * @param[in] varName Identifier name or string value.
  * @param[in] typeName Type name to inspect or resolve.
- * @param[in] isHandle Input isHandle for the operation.
+ * @param[in] isHandle True if the declared type is a handle (@).
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */

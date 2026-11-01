@@ -109,9 +109,9 @@ void NodeIndex::RecordContainerSpan(TSNode node, TSSymbol sym)
 }
 
 /**
- * @brief Node index traverse tree.
- * @param[in] root Root AST node of the document or tree.
- * @param[in] budget Input budget for the operation.
+ * @brief Traverses the AST tree iteratively using a flat cursor and indexes nodes of interest.
+ * @param[in] root Root AST node to traverse.
+ * @param[in] budget Traversal budget guard to prevent runaway recursion or unbounded visits.
  */
 void NodeIndex::TraverseTree(TSNode root, TraversalBudget* budget)
 {
@@ -484,11 +484,11 @@ std::optional<ContainerKind> ClassifyContainerKind(TSSymbol sym) noexcept
 }
 
 /**
- * @brief Append index raw containers.
- * @param[in] nameNode AST node under evaluation.
- * @param[in] kind Input kind for the operation.
- * @param[in] sourceCode Document source text.
- * @param[in,out] rawContainers Input rawContainers for the operation.
+ * @brief Extracts container name and byte range from a name AST node and appends a ContainerInfo entry.
+ * @param[in] nameNode AST node of the container name identifier.
+ * @param[in] kind Categorical ContainerKind (e.g. Class, Interface, Namespace).
+ * @param[in] sourceCode Document source text buffer.
+ * @param[in,out] rawContainers Output vector accumulating parsed container definitions.
  */
 void AppendRawContainers(TSNode nameNode, ContainerKind kind, std::string_view sourceCode,
                          std::vector<ContainerInfo>& rawContainers)
@@ -524,7 +524,7 @@ void AppendRawContainers(TSNode nameNode, ContainerKind kind, std::string_view s
 
 /**
  * @brief Compute index container qualified names.
- * @param[in,out] containers Input containers for the operation.
+ * @param[in,out] containers Vector of ContainerInfo structs whose qualified names are computed.
  */
 void ComputeContainerQualifiedNames(std::vector<ContainerInfo>& containers)
 {

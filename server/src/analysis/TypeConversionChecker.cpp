@@ -1056,10 +1056,10 @@ static ExpressionType ResolveUnaryValueType(TSNode node, const Scope* scope, con
 }
 
 /**
- * @brief Resolve cast value type.
- * @param[in] node AST node under evaluation.
- * @param[in] ctx Diagnostic collection and analysis context.
- * @return Calculated or extracted result of the operation.
+ * @brief Resolves the ExpressionType resulting from an explicit cast AST node ('cast<T>(expr)').
+ * @param[in] node AST node of the cast expression.
+ * @param[in] ctx Diagnostic collection and source code context.
+ * @return Resolved ExpressionType with constness and base type attributes.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
@@ -1073,11 +1073,11 @@ static ExpressionType ResolveCastValueType(TSNode node, const DiagnosticContext&
 }
 
 /**
- * @brief Resolve compound value type.
- * @param[in] node AST node under evaluation.
- * @param[in] scope Enclosing lexical scope.
+ * @brief Resolves the ExpressionType of an operand within compound assignment expressions.
+ * @param[in] node AST node representing the compound expression operand.
+ * @param[in] scope Enclosing lexical scope for variable resolution.
  * @param[in] ctx Diagnostic collection and analysis context.
- * @return Calculated or extracted result of the operation.
+ * @return Resolved ExpressionType of the compound value.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
@@ -2775,11 +2775,11 @@ static bool IsIncompleteOrIgnoredBranchType(std::string_view type)
 }
 
 /**
- * @brief Are ternary branches incompatible.
- * @param[in] clean1 Input clean1 for the operation.
- * @param[in] clean2 Input clean2 for the operation.
- * @param[in,out] ctx Diagnostic collection and analysis context.
- * @return True if the condition is satisfied; false otherwise.
+ * @brief Evaluates whether two branch result types of a ternary expression cannot be reconciled.
+ * @param[in] clean1 Sanitized base type name of the true-branch operand.
+ * @param[in] clean2 Sanitized base type name of the false-branch operand.
+ * @param[in,out] ctx Diagnostic context containing symbol table and conversion rules.
+ * @return True if neither type can convert to the other and no common ancestor exists.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
@@ -3500,7 +3500,7 @@ static bool HasHandleOpAssign(std::string_view clean, const SymbolTable& table)
 
 /**
  * @brief Has handle converting ctor.
- * @param[in] clean Input clean for the operation.
+ * @param[in] clean Cleaned base type name string view.
  * @param[in] table Symbol table containing resolved symbols.
  * @return True if the condition is satisfied; false otherwise.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via

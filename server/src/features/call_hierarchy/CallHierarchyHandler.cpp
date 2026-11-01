@@ -14,9 +14,9 @@ namespace angel_lsp::features
 {
 
 /**
- * @brief To item.
- * @param[in] sym Tree-sitter grammar symbol.
- * @return Calculated or extracted result of the operation.
+ * @brief Converts an analysis symbol into an LSP CallHierarchyItem.
+ * @param[in] sym Analysis symbol representing a function or method.
+ * @return Constructed CallHierarchyItem populated with name, range, and URI.
  */
 static lsp::CallHierarchyItem ToItem(const analysis::Symbol& sym)
 {

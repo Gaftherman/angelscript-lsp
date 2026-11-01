@@ -116,12 +116,9 @@ bool IsNullOperand(TSNode node, std::string_view type)
 }
 
 /**
- * @brief Strip modifiers.
- * @param[in] type Token type or semantic type.
- * @return Calculated or extracted result of the operation.
- * re-evaluates AST for isConst; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo /
- * Symbol::modifiers.isConst. Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
- * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
+ * @brief Strips leading const, trailing decorations, and type whitespace to obtain a bare base type.
+ * @param[in] type Raw type name string view.
+ * @return Sanitized base type name string.
  */
 static std::string StripModifiers(std::string_view type)
 {

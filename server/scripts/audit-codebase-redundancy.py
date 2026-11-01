@@ -812,6 +812,74 @@ def main():
         print(f"[ERROR] Found {doxygen_audit['missingCount']} targets missing Doxygen documentation! Must be strictly 0.", file=sys.stderr)
         sys.exit(1)
 
+    print("[Gate] Auditing zero anonymous namespaces (namespace {)...", flush=True)
+    anon_violations = []
+    for fpath in sorted(SERVER_SRC.rglob("*.[ch]*")):
+        if not fpath.is_file():
+            continue
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for idx, line in enumerate(content.splitlines(), 1):
+            if re.search(r"\bnamespace\s*\{", line):
+                anon_violations.append((fpath, idx, line.strip()))
+    if anon_violations:
+        print(f"[ERROR] Found {len(anon_violations)} anonymous namespace(s) in server/src/:", file=sys.stderr)
+        for f, idx, line in anon_violations:
+            print(f"  {rel_path(f)}:{idx}: {line}", file=sys.stderr)
+        sys.exit(1)
+
+    print("[Gate] Auditing zero using directives or declarations (using namespace / using <ns>::<symbol>)...", flush=True)
+    using_violations = []
+    using_ns_re = re.compile(r"\busing\s+namespace\b")
+    using_sym_re = re.compile(r"\busing\s+(?![^;=]*=)[a-zA-Z0-9_:,\s]+;")
+    for fpath in sorted(SERVER_SRC.rglob("*.[ch]*")):
+        if not fpath.is_file():
+            continue
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for idx, line in enumerate(content.splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*") or stripped.startswith(";"):
+                continue
+            if using_ns_re.search(stripped) or using_sym_re.search(stripped):
+                using_violations.append((fpath, idx, stripped))
+    if using_violations:
+        print(f"[ERROR] Found {len(using_violations)} using directive(s) in server/src/:", file=sys.stderr)
+        for f, idx, line in using_violations:
+            print(f"  {rel_path(f)}:{idx}: {line}", file=sys.stderr)
+        sys.exit(1)
+
+    print("[Gate] Auditing Doxygen comment quality (anti-slop)...", flush=True)
+    slop_violations = []
+    slop_param_re = re.compile(r"@param(\[[^\]]*\])?\s+(\w+)\s+(Parameter|Input)\s+\2\b", re.I)
+    slop_cond_re = re.compile(r"true if condition met;\s*otherwise false", re.I)
+    slop_res_re = re.compile(r"result of the operation", re.I)
+    slop_unify_re = re.compile(r"candidate for unification in", re.I)
+    slop_overlap_re = re.compile(r"structural overlap\s*\(\d+%\)", re.I)
+    for fpath in sorted(SERVER_SRC.rglob("*.[ch]*")):
+        if not fpath.is_file():
+            continue
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for idx, line in enumerate(content.splitlines(), 1):
+            stripped = line.strip()
+            cleaned_tag = stripped.lstrip("* ").strip()
+            if slop_cond_re.search(stripped) or slop_res_re.search(stripped) or slop_param_re.search(stripped):
+                slop_violations.append((fpath, idx, stripped))
+            elif (slop_unify_re.search(stripped) or slop_overlap_re.search(stripped)) and not cleaned_tag.startswith("@note"):
+                slop_violations.append((fpath, idx, stripped))
+    if slop_violations:
+        print(f"[ERROR] Found {len(slop_violations)} mechanical Doxygen slop template comments in server/src/:", file=sys.stderr)
+        for f, idx, line in slop_violations:
+            print(f"  {rel_path(f)}:{idx}: {line}", file=sys.stderr)
+        sys.exit(1)
+
     report = {
         "generatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "branch": "refactor/architecture-deduplication-and-ram",

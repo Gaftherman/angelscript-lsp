@@ -7,9 +7,9 @@
 namespace angel_lsp::features
 {
 /**
- * @brief Trim.
- * @param[in] s Input string or text span.
- * @return Calculated or extracted result of the operation.
+ * @brief Trims leading and trailing whitespace characters from a string view.
+ * @param[in] s Source string view to trim.
+ * @return Trimmed substring view without leading or trailing whitespace.
  */
 static std::string_view Trim(std::string_view s)
 {

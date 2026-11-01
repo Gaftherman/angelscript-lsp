@@ -188,12 +188,10 @@ static NamespaceData& FindOrCreateScope(std::vector<NamespaceData>& scopes, cons
 }
 
 /**
- * @brief Find or create class.
- * @param[in,out] scope Enclosing lexical scope.
- * @param[in] name Symbol or identifier name.
- * @return Calculated or extracted result of the operation.
- * Structural overlap (92%) with FindOrCreateInterface in server/src/analysis/EngineConfigConverter.cpp. Candidate for
- * unification in server/src/analysis/SemanticHelpers.h.
+ * @brief Retrieves an existing class entry by name within a namespace, or appends a new one.
+ * @param[in,out] scope Namespace container data where class entries are stored.
+ * @param[in] name Class identifier name to find or register.
+ * @return Mutable reference to the located or newly created ClassEntry.
  */
 static ClassEntry& FindOrCreateClass(NamespaceData& scope, const std::string& name)
 {
@@ -207,12 +205,10 @@ static ClassEntry& FindOrCreateClass(NamespaceData& scope, const std::string& na
 }
 
 /**
- * @brief Find or create enum.
- * @param[in,out] scope Enclosing lexical scope.
- * @param[in] name Symbol or identifier name.
- * @return Calculated or extracted result of the operation.
- * Structural overlap (92%) with FindOrCreateInterface in server/src/analysis/EngineConfigConverter.cpp. Candidate for
- * unification in server/src/analysis/SemanticHelpers.h.
+ * @brief Retrieves an existing enum entry by name within a namespace, or appends a new one.
+ * @param[in,out] scope Namespace container data where enum entries are stored.
+ * @param[in] name Enum identifier name to find or register.
+ * @return Mutable reference to the located or newly created EnumEntry.
  */
 static EnumEntry& FindOrCreateEnum(NamespaceData& scope, const std::string& name)
 {
@@ -226,12 +222,10 @@ static EnumEntry& FindOrCreateEnum(NamespaceData& scope, const std::string& name
 }
 
 /**
- * @brief Find or create interface.
- * @param[in,out] scope Enclosing lexical scope.
- * @param[in] name Symbol or identifier name.
- * @return Calculated or extracted result of the operation.
- * Structural overlap (92%) with FindOrCreateEnum in server/src/analysis/EngineConfigConverter.cpp. Candidate for
- * unification in server/src/analysis/SemanticHelpers.h.
+ * @brief Retrieves an existing interface entry by name within a namespace, or appends a new one.
+ * @param[in,out] scope Namespace container data where interface entries are stored.
+ * @param[in] name Interface identifier name to find or register.
+ * @return Mutable reference to the located or newly created InterfaceEntry.
  */
 static InterfaceEntry& FindOrCreateInterface(NamespaceData& scope, const std::string& name)
 {
@@ -385,10 +379,10 @@ static void ProcessDeclarationDirective(const std::vector<std::string>& tok, Nam
 }
 
 /**
- * @brief Format enums.
- * @param[in] enums Count of elements or operations.
- * @param[in] indent Input indent for the operation.
- * @param[in,out] out Output accumulator or result sink.
+ * @brief Formats a collection of enum definitions into indented AngelScript source text.
+ * @param[in] enums List of EnumEntry declarations to format.
+ * @param[in] indent Indentation whitespace prefix.
+ * @param[in,out] out Destination string receiving formatted source output.
  */
 static void FormatEnums(const std::vector<EnumEntry>& enums, const std::string& indent, std::string& out)
 {
@@ -402,10 +396,10 @@ static void FormatEnums(const std::vector<EnumEntry>& enums, const std::string& 
 }
 
 /**
- * @brief Format classes.
- * @param[in] classes Input classes for the operation.
- * @param[in] indent Input indent for the operation.
- * @param[in,out] out Output accumulator or result sink.
+ * @brief Formats a collection of class definitions into indented AngelScript stub declarations.
+ * @param[in] classes List of ClassEntry declarations to format.
+ * @param[in] indent Indentation whitespace prefix.
+ * @param[in,out] out Destination string receiving formatted source output.
  */
 static void FormatClasses(const std::vector<ClassEntry>& classes, const std::string& indent, std::string& out)
 {

@@ -2107,10 +2107,10 @@ static size_t SkipInlineWhitespaceBackward(const std::string& text, size_t pos)
 }
 
 /**
- * @brief Extract identifier backward.
- * @param[in] text Source code or text buffer.
- * @param[in] end End point or byte offset.
- * @return Calculated or extracted result of the operation.
+ * @brief Finds the start byte offset of an identifier moving backwards from the specified end position.
+ * @param[in] text Source code text buffer.
+ * @param[in] end Byte offset where backward search begins.
+ * @return Starting byte offset of the identifier.
  */
 static size_t ExtractIdentifierBackward(const std::string& text, size_t end)
 {

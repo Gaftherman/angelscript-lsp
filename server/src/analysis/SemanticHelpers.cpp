@@ -23,12 +23,9 @@
 namespace angel_lsp::analysis
 {
 /**
- * @brief Clean expression type.
- * @param[in] typeName Type name to inspect or resolve.
- * @return Calculated or extracted result of the operation.
- * Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo /
- * Symbol::modifiers.isConst. Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
- * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
+ * @brief Normalizes an expression type name by stripping const, references, handles, and whitespace.
+ * @param[in] typeName Raw expression type name to sanitize.
+ * @return Cleaned base type name without qualifiers or decorations.
  */
 std::string CleanExpressionType(std::string_view typeName)
 {
@@ -1740,11 +1737,11 @@ void TraverseAncestorsAndInterfaces(const std::string& rootType, const SymbolTab
 }
 
 /**
- * @brief Traverse derived classes.
- * @param[in] initialFrontier Input initialFrontier for the operation.
- * @param[in] symbolTable Symbol or grammar symbol.
- * @param[in,out] visited Input visited for the operation.
- * @param[in,out] related Input related for the operation.
+ * @brief Traverses derived classes iteratively across the inheritance rule index starting from a frontier.
+ * @param[in] initialFrontier Initial list of class names to expand downwards in the inheritance tree.
+ * @param[in] symbolTable Symbol table containing inheritance relationships and rule index.
+ * @param[in,out] visited Set of already visited class names to prevent cycles and duplicate traversal.
+ * @param[in,out] related Destination vector accumulating all discovered derived class names.
  */
 void TraverseDerivedClasses(const std::vector<std::string>& initialFrontier, const SymbolTable& symbolTable,
                             ankerl::unordered_dense::set<std::string>& visited, std::vector<std::string>& related)
@@ -1804,10 +1801,10 @@ std::vector<std::string> GetAllRelatedClasses(const std::string& className, cons
 }
 
 /**
- * @brief Get derived classes.
- * @param[in] className Identifier name or string value.
- * @param[in] symbolTable Symbol or grammar symbol.
- * @return Calculated or extracted result of the operation.
+ * @brief Traverses the inheritance graph downwards to collect all direct and indirect derived classes.
+ * @param[in] className Root class name from which derived classes are queried.
+ * @param[in] symbolTable Symbol table containing class definitions and inheritance relations.
+ * @return Vector of class names inheriting from className.
  */
 std::vector<std::string> GetDerivedClasses(const std::string& className, const SymbolTable& symbolTable)
 {
@@ -2828,10 +2825,10 @@ static std::string ResolveScopedEnumMember(std::string_view whole, TSNode exprNo
 }
 
 /**
- * @brief Extract variable or property type.
- * @param[in] syms Symbol or grammar symbol.
- * @param[in] table Symbol table containing resolved symbols.
- * @return Calculated or extracted result of the operation.
+ * @brief Resolves the type name of the first variable or property symbol found in a span of candidates.
+ * @param[in] syms Span of matching candidate symbols to inspect.
+ * @param[in] table Symbol table containing container type information.
+ * @return Type name string of the resolved variable or property, or empty string if none match.
  */
 static std::string ExtractVariableOrPropertyType(std::span<const Symbol> syms, const SymbolTable& table)
 {
@@ -3672,10 +3669,10 @@ static std::string ResolveTernaryHierarchy(const TernaryBranchTypes& types, cons
 }
 
 /**
- * @brief Resolve ternary numeric promotion.
- * @param[in] c1 Input c1 for the operation.
- * @param[in] c2 Input c2 for the operation.
- * @return Calculated or extracted result of the operation.
+ * @brief Determines the common promoted numeric type between two numeric operand types in a ternary expression.
+ * @param[in] c1 Cleaned type name of the true-branch expression.
+ * @param[in] c2 Cleaned type name of the false-branch expression.
+ * @return Promoted common numeric type name (e.g. \"double\", \"float\", \"int\").
  */
 static std::string ResolveTernaryNumericPromotion(const std::string& c1, const std::string& c2)
 {
@@ -4419,11 +4416,11 @@ static bool IsFunctionHandleTarget(TSNode target, TSNode exprNode, const Express
 }
 
 /**
- * @brief Resolve unary handle.
- * @param[in] operandNode AST node under evaluation.
- * @param[in] exprNode AST node under evaluation.
- * @param[in] ctx Diagnostic collection and analysis context.
- * @return Calculated or extracted result of the operation.
+ * @brief Resolves the resulting type of a unary handle take expression ('@expr').
+ * @param[in] operandNode AST node representing the inner operand expression.
+ * @param[in] exprNode AST node representing the unary '@' expression.
+ * @param[in] ctx Diagnostic collection and expression evaluation context.
+ * @return Resolved handle type name ending with '@', or empty string if unresolved.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
@@ -4992,10 +4989,10 @@ static bool IsValidDeducedRhsType(std::string_view rhsType)
 }
 
 /**
- * @brief Format deduced type.
- * @param[in] def Input def for the operation.
- * @param[in] rhsType Type name or descriptor.
- * @return Calculated or extracted result of the operation.
+ * @brief Formats a deduced variable type, appending handle '@' decoration if declared as a handle.
+ * @param[in] def Local definition containing type and handle qualifier flags.
+ * @param[in] rhsType Deduced right-hand-side expression type name.
+ * @return Formatted type string matching the definition's handle characteristics.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
@@ -5517,10 +5514,10 @@ void ProcessCallArgumentChild(TSNode child, TSFieldId fieldId, std::string_view 
 }
 
 /**
- * @brief Extract call arguments.
- * @param[in] argumentList Input argumentList for the operation.
- * @param[in] sourceCode Document source text.
- * @return Calculated or extracted result of the operation.
+ * @brief Structurally parses arguments from an argument_list AST node into a list of CallArgumentInfo.
+ * @param[in] argumentList AST node representing an argument list or call expression.
+ * @param[in] sourceCode Document source text buffer.
+ * @return Vector of extracted argument information including expressions and explicit names.
  */
 std::vector<CallArgumentInfo> ExtractCallArguments(TSNode argumentList, std::string_view sourceCode)
 {
@@ -5945,11 +5942,11 @@ static TSNode ResolveLambdaParameterListNode(TSNode node)
 }
 
 /**
- * @brief Apply lambda param child.
- * @param[in] child Child AST node.
- * @param[in] fieldId Input fieldId for the operation.
- * @param[in] sourceCode Document source text.
- * @param[in,out] current Input current for the operation.
+ * @brief Inspects a child node of a lambda parameter declaration and updates the parameter info.
+ * @param[in] child Child AST node within the parameter declaration.
+ * @param[in] fieldId Structural field ID associated with the child node.
+ * @param[in] sourceCode Document source text buffer.
+ * @param[in,out] current Lambda parameter metadata struct being populated.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst. Manually re-evaluates AST for isHandle; candidate for
  * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle /
@@ -5986,10 +5983,10 @@ void ApplyLambdaParamChild(TSNode child, TSFieldId fieldId, std::string_view sou
 }
 
 /**
- * @brief Extract lambda parameters.
- * @param[in] lambdaParamList Input lambdaParamList for the operation.
- * @param[in] sourceCode Document source text.
- * @return Calculated or extracted result of the operation.
+ * @brief Structurally parses lambda parameter declarations from AST into LambdaParamASTInfo structs.
+ * @param[in] lambdaParamList AST node representing a lambda parameter list.
+ * @param[in] sourceCode Document source text buffer.
+ * @return Ordered vector of extracted lambda parameter AST definitions.
  */
 std::vector<LambdaParamASTInfo> ExtractLambdaParameters(TSNode lambdaParamList, std::string_view sourceCode)
 {

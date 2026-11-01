@@ -42,12 +42,12 @@ static TSNode FindFunctionParametersNode(TSNode fnNode)
 }
 
 /**
- * @brief Try build missing const fix for symbol.
- * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
- * @param[in] rootNode AST node under evaluation.
- * @param[in] diag Input diag for the operation.
- * @param[in] sym Tree-sitter grammar symbol.
- * @return Found item if present; std::nullopt otherwise.
+ * @brief Attempts to construct a QuickFix CodeAction to add a const qualifier to a referenced method declaration.
+ * @param[in] request Code action request bundle containing AST root, source text, and parameters.
+ * @param[in] rootNode Root AST node of the document.
+ * @param[in] diag LSP diagnostic reporting the missing const method call error.
+ * @param[in] sym Target method symbol needing const qualification.
+ * @return QuickFix CodeAction if method declaration node is located, or std::nullopt otherwise.
  */
 static std::optional<lsp::CodeAction> TryBuildMissingConstFixForSymbol(const CodeActionRequest& request,
                                                                        TSNode rootNode, const lsp::Diagnostic& diag,
@@ -119,12 +119,12 @@ static void TryAddMissingConstDiagnosticFix(const CodeActionRequest& request, TS
 }
 
 /**
- * @brief Has const qualifier between.
- * @param[in] sourceCode Document source text.
- * @param[in] paramList Input paramList for the operation.
- * @param[in] bodyNode AST node under evaluation.
- * @param[in] fnNode AST node under evaluation.
- * @return True if the condition is satisfied; false otherwise.
+ * @brief Checks whether the 'const' keyword appears in source text between the parameter list and function body.
+ * @param[in] sourceCode Document source text buffer.
+ * @param[in] paramList AST node of the function parameter list.
+ * @param[in] bodyNode AST node of the function compound body (or null if abstract).
+ * @param[in] fnNode AST node of the enclosing function declaration.
+ * @return True if 'const' token is found in the intervening source span, false otherwise.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
@@ -154,10 +154,10 @@ static bool FindEnclosingMethodAndClass(TSNode leaf, TSNode& outFn, TSNode& outC
 }
 
 /**
- * @brief Build add const action.
- * @param[in] paramList Input paramList for the operation.
+ * @brief Constructs a QuickFix CodeAction to append the 'const' qualifier to a method parameter list.
+ * @param[in] paramList AST node of the method parameter list after which 'const' is inserted.
  * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
- * @return Calculated or extracted result of the operation.
+ * @return QuickFix CodeAction with text edit inserting ' const'.
  */
 static lsp::CodeAction BuildAddConstAction(TSNode paramList, const CodeActionRequest& request)
 {
@@ -224,8 +224,8 @@ static void TryAddIntentionalConstAction(const CodeActionRequest& request, TSNod
  * @brief Try add const handle diagnostic fix.
  * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
  * @param[in] rootNode AST node under evaluation.
- * @param[in] diag Input diag for the operation.
- * @param[in,out] actions Input actions for the operation.
+ * @param[in] diag LSP Diagnostic triggering the const qualifier action.
+ * @param[in,out] actions Output list where constructed CodeAction is appended.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */

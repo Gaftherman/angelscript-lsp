@@ -424,9 +424,6 @@ static void CheckLValuesIndexed(const LValueCheckRequest& request, DiagnosticCon
  * @brief Check l values.
  * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
  * @param[in,out] ctx Diagnostic collection and analysis context.
- * in server/src/analysis/CallChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (97%) with CheckConstCorrectness in server/src/analysis/ConstChecker.cpp. Candidate for
- * unification in server/src/analysis/SemanticHelpers.h.
  */
 void CheckLValues(const LValueCheckRequest& request, DiagnosticContext& ctx)
 {

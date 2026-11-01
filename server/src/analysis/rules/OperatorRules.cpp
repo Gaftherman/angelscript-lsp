@@ -91,9 +91,9 @@ static void ValidateBinaryComparisonOperator(const Symbol& sym, const FunctionSi
 }
 
 /**
- * @brief Validate op index.
- * @param[in] sym Tree-sitter grammar symbol.
- * @param[in] sig Input sig for the operation.
+ * @brief Validates opIndex operator overload signature requirements (must take at least one parameter).
+ * @param[in] sym Operator function symbol being validated.
+ * @param[in] sig Operator function signature.
  * @param[in] ctx Diagnostic collection and analysis context.
  */
 static void ValidateOpIndex(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)

@@ -20,10 +20,9 @@ static std::string TrimWhitespace(std::string_view text)
 }
 
 /**
- * @brief Clean shared type name.
- * @param[in] raw Input raw for the operation.
- * @return Calculated or extracted result of the operation.
- * via TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
+ * @brief Normalizes a shared type name by trimming whitespace and trailing decorations.
+ * @param[in] raw Raw type name string view.
+ * @return Cleaned type name without trailing references or handle markers.
  */
 static std::string CleanSharedTypeName(std::string_view raw)
 {

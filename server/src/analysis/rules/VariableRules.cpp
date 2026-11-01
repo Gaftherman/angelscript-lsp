@@ -70,8 +70,6 @@ static bool IsClassOrInterfaceMember(const Symbol& sym, const SymbolTable& table
 
 /**
  * @brief True when the symbol's container is a mixin class.
- * Structural overlap (93%) with IsInterfaceMember in server/src/analysis/rules/VariableRules.cpp. Candidate for
- * unification in server/src/analysis/SemanticHelpers.h.
  */
 static bool IsMixinMember(const Symbol& sym, const SymbolTable& table)
 {
@@ -308,9 +306,9 @@ static void CheckVirtualProperty(const Symbol& sym, const VariableSignature& sig
 }
 
 /**
- * @brief Check modifiers.
- * @param[in] sym Tree-sitter grammar symbol.
- * @param[in] sig Input sig for the operation.
+ * @brief Verifies that variable declaration modifiers comply with language rules (e.g. bans 'shared' on variables).
+ * @param[in] sym Variable symbol being validated.
+ * @param[in] sig Variable signature containing modifier flags.
  * @param[in] ctx Diagnostic collection and analysis context.
  */
 static void CheckModifiers(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)

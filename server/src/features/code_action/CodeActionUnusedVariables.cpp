@@ -259,11 +259,11 @@ static std::string ExtractSymbolNameFromDiag(const lsp::Diagnostic& diag, TSNode
 }
 
 /**
- * @brief Make ignore unused symbol action.
- * @param[in] diag Input diag for the operation.
- * @param[in] symbolName Symbol or grammar symbol.
- * @param[in] i18n Input i18n for the operation.
- * @return Calculated or extracted result of the operation.
+ * @brief Constructs a QuickFix CodeAction to ignore an unused symbol via workspace config.
+ * @param[in] diag LSP Diagnostic reporting the unused symbol.
+ * @param[in] symbolName Identifier name of the unused symbol.
+ * @param[in] i18n Internationalization provider for localized action titles.
+ * @return Configured CodeAction ready for client presentation.
  */
 static lsp::CodeAction MakeIgnoreUnusedSymbolAction(const lsp::Diagnostic& diag, std::string_view symbolName,
                                                     const i18n::I18n* i18n)

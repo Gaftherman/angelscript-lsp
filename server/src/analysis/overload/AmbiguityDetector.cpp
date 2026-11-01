@@ -119,9 +119,9 @@ bool HasSameSignature(const Symbol& left, const Symbol& right, std::string_view 
 }
 
 /**
- * @brief Inspect function arity.
- * @param[in] sig Input sig for the operation.
- * @return Calculated or extracted result of the operation.
+ * @brief Computes parameter arity constraints including minimum, maximum, and variadic flags.
+ * @param[in] sig Function signature containing parameter definitions.
+ * @return Computed ArityInfo struct representing parameter constraints.
  * @note [REFACTOR-CANDIDATE] Structural overlap (94%) with ArityOf in server/src/analysis/CallChecker.cpp. Candidate
  * for unification in server/src/analysis/SemanticHelpers.h.
  */

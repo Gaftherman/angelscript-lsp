@@ -316,9 +316,9 @@ static void MatchConfiguredReflectionCallees(TSNode callNode, const SemanticAnal
 }
 
 /**
- * @brief Collect scope string literal refs.
- * @param[in] root Root AST node of the document or tree.
- * @param[in,out] result Input result for the operation.
+ * @brief Traverses lexical scopes recursively to collect symbol names referenced in string literals.
+ * @param[in] root Root lexical scope from which to collect string literal references.
+ * @param[in,out] result Output set accumulating symbol names found in string literal references.
  */
 static void CollectScopeStringLiteralRefs(const Scope* root, ankerl::unordered_dense::set<std::string>& result)
 {
@@ -381,9 +381,9 @@ static ankerl::unordered_dense::set<std::string> CollectStringReflection(const S
 }
 
 /**
- * @brief Normalize param type.
- * @param[in] type Token type or semantic type.
- * @return Calculated or extracted result of the operation.
+ * @brief Normalizes a parameter type string by removing whitespace, leading const, and reference decorations.
+ * @param[in] type Target type string view to normalize.
+ * @return Normalized base parameter type name string.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst. Manually re-evaluates AST for isRef; candidate for
  * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.

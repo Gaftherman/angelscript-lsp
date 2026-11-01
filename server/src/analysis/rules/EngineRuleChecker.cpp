@@ -104,10 +104,10 @@ static void ReportStorageViolation(const Symbol& sym, const config::StorageRule&
 }
 
 /**
- * @brief Evaluate storage rule.
- * @param[in] sym Tree-sitter grammar symbol.
- * @param[in] sig Input sig for the operation.
- * @param[in] rule Input rule for the operation.
+ * @brief Validates a variable symbol against an engine storage restriction rule (e.g. member/global/array bans).
+ * @param[in] sym Variable symbol being validated.
+ * @param[in] sig Variable signature details containing type and modifiers.
+ * @param[in] rule Storage rule specifying disallowed scopes and type patterns.
  * @param[in] ctx Diagnostic collection and analysis context.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
@@ -143,11 +143,11 @@ static void EvaluateStorageRule(const Symbol& sym, const VariableSignature& sig,
 }
 
 /**
- * @brief Check scheduler arg safety.
- * @param[in] req Analysis or feature execution context.
- * @param[in] index Zero-based element index.
- * @param[in] rule Input rule for the operation.
- * @param[in] ctx Diagnostic collection and analysis context.
+ * @brief Verifies that an argument passed to a scheduler invocation satisfies engine safety constraints.
+ * @param[in] req Scheduler call request details including arguments and callee.
+ * @param[in] index Argument index being checked.
+ * @param[in] rule Scheduler rule specifying parameter requirements.
+ * @param[in] ctx Diagnostic context used to report unsafe argument warnings.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */

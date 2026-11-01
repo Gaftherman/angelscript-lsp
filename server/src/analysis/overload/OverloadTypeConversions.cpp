@@ -98,9 +98,9 @@ bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner)
 }
 
 /**
- * @brief Strip type decorations.
- * @param[in] result Input result for the operation.
- * @return Calculated or extracted result of the operation.
+ * @brief Iteratively strips trailing handle '@' and reference '&' decorations from a type string.
+ * @param[in] result Type name string to strip.
+ * @return Stripped type name without reference or handle suffixes.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
@@ -139,10 +139,10 @@ std::string DesugarArrayBrackets(std::string result, std::string_view arrayTypeN
 }
 
 /**
- * @brief Normalize type.
- * @param[in] typeName Type name to inspect or resolve.
- * @param[in] arrayTypeName Array type name for specialization.
- * @return Calculated or extracted result of the operation.
+ * @brief Normalizes a type name by stripping const, references, handles, and desugaring array brackets.
+ * @param[in] typeName Raw type name to normalize.
+ * @param[in] arrayTypeName Generic array template name for desugaring bracket syntax.
+ * @return Canonical base type name string.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */

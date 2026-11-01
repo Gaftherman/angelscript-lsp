@@ -24,8 +24,6 @@ namespace angel_lsp::features
  * @brief Trims surrounding whitespace, parentheses, and semicolons from node text.
  * @param[in] text Raw text to trim.
  * @return Trimmed string.
- * Structural overlap (90%) with TrimWhitespace in server/src/features/semantic_tokens/SemanticTokensHandler.cpp.
- * Candidate for unification in server/src/features/common/FeatureSharedUtils.h.
  */
 static std::string TrimNodeText(std::string text)
 {

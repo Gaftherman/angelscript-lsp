@@ -97,9 +97,9 @@ std::optional<DocumentLinkResult> GetDocumentLinks(const DocumentLinkRequest& re
 }
 
 /**
- * @brief Get unresolved include diagnostics.
+ * @brief Identifies unresolved include directives and produces corresponding diagnostics.
  * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
- * @return Calculated or extracted result of the operation.
+ * @return Vector of diagnostics for include directives that could not be resolved to files.
  */
 std::vector<analysis::Diagnostic> GetUnresolvedIncludeDiagnostics(const DocumentLinkRequest& request)
 {

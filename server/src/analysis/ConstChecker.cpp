@@ -24,8 +24,6 @@ namespace angel_lsp::analysis
  * keep the type's source text, so this is what a declaration's constness looks like from
  * here. `const Entity@` counts: in AngelScript that is a handle to a read-only object,
  * which is exactly the case the engine refuses a mutation through.
- * re-evaluates AST for isConst; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo /
- * Symbol::modifiers.isConst.
  */
 static bool TypeTextIsConst(std::string_view typeText)
 {
@@ -51,7 +49,7 @@ static bool TypeTextIsHandleConst(std::string_view typeText)
  * tree, including the null-assignment rule.
  *
  * @param[in] node AST node inside the function or method.
- * @param[in] name Parameter name to search for.
+ * @param[in] name Identifier name of the variable to search for.
  * @param[in] sourceCode Document source text.
  * @param[in] checkHandleConst True to check if handle itself is const (Type@ const).
  * @return True/false if parameter found and whether its type is const; std::nullopt if not found.
@@ -731,9 +729,6 @@ static void CheckConstCorrectnessIndexed(const ConstCheckRequest& request, Diagn
  * @brief Check const correctness.
  * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
  * @param[in,out] ctx Diagnostic collection and analysis context.
- * in server/src/analysis/CallChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (97%) with CheckLValues in server/src/analysis/LValueChecker.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
 void CheckConstCorrectness(const ConstCheckRequest& request, DiagnosticContext& ctx)
 {

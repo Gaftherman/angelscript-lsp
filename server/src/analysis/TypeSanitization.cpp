@@ -46,10 +46,10 @@ std::string CleanBaseType(std::string_view typeName, std::string_view arrayTypeN
 }
 
 /**
- * @brief Canonicalize array type.
- * @param[in] typeName Type name to inspect or resolve.
- * @param[in] arrayTypeName Array type name for specialization.
- * @return Calculated or extracted result of the operation.
+ * @brief Canonicalizes array syntax by translating bracket forms ('T[]') to generic template notation ('array<T>').
+ * @param[in] typeName Raw type name potentially using bracket array syntax.
+ * @param[in] arrayTypeName Generic array template identifier name (e.g. \"array\").
+ * @return Canonicalized type name string with template syntax.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType. Manually re-evaluates
  * AST for isConst; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo /

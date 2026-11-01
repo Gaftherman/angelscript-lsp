@@ -48,10 +48,10 @@ static void CheckIncDecMutation(TSNode curr, std::string_view sourceCode,
 }
 
 /**
- * @brief Check call mutation.
- * @param[in] curr Input curr for the operation.
- * @param[in] sourceCode Script source code view.
- * @param[in,out] mutatedVars Input mutatedVars for the operation.
+ * @brief Identifies arguments passed to a call expression that may be mutated by reference.
+ * @param[in] curr Call expression AST node being evaluated.
+ * @param[in] sourceCode Document source text buffer.
+ * @param[in,out] mutatedVars Output set accumulating identifiers mutated by the call.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier /
  * Symbol::modifiers.isReturnReference.
@@ -281,10 +281,10 @@ static void CollectInternalDefinitionsUsedAfter(const ExtractMethodStatements& s
 }
 
 /**
- * @brief Traverse subtree mutations.
- * @param[in] root Root AST node of the document or tree.
- * @param[in] sourceCode Document source text.
- * @param[in,out] mutatedVars Input mutatedVars for the operation.
+ * @brief Traverses a statement subtree iteratively to detect variables that undergo mutation.
+ * @param[in] root Root AST node of the statement subtree to inspect.
+ * @param[in] sourceCode Document source text buffer.
+ * @param[in,out] mutatedVars Output set accumulating names of variables mutated within the subtree.
  * @note [REFACTOR-CANDIDATE] Structural overlap (93%) with TraverseTree in server/src/analysis/NodeIndex.cpp. Candidate
  * for unification in server/src/analysis/SemanticHelpers.h.
  */

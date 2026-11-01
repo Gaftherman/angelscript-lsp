@@ -586,11 +586,9 @@ static std::vector<lsp::DocumentSymbol> ProcessChildren(TSNode containerNode, co
 }
 
 /**
- * @brief Map symbol type to kind.
- * @param[in] type Token type or semantic type.
- * @return Calculated or extracted result of the operation.
- * Structural overlap (63%) with KindWord in server/src/analysis/rules/TypeRules.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @brief Maps internal symbol type to the corresponding LSP SymbolKind.
+ * @param[in] type Internal analysis SymbolType enumeration value.
+ * @return Corresponding LSP SymbolKind enum value.
  */
 static inline lsp::SymbolKind MapSymbolTypeToKind(analysis::SymbolType type) noexcept
 {

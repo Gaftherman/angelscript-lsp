@@ -199,9 +199,9 @@ TSPoint FindClassClosingBracePoint(TSNode classBody)
 }
 
 /**
- * @brief Make disable diagnostic action.
- * @param[in] options Configuration or formatting options.
- * @return Calculated or extracted result of the operation.
+ * @brief Constructs an LSP CodeAction that offers to disable a diagnostic in workspace settings.
+ * @param[in] options Bundled configuration options including diagnostic, setting key, code, and i18n.
+ * @return Fully configured QuickFix CodeAction with client execution command.
  */
 lsp::CodeAction MakeDisableDiagnosticAction(const DisableDiagnosticActionOptions& options)
 {
@@ -231,12 +231,12 @@ lsp::CodeAction MakeDisableDiagnosticAction(const DisableDiagnosticActionOptions
 }
 
 /**
- * @brief Make disable diagnostic action.
- * @param[in] diag Input diag for the operation.
- * @param[in] title Input title for the operation.
- * @param[in] settingKey Input settingKey for the operation.
- * @param[in] code Input code for the operation.
- * @return Calculated or extracted result of the operation.
+ * @brief Constructs an LSP CodeAction to disable a diagnostic setting using explicit arguments.
+ * @param[in] diag Associated LSP diagnostic triggering the action.
+ * @param[in] title Localized human-readable action title.
+ * @param[in] settingKey Configuration key within the angelscript.* settings tree.
+ * @param[in] code Unique diagnostic error code identifier.
+ * @return Fully configured QuickFix CodeAction.
  */
 lsp::CodeAction MakeDisableDiagnosticAction(const lsp::Diagnostic& diag, std::string title, std::string settingKey,
                                             std::string code)

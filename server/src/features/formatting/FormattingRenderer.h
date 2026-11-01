@@ -45,7 +45,7 @@ std::string_view ExtractBom(std::string_view& sourceCode);
 
 /**
  * @brief Splits source text by newline characters.
- * @param[in] text Input text.
+ * @param[in] text Source text buffer to render.
  * @param[in] keepTrailingEmpty True to retain trailing empty line after final newline.
  * @return Vector of line strings.
  */

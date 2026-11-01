@@ -1522,12 +1522,10 @@ static void FilterAndPrioritizeLocalSymbols(std::vector<analysis::Symbol>& symbo
 }
 
 /**
- * @brief Container kind matches.
- * @param[in] containerType Type name or descriptor.
- * @param[in] memberContainerKind Input memberContainerKind for the operation.
- * @return True if the condition is satisfied; false otherwise.
- * overlap (62%) with IsOpeningOrMemberPunctuation in server/src/features/formatting/FormattingSpacing.cpp. Candidate
- * for unification in server/src/features/common/FeatureSharedUtils.h.
+ * @brief Checks compatibility between a symbol table container type and a syntactic member container kind.
+ * @param[in] containerType SymbolType of the enclosing container (e.g. Class, Interface, Enum, Namespace).
+ * @param[in] memberContainerKind Syntactic ContainerKind of the member definition.
+ * @return True if container kinds are compatible, false otherwise.
  */
 static bool ContainerKindMatches(analysis::SymbolType containerType, analysis::ContainerKind memberContainerKind)
 {

@@ -20,14 +20,9 @@ SymbolTable::SymbolTable() = default;
 SymbolTable::~SymbolTable() = default;
 
 /**
- * @brief Access modifier to string.
- * @param[in] access Input access for the operation.
- * @return Calculated or extracted result of the operation.
- * overlap (68%) with ContainerKindMatches in server/src/features/definition/DefinitionHandler.cpp. Candidate for
- * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (65%) with RawProfileStub in
- * server/src/analysis/EngineProfiles.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (62%) with IsOpeningOrMemberPunctuation in server/src/features/formatting/FormattingSpacing.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @brief Converts an AccessModifier enumeration value to its AngelScript keyword string.
+ * @param[in] access Access modifier enum value (public, protected, or private).
+ * @return Keyword string representing the access level.
  */
 static std::string AccessModifierToString(AccessModifier access)
 {
@@ -45,12 +40,9 @@ static std::string AccessModifierToString(AccessModifier access)
 }
 
 /**
- * @brief Parameter modifier to string.
- * @param[in] mod Input mod for the operation.
- * @return Calculated or extracted result of the operation.
- * overlap (85%) with FormatParameterReference in server/src/analysis/SignatureFormatter.cpp. Candidate for unification
- * in server/src/analysis/SemanticHelpers.h. Structural overlap (72%) with KindWord in
- * server/src/analysis/rules/TypeRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @brief Converts a ParameterModifier enum value to its AngelScript reference keyword string.
+ * @param[in] mod Parameter modifier enum value (in, out, or inout).
+ * @return Reference modifier string representing the parameter passing semantics.
  */
 static std::string ParameterModifierToString(ParameterModifier mod)
 {
@@ -1294,9 +1286,9 @@ std::string SymbolTable::BuildVirtualMixinUri(std::string_view hostClass, std::s
 }
 
 /**
- * @brief Symbol table extract virtual host class.
- * @param[in] uri File path or URI.
- * @return Calculated or extracted result of the operation.
+ * @brief Extracts the host class identifier from an angelscript-virtual URI.
+ * @param[in] uri Virtual document URI string.
+ * @return Extracted host class name, or empty string if not a virtual URI.
  */
 std::string SymbolTable::ExtractVirtualHostClass(std::string_view uri)
 {
@@ -1328,9 +1320,9 @@ std::string SymbolTable::ExtractVirtualHostClass(std::string_view uri)
 }
 
 /**
- * @brief Symbol table extract virtual mixin name.
- * @param[in] uri File path or URI.
- * @return Calculated or extracted result of the operation.
+ * @brief Extracts the mixin class name from an angelscript-virtual URI.
+ * @param[in] uri Virtual document URI string.
+ * @return Extracted mixin class name, or empty string if not a virtual URI.
  */
 std::string SymbolTable::ExtractVirtualMixinName(std::string_view uri)
 {
@@ -1436,10 +1428,10 @@ std::shared_ptr<const std::vector<Symbol>> SymbolTable::FindSymbolsPtr(std::stri
 }
 
 /**
- * @brief Symbol table find member symbol ptr.
- * @param[in] scope Enclosing lexical scope.
- * @param[in] member Member symbol or access information.
- * @return Calculated or extracted result of the operation.
+ * @brief Looks up a member symbol within a container scope returning a shared vector pointer.
+ * @param[in] scope Fully qualified name of the enclosing container class or namespace.
+ * @param[in] member Unqualified name of the member symbol to find.
+ * @return Shared pointer to matching symbols vector, or nullptr if none found.
  */
 std::shared_ptr<const std::vector<Symbol>> SymbolTable::FindMemberSymbolPtr(std::string_view scope,
                                                                             std::string_view member) const
@@ -1871,7 +1863,7 @@ static void PrintFunctionSymbol(angel_lsp::utils::LspLogger* logger, const Symbo
 
 /**
  * @brief Print variable symbol.
- * @param[in] logger Input logger for the operation.
+ * @param[in] logger Logger instance used for diagnostic message formatting.
  * @param[in] sym Tree-sitter grammar symbol.
  * @param[in] typeStr Type name or descriptor.
  * @param[in] range Source range or LSP range.
@@ -1898,12 +1890,10 @@ static void PrintVariableSymbol(angel_lsp::utils::LspLogger* logger, const Symbo
 
 /**
  * @brief Print class symbol.
- * @param[in] logger Input logger for the operation.
+ * @param[in] logger Logger instance used for diagnostic message formatting.
  * @param[in] sym Tree-sitter grammar symbol.
  * @param[in] typeStr Type name or descriptor.
  * @param[in] range Source range or LSP range.
- * PrintInterfaceSymbol in server/src/analysis/SymbolTable.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
 static void PrintClassSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const std::string& typeStr,
                              const std::string& range)
@@ -1929,7 +1919,7 @@ static void PrintClassSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& 
 
 /**
  * @brief Print interface symbol.
- * @param[in] logger Input logger for the operation.
+ * @param[in] logger Logger instance used for diagnostic message formatting.
  * @param[in] sym Tree-sitter grammar symbol.
  * @param[in] typeStr Type name or descriptor.
  * @param[in] range Source range or LSP range.

@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-01T19:43:52Z",
+  "generatedAt": "2026-11-01T20:22:46Z",
   "branch": "refactor/architecture-deduplication-and-ram",
   "description": "Deterministic AST and tokenization audit report covering local C++ structs, pass-1 flag re-evaluations, function similarity, hot struct RAM layout, and Doxygen coverage.",
   "localCppStructs": {
@@ -309,8 +309,8 @@
       },
       {
         "file": "server/src/analysis/ConstChecker.cpp",
-        "startLine": 121,
-        "endLine": 127,
+        "startLine": 119,
+        "endLine": 125,
         "structName": "ConstContext",
         "fields": [
           {
@@ -337,8 +337,8 @@
       },
       {
         "file": "server/src/analysis/ConstChecker.cpp",
-        "startLine": 187,
-        "endLine": 192,
+        "startLine": 185,
+        "endLine": 190,
         "structName": "EnclosingMethodInfo",
         "fields": [
           {
@@ -358,8 +358,8 @@
       },
       {
         "file": "server/src/analysis/ConstChecker.cpp",
-        "startLine": 490,
-        "endLine": 497,
+        "startLine": 488,
+        "endLine": 495,
         "structName": "MethodLookup",
         "fields": [
           {
@@ -652,7 +652,7 @@
       {
         "file": "server/src/analysis/DoxygenMarkdown.cpp",
         "startLine": 1598,
-        "endLine": 1685,
+        "endLine": 1679,
         "structName": "DocBlock",
         "fields": [
           {
@@ -1092,8 +1092,8 @@
       },
       {
         "file": "server/src/analysis/IsolationChecker.cpp",
-        "startLine": 319,
-        "endLine": 623,
+        "startLine": 318,
+        "endLine": 622,
         "structName": "IsolationVisitor",
         "fields": [
           {
@@ -1117,8 +1117,8 @@
       },
       {
         "file": "server/src/analysis/IsolationChecker.cpp",
-        "startLine": 543,
-        "endLine": 549,
+        "startLine": 542,
+        "endLine": 548,
         "structName": "IsoItem",
         "fields": [
           {
@@ -1172,8 +1172,8 @@
       },
       {
         "file": "server/src/analysis/LocalScopeCollector.cpp",
-        "startLine": 1508,
-        "endLine": 1515,
+        "startLine": 1496,
+        "endLine": 1503,
         "structName": "VirtualPropertyContext",
         "fields": [
           {
@@ -1764,8 +1764,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 1328,
-        "endLine": 1332,
+        "startLine": 1325,
+        "endLine": 1329,
         "structName": "HierarchyClassifiedBase",
         "fields": [
           {
@@ -1781,8 +1781,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 1930,
-        "endLine": 1936,
+        "startLine": 1927,
+        "endLine": 1933,
         "structName": "MixinExpansionContext",
         "fields": [
           {
@@ -1808,8 +1808,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 3164,
-        "endLine": 3169,
+        "startLine": 3161,
+        "endLine": 3166,
         "structName": "BinaryOverloadResult",
         "fields": [
           {
@@ -1831,8 +1831,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 3634,
-        "endLine": 3640,
+        "startLine": 3631,
+        "endLine": 3637,
         "structName": "TernaryBranchTypes",
         "fields": [
           {
@@ -1856,8 +1856,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 4919,
-        "endLine": 4924,
+        "startLine": 4916,
+        "endLine": 4921,
         "structName": "ActiveLocalDefKey",
         "fields": [
           {
@@ -1877,8 +1877,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 4932,
-        "endLine": 4942,
+        "startLine": 4929,
+        "endLine": 4939,
         "structName": "ActiveLocalDefGuard",
         "fields": [
           {
@@ -1890,8 +1890,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 5266,
-        "endLine": 5273,
+        "startLine": 5263,
+        "endLine": 5270,
         "structName": "DelegatePropertyReceiverContext",
         "fields": [
           {
@@ -1919,8 +1919,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 5712,
-        "endLine": 5727,
+        "startLine": 5709,
+        "endLine": 5724,
         "structName": "CallDelimiterState",
         "fields": [
           {
@@ -1960,8 +1960,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 6265,
-        "endLine": 6270,
+        "startLine": 6262,
+        "endLine": 6267,
         "structName": "FuncdefAgreement",
         "fields": [
           {
@@ -3694,8 +3694,8 @@
       },
       {
         "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-        "startLine": 457,
-        "endLine": 463,
+        "startLine": 455,
+        "endLine": 461,
         "structName": "CalleeResolutionResult",
         "fields": [
           {
@@ -3719,8 +3719,8 @@
       },
       {
         "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-        "startLine": 553,
-        "endLine": 560,
+        "startLine": 551,
+        "endLine": 558,
         "structName": "ArgInfo",
         "fields": [
           {
@@ -3750,8 +3750,8 @@
       },
       {
         "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-        "startLine": 1286,
-        "endLine": 1290,
+        "startLine": 1284,
+        "endLine": 1288,
         "structName": "ParamHintContext",
         "fields": [
           {
@@ -3769,8 +3769,8 @@
       },
       {
         "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-        "startLine": 1498,
-        "endLine": 1502,
+        "startLine": 1496,
+        "endLine": 1500,
         "structName": "OmittedHintContext",
         "fields": [
           {
@@ -3786,8 +3786,8 @@
       },
       {
         "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-        "startLine": 1513,
-        "endLine": 1518,
+        "startLine": 1511,
+        "endLine": 1516,
         "structName": "CallArgPosition",
         "fields": [
           {
@@ -3807,8 +3807,8 @@
       },
       {
         "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-        "startLine": 1529,
-        "endLine": 1535,
+        "startLine": 1527,
+        "endLine": 1533,
         "structName": "OmittedParamHint",
         "fields": [
           {
@@ -4574,8 +4574,8 @@
           {
             "file": "server/src/analysis/ConstChecker.cpp",
             "structName": "ConstContext",
-            "startLine": 121,
-            "endLine": 127,
+            "startLine": 119,
+            "endLine": 125,
             "matchedConcepts": [
               "scope",
               "table"
@@ -4584,8 +4584,8 @@
           {
             "file": "server/src/analysis/ConstChecker.cpp",
             "structName": "MethodLookup",
-            "startLine": 490,
-            "endLine": 497,
+            "startLine": 488,
+            "endLine": 495,
             "matchedConcepts": [
               "scope",
               "typeName"
@@ -4693,14 +4693,14 @@
       },
       {
         "file": "server/src/analysis/ConstChecker.cpp",
-        "line": 241,
+        "line": 239,
         "flagKind": "isConst",
         "codeSnippet": "(sym == gs.symFuncAttributes && parser::NodeText(child, sourceCode).find(\"const\") != std::string::np",
         "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst"
       },
       {
         "file": "server/src/analysis/ConstChecker.cpp",
-        "line": 360,
+        "line": 358,
         "flagKind": "isHandle",
         "codeSnippet": "bool isHandle = false;",
         "canonicalPass1Source": "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
@@ -4714,28 +4714,28 @@
       },
       {
         "file": "server/src/analysis/LocalScopeCollector.cpp",
-        "line": 1423,
+        "line": 1411,
         "flagKind": "isHandle",
         "codeSnippet": "bool isHandle = false;",
         "canonicalPass1Source": "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
       },
       {
         "file": "server/src/analysis/LocalScopeCollector.cpp",
-        "line": 1484,
+        "line": 1472,
         "flagKind": "isHandle",
         "codeSnippet": "bool isHandle = false;",
         "canonicalPass1Source": "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
       },
       {
         "file": "server/src/analysis/OverloadResolver.h",
-        "line": 122,
+        "line": 125,
         "flagKind": "isConst",
         "codeSnippet": "constexpr ArgumentConversion(MatchTier t, ConversionRank r, uint8_t sub = 0, uint8_t dist = 0, bool ",
         "canonicalPass1Source": "Symbol::modifiers.isConst / ParameterInformation::isConst"
       },
       {
         "file": "server/src/analysis/OverloadResolver.h",
-        "line": 135,
+        "line": 141,
         "flagKind": "isConst",
         "codeSnippet": "constexpr ArgumentConversion(ConversionRank r, uint8_t sub = 0, uint8_t dist = 0, bool isConst = fal",
         "canonicalPass1Source": "Symbol::modifiers.isConst / ParameterInformation::isConst"
@@ -4882,7 +4882,7 @@
       },
       {
         "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-        "line": 1964,
+        "line": 1962,
         "flagKind": "isHandle",
         "codeSnippet": "bool isHandle = analysis::IsHandleTypeView(typeText);",
         "canonicalPass1Source": "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
@@ -4896,15 +4896,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/DoxygenMarkdown.cpp",
-          "startLine": 1777,
-          "endLine": 1810,
+          "startLine": 1771,
+          "endLine": 1804,
           "name": "ProcessTParamTag",
           "signature": "ProcessTParamTag(TSNode tagNode, const std::string& sourceCode)"
         },
         "funcB": {
           "file": "server/src/analysis/DoxygenMarkdown.cpp",
-          "startLine": 1917,
-          "endLine": 1950,
+          "startLine": 1911,
+          "endLine": 1944,
           "name": "ProcessRetValTag",
           "signature": "ProcessRetValTag(TSNode tagNode, const std::string& sourceCode)"
         },
@@ -4932,15 +4932,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 355,
-          "endLine": 362,
+          "startLine": 330,
+          "endLine": 337,
           "name": "Emit",
           "signature": "DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& parentS"
         },
         "funcB": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 374,
-          "endLine": 381,
+          "startLine": 346,
+          "endLine": 353,
           "name": "Emit",
           "signature": "DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& parentS"
         },
@@ -4990,15 +4990,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 272,
-          "endLine": 279,
+          "startLine": 266,
+          "endLine": 273,
           "name": "Emit",
           "signature": "DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::string_vi"
         },
         "funcB": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 315,
-          "endLine": 322,
+          "startLine": 298,
+          "endLine": 305,
           "name": "Emit",
           "signature": "DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::initializ"
         },
@@ -5018,15 +5018,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/AccessChecker.cpp",
-          "startLine": 921,
-          "endLine": 943,
+          "startLine": 917,
+          "endLine": 939,
           "name": "CheckMemberAccess",
           "signature": "CheckMemberAccess(const AccessCheckRequest& request, DiagnosticContext& ctx)"
         },
         "funcB": {
           "file": "server/src/analysis/CallChecker.cpp",
-          "startLine": 2673,
-          "endLine": 2695,
+          "startLine": 2671,
+          "endLine": 2693,
           "name": "CheckCallArguments",
           "signature": "CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx)"
         },
@@ -5049,15 +5049,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/AccessChecker.cpp",
-          "startLine": 921,
-          "endLine": 943,
+          "startLine": 917,
+          "endLine": 939,
           "name": "CheckMemberAccess",
           "signature": "CheckMemberAccess(const AccessCheckRequest& request, DiagnosticContext& ctx)"
         },
         "funcB": {
           "file": "server/src/analysis/LValueChecker.cpp",
-          "startLine": 431,
-          "endLine": 453,
+          "startLine": 428,
+          "endLine": 450,
           "name": "CheckLValues",
           "signature": "CheckLValues(const LValueCheckRequest& request, DiagnosticContext& ctx)"
         },
@@ -5080,15 +5080,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/CallChecker.cpp",
-          "startLine": 2673,
-          "endLine": 2695,
+          "startLine": 2671,
+          "endLine": 2693,
           "name": "CheckCallArguments",
           "signature": "CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx)"
         },
         "funcB": {
           "file": "server/src/analysis/LValueChecker.cpp",
-          "startLine": 431,
-          "endLine": 453,
+          "startLine": 428,
+          "endLine": 450,
           "name": "CheckLValues",
           "signature": "CheckLValues(const LValueCheckRequest& request, DiagnosticContext& ctx)"
         },
@@ -5111,17 +5111,17 @@
       {
         "funcA": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 408,
-          "endLine": 414,
+          "startLine": 375,
+          "endLine": 381,
           "name": "EmitAtRange",
           "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, std::st"
         },
         "funcB": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 443,
-          "endLine": 449,
+          "startLine": 405,
+          "endLine": 411,
           "name": "EmitAtRange",
-          "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\n       "
+          "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\r\n      "
         },
         "similarityScore": 0.976,
         "sharedCalls": [
@@ -5198,15 +5198,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/AccessChecker.cpp",
-          "startLine": 921,
-          "endLine": 943,
+          "startLine": 917,
+          "endLine": 939,
           "name": "CheckMemberAccess",
           "signature": "CheckMemberAccess(const AccessCheckRequest& request, DiagnosticContext& ctx)"
         },
         "funcB": {
           "file": "server/src/analysis/ConstChecker.cpp",
-          "startLine": 738,
-          "endLine": 762,
+          "startLine": 733,
+          "endLine": 757,
           "name": "CheckConstCorrectness",
           "signature": "CheckConstCorrectness(const ConstCheckRequest& request, DiagnosticContext& ctx)"
         },
@@ -5229,15 +5229,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/CallChecker.cpp",
-          "startLine": 2673,
-          "endLine": 2695,
+          "startLine": 2671,
+          "endLine": 2693,
           "name": "CheckCallArguments",
           "signature": "CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx)"
         },
         "funcB": {
           "file": "server/src/analysis/ConstChecker.cpp",
-          "startLine": 738,
-          "endLine": 762,
+          "startLine": 733,
+          "endLine": 757,
           "name": "CheckConstCorrectness",
           "signature": "CheckConstCorrectness(const ConstCheckRequest& request, DiagnosticContext& ctx)"
         },
@@ -5260,15 +5260,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/ConstChecker.cpp",
-          "startLine": 738,
-          "endLine": 762,
+          "startLine": 733,
+          "endLine": 757,
           "name": "CheckConstCorrectness",
           "signature": "CheckConstCorrectness(const ConstCheckRequest& request, DiagnosticContext& ctx)"
         },
         "funcB": {
           "file": "server/src/analysis/LValueChecker.cpp",
-          "startLine": 431,
-          "endLine": 453,
+          "startLine": 428,
+          "endLine": 450,
           "name": "CheckLValues",
           "signature": "CheckLValues(const LValueCheckRequest& request, DiagnosticContext& ctx)"
         },
@@ -5291,15 +5291,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 994,
-          "endLine": 1015,
+          "startLine": 992,
+          "endLine": 1013,
           "name": "ReadForeachVariableTypeInfo",
           "signature": "LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, const st"
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1174,
-          "endLine": 1194,
+          "startLine": 1166,
+          "endLine": 1186,
           "name": "ReadEmptyParenVariableTypeInfo",
           "signature": "LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const std::"
         },
@@ -5339,8 +5339,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/rules/TypeRules.cpp",
-          "startLine": 103,
-          "endLine": 124,
+          "startLine": 98,
+          "endLine": 119,
           "name": "KindWord",
           "signature": "KindWord(SymbolType type)"
         },
@@ -5355,7 +5355,7 @@
           "startLine": 426,
           "endLine": 440,
           "name": "ProcessVirtualProperty",
-          "signature": "ProcessVirtualProperty(TSNode node, const TraversalContext& ctx,\n               "
+          "signature": "ProcessVirtualProperty(TSNode node, const TraversalContext& ctx,\r\n              "
         },
         "funcB": {
           "file": "server/src/features/document_symbol/DocumentSymbolHandler.cpp",
@@ -5380,15 +5380,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 272,
-          "endLine": 279,
+          "startLine": 266,
+          "endLine": 273,
           "name": "Emit",
           "signature": "DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::string_vi"
         },
         "funcB": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 294,
-          "endLine": 301,
+          "startLine": 282,
+          "endLine": 289,
           "name": "Emit",
           "signature": "DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::string_vi"
         },
@@ -5431,15 +5431,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 408,
-          "endLine": 414,
+          "startLine": 375,
+          "endLine": 381,
           "name": "EmitAtRange",
           "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, std::st"
         },
         "funcB": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 426,
-          "endLine": 432,
+          "startLine": 390,
+          "endLine": 396,
           "name": "EmitAtRange",
           "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, std::st"
         },
@@ -5487,15 +5487,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1861,
-          "endLine": 1905,
+          "startLine": 1855,
+          "endLine": 1899,
           "name": "ScanDocumentForNamespace",
           "signature": "ScanDocumentForNamespace(const analysis::Scope* root,\n                          "
         },
         "funcB": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1947,
-          "endLine": 1985,
+          "startLine": 1938,
+          "endLine": 1976,
           "name": "ScanDocumentForGlobal",
           "signature": "ScanDocumentForGlobal(const analysis::Scope* root, OccurrenceScanContext& ctx)"
         },
@@ -5532,15 +5532,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 294,
-          "endLine": 301,
+          "startLine": 282,
+          "endLine": 289,
           "name": "Emit",
           "signature": "DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::string_vi"
         },
         "funcB": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 315,
-          "endLine": 322,
+          "startLine": 298,
+          "endLine": 305,
           "name": "Emit",
           "signature": "DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::initializ"
         },
@@ -5661,17 +5661,17 @@
       {
         "funcA": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 426,
-          "endLine": 432,
+          "startLine": 390,
+          "endLine": 396,
           "name": "EmitAtRange",
           "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, std::st"
         },
         "funcB": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 443,
-          "endLine": 449,
+          "startLine": 405,
+          "endLine": 411,
           "name": "EmitAtRange",
-          "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\n       "
+          "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\r\n      "
         },
         "similarityScore": 0.932,
         "sharedCalls": [
@@ -5698,7 +5698,7 @@
           "startLine": 291,
           "endLine": 329,
           "name": "TraverseSubtreeMutations",
-          "signature": "TraverseSubtreeMutations(TSNode root, std::string_view sourceCode,\n             "
+          "signature": "TraverseSubtreeMutations(TSNode root, std::string_view sourceCode,\r\n            "
         },
         "similarityScore": 0.931,
         "sharedCalls": [
@@ -5718,7 +5718,7 @@
           "startLine": 1142,
           "endLine": 1190,
           "name": "CheckUnusedVariables",
-          "signature": "SemanticAnalyzer::CheckUnusedVariables(const Scope* rootScope,\n                 "
+          "signature": "SemanticAnalyzer::CheckUnusedVariables(const Scope* rootScope,\r\n                "
         },
         "funcB": {
           "file": "server/src/analysis/SemanticAnalyzer.cpp",
@@ -5843,15 +5843,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/EngineConfigConverter.cpp",
-          "startLine": 198,
-          "endLine": 207,
+          "startLine": 196,
+          "endLine": 205,
           "name": "FindOrCreateClass",
           "signature": "& FindOrCreateClass(NamespaceData& scope, const std::string& name)"
         },
         "funcB": {
           "file": "server/src/analysis/EngineConfigConverter.cpp",
-          "startLine": 217,
-          "endLine": 226,
+          "startLine": 213,
+          "endLine": 222,
           "name": "FindOrCreateEnum",
           "signature": "& FindOrCreateEnum(NamespaceData& scope, const std::string& name)"
         },
@@ -5868,15 +5868,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/EngineConfigConverter.cpp",
-          "startLine": 198,
-          "endLine": 207,
+          "startLine": 196,
+          "endLine": 205,
           "name": "FindOrCreateClass",
           "signature": "& FindOrCreateClass(NamespaceData& scope, const std::string& name)"
         },
         "funcB": {
           "file": "server/src/analysis/EngineConfigConverter.cpp",
-          "startLine": 236,
-          "endLine": 245,
+          "startLine": 230,
+          "endLine": 239,
           "name": "FindOrCreateInterface",
           "signature": "& FindOrCreateInterface(NamespaceData& scope, const std::string& name)"
         },
@@ -5893,15 +5893,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/EngineConfigConverter.cpp",
-          "startLine": 217,
-          "endLine": 226,
+          "startLine": 213,
+          "endLine": 222,
           "name": "FindOrCreateEnum",
           "signature": "& FindOrCreateEnum(NamespaceData& scope, const std::string& name)"
         },
         "funcB": {
           "file": "server/src/analysis/EngineConfigConverter.cpp",
-          "startLine": 236,
-          "endLine": 245,
+          "startLine": 230,
+          "endLine": 239,
           "name": "FindOrCreateInterface",
           "signature": "& FindOrCreateInterface(NamespaceData& scope, const std::string& name)"
         },
@@ -5969,15 +5969,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1174,
-          "endLine": 1194,
+          "startLine": 1166,
+          "endLine": 1186,
           "name": "ReadEmptyParenVariableTypeInfo",
           "signature": "LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const std::"
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1253,
-          "endLine": 1278,
+          "startLine": 1241,
+          "endLine": 1266,
           "name": "ReadVirtualPropertyTypeInfo",
           "signature": "LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const std:"
         },
@@ -6012,17 +6012,17 @@
       {
         "funcA": {
           "file": "server/src/analysis/SymbolTable.cpp",
-          "startLine": 1385,
-          "endLine": 1410,
+          "startLine": 1377,
+          "endLine": 1402,
           "name": "HasScopedSymbol",
           "signature": "SymbolTable::HasScopedSymbol(std::string_view scope, std::string_view name) cons"
         },
         "funcB": {
           "file": "server/src/analysis/SymbolTable.cpp",
-          "startLine": 1444,
-          "endLine": 1466,
+          "startLine": 1436,
+          "endLine": 1458,
           "name": "FindMemberSymbolPtr",
-          "signature": "SymbolTable::FindMemberSymbolPtr(std::string_view scope,\n                       "
+          "signature": "SymbolTable::FindMemberSymbolPtr(std::string_view scope,\r\n                      "
         },
         "similarityScore": 0.907,
         "sharedCalls": [
@@ -6040,15 +6040,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1912,
-          "endLine": 1937,
+          "startLine": 1906,
+          "endLine": 1931,
           "name": "CollectNamespaceOccurrences",
           "signature": "CollectNamespaceOccurrences(const CollectOccurrencesRequest& request, Occurrence"
         },
         "funcB": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1992,
-          "endLine": 2013,
+          "startLine": 1983,
+          "endLine": 2004,
           "name": "CollectGlobalOccurrences",
           "signature": "CollectGlobalOccurrences(const CollectOccurrencesRequest& request, OccurrenceCol"
         },
@@ -6070,15 +6070,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1947,
-          "endLine": 1985,
+          "startLine": 1938,
+          "endLine": 1976,
           "name": "ScanDocumentForGlobal",
           "signature": "ScanDocumentForGlobal(const analysis::Scope* root, OccurrenceScanContext& ctx)"
         },
         "funcB": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 2186,
-          "endLine": 2219,
+          "startLine": 2174,
+          "endLine": 2207,
           "name": "ScanDocumentForEnumMember",
           "signature": "ScanDocumentForEnumMember(const analysis::Scope* root, OccurrenceScanContext& ct"
         },
@@ -6136,7 +6136,7 @@
           "startLine": 768,
           "endLine": 792,
           "name": "TryResolveLocalDefinition",
-          "signature": "TryResolveLocalDefinition(TSNode node, const std::string& nodeText,\n            "
+          "signature": "TryResolveLocalDefinition(TSNode node, const std::string& nodeText,\r\n           "
         },
         "funcB": {
           "file": "server/src/features/definition/DefinitionHandler.cpp",
@@ -6208,8 +6208,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/EngineProfiles.cpp",
-          "startLine": 845,
-          "endLine": 865,
+          "startLine": 840,
+          "endLine": 860,
           "name": "RawProfileStub",
           "signature": "RawProfileStub(EngineProfileKind kind)"
         },
@@ -6221,8 +6221,8 @@
       {
         "funcA": {
           "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-          "startLine": 30,
-          "endLine": 41,
+          "startLine": 28,
+          "endLine": 39,
           "name": "TrimNodeText",
           "signature": "TrimNodeText(std::string text)"
         },
@@ -6246,15 +6246,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 294,
-          "endLine": 301,
+          "startLine": 282,
+          "endLine": 289,
           "name": "Emit",
           "signature": "DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::string_vi"
         },
         "funcB": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 426,
-          "endLine": 432,
+          "startLine": 390,
+          "endLine": 396,
           "name": "EmitAtRange",
           "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, std::st"
         },
@@ -6273,15 +6273,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 994,
-          "endLine": 1015,
+          "startLine": 992,
+          "endLine": 1013,
           "name": "ReadForeachVariableTypeInfo",
           "signature": "LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, const st"
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1253,
-          "endLine": 1278,
+          "startLine": 1241,
+          "endLine": 1266,
           "name": "ReadVirtualPropertyTypeInfo",
           "signature": "LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const std:"
         },
@@ -6318,7 +6318,7 @@
           "startLine": 328,
           "endLine": 350,
           "name": "CollectSymbols",
-          "signature": "SymbolCollector::CollectSymbols(const SymbolCollectRequest& request,\n           "
+          "signature": "SymbolCollector::CollectSymbols(const SymbolCollectRequest& request,\r\n          "
         },
         "funcB": {
           "file": "server/src/analysis/SymbolCollector.cpp",
@@ -6373,15 +6373,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 272,
-          "endLine": 279,
+          "startLine": 266,
+          "endLine": 273,
           "name": "Emit",
           "signature": "DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::string_vi"
         },
         "funcB": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 408,
-          "endLine": 414,
+          "startLine": 375,
+          "endLine": 381,
           "name": "EmitAtRange",
           "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, std::st"
         },
@@ -6426,15 +6426,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/EngineProfiles.cpp",
-          "startLine": 845,
-          "endLine": 865,
+          "startLine": 840,
+          "endLine": 860,
           "name": "RawProfileStub",
           "signature": "RawProfileStub(EngineProfileKind kind)"
         },
         "funcB": {
           "file": "server/src/analysis/rules/TypeRules.cpp",
-          "startLine": 103,
-          "endLine": 124,
+          "startLine": 98,
+          "endLine": 119,
           "name": "KindWord",
           "signature": "KindWord(SymbolType type)"
         },
@@ -6479,15 +6479,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SymbolTable.cpp",
-          "startLine": 1879,
-          "endLine": 1897,
+          "startLine": 1871,
+          "endLine": 1889,
           "name": "PrintVariableSymbol",
           "signature": "PrintVariableSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, cons"
         },
         "funcB": {
           "file": "server/src/analysis/SymbolTable.cpp",
-          "startLine": 1908,
-          "endLine": 1928,
+          "startLine": 1898,
+          "endLine": 1918,
           "name": "PrintClassSymbol",
           "signature": "PrintClassSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const s"
         },
@@ -6513,17 +6513,17 @@
       {
         "funcA": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 315,
-          "endLine": 322,
+          "startLine": 298,
+          "endLine": 305,
           "name": "Emit",
           "signature": "DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::initializ"
         },
         "funcB": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 443,
-          "endLine": 449,
+          "startLine": 405,
+          "endLine": 411,
           "name": "EmitAtRange",
-          "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\n       "
+          "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\r\n      "
         },
         "similarityScore": 0.879,
         "sharedCalls": [
@@ -6547,8 +6547,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/rules/VariableRules.cpp",
-          "startLine": 316,
-          "endLine": 323,
+          "startLine": 314,
+          "endLine": 321,
           "name": "CheckModifiers",
           "signature": "CheckModifiers(const Symbol& sym, const VariableSignature& sig, const Diagnostic"
         },
@@ -6565,15 +6565,15 @@
       {
         "funcA": {
           "file": "server/src/features/formatting/FormattingSpacing.cpp",
-          "startLine": 17,
-          "endLine": 31,
+          "startLine": 15,
+          "endLine": 29,
           "name": "IsClosingOrSeparatorPunctuation",
           "signature": "IsClosingOrSeparatorPunctuation(TokenType type)"
         },
         "funcB": {
           "file": "server/src/features/formatting/FormattingSpacing.cpp",
-          "startLine": 38,
-          "endLine": 50,
+          "startLine": 36,
+          "endLine": 48,
           "name": "IsOpeningOrMemberPunctuation",
           "signature": "IsOpeningOrMemberPunctuation(TokenType type)"
         },
@@ -6705,15 +6705,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1861,
-          "endLine": 1905,
+          "startLine": 1855,
+          "endLine": 1899,
           "name": "ScanDocumentForNamespace",
           "signature": "ScanDocumentForNamespace(const analysis::Scope* root,\n                          "
         },
         "funcB": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 2186,
-          "endLine": 2219,
+          "startLine": 2174,
+          "endLine": 2207,
           "name": "ScanDocumentForEnumMember",
           "signature": "ScanDocumentForEnumMember(const analysis::Scope* root, OccurrenceScanContext& ct"
         },
@@ -6782,8 +6782,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1070,
-          "endLine": 1087,
+          "startLine": 1068,
+          "endLine": 1085,
           "name": "CountVariableDeclarators",
           "signature": "CountVariableDeclarators(TSNode declarationNode, TSSymbol declaratorSym)"
         },
@@ -6820,7 +6820,7 @@
           "startLine": 1095,
           "endLine": 1134,
           "name": "CollectUsedDefinitions",
-          "signature": "SemanticAnalyzer::CollectUsedDefinitions(const Scope* rootScope,\n               "
+          "signature": "SemanticAnalyzer::CollectUsedDefinitions(const Scope* rootScope,\r\n              "
         },
         "similarityScore": 0.863,
         "sharedCalls": [
@@ -6878,15 +6878,15 @@
       {
         "funcA": {
           "file": "server/src/features/formatting/FormattingSpacing.cpp",
-          "startLine": 17,
-          "endLine": 31,
+          "startLine": 15,
+          "endLine": 29,
           "name": "IsClosingOrSeparatorPunctuation",
           "signature": "IsClosingOrSeparatorPunctuation(TokenType type)"
         },
         "funcB": {
           "file": "server/src/features/formatting/FormattingTokens.cpp",
-          "startLine": 197,
-          "endLine": 214,
+          "startLine": 191,
+          "endLine": 208,
           "name": "IsUnaryPrecedingTokenType",
           "signature": "IsUnaryPrecedingTokenType(TokenType type)"
         },
@@ -6946,8 +6946,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1753,
-          "endLine": 1778,
+          "startLine": 1750,
+          "endLine": 1775,
           "name": "CollectDeclarations",
           "signature": "CollectDeclarations(const std::string& symQuery, const CollectOccurrencesRequest"
         },
@@ -6978,15 +6978,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SymbolTable.cpp",
-          "startLine": 32,
-          "endLine": 45,
+          "startLine": 27,
+          "endLine": 40,
           "name": "AccessModifierToString",
           "signature": "AccessModifierToString(AccessModifier access)"
         },
         "funcB": {
           "file": "server/src/analysis/SymbolTable.cpp",
-          "startLine": 55,
-          "endLine": 70,
+          "startLine": 47,
+          "endLine": 62,
           "name": "ParameterModifierToString",
           "signature": "ParameterModifierToString(ParameterModifier mod)"
         },
@@ -6998,15 +6998,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 3312,
-          "endLine": 3331,
+          "startLine": 3309,
+          "endLine": 3328,
           "name": "ResolveBinary64OrFloat",
           "signature": "ResolveBinary64OrFloat(const std::string& cleanLeft, const std::string& cleanRig"
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 3680,
-          "endLine": 3693,
+          "startLine": 3677,
+          "endLine": 3690,
           "name": "ResolveTernaryNumericPromotion",
           "signature": "ResolveTernaryNumericPromotion(const std::string& c1, const std::string& c2)"
         },
@@ -7018,15 +7018,15 @@
       {
         "funcA": {
           "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-          "startLine": 1789,
-          "endLine": 1810,
+          "startLine": 1787,
+          "endLine": 1808,
           "name": "ProcessConstructorCallExpression",
           "signature": "ProcessConstructorCallExpression(TSNode node, const InlayHintRequest& request,\n "
         },
         "funcB": {
           "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-          "startLine": 1905,
-          "endLine": 1920,
+          "startLine": 1903,
+          "endLine": 1918,
           "name": "ProcessConstructorInitDeclarator",
           "signature": "ProcessConstructorInitDeclarator(const std::string& typeText, TSNode declarator,"
         },
@@ -7056,8 +7056,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/SymbolTable.cpp",
-          "startLine": 55,
-          "endLine": 70,
+          "startLine": 47,
+          "endLine": 62,
           "name": "ParameterModifierToString",
           "signature": "ParameterModifierToString(ParameterModifier mod)"
         },
@@ -7069,15 +7069,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SymbolTable.cpp",
-          "startLine": 1301,
-          "endLine": 1328,
+          "startLine": 1293,
+          "endLine": 1320,
           "name": "ExtractVirtualHostClass",
           "signature": "SymbolTable::ExtractVirtualHostClass(std::string_view uri)"
         },
         "funcB": {
           "file": "server/src/analysis/SymbolTable.cpp",
-          "startLine": 1335,
-          "endLine": 1363,
+          "startLine": 1327,
+          "endLine": 1355,
           "name": "ExtractVirtualMixinName",
           "signature": "SymbolTable::ExtractVirtualMixinName(std::string_view uri)"
         },
@@ -7097,15 +7097,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 272,
-          "endLine": 279,
+          "startLine": 266,
+          "endLine": 273,
           "name": "Emit",
           "signature": "DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::string_vi"
         },
         "funcB": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 426,
-          "endLine": 432,
+          "startLine": 390,
+          "endLine": 396,
           "name": "EmitAtRange",
           "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, std::st"
         },
@@ -7124,15 +7124,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 294,
-          "endLine": 301,
+          "startLine": 282,
+          "endLine": 289,
           "name": "Emit",
           "signature": "DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::string_vi"
         },
         "funcB": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 408,
-          "endLine": 414,
+          "startLine": 375,
+          "endLine": 381,
           "name": "EmitAtRange",
           "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, std::st"
         },
@@ -7187,8 +7187,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/DoxygenMarkdown.cpp",
-          "startLine": 2127,
-          "endLine": 2142,
+          "startLine": 2121,
+          "endLine": 2136,
           "name": "FormatInlineWord",
           "signature": "FormatInlineWord(std::string_view cmd, std::string_view word)"
         },
@@ -7230,15 +7230,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 3418,
-          "endLine": 3423,
+          "startLine": 3415,
+          "endLine": 3420,
           "name": "IsBooleanBinaryOpSym",
           "signature": "IsBooleanBinaryOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept"
         },
         "funcB": {
           "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-          "startLine": 1029,
-          "endLine": 1034,
+          "startLine": 1027,
+          "endLine": 1032,
           "name": "IsBooleanBinaryOperator",
           "signature": "IsBooleanBinaryOperator(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept"
         },
@@ -7279,7 +7279,7 @@
           "startLine": 336,
           "endLine": 352,
           "name": "ProcessInterfaceMethod",
-          "signature": "ProcessInterfaceMethod(TSNode node, const TraversalContext& ctx,\n               "
+          "signature": "ProcessInterfaceMethod(TSNode node, const TraversalContext& ctx,\r\n              "
         },
         "funcB": {
           "file": "server/src/features/document_symbol/DocumentSymbolHandler.cpp",
@@ -7364,7 +7364,7 @@
           "startLine": 426,
           "endLine": 440,
           "name": "ProcessVirtualProperty",
-          "signature": "ProcessVirtualProperty(TSNode node, const TraversalContext& ctx,\n               "
+          "signature": "ProcessVirtualProperty(TSNode node, const TraversalContext& ctx,\r\n              "
         },
         "similarityScore": 0.806,
         "sharedCalls": [
@@ -7379,8 +7379,8 @@
       {
         "funcA": {
           "file": "server/src/features/document_symbol/DocumentSymbolHandler.cpp",
-          "startLine": 595,
-          "endLine": 616,
+          "startLine": 593,
+          "endLine": 614,
           "name": "MapSymbolTypeToKind",
           "signature": "MapSymbolTypeToKind(analysis::SymbolType type) noexcept"
         },
@@ -7434,15 +7434,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 1749,
-          "endLine": 1786,
+          "startLine": 1746,
+          "endLine": 1783,
           "name": "TraverseDerivedClasses",
           "signature": "TraverseDerivedClasses(const std::vector<std::string>& initialFrontier, const Sy"
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 1812,
-          "endLine": 1865,
+          "startLine": 1809,
+          "endLine": 1862,
           "name": "GetDerivedClasses",
           "signature": "GetDerivedClasses(const std::string& className, const SymbolTable& symbolTable)"
         },
@@ -7506,15 +7506,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/DoxygenMarkdown.cpp",
-          "startLine": 1616,
-          "endLine": 1622,
+          "startLine": 1613,
+          "endLine": 1619,
           "name": "MakeWithKind",
           "signature": "MakeWithKind(DocBlockKind kind, std::string t)"
         },
         "funcB": {
           "file": "server/src/analysis/DoxygenMarkdown.cpp",
-          "startLine": 1677,
-          "endLine": 1684,
+          "startLine": 1671,
+          "endLine": 1678,
           "name": "MakeAdmonition",
           "signature": "MakeAdmonition(std::string l, std::string t)"
         },
@@ -7637,15 +7637,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1636,
-          "endLine": 1685,
+          "startLine": 1633,
+          "endLine": 1682,
           "name": "ScanDocumentForClassMember",
           "signature": "ScanDocumentForClassMember(const analysis::Scope* root,\n                        "
         },
         "funcB": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1947,
-          "endLine": 1985,
+          "startLine": 1938,
+          "endLine": 1976,
           "name": "ScanDocumentForGlobal",
           "signature": "ScanDocumentForGlobal(const analysis::Scope* root, OccurrenceScanContext& ctx)"
         },
@@ -7681,15 +7681,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SymbolTable.cpp",
-          "startLine": 1908,
-          "endLine": 1928,
+          "startLine": 1898,
+          "endLine": 1918,
           "name": "PrintClassSymbol",
           "signature": "PrintClassSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, const s"
         },
         "funcB": {
           "file": "server/src/analysis/SymbolTable.cpp",
-          "startLine": 1937,
-          "endLine": 1951,
+          "startLine": 1927,
+          "endLine": 1941,
           "name": "PrintInterfaceSymbol",
           "signature": "PrintInterfaceSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, con"
         },
@@ -7740,15 +7740,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 355,
-          "endLine": 362,
+          "startLine": 330,
+          "endLine": 337,
           "name": "Emit",
           "signature": "DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& parentS"
         },
         "funcB": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 408,
-          "endLine": 414,
+          "startLine": 375,
+          "endLine": 381,
           "name": "EmitAtRange",
           "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, std::st"
         },
@@ -7770,7 +7770,7 @@
           "startLine": 52,
           "endLine": 87,
           "name": "TryBuildMissingConstFixForSymbol",
-          "signature": "TryBuildMissingConstFixForSymbol(const CodeActionRequest& request,\n             "
+          "signature": "TryBuildMissingConstFixForSymbol(const CodeActionRequest& request,\r\n            "
         },
         "funcB": {
           "file": "server/src/features/code_action/CodeActionConstQualifier.cpp",
@@ -7828,15 +7828,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1787,
-          "endLine": 1806,
+          "startLine": 1784,
+          "endLine": 1803,
           "name": "MatchesScopeNamespaceQualifier",
           "signature": "MatchesScopeNamespaceQualifier(const analysis::LocalReference& ref, const analys"
         },
         "funcB": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 2066,
-          "endLine": 2080,
+          "startLine": 2057,
+          "endLine": 2071,
           "name": "HasPrecedingEnumQualifier",
           "signature": "HasPrecedingEnumQualifier(const analysis::LocalReference& ref, const analysis::S"
         },
@@ -7911,8 +7911,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/AccessChecker.cpp",
-          "startLine": 547,
-          "endLine": 554,
+          "startLine": 545,
+          "endLine": 552,
           "name": "IsDeclarationNodeType",
           "signature": "IsDeclarationNodeType(TSSymbol sym)"
         },
@@ -8007,7 +8007,7 @@
           "startLine": 2408,
           "endLine": 2449,
           "name": "ScanSwitchStatementCaseColons",
-          "signature": "ScanSwitchStatementCaseColons(TSNode switchNode, std::string_view sourceCode,\n  "
+          "signature": "ScanSwitchStatementCaseColons(TSNode switchNode, std::string_view sourceCode,\r\n "
         },
         "similarityScore": 0.743,
         "sharedCalls": [
@@ -8025,15 +8025,15 @@
       {
         "funcA": {
           "file": "server/src/features/formatting/FormattingSpacing.cpp",
-          "startLine": 38,
-          "endLine": 50,
+          "startLine": 36,
+          "endLine": 48,
           "name": "IsOpeningOrMemberPunctuation",
           "signature": "IsOpeningOrMemberPunctuation(TokenType type)"
         },
         "funcB": {
           "file": "server/src/features/formatting/FormattingTokens.cpp",
-          "startLine": 197,
-          "endLine": 214,
+          "startLine": 191,
+          "endLine": 208,
           "name": "IsUnaryPrecedingTokenType",
           "signature": "IsUnaryPrecedingTokenType(TokenType type)"
         },
@@ -8045,15 +8045,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 5525,
-          "endLine": 5592,
+          "startLine": 5522,
+          "endLine": 5589,
           "name": "ExtractCallArguments",
           "signature": "ExtractCallArguments(TSNode argumentList, std::string_view sourceCode)"
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 5994,
-          "endLine": 6059,
+          "startLine": 5991,
+          "endLine": 6056,
           "name": "ExtractLambdaParameters",
           "signature": "ExtractLambdaParameters(TSNode lambdaParamList, std::string_view sourceCode)"
         },
@@ -8080,15 +8080,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1636,
-          "endLine": 1685,
+          "startLine": 1633,
+          "endLine": 1682,
           "name": "ScanDocumentForClassMember",
           "signature": "ScanDocumentForClassMember(const analysis::Scope* root,\n                        "
         },
         "funcB": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 2186,
-          "endLine": 2219,
+          "startLine": 2174,
+          "endLine": 2207,
           "name": "ScanDocumentForEnumMember",
           "signature": "ScanDocumentForEnumMember(const analysis::Scope* root, OccurrenceScanContext& ct"
         },
@@ -8160,8 +8160,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 994,
-          "endLine": 1015,
+          "startLine": 992,
+          "endLine": 1013,
           "name": "ReadForeachVariableTypeInfo",
           "signature": "LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, const st"
         },
@@ -8201,8 +8201,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1174,
-          "endLine": 1194,
+          "startLine": 1166,
+          "endLine": 1186,
           "name": "ReadEmptyParenVariableTypeInfo",
           "signature": "LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const std::"
         },
@@ -8268,15 +8268,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 2836,
-          "endLine": 2852,
+          "startLine": 2833,
+          "endLine": 2849,
           "name": "ExtractVariableOrPropertyType",
           "signature": "ExtractVariableOrPropertyType(std::span<const Symbol> syms, const SymbolTable& t"
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 3928,
-          "endLine": 3949,
+          "startLine": 3925,
+          "endLine": 3946,
           "name": "ExtractMemberSymbolType",
           "signature": "ExtractMemberSymbolType(const Symbol& sym, const SymbolTable& table)"
         },
@@ -8296,15 +8296,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/rules/TypeRules.cpp",
-          "startLine": 103,
-          "endLine": 124,
+          "startLine": 98,
+          "endLine": 119,
           "name": "KindWord",
           "signature": "KindWord(SymbolType type)"
         },
         "funcB": {
           "file": "server/src/analysis/SymbolTable.cpp",
-          "startLine": 55,
-          "endLine": 70,
+          "startLine": 47,
+          "endLine": 62,
           "name": "ParameterModifierToString",
           "signature": "ParameterModifierToString(ParameterModifier mod)"
         },
@@ -8316,15 +8316,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1125,
-          "endLine": 1162,
+          "startLine": 1121,
+          "endLine": 1158,
           "name": "ReadVariableDeclaratorTypeInfo",
           "signature": "LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, TSNod"
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1174,
-          "endLine": 1194,
+          "startLine": 1166,
+          "endLine": 1186,
           "name": "ReadEmptyParenVariableTypeInfo",
           "signature": "LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const std::"
         },
@@ -8359,15 +8359,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 336,
-          "endLine": 341,
+          "startLine": 316,
+          "endLine": 321,
           "name": "Emit",
           "signature": "DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& parentS"
         },
         "funcB": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 374,
-          "endLine": 381,
+          "startLine": 346,
+          "endLine": 353,
           "name": "Emit",
           "signature": "DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& parentS"
         },
@@ -8456,15 +8456,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 336,
-          "endLine": 341,
+          "startLine": 316,
+          "endLine": 321,
           "name": "Emit",
           "signature": "DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& parentS"
         },
         "funcB": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 355,
-          "endLine": 362,
+          "startLine": 330,
+          "endLine": 337,
           "name": "Emit",
           "signature": "DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& parentS"
         },
@@ -8486,15 +8486,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1636,
-          "endLine": 1685,
+          "startLine": 1633,
+          "endLine": 1682,
           "name": "ScanDocumentForClassMember",
           "signature": "ScanDocumentForClassMember(const analysis::Scope* root,\n                        "
         },
         "funcB": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1861,
-          "endLine": 1905,
+          "startLine": 1855,
+          "endLine": 1899,
           "name": "ScanDocumentForNamespace",
           "signature": "ScanDocumentForNamespace(const analysis::Scope* root,\n                          "
         },
@@ -8578,7 +8578,7 @@
           "startLine": 52,
           "endLine": 87,
           "name": "TryBuildMissingConstFixForSymbol",
-          "signature": "TryBuildMissingConstFixForSymbol(const CodeActionRequest& request,\n             "
+          "signature": "TryBuildMissingConstFixForSymbol(const CodeActionRequest& request,\r\n            "
         },
         "funcB": {
           "file": "server/src/features/code_action/CodeActionConstQualifier.cpp",
@@ -8622,8 +8622,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1253,
-          "endLine": 1278,
+          "startLine": 1241,
+          "endLine": 1266,
           "name": "ReadVirtualPropertyTypeInfo",
           "signature": "LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const std:"
         },
@@ -8680,15 +8680,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SymbolTable.cpp",
-          "startLine": 32,
-          "endLine": 45,
+          "startLine": 27,
+          "endLine": 40,
           "name": "AccessModifierToString",
           "signature": "AccessModifierToString(AccessModifier access)"
         },
         "funcB": {
           "file": "server/src/features/definition/DefinitionHandler.cpp",
-          "startLine": 1532,
-          "endLine": 1545,
+          "startLine": 1530,
+          "endLine": 1543,
           "name": "ContainerKindMatches",
           "signature": "ContainerKindMatches(analysis::SymbolType containerType, analysis::ContainerKind"
         },
@@ -8722,15 +8722,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1024,
-          "endLine": 1062,
+          "startLine": 1022,
+          "endLine": 1060,
           "name": "ReadLambdaParameterTypeInfo",
           "signature": "LocalScopeCollector::ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode declara"
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1174,
-          "endLine": 1194,
+          "startLine": 1166,
+          "endLine": 1186,
           "name": "ReadEmptyParenVariableTypeInfo",
           "signature": "LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const std::"
         },
@@ -8841,15 +8841,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1125,
-          "endLine": 1162,
+          "startLine": 1121,
+          "endLine": 1158,
           "name": "ReadVariableDeclaratorTypeInfo",
           "signature": "LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, TSNod"
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1253,
-          "endLine": 1278,
+          "startLine": 1241,
+          "endLine": 1266,
           "name": "ReadVirtualPropertyTypeInfo",
           "signature": "LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const std:"
         },
@@ -8884,15 +8884,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 994,
-          "endLine": 1015,
+          "startLine": 992,
+          "endLine": 1013,
           "name": "ReadForeachVariableTypeInfo",
           "signature": "LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, const st"
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1125,
-          "endLine": 1162,
+          "startLine": 1121,
+          "endLine": 1158,
           "name": "ReadVariableDeclaratorTypeInfo",
           "signature": "LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, TSNod"
         },
@@ -8925,15 +8925,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/EngineProfiles.cpp",
-          "startLine": 845,
-          "endLine": 865,
+          "startLine": 840,
+          "endLine": 860,
           "name": "RawProfileStub",
           "signature": "RawProfileStub(EngineProfileKind kind)"
         },
         "funcB": {
           "file": "server/src/features/document_symbol/DocumentSymbolHandler.cpp",
-          "startLine": 595,
-          "endLine": 616,
+          "startLine": 593,
+          "endLine": 614,
           "name": "MapSymbolTypeToKind",
           "signature": "MapSymbolTypeToKind(analysis::SymbolType type) noexcept"
         },
@@ -8990,15 +8990,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/BinaryOperatorHelpers.cpp",
-          "startLine": 126,
-          "endLine": 132,
+          "startLine": 123,
+          "endLine": 129,
           "name": "StripModifiers",
           "signature": "StripModifiers(std::string_view type)"
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 1072,
-          "endLine": 1078,
+          "startLine": 1069,
+          "endLine": 1075,
           "name": "StripTemplateDecorations",
           "signature": "StripTemplateDecorations(std::string_view& typeName)"
         },
@@ -9014,15 +9014,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/EngineProfiles.cpp",
-          "startLine": 845,
-          "endLine": 865,
+          "startLine": 840,
+          "endLine": 860,
           "name": "RawProfileStub",
           "signature": "RawProfileStub(EngineProfileKind kind)"
         },
         "funcB": {
           "file": "server/src/analysis/SymbolTable.cpp",
-          "startLine": 32,
-          "endLine": 45,
+          "startLine": 27,
+          "endLine": 40,
           "name": "AccessModifierToString",
           "signature": "AccessModifierToString(AccessModifier access)"
         },
@@ -9034,15 +9034,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/EngineConfigConverter.cpp",
-          "startLine": 393,
-          "endLine": 402,
+          "startLine": 387,
+          "endLine": 396,
           "name": "FormatEnums",
           "signature": "FormatEnums(const std::vector<EnumEntry>& enums, const std::string& indent, std:"
         },
         "funcB": {
           "file": "server/src/analysis/EngineConfigConverter.cpp",
-          "startLine": 410,
-          "endLine": 425,
+          "startLine": 404,
+          "endLine": 419,
           "name": "FormatClasses",
           "signature": "FormatClasses(const std::vector<ClassEntry>& classes, const std::string& indent,"
         },
@@ -9056,15 +9056,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/rules/TypeRules.cpp",
-          "startLine": 103,
-          "endLine": 124,
+          "startLine": 98,
+          "endLine": 119,
           "name": "KindWord",
           "signature": "KindWord(SymbolType type)"
         },
         "funcB": {
           "file": "server/src/features/document_symbol/DocumentSymbolHandler.cpp",
-          "startLine": 595,
-          "endLine": 616,
+          "startLine": 593,
+          "endLine": 614,
           "name": "MapSymbolTypeToKind",
           "signature": "MapSymbolTypeToKind(analysis::SymbolType type) noexcept"
         },
@@ -9100,15 +9100,15 @@
       {
         "funcA": {
           "file": "server/src/features/definition/DefinitionHandler.cpp",
-          "startLine": 1532,
-          "endLine": 1545,
+          "startLine": 1530,
+          "endLine": 1543,
           "name": "ContainerKindMatches",
           "signature": "ContainerKindMatches(analysis::SymbolType containerType, analysis::ContainerKind"
         },
         "funcB": {
           "file": "server/src/features/formatting/FormattingSpacing.cpp",
-          "startLine": 38,
-          "endLine": 50,
+          "startLine": 36,
+          "endLine": 48,
           "name": "IsOpeningOrMemberPunctuation",
           "signature": "IsOpeningOrMemberPunctuation(TokenType type)"
         },
@@ -9160,15 +9160,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SymbolTable.cpp",
-          "startLine": 32,
-          "endLine": 45,
+          "startLine": 27,
+          "endLine": 40,
           "name": "AccessModifierToString",
           "signature": "AccessModifierToString(AccessModifier access)"
         },
         "funcB": {
           "file": "server/src/features/formatting/FormattingSpacing.cpp",
-          "startLine": 38,
-          "endLine": 50,
+          "startLine": 36,
+          "endLine": 48,
           "name": "IsOpeningOrMemberPunctuation",
           "signature": "IsOpeningOrMemberPunctuation(TokenType type)"
         },

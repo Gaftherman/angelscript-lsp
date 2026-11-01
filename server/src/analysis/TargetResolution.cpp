@@ -1629,9 +1629,6 @@ static bool IsClassMemberReferenceMatch(const analysis::LocalReference& ref, con
  * @param[in] root Document root scope.
  * @param[in] relatedSet Set of related class names.
  * @param[in,out] ctx Occurrence scan context.
- * Structural overlap (74%) with ScanDocumentForEnumMember in server/src/analysis/TargetResolution.cpp. Candidate for
- * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (69%) with ScanDocumentForNamespace in
- * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 static void ScanDocumentForClassMember(const analysis::Scope* root,
                                        const ankerl::unordered_dense::set<std::string>& relatedSet,
@@ -1854,9 +1851,6 @@ static bool IsRefInsideNamespace(const analysis::LocalReference& ref,
  * @param[in] root Document root scope.
  * @param[in] nsRanges Namespace line spans in fileUri.
  * @param[in,out] ctx Occurrence scan context.
- * Structural overlap (87%) with ScanDocumentForEnumMember in server/src/analysis/TargetResolution.cpp. Candidate for
- * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (69%) with ScanDocumentForClassMember in
- * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 static void ScanDocumentForNamespace(const analysis::Scope* root,
                                      const std::vector<std::pair<uint32_t, uint32_t>>& nsRanges,
@@ -1940,9 +1934,6 @@ static void CollectNamespaceOccurrences(const CollectOccurrencesRequest& request
  * @brief Scans a document scope tree for global symbol references.
  * @param[in] root Document root scope.
  * @param[in,out] ctx Occurrence scan context.
- * Structural overlap (90%) with ScanDocumentForEnumMember in server/src/analysis/TargetResolution.cpp. Candidate for
- * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (78%) with ScanDocumentForClassMember in
- * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 static void ScanDocumentForGlobal(const analysis::Scope* root, OccurrenceScanContext& ctx)
 {
@@ -2179,9 +2170,6 @@ static bool IsEnumMemberReferenceMatch(const analysis::LocalReference& ref, cons
  * @brief Scans a document scope tree for enum member occurrences.
  * @param[in] root Document root scope.
  * @param[in,out] ctx Occurrence scan context.
- * Structural overlap (87%) with ScanDocumentForNamespace in server/src/analysis/TargetResolution.cpp. Candidate for
- * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (74%) with ScanDocumentForClassMember in
- * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 static void ScanDocumentForEnumMember(const analysis::Scope* root, OccurrenceScanContext& ctx)
 {

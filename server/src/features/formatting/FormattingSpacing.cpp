@@ -11,8 +11,6 @@ static const std::unordered_set<std::string_view> kControlKeywords = {"if",    "
  * @brief Is closing or separator punctuation.
  * @param[in] type Token type or semantic type.
  * @return True if the condition is satisfied; false otherwise.
- * Structural overlap (79%) with IsUnconditionallyNonNullablePrimitive in server/src/analysis/SemanticAnalyzer.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 static bool IsClosingOrSeparatorPunctuation(TokenType type)
 {

@@ -396,8 +396,6 @@ static bool IsMemberAccessAllowed(const MemberAccess& member, std::string_view a
  * @param[in] member Member resolution outcome.
  * @param[in] memberName Name of the member being accessed.
  * @param[in,out] ctx Diagnostic context.
- * Structural overlap (77%) with EmitAtNode in server/src/analysis/IsolationChecker.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
 static void EmitPrivacyViolation(TSNode memberNode, const MemberAccess& member, std::string_view memberName,
                                  DiagnosticContext& ctx)
@@ -915,8 +913,6 @@ static void CheckMemberAccessIndexed(const AccessCheckRequest& request, Diagnost
  * @brief Check member access.
  * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
  * @param[in,out] ctx Diagnostic collection and analysis context.
- * overlap (97%) with CheckConstCorrectness in server/src/analysis/ConstChecker.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
 void CheckMemberAccess(const AccessCheckRequest& request, DiagnosticContext& ctx)
 {

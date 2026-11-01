@@ -21,9 +21,9 @@ static bool IsTypeSymbol(const analysis::Symbol& sym)
 }
 
 /**
- * @brief To item.
- * @param[in] sym Tree-sitter grammar symbol.
- * @return Calculated or extracted result of the operation.
+ * @brief Converts an analysis symbol into an LSP TypeHierarchyItem.
+ * @param[in] sym Analysis symbol representing a class or interface.
+ * @return Constructed TypeHierarchyItem populated with symbol details.
  */
 static lsp::TypeHierarchyItem ToItem(const analysis::Symbol& sym)
 {

@@ -29,7 +29,7 @@ class SemanticAnalyzer
 
     /**
      * @brief Runs semantic analysis for a document in the request context.
-     * @param request Input request containing symbol table and options.
+     * @param request Analysis request bundle containing document, symbol table, and settings.
      * @return Vector of emitted LSP diagnostics.
      */
     std::vector<Diagnostic> Analyze(const SemanticAnalysisRequest& request) const;

@@ -319,11 +319,11 @@ void SymbolCollector::PopulateDispatchTables()
 SymbolCollector::~SymbolCollector() = default;
 
 /**
- * @brief Symbol collector collect symbols.
- * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
- * @param[in,out] parser Input parser for the operation.
- * @param[in,out] symbolTable Symbol or grammar symbol.
- * @return Calculated or extracted result of the operation.
+ * @brief Parses source code and populates the symbol table with declarations and diagnostics.
+ * @param[in] request Request containing document source code and file URI.
+ * @param[in,out] parser Tree-sitter parser instance used for document parsing.
+ * @param[in,out] symbolTable Destination symbol table to populate with discovered declarations.
+ * @return Vector of parsing and declaration diagnostics discovered during symbol collection.
  */
 std::vector<Diagnostic> SymbolCollector::CollectSymbols(const SymbolCollectRequest& request,
                                                         angel_lsp::parser::AngelScriptParser& parser,
@@ -357,11 +357,11 @@ std::vector<Diagnostic> SymbolCollector::CollectSymbols(const std::string& fileU
 }
 
 /**
- * @brief Symbol collector collect symbols with tree.
- * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
- * @param[in] tree Input tree for the operation.
- * @param[in,out] symbolTable Symbol or grammar symbol.
- * @return Calculated or extracted result of the operation.
+ * @brief Traverses an existing AST tree and populates the symbol table with declarations.
+ * @param[in] request Request containing document source code and file URI.
+ * @param[in] tree Pre-parsed Tree-sitter AST tree pointer.
+ * @param[in,out] symbolTable Destination symbol table to populate with discovered declarations.
+ * @return Vector of diagnostics discovered during AST symbol collection.
  */
 std::vector<Diagnostic> SymbolCollector::CollectSymbolsWithTree(const SymbolCollectRequest& request, TSTree* tree,
                                                                 SymbolTable& symbolTable)
@@ -696,9 +696,9 @@ void SymbolCollector::ProcessLambda([[maybe_unused]] TSNode node, [[maybe_unused
 /**
  * @brief Symbol collector apply accessor tokens.
  * @param[in] accNode AST node under evaluation.
- * @param[in] isGet Input isGet for the operation.
- * @param[in] isSet Input isSet for the operation.
- * @param[in,out] varSig Input varSig for the operation.
+ * @param[in] isGet True if getter accessor was declared.
+ * @param[in] isSet True if setter accessor was declared.
+ * @param[in,out] varSig VariableSignature being updated with accessor traits.
  */
 void SymbolCollector::ApplyAccessorTokens(TSNode accNode, bool isGet, bool isSet, VariableSignature& varSig) const
 {
@@ -739,9 +739,9 @@ void SymbolCollector::ApplyAccessorTokens(TSNode accNode, bool isGet, bool isSet
 /**
  * @brief Symbol collector apply func attribute tokens.
  * @param[in] attrNode AST node under evaluation.
- * @param[in] isGet Input isGet for the operation.
- * @param[in] isSet Input isSet for the operation.
- * @param[in,out] varSig Input varSig for the operation.
+ * @param[in] isGet True if getter accessor was declared.
+ * @param[in] isSet True if setter accessor was declared.
+ * @param[in,out] varSig VariableSignature being updated with accessor traits.
  */
 void SymbolCollector::ApplyFuncAttributeTokens(TSNode attrNode, bool isGet, bool isSet, VariableSignature& varSig) const
 {
@@ -803,7 +803,7 @@ void SymbolCollector::ParseSingleAccessor(TSNode accNode, VariableSignature& var
 /**
  * @brief Symbol collector parse accessor nodes.
  * @param[in] node AST node under evaluation.
- * @param[in,out] varSig Input varSig for the operation.
+ * @param[in,out] varSig VariableSignature being updated with accessor traits.
  */
 void SymbolCollector::ParseAccessorNodes(TSNode node, VariableSignature& varSig) const
 {
@@ -1999,11 +1999,11 @@ static void SkipStringLiteral(std::string_view text, size_t& idx)
 }
 
 /**
- * @brief Find next clause boundary.
- * @param[in] text Source code or text buffer.
- * @param[in] start Start point or byte offset.
- * @param[in] limit Input limit for the operation.
- * @return Calculated or extracted result of the operation.
+ * @brief Advances through text skipping comments and literals to locate the next clause boundary.
+ * @param[in] text Source text buffer to scan.
+ * @param[in] start Byte offset from which scanning begins.
+ * @param[in] limit Maximum byte offset boundary for scanning.
+ * @return Byte offset of the next clause delimiter or limit if not found.
  */
 static size_t FindNextClauseBoundary(std::string_view text, size_t start, size_t limit)
 {
@@ -2313,7 +2313,7 @@ using SwitchScanContext = symbol_collector_detail::SwitchScanContext;
  * @brief Scan default clause colon.
  * @param[in] sCtx Analysis or feature execution context.
  * @param[in,out] idx Zero-based element index.
- * @param[in,out] outColons Input outColons for the operation.
+ * @param[in,out] outColons Vector collecting byte offsets of double-colon scope separators.
  */
 static void ScanDefaultClauseColon(const SwitchScanContext& sCtx, size_t& idx, std::vector<MissingCaseColon>& outColons)
 {
@@ -2345,7 +2345,7 @@ static void ScanDefaultClauseColon(const SwitchScanContext& sCtx, size_t& idx, s
  * @brief Scan case clause colon.
  * @param[in] sCtx Analysis or feature execution context.
  * @param[in,out] idx Zero-based element index.
- * @param[in,out] outColons Input outColons for the operation.
+ * @param[in,out] outColons Vector collecting byte offsets of double-colon scope separators.
  */
 static void ScanCaseClauseColon(const SwitchScanContext& sCtx, size_t& idx, std::vector<MissingCaseColon>& outColons)
 {
@@ -2403,7 +2403,7 @@ static bool FindSwitchBraceOffsets(TSNode switchNode, uint32_t& openByte, uint32
  * @param[in] switchNode AST node under evaluation.
  * @param[in] sourceCode Document source text.
  * @param[in] gs Precompiled grammar symbols.
- * @param[in,out] outColons Input outColons for the operation.
+ * @param[in,out] outColons Vector collecting byte offsets of double-colon scope separators.
  */
 static void ScanSwitchStatementCaseColons(TSNode switchNode, std::string_view sourceCode,
                                           const parser::GrammarSymbols& gs, std::vector<MissingCaseColon>& outColons)
@@ -2990,10 +2990,10 @@ static void AssignParamLocations(ParameterInformation& paramInfo, TSNode paramNo
 }
 
 /**
- * @brief Symbol collector extract parameter info.
- * @param[in] paramNode AST node under evaluation.
- * @param[in] sourceCode Document source text.
- * @return Calculated or extracted result of the operation.
+ * @brief Extracts parameter information including type, modifiers, and default value from AST.
+ * @param[in] paramNode AST parameter node being evaluated.
+ * @param[in] sourceCode Document source text buffer.
+ * @return Populated ParameterInformation struct describing the parameter.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst. Manually re-evaluates AST for isRef; candidate for
  * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.

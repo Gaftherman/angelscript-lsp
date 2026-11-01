@@ -120,10 +120,10 @@ static void EmitFuncdefCodeAction(const CodeActionRequest& request, const lsp::D
 }
 
 /**
- * @brief Try add handle on primitive fix.
- * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
- * @param[in] rootNode AST node under evaluation.
- * @param[in,out] actions Input actions for the operation.
+ * @brief Attempts to construct a QuickFix CodeAction to remove illegal handle '@' modifiers from primitive types.
+ * @param[in] request Code action request bundle containing AST root, source text, and diagnostics.
+ * @param[in] rootNode Root AST node of the document.
+ * @param[in,out] actions Output vector where constructed quick fix actions are appended.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */

@@ -210,9 +210,9 @@ template <typename T> std::optional<T> ParseClangInteger(std::string_view val)
 }
 
 /**
- * @brief Parse clang uint.
- * @param[in] val Input val for the operation.
- * @return Found item if present; std::nullopt otherwise.
+ * @brief Parses an unsigned 32-bit integer value from a clang-format config string.
+ * @param[in] val String view containing integer literal representation.
+ * @return Parsed uint32_t value if valid, or std::nullopt on conversion failure.
  */
 std::optional<uint32_t> ParseClangUInt(std::string_view val)
 {
@@ -220,9 +220,9 @@ std::optional<uint32_t> ParseClangUInt(std::string_view val)
 }
 
 /**
- * @brief Parse clang int.
- * @param[in] val Input val for the operation.
- * @return Found item if present; std::nullopt otherwise.
+ * @brief Parses a signed 32-bit integer value from a clang-format config string.
+ * @param[in] val String view containing integer literal representation.
+ * @return Parsed int32_t value if valid, or std::nullopt on conversion failure.
  */
 std::optional<int32_t> ParseClangInt(std::string_view val)
 {
@@ -230,9 +230,9 @@ std::optional<int32_t> ParseClangInt(std::string_view val)
 }
 
 /**
- * @brief Parse clang brace style.
- * @param[in] val Input val for the operation.
- * @return Found item if present; std::nullopt otherwise.
+ * @brief Parses a BraceStyle enumeration from a clang-format BreakBeforeBraces string.
+ * @param[in] val Configuration string value (e.g. \"Allman\", \"Attach\", \"Linux\").
+ * @return Parsed BraceStyle enum value if recognized, or std::nullopt otherwise.
  */
 std::optional<BraceStyle> ParseClangBraceStyle(std::string_view val)
 {
@@ -282,9 +282,9 @@ std::optional<ReferenceAlignment> ParseClangReferenceAlignment(std::string_view 
 }
 
 /**
- * @brief Parse clang space before parens.
- * @param[in] val Input val for the operation.
- * @return Found item if present; std::nullopt otherwise.
+ * @brief Parses a SpaceBeforeParensStyle enum value from a clang-format configuration string.
+ * @param[in] val Configuration string value.
+ * @return Parsed SpaceBeforeParensStyle enum if recognized, or std::nullopt.
  */
 std::optional<SpaceBeforeParensStyle> ParseClangSpaceBeforeParens(std::string_view val)
 {
@@ -300,9 +300,9 @@ std::optional<SpaceBeforeParensStyle> ParseClangSpaceBeforeParens(std::string_vi
 }
 
 /**
- * @brief Parse clang use tab.
- * @param[in] val Input val for the operation.
- * @return Found item if present; std::nullopt otherwise.
+ * @brief Parses a UseTabStyle enum value from a clang-format UseTab setting.
+ * @param[in] val Configuration string value (e.g. \"Never\", \"Always\", \"ForIndentation\").
+ * @return Parsed UseTabStyle enum if recognized, or std::nullopt.
  */
 std::optional<UseTabStyle> ParseClangUseTab(std::string_view val)
 {
@@ -331,9 +331,9 @@ std::optional<ShortBlockStyle> ParseClangShortBlockStyle(std::string_view val)
 }
 
 /**
- * @brief Parse clang short function style.
- * @param[in] val Input val for the operation.
- * @return Found item if present; std::nullopt otherwise.
+ * @brief Parses a ShortFunctionStyle enum value from an AllowShortFunctionsOnASingleLine setting.
+ * @param[in] val Configuration string value.
+ * @return Parsed ShortFunctionStyle enum if recognized, or std::nullopt.
  */
 std::optional<ShortFunctionStyle> ParseClangShortFunctionStyle(std::string_view val)
 {

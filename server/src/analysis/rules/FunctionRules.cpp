@@ -200,9 +200,9 @@ static void CheckVoidReturnType(const Symbol& sym, const FunctionSignature& sig,
 }
 
 /**
- * @brief Check return type legality.
- * @param[in] sym Tree-sitter grammar symbol.
- * @param[in] sig Input sig for the operation.
+ * @brief Enforces AngelScript rules on function return types (bans primitive handles and illegal return types).
+ * @param[in] sym Function symbol being checked.
+ * @param[in] sig Function signature containing return type and modifiers.
  * @param[in] ctx Diagnostic collection and analysis context.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType. Manually re-evaluates

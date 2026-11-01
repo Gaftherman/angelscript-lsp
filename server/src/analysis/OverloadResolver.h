@@ -110,15 +110,18 @@ struct ArgumentConversion
     int legacyScore = 999;           ///< Legacy scalar score for backwards compatibility
     bool isLossy = false;            ///< Conversion loses precision (narrowing / truncation)
 
-    /**
-     * @brief Argument conversion.
-     * @param[in] t Input t for the operation.
-     * @param[in] r Input r for the operation.
-     * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
-     * Symbol::modifiers.isConst / ParameterInformation::isConst.
-     */
     constexpr ArgumentConversion() noexcept = default;
 
+    /**
+     * @brief Constructs an ArgumentConversion with full tier, rank, and distance parameters.
+     * @param[in] t Classification match tier.
+     * @param[in] r Canonical conversion rank.
+     * @param[in] sub Disambiguation sub-rank for conversions within the same tier.
+     * @param[in] dist Inheritance depth distance for class hierarchy conversions.
+     * @param[in] isConst True if conversion applies a const qualification adjustment.
+     * @param[in] score Legacy scalar score for compatibility.
+     * @param[in] lossy True if conversion loses numeric precision.
+     */
     constexpr ArgumentConversion(MatchTier t, ConversionRank r, uint8_t sub = 0, uint8_t dist = 0, bool isConst = false,
                                  int score = 999, bool lossy = false) noexcept
         : tier(t), rank(r), subRank(sub), inheritanceDistance(dist), isConstAdjustment(isConst), legacyScore(score),
@@ -127,10 +130,13 @@ struct ArgumentConversion
     }
 
     /**
-     * @brief Argument conversion.
-     * @param[in] r Input r for the operation.
-     * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
-     * Symbol::modifiers.isConst / ParameterInformation::isConst.
+     * @brief Constructs an ArgumentConversion calculating the tier dynamically from conversion rank.
+     * @param[in] r Canonical conversion rank.
+     * @param[in] sub Disambiguation sub-rank for conversions within the same tier.
+     * @param[in] dist Inheritance depth distance for class hierarchy conversions.
+     * @param[in] isConst True if conversion applies a const qualification adjustment.
+     * @param[in] score Legacy scalar score for compatibility.
+     * @param[in] lossy True if conversion loses numeric precision.
      */
     constexpr ArgumentConversion(ConversionRank r, uint8_t sub = 0, uint8_t dist = 0, bool isConst = false,
                                  int score = 999, bool lossy = false) noexcept

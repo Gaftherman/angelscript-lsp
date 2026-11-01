@@ -1088,9 +1088,9 @@ void SemanticAnalyzer::CheckUndefinedIdentifiers(
 }
 
 /**
- * @brief Semantic analyzer collect used definitions.
- * @param[in] rootScope Lexical scope for symbol lookup.
- * @param[in] used Input used for the operation.
+ * @brief Traverses lexical scopes iteratively to gather all referenced LocalDefinition instances.
+ * @param[in] rootScope Root lexical scope from which traversal starts.
+ * @param[in,out] used Output set collecting all referenced local definitions.
  */
 void SemanticAnalyzer::CollectUsedDefinitions(const Scope* rootScope,
                                               ankerl::unordered_dense::set<const LocalDefinition*>& used) const
@@ -1134,10 +1134,10 @@ void SemanticAnalyzer::CollectUsedDefinitions(const Scope* rootScope,
 }
 
 /**
- * @brief Semantic analyzer check unused variables.
- * @param[in] rootScope Lexical scope for symbol lookup.
- * @param[in] used Input used for the operation.
- * @param[in,out] ctx Diagnostic collection and analysis context.
+ * @brief Inspects declared variables across scopes and emits diagnostics for those not present in used set.
+ * @param[in] rootScope Root lexical scope to inspect for unused definitions.
+ * @param[in] used Set of definitions known to have at least one valid usage.
+ * @param[in,out] ctx Diagnostic context used to emit unused variable warnings.
  */
 void SemanticAnalyzer::CheckUnusedVariables(const Scope* rootScope,
                                             const ankerl::unordered_dense::set<const LocalDefinition*>& used,

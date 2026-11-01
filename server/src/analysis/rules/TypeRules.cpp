@@ -1,4 +1,4 @@
-﻿#include "analysis/rules/TypeRules.h"
+#include "analysis/rules/TypeRules.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
@@ -94,11 +94,6 @@ static bool IsIntegerLiteral(std::string_view text)
 
 /**
  * @brief Formats a symbol type into the noun the compiler uses in as-err-name-conflict.
- * Structural overlap (88%) with RawProfileStub in server/src/analysis/EngineProfiles.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (72%) with ParameterModifierToString in
- * server/src/analysis/SymbolTable.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural
- * overlap (63%) with MapSymbolTypeToKind in server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate
- * for unification in server/src/analysis/SemanticHelpers.h.
  */
 static std::string KindWord(SymbolType type)
 {
@@ -263,9 +258,9 @@ void ValidateFuncdef(const Symbol& sym, const DiagnosticContext& ctx)
 }
 
 /**
- * @brief Check enum modifiers and body.
- * @param[in] sym Tree-sitter grammar symbol.
- * @param[in] sig Input sig for the operation.
+ * @brief Validates enum declaration body presence and legal modifier combinations.
+ * @param[in] sym Enum symbol being inspected.
+ * @param[in] sig Enum signature containing modifiers and body brace flags.
  * @param[in] ctx Diagnostic collection and analysis context.
  */
 static void CheckEnumModifiersAndBody(const Symbol& sym, const EnumSignature& sig, const DiagnosticContext& ctx)

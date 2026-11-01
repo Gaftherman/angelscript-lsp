@@ -29,9 +29,9 @@ struct BreakpointLocationsParams
 using BreakpointLocationsParams = breakpoint_handlers_detail::BreakpointLocationsParams;
 
 /**
- * @brief Extracts the document URI from JSON-RPC parameters.
- * @param[in] obj Input obj for the operation.
- * @return Extracted URI string or empty if missing.
+ * @brief Extracts the document URI string from the JSON-RPC textDocument object.
+ * @param[in] obj JSON-RPC parameters object containing the request payload.
+ * @return Extracted URI string or empty string if missing or invalid.
  */
 static std::string ExtractDocumentUri(const lsp::json::Object& obj)
 {
@@ -46,10 +46,10 @@ static std::string ExtractDocumentUri(const lsp::json::Object& obj)
 }
 
 /**
- * @brief Parses line numbers safely from the optional range parameter.
- * @param[in] obj Input obj for the operation.
- * @param[out] startLine Starting line number.
- * @param[out] endLine Ending line number.
+ * @brief Parses optional start and end line bounds from a JSON-RPC range parameter.
+ * @param[in] obj JSON-RPC parameters object containing the optional range.
+ * @param[out] startLine Output integer receiving the parsed 0-based start line.
+ * @param[out] endLine Output integer receiving the parsed 0-based end line.
  */
 static void ExtractRangeLines(const lsp::json::Object& obj, uint32_t& startLine, uint32_t& endLine)
 {

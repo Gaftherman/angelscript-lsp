@@ -2667,8 +2667,6 @@ static void CheckCallArgumentsIndexed(const CallCheckRequest& request, Diagnosti
  * @brief Check call arguments.
  * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
  * @param[in,out] ctx Diagnostic collection and analysis context.
- * overlap (97%) with CheckConstCorrectness in server/src/analysis/ConstChecker.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
 void CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx)
 {

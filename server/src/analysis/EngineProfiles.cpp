@@ -803,9 +803,9 @@ bool IsKnownEngineProfileName(std::string_view name)
 }
 
 /**
- * @brief Engine profile kind to string.
- * @param[in] kind Input kind for the operation.
- * @return Calculated or extracted result of the operation.
+ * @brief Converts an EngineProfileKind enum value to its canonical string representation.
+ * @param[in] kind Engine profile enumeration value.
+ * @return String view literal corresponding to the engine profile identifier.
  */
 std::string_view EngineProfileKindToString(EngineProfileKind kind)
 {
@@ -836,11 +836,6 @@ std::vector<std::string_view> GetAvailableEngineProfiles()
 
 /**
  * @brief The raw literal, before the list-factory rewrite. See GetProfileStubText.
- * Structural overlap (88%) with KindWord in server/src/analysis/rules/TypeRules.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (66%) with MapSymbolTypeToKind in
- * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (65%) with AccessModifierToString in
- * server/src/analysis/SymbolTable.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
 static std::string_view RawProfileStub(EngineProfileKind kind)
 {

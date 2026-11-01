@@ -1605,13 +1605,10 @@ struct DocBlock
     RetValItem retval;
 
     /**
-     * @brief Make brief.
-     * @param[in] t Input t for the operation.
-     * @return Calculated or extracted result of the operation.
-     * in server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
-     * Structural overlap (100%) with MakeReturn in server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification
-     * in server/src/analysis/SemanticHelpers.h. Structural overlap (83%) with MakeAdmonition in
-     * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+     * @brief Creates a documentation block with a specific kind and text content.
+     * @param[in] kind Categorical kind of the documentation block.
+     * @param[in] t Body text for the block.
+     * @return Constructed DocBlock instance.
      */
     static DocBlock MakeWithKind(DocBlockKind kind, std::string t)
     {
@@ -1666,13 +1663,10 @@ struct DocBlock
     }
 
     /**
-     * @brief Make admonition.
-     * @param[in] l Input l for the operation.
-     * @param[in] t Input t for the operation.
-     * @return Calculated or extracted result of the operation.
-     * Structural overlap (83%) with MakeCodeBlock in server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification
-     * in server/src/analysis/SemanticHelpers.h. Structural overlap (83%) with MakeReturn in
-     * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+     * @brief Creates an admonition documentation block with a label and text.
+     * @param[in] l Admonition label (e.g. Note, Warning).
+     * @param[in] t Content body of the admonition.
+     * @return Constructed DocBlock configured as an admonition.
      */
     static DocBlock MakeAdmonition(std::string l, std::string t)
     {

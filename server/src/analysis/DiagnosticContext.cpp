@@ -257,17 +257,11 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, Diagnosti
 }
 
 /**
- * @brief Diagnostic context emit.
- * @param[in] sym Tree-sitter grammar symbol.
- * @param[in] code Input code for the operation.
- * @param[in] arg1 Input arg1 for the operation.
- * @param[in] severity Input severity for the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
- * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (96%) with Emit in
- * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (88%) with EmitAtRange in server/src/analysis/DiagnosticContext.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (85%) with EmitAtRange in
- * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @brief Emits a diagnostic with a single formatting argument anchored to a symbol.
+ * @param[in] sym Symbol providing the source range and file URI.
+ * @param[in] code Diagnostic code identifier.
+ * @param[in] arg1 Format argument for message templating.
+ * @param[in] severity Diagnostic severity level.
  */
 void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::string_view arg1,
                              DiagnosticSeverity severity) const
@@ -279,17 +273,11 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri
 }
 
 /**
- * @brief Diagnostic context emit.
- * @param[in] sym Tree-sitter grammar symbol.
- * @param[in] code Input code for the operation.
- * @param[in] arg1 Input arg1 for the operation.
- * @param[in] arg2 Input arg2 for the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
- * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (94%) with Emit in
- * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (89%) with EmitAtRange in server/src/analysis/DiagnosticContext.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (85%) with EmitAtRange in
- * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @brief Emits an error diagnostic with two formatting arguments anchored to a symbol.
+ * @param[in] sym Symbol providing the source range and file URI.
+ * @param[in] code Diagnostic code identifier.
+ * @param[in] arg1 First format argument for message templating.
+ * @param[in] arg2 Second format argument for message templating.
  */
 void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::string_view arg1,
                              std::string_view arg2) const
@@ -301,16 +289,11 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri
 }
 
 /**
- * @brief Diagnostic context emit.
- * @param[in] sym Tree-sitter grammar symbol.
- * @param[in] code Input code for the operation.
- * @param[in] args List of argument nodes.
- * @param[in] severity Input severity for the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
- * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (94%) with Emit in
- * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (88%) with EmitAtRange in server/src/analysis/DiagnosticContext.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @brief Emits a diagnostic with a list of formatting arguments anchored to a symbol.
+ * @param[in] sym Symbol providing the source range and file URI.
+ * @param[in] code Diagnostic code identifier.
+ * @param[in] args Format argument list for message templating.
+ * @param[in] severity Diagnostic severity level.
  */
 void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::initializer_list<std::string_view> args,
                              DiagnosticSeverity severity) const
@@ -324,14 +307,11 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::init
 // --- Diagnostic Emission for ParameterInformation ---
 
 /**
- * @brief Diagnostic context emit.
- * @param[in] param Function parameter information.
- * @param[in] parentSym Symbol or grammar symbol.
- * @param[in] code Input code for the operation.
- * @param[in] severity Input severity for the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (71%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
- * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (70%) with Emit in
- * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @brief Emits a diagnostic anchored to a specific function parameter.
+ * @param[in] param ParameterInformation providing the line and column range.
+ * @param[in] parentSym Parent function symbol providing the file URI.
+ * @param[in] code Diagnostic code identifier.
+ * @param[in] severity Diagnostic severity level.
  */
 void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& parentSym, std::string_view code,
                              DiagnosticSeverity severity) const
@@ -341,16 +321,11 @@ void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& pa
 }
 
 /**
- * @brief Diagnostic context emit.
- * @param[in] param Function parameter information.
- * @param[in] parentSym Symbol or grammar symbol.
- * @param[in] code Input code for the operation.
- * @param[in] arg1 Input arg1 for the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
- * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (78%) with EmitAtRange in
- * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (70%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @brief Emits an error diagnostic with one formatting argument anchored to a parameter.
+ * @param[in] param ParameterInformation providing the line and column range.
+ * @param[in] parentSym Parent function symbol providing the file URI.
+ * @param[in] code Diagnostic code identifier.
+ * @param[in] arg1 Format argument for message templating.
  */
 void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& parentSym, std::string_view code,
                              std::string_view arg1) const
@@ -362,14 +337,11 @@ void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& pa
 }
 
 /**
- * @brief Diagnostic context emit.
- * @param[in] param Function parameter information.
- * @param[in] parentSym Symbol or grammar symbol.
- * @param[in] code Input code for the operation.
- * @param[in] args List of argument nodes.
- * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
- * for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (71%) with Emit in
- * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @brief Emits an error diagnostic with argument list anchored to a parameter.
+ * @param[in] param ParameterInformation providing the line and column range.
+ * @param[in] parentSym Parent function symbol providing the file URI.
+ * @param[in] code Diagnostic code identifier.
+ * @param[in] args Format argument list for message templating.
  */
 void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& parentSym, std::string_view code,
                              std::initializer_list<std::string_view> args) const
@@ -394,16 +366,11 @@ void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, Di
 }
 
 /**
- * @brief Diagnostic context emit at range.
- * @param[in] range Source range or LSP range.
- * @param[in] code Input code for the operation.
- * @param[in] arg1 Input arg1 for the operation.
- * @param[in] severity Input severity for the operation.
- * Structural overlap (88%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (85%) with Emit in
- * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (78%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @brief Emits a diagnostic with one formatting argument anchored to a source range.
+ * @param[in] range Source range where the diagnostic applies.
+ * @param[in] code Diagnostic code identifier.
+ * @param[in] arg1 Format argument for message templating.
+ * @param[in] severity Diagnostic severity level.
  */
 void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, std::string_view arg1,
                                     DiagnosticSeverity severity) const
@@ -414,14 +381,11 @@ void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, st
 }
 
 /**
- * @brief Diagnostic context emit at range.
- * @param[in] range Source range or LSP range.
- * @param[in] code Input code for the operation.
- * @param[in] arg1 Input arg1 for the operation.
- * @param[in] arg2 Input arg2 for the operation.
- * Structural overlap (89%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (85%) with Emit in
- * server/src/analysis/DiagnosticContext.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @brief Emits an error diagnostic with two formatting arguments anchored to a source range.
+ * @param[in] range Source range where the diagnostic applies.
+ * @param[in] code Diagnostic code identifier.
+ * @param[in] arg1 First format argument for message templating.
+ * @param[in] arg2 Second format argument for message templating.
  */
 void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, std::string_view arg1,
                                     std::string_view arg2) const
@@ -432,13 +396,11 @@ void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, st
 }
 
 /**
- * @brief Diagnostic context emit at range.
- * @param[in] range Source range or LSP range.
- * @param[in] code Input code for the operation.
- * @param[in] args List of argument nodes.
- * @param[in] severity Input severity for the operation.
- * Structural overlap (88%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @brief Emits a diagnostic with an argument list anchored to a source range.
+ * @param[in] range Source range where the diagnostic applies.
+ * @param[in] code Diagnostic code identifier.
+ * @param[in] args Format argument list for message templating.
+ * @param[in] severity Diagnostic severity level.
  */
 void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,
                                     std::initializer_list<std::string_view> args, DiagnosticSeverity severity) const
