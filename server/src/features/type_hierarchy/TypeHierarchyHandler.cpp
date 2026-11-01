@@ -1,6 +1,7 @@
 #include "features/type_hierarchy/TypeHierarchyHandler.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
+#include "features/common/FeatureSharedUtils.h"
 #include "parser/ASTUtils.h"
 #include "utils/Constants.h"
 #include "utils/ScopedNameUtils.h"
@@ -23,20 +24,6 @@ using analysis::rules::RuleIndex;
 bool IsTypeSymbol(const Symbol& sym)
 {
     return sym.type == SymbolType::Class || sym.type == SymbolType::Interface;
-}
-
-/**
- * @brief To range.
- * @param[in] range Parameter range.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ToRange in
- * server/src/features/call_hierarchy/CallHierarchyHandler.cpp. Candidate for unification in
- * server/src/features/common/FeatureSharedUtils.h.
- */
-lsp::Range ToRange(const analysis::SourceRange& range)
-{
-    return lsp::Range{lsp::Position{range.startLine, range.startCharacter},
-                      lsp::Position{range.endLine, range.endCharacter}};
 }
 
 /**
@@ -65,12 +52,12 @@ lsp::TypeHierarchyItem ToItem(const Symbol& sym)
     // neither would give both as an empty range at the origin - so the symbol's own
     // start/end is the fallback, which is always at least the name.
     const bool hasFullRange = sym.fullRange.endLine != 0 || sym.fullRange.endCharacter != 0;
-    item.range = hasFullRange ? ToRange(sym.fullRange)
+    item.range = hasFullRange ? common::ToLspRange(sym.fullRange)
                               : lsp::Range{lsp::Position{sym.startLine, sym.startCharacter},
                                            lsp::Position{sym.endLine, sym.endCharacter}};
 
     const bool hasSelection = sym.selectionRange.endLine != 0 || sym.selectionRange.endCharacter != 0;
-    item.selectionRange = hasSelection ? ToRange(sym.selectionRange)
+    item.selectionRange = hasSelection ? common::ToLspRange(sym.selectionRange)
                                        : lsp::Range{lsp::Position{sym.startLine, sym.startCharacter},
                                                     lsp::Position{sym.endLine, sym.endCharacter}};
     return item;
@@ -280,11 +267,11 @@ lsp::Range GetSymbolEffectiveRange(const Symbol& sym)
 {
     if (sym.selectionRange.endLine != 0 || sym.selectionRange.endCharacter != 0)
     {
-        return ToRange(sym.selectionRange);
+        return common::ToLspRange(sym.selectionRange);
     }
     if (sym.fullRange.endLine != 0 || sym.fullRange.endCharacter != 0)
     {
-        return ToRange(sym.fullRange);
+        return common::ToLspRange(sym.fullRange);
     }
     return lsp::Range{lsp::Position{sym.startLine, sym.startCharacter}, lsp::Position{sym.endLine, sym.endCharacter}};
 }

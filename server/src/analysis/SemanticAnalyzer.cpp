@@ -1192,45 +1192,6 @@ void SemanticAnalyzer::CheckUnusedVariables(const Scope* rootScope,
     }
 }
 
-namespace
-{
-/**
- * @brief True only for the VM-intrinsic numeric/bool kinds, where null is unconditionally
- *        invalid under any AngelScript engine configuration - unlike a class/object type
- *        (TypeKind::Object/Unknown/String/...), which could be app-registered with a
- *        converting constructor or opAssign(int) that legitimately accepts null (e.g. this
- *        corpus's SvenCoop "EHandle eView = null;" - confirmed by corpus audit and by
- *        reading the real declaration: EHandle(pView) is a registered converting
- *        constructor, invisible to this analyzer since no predefined stub exists for it).
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsValueOnlyKind in
- * server/src/analysis/rules/FunctionRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (92%) with IsUnaryPrecedingTokenType in server/src/features/formatting/FormattingTokens.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (79%) with
- * IsClosingOrSeparatorPunctuation in server/src/features/formatting/FormattingSpacing.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
- */
-bool IsUnconditionallyNonNullablePrimitive(TypeKind kind)
-{
-    switch (kind)
-    {
-    case TypeKind::Int8:
-    case TypeKind::Int16:
-    case TypeKind::Int32:
-    case TypeKind::Int64:
-    case TypeKind::UInt8:
-    case TypeKind::UInt16:
-    case TypeKind::UInt32:
-    case TypeKind::UInt64:
-    case TypeKind::Float:
-    case TypeKind::Double:
-    case TypeKind::Bool:
-        return true;
-    default:
-        return false;
-    }
-}
-} // namespace
-
 void SemanticAnalyzer::CheckNullAssignedToNonHandle(const SymbolTable& symbolTable, DiagnosticContext& ctx) const
 {
     symbolTable.ForEachSymbolInFile(

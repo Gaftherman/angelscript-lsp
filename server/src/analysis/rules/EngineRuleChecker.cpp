@@ -72,41 +72,6 @@ bool MatchesTypeName(const std::string& baseType, const config::StorageRule& rul
     return false;
 }
 
-/**
- * @brief Is class member.
- * @param[in] sym Parameter sym.
- * @param[in] table Parameter table.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsInterfaceMember in
- * server/src/analysis/rules/VariableRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (93%) with IsMixinMember in server/src/analysis/rules/VariableRules.cpp. Candidate for unification
- * in server/src/analysis/SemanticHelpers.h.
- */
-bool IsClassMember(const Symbol& sym, const SymbolTable& table)
-{
-    if (sym.containerName.empty())
-    {
-        return false;
-    }
-    const auto container = table.FindSymbolsPtr(sym.containerName);
-    return container && std::any_of(container->begin(), container->end(),
-                                    [](const Symbol& owner) { return owner.type == SymbolType::Class; });
-}
-
-/**
- * @brief Is enum type.
- * @param[in] typeName Parameter typeName.
- * @param[in] table Parameter table.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsInterfaceSymbol in
- * server/src/analysis/rules/ClassRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- */
-bool IsEnumType(const std::string& typeName, const SymbolTable& table)
-{
-    const auto syms = table.FindSymbolsPtr(typeName);
-    return syms && std::any_of(syms->begin(), syms->end(), [](const Symbol& s) { return s.type == SymbolType::Enum; });
-}
-
 std::string ExtractArrayElement(const VariableSignature& sig, const SemanticAnalysisRequest& request)
 {
     if (!sig.templateName.empty() && request.IsArrayLikeTemplate(sig.templateName))
@@ -154,7 +119,7 @@ void EvaluateStorageRule(const Symbol& sym, const VariableSignature& sig, const 
                          const DiagnosticContext& ctx)
 {
     const SymbolTable& table = ctx.request.symbolTable;
-    const bool isMember = IsClassMember(sym, table);
+    const bool isMember = HasContainerOfType(sym, table, SymbolType::Class);
     const bool isGlobal = !isMember && sym.containerName.empty();
     const std::string arrayElem = ExtractArrayElement(sig, ctx.request);
     const bool isArray = !arrayElem.empty();
@@ -256,7 +221,7 @@ void CheckSchedulerEnumDiscriminant(const SchedulerCallRequest& req, size_t inde
         if (index < sig.parameters.size())
         {
             const auto& param = sig.parameters[index];
-            if (IsEnumType(param.baseTypeName, ctx.request.symbolTable))
+            if (HasSymbolOfType(ctx.request.symbolTable, param.baseTypeName, SymbolType::Enum))
             {
                 std::string msg = i18n::FormatMessage(
                     ctx.request.i18n, "engine-rule-scheduler-enum-discriminant",

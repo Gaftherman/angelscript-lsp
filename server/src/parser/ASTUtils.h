@@ -44,6 +44,22 @@ namespace angel_lsp::parser
 }
 
 /**
+ * @brief Strips outer enclosing parentheses from an expression node.
+ * @param[in] node AST node to unwrap.
+ * @return Innermost non-parenthesized expression node, or null node if input is null.
+ */
+[[nodiscard]] inline TSNode UnwrapParentheses(TSNode node) noexcept
+{
+    const auto& gs = GetGrammarSymbols();
+    while (!ts_node_is_null(node) && ts_node_symbol(node) == gs.symParenthesizedExpression &&
+           ts_node_named_child_count(node) > 0)
+    {
+        node = ts_node_named_child(node, 0);
+    }
+    return node;
+}
+
+/**
  * @brief Convertible string slice of an AST node that converts to both std::string_view and std::string.
  *
  * Resolves the conversion barrier where callers needing an owning std::string had to either

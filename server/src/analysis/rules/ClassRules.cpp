@@ -155,21 +155,6 @@ CollectImplementedMethodNames(const std::string& typeName, const SymbolTable& ta
     return names;
 }
 
-/**
- * @brief Is interface symbol.
- * @param[in] table Parameter table.
- * @param[in] typeName Parameter typeName.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsEnumType in
- * server/src/analysis/rules/EngineRuleChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- */
-static bool IsInterfaceSymbol(const SymbolTable& table, std::string_view typeName) noexcept
-{
-    const auto syms = table.FindSymbolsPtr(typeName);
-    return syms &&
-           std::any_of(syms->begin(), syms->end(), [](const Symbol& s) { return s.type == SymbolType::Interface; });
-}
-
 /** @brief Collects all interfaces that must be checked for implementation. */
 void CollectInterfacesToCheck(const std::vector<std::string>& bases, const SymbolTable& table,
                               ankerl::unordered_dense::set<std::string>& interfacesToCheck)
@@ -194,7 +179,7 @@ void CollectInterfacesToCheck(const std::vector<std::string>& bases, const Symbo
                 const auto mixinAncestors = GetInheritedTypeHierarchy(cleanBase, table);
                 for (const auto& ancestor : mixinAncestors)
                 {
-                    if (IsInterfaceSymbol(table, ancestor))
+                    if (HasSymbolOfType(table, ancestor, SymbolType::Interface))
                     {
                         interfacesToCheck.insert(ancestor);
                     }
@@ -792,18 +777,6 @@ void CheckPropertyAccessors(const Symbol& sym, const DiagnosticContext& ctx)
     ValidatePropertyAccessorPairs(getters, setters, ctx);
 }
 
-/**
- * @brief Range bounds within the host document.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct InstantiationRange
-{
-    uint32_t startLine = 0;
-    uint32_t startChar = 0;
-    uint32_t endLine = 0;
-    uint32_t endChar = 0;
-};
-
 using TransparentStringSet = ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>;
 
 /**
@@ -814,7 +787,7 @@ struct MixinCheckContext
 {
     std::string hostClassName;
     const Symbol* mixinSym = nullptr;
-    InstantiationRange hostRange;
+    SourceRange hostRange;
     const TransparentStringSet& hostMembers;
     const TransparentStringSet& mixinSelfMembers;
     TransparentStringSet& reported;
@@ -959,8 +932,8 @@ TSNode FindMixinAstNode(const TSTree* mixinTree, const Symbol& mixinSym)
 }
 
 /** @brief Locates the point range where a mixin is included in the host class. */
-InstantiationRange FindHostMixinRange(const Symbol& sym, const Symbol& mixinSym, const std::string& mixinName,
-                                      const DiagnosticContext& ctx)
+SourceRange FindHostMixinRange(const Symbol& sym, const Symbol& mixinSym, const std::string& mixinName,
+                               const DiagnosticContext& ctx)
 {
     const uint32_t startL = sym.selectionRange.endLine > sym.selectionRange.startLine ||
                                     sym.selectionRange.endCharacter > sym.selectionRange.startCharacter
@@ -978,7 +951,7 @@ InstantiationRange FindHostMixinRange(const Symbol& sym, const Symbol& mixinSym,
                                   sym.selectionRange.endCharacter > sym.selectionRange.startCharacter
                               ? sym.selectionRange.endCharacter
                               : sym.endCharacter;
-    InstantiationRange range{startL, startC, endL, endC};
+    SourceRange range{startL, startC, endL, endC};
     if (!ctx.request.tree || ctx.request.sourceCode.empty())
     {
         return range;
@@ -995,7 +968,7 @@ InstantiationRange FindHostMixinRange(const Symbol& sym, const Symbol& mixinSym,
     {
         TSPoint sp = ts_node_start_point(incNode);
         TSPoint ep = ts_node_end_point(incNode);
-        return InstantiationRange{sp.row, sp.column, ep.row, ep.column};
+        return SourceRange{sp.row, sp.column, ep.row, ep.column};
     }
     return range;
 }
@@ -1014,7 +987,7 @@ void EmitMixinMemberNotFound(const MixinCheckContext& mctx, std::string_view mem
                                       std::string_view(mctx.mixinSym->name), memberName);
 
     RelatedDiagnosticRequest req;
-    req.range = {mctx.hostRange.startLine, mctx.hostRange.startChar, mctx.hostRange.endLine, mctx.hostRange.endChar};
+    req.range = mctx.hostRange;
     req.code = diagnostics::codes::MixinInstantiationMemberNotFound;
     req.args = {mctx.mixinSym->name, mctx.hostClassName, std::string(memberName), mctx.hostClassName};
     req.related = std::move(rel);
@@ -1595,7 +1568,7 @@ void CheckSingleMixinInstantiation(MixinInstantiationCheckRequest& req)
         return;
     }
 
-    InstantiationRange hostRange = FindHostMixinRange(req.hostSym, *mixinSym, req.mixinName, req.ctx);
+    SourceRange hostRange = FindHostMixinRange(req.hostSym, *mixinSym, req.mixinName, req.ctx);
     TSNode bodyNode = parser::GetChildByField(mixinNode, parser::GetGrammarSymbols().fieldBody);
     if (!ts_node_is_null(bodyNode))
     {

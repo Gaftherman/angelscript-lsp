@@ -811,14 +811,14 @@ void RemoveContainers(RuleIndex& index, const RuleIndexPartial& partial)
 } // namespace
 
 /**
- * @brief Rule index build partial.
- * @param[in] fileUri Parameter fileUri.
- * @param[in] symbols Parameter symbols.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with BuildPartial in server/src/analysis/rules/RuleIndex.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @brief Helper template to construct and populate a RuleIndexPartial.
+ * @tparam SymbolRange Collection type of Symbol or const Symbol*.
+ * @param[in] fileUri File URI to associate with the partial index.
+ * @param[in] symbols Sequence of symbols to index.
+ * @return Populated RuleIndexPartial.
  */
-RuleIndexPartial RuleIndex::BuildPartial(const std::string& fileUri, const std::vector<Symbol>& symbols)
+template <typename SymbolRange>
+RuleIndexPartial BuildPartialImpl(const std::string& fileUri, const SymbolRange& symbols)
 {
     RuleIndexPartial partial;
     partial.fileUri = fileUri;
@@ -826,20 +826,14 @@ RuleIndexPartial RuleIndex::BuildPartial(const std::string& fileUri, const std::
     return partial;
 }
 
-/**
- * @brief Rule index build partial.
- * @param[in] fileUri Parameter fileUri.
- * @param[in] symbols Parameter symbols.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with BuildPartial in server/src/analysis/rules/RuleIndex.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h.
- */
+RuleIndexPartial RuleIndex::BuildPartial(const std::string& fileUri, const std::vector<Symbol>& symbols)
+{
+    return BuildPartialImpl(fileUri, symbols);
+}
+
 RuleIndexPartial RuleIndex::BuildPartial(const std::string& fileUri, const std::vector<const Symbol*>& symbols)
 {
-    RuleIndexPartial partial;
-    partial.fileUri = fileUri;
-    PopulatePartial(partial, symbols);
-    return partial;
+    return BuildPartialImpl(fileUri, symbols);
 }
 
 void RuleIndex::ApplyPartial(const RuleIndexPartial& partial)

@@ -26,6 +26,29 @@ struct ContainerInfo
 };
 
 /**
+ * @brief Classifies a Tree-Sitter AST symbol into an AST ContainerKind.
+ * @param[in] sym Tree-Sitter grammar symbol to classify.
+ * @return ContainerKind if symbol represents a container (class, interface, namespace); std::nullopt otherwise.
+ */
+[[nodiscard]] std::optional<ContainerKind> ClassifyContainerKind(TSSymbol sym) noexcept;
+
+/**
+ * @brief Extracts raw container names and qualified segments from a container name node.
+ * @param[in] nameNode AST node containing the container identifier or scoped identifier.
+ * @param[in] kind The container classification kind.
+ * @param[in] sourceCode The source code buffer.
+ * @param[in,out] rawContainers Destination collection for extracted container definitions.
+ */
+void AppendRawContainers(TSNode nameNode, ContainerKind kind, std::string_view sourceCode,
+                         std::vector<ContainerInfo>& rawContainers);
+
+/**
+ * @brief Computes fully qualified scope names for a hierarchically ordered container stack.
+ * @param[in,out] containers In-place ordered stack of enclosing containers.
+ */
+void ComputeContainerQualifiedNames(std::vector<ContainerInfo>& containers);
+
+/**
  * @brief Precalculated byte interval and metadata for an AST container declaration.
  */
 struct IndexedContainerSpan

@@ -1,4 +1,5 @@
 #include "features/selection_range/SelectionRangeHandler.h"
+#include "features/common/FeatureSharedUtils.h"
 #include "parser/ASTUtils.h"
 
 #include <memory>
@@ -8,35 +9,6 @@ namespace angel_lsp::features
 {
 namespace
 {
-/**
- * @brief To range.
- * @param[in] node Parameter node.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with ToLspRange in
- * server/src/features/document_symbol/DocumentSymbolHandler.cpp. Candidate for unification in
- * server/src/features/common/FeatureSharedUtils.h.
- */
-lsp::Range ToRange(TSNode node)
-{
-    const TSPoint start = ts_node_start_point(node);
-    const TSPoint end = ts_node_end_point(node);
-    return lsp::Range{lsp::Position{start.row, start.column}, lsp::Position{end.row, end.column}};
-}
-
-/**
- * @brief Same range.
- * @param[in] a Parameter a.
- * @param[in] b Parameter b.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with SameRange in
- * server/src/features/linked_editing/LinkedEditingRangeHandler.cpp. Candidate for unification in
- * server/src/features/common/FeatureSharedUtils.h.
- */
-bool SameRange(const lsp::Range& a, const lsp::Range& b)
-{
-    return a.start.line == b.start.line && a.start.character == b.start.character && a.end.line == b.end.line &&
-           a.end.character == b.end.character;
-}
 
 /**
  * @brief Assembles one position's chain, innermost first.
@@ -58,8 +30,8 @@ lsp::SelectionRange BuildChain(TSNode root, const lsp::Position& position)
     parser::ForEachAncestor(node,
                             [&](TSNode current)
                             {
-                                const lsp::Range range = ToRange(current);
-                                if (ranges.empty() || !SameRange(ranges.back(), range))
+                                const lsp::Range range = common::ToLspRange(current);
+                                if (ranges.empty() || !common::SameRange(ranges.back(), range))
                                 {
                                     ranges.push_back(range);
                                 }
@@ -67,7 +39,7 @@ lsp::SelectionRange BuildChain(TSNode root, const lsp::Position& position)
 
     if (ranges.empty())
     {
-        return lsp::SelectionRange{ToRange(root), nullptr};
+        return lsp::SelectionRange{common::ToLspRange(root), nullptr};
     }
 
     // Built from the outermost inwards, because each link owns its parent.

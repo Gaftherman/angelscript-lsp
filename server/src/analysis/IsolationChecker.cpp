@@ -15,28 +15,6 @@ namespace angel_lsp::analysis
 {
 namespace
 {
-/**
- * @brief Emit at node.
- * @param[in] node Parameter node.
- * @param[in,out] ctx Parameter ctx.
- * @param[in] code Parameter code.
- * @param[in] arg Parameter arg.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with EmitAtNode in server/src/analysis/ControlFlowChecker.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with EmitAtNode in
- * server/src/analysis/InitializerListChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (89%) with EmitWarningAtNode in server/src/analysis/TypeConversionChecker.cpp. Candidate for
- * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (88%) with EmitAtNode in
- * server/src/analysis/ConstChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural
- * overlap (77%) with EmitPrivacyViolation in server/src/analysis/AccessChecker.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (71%) with EmitAtNode in
- * server/src/analysis/LValueChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- */
-void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, const std::string& arg)
-{
-    const TSPoint start = ts_node_start_point(node);
-    const TSPoint end = ts_node_end_point(node);
-    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code, arg);
-}
 
 std::string TrimWhitespace(std::string_view text)
 {
@@ -425,7 +403,7 @@ struct IsolationVisitor
             if (!IsSymbolShared(s) && !IsFromPredefinedStub(s, ctx))
             {
                 ctx.LogRule("CheckSharedIsolation", "as-err-shared-cannot-access-non-shared", s);
-                EmitAtNode(node, ctx, "as-err-shared-cannot-access-non-shared", typeName);
+                ctx.EmitAtNode(node, "as-err-shared-cannot-access-non-shared", typeName);
                 break;
             }
         }
@@ -473,7 +451,7 @@ struct IsolationVisitor
                     if (!s.GetFunction().modifiers.isShared && !IsFromPredefinedStub(s, ctx))
                     {
                         ctx.LogRule("CheckSharedIsolation", "as-err-shared-cannot-access-non-shared", s);
-                        EmitAtNode(funcNode, ctx, "as-err-shared-cannot-access-non-shared", calleeName);
+                        ctx.EmitAtNode(funcNode, "as-err-shared-cannot-access-non-shared", calleeName);
                         break;
                     }
                 }
@@ -553,7 +531,7 @@ struct IsolationVisitor
                     if (!s.GetVariable().modifiers.isShared && !IsFromPredefinedStub(s, ctx))
                     {
                         ctx.LogRule("CheckSharedIsolation", "as-err-shared-cannot-access-non-shared", s);
-                        EmitAtNode(node, ctx, "as-err-shared-cannot-access-non-shared", varName);
+                        ctx.EmitAtNode(node, "as-err-shared-cannot-access-non-shared", varName);
                         break;
                     }
                 }

@@ -19,6 +19,7 @@
 
 namespace angel_lsp::analysis
 {
+using parser::UnwrapParentheses;
 
 namespace node_types
 {
@@ -44,6 +45,60 @@ enum class InitializerItemKind
 };
 
 using parser::GetNodeText;
+
+/**
+ * @brief Checks if a symbol with the specified type exists in the symbol table.
+ * @param[in] table Symbol table to query.
+ * @param[in] name Symbol identifier or qualified name.
+ * @param[in] type Target symbol type.
+ * @return True if a matching symbol exists; false otherwise.
+ */
+[[nodiscard]] inline bool HasSymbolOfType(const SymbolTable& table, std::string_view name, SymbolType type) noexcept
+{
+    const auto syms = table.FindSymbolsPtr(name);
+    return syms && std::any_of(syms->begin(), syms->end(), [type](const Symbol& s) { return s.type == type; });
+}
+
+/**
+ * @brief Checks if a symbol's declaring container has the specified symbol type.
+ * @param[in] sym Symbol whose container to inspect.
+ * @param[in] table Symbol table to query.
+ * @param[in] type Target container symbol type.
+ * @return True if the container exists and matches the specified type; false otherwise.
+ */
+[[nodiscard]] inline bool HasContainerOfType(const Symbol& sym, const SymbolTable& table, SymbolType type) noexcept
+{
+    if (sym.containerName.empty())
+    {
+        return false;
+    }
+    const auto container = table.FindSymbolsPtr(sym.containerName);
+    return container && std::any_of(container->begin(), container->end(),
+                                    [type](const Symbol& owner) { return owner.type == type; });
+}
+
+/**
+ * @brief Checks whether a definition's declaring scope is inside any function/method/lambda body.
+ * @param[in] defScope Definition declaring scope.
+ * @return True if enclosed within a function scope.
+ */
+[[nodiscard]] inline bool IsDeclaredInFunctionScope(const Scope* defScope)
+{
+    size_t depth = 0;
+    ankerl::unordered_dense::set<const Scope*> visited;
+    for (const Scope* cur = defScope; cur != nullptr; cur = cur->parent)
+    {
+        if (++depth > kMaxScopeDepth || !visited.insert(cur).second)
+        {
+            break;
+        }
+        if (cur->isFunctionScope)
+        {
+            return true;
+        }
+    }
+    return false;
+}
 
 /**
  * @brief Extracts a non-allocating string_view corresponding to an AST node's byte range.

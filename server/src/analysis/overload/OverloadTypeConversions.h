@@ -207,4 +207,12 @@ bool IsContainerParameter(const ParameterInformation& param, const SymbolTable* 
  */
 bool IsSameType(const std::string& a, const std::string& b);
 
+/**
+ * @brief Compares two comma-separated template argument lists for semantic type equality.
+ * @param[in] aInner First template arguments inner string slice.
+ * @param[in] bInner Second template arguments inner string slice.
+ * @return True if both argument lists have identical size and types; false otherwise.
+ */
+[[nodiscard]] bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner);
+
 } // namespace angel_lsp::analysis

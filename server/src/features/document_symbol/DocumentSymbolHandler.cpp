@@ -1,5 +1,6 @@
 #include "features/document_symbol/DocumentSymbolHandler.h"
 #include "document/Document.h"
+#include "features/common/FeatureSharedUtils.h"
 #include "parser/ASTUtils.h"
 #include "parser/AngelScriptParser.h"
 
@@ -14,6 +15,8 @@ namespace angel_lsp::features
 {
 namespace
 {
+using common::ToLspRange;
+
 /**
  * @brief Context for document symbol AST traversal.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -24,21 +27,6 @@ struct TraversalContext
     bool isInsideClass = false;
     std::string_view enclosingClassName;
 };
-
-/**
- * @brief Converts a Tree-Sitter TSNode range to an LSP Range.
- * @param node Tree-Sitter AST node.
- * @return Enclosing LSP Range.
- * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with ToRange in
- * server/src/features/selection_range/SelectionRangeHandler.cpp. Candidate for unification in
- * server/src/features/common/FeatureSharedUtils.h.
- */
-inline lsp::Range ToLspRange(TSNode node)
-{
-    TSPoint start = ts_node_start_point(node);
-    TSPoint end = ts_node_end_point(node);
-    return lsp::Range{lsp::Position{start.row, start.column}, lsp::Position{end.row, end.column}};
-}
 
 using parser::GetNodeText;
 

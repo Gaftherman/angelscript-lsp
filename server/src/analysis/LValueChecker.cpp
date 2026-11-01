@@ -15,30 +15,6 @@ namespace angel_lsp::analysis
 {
 namespace
 {
-/**
- * @brief Emit at node.
- * @param[in] node Parameter node.
- * @param[in,out] ctx Parameter ctx.
- * @param[in] code Parameter code.
- * @note [REFACTOR-CANDIDATE] Structural overlap (71%) with EmitAtNode in server/src/analysis/ControlFlowChecker.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (71%) with EmitAtNode in
- * server/src/analysis/InitializerListChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (71%) with EmitAtNode in server/src/analysis/IsolationChecker.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
- */
-void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, std::string_view arg = {})
-{
-    const TSPoint start = ts_node_start_point(node);
-    const TSPoint end = ts_node_end_point(node);
-    if (arg.empty())
-    {
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code);
-    }
-    else
-    {
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code, arg);
-    }
-}
 
 /**
  * @brief Represents Call candidate context.
@@ -146,7 +122,7 @@ void ValidateCandidateReturnTypes(TSNode callNode, const std::vector<Symbol>& ca
 {
     if (candidates.empty())
     {
-        EmitAtNode(callNode, ctx, "as-err-assign-non-ref-call");
+        ctx.EmitAtNode(callNode, "as-err-assign-non-ref-call");
         return;
     }
 
@@ -175,11 +151,11 @@ void ValidateCandidateReturnTypes(TSNode callNode, const std::vector<Symbol>& ca
 
     if (allVoid)
     {
-        EmitAtNode(callNode, ctx, "as-err-assign-void");
+        ctx.EmitAtNode(callNode, "as-err-assign-void");
     }
     else if (!anyReference)
     {
-        EmitAtNode(callNode, ctx, "as-err-assign-non-ref-call");
+        ctx.EmitAtNode(callNode, "as-err-assign-non-ref-call");
     }
 }
 
@@ -210,37 +186,6 @@ void CheckCallLValue(TSNode callNode, const LValueCheckRequest& request, const S
     }
 
     ValidateCandidateReturnTypes(callNode, candidates, ctx);
-}
-
-TSNode UnwrapParentheses(TSNode node)
-{
-    TSNode current = node;
-    const auto& gs = parser::GetGrammarSymbols();
-    while (!ts_node_is_null(current) && ts_node_symbol(current) == gs.symParenthesizedExpression)
-    {
-        uint32_t count = ts_node_named_child_count(current);
-        if (count > 0)
-        {
-            current = ts_node_named_child(current, 0);
-            continue;
-        }
-        TSNode found{};
-        for (uint32_t i = 0; i < ts_node_child_count(current); ++i)
-        {
-            TSNode ch = ts_node_child(current, i);
-            if (ts_node_is_named(ch))
-            {
-                found = ch;
-                break;
-            }
-        }
-        if (ts_node_is_null(found))
-        {
-            break;
-        }
-        current = found;
-    }
-    return current;
 }
 
 bool IsIdentifierAssignable(std::string_view name, const Scope* scope, const SymbolTable& table,
@@ -441,11 +386,11 @@ void CheckAssignmentTarget(TSNode node, const LValueCheckRequest& request, const
     {
         if (const auto dt = IsBareDataType(target, scope, ctx.request.symbolTable, request.sourceCode))
         {
-            EmitAtNode(target, ctx, diagnostics::codes::ExpressionIsDataType, *dt);
+            ctx.EmitAtNode(target, diagnostics::codes::ExpressionIsDataType, *dt);
         }
         else
         {
-            EmitAtNode(target, ctx, "as-err-not-lvalue");
+            ctx.EmitAtNode(target, "as-err-not-lvalue");
         }
     }
 }

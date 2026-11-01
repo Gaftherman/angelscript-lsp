@@ -472,7 +472,9 @@ namespace
  * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ClassifyContainerKind in
  * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-std::optional<ContainerKind> ClassifyIndexContainerKind(TSSymbol sym) noexcept
+} // namespace
+
+std::optional<ContainerKind> ClassifyContainerKind(TSSymbol sym) noexcept
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (sym == gs.symClassDeclaration || sym == gs.symMixinDeclaration)
@@ -499,8 +501,8 @@ std::optional<ContainerKind> ClassifyIndexContainerKind(TSSymbol sym) noexcept
  * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with AppendRawContainers in
  * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-void AppendIndexRawContainers(TSNode nameNode, ContainerKind kind, std::string_view sourceCode,
-                              std::vector<ContainerInfo>& rawContainers)
+void AppendRawContainers(TSNode nameNode, ContainerKind kind, std::string_view sourceCode,
+                         std::vector<ContainerInfo>& rawContainers)
 {
     if (ts_node_is_null(nameNode))
     {
@@ -537,7 +539,7 @@ void AppendIndexRawContainers(TSNode nameNode, ContainerKind kind, std::string_v
  * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ComputeContainerQualifiedNames in
  * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
-void ComputeIndexContainerQualifiedNames(std::vector<ContainerInfo>& containers)
+void ComputeContainerQualifiedNames(std::vector<ContainerInfo>& containers)
 {
     for (size_t i = 0; i < containers.size(); ++i)
     {
@@ -553,7 +555,6 @@ void ComputeIndexContainerQualifiedNames(std::vector<ContainerInfo>& containers)
         containers[i].qualifiedName = std::move(qName);
     }
 }
-} // namespace
 
 std::vector<ContainerInfo> NodeIndex::CollectEnclosingContainers(uint32_t byteOffset, std::string_view sourceCode) const
 {
@@ -594,7 +595,7 @@ std::vector<ContainerInfo> NodeIndex::CollectEnclosingContainers(uint32_t byteOf
 
     for (TSNode node : enclosingNodes)
     {
-        const auto kind = ClassifyIndexContainerKind(ts_node_symbol(node));
+        const auto kind = ClassifyContainerKind(ts_node_symbol(node));
         if (!kind)
         {
             continue;
@@ -607,10 +608,10 @@ std::vector<ContainerInfo> NodeIndex::CollectEnclosingContainers(uint32_t byteOf
         }
 
         TSNode nameNode = parser::GetChildByField(node, gs.fieldName);
-        AppendIndexRawContainers(nameNode, *kind, sourceCode, rawContainers);
+        AppendRawContainers(nameNode, *kind, sourceCode, rawContainers);
     }
 
-    ComputeIndexContainerQualifiedNames(rawContainers);
+    ComputeContainerQualifiedNames(rawContainers);
     return rawContainers;
 }
 } // namespace angel_lsp::analysis

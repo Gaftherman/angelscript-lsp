@@ -120,29 +120,6 @@ TemplateSpelling ReadTemplateSpelling(const std::string& type)
 }
 
 /**
- * @brief Emit at node.
- * @param[in] node Parameter node.
- * @param[in,out] ctx Parameter ctx.
- * @param[in] code Parameter code.
- * @param[in] arg Parameter arg.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with EmitAtNode in server/src/analysis/ControlFlowChecker.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with EmitAtNode in
- * server/src/analysis/IsolationChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (89%) with EmitWarningAtNode in server/src/analysis/TypeConversionChecker.cpp. Candidate for
- * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (88%) with EmitAtNode in
- * server/src/analysis/ConstChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural
- * overlap (77%) with EmitPrivacyViolation in server/src/analysis/AccessChecker.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (71%) with EmitAtNode in
- * server/src/analysis/LValueChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- */
-void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, std::string_view arg)
-{
-    const TSPoint start = ts_node_start_point(node);
-    const TSPoint end = ts_node_end_point(node);
-    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code, arg);
-}
-
-/**
  * @brief The declared return type of the function a `return` sits in, or "" when unknown.
  */
 std::string EnclosingReturnType(TSNode returnNode, std::string_view sourceCode)
@@ -796,7 +773,7 @@ void ValidateMultiDimensionalContainer(TSNode node, uint32_t dimension, const st
                                  {
                                      if (sym != gs.symInitializerList)
                                      {
-                                         EmitAtNode(child, valCtx.ctx, "as-err-initializer-list-expected", "");
+                                         valCtx.ctx.EmitAtNode(child, "as-err-initializer-list-expected", "");
                                      }
                                      else
                                      {
@@ -853,7 +830,7 @@ void ValidateDictionaryPair(TSNode child, const DictInfo& dictInfo, const ListVa
     {
         if (ts_node_symbol(keyNode) == gs.symInitializerList)
         {
-            EmitAtNode(keyNode, valCtx.ctx, "as-err-initializer-list-not-supported", dictInfo.keyType);
+            valCtx.ctx.EmitAtNode(keyNode, "as-err-initializer-list-not-supported", dictInfo.keyType);
         }
         else
         {
@@ -864,7 +841,7 @@ void ValidateDictionaryPair(TSNode child, const DictInfo& dictInfo, const ListVa
     {
         if (ts_node_symbol(valNode) == gs.symInitializerList)
         {
-            EmitAtNode(valNode, valCtx.ctx, "as-err-initializer-list-not-supported", dictInfo.valType);
+            valCtx.ctx.EmitAtNode(valNode, "as-err-initializer-list-not-supported", dictInfo.valType);
         }
         else
         {
@@ -892,18 +869,18 @@ void ValidateDictionaryList(TSNode listNode, const DictInfo& dictInfo, const Lis
                                  }
                                  if (ts_node_symbol(child) != gs.symInitializerList)
                                  {
-                                     EmitAtNode(child, valCtx.ctx, "as-err-initializer-list-expected", "");
+                                     valCtx.ctx.EmitAtNode(child, "as-err-initializer-list-expected", "");
                                      return;
                                  }
 
                                  const uint32_t valuesCount = ListValueCount(child);
                                  if (valuesCount < 2)
                                  {
-                                     EmitAtNode(child, valCtx.ctx, "as-err-initializer-list-too-few", "");
+                                     valCtx.ctx.EmitAtNode(child, "as-err-initializer-list-too-few", "");
                                  }
                                  else if (valuesCount > 2)
                                  {
-                                     EmitAtNode(child, valCtx.ctx, "as-err-initializer-list-too-many", "");
+                                     valCtx.ctx.EmitAtNode(child, "as-err-initializer-list-too-many", "");
                                  }
 
                                  ValidateDictionaryPair(child, dictInfo, valCtx);
@@ -923,7 +900,7 @@ void ValidateStructAggregateList(TSNode listNode, const std::string& type, const
 {
     if (!structInfo.hasListSupport)
     {
-        EmitAtNode(listNode, valCtx.ctx, "as-err-initializer-list-not-supported", type);
+        valCtx.ctx.EmitAtNode(listNode, "as-err-initializer-list-not-supported", type);
         return;
     }
 
@@ -931,12 +908,12 @@ void ValidateStructAggregateList(TSNode listNode, const std::string& type, const
     const auto expected = static_cast<uint32_t>(structInfo.fields.size());
     if (written < expected)
     {
-        EmitAtNode(listNode, valCtx.ctx, "as-err-initializer-list-too-few", "");
+        valCtx.ctx.EmitAtNode(listNode, "as-err-initializer-list-too-few", "");
         return;
     }
     if (written > expected)
     {
-        EmitAtNode(listNode, valCtx.ctx, "as-err-initializer-list-too-many", "");
+        valCtx.ctx.EmitAtNode(listNode, "as-err-initializer-list-too-many", "");
         return;
     }
 
@@ -1115,7 +1092,7 @@ void ValidateList(TSNode listNode, const std::string& targetType, const ListVali
 
     if (IsUnsupportedTargetType(listNode, type, valCtx))
     {
-        EmitAtNode(listNode, valCtx.ctx, "as-err-initializer-list-not-supported", type);
+        valCtx.ctx.EmitAtNode(listNode, "as-err-initializer-list-not-supported", type);
         return;
     }
 

@@ -10,6 +10,7 @@
 
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeSanitization.h"
+#include "analysis/overload/OverloadTypeConversions.h"
 
 #include "parser/GrammarNames.h"
 #include "parser/Primitives.h"
@@ -62,74 +63,6 @@ struct ConversionTypes
     std::string from{};
     std::string to{};
 };
-
-bool IsSameType(const std::string& a, const std::string& b);
-
-/**
- * @brief Are template arguments equal.
- * @param[in] aInner Parameter aInner.
- * @param[in] bInner Parameter bInner.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with AreTemplateArgumentsEqual in
- * server/src/analysis/overload/OverloadTypeConversions.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
- */
-bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner)
-{
-    const auto aArgs = SplitTemplateArguments(aInner);
-    const auto bArgs = SplitTemplateArguments(bInner);
-    if (aArgs.size() != bArgs.size())
-    {
-        return false;
-    }
-    for (size_t i = 0; i < aArgs.size(); ++i)
-    {
-        std::string_view va = aArgs[i];
-        std::string_view vb = bArgs[i];
-        TrimTypeWhitespace(va);
-        TrimTypeWhitespace(vb);
-        if (!IsSameType(std::string(va), std::string(vb)))
-        {
-            return false;
-        }
-    }
-    return true;
-}
-
-bool IsSameType(const std::string& a, const std::string& b)
-{
-    const std::string ca = CanonicalizeType(a);
-    const std::string cb = CanonicalizeType(b);
-    if (ca == cb)
-    {
-        return true;
-    }
-    const size_t aOpen = ca.find('<');
-    const size_t bOpen = cb.find('<');
-    if (aOpen != std::string::npos && ca.ends_with('>') && bOpen != std::string::npos && cb.ends_with('>'))
-    {
-        const std::string_view aCont = std::string_view(ca).substr(0, aOpen);
-        const std::string_view bCont = std::string_view(cb).substr(0, bOpen);
-        if (aCont != bCont)
-        {
-            if (utils::ContainsScopeSeparator(aCont) && utils::ContainsScopeSeparator(bCont))
-            {
-                return false;
-            }
-            if (LastScopeSegment(aCont) != LastScopeSegment(bCont))
-            {
-                return false;
-            }
-        }
-        return AreTemplateArgumentsEqual(std::string_view(ca).substr(aOpen + 1, ca.size() - aOpen - 2),
-                                         std::string_view(cb).substr(bOpen + 1, cb.size() - bOpen - 2));
-    }
-    if (utils::ContainsScopeSeparator(ca) && utils::ContainsScopeSeparator(cb))
-    {
-        return false;
-    }
-    return LastScopeSegment(ca) == LastScopeSegment(cb);
-}
 
 /** @brief Visits every symbol registered under a qualified name without copying the bucket.
  *  @param visitor Returns true to stop the walk. */
@@ -3641,24 +3574,6 @@ static bool TypeAcceptsNullHandle(std::string_view typeName, const SymbolTable& 
         return false;
     }
     return HasHandleOpAssign(clean, table) || HasHandleConvertingCtor(clean, table);
-}
-
-/**
- * @brief Unwrap parentheses.
- * @param[in] node Parameter node.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with UnwrapParens in server/src/analysis/SemanticHelpers.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h.
- */
-static TSNode UnwrapParentheses(TSNode node)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    while (!ts_node_is_null(node) && ts_node_symbol(node) == gs.symParenthesizedExpression &&
-           ts_node_named_child_count(node) > 0)
-    {
-        node = ts_node_named_child(node, 0);
-    }
-    return node;
 }
 
 /**

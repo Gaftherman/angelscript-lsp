@@ -875,89 +875,33 @@ std::string_view RawProfileStub(EngineProfileKind kind)
 }
 
 /**
- * @brief Matches sven coop.
- * @param[in] lower Parameter lower.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with MatchesUrho3D in server/src/analysis/EngineProfiles.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with MatchesOpenXRay in
- * server/src/analysis/EngineProfiles.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (76%) with MatchesOOTP in server/src/analysis/EngineProfiles.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @brief Checks if a string contains any of the provided keywords.
+ * @param[in] text Target string to search within.
+ * @param[in] keywords List of candidate substrings.
+ * @return True if at least one keyword is found.
  */
-bool MatchesSvenCoop(std::string_view lower)
+bool MatchesAnyKeyword(std::string_view text, std::initializer_list<std::string_view> keywords) noexcept
 {
-    return lower.find("svencoop") != std::string_view::npos || lower.find("sven") != std::string_view::npos ||
-           lower.find("cbaseplayer") != std::string_view::npos ||
-           lower.find("g_playerfuncs") != std::string_view::npos ||
-           lower.find("g_enginefuncs") != std::string_view::npos;
-}
-
-/**
- * @brief Matches urho3 d.
- * @param[in] lower Parameter lower.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with MatchesSvenCoop in server/src/analysis/EngineProfiles.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with MatchesOpenXRay in
- * server/src/analysis/EngineProfiles.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (76%) with MatchesOOTP in server/src/analysis/EngineProfiles.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
- */
-bool MatchesUrho3D(std::string_view lower)
-{
-    return lower.find("urho3d") != std::string_view::npos || lower.find("urho") != std::string_view::npos ||
-           lower.find("atomic") != std::string_view::npos || lower.find("subscribetoevent") != std::string_view::npos ||
-           lower.find("variantmap") != std::string_view::npos;
-}
-
-/**
- * @brief Matches open x ray.
- * @param[in] lower Parameter lower.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with MatchesSvenCoop in server/src/analysis/EngineProfiles.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with MatchesUrho3D in
- * server/src/analysis/EngineProfiles.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (76%) with MatchesOOTP in server/src/analysis/EngineProfiles.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
- */
-bool MatchesOpenXRay(std::string_view lower)
-{
-    return lower.find("openxray") != std::string_view::npos || lower.find("xray") != std::string_view::npos ||
-           lower.find("stalker") != std::string_view::npos || lower.find("ini_file") != std::string_view::npos ||
-           lower.find("alife_simulator") != std::string_view::npos;
-}
-
-/**
- * @brief Matches ootp.
- * @param[in] lower Parameter lower.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (76%) with MatchesSvenCoop in server/src/analysis/EngineProfiles.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (76%) with MatchesUrho3D in
- * server/src/analysis/EngineProfiles.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (76%) with MatchesOpenXRay in server/src/analysis/EngineProfiles.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
- */
-bool MatchesOOTP(std::string_view lower)
-{
-    return lower.find("ootp") != std::string_view::npos || lower.find("ootpplayer") != std::string_view::npos ||
-           lower.find("ootpteam") != std::string_view::npos;
+    return std::any_of(keywords.begin(), keywords.end(),
+                       [text](std::string_view kw) { return text.find(kw) != std::string_view::npos; });
 }
 
 std::optional<EngineProfileKind> MatchProfileSample(std::string_view sample)
 {
     const std::string lower = ToLowerString(sample);
-    if (MatchesSvenCoop(lower))
+    if (MatchesAnyKeyword(lower, {"svencoop", "sven", "cbaseplayer", "g_playerfuncs", "g_enginefuncs"}))
     {
         return EngineProfileKind::SvenCoop;
     }
-    if (MatchesUrho3D(lower))
+    if (MatchesAnyKeyword(lower, {"urho3d", "urho", "atomic", "subscribetoevent", "variantmap"}))
     {
         return EngineProfileKind::Urho3D;
     }
-    if (MatchesOpenXRay(lower))
+    if (MatchesAnyKeyword(lower, {"openxray", "xray", "stalker", "ini_file", "alife_simulator"}))
     {
         return EngineProfileKind::OpenXRay;
     }
-    if (MatchesOOTP(lower))
+    if (MatchesAnyKeyword(lower, {"ootp", "ootpplayer", "ootpteam"}))
     {
         return EngineProfileKind::OOTP;
     }

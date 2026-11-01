@@ -1,4 +1,5 @@
 #include "features/linked_editing/LinkedEditingRangeHandler.h"
+#include "features/common/FeatureSharedUtils.h"
 
 #include <algorithm>
 #include <vector>
@@ -89,12 +90,6 @@ template <typename T> bool Covers(const T& item, const lsp::Position& position)
     return true;
 }
 
-template <typename T> lsp::Range ToRange(const T& item)
-{
-    return lsp::Range{lsp::Position{item.startLine, item.startCharacter},
-                      lsp::Position{item.endLine, item.endCharacter}};
-}
-
 /**
  * @brief The local or parameter the cursor sits on, whether at its declaration or a use.
  *
@@ -163,21 +158,6 @@ bool IsInsideFunction(const Scope* scope)
     return false;
 }
 
-/**
- * @brief Same range.
- * @param[in] a Parameter a.
- * @param[in] b Parameter b.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with SameRange in
- * server/src/features/selection_range/SelectionRangeHandler.cpp. Candidate for unification in
- * server/src/features/common/FeatureSharedUtils.h.
- */
-bool SameRange(const lsp::Range& a, const lsp::Range& b)
-{
-    return a.start.line == b.start.line && a.start.character == b.start.character && a.end.line == b.end.line &&
-           a.end.character == b.end.character;
-}
-
 /** @brief Collects every occurrence of a name inside one scope and its children. */
 void CollectIn(const Scope& scope, const std::string& name, std::vector<lsp::Range>& out)
 {
@@ -185,14 +165,14 @@ void CollectIn(const Scope& scope, const std::string& name, std::vector<lsp::Ran
     {
         if (definition.name == name)
         {
-            out.push_back(ToRange(definition));
+            out.push_back(common::ToLspRange(definition));
         }
     }
     for (const auto& reference : scope.references)
     {
         if (!reference.isMemberAccess && reference.name == name)
         {
-            out.push_back(ToRange(reference));
+            out.push_back(common::ToLspRange(reference));
         }
     }
 
@@ -258,7 +238,7 @@ std::optional<lsp::LinkedEditingRanges> GetLinkedEditingRanges(const LinkedEditi
     for (size_t i = ranges.size(); i-- > 0;)
     {
         const bool duplicate = std::any_of(ranges.begin(), ranges.begin() + i, [&ranges, i](const lsp::Range& earlier)
-                                           { return SameRange(earlier, ranges[i]); });
+                                           { return common::SameRange(earlier, ranges[i]); });
         if (duplicate)
         {
             ranges.erase(ranges.begin() + static_cast<std::ptrdiff_t>(i));

@@ -553,36 +553,6 @@ MethodLookup FindMethod(const std::string& typeName, const std::string& methodNa
     return result;
 }
 
-/**
- * @brief Arguments for constness diagnostic emission.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct DiagArgs
-{
-    std::string_view code;
-    std::string arg1 = "";
-    std::string arg2 = "";
-};
-
-/**
- * @brief Emit at node.
- * @param[in] node Parameter node.
- * @param[in,out] ctx Parameter ctx.
- * @param[in] diag Parameter diag.
- * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with EmitAtNode in server/src/analysis/ControlFlowChecker.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (88%) with EmitAtNode in
- * server/src/analysis/InitializerListChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (88%) with EmitAtNode in server/src/analysis/IsolationChecker.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (84%) with EmitWarningAtNode in
- * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- */
-void EmitAtNode(TSNode node, DiagnosticContext& ctx, const DiagArgs& diag)
-{
-    const TSPoint start = ts_node_start_point(node);
-    const TSPoint end = ts_node_end_point(node);
-    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diag.code, diag.arg1, diag.arg2);
-}
-
 Constness ResolveHandleConstness(TSNode node, const ConstContext& ctx)
 {
     if (ts_node_is_null(node))
@@ -656,7 +626,7 @@ void CheckAssignment(TSNode node, const ConstCheckRequest& request, const Scope*
     std::string memberName;
     if (IsMemberOfThis(actualTarget, encInfo, constCtx, memberName))
     {
-        EmitAtNode(target, ctx, {"as-err-readonly-reference", memberName});
+        ctx.EmitAtNode(target, "as-err-readonly-reference", memberName);
         return;
     }
 
@@ -664,7 +634,7 @@ void CheckAssignment(TSNode node, const ConstCheckRequest& request, const Scope*
     {
         if (ResolveHandleConstness(actualTarget, constCtx) == Constness::Const)
         {
-            EmitAtNode(target, ctx, {"as-err-const-assignment", NodeTextString(target, request.sourceCode)});
+            ctx.EmitAtNode(target, "as-err-const-assignment", NodeTextString(target, request.sourceCode));
         }
         return;
     }
@@ -674,7 +644,7 @@ void CheckAssignment(TSNode node, const ConstCheckRequest& request, const Scope*
         return;
     }
 
-    EmitAtNode(target, ctx, {"as-err-const-assignment", NodeTextString(target, request.sourceCode)});
+    ctx.EmitAtNode(target, "as-err-const-assignment", NodeTextString(target, request.sourceCode));
 }
 
 void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
@@ -713,8 +683,8 @@ void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const Scope*
         return;
     }
 
-    EmitAtNode(memberNode, ctx,
-               {"as-err-const-method-required", std::string(LastScopeSegment(method.declaringClass)), methodName});
+    ctx.EmitAtNode(memberNode, "as-err-const-method-required", std::string(LastScopeSegment(method.declaringClass)),
+                   methodName);
 }
 
 void CheckConstCorrectnessIndexed(const ConstCheckRequest& request, DiagnosticContext& ctx)

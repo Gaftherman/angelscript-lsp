@@ -1,5 +1,6 @@
-﻿#include "features/call_hierarchy/CallHierarchyHandler.h"
+#include "features/call_hierarchy/CallHierarchyHandler.h"
 #include "analysis/SemanticHelpers.h"
+#include "features/common/FeatureSharedUtils.h"
 #include "parser/ASTUtils.h"
 #include "utils/Constants.h"
 #include "utils/ScopedNameUtils.h"
@@ -22,20 +23,6 @@ using analysis::SymbolTable;
 using analysis::SymbolType;
 
 /**
- * @brief To range.
- * @param[in] range Parameter range.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ToRange in
- * server/src/features/type_hierarchy/TypeHierarchyHandler.cpp. Candidate for unification in
- * server/src/features/common/FeatureSharedUtils.h.
- */
-lsp::Range ToRange(const analysis::SourceRange& range)
-{
-    return lsp::Range{lsp::Position{range.startLine, range.startCharacter},
-                      lsp::Position{range.endLine, range.endCharacter}};
-}
-
-/**
  * @brief To item.
  * @param[in] sym Parameter sym.
  * @return Result of the operation.
@@ -51,12 +38,12 @@ lsp::CallHierarchyItem ToItem(const Symbol& sym)
     item.uri = lsp::DocumentUri::parse(sym.fileUri);
 
     const bool hasFullRange = sym.fullRange.endLine != 0 || sym.fullRange.endCharacter != 0;
-    item.range = hasFullRange ? ToRange(sym.fullRange)
+    item.range = hasFullRange ? common::ToLspRange(sym.fullRange)
                               : lsp::Range{lsp::Position{sym.startLine, sym.startCharacter},
                                            lsp::Position{sym.endLine, sym.endCharacter}};
 
     const bool hasSelection = sym.selectionRange.endLine != 0 || sym.selectionRange.endCharacter != 0;
-    item.selectionRange = hasSelection ? ToRange(sym.selectionRange)
+    item.selectionRange = hasSelection ? common::ToLspRange(sym.selectionRange)
                                        : lsp::Range{lsp::Position{sym.startLine, sym.startCharacter},
                                                     lsp::Position{sym.endLine, sym.endCharacter}};
 
@@ -234,11 +221,11 @@ std::vector<std::pair<std::string, std::vector<lsp::Range>>> GroupCallsByCallee(
                                          [&call](const auto& entry) { return entry.first == call.callee; });
             if (existing == byCallee.end())
             {
-                byCallee.emplace_back(call.callee, std::vector<lsp::Range>{ToRange(call.range)});
+                byCallee.emplace_back(call.callee, std::vector<lsp::Range>{common::ToLspRange(call.range)});
             }
             else
             {
-                existing->second.push_back(ToRange(call.range));
+                existing->second.push_back(common::ToLspRange(call.range));
             }
         }
     }
@@ -385,11 +372,11 @@ std::optional<std::vector<lsp::CallHierarchyIncomingCall>> GetIncomingCalls(cons
                                          [&call](const auto& entry) { return entry.first == call.caller; });
             if (existing == byCaller.end())
             {
-                byCaller.emplace_back(call.caller, std::vector<lsp::Range>{ToRange(call.range)});
+                byCaller.emplace_back(call.caller, std::vector<lsp::Range>{common::ToLspRange(call.range)});
             }
             else
             {
-                existing->second.push_back(ToRange(call.range));
+                existing->second.push_back(common::ToLspRange(call.range));
             }
         }
     }

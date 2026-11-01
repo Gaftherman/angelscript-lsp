@@ -196,16 +196,14 @@ std::optional<bool> ParseClangBool(std::string_view val)
 }
 
 /**
- * @brief Parse clang u int.
- * @param[in] val Parameter val.
- * @return Found item if present; std::nullopt otherwise.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ParseClangInt in
- * server/src/features/formatting/ClangFormatPresets.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
+ * @brief Parses an integer value from a string view using std::from_chars.
+ * @tparam T Integral type to parse.
+ * @param[in] val Input string view.
+ * @return Parsed value if valid; std::nullopt otherwise.
  */
-std::optional<uint32_t> ParseClangUInt(std::string_view val)
+template <typename T> std::optional<T> ParseClangInteger(std::string_view val)
 {
-    uint32_t result = 0;
+    T result = 0;
     auto [ptr, ec] = std::from_chars(val.data(), val.data() + val.size(), result);
     if (ec == std::errc() && ptr == val.data() + val.size())
     {
@@ -215,22 +213,23 @@ std::optional<uint32_t> ParseClangUInt(std::string_view val)
 }
 
 /**
+ * @brief Parse clang uint.
+ * @param[in] val Parameter val.
+ * @return Found item if present; std::nullopt otherwise.
+ */
+std::optional<uint32_t> ParseClangUInt(std::string_view val)
+{
+    return ParseClangInteger<uint32_t>(val);
+}
+
+/**
  * @brief Parse clang int.
  * @param[in] val Parameter val.
  * @return Found item if present; std::nullopt otherwise.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ParseClangUInt in
- * server/src/features/formatting/ClangFormatPresets.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
  */
 std::optional<int32_t> ParseClangInt(std::string_view val)
 {
-    int32_t result = 0;
-    auto [ptr, ec] = std::from_chars(val.data(), val.data() + val.size(), result);
-    if (ec == std::errc() && ptr == val.data() + val.size())
-    {
-        return result;
-    }
-    return std::nullopt;
+    return ParseClangInteger<int32_t>(val);
 }
 
 /**

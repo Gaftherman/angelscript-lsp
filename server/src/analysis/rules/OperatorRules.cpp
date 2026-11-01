@@ -56,41 +56,28 @@ bool IsDeclaredInAClass(const Symbol& sym, const DiagnosticContext& ctx)
                                     { return owner.type == SymbolType::Class || owner.type == SymbolType::Interface; });
 }
 /**
- * @brief Validate op cmp.
- * @param[in] sym Parameter sym.
- * @param[in] sig Parameter sig.
- * @param[in] ctx Parameter ctx.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ValidateOpEquals in
- * server/src/analysis/rules/OperatorRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @brief Expected return type and diagnostic code for comparison operator validation.
  */
-void ValidateOpCmp(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
+struct ExpectedOperatorShape
 {
-    if (sig.returnTypeKind != TypeKind::Int32 || sig.returnIsArray || sig.modifiers.isHandle)
-    {
-        ctx.LogRule("ValidateOperator", "as-err-opcmp-return-int", sym);
-        ctx.Emit(sym, "as-err-opcmp-return-int");
-    }
-    if (sig.parameters.size() != 1)
-    {
-        ctx.LogRule("ValidateOperator", "as-err-binary-operator-arity", sym);
-        ctx.Emit(sym, "as-err-binary-operator-arity", sym.name);
-    }
-}
+    TypeKind expectedReturnKind;
+    std::string_view returnDiagCode;
+};
 
 /**
- * @brief Validate op equals.
- * @param[in] sym Parameter sym.
- * @param[in] sig Parameter sig.
- * @param[in] ctx Parameter ctx.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ValidateOpCmp in
- * server/src/analysis/rules/OperatorRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @brief Validates a comparison operator method shape and return type.
+ * @param[in] sym Operator symbol.
+ * @param[in] sig Function signature.
+ * @param[in] ctx Diagnostic context.
+ * @param[in] shape Expected return type kind and diagnostic code.
  */
-void ValidateOpEquals(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
+void ValidateBinaryComparisonOperator(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx,
+                                      ExpectedOperatorShape shape)
 {
-    if (sig.returnTypeKind != TypeKind::Bool || sig.returnIsArray || sig.modifiers.isHandle)
+    if (sig.returnTypeKind != shape.expectedReturnKind || sig.returnIsArray || sig.modifiers.isHandle)
     {
-        ctx.LogRule("ValidateOperator", "as-err-opequals-return-bool", sym);
-        ctx.Emit(sym, "as-err-opequals-return-bool");
+        ctx.LogRule("ValidateOperator", shape.returnDiagCode, sym);
+        ctx.Emit(sym, shape.returnDiagCode);
     }
     if (sig.parameters.size() != 1)
     {
@@ -140,13 +127,13 @@ void ValidateOperator(const Symbol& sym, const DiagnosticContext& ctx)
 
     if (sym.name == "opCmp")
     {
-        ValidateOpCmp(sym, sig, ctx);
+        ValidateBinaryComparisonOperator(sym, sig, ctx, {TypeKind::Int32, "as-err-opcmp-return-int"});
         return;
     }
 
     if (sym.name == "opEquals")
     {
-        ValidateOpEquals(sym, sig, ctx);
+        ValidateBinaryComparisonOperator(sym, sig, ctx, {TypeKind::Bool, "as-err-opequals-return-bool"});
         return;
     }
 

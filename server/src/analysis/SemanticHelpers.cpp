@@ -331,24 +331,6 @@ bool AreAllSymbolsPureTypes(const std::vector<Symbol>& syms)
     return false;
 }
 
-/**
- * @brief Unwrap parens.
- * @param[in] node Parameter node.
- * @return Result of the operation.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with UnwrapParentheses in
- * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- */
-static TSNode UnwrapParens(TSNode node)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    while (!ts_node_is_null(node) && ts_node_symbol(node) == gs.symParenthesizedExpression &&
-           ts_node_named_child_count(node) > 0)
-    {
-        node = ts_node_named_child(node, 0);
-    }
-    return node;
-}
-
 static std::string ExtractTrimmedIdentifier(TSNode node, std::string_view sourceCode)
 {
     if (ts_node_is_null(node))
@@ -376,7 +358,7 @@ static std::string ExtractTrimmedIdentifier(TSNode node, std::string_view source
 std::optional<std::string> IsBareDataType(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
                                           std::string_view sourceCode)
 {
-    node = UnwrapParens(node);
+    node = parser::UnwrapParentheses(node);
     std::string name = ExtractTrimmedIdentifier(node, sourceCode);
     if (name.empty())
     {
@@ -2185,95 +2167,6 @@ TSNode AdjustStartNodeIfDeclarationName(TSNode node)
             return true;
         });
     return result;
-}
-
-/**
- * @brief Classify container kind.
- * @param[in] sym Parameter sym.
- * @return Found item if present; std::nullopt otherwise.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ClassifyIndexContainerKind in
- * server/src/analysis/NodeIndex.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- */
-std::optional<ContainerKind> ClassifyContainerKind(TSSymbol sym)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    if (sym == gs.symClassDeclaration || sym == gs.symMixinDeclaration)
-    {
-        return ContainerKind::Class;
-    }
-    if (sym == gs.symInterfaceDeclaration)
-    {
-        return ContainerKind::Interface;
-    }
-    if (sym == gs.symNamespaceDeclaration)
-    {
-        return ContainerKind::Namespace;
-    }
-    return std::nullopt;
-}
-
-/**
- * @brief Compute container qualified names.
- * @param[in,out] containers Parameter containers.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ComputeIndexContainerQualifiedNames in
- * server/src/analysis/NodeIndex.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- */
-void ComputeContainerQualifiedNames(std::vector<ContainerInfo>& containers)
-{
-    for (size_t i = 0; i < containers.size(); ++i)
-    {
-        std::string qName;
-        for (size_t j = containers.size(); j > i; --j)
-        {
-            if (!qName.empty())
-            {
-                qName += "::";
-            }
-            qName += containers[j - 1].name;
-        }
-        containers[i].qualifiedName = std::move(qName);
-    }
-}
-
-/**
- * @brief Append raw containers.
- * @param[in] nameNode Parameter nameNode.
- * @param[in] kind Parameter kind.
- * @param[in] sourceCode Parameter sourceCode.
- * @param[in,out] rawContainers Parameter rawContainers.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with AppendIndexRawContainers in
- * server/src/analysis/NodeIndex.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- */
-static void AppendRawContainers(TSNode nameNode, ContainerKind kind, std::string_view sourceCode,
-                                std::vector<ContainerInfo>& rawContainers)
-{
-    if (ts_node_is_null(nameNode))
-    {
-        return;
-    }
-    const uint32_t start = ts_node_start_byte(nameNode);
-    const uint32_t end = ts_node_end_byte(nameNode);
-    if (start >= end || end > sourceCode.size())
-    {
-        return;
-    }
-
-    std::string text(sourceCode.substr(start, end - start));
-    if (kind == ContainerKind::Namespace && utils::ContainsScopeSeparator(text))
-    {
-        auto segs = SplitScopeSegments(text);
-        for (auto it = segs.rbegin(); it != segs.rend(); ++it)
-        {
-            if (!it->empty())
-            {
-                rawContainers.push_back({*it, "", kind});
-            }
-        }
-    }
-    else
-    {
-        rawContainers.push_back({std::move(text), "", kind});
-    }
 }
 
 std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view sourceCode, const NodeIndex* nodeIndex)

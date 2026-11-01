@@ -67,56 +67,6 @@ uint32_t FirstStatementIndex(TSNode clause)
 }
 
 /**
- * @brief Emit at node.
- * @param[in] node Parameter node.
- * @param[in,out] ctx Parameter ctx.
- * @param[in] code Parameter code.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with EmitAtNode in server/src/analysis/ControlFlowChecker.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with EmitAtNode in
- * server/src/analysis/InitializerListChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (100%) with EmitAtNode in server/src/analysis/IsolationChecker.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (89%) with EmitWarningAtNode in
- * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (88%) with EmitAtNode in server/src/analysis/ConstChecker.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (77%) with EmitPrivacyViolation in
- * server/src/analysis/AccessChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural
- * overlap (71%) with EmitAtNode in server/src/analysis/LValueChecker.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
- */
-void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code,
-                DiagnosticSeverity severity = DiagnosticSeverity::Error)
-{
-    const TSPoint start = ts_node_start_point(node);
-    const TSPoint end = ts_node_end_point(node);
-    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code, severity);
-}
-
-/**
- * @brief Emit at node.
- * @param[in] node Parameter node.
- * @param[in,out] ctx Parameter ctx.
- * @param[in] code Parameter code.
- * @param[in] arg Parameter arg.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with EmitAtNode in server/src/analysis/ControlFlowChecker.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with EmitAtNode in
- * server/src/analysis/InitializerListChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (100%) with EmitAtNode in server/src/analysis/IsolationChecker.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (89%) with EmitWarningAtNode in
- * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (88%) with EmitAtNode in server/src/analysis/ConstChecker.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (77%) with EmitPrivacyViolation in
- * server/src/analysis/AccessChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural
- * overlap (71%) with EmitAtNode in server/src/analysis/LValueChecker.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
- */
-void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, const std::string& arg)
-{
-    const TSPoint start = ts_node_start_point(node);
-    const TSPoint end = ts_node_end_point(node);
-    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code, arg);
-}
-
-/**
  * @brief `if (c);` and `else;` - a bare semicolon where the branch body belongs.
  *
  * AngelScript is stricter here than C++ and stricter than its own loops, which is the whole
@@ -588,7 +538,7 @@ bool CheckLocalCaseConstantness(TSNode value, std::string_view idText, Diagnosti
 
     if (def && insideFunction && def->kind == LocalDefinitionKind::Variable)
     {
-        EmitAtNode(value, ctx, "as-err-case-not-constant");
+        ctx.EmitAtNode(value, "as-err-case-not-constant");
         return true;
     }
 
@@ -609,7 +559,7 @@ void CheckCaseConstantness(TSNode value, std::string_view sourceCode, Diagnostic
         {
             if (s.type == SymbolType::Variable && !s.GetVariable().modifiers.isConst)
             {
-                EmitAtNode(value, ctx, "as-err-case-not-constant");
+                ctx.EmitAtNode(value, "as-err-case-not-constant");
                 reported = true;
                 break;
             }
@@ -622,7 +572,7 @@ void CheckCaseConstantness(TSNode value, std::string_view sourceCode, Diagnostic
     }
     else if (sym == gs.symCallExpression)
     {
-        EmitAtNode(value, ctx, "as-err-case-not-constant");
+        ctx.EmitAtNode(value, "as-err-case-not-constant");
     }
 }
 
@@ -651,7 +601,7 @@ void ProcessCaseClause(TSNode clause, std::string_view sourceCode, std::vector<s
 
     if (IsUnusableCaseValue(value, sourceCode))
     {
-        EmitAtNode(value, ctx, "as-err-invalid-case-type");
+        ctx.EmitAtNode(value, "as-err-invalid-case-type");
     }
 
     CheckCaseConstantness(value, sourceCode, ctx);
@@ -662,7 +612,7 @@ void ProcessCaseClause(TSNode clause, std::string_view sourceCode, std::vector<s
         std::string key = ComputeCaseKey(text, ctx.request.GetRuleIndex());
         if (std::find(seenValues.begin(), seenValues.end(), key) != seenValues.end())
         {
-            EmitAtNode(value, ctx, "as-err-duplicate-case-value", text);
+            ctx.EmitAtNode(value, "as-err-duplicate-case-value", text);
         }
         else
         {
@@ -690,7 +640,7 @@ void CheckVariablesInClause(TSNode clause, DiagnosticContext& ctx)
                               }
                               if (NodeSymbol(stmt) == parser::GetGrammarSymbols().symVariableDeclaration)
                               {
-                                  EmitAtNode(stmt, ctx, diagnostics::codes::VariableInSwitchCase);
+                                  ctx.EmitAtNode(stmt, diagnostics::codes::VariableInSwitchCase);
                               }
                           });
 }
@@ -709,7 +659,7 @@ void CheckSwitch(TSNode node, std::string_view sourceCode, DiagnosticContext& ct
                               {
                                   if (NodeSymbol(clause) == parser::GetGrammarSymbols().symVariableDeclaration)
                                   {
-                                      EmitAtNode(clause, ctx, diagnostics::codes::VariableInSwitchCase);
+                                      ctx.EmitAtNode(clause, diagnostics::codes::VariableInSwitchCase);
                                   }
                                   return;
                               }
@@ -734,7 +684,7 @@ void CheckSwitch(TSNode node, std::string_view sourceCode, DiagnosticContext& ct
 
     if (haveDefault && !defaultIsLast)
     {
-        EmitAtNode(defaultClause, ctx, "as-err-default-must-be-last");
+        ctx.EmitAtNode(defaultClause, "as-err-default-must-be-last");
     }
 }
 
@@ -824,7 +774,7 @@ void CheckUnreachable(TSNode block, DiagnosticContext& ctx)
 
         if (terminated)
         {
-            EmitAtNode(child, ctx, "as-warn-unreachable-code", DiagnosticSeverity::Warning);
+            ctx.EmitAtNode(child, "as-warn-unreachable-code", DiagnosticSeverity::Warning);
             return;
         }
 
@@ -868,7 +818,7 @@ class ControlFlowVisitor
         // `float FS(float f) { return; }` passed every check this analyzer had.
         if (!state.requiredReturn.empty() && state.requiredReturn != "void" && ts_node_named_child_count(node) == 0)
         {
-            EmitAtNode(node, m_ctx, "as-err-return-value-required", state.functionName);
+            m_ctx.EmitAtNode(node, "as-err-return-value-required", state.functionName);
         }
 
         // The constructor half of the same rule. Reported here rather than in
@@ -877,7 +827,7 @@ class ControlFlowVisitor
         // return void was the one nothing checked.
         if (state.implicitVoid && ts_node_named_child_count(node) > 0)
         {
-            EmitAtNode(node, m_ctx, "as-err-void-return-value");
+            m_ctx.EmitAtNode(node, "as-err-void-return-value");
         }
 
         // `int f() { return null; }` - "No conversion from '<null handle>' to 'int' available."
@@ -889,7 +839,7 @@ class ControlFlowVisitor
             IsNonNullablePrimitiveName(state.requiredReturn) && ts_node_named_child_count(node) == 1 &&
             NodeSymbol(ts_node_named_child(node, 0)) == parser::GetGrammarSymbols().symNullLiteral)
         {
-            EmitAtNode(node, m_ctx, "as-err-null-non-handle", state.requiredReturn);
+            m_ctx.EmitAtNode(node, "as-err-null-non-handle", state.requiredReturn);
         }
     }
 
@@ -933,7 +883,7 @@ class ControlFlowVisitor
                                         (m_ctx.request.nodeIndex && m_ctx.request.nodeIndex->NodeHasSyntaxError(body));
             if (!hasSyntaxError && !DefinitelyReturns(body, m_sourceCode))
             {
-                EmitAtNode(ts_node_is_null(name) ? node : name, m_ctx, "as-err-not-all-paths-return", reportedName);
+                m_ctx.EmitAtNode(ts_node_is_null(name) ? node : name, "as-err-not-all-paths-return", reportedName);
             }
         }
 
@@ -953,7 +903,7 @@ class ControlFlowVisitor
         {
             if (state.loopDepth == 0 && state.switchDepth == 0)
             {
-                EmitAtNode(node, m_ctx, "as-err-break-outside-loop");
+                m_ctx.EmitAtNode(node, "as-err-break-outside-loop");
             }
             return true;
         }
@@ -961,7 +911,7 @@ class ControlFlowVisitor
         {
             if (state.loopDepth == 0)
             {
-                EmitAtNode(node, m_ctx, "as-err-continue-outside-loop");
+                m_ctx.EmitAtNode(node, "as-err-continue-outside-loop");
             }
             return true;
         }

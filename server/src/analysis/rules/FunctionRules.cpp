@@ -81,36 +81,6 @@ FunctionContext BuildFunctionContext(const Symbol& sym, const DiagnosticContext&
     return fctx;
 }
 
-/**
- * @brief True for the kinds that can never be passed or returned by reference.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsUnconditionallyNonNullablePrimitive in
- * server/src/analysis/SemanticAnalyzer.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (92%) with IsUnaryPrecedingTokenType in server/src/features/formatting/FormattingTokens.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (79%) with
- * IsClosingOrSeparatorPunctuation in server/src/features/formatting/FormattingSpacing.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
- */
-bool IsValueOnlyKind(TypeKind kind)
-{
-    switch (kind)
-    {
-    case TypeKind::Int8:
-    case TypeKind::Int16:
-    case TypeKind::Int32:
-    case TypeKind::Int64:
-    case TypeKind::UInt8:
-    case TypeKind::UInt16:
-    case TypeKind::UInt32:
-    case TypeKind::UInt64:
-    case TypeKind::Float:
-    case TypeKind::Double:
-    case TypeKind::Bool:
-        return true;
-    default:
-        return false;
-    }
-}
-
 /** @brief True when the type cannot be passed as &inout without unsafe references. */
 bool IsDisallowedInOutType(const ParameterInformation& param, const SymbolTable& table)
 {

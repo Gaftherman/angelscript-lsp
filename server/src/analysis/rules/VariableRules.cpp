@@ -71,24 +71,6 @@ bool IsClassOrInterfaceMember(const Symbol& sym, const SymbolTable& table)
 }
 
 /**
- * @brief True when the symbol's container is an interface, where members carry no body.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsClassMember in
- * server/src/analysis/rules/EngineRuleChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (93%) with IsMixinMember in server/src/analysis/rules/VariableRules.cpp. Candidate for unification
- * in server/src/analysis/SemanticHelpers.h.
- */
-bool IsInterfaceMember(const Symbol& sym, const SymbolTable& table)
-{
-    if (sym.containerName.empty())
-    {
-        return false;
-    }
-    const auto container = table.FindSymbolsPtr(sym.containerName);
-    return container && std::any_of(container->begin(), container->end(),
-                                    [](const Symbol& owner) { return owner.type == SymbolType::Interface; });
-}
-
-/**
  * @brief True when the symbol's container is a mixin class.
  * @note [REFACTOR-CANDIDATE] Structural overlap (93%) with IsClassMember in
  * server/src/analysis/rules/EngineRuleChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -317,7 +299,7 @@ void CheckVirtualProperty(const Symbol& sym, const VariableSignature& sig, const
     }
 
     // An interface declares accessors without bodies by definition, and so does a stub.
-    if (IsInterfaceMember(sym, table))
+    if (HasContainerOfType(sym, table, SymbolType::Interface))
     {
         return;
     }

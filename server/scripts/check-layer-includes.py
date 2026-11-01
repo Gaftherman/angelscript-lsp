@@ -132,7 +132,7 @@ def check_layer_matrix() -> list[str]:
                 parts_to = rel_to.split('/')
                 feat_from = parts_from[1] if len(parts_from) > 1 else ''
                 feat_to = parts_to[1] if len(parts_to) > 1 else ''
-                if feat_from and feat_to and feat_from != feat_to:
+                if feat_from and feat_to and feat_from != feat_to and feat_to != 'common':
                     violations.append(
                         f"Cross-feature violation: {rel_from} (feature '{feat_from}') includes {rel_to} (feature '{feat_to}')"
                     )

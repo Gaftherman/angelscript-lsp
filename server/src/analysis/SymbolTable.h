@@ -3,14 +3,14 @@
 #include <ankerl/unordered_dense.h>
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <shared_mutex>
 #include <string>
-#include <vector>
-
 #include <variant>
+#include <vector>
 
 #include "utils/Constants.h"
 #include <tree_sitter/api.h>
@@ -82,6 +82,42 @@ enum class TypeKind : uint8_t
     Int = Int32,
     UInt = UInt32
 };
+
+/**
+ * @brief Checks if a TypeKind is a primitive value-only type (cannot be null or handle).
+ * @param[in] kind The TypeKind to inspect.
+ * @return True if the type is a non-nullable primitive value type; false otherwise.
+ */
+[[nodiscard]] constexpr bool IsValueOnlyKind(TypeKind kind) noexcept
+{
+    switch (kind)
+    {
+    case TypeKind::Int8:
+    case TypeKind::Int16:
+    case TypeKind::Int32:
+    case TypeKind::Int64:
+    case TypeKind::UInt8:
+    case TypeKind::UInt16:
+    case TypeKind::UInt32:
+    case TypeKind::UInt64:
+    case TypeKind::Float:
+    case TypeKind::Double:
+    case TypeKind::Bool:
+        return true;
+    default:
+        return false;
+    }
+}
+
+/**
+ * @brief Alias for IsValueOnlyKind indicating unconditionally non-nullable primitive types.
+ * @param[in] kind The TypeKind to inspect.
+ * @return True if non-nullable primitive; false otherwise.
+ */
+[[nodiscard]] constexpr bool IsUnconditionallyNonNullablePrimitive(TypeKind kind) noexcept
+{
+    return IsValueOnlyKind(kind);
+}
 
 /**
  * @brief Classification categories for enclosing lexical containers.
@@ -224,6 +260,23 @@ struct SourceRange
     uint32_t startCharacter = 0;
     uint32_t endLine = 0;
     uint32_t endCharacter = 0;
+
+    bool operator==(const SourceRange& other) const noexcept = default;
+};
+
+/**
+ * @brief Hash functor for SourceRange.
+ */
+struct SourceRangeHash
+{
+    size_t operator()(const SourceRange& k) const noexcept
+    {
+        size_t h = std::hash<uint32_t>{}(k.startLine);
+        h ^= std::hash<uint32_t>{}(k.startCharacter) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<uint32_t>{}(k.endLine) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        h ^= std::hash<uint32_t>{}(k.endCharacter) + 0x9e3779b9 + (h << 6) + (h >> 2);
+        return h;
+    }
 };
 
 /**

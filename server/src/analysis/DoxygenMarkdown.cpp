@@ -1580,50 +1580,27 @@ struct DocBlock
      * in server/src/analysis/SemanticHelpers.h. Structural overlap (83%) with MakeAdmonition in
      * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
      */
+    static DocBlock MakeWithKind(DocBlockKind kind, std::string t)
+    {
+        DocBlock b;
+        b.kind = kind;
+        b.text = std::move(t);
+        return b;
+    }
+
     static DocBlock MakeBrief(std::string t)
     {
-        DocBlock b;
-        b.kind = DocBlockKind::Brief;
-        b.text = std::move(t);
-        return b;
+        return MakeWithKind(DocBlockKind::Brief, std::move(t));
     }
 
-    /**
-     * @brief Make body.
-     * @param[in] t Parameter t.
-     * @return Result of the operation.
-     * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with MakeBrief in server/src/analysis/DoxygenMarkdown.cpp.
-     * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with MakeCodeBlock
-     * in server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
-     * Structural overlap (100%) with MakeReturn in server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification
-     * in server/src/analysis/SemanticHelpers.h. Structural overlap (83%) with MakeAdmonition in
-     * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
-     */
     static DocBlock MakeBody(std::string t)
     {
-        DocBlock b;
-        b.kind = DocBlockKind::Body;
-        b.text = std::move(t);
-        return b;
+        return MakeWithKind(DocBlockKind::Body, std::move(t));
     }
 
-    /**
-     * @brief Make code block.
-     * @param[in] t Parameter t.
-     * @return Result of the operation.
-     * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with MakeBrief in server/src/analysis/DoxygenMarkdown.cpp.
-     * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with MakeBody in
-     * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
-     * Structural overlap (100%) with MakeReturn in server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification
-     * in server/src/analysis/SemanticHelpers.h. Structural overlap (83%) with MakeAdmonition in
-     * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
-     */
     static DocBlock MakeCodeBlock(std::string t)
     {
-        DocBlock b;
-        b.kind = DocBlockKind::CodeBlock;
-        b.text = std::move(t);
-        return b;
+        return MakeWithKind(DocBlockKind::CodeBlock, std::move(t));
     }
 
     static DocBlock MakeTParam(TParamItem tp)
@@ -1642,23 +1619,9 @@ struct DocBlock
         return b;
     }
 
-    /**
-     * @brief Make return.
-     * @param[in] t Parameter t.
-     * @return Result of the operation.
-     * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with MakeBrief in server/src/analysis/DoxygenMarkdown.cpp.
-     * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with MakeBody in
-     * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
-     * Structural overlap (100%) with MakeCodeBlock in server/src/analysis/DoxygenMarkdown.cpp. Candidate for
-     * unification in server/src/analysis/SemanticHelpers.h. Structural overlap (83%) with MakeAdmonition in
-     * server/src/analysis/DoxygenMarkdown.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
-     */
     static DocBlock MakeReturn(std::string t)
     {
-        DocBlock b;
-        b.kind = DocBlockKind::Return;
-        b.text = std::move(t);
-        return b;
+        return MakeWithKind(DocBlockKind::Return, std::move(t));
     }
 
     static DocBlock MakeRetVal(RetValItem r)

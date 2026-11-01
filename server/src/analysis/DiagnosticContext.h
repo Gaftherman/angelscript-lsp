@@ -78,6 +78,14 @@ struct DiagnosticContext
     void EmitAtRange(SourceRange range, std::string_view code, std::initializer_list<std::string_view> args,
                      DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
 
+    // --- Diagnostic Emission for TSNode ---
+    void EmitAtNode(TSNode node, std::string_view code, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+    void EmitAtNode(TSNode node, std::string_view code, std::string_view arg1,
+                    DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+    void EmitAtNode(TSNode node, std::string_view code, std::string_view arg1, std::string_view arg2) const;
+    void EmitAtNode(TSNode node, std::string_view code, std::initializer_list<std::string_view> args,
+                    DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+
     // --- Diagnostic Emission with Related Information ---
     void EmitWithRelated(const RelatedDiagnosticRequest& request) const;
 

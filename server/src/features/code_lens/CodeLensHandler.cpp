@@ -27,38 +27,8 @@ namespace angel_lsp::features
 namespace
 {
 
-/**
- * @brief Range key for deduplicating code lenses covering the same span.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct RangeKey
-{
-    uint32_t startLine = 0;
-    uint32_t startCharacter = 0;
-    uint32_t endLine = 0;
-    uint32_t endCharacter = 0;
-
-    bool operator==(const RangeKey& other) const noexcept
-    {
-        return startLine == other.startLine && startCharacter == other.startCharacter && endLine == other.endLine &&
-               endCharacter == other.endCharacter;
-    }
-};
-
-/**
- * @brief Hash functor for RangeKey.
- */
-struct RangeKeyHash
-{
-    size_t operator()(const RangeKey& k) const noexcept
-    {
-        size_t h = std::hash<uint32_t>{}(k.startLine);
-        h ^= std::hash<uint32_t>{}(k.startCharacter) + 0x9e3779b9 + (h << 6) + (h >> 2);
-        h ^= std::hash<uint32_t>{}(k.endLine) + 0x9e3779b9 + (h << 6) + (h >> 2);
-        h ^= std::hash<uint32_t>{}(k.endCharacter) + 0x9e3779b9 + (h << 6) + (h >> 2);
-        return h;
-    }
-};
+using RangeKey = analysis::SourceRange;
+using RangeKeyHash = analysis::SourceRangeHash;
 
 /**
  * @brief Enclosing class span data.

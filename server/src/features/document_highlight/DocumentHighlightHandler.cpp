@@ -21,31 +21,6 @@ namespace
 {
 
 /**
- * @brief Checks whether a definition's declaring scope is inside any function/method/lambda body.
- * @param[in] defScope Definition declaring scope.
- * @return True if enclosed within a function scope.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsDeclaredInFunctionScope in
- * server/src/analysis/TargetResolution.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- */
-bool IsDeclaredInFunctionScope(const analysis::Scope* defScope)
-{
-    size_t depth = 0;
-    ankerl::unordered_dense::set<const analysis::Scope*> visited;
-    for (const analysis::Scope* cur = defScope; cur != nullptr; cur = cur->parent)
-    {
-        if (++depth > analysis::kMaxScopeDepth || !visited.insert(cur).second)
-        {
-            break;
-        }
-        if (cur->isFunctionScope)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
  * @brief Resolves the enclosing class name for a given source position.
  * @param[in] symbolTable Symbol table to look up class definitions.
  * @param[in] uri Document file URI.
@@ -1063,7 +1038,7 @@ bool IsShadowedByFunctionLocal(const analysis::Scope* scope, const std::string& 
         return false;
     }
     const analysis::Scope* defScope = analysis::FindScopeDeclaringDefinition(rootScope, *localDef);
-    return defScope && IsDeclaredInFunctionScope(defScope);
+    return defScope && analysis::IsDeclaredInFunctionScope(defScope);
 }
 
 /**

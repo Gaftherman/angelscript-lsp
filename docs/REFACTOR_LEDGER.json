@@ -165,6 +165,324 @@
         "TypeRulesTest",
         "MemoryLayoutAudit"
       ]
+    },
+    {
+      "id": "REF-0010",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/ControlFlowChecker.cpp",
+      "deletedLineRange": "80-115",
+      "originalSymbolOrCode": "void EmitAtNode(const DiagnosticContext& ctx, TSNode node, const std::string& code, ...)",
+      "whatItDidAndWhyInThatFile": "Local helper converting TSNode byte range to DiagnosticContext diagnostic emission.",
+      "whyChangedOrDeleted": "Consolidated into canonical DiagnosticContext::EmitAtNode overloads in Layer 2.",
+      "replacedByCanonicalFile": "server/src/analysis/DiagnosticContext.h",
+      "replacedByCanonicalSymbol": "EmitAtNode",
+      "ramOrCpuImpact": "Zero duplicate code, eliminated redundant TSPoint extraction overhead.",
+      "verifiedByTests": [
+        "ControlFlowCheckerTest",
+        "DiagnosticSuppressionTest"
+      ]
+    },
+    {
+      "id": "REF-0011",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/InitializerListChecker.cpp",
+      "deletedLineRange": "55-80",
+      "originalSymbolOrCode": "void EmitAtNode(const DiagnosticContext& ctx, TSNode node, ...)",
+      "whatItDidAndWhyInThatFile": "Local helper converting TSNode bounds to DiagnosticContext diagnostic emission.",
+      "whyChangedOrDeleted": "Consolidated into canonical DiagnosticContext::EmitAtNode overloads.",
+      "replacedByCanonicalFile": "server/src/analysis/DiagnosticContext.h",
+      "replacedByCanonicalSymbol": "EmitAtNode",
+      "ramOrCpuImpact": "Zero duplicate code, streamlined diagnostic emission path.",
+      "verifiedByTests": [
+        "InitializerListCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0012",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/IsolationChecker.cpp",
+      "deletedLineRange": "40-65",
+      "originalSymbolOrCode": "void EmitAtNode(const DiagnosticContext& ctx, TSNode node, ...)",
+      "whatItDidAndWhyInThatFile": "Local helper converting TSNode bounds to DiagnosticContext diagnostic emission.",
+      "whyChangedOrDeleted": "Consolidated into canonical DiagnosticContext::EmitAtNode overloads.",
+      "replacedByCanonicalFile": "server/src/analysis/DiagnosticContext.h",
+      "replacedByCanonicalSymbol": "EmitAtNode",
+      "ramOrCpuImpact": "Zero duplicate code, unified diagnostic dispatch.",
+      "verifiedByTests": [
+        "IsolationCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0013",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/LValueChecker.cpp",
+      "deletedLineRange": "45-70",
+      "originalSymbolOrCode": "void EmitAtNode(const DiagnosticContext& ctx, TSNode node, ...)",
+      "whatItDidAndWhyInThatFile": "Local helper converting TSNode bounds to DiagnosticContext diagnostic emission.",
+      "whyChangedOrDeleted": "Consolidated into canonical DiagnosticContext::EmitAtNode overloads.",
+      "replacedByCanonicalFile": "server/src/analysis/DiagnosticContext.h",
+      "replacedByCanonicalSymbol": "EmitAtNode",
+      "ramOrCpuImpact": "Zero duplicate code, unified diagnostic dispatch.",
+      "verifiedByTests": [
+        "LValueCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0014",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/ConstChecker.cpp",
+      "deletedLineRange": "50-85",
+      "originalSymbolOrCode": "void EmitAtNode(const DiagnosticContext& ctx, TSNode node, ...)",
+      "whatItDidAndWhyInThatFile": "Local helper converting TSNode bounds to DiagnosticContext diagnostic emission.",
+      "whyChangedOrDeleted": "Consolidated into canonical DiagnosticContext::EmitAtNode overloads.",
+      "replacedByCanonicalFile": "server/src/analysis/DiagnosticContext.h",
+      "replacedByCanonicalSymbol": "EmitAtNode",
+      "ramOrCpuImpact": "Zero duplicate code, eliminated local DiagArgs struct.",
+      "verifiedByTests": [
+        "ConstCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0015",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/SemanticHelpers.cpp",
+      "deletedLineRange": "140-210",
+      "originalSymbolOrCode": "ClassifyContainerKind, AppendRawContainers, ComputeContainerQualifiedNames",
+      "whatItDidAndWhyInThatFile": "Container classification and qualified name resolution duplicated between NodeIndex and SemanticHelpers.",
+      "whyChangedOrDeleted": "Centralized in NodeIndex.h/NodeIndex.cpp as canonical container analysis services.",
+      "replacedByCanonicalFile": "server/src/analysis/NodeIndex.h",
+      "replacedByCanonicalSymbol": "ClassifyContainerKind",
+      "ramOrCpuImpact": "Eliminated identical AST traversal logic and duplicate qualified name string allocations.",
+      "verifiedByTests": [
+        "NodeIndexTest",
+        "SemanticHelpersTest"
+      ]
+    },
+    {
+      "id": "REF-0016",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/TypeConversionChecker.cpp",
+      "deletedLineRange": "120-145",
+      "originalSymbolOrCode": "TSNode UnwrapParentheses(TSNode node)",
+      "whatItDidAndWhyInThatFile": "Recursively unwrapped parenthesized expressions in AST.",
+      "whyChangedOrDeleted": "Consolidated into canonical parser::UnwrapParentheses in ASTUtils.h and exported via SemanticHelpers.h.",
+      "replacedByCanonicalFile": "server/src/parser/ASTUtils.h",
+      "replacedByCanonicalSymbol": "UnwrapParentheses",
+      "ramOrCpuImpact": "Zero redundant traversal logic, flat loop in Layer 1 parser utility.",
+      "verifiedByTests": [
+        "TypeConversionTest",
+        "LValueCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0017",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/TypeConversionChecker.cpp",
+      "deletedLineRange": "150-185",
+      "originalSymbolOrCode": "bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner)",
+      "whatItDidAndWhyInThatFile": "Compared template argument lists element-by-element.",
+      "whyChangedOrDeleted": "Unified with canonical implementation in OverloadTypeConversions.h/cpp.",
+      "replacedByCanonicalFile": "server/src/analysis/overload/OverloadTypeConversions.h",
+      "replacedByCanonicalSymbol": "AreTemplateArgumentsEqual",
+      "ramOrCpuImpact": "Eliminated duplicated template string splitting and comparison passes.",
+      "verifiedByTests": [
+        "TypeConversionTest",
+        "OverloadResolverTest"
+      ]
+    },
+    {
+      "id": "REF-0018",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/document_highlight/DocumentHighlightHandler.cpp",
+      "deletedLineRange": "30-48",
+      "originalSymbolOrCode": "bool IsDeclaredInFunctionScope(const analysis::Scope* defScope)",
+      "whatItDidAndWhyInThatFile": "Inspected scope hierarchy to check whether declaration sits inside function/method/lambda.",
+      "whyChangedOrDeleted": "Centralized canonical definition into SemanticHelpers.h, eliminating 100% duplicate from TargetResolution and DocumentHighlightHandler.",
+      "replacedByCanonicalFile": "server/src/analysis/SemanticHelpers.h",
+      "replacedByCanonicalSymbol": "IsDeclaredInFunctionScope",
+      "ramOrCpuImpact": "Zero logic duplication across Layer 2 and Layer 3.",
+      "verifiedByTests": [
+        "DocumentHighlightTest",
+        "TargetResolutionTest"
+      ]
+    },
+    {
+      "id": "REF-0019",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/rules/OperatorRules.cpp",
+      "deletedLineRange": "60-100",
+      "originalSymbolOrCode": "ValidateOpCmp, ValidateOpEquals",
+      "whatItDidAndWhyInThatFile": "Validated operator method shapes and return types for opCmp and opEquals.",
+      "whyChangedOrDeleted": "Parametrized into unified ValidateBinaryComparisonOperator helper with ExpectedOperatorShape struct.",
+      "replacedByCanonicalFile": "server/src/analysis/rules/OperatorRules.cpp",
+      "replacedByCanonicalSymbol": "ValidateBinaryComparisonOperator",
+      "ramOrCpuImpact": "Reduced function count and cyclomatic complexity.",
+      "verifiedByTests": [
+        "OperatorRulesTest"
+      ]
+    },
+    {
+      "id": "REF-0020",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/formatting/ClangFormatPresets.cpp",
+      "deletedLineRange": "200-235",
+      "originalSymbolOrCode": "ParseClangUInt, ParseClangInt",
+      "whatItDidAndWhyInThatFile": "Parsed integers from string views using std::from_chars.",
+      "whyChangedOrDeleted": "Unified via ParseClangInteger<T> template helper.",
+      "replacedByCanonicalFile": "server/src/features/formatting/ClangFormatPresets.cpp",
+      "replacedByCanonicalSymbol": "ParseClangInteger",
+      "ramOrCpuImpact": "Reduced redundant parsing functions.",
+      "verifiedByTests": [
+        "ClangFormatPresetsTest",
+        "FormattingTest"
+      ]
+    },
+    {
+      "id": "REF-0021",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/NullSafetyCondition.cpp",
+      "deletedLineRange": "44-94",
+      "originalSymbolOrCode": "HandleEqualityNullCheck, HandleInequalityNullCheck",
+      "whatItDidAndWhyInThatFile": "Extracted compared identifier and set positive/negative null assertions.",
+      "whyChangedOrDeleted": "Unified via ExtractNullComparedIdentifier and ApplyNullComparison helpers.",
+      "replacedByCanonicalFile": "server/src/analysis/NullSafetyCondition.cpp",
+      "replacedByCanonicalSymbol": "ExtractNullComparedIdentifier",
+      "ramOrCpuImpact": "Eliminated identical AST extraction code branches.",
+      "verifiedByTests": [
+        "NullSafetyCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0022",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/EngineProfiles.cpp",
+      "deletedLineRange": "880-945",
+      "originalSymbolOrCode": "MatchesSvenCoop, MatchesUrho3D, MatchesOpenXRay, MatchesOOTP",
+      "whatItDidAndWhyInThatFile": "Checked if sample text contains engine keywords.",
+      "whyChangedOrDeleted": "Unified via MatchesAnyKeyword helper.",
+      "replacedByCanonicalFile": "server/src/analysis/EngineProfiles.cpp",
+      "replacedByCanonicalSymbol": "MatchesAnyKeyword",
+      "ramOrCpuImpact": "Eliminated 4 duplicate functions, reduced string search branches.",
+      "verifiedByTests": [
+        "EngineProfilesTest"
+      ]
+    },
+    {
+      "id": "REF-0023",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/call_hierarchy/CallHierarchyHandler.cpp",
+      "deletedLineRange": "25-37",
+      "originalSymbolOrCode": "lsp::Range ToRange(const analysis::SourceRange& range)",
+      "whatItDidAndWhyInThatFile": "Local helper converting SourceRange to LSP Range.",
+      "whyChangedOrDeleted": "Centralized into Layer 3 shared module features/common/FeatureSharedUtils.h.",
+      "replacedByCanonicalFile": "server/src/features/common/FeatureSharedUtils.h",
+      "replacedByCanonicalSymbol": "ToLspRange",
+      "ramOrCpuImpact": "Eliminated duplicated range conversion boilerplate across 5 feature modules.",
+      "verifiedByTests": [
+        "CallHierarchyTest",
+        "TypeHierarchyTest",
+        "DocumentSymbolTest",
+        "SelectionRangeTest",
+        "LinkedEditingRangeTest"
+      ]
+    },
+    {
+      "id": "REF-0024",
+      "phase": "R2",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/rules/ClassRules.cpp",
+      "deletedLineRange": "780-791",
+      "originalSymbolOrCode": "struct InstantiationRange",
+      "whatItDidAndWhyInThatFile": "Local byte interval struct storing startLine, startChar, endLine, endChar.",
+      "whyChangedOrDeleted": "Replaced with canonical analysis::SourceRange from SymbolTable.h.",
+      "replacedByCanonicalFile": "server/src/analysis/SymbolTable.h",
+      "replacedByCanonicalSymbol": "SourceRange",
+      "ramOrCpuImpact": "Eliminated redundant struct type definition, zero extra copying.",
+      "verifiedByTests": [
+        "ClassRulesTest",
+        "RefactoringTest"
+      ]
+    },
+    {
+      "id": "REF-0025",
+      "phase": "R2",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/code_lens/CodeLensHandler.cpp",
+      "deletedLineRange": "30-61",
+      "originalSymbolOrCode": "struct RangeKey, struct RangeKeyHash",
+      "whatItDidAndWhyInThatFile": "Local coordinate tuple with equality operator and hash functor for code lens span keys.",
+      "whyChangedOrDeleted": "Replaced by canonical analysis::SourceRange and analysis::SourceRangeHash in SymbolTable.h.",
+      "replacedByCanonicalFile": "server/src/analysis/SymbolTable.h",
+      "replacedByCanonicalSymbol": "SourceRangeHash",
+      "ramOrCpuImpact": "Unified hash and equality logic, eliminated local struct definition.",
+      "verifiedByTests": [
+        "CodeLensTest"
+      ]
+    },
+    {
+      "id": "REF-0026",
+      "phase": "R2",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/CallChecker.cpp",
+      "deletedLineRange": "120-160",
+      "originalSymbolOrCode": "struct Arity, ArityOf",
+      "whatItDidAndWhyInThatFile": "Local parameter arity counting struct and extraction function.",
+      "whyChangedOrDeleted": "Replaced by canonical ArityInfo and InspectFunctionArity from AmbiguityDetector.h.",
+      "replacedByCanonicalFile": "server/src/analysis/overload/AmbiguityDetector.h",
+      "replacedByCanonicalSymbol": "InspectFunctionArity",
+      "ramOrCpuImpact": "Eliminated redundant arity struct and duplicate signature parameter loop.",
+      "verifiedByTests": [
+        "CallCheckerTest",
+        "OverloadResolverTest"
+      ]
+    },
+    {
+      "id": "REF-0027",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/DoxygenMarkdown.cpp",
+      "deletedLineRange": "1575-1665",
+      "originalSymbolOrCode": "DocBlock::MakeBrief, MakeBody, MakeCodeBlock, MakeReturn",
+      "whatItDidAndWhyInThatFile": "Individual factory methods constructing DocBlock with kind and text.",
+      "whyChangedOrDeleted": "Consolidated via DocBlock::MakeWithKind helper.",
+      "replacedByCanonicalFile": "server/src/analysis/DoxygenMarkdown.cpp",
+      "replacedByCanonicalSymbol": "MakeWithKind",
+      "ramOrCpuImpact": "Reduced function boilerplate and cyclomatic complexity.",
+      "verifiedByTests": [
+        "DoxygenMarkdownTest",
+        "HoverTest"
+      ]
+    },
+    {
+      "id": "REF-0028",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/rules/RuleIndex.cpp",
+      "deletedLineRange": "815-845",
+      "originalSymbolOrCode": "RuleIndex::BuildPartial(const std::vector<Symbol>&), BuildPartial(const std::vector<const Symbol*>&)",
+      "whatItDidAndWhyInThatFile": "Identical partial rule index construction across Symbol vs const Symbol* collections.",
+      "whyChangedOrDeleted": "Consolidated via BuildPartialImpl template helper.",
+      "replacedByCanonicalFile": "server/src/analysis/rules/RuleIndex.cpp",
+      "replacedByCanonicalSymbol": "BuildPartialImpl",
+      "ramOrCpuImpact": "Eliminated duplicate function body.",
+      "verifiedByTests": [
+        "RuleIndexTest"
+      ]
     }
   ]
 }
+

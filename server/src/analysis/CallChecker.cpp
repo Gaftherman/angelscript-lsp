@@ -7,6 +7,7 @@
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeSanitization.h"
 #include "analysis/ast/SemanticNodes.h"
+#include "analysis/overload/AmbiguityDetector.h"
 #include "analysis/overload/OverloadTypeConversions.h"
 #include "analysis/rules/EngineRuleChecker.h"
 #include "parser/ASTUtils.h"
@@ -119,47 +120,6 @@ SourceRange GetCalleeDiagnosticRange(TSNode callee)
 }
 
 /**
- * @brief What one declaration will accept, in argument counts.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct Arity
-{
-    uint32_t required = 0;
-    uint32_t maximum = 0;
-    bool variadic = false;
-};
-
-/**
- * @brief Calculates arity boundaries of a function signature.
- *
- * @param[in] sig Function signature to inspect.
- * @return Calculated Arity boundaries.
- * @note [REFACTOR-CANDIDATE] Structural overlap (94%) with InspectFunctionArity in
- * server/src/analysis/overload/AmbiguityDetector.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h.
- */
-Arity ArityOf(const FunctionSignature& sig)
-{
-    Arity arity;
-    for (const auto& param : sig.parameters)
-    {
-        // `...` reaches the collector as a parameter with nothing in it but its own text.
-        if (param.name == "..." || param.typeName == "..." || param.typeName.find("...") != std::string::npos)
-        {
-            arity.variadic = true;
-            continue;
-        }
-
-        ++arity.maximum;
-        if (param.defaultValue.empty())
-        {
-            ++arity.required;
-        }
-    }
-    return arity;
-}
-
-/**
  * @brief True when a name also denotes a type, which makes `Name(...)` a construction.
  *
  * `array<int>(5)`, `Foo(1)` and - the one the corpus audit found - `VoteBlocked(this.X)`,
@@ -235,8 +195,8 @@ CandidateSet JudgeAgainst(const std::vector<Symbol>& candidates, uint32_t argume
     {
         result.decided = true;
 
-        const Arity arity = ArityOf(sym.GetFunction());
-        if (argumentCount >= arity.required && (arity.variadic || argumentCount <= arity.maximum))
+        const auto arity = InspectFunctionArity(sym.GetFunction());
+        if (IsArityCompatible(arity, argumentCount))
         {
             result.accepts = true;
             return result;
@@ -1492,8 +1452,8 @@ std::vector<const Symbol*> FilterMatchingArityCandidates(const std::vector<Symbo
     {
         if (std::holds_alternative<FunctionSignature>(sym.signature))
         {
-            const Arity arity = ArityOf(sym.GetFunction());
-            if (argumentCount >= arity.required && (arity.variadic || argumentCount <= arity.maximum))
+            const auto arity = InspectFunctionArity(sym.GetFunction());
+            if (IsArityCompatible(arity, argumentCount))
             {
                 matching.push_back(&sym);
             }
@@ -1900,7 +1860,7 @@ static size_t ResolveParameterIndexForArgument(const FunctionSignature& sig, siz
 
     if (argIdx >= sig.parameters.size())
     {
-        return ArityOf(sig).variadic ? argIdx : size_t(-1);
+        return InspectFunctionArity(sig).isVariadic ? argIdx : size_t(-1);
     }
     return matchedParams.contains(argIdx) ? size_t(-1) : argIdx;
 }

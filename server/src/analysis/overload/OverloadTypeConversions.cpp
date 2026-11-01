@@ -113,14 +113,13 @@ bool CheckConstructorList(const std::shared_ptr<const std::vector<Symbol>>& syms
     }
     return false;
 }
+} // namespace
 
 /**
- * @brief Are template arguments equal.
- * @param[in] aInner Parameter aInner.
- * @param[in] bInner Parameter bInner.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with AreTemplateArgumentsEqual in
- * server/src/analysis/TypeConversionChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @brief Checks if two comma-separated template argument lists have identical types.
+ * @param[in] aInner First template argument list string (e.g. "int, float").
+ * @param[in] bInner Second template argument list string.
+ * @return True if argument counts and corresponding types match.
  */
 bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner)
 {
@@ -143,7 +142,6 @@ bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner)
     }
     return true;
 }
-} // namespace
 
 /**
  * @brief Strip type decorations.

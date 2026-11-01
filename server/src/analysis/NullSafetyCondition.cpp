@@ -1,4 +1,4 @@
-﻿#include "analysis/NullSafetyCondition.h"
+#include "analysis/NullSafetyCondition.h"
 #include "analysis/TypeExtraction.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
@@ -32,65 +32,39 @@ struct BinaryConditionParams
 };
 
 /**
- * @brief Handle equality null check.
- * @param[in] left Parameter left.
- * @param[in] right Parameter right.
- * @param[in] sourceCode Parameter sourceCode.
- * @param[in,out] sink Parameter sink.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with HandleInequalityNullCheck in
- * server/src/analysis/NullSafetyCondition.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @brief Extracts identifier name if one side is null initializer and the other is an identifier.
+ * @param[in] left Left expression AST node.
+ * @param[in] right Right expression AST node.
+ * @param[in] sourceCode Document source code.
+ * @return Extracted identifier name, or empty string if not a null comparison.
  */
-bool HandleEqualityNullCheck(TSNode left, TSNode right, std::string_view sourceCode, AssertionSink& sink)
+std::string ExtractNullComparedIdentifier(TSNode left, TSNode right, std::string_view sourceCode)
 {
-    std::string name;
     if (IsNullInitializer(right))
     {
-        name = GetIdentifierName(left, sourceCode);
+        return GetIdentifierName(left, sourceCode);
     }
-    else if (IsNullInitializer(left))
+    if (IsNullInitializer(left))
     {
-        name = GetIdentifierName(right, sourceCode);
+        return GetIdentifierName(right, sourceCode);
     }
-
-    if (!name.empty())
-    {
-        sink.positive.push_back({name, Nullability::DefinitelyNull});
-        sink.negative.push_back({name, Nullability::NonNull});
-        return true;
-    }
-    return false;
+    return {};
 }
 
 /**
- * @brief Handle inequality null check.
- * @param[in] left Parameter left.
- * @param[in] right Parameter right.
- * @param[in] sourceCode Parameter sourceCode.
- * @param[in,out] sink Parameter sink.
- * @return True if condition met; otherwise false.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with HandleEqualityNullCheck in
- * server/src/analysis/NullSafetyCondition.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
+ * @brief Records null assertions for an equality or inequality comparison against null.
+ * @param[in] name Variable or identifier name.
+ * @param[in,out] sink Positive and negative null assertion targets.
+ * @param[in] isEquality True if comparison is '==' or 'is'; false if '!=' or '!is'.
  */
-bool HandleInequalityNullCheck(TSNode left, TSNode right, std::string_view sourceCode, AssertionSink& sink)
+void ApplyNullComparison(const std::string& name, AssertionSink& sink, bool isEquality)
 {
-    std::string name;
-    if (IsNullInitializer(right))
+    if (name.empty())
     {
-        name = GetIdentifierName(left, sourceCode);
+        return;
     }
-    else if (IsNullInitializer(left))
-    {
-        name = GetIdentifierName(right, sourceCode);
-    }
-
-    if (!name.empty())
-    {
-        sink.positive.push_back({name, Nullability::NonNull});
-        sink.negative.push_back({name, Nullability::DefinitelyNull});
-        return true;
-    }
-    return false;
+    sink.positive.push_back({name, isEquality ? Nullability::DefinitelyNull : Nullability::NonNull});
+    sink.negative.push_back({name, isEquality ? Nullability::NonNull : Nullability::DefinitelyNull});
 }
 
 void ProcessLogicalBinary(const BinaryConditionParams& params, AssertionSink& sink)
@@ -143,11 +117,11 @@ void ProcessBinaryCondition(TSNode condition, std::string_view sourceCode, Asser
     const TSSymbol opSym = ts_node_symbol(opNode);
     if (opSym == gs.tokIs || opSym == gs.tokEqEq)
     {
-        HandleEqualityNullCheck(left, right, sourceCode, sink);
+        ApplyNullComparison(ExtractNullComparedIdentifier(left, right, sourceCode), sink, true);
     }
     else if (opSym == gs.tokBangIs || opSym == gs.tokBangEq)
     {
-        HandleInequalityNullCheck(left, right, sourceCode, sink);
+        ApplyNullComparison(ExtractNullComparedIdentifier(left, right, sourceCode), sink, false);
     }
     else if (opSym == gs.tokAmpAmp || opSym == gs.tokAnd || opSym == gs.tokPipePipe || opSym == gs.tokOr)
     {
