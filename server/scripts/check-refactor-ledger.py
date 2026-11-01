@@ -200,6 +200,7 @@ def check_git_diff(base_commit: str):
         "static_assert",
         "case",
         "default",
+        "operator",
     }
 
     curr_file = ""
@@ -240,6 +241,10 @@ def check_git_diff(base_commit: str):
 
         # Skip comments and member initializer list entries
         if re.match(r"^-\s*(?://|/\*|\*)", line) or re.match(r"^-\s*[:,]", line):
+            continue
+
+        # Skip statements that cannot be function or method declarations
+        if re.match(r"^-\s*(?:return|co_return|throw|goto|delete|new|break|continue)\b", line):
             continue
 
         # 1. Struct and class deletions: never skipped by indentation!

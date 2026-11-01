@@ -84,39 +84,13 @@ std::vector<Symbol> FindTypeDeclarations(std::string_view name, const SymbolTabl
 
 /**
  * @brief The identifier the cursor sits on, or empty when it is not on one.
- * @note [REFACTOR-CANDIDATE] Structural overlap (94%) with IdentifierAt in
- * server/src/features/implementation/ImplementationHandler.cpp. Candidate for unification in
- * server/src/features/common/FeatureSharedUtils.h.
+ * @param[in] request Type hierarchy prepare request details.
+ * @param[out] outNode AST node matching the identifier under the cursor.
+ * @return Extracted identifier text or empty string if not on an identifier.
  */
 std::string IdentifierAt(const TypeHierarchyPrepareRequest& request, TSNode& outNode)
 {
-    outNode = TSNode{};
-    if (!request.tree)
-    {
-        return "";
-    }
-
-    const TSNode root = ts_tree_root_node(request.tree);
-    const TSPoint point{request.position.line, request.position.character};
-    TSNode node = ts_node_descendant_for_point_range(root, point, point);
-    if (ts_node_is_null(node))
-    {
-        return "";
-    }
-
-    outNode = node;
-    if (ts_node_symbol(node) != parser::GetGrammarSymbols().symIdentifier)
-    {
-        return "";
-    }
-
-    const uint32_t start = ts_node_start_byte(node);
-    const uint32_t end = ts_node_end_byte(node);
-    if (start >= end || end > request.sourceCode.size())
-    {
-        return "";
-    }
-    return request.sourceCode.substr(start, end - start);
+    return common::FindIdentifierAtPosition(request.tree, request.position, request.sourceCode, outNode);
 }
 
 static std::vector<Symbol> FindTypeInEnclosingNamespaces(TSNode node, std::string_view text,

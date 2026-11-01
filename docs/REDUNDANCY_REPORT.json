@@ -1,9 +1,9 @@
 {
-  "generatedAt": "2026-11-01T17:28:22Z",
+  "generatedAt": "2026-11-01T17:55:15Z",
   "branch": "refactor/architecture-deduplication-and-ram",
   "description": "Deterministic AST and tokenization audit report covering local C++ structs, pass-1 flag re-evaluations, function similarity, hot struct RAM layout, and Doxygen coverage.",
   "localCppStructs": {
-    "totalLocalStructs": 192,
+    "totalLocalStructs": 191,
     "structs": [
       {
         "file": "server/src/analysis/AccessChecker.cpp",
@@ -1344,8 +1344,8 @@
       },
       {
         "file": "server/src/analysis/NullSafetyExpr.cpp",
-        "startLine": 86,
-        "endLine": 91,
+        "startLine": 71,
+        "endLine": 76,
         "structName": "ExprStackFrame",
         "fields": [
           {
@@ -1671,8 +1671,8 @@
       },
       {
         "file": "server/src/analysis/rules/OperatorRules.cpp",
-        "startLine": 61,
-        "endLine": 65,
+        "startLine": 62,
+        "endLine": 66,
         "structName": "ExpectedOperatorShape",
         "fields": [
           {
@@ -2425,25 +2425,8 @@
       },
       {
         "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "startLine": 1382,
-        "endLine": 1406,
-        "structName": "DiagnosticArgs",
-        "fields": [
-          {
-            "type": "std::string",
-            "name": "first"
-          },
-          {
-            "type": "std::string",
-            "name": "second"
-          }
-        ],
-        "semanticConcepts": []
-      },
-      {
-        "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "startLine": 1687,
-        "endLine": 1704,
+        "startLine": 1635,
+        "endLine": 1652,
         "structName": "DeclaredType",
         "fields": [
           {
@@ -2467,8 +2450,8 @@
       },
       {
         "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "startLine": 2057,
-        "endLine": 2061,
+        "startLine": 2005,
+        "endLine": 2009,
         "structName": "ZeroArgConstructorStatus",
         "fields": [
           {
@@ -2484,8 +2467,8 @@
       },
       {
         "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "startLine": 2588,
-        "endLine": 2592,
+        "startLine": 2536,
+        "endLine": 2540,
         "structName": "AssignmentOperands",
         "fields": [
           {
@@ -3727,8 +3710,8 @@
       },
       {
         "file": "server/src/features/implementation/ImplementationHandler.cpp",
-        "startLine": 61,
-        "endLine": 66,
+        "startLine": 40,
+        "endLine": 45,
         "structName": "SubtypeAccumulator",
         "fields": [
           {
@@ -3748,8 +3731,8 @@
       },
       {
         "file": "server/src/features/implementation/ImplementationHandler.cpp",
-        "startLine": 504,
-        "endLine": 527,
+        "startLine": 483,
+        "endLine": 506,
         "structName": "LocationCollector",
         "fields": [
           {
@@ -3765,8 +3748,8 @@
       },
       {
         "file": "server/src/features/implementation/ImplementationHandler.cpp",
-        "startLine": 533,
-        "endLine": 539,
+        "startLine": 512,
+        "endLine": 518,
         "structName": "MemberImplementationContext",
         "fields": [
           {
@@ -4145,8 +4128,8 @@
       },
       {
         "file": "server/src/features/type_hierarchy/TypeHierarchyHandler.cpp",
-        "startLine": 409,
-        "endLine": 415,
+        "startLine": 383,
+        "endLine": 389,
         "structName": "SubtypeQueryContext",
         "fields": [
           {
@@ -5030,14 +5013,14 @@
       },
       {
         "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "line": 2710,
+        "line": 2658,
         "flagKind": "isHandle",
         "codeSnippet": "bool isHandle = false;",
         "canonicalPass1Source": "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
       },
       {
         "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "line": 4036,
+        "line": 3984,
         "flagKind": "isRef",
         "codeSnippet": "return headText.find('&') != std::string_view::npos;",
         "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
@@ -5087,8 +5070,8 @@
     ]
   },
   "similarFunctionsMatrix": {
-    "totalEvaluatedFunctions": 2507,
-    "similarPairsCount": 153,
+    "totalEvaluatedFunctions": 2503,
+    "similarPairsCount": 145,
     "matrix": [
       {
         "funcA": {
@@ -5108,118 +5091,6 @@
         "similarityScore": 1.0,
         "sharedCalls": [],
         "whatTheyDo": "IsBitwiseOp (evaluates AST node or symbol predicate properties) and IsArithmeticOp (evaluates AST node or symbol predicate properties) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 486,
-          "endLine": 496,
-          "name": "EmitAtNode",
-          "signature": "DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, std::string_vi"
-        },
-        "funcB": {
-          "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 505,
-          "endLine": 515,
-          "name": "EmitAtNode",
-          "signature": "DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, std::string_vi"
-        },
-        "similarityScore": 1.0,
-        "sharedCalls": [
-          "EmitAtRange",
-          "column",
-          "end",
-          "row",
-          "start",
-          "ts_node_end_point",
-          "ts_node_is_null",
-          "ts_node_start_point"
-        ],
-        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, column, end]. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 486,
-          "endLine": 496,
-          "name": "EmitAtNode",
-          "signature": "DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, std::string_vi"
-        },
-        "funcB": {
-          "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 524,
-          "endLine": 534,
-          "name": "EmitAtNode",
-          "signature": "DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, std::initializ"
-        },
-        "similarityScore": 1.0,
-        "sharedCalls": [
-          "EmitAtRange",
-          "column",
-          "end",
-          "row",
-          "start",
-          "ts_node_end_point",
-          "ts_node_is_null",
-          "ts_node_start_point"
-        ],
-        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, column, end]. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 505,
-          "endLine": 515,
-          "name": "EmitAtNode",
-          "signature": "DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, std::string_vi"
-        },
-        "funcB": {
-          "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 524,
-          "endLine": 534,
-          "name": "EmitAtNode",
-          "signature": "DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, std::initializ"
-        },
-        "similarityScore": 1.0,
-        "sharedCalls": [
-          "EmitAtRange",
-          "column",
-          "end",
-          "row",
-          "start",
-          "ts_node_end_point",
-          "ts_node_is_null",
-          "ts_node_start_point"
-        ],
-        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, column, end]. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/NullSafetyChecker.cpp",
-          "startLine": 25,
-          "endLine": 31,
-          "name": "ApplyAssertions",
-          "signature": "ApplyAssertions(FlowState& state, const std::vector<NullAssertion>& assertions)"
-        },
-        "funcB": {
-          "file": "server/src/analysis/NullSafetyExpr.cpp",
-          "startLine": 23,
-          "endLine": 29,
-          "name": "ApplyAssertions",
-          "signature": "ApplyAssertions(FlowState& state, const std::vector<NullAssertion>& assertions)"
-        },
-        "similarityScore": 1.0,
-        "sharedCalls": [
-          "a",
-          "state",
-          "varName",
-          "vars"
-        ],
-        "whatTheyDo": "Both implementations executes ApplyAssertions logic via [a, state, varName]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -5341,93 +5212,6 @@
           "s"
         ],
         "whatTheyDo": "TrimWhitespace (executes TrimWhitespace logic via [back, front, remove_prefix]) and Trim (executes Trim logic via [back, front, remove_prefix]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 468,
-          "endLine": 477,
-          "name": "EmitAtNode",
-          "signature": "DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, DiagnosticSeve"
-        },
-        "funcB": {
-          "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 486,
-          "endLine": 496,
-          "name": "EmitAtNode",
-          "signature": "DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, std::string_vi"
-        },
-        "similarityScore": 0.982,
-        "sharedCalls": [
-          "EmitAtRange",
-          "column",
-          "end",
-          "row",
-          "start",
-          "ts_node_end_point",
-          "ts_node_is_null",
-          "ts_node_start_point"
-        ],
-        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, column, end]. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 468,
-          "endLine": 477,
-          "name": "EmitAtNode",
-          "signature": "DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, DiagnosticSeve"
-        },
-        "funcB": {
-          "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 505,
-          "endLine": 515,
-          "name": "EmitAtNode",
-          "signature": "DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, std::string_vi"
-        },
-        "similarityScore": 0.982,
-        "sharedCalls": [
-          "EmitAtRange",
-          "column",
-          "end",
-          "row",
-          "start",
-          "ts_node_end_point",
-          "ts_node_is_null",
-          "ts_node_start_point"
-        ],
-        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, column, end]. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 468,
-          "endLine": 477,
-          "name": "EmitAtNode",
-          "signature": "DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, DiagnosticSeve"
-        },
-        "funcB": {
-          "file": "server/src/analysis/DiagnosticContext.cpp",
-          "startLine": 524,
-          "endLine": 534,
-          "name": "EmitAtNode",
-          "signature": "DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, std::initializ"
-        },
-        "similarityScore": 0.982,
-        "sharedCalls": [
-          "EmitAtRange",
-          "column",
-          "end",
-          "row",
-          "start",
-          "ts_node_end_point",
-          "ts_node_is_null",
-          "ts_node_start_point"
-        ],
-        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, column, end]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6004,41 +5788,6 @@
       },
       {
         "funcA": {
-          "file": "server/src/features/implementation/ImplementationHandler.cpp",
-          "startLine": 30,
-          "endLine": 55,
-          "name": "IdentifierAt",
-          "signature": "IdentifierAt(const ImplementationRequest& request, TSNode& outNode)"
-        },
-        "funcB": {
-          "file": "server/src/features/type_hierarchy/TypeHierarchyHandler.cpp",
-          "startLine": 91,
-          "endLine": 120,
-          "name": "IdentifierAt",
-          "signature": "IdentifierAt(const TypeHierarchyPrepareRequest& request, TSNode& outNode)"
-        },
-        "similarityScore": 0.94,
-        "sharedCalls": [
-          "character",
-          "line",
-          "position",
-          "request",
-          "size",
-          "sourceCode",
-          "substr",
-          "tree",
-          "ts_node_descendant_for_point_range",
-          "ts_node_end_byte",
-          "ts_node_is_null",
-          "ts_node_start_byte",
-          "ts_node_symbol",
-          "ts_tree_root_node"
-        ],
-        "whatTheyDo": "Both implementations executes IdentifierAt logic via [character, line, position]. Separated due to Layer 3 isolation prohibition between features/implementation and features/type_hierarchy.",
-        "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/analysis/rules/RuleIndex.cpp",
           "startLine": 8,
           "endLine": 13,
@@ -6122,8 +5871,8 @@
         },
         "funcB": {
           "file": "server/src/features/implementation/ImplementationHandler.cpp",
-          "startLine": 267,
-          "endLine": 277,
+          "startLine": 246,
+          "endLine": 256,
           "name": "EnclosingType",
           "signature": "EnclosingType(TSNode node, std::string_view sourceCode)"
         },
@@ -6861,8 +6610,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/TypeConversionChecker.cpp",
-          "startLine": 4374,
-          "endLine": 4405,
+          "startLine": 4322,
+          "endLine": 4353,
           "name": "VisitNode",
           "signature": "VisitNode(TSNode root, const TypeConversionCheckRequest& request, DiagnosticCont"
         },
@@ -7097,8 +6846,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/rules/OperatorRules.cpp",
-          "startLine": 97,
-          "endLine": 104,
+          "startLine": 98,
+          "endLine": 105,
           "name": "ValidateOpIndex",
           "signature": "ValidateOpIndex(const Symbol& sym, const FunctionSignature& sig, const Diagnosti"
         },
@@ -7896,8 +7645,8 @@
         },
         "funcB": {
           "file": "server/src/features/implementation/ImplementationHandler.cpp",
-          "startLine": 284,
-          "endLine": 289,
+          "startLine": 263,
+          "endLine": 268,
           "name": "IsTypeName",
           "signature": "IsTypeName(const std::string& name, const SymbolTable& table)"
         },
@@ -8007,15 +7756,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TypeConversionChecker.cpp",
-          "startLine": 3866,
-          "endLine": 3906,
+          "startLine": 3814,
+          "endLine": 3854,
           "name": "ProcessMemberExpressionNode",
           "signature": "ProcessMemberExpressionNode(TSNode node, const TypeConversionCheckRequest& reque"
         },
         "funcB": {
           "file": "server/src/analysis/TypeConversionChecker.cpp",
-          "startLine": 3916,
-          "endLine": 3953,
+          "startLine": 3864,
+          "endLine": 3901,
           "name": "ProcessIndexExpressionNode",
           "signature": "ProcessIndexExpressionNode(TSNode node, const TypeConversionCheckRequest& reques"
         },
@@ -8024,6 +7773,7 @@
           "EmitAtNode",
           "InspectPropertyAccess",
           "ResolveNodeScope",
+          "ctx",
           "fieldLeft",
           "gs",
           "hasGet",
@@ -8442,8 +8192,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/TypeConversionChecker.cpp",
-          "startLine": 1511,
-          "endLine": 1515,
+          "startLine": 1459,
+          "endLine": 1463,
           "name": "IsSignedNumericPrimitive",
           "signature": "IsSignedNumericPrimitive(std::string_view typeName) noexcept"
         },
@@ -8870,43 +8620,6 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/TypeConversionChecker.cpp",
-          "startLine": 3976,
-          "endLine": 4012,
-          "name": "CheckLambdaReturnStatement",
-          "signature": "CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Scope* scope, D"
-        },
-        "funcB": {
-          "file": "server/src/analysis/TypeConversionChecker.cpp",
-          "startLine": 4099,
-          "endLine": 4150,
-          "name": "CheckFuncDeclarationReturnStatement",
-          "signature": "CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Scope* s"
-        },
-        "similarityScore": 0.715,
-        "sharedCalls": [
-          "CheckFloatTruncation",
-          "CleanBaseType",
-          "EmitAtNode",
-          "ExpressionTypeContext",
-          "IsBareDataType",
-          "IsConvertible",
-          "IsFunctionReference",
-          "NodeText",
-          "ResolveExpressionType",
-          "TrimString",
-          "actual",
-          "ctx",
-          "empty",
-          "expected",
-          "request",
-          "sourceCode"
-        ],
-        "whatTheyDo": "CheckLambdaReturnStatement (validates semantic rules and conditions via [CheckFloatTruncation, CleanBaseType, EmitAtNode]) and CheckFuncDeclarationReturnStatement (validates semantic rules and conditions via [CheckFloatTruncation, CheckReturnReference, CleanBaseType]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
           "startLine": 338,
           "endLine": 343,
@@ -8933,6 +8646,44 @@
           "startLine"
         ],
         "whatTheyDo": "Both implementations constructs and emits diagnostics via [Append, CreateDiagnostic, endCharacter]. Separated due to internal analysis checker boundaries within Layer 2.",
+        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
+          "file": "server/src/analysis/TypeConversionChecker.cpp",
+          "startLine": 3924,
+          "endLine": 3960,
+          "name": "CheckLambdaReturnStatement",
+          "signature": "CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Scope* scope, D"
+        },
+        "funcB": {
+          "file": "server/src/analysis/TypeConversionChecker.cpp",
+          "startLine": 4047,
+          "endLine": 4098,
+          "name": "CheckFuncDeclarationReturnStatement",
+          "signature": "CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Scope* s"
+        },
+        "similarityScore": 0.709,
+        "sharedCalls": [
+          "CheckFloatTruncation",
+          "CleanBaseType",
+          "EmitAtNode",
+          "EmitExpressionIsDataType",
+          "ExpressionTypeContext",
+          "IsBareDataType",
+          "IsConvertible",
+          "IsFunctionReference",
+          "NodeText",
+          "ResolveExpressionType",
+          "TrimString",
+          "actual",
+          "ctx",
+          "empty",
+          "expected",
+          "request",
+          "sourceCode"
+        ],
+        "whatTheyDo": "CheckLambdaReturnStatement (validates semantic rules and conditions via [CheckFloatTruncation, CleanBaseType, EmitAtNode]) and CheckFuncDeclarationReturnStatement (validates semantic rules and conditions via [CheckFloatTruncation, CheckReturnReference, CleanBaseType]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9086,46 +8837,6 @@
       },
       {
         "funcA": {
-          "file": "server/src/features/code_action/CodeActionConstQualifier.cpp",
-          "startLine": 57,
-          "endLine": 92,
-          "name": "TryBuildMissingConstFixForSymbol",
-          "signature": "TryBuildMissingConstFixForSymbol(const CodeActionRequest& request, TSNode rootNo"
-        },
-        "funcB": {
-          "file": "server/src/features/code_action/CodeActionConstQualifier.cpp",
-          "startLine": 242,
-          "endLine": 292,
-          "name": "TryAddConstHandleDiagnosticFix",
-          "signature": "TryAddConstHandleDiagnosticFix(const CodeActionRequest& request, TSNode rootNode"
-        },
-        "similarityScore": 0.685,
-        "sharedCalls": [
-          "action",
-          "changes",
-          "column",
-          "diagnostics",
-          "edit",
-          "gs",
-          "i18n",
-          "insertPt",
-          "isPreferred",
-          "kind",
-          "newText",
-          "range",
-          "request",
-          "row",
-          "title",
-          "ts_node_descendant_for_point_range",
-          "ts_node_is_null",
-          "uri",
-          "wsEdit"
-        ],
-        "whatTheyDo": "TryBuildMissingConstFixForSymbol (formats text representations of symbols via [FindFunctionParametersNode, action, changes]) and TryAddConstHandleDiagnosticFix (constructs and emits diagnostics via [GetNodeText, action, actions]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
           "startLine": 937,
           "endLine": 978,
@@ -9164,6 +8875,46 @@
           "typeName"
         ],
         "whatTheyDo": "ReadParameterTypeInfo (executes ReadParameterTypeInfo logic via [ExtractTypeInfoFromAST, GetNodeText, PopulateTypeRanges]) and ReadVirtualPropertyTypeInfo (executes ReadVirtualPropertyTypeInfo logic via [ExtractTypeInfoFromAST, GetNodeText, PopulateTypeRanges]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
+        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
+          "file": "server/src/features/code_action/CodeActionConstQualifier.cpp",
+          "startLine": 57,
+          "endLine": 92,
+          "name": "TryBuildMissingConstFixForSymbol",
+          "signature": "TryBuildMissingConstFixForSymbol(const CodeActionRequest& request, TSNode rootNo"
+        },
+        "funcB": {
+          "file": "server/src/features/code_action/CodeActionConstQualifier.cpp",
+          "startLine": 242,
+          "endLine": 292,
+          "name": "TryAddConstHandleDiagnosticFix",
+          "signature": "TryAddConstHandleDiagnosticFix(const CodeActionRequest& request, TSNode rootNode"
+        },
+        "similarityScore": 0.685,
+        "sharedCalls": [
+          "action",
+          "changes",
+          "column",
+          "diagnostics",
+          "edit",
+          "gs",
+          "i18n",
+          "insertPt",
+          "isPreferred",
+          "kind",
+          "newText",
+          "range",
+          "request",
+          "row",
+          "title",
+          "ts_node_descendant_for_point_range",
+          "ts_node_is_null",
+          "uri",
+          "wsEdit"
+        ],
+        "whatTheyDo": "TryBuildMissingConstFixForSymbol (formats text representations of symbols via [FindFunctionParametersNode, action, changes]) and TryAddConstHandleDiagnosticFix (constructs and emits diagnostics via [GetNodeText, action, actions]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9835,7 +9586,7 @@
     ]
   },
   "missingDoxygenCatalog": {
-    "missingCount": 21,
+    "missingCount": 16,
     "missing": [
       {
         "file": "server/src/analysis/LocalScopeCollector.cpp",
@@ -9850,39 +9601,9 @@
         "kind": "function"
       },
       {
-        "file": "server/src/analysis/rules/OperatorRules.cpp",
-        "line": 61,
-        "symbolOrSnippet": "struct ExpectedOperatorShape",
-        "kind": "struct"
-      },
-      {
         "file": "server/src/features/completion/CompletionHandler.cpp",
         "line": 2065,
         "symbolOrSnippet": "static size_t SkipInlineWhitespaceBackward(const std::string& text, size_t pos)",
-        "kind": "function"
-      },
-      {
-        "file": "server/src/analysis/DiagnosticContext.cpp",
-        "line": 468,
-        "symbolOrSnippet": "void DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, Diagnosti",
-        "kind": "function"
-      },
-      {
-        "file": "server/src/analysis/DiagnosticContext.cpp",
-        "line": 486,
-        "symbolOrSnippet": "void DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, std::stri",
-        "kind": "function"
-      },
-      {
-        "file": "server/src/analysis/DiagnosticContext.cpp",
-        "line": 505,
-        "symbolOrSnippet": "void DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, std::stri",
-        "kind": "function"
-      },
-      {
-        "file": "server/src/analysis/DiagnosticContext.cpp",
-        "line": 524,
-        "symbolOrSnippet": "void DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, std::init",
         "kind": "function"
       },
       {

@@ -13,21 +13,6 @@ namespace angel_lsp::analysis
 {
 namespace
 {
-/**
- * @brief Apply assertions.
- * @param[in,out] state Parameter state.
- * @param[in] assertions Parameter assertions.
- * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ApplyAssertions in
- * server/src/analysis/NullSafetyChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- */
-void ApplyAssertions(FlowState& state, const std::vector<NullAssertion>& assertions)
-{
-    for (const auto& a : assertions)
-    {
-        state.vars[a.varName] = a.state;
-    }
-}
-
 void CheckMemberDereference(TSNode obj, FlowState& state, NullCheckContext& ctx)
 {
     if (ts_node_is_null(obj))

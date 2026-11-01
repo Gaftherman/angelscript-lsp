@@ -459,78 +459,49 @@ void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,
     Append(std::move(diag));
 }
 
-/**
- * @brief Emits a diagnostic targeting the source range of a Tree-Sitter AST node.
- * @param[in] node AST node defining the diagnostic source range.
- * @param[in] code Diagnostic message code.
- * @param[in] severity Diagnostic severity level.
- */
-void DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, DiagnosticSeverity severity) const
+namespace
 {
-    if (ts_node_is_null(node))
-    {
-        return;
-    }
+SourceRange NodeToRange(TSNode node) noexcept
+{
     const TSPoint start = ts_node_start_point(node);
     const TSPoint end = ts_node_end_point(node);
-    EmitAtRange({start.row, start.column, end.row, end.column}, code, severity);
+    return {start.row, start.column, end.row, end.column};
+}
+} // namespace
+
+void DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, DiagnosticSeverity severity) const
+{
+    if (!ts_node_is_null(node))
+    {
+        EmitAtRange(NodeToRange(node), code, severity);
+    }
 }
 
-/**
- * @brief Emits a diagnostic with one formatted argument targeting an AST node.
- * @param[in] node AST node defining the diagnostic source range.
- * @param[in] code Diagnostic message code.
- * @param[in] arg1 First message argument.
- * @param[in] severity Diagnostic severity level.
- */
 void DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, std::string_view arg1,
                                    DiagnosticSeverity severity) const
 {
-    if (ts_node_is_null(node))
+    if (!ts_node_is_null(node))
     {
-        return;
+        EmitAtRange(NodeToRange(node), code, arg1, severity);
     }
-    const TSPoint start = ts_node_start_point(node);
-    const TSPoint end = ts_node_end_point(node);
-    EmitAtRange({start.row, start.column, end.row, end.column}, code, arg1, severity);
 }
 
-/**
- * @brief Emits a diagnostic with two formatted arguments targeting an AST node.
- * @param[in] node AST node defining the diagnostic source range.
- * @param[in] code Diagnostic message code.
- * @param[in] arg1 First message argument.
- * @param[in] arg2 Second message argument.
- */
 void DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, std::string_view arg1,
                                    std::string_view arg2) const
 {
-    if (ts_node_is_null(node))
+    if (!ts_node_is_null(node))
     {
-        return;
+        EmitAtRange(NodeToRange(node), code, arg1, arg2);
     }
-    const TSPoint start = ts_node_start_point(node);
-    const TSPoint end = ts_node_end_point(node);
-    EmitAtRange({start.row, start.column, end.row, end.column}, code, arg1, arg2);
 }
 
-/**
- * @brief Emits a diagnostic with an initializer list of arguments targeting an AST node.
- * @param[in] node AST node defining the diagnostic source range.
- * @param[in] code Diagnostic message code.
- * @param[in] args Initializer list of message arguments.
- * @param[in] severity Diagnostic severity level.
- */
 void DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, std::initializer_list<std::string_view> args,
                                    DiagnosticSeverity severity) const
 {
-    if (ts_node_is_null(node))
+    if (!ts_node_is_null(node))
     {
-        return;
+        EmitAtRange(NodeToRange(node), code, args, severity);
     }
-    const TSPoint start = ts_node_start_point(node);
-    const TSPoint end = ts_node_end_point(node);
-    EmitAtRange({start.row, start.column, end.row, end.column}, code, args, severity);
 }
 
 // --- Diagnostic Emission with Related Information ---

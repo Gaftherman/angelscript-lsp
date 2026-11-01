@@ -237,7 +237,7 @@
       "action": "UNIFY_FUNCTIONS",
       "sourceFile": "server/src/analysis/ConstChecker.cpp",
       "deletedLineRange": "50-85",
-      "originalSymbolOrCode": "void EmitAtNode(const DiagnosticContext& ctx, TSNode node, ...)",
+      "originalSymbolOrCode": "struct DiagArgs, void EmitAtNode(const DiagnosticContext& ctx, TSNode node, ...)",
       "whatItDidAndWhyInThatFile": "Local helper converting TSNode bounds to DiagnosticContext diagnostic emission.",
       "whyChangedOrDeleted": "Consolidated into canonical DiagnosticContext::EmitAtNode overloads.",
       "replacedByCanonicalFile": "server/src/analysis/DiagnosticContext.h",
@@ -253,7 +253,7 @@
       "action": "UNIFY_FUNCTIONS",
       "sourceFile": "server/src/analysis/SemanticHelpers.cpp",
       "deletedLineRange": "140-210",
-      "originalSymbolOrCode": "ClassifyContainerKind, AppendRawContainers, ComputeContainerQualifiedNames",
+      "originalSymbolOrCode": "ClassifyContainerKind, AppendRawContainers, ComputeContainerQualifiedNames, ClassifyIndexContainerKind, AppendIndexRawContainers, ComputeIndexContainerQualifiedNames",
       "whatItDidAndWhyInThatFile": "Container classification and qualified name resolution duplicated between NodeIndex and SemanticHelpers.",
       "whyChangedOrDeleted": "Centralized in NodeIndex.h/NodeIndex.cpp as canonical container analysis services.",
       "replacedByCanonicalFile": "server/src/analysis/NodeIndex.h",
@@ -270,7 +270,7 @@
       "action": "UNIFY_FUNCTIONS",
       "sourceFile": "server/src/analysis/TypeConversionChecker.cpp",
       "deletedLineRange": "120-145",
-      "originalSymbolOrCode": "TSNode UnwrapParentheses(TSNode node)",
+      "originalSymbolOrCode": "UnwrapParens, TSNode UnwrapParentheses(TSNode node)",
       "whatItDidAndWhyInThatFile": "Recursively unwrapped parenthesized expressions in AST.",
       "whyChangedOrDeleted": "Consolidated into canonical parser::UnwrapParentheses in ASTUtils.h and exported via SemanticHelpers.h.",
       "replacedByCanonicalFile": "server/src/parser/ASTUtils.h",
@@ -287,7 +287,7 @@
       "action": "UNIFY_FUNCTIONS",
       "sourceFile": "server/src/analysis/TypeConversionChecker.cpp",
       "deletedLineRange": "150-185",
-      "originalSymbolOrCode": "bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner)",
+      "originalSymbolOrCode": "AreTemplateArgumentsEqual, bool IsSameType(const std::string& a, const std::string& b)",
       "whatItDidAndWhyInThatFile": "Compared template argument lists element-by-element.",
       "whyChangedOrDeleted": "Unified with canonical implementation in OverloadTypeConversions.h/cpp.",
       "replacedByCanonicalFile": "server/src/analysis/overload/OverloadTypeConversions.h",
@@ -386,7 +386,7 @@
       "action": "UNIFY_FUNCTIONS",
       "sourceFile": "server/src/features/call_hierarchy/CallHierarchyHandler.cpp",
       "deletedLineRange": "25-37",
-      "originalSymbolOrCode": "lsp::Range ToRange(const analysis::SourceRange& range)",
+      "originalSymbolOrCode": "ToRange, ToLspRange, SameRange",
       "whatItDidAndWhyInThatFile": "Local helper converting SourceRange to LSP Range.",
       "whyChangedOrDeleted": "Centralized into Layer 3 shared module features/common/FeatureSharedUtils.h.",
       "replacedByCanonicalFile": "server/src/features/common/FeatureSharedUtils.h",
@@ -482,7 +482,154 @@
       "verifiedByTests": [
         "RuleIndexTest"
       ]
+    },
+    {
+      "id": "REF-0029",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/TypeConversionChecker.cpp",
+      "deletedLineRange": "1378-1465",
+      "originalSymbolOrCode": "struct DiagnosticArgs, void EmitAtNode(...), void EmitWarningAtNode(...)",
+      "whatItDidAndWhyInThatFile": "Local DiagnosticArgs wrapper struct and local EmitAtNode/EmitWarningAtNode helpers in TypeConversionChecker.",
+      "whyChangedOrDeleted": "Consolidated into canonical DiagnosticContext::EmitAtNode and local EmitExpressionIsDataType helper.",
+      "replacedByCanonicalFile": "server/src/analysis/DiagnosticContext.h",
+      "replacedByCanonicalSymbol": "EmitAtNode",
+      "ramOrCpuImpact": "Eliminated duplicate struct and local emission functions; zero extra allocations.",
+      "verifiedByTests": [
+        "TypeConversionTest",
+        "SemanticAnalyzerTest"
+      ]
+    },
+    {
+      "id": "REF-0030",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/NodeIndex.cpp",
+      "deletedLineRange": "500-545",
+      "originalSymbolOrCode": "ClassifyIndexContainerKind, AppendIndexRawContainers, ComputeIndexContainerQualifiedNames",
+      "whatItDidAndWhyInThatFile": "Container classification and container qualified name construction in NodeIndex.",
+      "whyChangedOrDeleted": "Canonicalized under NodeIndex.h/cpp with unified names ClassifyContainerKind, AppendRawContainers, ComputeContainerQualifiedNames.",
+      "replacedByCanonicalFile": "server/src/analysis/NodeIndex.h",
+      "replacedByCanonicalSymbol": "ClassifyContainerKind",
+      "ramOrCpuImpact": "Zero duplicate AST container classification algorithms across NodeIndex and SemanticHelpers.",
+      "verifiedByTests": [
+        "NodeIndexTest",
+        "SemanticHelpersTest"
+      ]
+    },
+    {
+      "id": "REF-0031",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/SemanticAnalyzer.cpp",
+      "deletedLineRange": "1070-1110",
+      "originalSymbolOrCode": "bool IsUnconditionallyNonNullablePrimitive(TypeKind kind)",
+      "whatItDidAndWhyInThatFile": "Checked if a TypeKind represents non-nullable primitive value types.",
+      "whyChangedOrDeleted": "Unified into canonical SymbolTable.h/SemanticHelpers.h function.",
+      "replacedByCanonicalFile": "server/src/analysis/SymbolTable.h",
+      "replacedByCanonicalSymbol": "IsUnconditionallyNonNullablePrimitive",
+      "ramOrCpuImpact": "Zero duplicate primitive type kind predicate branches.",
+      "verifiedByTests": [
+        "SemanticAnalyzerTest",
+        "TypeConversionTest"
+      ]
+    },
+    {
+      "id": "REF-0032",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/rules/ClassRules.cpp",
+      "deletedLineRange": "45-60",
+      "originalSymbolOrCode": "static bool IsInterfaceSymbol(const SymbolTable& table, std::string_view typeName) noexcept",
+      "whatItDidAndWhyInThatFile": "Checked whether a type identifier corresponds to an interface in the symbol table.",
+      "whyChangedOrDeleted": "Replaced with canonical HasSymbolOfType predicate in SemanticHelpers.h.",
+      "replacedByCanonicalFile": "server/src/analysis/SemanticHelpers.h",
+      "replacedByCanonicalSymbol": "HasSymbolOfType",
+      "ramOrCpuImpact": "Eliminated redundant symbol lookup wrapper.",
+      "verifiedByTests": [
+        "ClassRulesTest"
+      ]
+    },
+    {
+      "id": "REF-0033",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/rules/EngineRuleChecker.cpp",
+      "deletedLineRange": "60-95",
+      "originalSymbolOrCode": "bool IsClassMember(const Symbol& sym, const SymbolTable& table), bool IsEnumType(const std::string& typeName, const SymbolTable& table)",
+      "whatItDidAndWhyInThatFile": "Checked if a symbol is a class member or enum type.",
+      "whyChangedOrDeleted": "Replaced with canonical HasContainerOfType and HasSymbolOfType in SemanticHelpers.h.",
+      "replacedByCanonicalFile": "server/src/analysis/SemanticHelpers.h",
+      "replacedByCanonicalSymbol": "HasContainerOfType",
+      "ramOrCpuImpact": "Eliminated duplicate container type checkers in rule index.",
+      "verifiedByTests": [
+        "EngineProfilesTest"
+      ]
+    },
+    {
+      "id": "REF-0034",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/rules/FunctionRules.cpp",
+      "deletedLineRange": "50-80",
+      "originalSymbolOrCode": "bool IsValueOnlyKind(TypeKind kind)",
+      "whatItDidAndWhyInThatFile": "Checked if a TypeKind is exclusively a value type.",
+      "whyChangedOrDeleted": "Unified with canonical IsValueOnlyKind in SymbolTable.h.",
+      "replacedByCanonicalFile": "server/src/analysis/SymbolTable.h",
+      "replacedByCanonicalSymbol": "IsValueOnlyKind",
+      "ramOrCpuImpact": "Eliminated duplicate type predicate logic.",
+      "verifiedByTests": [
+        "FunctionRulesTest"
+      ]
+    },
+    {
+      "id": "REF-0035",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/rules/VariableRules.cpp",
+      "deletedLineRange": "40-65",
+      "originalSymbolOrCode": "bool IsInterfaceMember(const Symbol& sym, const SymbolTable& table)",
+      "whatItDidAndWhyInThatFile": "Checked if a symbol represents an interface member.",
+      "whyChangedOrDeleted": "Replaced with canonical HasContainerOfType in SemanticHelpers.h.",
+      "replacedByCanonicalFile": "server/src/analysis/SemanticHelpers.h",
+      "replacedByCanonicalSymbol": "HasContainerOfType",
+      "ramOrCpuImpact": "Unified interface membership predicate.",
+      "verifiedByTests": [
+        "VariableRulesTest"
+      ]
+    },
+    {
+      "id": "REF-0036",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/NullSafetyChecker.cpp",
+      "deletedLineRange": "18-31",
+      "originalSymbolOrCode": "void ApplyAssertions(FlowState& state, const std::vector<NullAssertion>& assertions)",
+      "whatItDidAndWhyInThatFile": "Applied null assertions to dataflow state variable map.",
+      "whyChangedOrDeleted": "Centralized canonical definition into NullSafetyTypes.h shared header.",
+      "replacedByCanonicalFile": "server/src/analysis/NullSafetyTypes.h",
+      "replacedByCanonicalSymbol": "ApplyAssertions",
+      "ramOrCpuImpact": "Eliminated 100% duplicate function body between NullSafetyChecker and NullSafetyExpr.",
+      "verifiedByTests": [
+        "NullSafetyCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0037",
+      "phase": "R2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/implementation/ImplementationHandler.cpp",
+      "deletedLineRange": "30-55",
+      "originalSymbolOrCode": "std::string IdentifierAt(const ImplementationRequest& request, TSNode& outNode)",
+      "whatItDidAndWhyInThatFile": "Extracted identifier AST node and name located at cursor position.",
+      "whyChangedOrDeleted": "Unified via common::FindIdentifierAtPosition in features/common/FeatureSharedUtils.h.",
+      "replacedByCanonicalFile": "server/src/features/common/FeatureSharedUtils.h",
+      "replacedByCanonicalSymbol": "FindIdentifierAtPosition",
+      "ramOrCpuImpact": "Eliminated 94% duplicate AST cursor lookup algorithm across Implementation and TypeHierarchy handlers.",
+      "verifiedByTests": [
+        "ImplementationTest",
+        "TypeHierarchyTest"
+      ]
     }
   ]
 }
-

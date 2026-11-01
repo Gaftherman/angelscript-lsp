@@ -1376,92 +1376,40 @@ static bool IsFunctionReference(TSNode expr, const Scope* scope, const Diagnosti
 }
 
 /**
- * @brief Represents Diagnostic args.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ * @brief Emits an ExpressionIsDataType diagnostic unless suppressed due to syntax errors in ancestor nodes.
+ * @param[in] node AST expression node.
+ * @param[in] ctx Diagnostic context.
+ * @param[in] dataTypeName Name of the data type used as an expression.
  */
-struct DiagnosticArgs
+static void EmitExpressionIsDataType(TSNode node, const DiagnosticContext& ctx, std::string_view dataTypeName)
 {
-    std::string first{};
-    std::string second{};
-
-    DiagnosticArgs() = default;
-    DiagnosticArgs(std::string_view a1) : first(a1)
+    if (ctx.request.nodeIndex && ctx.request.nodeIndex->NodeHasSyntaxError(node))
     {
+        return;
     }
-    DiagnosticArgs(std::string_view a1, std::string_view a2) : first(a1), second(a2)
-    {
-    }
-    DiagnosticArgs(std::string a1) : first(std::move(a1))
-    {
-    }
-    DiagnosticArgs(std::string a1, std::string a2) : first(std::move(a1)), second(std::move(a2))
-    {
-    }
-    DiagnosticArgs(const char* a1) : first(a1)
-    {
-    }
-    DiagnosticArgs(const char* a1, const char* a2) : first(a1), second(a2)
-    {
-    }
-};
-
-/** @brief Emits at the exact source range of a node. */
-void EmitAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, const DiagnosticArgs& args = {})
-{
-    if (code == diagnostics::codes::ExpressionIsDataType)
-    {
-        if (ctx.request.nodeIndex && ctx.request.nodeIndex->NodeHasSyntaxError(node))
-        {
-            return;
-        }
-        const auto& gs = parser::GetGrammarSymbols();
-        bool skip = false;
-        parser::ForEachAncestor(node,
-                                [&](TSNode walk) -> bool
+    const auto& gs = parser::GetGrammarSymbols();
+    bool skip = false;
+    parser::ForEachAncestor(node,
+                            [&](TSNode walk) -> bool
+                            {
+                                if (ts_node_has_error(walk) || ts_node_is_error(walk))
                                 {
-                                    if (ts_node_has_error(walk) || ts_node_is_error(walk))
-                                    {
-                                        skip = true;
-                                        return false;
-                                    }
-                                    TSSymbol sym = ts_node_symbol(walk);
-                                    if (sym == gs.symIfStatement || sym == gs.symWhileStatement ||
-                                        sym == gs.symForStatement)
-                                    {
-                                        skip = true;
-                                        return false;
-                                    }
-                                    return true;
-                                });
-        if (skip)
-        {
-            return;
-        }
+                                    skip = true;
+                                    return false;
+                                }
+                                TSSymbol sym = ts_node_symbol(walk);
+                                if (sym == gs.symIfStatement || sym == gs.symWhileStatement ||
+                                    sym == gs.symForStatement)
+                                {
+                                    skip = true;
+                                    return false;
+                                }
+                                return true;
+                            });
+    if (!skip)
+    {
+        ctx.EmitAtNode(node, diagnostics::codes::ExpressionIsDataType, dataTypeName);
     }
-    const TSPoint start = ts_node_start_point(node);
-    const TSPoint end = ts_node_end_point(node);
-    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code, {args.first, args.second},
-                    DiagnosticSeverity::Error);
-}
-
-/**
- * @brief Emit warning at node.
- * @param[in] node Parameter node.
- * @param[in,out] ctx Parameter ctx.
- * @param[in] code Parameter code.
- * @note [REFACTOR-CANDIDATE] Structural overlap (89%) with EmitAtNode in server/src/analysis/ControlFlowChecker.cpp.
- * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (89%) with EmitAtNode in
- * server/src/analysis/InitializerListChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- * Structural overlap (89%) with EmitAtNode in server/src/analysis/IsolationChecker.cpp. Candidate for unification in
- * server/src/analysis/SemanticHelpers.h. Structural overlap (84%) with EmitAtNode in
- * server/src/analysis/ConstChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
- */
-void EmitWarningAtNode(TSNode node, DiagnosticContext& ctx, std::string_view code, const DiagnosticArgs& args = {})
-{
-    const TSPoint start = ts_node_start_point(node);
-    const TSPoint end = ts_node_end_point(node);
-    ctx.EmitAtRange({start.row, start.column, end.row, end.column}, code, {args.first, args.second},
-                    DiagnosticSeverity::Warning);
 }
 
 // --- Numeric conversion warnings (TYPE-03) -------------------------------------------
@@ -1656,7 +1604,7 @@ void CheckSignedUnsignedComparison(TSNode node, const Scope* scope, DiagnosticCo
         return;
     }
 
-    EmitWarningAtNode(opNode, ctx, "as-warn-signed-unsigned-mismatch", {leftType, rightType});
+    ctx.EmitAtNode(opNode, "as-warn-signed-unsigned-mismatch", {leftType, rightType}, DiagnosticSeverity::Warning);
 }
 
 /**
@@ -1676,7 +1624,7 @@ void CheckFloatTruncation(TSNode valueNode, const ConversionTypes& types, const 
     {
         return;
     }
-    EmitWarningAtNode(valueNode, ctx, "as-warn-float-truncation", {types.from, types.to});
+    ctx.EmitAtNode(valueNode, "as-warn-float-truncation", {types.from, types.to}, DiagnosticSeverity::Warning);
 }
 
 /**
@@ -1788,18 +1736,18 @@ void CheckUnknownInitializerSource(TSNode valueNode, const DeclaredType& declare
                        });
     if (isTypeOrTemplate)
     {
-        EmitAtNode(valueNode, ctx, diagnostics::codes::ExpressionIsDataType, identName);
+        EmitExpressionIsDataType(valueNode, ctx, identName);
         return;
     }
     if (isNamespace)
     {
-        EmitAtNode(valueNode, ctx, "as-err-undefined-identifier", identName);
+        ctx.EmitAtNode(valueNode, "as-err-undefined-identifier", identName);
         return;
     }
 
     if (!FindFuncdef(declared.baseName, ctx.request.symbolTable) && IsFunctionReference(valueNode, scope, ctx))
     {
-        EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", {identName, declared.baseName});
+        ctx.EmitAtNode(valueNode, "as-err-no-implicit-conversion", {identName, declared.baseName});
     }
 }
 
@@ -1812,14 +1760,14 @@ void CheckHandleInitializer(TSNode valueNode, const ExpressionType& source, cons
     }
     if (source.isLiteral)
     {
-        EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", {source.baseName, declared.baseName});
+        ctx.EmitAtNode(valueNode, "as-err-no-implicit-conversion", {source.baseName, declared.baseName});
         return;
     }
 
     if (source.isConst && !declared.qualifiers.isConst)
     {
-        EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion",
-                   {"const " + source.baseName + "@", declared.baseName + "@"});
+        ctx.EmitAtNode(valueNode, "as-err-no-implicit-conversion",
+                       {"const " + source.baseName + "@", declared.baseName + "@"});
         return;
     }
 
@@ -1835,8 +1783,8 @@ void CheckHandleInitializer(TSNode valueNode, const ExpressionType& source, cons
         const auto hierarchy = GetInheritedTypeHierarchy(declared.baseName, ctx.request.symbolTable);
         if (std::find(hierarchy.begin(), hierarchy.end(), source.baseName) != hierarchy.end())
         {
-            EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion",
-                       {source.baseName + "@", declared.baseName + "@"});
+            ctx.EmitAtNode(valueNode, "as-err-no-implicit-conversion",
+                           {source.baseName + "@", declared.baseName + "@"});
         }
     }
 }
@@ -1852,7 +1800,7 @@ void CheckInitializer(TSNode declaratorNode, const DeclaredType& declared, const
 
     if (const auto dataTypeName = IsBareDataType(valueNode, scope, ctx.request.symbolTable, ctx.request.sourceCode))
     {
-        EmitAtNode(valueNode, ctx, diagnostics::codes::ExpressionIsDataType, *dataTypeName);
+        EmitExpressionIsDataType(valueNode, ctx, *dataTypeName);
         return;
     }
 
@@ -1879,7 +1827,7 @@ void CheckInitializer(TSNode declaratorNode, const DeclaredType& declared, const
 
     if (!IsConvertible(source.baseName, declared.baseName, ctx))
     {
-        EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion", {source.baseName, declared.baseName});
+        ctx.EmitAtNode(valueNode, "as-err-no-implicit-conversion", {source.baseName, declared.baseName});
     }
 }
 
@@ -1955,7 +1903,7 @@ bool CheckEnumConstruction(TSNode argument, const std::string& sourceBase, const
     }
     if (!IsNumericPrimitive(sourceBase) && !ResolvesToEnum(sourceBase, table))
     {
-        EmitAtNode(argument, ctx, "as-err-no-explicit-conversion", {sourceBase, targetType});
+        ctx.EmitAtNode(argument, "as-err-no-explicit-conversion", {sourceBase, targetType});
     }
     return true;
 }
@@ -2046,7 +1994,7 @@ void CheckConstruction(TSNode argumentListNode, const std::string& targetType, c
 
     if (!IsConstructibleFrom(source.baseName, targetType, binding, ctx))
     {
-        EmitAtNode(argument, ctx, "as-err-no-explicit-conversion", {source.baseName, targetType});
+        ctx.EmitAtNode(argument, "as-err-no-explicit-conversion", {source.baseName, targetType});
     }
 }
 
@@ -2126,11 +2074,11 @@ void CheckDefaultConstructor(TSNode declaratorNode, const std::string& typeName,
 
     if (isDeleted)
     {
-        EmitAtNode(targetNode, ctx, "as-err-deleted-method-called", {typeName, typeName});
+        ctx.EmitAtNode(targetNode, "as-err-deleted-method-called", {typeName, typeName});
     }
     else if (!hasZeroArg && !ctx.request.AlwaysImplementsDefaultConstruct())
     {
-        EmitAtNode(targetNode, ctx, "as-err-no-default-constructor", {typeName});
+        ctx.EmitAtNode(targetNode, "as-err-no-default-constructor", {typeName});
     }
 }
 
@@ -2261,7 +2209,7 @@ bool CheckLambdaFuncdefAssignment(TSNode targetNode, const FuncdefSignature& fun
     if (!ts_node_is_null(listNode) && LambdaContradictsFuncdef(ReadLambdaParameters(listNode, ctx.request.sourceCode),
                                                                funcdefSig, ctx.request.symbolTable))
     {
-        EmitAtNode(targetNode, ctx, "as-err-signature-mismatch-func-handle");
+        ctx.EmitAtNode(targetNode, "as-err-signature-mismatch-func-handle");
     }
     return true;
 }
@@ -2295,7 +2243,7 @@ void CheckNamedFunctionFuncdefAssignment(TSNode targetNode, const FuncdefSignatu
 
     if (!HasMatchingFuncdefCandidate(candidates, funcdefSig))
     {
-        EmitAtNode(targetNode, ctx, "as-err-signature-mismatch-func-handle");
+        ctx.EmitAtNode(targetNode, "as-err-signature-mismatch-func-handle");
     }
 }
 
@@ -2331,7 +2279,7 @@ void CheckConstructorDelegationStatement(TSNode stmt, const std::string& classNa
         TSNode callee = parser::GetCallCallee(expr);
         if (!ts_node_is_null(callee) && NodeText(callee, ctx.request.sourceCode) == className)
         {
-            EmitAtNode(expr, ctx, "as-err-constructor-delegation-disallowed");
+            ctx.EmitAtNode(expr, "as-err-constructor-delegation-disallowed");
         }
     }
 }
@@ -2440,7 +2388,7 @@ void CheckCast(TSNode castNode, const Scope* scope, DiagnosticContext& ctx)
         return;
     }
 
-    EmitAtNode(castNode, ctx, "as-err-invalid-cast", {source.baseName, targetName});
+    ctx.EmitAtNode(castNode, "as-err-invalid-cast", {source.baseName, targetName});
 }
 
 bool ClassDeclaresMethodReturningBool(const std::string& cls, const std::string& method, const SymbolTable& table)
@@ -2737,7 +2685,7 @@ void CheckRefTypeBoolConversion(TSNode condNode, const Scope* scope, DiagnosticC
         {
             if (CleanBaseType(sym.GetFunction().returnType) == "bool")
             {
-                EmitAtNode(current, ctx, "as-err-ref-type-bool-conv-disallowed", {baseClass, "bool"});
+                ctx.EmitAtNode(current, "as-err-ref-type-bool-conv-disallowed", {baseClass, "bool"});
                 break;
             }
         }
@@ -2828,12 +2776,12 @@ void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, 
     const Scope* scope = ResolveNodeScope(node, request);
     if (const auto dt1 = IsBareDataType(consequence, scope, ctx.request.symbolTable, request.sourceCode))
     {
-        EmitAtNode(consequence, ctx, diagnostics::codes::ExpressionIsDataType, *dt1);
+        EmitExpressionIsDataType(consequence, ctx, *dt1);
         return;
     }
     if (const auto dt2 = IsBareDataType(alternative, scope, ctx.request.symbolTable, request.sourceCode))
     {
-        EmitAtNode(alternative, ctx, diagnostics::codes::ExpressionIsDataType, *dt2);
+        EmitExpressionIsDataType(alternative, ctx, *dt2);
         return;
     }
 
@@ -2845,14 +2793,14 @@ void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, 
 
     if (IsFunctionReference(consequence, scope, ctx))
     {
-        EmitAtNode(consequence, ctx, "as-err-no-implicit-conversion",
-                   {TrimString(NodeText(consequence, request.sourceCode)), clean2});
+        ctx.EmitAtNode(consequence, "as-err-no-implicit-conversion",
+                       {TrimString(NodeText(consequence, request.sourceCode)), clean2});
         return;
     }
     if (IsFunctionReference(alternative, scope, ctx))
     {
-        EmitAtNode(alternative, ctx, "as-err-no-implicit-conversion",
-                   {TrimString(NodeText(alternative, request.sourceCode)), clean1});
+        ctx.EmitAtNode(alternative, "as-err-no-implicit-conversion",
+                       {TrimString(NodeText(alternative, request.sourceCode)), clean1});
         return;
     }
 
@@ -2863,7 +2811,7 @@ void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, 
 
     if (AreTernaryBranchesIncompatible(clean1, clean2, ctx))
     {
-        EmitAtNode(alternative, ctx, "as-err-no-implicit-conversion", {clean2, clean1});
+        ctx.EmitAtNode(alternative, "as-err-no-implicit-conversion", {clean2, clean1});
     }
 }
 
@@ -2884,13 +2832,13 @@ void ProcessExpressionStatementNode(TSNode node, const TypeConversionCheckReques
     const Scope* scope = ResolveNodeScope(node, request);
     if (const auto dataTypeName = IsBareDataType(expr, scope, ctx.request.symbolTable, request.sourceCode))
     {
-        EmitAtNode(expr, ctx, diagnostics::codes::ExpressionIsDataType, *dataTypeName);
+        EmitExpressionIsDataType(expr, ctx, *dataTypeName);
         return;
     }
 
     if (IsFunctionReference(expr, scope, ctx))
     {
-        EmitAtNode(expr, ctx, diagnostics::codes::IllegalOperation);
+        ctx.EmitAtNode(expr, diagnostics::codes::IllegalOperation);
         return;
     }
 
@@ -2910,7 +2858,7 @@ void ProcessExpressionStatementNode(TSNode node, const TypeConversionCheckReques
             }
             if (onlyNs)
             {
-                EmitAtNode(expr, ctx, "as-err-undefined-identifier", text);
+                ctx.EmitAtNode(expr, "as-err-undefined-identifier", text);
             }
         }
     }
@@ -2978,7 +2926,7 @@ void ProcessForeachNode(TSNode node, const TypeConversionCheckRequest& request, 
     const std::string containerBase = CleanExpressionType(containerType);
     if (IsCorePrimitive(containerBase) && containerBase != "auto" && containerBase != "void")
     {
-        EmitAtNode(collection, ctx, "as-err-invalid-foreach-container", containerBase);
+        ctx.EmitAtNode(collection, "as-err-invalid-foreach-container", containerBase);
     }
 
     if (!containerType.empty() && request.mutableScopeRoot)
@@ -3161,20 +3109,20 @@ void ProcessAutoDeclarator(TSNode child, const TypeConversionCheckRequest& reque
 
     if (ts_node_is_null(valueNode))
     {
-        EmitAtNode(child, ctx, "as-err-auto-requires-initializer");
+        ctx.EmitAtNode(child, "as-err-auto-requires-initializer");
         return;
     }
 
     const Scope* scope = ResolveNodeScope(child, request);
     if (IsCyclicAutoDependency(valueNode, nameNode, scope, request.sourceCode))
     {
-        EmitAtNode(valueNode, ctx, "as-err-cyclic-auto-dependency", varName);
+        ctx.EmitAtNode(valueNode, "as-err-cyclic-auto-dependency", varName);
         return;
     }
 
     if (const auto dataTypeName = IsBareDataType(valueNode, scope, ctx.request.symbolTable, request.sourceCode))
     {
-        EmitAtNode(valueNode, ctx, diagnostics::codes::ExpressionIsDataType, *dataTypeName);
+        EmitExpressionIsDataType(valueNode, ctx, *dataTypeName);
         return;
     }
 
@@ -3182,11 +3130,11 @@ void ProcessAutoDeclarator(TSNode child, const TypeConversionCheckRequest& reque
 
     if (rhsType == "void")
     {
-        EmitAtNode(valueNode, ctx, "as-err-cannot-infer-void");
+        ctx.EmitAtNode(valueNode, "as-err-cannot-infer-void");
     }
     else if (rhsType == "null")
     {
-        EmitAtNode(valueNode, ctx, "as-err-cannot-infer-null");
+        ctx.EmitAtNode(valueNode, "as-err-cannot-infer-null");
     }
     else if (!rhsType.empty() && request.mutableScopeRoot && scope)
     {
@@ -3235,7 +3183,7 @@ void CheckDeclaratorConstruction(TSNode child, const DeclaredType& declared, con
     const NonInstantiableKind nonInst = ClassifyNonInstantiable(declared.baseName, ctx.request.symbolTable);
     if (nonInst == NonInstantiableKind::Abstract)
     {
-        EmitAtNode(child, ctx, "as-err-abstract-instantiated", {declared.baseName, declared.baseName});
+        ctx.EmitAtNode(child, "as-err-abstract-instantiated", {declared.baseName, declared.baseName});
         return;
     }
 
@@ -3358,11 +3306,11 @@ void CheckAssignmentPropertyAccess(TSNode node, const Scope* scope, DiagnosticCo
         {
             if (opSym != gs.tokAssign)
             {
-                EmitAtNode(node, ctx, "as-err-compound-assign-on-indexed-prop", pInfo.propName);
+                ctx.EmitAtNode(node, "as-err-compound-assign-on-indexed-prop", pInfo.propName);
             }
             if (!pInfo.hasSet && pInfo.hasGet)
             {
-                EmitAtNode(left, ctx, "as-err-read-only-property", pInfo.propName);
+                ctx.EmitAtNode(left, "as-err-read-only-property", pInfo.propName);
             }
         }
     }
@@ -3373,11 +3321,11 @@ void CheckAssignmentPropertyAccess(TSNode node, const Scope* scope, DiagnosticCo
         {
             if (!pInfo.hasSet && pInfo.hasGet)
             {
-                EmitAtNode(left, ctx, "as-err-read-only-property", pInfo.propName);
+                ctx.EmitAtNode(left, "as-err-read-only-property", pInfo.propName);
             }
             else if (opSym != gs.tokAssign && !IsHandleTypeView(pInfo.receiverType))
             {
-                EmitAtNode(node, ctx, "as-err-compound-assign-on-value-prop", pInfo.propName);
+                ctx.EmitAtNode(node, "as-err-compound-assign-on-value-prop", pInfo.propName);
             }
         }
     }
@@ -3463,7 +3411,7 @@ void CheckHandleConstAssignment(AssignmentOperands operands, const ConversionTyp
     const bool leftConstTarget = leftVal.isConst;
     if (rightConstTarget && !leftConstTarget && !types.from.empty() && !types.to.empty())
     {
-        EmitAtNode(operands.right, ctx, "as-err-no-implicit-conversion", {"const " + types.from + "@", types.to + "@"});
+        ctx.EmitAtNode(operands.right, "as-err-no-implicit-conversion", {"const " + types.from + "@", types.to + "@"});
     }
 }
 
@@ -3489,7 +3437,7 @@ void CheckAssignmentOperatorConversion(TSNode node, TSNode right, const Conversi
             if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature) &&
                 sym.GetFunction().modifiers.isDelete)
             {
-                EmitAtNode(node, ctx, "as-err-deleted-method-called", {types.to, "opAssign"});
+                ctx.EmitAtNode(node, "as-err-deleted-method-called", {types.to, "opAssign"});
                 break;
             }
         }
@@ -3505,7 +3453,7 @@ void CheckAssignmentOperatorConversion(TSNode node, TSNode right, const Conversi
         const bool operatorHandlesIt = DeclaresOperatorMethod(types.to, overload, ctx.request.symbolTable);
         if (!operatorHandlesIt && !IsConvertible(types.from, types.to, ctx))
         {
-            EmitAtNode(right, ctx, "as-err-no-implicit-conversion", {types.from, types.to});
+            ctx.EmitAtNode(right, "as-err-no-implicit-conversion", {types.from, types.to});
         }
     }
 }
@@ -3626,7 +3574,7 @@ static bool CheckNullAssignmentToNonHandle(TSNode node, TSNode right, const std:
 
     if (!TypeAcceptsNullHandle(rawLeftType, ctx.request.symbolTable))
     {
-        EmitAtNode(right, ctx, "as-err-null-non-handle", rawLeftType);
+        ctx.EmitAtNode(right, "as-err-null-non-handle", rawLeftType);
         return true;
     }
     return true;
@@ -3648,7 +3596,7 @@ static bool CheckRightSideNamespaceOnly(TSNode right, DiagnosticContext& ctx)
                 return false;
             }
         }
-        EmitAtNode(right, ctx, "as-err-undefined-identifier", rightIdent);
+        ctx.EmitAtNode(right, "as-err-undefined-identifier", rightIdent);
         return true;
     }
     return false;
@@ -3672,12 +3620,12 @@ void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& reques
     const Scope* scope = ResolveNodeScope(node, request);
     if (const auto dt = IsBareDataType(left, scope, ctx.request.symbolTable, ctx.request.sourceCode))
     {
-        EmitAtNode(left, ctx, diagnostics::codes::ExpressionIsDataType, *dt);
+        EmitExpressionIsDataType(left, ctx, *dt);
         return;
     }
     if (const auto dt = IsBareDataType(right, scope, ctx.request.symbolTable, ctx.request.sourceCode))
     {
-        EmitAtNode(right, ctx, diagnostics::codes::ExpressionIsDataType, *dt);
+        EmitExpressionIsDataType(right, ctx, *dt);
         return;
     }
 
@@ -3710,8 +3658,8 @@ void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& reques
     }
     else if (types.from.empty() && IsFunctionReference(right, scope, ctx))
     {
-        EmitAtNode(right, ctx, "as-err-no-implicit-conversion",
-                   {TrimString(NodeText(right, ctx.request.sourceCode)), types.to});
+        ctx.EmitAtNode(right, "as-err-no-implicit-conversion",
+                       {TrimString(NodeText(right, ctx.request.sourceCode)), types.to});
     }
 
     CheckHandleConstAssignment({left, right}, types, scope, ctx);
@@ -3786,7 +3734,7 @@ static bool CheckUnaryInvalidOperand(TSNode node, TSNode operand, const Scope* s
     }
     if (const auto dt = IsBareDataType(operand, scope, ctx.request.symbolTable, ctx.request.sourceCode))
     {
-        EmitAtNode(operand, ctx, diagnostics::codes::ExpressionIsDataType, *dt);
+        EmitExpressionIsDataType(operand, ctx, *dt);
         return true;
     }
     const auto& gs = parser::GetGrammarSymbols();
@@ -3797,7 +3745,7 @@ static bool CheckUnaryInvalidOperand(TSNode node, TSNode operand, const Scope* s
     }
     if (IsFunctionReference(operand, scope, ctx))
     {
-        EmitAtNode(node, ctx, diagnostics::codes::IllegalOperation);
+        ctx.EmitAtNode(node, diagnostics::codes::IllegalOperation);
         return true;
     }
     return false;
@@ -3839,7 +3787,7 @@ void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& re
             PropertyAccessInfo pInfo = InspectPropertyAccess(arrayNode, scope, ctx);
             if (pInfo.isProperty && pInfo.isIndexed)
             {
-                EmitAtNode(node, ctx, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
+                ctx.EmitAtNode(node, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
                 return;
             }
         }
@@ -3848,7 +3796,7 @@ void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& re
             PropertyAccessInfo pInfo = InspectPropertyAccess(unwrapped, scope, ctx);
             if (pInfo.isProperty)
             {
-                EmitAtNode(node, ctx, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
+                ctx.EmitAtNode(node, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
                 return;
             }
         }
@@ -3900,7 +3848,7 @@ void ProcessMemberExpressionNode(TSNode node, const TypeConversionCheckRequest& 
         PropertyAccessInfo pInfo = InspectPropertyAccess(node, scope, ctx);
         if (pInfo.isProperty && !pInfo.hasGet && pInfo.hasSet)
         {
-            EmitAtNode(node, ctx, "as-err-write-only-property", pInfo.propName);
+            ctx.EmitAtNode(node, "as-err-write-only-property", pInfo.propName);
         }
     }
 }
@@ -3947,7 +3895,7 @@ void ProcessIndexExpressionNode(TSNode node, const TypeConversionCheckRequest& r
         PropertyAccessInfo pInfo = InspectPropertyAccess(arrayNode, scope, ctx);
         if (pInfo.isProperty && pInfo.isIndexed && !pInfo.hasGet && pInfo.hasSet)
         {
-            EmitAtNode(node, ctx, "as-err-write-only-property", pInfo.propName);
+            ctx.EmitAtNode(node, "as-err-write-only-property", pInfo.propName);
         }
     }
 }
@@ -3984,7 +3932,7 @@ void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Scope* sco
     const std::string expected = CleanBaseType(target->GetFuncdef().returnType);
     if (expected == "void")
     {
-        EmitAtNode(expr, ctx, "as-err-void-return-value");
+        ctx.EmitAtNode(expr, "as-err-void-return-value");
         return;
     }
 
@@ -3992,13 +3940,13 @@ void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Scope* sco
     {
         if (const auto dataTypeName = IsBareDataType(expr, scope, ctx.request.symbolTable, ctx.request.sourceCode))
         {
-            EmitAtNode(expr, ctx, diagnostics::codes::ExpressionIsDataType, *dataTypeName);
+            EmitExpressionIsDataType(expr, ctx, *dataTypeName);
             return;
         }
         if (IsFunctionReference(expr, scope, ctx))
         {
-            EmitAtNode(expr, ctx, "as-err-no-implicit-conversion",
-                       {TrimString(NodeText(expr, ctx.request.sourceCode)), expected});
+            ctx.EmitAtNode(expr, "as-err-no-implicit-conversion",
+                           {TrimString(NodeText(expr, ctx.request.sourceCode)), expected});
             return;
         }
 
@@ -4006,7 +3954,7 @@ void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Scope* sco
         CheckFloatTruncation(expr, {actual, expected}, scope, ctx);
         if (!actual.empty() && actual != expected && !IsConvertible(actual, expected, ctx))
         {
-            EmitAtNode(expr, ctx, "as-err-no-implicit-conversion", {actual, expected});
+            ctx.EmitAtNode(expr, "as-err-no-implicit-conversion", {actual, expected});
         }
     }
 }
@@ -4079,11 +4027,11 @@ void CheckReturnReference(TSNode expr, TSNode funcNode, const Scope* scope, Diag
 
     if (def->kind == LocalDefinitionKind::Parameter)
     {
-        EmitAtNode(expr, ctx, "as-err-cannot-return-param-ref", exprText);
+        ctx.EmitAtNode(expr, "as-err-cannot-return-param-ref", exprText);
     }
     else if (def->kind == LocalDefinitionKind::Variable)
     {
-        EmitAtNode(expr, ctx, "as-err-cannot-return-local-ref", exprText);
+        ctx.EmitAtNode(expr, "as-err-cannot-return-local-ref", exprText);
     }
 }
 
@@ -4117,7 +4065,7 @@ void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Sco
     const std::string expected = CleanBaseType(rawRetText);
     if (expected == "void")
     {
-        EmitAtNode(expr, ctx, "as-err-void-return-value");
+        ctx.EmitAtNode(expr, "as-err-void-return-value");
         return;
     }
 
@@ -4125,13 +4073,13 @@ void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Sco
     {
         if (const auto dataTypeName = IsBareDataType(expr, scope, ctx.request.symbolTable, ctx.request.sourceCode))
         {
-            EmitAtNode(expr, ctx, diagnostics::codes::ExpressionIsDataType, *dataTypeName);
+            EmitExpressionIsDataType(expr, ctx, *dataTypeName);
             return;
         }
         if (IsFunctionReference(expr, scope, ctx))
         {
-            EmitAtNode(expr, ctx, "as-err-no-implicit-conversion",
-                       {TrimString(NodeText(expr, ctx.request.sourceCode)), expected});
+            ctx.EmitAtNode(expr, "as-err-no-implicit-conversion",
+                           {TrimString(NodeText(expr, ctx.request.sourceCode)), expected});
             return;
         }
 
@@ -4144,7 +4092,7 @@ void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Sco
         CheckFloatTruncation(expr, {actual, expected}, scope, ctx);
         if (!actual.empty() && actual != expected && !IsConvertible(actual, expected, ctx))
         {
-            EmitAtNode(expr, ctx, "as-err-no-implicit-conversion", {actual, expected});
+            ctx.EmitAtNode(expr, "as-err-no-implicit-conversion", {actual, expected});
         }
     }
 }
@@ -4223,11 +4171,11 @@ void ProcessCallOrConstructNode(TSNode node, const TypeConversionCheckRequest& r
     const NonInstantiableKind calleeNonInst = ClassifyNonInstantiable(calleeName, ctx.request.symbolTable);
     if (calleeNonInst == NonInstantiableKind::Abstract)
     {
-        EmitAtNode(node, ctx, "as-err-abstract-instantiated", {calleeName, calleeName});
+        ctx.EmitAtNode(node, "as-err-abstract-instantiated", {calleeName, calleeName});
     }
     else if (calleeNonInst == NonInstantiableKind::Mixin)
     {
-        EmitAtNode(node, ctx, "as-err-mixin-not-a-type", calleeName);
+        ctx.EmitAtNode(node, "as-err-mixin-not-a-type", calleeName);
     }
     else if (calleeFuncdef)
     {

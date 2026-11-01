@@ -79,10 +79,41 @@ struct DiagnosticContext
                      DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
 
     // --- Diagnostic Emission for TSNode ---
+
+    /**
+     * @brief Emits a diagnostic targeting the source range of a Tree-Sitter AST node.
+     * @param[in] node AST node defining the diagnostic source range.
+     * @param[in] code Diagnostic message code.
+     * @param[in] severity Diagnostic severity level.
+     */
     void EmitAtNode(TSNode node, std::string_view code, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+
+    /**
+     * @brief Emits a diagnostic with one formatted argument targeting an AST node.
+     * @param[in] node AST node defining the diagnostic source range.
+     * @param[in] code Diagnostic message code.
+     * @param[in] arg1 First message argument.
+     * @param[in] severity Diagnostic severity level.
+     */
     void EmitAtNode(TSNode node, std::string_view code, std::string_view arg1,
                     DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+
+    /**
+     * @brief Emits a diagnostic with two formatted arguments targeting an AST node.
+     * @param[in] node AST node defining the diagnostic source range.
+     * @param[in] code Diagnostic message code.
+     * @param[in] arg1 First message argument.
+     * @param[in] arg2 Second message argument.
+     */
     void EmitAtNode(TSNode node, std::string_view code, std::string_view arg1, std::string_view arg2) const;
+
+    /**
+     * @brief Emits a diagnostic with an initializer list of arguments targeting an AST node.
+     * @param[in] node AST node defining the diagnostic source range.
+     * @param[in] code Diagnostic message code.
+     * @param[in] args Initializer list of message arguments.
+     * @param[in] severity Diagnostic severity level.
+     */
     void EmitAtNode(TSNode node, std::string_view code, std::initializer_list<std::string_view> args,
                     DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
 

@@ -5,6 +5,7 @@
 #include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
+#include <vector>
 
 namespace angel_lsp::analysis
 {
@@ -50,5 +51,18 @@ struct NullAssertion
     std::string varName;
     Nullability state = Nullability::Nullable;
 };
+
+/**
+ * @brief Applies null assertion outcomes to a dataflow state.
+ * @param[in,out] state Dataflow state tracking handle nullability.
+ * @param[in] assertions List of extracted null assertions to apply.
+ */
+inline void ApplyAssertions(FlowState& state, const std::vector<NullAssertion>& assertions)
+{
+    for (const auto& a : assertions)
+    {
+        state.vars[a.varName] = a.state;
+    }
+}
 
 } // namespace angel_lsp::analysis

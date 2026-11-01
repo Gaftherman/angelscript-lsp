@@ -57,6 +57,7 @@ bool IsDeclaredInAClass(const Symbol& sym, const DiagnosticContext& ctx)
 }
 /**
  * @brief Expected return type and diagnostic code for comparison operator validation.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
 struct ExpectedOperatorShape
 {
