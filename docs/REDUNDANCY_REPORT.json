@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-01T09:03:57Z",
+  "generatedAt": "2026-11-01T09:16:32Z",
   "branch": "refactor/architecture-deduplication-and-ram",
   "description": "Deterministic AST and tokenization audit report covering local C++ structs, pass-1 flag re-evaluations, function similarity, hot struct RAM layout, and Doxygen coverage.",
   "localCppStructs": {
@@ -5503,6 +5503,32 @@
       },
       {
         "funcA": {
+          "file": "server/src/features/call_hierarchy/CallHierarchyHandler.cpp",
+          "startLine": 32,
+          "endLine": 36,
+          "name": "ToRange",
+          "signature": "ToRange(const analysis::SourceRange& range)"
+        },
+        "funcB": {
+          "file": "server/src/features/type_hierarchy/TypeHierarchyHandler.cpp",
+          "startLine": 36,
+          "endLine": 40,
+          "name": "ToRange",
+          "signature": "ToRange(const analysis::SourceRange& range)"
+        },
+        "similarityScore": 1.0,
+        "sharedCalls": [
+          "endCharacter",
+          "endLine",
+          "range",
+          "startCharacter",
+          "startLine"
+        ],
+        "whatTheyDo": "Both implementations executes ToRange logic via [endCharacter, endLine, range]. Separated due to Layer 3 isolation prohibition between features/call_hierarchy and features/type_hierarchy.",
+        "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
+      },
+      {
+        "funcA": {
           "file": "server/src/analysis/rules/OperatorRules.cpp",
           "startLine": 66,
           "endLine": 78,
@@ -5532,32 +5558,6 @@
         ],
         "whatTheyDo": "ValidateOpCmp (validates semantic rules and conditions via [Emit, LogRule, ctx]) and ValidateOpEquals (validates semantic rules and conditions via [Emit, LogRule, ctx]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/features/call_hierarchy/CallHierarchyHandler.cpp",
-          "startLine": 32,
-          "endLine": 36,
-          "name": "ToRange",
-          "signature": "ToRange(const analysis::SourceRange& range)"
-        },
-        "funcB": {
-          "file": "server/src/features/type_hierarchy/TypeHierarchyHandler.cpp",
-          "startLine": 36,
-          "endLine": 40,
-          "name": "ToRange",
-          "signature": "ToRange(const analysis::SourceRange& range)"
-        },
-        "similarityScore": 1.0,
-        "sharedCalls": [
-          "endCharacter",
-          "endLine",
-          "range",
-          "startCharacter",
-          "startLine"
-        ],
-        "whatTheyDo": "Both implementations executes ToRange logic via [endCharacter, endLine, range]. Separated due to Layer 3 isolation prohibition between features/call_hierarchy and features/type_hierarchy.",
-        "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
       },
       {
         "funcA": {

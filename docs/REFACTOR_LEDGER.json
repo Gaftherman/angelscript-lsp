@@ -46,7 +46,7 @@
       "action": "COMPACT_RAM_LAYOUT",
       "sourceFile": "server/src/analysis/SymbolTable.h",
       "deletedLineRange": "180-260",
-      "originalSymbolOrCode": "ParameterInformation",
+      "originalSymbolOrCode": "ParameterInformation, rawText",
       "whatItDidAndWhyInThatFile": "Stored raw parameter text (std::string rawText) and 9 individual bool flags taking 248 bytes.",
       "whyChangedOrDeleted": "Eliminated rawText in favor of on-demand FormatParameter() formatting, and packed 9 bools into 1-bit bitfields.",
       "replacedByCanonicalFile": "server/src/analysis/SymbolTable.h",

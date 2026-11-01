@@ -118,6 +118,39 @@ def validate_ledger_schema():
     return violations
 
 
+def is_sym_declared_in_file_or_peer(sym: str, rel_path: str) -> bool:
+    if not rel_path:
+        return False
+    target_path = REPO_ROOT / rel_path.replace("/", "\\") if sys.platform == "win32" else REPO_ROOT / rel_path
+    if not target_path.is_file():
+        target_path = REPO_ROOT / rel_path
+    if not target_path.is_file():
+        return False
+
+    candidates = [target_path]
+    if target_path.suffix == ".cpp":
+        candidates.append(target_path.with_suffix(".h"))
+    elif target_path.suffix == ".h":
+        candidates.append(target_path.with_suffix(".cpp"))
+
+    func_pattern = re.compile(rf"\b{re.escape(sym)}\s*\(")
+    struct_pattern = re.compile(rf"\b(?:struct|class)\s+{re.escape(sym)}\b")
+
+    for cand in candidates:
+        if cand.is_file():
+            try:
+                content = cand.read_text(encoding="utf-8", errors="ignore")
+                if func_pattern.search(content) or struct_pattern.search(content):
+                    return True
+            except Exception:
+                pass
+    return False
+
+
+def is_symbol_recorded(sym: str, recorded_symbols: set) -> bool:
+    return any(re.search(rf"\b{re.escape(sym)}\b", s) for s in recorded_symbols)
+
+
 def check_git_diff(base_commit: str):
     violations = []
     try:
@@ -134,22 +167,61 @@ def check_git_diff(base_commit: str):
     ledger_data = json.loads(LEDGER_PATH.read_text(encoding="utf-8"))
     recorded_symbols = {e.get("originalSymbolOrCode", "") for e in ledger_data.get("entries", [])}
 
-    struct_del_re = re.compile(r"^-\s*(?:struct|class)\s+(\w+)\b", re.MULTILINE)
-    func_del_re = re.compile(r"^-\s*(?:[A-Za-z0-9_:<>&*]+\s+)+([A-Za-z0-9_]+)\s*\(", re.MULTILINE)
+    struct_del_re = re.compile(r"^-\s*(?:struct|class)\s+([A-Za-z0-9_]+)\b")
+    func_del_re = re.compile(r"^-\s*(?:[A-Za-z0-9_:<>&*]+\s+)+([A-Za-z0-9_]+)\s*\(")
+    ignored_keywords = {
+        "if",
+        "for",
+        "while",
+        "switch",
+        "catch",
+        "return",
+        "throw",
+        "sizeof",
+        "decltype",
+        "static_assert",
+        "case",
+        "default",
+    }
 
+    curr_file = ""
     for line in diff_res.stdout.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split()
+            if len(parts) >= 4:
+                b_path = parts[3]
+                if b_path.startswith("b/"):
+                    b_path = b_path[2:]
+                curr_file = b_path
+            continue
+        if line.startswith("+++ "):
+            target = line[4:].strip()
+            if target.startswith("b/"):
+                target = target[2:]
+            if target != "/dev/null":
+                curr_file = target
+            continue
+
         if not line.startswith("-") or line.startswith("---"):
             continue
+
+        # Skip local variable declarations, member initializers, and comments
+        if re.match(r"^-(?:\s{4,}|\t)", line) or re.match(r"^-\s*[:,]", line) or re.match(r"^-\s*(?://|/\*|\*)", line):
+            continue
+
         m_struct = struct_del_re.match(line)
         if m_struct:
             sym = m_struct.group(1)
-            if not any(sym in s for s in recorded_symbols):
+            if not is_symbol_recorded(sym, recorded_symbols) and not is_sym_declared_in_file_or_peer(sym, curr_file):
                 violations.append(f"Deleted struct '{sym}' not recorded in REFACTOR_LEDGER.json")
+            continue
+
         m_func = func_del_re.match(line)
         if m_func:
             sym = m_func.group(1)
-            if sym not in ("if", "for", "while", "switch", "catch") and not any(sym in s for s in recorded_symbols):
-                violations.append(f"Deleted function '{sym}' not recorded in REFACTOR_LEDGER.json")
+            if sym not in ignored_keywords and not is_symbol_recorded(sym, recorded_symbols):
+                if not is_sym_declared_in_file_or_peer(sym, curr_file):
+                    violations.append(f"Deleted function '{sym}' not recorded in REFACTOR_LEDGER.json")
 
     return violations
 
