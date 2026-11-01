@@ -8,6 +8,7 @@
 #include "analysis/NodeIndex.h"
 #include "analysis/ScopeTree.h"
 #include "analysis/SymbolTable.h"
+#include "analysis/TypeSanitization.h"
 #include "helpers/TestUtils.h"
 
 using namespace angel_lsp::analysis;
@@ -105,5 +106,86 @@ TEST_SUITE("MemoryLayoutAudit")
         CHECK(modifiers.isConst);
         CHECK_FALSE(modifiers.isExplicit);
         CHECK(modifiers.isFinal);
+    }
+
+    TEST_CASE("TypeSanitization view helpers evaluate complex qualifiers accurately without false positives")
+    {
+        const std::string typeName = angel_lsp::test::GenerateRandomSymbolName("CustomType");
+
+        // Basic types
+        CHECK_FALSE(IsHandleTypeView(typeName));
+        CHECK_FALSE(IsConstTypeView(typeName));
+        CHECK_FALSE(IsReferenceTypeView(typeName));
+
+        // Handle variations
+        CHECK(IsHandleTypeView(typeName + "@"));
+        CHECK(IsHandleTypeView("const " + typeName + "@"));
+        CHECK(IsHandleTypeView(typeName + "@ const"));
+        CHECK(IsHandleTypeView(typeName + "@ &"));
+        CHECK(IsHandleTypeView(typeName + "@&in"));
+        CHECK(IsHandleTypeView(typeName + "@&out"));
+        CHECK(IsHandleTypeView(typeName + "@ const &"));
+        CHECK(IsHandleTypeView(typeName + "@ const &out"));
+
+        // Critical edge cases: Nested templates and bracket arrays must NOT be recognized as handles
+        CHECK_FALSE(IsHandleTypeView("array<" + typeName + "@>"));
+        CHECK_FALSE(IsHandleTypeView("array<" + typeName + "@>&"));
+        CHECK_FALSE(IsHandleTypeView("array<" + typeName + "@>&in"));
+        CHECK_FALSE(IsHandleTypeView("array<" + typeName + "@>&out"));
+        CHECK_FALSE(IsHandleTypeView(typeName + "@[]"));
+        CHECK_FALSE(IsHandleTypeView("array<" + typeName + "@>[]"));
+        CHECK_FALSE(IsHandleTypeView("dictionary<string, " + typeName + "@>&"));
+
+        // Handles to arrays
+        CHECK(IsHandleTypeView("array<" + typeName + ">@"));
+        CHECK(IsHandleTypeView("array<" + typeName + ">@ const"));
+        CHECK(IsHandleTypeView("array<" + typeName + ">@ &"));
+
+        // Const variations
+        CHECK(IsConstTypeView("const " + typeName));
+        CHECK(IsConstTypeView("const " + typeName + "@"));
+        CHECK(IsConstTypeView(typeName + "@ const"));
+        CHECK(IsConstTypeView(typeName + "@ const &"));
+        CHECK(IsConstTypeView(typeName + "@ const &out"));
+        CHECK(HasLeadingConst("const " + typeName + "@"));
+        CHECK_FALSE(HasTrailingConst("const " + typeName + "@"));
+        CHECK(HasTrailingConst(typeName + "@ const"));
+        CHECK(HasTrailingConst(typeName + "@ const &"));
+        CHECK_FALSE(HasLeadingConst(typeName + "@ const"));
+
+        // Critical edge case: Const template argument does NOT make outer container const
+        CHECK_FALSE(IsConstTypeView("dictionary<string, const " + typeName + ">"));
+        CHECK_FALSE(IsConstTypeView("array<const " + typeName + ">"));
+        CHECK_FALSE(IsConstTypeView("array<const " + typeName + ">&"));
+
+        // Reference variations
+        CHECK(IsReferenceTypeView(typeName + "&"));
+        CHECK(IsReferenceTypeView(typeName + " &"));
+        CHECK(IsReferenceTypeView(typeName + "&in"));
+        CHECK(IsReferenceTypeView(typeName + " &in"));
+        CHECK(IsReferenceTypeView(typeName + "&out"));
+        CHECK(IsReferenceTypeView(typeName + " &out"));
+        CHECK(IsReferenceTypeView(typeName + "&inout"));
+        CHECK(IsReferenceTypeView(typeName + " &inout"));
+        CHECK(IsReferenceTypeView("array<" + typeName + "@>&"));
+
+        // Bracket arrays containing reference inside brackets must not be outer reference
+        CHECK_FALSE(IsReferenceTypeView(typeName + "[]"));
+
+        // Canonical TypeQualifiers extraction
+        const auto q1 = ExtractTypeQualifiersView(typeName + "@ const &out");
+        CHECK(q1.isHandle);
+        CHECK(q1.isConst);
+        CHECK(q1.isConstHandle);
+        CHECK(q1.isReference);
+        CHECK(q1.isOutRef);
+        CHECK_FALSE(q1.isInOutRef);
+        CHECK_FALSE(q1.isStandaloneRef);
+
+        const auto q2 = ExtractTypeQualifiersView("array<" + typeName + "@>&");
+        CHECK_FALSE(q2.isHandle);
+        CHECK_FALSE(q2.isConst);
+        CHECK(q2.isReference);
+        CHECK(q2.isStandaloneRef);
     }
 }

@@ -42,6 +42,54 @@ constexpr void TrimTypeWhitespace(std::string_view& typeName) noexcept
 }
 
 /**
+ * @brief Returns the character length of a trailing reference qualifier (&, &in, &out, &inout).
+ * @param[in] s String view to inspect.
+ * @return Byte length of trailing reference modifier or 0 if none.
+ */
+[[nodiscard]] constexpr size_t TrailingReferenceModifierLength(std::string_view s) noexcept
+{
+    if (s.ends_with("& inout"))
+    {
+        return 7;
+    }
+    if (s.ends_with("&inout"))
+    {
+        return 6;
+    }
+    if (s.ends_with("& out") || s.ends_with("& in"))
+    {
+        return 5;
+    }
+    if (s.ends_with("&out"))
+    {
+        return 4;
+    }
+    if (s.ends_with("&in"))
+    {
+        return 3;
+    }
+    if (!s.empty() && s.back() == '&')
+    {
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * @brief Returns the character length of a trailing qualifier (const or reference modifier).
+ * @param[in] s String view to inspect.
+ * @return Byte length of trailing qualifier or 0 if none.
+ */
+[[nodiscard]] constexpr size_t TrailingQualifierLength(std::string_view s) noexcept
+{
+    if (s.ends_with(" const") || s.ends_with("\tconst"))
+    {
+        return 6;
+    }
+    return TrailingReferenceModifierLength(s);
+}
+
+/**
  * @brief Strips trailing reference '&', handle '@', const, and optional array '[]' decorators from a string view.
  * @param[in] result String view to strip.
  * @param[in] stripArrays Whether to also strip trailing array brackets '[]' (defaults to false).
@@ -60,19 +108,9 @@ constexpr void TrimTypeWhitespace(std::string_view& typeName) noexcept
             result.remove_suffix(1);
             modified = true;
         }
-        if (result.ends_with("&inout"))
+        if (const size_t len = TrailingQualifierLength(result); len > 0)
         {
-            result.remove_suffix(6);
-            modified = true;
-        }
-        else if (result.ends_with("&in") || result.ends_with("&out"))
-        {
-            result.remove_suffix(3);
-            modified = true;
-        }
-        else if (result.ends_with(" const"))
-        {
-            result.remove_suffix(6);
+            result.remove_suffix(len);
             modified = true;
         }
         else if (stripArrays && result.ends_with("[]"))
@@ -96,14 +134,19 @@ constexpr void TrimTypeWhitespace(std::string_view& typeName) noexcept
 }
 
 /**
- * @brief Checks if a type string ends with a trailing const qualifier (e.g. "Type@ const").
+ * @brief Checks if a type string ends with a trailing const qualifier (e.g. "Type@ const" or "Type@ const &").
  * @param[in] type Type string view.
- * @return True if the type ends with " const" or "\tconst".
+ * @return True if the type ends with " const" or "\tconst" before any reference decorators.
  */
 [[nodiscard]] constexpr bool HasTrailingConst(std::string_view type) noexcept
 {
     TrimTypeWhitespace(type);
-    return type.ends_with(" const") || type.ends_with("\tconst");
+    if (const size_t refLen = TrailingReferenceModifierLength(type); refLen > 0)
+    {
+        type.remove_suffix(refLen);
+    }
+    TrimTypeWhitespace(type);
+    return type == "const" || type.ends_with(" const") || type.ends_with("\tconst");
 }
 
 /**
@@ -113,12 +156,7 @@ constexpr void TrimTypeWhitespace(std::string_view& typeName) noexcept
  */
 [[nodiscard]] constexpr bool IsConstTypeView(std::string_view type) noexcept
 {
-    TrimTypeWhitespace(type);
-    if (type == "const" || type.starts_with("const ") || type.ends_with(" const"))
-    {
-        return true;
-    }
-    return type.find(" const ") != std::string_view::npos;
+    return HasLeadingConst(type) || HasTrailingConst(type);
 }
 
 /**
@@ -133,24 +171,25 @@ constexpr void TrimTypeWhitespace(std::string_view& typeName) noexcept
     {
         return false;
     }
-    if (type.back() == '@')
+    if (const size_t refLen = TrailingReferenceModifierLength(type); refLen > 0)
     {
-        return true;
+        type.remove_suffix(refLen);
     }
-    if (type.ends_with("const"))
+    TrimTypeWhitespace(type);
+    if (type.empty())
     {
-        type.remove_suffix(5);
+        return false;
+    }
+    if (type.ends_with(" const") || type.ends_with("\tconst"))
+    {
+        type.remove_suffix(6);
         TrimTypeWhitespace(type);
-        if (!type.empty() && type.back() == '@')
-        {
-            return true;
-        }
     }
-    if (!type.ends_with('>'))
+    else if (type == "const")
     {
-        return type.find('@') != std::string_view::npos;
+        return false;
     }
-    return false;
+    return !type.empty() && type.back() == '@';
 }
 
 /**
@@ -175,16 +214,8 @@ constexpr void TrimTypeWhitespace(std::string_view& typeName) noexcept
     {
         return false;
     }
-    if (type.back() == '&' || type.ends_with("&in") || type.ends_with("&out") || type.ends_with("&inout") ||
-        type.ends_with("& in") || type.ends_with("& out") || type.ends_with("& inout"))
-    {
-        return true;
-    }
-    if (!type.ends_with('>'))
-    {
-        return type.find('&') != std::string_view::npos;
-    }
-    return false;
+    return type.back() == '&' || type.ends_with("&in") || type.ends_with("&out") || type.ends_with("&inout") ||
+           type.ends_with("& in") || type.ends_with("& out") || type.ends_with("& inout");
 }
 
 /**

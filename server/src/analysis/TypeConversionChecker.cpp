@@ -4107,14 +4107,20 @@ void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Scope* sco
  */
 bool IsFunctionReturnRef(TSNode funcNode, TSNode retTypeNode, std::string_view sourceCode)
 {
-    TSNode nameNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldName);
+    const std::string_view rawRetText = parser::NodeText(retTypeNode, sourceCode);
+    if (IsReferenceTypeView(rawRetText))
+    {
+        return true;
+    }
+    const TSNode nameNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldName);
     const uint32_t headEnd = ts_node_is_null(nameNode) ? ts_node_end_byte(retTypeNode) : ts_node_start_byte(nameNode);
     const uint32_t headStart = ts_node_start_byte(funcNode);
-    const std::string headText = (headEnd > headStart && headEnd <= sourceCode.size())
-                                     ? std::string(sourceCode.substr(headStart, headEnd - headStart))
-                                     : "";
-    const std::string rawRetText = NodeText(retTypeNode, sourceCode);
-    return headText.find('&') != std::string::npos || rawRetText.find('&') != std::string::npos;
+    if (headEnd > headStart && headEnd <= sourceCode.size())
+    {
+        const std::string_view headText = sourceCode.substr(headStart, headEnd - headStart);
+        return headText.find('&') != std::string_view::npos;
+    }
+    return false;
 }
 
 /**

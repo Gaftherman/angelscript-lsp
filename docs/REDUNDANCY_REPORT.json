@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-01T08:37:50Z",
+  "generatedAt": "2026-11-01T09:03:57Z",
   "branch": "refactor/architecture-deduplication-and-ram",
   "description": "Deterministic AST and tokenization audit report covering local C++ structs, pass-1 flag re-evaluations, function similarity, hot struct RAM layout, and Doxygen coverage.",
   "localCppStructs": {
@@ -1874,8 +1874,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 1350,
-        "endLine": 1354,
+        "startLine": 1351,
+        "endLine": 1355,
         "structName": "HierarchyClassifiedBase",
         "fields": [
           {
@@ -1891,8 +1891,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 1956,
-        "endLine": 1962,
+        "startLine": 1957,
+        "endLine": 1963,
         "structName": "MixinExpansionContext",
         "fields": [
           {
@@ -1918,8 +1918,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 3280,
-        "endLine": 3285,
+        "startLine": 3281,
+        "endLine": 3286,
         "structName": "BinaryOverloadResult",
         "fields": [
           {
@@ -1941,8 +1941,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 3755,
-        "endLine": 3761,
+        "startLine": 3756,
+        "endLine": 3762,
         "structName": "TernaryBranchTypes",
         "fields": [
           {
@@ -1966,8 +1966,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 5044,
-        "endLine": 5049,
+        "startLine": 5045,
+        "endLine": 5050,
         "structName": "ActiveLocalDefKey",
         "fields": [
           {
@@ -1987,8 +1987,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 5057,
-        "endLine": 5067,
+        "startLine": 5058,
+        "endLine": 5068,
         "structName": "ActiveLocalDefGuard",
         "fields": [
           {
@@ -2000,8 +2000,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 5391,
-        "endLine": 5398,
+        "startLine": 5392,
+        "endLine": 5399,
         "structName": "DelegatePropertyReceiverContext",
         "fields": [
           {
@@ -2029,8 +2029,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 5839,
-        "endLine": 5854,
+        "startLine": 5840,
+        "endLine": 5855,
         "structName": "CallDelimiterState",
         "fields": [
           {
@@ -2070,8 +2070,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 6394,
-        "endLine": 6399,
+        "startLine": 6395,
+        "endLine": 6400,
         "structName": "FuncdefAgreement",
         "fields": [
           {
@@ -4973,7 +4973,7 @@
     ]
   },
   "pass1FlagReparsing": {
-    "totalFlagReparseOccurrences": 31,
+    "totalFlagReparseOccurrences": 30,
     "occurrences": [
       {
         "file": "server/src/analysis/CallChecker.cpp",
@@ -5067,13 +5067,6 @@
         "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
       },
       {
-        "file": "server/src/analysis/SemanticHelpers.cpp",
-        "line": 39,
-        "flagKind": "isRef",
-        "codeSnippet": "while (!typeName.empty() && (typeName.back() == '&' || typeName.back() == ' ' || typeName.back() == ",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
-      },
-      {
         "file": "server/src/analysis/SymbolCollector.cpp",
         "line": 3024,
         "flagKind": "isConst",
@@ -5145,9 +5138,9 @@
       },
       {
         "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "line": 4117,
+        "line": 4121,
         "flagKind": "isRef",
-        "codeSnippet": "return headText.find('&') != std::string::npos || rawRetText.find('&') != std::string::npos;",
+        "codeSnippet": "return headText.find('&') != std::string_view::npos;",
         "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
       },
       {
@@ -5196,7 +5189,7 @@
   },
   "similarFunctionsMatrix": {
     "totalEvaluatedFunctions": 2544,
-    "similarPairsCount": 206,
+    "similarPairsCount": 209,
     "matrix": [
       {
         "funcA": {
@@ -5265,8 +5258,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 2246,
-          "endLine": 2276,
+          "startLine": 2247,
+          "endLine": 2277,
           "name": "AppendRawContainers",
           "signature": "AppendRawContainers(TSNode nameNode, ContainerKind kind, std::string_view source"
         },
@@ -5288,6 +5281,26 @@
           "ts_node_start_byte"
         ],
         "whatTheyDo": "AppendIndexRawContainers (executes AppendIndexRawContainers logic via [SplitScopeSegments, it, rawContainers]) and AppendRawContainers (executes AppendRawContainers logic via [SplitScopeSegments, it, rawContainers]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
+        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
+          "file": "server/src/analysis/BinaryOperatorChecker.cpp",
+          "startLine": 26,
+          "endLine": 30,
+          "name": "IsBitwiseOp",
+          "signature": "IsBitwiseOp(std::string_view op) noexcept"
+        },
+        "funcB": {
+          "file": "server/src/analysis/BinaryOperatorChecker.cpp",
+          "startLine": 39,
+          "endLine": 43,
+          "name": "IsArithmeticOp",
+          "signature": "IsArithmeticOp(std::string_view op) noexcept"
+        },
+        "similarityScore": 1.0,
+        "sharedCalls": [],
+        "whatTheyDo": "IsBitwiseOp (evaluates AST node or symbol predicate properties) and IsArithmeticOp (evaluates AST node or symbol predicate properties) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -5316,26 +5329,6 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/BinaryOperatorChecker.cpp",
-          "startLine": 26,
-          "endLine": 30,
-          "name": "IsBitwiseOp",
-          "signature": "IsBitwiseOp(std::string_view op) noexcept"
-        },
-        "funcB": {
-          "file": "server/src/analysis/BinaryOperatorChecker.cpp",
-          "startLine": 39,
-          "endLine": 43,
-          "name": "IsArithmeticOp",
-          "signature": "IsArithmeticOp(std::string_view op) noexcept"
-        },
-        "similarityScore": 1.0,
-        "sharedCalls": [],
-        "whatTheyDo": "IsBitwiseOp (evaluates AST node or symbol predicate properties) and IsArithmeticOp (evaluates AST node or symbol predicate properties) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/analysis/ControlFlowChecker.cpp",
           "startLine": 86,
           "endLine": 92,
@@ -5507,32 +5500,6 @@
         ],
         "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, column, ctx]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/features/call_hierarchy/CallHierarchyHandler.cpp",
-          "startLine": 32,
-          "endLine": 36,
-          "name": "ToRange",
-          "signature": "ToRange(const analysis::SourceRange& range)"
-        },
-        "funcB": {
-          "file": "server/src/features/type_hierarchy/TypeHierarchyHandler.cpp",
-          "startLine": 36,
-          "endLine": 40,
-          "name": "ToRange",
-          "signature": "ToRange(const analysis::SourceRange& range)"
-        },
-        "similarityScore": 1.0,
-        "sharedCalls": [
-          "endCharacter",
-          "endLine",
-          "range",
-          "startCharacter",
-          "startLine"
-        ],
-        "whatTheyDo": "Both implementations executes ToRange logic via [endCharacter, endLine, range]. Separated due to Layer 3 isolation prohibition between features/call_hierarchy and features/type_hierarchy.",
-        "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
       },
       {
         "funcA": {
@@ -5565,6 +5532,32 @@
         ],
         "whatTheyDo": "ValidateOpCmp (validates semantic rules and conditions via [Emit, LogRule, ctx]) and ValidateOpEquals (validates semantic rules and conditions via [Emit, LogRule, ctx]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
+          "file": "server/src/features/call_hierarchy/CallHierarchyHandler.cpp",
+          "startLine": 32,
+          "endLine": 36,
+          "name": "ToRange",
+          "signature": "ToRange(const analysis::SourceRange& range)"
+        },
+        "funcB": {
+          "file": "server/src/features/type_hierarchy/TypeHierarchyHandler.cpp",
+          "startLine": 36,
+          "endLine": 40,
+          "name": "ToRange",
+          "signature": "ToRange(const analysis::SourceRange& range)"
+        },
+        "similarityScore": 1.0,
+        "sharedCalls": [
+          "endCharacter",
+          "endLine",
+          "range",
+          "startCharacter",
+          "startLine"
+        ],
+        "whatTheyDo": "Both implementations executes ToRange logic via [endCharacter, endLine, range]. Separated due to Layer 3 isolation prohibition between features/call_hierarchy and features/type_hierarchy.",
+        "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
       },
       {
         "funcA": {
@@ -5650,8 +5643,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 2196,
-          "endLine": 2212,
+          "startLine": 2197,
+          "endLine": 2213,
           "name": "ClassifyContainerKind",
           "signature": "ClassifyContainerKind(TSSymbol sym)"
         },
@@ -5665,8 +5658,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 340,
-          "endLine": 349,
+          "startLine": 341,
+          "endLine": 350,
           "name": "UnwrapParens",
           "signature": "UnwrapParens(TSNode node)"
         },
@@ -5796,8 +5789,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 2220,
-          "endLine": 2235,
+          "startLine": 2221,
+          "endLine": 2236,
           "name": "ComputeContainerQualifiedNames",
           "signature": "ComputeContainerQualifiedNames(std::vector<ContainerInfo>& containers)"
         },
@@ -6787,6 +6780,81 @@
         ],
         "whatTheyDo": "Both implementations executes IdentifierAt logic via [character, line, position]. Separated due to Layer 3 isolation prohibition between features/implementation and features/type_hierarchy.",
         "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
+      },
+      {
+        "funcA": {
+          "file": "server/src/analysis/rules/RuleIndex.cpp",
+          "startLine": 8,
+          "endLine": 13,
+          "name": "Members",
+          "signature": "& RuleIndex::Members(std::string_view containerName) const"
+        },
+        "funcB": {
+          "file": "server/src/analysis/rules/RuleIndex.cpp",
+          "startLine": 20,
+          "endLine": 25,
+          "name": "ClassMembers",
+          "signature": "& RuleIndex::ClassMembers(std::string_view className) const"
+        },
+        "similarityScore": 0.939,
+        "sharedCalls": [
+          "end",
+          "find",
+          "it",
+          "second"
+        ],
+        "whatTheyDo": "Members (executes Members logic via [byContainer, end, it]) and ClassMembers (executes ClassMembers logic via [byClass, end, it]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
+        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
+          "file": "server/src/analysis/rules/RuleIndex.cpp",
+          "startLine": 8,
+          "endLine": 13,
+          "name": "Members",
+          "signature": "& RuleIndex::Members(std::string_view containerName) const"
+        },
+        "funcB": {
+          "file": "server/src/analysis/rules/RuleIndex.cpp",
+          "startLine": 32,
+          "endLine": 37,
+          "name": "NamespaceMembers",
+          "signature": "& RuleIndex::NamespaceMembers(std::string_view nsName) const"
+        },
+        "similarityScore": 0.939,
+        "sharedCalls": [
+          "end",
+          "find",
+          "it",
+          "second"
+        ],
+        "whatTheyDo": "Members (executes Members logic via [byContainer, end, it]) and NamespaceMembers (executes NamespaceMembers logic via [byNamespace, end, it]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
+        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
+          "file": "server/src/analysis/rules/RuleIndex.cpp",
+          "startLine": 20,
+          "endLine": 25,
+          "name": "ClassMembers",
+          "signature": "& RuleIndex::ClassMembers(std::string_view className) const"
+        },
+        "funcB": {
+          "file": "server/src/analysis/rules/RuleIndex.cpp",
+          "startLine": 32,
+          "endLine": 37,
+          "name": "NamespaceMembers",
+          "signature": "& RuleIndex::NamespaceMembers(std::string_view nsName) const"
+        },
+        "similarityScore": 0.939,
+        "sharedCalls": [
+          "end",
+          "find",
+          "it",
+          "second"
+        ],
+        "whatTheyDo": "ClassMembers (executes ClassMembers logic via [byClass, end, it]) and NamespaceMembers (executes NamespaceMembers logic via [byNamespace, end, it]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
+        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
         "funcA": {
@@ -7782,8 +7850,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/TypeConversionChecker.cpp",
-          "startLine": 4453,
-          "endLine": 4484,
+          "startLine": 4459,
+          "endLine": 4490,
           "name": "VisitNode",
           "signature": "VisitNode(TSNode root, const TypeConversionCheckRequest& request, DiagnosticCont"
         },
@@ -8544,15 +8612,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 3430,
-          "endLine": 3449,
+          "startLine": 3431,
+          "endLine": 3450,
           "name": "ResolveBinary64OrFloat",
           "signature": "ResolveBinary64OrFloat(const std::string& cleanLeft, const std::string& cleanRig"
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 3803,
-          "endLine": 3816,
+          "startLine": 3804,
+          "endLine": 3817,
           "name": "ResolveTernaryNumericPromotion",
           "signature": "ResolveTernaryNumericPromotion(const std::string& c1, const std::string& c2)"
         },
@@ -8805,8 +8873,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 3539,
-          "endLine": 3544,
+          "startLine": 3540,
+          "endLine": 3545,
           "name": "IsBooleanBinaryOpSym",
           "signature": "IsBooleanBinaryOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept"
         },
@@ -9132,15 +9200,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 1773,
-          "endLine": 1810,
+          "startLine": 1774,
+          "endLine": 1811,
           "name": "TraverseDerivedClasses",
           "signature": "TraverseDerivedClasses(const std::vector<std::string>& initialFrontier, const Sy"
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 1838,
-          "endLine": 1891,
+          "startLine": 1839,
+          "endLine": 1892,
           "name": "GetDerivedClasses",
           "signature": "GetDerivedClasses(const std::string& className, const SymbolTable& symbolTable)"
         },
@@ -9917,15 +9985,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 5652,
-          "endLine": 5719,
+          "startLine": 5653,
+          "endLine": 5720,
           "name": "ExtractCallArguments",
           "signature": "ExtractCallArguments(TSNode argumentList, std::string_view sourceCode)"
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 6123,
-          "endLine": 6188,
+          "startLine": 6124,
+          "endLine": 6189,
           "name": "ExtractLambdaParameters",
           "signature": "ExtractLambdaParameters(TSNode lambdaParamList, std::string_view sourceCode)"
         },
@@ -10142,15 +10210,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 2952,
-          "endLine": 2968,
+          "startLine": 2953,
+          "endLine": 2969,
           "name": "ExtractVariableOrPropertyType",
           "signature": "ExtractVariableOrPropertyType(std::span<const Symbol> syms, const SymbolTable& t"
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 4053,
-          "endLine": 4074,
+          "startLine": 4054,
+          "endLine": 4075,
           "name": "ExtractMemberSymbolType",
           "signature": "ExtractMemberSymbolType(const Symbol& sym, const SymbolTable& table)"
         },
@@ -10241,8 +10309,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/TypeConversionChecker.cpp",
-          "startLine": 4178,
-          "endLine": 4229,
+          "startLine": 4184,
+          "endLine": 4235,
           "name": "CheckFuncDeclarationReturnStatement",
           "signature": "CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Scope* s"
         },
@@ -11028,8 +11096,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 1094,
-          "endLine": 1100,
+          "startLine": 1095,
+          "endLine": 1101,
           "name": "StripTemplateDecorations",
           "signature": "StripTemplateDecorations(std::string_view& typeName)"
         },
@@ -11349,7 +11417,7 @@
     ]
   },
   "missingDoxygenCatalog": {
-    "missingCount": 13,
+    "missingCount": 16,
     "missing": [
       {
         "file": "server/src/analysis/LocalScopeCollector.cpp",
@@ -11367,6 +11435,24 @@
         "file": "server/src/features/completion/CompletionHandler.cpp",
         "line": 2065,
         "symbolOrSnippet": "static size_t SkipInlineWhitespaceBackward(const std::string& text, size_t pos)",
+        "kind": "function"
+      },
+      {
+        "file": "server/src/analysis/rules/RuleIndex.cpp",
+        "line": 8,
+        "symbolOrSnippet": "const ContainerMembers& RuleIndex::Members(std::string_view containerName) const",
+        "kind": "function"
+      },
+      {
+        "file": "server/src/analysis/rules/RuleIndex.cpp",
+        "line": 20,
+        "symbolOrSnippet": "const ContainerMembers& RuleIndex::ClassMembers(std::string_view className) cons",
+        "kind": "struct"
+      },
+      {
+        "file": "server/src/analysis/rules/RuleIndex.cpp",
+        "line": 32,
+        "symbolOrSnippet": "const ContainerMembers& RuleIndex::NamespaceMembers(std::string_view nsName) con",
         "kind": "function"
       },
       {

@@ -57,17 +57,10 @@ std::string CleanBaseType(std::string_view typeName, std::string_view arrayTypeN
  */
 std::string CanonicalizeArrayType(std::string_view typeName, std::string_view arrayTypeName)
 {
-    std::string s(typeName);
-
-    while (!s.empty() && (s.front() == ' ' || s.front() == '\t'))
-        s.erase(s.begin());
-    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '@' || s.back() == '&'))
-        s.pop_back();
-
-    if (s.starts_with("const "))
-    {
-        s = s.substr(6);
-    }
+    std::string_view sv = StripLeadingConst(typeName);
+    sv = StripTrailingDecorationsView(sv, false);
+    TrimTypeWhitespace(sv);
+    std::string s(sv);
 
     if (arrayTypeName.empty())
     {

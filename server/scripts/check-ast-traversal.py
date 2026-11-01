@@ -567,6 +567,7 @@ MANUAL_QUALIFIER_PATTERNS = [
     (re.compile(r'\.(?:starts_with|find)\s*\(\s*"const "'), 'manual "const " search (use analysis::IsConstTypeView or StripLeadingConst)'),
     (re.compile(r'\.find\s*\(\s*"&out"'), 'manual "&out" search (use param.isOutRef / IsReferenceTypeView)'),
     (re.compile(r'\.find\s*\(\s*"&inout"'), 'manual "&inout" search (use param.isInOutRef / IsReferenceTypeView)'),
+    (re.compile(r'\.find\s*\(\s*"&in"'), 'manual "&in" search (use param.modifier / IsReferenceTypeView)'),
 ]
 
 def check_no_manual_type_qualifier_parsing():

@@ -36,10 +36,11 @@ std::string CleanExpressionType(std::string_view typeName)
 {
     typeName = StripLeadingConst(typeName);
     TrimTypeWhitespace(typeName);
-    while (!typeName.empty() && (typeName.back() == '&' || typeName.back() == ' ' || typeName.back() == '\t'))
+    if (const size_t refLen = TrailingReferenceModifierLength(typeName); refLen > 0)
     {
-        typeName.remove_suffix(1);
+        typeName.remove_suffix(refLen);
     }
+    TrimTypeWhitespace(typeName);
     return std::string(typeName);
 }
 
