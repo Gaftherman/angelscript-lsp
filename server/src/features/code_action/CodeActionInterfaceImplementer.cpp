@@ -3,6 +3,7 @@
  * @brief Quick-fix provider for generating missing interface method implementations in classes.
  */
 
+#include "analysis/TypeSanitization.h"
 #include "config/ServerConfig.h"
 #include "features/code_action/CodeActionInternal.h"
 #include "parser/ASTUtils.h"
@@ -22,7 +23,7 @@ namespace
 std::string GetDefaultReturnValue(std::string_view returnType, std::string_view stringTypeName)
 {
     std::string cleanRet = analysis::CleanBaseType(returnType);
-    if (returnType.ends_with('@'))
+    if (analysis::IsHandleTypeView(returnType))
     {
         return "null";
     }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "analysis/SymbolTable.h"
+
 #include <cstddef>
 #include <string>
 #include <string_view>
@@ -11,19 +13,204 @@ namespace angel_lsp::analysis
  * @brief Removes leading and trailing whitespace from a type name view in place.
  * @param[in,out] typeName String view to trim.
  */
-void TrimTypeWhitespace(std::string_view& typeName);
+constexpr void TrimTypeWhitespace(std::string_view& typeName) noexcept
+{
+    while (!typeName.empty() && (typeName.front() == ' ' || typeName.front() == '\t'))
+    {
+        typeName.remove_prefix(1);
+    }
+    while (!typeName.empty() && (typeName.back() == ' ' || typeName.back() == '\t'))
+    {
+        typeName.remove_suffix(1);
+    }
+}
 
 /**
  * @brief Strips a leading "const " prefix from a type name view if present.
- * @param[in,out] typeName String view to strip.
+ * @param[in] typeName String view to strip.
+ * @return String view without leading const.
  */
-void StripLeadingConst(std::string_view& typeName);
+[[nodiscard]] constexpr std::string_view StripLeadingConst(std::string_view typeName) noexcept
+{
+    TrimTypeWhitespace(typeName);
+    if (typeName.starts_with("const "))
+    {
+        typeName.remove_prefix(6);
+    }
+    TrimTypeWhitespace(typeName);
+    return typeName;
+}
 
 /**
- * @brief Strips trailing reference '&', handle '@', const, and array '[]' decorators from a string view in place.
- * @param[in,out] result String view to strip in place.
+ * @brief Strips trailing reference '&', handle '@', const, and optional array '[]' decorators from a string view.
+ * @param[in] result String view to strip.
+ * @param[in] stripArrays Whether to also strip trailing array brackets '[]' (defaults to false).
+ * @return String view without trailing decorations.
  */
-void StripTrailingDecorationsView(std::string_view& result) noexcept;
+[[nodiscard]] constexpr std::string_view StripTrailingDecorationsView(std::string_view result,
+                                                                      bool stripArrays = false) noexcept
+{
+    bool modified = true;
+    while (modified)
+    {
+        modified = false;
+        while (!result.empty() &&
+               (result.back() == '@' || result.back() == '&' || result.back() == ' ' || result.back() == '\t'))
+        {
+            result.remove_suffix(1);
+            modified = true;
+        }
+        if (result.ends_with("&inout"))
+        {
+            result.remove_suffix(6);
+            modified = true;
+        }
+        else if (result.ends_with("&in") || result.ends_with("&out"))
+        {
+            result.remove_suffix(3);
+            modified = true;
+        }
+        else if (result.ends_with(" const"))
+        {
+            result.remove_suffix(6);
+            modified = true;
+        }
+        else if (stripArrays && result.ends_with("[]"))
+        {
+            result.remove_suffix(2);
+            modified = true;
+        }
+    }
+    return result;
+}
+
+/**
+ * @brief Checks if a type string starts with a leading const qualifier (e.g. "const Type" or "const Type@").
+ * @param[in] type Type string view.
+ * @return True if the type begins with "const " or is "const".
+ */
+[[nodiscard]] constexpr bool HasLeadingConst(std::string_view type) noexcept
+{
+    TrimTypeWhitespace(type);
+    return type == "const" || type.starts_with("const ") || type.starts_with("const\t");
+}
+
+/**
+ * @brief Checks if a type string ends with a trailing const qualifier (e.g. "Type@ const").
+ * @param[in] type Type string view.
+ * @return True if the type ends with " const" or "\tconst".
+ */
+[[nodiscard]] constexpr bool HasTrailingConst(std::string_view type) noexcept
+{
+    TrimTypeWhitespace(type);
+    return type.ends_with(" const") || type.ends_with("\tconst");
+}
+
+/**
+ * @brief Checks if a type string has a const qualifier.
+ * @param[in] type Type string view.
+ * @return True if the type begins with "const " or ends with " const" or is "const".
+ */
+[[nodiscard]] constexpr bool IsConstTypeView(std::string_view type) noexcept
+{
+    TrimTypeWhitespace(type);
+    if (type == "const" || type.starts_with("const ") || type.ends_with(" const"))
+    {
+        return true;
+    }
+    return type.find(" const ") != std::string_view::npos;
+}
+
+/**
+ * @brief Checks if a type string represents an AngelScript handle (@) type.
+ * @param[in] type Type string view.
+ * @return True if the type has a handle decoration on the outermost type.
+ */
+[[nodiscard]] constexpr bool IsHandleTypeView(std::string_view type) noexcept
+{
+    TrimTypeWhitespace(type);
+    if (type.empty())
+    {
+        return false;
+    }
+    if (type.back() == '@')
+    {
+        return true;
+    }
+    if (type.ends_with("const"))
+    {
+        type.remove_suffix(5);
+        TrimTypeWhitespace(type);
+        if (!type.empty() && type.back() == '@')
+        {
+            return true;
+        }
+    }
+    if (!type.ends_with('>'))
+    {
+        return type.find('@') != std::string_view::npos;
+    }
+    return false;
+}
+
+/**
+ * @brief Checks if a type string represents a const handle (e.g. "const Foo@" or "Foo@ const").
+ * @param[in] type Type string view.
+ * @return True if both const and handle decorators are present on the outermost type.
+ */
+[[nodiscard]] constexpr bool IsConstHandleTypeView(std::string_view type) noexcept
+{
+    return IsHandleTypeView(type) && IsConstTypeView(type);
+}
+
+/**
+ * @brief Checks if a type string represents a reference (&, &in, &out, &inout) type.
+ * @param[in] type Type string view.
+ * @return True if the type ends with a reference qualifier.
+ */
+[[nodiscard]] constexpr bool IsReferenceTypeView(std::string_view type) noexcept
+{
+    TrimTypeWhitespace(type);
+    if (type.empty())
+    {
+        return false;
+    }
+    if (type.back() == '&' || type.ends_with("&in") || type.ends_with("&out") || type.ends_with("&inout") ||
+        type.ends_with("& in") || type.ends_with("& out") || type.ends_with("& inout"))
+    {
+        return true;
+    }
+    if (!type.ends_with('>'))
+    {
+        return type.find('&') != std::string_view::npos;
+    }
+    return false;
+}
+
+/**
+ * @brief Extracts all type qualifiers (const, handle, reference, etc.) from a type string without heap allocation.
+ * @param[in] type Type string view.
+ * @return TypeQualifiers bitfield struct.
+ */
+[[nodiscard]] constexpr TypeQualifiers ExtractTypeQualifiersView(std::string_view type) noexcept
+{
+    TypeQualifiers q{};
+    TrimTypeWhitespace(type);
+    if (type.empty())
+    {
+        return q;
+    }
+    q.isAuto = (type == "auto");
+    q.isConst = IsConstTypeView(type);
+    q.isHandle = IsHandleTypeView(type);
+    q.isConstHandle = q.isConst && q.isHandle;
+    q.isReference = IsReferenceTypeView(type);
+    q.isOutRef = (type.ends_with("&out") || type.ends_with("& out"));
+    q.isInOutRef = (type.ends_with("&inout") || type.ends_with("& inout"));
+    q.isStandaloneRef =
+        q.isReference && !q.isOutRef && !q.isInOutRef && !type.ends_with("&in") && !type.ends_with("& in");
+    return q;
+}
 
 /**
  * @brief Strips trailing reference '&', handle '@', const, and array '[]' decorators.

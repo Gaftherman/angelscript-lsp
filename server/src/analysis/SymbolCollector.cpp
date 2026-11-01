@@ -3005,7 +3005,7 @@ ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, std
     ParameterInformation paramInfo;
     paramInfo.name = GetNodeText(pNameNode, sourceCode);
     paramInfo.typeName = GetNodeText(pTypeNode, sourceCode);
-    paramInfo.rawText = GetNodeText(paramNode, sourceCode);
+    const std::string_view paramText = GetNodeTextView(paramNode, sourceCode);
     paramInfo.baseTypeName = pInfo.baseTypeName;
     paramInfo.templateName = pInfo.templateName;
     paramInfo.typeKind = pInfo.kind;
@@ -3015,18 +3015,18 @@ ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, std
     paramInfo.defaultValue = GetNodeText(pDefaultNode, sourceCode);
     if (paramInfo.defaultValue.empty())
     {
-        paramInfo.defaultValue = ExtractFallbackDefaultValue(paramInfo.rawText);
+        paramInfo.defaultValue = ExtractFallbackDefaultValue(paramText);
     }
     paramInfo.isHandle = pInfo.isHandle;
     AssignParamLocations(paramInfo, paramNode, pNameNode);
 
     uint32_t refCount = 0;
-    if (paramInfo.rawText.find('&') != std::string::npos || paramInfo.rawText.find("const") != std::string::npos)
+    if (paramText.find('&') != std::string_view::npos || paramText.find("const") != std::string_view::npos)
     {
         ExtractParamTypeRefAndConst(pTypeNode, sourceCode, paramInfo, refCount);
     }
-    if (paramInfo.rawText.find('&') != std::string::npos || paramInfo.rawText.find("in") != std::string::npos ||
-        paramInfo.rawText.find("out") != std::string::npos)
+    if (paramText.find('&') != std::string_view::npos || paramText.find("in") != std::string_view::npos ||
+        paramText.find("out") != std::string_view::npos)
     {
         ExtractParamModifierTokens(paramNode, sourceCode, paramInfo, refCount);
     }

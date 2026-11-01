@@ -1,8 +1,9 @@
-﻿#include "analysis/ControlFlowChecker.h"
+#include "analysis/ControlFlowChecker.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeConversionChecker.h"
+#include "analysis/TypeSanitization.h"
 #include "analysis/rules/RuleIndex.h"
 #include "parser/ASTUtils.h"
 #include "utils/ScopedNameUtils.h"
@@ -884,7 +885,7 @@ class ControlFlowVisitor
         // about a return. Restricted to the primitives, and to a return type carrying no `@`,
         // so a class or a handle - where null may well be legal, and where the host may have
         // registered a conversion this analyzer cannot see - is left alone.
-        if (!state.requiredReturn.empty() && state.requiredReturn.find('@') == std::string::npos &&
+        if (!state.requiredReturn.empty() && !IsHandleTypeView(state.requiredReturn) &&
             IsNonNullablePrimitiveName(state.requiredReturn) && ts_node_named_child_count(node) == 1 &&
             NodeSymbol(ts_node_named_child(node, 0)) == parser::GetGrammarSymbols().symNullLiteral)
         {

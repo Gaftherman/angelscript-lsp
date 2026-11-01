@@ -964,11 +964,11 @@ struct LambdaParamASTInfo
     std::string name;                                     ///< Parameter identifier name.
     std::string typeName;                                 ///< Declared type name string.
     uint32_t index = 0;                                   ///< Zero-based parameter position.
-    bool hasWrittenType = false;                          ///< True if parameter has explicit type.
-    bool isConst = false;                                 ///< True if parameter has const qualifier.
-    bool isHandle = false;                                ///< True if parameter is a handle (@).
-    bool isReference = false;                             ///< True if parameter is a reference (&).
     ParameterModifier modifier = ParameterModifier::None; ///< In/Out parameter modifier.
+    bool hasWrittenType : 1 = false;                      ///< True if parameter has explicit type.
+    bool isConst : 1 = false;                             ///< True if parameter has const qualifier.
+    bool isHandle : 1 = false;                            ///< True if parameter is a handle (@).
+    bool isReference : 1 = false;                         ///< True if parameter is a reference (&).
 };
 
 /**
@@ -1061,12 +1061,12 @@ std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourc
 /** @brief One lambda parameter, exactly as the source wrote it. */
 struct LambdaParameter
 {
-    bool hasWrittenType = false; ///< False means "inherit from the funcdef", so unjudgeable.
     std::string typeName;
-    bool isConst = false;
-    bool isHandle = false;
-    bool isReference = false;
     ParameterModifier modifier = ParameterModifier::None;
+    bool hasWrittenType : 1 = false; ///< False means "inherit from the funcdef", so unjudgeable.
+    bool isConst : 1 = false;
+    bool isHandle : 1 = false;
+    bool isReference : 1 = false;
 };
 
 /**

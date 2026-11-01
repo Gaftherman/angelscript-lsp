@@ -158,15 +158,10 @@ std::string StripTypeDecorations(std::string result)
     while (modified)
     {
         modified = false;
-        while (!result.empty() &&
-               (result.back() == '@' || result.back() == '&' || result.back() == ' ' || result.back() == '\t'))
+        std::string_view sv = StripTrailingDecorationsView(result);
+        if (sv.size() != result.size())
         {
-            result.pop_back();
-            modified = true;
-        }
-        if (result.ends_with(" const"))
-        {
-            result.resize(result.size() - 6);
+            result = std::string(sv);
             modified = true;
         }
         if (StripReferenceSuffix(result))
@@ -201,12 +196,8 @@ std::string DesugarArrayBrackets(std::string result, std::string_view arrayTypeN
  */
 std::string NormalizeType(std::string_view typeName, std::string_view arrayTypeName)
 {
-    typeName = TrimWhitespace(typeName);
-    if (typeName.starts_with("const "))
-    {
-        typeName.remove_prefix(6);
-    }
-    typeName = TrimWhitespace(typeName);
+    typeName = StripLeadingConst(typeName);
+    TrimTypeWhitespace(typeName);
 
     std::string result = StripTypeDecorations(std::string(typeName));
     while (!result.empty() && (result.back() == ' ' || result.back() == '\t'))
@@ -227,7 +218,7 @@ std::string NormalizeType(std::string_view typeName, std::string_view arrayTypeN
  */
 bool HasHandleModifier(std::string_view typeName)
 {
-    return typeName.find('@') != std::string_view::npos;
+    return IsHandleTypeView(typeName);
 }
 
 bool HasConvertingConstructor(const std::string& fromType, const std::string& toType, const SymbolTable& symbolTable)
@@ -473,13 +464,12 @@ bool IsPrimitiveNarrowing(const std::string& fromType, const std::string& toType
  */
 bool HasConstModifier(std::string_view typeName)
 {
-    return typeName.starts_with("const ") || typeName.ends_with(" const") ||
-           typeName.find(" const ") != std::string_view::npos;
+    return IsConstTypeView(typeName);
 }
 
 bool IsWildcardParameter(const ParameterInformation& param)
 {
-    return param.typeName == "?" || param.rawText.find('?') != std::string::npos;
+    return param.typeName == "?" || param.typeName.find('?') != std::string::npos;
 }
 
 /**
@@ -492,10 +482,8 @@ bool IsWildcardParameter(const ParameterInformation& param)
  */
 bool IsOutParameter(const ParameterInformation& param)
 {
-    return param.modifier == ParameterModifier::Out || param.modifier == ParameterModifier::InOut ||
-           param.rawText.find("&out") != std::string::npos || param.rawText.find("&inout") != std::string::npos ||
-           param.typeName.find("&out") != std::string::npos || param.typeName.find("&inout") != std::string::npos ||
-           param.typeName.find("& out") != std::string::npos;
+    return param.modifier == ParameterModifier::Out || param.modifier == ParameterModifier::InOut || param.isOutRef ||
+           param.isInOutRef;
 }
 
 /**
@@ -514,12 +502,8 @@ static std::optional<std::string_view> ExtractTemplateBaseName(std::string_view 
         return std::nullopt;
     }
     std::string_view base = typeName.substr(0, openBracket);
-    base = TrimWhitespace(base);
-    if (base.starts_with("const "))
-    {
-        base.remove_prefix(6);
-        base = TrimWhitespace(base);
-    }
+    base = StripLeadingConst(base);
+    TrimTypeWhitespace(base);
     return base;
 }
 
@@ -586,7 +570,7 @@ static bool ClassAcceptsInitializerList(const std::string& cleanType, const Symb
 bool ParameterAcceptsInitializerList(const ParameterInformation& param, const SymbolTable* symbolTable,
                                      std::string_view arrayTypeName)
 {
-    if (param.typeName.ends_with("[]") || param.rawText.find("[]") != std::string::npos)
+    if (param.typeName.find("[]") != std::string::npos)
     {
         return true;
     }

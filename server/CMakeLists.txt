@@ -214,6 +214,7 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_custom_target(angel_lsp_anti_slop_gate ALL
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-ast-traversal.py"
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-grammar-names.py" --binary-dir "${CMAKE_BINARY_DIR}"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-refactor-ledger.py"
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
     COMMENT "Verifying AST traversal invariants, node symbol integrity, and anti-slop rules"
     VERBATIM

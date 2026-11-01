@@ -653,7 +653,7 @@ bool CanTriviallyConvert(const std::string& from, const std::string& to, const D
         return true;
     }
 
-    if ((from == "null" || CanonicalizeType(from) == "null") && to.ends_with("@"))
+    if ((from == "null" || CanonicalizeType(from) == "null") && IsHandleTypeView(to))
     {
         return true;
     }
@@ -979,8 +979,7 @@ ExpressionType ResolveIdentifierValueType(TSNode node, const Scope* scope, const
         if (const LocalDefinition* def = ResolveInScopeAt(scope, name, ts_node_start_byte(node));
             def && !def->typeName.empty())
         {
-            const bool isConst =
-                def->typeName.starts_with("const ") || def->typeName.find("const ") != std::string::npos;
+            const bool isConst = def->isConst || IsConstTypeView(def->typeName);
             return ExpressionType{CleanBaseType(def->typeName), true, false, isConst};
         }
     }
@@ -998,8 +997,7 @@ ExpressionType ResolveIdentifierValueType(TSNode node, const Scope* scope, const
                            if (!sym.GetVariable().typeName.empty())
                            {
                                const auto& var = sym.GetVariable();
-                               const bool isConst = var.modifiers.isConst || var.typeName.starts_with("const ") ||
-                                                    var.typeName.find("const ") != std::string::npos;
+                               const bool isConst = var.modifiers.isConst || IsConstTypeView(var.typeName);
                                result = ExpressionType{CleanBaseType(var.typeName), true, false, isConst};
                                return true;
                            }
@@ -1044,8 +1042,7 @@ ExpressionType ResolveCallValueType(TSNode node, const DiagnosticContext& ctx)
                            if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
                            {
                                const auto& fn = sym.GetFunction();
-                               const bool isConst = fn.returnType.starts_with("const ") ||
-                                                    fn.returnType.find("const ") != std::string::npos;
+                               const bool isConst = IsConstTypeView(fn.returnType);
                                result = ExpressionType{CleanBaseType(fn.returnType), true, false, isConst};
                                return true;
                            }
@@ -1116,7 +1113,7 @@ static ExpressionType ResolveCastValueType(TSNode node, const DiagnosticContext&
 {
     const std::string rawText =
         NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldType), ctx.request.sourceCode);
-    const bool isConst = rawText.starts_with("const ") || rawText.find("const ") != std::string::npos;
+    const bool isConst = IsConstTypeView(rawText);
     const std::string typeText = CleanBaseType(rawText);
     return typeText.empty() ? ExpressionType{} : ExpressionType{typeText, true, false, isConst};
 }
@@ -1170,7 +1167,7 @@ ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const D
     if (sym == gs.symMemberExpression)
     {
         const std::string resolved = ResolveExpressionType(node, ExpressionTypeContext(scope, ctx));
-        const bool isConst = resolved.starts_with("const ") || resolved.find("const ") != std::string::npos;
+        const bool isConst = IsConstTypeView(resolved);
         return resolved.empty() ? ExpressionType{} : ExpressionType{CleanBaseType(resolved), true, false, isConst};
     }
 
@@ -1672,7 +1669,7 @@ bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const DiagnosticCo
     {
         if (const LocalDefinition* def = ResolveInScopeAt(scope, LastScopeSegment(name), ts_node_start_byte(current)))
         {
-            return def->typeName.starts_with("const ");
+            return def->isConst || IsConstTypeView(def->typeName);
         }
     }
 
@@ -1684,7 +1681,8 @@ bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const DiagnosticCo
                            {
                                return false;
                            }
-                           folded = symVal.GetVariable().typeName.starts_with("const ");
+                           folded =
+                               symVal.GetVariable().modifiers.isConst || IsConstTypeView(symVal.GetVariable().typeName);
                            return true;
                        });
     return folded;
@@ -1756,8 +1754,7 @@ void CheckFloatTruncation(TSNode valueNode, const ConversionTypes& types, const 
 struct DeclaredType
 {
     std::string baseName;
-    bool isHandle = false;
-    bool isConst = false;
+    TypeQualifiers qualifiers;
     bool usable = false; ///< False when the shape is out of scope (array, template, unknown).
 
     /**
@@ -1810,8 +1807,8 @@ DeclaredType ReadDeclaredType(TSNode typeNode, const DiagnosticContext& ctx)
         return result;
     }
 
-    result.isHandle = raw.find('@') != std::string::npos;
-    result.isConst = raw.starts_with("const ") || raw.find("const ") != std::string::npos;
+    result.qualifiers.isHandle = IsHandleTypeView(raw);
+    result.qualifiers.isConst = IsConstTypeView(raw);
     result.baseName = CleanBaseType(raw);
     if (result.baseName.empty() || ctx.request.IsRegisteredSymbol(result.baseName))
     {
@@ -1886,7 +1883,7 @@ void CheckHandleInitializer(TSNode valueNode, const ExpressionType& source, cons
         return;
     }
 
-    if (source.isConst && !declared.isConst)
+    if (source.isConst && !declared.qualifiers.isConst)
     {
         EmitAtNode(valueNode, ctx, "as-err-no-implicit-conversion",
                    {"const " + source.baseName + "@", declared.baseName + "@"});
@@ -1937,7 +1934,7 @@ void CheckInitializer(TSNode declaratorNode, const DeclaredType& declared, const
         return;
     }
 
-    if (!declared.isHandle)
+    if (!declared.qualifiers.isHandle)
     {
         CheckFloatTruncation(valueNode, {source.baseName, declared.baseName}, scope, ctx);
     }
@@ -2784,12 +2781,12 @@ void CheckRefTypeBoolConversion(TSNode condNode, const Scope* scope, DiagnosticC
         const LocalDefinition* def = ResolveInScopeAt(scope, name, ts_node_start_byte(current));
         if (def)
         {
-            isHandle = def->typeName.find('@') != std::string::npos;
+            isHandle = def->isHandleType || IsHandleTypeView(def->typeName);
         }
     }
 
     const std::string condType = ResolveExpressionType(current, ExpressionTypeContext(scope, ctx));
-    if (!isHandle && condType.find('@') == std::string::npos)
+    if (!isHandle && !IsHandleTypeView(condType))
     {
         return;
     }
@@ -2870,7 +2867,7 @@ static bool IsIncompleteOrIgnoredBranchType(std::string_view type)
  */
 static bool AreTernaryBranchesIncompatible(const std::string& clean1, const std::string& clean2, DiagnosticContext& ctx)
 {
-    if ((clean1 == "null" && clean2.ends_with("@")) || (clean2 == "null" && clean1.ends_with("@")))
+    if ((clean1 == "null" && IsHandleTypeView(clean2)) || (clean2 == "null" && IsHandleTypeView(clean1)))
     {
         return false;
     }
@@ -3264,7 +3261,7 @@ void ProcessAutoDeclarator(TSNode child, const TypeConversionCheckRequest& reque
         if (def && CleanBaseType(def->typeName) == "auto")
         {
             std::string finalType = rhsType;
-            if ((def->isHandleType || def->typeName.find('@') != std::string::npos) && !finalType.ends_with('@'))
+            if ((def->isHandleType || IsHandleTypeView(def->typeName)) && !IsHandleTypeView(finalType))
             {
                 finalType += '@';
             }
@@ -3363,7 +3360,7 @@ void ProcessDeclaredVariableDeclarators(TSNode node, TSNode typeNode, const Type
             }
 
             CheckInitializer(child, declared, scope, ctx);
-            if (!declared.isHandle)
+            if (!declared.qualifiers.isHandle)
             {
                 CheckDeclaratorConstruction(child, declared, scope, ctx);
             }
@@ -3445,7 +3442,7 @@ void CheckAssignmentPropertyAccess(TSNode node, const Scope* scope, DiagnosticCo
             {
                 EmitAtNode(left, ctx, "as-err-read-only-property", pInfo.propName);
             }
-            else if (opSym != gs.tokAssign && pInfo.receiverType.find('@') == std::string::npos)
+            else if (opSym != gs.tokAssign && !IsHandleTypeView(pInfo.receiverType))
             {
                 EmitAtNode(node, ctx, "as-err-compound-assign-on-value-prop", pInfo.propName);
             }
@@ -3598,7 +3595,7 @@ static bool HasHandleOpAssign(std::string_view clean, const SymbolTable& table)
             {
                 const auto& fn = sym.GetFunction();
                 if (!fn.parameters.empty() &&
-                    (fn.parameters[0].isHandle || fn.parameters[0].typeName.find('@') != std::string::npos))
+                    (fn.parameters[0].isHandle || IsHandleTypeView(fn.parameters[0].typeName)))
                 {
                     return true;
                 }
@@ -3626,7 +3623,7 @@ static bool HasHandleConvertingCtor(std::string_view clean, const SymbolTable& t
             {
                 const auto& fn = sym.GetFunction();
                 if (!fn.modifiers.isExplicit && fn.parameters.size() == 1 &&
-                    (fn.parameters[0].isHandle || fn.parameters[0].typeName.find('@') != std::string::npos))
+                    (fn.parameters[0].isHandle || IsHandleTypeView(fn.parameters[0].typeName)))
                 {
                     return true;
                 }
@@ -3701,8 +3698,7 @@ static bool CheckNullAssignmentToNonHandle(TSNode node, TSNode right, const std:
     const TSNode left = ts_node_child_by_field_id(node, gs.fieldLeft);
     if (IsHandleAssignmentTarget(left))
     {
-        if (rawLeftType.find('@') != std::string::npos || rawLeftType == "auto" || rawLeftType == "?" ||
-            rawLeftType == "any")
+        if (IsHandleTypeView(rawLeftType) || rawLeftType == "auto" || rawLeftType == "?" || rawLeftType == "any")
         {
             return true;
         }
@@ -4319,7 +4315,7 @@ void ProcessCallOrConstructNode(TSNode node, const TypeConversionCheckRequest& r
     else
     {
         const DeclaredType target = ReadDeclaredType(callee, ctx);
-        if (target.usable && !target.isHandle && IsSameType(calleeName, target.baseName))
+        if (target.usable && !target.qualifiers.isHandle && IsSameType(calleeName, target.baseName))
         {
             const Scope* scope = ResolveNodeScope(node, request);
             CheckConstruction(argsNode, target.baseName, scope, ctx);
@@ -4503,7 +4499,7 @@ bool IsTruthyCondition(const std::string& typeName, const SymbolTable& table)
         return false;
     }
 
-    if (typeName.ends_with('@') || typeName.find('@') != std::string::npos)
+    if (IsHandleTypeView(typeName))
     {
         return true;
     }

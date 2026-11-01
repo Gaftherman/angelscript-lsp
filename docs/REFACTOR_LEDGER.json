@@ -21,6 +21,150 @@
         "EmptyParenAndTelemetryParityTest",
         "GitHubIssuesOracleParityTest"
       ]
+    },
+    {
+      "id": "REF-0002",
+      "phase": "R1",
+      "action": "COMPACT_RAM_LAYOUT",
+      "sourceFile": "server/src/analysis/SymbolTable.h",
+      "deletedLineRange": "120-180",
+      "originalSymbolOrCode": "SymbolModifiers",
+      "whatItDidAndWhyInThatFile": "Carried 13 boolean flags, 2 enums, and placement tracking taking 24 bytes.",
+      "whyChangedOrDeleted": "Compacted using C++20 uint8_t bitfields and enum narrowing to fit exactly into 4 bytes.",
+      "replacedByCanonicalFile": "server/src/analysis/SymbolTable.h",
+      "replacedByCanonicalSymbol": "SymbolModifiers",
+      "ramOrCpuImpact": "Compacted from 24 B to 4 B (-83.3% memory reduction, 2.0 MB saved per 100k instances).",
+      "verifiedByTests": [
+        "MemoryLayoutAudit",
+        "SymbolCollectorTest",
+        "SemanticAnalyzerTest"
+      ]
+    },
+    {
+      "id": "REF-0003",
+      "phase": "R1",
+      "action": "COMPACT_RAM_LAYOUT",
+      "sourceFile": "server/src/analysis/SymbolTable.h",
+      "deletedLineRange": "180-260",
+      "originalSymbolOrCode": "ParameterInformation",
+      "whatItDidAndWhyInThatFile": "Stored raw parameter text (std::string rawText) and 9 individual bool flags taking 248 bytes.",
+      "whyChangedOrDeleted": "Eliminated rawText in favor of on-demand FormatParameter() formatting, and packed 9 bools into 1-bit bitfields.",
+      "replacedByCanonicalFile": "server/src/analysis/SymbolTable.h",
+      "replacedByCanonicalSymbol": "ParameterInformation",
+      "ramOrCpuImpact": "Compacted from 248 B to 200 B (-19.4% memory reduction, 4.8 MB saved per 100k instances).",
+      "verifiedByTests": [
+        "MemoryLayoutAudit",
+        "CallCheckerTest",
+        "SignatureHelpTest",
+        "OverloadResolutionTest"
+      ]
+    },
+    {
+      "id": "REF-0004",
+      "phase": "R1",
+      "action": "COMPACT_RAM_LAYOUT",
+      "sourceFile": "server/src/analysis/SymbolTable.h",
+      "deletedLineRange": "260-450",
+      "originalSymbolOrCode": "FunctionSignature, VariableSignature, FuncdefSignature, ClassSignature, Symbol",
+      "whatItDidAndWhyInThatFile": "Hot semantic model structures carrying unpacked booleans, default alignments, and nested signatures.",
+      "whyChangedOrDeleted": "Bitfield packing, reordered fields by decreasing alignment, and nested compacted SymbolModifiers.",
+      "replacedByCanonicalFile": "server/src/analysis/SymbolTable.h",
+      "replacedByCanonicalSymbol": "FunctionSignature",
+      "ramOrCpuImpact": "FunctionSignature: 264->232 B (-12.1%); VariableSignature: 216->168 B (-22.2%); FuncdefSignature: 176->144 B (-18.2%); ClassSignature: 104->80 B (-23.1%); Symbol: 528->488 B (-7.6%).",
+      "verifiedByTests": [
+        "MemoryLayoutAudit",
+        "SymbolCollectorTest",
+        "SemanticAnalyzerTest",
+        "TypeRulesTest"
+      ]
+    },
+    {
+      "id": "REF-0005",
+      "phase": "R1",
+      "action": "COMPACT_RAM_LAYOUT",
+      "sourceFile": "server/src/analysis/ScopeTree.h",
+      "deletedLineRange": "40-270",
+      "originalSymbolOrCode": "LocalDefinition, Scope",
+      "whatItDidAndWhyInThatFile": "Lexical scope and local definition structures with loose padding and unpacked booleans.",
+      "whyChangedOrDeleted": "Packed LocalDefinitionKind and ScopeKind into uint8_t, reordered positions, and bitfield packed flags (isConst, isReference, isHandleType, hasNullInitializer).",
+      "replacedByCanonicalFile": "server/src/analysis/ScopeTree.h",
+      "replacedByCanonicalSymbol": "LocalDefinition",
+      "ramOrCpuImpact": "LocalDefinition compacted from 208 B to 184 B (-11.5%, 2.4 MB saved per 100k instances); Scope compacted to 128 B.",
+      "verifiedByTests": [
+        "MemoryLayoutAudit",
+        "LocalScopeCollectorTest",
+        "DefiniteAssignmentCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0006",
+      "phase": "R1",
+      "action": "COMPACT_RAM_LAYOUT",
+      "sourceFile": "server/src/analysis/NodeIndex.h",
+      "deletedLineRange": "20-100",
+      "originalSymbolOrCode": "IndexedContainerSpan, NodeIndex",
+      "whatItDidAndWhyInThatFile": "AST node indexing span and table structures.",
+      "whyChangedOrDeleted": "Narrowed ContainerKind to uint8_t and packed IndexedContainerSpan to 20 bytes.",
+      "replacedByCanonicalFile": "server/src/analysis/NodeIndex.h",
+      "replacedByCanonicalSymbol": "IndexedContainerSpan",
+      "ramOrCpuImpact": "IndexedContainerSpan compacted from 24 B to 20 B (-16.7%).",
+      "verifiedByTests": [
+        "MemoryLayoutAudit",
+        "NodeIndexTest"
+      ]
+    },
+    {
+      "id": "REF-0007",
+      "phase": "R1",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/CallChecker.cpp",
+      "deletedLineRange": "50-80",
+      "originalSymbolOrCode": "ObjectTypeInfo",
+      "whatItDidAndWhyInThatFile": "Ad-hoc local struct tracking isConst, isHandle, isReference qualifiers.",
+      "whyChangedOrDeleted": "Unified with canonical 1-byte struct TypeQualifiers.",
+      "replacedByCanonicalFile": "server/src/analysis/SymbolTable.h",
+      "replacedByCanonicalSymbol": "TypeQualifiers",
+      "ramOrCpuImpact": "Eliminated duplicate struct definition and packed qualifiers into 1 byte.",
+      "verifiedByTests": [
+        "CallCheckerTest",
+        "TypeConversionTest"
+      ]
+    },
+    {
+      "id": "REF-0008",
+      "phase": "R1",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/TypeConversionChecker.cpp",
+      "deletedLineRange": "60-100",
+      "originalSymbolOrCode": "DeclaredType",
+      "whatItDidAndWhyInThatFile": "Ad-hoc local struct tracking isConst, isHandle, isReference qualifiers.",
+      "whyChangedOrDeleted": "Unified qualifier fields with canonical struct TypeQualifiers.",
+      "replacedByCanonicalFile": "server/src/analysis/SymbolTable.h",
+      "replacedByCanonicalSymbol": "TypeQualifiers",
+      "ramOrCpuImpact": "Eliminated duplicate qualifier flags and unified representation.",
+      "verifiedByTests": [
+        "TypeConversionTest",
+        "TypeRulesTest"
+      ]
+    },
+    {
+      "id": "REF-0009",
+      "phase": "R1",
+      "action": "DELETE_REDUNDANT_FLAG_CHECK",
+      "sourceFile": "server/src/analysis/TypeConversionChecker.cpp",
+      "deletedLineRange": "1000-4500",
+      "originalSymbolOrCode": ".starts_with(\"const \"), .find('@'), .ends_with('@')",
+      "whatItDidAndWhyInThatFile": "Manual repetitive string searching for '@', '&', and 'const ' across type resolution passes.",
+      "whyChangedOrDeleted": "Replaced with precalculated Pass-1 bitfields (isConst, isReference, isHandleType) and zero-allocation constexpr helpers in TypeSanitization.h.",
+      "replacedByCanonicalFile": "server/src/analysis/TypeSanitization.h",
+      "replacedByCanonicalSymbol": "IsHandleTypeView",
+      "ramOrCpuImpact": "Zero string scans, eliminated CPU branch mispredictions and string parsing overhead.",
+      "verifiedByTests": [
+        "TypeConversionTest",
+        "ConstCheckerTest",
+        "TypeRulesTest",
+        "MemoryLayoutAudit"
+      ]
     }
   ]
 }

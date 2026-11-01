@@ -3,6 +3,7 @@
  * @brief Miscellaneous quick-fix code action providers (primitive handles, funcdefs, bool conversions).
  */
 
+#include "analysis/SignatureFormatter.h"
 #include "features/code_action/CodeActionInternal.h"
 #include "i18n/i18n.h"
 
@@ -58,8 +59,7 @@ std::string FormatFuncdefDeclarationText(const analysis::FunctionSignature& sign
         {
             declaration += ", ";
         }
-        const auto& parameter = signature.parameters[i];
-        declaration += parameter.rawText.empty() ? parameter.typeName : parameter.rawText;
+        declaration += analysis::FormatParameter(signature.parameters[i]);
     }
     declaration += ");\n";
     return declaration;
@@ -140,7 +140,7 @@ void TryAddHandleOnPrimitiveFix(const CodeActionRequest& request, TSNode rootNod
         }
 
         const std::string_view line = angel_lsp::utils::GetLine(request.sourceCode, diag.range.start.line);
-        const size_t at = line.find('@', diag.range.start.character);
+        const size_t at = line.find_first_of('@', diag.range.start.character);
         if (at == std::string_view::npos || at >= diag.range.end.character)
         {
             continue;

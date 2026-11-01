@@ -2,6 +2,7 @@
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SignatureFormatter.h"
+#include "analysis/TypeSanitization.h"
 #include "i18n/i18n.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
@@ -119,7 +120,7 @@ const std::vector<analysis::ParameterInformation>* GetParametersIfCallable(const
  */
 bool IsVarargParameter(const analysis::ParameterInformation& param)
 {
-    return param.name == "..." || param.typeName == "..." || param.rawText.find("...") != std::string::npos;
+    return param.name == "..." || param.typeName == "..." || param.typeName.find("...") != std::string::npos;
 }
 
 /**
@@ -1113,7 +1114,7 @@ std::string DeduceUnaryExpressionType(TSNode exprNode, const InlayHintRequest& r
     if (opSym == gs.tokAt)
     {
         std::string opT = DeduceExpressionType(operand, request);
-        if (!opT.empty() && !opT.ends_with("@"))
+        if (!opT.empty() && !analysis::IsHandleTypeView(opT))
         {
             return opT + "@";
         }
@@ -1248,14 +1249,6 @@ std::string ResolveParameterLabel(const analysis::ParameterInformation& param)
     if (!param.name.empty() && param.name != "...")
     {
         return param.name;
-    }
-    if (!param.rawText.empty() && param.rawText.find("...") == std::string::npos)
-    {
-        std::string fallback = TrimNodeText(param.rawText.substr(0, param.rawText.find('=')));
-        if (!fallback.empty() && fallback != "...")
-        {
-            return fallback;
-        }
     }
     return (!param.typeName.empty() && param.typeName != "...") ? param.typeName : "";
 }
@@ -1826,7 +1819,7 @@ void ProcessAutoVariableDeclarator(TSNode declarator, const InlayHintRequest& re
         return;
     }
 
-    if (isHandle && !deduced.ends_with('@'))
+    if (isHandle && !analysis::IsHandleTypeView(deduced))
     {
         deduced += '@';
     }
@@ -1943,7 +1936,7 @@ void ProcessVariableDeclaration(TSNode node, const InlayHintRequest& request, st
 
     std::string typeText = GetNodeText(varTypeNode, request.sourceCode);
     bool isAuto = (analysis::CleanBaseTypeView(typeText) == "auto");
-    bool isHandle = (typeText.find('@') != std::string::npos);
+    bool isHandle = analysis::IsHandleTypeView(typeText);
     parser::ForEachChildNode(node,
                              [&](TSNode child)
                              {

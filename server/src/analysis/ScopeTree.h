@@ -15,7 +15,7 @@
 namespace angel_lsp::analysis
 {
 /** @brief What kind of declaration a LOCALS_QUERY @local.definition.* capture represents. */
-enum class LocalDefinitionKind
+enum class LocalDefinitionKind : uint8_t
 {
     Parameter,
     Variable,
@@ -40,8 +40,6 @@ struct LocalTypeArgPosition
 
 /**
  * @brief Lexical definition occurrence (variable, parameter, loop variable) within a Scope.
- * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (pack flags, bundle positions into SourceRange in
- * Phase R1).
  */
 struct LocalDefinition
 {
@@ -63,7 +61,10 @@ struct LocalDefinition
     }
 
     std::string name;
-    LocalDefinitionKind kind = LocalDefinitionKind::Variable;
+    std::string typeName;
+    std::string defaultValue;
+
+    std::vector<LocalTypeArgPosition> templateArgPositions;
 
     uint32_t startLine = 0;
     uint32_t startCharacter = 0;
@@ -78,46 +79,22 @@ struct LocalDefinition
     uint32_t typeEndLine = 0;
     uint32_t typeEndCharacter = 0;
 
-    std::vector<LocalTypeArgPosition> templateArgPositions;
-
-    /**
-     * @brief Only meaningful when kind == Variable and the definition came from a
-     *        variable_declarator, a parameter, or a foreach_variable:
-     *        true if the declared type has a trailing '@' handle marker. See
-     *        SemanticAnalyzer::CheckNullAssignedToNonHandleInScope.
-     */
-    bool isHandleType = false;
-
-    /**
-     * @brief Same condition as isHandleType: the declared type's TypeKind, e.g. TypeKind::Int32
-     *        for a VM-intrinsic primitive vs TypeKind::Unknown/Object for a class type (whose
-     *        null-compatibility depends on app/engine registration this analyzer can't see).
-     *        Defaults to Unknown, same as an un-populated VariableSignature::typeKind.
-     */
-    TypeKind typeKind = TypeKind::Unknown;
-
-    /**
-     * @brief Only meaningful under the same condition as isHandleType: true if the
-     *        initializer's own top-level value is a 'null' literal (see
-     *        TypeExtraction.h::IsNullInitializer).
-     */
-    bool hasNullInitializer = false;
-
-    /** @brief Same condition as isHandleType: the declared type's source text, e.g. "int". */
-    std::string typeName;
-
-    /** @brief Initializer value expression as written in source, e.g. "\"ins2/arf/\"" or "40". */
-    std::string defaultValue;
-
-    /** @brief Full range of the declaration or declarator including type and initializer. */
     uint32_t fullStartLine = 0;
     uint32_t fullStartCharacter = 0;
     uint32_t fullEndLine = 0;
     uint32_t fullEndCharacter = 0;
 
-    /** @brief Byte offset where this definition becomes sequentially visible. */
     uint32_t visibleFromByte = 0;
+
+    LocalDefinitionKind kind = LocalDefinitionKind::Variable;
+    TypeKind typeKind = TypeKind::Unknown;
+
+    bool isHandleType : 1 = false;
+    bool hasNullInitializer : 1 = false;
+    bool isConst : 1 = false;
+    bool isReference : 1 = false;
 };
+static_assert(sizeof(LocalDefinition) <= 192);
 
 /** @brief A single identifier occurrence inside a Scope, not yet resolved to a definition. */
 struct LocalReference
@@ -201,7 +178,7 @@ struct StringLiteralCallRef
 };
 
 /** @brief What kind of syntactic construct created this lexical scope. */
-enum class ScopeKind
+enum class ScopeKind : uint8_t
 {
     Block,
     Function,
@@ -216,11 +193,15 @@ enum class ScopeKind
  *        tree built from a document's LOCALS_QUERY matches. Scopes nest by source range: every
  *        definition/reference is attached to the innermost scope whose range contains it, and
  *        every child scope's range is contained within its parent's.
- * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (pack ScopeKind and isFunctionScope into uint8_t in
- * Phase R1).
  */
 struct Scope
 {
+    Scope* parent = nullptr;
+    std::vector<std::unique_ptr<Scope>> children;
+    std::vector<LocalDefinition> definitions;
+    std::vector<LocalReference> references;
+    std::vector<StringLiteralCallRef> stringLiteralCallRefs;
+
     uint32_t startLine = 0;
     uint32_t startCharacter = 0;
     uint32_t endLine = 0;
@@ -237,13 +218,7 @@ struct Scope
      * captures both under the identical LocalDefinitionKind::Variable, with no other way to
      * tell them apart from a Scope/LocalDefinition alone.
      */
-    bool isFunctionScope = false;
-
-    Scope* parent = nullptr;
-    std::vector<std::unique_ptr<Scope>> children;
-    std::vector<LocalDefinition> definitions;
-    std::vector<LocalReference> references;
-    std::vector<StringLiteralCallRef> stringLiteralCallRefs;
+    bool isFunctionScope : 1 = false;
 
     /**
      * @brief Destroys the subtree iteratively rather than by recursive unique_ptr teardown.
@@ -283,6 +258,7 @@ struct Scope
     Scope(const Scope&) = delete;
     Scope& operator=(const Scope&) = delete;
 };
+static_assert(sizeof(Scope) <= 128);
 
 /**
  * @brief Maximum recursion or traversal depth allowed when walking scope hierarchies.

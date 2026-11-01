@@ -35,22 +35,18 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
 
         ParameterInformation wildcardRefParam;
         wildcardRefParam.typeName = "?&in";
-        wildcardRefParam.rawText = "const ?&in";
         CHECK(IsWildcardParameter(wildcardRefParam));
 
         ParameterInformation anyParam;
         anyParam.typeName = "any";
-        anyParam.rawText = "any";
         CHECK_FALSE(IsWildcardParameter(anyParam));
 
         ParameterInformation anyHandleParam;
         anyHandleParam.typeName = "any@";
-        anyHandleParam.rawText = "any@";
         CHECK_FALSE(IsWildcardParameter(anyHandleParam));
 
         ParameterInformation regularParam;
         regularParam.typeName = randomTypeName;
-        regularParam.rawText = randomTypeName;
         CHECK_FALSE(IsWildcardParameter(regularParam));
     }
 
@@ -63,26 +59,23 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
         // 1. Native bracket syntax
         ParameterInformation bracketParam;
         bracketParam.typeName = elemType + "[]";
-        bracketParam.rawText = elemType + "[]";
+        bracketParam.isArray = true;
         CHECK(IsContainerParameter(bracketParam, nullptr, "array"));
 
         // 2. Default array template
         ParameterInformation defaultArrayParam;
         defaultArrayParam.typeName = "array<" + elemType + ">";
-        defaultArrayParam.rawText = "array<" + elemType + ">";
         CHECK(IsContainerParameter(defaultArrayParam, nullptr, "array"));
 
         // 3. Configured array container name
         ParameterInformation customArrayParam;
         customArrayParam.typeName = customArrayName + "<" + elemType + ">";
-        customArrayParam.rawText = customArrayName + "<" + elemType + ">";
         CHECK(IsContainerParameter(customArrayParam, nullptr, customArrayName));
 
         // 4. vector< is not a built-in container in AngelScript and must not be accepted unless declared
         SymbolTable emptyTable;
         ParameterInformation vectorParam;
         vectorParam.typeName = "vector<" + elemType + ">";
-        vectorParam.rawText = "vector<" + elemType + ">";
         CHECK_FALSE(IsContainerParameter(vectorParam, &emptyTable, "array"));
 
         // 5. Dynamic SymbolTable lookup: custom template container with @listpattern
@@ -99,7 +92,6 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
 
         ParameterInformation dynamicTemplateParam;
         dynamicTemplateParam.typeName = customTemplateName + "<" + elemType + ">";
-        dynamicTemplateParam.rawText = customTemplateName + "<" + elemType + ">";
         CHECK(IsContainerParameter(dynamicTemplateParam, &tableWithTemplate, "array"));
 
         // 6. Template class without list pattern or list constructor (e.g. optional<T>) is rejected
@@ -116,7 +108,6 @@ TEST_SUITE("ConfiguredTypesAndAntiPatterns")
 
         ParameterInformation plainTemplateParam;
         plainTemplateParam.typeName = untaggedTemplate + "<" + elemType + ">";
-        plainTemplateParam.rawText = untaggedTemplate + "<" + elemType + ">";
         CHECK_FALSE(IsContainerParameter(plainTemplateParam, &tableWithTemplate, "array"));
     }
 

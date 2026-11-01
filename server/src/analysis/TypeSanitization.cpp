@@ -6,86 +6,20 @@
 
 namespace angel_lsp::analysis
 {
-void TrimTypeWhitespace(std::string_view& typeName)
-{
-    while (!typeName.empty() && (typeName.front() == ' ' || typeName.front() == '\t'))
-    {
-        typeName.remove_prefix(1);
-    }
-    while (!typeName.empty() && (typeName.back() == ' ' || typeName.back() == '\t'))
-    {
-        typeName.remove_suffix(1);
-    }
-}
-
-/**
- * @brief Strip leading const.
- * @param[in,out] typeName Parameter typeName.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
- * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
- */
-void StripLeadingConst(std::string_view& typeName)
-{
-    if (typeName.starts_with("const "))
-    {
-        typeName.remove_prefix(6);
-    }
-}
-
-/**
- * @brief Strip trailing decorations view.
- * @param[in,out] result Parameter result.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
- * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
- */
-void StripTrailingDecorationsView(std::string_view& result) noexcept
-{
-    bool modified = true;
-    while (modified)
-    {
-        modified = false;
-        while (!result.empty() &&
-               (result.back() == '@' || result.back() == '&' || result.back() == ' ' || result.back() == '\t'))
-        {
-            result.remove_suffix(1);
-            modified = true;
-        }
-        if (result.ends_with(" const"))
-        {
-            result.remove_suffix(6);
-            modified = true;
-        }
-        else if (result.ends_with("[]"))
-        {
-            result.remove_suffix(2);
-            modified = true;
-        }
-        else if (!result.empty() && result.back() == ']')
-        {
-            const size_t bracket = result.rfind('[');
-            if (bracket != std::string_view::npos)
-            {
-                result = result.substr(0, bracket);
-                modified = true;
-            }
-        }
-    }
-}
 
 void StripTrailingDecorations(std::string& result)
 {
-    std::string_view view = result;
-    StripTrailingDecorationsView(view);
+    std::string_view view = StripTrailingDecorationsView(result, true);
     result.resize(view.size());
 }
 
 std::string_view CleanBaseTypeView(std::string_view typeName, std::string_view arrayTypeName) noexcept
 {
     TrimTypeWhitespace(typeName);
-    StripLeadingConst(typeName);
+    typeName = StripLeadingConst(typeName);
     TrimTypeWhitespace(typeName);
 
-    StripTrailingDecorationsView(typeName);
+    typeName = StripTrailingDecorationsView(typeName, true);
 
     if (typeName.starts_with("array<") && typeName.ends_with('>'))
     {

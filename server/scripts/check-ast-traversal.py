@@ -554,6 +554,48 @@ def check_no_analysis_ast_utils():
         return [target]
     return []
 
+MANUAL_QUALIFIER_ALLOWED_FILES = {
+    SERVER_SRC / "analysis" / "TypeExtraction.cpp",
+    SERVER_SRC / "analysis" / "TypeExtraction.h",
+    SERVER_SRC / "analysis" / "TypeSanitization.cpp",
+    SERVER_SRC / "analysis" / "TypeSanitization.h",
+}
+
+MANUAL_QUALIFIER_PATTERNS = [
+    (re.compile(r'\.(?:find|ends_with)\s*\(\s*[\'"]@[\'"]'), "manual '@' search (use analysis::IsHandleTypeView)"),
+    (re.compile(r'\.back\(\)\s*==\s*[\'"]@[\'"]'), "manual back() == '@' (use analysis::IsHandleTypeView)"),
+    (re.compile(r'\.(?:starts_with|find)\s*\(\s*"const "'), 'manual "const " search (use analysis::IsConstTypeView or StripLeadingConst)'),
+    (re.compile(r'\.find\s*\(\s*"&out"'), 'manual "&out" search (use param.isOutRef / IsReferenceTypeView)'),
+    (re.compile(r'\.find\s*\(\s*"&inout"'), 'manual "&inout" search (use param.isInOutRef / IsReferenceTypeView)'),
+]
+
+def check_no_manual_type_qualifier_parsing():
+    """
+    Enforces that NO manual type qualifier reparsing is performed in Layer 2 (analysis)
+    or Layer 3 (features). All qualifier checks must read precalculated Pass-1 flags
+    or use canonical zero-allocation helpers in analysis/TypeSanitization.h.
+    """
+    violations = []
+    target_dirs = [SERVER_SRC / "analysis", SERVER_SRC / "features"]
+    for d in target_dirs:
+        for file_path in d.rglob("*.[ch]*"):
+            if not file_path.is_file() or file_path in MANUAL_QUALIFIER_ALLOWED_FILES:
+                continue
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+
+            for idx, line in enumerate(content.splitlines(), 1):
+                stripped = line.strip()
+                if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                    continue
+                for pat, desc in MANUAL_QUALIFIER_PATTERNS:
+                    if pat.search(line):
+                        violations.append((file_path, idx, stripped, desc))
+                        break
+    return violations
+
 def main():
     has_errors = False
     
@@ -741,10 +783,18 @@ def main():
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
 
+    qualifier_violations = check_no_manual_type_qualifier_parsing()
+    if qualifier_violations:
+        has_errors = True
+        print("[ERROR] Manual type qualifier reparsing detected in Layer 2 or Layer 3 (use precalculated Pass-1 flags or TypeSanitization.h):")
+        for f, line_num, line, reason in qualifier_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line} -> {reason}")
+
     if has_errors:
         sys.exit(1)
 
-    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 ForEachDescendantNode, 0 engine hardcodings, 0 type hardcodings, 0 banned identifiers, 0 unrandomized test BaseClass).")
+    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 ForEachDescendantNode, 0 engine hardcodings, 0 type hardcodings, 0 banned identifiers, 0 unrandomized test BaseClass, 0 manual qualifier reparsing).")
 
 if __name__ == "__main__":
     main()

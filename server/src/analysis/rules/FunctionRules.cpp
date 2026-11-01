@@ -1,7 +1,8 @@
-﻿#include "analysis/rules/FunctionRules.h"
+#include "analysis/rules/FunctionRules.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/TypeSanitization.h"
 #include "analysis/overload/OverloadTypeConversions.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
@@ -249,8 +250,8 @@ void CheckReturnTypeLegality(const Symbol& sym, const FunctionSignature& sig, co
         ctx.Emit(sym, "as-err-mixin-not-a-type", sig.returnBaseTypeName);
     }
 
-    const bool returnsByValue = sig.returnType.find('@') == std::string::npos &&
-                                sig.returnType.find('&') == std::string::npos && !sig.modifiers.isReturnReference;
+    const bool returnsByValue =
+        !IsHandleTypeView(sig.returnType) && !IsReferenceTypeView(sig.returnType) && !sig.modifiers.isReturnReference;
     if (returnsByValue && !sig.returnIsArray && sig.returnTemplateName.empty() &&
         ClassifyNonInstantiable(sig.returnBaseTypeName, ctx.request.symbolTable) != NonInstantiableKind::None)
     {

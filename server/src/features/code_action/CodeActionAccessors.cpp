@@ -1,3 +1,4 @@
+#include "analysis/TypeSanitization.h"
 #include "features/code_action/CodeActionInternal.h"
 #include "i18n/i18n.h"
 #include "parser/ASTUtils.h"
@@ -217,7 +218,7 @@ void EmitGetterSetterActionsForField(const CodeActionRequest& request, const Get
     }
 
     std::string cleanType = fType.empty() ? "int" : fType;
-    bool isPassByValue = analysis::IsPrimitiveTypeName(cleanType) || cleanType.ends_with("@");
+    bool isPassByValue = analysis::IsPrimitiveTypeName(cleanType) || analysis::IsHandleTypeView(cleanType);
     std::string setterParamType = isPassByValue ? cleanType : ("const " + cleanType + " &in");
 
     std::string getterCode =

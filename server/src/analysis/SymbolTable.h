@@ -29,7 +29,7 @@ struct RuleIndex;
 struct RuleIndexPartial;
 } // namespace rules
 
-enum class SymbolType
+enum class SymbolType : uint8_t
 {
     Variable,
     Function,
@@ -43,14 +43,14 @@ enum class SymbolType
     CallReference
 };
 
-enum class AccessModifier
+enum class AccessModifier : uint8_t
 {
     Public,
     Private,
     Protected
 };
 
-enum class ParameterModifier
+enum class ParameterModifier : uint8_t
 {
     None,
     In,
@@ -58,7 +58,7 @@ enum class ParameterModifier
     InOut
 };
 
-enum class TypeKind
+enum class TypeKind : uint8_t
 {
     Unknown,
     Auto,
@@ -106,28 +106,43 @@ enum class ModifierPlacement : uint8_t
 };
 
 /**
+ * @brief Canonical representation of AngelScript type qualifiers and reference modifiers.
+ */
+struct TypeQualifiers
+{
+    bool isConst : 1 = false;
+    bool isHandle : 1 = false;
+    bool isConstHandle : 1 = false;
+    bool isReference : 1 = false;
+    bool isOutRef : 1 = false;
+    bool isInOutRef : 1 = false;
+    bool isStandaloneRef : 1 = false;
+    bool isAuto : 1 = false;
+};
+static_assert(sizeof(TypeQualifiers) == 1);
+
+/**
  * @brief Declaration modifiers and syntactic attributes attached to symbols.
- * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (pack 14 bools into uint16_t in Phase R1).
  */
 struct SymbolModifiers
 {
     AccessModifier access = AccessModifier::Public;
-    bool isConst = false;
-    bool isHandle = false;
-    bool isShared = false;
-    bool isMixin = false;
-    bool isAbstract = false;
-    bool isFinal = false;
-    bool isDeclarationFinal =
-        false; ///< True when 'final' is a declaration_modifier (before type), not a func_attribute
-    bool isDeclarationAbstract = false; ///< True when 'abstract' is a declaration_modifier (before type)
-    bool isOverride = false;
-    bool isExplicit = false;
-    bool isProperty = false;
-    bool isDelete = false;
-    bool isExternal = false;
-    bool isReturnReference = false;
     ParameterModifier paramModifier = ParameterModifier::None;
+    bool isConst : 1 = false;
+    bool isHandle : 1 = false;
+    bool isShared : 1 = false;
+    bool isMixin : 1 = false;
+    bool isAbstract : 1 = false;
+    bool isFinal : 1 = false;
+    bool isDeclarationFinal : 1 =
+        false; ///< True when 'final' is a declaration_modifier (before type), not a func_attribute
+    bool isDeclarationAbstract : 1 = false; ///< True when 'abstract' is a declaration_modifier (before type)
+    bool isOverride : 1 = false;
+    bool isExplicit : 1 = false;
+    bool isProperty : 1 = false;
+    bool isDelete : 1 = false;
+    bool isExternal : 1 = false;
+    bool isReturnReference : 1 = false;
 
     [[nodiscard]] ModifierPlacement GetFinalPlacement() const noexcept
     {
@@ -159,51 +174,49 @@ struct SymbolModifiers
         isDeclarationAbstract = (placement == ModifierPlacement::Prefix);
     }
 };
+static_assert(sizeof(SymbolModifiers) <= 4);
 
 /**
  * @brief Signature metadata and semantic type qualifiers for a function parameter.
- * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (eliminate rawText, pack 9 bools into uint16_t
- * qualifiers in Phase R1).
  */
 struct ParameterInformation
 {
     ParameterInformation() = default;
-    ParameterInformation(std::string name_, std::string typeName_, std::string rawText_ = "",
-                         std::string baseTypeName_ = "")
-        : name(std::move(name_)), typeName(std::move(typeName_)), rawText(std::move(rawText_)),
-          baseTypeName(std::move(baseTypeName_))
+    ParameterInformation(std::string name_, std::string typeName_, std::string baseTypeName_ = "")
+        : name(std::move(name_)), typeName(std::move(typeName_)), baseTypeName(std::move(baseTypeName_))
     {
     }
 
     std::string name;
     std::string typeName;
-    std::string rawText;
     std::string baseTypeName;
     std::string templateName;
-    TypeKind typeKind = TypeKind::Unknown;
-    bool isArray = false;
-    bool hasPrimitiveHandle = false;
-    uint32_t arrayDepth = 0;
-    ParameterModifier modifier = ParameterModifier::None;
     std::string defaultValue;
-    bool isHandle = false;
-    bool isConst = false;
-    bool isReference = false;
-    bool hasDoubleReference = false;
-    bool isStandaloneRef = false;
-    bool isOutRef = false;
-    bool isInOutRef = false;
 
+    uint32_t arrayDepth = 0;
     uint32_t startLine = 0;
     uint32_t startCharacter = 0;
     uint32_t endLine = 0;
     uint32_t endCharacter = 0;
-
     uint32_t nameStartLine = 0;
     uint32_t nameStartCharacter = 0;
     uint32_t nameEndLine = 0;
     uint32_t nameEndCharacter = 0;
+
+    TypeKind typeKind = TypeKind::Unknown;
+    ParameterModifier modifier = ParameterModifier::None;
+
+    bool isArray : 1 = false;
+    bool hasPrimitiveHandle : 1 = false;
+    bool isHandle : 1 = false;
+    bool isConst : 1 = false;
+    bool isReference : 1 = false;
+    bool hasDoubleReference : 1 = false;
+    bool isStandaloneRef : 1 = false;
+    bool isOutRef : 1 = false;
+    bool isInOutRef : 1 = false;
 };
+static_assert(sizeof(ParameterInformation) <= 200);
 
 struct SourceRange
 {
@@ -245,62 +258,66 @@ struct TypeExtractionResult
 
 /**
  * @brief Signature metadata and parameter list for callable symbols.
- * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (pack return qualifiers in Phase R1).
  */
 struct FunctionSignature
 {
     std::string returnType;
     std::string returnBaseTypeName;
     std::string returnTemplateName;
-    SymbolModifiers modifiers;
-    TypeKind returnTypeKind = TypeKind::Unknown;
-    bool returnIsArray = false;
-    bool returnIsConst = false;
-    bool returnHasPrimitiveHandle = false;
-    uint32_t returnArrayDepth = 0;
-    std::vector<ParameterInformation> parameters;
-    bool hasBody = false;
-    bool isInterfaceMethod = false;
-    bool isImported = false;
     std::string originModule;
     std::string defaultValue;
     std::string displaySignature; ///< Canonical pre-formatted declaration for zero-copy std::string_view diagnostics.
+    std::vector<ParameterInformation> parameters;
+
+    uint32_t returnArrayDepth = 0;
+    SymbolModifiers modifiers;
+    TypeKind returnTypeKind = TypeKind::Unknown;
+
+    bool returnIsArray : 1 = false;
+    bool returnIsConst : 1 = false;
+    bool returnHasPrimitiveHandle : 1 = false;
+    bool hasBody : 1 = false;
+    bool isInterfaceMethod : 1 = false;
+    bool isImported : 1 = false;
 };
+static_assert(sizeof(FunctionSignature) <= 240);
 
 /**
  * @brief Signature and accessor metadata for variables and virtual properties.
- * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (pack 19 bools into uint32_t flags in Phase R1).
  */
 struct VariableSignature
 {
     std::string typeName;
     std::string baseTypeName;
     std::string templateName;
-    std::vector<std::string> templateArgumentTypes;
-    TypeKind typeKind = TypeKind::Unknown;
-    bool isArray = false;
-    bool hasPrimitiveHandle = false;
-    uint32_t arrayDepth = 0;
     std::string defaultValue;
+    std::vector<std::string> templateArgumentTypes;
+
+    uint32_t arrayDepth = 0;
     SymbolModifiers modifiers;
-    bool isVirtualProperty = false;
-    bool hasGet = false;
-    bool hasSet = false;
-    bool isGetConst = false;
-    bool hasBodyGet = false;
-    bool hasBodySet = false;
-    bool hasDuplicateGet = false;
-    bool hasDuplicateSet = false;
-    bool isGetOverride = false;
-    bool isSetOverride = false;
-    bool isGetFinal = false;
-    bool isSetFinal = false;
-    bool hasNullInitializer = false;
-    bool hasSemicolon = true;
-    bool isLocal = false;
-    bool isEnumConstant = false;
-    bool hasCallInitializer = false;
+    TypeKind typeKind = TypeKind::Unknown;
+
+    bool isArray : 1 = false;
+    bool hasPrimitiveHandle : 1 = false;
+    bool isVirtualProperty : 1 = false;
+    bool hasGet : 1 = false;
+    bool hasSet : 1 = false;
+    bool isGetConst : 1 = false;
+    bool hasBodyGet : 1 = false;
+    bool hasBodySet : 1 = false;
+    bool hasDuplicateGet : 1 = false;
+    bool hasDuplicateSet : 1 = false;
+    bool isGetOverride : 1 = false;
+    bool isSetOverride : 1 = false;
+    bool isGetFinal : 1 = false;
+    bool isSetFinal : 1 = false;
+    bool hasNullInitializer : 1 = false;
+    bool hasSemicolon : 1 = true;
+    bool isLocal : 1 = false;
+    bool isEnumConstant : 1 = false;
+    bool hasCallInitializer : 1 = false;
 };
+static_assert(sizeof(VariableSignature) <= 176);
 
 struct EnumMemberInformation
 {
@@ -311,18 +328,16 @@ struct EnumMemberInformation
 
 /**
  * @brief Enum declaration metadata and member constant listings.
- * @note [REFACTOR-CANDIDATE] Target for memory layout compaction in Phase R1.
  */
 struct EnumSignature
 {
-    SymbolModifiers modifiers;
     std::vector<EnumMemberInformation> members;
-    bool hasBraces = false;
+    SymbolModifiers modifiers;
+    bool hasBraces : 1 = false;
 };
 
 /**
  * @brief Class inheritance, included mixins, and template parameter metadata.
- * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (pack bool flags in Phase R1).
  */
 struct ClassSignature
 {
@@ -330,14 +345,14 @@ struct ClassSignature
     std::vector<std::string> includedMixins;
     std::vector<std::string> templateParams;
     SymbolModifiers modifiers;
-    bool isTemplate = false;
-    bool hasBraces = false;
-    bool hasListPattern = false;
+    bool isTemplate : 1 = false;
+    bool hasBraces : 1 = false;
+    bool hasListPattern : 1 = false;
 };
+static_assert(sizeof(ClassSignature) <= 80);
 
 /**
  * @brief Interface inheritance and modifier metadata.
- * @note [REFACTOR-CANDIDATE] Target for memory layout compaction in Phase R1.
  */
 struct InterfaceSignature
 {
@@ -347,73 +362,60 @@ struct InterfaceSignature
 
 /**
  * @brief Typedef alias declaration metadata and source position ranges.
- * @note [REFACTOR-CANDIDATE] Target for memory layout compaction in Phase R1.
  */
 struct TypedefSignature
 {
     std::string baseType;
-    TypeKind typeKind = TypeKind::Unknown;
-    bool hasSemicolon = true;
     uint32_t baseTypeStartLine = 0;
     uint32_t baseTypeStartCharacter = 0;
     uint32_t baseTypeEndLine = 0;
     uint32_t baseTypeEndCharacter = 0;
+    TypeKind typeKind = TypeKind::Unknown;
+    bool hasSemicolon : 1 = true;
 };
 
 /**
  * @brief Function definition pointer signature and parameter metadata.
- * @note [REFACTOR-CANDIDATE] Target for memory layout compaction in Phase R1.
  */
 struct FuncdefSignature
 {
     std::string returnType;
     std::string returnBaseTypeName;
     std::string returnTemplateName;
-    TypeKind returnTypeKind = TypeKind::Unknown;
-    bool returnIsArray = false;
-    bool returnIsConst = false;
-    bool returnHasPrimitiveHandle = false;
-    uint32_t returnArrayDepth = 0;
-    SymbolModifiers modifiers;
     std::vector<ParameterInformation> parameters;
+
+    uint32_t returnArrayDepth = 0;
     uint32_t returnTypeStartLine = 0;
     uint32_t returnTypeStartCharacter = 0;
     uint32_t returnTypeEndLine = 0;
     uint32_t returnTypeEndCharacter = 0;
+    SymbolModifiers modifiers;
+    TypeKind returnTypeKind = TypeKind::Unknown;
+
+    bool returnIsArray : 1 = false;
+    bool returnIsConst : 1 = false;
+    bool returnHasPrimitiveHandle : 1 = false;
 };
+static_assert(sizeof(FuncdefSignature) <= 152);
 
 /** @brief Describes a function/method call that occurs outside of any function body
  *         (e.g. a global variable initializer, a class field initializer, or an enum value). */
 struct CallReferenceSignature
 {
     std::string calleeName;
-    bool isMethodCall = false;
     std::string objectExpression;
+    bool isMethodCall : 1 = false;
 };
 
 /**
  * @brief Core symbol descriptor containing name, scope, container, and polymorphic signature variant.
- * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (compact variant, pack bool flags in Phase R1).
  */
 struct Symbol
 {
-    SymbolType type;
     std::string name;
     std::string containerName;
-    ContainerKind containerKind = ContainerKind::None;
     std::string qualifiedName;
     std::string fileUri;
-
-    uint32_t startLine = 0;
-    uint32_t startCharacter = 0;
-    uint32_t endLine = 0;
-    uint32_t endCharacter = 0;
-
-    SourceRange fullRange;      ///< Full enclosing source range of the declaration (for DocumentSymbol).
-    SourceRange selectionRange; ///< Source range of the identifier token itself (for DocumentSymbol/Rename).
-
-    bool isSynthesized = false;        ///< True when synthesized into a host class (e.g. from an included mixin).
-    bool isPredefined = false;         ///< True when parsed from a predefined stub or builtin profile.
     std::string virtualFileUri;        ///< Synthetic URI when virtual mixin documents are enabled (e.g.
                                        ///< angelscript-virtual://<host_class>/<mixin>.as).
     std::vector<std::string> metadata; ///< CScriptBuilder metadata strings attached to this symbol.
@@ -421,6 +423,19 @@ struct Symbol
     std::variant<std::monostate, FunctionSignature, VariableSignature, EnumSignature, ClassSignature,
                  InterfaceSignature, TypedefSignature, FuncdefSignature, CallReferenceSignature>
         signature;
+
+    SourceRange fullRange;      ///< Full enclosing source range of the declaration (for DocumentSymbol).
+    SourceRange selectionRange; ///< Source range of the identifier token itself (for DocumentSymbol/Rename).
+
+    uint32_t startLine = 0;
+    uint32_t startCharacter = 0;
+    uint32_t endLine = 0;
+    uint32_t endCharacter = 0;
+
+    SymbolType type = SymbolType::Variable;
+    ContainerKind containerKind = ContainerKind::None;
+    bool isSynthesized : 1 = false; ///< True when synthesized into a host class (e.g. from an included mixin).
+    bool isPredefined : 1 = false;  ///< True when parsed from a predefined stub or builtin profile.
 
     FunctionSignature& GetFunction()
     {
@@ -519,6 +534,7 @@ struct Symbol
         return qualifiedName.empty() ? std::string_view(name) : std::string_view(qualifiedName);
     }
 };
+static_assert(sizeof(Symbol) <= 504);
 
 /**
  * @brief Extracts all base classes or inherited interfaces declared on a symbol.

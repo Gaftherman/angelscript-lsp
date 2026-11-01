@@ -81,8 +81,7 @@ std::optional<ArgumentConversion> EvaluateSpecialArgumentMatch(const std::string
     }
     if (argType == "null")
     {
-        const bool paramIsHandle =
-            param.isHandle || HasHandleModifier(param.typeName) || param.typeName.find('@') != std::string::npos;
+        const bool paramIsHandle = param.isHandle || IsHandleTypeView(param.typeName);
         if (paramIsHandle || IsWildcardParameter(param) || IsFuncdefParam(param, symbolTable))
         {
             return ArgumentConversion{ConversionRank::Exact, 0, 0, false,
@@ -530,7 +529,7 @@ bool MatchesCallArity(const FunctionSignature& sig, uint32_t argCount) noexcept
     bool isVariadic = false;
     for (const auto& param : sig.parameters)
     {
-        if (param.rawText.find("...") != std::string::npos)
+        if (param.name == "..." || param.typeName == "..." || param.typeName.find("...") != std::string::npos)
         {
             isVariadic = true;
             continue;

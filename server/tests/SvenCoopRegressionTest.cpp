@@ -302,7 +302,6 @@ TEST_CASE("SvenCoopRegression - Overload candidate selection with ?& in varargs"
     analysis::ParameterInformation p3;
     p3.name = "arg1";
     p3.typeName = "?";
-    p3.rawText = "?& in";
     p3.modifier = analysis::ParameterModifier::In;
     p3.isReference = true;
     sig3.parameters.push_back(p3);
@@ -317,7 +316,6 @@ TEST_CASE("SvenCoopRegression - Overload candidate selection with ?& in varargs"
     analysis::ParameterInformation p4;
     p4.name = "arg2";
     p4.typeName = "?";
-    p4.rawText = "?& in";
     p4.modifier = analysis::ParameterModifier::In;
     p4.isReference = true;
     sig4.parameters.push_back(p4);

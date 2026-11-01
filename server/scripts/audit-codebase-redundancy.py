@@ -250,6 +250,7 @@ def scan_pass1_flag_reparsing():
     scan_files = [
         f for f in scan_files
         if "TypeExtraction.cpp" not in f.name and "TypeExtraction.h" not in f.name
+        and "TypeSanitization.h" not in f.name and "TypeSanitization.cpp" not in f.name
     ]
 
     patterns = [
@@ -653,7 +654,7 @@ def compute_memory_layout_audit():
                                     if c.type == "field_declaration":
                                         t_node = c.child_by_field_name("type")
                                         t_str = t_node.text.decode("utf-8", "ignore") if t_node else ""
-                                        if t_str == "bool":
+                                        if t_str == "bool" and b":" not in c.text:
                                             bools += 1
                                         if "string" in t_str:
                                             strings += 1

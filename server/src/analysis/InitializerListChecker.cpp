@@ -1,7 +1,8 @@
-﻿#include "analysis/InitializerListChecker.h"
+#include "analysis/InitializerListChecker.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeConversionChecker.h"
+#include "analysis/TypeSanitization.h"
 #include "analysis/rules/RuleIndex.h"
 #include "parser/ASTUtils.h"
 
@@ -45,41 +46,21 @@ std::string Trimmed(std::string text)
  */
 std::string StripDecorations(std::string_view raw)
 {
-    std::string text = Trimmed(std::string(raw));
-
+    std::string_view sv = raw;
     for (;;)
     {
-        if (text.starts_with("const") && text.size() > 5 && std::isspace(static_cast<unsigned char>(text[5])))
+        std::string_view prev = sv;
+        sv = StripLeadingConst(sv);
+        sv = StripTrailingDecorationsView(sv);
+        if (sv == prev)
         {
-            text = Trimmed(text.substr(5));
-            continue;
+            break;
         }
-        if (!text.empty() && (text.back() == '@' || text.back() == '&'))
-        {
-            text.pop_back();
-            text = Trimmed(text);
-            continue;
-        }
-        // A trailing `const` is only a qualifier when something separates it from the type
-        // name; without the boundary check a class called `Wconst` would be truncated to
-        // `W` and then match nothing.
-        if (text.size() > 5 && text.ends_with("const"))
-        {
-            const char before = text[text.size() - 6];
-            if (std::isspace(static_cast<unsigned char>(before)) || before == '&' || before == '@')
-            {
-                text = Trimmed(text.substr(0, text.size() - 5));
-                continue;
-            }
-        }
-        break;
     }
 
-    // Whitespace inside the shape - `array < int >` - would defeat the tests below, and
-    // none of it is meaningful.
     std::string compact;
-    compact.reserve(text.size());
-    for (char c : text)
+    compact.reserve(sv.size());
+    for (char c : sv)
     {
         if (!std::isspace(static_cast<unsigned char>(c)))
             compact += c;

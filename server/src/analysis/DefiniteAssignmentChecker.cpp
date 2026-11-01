@@ -1,4 +1,4 @@
-﻿#include "analysis/DefiniteAssignmentChecker.h"
+#include "analysis/DefiniteAssignmentChecker.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
@@ -285,8 +285,7 @@ class DefiniteAssignmentVisitor
                 return false;
             }
             const auto& param = candidate.parameters[i];
-            return param.modifier == ParameterModifier::Out || param.typeName.find("&out") != std::string::npos ||
-                   param.rawText.find("&out") != std::string::npos;
+            return param.modifier == ParameterModifier::Out || param.isOutRef;
         };
 
         if (info.sig && declaresOutAt(*info.sig))

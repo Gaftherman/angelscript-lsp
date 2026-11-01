@@ -1,9 +1,10 @@
-﻿#include "analysis/IsolationChecker.h"
+#include "analysis/IsolationChecker.h"
 #include "analysis/DiagnosticContext.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/ScopeTree.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SymbolTable.h"
+#include "analysis/TypeSanitization.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/Utils.h"
@@ -53,16 +54,10 @@ std::string TrimWhitespace(std::string_view text)
  */
 std::string CleanSharedTypeName(std::string_view raw)
 {
-    std::string text(raw);
-    while (!text.empty() && (text.front() == ' ' || text.front() == '\t'))
-    {
-        text.erase(text.begin());
-    }
-    while (!text.empty() && (text.back() == ' ' || text.back() == '\t' || text.back() == '@' || text.back() == '&'))
-    {
-        text.pop_back();
-    }
-    return text;
+    std::string_view sv = raw;
+    TrimTypeWhitespace(sv);
+    sv = StripTrailingDecorationsView(sv);
+    return std::string(sv);
 }
 
 bool IsSymbolShared(const Symbol& s)

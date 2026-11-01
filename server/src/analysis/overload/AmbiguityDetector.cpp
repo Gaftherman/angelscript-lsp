@@ -136,13 +136,13 @@ ArityInfo InspectFunctionArity(const FunctionSignature& sig)
     ArityInfo info;
     for (const auto& param : sig.parameters)
     {
-        if (param.rawText.find("...") != std::string::npos || param.typeName.find("...") != std::string::npos)
+        if (param.name == "..." || param.typeName == "..." || param.typeName.find("...") != std::string::npos)
         {
             info.isVariadic = true;
             continue;
         }
         ++info.maxParams;
-        if (param.defaultValue.empty() && param.rawText.find('=') == std::string::npos)
+        if (param.defaultValue.empty())
         {
             ++info.requiredParams;
         }

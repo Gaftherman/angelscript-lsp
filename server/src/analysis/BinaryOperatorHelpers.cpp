@@ -1,7 +1,8 @@
-﻿#include "analysis/BinaryOperatorHelpers.h"
+#include "analysis/BinaryOperatorHelpers.h"
 #include "analysis/ExpressionTypeCache.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeExtraction.h"
+#include "analysis/TypeSanitization.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "parser/Keywords.h"
@@ -126,22 +127,9 @@ bool IsNullOperand(TSNode node, std::string_view type)
  */
 static std::string StripModifiers(std::string_view type)
 {
-    while (!type.empty() && (type.front() == ' ' || type.front() == '\t'))
-    {
-        type.remove_prefix(1);
-    }
-    if (type.starts_with("const "))
-    {
-        type.remove_prefix(6);
-    }
-    while (!type.empty() && (type.front() == ' ' || type.front() == '\t'))
-    {
-        type.remove_prefix(1);
-    }
-    while (!type.empty() && (type.back() == '@' || type.back() == '&' || type.back() == ' ' || type.back() == '\t'))
-    {
-        type.remove_suffix(1);
-    }
+    type = StripLeadingConst(type);
+    type = StripTrailingDecorationsView(type);
+    TrimTypeWhitespace(type);
     return std::string(type);
 }
 

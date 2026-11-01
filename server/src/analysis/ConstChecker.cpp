@@ -1,6 +1,7 @@
 #include "analysis/ConstChecker.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/TypeSanitization.h"
 #include "parser/ASTUtils.h"
 #include "utils/Utils.h"
 
@@ -32,11 +33,7 @@ namespace
  */
 bool TypeTextIsConst(std::string_view typeText)
 {
-    while (!typeText.empty() && (typeText.front() == ' ' || typeText.front() == '\t'))
-    {
-        typeText.remove_prefix(1);
-    }
-    return typeText.starts_with("const ") || typeText == "const";
+    return HasLeadingConst(typeText);
 }
 
 /**
@@ -46,15 +43,7 @@ bool TypeTextIsConst(std::string_view typeText)
  */
 bool TypeTextIsHandleConst(std::string_view typeText)
 {
-    while (!typeText.empty() && (typeText.front() == ' ' || typeText.front() == '\t'))
-    {
-        typeText.remove_prefix(1);
-    }
-    while (!typeText.empty() && (typeText.back() == ' ' || typeText.back() == '\t'))
-    {
-        typeText.remove_suffix(1);
-    }
-    return typeText.ends_with(" const");
+    return HasTrailingConst(typeText);
 }
 
 /**
@@ -515,7 +504,7 @@ struct MethodLookup
  */
 bool IsSelfReferenceReturn(const FunctionSignature& fn, const std::string& owner)
 {
-    const bool isRef = fn.modifiers.isReturnReference || (!fn.returnType.empty() && fn.returnType.back() == '&');
+    const bool isRef = fn.modifiers.isReturnReference || IsReferenceTypeView(fn.returnType);
     return isRef && (CleanBaseType(fn.returnType) == owner || CleanBaseType(fn.returnBaseTypeName) == owner);
 }
 

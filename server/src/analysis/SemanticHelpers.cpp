@@ -4,6 +4,7 @@
 #include "analysis/OverloadResolver.h"
 #include "analysis/ScopeTree.h"
 #include "analysis/SymbolTable.h"
+#include "analysis/TypeSanitization.h"
 #include "analysis/overload/OverloadTypeConversions.h"
 #include "analysis/rules/RuleIndex.h"
 #include "config/EngineRuleConfig.h"
@@ -33,22 +34,8 @@ namespace angel_lsp::analysis
  */
 std::string CleanExpressionType(std::string_view typeName)
 {
-    while (!typeName.empty() && (typeName.front() == ' ' || typeName.front() == '\t'))
-    {
-        typeName.remove_prefix(1);
-    }
-    while (!typeName.empty() && (typeName.back() == ' ' || typeName.back() == '\t'))
-    {
-        typeName.remove_suffix(1);
-    }
-    if (typeName.starts_with("const "))
-    {
-        typeName.remove_prefix(6);
-    }
-    while (!typeName.empty() && (typeName.front() == ' ' || typeName.front() == '\t'))
-    {
-        typeName.remove_prefix(1);
-    }
+    typeName = StripLeadingConst(typeName);
+    TrimTypeWhitespace(typeName);
     while (!typeName.empty() && (typeName.back() == '&' || typeName.back() == ' ' || typeName.back() == '\t'))
     {
         typeName.remove_suffix(1);
@@ -198,7 +185,7 @@ bool HasListConstructorParam(const ParameterInformation& p)
     const std::string norm = StripTypeDecorations(p.baseTypeName.empty() ? p.typeName : p.baseTypeName);
     const bool isInt = (norm == "int" || norm == "uint" || norm == "int64" || norm == "uint64");
     return isInt && (p.isReference || p.modifier == ParameterModifier::In || p.modifier == ParameterModifier::InOut ||
-                     p.typeName.find("&in") != std::string::npos || p.rawText.find("&in") != std::string::npos);
+                     p.isInOutRef || IsReferenceTypeView(p.typeName));
 }
 } // namespace
 
@@ -1107,12 +1094,8 @@ std::string ResolveIndexedType(std::string_view typeName, size_t indexCount, con
 void StripTemplateDecorations(std::string_view& typeName)
 {
     TrimTypeWhitespace(typeName);
-    while (!typeName.empty() &&
-           (typeName.back() == ' ' || typeName.back() == '\t' || typeName.back() == '@' || typeName.back() == '&'))
-    {
-        typeName.remove_suffix(1);
-    }
-    StripLeadingConst(typeName);
+    typeName = StripTrailingDecorationsView(typeName);
+    typeName = StripLeadingConst(typeName);
     TrimTypeWhitespace(typeName);
 }
 
@@ -3855,11 +3838,11 @@ static std::string ResolveTernaryEnumPromotion(const std::string& c1, const std:
 static std::string ResolveTernaryNullBranch(const std::string& t1, const std::string& t2, const std::string& c1,
                                             const std::string& c2)
 {
-    if (c1 == "null" && t2.ends_with("@"))
+    if (c1 == "null" && IsHandleTypeView(t2))
     {
         return t2;
     }
-    if (c2 == "null" && t1.ends_with("@"))
+    if (c2 == "null" && IsHandleTypeView(t1))
     {
         return t1;
     }
@@ -3884,7 +3867,7 @@ static std::string ResolveTernaryBranchTypes(std::string_view t1, std::string_vi
     std::string c2 = CanonicalizeType(CleanBaseType(t2));
     if (!c1.empty() && c1 == c2)
     {
-        return (t1.ends_with("@") && t2.ends_with("@")) ? c1 + "@" : c1;
+        return (IsHandleTypeView(t1) && IsHandleTypeView(t2)) ? c1 + "@" : c1;
     }
     if (auto nullRes = ResolveTernaryNullBranch(clean1, clean2, c1, c2); !nullRes.empty())
     {
@@ -4585,7 +4568,7 @@ static std::string ResolveUnaryHandle(TSNode operandNode, TSNode exprNode, const
         return {};
     }
     std::string clean = CleanExpressionType(operandType);
-    return clean.ends_with("@") ? clean : clean + "@";
+    return IsHandleTypeView(clean) ? clean : clean + "@";
 }
 
 static std::string ResolveUnaryMinus(const std::string& operandType)
@@ -5143,7 +5126,7 @@ static bool IsValidDeducedRhsType(std::string_view rhsType)
  */
 static std::string FormatDeducedType(const LocalDefinition& def, std::string rhsType)
 {
-    if ((def.isHandleType || def.typeName.find('@') != std::string::npos) && !rhsType.ends_with('@'))
+    if ((def.isHandleType || IsHandleTypeView(def.typeName)) && !IsHandleTypeView(rhsType))
     {
         rhsType += '@';
     }
@@ -6108,8 +6091,8 @@ void ApplyLambdaParamChild(TSNode child, TSFieldId fieldId, std::string_view sou
         current.typeNode = child;
         current.hasWrittenType = true;
         std::string_view text = parser::GetNodeTextView(child, sourceCode);
-        current.isConst = text.starts_with("const ") || text == "const";
-        current.isHandle = text.find('@') != std::string_view::npos;
+        current.isConst = IsConstTypeView(text);
+        current.isHandle = IsHandleTypeView(text);
         current.typeName = CleanBaseType(text);
     }
     else if (sym == gs.tokAmp)
@@ -6334,7 +6317,7 @@ bool IsHandleType(std::string_view typeName, const SymbolTable& symbolTable) noe
     {
         return false;
     }
-    if (typeName.find('@') != std::string_view::npos)
+    if (IsHandleTypeView(typeName))
     {
         return true;
     }

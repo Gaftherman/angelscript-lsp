@@ -3,6 +3,7 @@
  * @brief Code action providers for adding const qualifier to methods.
  */
 
+#include "analysis/TypeSanitization.h"
 #include "features/code_action/CodeActionClassMutation.h"
 #include "features/code_action/CodeActionInternal.h"
 #include "parser/ASTUtils.h"
@@ -266,8 +267,7 @@ void TryAddConstHandleDiagnosticFix(const CodeActionRequest& request, TSNode roo
     }
 
     const std::string typeText = GetNodeText(typeNode, request.sourceCode);
-    if (typeText.find('@') == std::string::npos || typeText.starts_with("const ") ||
-        typeText.find("const") != std::string::npos)
+    if (!analysis::IsHandleTypeView(typeText) || analysis::IsConstTypeView(typeText))
     {
         return;
     }

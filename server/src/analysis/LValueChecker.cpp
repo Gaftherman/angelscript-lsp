@@ -2,6 +2,7 @@
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/NodeIndex.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/TypeSanitization.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/StopFlag.h"
@@ -166,7 +167,7 @@ void ValidateCandidateReturnTypes(TSNode callNode, const std::vector<Symbol>& ca
             allVoid = false;
         }
 
-        if (fn.modifiers.isReturnReference || (!fn.returnType.empty() && fn.returnType.back() == '&'))
+        if (fn.modifiers.isReturnReference || IsReferenceTypeView(fn.returnType))
         {
             anyReference = true;
         }

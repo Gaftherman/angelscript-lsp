@@ -3,6 +3,7 @@
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SignatureFormatter.h"
+#include "analysis/TypeSanitization.h"
 #include "analysis/VirtualMixinContext.h"
 #include "analysis/overload/ConversionRankingEngine.h"
 #include "analysis/rules/RuleIndex.h"
@@ -2036,10 +2037,6 @@ static std::optional<lsp::Hover> FormatNamedArgHover(const std::vector<analysis:
             {
                 md += " = " + param.defaultValue;
             }
-            else if (param.rawText.find('=') != std::string::npos)
-            {
-                md += " " + param.rawText.substr(param.rawText.find('='));
-            }
             md += "\n```\n" + angel_lsp::i18n::FormatMessage(ctx.request.i18n, "hover-named-arg-parameter-of",
                                                              "Parameter of `{}`", sym.name);
             return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)},
@@ -2545,13 +2542,13 @@ static std::optional<lsp::Hover> TryHoverAutoType(const HoverQueryContext& ctx)
         {
             typeNode = parser::GetChildByField(declNode, parser::GetGrammarSymbols().fieldType);
         }
-        bool isHandle = (ctx.nodeText.find('@') != std::string_view::npos);
+        bool isHandle = analysis::IsHandleTypeView(ctx.nodeText);
         if (!ts_node_is_null(typeNode) &&
-            analysis::GetNodeText(typeNode, ctx.request.sourceCode).find('@') != std::string::npos)
+            analysis::IsHandleTypeView(parser::GetNodeTextView(typeNode, ctx.request.sourceCode)))
         {
             isHandle = true;
         }
-        if (isHandle && !deduced.ends_with('@'))
+        if (isHandle && !analysis::IsHandleTypeView(deduced))
         {
             deduced += '@';
         }

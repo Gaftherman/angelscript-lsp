@@ -1,6 +1,7 @@
 #include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/TypeExtraction.h"
+#include "analysis/TypeSanitization.h"
 #include "parser/QueryRegistry.h"
 #include "parser/queries/BuiltQueries.h"
 #include "spdlog/fmt/fmt.h"
@@ -259,8 +260,7 @@ static bool HasReferenceOrHandleReturnType(TSNode funcNode, TSNode typeNode, con
                                            std::string_view sourceCode) noexcept
 {
     std::string_view retText = parser::GetNodeTextView(typeNode, sourceCode);
-    if (retText.empty() || retText == "void" || retText.find('&') != std::string_view::npos ||
-        retText.find('@') != std::string_view::npos)
+    if (retText.empty() || retText == "void" || IsReferenceTypeView(retText) || IsHandleTypeView(retText))
     {
         return true;
     }
@@ -272,7 +272,7 @@ static bool HasReferenceOrHandleReturnType(TSNode funcNode, TSNode typeNode, con
         if (tEnd < nStart && nStart <= sourceCode.size())
         {
             std::string_view between = sourceCode.substr(tEnd, nStart - tEnd);
-            if (between.find('&') != std::string_view::npos || between.find('@') != std::string_view::npos)
+            if (IsReferenceTypeView(between) || IsHandleTypeView(between))
             {
                 return true;
             }
@@ -949,6 +949,8 @@ void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std
     {
         TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(paramTypeNode, sourceCode);
         def.isHandleType = typeInfo.isHandle;
+        def.isConst = typeInfo.isConst;
+        def.isReference = typeInfo.isReference;
         def.typeKind = typeInfo.kind;
         def.typeName = GetNodeText(paramTypeNode, sourceCode);
         PopulateTypeRanges(paramTypeNode, sourceCode, def);
@@ -1000,6 +1002,8 @@ void LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, con
     {
         TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(foreachTypeNode, sourceCode);
         def.isHandleType = typeInfo.isHandle;
+        def.isConst = typeInfo.isConst;
+        def.isReference = typeInfo.isReference;
         def.typeKind = typeInfo.kind;
         def.typeName = GetNodeText(foreachTypeNode, sourceCode);
         PopulateTypeRanges(foreachTypeNode, sourceCode, def);
@@ -1038,6 +1042,8 @@ void LocalScopeCollector::ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode de
     {
         TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
         def.isHandleType = typeInfo.isHandle;
+        def.isConst = typeInfo.isConst;
+        def.isReference = typeInfo.isReference;
         def.typeKind = typeInfo.kind;
         def.typeName = GetNodeText(typeNode, sourceCode);
         PopulateTypeRanges(typeNode, sourceCode, def);
@@ -1165,6 +1171,8 @@ void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, 
     {
         TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
         def.isHandleType = typeInfo.isHandle;
+        def.isConst = typeInfo.isConst;
+        def.isReference = typeInfo.isReference;
         def.typeKind = typeInfo.kind;
         def.typeName = GetNodeText(typeNode, sourceCode);
         PopulateTypeRanges(typeNode, sourceCode, def);
@@ -1204,6 +1212,8 @@ void LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const 
     {
         TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
         def.isHandleType = typeInfo.isHandle;
+        def.isConst = typeInfo.isConst;
+        def.isReference = typeInfo.isReference;
         def.typeKind = typeInfo.kind;
         def.typeName = GetNodeText(typeNode, sourceCode);
         PopulateTypeRanges(typeNode, sourceCode, def);
@@ -1288,6 +1298,8 @@ void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const
     {
         TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
         def.isHandleType = typeInfo.isHandle;
+        def.isConst = typeInfo.isConst;
+        def.isReference = typeInfo.isReference;
         def.typeKind = typeInfo.kind;
         def.typeName = GetNodeText(typeNode, sourceCode);
         PopulateTypeRanges(typeNode, sourceCode, def);
@@ -1376,7 +1388,7 @@ bool ExtractAssignmentLeftVar(TSNode leftNode, const parser::GrammarSymbols& gs,
 void RegisterRecoveredVariable(Scope* rootScope, TSNode identNode, std::string varName, std::string typeName,
                                bool isHandle)
 {
-    if (isHandle && !typeName.ends_with('@'))
+    if (isHandle && !IsHandleTypeView(typeName))
     {
         typeName += "@";
     }

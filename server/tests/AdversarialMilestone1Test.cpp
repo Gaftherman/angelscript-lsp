@@ -111,7 +111,6 @@ ParameterInformation MakeParam(std::string typeName, std::string name, bool isHa
     p.isHandle = isHandle;
     p.isConst = isConst;
     p.modifier = mod;
-    p.rawText = p.typeName + " " + p.name;
     return p;
 }
 } // namespace
@@ -354,8 +353,7 @@ TEST_SUITE("Adversarial_OverloadResolver")
         FunctionSignature sigVar;
         sigVar.returnType = "void";
         auto p1 = MakeParam("string", "fmt");
-        auto p2 = MakeParam("?&in", "args");
-        p2.rawText = "...?&in";
+        auto p2 = MakeParam("...?&in", "args");
         sigVar.parameters = {p1, p2};
         symVar.signature = sigVar;
 

@@ -5,6 +5,7 @@
 #include "analysis/NodeIndex.h"
 #include "analysis/OverloadResolver.h"
 #include "analysis/SemanticHelpers.h"
+#include "analysis/TypeSanitization.h"
 #include "analysis/ast/SemanticNodes.h"
 #include "analysis/overload/OverloadTypeConversions.h"
 #include "analysis/rules/EngineRuleChecker.h"
@@ -143,14 +144,14 @@ Arity ArityOf(const FunctionSignature& sig)
     for (const auto& param : sig.parameters)
     {
         // `...` reaches the collector as a parameter with nothing in it but its own text.
-        if (param.rawText.find("...") != std::string::npos || param.typeName.find("...") != std::string::npos)
+        if (param.name == "..." || param.typeName == "..." || param.typeName.find("...") != std::string::npos)
         {
             arity.variadic = true;
             continue;
         }
 
         ++arity.maximum;
-        if (param.defaultValue.empty() && param.rawText.find('=') == std::string::npos)
+        if (param.defaultValue.empty())
         {
             ++arity.required;
         }
@@ -632,7 +633,7 @@ struct ObjectTypeInfo
 {
     std::string objectType;
     std::vector<std::string> templateArgs;
-    bool isConst = false;
+    TypeQualifiers qualifiers;
 };
 
 /**
@@ -698,8 +699,7 @@ ObjectTypeInfo ResolveMemberObjectType(TSNode objectNode, const CallValidationCo
         return info;
     }
     info.objectType = CleanBaseType(rawObjType);
-    info.isConst = rawObjType.starts_with("const ") || rawObjType.ends_with("const") || HasConstModifier(rawObjType) ||
-                   IsObjectNodeConst(objectNode, valCtx);
+    info.qualifiers.isConst = IsConstTypeView(rawObjType) || IsObjectNodeConst(objectNode, valCtx);
 
     if (rawObjType.find('<') != std::string::npos && rawObjType.ends_with('>'))
     {
@@ -1035,7 +1035,7 @@ CalleeResolution ResolveMemberCallee(const CallValidationContext& valCtx)
         return res;
     }
 
-    res.isReceiverConst = objInfo.isConst;
+    res.isReceiverConst = objInfo.qualifiers.isConst;
     res.candidates = FindMethodCandidates(objInfo.objectType, res.reportedName, valCtx.ctx.request.symbolTable,
                                           valCtx.ctx.request.exprCache);
     FilterMethodCandidatesConstness(res.candidates, res.isReceiverConst);
@@ -1568,7 +1568,7 @@ static bool IsTernaryBranchCompatible(const std::string& branchType, const std::
     {
         return true;
     }
-    if (branchType == "null" && expected.ends_with("@"))
+    if (branchType == "null" && IsHandleTypeView(expected))
     {
         return true;
     }
@@ -1910,8 +1910,7 @@ static bool CheckUnmatchedDefaultParameters(const FunctionSignature& sig,
 {
     for (size_t p = 0; p < sig.parameters.size(); ++p)
     {
-        if (!matchedParams.contains(p) && sig.parameters[p].defaultValue.empty() &&
-            sig.parameters[p].rawText.find('=') == std::string::npos)
+        if (!matchedParams.contains(p) && sig.parameters[p].defaultValue.empty())
         {
             return false;
         }
@@ -2286,7 +2285,10 @@ void CheckPrimitiveDirectInit(TSNode argListNode, const std::vector<std::string>
     }
     else
     {
-        ParameterInformation dummyParam{vctx.baseName, vctx.baseName, "", ""};
+        ParameterInformation dummyParam;
+        dummyParam.name = vctx.baseName;
+        dummyParam.typeName = vctx.baseName;
+        dummyParam.baseTypeName = vctx.baseName;
         const auto conv = EvaluateArgumentConversion(argTypes[0], dummyParam, vctx.ctx.request.symbolTable);
         if (!conv.IsViable())
         {

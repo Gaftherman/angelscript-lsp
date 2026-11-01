@@ -44,6 +44,9 @@ def main():
     # 6. AST Traversal & Parent-Climb Invariants
     run_step("AST Traversal Invariants", "python server/scripts/check-ast-traversal.py")
 
+    # 7. Refactor Ledger Integrity Gate
+    run_step("Refactor Ledger Integrity", "python server/scripts/check-refactor-ledger.py")
+
     # 6. Code Duplication Gate (jscpd threshold <= 3%)
     if shutil.which("npx"):
         run_step(

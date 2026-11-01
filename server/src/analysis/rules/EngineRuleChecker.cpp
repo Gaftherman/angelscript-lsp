@@ -1,4 +1,4 @@
-﻿#include "analysis/rules/EngineRuleChecker.h"
+#include "analysis/rules/EngineRuleChecker.h"
 
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticHelpers.h"
@@ -167,7 +167,7 @@ void EvaluateStorageRule(const Symbol& sym, const VariableSignature& sig, const 
         return;
     }
 
-    const bool hasHandle = isArray ? targetType.find('@') != std::string::npos : sig.modifiers.isHandle;
+    const bool hasHandle = isArray ? IsHandleTypeView(targetType) : sig.modifiers.isHandle;
     if (rule.handleOnly && !hasHandle)
     {
         return;
@@ -199,7 +199,7 @@ void CheckSchedulerArgSafety(const SchedulerCallRequest& req, size_t index, cons
 
     const std::string& argType = req.argTypes[index];
     const TSNode argNode = req.argNodes[index];
-    const bool hasHandle = argType.find('@') != std::string::npos;
+    const bool hasHandle = IsHandleTypeView(argType);
     if (rule.disallowArgHandleOnly && !hasHandle)
     {
         return;

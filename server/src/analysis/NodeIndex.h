@@ -27,17 +27,17 @@ struct ContainerInfo
 
 /**
  * @brief Precalculated byte interval and metadata for an AST container declaration.
- * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (pack isMixin with symbol in Phase R1).
  */
 struct IndexedContainerSpan
 {
     uint32_t startByte = 0;
     uint32_t endByte = 0;
-    TSSymbol symbol = 0;
     uint32_t nameStartByte = 0;
     uint32_t nameEndByte = 0;
+    TSSymbol symbol = 0;
     bool isMixin = false;
 };
+static_assert(sizeof(IndexedContainerSpan) <= 20);
 
 /**
  * @brief Single-pass index of AST nodes grouped by Tree-Sitter symbol for O(1) retrieval.
@@ -364,4 +364,5 @@ class NodeIndex
     ankerl::unordered_dense::map<std::string_view, TSSymbol> m_symbolByName;
     TSSymbol m_symComment = 0;
 };
+static_assert(sizeof(NodeIndex) <= 248);
 } // namespace angel_lsp::analysis
