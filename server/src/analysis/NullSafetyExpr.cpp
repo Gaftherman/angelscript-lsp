@@ -16,7 +16,7 @@ namespace
 /**
  * @brief Apply assertions.
  * @param[in,out] state Parameter state.
- * @param[in,out] assertions Parameter assertions.
+ * @param[in] assertions Parameter assertions.
  * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ApplyAssertions in
  * server/src/analysis/NullSafetyChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */

@@ -49,7 +49,7 @@ std::string DocumentPath(const std::string& uriStr)
 
 /**
  * @brief Get document links.
- * @param[in,out] request Parameter request.
+ * @param[in] request Parameter request.
  * @return Found item if present; std::nullopt otherwise.
  * @note [REFACTOR-CANDIDATE] Structural overlap (74%) with GetUnresolvedIncludeDiagnostics in
  * server/src/features/document_link/DocumentLinkHandler.cpp. Candidate for unification in
@@ -104,7 +104,7 @@ std::optional<DocumentLinkResult> GetDocumentLinks(const DocumentLinkRequest& re
 
 /**
  * @brief Get unresolved include diagnostics.
- * @param[in,out] request Parameter request.
+ * @param[in] request Parameter request.
  * @return Result of the operation.
  * @note [REFACTOR-CANDIDATE] Structural overlap (74%) with GetDocumentLinks in
  * server/src/features/document_link/DocumentLinkHandler.cpp. Candidate for unification in

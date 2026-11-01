@@ -19,7 +19,7 @@ namespace
  * @param[in] node Parameter node.
  * @param[in,out] ctx Parameter ctx.
  * @param[in] code Parameter code.
- * @param[in,out] arg Parameter arg.
+ * @param[in] arg Parameter arg.
  * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with EmitAtNode in server/src/analysis/ControlFlowChecker.cpp.
  * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (100%) with EmitAtNode in
  * server/src/analysis/InitializerListChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.

@@ -134,11 +134,11 @@ def check_git_diff(base_commit: str):
     ledger_data = json.loads(LEDGER_PATH.read_text(encoding="utf-8"))
     recorded_symbols = {e.get("originalSymbolOrCode", "") for e in ledger_data.get("entries", [])}
 
-    struct_del_re = re.compile(r"^[-\s]*(?:struct|class)\s+(\w+)\s*\{", re.MULTILINE)
-    func_del_re = re.compile(r"^-\s*(?:[A-Za-z0-9_:<>&*]+\s+)+([A-Za-z0-9_]+)\s*\([^)]*\)\s*\{?", re.MULTILINE)
+    struct_del_re = re.compile(r"^-\s*(?:struct|class)\s+(\w+)\b", re.MULTILINE)
+    func_del_re = re.compile(r"^-\s*(?:[A-Za-z0-9_:<>&*]+\s+)+([A-Za-z0-9_]+)\s*\(", re.MULTILINE)
 
     for line in diff_res.stdout.splitlines():
-        if not line.startswith("-"):
+        if not line.startswith("-") or line.startswith("---"):
             continue
         m_struct = struct_del_re.match(line)
         if m_struct:

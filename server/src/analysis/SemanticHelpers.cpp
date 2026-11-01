@@ -185,6 +185,14 @@ bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx)
 
 namespace
 {
+/**
+ * @brief Has list constructor param.
+ * @param[in] p Parameter p.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier /
+ * Symbol::modifiers.isReturnReference.
+ */
 bool HasListConstructorParam(const ParameterInformation& p)
 {
     const std::string norm = StripTypeDecorations(p.baseTypeName.empty() ? p.typeName : p.baseTypeName);
@@ -1772,8 +1780,8 @@ void TraverseAncestorsAndInterfaces(const std::string& rootType, const SymbolTab
 
 /**
  * @brief Traverse derived classes.
- * @param[in,out] initialFrontier Parameter initialFrontier.
- * @param[in,out] symbolTable Parameter symbolTable.
+ * @param[in] initialFrontier Parameter initialFrontier.
+ * @param[in] symbolTable Parameter symbolTable.
  * @param[in,out] visited Parameter visited.
  * @param[in,out] related Parameter related.
  * @note [REFACTOR-CANDIDATE] Structural overlap (80%) with GetDerivedClasses in
@@ -1838,8 +1846,8 @@ std::vector<std::string> GetAllRelatedClasses(const std::string& className, cons
 
 /**
  * @brief Get derived classes.
- * @param[in,out] className Parameter className.
- * @param[in,out] symbolTable Parameter symbolTable.
+ * @param[in] className Parameter className.
+ * @param[in] symbolTable Parameter symbolTable.
  * @return Result of the operation.
  * @note [REFACTOR-CANDIDATE] Structural overlap (80%) with TraverseDerivedClasses in
  * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -2953,7 +2961,7 @@ static std::string ResolveScopedEnumMember(std::string_view whole, TSNode exprNo
 /**
  * @brief Extract variable or property type.
  * @param[in] syms Parameter syms.
- * @param[in,out] table Parameter table.
+ * @param[in] table Parameter table.
  * @return Result of the operation.
  * @note [REFACTOR-CANDIDATE] Structural overlap (73%) with ExtractMemberSymbolType in
  * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -3539,7 +3547,7 @@ static std::string ResolveBinaryPrimitivePromotion(std::string_view op, const st
 /**
  * @brief Is boolean binary op sym.
  * @param[in] sym Parameter sym.
- * @param[in,out] gs Parameter gs.
+ * @param[in] gs Parameter gs.
  * @return True if condition met; otherwise false.
  * @note [REFACTOR-CANDIDATE] Structural overlap (84%) with IsBooleanBinaryOperator in
  * server/src/features/inlay_hint/InlayHintHandler.cpp. Candidate for unification in
@@ -3803,8 +3811,8 @@ static std::string ResolveTernaryHierarchy(const TernaryBranchTypes& types, cons
 
 /**
  * @brief Resolve ternary numeric promotion.
- * @param[in,out] c1 Parameter c1.
- * @param[in,out] c2 Parameter c2.
+ * @param[in] c1 Parameter c1.
+ * @param[in] c2 Parameter c2.
  * @return Result of the operation.
  * @note [REFACTOR-CANDIDATE] Structural overlap (85%) with ResolveBinary64OrFloat in
  * server/src/analysis/SemanticHelpers.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -4556,7 +4564,7 @@ static bool IsFunctionHandleTarget(TSNode target, TSNode exprNode, const Express
  * @brief Resolve unary handle.
  * @param[in] operandNode Parameter operandNode.
  * @param[in] exprNode Parameter exprNode.
- * @param[in,out] ctx Parameter ctx.
+ * @param[in] ctx Parameter ctx.
  * @return Result of the operation.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
@@ -5127,7 +5135,7 @@ static bool IsValidDeducedRhsType(std::string_view rhsType)
 
 /**
  * @brief Format deduced type.
- * @param[in,out] def Parameter def.
+ * @param[in] def Parameter def.
  * @param[in] rhsType Parameter rhsType.
  * @return Result of the operation.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
@@ -6315,7 +6323,7 @@ std::optional<Symbol> FindFuncdefSymbol(std::string_view typeName, const SymbolT
 /**
  * @brief Is handle type.
  * @param[in] typeName Parameter typeName.
- * @param[in,out] symbolTable Parameter symbolTable.
+ * @param[in] symbolTable Parameter symbolTable.
  * @return True if condition met; otherwise false.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.

@@ -50,7 +50,7 @@ std::vector<lsp::Location> ConvertAndSortOccurrences(const std::vector<analysis:
 
 /**
  * @brief Get references.
- * @param[in,out] request Parameter request.
+ * @param[in] request Parameter request.
  * @return Found item if present; std::nullopt otherwise.
  * @note [REFACTOR-CANDIDATE] Structural overlap (76%) with ResolveValidRenameTarget in
  * server/src/features/rename/RenameHandler.cpp. Candidate for unification in

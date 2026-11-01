@@ -978,7 +978,7 @@ void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std
 /**
  * @brief Local scope collector read foreach variable type info.
  * @param[in] declaratorNode Parameter declaratorNode.
- * @param[in,out] sourceCode Parameter sourceCode.
+ * @param[in] sourceCode Parameter sourceCode.
  * @param[in,out] def Parameter def.
  * @note [REFACTOR-CANDIDATE] Structural overlap (96%) with ReadEmptyParenVariableTypeInfo in
  * server/src/analysis/LocalScopeCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -1134,7 +1134,7 @@ static TSNode FindDeclaratorValueNode(TSNode declaratorNode, const std::string& 
  * @brief Local scope collector read variable declarator type info.
  * @param[in] declaratorNode Parameter declaratorNode.
  * @param[in] declarationNode Parameter declarationNode.
- * @param[in,out] sourceCode Parameter sourceCode.
+ * @param[in] sourceCode Parameter sourceCode.
  * @param[in,out] def Parameter def.
  * @note [REFACTOR-CANDIDATE] Structural overlap (69%) with ReadEmptyParenVariableTypeInfo in
  * server/src/analysis/LocalScopeCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -1260,7 +1260,7 @@ void LocalScopeCollector::ReadVariableTypeInfo(const RawCapture& capture, const 
 /**
  * @brief Local scope collector read virtual property type info.
  * @param[in] propertyNode Parameter propertyNode.
- * @param[in,out] sourceCode Parameter sourceCode.
+ * @param[in] sourceCode Parameter sourceCode.
  * @param[in,out] def Parameter def.
  * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with ReadEmptyParenVariableTypeInfo in
  * server/src/analysis/LocalScopeCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -1399,8 +1399,8 @@ void RegisterRecoveredVariable(Scope* rootScope, TSNode identNode, std::string v
  * @brief Try recover split if declaration.
  * @param[in] node Parameter node.
  * @param[in] rootScope Parameter rootScope.
- * @param[in,out] sourceCode Parameter sourceCode.
- * @param[in,out] gs Parameter gs.
+ * @param[in] sourceCode Parameter sourceCode.
+ * @param[in] gs Parameter gs.
  * @return True if condition met; otherwise false.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
@@ -1453,8 +1453,8 @@ bool TryRecoverSplitIfDeclaration(TSNode node, Scope* rootScope, const std::stri
  * @brief Try recover error if declaration.
  * @param[in] node Parameter node.
  * @param[in] rootScope Parameter rootScope.
- * @param[in,out] sourceCode Parameter sourceCode.
- * @param[in,out] gs Parameter gs.
+ * @param[in] sourceCode Parameter sourceCode.
+ * @param[in] gs Parameter gs.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */

@@ -99,7 +99,7 @@ std::string FormatDeclarationPrefix(const SymbolModifiers& modifiers)
 
 /**
  * @brief Format parameter reference.
- * @param[in,out] param Parameter param.
+ * @param[in] param Parameter param.
  * @return Result of the operation.
  * @note [REFACTOR-CANDIDATE] Structural overlap (85%) with ParameterModifierToString in
  * server/src/analysis/SymbolTable.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.

@@ -2675,7 +2675,7 @@ void CheckCallArgumentsIndexed(const CallCheckRequest& request, DiagnosticContex
 
 /**
  * @brief Check call arguments.
- * @param[in,out] request Parameter request.
+ * @param[in] request Parameter request.
  * @param[in,out] ctx Parameter ctx.
  * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with CheckMemberAccess in server/src/analysis/AccessChecker.cpp.
  * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (98%) with CheckLValues in

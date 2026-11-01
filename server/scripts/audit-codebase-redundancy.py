@@ -55,6 +55,35 @@ def has_doxygen_before(lines: list[str], start_line_1_based: int) -> bool:
             while c_idx >= 0:
                 c_line = lines[c_idx].strip()
                 if "/**" in c_line:
+                    return True
+                if "/*" in c_line:
+                    return False
+                c_idx -= 1
+            return False
+        return False
+    return False
+
+
+def has_refactor_candidate_note(lines: list[str], start_line_1_based: int) -> bool:
+    """Checks if a preceding Doxygen comment contains @note [REFACTOR-CANDIDATE]."""
+    idx = start_line_1_based - 2
+    modifiers = (
+        "[[", "template", "inline", "constexpr", "explicit", "static",
+        "virtual", "friend", "extern", "const", "override", "final"
+    )
+    while idx >= 0:
+        line = lines[idx].strip()
+        if not line:
+            idx -= 1
+            continue
+        if any(line.startswith(m) for m in modifiers):
+            idx -= 1
+            continue
+        if line.endswith("*/"):
+            c_idx = idx
+            while c_idx >= 0:
+                c_line = lines[c_idx].strip()
+                if "/**" in c_line:
                     comment = "\n".join(lines[c_idx:idx + 1])
                     return "@note [REFACTOR-CANDIDATE]" in comment
                 if "/*" in c_line:
@@ -232,8 +261,8 @@ def scan_pass1_flag_reparsing():
          "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType"),
         ("isHandle", re.compile(r'\bbool\s+isHandle\s*=\s*(?!.*(?:modifiers\.isHandle|\.isHandle|->isHandle|qualifiers\.isHandle))'),
          "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"),
-        ("isRef", re.compile(r'(\.back\(\)\s*==\s*[\'"]&[\'"]|\.ends_with\(\s*[\'"]&[\'"]|\.find\(\s*[\'"]&[\'"])'),
-         "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference"),
+        ("isRef", re.compile(r'(\.back\(\)\s*==\s*[\'"]&[\'"]|\.ends_with\(\s*[\'"]&(?:in|out|inout)?[\'"]|\.find\(\s*[\'"]&(?:in|out|inout)?[\'"]|\.starts_with\(\s*[\'"]&(?:in|out|inout)[\s"\']|\b==\s*[\'"]&(?:in|out|inout)?[\'"])'),
+         "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"),
         ("isRef", re.compile(r'\bbool\s+isRef(?:erence)?\s*=\s*(?!.*(?:modifiers\.isReturnReference|\.isReference|->isReference|qualifiers\.isReference))'),
          "ParameterInformation::isReference / Symbol::modifiers.isReturnReference"),
     ]
@@ -301,6 +330,35 @@ def norm_tokens(body_node) -> tuple[list[str], list[str]]:
             for i in range(n.child_count - 1, -1, -1):
                 stack.append(n.child(i))
     return tokens, sorted(set(calls))
+
+
+def describe_function_task(name: str, calls: list[str]) -> str:
+    name_lower = name.lower()
+    actions = []
+    if any(k in name_lower for k in ("check", "validate", "verify")):
+        actions.append("validates semantic rules and conditions")
+    elif any(k in name_lower for k in ("emit", "report", "diagnostic")):
+        actions.append("constructs and emits diagnostics")
+    elif any(k in name_lower for k in ("resolve", "lookup", "find", "search")):
+        actions.append("performs symbol/scope resolution")
+    elif any(k in name_lower for k in ("extract", "parse", "collect")):
+        actions.append("extracts AST structures and signature metadata")
+    elif any(k in name_lower for k in ("format", "build", "tostring", "print")):
+        actions.append("formats text representations of symbols")
+    elif any(k in name_lower for k in ("convert", "cast")):
+        actions.append("handles type conversions and coercions")
+    elif any(k in name_lower for k in ("match", "equal", "cmp")):
+        actions.append("evaluates equality and operator compatibility")
+    elif any(k in name_lower for k in ("is", "has", "can", "should")):
+        actions.append("evaluates AST node or symbol predicate properties")
+    else:
+        actions.append(f"executes {name} logic")
+
+    if calls:
+        top_calls = [c for c in calls if c not in ("size", "empty", "push_back", "find", "substr")][:3]
+        if top_calls:
+            actions.append(f"via [{', '.join(top_calls)}]")
+    return " ".join(actions)
 
 
 def scan_similar_functions():
@@ -384,15 +442,24 @@ def scan_similar_functions():
             is_cross_feature = "features/" in fA["file"] and "features/" in fB["file"] and fA["file"].split("/")[3] != fB["file"].split("/")[3]
             is_analysis_dupe = "analysis/" in fA["file"] and "analysis/" in fB["file"]
 
+            task_desc_A = describe_function_task(fA["name"], fA["calls"])
+            task_desc_B = describe_function_task(fB["name"], fB["calls"])
             if is_cross_feature:
+                featA = fA["file"].split("/")[3]
+                featB = fB["file"].split("/")[3]
                 unif_plan = "server/src/features/common/FeatureSharedUtils.h"
-                what = f"Duplicated across features ({fA['file'].split('/')[3]} vs {fB['file'].split('/')[3]}) due to Layer 3 feature isolation prohibition."
+                sep_reason = f"Layer 3 isolation prohibition between features/{featA} and features/{featB}"
             elif is_analysis_dupe:
                 unif_plan = "server/src/analysis/SemanticHelpers.h"
-                what = "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h."
+                sep_reason = "internal analysis checker boundaries within Layer 2"
             else:
                 unif_plan = "server/src/analysis/SemanticHelpers.h"
-                what = "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy."
+                sep_reason = "Layer 3 feature duplicating Layer 2 analysis capability"
+
+            if fA["name"] == fB["name"]:
+                what = f"Both implementations {task_desc_A}. Separated due to {sep_reason}."
+            else:
+                what = f"{fA['name']} ({task_desc_A}) and {fB['name']} ({task_desc_B}) share algorithmic structure. Separated due to {sep_reason}."
 
             matrix.append({
                 "funcA": {
@@ -563,6 +630,44 @@ def compute_memory_layout_audit():
         },
     ]
 
+    # Dynamically extract and verify field counts from C++ header ASTs
+    for item in structs_audit:
+        hpath = REPO_ROOT / item["headerFile"].replace("/", "\\")
+        if not hpath.is_file():
+            hpath = REPO_ROOT / item["headerFile"]
+        if hpath.is_file():
+            try:
+                tree = PARSER.parse(hpath.read_bytes())
+                stack = [tree.root_node]
+                while stack:
+                    n = stack.pop()
+                    if n.type in ("struct_specifier", "class_specifier"):
+                        name_node = n.child_by_field_name("name")
+                        if name_node and name_node.text.decode("utf-8", "ignore") == item["structName"]:
+                            body = n.child_by_field_name("body")
+                            if body:
+                                bools = 0
+                                strings = 0
+                                vectors = 0
+                                for c in body.children:
+                                    if c.type == "field_declaration":
+                                        t_node = c.child_by_field_name("type")
+                                        t_str = t_node.text.decode("utf-8", "ignore") if t_node else ""
+                                        if t_str == "bool":
+                                            bools += 1
+                                        if "string" in t_str:
+                                            strings += 1
+                                        if "vector" in t_str:
+                                            vectors += 1
+                                item["looseBools"] = bools
+                                item["stringCount"] = strings
+                                item["vectorCount"] = vectors
+                                break
+                    for i in range(n.child_count - 1, -1, -1):
+                        stack.append(n.child(i))
+            except Exception:
+                pass
+
     total_saved_mb = sum(s["savedMbPer100k"] for s in structs_audit)
     return {
         "totalAuditedStructures": len(structs_audit),
@@ -659,7 +764,7 @@ def scan_missing_doxygen(local_structs, similar_matrix, pass1_reparse):
         lines = content.splitlines()
 
         for tline in sorted(target_lines):
-            if not has_doxygen_before(lines, tline):
+            if not has_doxygen_before(lines, tline) or not has_refactor_candidate_note(lines, tline):
                 line_idx = tline - 1
                 if 0 <= line_idx < len(lines):
                     sym_line = lines[line_idx].strip()

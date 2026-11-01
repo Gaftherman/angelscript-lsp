@@ -74,8 +74,8 @@ bool MatchesTypeName(const std::string& baseType, const config::StorageRule& rul
 
 /**
  * @brief Is class member.
- * @param[in,out] sym Parameter sym.
- * @param[in,out] table Parameter table.
+ * @param[in] sym Parameter sym.
+ * @param[in] table Parameter table.
  * @return True if condition met; otherwise false.
  * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsInterfaceMember in
  * server/src/analysis/rules/VariableRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -95,8 +95,8 @@ bool IsClassMember(const Symbol& sym, const SymbolTable& table)
 
 /**
  * @brief Is enum type.
- * @param[in,out] typeName Parameter typeName.
- * @param[in,out] table Parameter table.
+ * @param[in] typeName Parameter typeName.
+ * @param[in] table Parameter table.
  * @return True if condition met; otherwise false.
  * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsInterfaceSymbol in
  * server/src/analysis/rules/ClassRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -143,10 +143,10 @@ void ReportStorageViolation(const Symbol& sym, const config::StorageRule& rule, 
 
 /**
  * @brief Evaluate storage rule.
- * @param[in,out] sym Parameter sym.
- * @param[in,out] sig Parameter sig.
- * @param[in,out] rule Parameter rule.
- * @param[in,out] ctx Parameter ctx.
+ * @param[in] sym Parameter sym.
+ * @param[in] sig Parameter sig.
+ * @param[in] rule Parameter rule.
+ * @param[in] ctx Parameter ctx.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
@@ -182,10 +182,10 @@ void EvaluateStorageRule(const Symbol& sym, const VariableSignature& sig, const 
 
 /**
  * @brief Check scheduler arg safety.
- * @param[in,out] req Parameter req.
+ * @param[in] req Parameter req.
  * @param[in] index Parameter index.
- * @param[in,out] rule Parameter rule.
- * @param[in,out] ctx Parameter ctx.
+ * @param[in] rule Parameter rule.
+ * @param[in] ctx Parameter ctx.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */

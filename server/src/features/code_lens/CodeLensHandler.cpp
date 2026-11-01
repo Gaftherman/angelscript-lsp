@@ -873,7 +873,7 @@ struct BatchReferenceContext
  * @brief Evaluates scope references against indexed symbol targets.
  * @param[in] fileUri URI of document owning scope.
  * @param[in] scope Lexical scope to evaluate.
- * @param[in,out] ctx Batched reference context.
+ * @param[in] ctx Batched reference context.
  */
 void ProcessScopeReferencesBatch(const std::string& fileUri, const analysis::Scope* scope,
                                  const BatchReferenceContext& ctx)
@@ -943,7 +943,7 @@ void ProcessScopeReferencesBatch(const std::string& fileUri, const analysis::Sco
  * @brief Traverses a scope tree flatly to collect references for batched targets.
  * @param[in] fileUri URI of document owning scope tree.
  * @param[in] root Root scope of document.
- * @param[in,out] ctx Batched reference context.
+ * @param[in] ctx Batched reference context.
  * @note [REFACTOR-CANDIDATE] Structural overlap (85%) with ForEachScopeReference in
  * server/src/features/document_highlight/DocumentHighlightHandler.cpp. Candidate for unification in
  * server/src/features/common/FeatureSharedUtils.h.

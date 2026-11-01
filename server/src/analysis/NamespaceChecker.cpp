@@ -241,7 +241,7 @@ void CheckFromNodeIndex(const NamespaceCheckRequest& request, DiagnosticContext&
 /**
  * @brief Check from ast traversal.
  * @param[in] root Parameter root.
- * @param[in,out] request Parameter request.
+ * @param[in] request Parameter request.
  * @param[in,out] ctx Parameter ctx.
  * @note [REFACTOR-CANDIDATE] Structural overlap (93%) with DispatchTreeWalkInitializerLists in
  * server/src/analysis/InitializerListChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.

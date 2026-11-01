@@ -227,9 +227,9 @@ void CheckVoidReturnType(const Symbol& sym, const FunctionSignature& sig, const 
 
 /**
  * @brief Check return type legality.
- * @param[in,out] sym Parameter sym.
- * @param[in,out] sig Parameter sig.
- * @param[in,out] ctx Parameter ctx.
+ * @param[in] sym Parameter sym.
+ * @param[in] sig Parameter sig.
+ * @param[in] ctx Parameter ctx.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType. Manually re-evaluates
  * AST for isRef; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo /

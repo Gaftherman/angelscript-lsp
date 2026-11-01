@@ -44,10 +44,10 @@ TSNode FindFunctionParametersNode(TSNode fnNode)
 
 /**
  * @brief Try build missing const fix for symbol.
- * @param[in,out] request Parameter request.
+ * @param[in] request Parameter request.
  * @param[in] rootNode Parameter rootNode.
- * @param[in,out] diag Parameter diag.
- * @param[in,out] sym Parameter sym.
+ * @param[in] diag Parameter diag.
+ * @param[in] sym Parameter sym.
  * @return Found item if present; std::nullopt otherwise.
  * @note [REFACTOR-CANDIDATE] Structural overlap (78%) with BuildAddConstAction in
  * server/src/features/code_action/CodeActionConstQualifier.cpp. Candidate for unification in
@@ -160,7 +160,7 @@ static bool FindEnclosingMethodAndClass(TSNode leaf, TSNode& outFn, TSNode& outC
 /**
  * @brief Build add const action.
  * @param[in] paramList Parameter paramList.
- * @param[in,out] request Parameter request.
+ * @param[in] request Parameter request.
  * @return Result of the operation.
  * @note [REFACTOR-CANDIDATE] Structural overlap (78%) with CreateAccessorAction in
  * server/src/features/code_action/CodeActionAccessors.cpp. Candidate for unification in
@@ -231,9 +231,9 @@ void TryAddIntentionalConstAction(const CodeActionRequest& request, TSNode rootN
 
 /**
  * @brief Try add const handle diagnostic fix.
- * @param[in,out] request Parameter request.
+ * @param[in] request Parameter request.
  * @param[in] rootNode Parameter rootNode.
- * @param[in,out] diag Parameter diag.
+ * @param[in] diag Parameter diag.
  * @param[in,out] actions Parameter actions.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.

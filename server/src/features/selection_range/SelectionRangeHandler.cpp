@@ -25,8 +25,8 @@ lsp::Range ToRange(TSNode node)
 
 /**
  * @brief Same range.
- * @param[in,out] a Parameter a.
- * @param[in,out] b Parameter b.
+ * @param[in] a Parameter a.
+ * @param[in] b Parameter b.
  * @return True if condition met; otherwise false.
  * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with SameRange in
  * server/src/features/linked_editing/LinkedEditingRangeHandler.cpp. Candidate for unification in

@@ -159,7 +159,7 @@ struct RenameTargetResult
 
 /**
  * @brief Resolve valid rename target.
- * @param[in,out] request Parameter request.
+ * @param[in] request Parameter request.
  * @return Found item if present; std::nullopt otherwise.
  * @note [REFACTOR-CANDIDATE] Structural overlap (76%) with GetReferences in
  * server/src/features/references/ReferencesHandler.cpp. Candidate for unification in

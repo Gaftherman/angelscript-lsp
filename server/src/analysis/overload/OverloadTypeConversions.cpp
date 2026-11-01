@@ -482,6 +482,14 @@ bool IsWildcardParameter(const ParameterInformation& param)
     return param.typeName == "?" || param.rawText.find('?') != std::string::npos;
 }
 
+/**
+ * @brief Is out parameter.
+ * @param[in] param Parameter param.
+ * @return True if condition met; otherwise false.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier /
+ * Symbol::modifiers.isReturnReference.
+ */
 bool IsOutParameter(const ParameterInformation& param)
 {
     return param.modifier == ParameterModifier::Out || param.modifier == ParameterModifier::InOut ||

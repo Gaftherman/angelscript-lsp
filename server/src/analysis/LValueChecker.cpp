@@ -136,7 +136,7 @@ void CollectIdentifierCandidates(TSNode funcNode, const CallCandidateContext& cc
 /**
  * @brief Validate candidate return types.
  * @param[in] callNode Parameter callNode.
- * @param[in,out] candidates Parameter candidates.
+ * @param[in] candidates Parameter candidates.
  * @param[in,out] ctx Parameter ctx.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
@@ -471,7 +471,7 @@ void CheckLValuesIndexed(const LValueCheckRequest& request, DiagnosticContext& c
 
 /**
  * @brief Check l values.
- * @param[in,out] request Parameter request.
+ * @param[in] request Parameter request.
  * @param[in,out] ctx Parameter ctx.
  * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with CheckMemberAccess in server/src/analysis/AccessChecker.cpp.
  * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (98%) with CheckCallArguments

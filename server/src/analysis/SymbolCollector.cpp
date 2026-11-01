@@ -308,7 +308,7 @@ SymbolCollector::~SymbolCollector() = default;
 
 /**
  * @brief Symbol collector collect symbols.
- * @param[in,out] request Parameter request.
+ * @param[in] request Parameter request.
  * @param[in,out] parser Parameter parser.
  * @param[in,out] symbolTable Parameter symbolTable.
  * @return Result of the operation.
@@ -348,7 +348,7 @@ std::vector<Diagnostic> SymbolCollector::CollectSymbols(const std::string& fileU
 
 /**
  * @brief Symbol collector collect symbols with tree.
- * @param[in,out] request Parameter request.
+ * @param[in] request Parameter request.
  * @param[in] tree Parameter tree.
  * @param[in,out] symbolTable Parameter symbolTable.
  * @return Result of the operation.
@@ -824,7 +824,7 @@ void SymbolCollector::ParseAccessorNodes(TSNode node, VariableSignature& varSig)
  * @brief Symbol collector process virtual property variable.
  * @param[in] varDeclNode Parameter varDeclNode.
  * @param[in,out] sCtx Parameter sCtx.
- * @param[in,out] ctx Parameter ctx.
+ * @param[in] ctx Parameter ctx.
  * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with ProcessProperty in server/src/analysis/SymbolCollector.cpp.
  * Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
@@ -1566,7 +1566,7 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
  * @brief Symbol collector process enum.
  * @param[in] node Parameter node.
  * @param[in,out] sCtx Parameter sCtx.
- * @param[in,out] ctx Parameter ctx.
+ * @param[in] ctx Parameter ctx.
  * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with ProcessInterface in server/src/analysis/SymbolCollector.cpp.
  * Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
@@ -1592,7 +1592,7 @@ void SymbolCollector::ProcessEnum(TSNode node, SymbolCollectContext& sCtx, const
  * @brief Symbol collector process property.
  * @param[in] node Parameter node.
  * @param[in,out] sCtx Parameter sCtx.
- * @param[in,out] ctx Parameter ctx.
+ * @param[in] ctx Parameter ctx.
  * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with ProcessVirtualPropertyVariable in
  * server/src/analysis/SymbolCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
@@ -1629,7 +1629,7 @@ void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, c
  * @brief Symbol collector process interface.
  * @param[in] node Parameter node.
  * @param[in,out] sCtx Parameter sCtx.
- * @param[in,out] ctx Parameter ctx.
+ * @param[in] ctx Parameter ctx.
  * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with ProcessEnum in server/src/analysis/SymbolCollector.cpp.
  * Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
@@ -1821,7 +1821,7 @@ bool HasNestedErrorOrMissing(TSNode node)
 /**
  * @brief Is declaration symbol.
  * @param[in] sym Parameter sym.
- * @param[in,out] gs Parameter gs.
+ * @param[in] gs Parameter gs.
  * @return True if condition met; otherwise false.
  * @note [REFACTOR-CANDIDATE] Structural overlap (68%) with IsContainerSymbol in server/src/analysis/CallGraph.cpp.
  * Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -2299,7 +2299,7 @@ struct SwitchScanContext
 
 /**
  * @brief Scan default clause colon.
- * @param[in,out] sCtx Parameter sCtx.
+ * @param[in] sCtx Parameter sCtx.
  * @param[in,out] idx Parameter idx.
  * @param[in,out] outColons Parameter outColons.
  * @note [REFACTOR-CANDIDATE] Structural overlap (87%) with ScanCaseClauseColon in
@@ -2333,7 +2333,7 @@ void ScanDefaultClauseColon(const SwitchScanContext& sCtx, size_t& idx, std::vec
 
 /**
  * @brief Scan case clause colon.
- * @param[in,out] sCtx Parameter sCtx.
+ * @param[in] sCtx Parameter sCtx.
  * @param[in,out] idx Parameter idx.
  * @param[in,out] outColons Parameter outColons.
  * @note [REFACTOR-CANDIDATE] Structural overlap (87%) with ScanDefaultClauseColon in
@@ -2394,7 +2394,7 @@ bool FindSwitchBraceOffsets(TSNode switchNode, uint32_t& openByte, uint32_t& clo
  * @brief Scan switch statement case colons.
  * @param[in] switchNode Parameter switchNode.
  * @param[in] sourceCode Parameter sourceCode.
- * @param[in,out] gs Parameter gs.
+ * @param[in] gs Parameter gs.
  * @param[in,out] outColons Parameter outColons.
  * @note [REFACTOR-CANDIDATE] Structural overlap (74%) with FindNextClauseBoundary in
  * server/src/analysis/SymbolCollector.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.

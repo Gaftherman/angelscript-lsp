@@ -262,7 +262,7 @@ std::string ExtractSymbolNameFromDiag(const lsp::Diagnostic& diag, TSNode rootNo
 
 /**
  * @brief Make ignore unused symbol action.
- * @param[in,out] diag Parameter diag.
+ * @param[in] diag Parameter diag.
  * @param[in] symbolName Parameter symbolName.
  * @param[in] i18n Parameter i18n.
  * @return Result of the operation.

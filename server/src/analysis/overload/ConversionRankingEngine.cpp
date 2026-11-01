@@ -60,9 +60,9 @@ static bool ParamAcceptsHandleConversion(const ParameterInformation& param, cons
 
 /**
  * @brief Evaluate special argument match.
- * @param[in,out] argType Parameter argType.
- * @param[in,out] param Parameter param.
- * @param[in,out] symbolTable Parameter symbolTable.
+ * @param[in] argType Parameter argType.
+ * @param[in] param Parameter param.
+ * @param[in] symbolTable Parameter symbolTable.
  * @return Found item if present; std::nullopt otherwise.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.

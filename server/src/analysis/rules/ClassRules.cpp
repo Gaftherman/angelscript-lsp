@@ -157,7 +157,7 @@ CollectImplementedMethodNames(const std::string& typeName, const SymbolTable& ta
 
 /**
  * @brief Is interface symbol.
- * @param[in,out] table Parameter table.
+ * @param[in] table Parameter table.
  * @param[in] typeName Parameter typeName.
  * @return True if condition met; otherwise false.
  * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with IsEnumType in

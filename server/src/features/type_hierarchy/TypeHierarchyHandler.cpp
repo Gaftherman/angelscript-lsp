@@ -27,7 +27,7 @@ bool IsTypeSymbol(const Symbol& sym)
 
 /**
  * @brief To range.
- * @param[in,out] range Parameter range.
+ * @param[in] range Parameter range.
  * @return Result of the operation.
  * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with ToRange in
  * server/src/features/call_hierarchy/CallHierarchyHandler.cpp. Candidate for unification in
@@ -41,7 +41,7 @@ lsp::Range ToRange(const analysis::SourceRange& range)
 
 /**
  * @brief To item.
- * @param[in,out] sym Parameter sym.
+ * @param[in] sym Parameter sym.
  * @return Result of the operation.
  * @note [REFACTOR-CANDIDATE] Structural overlap (67%) with ToItem in
  * server/src/features/call_hierarchy/CallHierarchyHandler.cpp. Candidate for unification in

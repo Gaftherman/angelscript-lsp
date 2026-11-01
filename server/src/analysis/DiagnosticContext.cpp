@@ -260,7 +260,7 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, Diagnosti
 
 /**
  * @brief Diagnostic context emit.
- * @param[in,out] sym Parameter sym.
+ * @param[in] sym Parameter sym.
  * @param[in] code Parameter code.
  * @param[in] arg1 Parameter arg1.
  * @param[in] severity Parameter severity.
@@ -282,7 +282,7 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri
 
 /**
  * @brief Diagnostic context emit.
- * @param[in,out] sym Parameter sym.
+ * @param[in] sym Parameter sym.
  * @param[in] code Parameter code.
  * @param[in] arg1 Parameter arg1.
  * @param[in] arg2 Parameter arg2.
@@ -304,7 +304,7 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri
 
 /**
  * @brief Diagnostic context emit.
- * @param[in,out] sym Parameter sym.
+ * @param[in] sym Parameter sym.
  * @param[in] code Parameter code.
  * @param[in] args Parameter args.
  * @param[in] severity Parameter severity.
@@ -327,8 +327,8 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::init
 
 /**
  * @brief Diagnostic context emit.
- * @param[in,out] param Parameter param.
- * @param[in,out] parentSym Parameter parentSym.
+ * @param[in] param Parameter param.
+ * @param[in] parentSym Parameter parentSym.
  * @param[in] code Parameter code.
  * @param[in] severity Parameter severity.
  * @note [REFACTOR-CANDIDATE] Structural overlap (71%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
@@ -344,8 +344,8 @@ void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& pa
 
 /**
  * @brief Diagnostic context emit.
- * @param[in,out] param Parameter param.
- * @param[in,out] parentSym Parameter parentSym.
+ * @param[in] param Parameter param.
+ * @param[in] parentSym Parameter parentSym.
  * @param[in] code Parameter code.
  * @param[in] arg1 Parameter arg1.
  * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate
@@ -365,8 +365,8 @@ void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& pa
 
 /**
  * @brief Diagnostic context emit.
- * @param[in,out] param Parameter param.
- * @param[in,out] parentSym Parameter parentSym.
+ * @param[in] param Parameter param.
+ * @param[in] parentSym Parameter parentSym.
  * @param[in] code Parameter code.
  * @param[in] args Parameter args.
  * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Emit in server/src/analysis/DiagnosticContext.cpp. Candidate

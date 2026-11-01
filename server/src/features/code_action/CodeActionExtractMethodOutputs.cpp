@@ -49,6 +49,15 @@ void CheckIncDecMutation(TSNode curr, std::string_view sourceCode,
     }
 }
 
+/**
+ * @brief Check call mutation.
+ * @param[in] curr Parameter curr.
+ * @param[in] sourceCode Script source code view.
+ * @param[in,out] mutatedVars Parameter mutatedVars.
+ * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
+ * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier /
+ * Symbol::modifiers.isReturnReference.
+ */
 void CheckCallMutation(TSNode curr, std::string_view sourceCode, ankerl::unordered_dense::set<std::string>& mutatedVars)
 {
     TSNode argsNode = parser::GetChildByField(curr, parser::GetGrammarSymbols().fieldArguments);

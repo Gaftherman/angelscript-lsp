@@ -14,8 +14,8 @@ using analysis::Scope;
 
 /**
  * @brief Contains.
- * @param[in,out] scope Parameter scope.
- * @param[in,out] position Parameter position.
+ * @param[in] scope Parameter scope.
+ * @param[in] position Parameter position.
  * @return True if condition met; otherwise false.
  * @note [REFACTOR-CANDIDATE] Structural overlap (92%) with Covers in
  * server/src/features/linked_editing/LinkedEditingRangeHandler.cpp. Candidate for unification in
@@ -65,8 +65,8 @@ const Scope* InnermostScope(const Scope* root, const lsp::Position& position)
 
 /**
  * @brief Covers.
- * @param[in,out] item Parameter item.
- * @param[in,out] position Parameter position.
+ * @param[in] item Parameter item.
+ * @param[in] position Parameter position.
  * @return True if condition met; otherwise false.
  * @note [REFACTOR-CANDIDATE] Structural overlap (92%) with Contains in
  * server/src/features/linked_editing/LinkedEditingRangeHandler.cpp. Candidate for unification in
@@ -165,8 +165,8 @@ bool IsInsideFunction(const Scope* scope)
 
 /**
  * @brief Same range.
- * @param[in,out] a Parameter a.
- * @param[in,out] b Parameter b.
+ * @param[in] a Parameter a.
+ * @param[in] b Parameter b.
  * @return True if condition met; otherwise false.
  * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with SameRange in
  * server/src/features/selection_range/SelectionRangeHandler.cpp. Candidate for unification in

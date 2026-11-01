@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-01T06:10:18Z",
+  "generatedAt": "2026-11-01T06:37:55Z",
   "branch": "refactor/architecture-deduplication-and-ram",
   "description": "Deterministic AST and tokenization audit report covering local C++ structs, pass-1 flag re-evaluations, function similarity, hot struct RAM layout, and Doxygen coverage.",
   "localCppStructs": {
@@ -592,7 +592,7 @@
       {
         "file": "server/src/analysis/DefiniteAssignmentChecker.cpp",
         "startLine": 102,
-        "endLine": 791,
+        "endLine": 800,
         "structName": "DefiniteAssignmentVisitor",
         "fields": [
           {
@@ -1875,8 +1875,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 1359,
-        "endLine": 1363,
+        "startLine": 1367,
+        "endLine": 1371,
         "structName": "HierarchyClassifiedBase",
         "fields": [
           {
@@ -1892,8 +1892,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 1965,
-        "endLine": 1971,
+        "startLine": 1973,
+        "endLine": 1979,
         "structName": "MixinExpansionContext",
         "fields": [
           {
@@ -1919,8 +1919,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 3289,
-        "endLine": 3294,
+        "startLine": 3297,
+        "endLine": 3302,
         "structName": "BinaryOverloadResult",
         "fields": [
           {
@@ -1942,8 +1942,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 3764,
-        "endLine": 3770,
+        "startLine": 3772,
+        "endLine": 3778,
         "structName": "TernaryBranchTypes",
         "fields": [
           {
@@ -1967,8 +1967,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 5053,
-        "endLine": 5058,
+        "startLine": 5061,
+        "endLine": 5066,
         "structName": "ActiveLocalDefKey",
         "fields": [
           {
@@ -1988,8 +1988,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 5066,
-        "endLine": 5076,
+        "startLine": 5074,
+        "endLine": 5084,
         "structName": "ActiveLocalDefGuard",
         "fields": [
           {
@@ -2001,8 +2001,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 5400,
-        "endLine": 5407,
+        "startLine": 5408,
+        "endLine": 5415,
         "structName": "DelegatePropertyReceiverContext",
         "fields": [
           {
@@ -2030,8 +2030,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 5848,
-        "endLine": 5863,
+        "startLine": 5856,
+        "endLine": 5871,
         "structName": "CallDelimiterState",
         "fields": [
           {
@@ -2071,8 +2071,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 6403,
-        "endLine": 6408,
+        "startLine": 6411,
+        "endLine": 6416,
         "structName": "FuncdefAgreement",
         "fields": [
           {
@@ -2749,8 +2749,8 @@
       },
       {
         "file": "server/src/features/code_action/CodeActionExtractMethodOutputs.cpp",
-        "startLine": 165,
-        "endLine": 170,
+        "startLine": 174,
+        "endLine": 179,
         "structName": "MethodOutputContext",
         "fields": [
           {
@@ -5002,7 +5002,7 @@
     ]
   },
   "pass1FlagReparsing": {
-    "totalFlagReparseOccurrences": 107,
+    "totalFlagReparseOccurrences": 115,
     "occurrences": [
       {
         "file": "server/src/analysis/BinaryOperatorHelpers.cpp",
@@ -5079,7 +5079,7 @@
         "line": 518,
         "flagKind": "isRef",
         "codeSnippet": "const bool isRef = fn.modifiers.isReturnReference || (!fn.returnType.empty() && fn.returnType.back()",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference"
+        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
       },
       {
         "file": "server/src/analysis/ControlFlowChecker.cpp",
@@ -5087,6 +5087,20 @@
         "flagKind": "isHandle",
         "codeSnippet": "if (!state.requiredReturn.empty() && state.requiredReturn.find('@') == std::string::npos &&",
         "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
+      },
+      {
+        "file": "server/src/analysis/DefiniteAssignmentChecker.cpp",
+        "line": 288,
+        "flagKind": "isRef",
+        "codeSnippet": "return param.modifier == ParameterModifier::Out || param.typeName.find(\"&out\") != std::string::npos ",
+        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
+      },
+      {
+        "file": "server/src/analysis/DefiniteAssignmentChecker.cpp",
+        "line": 289,
+        "flagKind": "isRef",
+        "codeSnippet": "param.rawText.find(\"&out\") != std::string::npos;",
+        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
       },
       {
         "file": "server/src/analysis/InitializerListChecker.cpp",
@@ -5121,7 +5135,7 @@
         "line": 262,
         "flagKind": "isRef",
         "codeSnippet": "if (retText.empty() || retText == \"void\" || retText.find('&') != std::string_view::npos ||",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference"
+        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
       },
       {
         "file": "server/src/analysis/LocalScopeCollector.cpp",
@@ -5163,7 +5177,7 @@
         "line": 169,
         "flagKind": "isRef",
         "codeSnippet": "if (fn.modifiers.isReturnReference || (!fn.returnType.empty() && fn.returnType.back() == '&'))",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference"
+        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
       },
       {
         "file": "server/src/analysis/overload/ConversionRankingEngine.cpp",
@@ -5202,7 +5216,21 @@
       },
       {
         "file": "server/src/analysis/overload/OverloadTypeConversions.cpp",
-        "line": 510,
+        "line": 496,
+        "flagKind": "isRef",
+        "codeSnippet": "param.rawText.find(\"&out\") != std::string::npos || param.rawText.find(\"&inout\") != std::string::npos",
+        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
+      },
+      {
+        "file": "server/src/analysis/overload/OverloadTypeConversions.cpp",
+        "line": 497,
+        "flagKind": "isRef",
+        "codeSnippet": "param.typeName.find(\"&out\") != std::string::npos || param.typeName.find(\"&inout\") != std::string::np",
+        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
+      },
+      {
+        "file": "server/src/analysis/overload/OverloadTypeConversions.cpp",
+        "line": 518,
         "flagKind": "isConst",
         "codeSnippet": "if (base.starts_with(\"const \"))",
         "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst"
@@ -5247,7 +5275,7 @@
         "line": 253,
         "flagKind": "isRef",
         "codeSnippet": "sig.returnType.find('&') == std::string::npos && !sig.modifiers.isReturnReference;",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference"
+        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
       },
       {
         "file": "server/src/analysis/rules/UnusedSymbolChecker.cpp",
@@ -5258,10 +5286,24 @@
       },
       {
         "file": "server/src/analysis/rules/UnusedSymbolChecker.cpp",
+        "line": 399,
+        "flagKind": "isRef",
+        "codeSnippet": "if (sv.ends_with(\"&inout\"))",
+        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
+      },
+      {
+        "file": "server/src/analysis/rules/UnusedSymbolChecker.cpp",
+        "line": 401,
+        "flagKind": "isRef",
+        "codeSnippet": "else if (sv.ends_with(\"&in\") || sv.ends_with(\"&out\"))",
+        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
+      },
+      {
+        "file": "server/src/analysis/rules/UnusedSymbolChecker.cpp",
         "line": 403,
         "flagKind": "isRef",
         "codeSnippet": "else if (sv.ends_with('&'))",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference"
+        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
@@ -5275,67 +5317,74 @@
         "line": 52,
         "flagKind": "isRef",
         "codeSnippet": "while (!typeName.empty() && (typeName.back() == '&' || typeName.back() == ' ' || typeName.back() == ",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference"
+        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "line": 1103,
+        "line": 201,
+        "flagKind": "isRef",
+        "codeSnippet": "p.typeName.find(\"&in\") != std::string::npos || p.rawText.find(\"&in\") != std::string::npos);",
+        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
+      },
+      {
+        "file": "server/src/analysis/SemanticHelpers.cpp",
+        "line": 1111,
         "flagKind": "isHandle",
         "codeSnippet": "(typeName.back() == ' ' || typeName.back() == '\\t' || typeName.back() == '@' || typeName.back() == '",
         "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "line": 3850,
+        "line": 3858,
         "flagKind": "isHandle",
         "codeSnippet": "if (c1 == \"null\" && t2.ends_with(\"@\"))",
         "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "line": 3854,
+        "line": 3862,
         "flagKind": "isHandle",
         "codeSnippet": "if (c2 == \"null\" && t1.ends_with(\"@\"))",
         "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "line": 3879,
+        "line": 3887,
         "flagKind": "isHandle",
         "codeSnippet": "return (t1.ends_with(\"@\") && t2.ends_with(\"@\")) ? c1 + \"@\" : c1;",
         "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "line": 4580,
+        "line": 4588,
         "flagKind": "isHandle",
         "codeSnippet": "return clean.ends_with(\"@\") ? clean : clean + \"@\";",
         "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "line": 5138,
+        "line": 5146,
         "flagKind": "isHandle",
         "codeSnippet": "if ((def.isHandleType || def.typeName.find('@') != std::string::npos) && !rhsType.ends_with('@'))",
         "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "line": 6103,
+        "line": 6111,
         "flagKind": "isConst",
         "codeSnippet": "current.isConst = text.starts_with(\"const \") || text == \"const\";",
         "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst"
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "line": 6104,
+        "line": 6112,
         "flagKind": "isHandle",
         "codeSnippet": "current.isHandle = text.find('@') != std::string_view::npos;",
         "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "line": 6329,
+        "line": 6337,
         "flagKind": "isHandle",
         "codeSnippet": "if (typeName.find('@') != std::string_view::npos)",
         "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
@@ -5394,7 +5443,7 @@
         "line": 3028,
         "flagKind": "isRef",
         "codeSnippet": "if (paramInfo.rawText.find('&') != std::string::npos || paramInfo.rawText.find(\"in\") != std::string:",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference"
+        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
       },
       {
         "file": "server/src/analysis/SymbolTable.h",
@@ -5618,7 +5667,7 @@
         "line": 4121,
         "flagKind": "isRef",
         "codeSnippet": "return headText.find('&') != std::string::npos || rawRetText.find('&') != std::string::npos;",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference"
+        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
       },
       {
         "file": "server/src/analysis/TypeConversionChecker.cpp",
@@ -5691,6 +5740,13 @@
         "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst"
       },
       {
+        "file": "server/src/features/code_action/CodeActionExtractMethodOutputs.cpp",
+        "line": 73,
+        "flagKind": "isRef",
+        "codeSnippet": "if (argText.starts_with(\"&out \") || argText.starts_with(\"&inout \") || argText.starts_with(\"out \") ||",
+        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
+      },
+      {
         "file": "server/src/features/code_action/CodeActionInterfaceImplementer.cpp",
         "line": 25,
         "flagKind": "isHandle",
@@ -5702,7 +5758,7 @@
         "line": 58,
         "flagKind": "isRef",
         "codeSnippet": "if (fn.modifiers.isReturnReference && !ret.ends_with('&'))",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference"
+        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
       },
       {
         "file": "server/src/features/code_action/CodeActionQuickFixes.cpp",
@@ -5761,41 +5817,6 @@
     "matrix": [
       {
         "funcA": {
-          "file": "server/src/analysis/NodeIndex.cpp",
-          "startLine": 502,
-          "endLine": 532,
-          "name": "AppendIndexRawContainers",
-          "signature": "AppendIndexRawContainers(TSNode nameNode, ContainerKind kind, std::string_view s"
-        },
-        "funcB": {
-          "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 2255,
-          "endLine": 2285,
-          "name": "AppendRawContainers",
-          "signature": "AppendRawContainers(TSNode nameNode, ContainerKind kind, std::string_view source"
-        },
-        "similarityScore": 1.0,
-        "sharedCalls": [
-          "SplitScopeSegments",
-          "empty",
-          "it",
-          "push_back",
-          "rawContainers",
-          "rbegin",
-          "rend",
-          "segs",
-          "size",
-          "sourceCode",
-          "substr",
-          "ts_node_end_byte",
-          "ts_node_is_null",
-          "ts_node_start_byte"
-        ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/analysis/rules/ClassRules.cpp",
           "startLine": 166,
           "endLine": 171,
@@ -5818,7 +5839,7 @@
           "table",
           "type"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "IsInterfaceSymbol (evaluates AST node or symbol predicate properties via [FindSymbolsPtr, begin, end]) and IsEnumType (evaluates AST node or symbol predicate properties via [FindSymbolsPtr, begin, end]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -5848,27 +5869,42 @@
           "table",
           "type"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "IsClassMember (evaluates AST node or symbol predicate properties via [FindSymbolsPtr, begin, container]) and IsInterfaceMember (evaluates AST node or symbol predicate properties via [FindSymbolsPtr, begin, container]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
         "funcA": {
-          "file": "server/src/analysis/BinaryOperatorChecker.cpp",
-          "startLine": 26,
-          "endLine": 30,
-          "name": "IsBitwiseOp",
-          "signature": "IsBitwiseOp(std::string_view op) noexcept"
+          "file": "server/src/analysis/NodeIndex.cpp",
+          "startLine": 502,
+          "endLine": 532,
+          "name": "AppendIndexRawContainers",
+          "signature": "AppendIndexRawContainers(TSNode nameNode, ContainerKind kind, std::string_view s"
         },
         "funcB": {
-          "file": "server/src/analysis/BinaryOperatorChecker.cpp",
-          "startLine": 39,
-          "endLine": 43,
-          "name": "IsArithmeticOp",
-          "signature": "IsArithmeticOp(std::string_view op) noexcept"
+          "file": "server/src/analysis/SemanticHelpers.cpp",
+          "startLine": 2263,
+          "endLine": 2293,
+          "name": "AppendRawContainers",
+          "signature": "AppendRawContainers(TSNode nameNode, ContainerKind kind, std::string_view source"
         },
         "similarityScore": 1.0,
-        "sharedCalls": [],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "sharedCalls": [
+          "SplitScopeSegments",
+          "empty",
+          "it",
+          "push_back",
+          "rawContainers",
+          "rbegin",
+          "rend",
+          "segs",
+          "size",
+          "sourceCode",
+          "substr",
+          "ts_node_end_byte",
+          "ts_node_is_null",
+          "ts_node_start_byte"
+        ],
+        "whatTheyDo": "AppendIndexRawContainers (executes AppendIndexRawContainers logic via [SplitScopeSegments, it, rawContainers]) and AppendRawContainers (executes AppendRawContainers logic via [SplitScopeSegments, it, rawContainers]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -5892,7 +5928,27 @@
           "size",
           "val"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "ParseClangUInt (extracts AST structures and signature metadata via [data, val]) and ParseClangInt (extracts AST structures and signature metadata via [data, val]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
+        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
+          "file": "server/src/analysis/BinaryOperatorChecker.cpp",
+          "startLine": 26,
+          "endLine": 30,
+          "name": "IsBitwiseOp",
+          "signature": "IsBitwiseOp(std::string_view op) noexcept"
+        },
+        "funcB": {
+          "file": "server/src/analysis/BinaryOperatorChecker.cpp",
+          "startLine": 39,
+          "endLine": 43,
+          "name": "IsArithmeticOp",
+          "signature": "IsArithmeticOp(std::string_view op) noexcept"
+        },
+        "similarityScore": 1.0,
+        "sharedCalls": [],
+        "whatTheyDo": "IsBitwiseOp (evaluates AST node or symbol predicate properties) and IsArithmeticOp (evaluates AST node or symbol predicate properties) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -5921,7 +5977,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, column, ctx]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -5950,7 +6006,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, column, ctx]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -5979,7 +6035,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, column, ctx]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6008,7 +6064,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, column, ctx]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6037,7 +6093,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, column, ctx]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6066,7 +6122,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, column, ctx]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6092,7 +6148,7 @@
           "startCharacter",
           "startLine"
         ],
-        "whatTheyDo": "Duplicated across features (call_hierarchy vs type_hierarchy) due to Layer 3 feature isolation prohibition.",
+        "whatTheyDo": "Both implementations executes ToRange logic via [endCharacter, endLine, range]. Separated due to Layer 3 isolation prohibition between features/call_hierarchy and features/type_hierarchy.",
         "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
       },
       {
@@ -6124,7 +6180,7 @@
           "sig",
           "size"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ValidateOpCmp (validates semantic rules and conditions via [Emit, LogRule, ctx]) and ValidateOpEquals (validates semantic rules and conditions via [Emit, LogRule, ctx]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6151,7 +6207,7 @@
           "bArgs",
           "size"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations evaluates equality and operator compatibility via [IsSameType, SplitTemplateArguments, TrimTypeWhitespace]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6171,7 +6227,7 @@
         },
         "similarityScore": 1.0,
         "sharedCalls": [],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "IsValueOnlyKind (evaluates AST node or symbol predicate properties) and IsUnconditionallyNonNullablePrimitive (evaluates AST node or symbol predicate properties) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6198,7 +6254,7 @@
           "second",
           "visited"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "Both implementations evaluates AST node or symbol predicate properties via [cur, insert, isFunctionScope]. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6211,8 +6267,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 2205,
-          "endLine": 2221,
+          "startLine": 2213,
+          "endLine": 2229,
           "name": "ClassifyContainerKind",
           "signature": "ClassifyContainerKind(TSSymbol sym)"
         },
@@ -6220,14 +6276,14 @@
         "sharedCalls": [
           "gs"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ClassifyIndexContainerKind (executes ClassifyIndexContainerKind logic via [gs]) and ClassifyContainerKind (executes ClassifyContainerKind logic via [gs]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 345,
-          "endLine": 354,
+          "startLine": 353,
+          "endLine": 362,
           "name": "UnwrapParens",
           "signature": "UnwrapParens(TSNode node)"
         },
@@ -6246,7 +6302,7 @@
           "ts_node_named_child_count",
           "ts_node_symbol"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "UnwrapParens (executes UnwrapParens logic via [gs, ts_node_is_null, ts_node_named_child]) and UnwrapParentheses (executes UnwrapParentheses logic via [gs, ts_node_is_null, ts_node_named_child]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6275,7 +6331,7 @@
           "push_back",
           "sink"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "HandleEqualityNullCheck (validates semantic rules and conditions via [GetIdentifierName, IsNullInitializer, name]) and HandleInequalityNullCheck (validates semantic rules and conditions via [GetIdentifierName, IsNullInitializer, name]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6298,7 +6354,7 @@
           "find",
           "lower"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "MatchesSvenCoop (evaluates equality and operator compatibility via [lower]) and MatchesUrho3D (evaluates equality and operator compatibility via [lower]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6321,7 +6377,7 @@
           "find",
           "lower"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "MatchesSvenCoop (evaluates equality and operator compatibility via [lower]) and MatchesOpenXRay (evaluates equality and operator compatibility via [lower]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6344,7 +6400,7 @@
           "find",
           "lower"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "MatchesUrho3D (evaluates equality and operator compatibility via [lower]) and MatchesOpenXRay (evaluates equality and operator compatibility via [lower]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6357,8 +6413,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 2229,
-          "endLine": 2244,
+          "startLine": 2237,
+          "endLine": 2252,
           "name": "ComputeContainerQualifiedNames",
           "signature": "ComputeContainerQualifiedNames(std::vector<ContainerInfo>& containers)"
         },
@@ -6371,7 +6427,7 @@
           "qualifiedName",
           "size"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ComputeIndexContainerQualifiedNames (executes ComputeIndexContainerQualifiedNames logic via [containers, name, qName]) and ComputeContainerQualifiedNames (executes ComputeContainerQualifiedNames logic via [containers, name, qName]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6396,7 +6452,7 @@
           "varName",
           "vars"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations executes ApplyAssertions logic via [a, state, varName]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6423,7 +6479,7 @@
           "line",
           "start"
         ],
-        "whatTheyDo": "Duplicated across features (linked_editing vs selection_range) due to Layer 3 feature isolation prohibition.",
+        "whatTheyDo": "Both implementations executes SameRange logic via [a, b, character]. Separated due to Layer 3 isolation prohibition between features/linked_editing and features/selection_range.",
         "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
       },
       {
@@ -6447,7 +6503,7 @@
           "fileUri",
           "partial"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations formats text representations of symbols via [PopulatePartial, fileUri, partial]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6471,7 +6527,7 @@
           "kind",
           "text"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "MakeBrief (executes MakeBrief logic via [b, kind, text]) and MakeBody (executes MakeBody logic via [b, kind, text]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6495,7 +6551,7 @@
           "kind",
           "text"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "MakeBrief (executes MakeBrief logic via [b, kind, text]) and MakeCodeBlock (executes MakeCodeBlock logic via [b, kind, text]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6519,7 +6575,7 @@
           "kind",
           "text"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "MakeBrief (executes MakeBrief logic via [b, kind, text]) and MakeReturn (executes MakeReturn logic via [b, kind, text]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6543,7 +6599,7 @@
           "kind",
           "text"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "MakeBody (executes MakeBody logic via [b, kind, text]) and MakeCodeBlock (executes MakeCodeBlock logic via [b, kind, text]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6567,7 +6623,7 @@
           "kind",
           "text"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "MakeBody (executes MakeBody logic via [b, kind, text]) and MakeReturn (executes MakeReturn logic via [b, kind, text]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6591,7 +6647,7 @@
           "kind",
           "text"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "MakeCodeBlock (executes MakeCodeBlock logic via [b, kind, text]) and MakeReturn (executes MakeReturn logic via [b, kind, text]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6627,7 +6683,7 @@
           "ts_node_is_null",
           "ts_node_start_byte"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ProcessTParamTag (executes ProcessTParamTag logic via [CleanDescriptionLines, FindChildByType, RenderDescription]) and ProcessRetValTag (executes ProcessRetValTag logic via [CleanDescriptionLines, FindChildByType, RenderDescription]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6660,7 +6716,7 @@
           "startCharacter",
           "startLine"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6685,7 +6741,7 @@
           "str",
           "substr"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations executes Trim logic via [find_first_not_of, find_last_not_of, str]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6712,7 +6768,7 @@
           "remove_suffix",
           "s"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "TrimWhitespace (executes TrimWhitespace logic via [back, front, remove_prefix]) and Trim (executes Trim logic via [back, front, remove_prefix]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6739,7 +6795,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated across features (document_symbol vs selection_range) due to Layer 3 feature isolation prohibition.",
+        "whatTheyDo": "ToLspRange (executes ToLspRange logic via [column, end, row]) and ToRange (executes ToRange logic via [column, end, row]) share algorithmic structure. Separated due to Layer 3 isolation prohibition between features/document_symbol and features/selection_range.",
         "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
       },
       {
@@ -6767,7 +6823,7 @@
           "i18n",
           "request"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6798,7 +6854,7 @@
           "sourceCode",
           "ts_node_is_null"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "CheckMemberAccess (validates semantic rules and conditions via [CheckMemberAccessIndexed, ctx, fileUri]) and CheckCallArguments (validates semantic rules and conditions via [CheckCallArgumentsIndexed, ctx, fileUri]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6829,7 +6885,7 @@
           "sourceCode",
           "ts_node_is_null"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "CheckMemberAccess (validates semantic rules and conditions via [CheckMemberAccessIndexed, ctx, fileUri]) and CheckLValues (validates semantic rules and conditions via [CheckLValuesIndexed, ctx, fileUri]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6860,7 +6916,7 @@
           "sourceCode",
           "ts_node_is_null"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "CheckCallArguments (validates semantic rules and conditions via [CheckCallArgumentsIndexed, ctx, fileUri]) and CheckLValues (validates semantic rules and conditions via [CheckLValuesIndexed, ctx, fileUri]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6887,7 +6943,7 @@
           "i18n",
           "request"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6919,7 +6975,7 @@
           "starts_with",
           "trimmed"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "CollectSingleLineCommentRanges (extracts AST structures and signature metadata via [TrimLeading, endLine, fr]) and CollectImportAndIncludeRanges (extracts AST structures and signature metadata via [TrimLeading, endLine, fr]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6947,7 +7003,7 @@
           "starts_with",
           "ts_node_is_null"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "RenderCodeWordNode (executes RenderCodeWordNode logic via [FindChildByType, front, full]) and RenderEmphasisNode (evaluates AST node or symbol predicate properties via [FindChildByType, front, full]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6978,7 +7034,7 @@
           "sourceCode",
           "ts_node_is_null"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "CheckMemberAccess (validates semantic rules and conditions via [CheckMemberAccessIndexed, ctx, fileUri]) and CheckConstCorrectness (validates semantic rules and conditions via [CheckConstCorrectnessIndexed, ctx, fileUri]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7009,7 +7065,7 @@
           "sourceCode",
           "ts_node_is_null"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "CheckCallArguments (validates semantic rules and conditions via [CheckCallArgumentsIndexed, ctx, fileUri]) and CheckConstCorrectness (validates semantic rules and conditions via [CheckConstCorrectnessIndexed, ctx, fileUri]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7040,7 +7096,7 @@
           "sourceCode",
           "ts_node_is_null"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "CheckConstCorrectness (validates semantic rules and conditions via [CheckConstCorrectnessIndexed, ctx, fileUri]) and CheckLValues (validates semantic rules and conditions via [CheckLValuesIndexed, ctx, fileUri]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7060,7 +7116,7 @@
         },
         "similarityScore": 0.964,
         "sharedCalls": [],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "EngineProfileKindToString (formats text representations of symbols) and KindWord (executes KindWord logic) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7088,7 +7144,7 @@
           "i18n",
           "request"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7117,7 +7173,7 @@
           "push_back",
           "sourceCode"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "ProcessVirtualProperty (executes ProcessVirtualProperty logic via [CreateDeclarationSymbol, GetChildByField, GetNodeText]) and ProcessTypedef (executes ProcessTypedef logic via [CreateDeclarationSymbol, GetChildByField, GetNodeText]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7157,7 +7213,7 @@
           "typeKind",
           "typeName"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ReadForeachVariableTypeInfo (executes ReadForeachVariableTypeInfo logic via [ExtractTypeInfoFromAST, GetNodeText, PopulateTypeRanges]) and ReadEmptyParenVariableTypeInfo (executes ReadEmptyParenVariableTypeInfo logic via [ExtractTypeInfoFromAST, GetNodeText, PopulateTypeRanges]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7180,7 +7236,7 @@
           "find",
           "source"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "SkipBlockComment (executes SkipBlockComment logic via [source]) and SkipHeredoc (executes SkipHeredoc logic via [source]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7207,7 +7263,7 @@
           "i18n",
           "request"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7236,7 +7292,7 @@
           "ts_tree_cursor_goto_next_sibling",
           "ts_tree_cursor_new"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "FindClassBodyInsertionPoint (performs symbol/scope resolution via [FindClassClosingBracePoint, fieldBody, ts_node_is_null]) and FindFunctionBodyBlock (performs symbol/scope resolution via [fieldBody, ts_node_is_null, ts_node_symbol]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7281,7 +7337,7 @@
           "startLine",
           "target"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ScanDocumentForNamespace (evaluates AST node or symbol predicate properties via [Add, IsRefInsideNamespace, IsShadowedInFunctionScope]) and ScanDocumentForGlobal (evaluates AST node or symbol predicate properties via [Add, IsShadowedInFunctionScope, MatchesCallArguments]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7309,7 +7365,7 @@
           "i18n",
           "request"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7344,7 +7400,7 @@
           "ts_node_symbol",
           "ts_tree_root_node"
         ],
-        "whatTheyDo": "Duplicated across features (implementation vs type_hierarchy) due to Layer 3 feature isolation prohibition.",
+        "whatTheyDo": "Both implementations executes IdentifierAt logic via [character, line, position]. Separated due to Layer 3 isolation prohibition between features/implementation and features/type_hierarchy.",
         "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
       },
       {
@@ -7373,7 +7429,7 @@
           "sig",
           "typeName"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ArityOf (executes ArityOf logic via [arity, defaultValue, maximum]) and InspectFunctionArity (executes InspectFunctionArity logic via [defaultValue, info, isVariadic]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7399,7 +7455,7 @@
           "name",
           "qualifiedName"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "FindEnclosingClassOrInterface (performs symbol/scope resolution via [GetEnclosingContainers, container, kind]) and EnclosingType (executes EnclosingType logic via [container, kind, name]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7429,7 +7485,7 @@
           "table",
           "type"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "IsClassMember (evaluates AST node or symbol predicate properties via [FindSymbolsPtr, begin, container]) and IsMixinMember (evaluates AST node or symbol predicate properties via [FindSymbolsPtr, GetClass, begin]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7459,7 +7515,7 @@
           "table",
           "type"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "IsInterfaceMember (evaluates AST node or symbol predicate properties via [FindSymbolsPtr, begin, container]) and IsMixinMember (evaluates AST node or symbol predicate properties via [FindSymbolsPtr, GetClass, begin]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7486,7 +7542,7 @@
           "i18n",
           "request"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7499,8 +7555,8 @@
         },
         "funcB": {
           "file": "server/src/features/code_action/CodeActionExtractMethodOutputs.cpp",
-          "startLine": 275,
-          "endLine": 313,
+          "startLine": 284,
+          "endLine": 322,
           "name": "TraverseSubtreeMutations",
           "signature": "TraverseSubtreeMutations(TSNode root, std::string_view sourceCode,\r\n            "
         },
@@ -7513,7 +7569,7 @@
           "ts_tree_cursor_goto_parent",
           "ts_tree_cursor_new"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "TraverseTree (executes TraverseTree logic via [IndexNode, ts_tree_cursor_current_node, ts_tree_cursor_delete]) and TraverseSubtreeMutations (executes TraverseSubtreeMutations logic via [CheckNodeMutations, ts_node_is_null, ts_tree_cursor_current_node]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7555,7 +7611,7 @@
           "startLine",
           "worklist"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "CheckUnusedVariables (validates semantic rules and conditions via [EmitAtRange, ancestor, back]) and CheckNullAssignedToNonHandleInScope (validates semantic rules and conditions via [EmitAtRange, IsUnconditionallyNonNullablePrimitive, ancestor]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7583,7 +7639,7 @@
           "ts_tree_cursor_goto_parent",
           "ts_tree_cursor_new"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "DispatchTreeWalkInitializerLists (evaluates AST node or symbol predicate properties via [DispatchInitListNode, initCtx, request]) and CheckFromASTTraversal (validates semantic rules and conditions via [ProcessNamespaceNode, ts_node_is_null, ts_tree_cursor_current_node]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7603,7 +7659,7 @@
         },
         "similarityScore": 0.924,
         "sharedCalls": [],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "IsValueOnlyKind (evaluates AST node or symbol predicate properties) and IsUnaryPrecedingTokenType (evaluates AST node or symbol predicate properties) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7623,7 +7679,7 @@
         },
         "similarityScore": 0.924,
         "sharedCalls": [],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "IsUnconditionallyNonNullablePrimitive (evaluates AST node or symbol predicate properties) and IsUnaryPrecedingTokenType (evaluates AST node or symbol predicate properties) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7653,7 +7709,7 @@
           "s",
           "stack"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "CollectScopeStringLiteralRefs (extracts AST structures and signature metadata via [back, child, children]) and ForEachScopeReference (executes ForEachScopeReference logic via [back, callback, child]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7681,7 +7737,7 @@
           "startCharacter",
           "startLine"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "Contains (executes Contains logic via [character, endCharacter, endLine]) and Covers (executes Covers logic via [character, endCharacter, endLine]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7706,7 +7762,7 @@
           "push_back",
           "scope"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "FindOrCreateClass (performs symbol/scope resolution via [back, c, classes]) and FindOrCreateEnum (performs symbol/scope resolution via [back, e, enums]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7731,7 +7787,7 @@
           "push_back",
           "scope"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "FindOrCreateClass (performs symbol/scope resolution via [back, c, classes]) and FindOrCreateInterface (performs symbol/scope resolution via [back, in, interfaces]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7756,7 +7812,7 @@
           "push_back",
           "scope"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "FindOrCreateEnum (performs symbol/scope resolution via [back, e, enums]) and FindOrCreateInterface (performs symbol/scope resolution via [back, in, interfaces]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7780,7 +7836,7 @@
           "rfind",
           "val"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "ParseClangBraceStyle (extracts AST structures and signature metadata via [remove_prefix, rfind, val]) and ParseClangShortFunctionStyle (extracts AST structures and signature metadata via [remove_prefix, rfind, val]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7807,7 +7863,7 @@
           "minArgs",
           "ref"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "Both implementations evaluates equality and operator compatibility via [argumentCount, isCall, isFunction]. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7835,7 +7891,7 @@
           "scope",
           "size"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "HasScopedSymbol (evaluates AST node or symbol predicate properties via [HasSymbol, append, data]) and FindMemberSymbolPtr (performs symbol/scope resolution via [FindSymbolsPtr, append, data]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7865,7 +7921,7 @@
           "scopeIndex",
           "target"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "CollectNamespaceOccurrences (extracts AST structures and signature metadata via [CollectDeclarations, CollectNamespaceAndContainerLineRanges, GetAllIndexedFileUris]) and CollectGlobalOccurrences (extracts AST structures and signature metadata via [CollectDeclarations, GetAllIndexedFileUris, GetRoot]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7908,7 +7964,7 @@
           "startLine",
           "target"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ScanDocumentForGlobal (evaluates AST node or symbol predicate properties via [Add, IsShadowedInFunctionScope, MatchesCallArguments]) and ScanDocumentForEnumMember (evaluates AST node or symbol predicate properties via [Add, IsEnumMemberReferenceMatch, back]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7928,7 +7984,7 @@
         },
         "similarityScore": 0.904,
         "sharedCalls": [],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "ExtractIdentifierBackward (extracts AST structures and signature metadata) and ExtractQueryPrefix (extracts AST structures and signature metadata via [linePrefix]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7956,7 +8012,7 @@
           "pop_back",
           "text"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "CleanSharedTypeName (executes CleanSharedTypeName logic via [back, begin, erase]) and TrimNodeText (executes TrimNodeText logic via [back, begin, erase]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -7982,7 +8038,7 @@
           "remove_prefix",
           "remove_suffix"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "Both implementations executes TrimWhitespace logic via [back, front, remove_prefix]. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8017,7 +8073,7 @@
           "ts_node_is_null",
           "ts_node_start_byte"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "TryResolveLocalDefinition (performs symbol/scope resolution via [FindInnermostScope, IsDefinitionInsideFunction, MakeLocalDefinitionLocation]) and TryResolveLocalDefinitionFallback (performs symbol/scope resolution via [FindInnermostScope, IsDefinitionInsideFunction, MakeLocalDefinitionLocation]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8050,7 +8106,7 @@
           "type",
           "uri"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "CollectClassMemberDeclarations (extracts AST structures and signature metadata via [Add, FindSymbols, collector]) and CollectDeclarationsByName (extracts AST structures and signature metadata via [Add, FindSymbols, collector]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8092,7 +8148,7 @@
           "typeKind",
           "typeName"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ReadEmptyParenVariableTypeInfo (executes ReadEmptyParenVariableTypeInfo logic via [ExtractTypeInfoFromAST, GetNodeText, PopulateTypeRanges]) and ReadVirtualPropertyTypeInfo (executes ReadVirtualPropertyTypeInfo logic via [ExtractTypeInfoFromAST, GetNodeText, PopulateTypeRanges]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8112,7 +8168,7 @@
         },
         "similarityScore": 0.895,
         "sharedCalls": [],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "EngineProfileKindToString (formats text representations of symbols) and RawProfileStub (executes RawProfileStub logic) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8137,7 +8193,7 @@
           "front",
           "text"
         ],
-        "whatTheyDo": "Duplicated across features (inlay_hint vs semantic_tokens) due to Layer 3 feature isolation prohibition.",
+        "whatTheyDo": "TrimNodeText (executes TrimNodeText logic via [back, begin, erase]) and TrimWhitespace (executes TrimWhitespace logic via [back, front, remove_prefix]) share algorithmic structure. Separated due to Layer 3 isolation prohibition between features/inlay_hint and features/semantic_tokens.",
         "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
       },
       {
@@ -8164,7 +8220,7 @@
           "i18n",
           "request"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Emit (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) and EmitAtRange (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8195,7 +8251,7 @@
           "sourceCode",
           "ts_tree_root_node"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "CollectSymbols (extracts AST structures and signature metadata via [CollectFromTree, Parse, Reserve]) and CollectSymbolsWithTree (extracts AST structures and signature metadata via [CollectFromTree, Reserve, ResolveIncludedMixins]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8224,7 +8280,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "EmitAtNode (constructs and emits diagnostics via [EmitAtRange, column, ctx]) and EmitWarningAtNode (constructs and emits diagnostics via [EmitAtRange, args, column]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8253,7 +8309,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "EmitAtNode (constructs and emits diagnostics via [EmitAtRange, column, ctx]) and EmitWarningAtNode (constructs and emits diagnostics via [EmitAtRange, args, column]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8282,7 +8338,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "EmitAtNode (constructs and emits diagnostics via [EmitAtRange, column, ctx]) and EmitWarningAtNode (constructs and emits diagnostics via [EmitAtRange, args, column]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8311,7 +8367,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "EmitAtNode (constructs and emits diagnostics via [EmitAtRange, column, ctx]) and EmitWarningAtNode (constructs and emits diagnostics via [EmitAtRange, args, column]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8338,7 +8394,7 @@
           "ts_tree_cursor_goto_parent",
           "ts_tree_cursor_new"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "TraverseTree (executes TraverseTree logic via [IndexNode, ts_tree_cursor_current_node, ts_tree_cursor_delete]) and VisitNode (evaluates AST node or symbol predicate properties via [ProcessNode, ts_node_is_named, ts_tree_cursor_current_node]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8365,7 +8421,7 @@
           "i18n",
           "request"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Emit (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) and EmitAtRange (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8391,7 +8447,7 @@
           "remove_prefix",
           "remove_suffix"
         ],
-        "whatTheyDo": "Duplicated across features (formatting vs semantic_tokens) due to Layer 3 feature isolation prohibition.",
+        "whatTheyDo": "Trim (executes Trim logic via [back, front, remove_prefix]) and TrimWhitespace (executes TrimWhitespace logic via [back, front, remove_prefix]) share algorithmic structure. Separated due to Layer 3 isolation prohibition between features/formatting and features/semantic_tokens.",
         "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
       },
       {
@@ -8411,7 +8467,7 @@
         },
         "similarityScore": 0.883,
         "sharedCalls": [],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "RawProfileStub (executes RawProfileStub logic) and KindWord (executes KindWord logic) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8440,7 +8496,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, arg1, arg2]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8469,7 +8525,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, arg1, arg2]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8498,7 +8554,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, arg1, arg2]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8527,7 +8583,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, arg1, arg2]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8560,7 +8616,7 @@
           "startLine",
           "target"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "CollectNamespaceHighlightRanges (extracts AST structures and signature metadata via [Add, CollectNamespaceDeclarations, ForEachScopeReference]) and CollectGlobalHighlightRanges (extracts AST structures and signature metadata via [Add, CollectGlobalDeclarations, ForEachScopeReference]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8609,7 +8665,7 @@
           "typeName",
           "varSig"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ProcessVirtualPropertyVariable (executes ProcessVirtualPropertyVariable logic via [CreateSymbol, ExtractModifiers, ExtractTypeInfoFromAST]) and ProcessProperty (executes ProcessProperty logic via [CreateSymbol, ExtractModifiers, ExtractTypeInfoFromAST]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8643,7 +8699,7 @@
           "qualifiedName",
           "sig"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "PrintVariableSymbol (formats text representations of symbols via [AccessModifierToString, GetVariable, JoinFlags]) and PrintClassSymbol (formats text representations of symbols via [AccessModifierToString, GetClass, JoinFlags]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8670,7 +8726,7 @@
           "i18n",
           "request"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Emit (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) and EmitAtRange (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8695,7 +8751,7 @@
           "ctx",
           "sig"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ValidateOpIndex (validates semantic rules and conditions via [Emit, LogRule, ctx]) and CheckModifiers (validates semantic rules and conditions via [Emit, LogRule, ctx]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8715,7 +8771,7 @@
         },
         "similarityScore": 0.878,
         "sharedCalls": [],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "IsClosingOrSeparatorPunctuation (evaluates AST node or symbol predicate properties) and IsOpeningOrMemberPunctuation (evaluates AST node or symbol predicate properties) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8749,7 +8805,7 @@
           "signature",
           "sourceCode"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ProcessEnum (executes ProcessEnum logic via [CollectEnumMembers, CreateSymbol, EnumHasBraces]) and ProcessInterface (executes ProcessInterface logic via [CreateSymbol, ExtractBases, ExtractModifiers]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8790,7 +8846,7 @@
           "typeKind",
           "typeName"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ReadForeachVariableTypeInfo (executes ReadForeachVariableTypeInfo logic via [ExtractTypeInfoFromAST, GetNodeText, PopulateTypeRanges]) and ReadVirtualPropertyTypeInfo (executes ReadVirtualPropertyTypeInfo logic via [ExtractTypeInfoFromAST, GetNodeText, PopulateTypeRanges]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8828,7 +8884,7 @@
           "sourceCode",
           "switchNode"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ScanDefaultClauseColon (evaluates AST node or symbol predicate properties via [ComputeLocalPoint, FindNextClauseBoundary, character]) and ScanCaseClauseColon (evaluates AST node or symbol predicate properties via [ComputeLocalPoint, FindNextClauseBoundary, ScanCaseExpression]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8871,7 +8927,7 @@
           "startLine",
           "target"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ScanDocumentForNamespace (evaluates AST node or symbol predicate properties via [Add, IsRefInsideNamespace, IsShadowedInFunctionScope]) and ScanDocumentForEnumMember (evaluates AST node or symbol predicate properties via [Add, IsEnumMemberReferenceMatch, back]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8905,7 +8961,7 @@
           "size",
           "typeName"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "HasSameParameterList (evaluates AST node or symbol predicate properties via [GetFunction, NormalizeType, a]) and HasSameSignature (evaluates AST node or symbol predicate properties via [GetFunction, NormalizeType, a]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8933,7 +8989,7 @@
           "ts_tree_cursor_goto_next_sibling",
           "ts_tree_cursor_new"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "CountVariableDeclarators (executes CountVariableDeclarators logic via [ts_node_is_named, ts_node_symbol, ts_tree_cursor_current_node]) and ParseAccessorNodes (extracts AST structures and signature metadata via [ParseSingleAccessor, m_gs, ts_node_is_named]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -8973,7 +9029,7 @@
           "startLine",
           "worklist"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "CollectUsedLocals (extracts AST structures and signature metadata via [ResolveInScope, back, child]) and CollectUsedDefinitions (extracts AST structures and signature metadata via [ResolveInScope, back, child]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9001,7 +9057,7 @@
           "qualifiedName",
           "target"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "AssignTargetFromContainerKind (executes AssignTargetFromContainerKind logic via [containerKind, containerName, declaringClass]) and AssignTargetFromContainerLookup (performs symbol/scope resolution via [FindSymbols, containerName, csym]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9021,7 +9077,7 @@
         },
         "similarityScore": 0.86,
         "sharedCalls": [],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "IsClosingOrSeparatorPunctuation (evaluates AST node or symbol predicate properties) and IsUnaryPrecedingTokenType (evaluates AST node or symbol predicate properties) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9062,7 +9118,7 @@
           "ts_node_start_point",
           "ts_node_symbol"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "CheckBinaryOperatorCompatibility (validates semantic rules and conditions via [AreBinaryOperandsCompatible, EmitAtRange, GetEffectiveStringTypeName]) and CheckComparisonOperatorCompatibility (validates semantic rules and conditions via [EmitAtRange, EmitComparisonDiagnostics, GetNodeTextView]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9101,7 +9157,7 @@
           "target",
           "type"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "CollectClassMemberDeclarations (extracts AST structures and signature metadata via [Add, FindSymbols, FunctionMatchesTarget]) and CollectDeclarations (extracts AST structures and signature metadata via [Add, FindSymbols, FunctionMatchesTarget]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9121,27 +9177,27 @@
         },
         "similarityScore": 0.857,
         "sharedCalls": [],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "AccessModifierToString (formats text representations of symbols) and ParameterModifierToString (formats text representations of symbols) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 3439,
-          "endLine": 3458,
+          "startLine": 3447,
+          "endLine": 3466,
           "name": "ResolveBinary64OrFloat",
           "signature": "ResolveBinary64OrFloat(const std::string& cleanLeft, const std::string& cleanRig"
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 3812,
-          "endLine": 3825,
+          "startLine": 3820,
+          "endLine": 3833,
           "name": "ResolveTernaryNumericPromotion",
           "signature": "ResolveTernaryNumericPromotion(const std::string& c1, const std::string& c2)"
         },
         "similarityScore": 0.854,
         "sharedCalls": [],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ResolveBinary64OrFloat (performs symbol/scope resolution) and ResolveTernaryNumericPromotion (performs symbol/scope resolution) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9172,7 +9228,7 @@
           "sourceCode",
           "ts_node_is_null"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "ProcessConstructorCallExpression (executes ProcessConstructorCallExpression logic via [AddOmittedDefaultArgumentHints, AddParameterHints, DeduceCastOrConstructType]) and ProcessConstructorInitDeclarator (executes ProcessConstructorInitDeclarator logic via [AddOmittedDefaultArgumentHints, AddParameterHints, FindDeclaratorArgumentList]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9192,7 +9248,7 @@
         },
         "similarityScore": 0.85,
         "sharedCalls": [],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "FormatParameterReference (formats text representations of symbols via [isReference, modifier, param]) and ParameterModifierToString (formats text representations of symbols) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9220,7 +9276,7 @@
           "substr",
           "uri"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ExtractVirtualHostClass (extracts AST structures and signature metadata via [front, remove_prefix, rest]) and ExtractVirtualMixinName (extracts AST structures and signature metadata via [ends_with, front, mixinPart]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9247,7 +9303,7 @@
           "i18n",
           "request"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Emit (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) and EmitAtRange (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9274,7 +9330,7 @@
           "i18n",
           "request"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Emit (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) and EmitAtRange (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9303,7 +9359,7 @@
           "push_back",
           "stack"
         ],
-        "whatTheyDo": "Duplicated across features (code_lens vs document_highlight) due to Layer 3 feature isolation prohibition.",
+        "whatTheyDo": "CollectReferencesInScopeTreeBatch (extracts AST structures and signature metadata via [ProcessScopeReferencesBatch, back, child]) and ForEachScopeReference (executes ForEachScopeReference logic via [back, callback, child]) share algorithmic structure. Separated due to Layer 3 isolation prohibition between features/code_lens and features/document_highlight.",
         "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
       },
       {
@@ -9323,7 +9379,7 @@
         },
         "similarityScore": 0.845,
         "sharedCalls": [],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "FormatInlineCommand (formats text representations of symbols) and FormatInlineWord (formats text representations of symbols) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9353,7 +9409,7 @@
           "push_back",
           "title"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [action, arguments, cmd]. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9382,14 +9438,14 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "EmitAtNode (constructs and emits diagnostics via [EmitAtRange, arg1, arg2]) and EmitWarningAtNode (constructs and emits diagnostics via [EmitAtRange, args, column]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 3548,
-          "endLine": 3553,
+          "startLine": 3556,
+          "endLine": 3561,
           "name": "IsBooleanBinaryOpSym",
           "signature": "IsBooleanBinaryOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept"
         },
@@ -9404,7 +9460,7 @@
         "sharedCalls": [
           "gs"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "IsBooleanBinaryOpSym (evaluates AST node or symbol predicate properties via [gs]) and IsBooleanBinaryOperator (evaluates AST node or symbol predicate properties via [gs]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9428,7 +9484,7 @@
           "rule",
           "valid"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "MatchSpecialCaptureRule (evaluates equality and operator compatibility via [isOperatorOrPunctuation, priority, rule]) and MatchKeywordOrConstantRule (evaluates equality and operator compatibility via [priority, rule, valid]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9452,7 +9508,7 @@
           "kind",
           "text"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "MakeBrief (executes MakeBrief logic via [b, kind, text]) and MakeAdmonition (executes MakeAdmonition logic via [b, kind, label]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9476,7 +9532,7 @@
           "kind",
           "text"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "MakeBody (executes MakeBody logic via [b, kind, text]) and MakeAdmonition (executes MakeAdmonition logic via [b, kind, label]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9500,7 +9556,7 @@
           "kind",
           "text"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "MakeCodeBlock (executes MakeCodeBlock logic via [b, kind, text]) and MakeAdmonition (executes MakeAdmonition logic via [b, kind, label]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9524,7 +9580,7 @@
           "kind",
           "text"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "MakeReturn (executes MakeReturn logic via [b, kind, text]) and MakeAdmonition (executes MakeAdmonition logic via [b, kind, label]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9558,7 +9614,7 @@
           "retNode",
           "sourceCode"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "ProcessInterfaceMethod (executes ProcessInterfaceMethod logic via [BuildFunctionDetail, ExtractFunctionComponents, GetNodeText]) and ProcessFuncdef (executes ProcessFuncdef logic via [ExtractFunctionComponents, GetNodeText, MakeDocumentSymbol]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9583,7 +9639,7 @@
           "outSymbols",
           "push_back"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "ProcessImport (executes ProcessImport logic via [CreateDeclarationSymbol, detail, outSymbols]) and ProcessTypedef (executes ProcessTypedef logic via [CreateDeclarationSymbol, GetChildByField, GetNodeText]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9603,7 +9659,7 @@
         },
         "similarityScore": 0.822,
         "sharedCalls": [],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "ParseClangSpaceBeforeParens (extracts AST structures and signature metadata) and ParseClangUseTab (extracts AST structures and signature metadata) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9628,7 +9684,7 @@
           "outSymbols",
           "push_back"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "ProcessImport (executes ProcessImport logic via [CreateDeclarationSymbol, detail, outSymbols]) and ProcessVirtualProperty (executes ProcessVirtualProperty logic via [CreateDeclarationSymbol, GetChildByField, GetNodeText]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9654,7 +9710,7 @@
           "table",
           "type"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "IsScalarCastTarget (handles type conversions and coercions via [FindSymbolsPtr, begin, end]) and IsTypeName (evaluates AST node or symbol predicate properties via [FindSymbolsPtr, begin, end]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9674,7 +9730,7 @@
         },
         "similarityScore": 0.801,
         "sharedCalls": [],
-        "whatTheyDo": "Duplicated across features (document_symbol vs workspace_symbol) due to Layer 3 feature isolation prohibition.",
+        "whatTheyDo": "MapSymbolTypeToKind (executes MapSymbolTypeToKind logic) and ToSymbolKind (executes ToSymbolKind logic via [containerName]) share algorithmic structure. Separated due to Layer 3 isolation prohibition between features/document_symbol and features/workspace_symbol.",
         "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
       },
       {
@@ -9709,21 +9765,21 @@
           "targetNamespace",
           "uri"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "MatchesTargetNamespaceQualifier (evaluates equality and operator compatibility via [GetMemberObjectText, candRef, criteria]) and IsValidEnumMemberAccess (evaluates AST node or symbol predicate properties via [GetMemberObjectText, QualifierMatchesEnumContainer, candRef]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 1782,
-          "endLine": 1819,
+          "startLine": 1790,
+          "endLine": 1827,
           "name": "TraverseDerivedClasses",
           "signature": "TraverseDerivedClasses(const std::vector<std::string>& initialFrontier, const Sy"
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 1847,
-          "endLine": 1900,
+          "startLine": 1855,
+          "endLine": 1908,
           "name": "GetDerivedClasses",
           "signature": "GetDerivedClasses(const std::string& className, const SymbolTable& symbolTable)"
         },
@@ -9746,7 +9802,7 @@
           "second",
           "visited"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "TraverseDerivedClasses (executes TraverseDerivedClasses logic via [GetRuleIndex, derived, derivedByBase]) and GetDerivedClasses (executes GetDerivedClasses logic via [CleanBaseType, GetRuleIndex, derived]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9780,7 +9836,7 @@
           "ts_node_is_null",
           "ts_node_symbol"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ProcessMemberExpressionNode (executes ProcessMemberExpressionNode logic via [EmitAtNode, InspectPropertyAccess, ResolveNodeScope]) and ProcessIndexExpressionNode (executes ProcessIndexExpressionNode logic via [EmitAtNode, InspectPropertyAccess, ResolveNodeScope]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9814,7 +9870,7 @@
           "ts_node_start_point",
           "ts_node_symbol"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "TryExtractSyntaxFoldingRange (extracts AST structures and signature metadata via [IsSyntaxFoldingSymbol, column, endCharacter]) and TryExtractCommentFoldingRange (extracts AST structures and signature metadata via [column, endCharacter, endLine]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9834,7 +9890,7 @@
         },
         "similarityScore": 0.786,
         "sharedCalls": [],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "IsValueOnlyKind (evaluates AST node or symbol predicate properties) and IsClosingOrSeparatorPunctuation (evaluates AST node or symbol predicate properties) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9854,7 +9910,7 @@
         },
         "similarityScore": 0.786,
         "sharedCalls": [],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "IsUnconditionallyNonNullablePrimitive (evaluates AST node or symbol predicate properties) and IsClosingOrSeparatorPunctuation (evaluates AST node or symbol predicate properties) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9895,7 +9951,7 @@
           "type",
           "typeName"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "Both implementations performs symbol/scope resolution via [FindMemberSymbolPtr, GetFunction, GetVariable]. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9927,7 +9983,7 @@
           "title",
           "wsEdit"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "CreateAccessorAction (executes CreateAccessorAction logic via [action, changes, column]) and BuildAddConstAction (formats text representations of symbols via [action, changes, column]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9971,7 +10027,7 @@
           "startLine",
           "target"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ScanDocumentForClassMember (evaluates AST node or symbol predicate properties via [Add, GetEnclosingClassName, IsClassMemberReferenceMatch]) and ScanDocumentForGlobal (evaluates AST node or symbol predicate properties via [Add, IsShadowedInFunctionScope, MatchesCallArguments]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10004,7 +10060,7 @@
           "qualifiedName",
           "sig"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "PrintClassSymbol (formats text representations of symbols via [AccessModifierToString, GetClass, JoinFlags]) and PrintInterfaceSymbol (formats text representations of symbols via [GetInterface, JoinFlags, JoinStrings]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10031,7 +10087,7 @@
           "i18n",
           "request"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Emit (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) and EmitAtRange (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10067,7 +10123,7 @@
           "uri",
           "wsEdit"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "TryBuildMissingConstFixForSymbol (formats text representations of symbols via [FindFunctionParametersNode, action, changes]) and BuildAddConstAction (formats text representations of symbols via [action, changes, column]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10092,7 +10148,7 @@
           "outSymbols",
           "push_back"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "ProcessEnum (executes ProcessEnum logic via [CollectEnumMembers, CreateDeclarationSymbol, children]) and ProcessImport (executes ProcessImport logic via [CreateDeclarationSymbol, detail, outSymbols]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10121,7 +10177,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "EmitPrivacyViolation (constructs and emits diagnostics via [EmitAtRange, access, column]) and EmitAtNode (constructs and emits diagnostics via [EmitAtRange, column, ctx]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10150,7 +10206,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "EmitPrivacyViolation (constructs and emits diagnostics via [EmitAtRange, access, column]) and EmitAtNode (constructs and emits diagnostics via [EmitAtRange, column, ctx]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10179,7 +10235,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "EmitPrivacyViolation (constructs and emits diagnostics via [EmitAtRange, access, column]) and EmitAtNode (constructs and emits diagnostics via [EmitAtRange, column, ctx]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10208,7 +10264,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "EmitPrivacyViolation (constructs and emits diagnostics via [EmitAtRange, access, column]) and EmitAtNode (constructs and emits diagnostics via [EmitAtRange, column, ctx]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10242,7 +10298,7 @@
           "ts_node_is_null",
           "uri"
         ],
-        "whatTheyDo": "Duplicated across features (references vs rename) due to Layer 3 feature isolation prohibition.",
+        "whatTheyDo": "GetReferences (executes GetReferences logic via [ConvertAndSortOccurrences, character, has_value]) and ResolveValidRenameTarget (performs symbol/scope resolution via [IsTargetPredefined, character, contains]) share algorithmic structure. Separated due to Layer 3 isolation prohibition between features/references and features/rename.",
         "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
       },
       {
@@ -10271,7 +10327,7 @@
           "startCharacter",
           "startLine"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "MatchesScopeNamespaceQualifier (evaluates equality and operator compatibility via [EndsWithScopedSuffix, candRef, endCharacter]) and HasPrecedingEnumQualifier (evaluates AST node or symbol predicate properties via [EnumQualifierMatches, candRef, endCharacter]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10294,7 +10350,7 @@
           "find",
           "lower"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "MatchesSvenCoop (evaluates equality and operator compatibility via [lower]) and MatchesOOTP (evaluates equality and operator compatibility via [lower]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10317,7 +10373,7 @@
           "find",
           "lower"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "MatchesUrho3D (evaluates equality and operator compatibility via [lower]) and MatchesOOTP (evaluates equality and operator compatibility via [lower]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10340,7 +10396,7 @@
           "find",
           "lower"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "MatchesOpenXRay (evaluates equality and operator compatibility via [lower]) and MatchesOOTP (evaluates equality and operator compatibility via [lower]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10362,7 +10418,7 @@
         "sharedCalls": [
           "gs"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "IsDeclarationNodeType (evaluates AST node or symbol predicate properties via [gs]) and IsDeclarationNode (evaluates AST node or symbol predicate properties via [gs]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10382,7 +10438,7 @@
         },
         "similarityScore": 0.75,
         "sharedCalls": [],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "IsSignedNumericPrimitive (evaluates AST node or symbol predicate properties) and IsNumericTypeName (evaluates AST node or symbol predicate properties) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10426,7 +10482,7 @@
           "start",
           "uri"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "GetDocumentLinks (executes GetDocumentLinks logic via [DocumentPath, FindPathSpan, allowedRoots]) and GetUnresolvedIncludeDiagnostics (constructs and emits diagnostics via [DocumentPath, FindPathSpan, GetMessage]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10454,7 +10510,7 @@
           "starts_with",
           "substr"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "FindNextClauseBoundary (performs symbol/scope resolution via [IsIdentChar, SkipStringLiteral, SkipWhitespaceAndComments]) and ScanSwitchStatementCaseColons (evaluates AST node or symbol predicate properties via [FindSwitchBraceOffsets, IsIdentChar, ScanCaseClauseColon]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10474,21 +10530,21 @@
         },
         "similarityScore": 0.742,
         "sharedCalls": [],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "IsOpeningOrMemberPunctuation (evaluates AST node or symbol predicate properties) and IsUnaryPrecedingTokenType (evaluates AST node or symbol predicate properties) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 5661,
-          "endLine": 5728,
+          "startLine": 5669,
+          "endLine": 5736,
           "name": "ExtractCallArguments",
           "signature": "ExtractCallArguments(TSNode argumentList, std::string_view sourceCode)"
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 6132,
-          "endLine": 6197,
+          "startLine": 6140,
+          "endLine": 6205,
           "name": "ExtractLambdaParameters",
           "signature": "ExtractLambdaParameters(TSNode lambdaParamList, std::string_view sourceCode)"
         },
@@ -10509,7 +10565,7 @@
           "ts_tree_cursor_goto_next_sibling",
           "ts_tree_cursor_new"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ExtractCallArguments (extracts AST structures and signature metadata via [ProcessCallArgumentChild, ResolveArgumentListNode, current]) and ExtractLambdaParameters (extracts AST structures and signature metadata via [ApplyLambdaParamChild, ResolveLambdaParameterListNode, current]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10552,7 +10608,7 @@
           "startLine",
           "target"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ScanDocumentForClassMember (evaluates AST node or symbol predicate properties via [Add, GetEnclosingClassName, IsClassMemberReferenceMatch]) and ScanDocumentForEnumMember (evaluates AST node or symbol predicate properties via [Add, IsEnumMemberReferenceMatch, back]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10582,7 +10638,7 @@
           "state",
           "substr"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "TryConsumeBlockComment (executes TryConsumeBlockComment logic via [curCol, curLine, i]) and TryConsumeRawString (executes TryConsumeRawString logic via [curCol, curLine, i]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10615,21 +10671,21 @@
           "ts_tree_cursor_new",
           "varSig"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ApplyAccessorTokens (executes ApplyAccessorTokens logic via [ApplyFuncAttributeTokens, isGetConst, isGetFinal]) and ApplyFuncAttributeTokens (executes ApplyFuncAttributeTokens logic via [isGetFinal, isGetOverride, isSetFinal]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 2961,
-          "endLine": 2977,
+          "startLine": 2969,
+          "endLine": 2985,
           "name": "ExtractVariableOrPropertyType",
           "signature": "ExtractVariableOrPropertyType(std::span<const Symbol> syms, const SymbolTable& t"
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 4062,
-          "endLine": 4083,
+          "startLine": 4070,
+          "endLine": 4091,
           "name": "ExtractMemberSymbolType",
           "signature": "ExtractMemberSymbolType(const Symbol& sym, const SymbolTable& table)"
         },
@@ -10643,7 +10699,7 @@
           "type",
           "typeName"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ExtractVariableOrPropertyType (extracts AST structures and signature metadata via [CleanExpressionType, GetVariable, QualifyTypeInContainer]) and ExtractMemberSymbolType (extracts AST structures and signature metadata via [CleanExpressionType, ExtractAccessorMemberType, GetVariable]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10663,7 +10719,7 @@
         },
         "similarityScore": 0.725,
         "sharedCalls": [],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "KindWord (executes KindWord logic) and ParameterModifierToString (formats text representations of symbols) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10700,7 +10756,7 @@
           "request",
           "sourceCode"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "CheckLambdaReturnStatement (validates semantic rules and conditions via [CheckFloatTruncation, CleanBaseType, EmitAtNode]) and CheckFuncDeclarationReturnStatement (validates semantic rules and conditions via [CheckFloatTruncation, CheckReturnReference, CleanBaseType]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10730,7 +10786,7 @@
           "startCharacter",
           "startLine"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [Append, CreateDiagnostic, endCharacter]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10759,7 +10815,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, column, ctx]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10788,7 +10844,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, column, ctx]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10817,7 +10873,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, column, ctx]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10846,7 +10902,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, column, ctx]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10880,7 +10936,7 @@
           "sig",
           "type"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "CheckExternalClass (validates semantic rules and conditions via [Emit, FindSymbolsPtr, GetClass]) and CheckEnumModifiersAndBody (validates semantic rules and conditions via [Emit, FindSymbolsPtr, GetEnum]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10910,7 +10966,7 @@
           "push_back",
           "title"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "MakeDisableDiagnosticAction (constructs and emits diagnostics via [action, arguments, cmd]) and MakeIgnoreUnusedSymbolAction (executes MakeIgnoreUnusedSymbolAction logic via [action, arguments, cmd]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10940,7 +10996,7 @@
           "startCharacter",
           "startLine"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [Append, CreateDiagnostic, endCharacter]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -10982,7 +11038,7 @@
           "typeKind",
           "typeName"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ReadVariableDeclaratorTypeInfo (executes ReadVariableDeclaratorTypeInfo logic via [CountVariableDeclarators, ExtractTypeInfoFromAST, FindDeclarationTypeNode]) and ReadEmptyParenVariableTypeInfo (executes ReadEmptyParenVariableTypeInfo logic via [ExtractTypeInfoFromAST, GetNodeText, PopulateTypeRanges]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -11026,7 +11082,7 @@
           "startLine",
           "target"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ScanDocumentForClassMember (evaluates AST node or symbol predicate properties via [Add, GetEnclosingClassName, IsClassMemberReferenceMatch]) and ScanDocumentForNamespace (evaluates AST node or symbol predicate properties via [Add, IsRefInsideNamespace, IsShadowedInFunctionScope]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -11071,7 +11127,7 @@
           "uri",
           "wsEdit"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "EmitIncludeSuggestions (constructs and emits diagnostics via [action, actions, changes]) and EmitTypoCodeActions (constructs and emits diagnostics via [action, actions, changes]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -11098,7 +11154,7 @@
           "remove_suffix",
           "starts_with"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "StripModifiers (executes StripModifiers logic via [back, front, remove_prefix]) and CleanExpressionType (executes CleanExpressionType logic via [back, front, remove_prefix]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -11122,7 +11178,7 @@
           "rule",
           "valid"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "MatchCallableOrPropertyRule (evaluates equality and operator compatibility via [priority, rule, valid]) and MatchEntityCaptureRule (evaluates equality and operator compatibility via [MatchCallableOrPropertyRule, priority, rule]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -11147,7 +11203,7 @@
           "remove_prefix",
           "typeText"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "TypeTextIsConst (evaluates AST node or symbol predicate properties via [front, remove_prefix, starts_with]) and TypeTextIsHandleConst (evaluates AST node or symbol predicate properties via [back, ends_with, front]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -11167,7 +11223,7 @@
         },
         "similarityScore": 0.679,
         "sharedCalls": [],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "AccessModifierToString (formats text representations of symbols) and ContainerKindMatches (evaluates equality and operator compatibility) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -11189,7 +11245,7 @@
         "sharedCalls": [
           "gs"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "IsContainerSymbol (evaluates AST node or symbol predicate properties via [gs]) and IsDeclarationSymbol (evaluates AST node or symbol predicate properties via [gs]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -11229,7 +11285,7 @@
           "startLine",
           "target"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "CollectClassMemberHighlightRanges (extracts AST structures and signature metadata via [Add, CollectClassMemberDeclarations, IsClassMemberReferenceMatch]) and CollectEnumMemberScopeReferences (extracts AST structures and signature metadata via [Add, IsEnumMemberHighlightMatch, IsShadowedByFunctionLocal]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -11268,7 +11324,7 @@
           "startLine",
           "uri"
         ],
-        "whatTheyDo": "Duplicated across features (call_hierarchy vs type_hierarchy) due to Layer 3 feature isolation prohibition.",
+        "whatTheyDo": "Both implementations executes ToItem logic via [ToRange, containerName, data]. Separated due to Layer 3 isolation prohibition between features/call_hierarchy and features/type_hierarchy.",
         "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
       },
       {
@@ -11314,7 +11370,7 @@
           "ts_node_end_point",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "CheckUsingDeclarationCapture (validates semantic rules and conditions via [GetChildByFieldName, GetMessageView, GetNodeText]) and CheckDuplicateModifierGroup (validates semantic rules and conditions via [GetMessageView, GetNodeText, character]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -11334,7 +11390,7 @@
         },
         "similarityScore": 0.663,
         "sharedCalls": [],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "RawProfileStub (executes RawProfileStub logic) and MapSymbolTypeToKind (executes MapSymbolTypeToKind logic) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -11354,7 +11410,7 @@
         },
         "similarityScore": 0.649,
         "sharedCalls": [],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "RawProfileStub (executes RawProfileStub logic) and AccessModifierToString (formats text representations of symbols) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -11376,7 +11432,7 @@
         "sharedCalls": [
           "name"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "FormatEnums (formats text representations of symbols via [en, name, values]) and FormatClasses (formats text representations of symbols via [cls, constructors, destructors]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -11418,7 +11474,7 @@
           "typeKind",
           "typeName"
         ],
-        "whatTheyDo": "Duplicated internal analysis checker logic; candidate for consolidation in SemanticHelpers.h.",
+        "whatTheyDo": "ReadVariableDeclaratorTypeInfo (executes ReadVariableDeclaratorTypeInfo logic via [CountVariableDeclarators, ExtractTypeInfoFromAST, FindDeclarationTypeNode]) and ReadVirtualPropertyTypeInfo (executes ReadVirtualPropertyTypeInfo logic via [ExtractTypeInfoFromAST, GetNodeText, PopulateTypeRanges]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -11438,7 +11494,7 @@
         },
         "similarityScore": 0.63,
         "sharedCalls": [],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "KindWord (executes KindWord logic) and MapSymbolTypeToKind (executes MapSymbolTypeToKind logic) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -11462,7 +11518,7 @@
           "rule",
           "valid"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "MatchKeywordOrConstantRule (evaluates equality and operator compatibility via [priority, rule, valid]) and MatchCallableOrPropertyRule (evaluates equality and operator compatibility via [priority, rule, valid]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -11482,7 +11538,7 @@
         },
         "similarityScore": 0.619,
         "sharedCalls": [],
-        "whatTheyDo": "Duplicated across features (definition vs formatting) due to Layer 3 feature isolation prohibition.",
+        "whatTheyDo": "ContainerKindMatches (evaluates equality and operator compatibility) and IsOpeningOrMemberPunctuation (evaluates AST node or symbol predicate properties) share algorithmic structure. Separated due to Layer 3 isolation prohibition between features/definition and features/formatting.",
         "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
       },
       {
@@ -11522,7 +11578,7 @@
           "startLine",
           "target"
         ],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "CollectLocalOccurrences (extracts AST structures and signature metadata via [Add, CollectScopeReferences, IsSymbolShadowedInScope]) and CollectLocalHighlightRanges (extracts AST structures and signature metadata via [Add, back, child]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -11542,7 +11598,7 @@
         },
         "similarityScore": 0.617,
         "sharedCalls": [],
-        "whatTheyDo": "Feature logic duplicates Layer 2 analysis capability; promote helper to Layer 2 to eliminate feature-level redundancy.",
+        "whatTheyDo": "AccessModifierToString (formats text representations of symbols) and IsOpeningOrMemberPunctuation (evaluates AST node or symbol predicate properties) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       }
     ]
@@ -11579,7 +11635,7 @@
         "structName": "VariableSignature",
         "headerFile": "server/src/analysis/SymbolTable.h",
         "looseBools": 19,
-        "stringCount": 4,
+        "stringCount": 5,
         "vectorCount": 1,
         "estimatedPaddingBytes": 5,
         "currentSizeBytes": 208,
@@ -11615,7 +11671,7 @@
         "structName": "ClassSignature",
         "headerFile": "server/src/analysis/SymbolTable.h",
         "looseBools": 3,
-        "stringCount": 0,
+        "stringCount": 3,
         "vectorCount": 3,
         "estimatedPaddingBytes": 5,
         "currentSizeBytes": 104,
@@ -11662,9 +11718,9 @@
       {
         "structName": "NodeIndex",
         "headerFile": "server/src/analysis/NodeIndex.h",
-        "looseBools": 0,
-        "stringCount": 0,
-        "vectorCount": 6,
+        "looseBools": 6,
+        "stringCount": 1,
+        "vectorCount": 7,
         "estimatedPaddingBytes": 6,
         "currentSizeBytes": 232,
         "compactedSizeBytes": 216,
@@ -11675,7 +11731,7 @@
         "structName": "Symbol",
         "headerFile": "server/src/analysis/SymbolTable.h",
         "looseBools": 2,
-        "stringCount": 5,
+        "stringCount": 6,
         "vectorCount": 1,
         "estimatedPaddingBytes": 9,
         "currentSizeBytes": 512,

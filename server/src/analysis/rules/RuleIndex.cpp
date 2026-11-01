@@ -812,8 +812,8 @@ void RemoveContainers(RuleIndex& index, const RuleIndexPartial& partial)
 
 /**
  * @brief Rule index build partial.
- * @param[in,out] fileUri Parameter fileUri.
- * @param[in,out] symbols Parameter symbols.
+ * @param[in] fileUri Parameter fileUri.
+ * @param[in] symbols Parameter symbols.
  * @return Result of the operation.
  * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with BuildPartial in server/src/analysis/rules/RuleIndex.cpp.
  * Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -828,7 +828,7 @@ RuleIndexPartial RuleIndex::BuildPartial(const std::string& fileUri, const std::
 
 /**
  * @brief Rule index build partial.
- * @param[in,out] fileUri Parameter fileUri.
+ * @param[in] fileUri Parameter fileUri.
  * @param[in] symbols Parameter symbols.
  * @return Result of the operation.
  * @note [REFACTOR-CANDIDATE] Structural overlap (100%) with BuildPartial in server/src/analysis/rules/RuleIndex.cpp.

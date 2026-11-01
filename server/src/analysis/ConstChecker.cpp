@@ -579,7 +579,7 @@ struct DiagArgs
  * @brief Emit at node.
  * @param[in] node Parameter node.
  * @param[in,out] ctx Parameter ctx.
- * @param[in,out] diag Parameter diag.
+ * @param[in] diag Parameter diag.
  * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with EmitAtNode in server/src/analysis/ControlFlowChecker.cpp.
  * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (88%) with EmitAtNode in
  * server/src/analysis/InitializerListChecker.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
@@ -761,7 +761,7 @@ void CheckConstCorrectnessIndexed(const ConstCheckRequest& request, DiagnosticCo
 
 /**
  * @brief Check const correctness.
- * @param[in,out] request Parameter request.
+ * @param[in] request Parameter request.
  * @param[in,out] ctx Parameter ctx.
  * @note [REFACTOR-CANDIDATE] Structural overlap (97%) with CheckMemberAccess in server/src/analysis/AccessChecker.cpp.
  * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (97%) with CheckCallArguments

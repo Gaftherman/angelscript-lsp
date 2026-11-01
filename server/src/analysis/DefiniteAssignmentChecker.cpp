@@ -267,6 +267,15 @@ class DefiniteAssignmentVisitor
         return false;
     }
 
+    /**
+     * @brief Is out parameter.
+     * @param[in] i Parameter i.
+     * @param[in] info Parameter info.
+     * @return True if condition met; otherwise false.
+     * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
+     * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier /
+     * Symbol::modifiers.isReturnReference.
+     */
     bool IsOutParameter(size_t i, const CallCandidateInfo& info) const
     {
         const auto declaresOutAt = [i](const FunctionSignature& candidate)

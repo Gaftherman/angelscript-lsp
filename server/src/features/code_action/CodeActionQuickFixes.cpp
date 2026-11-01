@@ -118,7 +118,7 @@ void EmitFuncdefCodeAction(const CodeActionRequest& request, const lsp::Diagnost
 
 /**
  * @brief Try add handle on primitive fix.
- * @param[in,out] request Parameter request.
+ * @param[in] request Parameter request.
  * @param[in] rootNode Parameter rootNode.
  * @param[in,out] actions Parameter actions.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via

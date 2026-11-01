@@ -274,9 +274,9 @@ namespace
 {
 /**
  * @brief Check enum modifiers and body.
- * @param[in,out] sym Parameter sym.
- * @param[in,out] sig Parameter sig.
- * @param[in,out] ctx Parameter ctx.
+ * @param[in] sym Parameter sym.
+ * @param[in] sig Parameter sig.
+ * @param[in] ctx Parameter ctx.
  * @note [REFACTOR-CANDIDATE] Structural overlap (71%) with CheckExternalClass in
  * server/src/analysis/rules/ClassRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */

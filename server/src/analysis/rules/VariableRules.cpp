@@ -331,9 +331,9 @@ void CheckVirtualProperty(const Symbol& sym, const VariableSignature& sig, const
 
 /**
  * @brief Check modifiers.
- * @param[in,out] sym Parameter sym.
- * @param[in,out] sig Parameter sig.
- * @param[in,out] ctx Parameter ctx.
+ * @param[in] sym Parameter sym.
+ * @param[in] sig Parameter sig.
+ * @param[in] ctx Parameter ctx.
  * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with ValidateOpIndex in
  * server/src/analysis/rules/OperatorRules.cpp. Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */

@@ -43,6 +43,40 @@ def camel_to_sentence(name: str) -> str:
     return sentence[0].upper() + sentence[1:] + "."
 
 
+PARAM_DESCRIPTIONS = {
+    "ctx": "Diagnostic collection context.",
+    "diag": "Diagnostic collection context.",
+    "diags": "Diagnostic output list.",
+    "request": "Feature or checker request parameters.",
+    "req": "Feature or checker request parameters.",
+    "table": "Symbol table to query.",
+    "symbolTable": "Symbol table to query.",
+    "sourceCode": "Script source code view.",
+    "node": "AST node to inspect.",
+    "root": "Root AST node.",
+    "sym": "Symbol descriptor.",
+    "symbol": "Symbol descriptor.",
+    "sig": "Signature descriptor.",
+    "scope": "Enclosing lexical scope.",
+    "name": "Target identifier name.",
+    "type": "Semantic type name or descriptor.",
+    "typeName": "Semantic type name.",
+    "rule": "Engine rule configuration.",
+    "cache": "Expression type cache.",
+    "index": "Node or symbol index.",
+    "tokens": "Token array to populate or inspect.",
+}
+
+
+def get_param_desc(pname: str) -> str:
+    if pname in PARAM_DESCRIPTIONS:
+        return PARAM_DESCRIPTIONS[pname]
+    for key, desc in PARAM_DESCRIPTIONS.items():
+        if pname.lower().startswith(key.lower()) or pname.lower().endswith(key.lower()):
+            return desc
+    return f"Parameter {pname}."
+
+
 def extract_params_and_return(func_node) -> tuple[list[tuple[str, str]], str]:
     """
     Extracts parameter list [(param_name, direction)] and return type string.
@@ -69,6 +103,7 @@ def extract_params_and_return(func_node) -> tuple[list[tuple[str, str]], str]:
     if param_list:
         for c in param_list.children:
             if c.type == "parameter_declaration":
+                c_text = c.text.decode("utf-8", "ignore").strip()
                 t_node = c.child_by_field_name("type")
                 t_str = t_node.text.decode("utf-8", "ignore").strip() if t_node else ""
                 d_node = c.child_by_field_name("declarator")
@@ -77,7 +112,9 @@ def extract_params_and_return(func_node) -> tuple[list[tuple[str, str]], str]:
                     # Clean up pointer/ref and default arguments
                     pname = raw_name.split("=")[0].strip().lstrip("&* ").strip()
                     if pname:
-                        direction = "[in,out]" if ("&" in raw_name or "&" in t_str) and "const" not in t_str else "[in]"
+                        is_const = "const" in c_text
+                        is_mut_ref = ("&" in raw_name or "*" in raw_name or "&" in t_str or "*" in t_str) and not is_const
+                        direction = "[in,out]" if is_mut_ref else "[in]"
                         params.append((pname, direction))
     return params, ret_type
 
@@ -170,7 +207,7 @@ def build_new_doxygen_block(indent: str, name: str, kind: str, note: str, params
 
     if kind == "function":
         for pname, direction in params:
-            doc.append(f"{indent} * @param{direction} {pname} Parameter {pname}.")
+            doc.append(f"{indent} * @param{direction} {pname} {get_param_desc(pname)}")
         if ret_type and ret_type != "void":
             if ret_type == "bool":
                 doc.append(f"{indent} * @return True if condition met; otherwise false.")
@@ -438,7 +475,87 @@ def apply_annotations():
 
         full_p.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
+    fixed_directions = fix_const_param_doxygen_directions()
     print(f"[DONE] Created {total_added} new Doxygen blocks and augmented {total_augmented} existing blocks.")
+    if fixed_directions:
+        print(f"[DONE] Corrected {fixed_directions} invalid @param[in,out] tags on const parameters to @param[in].")
+
+
+def fix_const_param_doxygen_directions() -> int:
+    """Scans all server/src/ files and replaces @param[in,out] with @param[in] for const parameters."""
+    fixed = 0
+    all_files = sorted(SERVER_SRC.rglob("*.[ch]*"))
+    for f in all_files:
+        try:
+            text = f.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        if "@param[in,out]" not in text:
+            continue
+        tree = PARSER.parse(text.encode("utf-8"))
+        lines = text.splitlines()
+        stack = [tree.root_node]
+        file_modified = False
+
+        while stack:
+            n = stack.pop()
+            if n.type in ("function_definition", "declaration"):
+                sl = n.start_point[0]
+                param_list = None
+                p_stack = [n]
+                while p_stack:
+                    pn = p_stack.pop()
+                    if pn.type == "parameter_list":
+                        param_list = pn
+                        break
+                    if pn != n and pn.type in ("function_definition", "compound_statement"):
+                        continue
+                    for i in range(pn.child_count - 1, -1, -1):
+                        p_stack.append(pn.child(i))
+
+                if param_list:
+                    const_params = set()
+                    for c in param_list.children:
+                        if c.type == "parameter_declaration":
+                            c_text = c.text.decode("utf-8", "ignore")
+                            d_node = c.child_by_field_name("declarator")
+                            if d_node:
+                                raw_name = d_node.text.decode("utf-8", "ignore").strip()
+                                pname = raw_name.split("=")[0].strip().lstrip("&* ").strip()
+                                if pname and "const" in c_text:
+                                    const_params.add(pname)
+
+                    if const_params:
+                        idx = sl - 1
+                        while idx >= 0:
+                            l = lines[idx].strip()
+                            if not l:
+                                idx -= 1
+                                continue
+                            if any(l.startswith(m) for m in MODIFIERS):
+                                idx -= 1
+                                continue
+                            if l.endswith("*/"):
+                                c_idx = idx
+                                while c_idx >= 0:
+                                    for cp in const_params:
+                                        pat = re.compile(r"(@param\[)in,out(\]\s+" + re.escape(cp) + r"\b)")
+                                        if pat.search(lines[c_idx]):
+                                            lines[c_idx] = pat.sub(r"\1in\2", lines[c_idx])
+                                            fixed += 1
+                                            file_modified = True
+                                    if "/**" in lines[c_idx]:
+                                        break
+                                    c_idx -= 1
+                                break
+                            break
+            for i in range(n.child_count - 1, -1, -1):
+                stack.append(n.child(i))
+
+        if file_modified:
+            f.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    return fixed
 
 
 if __name__ == "__main__":

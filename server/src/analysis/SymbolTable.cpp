@@ -1895,9 +1895,9 @@ void PrintFunctionSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym,
 /**
  * @brief Print variable symbol.
  * @param[in] logger Parameter logger.
- * @param[in,out] sym Parameter sym.
- * @param[in,out] typeStr Parameter typeStr.
- * @param[in,out] range Parameter range.
+ * @param[in] sym Parameter sym.
+ * @param[in] typeStr Parameter typeStr.
+ * @param[in] range Parameter range.
  * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with PrintClassSymbol in server/src/analysis/SymbolTable.cpp.
  * Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */
@@ -1924,9 +1924,9 @@ void PrintVariableSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym,
 /**
  * @brief Print class symbol.
  * @param[in] logger Parameter logger.
- * @param[in,out] sym Parameter sym.
- * @param[in,out] typeStr Parameter typeStr.
- * @param[in,out] range Parameter range.
+ * @param[in] sym Parameter sym.
+ * @param[in] typeStr Parameter typeStr.
+ * @param[in] range Parameter range.
  * @note [REFACTOR-CANDIDATE] Structural overlap (88%) with PrintVariableSymbol in server/src/analysis/SymbolTable.cpp.
  * Candidate for unification in server/src/analysis/SemanticHelpers.h. Structural overlap (78%) with
  * PrintInterfaceSymbol in server/src/analysis/SymbolTable.cpp. Candidate for unification in
@@ -1957,9 +1957,9 @@ void PrintClassSymbol(angel_lsp::utils::LspLogger* logger, const Symbol& sym, co
 /**
  * @brief Print interface symbol.
  * @param[in] logger Parameter logger.
- * @param[in,out] sym Parameter sym.
- * @param[in,out] typeStr Parameter typeStr.
- * @param[in,out] range Parameter range.
+ * @param[in] sym Parameter sym.
+ * @param[in] typeStr Parameter typeStr.
+ * @param[in] range Parameter range.
  * @note [REFACTOR-CANDIDATE] Structural overlap (78%) with PrintClassSymbol in server/src/analysis/SymbolTable.cpp.
  * Candidate for unification in server/src/analysis/SemanticHelpers.h.
  */

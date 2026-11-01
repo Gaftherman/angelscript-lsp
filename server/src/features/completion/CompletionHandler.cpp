@@ -2073,7 +2073,7 @@ static size_t SkipInlineWhitespaceBackward(const std::string& text, size_t pos)
 
 /**
  * @brief Extract identifier backward.
- * @param[in,out] text Parameter text.
+ * @param[in] text Parameter text.
  * @param[in] end Parameter end.
  * @return Result of the operation.
  * @note [REFACTOR-CANDIDATE] Structural overlap (90%) with ExtractQueryPrefix in

@@ -1107,7 +1107,7 @@ static ExpressionType ResolveUnaryValueType(TSNode node, const Scope* scope, con
 /**
  * @brief Resolve cast value type.
  * @param[in] node Parameter node.
- * @param[in,out] ctx Parameter ctx.
+ * @param[in] ctx Parameter ctx.
  * @return Result of the operation.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
@@ -1125,7 +1125,7 @@ static ExpressionType ResolveCastValueType(TSNode node, const DiagnosticContext&
  * @brief Resolve compound value type.
  * @param[in] node Parameter node.
  * @param[in] scope Parameter scope.
- * @param[in,out] ctx Parameter ctx.
+ * @param[in] ctx Parameter ctx.
  * @return Result of the operation.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
@@ -2861,8 +2861,8 @@ static bool IsIncompleteOrIgnoredBranchType(std::string_view type)
 
 /**
  * @brief Are ternary branches incompatible.
- * @param[in,out] clean1 Parameter clean1.
- * @param[in,out] clean2 Parameter clean2.
+ * @param[in] clean1 Parameter clean1.
+ * @param[in] clean2 Parameter clean2.
  * @param[in,out] ctx Parameter ctx.
  * @return True if condition met; otherwise false.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
@@ -3611,7 +3611,7 @@ static bool HasHandleOpAssign(std::string_view clean, const SymbolTable& table)
 /**
  * @brief Has handle converting ctor.
  * @param[in] clean Parameter clean.
- * @param[in,out] table Parameter table.
+ * @param[in] table Parameter table.
  * @return True if condition met; otherwise false.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
@@ -4490,8 +4490,8 @@ void VisitNode(TSNode root, const TypeConversionCheckRequest& request, Diagnosti
 
 /**
  * @brief Is truthy condition.
- * @param[in,out] typeName Parameter typeName.
- * @param[in,out] table Parameter table.
+ * @param[in] typeName Parameter typeName.
+ * @param[in] table Parameter table.
  * @return True if condition met; otherwise false.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.

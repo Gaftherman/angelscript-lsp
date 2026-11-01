@@ -200,7 +200,7 @@ TSPoint FindClassClosingBracePoint(TSNode classBody)
 
 /**
  * @brief Make disable diagnostic action.
- * @param[in,out] options Parameter options.
+ * @param[in] options Parameter options.
  * @return Result of the operation.
  * @note [REFACTOR-CANDIDATE] Structural overlap (84%) with MakeDisableDiagnosticAction in
  * server/src/features/code_action/CodeActionCommon.cpp. Candidate for unification in
@@ -235,7 +235,7 @@ lsp::CodeAction MakeDisableDiagnosticAction(const DisableDiagnosticActionOptions
 
 /**
  * @brief Make disable diagnostic action.
- * @param[in,out] diag Parameter diag.
+ * @param[in] diag Parameter diag.
  * @param[in] title Parameter title.
  * @param[in] settingKey Parameter settingKey.
  * @param[in] code Parameter code.

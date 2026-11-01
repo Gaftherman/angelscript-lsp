@@ -669,7 +669,7 @@ bool ResolveEnumTarget(TSNode outNode, const std::string& nodeText, const Resolv
 
 /**
  * @brief Assign target from container kind.
- * @param[in,out] sym Parameter sym.
+ * @param[in] sym Parameter sym.
  * @param[in,out] target Parameter target.
  * @return True if condition met; otherwise false.
  * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with AssignTargetFromContainerLookup in
@@ -702,8 +702,8 @@ bool AssignTargetFromContainerKind(const analysis::Symbol& sym, TargetDescriptor
 
 /**
  * @brief Assign target from container lookup.
- * @param[in,out] sym Parameter sym.
- * @param[in,out] table Parameter table.
+ * @param[in] sym Parameter sym.
+ * @param[in] table Parameter table.
  * @param[in,out] target Parameter target.
  * @return True if condition met; otherwise false.
  * @note [REFACTOR-CANDIDATE] Structural overlap (86%) with AssignTargetFromContainerKind in

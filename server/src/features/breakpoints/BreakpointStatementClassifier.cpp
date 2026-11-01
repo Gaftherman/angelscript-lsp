@@ -197,7 +197,7 @@ void EmitLocationIfInRange(TSPoint start, TSPoint end, const BreakpointLocations
 /**
  * @brief Is bare primitive or handle type.
  * @param[in] typeNode Parameter typeNode.
- * @param[in,out] gs Parameter gs.
+ * @param[in] gs Parameter gs.
  * @return True if condition met; otherwise false.
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
