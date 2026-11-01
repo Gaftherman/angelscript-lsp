@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-01T09:16:32Z",
+  "generatedAt": "2026-11-01T09:28:13Z",
   "branch": "refactor/architecture-deduplication-and-ram",
   "description": "Deterministic AST and tokenization audit report covering local C++ structs, pass-1 flag re-evaluations, function similarity, hot struct RAM layout, and Doxygen coverage.",
   "localCppStructs": {
@@ -5193,6 +5193,41 @@
     "matrix": [
       {
         "funcA": {
+          "file": "server/src/analysis/NodeIndex.cpp",
+          "startLine": 502,
+          "endLine": 532,
+          "name": "AppendIndexRawContainers",
+          "signature": "AppendIndexRawContainers(TSNode nameNode, ContainerKind kind, std::string_view s"
+        },
+        "funcB": {
+          "file": "server/src/analysis/SemanticHelpers.cpp",
+          "startLine": 2247,
+          "endLine": 2277,
+          "name": "AppendRawContainers",
+          "signature": "AppendRawContainers(TSNode nameNode, ContainerKind kind, std::string_view source"
+        },
+        "similarityScore": 1.0,
+        "sharedCalls": [
+          "SplitScopeSegments",
+          "empty",
+          "it",
+          "push_back",
+          "rawContainers",
+          "rbegin",
+          "rend",
+          "segs",
+          "size",
+          "sourceCode",
+          "substr",
+          "ts_node_end_byte",
+          "ts_node_is_null",
+          "ts_node_start_byte"
+        ],
+        "whatTheyDo": "AppendIndexRawContainers (executes AppendIndexRawContainers logic via [SplitScopeSegments, it, rawContainers]) and AppendRawContainers (executes AppendRawContainers logic via [SplitScopeSegments, it, rawContainers]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
+        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
           "file": "server/src/analysis/rules/ClassRules.cpp",
           "startLine": 166,
           "endLine": 171,
@@ -5250,61 +5285,6 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/NodeIndex.cpp",
-          "startLine": 502,
-          "endLine": 532,
-          "name": "AppendIndexRawContainers",
-          "signature": "AppendIndexRawContainers(TSNode nameNode, ContainerKind kind, std::string_view s"
-        },
-        "funcB": {
-          "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 2247,
-          "endLine": 2277,
-          "name": "AppendRawContainers",
-          "signature": "AppendRawContainers(TSNode nameNode, ContainerKind kind, std::string_view source"
-        },
-        "similarityScore": 1.0,
-        "sharedCalls": [
-          "SplitScopeSegments",
-          "empty",
-          "it",
-          "push_back",
-          "rawContainers",
-          "rbegin",
-          "rend",
-          "segs",
-          "size",
-          "sourceCode",
-          "substr",
-          "ts_node_end_byte",
-          "ts_node_is_null",
-          "ts_node_start_byte"
-        ],
-        "whatTheyDo": "AppendIndexRawContainers (executes AppendIndexRawContainers logic via [SplitScopeSegments, it, rawContainers]) and AppendRawContainers (executes AppendRawContainers logic via [SplitScopeSegments, it, rawContainers]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/BinaryOperatorChecker.cpp",
-          "startLine": 26,
-          "endLine": 30,
-          "name": "IsBitwiseOp",
-          "signature": "IsBitwiseOp(std::string_view op) noexcept"
-        },
-        "funcB": {
-          "file": "server/src/analysis/BinaryOperatorChecker.cpp",
-          "startLine": 39,
-          "endLine": 43,
-          "name": "IsArithmeticOp",
-          "signature": "IsArithmeticOp(std::string_view op) noexcept"
-        },
-        "similarityScore": 1.0,
-        "sharedCalls": [],
-        "whatTheyDo": "IsBitwiseOp (evaluates AST node or symbol predicate properties) and IsArithmeticOp (evaluates AST node or symbol predicate properties) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/features/formatting/ClangFormatPresets.cpp",
           "startLine": 206,
           "endLine": 215,
@@ -5329,6 +5309,26 @@
       },
       {
         "funcA": {
+          "file": "server/src/analysis/BinaryOperatorChecker.cpp",
+          "startLine": 26,
+          "endLine": 30,
+          "name": "IsBitwiseOp",
+          "signature": "IsBitwiseOp(std::string_view op) noexcept"
+        },
+        "funcB": {
+          "file": "server/src/analysis/BinaryOperatorChecker.cpp",
+          "startLine": 39,
+          "endLine": 43,
+          "name": "IsArithmeticOp",
+          "signature": "IsArithmeticOp(std::string_view op) noexcept"
+        },
+        "similarityScore": 1.0,
+        "sharedCalls": [],
+        "whatTheyDo": "IsBitwiseOp (evaluates AST node or symbol predicate properties) and IsArithmeticOp (evaluates AST node or symbol predicate properties) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
+        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
           "file": "server/src/analysis/ControlFlowChecker.cpp",
           "startLine": 86,
           "endLine": 92,
@@ -5500,32 +5500,6 @@
         ],
         "whatTheyDo": "Both implementations constructs and emits diagnostics via [EmitAtRange, column, ctx]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/features/call_hierarchy/CallHierarchyHandler.cpp",
-          "startLine": 32,
-          "endLine": 36,
-          "name": "ToRange",
-          "signature": "ToRange(const analysis::SourceRange& range)"
-        },
-        "funcB": {
-          "file": "server/src/features/type_hierarchy/TypeHierarchyHandler.cpp",
-          "startLine": 36,
-          "endLine": 40,
-          "name": "ToRange",
-          "signature": "ToRange(const analysis::SourceRange& range)"
-        },
-        "similarityScore": 1.0,
-        "sharedCalls": [
-          "endCharacter",
-          "endLine",
-          "range",
-          "startCharacter",
-          "startLine"
-        ],
-        "whatTheyDo": "Both implementations executes ToRange logic via [endCharacter, endLine, range]. Separated due to Layer 3 isolation prohibition between features/call_hierarchy and features/type_hierarchy.",
-        "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
       },
       {
         "funcA": {
@@ -5558,6 +5532,32 @@
         ],
         "whatTheyDo": "ValidateOpCmp (validates semantic rules and conditions via [Emit, LogRule, ctx]) and ValidateOpEquals (validates semantic rules and conditions via [Emit, LogRule, ctx]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
+          "file": "server/src/features/call_hierarchy/CallHierarchyHandler.cpp",
+          "startLine": 32,
+          "endLine": 36,
+          "name": "ToRange",
+          "signature": "ToRange(const analysis::SourceRange& range)"
+        },
+        "funcB": {
+          "file": "server/src/features/type_hierarchy/TypeHierarchyHandler.cpp",
+          "startLine": 36,
+          "endLine": 40,
+          "name": "ToRange",
+          "signature": "ToRange(const analysis::SourceRange& range)"
+        },
+        "similarityScore": 1.0,
+        "sharedCalls": [
+          "endCharacter",
+          "endLine",
+          "range",
+          "startCharacter",
+          "startLine"
+        ],
+        "whatTheyDo": "Both implementations executes ToRange logic via [endCharacter, endLine, range]. Separated due to Layer 3 isolation prohibition between features/call_hierarchy and features/type_hierarchy.",
+        "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
       },
       {
         "funcA": {
@@ -10667,6 +10667,46 @@
       },
       {
         "funcA": {
+          "file": "server/src/features/code_action/CodeActionConstQualifier.cpp",
+          "startLine": 57,
+          "endLine": 92,
+          "name": "TryBuildMissingConstFixForSymbol",
+          "signature": "TryBuildMissingConstFixForSymbol(const CodeActionRequest& request, TSNode rootNo"
+        },
+        "funcB": {
+          "file": "server/src/features/code_action/CodeActionConstQualifier.cpp",
+          "startLine": 242,
+          "endLine": 292,
+          "name": "TryAddConstHandleDiagnosticFix",
+          "signature": "TryAddConstHandleDiagnosticFix(const CodeActionRequest& request, TSNode rootNode"
+        },
+        "similarityScore": 0.685,
+        "sharedCalls": [
+          "action",
+          "changes",
+          "column",
+          "diagnostics",
+          "edit",
+          "gs",
+          "i18n",
+          "insertPt",
+          "isPreferred",
+          "kind",
+          "newText",
+          "range",
+          "request",
+          "row",
+          "title",
+          "ts_node_descendant_for_point_range",
+          "ts_node_is_null",
+          "uri",
+          "wsEdit"
+        ],
+        "whatTheyDo": "TryBuildMissingConstFixForSymbol (formats text representations of symbols via [FindFunctionParametersNode, action, changes]) and TryAddConstHandleDiagnosticFix (constructs and emits diagnostics via [GetNodeText, action, actions]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
+        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
           "startLine": 937,
           "endLine": 978,
@@ -10705,46 +10745,6 @@
           "typeName"
         ],
         "whatTheyDo": "ReadParameterTypeInfo (executes ReadParameterTypeInfo logic via [ExtractTypeInfoFromAST, GetNodeText, PopulateTypeRanges]) and ReadVirtualPropertyTypeInfo (executes ReadVirtualPropertyTypeInfo logic via [ExtractTypeInfoFromAST, GetNodeText, PopulateTypeRanges]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/features/code_action/CodeActionConstQualifier.cpp",
-          "startLine": 57,
-          "endLine": 92,
-          "name": "TryBuildMissingConstFixForSymbol",
-          "signature": "TryBuildMissingConstFixForSymbol(const CodeActionRequest& request, TSNode rootNo"
-        },
-        "funcB": {
-          "file": "server/src/features/code_action/CodeActionConstQualifier.cpp",
-          "startLine": 242,
-          "endLine": 292,
-          "name": "TryAddConstHandleDiagnosticFix",
-          "signature": "TryAddConstHandleDiagnosticFix(const CodeActionRequest& request, TSNode rootNode"
-        },
-        "similarityScore": 0.685,
-        "sharedCalls": [
-          "action",
-          "changes",
-          "column",
-          "diagnostics",
-          "edit",
-          "gs",
-          "i18n",
-          "insertPt",
-          "isPreferred",
-          "kind",
-          "newText",
-          "range",
-          "request",
-          "row",
-          "title",
-          "ts_node_descendant_for_point_range",
-          "ts_node_is_null",
-          "uri",
-          "wsEdit"
-        ],
-        "whatTheyDo": "TryBuildMissingConstFixForSymbol (formats text representations of symbols via [FindFunctionParametersNode, action, changes]) and TryAddConstHandleDiagnosticFix (constructs and emits diagnostics via [GetNodeText, action, actions]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {

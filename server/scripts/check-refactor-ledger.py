@@ -133,7 +133,7 @@ def is_sym_declared_in_file_or_peer(sym: str, rel_path: str) -> bool:
     elif target_path.suffix == ".h":
         candidates.append(target_path.with_suffix(".cpp"))
 
-    func_pattern = re.compile(rf"\b{re.escape(sym)}\s*\(")
+    func_pattern = re.compile(rf"(?:^|\n)\s*(?:[A-Za-z0-9_:<>&*\[\]]+\s+)+{re.escape(sym)}\s*\(")
     struct_pattern = re.compile(rf"\b(?:struct|class)\s+{re.escape(sym)}\b")
 
     for cand in candidates:
@@ -154,8 +154,25 @@ def is_symbol_recorded(sym: str, recorded_symbols: set) -> bool:
 def check_git_diff(base_commit: str):
     violations = []
     try:
+        ref = base_commit
+        chk = subprocess.run(
+            ["git", "rev-parse", "--verify", ref],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+        )
+        if chk.returncode != 0:
+            chk_origin = subprocess.run(
+                ["git", "rev-parse", "--verify", f"origin/{ref}"],
+                cwd=str(REPO_ROOT),
+                capture_output=True,
+                text=True,
+            )
+            if chk_origin.returncode == 0:
+                ref = f"origin/{ref}"
+
         diff_res = subprocess.run(
-            ["git", "diff", f"{base_commit}..HEAD", "-U0", "--", "server/src/"],
+            ["git", "diff", f"{ref}..HEAD", "-U0", "--", "server/src/"],
             cwd=str(REPO_ROOT),
             capture_output=True,
             text=True,
@@ -168,7 +185,8 @@ def check_git_diff(base_commit: str):
     recorded_symbols = {e.get("originalSymbolOrCode", "") for e in ledger_data.get("entries", [])}
 
     struct_del_re = re.compile(r"^-\s*(?:struct|class)\s+([A-Za-z0-9_]+)\b")
-    func_del_re = re.compile(r"^-\s*(?:[A-Za-z0-9_:<>&*]+\s+)+([A-Za-z0-9_]+)\s*\(")
+    func_del_re = re.compile(r"^-\s*(?:[A-Za-z0-9_:<>&*\[\]]+\s+)+([A-Za-z0-9_]+)\s*\(")
+    var_init_re = re.compile(r"^-\s*(?:[A-Za-z0-9_:<>&*\[\]]+\s+)+[A-Za-z0-9_]+\s*\(\s*[A-Za-z0-9_]+\s*\)\s*;")
     ignored_keywords = {
         "if",
         "for",
@@ -185,6 +203,8 @@ def check_git_diff(base_commit: str):
     }
 
     curr_file = ""
+    in_func_block = False
+
     for line in diff_res.stdout.splitlines():
         if line.startswith("diff --git "):
             parts = line.split()
@@ -193,6 +213,7 @@ def check_git_diff(base_commit: str):
                 if b_path.startswith("b/"):
                     b_path = b_path[2:]
                 curr_file = b_path
+            in_func_block = False
             continue
         if line.startswith("+++ "):
             target = line[4:].strip()
@@ -200,15 +221,28 @@ def check_git_diff(base_commit: str):
                 target = target[2:]
             if target != "/dev/null":
                 curr_file = target
+            in_func_block = False
+            continue
+        if line.startswith("@@"):
+            match_hunk = re.search(r"@@\s+(.*)$", line)
+            if match_hunk:
+                ctx = match_hunk.group(1).strip()
+                if "(" in ctx and ")" in ctx and not ctx.startswith(("struct ", "class ")):
+                    in_func_block = True
+                else:
+                    in_func_block = False
+            else:
+                in_func_block = False
             continue
 
         if not line.startswith("-") or line.startswith("---"):
             continue
 
-        # Skip local variable declarations, member initializers, and comments
-        if re.match(r"^-(?:\s{4,}|\t)", line) or re.match(r"^-\s*[:,]", line) or re.match(r"^-\s*(?://|/\*|\*)", line):
+        # Skip comments and member initializer list entries
+        if re.match(r"^-\s*(?://|/\*|\*)", line) or re.match(r"^-\s*[:,]", line):
             continue
 
+        # 1. Struct and class deletions: never skipped by indentation!
         m_struct = struct_del_re.match(line)
         if m_struct:
             sym = m_struct.group(1)
@@ -216,6 +250,15 @@ def check_git_diff(base_commit: str):
                 violations.append(f"Deleted struct '{sym}' not recorded in REFACTOR_LEDGER.json")
             continue
 
+        # Skip local statements/variables indented inside function implementations
+        if in_func_block and re.match(r"^-(?:\s{4,}|\t)", line):
+            continue
+
+        # Skip direct-initialization local variables (e.g. `Type var(arg);`)
+        if var_init_re.match(line):
+            continue
+
+        # 2. Function and method declarations / definitions
         m_func = func_del_re.match(line)
         if m_func:
             sym = m_func.group(1)
