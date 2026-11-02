@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/resolution/SemanticHelpers.h"
@@ -40,20 +41,7 @@ namespace angel_lsp::analysis
  */
 class NodeIndex;
 
-struct CallCheckRequest
-{
-    /** @brief Root node of the document's syntax tree. */
-    TSNode root;
-
-    /** @brief Document source text the tree was parsed from. */
-    std::string_view sourceCode;
-
-    /** @brief Root of the document's lexical scope tree, or nullptr when none was collected. */
-    const Scope* scopeRoot = nullptr;
-
-    /** @brief Optional pre-indexed node index for fast single-pass querying. */
-    const NodeIndex* nodeIndex = nullptr;
-};
+using CallCheckRequest = AstCheckContext;
 
 /**
  * @brief Runs the call-argument pass over one document.
@@ -61,6 +49,22 @@ struct CallCheckRequest
  * @param ctx Diagnostic sink and the analysis request behind it.
  */
 void CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx);
+
+/**
+ * @brief AST checker for function and method call argument count and type matching.
+ */
+struct CallChecker
+{
+    static constexpr std::string_view Name = "CallChecker";
+    static bool IsEnabled([[maybe_unused]] const SemanticAnalysisRequest& request)
+    {
+        return true;
+    }
+    static void Run(const AstCheckContext& ast, DiagnosticContext& ctx)
+    {
+        CheckCallArguments(ast, ctx);
+    }
+};
 
 /**
  * @brief Filters candidate symbols to those whose arity can accept argumentCount.

@@ -1206,11 +1206,11 @@ static void DispatchIndexedInitializerLists(const InitializerListContext& initCt
  */
 static void DispatchTreeWalkInitializerLists(const InitializerListContext& initCtx)
 {
-    if (ts_node_is_null(initCtx.request.root))
+    if (ts_node_is_null(initCtx.request.rootNode))
     {
         return;
     }
-    TSTreeCursor cursor = ts_tree_cursor_new(initCtx.request.root);
+    TSTreeCursor cursor = ts_tree_cursor_new(initCtx.request.rootNode);
     bool visitedChildren = false;
     while (true)
     {

@@ -2,10 +2,12 @@
 
 #include "analysis/checkers/TypeConversionChecker.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
 #include "i18n/i18n.h"
 #include "parser/ASTUtils.h"
+#include "parser/GrammarNames.h"
 #include "parser/Primitives.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/Utils.h"
@@ -411,6 +413,296 @@ void CheckEngineSchedulerCall(const SchedulerCallRequest& req, const DiagnosticC
             CheckSingleSchedulerArg(req, i, rule, ctx);
         }
     }
+}
+
+static void CheckDialectForeach(const NodeIndex& nodeIndex, DiagnosticContext& ctx)
+{
+    if (!ctx.request.SupportsForeach())
+    {
+        for (TSNode node : nodeIndex.Nodes(parser::GetGrammarSymbols().symForeachStatement))
+        {
+            const TSPoint start = ts_node_start_point(node);
+            ctx.EmitAtRange({start.row, start.column, start.row, start.column + 7}, "as-err-foreach-unsupported",
+                            DiagnosticSeverity::Error);
+        }
+    }
+}
+
+static void CheckDialectEmptyListElements(const NodeIndex& nodeIndex, DiagnosticContext& ctx)
+{
+    if (ctx.request.DisallowsEmptyListElements())
+    {
+        const auto& gs = parser::GetGrammarSymbols();
+        for (TSNode node : nodeIndex.Nodes(gs.symInitializerList))
+        {
+            TSTreeCursor cursor = ts_tree_cursor_new(node);
+            if (ts_tree_cursor_goto_first_child(&cursor))
+            {
+                TSSymbol prevSym = 0;
+                TSPoint prevStart{};
+                do
+                {
+                    TSNode ch = ts_tree_cursor_current_node(&cursor);
+                    TSSymbol currSym = ts_node_symbol(ch);
+                    if (prevSym == gs.tokComma && (currSym == gs.tokComma || currSym == gs.tokCloseBrace))
+                    {
+                        ctx.EmitAtRange({prevStart.row, prevStart.column, prevStart.row, prevStart.column + 1},
+                                        "as-err-empty-list-element", DiagnosticSeverity::Error);
+                    }
+                    prevSym = currSym;
+                    prevStart = ts_node_start_point(ch);
+                } while (ts_tree_cursor_goto_next_sibling(&cursor));
+            }
+            ts_tree_cursor_delete(&cursor);
+        }
+    }
+}
+
+static void CheckCharLiteralDeclarator(TSNode declarator, const std::string& declared, DiagnosticContext& ctx)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_symbol(declarator) != gs.symVariableDeclarator)
+    {
+        return;
+    }
+
+    const TSNode value = parser::GetChildByField(declarator, gs.fieldValue);
+    if (ts_node_is_null(value) || ts_node_symbol(value) != gs.symStringLiteral)
+    {
+        return;
+    }
+
+    const uint32_t from = ts_node_start_byte(value);
+    if (from < ctx.request.sourceCode.size() && ctx.request.sourceCode[from] == '\'')
+    {
+        const TSPoint start = ts_node_start_point(value);
+        const TSPoint end = ts_node_end_point(value);
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-character-literal-is-string", declared,
+                        DiagnosticSeverity::Error);
+    }
+}
+
+static void CheckDialectVariableDeclarationNode(TSNode node, DiagnosticContext& ctx)
+{
+    if (ctx.request.CharacterLiteralMode() != 0)
+    {
+        return;
+    }
+
+    const TSNode typeNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldVarType);
+    if (ts_node_is_null(typeNode))
+    {
+        return;
+    }
+
+    const std::string declared = CleanBaseType(parser::GetNodeText(typeNode, ctx.request.sourceCode));
+    if (!IsPrimitiveTypeName(declared) || declared == "auto" || declared == "void")
+    {
+        return;
+    }
+
+    TSTreeCursor cursor = ts_tree_cursor_new(node);
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        do
+        {
+            CheckCharLiteralDeclarator(ts_tree_cursor_current_node(&cursor), declared, ctx);
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    }
+    ts_tree_cursor_delete(&cursor);
+}
+
+static void CheckDialectCharacterLiterals(const NodeIndex& nodeIndex, DiagnosticContext& ctx)
+{
+    if (ctx.request.CharacterLiteralMode() != 0)
+    {
+        return;
+    }
+
+    for (TSNode node : nodeIndex.Nodes(parser::GetGrammarSymbols().symVariableDeclaration))
+    {
+        CheckDialectVariableDeclarationNode(node, ctx);
+    }
+}
+
+static bool IsIntegerLiteral(TSNode candidate, std::string_view sourceCode)
+{
+    if (ts_node_is_null(candidate) || ts_node_symbol(candidate) != parser::GetGrammarSymbols().symNumberLiteral)
+    {
+        return false;
+    }
+    const std::string text = parser::GetNodeText(candidate, sourceCode);
+    return text.find_first_of(".eEfF") == std::string::npos;
+}
+
+static void CheckDialectIntegerDivisionNode(TSNode node, DiagnosticContext& ctx)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSNode op = parser::GetChildByField(node, gs.fieldOperator);
+    if (ts_node_is_null(op) || ts_node_symbol(op) != gs.tokSlash)
+    {
+        return;
+    }
+
+    const TSNode left = parser::GetChildByField(node, gs.fieldLeft);
+    const TSNode right = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldRight);
+
+    if (IsIntegerLiteral(left, ctx.request.sourceCode) && IsIntegerLiteral(right, ctx.request.sourceCode))
+    {
+        const TSPoint start = ts_node_start_point(node);
+        const TSPoint end = ts_node_end_point(node);
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-hint-integer-division",
+                        DiagnosticSeverity::Hint);
+    }
+}
+
+static void CheckDialectIntegerDivision(const NodeIndex& nodeIndex, DiagnosticContext& ctx)
+{
+    if (ctx.request.diagnostics && ctx.request.diagnostics->reportIntegerDivision &&
+        !ctx.request.DisablesIntegerDivision())
+    {
+        for (TSNode node : nodeIndex.Nodes(parser::GetGrammarSymbols().symBinaryExpression))
+        {
+            CheckDialectIntegerDivisionNode(node, ctx);
+        }
+    }
+}
+
+static void CheckDialectNamedArguments(const NodeIndex& nodeIndex, DiagnosticContext& ctx)
+{
+    if (ctx.request.NamedArgumentSyntaxMode() != 2)
+    {
+        for (TSNode node : nodeIndex.Nodes(parser::GetGrammarSymbols().symArgumentList))
+        {
+            const uint32_t argCount = ts_node_named_child_count(node);
+            for (uint32_t i = 0; i < argCount; ++i)
+            {
+                const auto& gs = parser::GetGrammarSymbols();
+                const TSNode argument = ts_node_named_child(node, i);
+                if (ts_node_symbol(argument) != gs.symAssignmentExpression)
+                {
+                    continue;
+                }
+
+                const TSNode target = parser::GetChildByField(argument, gs.fieldLeft);
+                if (ts_node_is_null(target))
+                {
+                    continue;
+                }
+                const TSSymbol targetSym = ts_node_symbol(target);
+                if (targetSym != gs.symIdentifier && targetSym != gs.symScopedIdentifier)
+                {
+                    continue;
+                }
+                if (targetSym == gs.symScopedIdentifier && ts_node_named_child_count(target) != 1)
+                {
+                    continue;
+                }
+
+                const TSPoint start = ts_node_start_point(argument);
+                const TSPoint end = ts_node_end_point(argument);
+                const std::string name = parser::GetNodeText(target, ctx.request.sourceCode);
+
+                ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-named-argument-syntax", name,
+                                ctx.request.NamedArgumentSyntaxMode() == 1 ? DiagnosticSeverity::Warning
+                                                                           : DiagnosticSeverity::Error);
+            }
+        }
+    }
+}
+
+static bool IsSymbolTableClass(const SymbolTable& table, const std::string& typeName)
+{
+    if (const auto symbols = table.FindSymbolsPtr(typeName))
+    {
+        for (const auto& sym : *symbols)
+        {
+            if (sym.type == SymbolType::Class)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static void CheckDialectAssignmentExpressionNode(TSNode node, DiagnosticContext& ctx)
+{
+    const TSNode op = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperator);
+    const TSNode target = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
+
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_is_null(op) || ts_node_symbol(op) != gs.tokAssign || ts_node_is_null(target))
+    {
+        return;
+    }
+
+    if (parser::IsHandleAssignmentTarget(target))
+    {
+        return;
+    }
+
+    const Scope* scope = ctx.request.scopeRoot
+                             ? FindInnermostScope(ctx.request.scopeRoot.get(), ts_node_start_point(target).row,
+                                                  ts_node_start_point(target).column)
+                             : nullptr;
+    ExpressionTypeContext exprCtx(scope, ctx);
+    const std::string targetType = CleanBaseType(ResolveExpressionType(target, exprCtx));
+
+    if (IsSymbolTableClass(ctx.request.symbolTable, targetType))
+    {
+        const TSPoint start = ts_node_start_point(node);
+        const TSPoint end = ts_node_end_point(node);
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-value-assign-for-ref", targetType,
+                        DiagnosticSeverity::Error);
+    }
+}
+
+static void CheckDialectValueAssignForRef(const NodeIndex& nodeIndex, DiagnosticContext& ctx)
+{
+    if (ctx.request.DisallowsValueAssignForRef())
+    {
+        for (TSNode node : nodeIndex.Nodes(parser::GetGrammarSymbols().symAssignmentExpression))
+        {
+            CheckDialectAssignmentExpressionNode(node, ctx);
+        }
+    }
+}
+
+static void CheckDialectMultilineStrings(const NodeIndex& nodeIndex, DiagnosticContext& ctx)
+{
+    if (!ctx.request.AllowsMultilineStrings())
+    {
+        for (TSNode node : nodeIndex.Nodes(parser::GetGrammarSymbols().symStringLiteral))
+        {
+            const TSPoint start = ts_node_start_point(node);
+            const TSPoint end = ts_node_end_point(node);
+
+            if (end.row > start.row)
+            {
+                const uint32_t from = ts_node_start_byte(node);
+                const bool isHeredoc =
+                    from + 3 <= ctx.request.sourceCode.size() && ctx.request.sourceCode.compare(from, 3, "\"\"\"") == 0;
+
+                if (!isHeredoc)
+                {
+                    ctx.EmitAtRange({start.row, start.column, start.row, start.column + 1}, "as-err-multiline-string",
+                                    DiagnosticSeverity::Error);
+                }
+            }
+        }
+    }
+}
+
+void CheckEngineDialectRules(const NodeIndex& nodeIndex, DiagnosticContext& ctx)
+{
+    CheckDialectForeach(nodeIndex, ctx);
+    CheckDialectEmptyListElements(nodeIndex, ctx);
+    CheckDialectCharacterLiterals(nodeIndex, ctx);
+    CheckDialectIntegerDivision(nodeIndex, ctx);
+    CheckDialectNamedArguments(nodeIndex, ctx);
+    CheckDialectValueAssignForRef(nodeIndex, ctx);
+    CheckDialectMultilineStrings(nodeIndex, ctx);
 }
 
 } // namespace angel_lsp::analysis::rules

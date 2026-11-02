@@ -408,7 +408,7 @@ static void CheckLValuesIndexed(const LValueCheckRequest& request, DiagnosticCon
  */
 void CheckLValues(const LValueCheckRequest& request, DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(request.root) || request.sourceCode.empty())
+    if (ts_node_is_null(request.rootNode) || request.sourceCode.empty())
     {
         return;
     }
@@ -424,7 +424,7 @@ void CheckLValues(const LValueCheckRequest& request, DiagnosticContext& ctx)
         return;
     }
 
-    NodeIndex localIndex(request.root);
+    NodeIndex localIndex(request.rootNode);
     LValueCheckRequest indexedRequest = request;
     indexedRequest.nodeIndex = &localIndex;
     CheckLValuesIndexed(indexedRequest, ctx);

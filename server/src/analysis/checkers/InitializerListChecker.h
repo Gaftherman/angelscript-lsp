@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/ScopeTree.h"
 
@@ -26,26 +27,7 @@ namespace angel_lsp::analysis
  */
 class NodeIndex;
 
-struct InitializerListCheckRequest
-{
-    /** @brief Root node of the document's syntax tree. */
-    TSNode root;
-
-    /** @brief Document source text the tree was parsed from. */
-    std::string_view sourceCode;
-
-    /**
-     * @brief Root of the document's lexical scope tree, or nullptr when none was collected.
-     *
-     * Needed to type an element that names something - `array<int> a = {count}` - rather than
-     * spelling a literal. Without it the element check still runs on literals and stays silent
-     * on everything else, which is the correct degradation.
-     */
-    const Scope* scopeRoot = nullptr;
-
-    /** @brief Optional pre-indexed node index for fast single-pass querying. */
-    const NodeIndex* nodeIndex = nullptr;
-};
+using InitializerListCheckRequest = AstCheckContext;
 
 /**
  * @brief Reports initializer lists applied to a type that cannot be built from one.
@@ -53,6 +35,22 @@ struct InitializerListCheckRequest
  * @param ctx Diagnostic sink; also carries the TypeConfig naming the array template.
  */
 void CheckInitializerLists(const InitializerListCheckRequest& request, DiagnosticContext& ctx);
+
+/**
+ * @brief AST checker for initializer list nesting and element type compatibility.
+ */
+struct InitializerListChecker
+{
+    static constexpr std::string_view Name = "InitializerListChecker";
+    static bool IsEnabled([[maybe_unused]] const SemanticAnalysisRequest& request)
+    {
+        return true;
+    }
+    static void Run(const AstCheckContext& ast, DiagnosticContext& ctx)
+    {
+        CheckInitializerLists(ast, ctx);
+    }
+};
 
 /**
  * @brief Context for inspecting elements in an initializer list.

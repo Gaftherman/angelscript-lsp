@@ -1432,6 +1432,139 @@
         "SymbolTableIndexTest",
         "MemoryLayoutAuditTest"
       ]
+    },
+    {
+      "id": "REF-0087",
+      "phase": "S2",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/checkers/AccessChecker.h",
+      "deletedLineRange": "34-47",
+      "originalSymbolOrCode": "AccessCheckRequest",
+      "whatItDidAndWhyInThatFile": "AST check request struct holding root node, source code, scope root, and node index.",
+      "whyChangedOrDeleted": "Unified with canonical AstCheckContext to eliminate duplicate request structs across Layer 2 checkers.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/AstCheckContext.h",
+      "replacedByCanonicalSymbol": "AstCheckContext",
+      "ramOrCpuImpact": "Eliminated duplicate struct definitions; zero runtime overhead via type aliasing.",
+      "verifiedByTests": [
+        "SemanticAnalyzerTest",
+        "AccessCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0088",
+      "phase": "S2",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/checkers/ConstChecker.h",
+      "deletedLineRange": "39-52",
+      "originalSymbolOrCode": "ConstCheckRequest",
+      "whatItDidAndWhyInThatFile": "AST check request struct holding root node, source code, scope root, and node index.",
+      "whyChangedOrDeleted": "Unified with canonical AstCheckContext to eliminate duplicate request structs across Layer 2 checkers.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/AstCheckContext.h",
+      "replacedByCanonicalSymbol": "AstCheckContext",
+      "ramOrCpuImpact": "Eliminated duplicate struct definitions; zero runtime overhead via type aliasing.",
+      "verifiedByTests": [
+        "SemanticAnalyzerTest",
+        "ConstCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0089",
+      "phase": "S2",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/checkers/LValueChecker.h",
+      "deletedLineRange": "14-27",
+      "originalSymbolOrCode": "LValueCheckRequest",
+      "whatItDidAndWhyInThatFile": "AST check request struct holding root node, source code, scope root, and node index.",
+      "whyChangedOrDeleted": "Unified with canonical AstCheckContext to eliminate duplicate request structs across Layer 2 checkers.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/AstCheckContext.h",
+      "replacedByCanonicalSymbol": "AstCheckContext",
+      "ramOrCpuImpact": "Eliminated duplicate struct definitions; zero runtime overhead via type aliasing.",
+      "verifiedByTests": [
+        "SemanticAnalyzerTest",
+        "LValueCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0090",
+      "phase": "S2",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/checkers/CallChecker.h",
+      "deletedLineRange": "43-56",
+      "originalSymbolOrCode": "CallCheckRequest",
+      "whatItDidAndWhyInThatFile": "AST check request struct holding root node, source code, scope root, and node index.",
+      "whyChangedOrDeleted": "Unified with canonical AstCheckContext to eliminate duplicate request structs across Layer 2 checkers.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/AstCheckContext.h",
+      "replacedByCanonicalSymbol": "AstCheckContext",
+      "ramOrCpuImpact": "Eliminated duplicate struct definitions; zero runtime overhead via type aliasing.",
+      "verifiedByTests": [
+        "SemanticAnalyzerTest",
+        "CallCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0091",
+      "phase": "S2",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/checkers/DefiniteAssignmentChecker.h",
+      "deletedLineRange": "14-20",
+      "originalSymbolOrCode": "DefiniteAssignmentCheckRequest",
+      "whatItDidAndWhyInThatFile": "AST check request struct holding root node, source code, scope root, and node index.",
+      "whyChangedOrDeleted": "Unified with canonical AstCheckContext to eliminate duplicate request structs across Layer 2 checkers.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/AstCheckContext.h",
+      "replacedByCanonicalSymbol": "AstCheckContext",
+      "ramOrCpuImpact": "Eliminated duplicate struct definitions; zero runtime overhead via type aliasing.",
+      "verifiedByTests": [
+        "SemanticAnalyzerTest"
+      ]
+    },
+    {
+      "id": "REF-0092",
+      "phase": "S2",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/checkers/null_safety/NullSafetyTypes.h",
+      "deletedLineRange": "28-34",
+      "originalSymbolOrCode": "NullSafetyCheckRequest",
+      "whatItDidAndWhyInThatFile": "AST check request struct holding root node, source code, scope root, and node index.",
+      "whyChangedOrDeleted": "Unified with canonical AstCheckContext to eliminate duplicate request structs across Layer 2 checkers.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/AstCheckContext.h",
+      "replacedByCanonicalSymbol": "AstCheckContext",
+      "ramOrCpuImpact": "Eliminated duplicate struct definitions; zero runtime overhead via type aliasing.",
+      "verifiedByTests": [
+        "SemanticAnalyzerTest",
+        "NullSafetyCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0093",
+      "phase": "S2",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/checkers/IsolationChecker.h",
+      "deletedLineRange": "16-22",
+      "originalSymbolOrCode": "IsolationCheckRequest",
+      "whatItDidAndWhyInThatFile": "AST check request struct holding root node, source code, scope root, and node index.",
+      "whyChangedOrDeleted": "Unified with canonical AstCheckContext to eliminate duplicate request structs across Layer 2 checkers.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/AstCheckContext.h",
+      "replacedByCanonicalSymbol": "AstCheckContext",
+      "ramOrCpuImpact": "Eliminated duplicate struct definitions; zero runtime overhead via type aliasing.",
+      "verifiedByTests": [
+        "SemanticAnalyzerTest"
+      ]
+    },
+    {
+      "id": "REF-0094",
+      "phase": "S2",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/checkers/InitializerListChecker.h",
+      "deletedLineRange": "29-48",
+      "originalSymbolOrCode": "InitializerListCheckRequest",
+      "whatItDidAndWhyInThatFile": "AST check request struct holding root node, source code, scope root, and node index.",
+      "whyChangedOrDeleted": "Unified with canonical AstCheckContext to eliminate duplicate request structs across Layer 2 checkers.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/AstCheckContext.h",
+      "replacedByCanonicalSymbol": "AstCheckContext",
+      "ramOrCpuImpact": "Eliminated duplicate struct definitions; zero runtime overhead via type aliasing.",
+      "verifiedByTests": [
+        "SemanticAnalyzerTest"
+      ]
     }
   ]
 }

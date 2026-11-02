@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include <ankerl/unordered_dense.h>
 #include <string>
@@ -22,16 +23,7 @@ enum class Nullability
     DefinitelyNull ///< Variable is definitely null (explicit null assignment or null branch).
 };
 
-/**
- * @brief Context parameters for null safety handle flow analysis.
- */
-struct NullSafetyCheckRequest
-{
-    TSNode root;
-    std::string_view sourceCode;
-    const Scope* scopeRoot = nullptr;
-    const NodeIndex* nodeIndex = nullptr;
-};
+using NullSafetyCheckRequest = AstCheckContext;
 
 /**
  * @brief Evaluation context passed during null-safety traversal.

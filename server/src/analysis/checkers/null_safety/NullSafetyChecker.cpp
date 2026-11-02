@@ -140,7 +140,7 @@ static void AnalyzeFunction(TSNode funcNode, const Scope* scopeRoot, NullCheckCo
 
 void CheckNullSafety(const NullSafetyCheckRequest& request, DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(request.root) || request.sourceCode.empty() || !request.nodeIndex)
+    if (ts_node_is_null(request.rootNode) || request.sourceCode.empty() || !request.nodeIndex)
     {
         return;
     }

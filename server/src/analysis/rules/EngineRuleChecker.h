@@ -7,8 +7,20 @@
 #include <string_view>
 #include <tree_sitter/api.h>
 
+namespace angel_lsp::analysis
+{
+class NodeIndex;
+}
+
 namespace angel_lsp::analysis::rules
 {
+
+/**
+ * @brief Fast single-pass engine dialect check using NodeIndex.
+ * @param[in] nodeIndex Prebuilt node index.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void CheckEngineDialectRules(const NodeIndex& nodeIndex, DiagnosticContext& ctx);
 
 /**
  * @brief Validates member and global variables against data-driven storage rules.

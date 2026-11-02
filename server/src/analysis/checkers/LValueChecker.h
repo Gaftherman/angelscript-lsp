@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include <string_view>
 #include <tree_sitter/api.h>
@@ -8,23 +9,7 @@ namespace angel_lsp::analysis
 {
 class NodeIndex;
 
-/**
- * @brief Request context for l-value correctness checking.
- */
-struct LValueCheckRequest
-{
-    /** @brief Root node of the document's syntax tree. */
-    TSNode root;
-
-    /** @brief Document source text the tree was parsed from. */
-    std::string_view sourceCode;
-
-    /** @brief Root of the document's lexical scope tree, or nullptr when none was collected. */
-    const Scope* scopeRoot = nullptr;
-
-    /** @brief Optional single-pass AST node index. */
-    const NodeIndex* nodeIndex = nullptr;
-};
+using LValueCheckRequest = AstCheckContext;
 
 /**
  * @brief Verifies that left-hand side targets of assignment expressions are modifiable l-values.
@@ -32,6 +17,22 @@ struct LValueCheckRequest
  * @param ctx Diagnostic sink and context.
  */
 void CheckLValues(const LValueCheckRequest& request, DiagnosticContext& ctx);
+
+/**
+ * @brief AST checker for left-hand side modifiable l-value expressions.
+ */
+struct LValueChecker
+{
+    static constexpr std::string_view Name = "LValueChecker";
+    static bool IsEnabled([[maybe_unused]] const SemanticAnalysisRequest& request)
+    {
+        return true;
+    }
+    static void Run(const AstCheckContext& ast, DiagnosticContext& ctx)
+    {
+        CheckLValues(ast, ctx);
+    }
+};
 
 /**
  * @brief Bundles callee candidate signatures, argument expressions, and typing state during call evaluation.

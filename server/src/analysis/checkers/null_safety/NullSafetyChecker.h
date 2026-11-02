@@ -26,4 +26,20 @@ struct NullSafetyEngine
     static void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx);
 };
 
+/**
+ * @brief AST checker for handle flow and null safety dereference validation.
+ */
+struct NullSafetyChecker
+{
+    static constexpr std::string_view Name = "NullSafetyChecker";
+    static bool IsEnabled(const SemanticAnalysisRequest& request)
+    {
+        return request.diagnostics && request.diagnostics->reportPossibleNullDereference;
+    }
+    static void Run(const AstCheckContext& ast, DiagnosticContext& ctx)
+    {
+        CheckNullSafety(ast, ctx);
+    }
+};
+
 } // namespace angel_lsp::analysis

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/NodeIndex.h"
 
@@ -36,20 +37,7 @@ struct ExpressionTypeContext;
  * engine-registered one looks like from here, and those carry members - and const overloads -
  * written down in no source this analyzer reads.
  */
-struct ConstCheckRequest
-{
-    /** @brief Root node of the document's syntax tree. */
-    TSNode root;
-
-    /** @brief Document source text the tree was parsed from. */
-    std::string_view sourceCode;
-
-    /** @brief Root of the document's lexical scope tree, or nullptr when none was collected. */
-    const Scope* scopeRoot = nullptr;
-
-    /** @brief Optional pre-indexed node index for fast single-pass querying. */
-    const NodeIndex* nodeIndex = nullptr;
-};
+using ConstCheckRequest = AstCheckContext;
 
 /**
  * @brief Identifies the enclosing method symbol, declaring class, and const-qualifier status during const checks.
@@ -67,6 +55,22 @@ struct EnclosingMethodInfo
  * @param[in,out] ctx Diagnostic sink and the analysis request behind it.
  */
 void CheckConstCorrectness(const ConstCheckRequest& request, DiagnosticContext& ctx);
+
+/**
+ * @brief AST checker for const-correctness rules.
+ */
+struct ConstChecker
+{
+    static constexpr std::string_view Name = "ConstChecker";
+    static bool IsEnabled([[maybe_unused]] const SemanticAnalysisRequest& request)
+    {
+        return true;
+    }
+    static void Run(const AstCheckContext& ast, DiagnosticContext& ctx)
+    {
+        CheckConstCorrectness(ast, ctx);
+    }
+};
 
 /**
  * @brief Determines if an assignment target refers to a member of 'this' in a const method.

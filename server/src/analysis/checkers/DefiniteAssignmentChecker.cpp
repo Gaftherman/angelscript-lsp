@@ -812,7 +812,7 @@ static void TraverseFunctions(TSNode root, DefiniteAssignmentVisitor& visitor)
 
 void CheckDefiniteAssignment(const DefiniteAssignmentCheckRequest& request, DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(request.root) || request.sourceCode.empty())
+    if (ts_node_is_null(request.rootNode) || request.sourceCode.empty())
     {
         return;
     }
@@ -837,6 +837,6 @@ void CheckDefiniteAssignment(const DefiniteAssignmentCheckRequest& request, Diag
         return;
     }
 
-    TraverseFunctions(request.root, visitor);
+    TraverseFunctions(request.rootNode, visitor);
 }
 } // namespace angel_lsp::analysis

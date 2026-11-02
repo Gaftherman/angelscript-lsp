@@ -2519,7 +2519,7 @@ static void CheckCallArgumentsIndexed(const CallCheckRequest& request, Diagnosti
  */
 void CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(request.root) || request.sourceCode.empty())
+    if (ts_node_is_null(request.rootNode) || request.sourceCode.empty())
     {
         return;
     }
@@ -2535,7 +2535,7 @@ void CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx)
         return;
     }
 
-    NodeIndex localIndex(request.root);
+    NodeIndex localIndex(request.rootNode);
     CallCheckRequest indexedRequest = request;
     indexedRequest.nodeIndex = &localIndex;
     CheckCallArgumentsIndexed(indexedRequest, ctx);

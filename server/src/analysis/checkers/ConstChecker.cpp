@@ -698,7 +698,7 @@ static void CheckConstCorrectnessIndexed(const ConstCheckRequest& request, Diagn
  */
 void CheckConstCorrectness(const ConstCheckRequest& request, DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(request.root) || request.sourceCode.empty())
+    if (ts_node_is_null(request.rootNode) || request.sourceCode.empty())
     {
         return;
     }
@@ -716,7 +716,7 @@ void CheckConstCorrectness(const ConstCheckRequest& request, DiagnosticContext& 
         return;
     }
 
-    NodeIndex localIndex(request.root);
+    NodeIndex localIndex(request.rootNode);
     ConstCheckRequest indexedRequest = request;
     indexedRequest.nodeIndex = &localIndex;
     CheckConstCorrectnessIndexed(indexedRequest, ctx);
