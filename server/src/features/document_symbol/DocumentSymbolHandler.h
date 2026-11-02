@@ -54,4 +54,26 @@ struct FunctionComponents
     TSNode retNode;
     TSNode paramsNode;
 };
+
+/**
+ * @brief Traversal engine for processing AST nodes into hierarchical LSP document symbols.
+ */
+struct DocumentSymbolProcessor
+{
+    /**
+     * @brief Processes all child nodes within an AST container node.
+     * @param[in] containerNode AST container node.
+     * @param[in] ctx Traversal context.
+     * @return Vector of child document symbols.
+     */
+    static std::vector<lsp::DocumentSymbol> ProcessChildren(TSNode containerNode, const TraversalContext& ctx);
+
+    /**
+     * @brief Processes an individual AST node and appends any extracted symbol to outSymbols.
+     * @param[in] node AST node to process.
+     * @param[in] ctx Traversal context.
+     * @param[in,out] outSymbols Symbol list to append to.
+     */
+    static void ProcessNode(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols);
+};
 } // namespace angel_lsp::features

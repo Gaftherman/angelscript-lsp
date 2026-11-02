@@ -1,12 +1,8 @@
 #pragma once
 
 #include "analysis/SemanticAnalysisRequest.h"
+#include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/diagnostics/Diagnostics.h"
-
-namespace angel_lsp::analysis
-{
-struct DiagnosticContext;
-}
 
 namespace angel_lsp::analysis::rules
 {

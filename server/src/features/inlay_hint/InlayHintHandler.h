@@ -109,4 +109,18 @@ struct OmittedParamHint
     std::string fileUri;
     const analysis::ParameterInformation* param = nullptr;
 };
+
+/**
+ * @brief Helper for deducing expression types during inlay hint generation.
+ */
+struct InlayHintExpressionDeducer
+{
+    /**
+     * @brief Deduces the type string for an expression AST node.
+     * @param[in] exprNode Target expression AST node.
+     * @param[in] request Inlay hint request context.
+     * @return Deduced type string or empty string.
+     */
+    static std::string DeduceExpressionType(TSNode exprNode, const InlayHintRequest& request);
+};
 } // namespace angel_lsp::features

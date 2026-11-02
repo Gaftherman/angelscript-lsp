@@ -9,13 +9,6 @@ namespace angel_lsp::analysis
 {
 struct Scope;
 
-struct NullCheckContext
-{
-    std::string_view sourceCode;
-    DiagnosticContext& diagCtx;
-    const Scope* scopeRoot = nullptr;
-};
-
 /**
  * @brief Checks expressions for potential null handle dereferences.
  * @param[in] expr Expression AST node to check.

@@ -207,8 +207,6 @@ static bool IsIdentifierAssignable(std::string_view name, const Scope* scope, co
     return true;
 }
 
-static bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const DiagnosticContext& ctx);
-
 static bool IsAssignableMember(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
     TSNode objNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldObject);
@@ -276,7 +274,8 @@ static bool IsTernaryAssignable(TSNode node, const Scope* scope, const Diagnosti
             alternative = ts_node_named_child(node, 2);
         }
     }
-    if (!IsAssignableLValueNode(consequence, scope, ctx) || !IsAssignableLValueNode(alternative, scope, ctx))
+    if (!LValueNodeValidator::IsAssignableLValueNode(consequence, scope, ctx) ||
+        !LValueNodeValidator::IsAssignableLValueNode(alternative, scope, ctx))
     {
         return false;
     }
@@ -296,12 +295,12 @@ static bool IsUnaryAssignable(TSNode node, const Scope* scope, const DiagnosticC
     if (!ts_node_is_null(opNode) && ts_node_symbol(opNode) == gs.tokAt)
     {
         TSNode operand = parser::GetChildByField(node, gs.fieldOperand);
-        return IsAssignableLValueNode(operand, scope, ctx);
+        return LValueNodeValidator::IsAssignableLValueNode(operand, scope, ctx);
     }
     return false;
 }
 
-static bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const DiagnosticContext& ctx)
+bool LValueNodeValidator::IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const DiagnosticContext& ctx)
 {
     if (ts_node_is_null(rawNode))
     {
@@ -370,7 +369,7 @@ static void CheckAssignmentTarget(TSNode node, const LValueCheckRequest& request
         return;
     }
 
-    if (!IsAssignableLValueNode(target, scope, ctx))
+    if (!LValueNodeValidator::IsAssignableLValueNode(target, scope, ctx))
     {
         if (const auto dt = IsBareDataType(target, scope, ctx.request.symbolTable, request.sourceCode))
         {

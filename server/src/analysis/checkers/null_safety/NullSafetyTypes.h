@@ -34,6 +34,16 @@ struct NullSafetyCheckRequest
 };
 
 /**
+ * @brief Evaluation context passed during null-safety traversal.
+ */
+struct NullCheckContext
+{
+    std::string_view sourceCode;
+    DiagnosticContext& diagCtx;
+    const Scope* scopeRoot = nullptr;
+};
+
+/**
  * @brief Dataflow state at a specific control flow point.
  */
 struct FlowState

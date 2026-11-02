@@ -11,10 +11,7 @@
 #include <tree_sitter/api.h>
 #include <vector>
 
-namespace angel_lsp::analysis
-{
-struct TemplateBinding;
-}
+#include "analysis/resolution/SemanticHelpers.h"
 
 namespace angel_lsp::features
 {

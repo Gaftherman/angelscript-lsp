@@ -252,4 +252,30 @@ struct AssignmentOperands
     TSNode left;
     TSNode right;
 };
+
+/**
+ * @brief Analysis engine for recursive expression value evaluation and type convertibility queries.
+ */
+struct TypeConversionEvaluator
+{
+    /**
+     * @brief Determines whether a value of source type is convertible to target type.
+     * @param[in] from Source type name string.
+     * @param[in] to Target destination type name string.
+     * @param[in] ctx Diagnostic context containing symbol table and active type configuration.
+     * @param[in,out] state Active conversion exploration state and edge guards.
+     * @return True if convertible; false otherwise.
+     */
+    static bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx,
+                              ConversionState& state);
+
+    /**
+     * @brief Resolves the expression type and constness denotation for an AST value node.
+     * @param[in] node AST expression node to resolve.
+     * @param[in] scope Lexical scope.
+     * @param[in] ctx Diagnostic sink and evaluation context.
+     * @return Resolved ExpressionType.
+     */
+    static ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx);
+};
 } // namespace angel_lsp::analysis

@@ -1247,7 +1247,78 @@ static bool ValidateArgumentOrdering(TSNode arguments, bool& sawNamedArg, Diagno
     return true;
 }
 
-static bool CheckArgIsLValue(TSNode argNode, std::string_view sourceCode, const Scope* scope, const SymbolTable& table);
+/**
+ * @brief Checks if a symbol represents an assignable L-value variable or parameter.
+ * @param[in] name Symbol identifier name.
+ * @param[in] scope Lexical scope.
+ * @param[in] table Symbol table.
+ * @param[in] refByte Optional byte offset of reference in document.
+ * @return True if assignable variable.
+ */
+static bool IsAssignableLValueSymbol(std::string_view name, const Scope* scope, const SymbolTable& table,
+                                     uint32_t refByte = UINT32_MAX)
+{
+    if (scope)
+    {
+        const auto* def = ResolveInScopeAt(scope, name, refByte);
+        if (def && (def->kind == LocalDefinitionKind::Variable || def->kind == LocalDefinitionKind::Parameter ||
+                    def->kind == LocalDefinitionKind::Field))
+        {
+            return !HasConstModifier(def->typeName);
+        }
+    }
+    auto syms = table.FindSymbolsPtr(name);
+    if (syms)
+    {
+        for (const auto& s : *syms)
+        {
+            if (s.type == SymbolType::Variable && !s.GetVariable().modifiers.isConst)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Validates if an AST node is a valid L-value for an out parameter.
+ * @param[in] argNode Argument AST node.
+ * @param[in] sourceCode Document source text.
+ * @param[in] scope Lexical scope.
+ * @param[in] table Symbol table.
+ * @return True if node is an assignable L-value.
+ */
+static bool CheckArgIsLValue(TSNode argNode, std::string_view sourceCode, const Scope* scope, const SymbolTable& table)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    TSSymbol aSym = ts_node_symbol(argNode);
+    std::string aText = parser::NodeText(argNode, sourceCode);
+    TrimString(aText);
+
+    if (aSym == gs.symUnaryExpression && aText.starts_with("@"))
+    {
+        TSNode operand = parser::GetChildByField(argNode, gs.fieldOperand);
+        if (!ts_node_is_null(operand))
+        {
+            argNode = operand;
+            aSym = ts_node_symbol(argNode);
+            aText = parser::NodeText(argNode, sourceCode);
+            TrimString(aText);
+        }
+    }
+
+    if (aSym == gs.symThisExpression || aText == parser::keywords::This)
+    {
+        return true;
+    }
+
+    if (aSym == gs.symIdentifier || aSym == gs.symScopedIdentifier)
+    {
+        return IsAssignableLValueSymbol(aText, scope, table, ts_node_start_byte(argNode));
+    }
+    return (aSym == gs.symMemberExpression || aSym == gs.symIndexExpression);
+}
 
 using CallArgTypes = CallResolutionContext;
 
@@ -1611,80 +1682,6 @@ static void ReportOverloadResolutionFailure(std::span<const Symbol* const> candi
         valCtx.ctx.EmitAtRange(GetCalleeDiagnosticRange(valCtx.callee), "as-err-call-no-matching-signature",
                                hasNull ? FormatCallDescriptionWithNull(reportedName, args.argTypes) : reportedName);
     }
-}
-
-/**
- * @brief Checks whether a named symbol resolves to an assignable non-const variable.
- *
- * @param[in] name Symbol name.
- * @param[in] scope Lexical scope.
- * @param[in] table Symbol table.
- * @return True if assignable variable.
- */
-static bool IsAssignableLValueSymbol(std::string_view name, const Scope* scope, const SymbolTable& table,
-                                     uint32_t refByte = UINT32_MAX)
-{
-    if (scope)
-    {
-        const auto* def = ResolveInScopeAt(scope, name, refByte);
-        if (def && (def->kind == LocalDefinitionKind::Variable || def->kind == LocalDefinitionKind::Parameter ||
-                    def->kind == LocalDefinitionKind::Field))
-        {
-            return !HasConstModifier(def->typeName);
-        }
-    }
-    auto syms = table.FindSymbolsPtr(name);
-    if (syms)
-    {
-        for (const auto& s : *syms)
-        {
-            if (s.type == SymbolType::Variable && !s.GetVariable().modifiers.isConst)
-            {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Validates if an AST node is a valid L-value for an out parameter.
- *
- * @param[in] argNode Argument AST node.
- * @param[in] sourceCode Document source text.
- * @param[in] scope Lexical scope.
- * @param[in] table Symbol table.
- * @return True if node is an assignable L-value.
- */
-static bool CheckArgIsLValue(TSNode argNode, std::string_view sourceCode, const Scope* scope, const SymbolTable& table)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    TSSymbol aSym = ts_node_symbol(argNode);
-    std::string aText = parser::NodeText(argNode, sourceCode);
-    TrimString(aText);
-
-    if (aSym == gs.symUnaryExpression && aText.starts_with("@"))
-    {
-        TSNode operand = parser::GetChildByField(argNode, gs.fieldOperand);
-        if (!ts_node_is_null(operand))
-        {
-            argNode = operand;
-            aSym = ts_node_symbol(argNode);
-            aText = parser::NodeText(argNode, sourceCode);
-            TrimString(aText);
-        }
-    }
-
-    if (aSym == gs.symThisExpression || aText == parser::keywords::This)
-    {
-        return true;
-    }
-
-    if (aSym == gs.symIdentifier || aSym == gs.symScopedIdentifier)
-    {
-        return IsAssignableLValueSymbol(aText, scope, table, ts_node_start_byte(argNode));
-    }
-    return (aSym == gs.symMemberExpression || aSym == gs.symIndexExpression);
 }
 
 /**

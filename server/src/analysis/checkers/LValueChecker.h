@@ -42,4 +42,19 @@ struct CallCandidateContext
     const Scope* scope = nullptr;
     DiagnosticContext& ctx;
 };
+
+/**
+ * @brief Evaluation engine for validating assignable L-value expression nodes.
+ */
+struct LValueNodeValidator
+{
+    /**
+     * @brief Determines whether an expression AST node denotes an assignable modifiable L-value.
+     * @param[in] rawNode AST expression node to validate.
+     * @param[in] scope Lexical scope.
+     * @param[in] ctx Diagnostic context.
+     * @return True if node is an assignable L-value; false otherwise.
+     */
+    static bool IsAssignableLValueNode(TSNode rawNode, const Scope* scope, const DiagnosticContext& ctx);
+};
 } // namespace angel_lsp::analysis

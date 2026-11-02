@@ -657,14 +657,6 @@ static CalleeResolutionResult ResolveConstructorParameters(const std::string& de
 }
 
 /**
- * @brief Forward declaration for expression type deduction.
- * @param[in] exprNode Target expression node.
- * @param[in] request Inlay hint request context.
- * @return Deduced type string or empty string.
- */
-static std::string DeduceExpressionType(TSNode exprNode, const InlayHintRequest& request);
-
-/**
  * @brief Deduces AngelScript type string from a numeric literal text.
  * @param[in] nodeTxt Trimmed literal string.
  * @return Deduced type ("float", "double", or "int").
@@ -1047,8 +1039,8 @@ static std::string DeduceBinaryExpressionType(TSNode exprNode, const InlayHintRe
 
     TSNode left = parser::GetChildByField(exprNode, gs.fieldLeft);
     TSNode right = parser::GetChildByField(exprNode, gs.fieldRight);
-    std::string leftT = DeduceExpressionType(left, request);
-    std::string rightT = DeduceExpressionType(right, request);
+    std::string leftT = InlayHintExpressionDeducer::DeduceExpressionType(left, request);
+    std::string rightT = InlayHintExpressionDeducer::DeduceExpressionType(right, request);
 
     const std::string_view strType = request.symbolTable.GetStringType();
     return SelectWiderType(leftT, rightT, strType);
@@ -1073,14 +1065,14 @@ static std::string DeduceUnaryExpressionType(TSNode exprNode, const InlayHintReq
     }
     if (opSym == gs.tokAt)
     {
-        std::string opT = DeduceExpressionType(operand, request);
+        std::string opT = InlayHintExpressionDeducer::DeduceExpressionType(operand, request);
         if (!opT.empty() && !analysis::IsHandleTypeView(opT))
         {
             return opT + "@";
         }
         return opT;
     }
-    return DeduceExpressionType(operand, request);
+    return InlayHintExpressionDeducer::DeduceExpressionType(operand, request);
 }
 
 /**
@@ -1099,7 +1091,7 @@ static std::string DeduceParenthesizedType(TSNode exprNode, const InlayHintReque
                                       const TSSymbol cType = ts_node_symbol(child);
                                       if (cType != gs.tokOpenParen && cType != gs.tokCloseParen)
                                       {
-                                          result = DeduceExpressionType(child, request);
+                                          result = InlayHintExpressionDeducer::DeduceExpressionType(child, request);
                                           return false;
                                       }
                                       return true;
@@ -1107,12 +1099,6 @@ static std::string DeduceParenthesizedType(TSNode exprNode, const InlayHintReque
     return result;
 }
 
-/**
- * @brief Deduces the type string for an expression AST node.
- * @param[in] exprNode AST expression node.
- * @param[in] request Inlay hint request context.
- * @return Deduced type string or empty string.
- */
 /**
  * @brief Deduces compound expression type (call, member, unary, binary, postfix).
  * @param[in] type AST node type name.
@@ -1144,12 +1130,12 @@ static std::string DeduceCompoundExpressionType(TSSymbol type, TSNode exprNode, 
     if (type == gs.symPostfixExpression)
     {
         TSNode operand = parser::GetChildByField(exprNode, gs.fieldOperand);
-        return DeduceExpressionType(operand, request);
+        return InlayHintExpressionDeducer::DeduceExpressionType(operand, request);
     }
     return "";
 }
 
-static std::string DeduceExpressionType(TSNode exprNode, const InlayHintRequest& request)
+std::string InlayHintExpressionDeducer::DeduceExpressionType(TSNode exprNode, const InlayHintRequest& request)
 {
     if (ts_node_is_null(exprNode))
     {
@@ -1728,7 +1714,7 @@ static void ProcessAutoVariableDeclarator(TSNode declarator, const InlayHintRequ
         return;
     }
 
-    std::string deduced = DeduceExpressionType(initExpr, request);
+    std::string deduced = InlayHintExpressionDeducer::DeduceExpressionType(initExpr, request);
     if (deduced.empty() || deduced == "auto" || deduced == "null" || deduced == "void")
     {
         return;

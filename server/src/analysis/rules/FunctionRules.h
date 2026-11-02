@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/NodeIndex.h"
 
 #include <tree_sitter/api.h>
 
@@ -31,15 +32,6 @@ void ValidateFunction(const Symbol& sym, const DiagnosticContext& ctx);
 void ValidateParameters(const Symbol& sym, const std::vector<ParameterInformation>& parameters, bool isFuncdef,
                         const DiagnosticContext& ctx);
 
-} // namespace angel_lsp::analysis::rules
-
-namespace angel_lsp::analysis
-{
-class NodeIndex;
-}
-
-namespace angel_lsp::analysis::rules
-{
 /**
  * @brief Reports an anonymous function (lambda expression) using pre-indexed AST nodes.
  * @param nodeIndex Pre-indexed syntax tree nodes.

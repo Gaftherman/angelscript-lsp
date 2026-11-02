@@ -644,8 +644,6 @@ static AggregateStructInfo InspectAggregateStruct(const TemplateSpelling& spelli
     return info;
 }
 
-static void ValidateList(TSNode listNode, const std::string& targetType, const ListValidationContext& valCtx);
-
 /**
  * @brief Validates elements of a sequence or multi-dimensional container recursively.
  *
@@ -688,7 +686,7 @@ static void ValidateMultiDimensionalContainer(TSNode node, uint32_t dimension, c
                                  {
                                      if (sym == gs.symInitializerList)
                                      {
-                                         ValidateList(child, elemType, nextCtx);
+                                         InitializerListValidator::ValidateList(child, elemType, nextCtx);
                                      }
                                      else
                                      {
@@ -825,29 +823,29 @@ static void ValidateStructAggregateList(TSNode listNode, const std::string& type
     const ListValidationContext nextCtx{valCtx.ctx, valCtx.elements, valCtx.arrayLikeTemplates, valCtx.cache,
                                         valCtx.depth + 1};
     size_t fieldIdx = 0;
-    parser::ForEachChildNode(listNode,
-                             [&](TSNode elem)
-                             {
-                                 if (!ts_node_is_named(elem) || ts_node_symbol(elem) == gs.symComment)
-                                 {
-                                     return;
-                                 }
-                                 if (fieldIdx >= structInfo.fields.size())
-                                 {
-                                     return;
-                                 }
-                                 const TSSymbol sym = ts_node_symbol(elem);
-                                 if (sym == gs.symInitializerList)
-                                 {
-                                     ValidateList(elem, structInfo.fields[fieldIdx].type, nextCtx);
-                                 }
-                                 else
-                                 {
-                                     CheckElementValue(elem, structInfo.fields[fieldIdx].type, valCtx.ctx,
-                                                       valCtx.elements);
-                                 }
-                                 ++fieldIdx;
-                             });
+    parser::ForEachChildNode(
+        listNode,
+        [&](TSNode elem)
+        {
+            if (!ts_node_is_named(elem) || ts_node_symbol(elem) == gs.symComment)
+            {
+                return;
+            }
+            if (fieldIdx >= structInfo.fields.size())
+            {
+                return;
+            }
+            const TSSymbol sym = ts_node_symbol(elem);
+            if (sym == gs.symInitializerList)
+            {
+                InitializerListValidator::ValidateList(elem, structInfo.fields[fieldIdx].type, nextCtx);
+            }
+            else
+            {
+                CheckElementValue(elem, structInfo.fields[fieldIdx].type, valCtx.ctx, valCtx.elements);
+            }
+            ++fieldIdx;
+        });
 }
 
 /**
@@ -981,7 +979,8 @@ static void CheckUnknownListPattern(TSNode listNode, const std::string& type, co
     }
 }
 
-static void ValidateList(TSNode listNode, const std::string& targetType, const ListValidationContext& valCtx)
+void InitializerListValidator::ValidateList(TSNode listNode, const std::string& targetType,
+                                            const ListValidationContext& valCtx)
 {
     if (ts_node_is_null(listNode))
     {
@@ -1057,7 +1056,8 @@ static void ProcessTypedInitializerList(TSNode node, const InitializerListContex
     {
         const ElementContext elements = ElementsAt(valueNode, initCtx.request);
         const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.arrayLikeTemplates, initCtx.structCache, 0};
-        ValidateList(valueNode, parser::GetNodeText(typeNode, initCtx.request.sourceCode), valCtx);
+        InitializerListValidator::ValidateList(valueNode, parser::GetNodeText(typeNode, initCtx.request.sourceCode),
+                                               valCtx);
     }
 }
 
@@ -1087,7 +1087,7 @@ static void ProcessAssignmentExpression(TSNode node, const InitializerListContex
         {
             const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.arrayLikeTemplates, initCtx.structCache,
                                                0};
-            ValidateList(value, targetType, valCtx);
+            InitializerListValidator::ValidateList(value, targetType, valCtx);
         }
     }
 }
@@ -1121,7 +1121,7 @@ static void ProcessReturnStatement(TSNode node, const InitializerListContext& in
     {
         const ElementContext elements = ElementsAt(value, initCtx.request);
         const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.arrayLikeTemplates, initCtx.structCache, 0};
-        ValidateList(value, returnType, valCtx);
+        InitializerListValidator::ValidateList(value, returnType, valCtx);
     }
 }
 
@@ -1160,7 +1160,7 @@ static void ProcessVariableDeclaration(TSNode node, const InitializerListContext
                 const ElementContext elements = ElementsAt(valueNode, initCtx.request);
                 const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.arrayLikeTemplates,
                                                    initCtx.structCache, 0};
-                ValidateList(valueNode, declaredType, valCtx);
+                InitializerListValidator::ValidateList(valueNode, declaredType, valCtx);
             }
         });
 }
@@ -1251,7 +1251,7 @@ void CheckInitializerListAgainstType(TSNode listNode, const std::string& targetT
     StructLayoutCache cache;
     const std::unordered_set<std::string> arrayTemplates = ctx.request.GetArrayLikeTemplateNames();
     const ListValidationContext valCtx{ctx, elements, arrayTemplates, cache, 0};
-    ValidateList(listNode, targetType, valCtx);
+    InitializerListValidator::ValidateList(listNode, targetType, valCtx);
 }
 
 void ValidateInitializerList(TSNode listNode, const std::string& expectedType, DiagnosticContext& ctx)
@@ -1260,7 +1260,7 @@ void ValidateInitializerList(TSNode listNode, const std::string& expectedType, D
     StructLayoutCache cache;
     const std::unordered_set<std::string> arrayTemplates = ctx.request.GetArrayLikeTemplateNames();
     const ListValidationContext valCtx{ctx, elements, arrayTemplates, cache, 0};
-    ValidateList(listNode, expectedType, valCtx);
+    InitializerListValidator::ValidateList(listNode, expectedType, valCtx);
 }
 
 void CheckInitializerLists(const InitializerListCheckRequest& request, DiagnosticContext& ctx)

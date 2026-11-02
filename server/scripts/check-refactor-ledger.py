@@ -252,6 +252,10 @@ def check_git_diff(base_commit: str):
             continue
 
         # 1. Struct and class deletions: never skipped by indentation!
+        # Forward declarations (e.g. `class LspLogger;` or `struct DiagnosticContext;`) are not struct definitions
+        if re.match(r"^-\s*(?:struct|class)\s+[A-Za-z0-9_]+\s*;\s*$", line):
+            continue
+
         m_struct = struct_del_re.match(line)
         if m_struct:
             sym = m_struct.group(1)

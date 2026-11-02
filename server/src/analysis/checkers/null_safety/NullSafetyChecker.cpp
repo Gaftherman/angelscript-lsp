@@ -36,8 +36,6 @@ static FlowState MergeFlowStates(const FlowState& s1, const FlowState& s2)
     return result;
 }
 
-static void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx);
-
 static void CheckIfStmt(TSNode stmt, FlowState& state, NullCheckContext& ctx)
 {
     const ast::IfStatementView ifView(stmt, ctx.sourceCode);
@@ -52,14 +50,14 @@ static void CheckIfStmt(TSNode stmt, FlowState& state, NullCheckContext& ctx)
 
     FlowState thenState = state;
     ApplyAssertions(thenState, posAssertions);
-    CheckStatement(conseq, thenState, ctx);
+    NullSafetyEngine::CheckStatement(conseq, thenState, ctx);
 
     FlowState elseState = state;
     ApplyAssertions(elseState, negAssertions);
 
     if (ifView.HasAlternative())
     {
-        CheckStatement(alt, elseState, ctx);
+        NullSafetyEngine::CheckStatement(alt, elseState, ctx);
         if (thenState.isTerminated && elseState.isTerminated)
         {
             state.isTerminated = true;
@@ -83,7 +81,7 @@ static void CheckIfStmt(TSNode stmt, FlowState& state, NullCheckContext& ctx)
     }
 }
 
-static void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx)
+void NullSafetyEngine::CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx)
 {
     if (ts_node_is_null(stmt) || state.isTerminated)
     {
@@ -137,7 +135,7 @@ static void AnalyzeFunction(TSNode funcNode, const Scope* scopeRoot, NullCheckCo
 
     FlowState state;
     CollectParameters(funcNode, scopeRoot, ctx.sourceCode, state);
-    CheckStatement(body, state, ctx);
+    NullSafetyEngine::CheckStatement(body, state, ctx);
 }
 
 void CheckNullSafety(const NullSafetyCheckRequest& request, DiagnosticContext& ctx)

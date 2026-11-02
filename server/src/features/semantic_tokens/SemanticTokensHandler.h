@@ -16,10 +16,7 @@
 #include <tree_sitter/api.h>
 #include <vector>
 
-namespace angel_lsp::analysis::rules
-{
-struct RuleIndex;
-}
+#include "analysis/rules/RuleIndex.h"
 
 namespace angel_lsp::features
 {

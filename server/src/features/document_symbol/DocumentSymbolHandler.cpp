@@ -69,9 +69,6 @@ CreateDeclarationSymbol(TSNode node, lsp::SymbolKind kind, const TraversalContex
     return MakeDocumentSymbol(std::move(name), kind, node, nameNode);
 }
 
-static std::vector<lsp::DocumentSymbol> ProcessChildren(TSNode containerNode, const TraversalContext& ctx);
-static void ProcessNode(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols);
-
 /**
  * @brief Processes a namespace_declaration AST node.
  * @param[in] node AST node.
@@ -93,7 +90,7 @@ static void ProcessNamespace(TSNode node, const TraversalContext& ctx, std::vect
     if (!ts_node_is_null(bodyNode))
     {
         TraversalContext bodyCtx{ctx.sourceCode, false, ""};
-        auto children = ProcessChildren(bodyNode, bodyCtx);
+        auto children = DocumentSymbolProcessor::ProcessChildren(bodyNode, bodyCtx);
         if (!children.empty())
         {
             sym.children = std::move(children);
@@ -130,7 +127,7 @@ static void ProcessClassLike(TSNode node, TSSymbol sym, const TraversalContext& 
     if (!ts_node_is_null(bodyNode))
     {
         TraversalContext bodyCtx{ctx.sourceCode, true, name};
-        auto children = ProcessChildren(bodyNode, bodyCtx);
+        auto children = DocumentSymbolProcessor::ProcessChildren(bodyNode, bodyCtx);
         if (!children.empty())
         {
             docSym.children = std::move(children);
@@ -499,7 +496,8 @@ static bool ProcessCallableNode(TSNode node, const TraversalContext& ctx, std::v
     return false;
 }
 
-static void ProcessNode(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
+void DocumentSymbolProcessor::ProcessNode(TSNode node, const TraversalContext& ctx,
+                                          std::vector<lsp::DocumentSymbol>& outSymbols)
 {
     if (ts_node_is_null(node))
     {
@@ -537,7 +535,8 @@ static void ProcessNode(TSNode node, const TraversalContext& ctx, std::vector<ls
  * @param[in] ctx Traversal context.
  * @return Vector of extracted child DocumentSymbol instances.
  */
-static std::vector<lsp::DocumentSymbol> ProcessChildren(TSNode containerNode, const TraversalContext& ctx)
+std::vector<lsp::DocumentSymbol> DocumentSymbolProcessor::ProcessChildren(TSNode containerNode,
+                                                                          const TraversalContext& ctx)
 {
     std::vector<lsp::DocumentSymbol> symbols;
     uint32_t count = ts_node_named_child_count(containerNode);
@@ -565,7 +564,7 @@ std::optional<DocumentSymbolResult> GetDocumentSymbols(const DocumentSymbolReque
     if (request.tree != nullptr)
     {
         TSNode root = ts_tree_root_node(request.tree);
-        symbols = ProcessChildren(root, ctx);
+        symbols = DocumentSymbolProcessor::ProcessChildren(root, ctx);
     }
     else
     {
@@ -574,7 +573,7 @@ std::optional<DocumentSymbolResult> GetDocumentSymbols(const DocumentSymbolReque
         if (tempTree)
         {
             TSNode root = ts_tree_root_node(tempTree.get());
-            symbols = ProcessChildren(root, ctx);
+            symbols = DocumentSymbolProcessor::ProcessChildren(root, ctx);
         }
     }
 

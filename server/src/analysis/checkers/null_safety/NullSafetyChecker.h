@@ -12,4 +12,18 @@ namespace angel_lsp::analysis
  */
 void CheckNullSafety(const NullSafetyCheckRequest& request, DiagnosticContext& ctx);
 
+/**
+ * @brief Analysis engine for verifying null safety conditions across statement blocks.
+ */
+struct NullSafetyEngine
+{
+    /**
+     * @brief Recursively traverses and checks statements for null safety invariants.
+     * @param[in] stmt AST statement node to check.
+     * @param[in,out] state Active dataflow state tracking nullability and warnings.
+     * @param[in,out] ctx Diagnostic context and source code configuration.
+     */
+    static void CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx);
+};
+
 } // namespace angel_lsp::analysis

@@ -11,10 +11,7 @@
 #include <tree_sitter/api.h>
 #include <vector>
 
-namespace angel_lsp::config
-{
-struct EngineRuleConfig;
-}
+#include "config/ServerConfig.h"
 
 namespace angel_lsp::features
 {

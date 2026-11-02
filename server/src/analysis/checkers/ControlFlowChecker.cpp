@@ -125,22 +125,10 @@ static bool IsNonNullablePrimitiveName(std::string_view typeName)
     return parser::primitives::IsNonNullable(typeName);
 }
 
-static bool BlockOrClauseDefinitelyReturns(TSNode node, TSSymbol sym, std::string_view sourceCode);
-static bool IfDefinitelyReturns(TSNode node, std::string_view sourceCode);
-static bool SwitchDefinitelyReturns(TSNode node, std::string_view sourceCode);
-static bool TryDefinitelyReturns(TSNode node, std::string_view sourceCode);
-
 /**
  * @brief True when control cannot fall off the end of this statement.
- *
- * Deliberately one-sided. Answering "yes" wrongly hides a real missing return, which costs
- * nothing; answering "no" wrongly reports a function that is perfectly fine, which is the
- * failure that matters. So every construct whose exit conditions this pass cannot settle -
- * a try block, a loop with a computed condition - answers "no" only where "no" is also the
- * honest reading, and the loops whose condition is literally true answer "yes" because they
- * have no normal exit at all.
  */
-static bool DefinitelyReturns(TSNode node, std::string_view sourceCode)
+bool DefiniteReturnAnalyzer::DefinitelyReturns(TSNode node, std::string_view sourceCode)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol sym = ts_node_symbol(node);
@@ -165,17 +153,6 @@ static bool DefinitelyReturns(TSNode node, std::string_view sourceCode)
         return SwitchDefinitelyReturns(node, sourceCode);
     }
 
-    // No loop counts, whatever its condition says. This used to reason that `while (true)`
-    // has no normal exit and so ends the function - true of the program, and not the rule
-    // the compiler applies. Measured, all three:
-    //
-    //     int f() { while (true) { return 1; } }        Not all paths return a value
-    //     int f() { for (;;) { return 1; } }            Not all paths return a value
-    //     int f() { do { return 1; } while (true); }    Not all paths return a value
-    //
-    // Its analysis is structural: a loop body may run zero times as far as it is concerned,
-    // so a return inside one is not a return on every path. Believing otherwise cost three
-    // errors the compiler gives and this analyzer did not.
     if (sym == gs.symWhileStatement || sym == gs.symDoWhileStatement || sym == gs.symForStatement ||
         sym == gs.symForeachStatement)
     {
@@ -190,7 +167,7 @@ static bool DefinitelyReturns(TSNode node, std::string_view sourceCode)
     return false;
 }
 
-static bool BlockOrClauseDefinitelyReturns(TSNode node, TSSymbol sym, std::string_view sourceCode)
+bool DefiniteReturnAnalyzer::BlockOrClauseDefinitelyReturns(TSNode node, TSSymbol sym, std::string_view sourceCode)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const bool isCaseClause = (sym == gs.symCaseClause);
@@ -217,7 +194,7 @@ static bool BlockOrClauseDefinitelyReturns(TSNode node, TSSymbol sym, std::strin
     return returned;
 }
 
-static bool IfDefinitelyReturns(TSNode node, std::string_view sourceCode)
+bool DefiniteReturnAnalyzer::IfDefinitelyReturns(TSNode node, std::string_view sourceCode)
 {
     TSNode alternative = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldAlternative);
     if (ts_node_is_null(alternative))
@@ -282,7 +259,7 @@ done:
     return hasBreak;
 }
 
-static bool SwitchDefinitelyReturns(TSNode node, std::string_view sourceCode)
+bool DefiniteReturnAnalyzer::SwitchDefinitelyReturns(TSNode node, std::string_view sourceCode)
 {
     bool hasDefault = false;
     bool hasEscapingBreak = false;
@@ -327,7 +304,7 @@ static bool SwitchDefinitelyReturns(TSNode node, std::string_view sourceCode)
     return hasDefault && defaultReturns;
 }
 
-static bool TryDefinitelyReturns(TSNode node, std::string_view sourceCode)
+bool DefiniteReturnAnalyzer::TryDefinitelyReturns(TSNode node, std::string_view sourceCode)
 {
     // Every block has to return, because either one of them can be the path taken: the
     // try block runs to its end, or an exception hands control to the catch block. The
@@ -846,7 +823,7 @@ class ControlFlowVisitor
         {
             const bool hasSyntaxError = ts_node_has_error(body) ||
                                         (m_ctx.request.nodeIndex && m_ctx.request.nodeIndex->NodeHasSyntaxError(body));
-            if (!hasSyntaxError && !DefinitelyReturns(body, m_sourceCode))
+            if (!hasSyntaxError && !DefiniteReturnAnalyzer::DefinitelyReturns(body, m_sourceCode))
             {
                 m_ctx.EmitAtNode(ts_node_is_null(name) ? node : name, "as-err-not-all-paths-return", reportedName);
             }

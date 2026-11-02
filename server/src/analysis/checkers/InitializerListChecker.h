@@ -182,4 +182,18 @@ struct InitializerListContext
     const std::unordered_set<std::string>& arrayLikeTemplates;
     StructLayoutCache& structCache;
 };
+
+/**
+ * @brief Analysis engine for recursive validation of initializer list contents against expected types.
+ */
+struct InitializerListValidator
+{
+    /**
+     * @brief Validates an initializer list node against target composite, container, or struct type.
+     * @param[in] listNode Initializer list AST node.
+     * @param[in] targetType Target type name.
+     * @param[in] valCtx Active list validation context.
+     */
+    static void ValidateList(TSNode listNode, const std::string& targetType, const ListValidationContext& valCtx);
+};
 } // namespace angel_lsp::analysis

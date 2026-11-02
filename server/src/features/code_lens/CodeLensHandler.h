@@ -15,11 +15,7 @@
 #include <tuple>
 #include <vector>
 
-namespace angel_lsp::config
-{
-struct UnusedSymbolRules;
-struct ServerConfig;
-} // namespace angel_lsp::config
+#include "config/ServerConfig.h"
 
 #include "i18n/i18n.h"
 #include "utils/LspLogger.h"

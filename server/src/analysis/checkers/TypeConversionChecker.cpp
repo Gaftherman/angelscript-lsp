@@ -117,7 +117,40 @@ static std::vector<Symbol> CollectFunctionCandidates(const std::string& funcName
     return candidates;
 }
 
-static std::optional<Symbol> FindFuncdef(const std::string& name, const SymbolTable& table);
+/**
+ * @brief Finds a funcdef symbol matching the given name in the symbol table.
+ * @param[in] name Funcdef type name to search.
+ * @param[in] table Symbol table.
+ * @return Optional Symbol if found.
+ */
+static std::optional<Symbol> FindFuncdef(const std::string& name, const SymbolTable& table)
+{
+    std::optional<Symbol> result;
+    ForEachSymbolNamed(name, table,
+                       [&](const Symbol& sym)
+                       {
+                           if (sym.type == SymbolType::Funcdef)
+                           {
+                               result = sym;
+                               return true;
+                           }
+                           return false;
+                       });
+    if (result)
+    {
+        return result;
+    }
+    const std::string_view bare = LastScopeSegment(name);
+    const auto matches = table.FindTypeSymbolsByShortName(bare);
+    for (const auto& sym : matches)
+    {
+        if (sym.type == SymbolType::Funcdef)
+        {
+            return sym;
+        }
+    }
+    return result;
+}
 
 /** @brief Looks up what a type name denotes.
  *  @return found == false when the name resolves to nothing this analyzer can see - which
@@ -624,9 +657,6 @@ static bool CanConvertEnumTarget(const std::string& from, const std::string& to,
     return false;
 }
 
-static bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx,
-                          ConversionState& state);
-
 static bool CanConvertClasses(const std::string& from, const std::string& to, const DiagnosticContext& ctx,
                               ConversionState& state)
 {
@@ -664,7 +694,7 @@ static bool CanConvertClasses(const std::string& from, const std::string& to, co
             {
                 paramType = SubstituteTemplateParameters(paramType, binding);
             }
-            if (IsConvertible(from, paramType, ctx, nextState))
+            if (TypeConversionEvaluator::IsConvertible(from, paramType, ctx, nextState))
             {
                 convertible = true;
                 return true;
@@ -721,8 +751,8 @@ static bool CanConvertUserTypes(const ConversionTypes& types, const DiagnosticCo
     return CanConvertClasses(types.from, types.to, ctx, state);
 }
 
-static bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx,
-                          ConversionState& state)
+bool TypeConversionEvaluator::IsConvertible(const std::string& from, const std::string& to,
+                                            const DiagnosticContext& ctx, ConversionState& state)
 {
     if (IsPoisonOrEmptyType(from, to))
     {
@@ -795,7 +825,7 @@ static bool IsConvertible(const std::string& from, const std::string& to, const 
 {
     ConversionState state;
     state.depth = depth;
-    return IsConvertible(from, to, ctx, state);
+    return TypeConversionEvaluator::IsConvertible(from, to, ctx, state);
 }
 
 /** @brief Classifies a numeric literal as integral or floating point. */
@@ -827,8 +857,6 @@ static std::string EnclosingClassName(TSNode node, std::string_view sourceCode)
     }
     return "";
 }
-
-static ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx);
 
 /**
  * @brief Resolves the type a bare (possibly scope-qualified) name denotes as a value.
@@ -944,7 +972,8 @@ static ExpressionType ResolveUnaryValueType(TSNode node, const Scope* scope, con
     {
         return ExpressionType{"bool", true, false};
     }
-    auto val = ResolveValueType(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperand), scope, ctx);
+    auto val = TypeConversionEvaluator::ResolveValueType(
+        parser::GetChildByField(node, parser::GetGrammarSymbols().fieldOperand), scope, ctx);
     if (op == "-")
     {
         if (val.baseName == "uint" || val.baseName == "uint32")
@@ -1036,7 +1065,7 @@ static ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, 
     return ExpressionType{};
 }
 
-static ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
+ExpressionType TypeConversionEvaluator::ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     while (!ts_node_is_null(node) && ts_node_symbol(node) == gs.symParenthesizedExpression)
@@ -1069,6 +1098,11 @@ static ExpressionType ResolveValueType(TSNode node, const Scope* scope, const Di
     }
 
     return ResolveCompoundValueType(node, scope, ctx);
+}
+
+static ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
+{
+    return TypeConversionEvaluator::ResolveValueType(node, scope, ctx);
 }
 
 static bool CheckVirtualPropertySymbol(const std::string& typeName, const std::string& propName,
@@ -1950,35 +1984,6 @@ static void CheckDefaultConstructor(TSNode declaratorNode, const std::string& ty
     {
         ctx.EmitAtNode(targetNode, "as-err-no-default-constructor", {typeName});
     }
-}
-
-static std::optional<Symbol> FindFuncdef(const std::string& name, const SymbolTable& table)
-{
-    std::optional<Symbol> result;
-    ForEachSymbolNamed(name, table,
-                       [&](const Symbol& sym)
-                       {
-                           if (sym.type == SymbolType::Funcdef)
-                           {
-                               result = sym;
-                               return true;
-                           }
-                           return false;
-                       });
-    if (result)
-    {
-        return result;
-    }
-    const std::string_view bare = LastScopeSegment(name);
-    const auto matches = table.FindTypeSymbolsByShortName(bare);
-    for (const auto& sym : matches)
-    {
-        if (sym.type == SymbolType::Funcdef)
-        {
-            return sym;
-        }
-    }
-    return result;
 }
 
 static bool MatchesFuncdefSignature(const FunctionSignature& fn, const FuncdefSignature& fd)

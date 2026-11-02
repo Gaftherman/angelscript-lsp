@@ -1410,7 +1410,34 @@ static bool ShouldCompleteParens(const CompletionCollector& collector)
     return configEnabled && !HasTrailingOpenParen(collector.request.sourceCode, collector.request.position);
 }
 
-static std::string FindEnclosingClassName(const CompletionRequest& request);
+/**
+ * @brief Resolves name of the class enclosing cursor position.
+ * @param[in] request Completion request.
+ * @return Enclosing class name, or empty string.
+ */
+static std::string FindEnclosingClassName(const CompletionRequest& request)
+{
+    std::string fromTable = request.symbolTable.FindEnclosingClassName(request.uri, request.position.line);
+    if (!fromTable.empty())
+    {
+        return fromTable;
+    }
+    if (request.tree)
+    {
+        TSNode rootNode = ts_tree_root_node(request.tree);
+        TSPoint pt{request.position.line, request.position.character};
+        TSNode curNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
+        auto containers = analysis::GetEnclosingContainers(curNode, request.sourceCode);
+        for (const auto& c : containers)
+        {
+            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
+            {
+                return c.qualifiedName.empty() ? c.name : c.qualifiedName;
+            }
+        }
+    }
+    return "";
+}
 
 static bool IsMixinIncluded(std::string_view hostClass, std::string_view mixinName, const analysis::SymbolTable& table)
 {
@@ -1584,35 +1611,6 @@ static void PopulateMembersForType(const std::string& typeName, const MemberTemp
             }
         }
     }
-}
-
-/**
- * @brief Resolves name of the class enclosing cursor position.
- * @param[in] request Completion request.
- * @return Enclosing class name, or empty string.
- */
-static std::string FindEnclosingClassName(const CompletionRequest& request)
-{
-    std::string fromTable = request.symbolTable.FindEnclosingClassName(request.uri, request.position.line);
-    if (!fromTable.empty())
-    {
-        return fromTable;
-    }
-    if (request.tree)
-    {
-        TSNode rootNode = ts_tree_root_node(request.tree);
-        TSPoint pt{request.position.line, request.position.character};
-        TSNode curNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
-        auto containers = analysis::GetEnclosingContainers(curNode, request.sourceCode);
-        for (const auto& c : containers)
-        {
-            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
-            {
-                return c.qualifiedName.empty() ? c.name : c.qualifiedName;
-            }
-        }
-    }
-    return "";
 }
 
 /**

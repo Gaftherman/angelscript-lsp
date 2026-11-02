@@ -9,6 +9,7 @@
 #include "config/ServerConfig.h"
 #include "i18n/i18n.h"
 #include "utils/PreprocessorRegions.h"
+#include "utils/StopFlag.h"
 
 #include <ankerl/unordered_dense.h>
 #include <memory>
@@ -16,11 +17,6 @@
 #include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
-
-namespace angel_lsp::utils
-{
-class StopFlag;
-}
 
 namespace angel_lsp::analysis
 {
