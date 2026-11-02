@@ -853,6 +853,98 @@ def check_cpp_structs_odr_safety():
     }
 
 
+def check_no_stacked_doxygen_blocks():
+    r"""
+    Check 24: Enforces Prohibition of stacked or consecutive Doxygen comment blocks (*/\s*/**).
+    Each declaration must have at most one cohesive Doxygen block.
+    """
+    violations = []
+    stacked_re = re.compile(r"\*/\s*/\*\*")
+    for fpath in sorted(SERVER_SRC.rglob("*.[ch]*")):
+        if not fpath.is_file() or fpath.name == "DoxygenMarkdown.cpp":
+            continue
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for m in stacked_re.finditer(content):
+            line_num = content[:m.start()].count("\n") + 1
+            violations.append((fpath, line_num, "Stacked Doxygen comment blocks (*/ ... /**)"))
+    return violations
+
+
+def check_no_decorative_comment_banners():
+    """
+    Check 25: Enforces Prohibition of decorative comment dividers/banners (// ===..., // ---..., // ***...).
+    """
+    violations = []
+    banner_re = re.compile(r"^//\s*[=\-*]{4,}\s*$")
+    for fpath in sorted(SERVER_SRC.rglob("*.[ch]*")):
+        if not fpath.is_file():
+            continue
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for idx, line in enumerate(content.splitlines(), 1):
+            stripped = line.strip()
+            if banner_re.match(stripped):
+                violations.append((fpath, idx, stripped))
+    return violations
+
+
+def check_no_workflow_narration_comments():
+    """
+    Check 26: Enforces Prohibition of step-by-step workflow narration comments (// Step 1, // First,, // Finally,).
+    """
+    violations = []
+    narration_re = re.compile(r"^//\s*(?:Step\s+\d+|First,|Finally,)\b", re.IGNORECASE)
+    for fpath in sorted(SERVER_SRC.rglob("*.[ch]*")):
+        if not fpath.is_file():
+            continue
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for idx, line in enumerate(content.splitlines(), 1):
+            stripped = line.strip()
+            if narration_re.search(stripped):
+                violations.append((fpath, idx, stripped))
+    return violations
+
+
+def check_no_over_explained_doxygen_prose():
+    """
+    Check 27: Enforces concise technical documentation in Doxygen blocks (preventing AI essays).
+    No single uninterrupted free-prose paragraph may exceed 7 lines.
+    """
+    violations = []
+    doxygen_re = re.compile(r"/\*\*(.*?)\*/", re.DOTALL)
+    for fpath in sorted(SERVER_SRC.rglob("*.[ch]*")):
+        if not fpath.is_file() or fpath.name == "DoxygenMarkdown.cpp":
+            continue
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for m in doxygen_re.finditer(content):
+            block = m.group(1)
+            lines = [l.strip().lstrip("*").strip() for l in block.splitlines()]
+            cur_prose = 0
+            max_in_block = 0
+            for l in lines:
+                if not l or l.startswith("@"):
+                    cur_prose = 0
+                    continue
+                cur_prose += 1
+                if cur_prose > max_in_block:
+                    max_in_block = cur_prose
+            if max_in_block >= 8:
+                line_no = content[:m.start()].count("\n") + 1
+                violations.append((fpath, line_no, f"Over-explained Doxygen prose paragraph ({max_in_block} consecutive lines)"))
+    return violations
+
+
 def main():
     has_errors = False
     
@@ -1114,10 +1206,42 @@ def main():
                     rel = f.relative_to(REPO_ROOT)
                     print(f"    {rel}:{line_num}")
 
+    stacked_doxygen_violations = check_no_stacked_doxygen_blocks()
+    if stacked_doxygen_violations:
+        has_errors = True
+        print("[ERROR] Stacked Doxygen comment blocks (*/ ... /**) detected in server/src/:")
+        for f, line_num, desc in stacked_doxygen_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {desc}")
+
+    banner_violations = check_no_decorative_comment_banners()
+    if banner_violations:
+        has_errors = True
+        print("[ERROR] Decorative comment divider/banner detected in server/src/:")
+        for f, line_num, line in banner_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
+    narration_violations = check_no_workflow_narration_comments()
+    if narration_violations:
+        has_errors = True
+        print("[ERROR] Workflow narration comment (// Step 1, // First,, // Finally,) detected in server/src/:")
+        for f, line_num, line in narration_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
+    prose_violations = check_no_over_explained_doxygen_prose()
+    if prose_violations:
+        has_errors = True
+        print("[ERROR] Over-explained Doxygen prose paragraph detected in server/src/ (concise ceiling exceeded):")
+        for f, line_num, desc in prose_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {desc}")
+
     if has_errors:
         sys.exit(1)
 
-    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 ForEachDescendantNode, 0 engine hardcodings, 0 type hardcodings, 0 banned identifiers, 0 unrandomized test BaseClass, 0 manual qualifier reparsing, 0 anonymous namespaces, 0 using directives, 0 doxygen slop templates, 0 ODR struct violations).")
+    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 ForEachDescendantNode, 0 engine hardcodings, 0 type hardcodings, 0 banned identifiers, 0 unrandomized test BaseClass, 0 manual qualifier reparsing, 0 anonymous namespaces, 0 using directives, 0 doxygen slop templates, 0 ODR struct violations, 0 stacked doxygen blocks, 0 decorative banners, 0 workflow narration comments, 0 over-explained doxygen essays).")
 
 if __name__ == "__main__":
     main()

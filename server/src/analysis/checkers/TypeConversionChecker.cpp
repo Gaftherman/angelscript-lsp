@@ -933,8 +933,7 @@ static ExpressionType ResolveCallValueType(TSNode node, const DiagnosticContext&
                            if (sym.type == SymbolType::Function && !sym.GetFunction().returnType.empty())
                            {
                                const auto& fn = sym.GetFunction();
-                               const bool isConst = IsConstTypeView(fn.returnType);
-                               result = ExpressionType{CleanBaseType(fn.returnType), true, false, isConst};
+                               result = ExpressionType{CleanBaseType(fn.returnType), true, false, fn.returnIsConst};
                                return true;
                            }
                            return false;
@@ -1003,9 +1002,9 @@ static ExpressionType ResolveCastValueType(TSNode node, const DiagnosticContext&
 {
     const std::string rawText =
         parser::NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldType), ctx.request.sourceCode);
-    const bool isConst = IsConstTypeView(rawText);
+    const auto qualifiers = ExtractTypeQualifiersView(rawText);
     const std::string typeText = CleanBaseType(rawText);
-    return typeText.empty() ? ExpressionType{} : ExpressionType{typeText, true, false, isConst};
+    return typeText.empty() ? ExpressionType{} : ExpressionType{typeText, true, false, qualifiers.isConst};
 }
 
 /**
@@ -1055,8 +1054,9 @@ static ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, 
     if (sym == gs.symMemberExpression)
     {
         const std::string resolved = ResolveExpressionType(node, ExpressionTypeContext(scope, ctx));
-        const bool isConst = IsConstTypeView(resolved);
-        return resolved.empty() ? ExpressionType{} : ExpressionType{CleanBaseType(resolved), true, false, isConst};
+        const auto qualifiers = ExtractTypeQualifiersView(resolved);
+        return resolved.empty() ? ExpressionType{}
+                                : ExpressionType{CleanBaseType(resolved), true, false, qualifiers.isConst};
     }
 
     return ExpressionType{};

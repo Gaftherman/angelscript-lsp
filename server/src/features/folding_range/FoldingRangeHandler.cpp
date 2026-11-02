@@ -211,6 +211,57 @@ static void CollectAstFoldingRanges(TSNode rootNode, std::string_view sourceCode
 }
 
 /**
+ * @brief Collects folding ranges for contiguous lines matching a predicate.
+ * @tparam Predicate Callable matching a line string view.
+ * @param[in] lines Splitted document lines.
+ * @param[in] matches Predicate returning true when a line belongs to the contiguous span.
+ * @param[in] kind Optional LSP folding range kind.
+ * @param[in,out] outRanges Output accumulator for folding ranges.
+ */
+template <typename Predicate>
+static void CollectContiguousLineRanges(const std::vector<std::string_view>& lines, Predicate&& matches,
+                                        std::optional<lsp::FoldingRangeKind> kind,
+                                        std::vector<lsp::FoldingRange>& outRanges)
+{
+    int spanStart = -1;
+    int spanEnd = -1;
+
+    for (int i = 0; i < static_cast<int>(lines.size()); ++i)
+    {
+        const std::string_view trimmed = TrimLeading(lines[i]);
+        if (matches(trimmed))
+        {
+            if (spanStart == -1)
+            {
+                spanStart = i;
+            }
+            spanEnd = i;
+        }
+        else
+        {
+            if (spanStart != -1 && spanEnd > spanStart)
+            {
+                lsp::FoldingRange fr;
+                fr.startLine = static_cast<uint32_t>(spanStart);
+                fr.endLine = static_cast<uint32_t>(spanEnd);
+                fr.kind = kind;
+                outRanges.push_back(fr);
+            }
+            spanStart = -1;
+            spanEnd = -1;
+        }
+    }
+    if (spanStart != -1 && spanEnd > spanStart)
+    {
+        lsp::FoldingRange fr;
+        fr.startLine = static_cast<uint32_t>(spanStart);
+        fr.endLine = static_cast<uint32_t>(spanEnd);
+        fr.kind = kind;
+        outRanges.push_back(fr);
+    }
+}
+
+/**
  * @brief Collects folding ranges for contiguous single-line comments (// ...).
  * @param[in] lines Splitted document lines.
  * @param[in,out] outRanges Output accumulator for folding ranges.
@@ -218,42 +269,9 @@ static void CollectAstFoldingRanges(TSNode rootNode, std::string_view sourceCode
 static void CollectSingleLineCommentRanges(const std::vector<std::string_view>& lines,
                                            std::vector<lsp::FoldingRange>& outRanges)
 {
-    int commentStart = -1;
-    int commentEnd = -1;
-
-    for (int i = 0; i < static_cast<int>(lines.size()); ++i)
-    {
-        const std::string_view trimmed = TrimLeading(lines[i]);
-        if (trimmed.starts_with("//"))
-        {
-            if (commentStart == -1)
-            {
-                commentStart = i;
-            }
-            commentEnd = i;
-        }
-        else
-        {
-            if (commentStart != -1 && commentEnd > commentStart)
-            {
-                lsp::FoldingRange fr;
-                fr.startLine = static_cast<uint32_t>(commentStart);
-                fr.endLine = static_cast<uint32_t>(commentEnd);
-                fr.kind = lsp::FoldingRangeKind::Comment;
-                outRanges.push_back(fr);
-            }
-            commentStart = -1;
-            commentEnd = -1;
-        }
-    }
-    if (commentStart != -1 && commentEnd > commentStart)
-    {
-        lsp::FoldingRange fr;
-        fr.startLine = static_cast<uint32_t>(commentStart);
-        fr.endLine = static_cast<uint32_t>(commentEnd);
-        fr.kind = lsp::FoldingRangeKind::Comment;
-        outRanges.push_back(fr);
-    }
+    CollectContiguousLineRanges(
+        lines, [](std::string_view line) noexcept { return line.starts_with("//"); }, lsp::FoldingRangeKind::Comment,
+        outRanges);
 }
 
 /**
@@ -264,42 +282,10 @@ static void CollectSingleLineCommentRanges(const std::vector<std::string_view>& 
 static void CollectImportAndIncludeRanges(const std::vector<std::string_view>& lines,
                                           std::vector<lsp::FoldingRange>& outRanges)
 {
-    int importStart = -1;
-    int importEnd = -1;
-
-    for (int i = 0; i < static_cast<int>(lines.size()); ++i)
-    {
-        const std::string_view trimmed = TrimLeading(lines[i]);
-        if (trimmed.starts_with("import ") || trimmed.starts_with("#include"))
-        {
-            if (importStart == -1)
-            {
-                importStart = i;
-            }
-            importEnd = i;
-        }
-        else
-        {
-            if (importStart != -1 && importEnd > importStart)
-            {
-                lsp::FoldingRange fr;
-                fr.startLine = static_cast<uint32_t>(importStart);
-                fr.endLine = static_cast<uint32_t>(importEnd);
-                fr.kind = lsp::FoldingRangeKind::Imports;
-                outRanges.push_back(fr);
-            }
-            importStart = -1;
-            importEnd = -1;
-        }
-    }
-    if (importStart != -1 && importEnd > importStart)
-    {
-        lsp::FoldingRange fr;
-        fr.startLine = static_cast<uint32_t>(importStart);
-        fr.endLine = static_cast<uint32_t>(importEnd);
-        fr.kind = lsp::FoldingRangeKind::Imports;
-        outRanges.push_back(fr);
-    }
+    CollectContiguousLineRanges(
+        lines,
+        [](std::string_view line) noexcept { return line.starts_with("import ") || line.starts_with("#include"); },
+        lsp::FoldingRangeKind::Imports, outRanges);
 }
 
 /**

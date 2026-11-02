@@ -219,6 +219,18 @@ constexpr void TrimTypeWhitespace(std::string_view& typeName) noexcept
 }
 
 /**
+ * @brief Checks if a call argument string view is prefixed with an out or inout reference qualifier.
+ * @param[in] arg Call argument expression string view.
+ * @return True if prefixed with an out or inout reference modifier.
+ */
+[[nodiscard]] constexpr bool IsOutOrInOutArgumentView(std::string_view arg) noexcept
+{
+    TrimTypeWhitespace(arg);
+    return arg.starts_with("&out ") || arg.starts_with("&inout ") || arg.starts_with("& out ") ||
+           arg.starts_with("& inout ") || arg.starts_with("out ") || arg.starts_with("inout ");
+}
+
+/**
  * @brief Extracts all type qualifiers (const, handle, reference, etc.) from a type string without heap allocation.
  * @param[in] type Type string view.
  * @return TypeQualifiers bitfield struct.

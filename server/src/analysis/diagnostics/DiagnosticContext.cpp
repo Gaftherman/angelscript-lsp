@@ -266,10 +266,7 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, Diagnosti
 void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::string_view arg1,
                              DiagnosticSeverity severity) const
 {
-    const SourceRange range = ResolveSymbolDiagnosticRange(sym);
-    Diagnostic diag = CreateDiagnostic(range, sym.fileUri, code, severity);
-    ApplyMessageFormatting(diag, request.i18n, code, {arg1});
-    Append(std::move(diag));
+    Emit(sym, code, {arg1}, severity);
 }
 
 /**
@@ -282,10 +279,7 @@ void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri
 void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::string_view arg1,
                              std::string_view arg2) const
 {
-    const SourceRange range = ResolveSymbolDiagnosticRange(sym);
-    Diagnostic diag = CreateDiagnostic(range, sym.fileUri, code, DiagnosticSeverity::Error);
-    ApplyMessageFormatting(diag, request.i18n, code, {arg1, arg2});
-    Append(std::move(diag));
+    Emit(sym, code, {arg1, arg2}, DiagnosticSeverity::Error);
 }
 
 /**
@@ -330,10 +324,7 @@ void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& pa
 void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& parentSym, std::string_view code,
                              std::string_view arg1) const
 {
-    SourceRange range{param.startLine, param.startCharacter, param.endLine, param.endCharacter};
-    Diagnostic diag = CreateDiagnostic(range, parentSym.fileUri, code, DiagnosticSeverity::Error);
-    ApplyMessageFormatting(diag, request.i18n, code, {arg1});
-    Append(std::move(diag));
+    Emit(param, parentSym, code, {arg1});
 }
 
 /**
@@ -375,9 +366,7 @@ void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, Di
 void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, std::string_view arg1,
                                     DiagnosticSeverity severity) const
 {
-    Diagnostic diag = CreateDiagnostic(range, request.fileUri, code, severity);
-    ApplyMessageFormatting(diag, request.i18n, code, {arg1});
-    Append(std::move(diag));
+    EmitAtRange(range, code, {arg1}, severity);
 }
 
 /**
@@ -390,9 +379,7 @@ void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, st
 void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, std::string_view arg1,
                                     std::string_view arg2) const
 {
-    Diagnostic diag = CreateDiagnostic(range, request.fileUri, code, DiagnosticSeverity::Error);
-    ApplyMessageFormatting(diag, request.i18n, code, {arg1, arg2});
-    Append(std::move(diag));
+    EmitAtRange(range, code, {arg1, arg2}, DiagnosticSeverity::Error);
 }
 
 /**

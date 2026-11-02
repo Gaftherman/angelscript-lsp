@@ -1769,14 +1769,13 @@ static ParamItem ProcessParamTag(TSNode tagNode, const std::string& sourceCode)
 }
 
 /**
- * @brief Splits the template parameter name from the description for a @tparam tag.
- * @param[in] tagNode AST node representing the tparam tag.
+ * @brief Parses a two-part Doxygen tag (such as @tparam or @retval) into a key and description pair.
+ * @param[in] tagNode AST node representing the tag.
  * @param[in] sourceCode Source text buffer of the document.
- * @return Structured TParamItem populated from the tag node.
+ * @return Pair of {key token, trailing description}.
  */
-static TParamItem ProcessTParamTag(TSNode tagNode, const std::string& sourceCode)
+static std::pair<std::string, std::string> ExtractTwoPartTag(TSNode tagNode, const std::string& sourceCode)
 {
-    TParamItem item;
     TSNode descChild = FindChildByType(tagNode, "description");
     std::string desc;
     if (!ts_node_is_null(descChild))
@@ -1798,15 +1797,21 @@ static TParamItem ProcessTParamTag(TSNode tagNode, const std::string& sourceCode
     size_t sp = desc.find_first_of(" \t");
     if (sp != std::string::npos)
     {
-        item.name = desc.substr(0, sp);
-        item.description = Trim(desc.substr(sp + 1));
+        return {desc.substr(0, sp), Trim(desc.substr(sp + 1))};
     }
-    else
-    {
-        item.name = desc;
-        item.description = "";
-    }
-    return item;
+    return {desc, std::string()};
+}
+
+/**
+ * @brief Splits the template parameter name from the description for a @tparam tag.
+ * @param[in] tagNode AST node representing the tparam tag.
+ * @param[in] sourceCode Source text buffer of the document.
+ * @return Structured TParamItem populated from the tag node.
+ */
+static TParamItem ProcessTParamTag(TSNode tagNode, const std::string& sourceCode)
+{
+    auto [name, desc] = ExtractTwoPartTag(tagNode, sourceCode);
+    return TParamItem{std::move(name), std::move(desc)};
 }
 
 /**
@@ -1937,37 +1942,8 @@ static DocBlock ProcessAdmonitionTag(const std::string& cleanedTag, TSNode tagNo
  */
 static RetValItem ProcessRetValTag(TSNode tagNode, const std::string& sourceCode)
 {
-    RetValItem item;
-    TSNode descChild = FindChildByType(tagNode, "description");
-    std::string desc;
-    if (!ts_node_is_null(descChild))
-    {
-        desc = RenderDescription(descChild, sourceCode);
-    }
-    else
-    {
-        TSNode nameChild = FindChildByType(tagNode, "tag_name");
-        uint32_t start = !ts_node_is_null(nameChild) ? ts_node_end_byte(nameChild) : ts_node_start_byte(tagNode);
-        uint32_t end = ts_node_end_byte(tagNode);
-        if (end > start && end <= sourceCode.size())
-        {
-            desc = CleanDescriptionLines(RewriteAtInlineCommands(sourceCode.substr(start, end - start)));
-        }
-    }
-
-    desc = Trim(desc);
-    size_t sp = desc.find_first_of(" \t");
-    if (sp != std::string::npos)
-    {
-        item.value = desc.substr(0, sp);
-        item.description = Trim(desc.substr(sp + 1));
-    }
-    else
-    {
-        item.value = desc;
-        item.description = "";
-    }
-    return item;
+    auto [value, desc] = ExtractTwoPartTag(tagNode, sourceCode);
+    return RetValItem{std::move(value), std::move(desc)};
 }
 
 /**

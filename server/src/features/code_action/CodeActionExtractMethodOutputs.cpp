@@ -3,6 +3,7 @@
  * @brief Analysis for identifying mutated and output variables in extracted method selection.
  */
 
+#include "analysis/types/TypeSanitization.h"
 #include "features/code_action/CodeActionExtractMethodAnalysis.h"
 
 namespace angel_lsp::features
@@ -66,8 +67,7 @@ static void CheckCallMutation(TSNode curr, std::string_view sourceCode,
     {
         TSNode arg = ts_node_named_child(argsNode, i);
         std::string_view argText = parser::NodeText(arg, sourceCode);
-        if (argText.starts_with("&out ") || argText.starts_with("&inout ") || argText.starts_with("out ") ||
-            argText.starts_with("inout "))
+        if (analysis::IsOutOrInOutArgumentView(argText))
         {
             TSNode idNode = parser::GetChildByField(arg, parser::GetGrammarSymbols().fieldName);
             if (ts_node_is_null(idNode) && ts_node_named_child_count(arg) > 0)

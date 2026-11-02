@@ -274,6 +274,16 @@ class LocalScopeCollector
     void ReadEmptyParenVariableTypeInfo(TSNode funcNode, const std::string& sourceCode, LocalDefinition& def) const;
 
     /**
+     * @brief Populates type metadata and full source range from a named child field.
+     * @param[in] parentNode Parent AST node.
+     * @param[in] fieldSymbol Grammar field symbol for the type child.
+     * @param[in] sourceCode Source text of the document.
+     * @param[in,out] def LocalDefinition receiving type info.
+     */
+    void PopulateVariableFromField(TSNode parentNode, TSSymbol fieldSymbol, const std::string& sourceCode,
+                                   LocalDefinition& def) const;
+
+    /**
      * @brief Populates type span coordinates and template argument positions.
      * @param tNode Type AST node.
      * @param sourceCode Source text of the document.

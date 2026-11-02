@@ -961,6 +961,29 @@ void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std
     ts_tree_cursor_delete(&cursor);
 }
 
+void LocalScopeCollector::PopulateVariableFromField(TSNode parentNode, TSSymbol fieldSymbol,
+                                                    const std::string& sourceCode, LocalDefinition& def) const
+{
+    TSPoint rStart = ts_node_start_point(parentNode);
+    TSPoint rEnd = ts_node_end_point(parentNode);
+    def.fullStartLine = rStart.row;
+    def.fullStartCharacter = rStart.column;
+    def.fullEndLine = rEnd.row;
+    def.fullEndCharacter = rEnd.column;
+
+    TSNode typeNode = parser::GetChildByField(parentNode, fieldSymbol);
+    if (!ts_node_is_null(typeNode))
+    {
+        TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
+        def.isHandleType = typeInfo.isHandle;
+        def.isConst = typeInfo.isConst;
+        def.isReference = typeInfo.isReference;
+        def.typeKind = typeInfo.kind;
+        def.typeName = parser::GetNodeText(typeNode, sourceCode);
+        PopulateTypeRanges(typeNode, sourceCode, def);
+    }
+}
+
 /**
  * @brief Populates type metadata and full source range for a foreach loop variable declaration.
  * @param[in] declaratorNode AST declarator node of the foreach variable.
@@ -970,24 +993,7 @@ void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std
 void LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, const std::string& sourceCode,
                                                       LocalDefinition& def) const
 {
-    TSPoint fStart = ts_node_start_point(declaratorNode);
-    TSPoint fEnd = ts_node_end_point(declaratorNode);
-    def.fullStartLine = fStart.row;
-    def.fullStartCharacter = fStart.column;
-    def.fullEndLine = fEnd.row;
-    def.fullEndCharacter = fEnd.column;
-
-    TSNode foreachTypeNode = parser::GetChildByField(declaratorNode, parser::GetGrammarSymbols().fieldType);
-    if (!ts_node_is_null(foreachTypeNode))
-    {
-        TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(foreachTypeNode, sourceCode);
-        def.isHandleType = typeInfo.isHandle;
-        def.isConst = typeInfo.isConst;
-        def.isReference = typeInfo.isReference;
-        def.typeKind = typeInfo.kind;
-        def.typeName = parser::GetNodeText(foreachTypeNode, sourceCode);
-        PopulateTypeRanges(foreachTypeNode, sourceCode, def);
-    }
+    PopulateVariableFromField(declaratorNode, parser::GetGrammarSymbols().fieldType, sourceCode, def);
 }
 
 /**
@@ -1144,23 +1150,7 @@ void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, 
 void LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const std::string& sourceCode,
                                                          LocalDefinition& def) const
 {
-    TSPoint rStart = ts_node_start_point(funcNode);
-    TSPoint rEnd = ts_node_end_point(funcNode);
-    def.fullStartLine = rStart.row;
-    def.fullStartCharacter = rStart.column;
-    def.fullEndLine = rEnd.row;
-    def.fullEndCharacter = rEnd.column;
-    TSNode typeNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldReturnType);
-    if (!ts_node_is_null(typeNode))
-    {
-        TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
-        def.isHandleType = typeInfo.isHandle;
-        def.isConst = typeInfo.isConst;
-        def.isReference = typeInfo.isReference;
-        def.typeKind = typeInfo.kind;
-        def.typeName = parser::GetNodeText(typeNode, sourceCode);
-        PopulateTypeRanges(typeNode, sourceCode, def);
-    }
+    PopulateVariableFromField(funcNode, parser::GetGrammarSymbols().fieldReturnType, sourceCode, def);
 }
 
 void LocalScopeCollector::ReadVariableTypeInfo(const RawCapture& capture, const std::string& sourceCode,

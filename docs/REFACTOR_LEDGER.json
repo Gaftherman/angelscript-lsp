@@ -1695,6 +1695,73 @@
         "ServerHarnessTest",
         "ServerStressTest"
       ]
+    },
+    {
+      "id": "REF-0103",
+      "phase": "S4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/lsp/Server.h",
+      "deletedLineRange": "60-180",
+      "originalSymbolOrCode": "DiagnosticsSnapshot, ModuleView, ModuleClaim, PredefinedIndexTiming, CommitAnalysisRequest, CollectScopesRequest, OpenDocument, RenameContext, ParseAndCollectResult, AnalysisTimingProfile",
+      "whatItDidAndWhyInThatFile": "Internal state and synchronization structures declared directly in Server.h.",
+      "whyChangedOrDeleted": "Consolidated into single source of truth in WorkspaceStateStore, DiagnosticsPipeline, ModuleIndex, and ServerAnalysisTypes.h.",
+      "replacedByCanonicalFile": "server/src/lsp/services/ServerAnalysisTypes.h",
+      "replacedByCanonicalSymbol": "ParseAndCollectResult",
+      "ramOrCpuImpact": "Decoupled Server facade and eliminated redundant internal state caching.",
+      "verifiedByTests": [
+        "ServerHarnessTest",
+        "MassiveWorkspaceStressTest"
+      ]
+    },
+    {
+      "id": "REF-0104",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/linked_editing/LinkedEditingRangeHandler.cpp",
+      "deletedLineRange": "8-30",
+      "originalSymbolOrCode": "Contains",
+      "whatItDidAndWhyInThatFile": "Scope containment check duplicating range coordinate comparison.",
+      "whyChangedOrDeleted": "Unified with templated Covers function operating across Scope, LocalDefinition, and SourceRange.",
+      "replacedByCanonicalFile": "server/src/features/linked_editing/LinkedEditingRangeHandler.cpp",
+      "replacedByCanonicalSymbol": "Covers",
+      "ramOrCpuImpact": "Eliminated duplicate coordinate boundary comparison logic.",
+      "verifiedByTests": [
+        "LinkedEditingRangeTest"
+      ]
+    },
+    {
+      "id": "REF-0105",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/code_lens/CodeLensHandler.cpp",
+      "deletedLineRange": "1570-1610",
+      "originalSymbolOrCode": "FormatReferenceCount, FormatImplementationCount, ReadForeachVariableTypeInfo, ReadEmptyParenVariableTypeInfo",
+      "whatItDidAndWhyInThatFile": "Duplicated pluralization string formatting and loop variable AST extraction routines.",
+      "whyChangedOrDeleted": "Consolidated into FormatCountMessage helper in CodeLensHandler and PopulateVariableFromField in LocalScopeCollector.",
+      "replacedByCanonicalFile": "server/src/features/code_lens/CodeLensHandler.cpp",
+      "replacedByCanonicalSymbol": "FormatCountMessage",
+      "ramOrCpuImpact": "Zero runtime overhead; deduplicated identical formatting and AST traversal passes.",
+      "verifiedByTests": [
+        "CodeLensTest",
+        "LocalScopeCollectorTest"
+      ]
+    },
+    {
+      "id": "REF-0106",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/documentation/DoxygenMarkdown.cpp",
+      "deletedLineRange": "1770-1970",
+      "originalSymbolOrCode": "ProcessTParamTag, ProcessRetValTag, CollectSingleLineCommentRanges, CollectImportAndIncludeRanges",
+      "whatItDidAndWhyInThatFile": "Duplicated tag extraction for two-part Doxygen tags and duplicate loop logic for contiguous line range collection.",
+      "whyChangedOrDeleted": "Unified via ExtractTwoPartTag helper in DoxygenMarkdown and CollectContiguousLineRanges template in FoldingRangeHandler.",
+      "replacedByCanonicalFile": "server/src/analysis/documentation/DoxygenMarkdown.cpp",
+      "replacedByCanonicalSymbol": "ExtractTwoPartTag",
+      "ramOrCpuImpact": "Eliminated repetitive string slicing and contiguous line scanning passes.",
+      "verifiedByTests": [
+        "DoxygenMarkdownTest",
+        "FoldingRangeTest"
+      ]
     }
   ]
 }

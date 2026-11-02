@@ -35,24 +35,8 @@ struct SemanticAnalysisRequest
     }
 
     /**
-     * @brief What this server knows about the modules the host builds, when it knows anything.
-     *
-     * A module is AngelScript's unit of compilation, and two rules cannot be answered without
-     * knowing where its edges are:
-     *
-     *   - `external shared class Foo;` compiles only when ANOTHER module already declares
-     *     `shared class Foo`. Measured, and the surprise is how strict it is: with the full
-     *     definition in the SAME module the compiler still answers "External shared entity
-     *     'Foo' not found". So the question is not "does this name exist" - which the symbol
-     *     table can answer - but "does it exist somewhere else", which it cannot.
-     *   - `import void F() from "other";` names a module in a string. Whether that module
-     *     exists is not a compile-time question at all - measured, the compiler accepts an
-     *     import from a module that was never built, because binding happens at runtime - so
-     *     anything said about it is a hint and never an error.
-     *
-     * Absent (the default) means angelscript.modules is not configured, and every rule that
-     * reads this stays as conservative as it was. Silent rather than guessing, which is the
-     * same rule that keeps the analyzer quiet about a type whose stub it cannot see.
+     * @brief Module compilation boundary context for external shared entities and cross-module imports.
+     * @note When unconfigured, rules remain conservative and silence cross-module diagnostics.
      */
     struct ModuleContext
     {

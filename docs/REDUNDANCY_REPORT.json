@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-02T07:59:01Z",
+  "generatedAt": "2026-11-02T11:40:14Z",
   "branch": "refactor/architecture-deduplication-and-ram",
   "description": "Deterministic AST and tokenization audit report covering local C++ structs, pass-1 flag re-evaluations, function similarity, hot struct RAM layout, and Doxygen coverage.",
   "localCppStructs": {
@@ -66,29 +66,8 @@
     ]
   },
   "pass1FlagReparsing": {
-    "totalFlagReparseOccurrences": 10,
+    "totalFlagReparseOccurrences": 6,
     "occurrences": [
-      {
-        "file": "server/src/analysis/checkers/TypeConversionChecker.cpp",
-        "line": 939,
-        "flagKind": "isConst",
-        "codeSnippet": "const bool isConst = IsConstTypeView(fn.returnType);",
-        "canonicalPass1Source": "Symbol::modifiers.isConst / ParameterInformation::isConst"
-      },
-      {
-        "file": "server/src/analysis/checkers/TypeConversionChecker.cpp",
-        "line": 1009,
-        "flagKind": "isConst",
-        "codeSnippet": "const bool isConst = IsConstTypeView(rawText);",
-        "canonicalPass1Source": "Symbol::modifiers.isConst / ParameterInformation::isConst"
-      },
-      {
-        "file": "server/src/analysis/checkers/TypeConversionChecker.cpp",
-        "line": 1061,
-        "flagKind": "isConst",
-        "codeSnippet": "const bool isConst = IsConstTypeView(resolved);",
-        "canonicalPass1Source": "Symbol::modifiers.isConst / ParameterInformation::isConst"
-      },
       {
         "file": "server/src/analysis/checkers/TypeConversionChecker.h",
         "line": 164,
@@ -130,171 +109,34 @@
         "flagKind": "isConst",
         "codeSnippet": "constexpr ArgumentConversion(ConversionRank r, uint8_t sub = 0, uint8_t dist = 0, bool isConst = fal",
         "canonicalPass1Source": "Symbol::modifiers.isConst / ParameterInformation::isConst"
-      },
-      {
-        "file": "server/src/features/code_action/CodeActionExtractMethodOutputs.cpp",
-        "line": 69,
-        "flagKind": "isRef",
-        "codeSnippet": "if (argText.starts_with(\"&out \") || argText.starts_with(\"&inout \") || argText.starts_with(\"out \") ||",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
       }
     ]
   },
   "similarFunctionsMatrix": {
-    "totalEvaluatedFunctions": 2361,
-    "similarPairsCount": 83,
+    "totalEvaluatedFunctions": 2348,
+    "similarPairsCount": 64,
     "matrix": [
       {
         "funcA": {
-          "file": "server/src/features/linked_editing/LinkedEditingRangeHandler.cpp",
-          "startLine": 16,
-          "endLine": 31,
-          "name": "Contains",
-          "signature": "static bool Contains(const analysis::Scope& scope, const lsp::Position& position"
-        },
-        "funcB": {
-          "file": "server/src/features/linked_editing/LinkedEditingRangeHandler.cpp",
-          "startLine": 64,
-          "endLine": 79,
-          "name": "Covers",
-          "signature": "template <typename T> static bool Covers(const T& item, const lsp::Position& pos"
-        },
-        "similarityScore": 1.0,
-        "sharedCalls": [],
-        "whatTheyDo": "Contains (executes Contains logic) and Covers (executes Covers logic) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/features/code_lens/CodeLensHandler.cpp",
-          "startLine": 1582,
-          "endLine": 1586,
-          "name": "FormatReferenceCount",
-          "signature": "static std::string FormatReferenceCount(size_t refCount, const i18n::I18n* i18n)"
-        },
-        "funcB": {
-          "file": "server/src/features/code_lens/CodeLensHandler.cpp",
-          "startLine": 1594,
-          "endLine": 1598,
-          "name": "FormatImplementationCount",
-          "signature": "static std::string FormatImplementationCount(size_t implCount, const i18n::I18n*"
-        },
-        "similarityScore": 1.0,
-        "sharedCalls": [
-          "FormatMessage"
-        ],
-        "whatTheyDo": "FormatReferenceCount (formats text representations of symbols via [FormatMessage]) and FormatImplementationCount (formats text representations of symbols via [FormatMessage]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 970,
-          "endLine": 991,
-          "name": "ReadForeachVariableTypeInfo",
-          "signature": "void LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, con"
-        },
-        "funcB": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1144,
-          "endLine": 1164,
-          "name": "ReadEmptyParenVariableTypeInfo",
-          "signature": "void LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const "
-        },
-        "similarityScore": 0.993,
-        "sharedCalls": [
-          "ExtractTypeInfoFromAST",
-          "GetChildByField",
-          "GetGrammarSymbols",
-          "GetNodeText",
-          "PopulateTypeRanges",
-          "ts_node_end_point",
-          "ts_node_is_null",
-          "ts_node_start_point"
-        ],
-        "whatTheyDo": "ReadForeachVariableTypeInfo (executes ReadForeachVariableTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) and ReadEmptyParenVariableTypeInfo (executes ReadEmptyParenVariableTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/analysis/documentation/DoxygenMarkdown.cpp",
-          "startLine": 1777,
-          "endLine": 1810,
+          "startLine": 1811,
+          "endLine": 1815,
           "name": "ProcessTParamTag",
           "signature": "static TParamItem ProcessTParamTag(TSNode tagNode, const std::string& sourceCode"
         },
         "funcB": {
           "file": "server/src/analysis/documentation/DoxygenMarkdown.cpp",
-          "startLine": 1938,
-          "endLine": 1971,
+          "startLine": 1943,
+          "endLine": 1947,
           "name": "ProcessRetValTag",
           "signature": "static RetValItem ProcessRetValTag(TSNode tagNode, const std::string& sourceCode"
         },
-        "similarityScore": 0.99,
+        "similarityScore": 1.0,
         "sharedCalls": [
-          "CleanDescriptionLines",
-          "FindChildByType",
-          "RenderDescription",
-          "RewriteAtInlineCommands",
-          "Trim",
-          "find_first_of",
-          "size",
-          "substr",
-          "ts_node_end_byte",
-          "ts_node_is_null",
-          "ts_node_start_byte"
-        ],
-        "whatTheyDo": "ProcessTParamTag (executes ProcessTParamTag logic via [CleanDescriptionLines, FindChildByType, RenderDescription]) and ProcessRetValTag (executes ProcessRetValTag logic via [CleanDescriptionLines, FindChildByType, RenderDescription]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 330,
-          "endLine": 337,
-          "name": "Emit",
-          "signature": "void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& pa"
-        },
-        "funcB": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 346,
-          "endLine": 353,
-          "name": "Emit",
-          "signature": "void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& pa"
-        },
-        "similarityScore": 0.984,
-        "sharedCalls": [
-          "Append",
-          "ApplyMessageFormatting",
-          "CreateDiagnostic",
+          "ExtractTwoPartTag",
           "move"
         ],
-        "whatTheyDo": "Both implementations constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/features/folding_range/FoldingRangeHandler.cpp",
-          "startLine": 218,
-          "endLine": 257,
-          "name": "CollectSingleLineCommentRanges",
-          "signature": "static void CollectSingleLineCommentRanges(const std::vector<std::string_view>& "
-        },
-        "funcB": {
-          "file": "server/src/features/folding_range/FoldingRangeHandler.cpp",
-          "startLine": 264,
-          "endLine": 303,
-          "name": "CollectImportAndIncludeRanges",
-          "signature": "static void CollectImportAndIncludeRanges(const std::vector<std::string_view>& l"
-        },
-        "similarityScore": 0.982,
-        "sharedCalls": [
-          "TrimLeading",
-          "push_back",
-          "size",
-          "starts_with"
-        ],
-        "whatTheyDo": "CollectSingleLineCommentRanges (extracts AST structures and signature metadata via [TrimLeading, starts_with]) and CollectImportAndIncludeRanges (extracts AST structures and signature metadata via [TrimLeading, starts_with]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
+        "whatTheyDo": "ProcessTParamTag (executes ProcessTParamTag logic via [ExtractTwoPartTag, move]) and ProcessRetValTag (executes ProcessRetValTag logic via [ExtractTwoPartTag, move]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
       },
       {
@@ -327,35 +169,9 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 266,
-          "endLine": 273,
-          "name": "Emit",
-          "signature": "void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri"
-        },
-        "funcB": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 298,
-          "endLine": 305,
-          "name": "Emit",
-          "signature": "void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::init"
-        },
-        "similarityScore": 0.98,
-        "sharedCalls": [
-          "Append",
-          "ApplyMessageFormatting",
-          "CreateDiagnostic",
-          "ResolveSymbolDiagnosticRange",
-          "move"
-        ],
-        "whatTheyDo": "Both implementations constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/analysis/checkers/AccessChecker.cpp",
-          "startLine": 877,
-          "endLine": 899,
+          "startLine": 856,
+          "endLine": 878,
           "name": "CheckMemberAccess",
           "signature": "void CheckMemberAccess(const AccessCheckRequest& request, DiagnosticContext& ctx"
         },
@@ -379,8 +195,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/checkers/AccessChecker.cpp",
-          "startLine": 877,
-          "endLine": 899,
+          "startLine": 856,
+          "endLine": 878,
           "name": "CheckMemberAccess",
           "signature": "void CheckMemberAccess(const AccessCheckRequest& request, DiagnosticContext& ctx"
         },
@@ -428,27 +244,29 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 375,
-          "endLine": 381,
-          "name": "EmitAtRange",
-          "signature": "void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, st"
+          "file": "server/src/features/document_symbol/DocumentSymbolHandler.cpp",
+          "startLine": 390,
+          "endLine": 404,
+          "name": "ProcessVirtualProperty",
+          "signature": "static void ProcessVirtualProperty(TSNode node, const TraversalContext& ctx,\n   "
         },
         "funcB": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 405,
-          "endLine": 411,
-          "name": "EmitAtRange",
-          "signature": "void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\n  "
+          "file": "server/src/features/document_symbol/DocumentSymbolHandler.cpp",
+          "startLine": 412,
+          "endLine": 425,
+          "name": "ProcessTypedef",
+          "signature": "static void ProcessTypedef(TSNode node, const TraversalContext& ctx, std::vector"
         },
-        "similarityScore": 0.976,
+        "similarityScore": 0.977,
         "sharedCalls": [
-          "Append",
-          "ApplyMessageFormatting",
-          "CreateDiagnostic",
-          "move"
+          "CreateDeclarationSymbol",
+          "GetChildByField",
+          "GetGrammarSymbols",
+          "GetNodeText",
+          "move",
+          "push_back"
         ],
-        "whatTheyDo": "Both implementations constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]. Separated due to internal analysis checker boundaries within Layer 2.",
+        "whatTheyDo": "ProcessVirtualProperty (executes ProcessVirtualProperty logic via [CreateDeclarationSymbol, GetChildByField, GetGrammarSymbols]) and ProcessTypedef (executes ProcessTypedef logic via [CreateDeclarationSymbol, GetChildByField, GetGrammarSymbols]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
       },
       {
@@ -496,32 +314,6 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 266,
-          "endLine": 273,
-          "name": "Emit",
-          "signature": "void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri"
-        },
-        "funcB": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 282,
-          "endLine": 289,
-          "name": "Emit",
-          "signature": "void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri"
-        },
-        "similarityScore": 0.953,
-        "sharedCalls": [
-          "Append",
-          "ApplyMessageFormatting",
-          "CreateDiagnostic",
-          "ResolveSymbolDiagnosticRange",
-          "move"
-        ],
-        "whatTheyDo": "Both implementations constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/features/formatting/FormattingLexer.cpp",
           "startLine": 72,
           "endLine": 106,
@@ -548,8 +340,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/checkers/InitializerListChecker.cpp",
-          "startLine": 1214,
-          "endLine": 1246,
+          "startLine": 1207,
+          "endLine": 1239,
           "name": "DispatchTreeWalkInitializerLists",
           "signature": "static void DispatchTreeWalkInitializerLists(const InitializerListContext& initC"
         },
@@ -606,66 +398,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 375,
-          "endLine": 381,
-          "name": "EmitAtRange",
-          "signature": "void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, st"
-        },
-        "funcB": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 390,
-          "endLine": 396,
-          "name": "EmitAtRange",
-          "signature": "void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, st"
-        },
-        "similarityScore": 0.944,
-        "sharedCalls": [
-          "Append",
-          "ApplyMessageFormatting",
-          "CreateDiagnostic",
-          "move"
-        ],
-        "whatTheyDo": "Both implementations constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 282,
-          "endLine": 289,
-          "name": "Emit",
-          "signature": "void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri"
-        },
-        "funcB": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 298,
-          "endLine": 305,
-          "name": "Emit",
-          "signature": "void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::init"
-        },
-        "similarityScore": 0.933,
-        "sharedCalls": [
-          "Append",
-          "ApplyMessageFormatting",
-          "CreateDiagnostic",
-          "ResolveSymbolDiagnosticRange",
-          "move"
-        ],
-        "whatTheyDo": "Both implementations constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 506,
-          "endLine": 515,
+          "startLine": 493,
+          "endLine": 502,
           "name": "LogRule",
           "signature": "void DiagnosticContext::LogRule(std::string_view ruleName, std::string_view code"
         },
         "funcB": {
           "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 524,
-          "endLine": 534,
+          "startLine": 511,
+          "endLine": 521,
           "name": "LogParam",
           "signature": "void DiagnosticContext::LogParam(std::string_view ruleName, std::string_view cod"
         },
@@ -730,15 +471,15 @@
       {
         "funcA": {
           "file": "server/src/features/completion/CompletionHandler.cpp",
-          "startLine": 1996,
-          "endLine": 2004,
+          "startLine": 1985,
+          "endLine": 1993,
           "name": "ExtractIdentifierBackward",
           "signature": "static size_t ExtractIdentifierBackward(const std::string& text, size_t end)"
         },
         "funcB": {
           "file": "server/src/features/completion/CompletionHandler.cpp",
-          "startLine": 2623,
-          "endLine": 2631,
+          "startLine": 2612,
+          "endLine": 2620,
           "name": "ExtractQueryPrefix",
           "signature": "static std::string_view ExtractQueryPrefix(std::string_view linePrefix)"
         },
@@ -747,31 +488,6 @@
           "isalnum"
         ],
         "whatTheyDo": "ExtractIdentifierBackward (extracts AST structures and signature metadata via [isalnum]) and ExtractQueryPrefix (extracts AST structures and signature metadata via [isalnum]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 390,
-          "endLine": 396,
-          "name": "EmitAtRange",
-          "signature": "void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, st"
-        },
-        "funcB": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 405,
-          "endLine": 411,
-          "name": "EmitAtRange",
-          "signature": "void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\n  "
-        },
-        "similarityScore": 0.92,
-        "sharedCalls": [
-          "Append",
-          "ApplyMessageFormatting",
-          "CreateDiagnostic",
-          "move"
-        ],
-        "whatTheyDo": "Both implementations constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
       },
       {
@@ -792,35 +508,6 @@
         "similarityScore": 0.917,
         "sharedCalls": [],
         "whatTheyDo": "EngineProfileKindToString (formats text representations of symbols) and RawProfileStub (executes RawProfileStub logic) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 970,
-          "endLine": 991,
-          "name": "ReadForeachVariableTypeInfo",
-          "signature": "void LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, con"
-        },
-        "funcB": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1219,
-          "endLine": 1244,
-          "name": "ReadVirtualPropertyTypeInfo",
-          "signature": "void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const"
-        },
-        "similarityScore": 0.911,
-        "sharedCalls": [
-          "ExtractTypeInfoFromAST",
-          "GetChildByField",
-          "GetGrammarSymbols",
-          "GetNodeText",
-          "PopulateTypeRanges",
-          "ts_node_end_point",
-          "ts_node_is_null",
-          "ts_node_start_point"
-        ],
-        "whatTheyDo": "ReadForeachVariableTypeInfo (executes ReadForeachVariableTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) and ReadVirtualPropertyTypeInfo (executes ReadVirtualPropertyTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
       },
       {
@@ -850,45 +537,67 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1144,
-          "endLine": 1164,
-          "name": "ReadEmptyParenVariableTypeInfo",
-          "signature": "void LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const "
+          "file": "server/src/analysis/resolution/TargetResolution.cpp",
+          "startLine": 1828,
+          "endLine": 1866,
+          "name": "ScanDocumentForGlobal",
+          "signature": "static void ScanDocumentForGlobal(const analysis::Scope* root, OccurrenceScanCon"
         },
         "funcB": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1219,
-          "endLine": 1244,
-          "name": "ReadVirtualPropertyTypeInfo",
-          "signature": "void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const"
+          "file": "server/src/analysis/resolution/TargetResolution.cpp",
+          "startLine": 2064,
+          "endLine": 2097,
+          "name": "ScanDocumentForEnumMember",
+          "signature": "static void ScanDocumentForEnumMember(const analysis::Scope* root, OccurrenceSca"
         },
-        "similarityScore": 0.904,
+        "similarityScore": 0.905,
         "sharedCalls": [
-          "ExtractTypeInfoFromAST",
-          "GetChildByField",
-          "GetGrammarSymbols",
-          "GetNodeText",
-          "PopulateTypeRanges",
-          "ts_node_end_point",
-          "ts_node_is_null",
-          "ts_node_start_point"
+          "Add",
+          "back",
+          "contains",
+          "empty",
+          "get",
+          "pop_back",
+          "push_back"
         ],
-        "whatTheyDo": "ReadEmptyParenVariableTypeInfo (executes ReadEmptyParenVariableTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) and ReadVirtualPropertyTypeInfo (executes ReadVirtualPropertyTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
+        "whatTheyDo": "ScanDocumentForGlobal (evaluates AST node or symbol predicate properties via [Add, IsShadowedInFunctionScope, MatchesCallArguments]) and ScanDocumentForEnumMember (evaluates AST node or symbol predicate properties via [Add, IsEnumMemberReferenceMatch, back]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
+        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
+          "file": "server/src/features/folding_range/FoldingRangeHandler.cpp",
+          "startLine": 269,
+          "endLine": 275,
+          "name": "CollectSingleLineCommentRanges",
+          "signature": "static void CollectSingleLineCommentRanges(const std::vector<std::string_view>& "
+        },
+        "funcB": {
+          "file": "server/src/features/folding_range/FoldingRangeHandler.cpp",
+          "startLine": 282,
+          "endLine": 289,
+          "name": "CollectImportAndIncludeRanges",
+          "signature": "static void CollectImportAndIncludeRanges(const std::vector<std::string_view>& l"
+        },
+        "similarityScore": 0.9,
+        "sharedCalls": [
+          "CollectContiguousLineRanges",
+          "starts_with"
+        ],
+        "whatTheyDo": "CollectSingleLineCommentRanges (extracts AST structures and signature metadata via [CollectContiguousLineRanges, starts_with]) and CollectImportAndIncludeRanges (extracts AST structures and signature metadata via [CollectContiguousLineRanges, starts_with]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
       },
       {
         "funcA": {
           "file": "server/src/features/document_highlight/DocumentHighlightHandler.cpp",
-          "startLine": 553,
-          "endLine": 574,
+          "startLine": 548,
+          "endLine": 569,
           "name": "CollectClassMemberDeclarations",
           "signature": "static void CollectClassMemberDeclarations(const std::unordered_set<std::string>"
         },
         "funcB": {
           "file": "server/src/features/document_highlight/DocumentHighlightHandler.cpp",
-          "startLine": 996,
-          "endLine": 1012,
+          "startLine": 991,
+          "endLine": 1007,
           "name": "CollectDeclarationsByName",
           "signature": "static void CollectDeclarationsByName(std::string_view name, const DocumentHighl"
         },
@@ -903,15 +612,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 1530,
-          "endLine": 1546,
+          "startLine": 1524,
+          "endLine": 1540,
           "name": "ProcessEnum",
           "signature": "void SymbolCollector::ProcessEnum(TSNode node, SymbolCollectContext& sCtx, const"
         },
         "funcB": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 1589,
-          "endLine": 1601,
+          "startLine": 1583,
+          "endLine": 1595,
           "name": "ProcessInterface",
           "signature": "void SymbolCollector::ProcessInterface(TSNode node, SymbolCollectContext& sCtx, "
         },
@@ -924,51 +633,6 @@
           "push_back"
         ],
         "whatTheyDo": "ProcessEnum (executes ProcessEnum logic via [CollectEnumMembers, CreateSymbol, EnumHasBraces]) and ProcessInterface (executes ProcessInterface logic via [CreateSymbol, ExtractBases, ExtractModifiers]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/index/SymbolTable.cpp",
-          "startLine": 27,
-          "endLine": 40,
-          "name": "AccessModifierToString",
-          "signature": "static std::string AccessModifierToString(AccessModifier access)"
-        },
-        "funcB": {
-          "file": "server/src/analysis/index/SymbolTable.cpp",
-          "startLine": 47,
-          "endLine": 62,
-          "name": "ParameterModifierToString",
-          "signature": "static std::string ParameterModifierToString(ParameterModifier mod)"
-        },
-        "similarityScore": 0.894,
-        "sharedCalls": [],
-        "whatTheyDo": "AccessModifierToString (formats text representations of symbols) and ParameterModifierToString (formats text representations of symbols) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 282,
-          "endLine": 289,
-          "name": "Emit",
-          "signature": "void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri"
-        },
-        "funcB": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 390,
-          "endLine": 396,
-          "name": "EmitAtRange",
-          "signature": "void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, st"
-        },
-        "similarityScore": 0.893,
-        "sharedCalls": [
-          "Append",
-          "ApplyMessageFormatting",
-          "CreateDiagnostic",
-          "move"
-        ],
-        "whatTheyDo": "Emit (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) and EmitAtRange (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
       },
       {
@@ -994,15 +658,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 287,
-          "endLine": 309,
+          "startLine": 285,
+          "endLine": 307,
           "name": "CollectSymbols",
           "signature": "std::vector<Diagnostic> SymbolCollector::CollectSymbols(const SymbolCollectReque"
         },
         "funcB": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 325,
-          "endLine": 344,
+          "startLine": 323,
+          "endLine": 342,
           "name": "CollectSymbolsWithTree",
           "signature": "std::vector<Diagnostic> SymbolCollector::CollectSymbolsWithTree(const SymbolColl"
         },
@@ -1021,15 +685,43 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1046,
-          "endLine": 1063,
+          "startLine": 964,
+          "endLine": 985,
+          "name": "PopulateVariableFromField",
+          "signature": "void LocalScopeCollector::PopulateVariableFromField(TSNode parentNode, TSSymbol "
+        },
+        "funcB": {
+          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
+          "startLine": 1209,
+          "endLine": 1234,
+          "name": "ReadVirtualPropertyTypeInfo",
+          "signature": "void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const"
+        },
+        "similarityScore": 0.886,
+        "sharedCalls": [
+          "ExtractTypeInfoFromAST",
+          "GetChildByField",
+          "GetNodeText",
+          "PopulateTypeRanges",
+          "ts_node_end_point",
+          "ts_node_is_null",
+          "ts_node_start_point"
+        ],
+        "whatTheyDo": "PopulateVariableFromField (executes PopulateVariableFromField logic via [ExtractTypeInfoFromAST, GetChildByField, GetNodeText]) and ReadVirtualPropertyTypeInfo (executes ReadVirtualPropertyTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
+        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
+          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
+          "startLine": 1052,
+          "endLine": 1069,
           "name": "CountVariableDeclarators",
           "signature": "static uint32_t CountVariableDeclarators(TSNode declarationNode, TSSymbol declar"
         },
         "funcB": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 767,
-          "endLine": 782,
+          "startLine": 761,
+          "endLine": 776,
           "name": "ParseAccessorNodes",
           "signature": "void SymbolCollector::ParseAccessorNodes(TSNode node, VariableSignature& varSig)"
         },
@@ -1048,41 +740,16 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 266,
-          "endLine": 273,
-          "name": "Emit",
-          "signature": "void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri"
-        },
-        "funcB": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 375,
-          "endLine": 381,
-          "name": "EmitAtRange",
-          "signature": "void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, st"
-        },
-        "similarityScore": 0.882,
-        "sharedCalls": [
-          "Append",
-          "ApplyMessageFormatting",
-          "CreateDiagnostic",
-          "move"
-        ],
-        "whatTheyDo": "Emit (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) and EmitAtRange (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/features/document_highlight/DocumentHighlightHandler.cpp",
-          "startLine": 1080,
-          "endLine": 1096,
+          "startLine": 1075,
+          "endLine": 1091,
           "name": "CollectNamespaceHighlightRanges",
           "signature": "static void CollectNamespaceHighlightRanges(const analysis::TargetDescriptor& ta"
         },
         "funcB": {
           "file": "server/src/features/document_highlight/DocumentHighlightHandler.cpp",
-          "startLine": 1117,
-          "endLine": 1131,
+          "startLine": 1112,
+          "endLine": 1126,
           "name": "CollectGlobalHighlightRanges",
           "signature": "static void CollectGlobalHighlightRanges(const analysis::TargetDescriptor& targe"
         },
@@ -1098,15 +765,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 2203,
-          "endLine": 2227,
+          "startLine": 2191,
+          "endLine": 2215,
           "name": "ScanDefaultClauseColon",
           "signature": "static void ScanDefaultClauseColon(const SwitchScanContext& sCtx, size_t& idx, s"
         },
         "funcB": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 2235,
-          "endLine": 2258,
+          "startLine": 2223,
+          "endLine": 2246,
           "name": "ScanCaseClauseColon",
           "signature": "static void ScanCaseClauseColon(const SwitchScanContext& sCtx, size_t& idx, std:"
         },
@@ -1122,15 +789,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 298,
-          "endLine": 305,
+          "startLine": 292,
+          "endLine": 299,
           "name": "Emit",
           "signature": "void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::init"
         },
         "funcB": {
           "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 405,
-          "endLine": 411,
+          "startLine": 392,
+          "endLine": 398,
           "name": "EmitAtRange",
           "signature": "void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\n  "
         },
@@ -1146,16 +813,44 @@
       },
       {
         "funcA": {
+          "file": "server/src/analysis/resolution/TargetResolution.cpp",
+          "startLine": 1745,
+          "endLine": 1789,
+          "name": "ScanDocumentForNamespace",
+          "signature": "static void ScanDocumentForNamespace(const analysis::Scope* root,\n              "
+        },
+        "funcB": {
+          "file": "server/src/analysis/resolution/TargetResolution.cpp",
+          "startLine": 2064,
+          "endLine": 2097,
+          "name": "ScanDocumentForEnumMember",
+          "signature": "static void ScanDocumentForEnumMember(const analysis::Scope* root, OccurrenceSca"
+        },
+        "similarityScore": 0.874,
+        "sharedCalls": [
+          "Add",
+          "back",
+          "contains",
+          "empty",
+          "get",
+          "pop_back",
+          "push_back"
+        ],
+        "whatTheyDo": "ScanDocumentForNamespace (evaluates AST node or symbol predicate properties via [Add, IsRefInsideNamespace, IsShadowedInFunctionScope]) and ScanDocumentForEnumMember (evaluates AST node or symbol predicate properties via [Add, IsEnumMemberReferenceMatch, back]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
+        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 790,
-          "endLine": 819,
+          "startLine": 784,
+          "endLine": 813,
           "name": "ProcessVirtualPropertyVariable",
           "signature": "void SymbolCollector::ProcessVirtualPropertyVariable(TSNode varDeclNode, SymbolC"
         },
         "funcB": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 1554,
-          "endLine": 1581,
+          "startLine": 1548,
+          "endLine": 1575,
           "name": "ProcessProperty",
           "signature": "void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, c"
         },
@@ -1191,56 +886,6 @@
         "similarityScore": 0.864,
         "sharedCalls": [],
         "whatTheyDo": "IsClosingOrSeparatorPunctuation (evaluates AST node or symbol predicate properties) and IsOpeningOrMemberPunctuation (evaluates AST node or symbol predicate properties) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 266,
-          "endLine": 273,
-          "name": "Emit",
-          "signature": "void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri"
-        },
-        "funcB": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 405,
-          "endLine": 411,
-          "name": "EmitAtRange",
-          "signature": "void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\n  "
-        },
-        "similarityScore": 0.857,
-        "sharedCalls": [
-          "Append",
-          "ApplyMessageFormatting",
-          "CreateDiagnostic",
-          "move"
-        ],
-        "whatTheyDo": "Emit (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) and EmitAtRange (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 298,
-          "endLine": 305,
-          "name": "Emit",
-          "signature": "void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::init"
-        },
-        "funcB": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 375,
-          "endLine": 381,
-          "name": "EmitAtRange",
-          "signature": "void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, st"
-        },
-        "similarityScore": 0.857,
-        "sharedCalls": [
-          "Append",
-          "ApplyMessageFormatting",
-          "CreateDiagnostic",
-          "move"
-        ],
-        "whatTheyDo": "Emit (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) and EmitAtRange (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
       },
       {
@@ -1292,15 +937,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/SymbolTable.cpp",
-          "startLine": 2044,
-          "endLine": 2053,
+          "startLine": 1758,
+          "endLine": 1767,
           "name": "HashParameter",
           "signature": "static inline void HashParameter(uint64_t& h, const ParameterInformation& p)"
         },
         "funcB": {
           "file": "server/src/analysis/index/SymbolTable.cpp",
-          "startLine": 2080,
-          "endLine": 2088,
+          "startLine": 1794,
+          "endLine": 1802,
           "name": "HashVariableSignature",
           "signature": "static void HashVariableSignature(uint64_t& h, const VariableSignature& v)"
         },
@@ -1314,84 +959,9 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 266,
-          "endLine": 273,
-          "name": "Emit",
-          "signature": "void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri"
-        },
-        "funcB": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 390,
-          "endLine": 396,
-          "name": "EmitAtRange",
-          "signature": "void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, st"
-        },
-        "similarityScore": 0.837,
-        "sharedCalls": [
-          "Append",
-          "ApplyMessageFormatting",
-          "CreateDiagnostic",
-          "move"
-        ],
-        "whatTheyDo": "Emit (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) and EmitAtRange (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 282,
-          "endLine": 289,
-          "name": "Emit",
-          "signature": "void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::stri"
-        },
-        "funcB": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 375,
-          "endLine": 381,
-          "name": "EmitAtRange",
-          "signature": "void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, st"
-        },
-        "similarityScore": 0.837,
-        "sharedCalls": [
-          "Append",
-          "ApplyMessageFormatting",
-          "CreateDiagnostic",
-          "move"
-        ],
-        "whatTheyDo": "Emit (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) and EmitAtRange (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 330,
-          "endLine": 337,
-          "name": "Emit",
-          "signature": "void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& pa"
-        },
-        "funcB": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 390,
-          "endLine": 396,
-          "name": "EmitAtRange",
-          "signature": "void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, st"
-        },
-        "similarityScore": 0.804,
-        "sharedCalls": [
-          "Append",
-          "ApplyMessageFormatting",
-          "CreateDiagnostic",
-          "move"
-        ],
-        "whatTheyDo": "Emit (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) and EmitAtRange (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/features/document_highlight/DocumentHighlightHandler.cpp",
-          "startLine": 1297,
-          "endLine": 1328,
+          "startLine": 1292,
+          "endLine": 1323,
           "name": "GetDocumentHighlights",
           "signature": "std::optional<DocumentHighlightResult> GetDocumentHighlights(const DocumentHighl"
         },
@@ -1409,6 +979,54 @@
         ],
         "whatTheyDo": "GetDocumentHighlights (executes GetDocumentHighlights logic via [BuildSortedHighlights, DispatchTargetHighlights, GetRoot]) and ResolveValidRenameTarget (performs symbol/scope resolution via [IsTargetPredefined, ResolveTargetSymbol, contains]) share algorithmic structure. Separated due to Layer 3 isolation prohibition between features/document_highlight and features/rename.",
         "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
+      },
+      {
+        "funcA": {
+          "file": "server/src/features/document_symbol/DocumentSymbolHandler.cpp",
+          "startLine": 324,
+          "endLine": 336,
+          "name": "ProcessImport",
+          "signature": "static void ProcessImport(TSNode node, const TraversalContext& ctx, std::vector<"
+        },
+        "funcB": {
+          "file": "server/src/features/document_symbol/DocumentSymbolHandler.cpp",
+          "startLine": 412,
+          "endLine": 425,
+          "name": "ProcessTypedef",
+          "signature": "static void ProcessTypedef(TSNode node, const TraversalContext& ctx, std::vector"
+        },
+        "similarityScore": 0.8,
+        "sharedCalls": [
+          "CreateDeclarationSymbol",
+          "move",
+          "push_back"
+        ],
+        "whatTheyDo": "ProcessImport (executes ProcessImport logic via [CreateDeclarationSymbol, move]) and ProcessTypedef (executes ProcessTypedef logic via [CreateDeclarationSymbol, GetChildByField, GetGrammarSymbols]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
+        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
+          "file": "server/src/features/document_symbol/DocumentSymbolHandler.cpp",
+          "startLine": 324,
+          "endLine": 336,
+          "name": "ProcessImport",
+          "signature": "static void ProcessImport(TSNode node, const TraversalContext& ctx, std::vector<"
+        },
+        "funcB": {
+          "file": "server/src/features/document_symbol/DocumentSymbolHandler.cpp",
+          "startLine": 390,
+          "endLine": 404,
+          "name": "ProcessVirtualProperty",
+          "signature": "static void ProcessVirtualProperty(TSNode node, const TraversalContext& ctx,\n   "
+        },
+        "similarityScore": 0.797,
+        "sharedCalls": [
+          "CreateDeclarationSymbol",
+          "move",
+          "push_back"
+        ],
+        "whatTheyDo": "ProcessImport (executes ProcessImport logic via [CreateDeclarationSymbol, move]) and ProcessVirtualProperty (executes ProcessVirtualProperty logic via [CreateDeclarationSymbol, GetChildByField, GetGrammarSymbols]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
+        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
       },
       {
         "funcA": {
@@ -1432,31 +1050,6 @@
           "parse"
         ],
         "whatTheyDo": "CreateAccessorAction (executes CreateAccessorAction logic via [CodeActionKindEnum, move, parse]) and BuildAddConstAction (formats text representations of symbols via [CodeActionKindEnum, FormatMessage, move]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 330,
-          "endLine": 337,
-          "name": "Emit",
-          "signature": "void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& pa"
-        },
-        "funcB": {
-          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 375,
-          "endLine": 381,
-          "name": "EmitAtRange",
-          "signature": "void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, st"
-        },
-        "similarityScore": 0.785,
-        "sharedCalls": [
-          "Append",
-          "ApplyMessageFormatting",
-          "CreateDiagnostic",
-          "move"
-        ],
-        "whatTheyDo": "Emit (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) and EmitAtRange (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
       },
       {
@@ -1488,15 +1081,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 346,
-          "endLine": 353,
+          "startLine": 337,
+          "endLine": 344,
           "name": "Emit",
           "signature": "void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& pa"
         },
         "funcB": {
           "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 405,
-          "endLine": 411,
+          "startLine": 392,
+          "endLine": 398,
           "name": "EmitAtRange",
           "signature": "void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\n  "
         },
@@ -1508,46 +1101,6 @@
           "move"
         ],
         "whatTheyDo": "Emit (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) and EmitAtRange (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/index/SymbolTable.cpp",
-          "startLine": 47,
-          "endLine": 62,
-          "name": "ParameterModifierToString",
-          "signature": "static std::string ParameterModifierToString(ParameterModifier mod)"
-        },
-        "funcB": {
-          "file": "server/src/analysis/rules/TypeRules.cpp",
-          "startLine": 98,
-          "endLine": 119,
-          "name": "KindWord",
-          "signature": "static std::string KindWord(SymbolType type)"
-        },
-        "similarityScore": 0.777,
-        "sharedCalls": [],
-        "whatTheyDo": "ParameterModifierToString (formats text representations of symbols) and KindWord (executes KindWord logic) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/index/SymbolTable.cpp",
-          "startLine": 47,
-          "endLine": 62,
-          "name": "ParameterModifierToString",
-          "signature": "static std::string ParameterModifierToString(ParameterModifier mod)"
-        },
-        "funcB": {
-          "file": "server/src/analysis/types/EngineProfiles.cpp",
-          "startLine": 801,
-          "endLine": 821,
-          "name": "EngineProfileKindToString",
-          "signature": "std::string_view EngineProfileKindToString(EngineProfileKind kind)"
-        },
-        "similarityScore": 0.773,
-        "sharedCalls": [],
-        "whatTheyDo": "ParameterModifierToString (formats text representations of symbols) and EngineProfileKindToString (formats text representations of symbols) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
       },
       {
@@ -1627,31 +1180,27 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 921,
-          "endLine": 962,
-          "name": "ReadParameterTypeInfo",
-          "signature": "void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std"
+          "file": "server/src/analysis/resolution/ExpressionTypeResolver.cpp",
+          "startLine": 213,
+          "endLine": 229,
+          "name": "ExtractVariableOrPropertyType",
+          "signature": "static std::string ExtractVariableOrPropertyType(std::span<const Symbol> syms, c"
         },
         "funcB": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 970,
-          "endLine": 991,
-          "name": "ReadForeachVariableTypeInfo",
-          "signature": "void LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, con"
+          "file": "server/src/analysis/resolution/ExpressionTypeResolver.cpp",
+          "startLine": 1260,
+          "endLine": 1281,
+          "name": "ExtractMemberSymbolType",
+          "signature": "static std::string ExtractMemberSymbolType(const Symbol& sym, const SymbolTable&"
         },
-        "similarityScore": 0.749,
+        "similarityScore": 0.74,
         "sharedCalls": [
-          "ExtractTypeInfoFromAST",
-          "GetChildByField",
-          "GetGrammarSymbols",
-          "GetNodeText",
-          "PopulateTypeRanges",
-          "ts_node_end_point",
-          "ts_node_is_null",
-          "ts_node_start_point"
+          "CleanExpressionType",
+          "GetVariable",
+          "QualifyTypeInContainer",
+          "empty"
         ],
-        "whatTheyDo": "ReadParameterTypeInfo (executes ReadParameterTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) and ReadForeachVariableTypeInfo (executes ReadForeachVariableTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
+        "whatTheyDo": "ExtractVariableOrPropertyType (extracts AST structures and signature metadata via [CleanExpressionType, GetVariable, QualifyTypeInContainer]) and ExtractMemberSymbolType (extracts AST structures and signature metadata via [CleanExpressionType, ExtractAccessorMemberType, GetVariable]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
       },
       {
@@ -1664,37 +1213,36 @@
         },
         "funcB": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1144,
-          "endLine": 1164,
-          "name": "ReadEmptyParenVariableTypeInfo",
-          "signature": "void LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const "
+          "startLine": 964,
+          "endLine": 985,
+          "name": "PopulateVariableFromField",
+          "signature": "void LocalScopeCollector::PopulateVariableFromField(TSNode parentNode, TSSymbol "
         },
-        "similarityScore": 0.749,
+        "similarityScore": 0.731,
         "sharedCalls": [
           "ExtractTypeInfoFromAST",
           "GetChildByField",
-          "GetGrammarSymbols",
           "GetNodeText",
           "PopulateTypeRanges",
           "ts_node_end_point",
           "ts_node_is_null",
           "ts_node_start_point"
         ],
-        "whatTheyDo": "ReadParameterTypeInfo (executes ReadParameterTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) and ReadEmptyParenVariableTypeInfo (executes ReadEmptyParenVariableTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
+        "whatTheyDo": "ReadParameterTypeInfo (executes ReadParameterTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) and PopulateVariableFromField (executes PopulateVariableFromField logic via [ExtractTypeInfoFromAST, GetChildByField, GetNodeText]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
       },
       {
         "funcA": {
           "file": "server/src/analysis/index/SymbolTable.cpp",
-          "startLine": 2060,
-          "endLine": 2073,
+          "startLine": 1774,
+          "endLine": 1787,
           "name": "HashFunctionSignature",
           "signature": "static void HashFunctionSignature(uint64_t& h, const FunctionSignature& fn)"
         },
         "funcB": {
           "file": "server/src/analysis/index/SymbolTable.cpp",
-          "startLine": 2147,
-          "endLine": 2157,
+          "startLine": 1861,
+          "endLine": 1871,
           "name": "HashFuncdefSignature",
           "signature": "static void HashFuncdefSignature(uint64_t& h, const FuncdefSignature& fd)"
         },
@@ -1712,15 +1260,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 662,
-          "endLine": 696,
+          "startLine": 656,
+          "endLine": 690,
           "name": "ApplyAccessorTokens",
           "signature": "void SymbolCollector::ApplyAccessorTokens(TSNode accNode, bool isGet, bool isSet"
         },
         "funcB": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 705,
-          "endLine": 731,
+          "startLine": 699,
+          "endLine": 725,
           "name": "ApplyFuncAttributeTokens",
           "signature": "void SymbolCollector::ApplyFuncAttributeTokens(TSNode attrNode, bool isGet, bool"
         },
@@ -1758,6 +1306,33 @@
       },
       {
         "funcA": {
+          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
+          "startLine": 964,
+          "endLine": 985,
+          "name": "PopulateVariableFromField",
+          "signature": "void LocalScopeCollector::PopulateVariableFromField(TSNode parentNode, TSSymbol "
+        },
+        "funcB": {
+          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
+          "startLine": 1105,
+          "endLine": 1142,
+          "name": "ReadVariableDeclaratorTypeInfo",
+          "signature": "void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, "
+        },
+        "similarityScore": 0.715,
+        "sharedCalls": [
+          "ExtractTypeInfoFromAST",
+          "GetNodeText",
+          "PopulateTypeRanges",
+          "ts_node_end_point",
+          "ts_node_is_null",
+          "ts_node_start_point"
+        ],
+        "whatTheyDo": "PopulateVariableFromField (executes PopulateVariableFromField logic via [ExtractTypeInfoFromAST, GetChildByField, GetNodeText]) and ReadVariableDeclaratorTypeInfo (executes ReadVariableDeclaratorTypeInfo logic via [CountVariableDeclarators, ExtractTypeInfoFromAST, FindDeclarationTypeNode]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
+        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
           "file": "server/src/analysis/checkers/BinaryOperatorChecker.cpp",
           "startLine": 22,
           "endLine": 49,
@@ -1765,9 +1340,9 @@
           "signature": "static std::pair<std::string_view, std::string_view> GetOpMethods(std::string_vi"
         },
         "funcB": {
-          "file": "server/src/analysis/resolution/SemanticHelpers.cpp",
-          "startLine": 3101,
-          "endLine": 3128,
+          "file": "server/src/analysis/resolution/ExpressionTypeResolver.cpp",
+          "startLine": 508,
+          "endLine": 535,
           "name": "GetBinaryOpMethods",
           "signature": "static std::pair<std::string_view, std::string_view> GetBinaryOpMethods(std::str"
         },
@@ -1799,53 +1374,6 @@
           "push_back"
         ],
         "whatTheyDo": "MakeDisableDiagnosticAction (constructs and emits diagnostics via [CodeActionKindEnum, Value, move]) and MakeIgnoreUnusedSymbolAction (executes MakeIgnoreUnusedSymbolAction logic via [CodeActionKindEnum, FormatMessage, Value]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/index/SymbolTable.cpp",
-          "startLine": 47,
-          "endLine": 62,
-          "name": "ParameterModifierToString",
-          "signature": "static std::string ParameterModifierToString(ParameterModifier mod)"
-        },
-        "funcB": {
-          "file": "server/src/analysis/types/EngineProfiles.cpp",
-          "startLine": 831,
-          "endLine": 851,
-          "name": "RawProfileStub",
-          "signature": "static std::string_view RawProfileStub(EngineProfileKind kind)"
-        },
-        "similarityScore": 0.706,
-        "sharedCalls": [],
-        "whatTheyDo": "ParameterModifierToString (formats text representations of symbols) and RawProfileStub (executes RawProfileStub logic) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1099,
-          "endLine": 1136,
-          "name": "ReadVariableDeclaratorTypeInfo",
-          "signature": "void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, "
-        },
-        "funcB": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1144,
-          "endLine": 1164,
-          "name": "ReadEmptyParenVariableTypeInfo",
-          "signature": "void LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const "
-        },
-        "similarityScore": 0.702,
-        "sharedCalls": [
-          "ExtractTypeInfoFromAST",
-          "GetNodeText",
-          "PopulateTypeRanges",
-          "ts_node_end_point",
-          "ts_node_is_null",
-          "ts_node_start_point"
-        ],
-        "whatTheyDo": "ReadVariableDeclaratorTypeInfo (executes ReadVariableDeclaratorTypeInfo logic via [CountVariableDeclarators, ExtractTypeInfoFromAST, FindDeclarationTypeNode]) and ReadEmptyParenVariableTypeInfo (executes ReadEmptyParenVariableTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
       },
       {
@@ -1885,8 +1413,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1219,
-          "endLine": 1244,
+          "startLine": 1209,
+          "endLine": 1234,
           "name": "ReadVirtualPropertyTypeInfo",
           "signature": "void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const"
         },
@@ -1934,16 +1462,43 @@
       },
       {
         "funcA": {
+          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
+          "startLine": 964,
+          "endLine": 985,
+          "name": "PopulateVariableFromField",
+          "signature": "void LocalScopeCollector::PopulateVariableFromField(TSNode parentNode, TSSymbol "
+        },
+        "funcB": {
+          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
+          "startLine": 1006,
+          "endLine": 1044,
+          "name": "ReadLambdaParameterTypeInfo",
+          "signature": "void LocalScopeCollector::ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode de"
+        },
+        "similarityScore": 0.695,
+        "sharedCalls": [
+          "ExtractTypeInfoFromAST",
+          "GetNodeText",
+          "PopulateTypeRanges",
+          "ts_node_end_point",
+          "ts_node_is_null",
+          "ts_node_start_point"
+        ],
+        "whatTheyDo": "PopulateVariableFromField (executes PopulateVariableFromField logic via [ExtractTypeInfoFromAST, GetChildByField, GetNodeText]) and ReadLambdaParameterTypeInfo (executes ReadLambdaParameterTypeInfo logic via [ExtractLambdaParameters, ExtractTypeInfoFromAST, GetNodeText]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
+        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
           "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 316,
-          "endLine": 321,
+          "startLine": 310,
+          "endLine": 315,
           "name": "Emit",
           "signature": "void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& pa"
         },
         "funcB": {
           "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 346,
-          "endLine": 353,
+          "startLine": 337,
+          "endLine": 344,
           "name": "Emit",
           "signature": "void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& pa"
         },
@@ -1957,97 +1512,16 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 970,
-          "endLine": 991,
-          "name": "ReadForeachVariableTypeInfo",
-          "signature": "void LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, con"
-        },
-        "funcB": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1000,
-          "endLine": 1038,
-          "name": "ReadLambdaParameterTypeInfo",
-          "signature": "void LocalScopeCollector::ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode de"
-        },
-        "similarityScore": 0.681,
-        "sharedCalls": [
-          "ExtractTypeInfoFromAST",
-          "GetNodeText",
-          "PopulateTypeRanges",
-          "ts_node_end_point",
-          "ts_node_is_null",
-          "ts_node_start_point"
-        ],
-        "whatTheyDo": "ReadForeachVariableTypeInfo (executes ReadForeachVariableTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) and ReadLambdaParameterTypeInfo (executes ReadLambdaParameterTypeInfo logic via [ExtractLambdaParameters, ExtractTypeInfoFromAST, GetNodeText]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 970,
-          "endLine": 991,
-          "name": "ReadForeachVariableTypeInfo",
-          "signature": "void LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, con"
-        },
-        "funcB": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1099,
-          "endLine": 1136,
-          "name": "ReadVariableDeclaratorTypeInfo",
-          "signature": "void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, "
-        },
-        "similarityScore": 0.681,
-        "sharedCalls": [
-          "ExtractTypeInfoFromAST",
-          "GetNodeText",
-          "PopulateTypeRanges",
-          "ts_node_end_point",
-          "ts_node_is_null",
-          "ts_node_start_point"
-        ],
-        "whatTheyDo": "ReadForeachVariableTypeInfo (executes ReadForeachVariableTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) and ReadVariableDeclaratorTypeInfo (executes ReadVariableDeclaratorTypeInfo logic via [CountVariableDeclarators, ExtractTypeInfoFromAST, FindDeclarationTypeNode]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1000,
-          "endLine": 1038,
-          "name": "ReadLambdaParameterTypeInfo",
-          "signature": "void LocalScopeCollector::ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode de"
-        },
-        "funcB": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1144,
-          "endLine": 1164,
-          "name": "ReadEmptyParenVariableTypeInfo",
-          "signature": "void LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const "
-        },
-        "similarityScore": 0.681,
-        "sharedCalls": [
-          "ExtractTypeInfoFromAST",
-          "GetNodeText",
-          "PopulateTypeRanges",
-          "ts_node_end_point",
-          "ts_node_is_null",
-          "ts_node_start_point"
-        ],
-        "whatTheyDo": "ReadLambdaParameterTypeInfo (executes ReadLambdaParameterTypeInfo logic via [ExtractLambdaParameters, ExtractTypeInfoFromAST, GetNodeText]) and ReadEmptyParenVariableTypeInfo (executes ReadEmptyParenVariableTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 1656,
-          "endLine": 1680,
+          "startLine": 1646,
+          "endLine": 1670,
           "name": "CheckUsingDeclarationCapture",
           "signature": "void SymbolCollector::CheckUsingDeclarationCapture(TSNode usingNode, SymbolColle"
         },
         "funcB": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 1687,
-          "endLine": 1736,
+          "startLine": 1677,
+          "endLine": 1726,
           "name": "CheckDuplicateModifierGroup",
           "signature": "void SymbolCollector::CheckDuplicateModifierGroup(TSNode declNode, SymbolCollect"
         },
@@ -2069,15 +1543,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1099,
-          "endLine": 1136,
+          "startLine": 1105,
+          "endLine": 1142,
           "name": "ReadVariableDeclaratorTypeInfo",
           "signature": "void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, "
         },
         "funcB": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1219,
-          "endLine": 1244,
+          "startLine": 1209,
+          "endLine": 1234,
           "name": "ReadVirtualPropertyTypeInfo",
           "signature": "void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const"
         },
@@ -2096,8 +1570,8 @@
       {
         "funcA": {
           "file": "server/src/features/document_highlight/DocumentHighlightHandler.cpp",
-          "startLine": 1297,
-          "endLine": 1328,
+          "startLine": 1292,
+          "endLine": 1323,
           "name": "GetDocumentHighlights",
           "signature": "std::optional<DocumentHighlightResult> GetDocumentHighlights(const DocumentHighl"
         },
@@ -2115,6 +1589,33 @@
         ],
         "whatTheyDo": "GetDocumentHighlights (executes GetDocumentHighlights logic via [BuildSortedHighlights, DispatchTargetHighlights, GetRoot]) and GetReferences (executes GetReferences logic via [CollectOccurrences, ConvertAndSortOccurrences, ResolveTargetSymbol]) share algorithmic structure. Separated due to Layer 3 isolation prohibition between features/document_highlight and features/references.",
         "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
+      },
+      {
+        "funcA": {
+          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
+          "startLine": 1006,
+          "endLine": 1044,
+          "name": "ReadLambdaParameterTypeInfo",
+          "signature": "void LocalScopeCollector::ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode de"
+        },
+        "funcB": {
+          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
+          "startLine": 1209,
+          "endLine": 1234,
+          "name": "ReadVirtualPropertyTypeInfo",
+          "signature": "void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const"
+        },
+        "similarityScore": 0.632,
+        "sharedCalls": [
+          "ExtractTypeInfoFromAST",
+          "GetNodeText",
+          "PopulateTypeRanges",
+          "ts_node_end_point",
+          "ts_node_is_null",
+          "ts_node_start_point"
+        ],
+        "whatTheyDo": "ReadLambdaParameterTypeInfo (executes ReadLambdaParameterTypeInfo logic via [ExtractLambdaParameters, ExtractTypeInfoFromAST, GetNodeText]) and ReadVirtualPropertyTypeInfo (executes ReadVirtualPropertyTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
+        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
       },
       {
         "funcA": {
@@ -2144,15 +1645,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 1775,
-          "endLine": 1779,
+          "startLine": 1763,
+          "endLine": 1767,
           "name": "IsDeclarationSymbol",
           "signature": "static bool IsDeclarationSymbol(TSSymbol sym, const parser::GrammarSymbols& gs)"
         },
         "funcB": {
           "file": "server/src/features/document_highlight/DocumentHighlightHandler.cpp",
-          "startLine": 67,
-          "endLine": 73,
+          "startLine": 62,
+          "endLine": 68,
           "name": "IsCallableOrTypeDeclaration",
           "signature": "static bool IsCallableOrTypeDeclaration(TSSymbol pType, const parser::GrammarSym"
         },
@@ -2171,8 +1672,8 @@
         },
         "funcB": {
           "file": "server/src/features/document_highlight/DocumentHighlightHandler.cpp",
-          "startLine": 67,
-          "endLine": 73,
+          "startLine": 62,
+          "endLine": 68,
           "name": "IsCallableOrTypeDeclaration",
           "signature": "static bool IsCallableOrTypeDeclaration(TSSymbol pType, const parser::GrammarSym"
         },
@@ -2190,9 +1691,9 @@
           "signature": "static std::string StripModifiers(std::string_view type)"
         },
         "funcB": {
-          "file": "server/src/analysis/resolution/SemanticHelpers.cpp",
-          "startLine": 1064,
-          "endLine": 1070,
+          "file": "server/src/analysis/resolution/TemplateTypeResolver.cpp",
+          "startLine": 309,
+          "endLine": 315,
           "name": "StripTemplateDecorations",
           "signature": "void StripTemplateDecorations(std::string_view& typeName)"
         },

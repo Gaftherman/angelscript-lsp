@@ -1561,27 +1561,33 @@ static void CollectReferenceTargets(const SymbolGroups& symGroups, const Compati
 }
 
 /**
- * @brief Formats the localized reference count string for a code lens.
- * @param[in] refCount Number of references.
+ * @brief Formats a localized singular or plural count message string.
+ * @param[in] count Quantity to format.
  * @param[in] i18n Optional pointer to I18n translation context.
- * @return Localized reference count string.
+ * @param[in] singularKey Translation key for singular count (count == 1).
+ * @param[in] singularFallback Fallback English pattern for singular.
+ * @param[in] pluralKey Translation key for plural count.
+ * @param[in] pluralFallback Fallback English pattern for plural.
+ * @return Localized formatted count string.
  */
-static std::string FormatReferenceCount(size_t refCount, const i18n::I18n* i18n)
+static std::string FormatCountMessage(size_t count, const i18n::I18n* i18n, std::string_view singularKey,
+                                      std::string_view singularFallback, std::string_view pluralKey,
+                                      std::string_view pluralFallback)
 {
-    return (refCount == 1) ? i18n::FormatMessage(i18n, "codelens.reference", "1 reference")
-                           : i18n::FormatMessage(i18n, "codelens.references", "{} references", refCount);
+    return (count == 1) ? i18n::FormatMessage(i18n, singularKey, singularFallback)
+                        : i18n::FormatMessage(i18n, pluralKey, pluralFallback, count);
 }
 
-/**
- * @brief Formats the localized implementation count string for a code lens.
- * @param[in] implCount Number of interface implementations.
- * @param[in] i18n Optional pointer to I18n translation context.
- * @return Localized implementation count string.
- */
+static std::string FormatReferenceCount(size_t refCount, const i18n::I18n* i18n)
+{
+    return FormatCountMessage(refCount, i18n, "codelens.reference", "1 reference", "codelens.references",
+                              "{} references");
+}
+
 static std::string FormatImplementationCount(size_t implCount, const i18n::I18n* i18n)
 {
-    return (implCount == 1) ? i18n::FormatMessage(i18n, "codelens.implementation", "1 implementation")
-                            : i18n::FormatMessage(i18n, "codelens.implementations", "{} implementations", implCount);
+    return FormatCountMessage(implCount, i18n, "codelens.implementation", "1 implementation",
+                              "codelens.implementations", "{} implementations");
 }
 
 /**

@@ -8,58 +8,11 @@ namespace angel_lsp::features
 {
 
 /**
- * @brief Contains.
- * @param[in] scope Enclosing lexical scope.
- * @param[in] position Target document position.
- * @return True if the condition is satisfied; false otherwise.
- */
-static bool Contains(const analysis::Scope& scope, const lsp::Position& position)
-{
-    if (position.line < scope.startLine || position.line > scope.endLine)
-    {
-        return false;
-    }
-    if (position.line == scope.startLine && position.character < scope.startCharacter)
-    {
-        return false;
-    }
-    if (position.line == scope.endLine && position.character > scope.endCharacter)
-    {
-        return false;
-    }
-    return true;
-}
-
-/** @brief Innermost scope containing a position, or nullptr when the tree does not cover it. */
-static const analysis::Scope* InnermostScope(const analysis::Scope* root, const lsp::Position& position)
-{
-    if (!root || !Contains(*root, position))
-    {
-        return nullptr;
-    }
-
-    const analysis::Scope* current = root;
-    for (bool descended = true; descended;)
-    {
-        descended = false;
-        for (const auto& child : current->children)
-        {
-            if (child && Contains(*child, position))
-            {
-                current = child.get();
-                descended = true;
-                break;
-            }
-        }
-    }
-    return current;
-}
-
-/**
- * @brief Covers.
+ * @brief Checks if a range-bearing item (scope, definition, or reference) encompasses an LSP position.
+ * @tparam T Type exposing startLine, endLine, startCharacter, and endCharacter coordinates.
  * @param[in] item AST node or document range item.
- * @param[in] position Target document position.
- * @return True if the condition is satisfied; false otherwise.
+ * @param[in] position Target document position to check for containment.
+ * @return True if the target position falls within the item's line and character bounds.
  */
 template <typename T> static bool Covers(const T& item, const lsp::Position& position)
 {
@@ -76,6 +29,31 @@ template <typename T> static bool Covers(const T& item, const lsp::Position& pos
         return false;
     }
     return true;
+}
+
+/** @brief Innermost scope containing a position, or nullptr when the tree does not cover it. */
+static const analysis::Scope* InnermostScope(const analysis::Scope* root, const lsp::Position& position)
+{
+    if (!root || !Covers(*root, position))
+    {
+        return nullptr;
+    }
+
+    const analysis::Scope* current = root;
+    for (bool descended = true; descended;)
+    {
+        descended = false;
+        for (const auto& child : current->children)
+        {
+            if (child && Covers(*child, position))
+            {
+                current = child.get();
+                descended = true;
+                break;
+            }
+        }
+    }
+    return current;
 }
 
 /**

@@ -49,39 +49,12 @@ struct PreprocessorFeatures
 };
 
 /**
- * @brief Lines removed by `#if` / `#endif`, mirroring CScriptBuilder's preprocessor.
- *
- * AngelScript has no preprocessor of its own; `#if` is handled by the CScriptBuilder add-on,
- * and its model is deliberately tiny (scriptbuilder.cpp, LoadScriptSection/ExcludeCode):
- *
- *  - Only `#if <identifier>` and `#endif` exist. There is no `#else`, no `#elif`, no `#ifdef`
- *    and no `#define` - words are defined by the *host application* calling DefineWord().
- *
- *    Measured, not read off the source: `#if FOO / void a(){} / #else / void b(){} / #endif`
- *    followed by a call to `b()` is rejected with "No matching symbol 'b'", not with a
- *    complaint about `#else`. The `#else` branch did not become the taken one - it was blanked
- *    along with the rest of the block, because `#else` is not a directive and the exclusion
- *    runs to the `#endif` regardless. `#define`, `#ifdef` and a live `#else` are each a plain
- *    syntax error, and a `#pragma` fails the section outright unless the host registered a
- *    pragma callback (scriptbuilder.cpp:533).
- *  - If the identifier is not a defined word, everything up to and including the matching
- *    `#endif` is blanked out. Nesting is tracked, so an inner `#if` inside an excluded block
- *    does not end it early.
- *  - If it *is* defined, the directives are stripped and the body is compiled normally.
- *  - Blanking preserves newlines, so line numbers never shift.
- *
- * Analysing text the compiler never sees produces diagnostics about code that does not exist.
- * That was found by running this analyzer against the real compiler: AS-Harness's json.as keeps
- * a block of deliberately-unbuildable code inside `#if FALSE`, and every diagnostic we reported
- * for that file came from there.
- *
- * @param sourceCode Document text.
- * @param definedWords Words the host has defined. Empty - the default - means every `#if` block
- *        is excluded, which is exactly what an unconfigured CScriptBuilder does.
- * @param features Extensions the host added to its copy of the add-on. All off by default, in
- *        which case only `#if` and `#endif` are directives and everything between a dead `#if`
- *        and its `#endif` goes, `#else` included.
- * @return Excluded ranges in source order, non-overlapping.
+ * @brief Identifies source lines excluded by `#if` / `#endif` preprocessor directives.
+ * @param[in] sourceCode Document text buffer to scan for directives.
+ * @param[in] definedWords Set of preprocessor macro words defined by the host application.
+ * @param[in] features Optional preprocessor dialect extensions supported by the host.
+ * @return Sorted non-overlapping list of excluded line ranges.
+ * @note Preserves newlines across blanked regions to keep line numbering synchronized.
  */
 std::vector<ExcludedLineRange>
 FindExcludedLineRanges(std::string_view sourceCode, const ankerl::unordered_dense::set<std::string>& definedWords = {},
