@@ -153,7 +153,7 @@ lsp::json::Value Server::HandleRequestsTextDocument_BreakpointLocations(lsp::jso
     result.reserve(items.size());
 
     std::optional<utils::LineIndex> lineIndex;
-    if (m_positionEncoding != utils::PositionEncoding::Utf8 && !items.empty())
+    if (GetPositionEncoding() != utils::PositionEncoding::Utf8 && !items.empty())
     {
         lineIndex = utils::LineIndex::Build(*doc->text);
     }
@@ -161,7 +161,8 @@ lsp::json::Value Server::HandleRequestsTextDocument_BreakpointLocations(lsp::jso
 
     for (const auto& item : items)
     {
-        result.push_back(lsp::json::Value(FormatBreakpointLocation(item, *doc->text, pLineIndex, m_positionEncoding)));
+        result.push_back(
+            lsp::json::Value(FormatBreakpointLocation(item, *doc->text, pLineIndex, GetPositionEncoding())));
     }
 
     return lsp::json::Value(std::move(result));

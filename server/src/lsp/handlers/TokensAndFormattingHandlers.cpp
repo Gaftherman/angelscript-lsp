@@ -38,7 +38,7 @@ Server::HandleRequestsTextDocument_LinkedEditingRange(lsp::requests::TextDocumen
 
     auto scopeRoot = m_scopeIndex.GetRoot(doc->uri);
     features::LinkedEditingRangeRequest lr{*doc->text, scopeRoot.get(),
-                                           codec::Decode(*doc->text, m_positionEncoding, req.position)};
+                                           codec::Decode(*doc->text, GetPositionEncoding(), req.position)};
 
     auto ranges = features::GetLinkedEditingRanges(lr);
     if (!ranges.has_value())
@@ -47,19 +47,19 @@ Server::HandleRequestsTextDocument_LinkedEditingRange(lsp::requests::TextDocumen
     }
     for (auto& range : ranges->ranges)
     {
-        codec::Encode(*doc->text, m_positionEncoding, range);
+        codec::Encode(*doc->text, GetPositionEncoding(), range);
     }
     return ranges.value();
 }
 
-lsp::requests::TextDocument_SelectionRange::Result
-Server::HandleRequestsTextDocument_SelectionRange(lsp::requests::TextDocument_SelectionRange::Params&& req)
+static lsp::requests::TextDocument_SelectionRange::Result
+HandleRequestsTextDocument_SelectionRange(Server& server, lsp::requests::TextDocument_SelectionRange::Params&& req)
 {
-    if (!m_config.features.enableSelectionRange)
+    if (!server.GetConfig().features.enableSelectionRange)
     {
         return lsp::Null{};
     }
-    const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+    const auto doc = server.LookupOpenDocument(req.textDocument.uri.toString());
     if (!doc)
     {
         return lsp::Null{};
@@ -69,7 +69,7 @@ Server::HandleRequestsTextDocument_SelectionRange(lsp::requests::TextDocument_Se
     positions.reserve(req.positions.size());
     for (const auto& position : req.positions)
     {
-        positions.push_back(codec::Decode(*doc->text, m_positionEncoding, position));
+        positions.push_back(codec::Decode(*doc->text, server.GetPositionEncoding(), position));
     }
 
     features::SelectionRangeRequest sr{*doc->text, doc->tree, positions};
@@ -83,7 +83,7 @@ Server::HandleRequestsTextDocument_SelectionRange(lsp::requests::TextDocument_Se
     {
         for (lsp::SelectionRange* link = &chain; link != nullptr; link = link->parent.get())
         {
-            codec::Encode(*doc->text, m_positionEncoding, link->range);
+            codec::Encode(*doc->text, server.GetPositionEncoding(), link->range);
         }
     }
     return ranges;
@@ -205,21 +205,21 @@ Server::HandleRequestsTextDocument_SemanticTokens_Range(lsp::requests::TextDocum
     sr.scopeRoot = m_scopeIndex.GetRoot(doc->uri);
     sr.nodeIndex = nodeIndexPtr;
     sr.excludedLineRanges = ExcludedLineRanges(*doc->text);
-    sr.range = codec::Decode(*doc->text, m_positionEncoding, req.range);
+    sr.range = codec::Decode(*doc->text, GetPositionEncoding(), req.range);
 
     lsp::SemanticTokens tokens = features::GetSemanticTokens(sr);
-    codec::EncodeSemanticTokens(*doc->text, m_positionEncoding, tokens.data);
+    codec::EncodeSemanticTokens(*doc->text, GetPositionEncoding(), tokens.data);
     return tokens;
 }
 
-lsp::requests::TextDocument_FoldingRange::Result
-Server::HandleRequestsTextDocument_FoldingRange(lsp::requests::TextDocument_FoldingRange::Params&& req)
+static lsp::requests::TextDocument_FoldingRange::Result
+HandleRequestsTextDocument_FoldingRange(Server& server, lsp::requests::TextDocument_FoldingRange::Params&& req)
 {
-    if (!m_config.features.enableFoldingRange)
+    if (!server.GetConfig().features.enableFoldingRange)
     {
         return lsp::Array<lsp::FoldingRange>{};
     }
-    const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+    const auto doc = server.LookupOpenDocument(req.textDocument.uri.toString());
     if (!doc)
     {
         return lsp::Array<lsp::FoldingRange>{};
@@ -231,12 +231,12 @@ Server::HandleRequestsTextDocument_FoldingRange(lsp::requests::TextDocument_Fold
     const double elapsedMs = timer.ElapsedMs();
     if (ranges.has_value())
     {
-        LogInfo(fmt::format("[Folding Ranges] Finished in {:.2f} ms for {} ({} ranges)", elapsedMs, doc->uri,
-                            ranges->size()));
-        EncodeIn(*doc->text, ranges.value());
+        server.LogInfo(fmt::format("[Folding Ranges] Finished in {:.2f} ms for {} ({} ranges)", elapsedMs, doc->uri,
+                                   ranges->size()));
+        server.EncodeIn(*doc->text, ranges.value());
         return ranges.value();
     }
-    LogInfo(fmt::format("[Folding Ranges] Finished in {:.2f} ms for {} (0 ranges)", elapsedMs, doc->uri));
+    server.LogInfo(fmt::format("[Folding Ranges] Finished in {:.2f} ms for {} (0 ranges)", elapsedMs, doc->uri));
     return lsp::Array<lsp::FoldingRange>{};
 }
 
@@ -262,7 +262,7 @@ Server::HandleRequestsTextDocument_InlayHint(lsp::requests::TextDocument_InlayHi
     features::InlayHintRequest ihr{doc->uri,
                                    *doc->text,
                                    doc->tree,
-                                   codec::Decode(*doc->text, m_positionEncoding, req.range),
+                                   codec::Decode(*doc->text, GetPositionEncoding(), req.range),
                                    m_symbolTable,
                                    m_scopeIndex,
                                    m_config.features.inlayHintsSuppressWhenArgumentMatchesName,
@@ -292,7 +292,7 @@ void Server::RegisterTokensAndFormattingHandlers()
 
     m_messageHandler->add<lsp::requests::TextDocument_SelectionRange>(
         [this](lsp::requests::TextDocument_SelectionRange::Params&& req)
-        { return HandleRequestsTextDocument_SelectionRange(std::move(req)); });
+        { return HandleRequestsTextDocument_SelectionRange(*this, std::move(req)); });
 
     m_messageHandler->add<lsp::requests::TextDocument_SemanticTokens_Full>(
         [this](lsp::requests::TextDocument_SemanticTokens_Full::Params&& req)
@@ -308,7 +308,7 @@ void Server::RegisterTokensAndFormattingHandlers()
 
     m_messageHandler->add<lsp::requests::TextDocument_FoldingRange>(
         [this](lsp::requests::TextDocument_FoldingRange::Params&& req)
-        { return HandleRequestsTextDocument_FoldingRange(std::move(req)); });
+        { return HandleRequestsTextDocument_FoldingRange(*this, std::move(req)); });
 
     m_messageHandler->add<lsp::requests::TextDocument_InlayHint>(
         [this](lsp::requests::TextDocument_InlayHint::Params&& req)

@@ -5,21 +5,21 @@
 
 namespace angel_lsp
 {
-lsp::requests::TextDocument_PrepareCallHierarchy::Result
-Server::HandleRequestsTextDocument_PrepareCallHierarchy(lsp::requests::TextDocument_PrepareCallHierarchy::Params&& req)
+static lsp::requests::TextDocument_PrepareCallHierarchy::Result
+PrepareCallHierarchy(Server& server, lsp::requests::TextDocument_PrepareCallHierarchy::Params&& req)
 {
-    if (!m_config.features.enableCallHierarchy)
+    if (!server.GetConfig().features.enableCallHierarchy)
     {
         return lsp::Null{};
     }
-    const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+    const auto doc = server.LookupOpenDocument(req.textDocument.uri.toString());
     if (!doc)
     {
         return lsp::Null{};
     }
 
-    features::CallHierarchyPrepareRequest pr{doc->uri, *doc->text, doc->tree, m_symbolTable,
-                                             codec::Decode(*doc->text, m_positionEncoding, req.position)};
+    features::CallHierarchyPrepareRequest pr{doc->uri, *doc->text, doc->tree, server.GetSymbolTable(),
+                                             codec::Decode(*doc->text, server.GetPositionEncoding(), req.position)};
     auto items = features::PrepareCallHierarchy(pr);
     if (!items.has_value() || items->empty())
     {
@@ -27,20 +27,20 @@ Server::HandleRequestsTextDocument_PrepareCallHierarchy(lsp::requests::TextDocum
     }
     for (auto& item : items.value())
     {
-        EncodeItemRanges(item);
+        server.EncodeItemRanges(item);
     }
     return items.value();
 }
 
-lsp::requests::CallHierarchy_IncomingCalls::Result
-Server::HandleRequestsCallHierarchy_IncomingCalls(lsp::requests::CallHierarchy_IncomingCalls::Params&& req)
+static lsp::requests::CallHierarchy_IncomingCalls::Result
+GetIncomingCalls(Server& server, lsp::requests::CallHierarchy_IncomingCalls::Params&& req)
 {
-    if (!m_config.features.enableCallHierarchy)
+    if (!server.GetConfig().features.enableCallHierarchy)
     {
         return lsp::Null{};
     }
 
-    features::CallHierarchyItemRequest ir{m_symbolTable, m_callGraph, req.item};
+    features::CallHierarchyItemRequest ir{server.GetSymbolTable(), server.GetCallGraph(), req.item};
     auto calls = features::GetIncomingCalls(ir);
     if (!calls.has_value() || calls->empty())
     {
@@ -48,25 +48,23 @@ Server::HandleRequestsCallHierarchy_IncomingCalls(lsp::requests::CallHierarchy_I
     }
     for (auto& call : calls.value())
     {
-        EncodeItemRanges(call.from);
-        EncodeRangesIn(DocumentKey(call.from.uri.toString()), call.fromRanges);
+        server.EncodeItemRanges(call.from);
+        server.EncodeRangesIn(Server::DocumentKey(call.from.uri.toString()), call.fromRanges);
     }
     return calls.value();
 }
 
-lsp::requests::CallHierarchy_OutgoingCalls::Result
-Server::HandleRequestsCallHierarchy_OutgoingCalls(lsp::requests::CallHierarchy_OutgoingCalls::Params&& req)
+static lsp::requests::CallHierarchy_OutgoingCalls::Result
+GetOutgoingCalls(Server& server, lsp::requests::CallHierarchy_OutgoingCalls::Params&& req)
 {
-    if (!m_config.features.enableCallHierarchy)
+    if (!server.GetConfig().features.enableCallHierarchy)
     {
         return lsp::Null{};
     }
 
-    // fromRanges are ranges in the caller, which is the item the client asked about -
-    // not in the callee the entry points at.
-    const std::string callerUri = DocumentKey(req.item.uri.toString());
+    const std::string callerUri = Server::DocumentKey(req.item.uri.toString());
 
-    features::CallHierarchyItemRequest ir{m_symbolTable, m_callGraph, req.item};
+    features::CallHierarchyItemRequest ir{server.GetSymbolTable(), server.GetCallGraph(), req.item};
     auto calls = features::GetOutgoingCalls(ir);
     if (!calls.has_value() || calls->empty())
     {
@@ -74,27 +72,27 @@ Server::HandleRequestsCallHierarchy_OutgoingCalls(lsp::requests::CallHierarchy_O
     }
     for (auto& call : calls.value())
     {
-        EncodeItemRanges(call.to);
-        EncodeRangesIn(callerUri, call.fromRanges);
+        server.EncodeItemRanges(call.to);
+        server.EncodeRangesIn(callerUri, call.fromRanges);
     }
     return calls.value();
 }
 
-lsp::requests::TextDocument_PrepareTypeHierarchy::Result
-Server::HandleRequestsTextDocument_PrepareTypeHierarchy(lsp::requests::TextDocument_PrepareTypeHierarchy::Params&& req)
+static lsp::requests::TextDocument_PrepareTypeHierarchy::Result
+PrepareTypeHierarchy(Server& server, lsp::requests::TextDocument_PrepareTypeHierarchy::Params&& req)
 {
-    if (!m_config.features.enableTypeHierarchy)
+    if (!server.GetConfig().features.enableTypeHierarchy)
     {
         return lsp::Null{};
     }
-    const auto doc = LookupOpenDocument(req.textDocument.uri.toString());
+    const auto doc = server.LookupOpenDocument(req.textDocument.uri.toString());
     if (!doc)
     {
         return lsp::Null{};
     }
 
-    features::TypeHierarchyPrepareRequest pr{doc->uri, *doc->text, doc->tree, m_symbolTable,
-                                             codec::Decode(*doc->text, m_positionEncoding, req.position)};
+    features::TypeHierarchyPrepareRequest pr{doc->uri, *doc->text, doc->tree, server.GetSymbolTable(),
+                                             codec::Decode(*doc->text, server.GetPositionEncoding(), req.position)};
     auto items = features::PrepareTypeHierarchy(pr);
     if (!items.has_value() || items->empty())
     {
@@ -102,20 +100,20 @@ Server::HandleRequestsTextDocument_PrepareTypeHierarchy(lsp::requests::TextDocum
     }
     for (auto& item : items.value())
     {
-        EncodeItemRanges(item);
+        server.EncodeItemRanges(item);
     }
     return items.value();
 }
 
-lsp::requests::TypeHierarchy_Supertypes::Result
-Server::HandleRequestsTypeHierarchy_Supertypes(lsp::requests::TypeHierarchy_Supertypes::Params&& req)
+static lsp::requests::TypeHierarchy_Supertypes::Result
+GetSupertypes(Server& server, lsp::requests::TypeHierarchy_Supertypes::Params&& req)
 {
-    if (!m_config.features.enableTypeHierarchy)
+    if (!server.GetConfig().features.enableTypeHierarchy)
     {
         return lsp::Null{};
     }
 
-    features::TypeHierarchyItemRequest ir{m_symbolTable, req.item};
+    features::TypeHierarchyItemRequest ir{server.GetSymbolTable(), req.item};
     auto items = features::GetSupertypes(ir);
     if (!items.has_value() || items->empty())
     {
@@ -123,20 +121,20 @@ Server::HandleRequestsTypeHierarchy_Supertypes(lsp::requests::TypeHierarchy_Supe
     }
     for (auto& item : items.value())
     {
-        EncodeItemRanges(item);
+        server.EncodeItemRanges(item);
     }
     return items.value();
 }
 
-lsp::requests::TypeHierarchy_Subtypes::Result
-Server::HandleRequestsTypeHierarchy_Subtypes(lsp::requests::TypeHierarchy_Subtypes::Params&& req)
+static lsp::requests::TypeHierarchy_Subtypes::Result GetSubtypes(Server& server,
+                                                                 lsp::requests::TypeHierarchy_Subtypes::Params&& req)
 {
-    if (!m_config.features.enableTypeHierarchy)
+    if (!server.GetConfig().features.enableTypeHierarchy)
     {
         return lsp::Null{};
     }
 
-    features::TypeHierarchyItemRequest ir{m_symbolTable, req.item};
+    features::TypeHierarchyItemRequest ir{server.GetSymbolTable(), req.item};
     auto items = features::GetSubtypes(ir);
     if (!items.has_value() || items->empty())
     {
@@ -144,7 +142,7 @@ Server::HandleRequestsTypeHierarchy_Subtypes(lsp::requests::TypeHierarchy_Subtyp
     }
     for (auto& item : items.value())
     {
-        EncodeItemRanges(item);
+        server.EncodeItemRanges(item);
     }
     return items.value();
 }
@@ -153,26 +151,24 @@ void Server::RegisterHierarchyHandlers()
 {
     m_messageHandler->add<lsp::requests::TextDocument_PrepareCallHierarchy>(
         [this](lsp::requests::TextDocument_PrepareCallHierarchy::Params&& req)
-        { return HandleRequestsTextDocument_PrepareCallHierarchy(std::move(req)); });
+        { return PrepareCallHierarchy(*this, std::move(req)); });
 
     m_messageHandler->add<lsp::requests::CallHierarchy_IncomingCalls>(
         [this](lsp::requests::CallHierarchy_IncomingCalls::Params&& req)
-        { return HandleRequestsCallHierarchy_IncomingCalls(std::move(req)); });
+        { return GetIncomingCalls(*this, std::move(req)); });
 
     m_messageHandler->add<lsp::requests::CallHierarchy_OutgoingCalls>(
         [this](lsp::requests::CallHierarchy_OutgoingCalls::Params&& req)
-        { return HandleRequestsCallHierarchy_OutgoingCalls(std::move(req)); });
+        { return GetOutgoingCalls(*this, std::move(req)); });
 
     m_messageHandler->add<lsp::requests::TextDocument_PrepareTypeHierarchy>(
         [this](lsp::requests::TextDocument_PrepareTypeHierarchy::Params&& req)
-        { return HandleRequestsTextDocument_PrepareTypeHierarchy(std::move(req)); });
+        { return PrepareTypeHierarchy(*this, std::move(req)); });
 
     m_messageHandler->add<lsp::requests::TypeHierarchy_Supertypes>(
-        [this](lsp::requests::TypeHierarchy_Supertypes::Params&& req)
-        { return HandleRequestsTypeHierarchy_Supertypes(std::move(req)); });
+        [this](lsp::requests::TypeHierarchy_Supertypes::Params&& req) { return GetSupertypes(*this, std::move(req)); });
 
     m_messageHandler->add<lsp::requests::TypeHierarchy_Subtypes>(
-        [this](lsp::requests::TypeHierarchy_Subtypes::Params&& req)
-        { return HandleRequestsTypeHierarchy_Subtypes(std::move(req)); });
+        [this](lsp::requests::TypeHierarchy_Subtypes::Params&& req) { return GetSubtypes(*this, std::move(req)); });
 }
 } // namespace angel_lsp

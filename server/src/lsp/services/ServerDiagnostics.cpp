@@ -122,15 +122,15 @@ static std::string_view GetDiagnosticSettingsUri(std::string_view code)
 
 void Server::EncodeIn(std::string_view text, lsp::Range& range) const
 {
-    codec::Encode(text, m_positionEncoding, range);
+    codec::Encode(text, GetPositionEncoding(), range);
 }
 
 void Server::EncodeIn(std::string_view text, lsp::Hover& hover) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8 || !hover.range.has_value())
+    if (GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8 || !hover.range.has_value())
         return;
 
-    codec::Encode(text, m_positionEncoding, hover.range.value());
+    codec::Encode(text, GetPositionEncoding(), hover.range.value());
 }
 
 static void EncodeSymbolsRecursive(const utils::LineIndex& lineIndex, std::string_view text,
@@ -150,27 +150,27 @@ static void EncodeSymbolsRecursive(const utils::LineIndex& lineIndex, std::strin
 
 void Server::EncodeIn(std::string_view text, std::vector<lsp::TextEdit>& edits) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8 || edits.empty())
+    if (GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8 || edits.empty())
         return;
 
     const utils::LineIndex lineIndex = utils::LineIndex::Build(text);
     for (auto& edit : edits)
-        codec::Encode(lineIndex, text, m_positionEncoding, edit.range);
+        codec::Encode(lineIndex, text, GetPositionEncoding(), edit.range);
 }
 
 void Server::EncodeIn(std::string_view text, std::vector<lsp::DocumentHighlight>& highlights) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8 || highlights.empty())
+    if (GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8 || highlights.empty())
         return;
 
     const utils::LineIndex lineIndex = utils::LineIndex::Build(text);
     for (auto& highlight : highlights)
-        codec::Encode(lineIndex, text, m_positionEncoding, highlight.range);
+        codec::Encode(lineIndex, text, GetPositionEncoding(), highlight.range);
 }
 
 void Server::EncodeIn(std::string_view text, std::vector<lsp::FoldingRange>& ranges) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8 || ranges.empty())
+    if (GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8 || ranges.empty())
         return;
 
     const utils::LineIndex lineIndex = utils::LineIndex::Build(text);
@@ -180,103 +180,103 @@ void Server::EncodeIn(std::string_view text, std::vector<lsp::FoldingRange>& ran
         {
             const std::string_view line = lineIndex.Line(text, range.startLine);
             range.startCharacter =
-                angel_lsp::utils::ByteToLspCharColumn(line, range.startCharacter.value(), m_positionEncoding);
+                angel_lsp::utils::ByteToLspCharColumn(line, range.startCharacter.value(), GetPositionEncoding());
         }
 
         if (range.endCharacter.has_value())
         {
             const std::string_view line = lineIndex.Line(text, range.endLine);
             range.endCharacter =
-                angel_lsp::utils::ByteToLspCharColumn(line, range.endCharacter.value(), m_positionEncoding);
+                angel_lsp::utils::ByteToLspCharColumn(line, range.endCharacter.value(), GetPositionEncoding());
         }
     }
 }
 
 void Server::EncodeIn(std::string_view text, std::vector<lsp::DocumentLink>& links) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8 || links.empty())
+    if (GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8 || links.empty())
         return;
 
     const utils::LineIndex lineIndex = utils::LineIndex::Build(text);
     for (auto& link : links)
-        codec::Encode(lineIndex, text, m_positionEncoding, link.range);
+        codec::Encode(lineIndex, text, GetPositionEncoding(), link.range);
 }
 
 void Server::EncodeIn(std::string_view text, std::vector<lsp::InlayHint>& hints) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8 || hints.empty())
+    if (GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8 || hints.empty())
         return;
 
     const utils::LineIndex lineIndex = utils::LineIndex::Build(text);
     for (auto& hint : hints)
     {
-        codec::Encode(lineIndex, text, m_positionEncoding, hint.position);
+        codec::Encode(lineIndex, text, GetPositionEncoding(), hint.position);
 
         if (hint.textEdits.has_value())
         {
             for (auto& edit : hint.textEdits.value())
-                codec::Encode(lineIndex, text, m_positionEncoding, edit.range);
+                codec::Encode(lineIndex, text, GetPositionEncoding(), edit.range);
         }
     }
 }
 
 void Server::EncodeIn(std::string_view text, std::vector<lsp::DocumentSymbol>& symbols) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8 || symbols.empty())
+    if (GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8 || symbols.empty())
         return;
 
     const utils::LineIndex lineIndex = utils::LineIndex::Build(text);
-    EncodeSymbolsRecursive(lineIndex, text, m_positionEncoding, symbols);
+    EncodeSymbolsRecursive(lineIndex, text, GetPositionEncoding(), symbols);
 }
 
 void Server::EncodeIn(std::string_view text, std::vector<lsp::CodeLens>& lenses) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8 || lenses.empty())
+    if (GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8 || lenses.empty())
         return;
 
     const utils::LineIndex lineIndex = utils::LineIndex::Build(text);
     for (auto& lens : lenses)
-        codec::Encode(lineIndex, text, m_positionEncoding, lens.range);
+        codec::Encode(lineIndex, text, GetPositionEncoding(), lens.range);
 }
 
 void Server::EncodeIn(std::string_view text, lsp::PrepareRenameResult& result) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
+    if (GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8)
         return;
 
     if (auto* range = std::get_if<lsp::Range>(&result))
-        codec::Encode(text, m_positionEncoding, *range);
+        codec::Encode(text, GetPositionEncoding(), *range);
     else if (auto* placeholder = std::get_if<lsp::PrepareRenamePlaceholder>(&result))
-        codec::Encode(text, m_positionEncoding, placeholder->range);
+        codec::Encode(text, GetPositionEncoding(), placeholder->range);
 }
 
 void Server::EncodeAcrossDocuments(std::vector<lsp::Location>& locations) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
+    if (GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8)
         return;
 
     for (auto& location : locations)
     {
         if (auto text = FindDocumentText(DocumentKey(location.uri.toString())))
-            codec::Encode(*text, m_positionEncoding, location.range);
+            codec::Encode(*text, GetPositionEncoding(), location.range);
     }
 }
 
 void Server::EncodeAcrossDocuments(std::vector<lsp::SymbolInformation>& symbols) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
+    if (GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8)
         return;
 
     for (auto& symbol : symbols)
     {
         if (auto text = FindDocumentText(DocumentKey(symbol.location.uri.toString())))
-            codec::Encode(*text, m_positionEncoding, symbol.location.range);
+            codec::Encode(*text, GetPositionEncoding(), symbol.location.range);
     }
 }
 
 void Server::EncodeAcrossDocuments(lsp::WorkspaceEdit& edit) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
+    if (GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8)
         return;
 
     if (edit.changes.has_value())
@@ -302,17 +302,17 @@ void Server::EncodeAcrossDocuments(lsp::WorkspaceEdit& edit) const
                         if (std::holds_alternative<lsp::TextEdit>(e))
                         {
                             auto& te = std::get<lsp::TextEdit>(e);
-                            codec::Encode(*text, m_positionEncoding, te.range);
+                            codec::Encode(*text, GetPositionEncoding(), te.range);
                         }
                         else if (std::holds_alternative<lsp::AnnotatedTextEdit>(e))
                         {
                             auto& ate = std::get<lsp::AnnotatedTextEdit>(e);
-                            codec::Encode(*text, m_positionEncoding, ate.range);
+                            codec::Encode(*text, GetPositionEncoding(), ate.range);
                         }
                         else if (std::holds_alternative<lsp::SnippetTextEdit>(e))
                         {
                             auto& ste = std::get<lsp::SnippetTextEdit>(e);
-                            codec::Encode(*text, m_positionEncoding, ste.range);
+                            codec::Encode(*text, GetPositionEncoding(), ste.range);
                         }
                     }
                 }
@@ -323,19 +323,19 @@ void Server::EncodeAcrossDocuments(lsp::WorkspaceEdit& edit) const
 
 void Server::EncodeRangesIn(const std::string& uri, std::vector<lsp::Range>& ranges) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
+    if (GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8)
         return;
 
     if (auto text = FindDocumentText(uri))
     {
         for (auto& range : ranges)
-            codec::Encode(*text, m_positionEncoding, range);
+            codec::Encode(*text, GetPositionEncoding(), range);
     }
 }
 
 void Server::EncodeAcrossDocuments(std::vector<lsp::CodeAction>& actions) const
 {
-    if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
+    if (GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8)
         return;
 
     for (auto& action : actions)

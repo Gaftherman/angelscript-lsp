@@ -193,120 +193,120 @@ Server::HandleRequestsWorkspace_Symbol(lsp::requests::Workspace_Symbol::Params&&
     return lsp::Array<lsp::SymbolInformation>{};
 }
 
-void Server::RegisterLifecycleHandlers()
+static void RegisterLifecycleHandlers(Server& server, lsp::MessageHandler& handler)
 {
-    m_messageHandler->add<lsp::requests::Initialize>([this](lsp::requests::Initialize::Params&& params)
-                                                     { return HandleRequestsInitialized(std::move(params)); });
+    handler.add<lsp::requests::Initialize>([&server](lsp::requests::Initialize::Params&& params)
+                                           { return server.HandleRequestsInitialized(std::move(params)); });
 
-    m_messageHandler->add<lsp::notifications::Initialized>([this](lsp::notifications::Initialized::Params&& params)
-                                                           { HandleNotificationsInitialized(std::move(params)); });
+    handler.add<lsp::notifications::Initialized>([&server](lsp::notifications::Initialized::Params&& params)
+                                                 { server.HandleNotificationsInitialized(std::move(params)); });
 
-    m_messageHandler->add<lsp::requests::Shutdown>([this]() { return HandleRequestsShutdown(); });
+    handler.add<lsp::requests::Shutdown>([&server]() { return server.HandleRequestsShutdown(); });
 
-    m_messageHandler->add<lsp::notifications::Exit>([this]() { HandleNotificationsExit(); });
+    handler.add<lsp::notifications::Exit>([&server]() { server.HandleNotificationsExit(); });
 
-    m_messageHandler->add<lsp::notifications::Window_WorkDoneProgress_Cancel>(
-        [this](lsp::notifications::Window_WorkDoneProgress_Cancel::Params&& params)
-        { HandleNotificationsWindow_WorkDoneProgress_Cancel(std::move(params)); });
+    handler.add<lsp::notifications::Window_WorkDoneProgress_Cancel>(
+        [&server](lsp::notifications::Window_WorkDoneProgress_Cancel::Params&& params)
+        { server.HandleNotificationsWindow_WorkDoneProgress_Cancel(std::move(params)); });
 
-    m_messageHandler->add<lsp::notifications::SetTrace>([this](lsp::notifications::SetTrace::Params&& params)
-                                                        { HandleNotificationsSetTrace(std::move(params)); });
+    handler.add<lsp::notifications::SetTrace>([&server](lsp::notifications::SetTrace::Params&& params)
+                                              { server.HandleNotificationsSetTrace(std::move(params)); });
 
-    m_messageHandler->add<lsp::notifications::CancelRequest>(
+    handler.add<lsp::notifications::CancelRequest>(
         [](lsp::notifications::CancelRequest::Params&&)
         {
             // Synchronous message dispatch consumes the cancel without further action.
         });
 }
 
-void Server::RegisterFileEventHandlers()
+static void RegisterFileEventHandlers(Server& server, lsp::MessageHandler& handler)
 {
-    m_messageHandler->add<lsp::notifications::Workspace_DidCreateFiles>(
-        [this](lsp::notifications::Workspace_DidCreateFiles::Params&& params)
-        { HandleNotificationsWorkspace_DidCreateFiles(std::move(params)); });
+    handler.add<lsp::notifications::Workspace_DidCreateFiles>(
+        [&server](lsp::notifications::Workspace_DidCreateFiles::Params&& params)
+        { server.HandleNotificationsWorkspace_DidCreateFiles(std::move(params)); });
 
-    m_messageHandler->add<lsp::notifications::Workspace_DidRenameFiles>(
-        [this](lsp::notifications::Workspace_DidRenameFiles::Params&& params)
-        { HandleNotificationsWorkspace_DidRenameFiles(std::move(params)); });
+    handler.add<lsp::notifications::Workspace_DidRenameFiles>(
+        [&server](lsp::notifications::Workspace_DidRenameFiles::Params&& params)
+        { server.HandleNotificationsWorkspace_DidRenameFiles(std::move(params)); });
 
-    m_messageHandler->add<lsp::notifications::Workspace_DidDeleteFiles>(
-        [this](lsp::notifications::Workspace_DidDeleteFiles::Params&& params)
-        { HandleNotificationsWorkspace_DidDeleteFiles(std::move(params)); });
+    handler.add<lsp::notifications::Workspace_DidDeleteFiles>(
+        [&server](lsp::notifications::Workspace_DidDeleteFiles::Params&& params)
+        { server.HandleNotificationsWorkspace_DidDeleteFiles(std::move(params)); });
 
-    m_messageHandler->add<lsp::notifications::Workspace_DidChangeWatchedFiles>(
-        [this](lsp::notifications::Workspace_DidChangeWatchedFiles::Params&& params)
-        { HandleNotificationsWorkspace_DidChangeWatchedFiles(std::move(params)); });
+    handler.add<lsp::notifications::Workspace_DidChangeWatchedFiles>(
+        [&server](lsp::notifications::Workspace_DidChangeWatchedFiles::Params&& params)
+        { server.HandleNotificationsWorkspace_DidChangeWatchedFiles(std::move(params)); });
 
-    m_messageHandler->add<lsp::notifications::Workspace_DidChangeWorkspaceFolders>(
-        [this](lsp::notifications::Workspace_DidChangeWorkspaceFolders::Params&& params)
-        { HandleNotificationsWorkspace_DidChangeWorkspaceFolders(std::move(params)); });
+    handler.add<lsp::notifications::Workspace_DidChangeWorkspaceFolders>(
+        [&server](lsp::notifications::Workspace_DidChangeWorkspaceFolders::Params&& params)
+        { server.HandleNotificationsWorkspace_DidChangeWorkspaceFolders(std::move(params)); });
 }
 
-void Server::RegisterDocumentSyncHandlers()
+static void RegisterDocumentSyncHandlers(Server& server, lsp::MessageHandler& handler)
 {
-    m_messageHandler->add<lsp::notifications::TextDocument_DidOpen>(
-        [this](lsp::notifications::TextDocument_DidOpen::Params&& params)
-        { HandleNotificationsTextDocument_DidOpen(std::move(params)); });
+    handler.add<lsp::notifications::TextDocument_DidOpen>(
+        [&server](lsp::notifications::TextDocument_DidOpen::Params&& params)
+        { server.HandleNotificationsTextDocument_DidOpen(std::move(params)); });
 
-    m_messageHandler->add<lsp::notifications::TextDocument_DidChange>(
-        [this](lsp::notifications::TextDocument_DidChange::Params&& params)
-        { HandleNotificationsTextDocument_DidChange(std::move(params)); });
+    handler.add<lsp::notifications::TextDocument_DidChange>(
+        [&server](lsp::notifications::TextDocument_DidChange::Params&& params)
+        { server.HandleNotificationsTextDocument_DidChange(std::move(params)); });
 
-    m_messageHandler->add<lsp::notifications::TextDocument_DidClose>(
-        [this](lsp::notifications::TextDocument_DidClose::Params&& params)
-        { HandleNotificationsTextDocument_DidClose(std::move(params)); });
+    handler.add<lsp::notifications::TextDocument_DidClose>(
+        [&server](lsp::notifications::TextDocument_DidClose::Params&& params)
+        { server.HandleNotificationsTextDocument_DidClose(std::move(params)); });
 
-    m_messageHandler->add<lsp::notifications::TextDocument_WillSave>(
-        [this](lsp::notifications::TextDocument_WillSave::Params&& params)
-        { HandleNotificationsTextDocument_WillSave(std::move(params)); });
+    handler.add<lsp::notifications::TextDocument_WillSave>(
+        [&server](lsp::notifications::TextDocument_WillSave::Params&& params)
+        { server.HandleNotificationsTextDocument_WillSave(std::move(params)); });
 
-    m_messageHandler->add<lsp::notifications::TextDocument_DidSave>(
-        [this](lsp::notifications::TextDocument_DidSave::Params&& params)
-        { HandleNotificationsTextDocument_DidSave(std::move(params)); });
+    handler.add<lsp::notifications::TextDocument_DidSave>(
+        [&server](lsp::notifications::TextDocument_DidSave::Params&& params)
+        { server.HandleNotificationsTextDocument_DidSave(std::move(params)); });
 
-    m_messageHandler->add<lsp::requests::TextDocument_WillSaveWaitUntil>(
-        [this](lsp::requests::TextDocument_WillSaveWaitUntil::Params&& req)
-        { return HandleRequestsTextDocument_WillSaveWaitUntil(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_WillSaveWaitUntil>(
+        [&server](lsp::requests::TextDocument_WillSaveWaitUntil::Params&& req)
+        { return server.HandleRequestsTextDocument_WillSaveWaitUntil(std::move(req)); });
 }
 
-void Server::RegisterWorkspaceActionHandlers()
+static void RegisterWorkspaceActionHandlers(Server& server, lsp::MessageHandler& handler)
 {
-    m_messageHandler->add<lsp::requests::Workspace_Diagnostic>(
-        [this](lsp::requests::Workspace_Diagnostic::Params&& params)
-        { return HandleRequestsWorkspace_Diagnostic(std::move(params)); });
+    handler.add<lsp::requests::Workspace_Diagnostic>(
+        [&server](lsp::requests::Workspace_Diagnostic::Params&& params)
+        { return server.HandleRequestsWorkspace_Diagnostic(std::move(params)); });
 
-    m_messageHandler->add<lsp::notifications::Workspace_DidChangeConfiguration>(
-        [this](lsp::notifications::Workspace_DidChangeConfiguration::Params&& params)
-        { HandleNotificationsWorkspace_DidChangeConfiguration(std::move(params)); });
+    handler.add<lsp::notifications::Workspace_DidChangeConfiguration>(
+        [&server](lsp::notifications::Workspace_DidChangeConfiguration::Params&& params)
+        { server.HandleNotificationsWorkspace_DidChangeConfiguration(std::move(params)); });
 
-    m_messageHandler->add<lsp::requests::Workspace_TextDocumentContent>(
-        [this](lsp::requests::Workspace_TextDocumentContent::Params&& req)
-        { return HandleRequestsWorkspace_TextDocumentContent(std::move(req)); });
+    handler.add<lsp::requests::Workspace_TextDocumentContent>(
+        [&server](lsp::requests::Workspace_TextDocumentContent::Params&& req)
+        { return server.HandleRequestsWorkspace_TextDocumentContent(std::move(req)); });
 
-    m_messageHandler->add("angelscript/virtualDocumentContent", [this](lsp::json::Value&& params)
-                          { return HandleRequestsVirtualDocumentContent(std::move(params)); });
+    handler.add("angelscript/virtualDocumentContent", [&server](lsp::json::Value&& params)
+                { return server.HandleRequestsVirtualDocumentContent(std::move(params)); });
 
-    m_messageHandler->add<lsp::requests::Workspace_Symbol>([this](lsp::requests::Workspace_Symbol::Params&& req)
-                                                           { return HandleRequestsWorkspace_Symbol(std::move(req)); });
+    handler.add<lsp::requests::Workspace_Symbol>([&server](lsp::requests::Workspace_Symbol::Params&& req)
+                                                 { return server.HandleRequestsWorkspace_Symbol(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::WorkspaceSymbol_Resolve>(
-        [this](lsp::requests::WorkspaceSymbol_Resolve::Params&& req)
-        { return HandleRequestsWorkspaceSymbol_Resolve(std::move(req)); });
+    handler.add<lsp::requests::WorkspaceSymbol_Resolve>(
+        [&server](lsp::requests::WorkspaceSymbol_Resolve::Params&& req)
+        { return server.HandleRequestsWorkspaceSymbol_Resolve(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::Workspace_ExecuteCommand>(
-        [this](lsp::requests::Workspace_ExecuteCommand::Params&& req)
-        { return HandleRequestsWorkspace_ExecuteCommand(std::move(req)); });
+    handler.add<lsp::requests::Workspace_ExecuteCommand>(
+        [&server](lsp::requests::Workspace_ExecuteCommand::Params&& req)
+        { return server.HandleRequestsWorkspace_ExecuteCommand(std::move(req)); });
 }
 
 void Server::RegisterWorkspaceHandlers()
 {
-    RegisterLifecycleHandlers();
-    RegisterFileEventHandlers();
-    RegisterDocumentSyncHandlers();
-    RegisterWorkspaceActionHandlers();
+    RegisterLifecycleHandlers(*this, *m_messageHandler);
+    RegisterFileEventHandlers(*this, *m_messageHandler);
+    RegisterDocumentSyncHandlers(*this, *m_messageHandler);
+    RegisterWorkspaceActionHandlers(*this, *m_messageHandler);
 }
 
-void Server::UpdateFormatConfiguration(const lsp::LSPObject& section)
+static void UpdateFormatConfiguration(Server& server, const lsp::LSPObject& section)
 {
     const lsp::LSPObject* formatObj = nullptr;
     if (const auto* formatVal = section.find("format"); formatVal && formatVal->isObject())
@@ -316,26 +316,26 @@ void Server::UpdateFormatConfiguration(const lsp::LSPObject& section)
     if (auto styleVal = FindSectionString(section, formatObj, "braceStyle", "format"); styleVal.has_value())
     {
         const bool wantsKR = BraceStyleIsKR(*styleVal);
-        const bool prevKR = m_sessionCoordinator->GetFormatBraceStyleKR();
+        const bool prevKR = server.GetSessionCoordinator().GetFormatBraceStyleKR();
         if (wantsKR != prevKR)
         {
-            m_sessionCoordinator->SetFormatBraceStyleKR(wantsKR);
-            LogInfo(fmt::format("Format brace style changed to '{}'", *styleVal));
+            server.GetSessionCoordinator().SetFormatBraceStyleKR(wantsKR);
+            server.LogInfo(fmt::format("Format brace style changed to '{}'", *styleVal));
         }
     }
     if (auto spacesVal = FindSectionBool(section, formatObj, "spacesInsideParentheses", "format");
         spacesVal.has_value())
     {
-        m_sessionCoordinator->SetFormatSpacesInsideParentheses(*spacesVal);
+        server.GetSessionCoordinator().SetFormatSpacesInsideParentheses(*spacesVal);
     }
     if (auto keepEmpty = FindSectionBool(section, formatObj, "keepEmptyBlocksOnSingleLine", "format");
         keepEmpty.has_value())
     {
-        m_sessionCoordinator->SetFormatKeepEmptyBlocksOnSingleLine(*keepEmpty);
+        server.GetSessionCoordinator().SetFormatKeepEmptyBlocksOnSingleLine(*keepEmpty);
     }
     if (auto fosVal = FindSectionBool(section, formatObj, "onSave", "format"); fosVal.has_value())
     {
-        m_config.format.formatOnSave = *fosVal;
+        server.GetMutableConfig().format.formatOnSave = *fosVal;
     }
     if (auto alignVal = FindSectionString(section, formatObj, "pointerAlignment", "format"); alignVal.has_value())
     {
@@ -348,11 +348,11 @@ void Server::UpdateFormatConfiguration(const lsp::LSPObject& section)
         {
             align = features::PointerAlignment::Middle;
         }
-        m_sessionCoordinator->SetFormatPointerAlignment(align);
+        server.GetSessionCoordinator().SetFormatPointerAlignment(align);
     }
 }
 
-bool Server::UpdateEngineConfiguration(const lsp::LSPObject& section)
+static bool UpdateEngineConfiguration(Server& server, const lsp::LSPObject& section)
 {
     bool engineChanged = false;
     const lsp::LSPObject* engineObj = nullptr;
@@ -378,7 +378,7 @@ bool Server::UpdateEngineConfiguration(const lsp::LSPObject& section)
         }
     };
 
-    BindEngineConfiguration(applyBool, applyInt);
+    server.BindEngineConfiguration(applyBool, applyInt);
 
     return engineChanged;
 }
@@ -407,7 +407,30 @@ static bool UpdateUnusedFunctionExclusions(const lsp::LSPObject& section, const 
     return changed;
 }
 
-bool Server::UpdateDiagnosticsConfiguration(const lsp::LSPObject& section)
+static void UpdateUnusedDiagnostics(const lsp::LSPObject& section, const lsp::LSPObject* diagObj,
+                                    config::DiagnosticsConfig& diag, bool& changed)
+{
+    auto applyExplicitBool = [&](std::string_view name, bool& target, bool& explicitFlag)
+    {
+        if (auto v = FindSectionBool(section, diagObj, name, "diagnostics"))
+        {
+            explicitFlag = true;
+            if (target != *v)
+            {
+                target = *v;
+                changed = true;
+            }
+        }
+    };
+
+    applyExplicitBool("reportUnusedFunctions", diag.reportUnusedFunctions, diag.reportUnusedFunctionsExplicit);
+    applyExplicitBool("reportUnusedGlobalVariables", diag.reportUnusedGlobalVariables,
+                      diag.reportUnusedGlobalVariablesExplicit);
+    applyExplicitBool("reportUnusedClasses", diag.reportUnusedClasses, diag.reportUnusedClassesExplicit);
+    applyExplicitBool("reportUnusedMembers", diag.reportUnusedMembers, diag.reportUnusedMembersExplicit);
+}
+
+static bool UpdateDiagnosticsConfiguration(Server& server, const lsp::LSPObject& section)
 {
     bool diagnosticsChanged = false;
     const lsp::LSPObject* diagObj = nullptr;
@@ -415,6 +438,8 @@ bool Server::UpdateDiagnosticsConfiguration(const lsp::LSPObject& section)
     {
         diagObj = &d->object();
     }
+
+    auto& config = server.GetMutableConfig();
 
     auto applyBool = [&](std::string_view name, bool& target)
     {
@@ -425,51 +450,32 @@ bool Server::UpdateDiagnosticsConfiguration(const lsp::LSPObject& section)
         }
     };
 
-    applyBool("reportUnknownTypes", m_config.diagnostics.reportUnknownTypes);
-    applyBool("reportAccessorPortability", m_config.diagnostics.reportAccessorPortability);
-    applyBool("reportAccessorDisabled", m_config.diagnostics.reportAccessorDisabled);
-    applyBool("reportBoolConversion", m_config.diagnostics.reportBoolConversion);
-    applyBool("reportMissingFuncdef", m_config.diagnostics.reportMissingFuncdef);
-    applyBool("reportIntegerDivision", m_config.diagnostics.reportIntegerDivision);
-    applyBool("reportPossibleNullDereference", m_config.diagnostics.reportPossibleNullDereference);
-    applyBool("reportAllNullDereferences", m_config.diagnostics.reportAllNullDereferences);
-    auto applyExplicitBool = [&](std::string_view name, bool& target, bool& explicitFlag)
-    {
-        if (auto v = FindSectionBool(section, diagObj, name, "diagnostics"))
-        {
-            explicitFlag = true;
-            if (target != *v)
-            {
-                target = *v;
-                diagnosticsChanged = true;
-            }
-        }
-    };
+    applyBool("reportUnknownTypes", config.diagnostics.reportUnknownTypes);
+    applyBool("reportAccessorPortability", config.diagnostics.reportAccessorPortability);
+    applyBool("reportAccessorDisabled", config.diagnostics.reportAccessorDisabled);
+    applyBool("reportBoolConversion", config.diagnostics.reportBoolConversion);
+    applyBool("reportMissingFuncdef", config.diagnostics.reportMissingFuncdef);
+    applyBool("reportIntegerDivision", config.diagnostics.reportIntegerDivision);
+    applyBool("reportPossibleNullDereference", config.diagnostics.reportPossibleNullDereference);
+    applyBool("reportAllNullDereferences", config.diagnostics.reportAllNullDereferences);
 
-    applyExplicitBool("reportUnusedFunctions", m_config.diagnostics.reportUnusedFunctions,
-                      m_config.diagnostics.reportUnusedFunctionsExplicit);
-    applyExplicitBool("reportUnusedGlobalVariables", m_config.diagnostics.reportUnusedGlobalVariables,
-                      m_config.diagnostics.reportUnusedGlobalVariablesExplicit);
-    applyExplicitBool("reportUnusedClasses", m_config.diagnostics.reportUnusedClasses,
-                      m_config.diagnostics.reportUnusedClassesExplicit);
-    applyExplicitBool("reportUnusedMembers", m_config.diagnostics.reportUnusedMembers,
-                      m_config.diagnostics.reportUnusedMembersExplicit);
+    UpdateUnusedDiagnostics(section, diagObj, config.diagnostics, diagnosticsChanged);
 
     if (auto v = FindSectionInt(section, diagObj, "reportHandleComparisonEquality", "diagnostics");
-        v && m_config.diagnostics.reportHandleComparisonEquality != *v)
+        v && config.diagnostics.reportHandleComparisonEquality != *v)
     {
-        m_config.diagnostics.reportHandleComparisonEquality = *v;
+        config.diagnostics.reportHandleComparisonEquality = *v;
         diagnosticsChanged = true;
     }
 
     if (auto v = FindSectionString(section, diagObj, "missingAssetPathSeverity", "diagnostics");
-        v && m_config.diagnostics.missingAssetPathSeverity != *v)
+        v && config.diagnostics.missingAssetPathSeverity != *v)
     {
-        m_config.diagnostics.missingAssetPathSeverity = *v;
+        config.diagnostics.missingAssetPathSeverity = *v;
         diagnosticsChanged = true;
     }
 
-    if (UpdateUnusedFunctionExclusions(section, diagObj, m_config.diagnostics))
+    if (UpdateUnusedFunctionExclusions(section, diagObj, config.diagnostics))
     {
         diagnosticsChanged = true;
     }
@@ -666,41 +672,42 @@ static void UpdateCompletionFeatureConfig(const lsp::LSPObject& section, config:
     }
 }
 
-void Server::UpdateFeatureConfiguration(const lsp::LSPObject& section)
+static void UpdateFeatureConfiguration(Server& server, const lsp::LSPObject& section)
 {
     const lsp::LSPObject* featObj = nullptr;
     if (const auto* featVal = section.find("features"); featVal && featVal->isObject())
     {
         featObj = &featVal->object();
     }
+    auto& config = server.GetMutableConfig();
     if (auto vmd = FindSectionBool(section, featObj, "enableVirtualMixinDocuments", "features"); vmd.has_value())
     {
-        m_config.features.enableVirtualMixinDocuments = *vmd;
-        m_symbolTable.SetVirtualMixinDocumentsEnabled(m_config.features.enableVirtualMixinDocuments);
-        m_symbolTable.SetConfiguredTypes(m_config.types.arrayTypeName, m_config.types.stringTypeName);
+        config.features.enableVirtualMixinDocuments = *vmd;
+        server.GetMutableSymbolTable().SetVirtualMixinDocumentsEnabled(config.features.enableVirtualMixinDocuments);
+        server.GetMutableSymbolTable().SetConfiguredTypes(config.types.arrayTypeName, config.types.stringTypeName);
     }
     if (auto ih = FindSectionBool(section, featObj, "inlayHints", "features"); ih.has_value())
     {
-        m_config.features.enableInlayHints = *ih;
+        config.features.enableInlayHints = *ih;
     }
     if (auto fmt = FindSectionBool(section, featObj, "formatting", "features"); fmt.has_value())
     {
-        m_config.features.enableFormatting = *fmt;
+        config.features.enableFormatting = *fmt;
     }
     if (auto otf = FindSectionBool(section, featObj, "onTypeFormatting", "features"); otf.has_value())
     {
-        m_config.features.enableOnTypeFormatting = *otf;
+        config.features.enableOnTypeFormatting = *otf;
     }
     if (auto cs = FindSectionBool(section, featObj, "commentSuppressions", "features"); cs.has_value())
     {
-        m_config.features.enableCommentSuppressions = *cs;
+        config.features.enableCommentSuppressions = *cs;
     }
 
-    UpdateMetadataFeatureConfig(section, m_config);
-    UpdateCompletionFeatureConfig(section, m_config);
-    UpdateInlayHintFeatureConfig(section, m_config);
-    UpdateHoverFeatureConfig(section, m_config);
-    UpdateCodeLensFeatureConfig(section, m_config);
+    UpdateMetadataFeatureConfig(section, config);
+    UpdateCompletionFeatureConfig(section, config);
+    UpdateInlayHintFeatureConfig(section, config);
+    UpdateHoverFeatureConfig(section, config);
+    UpdateCodeLensFeatureConfig(section, config);
 }
 
 static std::vector<config::ServerConfig::ModuleDefinition> ParseModuleDefinitions(const lsp::LSPArray& items)
@@ -726,16 +733,17 @@ static std::vector<config::ServerConfig::ModuleDefinition> ParseModuleDefinition
     return parsed;
 }
 
-bool Server::UpdateModulesConfiguration(const lsp::LSPObject& section)
+static bool UpdateModulesConfiguration(Server& server, const lsp::LSPObject& section)
 {
+    auto& config = server.GetMutableConfig();
     bool entryPointChanged = false;
     if (const auto* entryVal = section.find("moduleEntryPoint"); entryVal && entryVal->isString())
     {
-        if (entryVal->string() != m_config.moduleEntryPoint)
+        if (entryVal->string() != config.moduleEntryPoint)
         {
-            m_config.moduleEntryPoint = entryVal->string();
+            config.moduleEntryPoint = entryVal->string();
             entryPointChanged = true;
-            LogInfo(fmt::format("Module entry point changed to '{}'", m_config.moduleEntryPoint));
+            server.LogInfo(fmt::format("Module entry point changed to '{}'", config.moduleEntryPoint));
         }
     }
 
@@ -748,38 +756,39 @@ bool Server::UpdateModulesConfiguration(const lsp::LSPObject& section)
     auto parsed = ParseModuleDefinitions(modulesVal->array());
 
     const bool changed =
-        parsed.size() != m_config.modules.size() ||
-        !std::equal(parsed.begin(), parsed.end(), m_config.modules.begin(),
+        parsed.size() != config.modules.size() ||
+        !std::equal(parsed.begin(), parsed.end(), config.modules.begin(),
                     [](const config::ServerConfig::ModuleDefinition& a, const config::ServerConfig::ModuleDefinition& b)
                     { return a.name == b.name && a.entry == b.entry && a.folder == b.folder; });
 
     if (changed)
     {
-        m_config.modules = std::move(parsed);
-        LogInfo(fmt::format("Modules changed ({} configured); rescanning", m_config.modules.size()));
-        WithdrawStaleModuleDiagnostics();
+        config.modules = std::move(parsed);
+        server.LogInfo(fmt::format("Modules changed ({} configured); rescanning", config.modules.size()));
+        server.WithdrawStaleModuleDiagnostics();
         return true;
     }
     if (entryPointChanged)
     {
-        WithdrawStaleModuleDiagnostics();
+        server.WithdrawStaleModuleDiagnostics();
     }
     return entryPointChanged;
 }
 
-bool Server::UpdateIncludeConfiguration(const lsp::LSPObject& section)
+static bool UpdateIncludeConfiguration(Server& server, const lsp::LSPObject& section)
 {
+    auto& config = server.GetMutableConfig();
     bool changed = false;
     if (const auto* includeVal = section.find("include"); includeVal && includeVal->isObject())
     {
         if (const auto* implicitVal = includeVal->object().find("implicitExtension");
             implicitVal && implicitVal->isBoolean())
         {
-            if (implicitVal->boolean() != m_config.implicitIncludeExtension)
+            if (implicitVal->boolean() != config.implicitIncludeExtension)
             {
-                m_config.implicitIncludeExtension = implicitVal->boolean();
-                LogInfo(fmt::format("Implicit include extension {}; rebuilding the include graph",
-                                    m_config.implicitIncludeExtension ? "on" : "off"));
+                config.implicitIncludeExtension = implicitVal->boolean();
+                server.LogInfo(fmt::format("Implicit include extension {}; rebuilding the include graph",
+                                           config.implicitIncludeExtension ? "on" : "off"));
                 changed = true;
             }
         }
@@ -793,10 +802,10 @@ bool Server::UpdateIncludeConfiguration(const lsp::LSPObject& section)
             if (item.isString() && !item.string().empty())
                 updated.push_back(item.string());
         }
-        if (updated != m_config.forceIncludeFiles)
+        if (updated != config.forceIncludeFiles)
         {
-            m_config.forceIncludeFiles = std::move(updated);
-            LogInfo(fmt::format("Force include files changed ({} entries)", m_config.forceIncludeFiles.size()));
+            config.forceIncludeFiles = std::move(updated);
+            server.LogInfo(fmt::format("Force include files changed ({} entries)", config.forceIncludeFiles.size()));
             changed = true;
         }
     }
@@ -831,47 +840,48 @@ static bool UpdateActiveStubFiles(angel_lsp::config::ServerConfig& config, const
     return false;
 }
 
-bool Server::UpdatePredefinedAndProfileConfiguration(const lsp::LSPObject& section)
+static bool UpdatePredefinedAndProfileConfiguration(Server& server, const lsp::LSPObject& section)
 {
+    auto& config = server.GetMutableConfig();
     bool shouldRescan = false;
 
     if (const auto* predefinedVal = section.find("predefined"); predefinedVal && predefinedVal->isObject())
     {
         if (const auto* activeVal = predefinedVal->object().find("active"); activeVal && activeVal->isString())
         {
-            if (activeVal->string() != m_config.activePredefined)
+            if (activeVal->string() != config.activePredefined)
             {
-                m_config.activePredefined = activeVal->string();
-                LogInfo(
+                config.activePredefined = activeVal->string();
+                server.LogInfo(
                     fmt::format("Active predefined stub changed to '{}'; rescanning",
-                                m_config.activePredefined.empty() ? std::string("<all>") : m_config.activePredefined));
+                                config.activePredefined.empty() ? std::string("<all>") : config.activePredefined));
                 shouldRescan = true;
             }
         }
     }
 
-    if (UpdateActiveStubFiles(m_config, section))
+    if (UpdateActiveStubFiles(config, section))
     {
-        LogInfo(fmt::format("Active stub files changed ({} active); rescanning", m_config.activeStubFiles.size()));
+        server.LogInfo(fmt::format("Active stub files changed ({} active); rescanning", config.activeStubFiles.size()));
         shouldRescan = true;
     }
 
     if (const auto* profileVal = section.find("engineProfile"); profileVal && profileVal->isString())
     {
-        if (!profileVal->string().empty() && profileVal->string() != EngineProfile())
+        if (!profileVal->string().empty() && profileVal->string() != server.EngineProfile())
         {
-            m_workspaceStore->SetEngineProfile(profileVal->string());
-            LogInfo(fmt::format("Engine profile changed to '{}'; reloading predefineds", profileVal->string()));
+            server.GetWorkspaceStore().SetEngineProfile(profileVal->string());
+            server.LogInfo(fmt::format("Engine profile changed to '{}'; reloading predefineds", profileVal->string()));
             shouldRescan = true;
         }
     }
 
     if (const auto* rulesFileVal = section.find("rulesFile"); rulesFileVal && rulesFileVal->isString())
     {
-        if (rulesFileVal->string() != m_config.rulesFile)
+        if (rulesFileVal->string() != config.rulesFile)
         {
-            m_config.rulesFile = rulesFileVal->string();
-            LogInfo(fmt::format("Rules file changed to '{}'; reloading engine rules", m_config.rulesFile));
+            config.rulesFile = rulesFileVal->string();
+            server.LogInfo(fmt::format("Rules file changed to '{}'; reloading engine rules", config.rulesFile));
             shouldRescan = true;
         }
     }
@@ -879,7 +889,7 @@ bool Server::UpdatePredefinedAndProfileConfiguration(const lsp::LSPObject& secti
     return shouldRescan;
 }
 
-bool Server::UpdateSearchDirectoriesConfiguration(const lsp::LSPObject& section)
+static bool UpdateSearchDirectoriesConfiguration(Server& server, const lsp::LSPObject& section)
 {
     const auto* directories = section.find("searchDirectories");
     if (!directories || !directories->isArray())
@@ -896,11 +906,11 @@ bool Server::UpdateSearchDirectoriesConfiguration(const lsp::LSPObject& section)
         }
     }
 
-    if (updated != *SearchDirectories())
+    if (updated != *server.SearchDirectories())
     {
         const size_t count = updated.size();
-        m_workspaceStore->SetSearchDirectories(std::move(updated));
-        LogInfo(fmt::format("Search directories changed ({} entries); rebuilding the include graph", count));
+        server.GetWorkspaceStore().SetSearchDirectories(std::move(updated));
+        server.LogInfo(fmt::format("Search directories changed ({} entries); rebuilding the include graph", count));
         return true;
     }
     return false;
@@ -920,20 +930,20 @@ void Server::HandleNotificationsWorkspace_DidChangeConfiguration(
         section = &nested->object();
     }
 
-    UpdateFormatConfiguration(*section);
-    bool shouldReanalyse = UpdateEngineConfiguration(*section);
-    shouldReanalyse = UpdateDiagnosticsConfiguration(*section) || shouldReanalyse;
+    UpdateFormatConfiguration(*this, *section);
+    bool shouldReanalyse = UpdateEngineConfiguration(*this, *section);
+    shouldReanalyse = UpdateDiagnosticsConfiguration(*this, *section) || shouldReanalyse;
     if (shouldReanalyse)
     {
         ReanalyseOpenDocuments();
     }
-    UpdateFeatureConfiguration(*section);
+    UpdateFeatureConfiguration(*this, *section);
 
     bool shouldRescan = false;
-    shouldRescan = UpdateModulesConfiguration(*section) || shouldRescan;
-    shouldRescan = UpdateIncludeConfiguration(*section) || shouldRescan;
-    shouldRescan = UpdatePredefinedAndProfileConfiguration(*section) || shouldRescan;
-    shouldRescan = UpdateSearchDirectoriesConfiguration(*section) || shouldRescan;
+    shouldRescan = UpdateModulesConfiguration(*this, *section) || shouldRescan;
+    shouldRescan = UpdateIncludeConfiguration(*this, *section) || shouldRescan;
+    shouldRescan = UpdatePredefinedAndProfileConfiguration(*this, *section) || shouldRescan;
+    shouldRescan = UpdateSearchDirectoriesConfiguration(*this, *section) || shouldRescan;
 
     if (shouldRescan)
     {

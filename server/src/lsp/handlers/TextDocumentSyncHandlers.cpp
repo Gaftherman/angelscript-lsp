@@ -120,11 +120,11 @@ void Server::ReanalyzeDependentsOnSave(const std::string& uriStr)
     std::vector<std::string> closureFiles;
     if (!savedPath.empty())
     {
-        closureFiles = m_includeGraph.GetModuleClosure(savedPath);
+        closureFiles = GetIncludeGraph().GetModuleClosure(savedPath);
     }
     ankerl::unordered_dense::set<std::string> closureSet(closureFiles.begin(), closureFiles.end());
 
-    for (const auto& [openUri, openText] : m_documentStore.GetSnapshot())
+    for (const auto& [openUri, openText] : GetDocumentStore().GetSnapshot())
     {
         if (openUri == uriStr)
         {
@@ -169,18 +169,18 @@ void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDoc
     utils::HighResTimer totalTimer;
     std::string uriStr = DocumentKey(params.textDocument.uri.toString());
     LogInfo(fmt::format("[File Save] Processing save and re-analysis for: {}", uriStr));
-    m_documentStore.SetClientUri(uriStr, params.textDocument.uri.toString());
+    GetDocumentStore().SetClientUri(uriStr, params.textDocument.uri.toString());
     std::string text = params.text.has_value() ? params.text.value() : "";
 
     if (text.empty())
     {
-        if (auto docText = m_documentStore.GetText(uriStr))
+        if (auto docText = GetDocumentStore().GetText(uriStr))
         {
             text = std::move(*docText);
         }
     }
 
-    const int version = m_documentStore.GetVersion(uriStr);
+    const int version = GetDocumentStore().GetVersion(uriStr);
     m_diagnosticsPipeline->MarkSaved(uriStr, version);
 
     m_scopeIndex.ClearDocument(uriStr);
@@ -230,7 +230,7 @@ void Server::UpdateSavedDocumentCaches(const std::string& uriStr, const std::str
 
     if (const std::string savedPath = CanonicalPathFromUri(uriStr); !savedPath.empty())
     {
-        m_includeGraph.UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
+        GetIncludeGraph().UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
             savedPath, text, *SearchDirectories(), IncludeAllowedRoots(), std::string(ImplicitIncludeExtension())});
     }
 
@@ -282,8 +282,8 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
 
     if (!contributes)
     {
-        m_documentStore.OpenDocument(DocumentStore::OpenDocumentRequest{req.uriStr, req.text, req.version,
-                                                                        document::MakeTreePtr(nullptr), req.clientUri});
+        GetDocumentStore().OpenDocument(DocumentStore::OpenDocumentRequest{
+            req.uriStr, req.text, req.version, document::MakeTreePtr(nullptr), req.clientUri});
         m_symbolTable.ClearDocumentSymbols(req.uriStr);
         m_predefinedManager.RemoveStub(req.uriStr);
         if (m_workspaceStore)
@@ -312,7 +312,7 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
 
     if (contentUnchanged)
     {
-        m_documentStore.LinkDocument(req.uriStr, preindexedDoc, req.clientUri, req.version);
+        GetDocumentStore().LinkDocument(req.uriStr, preindexedDoc, req.clientUri, req.version);
         const double totalMs = req.totalTimer.ElapsedMs();
         LogInfo(fmt::format("[File Open] Finished opening predefined file (zero-copy link): {} in {}", req.uriStr,
                             utils::FormatDuration(totalMs)));
@@ -329,8 +329,8 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
     TSTree* tree = m_parser->Parse(analysisText);
     ReplaceSymbolsFromTree(req.uriStr, analysisText, tree);
     CommitPredefinedIndex(req.uriStr, analysisText, document::MakeTreePtr(ts_tree_copy(tree)));
-    m_documentStore.OpenDocument(DocumentStore::OpenDocumentRequest{req.uriStr, req.text, req.version,
-                                                                    document::MakeTreePtr(tree), req.clientUri});
+    GetDocumentStore().OpenDocument(DocumentStore::OpenDocumentRequest{req.uriStr, req.text, req.version,
+                                                                       document::MakeTreePtr(tree), req.clientUri});
 
     ScheduleAnalysisImmediate(ScheduleAnalysisRequest{
         .uriStr = req.uriStr,
@@ -366,7 +366,7 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
     utils::HighResTimer parseTimer;
     TSTree* tree = m_parser->Parse(analysisText);
     double parseMs = parseTimer.ElapsedMs();
-    m_documentStore.OpenDocument(
+    GetDocumentStore().OpenDocument(
         DocumentStore::OpenDocumentRequest{uriStr, text, version, document::MakeTreePtr(tree), clientUri});
 
     if (m_config.features.enablePredefinedLoader && !IsPredefinedReady())
@@ -411,8 +411,9 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
     LogAnalysisProfile("[File Open]", uriStr, AnalysisTimingProfile{totalMs, 0.0, parseMs, colMs, scopeMs, checkMs});
 }
 
-void Server::ApplyContentChange(std::string& buffer, document::TreePtr& workingTree,
-                                const lsp::TextDocumentContentChangeEvent& change, bool isPredefined)
+static void ApplyContentChange(std::string& buffer, document::TreePtr& workingTree,
+                               const lsp::TextDocumentContentChangeEvent& change, bool isPredefined,
+                               utils::PositionEncoding encoding)
 {
     if (std::holds_alternative<lsp::TextDocumentContentChangePartial>(change))
     {
@@ -420,7 +421,7 @@ void Server::ApplyContentChange(std::string& buffer, document::TreePtr& workingT
 
         if (workingTree && !isPredefined)
         {
-            TSInputEdit edit = ComputeTsInputEdit(buffer, rt, m_positionEncoding);
+            TSInputEdit edit = ComputeTsInputEdit(buffer, rt, encoding);
             ts_tree_edit(workingTree.get(), &edit);
         }
 
@@ -428,7 +429,7 @@ void Server::ApplyContentChange(std::string& buffer, document::TreePtr& workingT
             buffer,
             angel_lsp::utils::TextChangeRange{rt.range.start.line, rt.range.start.character, rt.range.end.line,
                                               rt.range.end.character},
-            rt.text, m_positionEncoding);
+            rt.text, encoding);
     }
     else if (std::holds_alternative<lsp::TextDocumentContentChangeWholeDocument>(change))
     {
@@ -443,9 +444,9 @@ void Server::HandleNotificationsTextDocument_DidChange(lsp::notifications::TextD
     std::lock_guard<std::mutex> lifecycleLock(m_lifecycleMutex);
 
     std::string uriStr = DocumentKey(params.textDocument.uri.toString());
-    m_documentStore.SetClientUri(uriStr, params.textDocument.uri.toString());
+    GetDocumentStore().SetClientUri(uriStr, params.textDocument.uri.toString());
 
-    auto doc = m_documentStore.GetDocument(uriStr);
+    auto doc = GetDocumentStore().GetDocument(uriStr);
     if (!doc)
     {
         return;
@@ -460,7 +461,7 @@ void Server::HandleNotificationsTextDocument_DidChange(lsp::notifications::TextD
 
     for (const auto& change : params.contentChanges)
     {
-        ApplyContentChange(buffer, workingTree, change, isPredefined);
+        ApplyContentChange(buffer, workingTree, change, isPredefined, GetPositionEncoding());
     }
 
     const std::string analysisText = AnalysisTextFor(uriStr, buffer);
@@ -469,7 +470,7 @@ void Server::HandleNotificationsTextDocument_DidChange(lsp::notifications::TextD
     // For a predefined stub, reparse cleanly without reusing incremental state.
     TSTree* oldTree = (isPredefined || !workingTree) ? nullptr : workingTree.get();
     TSTree* newTree = m_parser->Parse(analysisText, oldTree);
-    m_documentStore.UpdateDocument(uriStr, buffer, version, document::MakeTreePtr(newTree));
+    GetDocumentStore().UpdateDocument(uriStr, buffer, version, document::MakeTreePtr(newTree));
     double parseMs = parseTimer.ElapsedMs();
     LogInfo(fmt::format("[DidChange Incremental Parse] File: {} | Parse: {:.2f} ms", uriStr, parseMs));
 
@@ -542,7 +543,7 @@ void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDo
     std::lock_guard<std::mutex> lifecycleLock(m_lifecycleMutex);
     std::string uriStr = DocumentKey(params.textDocument.uri.toString());
     LogInfo(fmt::format("[File Close] Document closed: {}", uriStr));
-    m_documentStore.CloseDocument(uriStr);
+    GetDocumentStore().CloseDocument(uriStr);
 
     m_diagnosticsPipeline->Cancel(uriStr);
 
@@ -573,7 +574,7 @@ void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDo
     const bool isModuleFile = RestoreClosedModuleFile(uriStr, path);
 
     // Closing a file does not remove it from the modules of the documents still open.
-    const std::vector<std::string> stillOpen = m_documentStore.GetOpenUris();
+    const std::vector<std::string> stillOpen = GetDocumentStore().GetOpenUris();
 
     for (const auto& openUri : stillOpen)
     {
@@ -582,7 +583,7 @@ void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDo
             const size_t newlyIndexed = IndexModuleClosure(openUri);
             if (newlyIndexed > 0)
             {
-                if (auto openText = m_documentStore.GetText(openUri))
+                if (auto openText = GetDocumentStore().GetText(openUri))
                 {
                     ScheduleAnalysis(openUri, *openText);
                 }

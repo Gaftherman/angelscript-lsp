@@ -45,7 +45,7 @@ Server::HandleRequestsTextDocument_Hover(lsp::requests::TextDocument_Hover::Para
                               doc->tree,
                               m_symbolTable,
                               m_scopeIndex,
-                              codec::Decode(*doc->text, m_positionEncoding, req.position),
+                              codec::Decode(*doc->text, GetPositionEncoding(), req.position),
                               [this, heldDocs](const std::string& uri) -> const std::string*
                               {
                                   auto sp = FindDocumentText(uri);
@@ -85,8 +85,9 @@ Server::HandleRequestsTextDocument_Hover(lsp::requests::TextDocument_Hover::Para
 
 features::DefinitionRequest Server::MakeDefinitionRequest(const OpenDocument& doc, const lsp::Position& position)
 {
-    features::DefinitionRequest dr{doc.uri,       *doc.text,    doc.tree,
-                                   m_symbolTable, m_scopeIndex, codec::Decode(*doc.text, m_positionEncoding, position)};
+    features::DefinitionRequest dr{doc.uri,      *doc.text,
+                                   doc.tree,     m_symbolTable,
+                                   m_scopeIndex, codec::Decode(*doc.text, GetPositionEncoding(), position)};
     dr.engineRules = &m_config.engineRules;
     dr.predefinedExtension = m_config.info.predefinedFileExtension;
     dr.resolveInclude = [this, uri = doc.uri](const std::string& rawPath)
@@ -207,7 +208,7 @@ Server::HandleRequestsTextDocument_Implementation(lsp::requests::TextDocument_Im
                                        *doc->text,
                                        doc->tree,
                                        m_symbolTable,
-                                       codec::Decode(*doc->text, m_positionEncoding, req.position),
+                                       codec::Decode(*doc->text, GetPositionEncoding(), req.position),
                                        m_logger.get()};
     auto impls = features::GetImplementations(ir);
     if (impls.has_value() && !impls->empty())
@@ -242,7 +243,7 @@ Server::HandleRequestsTextDocument_References(lsp::requests::TextDocument_Refere
     features::ReferencesRequest rr{doc->uri,
                                    *doc->text,
                                    doc->tree,
-                                   codec::Decode(*doc->text, m_positionEncoding, req.position),
+                                   codec::Decode(*doc->text, GetPositionEncoding(), req.position),
                                    req.context.includeDeclaration,
                                    m_symbolTable,
                                    m_scopeIndex,
@@ -270,7 +271,7 @@ Server::HandleRequestsTextDocument_DocumentHighlight(lsp::requests::TextDocument
     }
 
     features::DocumentHighlightRequest hr{doc->uri,      *doc->text,
-                                          doc->tree,     codec::Decode(*doc->text, m_positionEncoding, req.position),
+                                          doc->tree,     codec::Decode(*doc->text, GetPositionEncoding(), req.position),
                                           m_symbolTable, m_scopeIndex};
     auto highlights = features::GetDocumentHighlights(hr);
     if (highlights.has_value() && !highlights->empty())
@@ -306,7 +307,7 @@ Server::HandleRequestsTextDocument_Completion(lsp::requests::TextDocument_Comple
     cr.findModuleSymbols = [this](std::string_view prefix)
     {
         std::vector<std::pair<std::string, std::string>> results;
-        for (const auto& sym : m_moduleIndex.FindSymbolsByPrefix(prefix))
+        for (const auto& sym : GetModuleIndex().FindSymbolsByPrefix(prefix))
         {
             results.emplace_back(sym.name, sym.containerName);
         }
@@ -354,7 +355,7 @@ Server::HandleRequestsTextDocument_SignatureHelp(lsp::requests::TextDocument_Sig
 
     features::SignatureHelpRequest sr{doc->uri,     *doc->text,
                                       doc->tree,    m_symbolTable,
-                                      m_scopeIndex, codec::Decode(*doc->text, m_positionEncoding, req.position)};
+                                      m_scopeIndex, codec::Decode(*doc->text, GetPositionEncoding(), req.position)};
     auto sig = features::GetSignatureHelp(sr);
     if (sig.has_value())
     {
@@ -377,7 +378,7 @@ std::optional<RenameContext> Server::SetupRenameContext(const std::string& uriSt
 
     const auto loadedUris = m_predefinedManager.GetLoadedUris();
     return RenameContext{*doc, std::unordered_set<std::string>(loadedUris.begin(), loadedUris.end()),
-                         codec::Decode(*doc->text, m_positionEncoding, rawPos)};
+                         codec::Decode(*doc->text, GetPositionEncoding(), rawPos)};
 }
 
 lsp::requests::TextDocument_PrepareRename::Result
@@ -436,11 +437,11 @@ Server::HandleRequestsTextDocument_CodeAction(lsp::requests::TextDocument_CodeAc
     lsp::CodeActionContext context = req.context;
     for (auto& diag : context.diagnostics)
     {
-        diag.range = codec::Decode(*doc->text, m_positionEncoding, diag.range);
+        diag.range = codec::Decode(*doc->text, GetPositionEncoding(), diag.range);
     }
 
     features::CodeActionRequest car{
-        doc->uri,  *doc->text,    doc->tree,    codec::Decode(*doc->text, m_positionEncoding, req.range),
+        doc->uri,  *doc->text,    doc->tree,    codec::Decode(*doc->text, GetPositionEncoding(), req.range),
         context,   m_symbolTable, m_scopeIndex, IncludeAllowedRoots(),
         &m_config, m_i18n.get()};
     auto actions = features::GetCodeActions(car);
@@ -553,7 +554,7 @@ Server::HandleRequestsTextDocument_RangeFormatting(lsp::requests::TextDocument_R
     features::RangeFormattingRequest rfr{doc->uri,
                                          *doc->text,
                                          doc->tree,
-                                         codec::Decode(*doc->text, m_positionEncoding, req.range),
+                                         codec::Decode(*doc->text, GetPositionEncoding(), req.range),
                                          req.options,
                                          CurrentBraceStyle(),
                                          CurrentSpacesInsideParentheses(),
@@ -584,7 +585,7 @@ Server::HandleRequestsTextDocument_OnTypeFormatting(lsp::requests::TextDocument_
     features::OnTypeFormattingRequest otfr{doc->uri,
                                            *doc->text,
                                            doc->tree,
-                                           codec::Decode(*doc->text, m_positionEncoding, req.position),
+                                           codec::Decode(*doc->text, GetPositionEncoding(), req.position),
                                            req.ch,
                                            req.options,
                                            CurrentBraceStyle(),
@@ -672,138 +673,136 @@ Server::HandleRequestsCodeLens_Resolve(lsp::requests::CodeLens_Resolve::Params&&
     return resolved.value_or(std::move(req));
 }
 
-void Server::RegisterNavigationHandlers()
+static void RegisterNavigationHandlers(Server& server, lsp::MessageHandler& handler)
 {
-    m_messageHandler->add<lsp::requests::TextDocument_Hover>(
-        [this](lsp::requests::TextDocument_Hover::Params&& req)
-        { return HandleRequestsTextDocument_Hover(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_Hover>([&server](lsp::requests::TextDocument_Hover::Params&& req)
+                                                   { return server.HandleRequestsTextDocument_Hover(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::TextDocument_Definition>(
-        [this](lsp::requests::TextDocument_Definition::Params&& req)
-        { return HandleRequestsTextDocument_Definition(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_Definition>(
+        [&server](lsp::requests::TextDocument_Definition::Params&& req)
+        { return server.HandleRequestsTextDocument_Definition(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::TextDocument_Moniker>(
-        [this](lsp::requests::TextDocument_Moniker::Params&& req)
-        { return HandleRequestsTextDocument_Moniker(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_Moniker>(
+        [&server](lsp::requests::TextDocument_Moniker::Params&& req)
+        { return server.HandleRequestsTextDocument_Moniker(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::TextDocument_InlineCompletion>(
+    handler.add<lsp::requests::TextDocument_InlineCompletion>(
         [](lsp::requests::TextDocument_InlineCompletion::Params&&)
             -> lsp::requests::TextDocument_InlineCompletion::Result { return lsp::Null{}; });
 
-    m_messageHandler->add<lsp::requests::TextDocument_Declaration>(
-        [this](lsp::requests::TextDocument_Declaration::Params&& req)
-        { return HandleRequestsTextDocument_Declaration(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_Declaration>(
+        [&server](lsp::requests::TextDocument_Declaration::Params&& req)
+        { return server.HandleRequestsTextDocument_Declaration(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::TextDocument_Implementation>(
-        [this](lsp::requests::TextDocument_Implementation::Params&& req)
-        { return HandleRequestsTextDocument_Implementation(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_Implementation>(
+        [&server](lsp::requests::TextDocument_Implementation::Params&& req)
+        { return server.HandleRequestsTextDocument_Implementation(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::TextDocument_TypeDefinition>(
-        [this](lsp::requests::TextDocument_TypeDefinition::Params&& req)
-        { return HandleRequestsTextDocument_TypeDefinition(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_TypeDefinition>(
+        [&server](lsp::requests::TextDocument_TypeDefinition::Params&& req)
+        { return server.HandleRequestsTextDocument_TypeDefinition(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::TextDocument_References>(
-        [this](lsp::requests::TextDocument_References::Params&& req)
-        { return HandleRequestsTextDocument_References(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_References>(
+        [&server](lsp::requests::TextDocument_References::Params&& req)
+        { return server.HandleRequestsTextDocument_References(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::TextDocument_DocumentHighlight>(
-        [this](lsp::requests::TextDocument_DocumentHighlight::Params&& req)
-        { return HandleRequestsTextDocument_DocumentHighlight(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_DocumentHighlight>(
+        [&server](lsp::requests::TextDocument_DocumentHighlight::Params&& req)
+        { return server.HandleRequestsTextDocument_DocumentHighlight(std::move(req)); });
 
-    m_messageHandler->add("textDocument/breakpointLocations", [this](lsp::json::Value&& params)
-                          { return HandleRequestsTextDocument_BreakpointLocations(std::move(params)); });
+    handler.add("textDocument/breakpointLocations", [&server](lsp::json::Value&& params)
+                { return server.HandleRequestsTextDocument_BreakpointLocations(std::move(params)); });
 
-    m_messageHandler->add("angelscript/breakpointLocations", [this](lsp::json::Value&& params)
-                          { return HandleRequestsTextDocument_BreakpointLocations(std::move(params)); });
+    handler.add("angelscript/breakpointLocations", [&server](lsp::json::Value&& params)
+                { return server.HandleRequestsTextDocument_BreakpointLocations(std::move(params)); });
 
-    m_messageHandler->add("textDocument/evaluatableExpression", [this](lsp::json::Value&& params)
-                          { return HandleRequestsTextDocument_EvaluatableExpression(std::move(params)); });
+    handler.add("textDocument/evaluatableExpression", [&server](lsp::json::Value&& params)
+                { return server.HandleRequestsTextDocument_EvaluatableExpression(std::move(params)); });
 
-    m_messageHandler->add("angelscript/evaluatableExpression", [this](lsp::json::Value&& params)
-                          { return HandleRequestsTextDocument_EvaluatableExpression(std::move(params)); });
+    handler.add("angelscript/evaluatableExpression", [&server](lsp::json::Value&& params)
+                { return server.HandleRequestsTextDocument_EvaluatableExpression(std::move(params)); });
 
-    m_messageHandler->add("angelscript/debugCompletion", [this](lsp::json::Value&& params)
-                          { return HandleRequestsAngelscript_DebugCompletion(std::move(params)); });
+    handler.add("angelscript/debugCompletion", [&server](lsp::json::Value&& params)
+                { return server.HandleRequestsAngelscript_DebugCompletion(std::move(params)); });
 }
 
-void Server::RegisterEditingHandlers()
+static void RegisterEditingHandlers(Server& server, lsp::MessageHandler& handler)
 {
-    m_messageHandler->add<lsp::requests::TextDocument_Completion>(
-        [this](lsp::requests::TextDocument_Completion::Params&& req)
-        { return HandleRequestsTextDocument_Completion(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_Completion>(
+        [&server](lsp::requests::TextDocument_Completion::Params&& req)
+        { return server.HandleRequestsTextDocument_Completion(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::CompletionItem_Resolve>(
-        [this](lsp::requests::CompletionItem_Resolve::Params&& req)
-        { return HandleRequestsCompletionItem_Resolve(std::move(req)); });
+    handler.add<lsp::requests::CompletionItem_Resolve>(
+        [&server](lsp::requests::CompletionItem_Resolve::Params&& req)
+        { return server.HandleRequestsCompletionItem_Resolve(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::TextDocument_SignatureHelp>(
-        [this](lsp::requests::TextDocument_SignatureHelp::Params&& req)
-        { return HandleRequestsTextDocument_SignatureHelp(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_SignatureHelp>(
+        [&server](lsp::requests::TextDocument_SignatureHelp::Params&& req)
+        { return server.HandleRequestsTextDocument_SignatureHelp(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::TextDocument_PrepareRename>(
-        [this](lsp::requests::TextDocument_PrepareRename::Params&& req)
-        { return HandleRequestsTextDocument_PrepareRename(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_PrepareRename>(
+        [&server](lsp::requests::TextDocument_PrepareRename::Params&& req)
+        { return server.HandleRequestsTextDocument_PrepareRename(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::TextDocument_Rename>(
-        [this](lsp::requests::TextDocument_Rename::Params&& req)
-        { return HandleRequestsTextDocument_Rename(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_Rename>(
+        [&server](lsp::requests::TextDocument_Rename::Params&& req)
+        { return server.HandleRequestsTextDocument_Rename(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::TextDocument_CodeAction>(
-        [this](lsp::requests::TextDocument_CodeAction::Params&& req)
-        { return HandleRequestsTextDocument_CodeAction(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_CodeAction>(
+        [&server](lsp::requests::TextDocument_CodeAction::Params&& req)
+        { return server.HandleRequestsTextDocument_CodeAction(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::CodeAction_Resolve>(
-        [this](lsp::requests::CodeAction_Resolve::Params&& req)
-        { return HandleRequestsCodeAction_Resolve(std::move(req)); });
+    handler.add<lsp::requests::CodeAction_Resolve>([&server](lsp::requests::CodeAction_Resolve::Params&& req)
+                                                   { return server.HandleRequestsCodeAction_Resolve(std::move(req)); });
 }
 
-void Server::RegisterFormattingAndSymbolHandlers()
+static void RegisterFormattingAndSymbolHandlers(Server& server, lsp::MessageHandler& handler)
 {
-    m_messageHandler->add<lsp::requests::TextDocument_Diagnostic>(
-        [this](lsp::requests::TextDocument_Diagnostic::Params&& params)
-        { return HandleRequestsTextDocument_Diagnostic(std::move(params)); });
+    handler.add<lsp::requests::TextDocument_Diagnostic>(
+        [&server](lsp::requests::TextDocument_Diagnostic::Params&& params)
+        { return server.HandleRequestsTextDocument_Diagnostic(std::move(params)); });
 
-    m_messageHandler->add<lsp::requests::TextDocument_DocumentSymbol>(
-        [this](lsp::requests::TextDocument_DocumentSymbol::Params&& req)
-        { return HandleRequestsTextDocument_DocumentSymbol(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_DocumentSymbol>(
+        [&server](lsp::requests::TextDocument_DocumentSymbol::Params&& req)
+        { return server.HandleRequestsTextDocument_DocumentSymbol(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::TextDocument_Formatting>(
-        [this](lsp::requests::TextDocument_Formatting::Params&& req)
-        { return HandleRequestsTextDocument_Formatting(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_Formatting>(
+        [&server](lsp::requests::TextDocument_Formatting::Params&& req)
+        { return server.HandleRequestsTextDocument_Formatting(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::TextDocument_RangeFormatting>(
-        [this](lsp::requests::TextDocument_RangeFormatting::Params&& req)
-        { return HandleRequestsTextDocument_RangeFormatting(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_RangeFormatting>(
+        [&server](lsp::requests::TextDocument_RangeFormatting::Params&& req)
+        { return server.HandleRequestsTextDocument_RangeFormatting(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::TextDocument_RangesFormatting>(
-        [this](lsp::requests::TextDocument_RangesFormatting::Params&& req)
-        { return HandleRequestsTextDocument_RangesFormatting(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_RangesFormatting>(
+        [&server](lsp::requests::TextDocument_RangesFormatting::Params&& req)
+        { return server.HandleRequestsTextDocument_RangesFormatting(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::TextDocument_OnTypeFormatting>(
-        [this](lsp::requests::TextDocument_OnTypeFormatting::Params&& req)
-        { return HandleRequestsTextDocument_OnTypeFormatting(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_OnTypeFormatting>(
+        [&server](lsp::requests::TextDocument_OnTypeFormatting::Params&& req)
+        { return server.HandleRequestsTextDocument_OnTypeFormatting(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::TextDocument_DocumentLink>(
-        [this](lsp::requests::TextDocument_DocumentLink::Params&& req)
-        { return HandleRequestsTextDocument_DocumentLink(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_DocumentLink>(
+        [&server](lsp::requests::TextDocument_DocumentLink::Params&& req)
+        { return server.HandleRequestsTextDocument_DocumentLink(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::DocumentLink_Resolve>(
-        [this](lsp::requests::DocumentLink_Resolve::Params&& req)
-        { return HandleRequestsDocumentLink_Resolve(std::move(req)); });
+    handler.add<lsp::requests::DocumentLink_Resolve>(
+        [&server](lsp::requests::DocumentLink_Resolve::Params&& req)
+        { return server.HandleRequestsDocumentLink_Resolve(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::TextDocument_CodeLens>(
-        [this](lsp::requests::TextDocument_CodeLens::Params&& req)
-        { return HandleRequestsTextDocument_CodeLens(std::move(req)); });
+    handler.add<lsp::requests::TextDocument_CodeLens>(
+        [&server](lsp::requests::TextDocument_CodeLens::Params&& req)
+        { return server.HandleRequestsTextDocument_CodeLens(std::move(req)); });
 
-    m_messageHandler->add<lsp::requests::CodeLens_Resolve>([this](lsp::requests::CodeLens_Resolve::Params&& req)
-                                                           { return HandleRequestsCodeLens_Resolve(std::move(req)); });
+    handler.add<lsp::requests::CodeLens_Resolve>([&server](lsp::requests::CodeLens_Resolve::Params&& req)
+                                                 { return server.HandleRequestsCodeLens_Resolve(std::move(req)); });
 }
 
 void Server::RegisterTextDocumentHandlers()
 {
-    RegisterNavigationHandlers();
-    RegisterEditingHandlers();
-    RegisterFormattingAndSymbolHandlers();
+    RegisterNavigationHandlers(*this, *m_messageHandler);
+    RegisterEditingHandlers(*this, *m_messageHandler);
+    RegisterFormattingAndSymbolHandlers(*this, *m_messageHandler);
 }
 
 std::optional<lsp::requests::TextDocument_Diagnostic::Result>
@@ -931,7 +930,7 @@ Server::HandleRequestsTextDocument_RangesFormatting(lsp::requests::TextDocument_
         features::RangeFormattingRequest rfr{doc->uri,
                                              *doc->text,
                                              doc->tree,
-                                             codec::Decode(*doc->text, m_positionEncoding, range),
+                                             codec::Decode(*doc->text, GetPositionEncoding(), range),
                                              params.options,
                                              CurrentBraceStyle(),
                                              CurrentSpacesInsideParentheses(),

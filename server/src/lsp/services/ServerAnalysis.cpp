@@ -11,7 +11,7 @@ namespace angel_lsp
 {
 void Server::ReanalyseOpenDocuments()
 {
-    const auto docs = m_documentStore.GetAllDocuments();
+    const auto docs = GetDocumentStore().GetAllDocuments();
     for (const auto& doc : docs)
     {
         if (!doc || angel_lsp::utils::IsPredefinedFile(doc->uri, m_config.info.predefinedFileExtension))
@@ -70,7 +70,9 @@ Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
 
     request.diagnostics = &m_config.diagnostics;
     request.engineRules = &m_config.engineRules;
-    request.severityOverrides = m_diagnosticSeverities.empty() ? nullptr : &m_diagnosticSeverities;
+    request.severityOverrides = m_diagnosticsPipeline->GetDiagnosticSeverities().empty()
+                                    ? nullptr
+                                    : &m_diagnosticsPipeline->GetDiagnosticSeverities();
     request.enableTypeConversionChecks = m_config.features.enableTypeConversionChecks;
     request.enableCommentSuppressions = m_config.features.enableCommentSuppressions;
     request.enableMetadata = m_config.features.enableMetadata;
@@ -79,7 +81,7 @@ Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
     request.sourceCode = text;
     request.tree = tree;
 
-    const auto rawTextOpt = m_documentStore.GetText(uriStr);
+    const auto rawTextOpt = GetDocumentStore().GetText(uriStr);
     const std::string_view preprocessorSource = rawTextOpt ? std::string_view(*rawTextOpt) : std::string_view(text);
 
     auto scan = angel_lsp::utils::ScanPreprocessor(preprocessorSource, *DefinedWords(), m_config.preprocessor,
@@ -239,7 +241,7 @@ void Server::ScheduleAnalysis(ScheduleAnalysisRequest req)
 
     if (req.generation == 0)
     {
-        req.generation = m_documentStore.GetGeneration(req.uriStr);
+        req.generation = GetDocumentStore().GetGeneration(req.uriStr);
     }
 
     const uint64_t configRevision = m_sessionCoordinator->GetConfigRevision();
@@ -263,7 +265,7 @@ void Server::ScheduleAnalysisImmediate(ScheduleAnalysisRequest req)
 
     if (req.generation == 0)
     {
-        req.generation = m_documentStore.GetGeneration(req.uriStr);
+        req.generation = GetDocumentStore().GetGeneration(req.uriStr);
     }
 
     const uint64_t configRevision = m_sessionCoordinator->GetConfigRevision();
@@ -273,14 +275,9 @@ void Server::ScheduleAnalysisImmediate(ScheduleAnalysisRequest req)
         {req.uriStr, analysisText, req.force, std::move(req.tree), req.version, req.generation, configRevision});
 }
 
-void Server::ScheduleAnalysisImmediate(const std::string& uriStr, const std::string& text, bool force)
-{
-    ScheduleAnalysisImmediate(ScheduleAnalysisRequest{.uriStr = uriStr, .text = text, .force = force});
-}
-
 bool Server::IsCommitAnalysisStale(const CommitAnalysisRequest& req) const
 {
-    if (req.generation > 0 && !m_documentStore.IsCurrent(req.uriStr, req.generation, req.version))
+    if (req.generation > 0 && !GetDocumentStore().IsCurrent(req.uriStr, req.generation, req.version))
     {
         return true;
     }
@@ -346,7 +343,7 @@ bool Server::CommitAnalysisResults(CommitAnalysisRequest req)
 
 bool Server::IsAnalyzeDocumentStale(const AnalyzeDocumentRequest& req) const
 {
-    if (req.generation > 0 && !m_documentStore.IsCurrent(req.uriStr, req.generation, req.version))
+    if (req.generation > 0 && !GetDocumentStore().IsCurrent(req.uriStr, req.generation, req.version))
     {
         return true;
     }
@@ -376,7 +373,7 @@ void Server::StorePredefinedSnapshot(const AnalyzeDocumentRequest& req, const st
         m_predefinedManager.SetDocumentText(req.uriStr, analysisText);
         if (tree)
         {
-            m_documentStore.SetTree(req.uriStr, document::MakeTreePtr(ts_tree_copy(tree.get())));
+            GetDocumentStore().SetTree(req.uriStr, document::MakeTreePtr(ts_tree_copy(tree.get())));
             auto updatedDoc = std::make_shared<const document::Document>(
                 document::DocumentSnapshot{req.uriStr, analysisText, req.version, req.generation},
                 document::MakeTreePtr(ts_tree_copy(tree.get())));
@@ -532,7 +529,7 @@ void Server::LogAnalysisProfile(std::string_view prefix, const std::string& uriS
 bool Server::IsUnchangedClosedDocument(const std::string& uriStr, uint64_t generation,
                                        const angel_lsp::analysis::SymbolTable& staging) const
 {
-    if (generation != 0 || m_documentStore.IsOpen(uriStr))
+    if (generation != 0 || GetDocumentStore().IsOpen(uriStr))
     {
         return false;
     }
@@ -561,7 +558,7 @@ void Server::CommitSyntaxOnlyResults(const AnalyzeDocumentRequest& req, std::vec
 
 bool Server::IsAnalysisRequestStale(const AnalyzeDocumentRequest& req) const
 {
-    if (req.generation > 0 && !m_documentStore.IsCurrent(req.uriStr, req.generation, req.version))
+    if (req.generation > 0 && !GetDocumentStore().IsCurrent(req.uriStr, req.generation, req.version))
     {
         return true;
     }
@@ -588,13 +585,14 @@ const analysis::SymbolTable* Server::PrepareAnalysisSnapshot(const std::string& 
     return outSnapshot.get();
 }
 
-void Server::LogAnalysisProfileAndClosure(const std::string& uriStr, double closureMs,
-                                          const AnalysisTimingProfile& profile) const
+static void LogAnalysisProfileAndClosure(const Server& server, const std::string& uriStr, double closureMs,
+                                         const AnalysisTimingProfile& profile)
 {
-    LogAnalysisProfile("[Analysis]", uriStr, profile);
+    server.LogAnalysisProfile("[Analysis]", uriStr, profile);
     if (closureMs > 0.05)
     {
-        LogInfo(fmt::format("[Analysis Breakdown] File: {} | Closure: {}", uriStr, utils::FormatDuration(closureMs)));
+        server.LogInfo(
+            fmt::format("[Analysis Breakdown] File: {} | Closure: {}", uriStr, utils::FormatDuration(closureMs)));
     }
 }
 
@@ -679,7 +677,7 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     if (!m_config.modules.empty() && ClaimFor(CanonicalPathFromUri(req.uriStr)).owner == nullptr)
     {
         LogAnalysisProfileAndClosure(
-            req.uriStr, closureMs,
+            *this, req.uriStr, closureMs,
             AnalysisTimingProfile{totalTimer.ElapsedMs(), snapshotMs, parsed.parseMs, parsed.colMs, scopeMs, 0.0});
         CommitAnalysisResults({req.uriStr,
                                req.version,
@@ -705,7 +703,7 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     AppendIncludeDiagnostics(req.uriStr, req.text, parsed.diagnostics);
 
     LogAnalysisProfileAndClosure(
-        req.uriStr, closureMs,
+        *this, req.uriStr, closureMs,
         AnalysisTimingProfile{totalTimer.ElapsedMs(), snapshotMs, parsed.parseMs, parsed.colMs, scopeMs, checkMs});
 
     CommitAnalysisResults({req.uriStr, req.version, req.generation, req.configRevision,

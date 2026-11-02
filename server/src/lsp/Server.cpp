@@ -69,6 +69,9 @@ static bool BraceStyleIsKR(std::string_view name)
     return lowered == "kr" || lowered == "k&r" || lowered == "kandr" || lowered == "onetbs";
 }
 
+static void BuildDiagnosticSeverityOverrides(DiagnosticsPipeline* pipeline,
+                                             const angel_lsp::config::ServerConfig& config, utils::LspLogger* logger);
+
 /**
  * @brief Searches for a boolean setting under direct, dot-prefixed, or fully-qualified engine keys.
  * @param[in] initSection Configuration object section.
@@ -132,17 +135,7 @@ static std::optional<int> FindSectionInt(const lsp::LSPObject* initSection, cons
 Server::Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& stream)
     : m_config(config), m_workspaceStore(std::make_unique<WorkspaceStateStore>()),
       m_diagnosticsPipeline(std::make_unique<DiagnosticsPipeline>()),
-      m_sessionCoordinator(std::make_unique<LspSessionCoordinator>()),
-      m_documentStore(m_workspaceStore->GetDocumentStore()), m_includeGraph(m_workspaceStore->GetIncludeGraph()),
-      m_moduleIndex(m_workspaceStore->GetModuleIndex()),
-      m_diagnosticsCacheMutex(m_diagnosticsPipeline->GetCacheMutexRef()),
-      m_diagnosticsCache(m_diagnosticsPipeline->GetCacheRef()),
-      m_diagnosticSeverities(m_diagnosticsPipeline->GetSeveritiesRef()),
-      m_positionEncoding(m_sessionCoordinator->PositionEncodingRef()),
-      m_snippetSupport(m_sessionCoordinator->SnippetSupportRef()),
-      m_workDoneProgressSupport(m_sessionCoordinator->WorkDoneProgressSupportRef()),
-      m_clientPullsDiagnostics(m_sessionCoordinator->ClientPullsDiagnosticsRef()),
-      m_clientSupportsDiagnosticRefresh(m_sessionCoordinator->ClientSupportsDiagnosticRefreshRef())
+      m_sessionCoordinator(std::make_unique<LspSessionCoordinator>())
 {
     m_sessionCoordinator->Start();
     m_sessionCoordinator->SetFormatBraceStyleKR(BraceStyleIsKR(m_config.format.braceStyle));
@@ -185,7 +178,7 @@ Server::Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& s
                              .configRevision = req.configRevision});
         });
 
-    BuildDiagnosticSeverityOverrides();
+    BuildDiagnosticSeverityOverrides(m_diagnosticsPipeline.get(), m_config, m_logger.get());
     InitHandles();
 }
 
@@ -375,9 +368,12 @@ void Server::Run()
     }
 }
 
-void Server::ExtractInitialWorkspaceRoots(const lsp::requests::Initialize::Params& params)
+static void ExtractInitialWorkspaceRoots(WorkspaceStateStore& workspaceStore,
+                                         [[maybe_unused]] const angel_lsp::config::ServerConfig& config,
+                                         std::mutex& runtimeConfigMutex,
+                                         const lsp::requests::Initialize::Params& params)
 {
-    std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+    std::lock_guard<std::mutex> lock(runtimeConfigMutex);
     std::vector<std::string> roots;
     if (params.workspaceFolders.has_value() && !params.workspaceFolders.value().isNull())
     {
@@ -413,16 +409,16 @@ void Server::ExtractInitialWorkspaceRoots(const lsp::requests::Initialize::Param
     }
 
 #if defined(_DEBUG) || !defined(NDEBUG)
-    if (m_config.info.enableFileLogging && !roots.empty())
+    if (config.info.enableFileLogging && !roots.empty())
     {
         angel_lsp::utils::MultiFileLogger::Instance().Initialize(roots.front());
     }
 #endif
 
-    m_workspaceStore->SetWorkspaceRoots(std::move(roots));
+    workspaceStore.SetWorkspaceRoots(std::move(roots));
 }
 
-void Server::ApplyEngineInitializationOptions(const std::optional<lsp::LSPAny>& initOpts)
+static void ApplyEngineInitializationOptions(Server& server, const std::optional<lsp::LSPAny>& initOpts)
 {
     if (!initOpts.has_value() || !initOpts->isObject())
     {
@@ -451,7 +447,7 @@ void Server::ApplyEngineInitializationOptions(const std::optional<lsp::LSPAny>& 
             target = *v;
     };
 
-    BindEngineConfiguration(applyBool, applyInt);
+    server.BindEngineConfiguration(applyBool, applyInt);
 }
 
 void Server::BindEngineConfiguration(const std::function<void(std::string_view, bool&)>& applyBool,
@@ -477,7 +473,8 @@ void Server::BindEngineConfiguration(const std::function<void(std::string_view, 
     applyInt("compilerWarnings", m_config.engine.compilerWarnings);
 }
 
-void Server::NegotiateClientCapabilities(const lsp::ClientCapabilities& capabilities)
+static void NegotiateClientCapabilities(LspSessionCoordinator& sessionCoordinator,
+                                        const lsp::ClientCapabilities& capabilities)
 {
     utils::PositionEncoding positionEncoding = angel_lsp::utils::PositionEncoding::Utf16;
     if (capabilities.general.has_value() && capabilities.general->positionEncodings.has_value())
@@ -491,17 +488,17 @@ void Server::NegotiateClientCapabilities(const lsp::ClientCapabilities& capabili
             }
         }
     }
-    m_sessionCoordinator->SetPositionEncoding(positionEncoding);
+    sessionCoordinator.SetPositionEncoding(positionEncoding);
 
     if (capabilities.window.has_value() && capabilities.window->workDoneProgress.has_value())
     {
-        m_sessionCoordinator->SetWorkDoneProgressSupport(capabilities.window->workDoneProgress.value());
+        sessionCoordinator.SetWorkDoneProgressSupport(capabilities.window->workDoneProgress.value());
     }
 
-    m_sessionCoordinator->SetClientPullsDiagnostics(capabilities.textDocument.has_value() &&
-                                                    capabilities.textDocument->diagnostic.has_value());
+    sessionCoordinator.SetClientPullsDiagnostics(capabilities.textDocument.has_value() &&
+                                                 capabilities.textDocument->diagnostic.has_value());
 
-    m_sessionCoordinator->SetClientSupportsDiagnosticRefresh(
+    sessionCoordinator.SetClientSupportsDiagnosticRefresh(
         capabilities.workspace.has_value() && capabilities.workspace->diagnostics.has_value() &&
         capabilities.workspace->diagnostics->refreshSupport.has_value() &&
         capabilities.workspace->diagnostics->refreshSupport.value());
@@ -510,19 +507,20 @@ void Server::NegotiateClientCapabilities(const lsp::ClientCapabilities& capabili
         capabilities.textDocument->completion->completionItem.has_value() &&
         capabilities.textDocument->completion->completionItem->snippetSupport.has_value())
     {
-        m_sessionCoordinator->SetClientSupportsSnippets(
+        sessionCoordinator.SetClientSupportsSnippets(
             capabilities.textDocument->completion->completionItem->snippetSupport.value());
     }
 }
 
-void Server::ConfigureNavigationAndEditingCapabilities(lsp::ServerCapabilities& caps) const
+static void ConfigureNavigationAndEditingCapabilities(const angel_lsp::config::ServerConfig& config,
+                                                      lsp::ServerCapabilities& caps)
 {
-    if (m_config.features.enableHover)
+    if (config.features.enableHover)
     {
         caps.hoverProvider = true;
     }
 
-    if (m_config.features.enableDefinition)
+    if (config.features.enableDefinition)
     {
         caps.definitionProvider = true;
         caps.typeDefinitionProvider = true;
@@ -530,32 +528,32 @@ void Server::ConfigureNavigationAndEditingCapabilities(lsp::ServerCapabilities& 
         caps.monikerProvider = true;
     }
 
-    if (m_config.features.enableImplementation)
+    if (config.features.enableImplementation)
     {
         caps.implementationProvider = true;
     }
 
-    if (m_config.features.enableSelectionRange)
+    if (config.features.enableSelectionRange)
     {
         caps.selectionRangeProvider = true;
     }
 
-    if (m_config.features.enableCallHierarchy)
+    if (config.features.enableCallHierarchy)
     {
         caps.callHierarchyProvider = true;
     }
 
-    if (m_config.features.enableTypeHierarchy)
+    if (config.features.enableTypeHierarchy)
     {
         caps.typeHierarchyProvider = true;
     }
 
-    if (m_config.features.enableLinkedEditing)
+    if (config.features.enableLinkedEditing)
     {
         caps.linkedEditingRangeProvider = true;
     }
 
-    if (m_config.features.enableCodeLens)
+    if (config.features.enableCodeLens)
     {
         lsp::CodeLensOptions codeLensOpts;
         codeLensOpts.resolveProvider = true;
@@ -563,9 +561,10 @@ void Server::ConfigureNavigationAndEditingCapabilities(lsp::ServerCapabilities& 
     }
 }
 
-void Server::ConfigureEditingAndSymbolCapabilities(lsp::ServerCapabilities& caps) const
+static void ConfigureEditingAndSymbolCapabilities(const angel_lsp::config::ServerConfig& config,
+                                                  lsp::ServerCapabilities& caps)
 {
-    if (m_config.features.enableCompletion)
+    if (config.features.enableCompletion)
     {
         lsp::CompletionOptions completionOpts;
         completionOpts.triggerCharacters = lsp::Array<lsp::String>{".", ":"};
@@ -573,7 +572,7 @@ void Server::ConfigureEditingAndSymbolCapabilities(lsp::ServerCapabilities& caps
         caps.completionProvider = completionOpts;
     }
 
-    if (m_config.features.enableSemanticTokens)
+    if (config.features.enableSemanticTokens)
     {
         lsp::SemanticTokensOptions semOpts;
         semOpts.legend = features::GetSemanticTokensLegend();
@@ -584,48 +583,48 @@ void Server::ConfigureEditingAndSymbolCapabilities(lsp::ServerCapabilities& caps
         caps.semanticTokensProvider = semOpts;
     }
 
-    if (m_config.features.enableSignatureHelp)
+    if (config.features.enableSignatureHelp)
     {
         lsp::SignatureHelpOptions sigOpts;
         sigOpts.triggerCharacters = lsp::Array<lsp::String>{"(", ","};
         caps.signatureHelpProvider = sigOpts;
     }
 
-    if (m_config.features.enableDocumentSymbols)
+    if (config.features.enableDocumentSymbols)
     {
         caps.documentSymbolProvider = true;
     }
 
-    if (m_config.features.enableWorkspaceSymbols)
+    if (config.features.enableWorkspaceSymbols)
     {
         lsp::WorkspaceSymbolOptions wsOpts;
         wsOpts.resolveProvider = true;
         caps.workspaceSymbolProvider = wsOpts;
     }
 
-    if (m_config.features.enableReferences)
+    if (config.features.enableReferences)
     {
         caps.referencesProvider = true;
     }
 
-    if (m_config.features.enableRename)
+    if (config.features.enableRename)
     {
         lsp::RenameOptions renameOpts;
         renameOpts.prepareProvider = true;
         caps.renameProvider = renameOpts;
     }
 
-    if (m_config.features.enableDocumentHighlight)
+    if (config.features.enableDocumentHighlight)
     {
         caps.documentHighlightProvider = true;
     }
 
-    if (m_config.features.enableFoldingRange)
+    if (config.features.enableFoldingRange)
     {
         caps.foldingRangeProvider = true;
     }
 
-    if (m_config.features.enableInlayHints)
+    if (config.features.enableInlayHints)
     {
         lsp::InlayHintOptions inlayOpts;
         inlayOpts.resolveProvider = true;
@@ -633,9 +632,10 @@ void Server::ConfigureEditingAndSymbolCapabilities(lsp::ServerCapabilities& caps
     }
 }
 
-void Server::ConfigureFormattingAndDiagnosticCapabilities(lsp::ServerCapabilities& caps) const
+static void ConfigureFormattingAndDiagnosticCapabilities(const angel_lsp::config::ServerConfig& config,
+                                                         lsp::ServerCapabilities& caps)
 {
-    if (m_config.features.enableCodeAction)
+    if (config.features.enableCodeAction)
     {
         lsp::CodeActionOptions codeActionOpts;
         codeActionOpts.resolveProvider = true;
@@ -647,13 +647,13 @@ void Server::ConfigureFormattingAndDiagnosticCapabilities(lsp::ServerCapabilitie
         caps.codeActionProvider = codeActionOpts;
     }
 
-    if (m_config.features.enableFormatting)
+    if (config.features.enableFormatting)
     {
         caps.documentFormattingProvider = true;
         lsp::DocumentRangeFormattingOptions rangeOpts;
         rangeOpts.rangesSupport = true;
         caps.documentRangeFormattingProvider = rangeOpts;
-        if (m_config.features.enableOnTypeFormatting)
+        if (config.features.enableOnTypeFormatting)
         {
             lsp::DocumentOnTypeFormattingOptions onTypeOpts;
             onTypeOpts.firstTriggerCharacter = ";";
@@ -662,14 +662,14 @@ void Server::ConfigureFormattingAndDiagnosticCapabilities(lsp::ServerCapabilitie
         }
     }
 
-    if (m_config.features.enableDocumentLink)
+    if (config.features.enableDocumentLink)
     {
         lsp::DocumentLinkOptions linkOpts;
         linkOpts.resolveProvider = true;
         caps.documentLinkProvider = linkOpts;
     }
 
-    if (m_config.features.enablePullDiagnostics)
+    if (config.features.enablePullDiagnostics)
     {
         lsp::DiagnosticOptions diagnosticOpts;
         diagnosticOpts.identifier = std::string("angelscript");
@@ -679,7 +679,7 @@ void Server::ConfigureFormattingAndDiagnosticCapabilities(lsp::ServerCapabilitie
     }
 }
 
-void Server::ConfigureWorkspaceCapabilities(lsp::ServerCapabilities& caps) const
+static void ConfigureWorkspaceCapabilities(const angel_lsp::config::ServerConfig& config, lsp::ServerCapabilities& caps)
 {
     lsp::WorkspaceFoldersServerCapabilities folderCaps;
     folderCaps.supported = true;
@@ -689,7 +689,7 @@ void Server::ConfigureWorkspaceCapabilities(lsp::ServerCapabilities& caps) const
     workspaceOpts.workspaceFolders = folderCaps;
 
     lsp::FileOperationPattern scriptPattern;
-    scriptPattern.glob = fmt::format("**/*{}", m_config.info.fileExtension);
+    scriptPattern.glob = fmt::format("**/*{}", config.info.fileExtension);
 
     lsp::FileOperationFilter scriptFilter;
     scriptFilter.pattern = scriptPattern;
@@ -706,7 +706,7 @@ void Server::ConfigureWorkspaceCapabilities(lsp::ServerCapabilities& caps) const
 
     lsp::TextDocumentContentOptions contentOpts;
     lsp::Array<lsp::String> schemes{"angelscript-predefined"};
-    if (m_config.features.enableVirtualMixinDocuments)
+    if (config.features.enableVirtualMixinDocuments)
     {
         schemes.push_back("angelscript-virtual");
     }
@@ -720,12 +720,12 @@ void Server::ConfigureWorkspaceCapabilities(lsp::ServerCapabilities& caps) const
     caps.executeCommandProvider = cmdOpts;
 }
 
-lsp::ServerCapabilities Server::BuildServerCapabilities() const
+static lsp::ServerCapabilities BuildServerCapabilities(const angel_lsp::config::ServerConfig& config,
+                                                       utils::PositionEncoding enc)
 {
     lsp::ServerCapabilities caps;
-    caps.positionEncoding = (m_sessionCoordinator->GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8)
-                                ? lsp::PositionEncodingKind::UTF8
-                                : lsp::PositionEncodingKind::UTF16;
+    caps.positionEncoding = (enc == angel_lsp::utils::PositionEncoding::Utf8) ? lsp::PositionEncodingKind::UTF8
+                                                                              : lsp::PositionEncodingKind::UTF16;
 
     lsp::TextDocumentSyncOptions sync;
     sync.openClose = true;
@@ -738,23 +738,77 @@ lsp::ServerCapabilities Server::BuildServerCapabilities() const
     sync.save = saveOptions;
     caps.textDocumentSync = sync;
 
-    ConfigureNavigationAndEditingCapabilities(caps);
-    ConfigureEditingAndSymbolCapabilities(caps);
-    ConfigureFormattingAndDiagnosticCapabilities(caps);
-    ConfigureWorkspaceCapabilities(caps);
+    ConfigureNavigationAndEditingCapabilities(config, caps);
+    ConfigureEditingAndSymbolCapabilities(config, caps);
+    ConfigureFormattingAndDiagnosticCapabilities(config, caps);
+    ConfigureWorkspaceCapabilities(config, caps);
 
     return caps;
 }
 
+static void LogNonDefaultEngineProperties(const config::EngineProperties& engine, utils::LspLogger* logger)
+{
+    const config::EngineProperties defaults;
+    std::string changed;
+
+    const auto note = [&changed](bool current, bool byDefault, std::string_view name)
+    {
+        if (current == byDefault)
+        {
+            return;
+        }
+        if (!changed.empty())
+        {
+            changed += ", ";
+        }
+        changed += name;
+        changed += current ? "=true" : "=false";
+    };
+
+    note(engine.allowUnsafeReferences, defaults.allowUnsafeReferences, "allowUnsafeReferences");
+    note(engine.privatePropAsProtected, defaults.privatePropAsProtected, "privatePropAsProtected");
+    note(engine.disallowGlobalVars, defaults.disallowGlobalVars, "disallowGlobalVars");
+    note(engine.allowMultilineStrings, defaults.allowMultilineStrings, "allowMultilineStrings");
+    note(engine.disallowValueAssignForRef, defaults.disallowValueAssignForRef, "disallowValueAssignForRef");
+    note(engine.disableIntegerDivision, defaults.disableIntegerDivision, "disableIntegerDivision");
+    note(engine.disallowEmptyListElements, defaults.disallowEmptyListElements, "disallowEmptyListElements");
+    note(engine.foreachSupport, defaults.foreachSupport, "foreachSupport");
+    note(engine.requireEnumScope, defaults.requireEnumScope, "requireEnumScope");
+    note(engine.alwaysImplDefaultConstruct, defaults.alwaysImplDefaultConstruct, "alwaysImplDefaultConstruct");
+    note(engine.allowUnicodeIdentifiers, defaults.allowUnicodeIdentifiers, "allowUnicodeIdentifiers");
+    note(engine.ignoreDuplicateSharedIntf, defaults.ignoreDuplicateSharedIntf, "ignoreDuplicateSharedIntf");
+
+    auto noteInt = [&](int current, int defVal, std::string_view name)
+    {
+        if (current == defVal)
+            return;
+        if (!changed.empty())
+            changed += ", ";
+        changed += name;
+        changed += "=" + std::to_string(current);
+    };
+
+    noteInt(engine.propertyAccessorMode, defaults.propertyAccessorMode, "propertyAccessorMode");
+    noteInt(engine.boolConversionMode, defaults.boolConversionMode, "boolConversionMode");
+    noteInt(engine.useCharacterLiterals, defaults.useCharacterLiterals, "useCharacterLiterals");
+    noteInt(engine.alterSyntaxNamedArgs, defaults.alterSyntaxNamedArgs, "alterSyntaxNamedArgs");
+    noteInt(engine.compilerWarnings, defaults.compilerWarnings, "compilerWarnings");
+
+    if (!changed.empty() && logger)
+    {
+        logger->LogInfo(fmt::format("Engine properties differing from the defaults: {}", changed));
+    }
+}
+
 lsp::requests::Initialize::Result Server::HandleRequestsInitialized(lsp::requests::Initialize::Params&& params)
 {
-    ExtractInitialWorkspaceRoots(params);
-    ApplyEngineInitializationOptions(params.initializationOptions);
+    ExtractInitialWorkspaceRoots(*m_workspaceStore, m_config, m_runtimeConfigMutex, params);
+    ApplyEngineInitializationOptions(*this, params.initializationOptions);
 
     m_i18n = std::make_unique<angel_lsp::i18n::I18n>(
         params.locale.value_or(m_config.info.locale.empty() ? "en" : m_config.info.locale));
 
-    NegotiateClientCapabilities(params.capabilities);
+    NegotiateClientCapabilities(*m_sessionCoordinator, params.capabilities);
 
     const bool useUtf8 = (m_sessionCoordinator->GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8);
     LogInfo(fmt::format("Negotiated position encoding: {}", useUtf8 ? "utf-8" : "utf-16"));
@@ -766,7 +820,7 @@ lsp::requests::Initialize::Result Server::HandleRequestsInitialized(lsp::request
     info.name = m_config.info.name;
     info.version = m_config.info.version;
     result.serverInfo = info;
-    result.capabilities = BuildServerCapabilities();
+    result.capabilities = BuildServerCapabilities(m_config, m_sessionCoordinator->GetPositionEncoding());
 
     return result;
 }
@@ -829,11 +883,12 @@ lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string& uri
     return tokens;
 }
 
-void Server::BuildDiagnosticSeverityOverrides()
+static void BuildDiagnosticSeverityOverrides(DiagnosticsPipeline* pipeline,
+                                             const angel_lsp::config::ServerConfig& config, utils::LspLogger* logger)
 {
     ankerl::unordered_dense::map<std::string, angel_lsp::analysis::DiagnosticSeverity> severities;
 
-    for (const auto& [code, severityName] : m_config.diagnosticSeverities)
+    for (const auto& [code, severityName] : config.diagnosticSeverities)
     {
         if (severityName == "error")
             severities[code] = angel_lsp::analysis::DiagnosticSeverity::Error;
@@ -843,78 +898,24 @@ void Server::BuildDiagnosticSeverityOverrides()
             severities[code] = angel_lsp::analysis::DiagnosticSeverity::Information;
         else if (severityName == "hint")
             severities[code] = angel_lsp::analysis::DiagnosticSeverity::Hint;
-        else
-            LogError(fmt::format("Unknown diagnostic severity '{}' for '{}'; ignored", severityName, code));
+        else if (logger)
+            logger->LogError(fmt::format("Unknown diagnostic severity '{}' for '{}'; ignored", severityName, code));
     }
 
-    if (!severities.empty())
+    if (!severities.empty() && logger)
     {
-        LogInfo(fmt::format("Diagnostic severity overrides active: {}", severities.size()));
+        logger->LogInfo(fmt::format("Diagnostic severity overrides active: {}", severities.size()));
     }
 
-    if (m_diagnosticsPipeline)
+    if (pipeline)
     {
-        m_diagnosticsPipeline->SetDiagnosticSeverities(std::move(severities));
+        pipeline->SetDiagnosticSeverities(std::move(severities));
     }
 
     // Engine options are reported only when they differ from AngelScript's own defaults. They
     // change which diagnostics can appear at all, so a surprising silence is worth being able
     // to explain from the log; saying so on every start when nothing was set is just noise.
-    LogNonDefaultEngineProperties();
-}
-
-void Server::LogNonDefaultEngineProperties() const
-{
-    const config::EngineProperties defaults;
-    std::string changed;
-
-    const auto note = [&changed](bool current, bool byDefault, std::string_view name)
-    {
-        if (current == byDefault)
-        {
-            return;
-        }
-        if (!changed.empty())
-        {
-            changed += ", ";
-        }
-        changed += name;
-        changed += current ? "=true" : "=false";
-    };
-
-    note(m_config.engine.allowUnsafeReferences, defaults.allowUnsafeReferences, "allowUnsafeReferences");
-    note(m_config.engine.privatePropAsProtected, defaults.privatePropAsProtected, "privatePropAsProtected");
-    note(m_config.engine.disallowGlobalVars, defaults.disallowGlobalVars, "disallowGlobalVars");
-    note(m_config.engine.allowMultilineStrings, defaults.allowMultilineStrings, "allowMultilineStrings");
-    note(m_config.engine.disallowValueAssignForRef, defaults.disallowValueAssignForRef, "disallowValueAssignForRef");
-    note(m_config.engine.disableIntegerDivision, defaults.disableIntegerDivision, "disableIntegerDivision");
-    note(m_config.engine.disallowEmptyListElements, defaults.disallowEmptyListElements, "disallowEmptyListElements");
-    note(m_config.engine.foreachSupport, defaults.foreachSupport, "foreachSupport");
-    note(m_config.engine.requireEnumScope, defaults.requireEnumScope, "requireEnumScope");
-    note(m_config.engine.alwaysImplDefaultConstruct, defaults.alwaysImplDefaultConstruct, "alwaysImplDefaultConstruct");
-    note(m_config.engine.allowUnicodeIdentifiers, defaults.allowUnicodeIdentifiers, "allowUnicodeIdentifiers");
-    note(m_config.engine.ignoreDuplicateSharedIntf, defaults.ignoreDuplicateSharedIntf, "ignoreDuplicateSharedIntf");
-
-    auto noteInt = [&](int current, int defVal, std::string_view name)
-    {
-        if (current == defVal)
-            return;
-        if (!changed.empty())
-            changed += ", ";
-        changed += name;
-        changed += "=" + std::to_string(current);
-    };
-
-    noteInt(m_config.engine.propertyAccessorMode, defaults.propertyAccessorMode, "propertyAccessorMode");
-    noteInt(m_config.engine.boolConversionMode, defaults.boolConversionMode, "boolConversionMode");
-    noteInt(m_config.engine.useCharacterLiterals, defaults.useCharacterLiterals, "useCharacterLiterals");
-    noteInt(m_config.engine.alterSyntaxNamedArgs, defaults.alterSyntaxNamedArgs, "alterSyntaxNamedArgs");
-    noteInt(m_config.engine.compilerWarnings, defaults.compilerWarnings, "compilerWarnings");
-
-    if (!changed.empty())
-    {
-        LogInfo(fmt::format("Engine properties differing from the defaults: {}", changed));
-    }
+    LogNonDefaultEngineProperties(config.engine, logger);
 }
 
 std::string Server::CanonicalPathFromUri(const std::string& uriStr)

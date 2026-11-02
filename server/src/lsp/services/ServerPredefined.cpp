@@ -222,7 +222,7 @@ void Server::UnloadUnselectedPredefinedStubs(const std::vector<std::string>& wan
     std::vector<std::string> stale;
     for (const auto& [path, uri] : m_predefinedManager.GetAllUriByPath())
     {
-        if (m_documentStore.IsOpen(uri))
+        if (GetDocumentStore().IsOpen(uri))
         {
             continue;
         }

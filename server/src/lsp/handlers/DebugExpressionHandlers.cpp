@@ -94,7 +94,7 @@ lsp::json::Value Server::HandleRequestsTextDocument_EvaluatableExpression(lsp::j
     }
 
     const lsp::Position rawPos = ExtractPosition(obj);
-    const lsp::Position decodedPos = codec::Decode(*doc->text, m_positionEncoding, rawPos);
+    const lsp::Position decodedPos = codec::Decode(*doc->text, GetPositionEncoding(), rawPos);
 
     const features::EvaluatableExpressionRequest req{ts_tree_root_node(doc->tree), *doc->text, decodedPos.line,
                                                      decodedPos.character};
@@ -105,7 +105,7 @@ lsp::json::Value Server::HandleRequestsTextDocument_EvaluatableExpression(lsp::j
         return lsp::json::Value(nullptr);
     }
 
-    return lsp::json::Value(FormatEvaluatableResponse(*result, *doc->text, m_positionEncoding));
+    return lsp::json::Value(FormatEvaluatableResponse(*result, *doc->text, GetPositionEncoding()));
 }
 
 lsp::json::Value Server::HandleRequestsAngelscript_DebugCompletion(lsp::json::Value&& params)

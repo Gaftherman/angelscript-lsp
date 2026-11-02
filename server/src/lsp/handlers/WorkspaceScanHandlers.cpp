@@ -15,6 +15,10 @@
 namespace angel_lsp
 {
 
+static std::optional<lsp::TextDocumentEdit> BuildIncludeRewrite(const Server& server, const std::string& includerPath,
+                                                                const std::string& oldTargetPath,
+                                                                const std::string& newTargetPath);
+
 /**
  * @brief Constructs a TextEdit for replacing an include directive's path substring.
  * @param[in] line The source text line containing the directive.
@@ -760,7 +764,7 @@ void Server::HandleNotificationsWorkspace_DidRenameFiles(lsp::notifications::Wor
 
         for (const std::string& includer : includers)
         {
-            auto edit = BuildIncludeRewrite(includer, oldPath, newPath);
+            auto edit = BuildIncludeRewrite(*this, includer, oldPath, newPath);
             if (edit.has_value())
                 documentEdits.push_back(std::move(*edit));
         }
@@ -802,16 +806,16 @@ void Server::HandleNotificationsWorkspace_DidRenameFiles(lsp::notifications::Wor
         ReanalyseOpenDocuments();
 }
 
-std::optional<lsp::TextDocumentEdit> Server::BuildIncludeRewrite(const std::string& includerPath,
-                                                                 const std::string& oldTargetPath,
-                                                                 const std::string& newTargetPath)
+static std::optional<lsp::TextDocumentEdit> BuildIncludeRewrite(const Server& server, const std::string& includerPath,
+                                                                const std::string& oldTargetPath,
+                                                                const std::string& newTargetPath)
 {
     // Read from the editor's buffer when it has one - it may hold unsaved edits, and rewriting
     // against the copy on disk would produce an edit whose line numbers do not match what the
     // user is looking at.
-    const std::string includerUri = UriFromPath(includerPath);
+    const std::string includerUri = Server::UriFromPath(includerPath);
     std::string text;
-    if (auto open = FindDocumentText(includerUri))
+    if (auto open = server.FindDocumentText(includerUri))
     {
         text = *open;
     }
@@ -837,8 +841,8 @@ std::optional<lsp::TextDocumentEdit> Server::BuildIncludeRewrite(const std::stri
     for (const auto& directive : angel_lsp::utils::IncludeResolver::ExtractIncludes(text))
     {
         const std::string resolved = angel_lsp::utils::IncludeResolver::ResolveIncludePath(
-            angel_lsp::utils::IncludeResolveRequest{directive.rawPath, includerPath, *SearchDirectories(),
-                                                    IncludeAllowedRoots(), ImplicitIncludeExtension()});
+            angel_lsp::utils::IncludeResolveRequest{directive.rawPath, includerPath, *server.SearchDirectories(),
+                                                    server.IncludeAllowedRoots(), server.ImplicitIncludeExtension()});
         if (resolved != oldTargetPath)
             continue;
 

@@ -24,15 +24,17 @@ void Server::NotifyModuleWarning(const std::string& text)
     m_messageHandler->sendNotification<lsp::notifications::Window_ShowMessage>(std::move(params));
 }
 
-bool Server::PopulateModuleFolderMembers(const std::string& folder, ModuleView& view,
-                                         const std::vector<std::string>& workspaceFiles)
+static bool PathIsInside(const std::string& normalizedPath, const std::string& normalizedDirectory);
+
+static bool PopulateModuleFolderMembers(Server& server, const std::string& folder, ModuleView& view,
+                                        const std::vector<std::string>& workspaceFiles)
 {
-    view.folderPath = ResolveConfiguredPath(folder);
+    view.folderPath = server.ResolveConfiguredPath(folder);
 
     std::error_code ec;
     if (!std::filesystem::is_directory(std::filesystem::path(view.folderPath), ec))
     {
-        NotifyModuleWarning(
+        server.NotifyModuleWarning(
             fmt::format("AngelScript: module '{}' names a folder that does not exist: {}", view.name, view.folderPath));
         return false;
     }
@@ -48,12 +50,12 @@ bool Server::PopulateModuleFolderMembers(const std::string& folder, ModuleView& 
     if (view.memberPaths.empty())
     {
         angel_lsp::utils::ForEachWorkspaceFile(
-            {view.folderPath}, m_config.exclude, nullptr,
+            {view.folderPath}, server.GetConfig().exclude, nullptr,
             [&](const std::filesystem::directory_entry& entry)
             {
                 const std::string pathStr = entry.path().string();
-                if (!m_config.info.fileExtension.empty() &&
-                    std::string_view(pathStr).ends_with(m_config.info.fileExtension))
+                if (!server.GetConfig().info.fileExtension.empty() &&
+                    std::string_view(pathStr).ends_with(server.GetConfig().info.fileExtension))
                 {
                     view.memberPaths.insert(angel_lsp::utils::IncludeResolver::NormalizeWalkedPath(entry.path()));
                 }
@@ -63,19 +65,19 @@ bool Server::PopulateModuleFolderMembers(const std::string& folder, ModuleView& 
     return true;
 }
 
-bool Server::PopulateModuleEntryClosure(const std::string& entry, ModuleView& view)
+static bool PopulateModuleEntryClosure(Server& server, const std::string& entry, ModuleView& view)
 {
-    view.entryPath = ResolveConfiguredPath(entry);
+    view.entryPath = server.ResolveConfiguredPath(entry);
 
     std::error_code ec;
     if (!std::filesystem::is_regular_file(std::filesystem::path(view.entryPath), ec))
     {
-        NotifyModuleWarning(fmt::format("AngelScript: module '{}' names an entry script that does not exist: {}",
-                                        view.name, view.entryPath));
+        server.NotifyModuleWarning(fmt::format("AngelScript: module '{}' names an entry script that does not exist: {}",
+                                               view.name, view.entryPath));
         return false;
     }
 
-    for (const auto& member : GetIncludeGraph().GetForwardClosure(view.entryPath))
+    for (const auto& member : server.GetIncludeGraph().GetForwardClosure(view.entryPath))
     {
         view.closurePaths.insert(member);
         view.memberPaths.insert(member);
@@ -83,9 +85,9 @@ bool Server::PopulateModuleEntryClosure(const std::string& entry, ModuleView& vi
 
     if (view.closurePaths.empty())
     {
-        const auto searchDirs = SearchDirectories();
+        const auto searchDirs = server.SearchDirectories();
         for (const auto& member : angel_lsp::utils::IncludeResolver::ResolveAllIncludes(view.entryPath, *searchDirs, {},
-                                                                                        IncludeAllowedRoots()))
+                                                                                        server.IncludeAllowedRoots()))
         {
             view.closurePaths.insert(member);
             view.memberPaths.insert(member);
@@ -95,14 +97,14 @@ bool Server::PopulateModuleEntryClosure(const std::string& entry, ModuleView& vi
     view.closurePaths.insert(view.entryPath);
     view.memberPaths.insert(view.entryPath);
 
-    for (const auto& forceFile : m_config.forceIncludeFiles)
+    for (const auto& forceFile : server.GetConfig().forceIncludeFiles)
     {
-        const std::string resolvedForce = ResolveConfiguredPath(forceFile);
+        const std::string resolvedForce = server.ResolveConfiguredPath(forceFile);
         if (!resolvedForce.empty())
         {
             view.closurePaths.insert(resolvedForce);
             view.memberPaths.insert(resolvedForce);
-            for (const auto& fwd : GetIncludeGraph().GetForwardClosure(resolvedForce))
+            for (const auto& fwd : server.GetIncludeGraph().GetForwardClosure(resolvedForce))
             {
                 view.closurePaths.insert(fwd);
                 view.memberPaths.insert(fwd);
@@ -112,14 +114,15 @@ bool Server::PopulateModuleEntryClosure(const std::string& entry, ModuleView& vi
     return true;
 }
 
-std::optional<ModuleView> Server::ResolveModuleDefinition(const config::ServerConfig::ModuleDefinition& definition,
-                                                          const std::vector<ModuleView>& resolved,
-                                                          const std::vector<std::string>& workspaceFiles)
+static std::optional<ModuleView> ResolveModuleDefinition(Server& server,
+                                                         const config::ServerConfig::ModuleDefinition& definition,
+                                                         const std::vector<ModuleView>& resolved,
+                                                         const std::vector<std::string>& workspaceFiles)
 {
     if (definition.name.empty() || (definition.entry.empty() && definition.folder.empty()))
     {
-        NotifyModuleWarning("AngelScript: a configured module needs a name and at least one of an entry "
-                            "script or a folder. One was skipped.");
+        server.NotifyModuleWarning("AngelScript: a configured module needs a name and at least one of an entry "
+                                   "script or a folder. One was skipped.");
         return std::nullopt;
     }
 
@@ -127,9 +130,10 @@ std::optional<ModuleView> Server::ResolveModuleDefinition(const config::ServerCo
                                        { return existing.name == definition.name; });
     if (duplicate)
     {
-        NotifyModuleWarning(fmt::format("AngelScript: two modules are both named '{}'. The second was skipped - "
-                                        "'external shared' cannot say which module an entity came from otherwise.",
-                                        definition.name));
+        server.NotifyModuleWarning(
+            fmt::format("AngelScript: two modules are both named '{}'. The second was skipped - "
+                        "'external shared' cannot say which module an entity came from otherwise.",
+                        definition.name));
         return std::nullopt;
     }
 
@@ -137,19 +141,19 @@ std::optional<ModuleView> Server::ResolveModuleDefinition(const config::ServerCo
     view.name = definition.name;
     view.isImplicitEntryPoint = definition.isImplicitEntryPoint;
 
-    if (!definition.folder.empty() && !PopulateModuleFolderMembers(definition.folder, view, workspaceFiles))
+    if (!definition.folder.empty() && !PopulateModuleFolderMembers(server, definition.folder, view, workspaceFiles))
     {
         return std::nullopt;
     }
 
-    if (!definition.entry.empty() && !PopulateModuleEntryClosure(definition.entry, view))
+    if (!definition.entry.empty() && !PopulateModuleEntryClosure(server, definition.entry, view))
     {
         return std::nullopt;
     }
 
-    LogInfo(fmt::format("Module '{}': {} file(s){}{}", view.name, view.memberPaths.size(),
-                        view.folderPath.empty() ? std::string() : fmt::format(" under {}", view.folderPath),
-                        view.entryPath.empty() ? std::string() : fmt::format(" from {}", view.entryPath)));
+    server.LogInfo(fmt::format("Module '{}': {} file(s){}{}", view.name, view.memberPaths.size(),
+                               view.folderPath.empty() ? std::string() : fmt::format(" under {}", view.folderPath),
+                               view.entryPath.empty() ? std::string() : fmt::format(" from {}", view.entryPath)));
 
     return view;
 }
@@ -253,7 +257,7 @@ void Server::BuildModuleIndex()
 
     for (const auto& definition : allDefs)
     {
-        if (auto view = ResolveModuleDefinition(definition, resolved, workspaceFiles))
+        if (auto view = ResolveModuleDefinition(*this, definition, resolved, workspaceFiles))
         {
             resolved.push_back(std::move(*view));
         }
@@ -265,7 +269,7 @@ void Server::BuildModuleIndex()
     SyncModuleIndexSymbols();
 }
 
-bool Server::PathIsInside(const std::string& normalizedPath, const std::string& normalizedDirectory)
+static bool PathIsInside(const std::string& normalizedPath, const std::string& normalizedDirectory)
 {
     if (normalizedDirectory.empty() || normalizedPath.size() <= normalizedDirectory.size() ||
         normalizedPath[normalizedDirectory.size()] != '/')
@@ -320,12 +324,12 @@ ModuleClaim Server::ClaimFor(const std::string& normalizedPath) const
 
 bool Server::IsOpenElsewhere(const std::string& uriStr) const
 {
-    return m_documentStore.IsOpen(uriStr);
+    return GetDocumentStore().IsOpen(uriStr);
 }
 
 void Server::ScheduleOpenDocumentsForReanalysis()
 {
-    const auto open = m_documentStore.GetSnapshot();
+    const auto open = GetDocumentStore().GetSnapshot();
     for (const auto& [uriStr, text] : open)
     {
         if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
@@ -460,7 +464,7 @@ void Server::WithdrawStaleModuleDiagnostics()
 
     if (!m_config.modules.empty())
     {
-        for (const auto& uriStr : m_documentStore.GetOpenUris())
+        for (const auto& uriStr : GetDocumentStore().GetOpenUris())
         {
             const std::string path = CanonicalPathFromUri(uriStr);
             if (path.empty() || ClaimFor(path).owner == nullptr)
@@ -509,7 +513,7 @@ void Server::ReanalyzeClosedModuleDependents(const std::string& savedUriStr, con
         std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
         for (const auto& pubUri : m_publishedForModules)
         {
-            if (pubUri == savedUriStr || m_documentStore.IsOpen(pubUri))
+            if (pubUri == savedUriStr || GetDocumentStore().IsOpen(pubUri))
             {
                 continue;
             }
@@ -540,7 +544,7 @@ ankerl::unordered_dense::set<std::string> Server::CollectWantedClosurePaths() co
 {
     ankerl::unordered_dense::set<std::string> wantedCanonicalPaths;
 
-    for (const auto& openUri : m_documentStore.GetOpenUris())
+    for (const auto& openUri : GetDocumentStore().GetOpenUris())
     {
         const std::string p = CanonicalPathFromUri(openUri);
         if (!p.empty())
@@ -629,7 +633,7 @@ void Server::IndexConfiguredModules(angel_lsp::parser::AngelScriptParser& parser
         {
             const std::string uriStr = UriFromPath(path);
 
-            if (IsOpenElsewhere(uriStr) || m_documentStore.IsOpen(uriStr))
+            if (IsOpenElsewhere(uriStr) || GetDocumentStore().IsOpen(uriStr))
             {
                 continue;
             }
@@ -700,7 +704,7 @@ void Server::SyncModuleIndexSymbols()
             }
         }
     }
-    m_moduleIndex.SetExportedSymbols(std::move(exported));
+    GetModuleIndex().SetExportedSymbols(std::move(exported));
 }
 
 void Server::CollectSharedSymbolsElsewhere(const ModuleView& owning,
@@ -761,13 +765,13 @@ Server::ModuleContextFor(const std::string& uriStr) const
     return context;
 }
 
-void Server::AppendConfiguredPathAndParent(const std::string& raw, std::vector<std::string>& roots) const
+static void AppendConfiguredPathAndParent(const Server& server, const std::string& raw, std::vector<std::string>& roots)
 {
     if (raw.empty())
     {
         return;
     }
-    const std::string resolved = ResolveConfiguredPath(raw);
+    const std::string resolved = server.ResolveConfiguredPath(raw);
     if (resolved.empty())
     {
         return;
@@ -780,29 +784,30 @@ void Server::AppendConfiguredPathAndParent(const std::string& raw, std::vector<s
     }
 }
 
-void Server::CollectConfiguredAllowedRoots(std::vector<std::string>& roots) const
+static void CollectConfiguredAllowedRoots(const Server& server, const angel_lsp::config::ServerConfig& config,
+                                          std::vector<std::string>& roots)
 {
-    for (const auto& predefined : m_config.predefinedFiles)
+    for (const auto& predefined : config.predefinedFiles)
     {
-        AppendConfiguredPathAndParent(predefined, roots);
+        AppendConfiguredPathAndParent(server, predefined, roots);
     }
 
-    if (!m_config.activePredefined.empty() && m_config.activePredefined != "all")
+    if (!config.activePredefined.empty() && config.activePredefined != "all")
     {
-        AppendConfiguredPathAndParent(m_config.activePredefined, roots);
+        AppendConfiguredPathAndParent(server, config.activePredefined, roots);
     }
 
-    for (const auto& definition : m_config.modules)
+    for (const auto& definition : config.modules)
     {
-        AppendConfiguredPathAndParent(definition.entry, roots);
-        AppendConfiguredPathAndParent(definition.folder, roots);
+        AppendConfiguredPathAndParent(server, definition.entry, roots);
+        AppendConfiguredPathAndParent(server, definition.folder, roots);
     }
 
-    AppendConfiguredPathAndParent(m_config.moduleEntryPoint, roots);
+    AppendConfiguredPathAndParent(server, config.moduleEntryPoint, roots);
 
-    for (const auto& forceFile : m_config.forceIncludeFiles)
+    for (const auto& forceFile : config.forceIncludeFiles)
     {
-        AppendConfiguredPathAndParent(forceFile, roots);
+        AppendConfiguredPathAndParent(server, forceFile, roots);
     }
 }
 
@@ -827,11 +832,11 @@ std::vector<std::string> Server::IncludeAllowedRoots() const
     const auto searchDirectories = SearchDirectories();
     roots.insert(roots.end(), searchDirectories->begin(), searchDirectories->end());
 
-    CollectConfiguredAllowedRoots(roots);
+    CollectConfiguredAllowedRoots(*this, m_config, roots);
 
     if (roots.empty())
     {
-        for (const auto& uri : m_documentStore.GetOpenUris())
+        for (const auto& uri : GetDocumentStore().GetOpenUris())
         {
             const std::string p = CanonicalPathFromUri(uri);
             if (!p.empty())
@@ -940,10 +945,10 @@ static void AppendFilteredMembers(const ankerl::unordered_dense::set<std::string
     }
 }
 
-void Server::AppendEnclosingFolderModuleMembers(const std::string& openPath, const ModuleClaim& claim,
-                                                std::vector<std::string>& closure) const
+static void AppendEnclosingFolderModuleMembers(const std::vector<ModuleView>& modules, const std::string& openPath,
+                                               const ModuleClaim& claim, std::vector<std::string>& closure)
 {
-    for (const auto& mod : m_modules)
+    for (const auto& mod : modules)
     {
         if (claim.owner != nullptr && mod.name == claim.owner->name)
         {
@@ -956,12 +961,13 @@ void Server::AppendEnclosingFolderModuleMembers(const std::string& openPath, con
     }
 }
 
-void Server::AppendIncludeGraphClosure(const std::string& openPath, std::vector<std::string>& closure) const
+static void AppendIncludeGraphClosure(const Server& server, const std::string& openPath,
+                                      std::vector<std::string>& closure)
 {
-    if (!m_config.moduleEntryPoint.empty())
+    if (!server.GetConfig().moduleEntryPoint.empty())
     {
-        const std::string entryPath = ResolveConfiguredPath(m_config.moduleEntryPoint);
-        auto fwd = GetIncludeGraph().GetForwardClosure(entryPath);
+        const std::string entryPath = server.ResolveConfiguredPath(server.GetConfig().moduleEntryPoint);
+        auto fwd = server.GetIncludeGraph().GetForwardClosure(entryPath);
         if (std::any_of(fwd.begin(), fwd.end(),
                         [&openPath](const std::string& p) { return NormalizedPathsEqual(p, openPath); }))
         {
@@ -969,21 +975,21 @@ void Server::AppendIncludeGraphClosure(const std::string& openPath, std::vector<
             return;
         }
     }
-    const auto mc = GetIncludeGraph().GetModuleClosure(openPath);
+    const auto mc = server.GetIncludeGraph().GetModuleClosure(openPath);
     closure.insert(closure.end(), mc.begin(), mc.end());
 }
 
-void Server::AppendForceIncludesClosure(std::vector<std::string>& closure) const
+static void AppendForceIncludesClosure(const Server& server, std::vector<std::string>& closure)
 {
-    for (const auto& forceFile : m_config.forceIncludeFiles)
+    for (const auto& forceFile : server.GetConfig().forceIncludeFiles)
     {
-        const std::string resolvedForce = ResolveConfiguredPath(forceFile);
+        const std::string resolvedForce = server.ResolveConfiguredPath(forceFile);
         if (resolvedForce.empty())
         {
             continue;
         }
         closure.push_back(resolvedForce);
-        for (const auto& fwd : GetIncludeGraph().GetForwardClosure(resolvedForce))
+        for (const auto& fwd : server.GetIncludeGraph().GetForwardClosure(resolvedForce))
         {
             closure.push_back(fwd);
         }
@@ -1001,9 +1007,9 @@ std::vector<std::string> Server::ComputeModuleClosure(const std::string& openPat
         AppendFilteredMembers(claim.owner->memberPaths, openPath, closure);
     }
 
-    AppendEnclosingFolderModuleMembers(openPath, claim, closure);
-    AppendIncludeGraphClosure(openPath, closure);
-    AppendForceIncludesClosure(closure);
+    AppendEnclosingFolderModuleMembers(m_modules, openPath, claim, closure);
+    AppendIncludeGraphClosure(*this, openPath, closure);
+    AppendForceIncludesClosure(*this, closure);
 
     return closure;
 }
@@ -1046,7 +1052,7 @@ size_t Server::IndexModuleClosure(const std::string& openUriStr)
             std::lock_guard<std::mutex> lock(m_closureMutex);
             const auto already = m_indexedUriByPath.find(path);
             uriStr = (already != m_indexedUriByPath.end()) ? already->second : UriFromPath(path);
-            alreadyOpen = m_documentStore.IsOpen(uriStr);
+            alreadyOpen = GetDocumentStore().IsOpen(uriStr);
             alreadyIndexed = m_closureDocuments.contains(uriStr);
         }
 
@@ -1069,7 +1075,7 @@ size_t Server::IndexModuleClosure(const std::string& openUriStr)
 
     {
         std::lock_guard<std::mutex> lock(m_closureMutex);
-        if (m_documentStore.IsOpen(openUriStr) || !m_closureDocuments.contains(openUriStr))
+        if (GetDocumentStore().IsOpen(openUriStr) || !m_closureDocuments.contains(openUriStr))
         {
             m_openDocumentClosures[openUriStr] = std::move(indexed);
         }
