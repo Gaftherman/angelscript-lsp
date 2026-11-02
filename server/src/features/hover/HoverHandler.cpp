@@ -2556,17 +2556,17 @@ static std::optional<lsp::Hover> TryHoverAutoType(const HoverQueryContext& ctx)
         {
             typeNode = parser::GetChildByField(declNode, parser::GetGrammarSymbols().fieldType);
         }
-        bool isHandle = analysis::IsHandleTypeView(ctx.nodeText);
+        bool isHandleType = analysis::IsHandleTypeView(ctx.nodeText);
         if (!ts_node_is_null(typeNode) &&
             analysis::IsHandleTypeView(parser::GetNodeTextView(typeNode, ctx.request.sourceCode)))
         {
-            isHandle = true;
+            isHandleType = true;
         }
-        if (isHandle && !analysis::IsHandleTypeView(deduced))
+        if (isHandleType && !analysis::IsHandleTypeView(deduced))
         {
             deduced += '@';
         }
-        std::string md = "```angelscript\n" + std::string(isHandle ? "auto@" : "auto") + ": " + deduced + "\n```";
+        std::string md = "```angelscript\n" + std::string(isHandleType ? "auto@" : "auto") + ": " + deduced + "\n```";
         return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, ctx.range};
     }
 

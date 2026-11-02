@@ -1404,11 +1404,11 @@ static bool TryRecoverSplitIfDeclaration(TSNode node, Scope* rootScope, const st
     }
     TSNode left = parser::GetChildByField(assignExpr, parser::GetGrammarSymbols().fieldLeft);
     std::string varName;
-    bool isHandle = false;
+    bool isHandleVar = false;
     TSNode identNode = TSNode{};
-    if (ExtractAssignmentLeftVar(left, gs, sourceCode, varName, isHandle, identNode))
+    if (ExtractAssignmentLeftVar(left, gs, sourceCode, varName, isHandleVar, identNode))
     {
-        RegisterRecoveredVariable(rootScope, identNode, std::move(varName), std::string(typeView), isHandle);
+        RegisterRecoveredVariable(rootScope, identNode, std::move(varName), std::string(typeView), isHandleVar);
         return true;
     }
     return false;
@@ -1465,11 +1465,11 @@ static void TryRecoverErrorIfDeclaration(TSNode node, Scope* rootScope, const st
     }
     TSNode left = parser::GetChildByField(assignExpr, parser::GetGrammarSymbols().fieldLeft);
     std::string varName;
-    bool isHandle = false;
+    bool isHandleVar = false;
     TSNode identNode = TSNode{};
-    if (ExtractAssignmentLeftVar(left, gs, sourceCode, varName, isHandle, identNode))
+    if (ExtractAssignmentLeftVar(left, gs, sourceCode, varName, isHandleVar, identNode))
     {
-        RegisterRecoveredVariable(rootScope, identNode, std::move(varName), std::move(errTypeName), isHandle);
+        RegisterRecoveredVariable(rootScope, identNode, std::move(varName), std::move(errTypeName), isHandleVar);
     }
 }
 

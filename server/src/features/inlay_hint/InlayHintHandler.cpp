@@ -1950,7 +1950,7 @@ static void ProcessVariableDeclaration(TSNode node, const InlayHintRequest& requ
 
     std::string typeText = parser::GetNodeText(varTypeNode, request.sourceCode);
     bool isAuto = (analysis::CleanBaseTypeView(typeText) == "auto");
-    bool isHandle = analysis::IsHandleTypeView(typeText);
+    bool isHandleType = analysis::IsHandleTypeView(typeText);
     parser::ForEachChildNode(node,
                              [&](TSNode child)
                              {
@@ -1960,7 +1960,7 @@ static void ProcessVariableDeclaration(TSNode node, const InlayHintRequest& requ
                                  }
                                  if (isAuto)
                                  {
-                                     ProcessAutoVariableDeclarator(child, request, hints, isHandle);
+                                     ProcessAutoVariableDeclarator(child, request, hints, isHandleType);
                                  }
                                  else if (!typeText.empty())
                                  {

@@ -866,7 +866,7 @@
       "action": "UNIFY_STRUCT",
       "sourceFile": "server/src/features/code_action/CodeActionIncludes.cpp",
       "deletedLineRange": "28-40",
-      "originalSymbolOrCode": "struct IncludeCandidate",
+      "originalSymbolOrCode": "struct Candidate, struct IncludeCandidate",
       "whatItDidAndWhyInThatFile": "Stored spelling and edit distance for include fix candidates.",
       "whyChangedOrDeleted": "Consolidated into canonical TypoCandidate in features/code_action/CodeActionInternal.h.",
       "replacedByCanonicalFile": "server/src/features/code_action/CodeActionInternal.h",
@@ -1008,6 +1008,106 @@
       "verifiedByTests": [
         "CallCheckerTest",
         "ConstCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0061",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/ConstChecker.cpp",
+      "deletedLineRange": "488-495",
+      "originalSymbolOrCode": "struct MethodLookup",
+      "whatItDidAndWhyInThatFile": "Held method lookup result flags for const method resolution.",
+      "whyChangedOrDeleted": "Consolidated into canonical MemberLookupResult in analysis/SemanticHelpers.h.",
+      "replacedByCanonicalFile": "server/src/analysis/SemanticHelpers.h",
+      "replacedByCanonicalSymbol": "MemberLookupResult",
+      "ramOrCpuImpact": "Eliminated duplicate struct across AccessChecker and ConstChecker.",
+      "verifiedByTests": [
+        "ConstCheckerTest",
+        "AccessCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0062",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/TypeConversionChecker.cpp",
+      "deletedLineRange": "62-75",
+      "originalSymbolOrCode": "struct ConversionTypes",
+      "whatItDidAndWhyInThatFile": "Paired from and to type names for conversion evaluation.",
+      "whyChangedOrDeleted": "Consolidated canonical ConversionTypePair into analysis/SemanticHelpers.h.",
+      "replacedByCanonicalFile": "server/src/analysis/SemanticHelpers.h",
+      "replacedByCanonicalSymbol": "ConversionTypePair",
+      "ramOrCpuImpact": "Eliminated duplicate type pair struct across TypeConversionChecker and RepeatedConversionChecker.",
+      "verifiedByTests": [
+        "TypeConversionTest",
+        "RepeatedConversionCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0063",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/code_action/CodeActionTypos.cpp",
+      "deletedLineRange": "35-48",
+      "originalSymbolOrCode": "struct TypoCandidateSuggestion",
+      "whatItDidAndWhyInThatFile": "Stored candidate name and edit distance for typo suggestions.",
+      "whyChangedOrDeleted": "Consolidated into canonical TypoCandidate in features/code_action/CodeActionInternal.h.",
+      "replacedByCanonicalFile": "server/src/features/code_action/CodeActionInternal.h",
+      "replacedByCanonicalSymbol": "TypoCandidate",
+      "ramOrCpuImpact": "Eliminated duplicate typo candidate struct in code action providers.",
+      "verifiedByTests": [
+        "CodeActionTest"
+      ]
+    },
+    {
+      "id": "REF-0064",
+      "phase": "R4",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/code_lens/CodeLensHandler.cpp",
+      "deletedLineRange": "545-552",
+      "originalSymbolOrCode": "static bool MatchesCallArguments(const analysis::LocalReference& ref, const ReferenceCollectionCriteria& criteria)",
+      "whatItDidAndWhyInThatFile": "Checked if argument count matched criteria parameter constraints.",
+      "whyChangedOrDeleted": "Consolidated canonical MatchesCallArguments into analysis/SemanticHelpers.h.",
+      "replacedByCanonicalFile": "server/src/analysis/SemanticHelpers.h",
+      "replacedByCanonicalSymbol": "MatchesCallArguments",
+      "ramOrCpuImpact": "Eliminated duplicate argument count validator function across TargetResolution and CodeLensHandler.",
+      "verifiedByTests": [
+        "CodeLensTest",
+        "TargetResolutionTest"
+      ]
+    },
+    {
+      "id": "REF-0065",
+      "phase": "R4",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/completion/CompletionHandler.cpp",
+      "deletedLineRange": "3311-3315",
+      "originalSymbolOrCode": "static bool IsNumericTypeName(std::string_view t)",
+      "whatItDidAndWhyInThatFile": "Checked whether a type string represents a numeric primitive.",
+      "whyChangedOrDeleted": "Unified with canonical parser::primitives::IsNumeric in parser/Primitives.h.",
+      "replacedByCanonicalFile": "server/src/parser/Primitives.h",
+      "replacedByCanonicalSymbol": "IsNumeric",
+      "ramOrCpuImpact": "Eliminated duplicate numeric type classifier array.",
+      "verifiedByTests": [
+        "CompletionTest"
+      ]
+    },
+    {
+      "id": "REF-0066",
+      "phase": "R4",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/TargetResolution.cpp",
+      "deletedLineRange": "1412-1424",
+      "originalSymbolOrCode": "ResolveReceiverMemberType member lookup loop",
+      "whatItDidAndWhyInThatFile": "Extracted member variable or function return type from receiver symbol table.",
+      "whyChangedOrDeleted": "Consolidated into canonical ResolveReceiverMemberType in analysis/SemanticHelpers.h.",
+      "replacedByCanonicalFile": "server/src/analysis/SemanticHelpers.h",
+      "replacedByCanonicalSymbol": "ResolveReceiverMemberType",
+      "ramOrCpuImpact": "Unified receiver member type resolution across TargetResolution and CodeLensHandler.",
+      "verifiedByTests": [
+        "TargetResolutionTest",
+        "CodeLensTest"
       ]
     }
   ]

@@ -54,7 +54,7 @@ static std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis:
     {
         const auto& fn = m.GetFunction();
         std::string ret = fn.returnType.empty() ? "void" : fn.returnType;
-        if (fn.modifiers.isReturnReference && !ret.ends_with('&'))
+        if (fn.modifiers.isReturnReference && analysis::TrailingReferenceModifierLength(ret) == 0)
         {
             ret += "&";
         }

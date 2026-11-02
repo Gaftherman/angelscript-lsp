@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-02T01:14:23Z",
+  "generatedAt": "2026-11-02T01:57:41Z",
   "branch": "refactor/architecture-deduplication-and-ram",
   "description": "Deterministic AST and tokenization audit report covering local C++ structs, pass-1 flag re-evaluations, function similarity, hot struct RAM layout, and Doxygen coverage.",
   "localCppStructs": {
@@ -2692,8 +2692,8 @@
       },
       {
         "file": "server/src/features/code_lens/CodeLensHandler.cpp",
-        "startLine": 791,
-        "endLine": 806,
+        "startLine": 770,
+        "endLine": 785,
         "structName": "SymbolLensTarget",
         "fields": [
           {
@@ -2753,8 +2753,8 @@
       },
       {
         "file": "server/src/features/code_lens/CodeLensHandler.cpp",
-        "startLine": 820,
-        "endLine": 831,
+        "startLine": 799,
+        "endLine": 810,
         "structName": "BatchReferenceContext",
         "fields": [
           {
@@ -2778,8 +2778,8 @@
       },
       {
         "file": "server/src/features/code_lens/CodeLensHandler.cpp",
-        "startLine": 1080,
-        "endLine": 1084,
+        "startLine": 1059,
+        "endLine": 1063,
         "structName": "SymbolGroups",
         "fields": [
           {
@@ -2795,8 +2795,8 @@
       },
       {
         "file": "server/src/features/code_lens/CodeLensHandler.cpp",
-        "startLine": 1313,
-        "endLine": 1318,
+        "startLine": 1292,
+        "endLine": 1297,
         "structName": "CompatibleClassContext",
         "fields": [
           {
@@ -2818,8 +2818,8 @@
       },
       {
         "file": "server/src/features/code_lens/CodeLensHandler.cpp",
-        "startLine": 1725,
-        "endLine": 1730,
+        "startLine": 1704,
+        "endLine": 1709,
         "structName": "AssembledLensContext",
         "fields": [
           {
@@ -4465,29 +4465,8 @@
     ]
   },
   "pass1FlagReparsing": {
-    "totalFlagReparseOccurrences": 20,
+    "totalFlagReparseOccurrences": 10,
     "occurrences": [
-      {
-        "file": "server/src/analysis/ConstChecker.cpp",
-        "line": 344,
-        "flagKind": "isHandle",
-        "codeSnippet": "bool isHandle = false;",
-        "canonicalPass1Source": "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
-      },
-      {
-        "file": "server/src/analysis/LocalScopeCollector.cpp",
-        "line": 1407,
-        "flagKind": "isHandle",
-        "codeSnippet": "bool isHandle = false;",
-        "canonicalPass1Source": "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
-      },
-      {
-        "file": "server/src/analysis/LocalScopeCollector.cpp",
-        "line": 1468,
-        "flagKind": "isHandle",
-        "codeSnippet": "bool isHandle = false;",
-        "canonicalPass1Source": "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
-      },
       {
         "file": "server/src/analysis/OverloadResolver.h",
         "line": 125,
@@ -4501,20 +4480,6 @@
         "flagKind": "isConst",
         "codeSnippet": "constexpr ArgumentConversion(ConversionRank r, uint8_t sub = 0, uint8_t dist = 0, bool isConst = fal",
         "canonicalPass1Source": "Symbol::modifiers.isConst / ParameterInformation::isConst"
-      },
-      {
-        "file": "server/src/analysis/SymbolCollector.cpp",
-        "line": 3028,
-        "flagKind": "isConst",
-        "codeSnippet": "if (paramText.find('&') != std::string_view::npos || paramText.find(\"const\") != std::string_view::np",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst"
-      },
-      {
-        "file": "server/src/analysis/SymbolCollector.cpp",
-        "line": 3032,
-        "flagKind": "isRef",
-        "codeSnippet": "if (paramText.find('&') != std::string_view::npos || paramText.find(\"in\") != std::string_view::npos ",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
       },
       {
         "file": "server/src/analysis/SymbolTable.h",
@@ -4566,52 +4531,17 @@
         "canonicalPass1Source": "Symbol::modifiers.isConst / ParameterInformation::isConst"
       },
       {
-        "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "line": 2682,
-        "flagKind": "isHandle",
-        "codeSnippet": "bool isHandle = false;",
-        "canonicalPass1Source": "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
-      },
-      {
-        "file": "server/src/features/breakpoints/BreakpointStatementClassifier.cpp",
-        "line": 207,
-        "flagKind": "isHandle",
-        "codeSnippet": "bool isHandle = false;",
-        "canonicalPass1Source": "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
-      },
-      {
         "file": "server/src/features/code_action/CodeActionExtractMethodOutputs.cpp",
         "line": 72,
         "flagKind": "isRef",
         "codeSnippet": "if (argText.starts_with(\"&out \") || argText.starts_with(\"&inout \") || argText.starts_with(\"out \") ||",
         "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
-      },
-      {
-        "file": "server/src/features/code_action/CodeActionInterfaceImplementer.cpp",
-        "line": 57,
-        "flagKind": "isRef",
-        "codeSnippet": "if (fn.modifiers.isReturnReference && !ret.ends_with('&'))",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
-      },
-      {
-        "file": "server/src/features/hover/HoverHandler.cpp",
-        "line": 2559,
-        "flagKind": "isHandle",
-        "codeSnippet": "bool isHandle = analysis::IsHandleTypeView(ctx.nodeText);",
-        "canonicalPass1Source": "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
-      },
-      {
-        "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-        "line": 1953,
-        "flagKind": "isHandle",
-        "codeSnippet": "bool isHandle = analysis::IsHandleTypeView(typeText);",
-        "canonicalPass1Source": "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
       }
     ]
   },
   "similarFunctionsMatrix": {
-    "totalEvaluatedFunctions": 2488,
-    "similarPairsCount": 134,
+    "totalEvaluatedFunctions": 2485,
+    "similarPairsCount": 131,
     "matrix": [
       {
         "funcA": {
@@ -4816,7 +4746,7 @@
           "startLine": 405,
           "endLine": 411,
           "name": "EmitAtRange",
-          "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\r\n      "
+          "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\n       "
         },
         "similarityScore": 0.976,
         "sharedCalls": [
@@ -5050,7 +4980,7 @@
           "startLine": 426,
           "endLine": 440,
           "name": "ProcessVirtualProperty",
-          "signature": "ProcessVirtualProperty(TSNode node, const TraversalContext& ctx,\r\n              "
+          "signature": "ProcessVirtualProperty(TSNode node, const TraversalContext& ctx,\n               "
         },
         "funcB": {
           "file": "server/src/features/document_symbol/DocumentSymbolHandler.cpp",
@@ -5182,15 +5112,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1855,
-          "endLine": 1899,
+          "startLine": 1833,
+          "endLine": 1877,
           "name": "ScanDocumentForNamespace",
           "signature": "ScanDocumentForNamespace(const analysis::Scope* root,\n                          "
         },
         "funcB": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1938,
-          "endLine": 1976,
+          "startLine": 1916,
+          "endLine": 1954,
           "name": "ScanDocumentForGlobal",
           "signature": "ScanDocumentForGlobal(const analysis::Scope* root, OccurrenceScanContext& ctx)"
         },
@@ -5366,7 +5296,7 @@
           "startLine": 405,
           "endLine": 411,
           "name": "EmitAtRange",
-          "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\r\n      "
+          "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\n       "
         },
         "similarityScore": 0.932,
         "sharedCalls": [
@@ -5393,7 +5323,7 @@
           "startLine": 291,
           "endLine": 329,
           "name": "TraverseSubtreeMutations",
-          "signature": "TraverseSubtreeMutations(TSNode root, std::string_view sourceCode,\r\n            "
+          "signature": "TraverseSubtreeMutations(TSNode root, std::string_view sourceCode,\n             "
         },
         "similarityScore": 0.931,
         "sharedCalls": [
@@ -5413,7 +5343,7 @@
           "startLine": 1147,
           "endLine": 1195,
           "name": "CheckUnusedVariables",
-          "signature": "SemanticAnalyzer::CheckUnusedVariables(const Scope* rootScope,\r\n                "
+          "signature": "SemanticAnalyzer::CheckUnusedVariables(const Scope* rootScope,\n                 "
         },
         "funcB": {
           "file": "server/src/analysis/SemanticAnalyzer.cpp",
@@ -5690,7 +5620,7 @@
           "startLine": 1436,
           "endLine": 1458,
           "name": "FindMemberSymbolPtr",
-          "signature": "SymbolTable::FindMemberSymbolPtr(std::string_view scope,\r\n                      "
+          "signature": "SymbolTable::FindMemberSymbolPtr(std::string_view scope,\n                       "
         },
         "similarityScore": 0.907,
         "sharedCalls": [
@@ -5708,15 +5638,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1906,
-          "endLine": 1931,
+          "startLine": 1884,
+          "endLine": 1909,
           "name": "CollectNamespaceOccurrences",
           "signature": "CollectNamespaceOccurrences(const CollectOccurrencesRequest& request, Occurrence"
         },
         "funcB": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1983,
-          "endLine": 2004,
+          "startLine": 1961,
+          "endLine": 1982,
           "name": "CollectGlobalOccurrences",
           "signature": "CollectGlobalOccurrences(const CollectOccurrencesRequest& request, OccurrenceCol"
         },
@@ -5738,15 +5668,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1938,
-          "endLine": 1976,
+          "startLine": 1916,
+          "endLine": 1954,
           "name": "ScanDocumentForGlobal",
           "signature": "ScanDocumentForGlobal(const analysis::Scope* root, OccurrenceScanContext& ctx)"
         },
         "funcB": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 2174,
-          "endLine": 2207,
+          "startLine": 2152,
+          "endLine": 2185,
           "name": "ScanDocumentForEnumMember",
           "signature": "ScanDocumentForEnumMember(const analysis::Scope* root, OccurrenceScanContext& ct"
         },
@@ -5804,7 +5734,7 @@
           "startLine": 768,
           "endLine": 792,
           "name": "TryResolveLocalDefinition",
-          "signature": "TryResolveLocalDefinition(TSNode node, const std::string& nodeText,\r\n           "
+          "signature": "TryResolveLocalDefinition(TSNode node, const std::string& nodeText,\n            "
         },
         "funcB": {
           "file": "server/src/features/definition/DefinitionHandler.cpp",
@@ -5961,7 +5891,7 @@
           "startLine": 328,
           "endLine": 350,
           "name": "CollectSymbols",
-          "signature": "SymbolCollector::CollectSymbols(const SymbolCollectRequest& request,\r\n          "
+          "signature": "SymbolCollector::CollectSymbols(const SymbolCollectRequest& request,\n           "
         },
         "funcB": {
           "file": "server/src/analysis/SymbolCollector.cpp",
@@ -6140,7 +6070,7 @@
           "startLine": 405,
           "endLine": 411,
           "name": "EmitAtRange",
-          "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\r\n      "
+          "signature": "DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\n       "
         },
         "similarityScore": 0.879,
         "sharedCalls": [
@@ -6322,15 +6252,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1855,
-          "endLine": 1899,
+          "startLine": 1833,
+          "endLine": 1877,
           "name": "ScanDocumentForNamespace",
           "signature": "ScanDocumentForNamespace(const analysis::Scope* root,\n                          "
         },
         "funcB": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 2174,
-          "endLine": 2207,
+          "startLine": 2152,
+          "endLine": 2185,
           "name": "ScanDocumentForEnumMember",
           "signature": "ScanDocumentForEnumMember(const analysis::Scope* root, OccurrenceScanContext& ct"
         },
@@ -6437,7 +6367,7 @@
           "startLine": 1100,
           "endLine": 1139,
           "name": "CollectUsedDefinitions",
-          "signature": "SemanticAnalyzer::CollectUsedDefinitions(const Scope* rootScope,\r\n              "
+          "signature": "SemanticAnalyzer::CollectUsedDefinitions(const Scope* rootScope,\n               "
         },
         "similarityScore": 0.863,
         "sharedCalls": [
@@ -6556,15 +6486,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1549,
-          "endLine": 1580,
+          "startLine": 1542,
+          "endLine": 1573,
           "name": "CollectClassMemberDeclarations",
           "signature": "CollectClassMemberDeclarations(const ankerl::unordered_dense::set<std::string>& "
         },
         "funcB": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1750,
-          "endLine": 1775,
+          "startLine": 1728,
+          "endLine": 1753,
           "name": "CollectDeclarations",
           "signature": "CollectDeclarations(const std::string& symQuery, const CollectOccurrencesRequest"
         },
@@ -6630,33 +6560,6 @@
         "similarityScore": 0.854,
         "sharedCalls": [],
         "whatTheyDo": "ResolveBinary64OrFloat (performs symbol/scope resolution) and ResolveTernaryNumericPromotion (performs symbol/scope resolution) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1588,
-          "endLine": 1595,
-          "name": "MatchesCallArguments",
-          "signature": "MatchesCallArguments(const analysis::LocalReference& ref, const TargetDescriptor"
-        },
-        "funcB": {
-          "file": "server/src/features/code_lens/CodeLensHandler.cpp",
-          "startLine": 545,
-          "endLine": 552,
-          "name": "MatchesCallArguments",
-          "signature": "MatchesCallArguments(const analysis::LocalReference& ref, const ReferenceCollect"
-        },
-        "similarityScore": 0.853,
-        "sharedCalls": [
-          "argumentCount",
-          "isCall",
-          "isFunction",
-          "maxArgs",
-          "minArgs",
-          "ref"
-        ],
-        "whatTheyDo": "Both implementations evaluates equality and operator compatibility via [MatchesArgumentCount, argumentCount, isCall]. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -6795,8 +6698,8 @@
       {
         "funcA": {
           "file": "server/src/features/code_lens/CodeLensHandler.cpp",
-          "startLine": 912,
-          "endLine": 933,
+          "startLine": 891,
+          "endLine": 912,
           "name": "CollectReferencesInScopeTreeBatch",
           "signature": "CollectReferencesInScopeTreeBatch(const std::string& fileUri, const analysis::Sc"
         },
@@ -6901,7 +6804,7 @@
           "startLine": 336,
           "endLine": 352,
           "name": "ProcessInterfaceMethod",
-          "signature": "ProcessInterfaceMethod(TSNode node, const TraversalContext& ctx,\r\n              "
+          "signature": "ProcessInterfaceMethod(TSNode node, const TraversalContext& ctx,\n               "
         },
         "funcB": {
           "file": "server/src/features/document_symbol/DocumentSymbolHandler.cpp",
@@ -6986,7 +6889,7 @@
           "startLine": 426,
           "endLine": 440,
           "name": "ProcessVirtualProperty",
-          "signature": "ProcessVirtualProperty(TSNode node, const TraversalContext& ctx,\r\n              "
+          "signature": "ProcessVirtualProperty(TSNode node, const TraversalContext& ctx,\n               "
         },
         "similarityScore": 0.806,
         "sharedCalls": [
@@ -7001,15 +6904,15 @@
       {
         "funcA": {
           "file": "server/src/features/code_lens/CodeLensHandler.cpp",
-          "startLine": 562,
-          "endLine": 594,
+          "startLine": 540,
+          "endLine": 572,
           "name": "MatchesTargetNamespaceQualifier",
           "signature": "MatchesTargetNamespaceQualifier(const std::string& fileUri, const analysis::Loca"
         },
         "funcB": {
           "file": "server/src/features/code_lens/CodeLensHandler.cpp",
-          "startLine": 626,
-          "endLine": 657,
+          "startLine": 604,
+          "endLine": 635,
           "name": "IsValidEnumMemberAccess",
           "signature": "IsValidEnumMemberAccess(const std::string& fileUri, const analysis::LocalReferen"
         },
@@ -7165,47 +7068,6 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1397,
-          "endLine": 1438,
-          "name": "ResolveReceiverFromScope",
-          "signature": "ResolveReceiverFromScope(const analysis::LocalReference& ref, const analysis::Sc"
-        },
-        "funcB": {
-          "file": "server/src/features/code_lens/CodeLensHandler.cpp",
-          "startLine": 472,
-          "endLine": 518,
-          "name": "ResolveReceiverFromScope",
-          "signature": "ResolveReceiverFromScope(const std::string& fileUri, const analysis::LocalRefere"
-        },
-        "similarityScore": 0.784,
-        "sharedCalls": [
-          "FindMemberSymbolPtr",
-          "GetFunction",
-          "GetVariable",
-          "candRef",
-          "currentReceiverType",
-          "empty",
-          "endCharacter",
-          "front",
-          "m",
-          "memberSyms",
-          "name",
-          "ref",
-          "references",
-          "returnType",
-          "scope",
-          "startCharacter",
-          "startLine",
-          "t",
-          "type",
-          "typeName"
-        ],
-        "whatTheyDo": "Both implementations performs symbol/scope resolution via [FindMemberSymbolPtr, GetFunction, GetVariable]. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/features/code_action/CodeActionAccessors.cpp",
           "startLine": 159,
           "endLine": 175,
@@ -7239,15 +7101,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1633,
-          "endLine": 1682,
+          "startLine": 1611,
+          "endLine": 1660,
           "name": "ScanDocumentForClassMember",
           "signature": "ScanDocumentForClassMember(const analysis::Scope* root,\n                        "
         },
         "funcB": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1938,
-          "endLine": 1976,
+          "startLine": 1916,
+          "endLine": 1954,
           "name": "ScanDocumentForGlobal",
           "signature": "ScanDocumentForGlobal(const analysis::Scope* root, OccurrenceScanContext& ctx)"
         },
@@ -7372,7 +7234,7 @@
           "startLine": 52,
           "endLine": 87,
           "name": "TryBuildMissingConstFixForSymbol",
-          "signature": "TryBuildMissingConstFixForSymbol(const CodeActionRequest& request,\r\n            "
+          "signature": "TryBuildMissingConstFixForSymbol(const CodeActionRequest& request,\n             "
         },
         "funcB": {
           "file": "server/src/features/code_action/CodeActionConstQualifier.cpp",
@@ -7430,15 +7292,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1784,
-          "endLine": 1803,
+          "startLine": 1762,
+          "endLine": 1781,
           "name": "MatchesScopeNamespaceQualifier",
           "signature": "MatchesScopeNamespaceQualifier(const analysis::LocalReference& ref, const analys"
         },
         "funcB": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 2057,
-          "endLine": 2071,
+          "startLine": 2035,
+          "endLine": 2049,
           "name": "HasPrecedingEnumQualifier",
           "signature": "HasPrecedingEnumQualifier(const analysis::LocalReference& ref, const analysis::S"
         },
@@ -7512,26 +7374,6 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/TypeConversionChecker.cpp",
-          "startLine": 1469,
-          "endLine": 1473,
-          "name": "IsSignedNumericPrimitive",
-          "signature": "IsSignedNumericPrimitive(std::string_view typeName) noexcept"
-        },
-        "funcB": {
-          "file": "server/src/features/completion/CompletionHandler.cpp",
-          "startLine": 3311,
-          "endLine": 3315,
-          "name": "IsNumericTypeName",
-          "signature": "IsNumericTypeName(std::string_view t)"
-        },
-        "similarityScore": 0.75,
-        "sharedCalls": [],
-        "whatTheyDo": "IsSignedNumericPrimitive (evaluates AST node or symbol predicate properties) and IsNumericTypeName (evaluates AST node or symbol predicate properties) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/features/document_link/DocumentLinkHandler.cpp",
           "startLine": 52,
           "endLine": 97,
@@ -7587,7 +7429,7 @@
           "startLine": 2408,
           "endLine": 2449,
           "name": "ScanSwitchStatementCaseColons",
-          "signature": "ScanSwitchStatementCaseColons(TSNode switchNode, std::string_view sourceCode,\r\n "
+          "signature": "ScanSwitchStatementCaseColons(TSNode switchNode, std::string_view sourceCode,\n  "
         },
         "similarityScore": 0.743,
         "sharedCalls": [
@@ -7660,15 +7502,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1633,
-          "endLine": 1682,
+          "startLine": 1611,
+          "endLine": 1660,
           "name": "ScanDocumentForClassMember",
           "signature": "ScanDocumentForClassMember(const analysis::Scope* root,\n                        "
         },
         "funcB": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 2174,
-          "endLine": 2207,
+          "startLine": 2152,
+          "endLine": 2185,
           "name": "ScanDocumentForEnumMember",
           "signature": "ScanDocumentForEnumMember(const analysis::Scope* root, OccurrenceScanContext& ct"
         },
@@ -8112,15 +7954,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1633,
-          "endLine": 1682,
+          "startLine": 1611,
+          "endLine": 1660,
           "name": "ScanDocumentForClassMember",
           "signature": "ScanDocumentForClassMember(const analysis::Scope* root,\n                        "
         },
         "funcB": {
           "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1855,
-          "endLine": 1899,
+          "startLine": 1833,
+          "endLine": 1877,
           "name": "ScanDocumentForNamespace",
           "signature": "ScanDocumentForNamespace(const analysis::Scope* root,\n                          "
         },
@@ -8159,7 +8001,7 @@
           "startLine": 52,
           "endLine": 87,
           "name": "TryBuildMissingConstFixForSymbol",
-          "signature": "TryBuildMissingConstFixForSymbol(const CodeActionRequest& request,\r\n            "
+          "signature": "TryBuildMissingConstFixForSymbol(const CodeActionRequest& request,\n             "
         },
         "funcB": {
           "file": "server/src/features/code_action/CodeActionConstQualifier.cpp",

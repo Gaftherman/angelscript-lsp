@@ -204,7 +204,7 @@ bool IsBarePrimitiveOrHandleType(TSNode typeNode, const parser::GrammarSymbols& 
     {
         return false;
     }
-    bool isHandle = false;
+    bool hasHandleModifier = false;
     bool isObjectArrayOrTemplate = false;
     bool isPrimitive = false;
 
@@ -215,7 +215,7 @@ bool IsBarePrimitiveOrHandleType(TSNode typeNode, const parser::GrammarSymbols& 
         const TSSymbol sym = ts_node_symbol(child);
         if (sym == gs.tokAt)
         {
-            isHandle = true;
+            hasHandleModifier = true;
         }
         else if (sym == gs.tokOpenBracket || sym == gs.symTemplateTypeList)
         {
@@ -243,7 +243,7 @@ bool IsBarePrimitiveOrHandleType(TSNode typeNode, const parser::GrammarSymbols& 
     {
         return false;
     }
-    return isHandle || isPrimitive;
+    return hasHandleModifier || isPrimitive;
 }
 
 bool IsExecutableVariableDecl(TSNode node, bool inStatementBlock, const parser::GrammarSymbols& gs) noexcept

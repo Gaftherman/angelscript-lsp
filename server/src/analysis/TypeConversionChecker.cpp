@@ -2679,19 +2679,19 @@ static void CheckRefTypeBoolConversion(TSNode condNode, const Scope* scope, Diag
         return;
     }
 
-    bool isHandle = false;
+    bool isHandleTarget = false;
     if (scope)
     {
         const std::string name = parser::NodeText(current, ctx.request.sourceCode);
         const LocalDefinition* def = ResolveInScopeAt(scope, name, ts_node_start_byte(current));
         if (def)
         {
-            isHandle = def->isHandleType || IsHandleTypeView(def->typeName);
+            isHandleTarget = def->isHandleType || IsHandleTypeView(def->typeName);
         }
     }
 
     const std::string condType = ResolveExpressionType(current, ExpressionTypeContext(scope, ctx));
-    if (!isHandle && !IsHandleTypeView(condType))
+    if (!isHandleTarget && !IsHandleTypeView(condType))
     {
         return;
     }

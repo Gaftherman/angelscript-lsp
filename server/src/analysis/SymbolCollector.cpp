@@ -3025,15 +3025,11 @@ ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, std
     AssignParamLocations(paramInfo, paramNode, pNameNode);
 
     uint32_t refCount = 0;
-    if (paramText.find('&') != std::string_view::npos || paramText.find("const") != std::string_view::npos)
+    if (pInfo.isConst || pInfo.isReference)
     {
         ExtractParamTypeRefAndConst(pTypeNode, sourceCode, paramInfo, refCount);
     }
-    if (paramText.find('&') != std::string_view::npos || paramText.find("in") != std::string_view::npos ||
-        paramText.find("out") != std::string_view::npos)
-    {
-        ExtractParamModifierTokens(paramNode, sourceCode, paramInfo, refCount);
-    }
+    ExtractParamModifierTokens(paramNode, sourceCode, paramInfo, refCount);
 
     paramInfo.hasDoubleReference = (refCount > 1);
     paramInfo.isStandaloneRef = (paramInfo.isReference && paramInfo.modifier == ParameterModifier::None);

@@ -1409,18 +1409,11 @@ static std::string ResolveReceiverFromScope(const analysis::LocalReference& ref,
             }
             else
             {
-                auto memberSyms = ctx.request.symbolTable.FindMemberSymbolPtr(currentReceiverType, candRef.name);
-                if (memberSyms && !memberSyms->empty())
+                std::string memberType =
+                    ResolveReceiverMemberType(currentReceiverType, candRef.name, ctx.request.symbolTable);
+                if (!memberType.empty())
                 {
-                    const auto& m = memberSyms->front();
-                    if (m.type == analysis::SymbolType::Variable && !m.GetVariable().typeName.empty())
-                    {
-                        currentReceiverType = analysis::CleanBaseType(m.GetVariable().typeName);
-                    }
-                    else if (m.type == analysis::SymbolType::Function && !m.GetFunction().returnType.empty())
-                    {
-                        currentReceiverType = analysis::CleanBaseType(m.GetFunction().returnType);
-                    }
+                    currentReceiverType = std::move(memberType);
                 }
                 else
                 {
@@ -1577,21 +1570,6 @@ static void CollectClassMemberDeclarations(const ankerl::unordered_dense::set<st
             }
         }
     }
-}
-
-/**
- * @brief Checks if a call reference satisfies target argument count constraints.
- * @param[in] ref Reference to check.
- * @param[in] target Target descriptor.
- * @return True if argument count matches.
- */
-static bool MatchesCallArguments(const analysis::LocalReference& ref, const TargetDescriptor& target)
-{
-    if (target.isFunction && ref.isCall)
-    {
-        return MatchesArgumentCount(ref.argumentCount, target.minArgs, target.maxArgs);
-    }
-    return true;
 }
 
 /**

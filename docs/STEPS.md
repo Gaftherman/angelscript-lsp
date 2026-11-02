@@ -2406,15 +2406,16 @@ Settings declared in package.json but not passed to the server:
    - Integrated Prohibition 14 into `AGENTS.md`.
 
 4. **Cluster Unification & Anti-Duplication (`SemanticHelpers.h`, `FeatureSharedUtils.h`, `ASTUtils.h`, `Utils.h`)**:
-   - Unified `CLUSTER-AST-BYTE-INTERVALS`, `CLUSTER-MEMBER-LOOKUP` (`MemberLookupResult`), and `CLUSTER-CALL-RESOLUTION` (`MatchesArgumentCount`).
+   - Unified `CLUSTER-AST-BYTE-INTERVALS`, `CLUSTER-MEMBER-LOOKUP` (`MemberLookupResult`, `ResolveReceiverMemberType`), and `CLUSTER-CALL-RESOLUTION` (`MatchesArgumentCount`, `MatchesCallArguments`).
    - Consolidated `IsBooleanBinaryOpSym` in `SemanticHelpers.h/.cpp` across inlay hints and analysis checkers.
    - Consolidated `ToLspSymbolKind` in `features/common/FeatureSharedUtils.h` across `DocumentSymbolHandler` and `WorkspaceSymbolHandler`.
    - Consolidated `IsDeclarationSymbol` in `parser/ASTUtils.h` across `AccessChecker` and `DefinitionHandler`.
    - Consolidated `TrimView` across `DocComment`, `DoxygenMarkdown`, `SemanticTokensHandler`, and `ClangFormatReader`.
-   - Reduced redundant pass-1 flag reparsings across checkers from 30 down to 20.
+   - Consolidated `IsNumericTypeName` in `CompletionHandler.cpp` to canonical `parser::primitives::IsNumeric`.
+   - Reduced redundant pass-1 flag reparsings across checkers from 30 down to 10.
 
 5. **Immutable Refactor Ledger & Verification Gates (`REFACTOR_LEDGER.json`, `check-refactor-ledger.py`, `audit-codebase-redundancy.py`)**:
-   - Tracked all 60 refactoring actions with verified tests and RAM/CPU impact in `docs/REFACTOR_LEDGER.json`.
+   - Tracked all 66 refactoring actions with verified tests and RAM/CPU impact in `docs/REFACTOR_LEDGER.json`.
    - Added automated diff verification `--check-diff develop` in `check-refactor-ledger.py`.
    - Enforced 13 static quality gates in `check-quality.py` with 0 warnings.
 
@@ -2424,5 +2425,5 @@ Settings declared in package.json but not passed to the server:
 - **Client Integration Tests**: 74 / 74 passed (`vscode-test`).
 - **Static Quality Gates**: 13/13 gates passed with 0 warnings (`check-quality.py`).
 - **RAM Optimization**: Total estimated memory savings of ~15-20% across large-scale workspaces.
-- **Deduplication**: 0 ODR struct hazards, redundant pass-1 checks reduced by 33%, jscpd duplication maintained at ~1.06%.
+- **Deduplication**: 0 ODR struct hazards, redundant pass-1 checks reduced by 66.7% (from 30 to 10), high-similarity function pairs eliminated from matrix, jscpd duplication maintained at ~1.06%.
 

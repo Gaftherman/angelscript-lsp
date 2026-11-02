@@ -3303,17 +3303,6 @@ static std::string ExtractAssignmentTargetType(std::string_view prefix)
     return std::string(typePart.substr(typeStart, typeEnd - typeStart));
 }
 
-/**
- * @brief Checks whether a type name represents a numeric primitive.
- * @param[in] t Type name to inspect.
- * @return True if type is a numeric primitive.
- */
-static bool IsNumericTypeName(std::string_view t)
-{
-    return t == "int" || t == "int8" || t == "int16" || t == "int32" || t == "int64" || t == "uint" || t == "uint8" ||
-           t == "uint16" || t == "uint32" || t == "uint64" || t == "float" || t == "double";
-}
-
 namespace completion_handler_detail
 {
 /**
@@ -3373,7 +3362,7 @@ static TypeMatchRank ComputeTypeRank(const lsp::CompletionItem& item, const std:
         }
     }
 
-    if (IsNumericTypeName(cleanExpected) && IsNumericTypeName(cleanItem))
+    if (parser::primitives::IsNumeric(cleanExpected) && parser::primitives::IsNumeric(cleanItem))
     {
         return TypeMatchRank::Convertible;
     }

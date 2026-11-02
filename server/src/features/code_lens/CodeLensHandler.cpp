@@ -486,18 +486,11 @@ static std::string ResolveReceiverFromScope(const std::string& fileUri, const an
             }
             else
             {
-                auto memberSyms = criteria.symbolTable.FindMemberSymbolPtr(currentReceiverType, candRef.name);
-                if (memberSyms && !memberSyms->empty())
+                std::string memberType =
+                    analysis::ResolveReceiverMemberType(currentReceiverType, candRef.name, criteria.symbolTable);
+                if (!memberType.empty())
                 {
-                    const auto& m = memberSyms->front();
-                    if (m.type == analysis::SymbolType::Variable && !m.GetVariable().typeName.empty())
-                    {
-                        currentReceiverType = analysis::CleanBaseType(m.GetVariable().typeName);
-                    }
-                    else if (m.type == analysis::SymbolType::Function && !m.GetFunction().returnType.empty())
-                    {
-                        currentReceiverType = analysis::CleanBaseType(m.GetFunction().returnType);
-                    }
+                    currentReceiverType = std::move(memberType);
                 }
                 else
                 {
@@ -534,21 +527,6 @@ static bool IsCompatibleMemberAccess(const std::string& fileUri, const analysis:
         rType = ResolveReceiverFromScope(fileUri, ref, scope, criteria);
     }
     return !rType.empty() && criteria.compatibleClasses.contains(rType);
-}
-
-/**
- * @brief Validates if argument count matches the expected parameter constraints.
- * @param[in] ref Reference to check.
- * @param[in] criteria Active search criteria.
- * @return True if argument count is within valid bounds.
- */
-static bool MatchesCallArguments(const analysis::LocalReference& ref, const ReferenceCollectionCriteria& criteria)
-{
-    if (criteria.isFunction && ref.isCall)
-    {
-        return analysis::MatchesArgumentCount(ref.argumentCount, criteria.minArgs, criteria.maxArgs);
-    }
-    return true;
 }
 
 /**
@@ -739,7 +717,8 @@ static bool IsValidConstructorAccess(const std::string& fileUri, const analysis:
     {
         return false;
     }
-    return (ref.isCall && MatchesCallArguments(ref, criteria)) || (ref.isTypeSpecifier && criteria.minArgs == 0);
+    return (ref.isCall && analysis::MatchesCallArguments(ref, criteria)) ||
+           (ref.isTypeSpecifier && criteria.minArgs == 0);
 }
 
 static bool IsValidAccess(const std::string& fileUri, const analysis::LocalReference& ref, const analysis::Scope* scope,
@@ -878,7 +857,7 @@ static void ProcessScopeReferencesBatch(const std::string& fileUri, const analys
             {
                 continue;
             }
-            if (!MatchesCallArguments(ref, criteria))
+            if (!analysis::MatchesCallArguments(ref, criteria))
             {
                 continue;
             }

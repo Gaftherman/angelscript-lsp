@@ -170,6 +170,31 @@ bool IsReservedKeyword(const std::string& name);
 }
 
 /**
+ * @brief Checks if a call reference satisfies target/criteria argument count bounds.
+ * @tparam RefLike Reference object possessing isCall (bool) and argumentCount (size_t/int).
+ * @tparam TargetLike Target object possessing isFunction (bool), minArgs (int/size_t), and maxArgs (int/size_t).
+ * @param[in] ref Local reference to check.
+ * @param[in] target Target or criteria constraints.
+ * @return True if argument count is within bounds, or reference is not a function call.
+ */
+template <typename RefLike, typename TargetLike>
+    requires requires(const RefLike& r, const TargetLike& t) {
+        { r.isCall } -> std::convertible_to<bool>;
+        { r.argumentCount } -> std::convertible_to<size_t>;
+        { t.isFunction } -> std::convertible_to<bool>;
+        { t.minArgs } -> std::convertible_to<size_t>;
+        { t.maxArgs } -> std::convertible_to<size_t>;
+    }
+[[nodiscard]] constexpr bool MatchesCallArguments(const RefLike& ref, const TargetLike& target) noexcept
+{
+    if (target.isFunction && ref.isCall)
+    {
+        return MatchesArgumentCount(ref.argumentCount, target.minArgs, target.maxArgs);
+    }
+    return true;
+}
+
+/**
  * @brief Immutable core AngelScript primitive types.
  */
 [[nodiscard]] constexpr bool IsCorePrimitive(std::string_view typeName) noexcept
@@ -1103,6 +1128,32 @@ struct ConversionTypePair
     std::string from;
     std::string to;
 };
+
+/**
+ * @brief Resolves the cleaned base type of a member variable or function return type on a receiver.
+ * @param[in] receiverType Name of the receiving container type.
+ * @param[in] memberName Identifier of the member being accessed.
+ * @param[in] table Symbol table for looking up members.
+ * @return Cleaned base type name of the member, or empty string if not found.
+ */
+inline std::string ResolveReceiverMemberType(std::string_view receiverType, std::string_view memberName,
+                                             const SymbolTable& table)
+{
+    auto memberSyms = table.FindMemberSymbolPtr(receiverType, memberName);
+    if (memberSyms && !memberSyms->empty())
+    {
+        const auto& m = memberSyms->front();
+        if (m.type == SymbolType::Variable && !m.GetVariable().typeName.empty())
+        {
+            return CleanBaseType(m.GetVariable().typeName);
+        }
+        if (m.type == SymbolType::Function && !m.GetFunction().returnType.empty())
+        {
+            return CleanBaseType(m.GetFunction().returnType);
+        }
+    }
+    return {};
+}
 
 /**
  * @brief Context bundled for receiver type resolution.

@@ -341,19 +341,19 @@ static bool IsMemberExprOfThis(TSNode target, const EnclosingMethodInfo& encInfo
     std::string parentMember;
     if (IsMemberOfThis(obj, encInfo, ctx, parentMember))
     {
-        bool isHandle = false;
+        bool hasHandleType = false;
         if (const auto* var = FindClassMemberVariable(encInfo.className, parentMember, ctx.symbolTable, ctx.cache))
         {
-            isHandle = var->modifiers.isHandle;
+            hasHandleType = var->modifiers.isHandle;
         }
         else if (ctx.scope)
         {
             if (const auto* def = ResolveInScope(ctx.scope, parentMember))
             {
-                isHandle = def->isHandleType;
+                hasHandleType = def->isHandleType;
             }
         }
-        if (!isHandle)
+        if (!hasHandleType)
         {
             outMemberName = parser::NodeText(member, ctx.sourceCode);
             return true;
