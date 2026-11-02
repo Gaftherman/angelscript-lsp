@@ -1,6 +1,7 @@
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/ScopeTree.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
@@ -783,6 +784,184 @@ std::vector<std::pair<uint32_t, uint32_t>> CollectNamespaceAndContainerLineRange
             }
         });
     return nsRanges;
+}
+
+bool NamesAFunctionNotAType(std::string_view name, const SymbolTable& table)
+{
+    if (name.empty())
+    {
+        return false;
+    }
+
+    const auto symsPtr = table.FindSymbolsPtr(name);
+    if (!symsPtr)
+    {
+        return false;
+    }
+
+    bool isFunction = false;
+    for (const auto& sym : *symsPtr)
+    {
+        switch (sym.type)
+        {
+        case SymbolType::Function:
+            if (sym.containerName.empty())
+            {
+                isFunction = true;
+            }
+            break;
+
+        case SymbolType::Class:
+        case SymbolType::Interface:
+        case SymbolType::Enum:
+        case SymbolType::Typedef:
+        case SymbolType::Funcdef:
+            return false;
+
+        default:
+            break;
+        }
+    }
+
+    return isFunction;
+}
+
+std::vector<Symbol> LookupTypeCandidateSymbols(const std::string& name, const SymbolTable& symbolTable)
+{
+    auto syms = symbolTable.FindSymbols(name);
+    if (syms.empty())
+    {
+        const std::string shortName = std::string(LastScopeSegment(name));
+        if (shortName != name)
+        {
+            syms = symbolTable.FindSymbols(shortName);
+        }
+    }
+    if (syms.empty())
+    {
+        auto typeSyms = symbolTable.FindTypeSymbolsByShortName(LastScopeSegment(name));
+        if (!typeSyms.empty())
+        {
+            syms = std::move(typeSyms);
+        }
+    }
+    return syms;
+}
+
+bool AreAllSymbolsPureTypes(const std::vector<Symbol>& syms)
+{
+    if (syms.empty())
+    {
+        return false;
+    }
+    for (const auto& s : syms)
+    {
+        if (s.type == SymbolType::Variable || s.type == SymbolType::Function || s.type == SymbolType::Property)
+        {
+            return false;
+        }
+    }
+    for (const auto& s : syms)
+    {
+        if (s.type == SymbolType::Class || s.type == SymbolType::Interface || s.type == SymbolType::Enum ||
+            s.type == SymbolType::Typedef || s.type == SymbolType::Funcdef)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static std::string ExtractTrimmedIdentifier(TSNode node, std::string_view sourceCode)
+{
+    if (ts_node_is_null(node))
+    {
+        return {};
+    }
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol sym = ts_node_symbol(node);
+    if (sym != gs.symIdentifier && sym != gs.symScopedIdentifier)
+    {
+        return {};
+    }
+    std::string name = parser::GetNodeText(node, sourceCode);
+    while (!name.empty() && isspace(static_cast<unsigned char>(name.front())))
+    {
+        name.erase(name.begin());
+    }
+    while (!name.empty() && isspace(static_cast<unsigned char>(name.back())))
+    {
+        name.pop_back();
+    }
+    return name;
+}
+
+std::optional<std::string> IsBareDataType(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
+                                          std::string_view sourceCode)
+{
+    node = parser::UnwrapParentheses(node);
+    std::string name = ExtractTrimmedIdentifier(node, sourceCode);
+    if (name.empty())
+    {
+        return std::nullopt;
+    }
+
+    if (IsPrimitiveTypeName(name))
+    {
+        return name;
+    }
+
+    if (scope)
+    {
+        if (const LocalDefinition* def = ResolveInScopeAt(scope, name, ts_node_start_byte(node)))
+        {
+            return def->kind == LocalDefinitionKind::Type ? std::optional<std::string>(name) : std::nullopt;
+        }
+    }
+
+    const auto syms = LookupTypeCandidateSymbols(name, symbolTable);
+    if (AreAllSymbolsPureTypes(syms))
+    {
+        return name;
+    }
+
+    return std::nullopt;
+}
+
+std::string ExtractDatatypeScopePrefix(TSNode datatypeNode, std::string_view sourceCode)
+{
+    TSNode typeNode = parser::GetParent(datatypeNode);
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_is_null(typeNode) || ts_node_symbol(typeNode) != gs.symType)
+    {
+        return {};
+    }
+    TSTreeCursor cursor = ts_tree_cursor_new(typeNode);
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        do
+        {
+            TSNode c = ts_tree_cursor_current_node(&cursor);
+            if (ts_node_symbol(c) == gs.symScope)
+            {
+                const uint32_t sStart = ts_node_start_byte(c);
+                const uint32_t sEnd = ts_node_end_byte(c);
+                ts_tree_cursor_delete(&cursor);
+                if (sStart < sourceCode.size() && sEnd <= sourceCode.size() && sStart < sEnd)
+                {
+                    std::string scopeText(sourceCode.substr(sStart, sEnd - sStart));
+                    if (!utils::EndsWithScopeSeparator(scopeText))
+                    {
+                        scopeText.append(utils::k_scopeSeparator);
+                    }
+                    return scopeText;
+                }
+                return {};
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+        ts_tree_cursor_delete(&cursor);
+    }
+    return {};
 }
 
 } // namespace angel_lsp::analysis

@@ -101,13 +101,6 @@ class SemanticAnalyzer
      */
     void RunTypeAndStructureRules(const SemanticAnalysisRequest& request, const NodeIndex* indexPtr,
                                   DiagnosticContext& ctx) const;
-
-    /**
-     * @brief Checks preprocessor directives and module boundaries.
-     * @param[in] request The semantic analysis request.
-     * @param[in,out] ctx Diagnostic context accumulating emitted diagnostics.
-     */
-    void CheckDirectivesAndModules(const SemanticAnalysisRequest& request, DiagnosticContext& ctx) const;
 };
 
 /**

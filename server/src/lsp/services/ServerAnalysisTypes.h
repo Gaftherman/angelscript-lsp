@@ -10,6 +10,7 @@
 #include "utils/LspLogger.h"
 #include "utils/StopFlag.h"
 #include "utils/Timer.h"
+#include <lsp/types.h>
 
 #include <chrono>
 #include <cstdint>
@@ -62,6 +63,17 @@ struct MixinSymbolLocation
     uint32_t endLine{0};
     std::string resolvedBaseClass;
     bool found{false};
+};
+
+/**
+ * @brief Snapshot of computed semantic token data and revision tracking for delta computations.
+ */
+struct SemanticTokensSnapshot
+{
+    std::string resultId;
+    std::vector<lsp::uint> data;
+    bool hasError = false;
+    int version = -1;
 };
 
 /**

@@ -294,10 +294,11 @@ Server::HandleRequestsTextDocument_Completion(lsp::requests::TextDocument_Comple
         return lsp::Array<lsp::CompletionItem>{};
     }
 
-    features::CompletionRequest cr{doc->uri,     *doc->text,
-                                   doc->tree,    m_symbolTable,
-                                   m_scopeIndex, codec::Decode(*doc->text, m_positionEncoding, req.position),
-                                   &m_config,    m_snippetSupport};
+    features::CompletionRequest cr{
+        doc->uri,     *doc->text,
+        doc->tree,    m_symbolTable,
+        m_scopeIndex, codec::Decode(*doc->text, m_sessionCoordinator->GetPositionEncoding(), req.position),
+        &m_config,    m_sessionCoordinator->GetClientSupportsSnippets()};
 
     cr.documentPath = CanonicalPathFromUri(doc->uri);
     cr.implicitExtension = std::string(ImplicitIncludeExtension());
@@ -362,7 +363,7 @@ Server::HandleRequestsTextDocument_SignatureHelp(lsp::requests::TextDocument_Sig
     return lsp::Null{};
 }
 
-std::optional<Server::RenameContext> Server::SetupRenameContext(const std::string& uriStr, const lsp::Position& rawPos)
+std::optional<RenameContext> Server::SetupRenameContext(const std::string& uriStr, const lsp::Position& rawPos)
 {
     if (!m_config.features.enableRename)
     {
@@ -809,9 +810,9 @@ std::optional<lsp::requests::TextDocument_Diagnostic::Result>
 Server::TryGetCachedDiagnosticReport(const std::string& uriStr, size_t currentHash, int currentVersion,
                                      const std::optional<std::string>& previousResultId)
 {
-    std::lock_guard<std::mutex> lock(m_diagnosticsCacheMutex);
-    const auto it = m_diagnosticsCache.find(uriStr);
-    if (it == m_diagnosticsCache.end())
+    std::lock_guard<std::mutex> lock(m_diagnosticsPipeline->GetCacheMutexRef());
+    const auto it = m_diagnosticsPipeline->GetCacheRef().find(uriStr);
+    if (it == m_diagnosticsPipeline->GetCacheRef().end())
     {
         return std::nullopt;
     }
@@ -867,7 +868,7 @@ Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagno
             .text = *current,
             .parser = *m_parser,
             .version = currentVersion,
-            .generation = m_documentStore.GetGeneration(uriStr),
+            .generation = GetDocumentStore().GetGeneration(uriStr),
         });
 
         if (auto fresh = TryGetCachedDiagnosticReport(uriStr, currentHash, currentVersion, params.previousResultId))

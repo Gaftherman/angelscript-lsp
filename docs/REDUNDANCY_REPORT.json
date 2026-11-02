@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-02T11:40:14Z",
+  "generatedAt": "2026-11-02T12:39:30Z",
   "branch": "refactor/architecture-deduplication-and-ram",
   "description": "Deterministic AST and tokenization audit report covering local C++ structs, pass-1 flag re-evaluations, function similarity, hot struct RAM layout, and Doxygen coverage.",
   "localCppStructs": {

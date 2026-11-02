@@ -208,7 +208,7 @@ Server::~Server()
     {
         m_workspaceThread.join();
     }
-    m_documentStore.Clear();
+    GetDocumentStore().Clear();
     m_predefinedManager.Clear();
     if (m_workspaceStore)
     {
@@ -479,37 +479,39 @@ void Server::BindEngineConfiguration(const std::function<void(std::string_view, 
 
 void Server::NegotiateClientCapabilities(const lsp::ClientCapabilities& capabilities)
 {
-    m_positionEncoding = angel_lsp::utils::PositionEncoding::Utf16;
+    utils::PositionEncoding positionEncoding = angel_lsp::utils::PositionEncoding::Utf16;
     if (capabilities.general.has_value() && capabilities.general->positionEncodings.has_value())
     {
         for (const auto& offered : capabilities.general->positionEncodings.value())
         {
             if (offered == lsp::PositionEncodingKind::UTF8)
             {
-                m_positionEncoding = angel_lsp::utils::PositionEncoding::Utf8;
+                positionEncoding = angel_lsp::utils::PositionEncoding::Utf8;
                 break;
             }
         }
     }
+    m_sessionCoordinator->SetPositionEncoding(positionEncoding);
 
     if (capabilities.window.has_value() && capabilities.window->workDoneProgress.has_value())
     {
-        m_workDoneProgressSupport = capabilities.window->workDoneProgress.value();
+        m_sessionCoordinator->SetWorkDoneProgressSupport(capabilities.window->workDoneProgress.value());
     }
 
-    m_clientPullsDiagnostics =
-        capabilities.textDocument.has_value() && capabilities.textDocument->diagnostic.has_value();
+    m_sessionCoordinator->SetClientPullsDiagnostics(capabilities.textDocument.has_value() &&
+                                                    capabilities.textDocument->diagnostic.has_value());
 
-    m_clientSupportsDiagnosticRefresh = capabilities.workspace.has_value() &&
-                                        capabilities.workspace->diagnostics.has_value() &&
-                                        capabilities.workspace->diagnostics->refreshSupport.has_value() &&
-                                        capabilities.workspace->diagnostics->refreshSupport.value();
+    m_sessionCoordinator->SetClientSupportsDiagnosticRefresh(
+        capabilities.workspace.has_value() && capabilities.workspace->diagnostics.has_value() &&
+        capabilities.workspace->diagnostics->refreshSupport.has_value() &&
+        capabilities.workspace->diagnostics->refreshSupport.value());
 
     if (capabilities.textDocument.has_value() && capabilities.textDocument->completion.has_value() &&
         capabilities.textDocument->completion->completionItem.has_value() &&
         capabilities.textDocument->completion->completionItem->snippetSupport.has_value())
     {
-        m_snippetSupport = capabilities.textDocument->completion->completionItem->snippetSupport.value();
+        m_sessionCoordinator->SetClientSupportsSnippets(
+            capabilities.textDocument->completion->completionItem->snippetSupport.value());
     }
 }
 
@@ -721,7 +723,7 @@ void Server::ConfigureWorkspaceCapabilities(lsp::ServerCapabilities& caps) const
 lsp::ServerCapabilities Server::BuildServerCapabilities() const
 {
     lsp::ServerCapabilities caps;
-    caps.positionEncoding = (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
+    caps.positionEncoding = (m_sessionCoordinator->GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8)
                                 ? lsp::PositionEncodingKind::UTF8
                                 : lsp::PositionEncodingKind::UTF16;
 
@@ -754,7 +756,7 @@ lsp::requests::Initialize::Result Server::HandleRequestsInitialized(lsp::request
 
     NegotiateClientCapabilities(params.capabilities);
 
-    const bool useUtf8 = (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8);
+    const bool useUtf8 = (m_sessionCoordinator->GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8);
     LogInfo(fmt::format("Negotiated position encoding: {}", useUtf8 ? "utf-8" : "utf-16"));
     m_symbolTable.SetVirtualMixinDocumentsEnabled(m_config.features.enableVirtualMixinDocuments);
     m_symbolTable.SetConfiguredTypes(m_config.types.arrayTypeName, m_config.types.stringTypeName);
@@ -791,9 +793,9 @@ void Server::HandleNotificationsExit()
 
 lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string& uriStr, const std::string& text)
 {
-    const auto docHandle = m_documentStore.GetDocument(uriStr);
+    const auto docHandle = GetDocumentStore().GetDocument(uriStr);
     TSTree* tree = docHandle ? docHandle->tree.get() : nullptr;
-    int currentVersion = docHandle ? docHandle->version : m_documentStore.GetVersion(uriStr);
+    int currentVersion = docHandle ? docHandle->version : GetDocumentStore().GetVersion(uriStr);
 
     analysis::NodeIndex localNodeIndex;
     const analysis::NodeIndex* nodeIndexPtr = nullptr;
@@ -812,7 +814,7 @@ lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string& uri
     request.nodeIndex = nodeIndexPtr;
     request.excludedLineRanges = ExcludedLineRanges(text);
     lsp::SemanticTokens tokens = features::GetSemanticTokens(request);
-    codec::EncodeSemanticTokens(text, m_positionEncoding, tokens.data);
+    codec::EncodeSemanticTokens(text, m_sessionCoordinator->GetPositionEncoding(), tokens.data);
 
     const bool hasError = tree != nullptr && ts_node_has_error(ts_tree_root_node(tree));
 
@@ -829,30 +831,30 @@ lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string& uri
 
 void Server::BuildDiagnosticSeverityOverrides()
 {
-    m_diagnosticSeverities.clear();
+    ankerl::unordered_dense::map<std::string, angel_lsp::analysis::DiagnosticSeverity> severities;
 
     for (const auto& [code, severityName] : m_config.diagnosticSeverities)
     {
         if (severityName == "error")
-            m_diagnosticSeverities[code] = angel_lsp::analysis::DiagnosticSeverity::Error;
+            severities[code] = angel_lsp::analysis::DiagnosticSeverity::Error;
         else if (severityName == "warning")
-            m_diagnosticSeverities[code] = angel_lsp::analysis::DiagnosticSeverity::Warning;
+            severities[code] = angel_lsp::analysis::DiagnosticSeverity::Warning;
         else if (severityName == "information")
-            m_diagnosticSeverities[code] = angel_lsp::analysis::DiagnosticSeverity::Information;
+            severities[code] = angel_lsp::analysis::DiagnosticSeverity::Information;
         else if (severityName == "hint")
-            m_diagnosticSeverities[code] = angel_lsp::analysis::DiagnosticSeverity::Hint;
+            severities[code] = angel_lsp::analysis::DiagnosticSeverity::Hint;
         else
             LogError(fmt::format("Unknown diagnostic severity '{}' for '{}'; ignored", severityName, code));
     }
 
-    if (!m_diagnosticSeverities.empty())
+    if (!severities.empty())
     {
-        LogInfo(fmt::format("Diagnostic severity overrides active: {}", m_diagnosticSeverities.size()));
+        LogInfo(fmt::format("Diagnostic severity overrides active: {}", severities.size()));
     }
 
     if (m_diagnosticsPipeline)
     {
-        m_diagnosticsPipeline->SetDiagnosticSeverities(m_diagnosticSeverities);
+        m_diagnosticsPipeline->SetDiagnosticSeverities(std::move(severities));
     }
 
     // Engine options are reported only when they differ from AngelScript's own defaults. They
@@ -947,7 +949,7 @@ std::shared_ptr<const std::string> Server::FindDocumentText(const std::string& u
         }
     }
 
-    if (auto open = m_documentStore.GetTextShared(key))
+    if (auto open = GetDocumentStore().GetTextShared(key))
     {
         return open;
     }
@@ -975,11 +977,11 @@ std::shared_ptr<const document::Document> Server::ResolveVirtualDocument(const s
         return nullptr;
     }
     document::TreePtr tree = m_parser ? document::MakeTreePtr(m_parser->Parse(text)) : document::MakeTreePtr(nullptr);
-    m_documentStore.OpenDocument(DocumentStore::OpenDocumentRequest{key, text, 0, std::move(tree), key});
-    return m_documentStore.GetDocument(key);
+    GetDocumentStore().OpenDocument(DocumentStore::OpenDocumentRequest{key, text, 0, std::move(tree), key});
+    return GetDocumentStore().GetDocument(key);
 }
 
-std::optional<Server::OpenDocument> Server::LookupPreindexedFallback(const std::string& key)
+std::optional<OpenDocument> Server::LookupPreindexedFallback(const std::string& key)
 {
     if (angel_lsp::utils::IsPredefinedFile(key, m_config.info.predefinedFileExtension))
     {
@@ -1004,11 +1006,11 @@ std::optional<Server::OpenDocument> Server::LookupPreindexedFallback(const std::
     return std::nullopt;
 }
 
-std::optional<Server::OpenDocument> Server::LookupOpenDocument(const std::string& uriStr)
+std::optional<OpenDocument> Server::LookupOpenDocument(const std::string& uriStr)
 {
     const std::string key = DocumentKey(uriStr);
 
-    auto doc = m_documentStore.GetDocument(key);
+    auto doc = GetDocumentStore().GetDocument(key);
     if (!doc)
     {
         if (key.starts_with("angelscript-virtual:") || uriStr.starts_with("angelscript-virtual:"))

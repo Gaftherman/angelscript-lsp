@@ -1,4 +1,5 @@
 #include "analysis/resolution/ClassHierarchyResolver.h"
+#include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
@@ -873,6 +874,110 @@ TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::
                                       });
     }
     return found;
+}
+
+bool IsDestructorSymbol(const Symbol& sym)
+{
+    if (sym.type != SymbolType::Function)
+    {
+        return false;
+    }
+    return sym.name.starts_with("~");
+}
+
+bool IsDestructorDeclaration(const Symbol& sym, std::string_view source)
+{
+    if (sym.type != SymbolType::Function)
+    {
+        return false;
+    }
+    if (sym.name.starts_with('~'))
+    {
+        return true;
+    }
+    if (source.empty())
+    {
+        return false;
+    }
+
+    size_t offset = 0;
+    for (uint32_t line = 0; line < sym.selectionRange.startLine; ++line)
+    {
+        offset = source.find('\n', offset);
+        if (offset == std::string_view::npos)
+        {
+            return false;
+        }
+        ++offset;
+    }
+
+    offset += sym.selectionRange.startCharacter;
+    if (offset == 0 || offset > source.size())
+    {
+        return false;
+    }
+
+    size_t back = offset;
+    while (back > 0 && (source[back - 1] == ' ' || source[back - 1] == '\t'))
+    {
+        --back;
+    }
+    return back > 0 && source[back - 1] == '~';
+}
+
+bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx)
+{
+    if (sym.fileUri != ctx.request.fileUri)
+    {
+        return false;
+    }
+    return IsDestructorDeclaration(sym, ctx.request.sourceCode);
+}
+
+bool HasBaseClassList(TSNode classNode)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    const uint32_t childCount = ts_node_named_child_count(classNode);
+    for (uint32_t i = 0; i < childCount; ++i)
+    {
+        if (ts_node_symbol(ts_node_named_child(classNode, i)) == gs.symBaseClassList)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool IsBaseConstructorCall(TSNode node, std::string_view sourceCode)
+{
+    if (ts_node_is_null(node))
+    {
+        return false;
+    }
+
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSNode function = parser::FindAncestorWithSymbol(parser::GetParent(node), gs.symFuncDeclaration);
+    if (ts_node_is_null(function) ||
+        !ts_node_is_null(parser::GetChildByField(function, parser::GetGrammarSymbols().fieldReturnType)))
+    {
+        return false;
+    }
+
+    const TSNode functionName = parser::GetChildByField(function, parser::GetGrammarSymbols().fieldName);
+    const TSNode owner = parser::FindAncestorWithSymbol(parser::GetParent(function), gs.symClassDeclaration);
+    if (ts_node_is_null(functionName) || ts_node_is_null(owner))
+    {
+        return false;
+    }
+
+    const TSNode className = parser::GetChildByField(owner, parser::GetGrammarSymbols().fieldName);
+    if (ts_node_is_null(className) ||
+        parser::GetNodeText(className, sourceCode) != parser::GetNodeText(functionName, sourceCode))
+    {
+        return false;
+    }
+
+    return HasBaseClassList(owner);
 }
 
 } // namespace angel_lsp::analysis

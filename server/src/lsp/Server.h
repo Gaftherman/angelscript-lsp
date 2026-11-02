@@ -60,39 +60,6 @@ namespace angel_lsp
 class Server
 {
   public:
-    using BreakpointLocationsParams = angel_lsp::BreakpointLocationsParams;
-    using VirtualMixinTarget = angel_lsp::VirtualMixinTarget;
-    using MixinSymbolLocation = angel_lsp::MixinSymbolLocation;
-    using CachedTokensSnapshot = angel_lsp::CachedTokensSnapshot;
-    using PhaseTimer = angel_lsp::PhaseTimer;
-    using CodeSettingPair = angel_lsp::CodeSettingPair;
-    using ReanalyseOnExit = angel_lsp::ReanalyseOnExit;
-    using PredefinedLoadContext = angel_lsp::PredefinedLoadContext;
-    using PredefinedIndexTiming = angel_lsp::PredefinedIndexTiming;
-    using CommitAnalysisRequest = angel_lsp::CommitAnalysisRequest;
-    using CollectScopesRequest = angel_lsp::CollectScopesRequest;
-    using PublishDiagnosticsRequest = angel_lsp::PublishDiagnosticsRequest;
-    using DidOpenPredefinedRequest = angel_lsp::DidOpenPredefinedRequest;
-    using WorkspaceFilesWalkResult = angel_lsp::WorkspaceFilesWalkResult;
-    using ScheduleAnalysisRequest = angel_lsp::ScheduleAnalysisRequest;
-    using AnalyzeDocumentRequest = angel_lsp::AnalyzeDocumentRequest;
-    using ParseAndCollectResult = angel_lsp::ParseAndCollectResult;
-    using AnalysisTimingProfile = angel_lsp::AnalysisTimingProfile;
-    using OpenDocument = angel_lsp::OpenDocument;
-    using RenameContext = angel_lsp::RenameContext;
-    using ModuleView = angel_lsp::ModuleView;
-    using ModuleClaim = angel_lsp::ModuleClaim;
-    using ModuleCandidate = angel_lsp::ModuleCandidate;
-    using DiagnosticsSnapshot = angel_lsp::DiagnosticsSnapshot;
-
-    struct SemanticTokensSnapshot
-    {
-        std::string resultId;
-        std::vector<lsp::uint> data;
-        bool hasError = false;
-        int version = -1;
-    };
-
     using OnBeforeCommitHook = std::function<void(const std::string& uri, int version, uint64_t generation)>;
 
     explicit Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& stream = lsp::io::standardIO());
@@ -134,9 +101,29 @@ class Server
     {
         return m_symbolTable;
     }
-    [[nodiscard]] const DocumentStore& GetDocumentStore() const
+    [[nodiscard]] DocumentStore& GetDocumentStore() noexcept
     {
-        return m_documentStore;
+        return m_workspaceStore->GetDocumentStore();
+    }
+    [[nodiscard]] const DocumentStore& GetDocumentStore() const noexcept
+    {
+        return m_workspaceStore->GetDocumentStore();
+    }
+    [[nodiscard]] utils::WorkspaceIncludeGraph& GetIncludeGraph() noexcept
+    {
+        return m_workspaceStore->GetIncludeGraph();
+    }
+    [[nodiscard]] const utils::WorkspaceIncludeGraph& GetIncludeGraph() const noexcept
+    {
+        return m_workspaceStore->GetIncludeGraph();
+    }
+    [[nodiscard]] ModuleIndex& GetModuleIndex() noexcept
+    {
+        return m_workspaceStore->GetModuleIndex();
+    }
+    [[nodiscard]] const ModuleIndex& GetModuleIndex() const noexcept
+    {
+        return m_workspaceStore->GetModuleIndex();
     }
 
     [[nodiscard]] WorkspaceSnapshot CreateWorkspaceSnapshot() const;
@@ -148,7 +135,7 @@ class Server
     bool SetDefinedWordsFrom(const std::string& source, std::vector<std::string> words);
     [[nodiscard]] std::vector<std::string> IncludableFiles() const
     {
-        return m_includeGraph.AllFiles();
+        return m_workspaceStore->GetIncludeGraph().AllFiles();
     }
     [[nodiscard]] std::string_view ImplicitIncludeExtension() const noexcept;
 
@@ -198,7 +185,7 @@ class Server
         {
             return lsp::Null{};
         }
-        const lsp::Position decodedPos = codec::Decode(*doc->text, m_positionEncoding, rawPos);
+        const lsp::Position decodedPos = codec::Decode(*doc->text, m_sessionCoordinator->GetPositionEncoding(), rawPos);
         return fn(*doc, decodedPos);
     }
 
@@ -208,7 +195,7 @@ class Server
 
     template <typename ItemT> void EncodeItemRanges(ItemT& item) const
     {
-        if (m_positionEncoding == utils::PositionEncoding::Utf8)
+        if (m_sessionCoordinator->GetPositionEncoding() == utils::PositionEncoding::Utf8)
         {
             return;
         }
@@ -345,15 +332,15 @@ class Server
 
     void SetDocumentVersion(const std::string& uriStr, int version)
     {
-        m_documentStore.SetVersion(uriStr, version);
+        GetDocumentStore().SetVersion(uriStr, version);
     }
     [[nodiscard]] int GetDocumentVersion(const std::string& uriStr) const
     {
-        return m_documentStore.GetVersion(uriStr);
+        return GetDocumentStore().GetVersion(uriStr);
     }
     void RemoveDocumentVersion(const std::string& uriStr)
     {
-        m_documentStore.SetVersion(uriStr, -1);
+        GetDocumentStore().SetVersion(uriStr, -1);
     }
     void ClearMixinCaches()
     {

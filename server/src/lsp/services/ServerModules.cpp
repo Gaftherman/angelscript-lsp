@@ -75,7 +75,7 @@ bool Server::PopulateModuleEntryClosure(const std::string& entry, ModuleView& vi
         return false;
     }
 
-    for (const auto& member : m_includeGraph.GetForwardClosure(view.entryPath))
+    for (const auto& member : GetIncludeGraph().GetForwardClosure(view.entryPath))
     {
         view.closurePaths.insert(member);
         view.memberPaths.insert(member);
@@ -102,7 +102,7 @@ bool Server::PopulateModuleEntryClosure(const std::string& entry, ModuleView& vi
         {
             view.closurePaths.insert(resolvedForce);
             view.memberPaths.insert(resolvedForce);
-            for (const auto& fwd : m_includeGraph.GetForwardClosure(resolvedForce))
+            for (const auto& fwd : GetIncludeGraph().GetForwardClosure(resolvedForce))
             {
                 view.closurePaths.insert(fwd);
                 view.memberPaths.insert(fwd);
@@ -112,9 +112,9 @@ bool Server::PopulateModuleEntryClosure(const std::string& entry, ModuleView& vi
     return true;
 }
 
-std::optional<Server::ModuleView>
-Server::ResolveModuleDefinition(const config::ServerConfig::ModuleDefinition& definition,
-                                const std::vector<ModuleView>& resolved, const std::vector<std::string>& workspaceFiles)
+std::optional<ModuleView> Server::ResolveModuleDefinition(const config::ServerConfig::ModuleDefinition& definition,
+                                                          const std::vector<ModuleView>& resolved,
+                                                          const std::vector<std::string>& workspaceFiles)
 {
     if (definition.name.empty() || (definition.entry.empty() && definition.folder.empty()))
     {
@@ -249,7 +249,7 @@ void Server::BuildModuleIndex()
     std::vector<ModuleView> resolved;
     resolved.reserve(allDefs.size());
 
-    const std::vector<std::string> workspaceFiles = m_includeGraph.AllFiles();
+    const std::vector<std::string> workspaceFiles = GetIncludeGraph().AllFiles();
 
     for (const auto& definition : allDefs)
     {
@@ -277,7 +277,7 @@ bool Server::PathIsInside(const std::string& normalizedPath, const std::string& 
                                 normalizedDirectory);
 }
 
-Server::ModuleClaim Server::ClaimFor(const std::string& normalizedPath) const
+ModuleClaim Server::ClaimFor(const std::string& normalizedPath) const
 {
     std::vector<ModuleCandidate> candidates;
 
@@ -907,8 +907,8 @@ void Server::AppendIncludeDiagnostics(const std::string& uriStr, const std::stri
 void Server::PurgeClosureFile(const std::string& uriStr)
 {
     {
-        std::lock_guard<std::mutex> lock(m_diagnosticsCacheMutex);
-        m_diagnosticsCache.erase(uriStr);
+        std::lock_guard<std::mutex> lock(m_diagnosticsPipeline->GetCacheMutexRef());
+        m_diagnosticsPipeline->GetCacheRef().erase(uriStr);
     }
 
     m_symbolTable.ClearDocumentSymbols(uriStr);
@@ -961,7 +961,7 @@ void Server::AppendIncludeGraphClosure(const std::string& openPath, std::vector<
     if (!m_config.moduleEntryPoint.empty())
     {
         const std::string entryPath = ResolveConfiguredPath(m_config.moduleEntryPoint);
-        auto fwd = m_includeGraph.GetForwardClosure(entryPath);
+        auto fwd = GetIncludeGraph().GetForwardClosure(entryPath);
         if (std::any_of(fwd.begin(), fwd.end(),
                         [&openPath](const std::string& p) { return NormalizedPathsEqual(p, openPath); }))
         {
@@ -969,7 +969,7 @@ void Server::AppendIncludeGraphClosure(const std::string& openPath, std::vector<
             return;
         }
     }
-    const auto mc = m_includeGraph.GetModuleClosure(openPath);
+    const auto mc = GetIncludeGraph().GetModuleClosure(openPath);
     closure.insert(closure.end(), mc.begin(), mc.end());
 }
 
@@ -983,7 +983,7 @@ void Server::AppendForceIncludesClosure(std::vector<std::string>& closure) const
             continue;
         }
         closure.push_back(resolvedForce);
-        for (const auto& fwd : m_includeGraph.GetForwardClosure(resolvedForce))
+        for (const auto& fwd : GetIncludeGraph().GetForwardClosure(resolvedForce))
         {
             closure.push_back(fwd);
         }

@@ -14,6 +14,7 @@ namespace angel_lsp::analysis
 {
 struct SemanticAnalysisRequest;
 struct DiagnosticContext;
+struct Scope;
 
 struct MemberLookupContext
 {
@@ -53,4 +54,11 @@ std::vector<Symbol> FilterSymbolsByContainerKind(std::vector<Symbol> found, Cont
 std::vector<std::pair<uint32_t, uint32_t>> CollectNamespaceAndContainerLineRanges(const SymbolTable& symbolTable,
                                                                                   const std::string& fileUri,
                                                                                   std::string_view declaringNamespace);
+
+bool NamesAFunctionNotAType(std::string_view name, const SymbolTable& table);
+std::vector<Symbol> LookupTypeCandidateSymbols(const std::string& name, const SymbolTable& symbolTable);
+bool AreAllSymbolsPureTypes(const std::vector<Symbol>& syms);
+std::optional<std::string> IsBareDataType(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
+                                          std::string_view sourceCode);
+std::string ExtractDatatypeScopePrefix(TSNode datatypeNode, std::string_view sourceCode);
 } // namespace angel_lsp::analysis

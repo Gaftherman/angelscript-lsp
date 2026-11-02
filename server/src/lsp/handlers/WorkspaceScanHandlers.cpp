@@ -48,7 +48,7 @@ static std::optional<lsp::TextEdit> TryBuildDirectiveEdit(std::string_view line,
     return edit;
 }
 
-Server::ReanalyseOnExit::~ReanalyseOnExit()
+ReanalyseOnExit::~ReanalyseOnExit()
 {
     server->SetPredefinedReady(true);
     server->SetWorkspaceScanComplete(true);
@@ -60,7 +60,7 @@ Server::ReanalyseOnExit::~ReanalyseOnExit()
 
 void Server::BeginWorkspaceProgress(const std::string& title)
 {
-    if (!m_workDoneProgressSupport)
+    if (!m_sessionCoordinator->GetWorkDoneProgressSupport())
     {
         return;
     }
@@ -94,7 +94,7 @@ void Server::BeginWorkspaceProgress(const std::string& title)
 
 void Server::ReportWorkspaceProgress(const std::string& message, unsigned percentage)
 {
-    if (!m_workDoneProgressSupport || m_workspaceProgressToken.empty())
+    if (!m_sessionCoordinator->GetWorkDoneProgressSupport() || m_workspaceProgressToken.empty())
     {
         return;
     }
@@ -111,7 +111,7 @@ void Server::ReportWorkspaceProgress(const std::string& message, unsigned percen
 
 void Server::EndWorkspaceProgress(const std::string& message)
 {
-    if (!m_workDoneProgressSupport || m_workspaceProgressToken.empty())
+    if (!m_sessionCoordinator->GetWorkDoneProgressSupport() || m_workspaceProgressToken.empty())
     {
         return;
     }
@@ -229,7 +229,7 @@ void Server::BuildIncludeGraphAndModules(const std::vector<std::string>& allScri
     std::optional<PhaseTimer> phase;
     phase.emplace(m_logger.get(), "include graph");
 
-    m_includeGraph.BuildFromFiles(utils::WorkspaceIncludeGraph::BuildFromFilesRequest{
+    GetIncludeGraph().BuildFromFiles(utils::WorkspaceIncludeGraph::BuildFromFilesRequest{
         .scriptFiles = allScriptFiles,
         .searchDirectories = *searchDirectories,
         .workspaceRoots = roots,
@@ -244,8 +244,8 @@ void Server::BuildIncludeGraphAndModules(const std::vector<std::string>& allScri
         return;
     }
 
-    LogInfo(fmt::format("Include graph built: {} script file(s)", m_includeGraph.FileCount()));
-    ReportWorkspaceProgress(fmt::format("Indexed {} script file(s)", m_includeGraph.FileCount()), 60);
+    LogInfo(fmt::format("Include graph built: {} script file(s)", GetIncludeGraph().FileCount()));
+    ReportWorkspaceProgress(fmt::format("Indexed {} script file(s)", GetIncludeGraph().FileCount()), 60);
 
     phase.emplace(m_logger.get(), "configured modules");
     BuildModuleIndex();
@@ -348,7 +348,7 @@ void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
             return;
         }
 
-        EndWorkspaceProgress(fmt::format("{} script file(s) indexed", m_includeGraph.FileCount()));
+        EndWorkspaceProgress(fmt::format("{} script file(s) indexed", GetIncludeGraph().FileCount()));
     }
     catch (const std::exception& e)
     {
@@ -449,7 +449,7 @@ bool Server::HandleWatchedFileDeleted(const std::string& path, const std::string
 
     PurgeClosureFile(UriFromPath(path));
     PurgeClosureFile(uriStr);
-    return m_includeGraph.RemoveFile(path);
+    return GetIncludeGraph().RemoveFile(path);
 }
 
 bool Server::HandleWatchedFileChanged(const std::string& path, bool isPredefined,
@@ -477,7 +477,7 @@ bool Server::HandleWatchedFileChanged(const std::string& path, bool isPredefined
     const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     LogInfo(fmt::format("[File Read] Finished reading watched file: {} in {} ({} bytes)", path,
                         utils::FormatDuration(readTimer.ElapsedMs()), content.size()));
-    m_includeGraph.UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
+    GetIncludeGraph().UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
         path, content, *SearchDirectories(), IncludeAllowedRoots(), std::string(ImplicitIncludeExtension())});
 
     std::string indexedUriToReindex;
@@ -529,11 +529,11 @@ void Server::ReplaceDeletedPredefinedStub(angel_lsp::parser::AngelScriptParser& 
 
 void Server::RefreshOpenDocumentIncludes()
 {
-    for (const auto& [openUri, openText] : m_documentStore.GetSnapshot())
+    for (const auto& [openUri, openText] : GetDocumentStore().GetSnapshot())
     {
         if (const std::string openPath = CanonicalPathFromUri(openUri); !openPath.empty())
         {
-            m_includeGraph.UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
+            GetIncludeGraph().UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
                 openPath, openText, *SearchDirectories(), IncludeAllowedRoots(),
                 std::string(ImplicitIncludeExtension())});
         }
@@ -550,7 +550,7 @@ void Server::HandleNotificationsWorkspace_DidChangeWatchedFiles(
     for (const auto& event : params.changes)
     {
         const std::string uriStr = DocumentKey(event.uri.toString());
-        if (m_documentStore.IsOpen(uriStr))
+        if (GetDocumentStore().IsOpen(uriStr))
         {
             continue;
         }
@@ -696,12 +696,12 @@ void Server::HandleNotificationsWorkspace_DidCreateFiles(lsp::notifications::Wor
     InvalidateCreatedClosureFiles(createdPaths);
 
     const auto searchDirectories = SearchDirectories();
-    for (const auto& [openUri, text] : m_documentStore.GetSnapshot())
+    for (const auto& [openUri, text] : GetDocumentStore().GetSnapshot())
     {
         const std::string openPath = CanonicalPathFromUri(openUri);
         if (!openPath.empty())
         {
-            m_includeGraph.UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
+            GetIncludeGraph().UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
                 openPath, text, *searchDirectories, IncludeAllowedRoots(), {}});
         }
     }
@@ -724,8 +724,8 @@ void Server::HandleNotificationsWorkspace_DidDeleteFiles(lsp::notifications::Wor
             continue;
 
         PurgeClosureFile(uriStr);
-        anythingChanged = m_includeGraph.RemoveFile(path) || anythingChanged;
-        m_documentStore.RemoveClientUri(uriStr);
+        anythingChanged = GetIncludeGraph().RemoveFile(path) || anythingChanged;
+        GetDocumentStore().RemoveClientUri(uriStr);
     }
 
     if (!anythingChanged)
@@ -751,11 +751,11 @@ void Server::HandleNotificationsWorkspace_DidRenameFiles(lsp::notifications::Wor
 
         // Collected BEFORE the old file leaves the graph: the edge that says who included it is
         // the only record of which files need rewriting, and RemoveFile takes it with it.
-        const std::vector<std::string> includers = m_includeGraph.GetFilesIncluding(oldPath);
+        const std::vector<std::string> includers = GetIncludeGraph().GetFilesIncluding(oldPath);
 
         PurgeClosureFile(oldUri);
-        m_includeGraph.RemoveFile(oldPath);
-        m_documentStore.RemoveClientUri(oldUri);
+        GetIncludeGraph().RemoveFile(oldPath);
+        GetDocumentStore().RemoveClientUri(oldUri);
         anythingChanged = true;
 
         for (const std::string& includer : includers)

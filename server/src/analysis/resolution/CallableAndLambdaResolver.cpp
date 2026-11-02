@@ -2,6 +2,7 @@
 #include "analysis/index/ScopeTree.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/resolution/OverloadResolver.h"
+#include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/resolution/TemplateTypeResolver.h"
 #include "analysis/types/TypeSanitization.h"
@@ -1076,6 +1077,173 @@ std::optional<Symbol> TryResolveCallableFuncdef(const std::string& name, const S
         return std::nullopt;
     }
     return FuncdefToFunctionSymbol(*funcdefSym, name);
+}
+
+static bool HasListConstructorParam(const ParameterInformation& p)
+{
+    const std::string norm = StripTypeDecorations(p.baseTypeName.empty() ? p.typeName : p.baseTypeName);
+    const bool isInt = (norm == "int" || norm == "uint" || norm == "int64" || norm == "uint64");
+    return isInt && (p.isReference || p.modifier == ParameterModifier::In || p.modifier == ParameterModifier::InOut ||
+                     p.isInOutRef || IsReferenceTypeView(p.typeName));
+}
+
+bool IsListConstructorSignature(const FunctionSignature& fn)
+{
+    if (fn.parameters.size() == 1)
+    {
+        return HasListConstructorParam(fn.parameters[0]);
+    }
+    if (fn.parameters.size() == 2)
+    {
+        return HasListConstructorParam(fn.parameters[0]) && HasListConstructorParam(fn.parameters[1]);
+    }
+    return false;
+}
+
+bool IsListConstructor(const Symbol& sym)
+{
+    if (sym.type != SymbolType::Function || !std::holds_alternative<FunctionSignature>(sym.signature))
+    {
+        return false;
+    }
+    return IsListConstructorSignature(sym.GetFunction());
+}
+
+static bool IsMemberMethodSymbol(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
+                                 std::string_view sourceCode)
+{
+    TSNode objNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldObject);
+    TSNode memNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldMember);
+    if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
+    {
+        return false;
+    }
+    const std::string memName = parser::NodeText(memNode, sourceCode);
+    const std::string objType = ResolveExpressionType(objNode, ExpressionTypeContext(scope, symbolTable, sourceCode));
+    const std::string cleanObj = CleanBaseType(objType);
+    if (cleanObj.empty() || memName.empty())
+    {
+        return false;
+    }
+    for (const auto& cls : GetInheritedTypeHierarchy(cleanObj, symbolTable))
+    {
+        if (const auto syms = symbolTable.FindMemberSymbolPtr(cls, memName))
+        {
+            bool hasFunc = false;
+            bool hasVarOrProp = false;
+            for (const auto& s : *syms)
+            {
+                if (s.type == SymbolType::Function)
+                {
+                    hasFunc = true;
+                }
+                else if (s.type == SymbolType::Variable || s.type == SymbolType::Property)
+                {
+                    hasVarOrProp = true;
+                }
+            }
+            if (hasFunc && !hasVarOrProp)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+static bool HasFunctionSymbolOnly(const std::vector<Symbol>& syms)
+{
+    bool hasFunc = false;
+    bool hasVarOrProp = false;
+    for (const auto& s : syms)
+    {
+        if (s.type == SymbolType::Function)
+        {
+            hasFunc = true;
+        }
+        else if (s.type == SymbolType::Variable || s.type == SymbolType::Property)
+        {
+            hasVarOrProp = true;
+        }
+    }
+    return hasFunc && !hasVarOrProp;
+}
+
+static bool IsLocalVariableOrFieldInScope(const Scope* scope, TSSymbol sym, const std::string& name,
+                                          uint32_t refByte = UINT32_MAX)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    const bool isUnqualified =
+        (sym == gs.symIdentifier || (sym == gs.symScopedIdentifier && !utils::ContainsScopeSeparator(name)));
+    if (isUnqualified && scope)
+    {
+        if (const auto def = ResolveInScopeAt(scope, name, refByte))
+        {
+            return def->kind == LocalDefinitionKind::Variable || def->kind == LocalDefinitionKind::Parameter ||
+                   def->kind == LocalDefinitionKind::Field;
+        }
+    }
+    return false;
+}
+
+static bool HasGlobalFunctionSymbol(std::string_view name, const SymbolTable& symbolTable)
+{
+    if (const auto found = symbolTable.FindSymbolsPtr(name))
+    {
+        return HasFunctionSymbolOnly(*found);
+    }
+    const std::string_view lastSeg = LastScopeSegment(name);
+    if (lastSeg != name)
+    {
+        if (const auto found = symbolTable.FindSymbolsPtr(lastSeg))
+        {
+            return HasFunctionSymbolOnly(*found);
+        }
+    }
+    return false;
+}
+
+static bool IsIdentifierFunctionSymbol(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
+                                       std::string_view sourceCode)
+{
+    std::string name = parser::GetNodeText(node, sourceCode);
+    if (name.empty())
+    {
+        return false;
+    }
+    if (IsLocalVariableOrFieldInScope(scope, ts_node_symbol(node), name, ts_node_start_byte(node)))
+    {
+        return false;
+    }
+    return HasGlobalFunctionSymbol(name, symbolTable);
+}
+
+bool IsFunctionReference(TSNode node, const Scope* scope, const SymbolTable& symbolTable, std::string_view sourceCode)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    while (!ts_node_is_null(node) && ts_node_symbol(node) == gs.symParenthesizedExpression &&
+           ts_node_named_child_count(node) > 0)
+    {
+        node = ts_node_named_child(node, 0);
+    }
+    if (ts_node_is_null(node))
+    {
+        return false;
+    }
+    const TSSymbol sym = ts_node_symbol(node);
+    if (sym == gs.symCallExpression || sym == gs.symConstructCallExpression)
+    {
+        return false;
+    }
+    if (sym == gs.symMemberExpression)
+    {
+        return IsMemberMethodSymbol(node, scope, symbolTable, sourceCode);
+    }
+    if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier)
+    {
+        return IsIdentifierFunctionSymbol(node, scope, symbolTable, sourceCode);
+    }
+    return false;
 }
 
 } // namespace angel_lsp::analysis

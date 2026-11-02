@@ -134,9 +134,10 @@ lsp::json::Value Server::HandleRequestsAngelscript_DebugCompletion(lsp::json::Va
         line = static_cast<uint32_t>(lVal->number());
     }
 
-    features::CompletionRequest cr{doc->uri,      *doc->text,      doc->tree,
-                                   m_symbolTable, m_scopeIndex,    lsp::Position{line, 0},
-                                   &m_config,     m_snippetSupport};
+    features::CompletionRequest cr{doc->uri,     *doc->text,
+                                   doc->tree,    m_symbolTable,
+                                   m_scopeIndex, lsp::Position{line, 0},
+                                   &m_config,    m_sessionCoordinator->GetClientSupportsSnippets()};
     cr.documentPath = CanonicalPathFromUri(doc->uri);
     cr.implicitExtension = std::string(ImplicitIncludeExtension());
     cr.listIncludeCandidates = [this]() { return IncludableFiles(); };

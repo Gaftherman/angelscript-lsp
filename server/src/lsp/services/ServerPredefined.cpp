@@ -479,8 +479,8 @@ ComputeDefinedWordsHash(const std::shared_ptr<const ankerl::unordered_dense::set
     return definesHash;
 }
 
-Server::PredefinedIndexTiming Server::IndexAndCommitPredefinedStub(const std::string& uri, const std::string& content,
-                                                                   angel_lsp::parser::AngelScriptParser& parser)
+PredefinedIndexTiming Server::IndexAndCommitPredefinedStub(const std::string& uri, const std::string& content,
+                                                           angel_lsp::parser::AngelScriptParser& parser)
 {
     utils::HighResTimer parseTimer;
     document::TreePtr tree = document::MakeTreePtr(parser.Parse(content));

@@ -956,12 +956,12 @@ Server::HandleRequestsWorkspace_Diagnostic(lsp::requests::Workspace_Diagnostic::
 
     lsp::WorkspaceDiagnosticReport report;
 
-    std::lock_guard<std::mutex> lock(m_diagnosticsCacheMutex);
-    for (const auto& [uriStr, snapshot] : m_diagnosticsCache)
+    std::lock_guard<std::mutex> lock(m_diagnosticsPipeline->GetCacheMutexRef());
+    for (const auto& [uriStr, snapshot] : m_diagnosticsPipeline->GetCacheRef())
     {
         // Out under the client's own spelling, for the same reason PublishDiagnostics does it:
         // the key is canonical and the client matches these against its own URIs.
-        const std::string outgoingUri = m_documentStore.GetClientUri(uriStr);
+        const std::string outgoingUri = GetDocumentStore().GetClientUri(uriStr);
 
         if (const auto it = known.find(uriStr); it != known.end() && it->second == snapshot.resultId)
         {

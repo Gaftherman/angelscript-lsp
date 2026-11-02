@@ -144,7 +144,7 @@ Server::HandleRequestsTextDocument_SemanticTokens_Full_Delta(
         return ComputeAndCacheSemanticTokens(doc->uri, *doc->text);
     }
 
-    const int currentVersion = m_documentStore.GetVersion(doc->uri);
+    const int currentVersion = GetDocumentStore().GetVersion(doc->uri);
     if (currentVersion >= 0 && snap.cachedVersion == currentVersion)
     {
         std::lock_guard<std::mutex> lock(m_semanticTokensMutex);

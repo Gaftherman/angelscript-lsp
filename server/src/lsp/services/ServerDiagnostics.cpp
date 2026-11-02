@@ -400,7 +400,7 @@ Server::ToProtocolDiagnostics(const std::string& text,
             {
                 lsp::DiagnosticRelatedInformation lspRel;
                 lspRel.message = rel.message;
-                const std::string relUri = m_documentStore.GetClientUri(rel.fileUri);
+                const std::string relUri = GetDocumentStore().GetClientUri(rel.fileUri);
                 lspRel.location.uri = lsp::DocumentUri(lsp::Uri::parse(relUri));
                 lspRel.location.range.start.line = rel.range.start.line;
                 lspRel.location.range.start.character = rel.range.start.character;
@@ -412,7 +412,7 @@ Server::ToProtocolDiagnostics(const std::string& text,
         }
 
         if (!text.empty())
-            codec::Encode(text, m_positionEncoding, lspDiag.range);
+            codec::Encode(text, m_sessionCoordinator->GetPositionEncoding(), lspDiag.range);
 
         converted.push_back(std::move(lspDiag));
     }
@@ -422,7 +422,7 @@ Server::ToProtocolDiagnostics(const std::string& text,
 
 void Server::PublishInactiveRegions(const std::string& uriStr, const std::string& text)
 {
-    const auto rawTextOpt = m_documentStore.GetText(uriStr);
+    const auto rawTextOpt = GetDocumentStore().GetText(uriStr);
     const std::string& effectiveText = rawTextOpt ? *rawTextOpt : text;
     const auto excluded = ExcludedLineRanges(effectiveText);
 
@@ -436,7 +436,7 @@ void Server::PublishInactiveRegions(const std::string& uriStr, const std::string
     }
 
     lsp::json::Object params;
-    std::string clientUri = m_documentStore.GetClientUri(uriStr);
+    std::string clientUri = GetDocumentStore().GetClientUri(uriStr);
     params["uri"] = lsp::json::Value(std::move(clientUri));
     params["regions"] = std::move(regions);
 
@@ -446,7 +446,7 @@ void Server::PublishInactiveRegions(const std::string& uriStr, const std::string
 
 bool Server::IsPublishDiagnosticsStale(const PublishDiagnosticsRequest& request) const
 {
-    if (request.generation > 0 && !m_documentStore.IsCurrent(request.uriStr, request.generation, request.version))
+    if (request.generation > 0 && !GetDocumentStore().IsCurrent(request.uriStr, request.generation, request.version))
     {
         return true;
     }
@@ -469,7 +469,6 @@ bool Server::IsPublishDiagnosticsStale(const PublishDiagnosticsRequest& request)
 void Server::CacheDiagnosticsSnapshot(const PublishDiagnosticsRequest& request,
                                       const std::vector<lsp::Diagnostic>& protocolDiagnostics)
 {
-    std::lock_guard<std::mutex> cacheLock(m_diagnosticsCacheMutex);
     DiagnosticsSnapshot snapshot;
     snapshot.resultId = std::to_string(m_diagnosticsPipeline->NextRevision());
     snapshot.items = protocolDiagnostics;
@@ -477,16 +476,16 @@ void Server::CacheDiagnosticsSnapshot(const PublishDiagnosticsRequest& request,
     snapshot.version = request.version;
     snapshot.generation = request.generation;
     snapshot.configRevision = m_sessionCoordinator->GetConfigRevision();
-    m_diagnosticsCache[request.uriStr] = std::move(snapshot);
+    m_diagnosticsPipeline->CacheDiagnosticsSnapshot(request.uriStr, std::move(snapshot));
 }
 
 void Server::NotifyClientDiagnostics(lsp::notifications::TextDocument_PublishDiagnostics::Params params)
 {
-    if (m_clientPullsDiagnostics)
+    if (m_sessionCoordinator->GetClientPullsDiagnostics())
     {
         const bool isBatchQueued =
-            m_diagnosticsPipeline->HasQueuedWork() && !m_documentStore.IsOpen(DocumentKey(params.uri.toString()));
-        if (m_clientSupportsDiagnosticRefresh && !isBatchQueued)
+            m_diagnosticsPipeline->HasQueuedWork() && !GetDocumentStore().IsOpen(DocumentKey(params.uri.toString()));
+        if (m_sessionCoordinator->GetClientSupportsDiagnosticRefresh() && !isBatchQueued)
         {
             std::lock_guard<std::mutex> lock(m_messageHandlerMutex);
             if (m_messageHandler)
@@ -528,15 +527,15 @@ void Server::PublishDiagnostics(const PublishDiagnosticsRequest& request)
         params.version = request.version;
     }
 
-    const std::string outgoingUri = m_documentStore.GetClientUri(request.uriStr);
+    const std::string outgoingUri = GetDocumentStore().GetClientUri(request.uriStr);
     params.uri = lsp::DocumentUri(lsp::Uri::parse(outgoingUri));
 
-    const auto rawTextOpt = m_documentStore.GetText(request.uriStr);
+    const auto rawTextOpt = GetDocumentStore().GetText(request.uriStr);
     const std::string& effectiveText = rawTextOpt ? *rawTextOpt : request.text;
 
     params.diagnostics = ToProtocolDiagnostics(effectiveText, request.diagnostics);
 
-    if (m_documentStore.IsOpen(request.uriStr))
+    if (GetDocumentStore().IsOpen(request.uriStr))
     {
         PublishInactiveRegions(request.uriStr, effectiveText);
     }
@@ -554,7 +553,7 @@ void Server::PublishDiagnostics(const std::string& uriStr, const std::string& te
         .text = text,
         .diagnostics = diagnostics,
         .version = version,
-        .generation = m_documentStore.GetGeneration(uriStr),
+        .generation = GetDocumentStore().GetGeneration(uriStr),
     });
 }
 } // namespace angel_lsp

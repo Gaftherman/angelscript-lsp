@@ -489,8 +489,8 @@ void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::
     }
 }
 
-Server::ParseAndCollectResult Server::ParseAndCollectSymbols(AnalyzeDocumentRequest& req,
-                                                             angel_lsp::analysis::SymbolTable& staging)
+ParseAndCollectResult Server::ParseAndCollectSymbols(AnalyzeDocumentRequest& req,
+                                                     angel_lsp::analysis::SymbolTable& staging)
 {
     utils::HighResTimer parseTimer;
     document::TreePtr tree = req.treeCopy ? std::move(req.treeCopy) : document::MakeTreePtr(req.parser.Parse(req.text));
@@ -612,8 +612,8 @@ std::vector<analysis::Diagnostic> Server::AnalyzeWorkerSemantics(angel_lsp::anal
     return diagnostics;
 }
 
-std::optional<Server::ParseAndCollectResult> Server::PrepareWorkerDocument(AnalyzeDocumentRequest& req,
-                                                                           angel_lsp::analysis::SymbolTable& staging)
+std::optional<ParseAndCollectResult> Server::PrepareWorkerDocument(AnalyzeDocumentRequest& req,
+                                                                   angel_lsp::analysis::SymbolTable& staging)
 {
     LogInfo(fmt::format("[Analysis] Starting background analysis for file: {}", req.uriStr));
 

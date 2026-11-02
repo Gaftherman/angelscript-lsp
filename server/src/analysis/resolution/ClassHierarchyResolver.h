@@ -45,6 +45,14 @@ struct MixinExpansionContext
     std::vector<std::string>& result;
 };
 
+struct DiagnosticContext;
+
+bool IsDestructorSymbol(const Symbol& sym);
+bool IsDestructorDeclaration(const Symbol& sym, std::string_view source);
+bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx);
+bool HasBaseClassList(TSNode classNode);
+bool IsBaseConstructorCall(TSNode node, std::string_view sourceCode);
+
 NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const SymbolTable& table);
 bool IsMixinClass(std::string_view baseTypeName, const SymbolTable& table);
 std::vector<std::string> GetInheritedTypeHierarchy(const std::string& className, const SymbolTable& symbolTable,
