@@ -673,7 +673,7 @@
       "originalSymbolOrCode": "MemberLookupContext",
       "whatItDidAndWhyInThatFile": "Held type name, SymbolTable reference, and accessor requirement flag for member lookup.",
       "whyChangedOrDeleted": "Consolidated canonical MemberLookupContext into analysis/SemanticHelpers.h.",
-      "replacedByCanonicalFile": "server/src/analysis/resolution/SemanticHelpers.h",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/ScopeSymbolLookup.h",
       "replacedByCanonicalSymbol": "MemberLookupContext",
       "ramOrCpuImpact": "Deduplicated member lookup context definition.",
       "verifiedByTests": [
@@ -689,7 +689,7 @@
       "originalSymbolOrCode": "CallNodes, CallArgTypes",
       "whatItDidAndWhyInThatFile": "Held call expression AST nodes and argument types for call and signature resolution.",
       "whyChangedOrDeleted": "Consolidated canonical CallNodes and CallResolutionContext into analysis/SemanticHelpers.h.",
-      "replacedByCanonicalFile": "server/src/analysis/resolution/SemanticHelpers.h",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/CallableAndLambdaResolver.h",
       "replacedByCanonicalSymbol": "CallResolutionContext",
       "ramOrCpuImpact": "Unified call expression and resolution context structures across features and analysis checkers.",
       "verifiedByTests": [
@@ -738,7 +738,7 @@
       "originalSymbolOrCode": "size_t CountCallArguments(TSNode argsChild)",
       "whatItDidAndWhyInThatFile": "Counted argument child nodes in call argument lists.",
       "whyChangedOrDeleted": "Unified with canonical analysis::CountCallArguments in SemanticHelpers.h.",
-      "replacedByCanonicalFile": "server/src/analysis/resolution/SemanticHelpers.h",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/CallableAndLambdaResolver.h",
       "replacedByCanonicalSymbol": "CountCallArguments",
       "ramOrCpuImpact": "Unified argument counting algorithm across analysis services.",
       "verifiedByTests": [
@@ -770,7 +770,7 @@
       "originalSymbolOrCode": "std::string GetVariableOrPropertyType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)",
       "whatItDidAndWhyInThatFile": "Extracted variable or property type from AST node in TypeConversionChecker.",
       "whyChangedOrDeleted": "Unified with canonical analysis::ResolveExpressionType in SemanticHelpers.h.",
-      "replacedByCanonicalFile": "server/src/analysis/resolution/SemanticHelpers.h",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/ExpressionTypeResolver.h",
       "replacedByCanonicalSymbol": "ResolveExpressionType",
       "ramOrCpuImpact": "Unified expression type resolution.",
       "verifiedByTests": [
@@ -819,7 +819,7 @@
       "originalSymbolOrCode": "struct MemberAccess",
       "whatItDidAndWhyInThatFile": "Stored member lookup result for property and method access validation.",
       "whyChangedOrDeleted": "Consolidated into canonical MemberLookupResult in analysis/SemanticHelpers.h.",
-      "replacedByCanonicalFile": "server/src/analysis/resolution/SemanticHelpers.h",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/ScopeSymbolLookup.h",
       "replacedByCanonicalSymbol": "MemberLookupResult",
       "ramOrCpuImpact": "Eliminated duplicate member lookup struct across AccessChecker and ConstChecker.",
       "verifiedByTests": [
@@ -836,7 +836,7 @@
       "originalSymbolOrCode": "struct ConstContext",
       "whatItDidAndWhyInThatFile": "Bundled Scope and DiagnosticContext for const checking.",
       "whyChangedOrDeleted": "Replaced with canonical ExpressionTypeContext in analysis/SemanticHelpers.h.",
-      "replacedByCanonicalFile": "server/src/analysis/resolution/SemanticHelpers.h",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/ExpressionTypeResolver.h",
       "replacedByCanonicalSymbol": "ExpressionTypeContext",
       "ramOrCpuImpact": "Zero duplicate analysis context wrappers.",
       "verifiedByTests": [
@@ -1019,7 +1019,7 @@
       "originalSymbolOrCode": "struct MethodLookup",
       "whatItDidAndWhyInThatFile": "Held method lookup result flags for const method resolution.",
       "whyChangedOrDeleted": "Consolidated into canonical MemberLookupResult in analysis/SemanticHelpers.h.",
-      "replacedByCanonicalFile": "server/src/analysis/resolution/SemanticHelpers.h",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/ScopeSymbolLookup.h",
       "replacedByCanonicalSymbol": "MemberLookupResult",
       "ramOrCpuImpact": "Eliminated duplicate struct across AccessChecker and ConstChecker.",
       "verifiedByTests": [
@@ -1102,7 +1102,7 @@
       "originalSymbolOrCode": "ResolveReceiverMemberType member lookup loop",
       "whatItDidAndWhyInThatFile": "Extracted member variable or function return type from receiver symbol table.",
       "whyChangedOrDeleted": "Consolidated into canonical ResolveReceiverMemberType in analysis/SemanticHelpers.h.",
-      "replacedByCanonicalFile": "server/src/analysis/resolution/SemanticHelpers.h",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/ExpressionTypeResolver.h",
       "replacedByCanonicalSymbol": "ResolveReceiverMemberType",
       "ramOrCpuImpact": "Unified receiver member type resolution across TargetResolution and CodeLensHandler.",
       "verifiedByTests": [
@@ -1422,7 +1422,7 @@
       "action": "DELETE_DEAD_FUNCTION",
       "sourceFile": "server/src/analysis/index/SymbolTable.cpp",
       "deletedLineRange": "1831-2014",
-      "originalSymbolOrCode": "SymbolTable::PrintSymbols",
+      "originalSymbolOrCode": "SymbolTable::PrintSymbols, AccessModifierToString, ParameterModifierToString, JoinStrings, JoinFlags, BuildParamStrings, PrintFunctionSymbol, PrintVariableSymbol, PrintClassSymbol, PrintInterfaceSymbol, PrintOtherSymbol, PrintSingleSymbol",
       "whatItDidAndWhyInThatFile": "Diagnostic symbol table printer and text formatting helpers for logger inspection.",
       "whyChangedOrDeleted": "Dead diagnostic logging functions completely unreferenced across the codebase; SymbolTable inspection is performed via structured SymbolTable query APIs and test assertions.",
       "replacedByCanonicalFile": "server/src/analysis/index/SymbolTable.h",
@@ -1562,6 +1562,102 @@
       "replacedByCanonicalFile": "server/src/analysis/checkers/AstCheckContext.h",
       "replacedByCanonicalSymbol": "AstCheckContext",
       "ramOrCpuImpact": "Eliminated duplicate struct definitions; zero runtime overhead via type aliasing.",
+      "verifiedByTests": [
+        "SemanticAnalyzerTest"
+      ]
+    },
+    {
+      "id": "REF-0095",
+      "phase": "S2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/SemanticAnalyzer.cpp",
+      "deletedLineRange": "50-340",
+      "originalSymbolOrCode": "CheckEngineDialectRules, CheckDialectForeach, CheckDialectEmptyListElements, CheckCharLiteralDeclarator, CheckDialectVariableDeclarationNode, CheckDialectCharacterLiterals, IsIntegerLiteral, CheckDialectIntegerDivisionNode, CheckDialectIntegerDivision, CheckDialectNamedArguments, IsSymbolTableClass, CheckDialectAssignmentExpressionNode, exprCtx, CheckDialectValueAssignForRef, CheckDialectMultilineStrings",
+      "whatItDidAndWhyInThatFile": "Engine dialect syntax validation rules embedded in SemanticAnalyzer.",
+      "whyChangedOrDeleted": "Extracted to dedicated domain rule checker EngineRuleChecker to decouple language dialect rules from the semantic coordinator.",
+      "replacedByCanonicalFile": "server/src/analysis/rules/EngineRuleChecker.cpp",
+      "replacedByCanonicalSymbol": "CheckEngineDialectRules",
+      "ramOrCpuImpact": "Reduced SemanticAnalyzer footprint and decoupled dialect checking into isolated visitor.",
+      "verifiedByTests": [
+        "SemanticAnalyzerTest"
+      ]
+    },
+    {
+      "id": "REF-0096",
+      "phase": "S2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/SemanticAnalyzer.cpp",
+      "deletedLineRange": "341-730",
+      "originalSymbolOrCode": "CheckUndefinedIdentifiers, CheckUndefinedIdentifiersIterative, CollectMixinRanges, ShouldIgnoreReference, IsReferenceInMixin, IsEnumReferenceQualified, CheckEnumScopeDiagnostic, IsContainerAccessorProperty, IsEnclosingScopeMember, IsAccessorPropertyOrKeyword, UndefinedIdentifierContext, IsReferenceInSyntaxErrorOrMetadata, CheckScopeReferences, GetDefinitionTypeRange, ValidateTemplateArguments, CheckMissingFuncdefHint, CheckIllegalHandleOnPrimitive, ResolveEnclosingNamespaceForDefinition, ValidateVariableType",
+      "whatItDidAndWhyInThatFile": "Undefined identifier validation and scope reference resolution in SemanticAnalyzer.",
+      "whyChangedOrDeleted": "Extracted to dedicated UndefinedIdentifierChecker implementing the SemanticAstChecker concept in Sub-Layer 2.6b.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/UndefinedIdentifierChecker.cpp",
+      "replacedByCanonicalSymbol": "CheckUndefinedIdentifiers",
+      "ramOrCpuImpact": "Reduced SemanticAnalyzer CCN and cyclomatic complexity; decoupled identifier resolution.",
+      "verifiedByTests": [
+        "SemanticAnalyzerTest"
+      ]
+    },
+    {
+      "id": "REF-0097",
+      "phase": "S2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/SemanticAnalyzer.cpp",
+      "deletedLineRange": "731-1035",
+      "originalSymbolOrCode": "CheckLocalVariableDeclarations, CheckLocalNames, CheckLocalTypes, CheckNullAssignedToNonHandle, CheckNullAssignedToNonHandleInScope",
+      "whatItDidAndWhyInThatFile": "Local variable declaration, type, and null assignment rules in SemanticAnalyzer.",
+      "whyChangedOrDeleted": "Moved to dedicated domain rules module VariableRules to isolate variable declaration checks.",
+      "replacedByCanonicalFile": "server/src/analysis/rules/VariableRules.cpp",
+      "replacedByCanonicalSymbol": "CheckLocalVariableDeclarations",
+      "ramOrCpuImpact": "Zero duplicate code; modularized variable semantic rules.",
+      "verifiedByTests": [
+        "SemanticAnalyzerTest"
+      ]
+    },
+    {
+      "id": "REF-0098",
+      "phase": "S3",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/resolution/SemanticHelpers.h",
+      "deletedLineRange": "100-300",
+      "originalSymbolOrCode": "HierarchyClassifiedBase, MixinExpansionContext",
+      "whatItDidAndWhyInThatFile": "Inheritance hierarchy and mixin expansion types in SemanticHelpers.",
+      "whyChangedOrDeleted": "Extracted to dedicated domain resolution service ClassHierarchyResolver in Sub-Layer 2.5.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/ClassHierarchyResolver.h",
+      "replacedByCanonicalSymbol": "HierarchyClassifiedBase",
+      "ramOrCpuImpact": "Decomposed monolithic helpers; reduced compile times and improved cache locality.",
+      "verifiedByTests": [
+        "SemanticAnalyzerTest"
+      ]
+    },
+    {
+      "id": "REF-0099",
+      "phase": "S3",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/resolution/SemanticHelpers.h",
+      "deletedLineRange": "301-600",
+      "originalSymbolOrCode": "TernaryBranchTypes, ActiveLocalDefKey, ActiveLocalDefGuard, DelegatePropertyReceiverContext",
+      "whatItDidAndWhyInThatFile": "Expression type deduction and delegate receiver resolution context structs in SemanticHelpers.",
+      "whyChangedOrDeleted": "Extracted into domain services ExpressionTypeResolver and PropertyAndDelegateResolver.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/ExpressionTypeResolver.h",
+      "replacedByCanonicalSymbol": "TernaryBranchTypes",
+      "ramOrCpuImpact": "Modularized expression typing contexts and delegate property resolution.",
+      "verifiedByTests": [
+        "SemanticAnalyzerTest"
+      ]
+    },
+    {
+      "id": "REF-0100",
+      "phase": "S3",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/resolution/SemanticHelpers.h",
+      "deletedLineRange": "601-900",
+      "originalSymbolOrCode": "CallDelimiterState, AtTopLevel, FuncdefAgreement",
+      "whatItDidAndWhyInThatFile": "Call delimiter state and funcdef agreement structures in SemanticHelpers.",
+      "whyChangedOrDeleted": "Extracted into domain service CallableAndLambdaResolver in Sub-Layer 2.5.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/CallableAndLambdaResolver.h",
+      "replacedByCanonicalSymbol": "CallDelimiterState",
+      "ramOrCpuImpact": "Decomposed monolithic helpers into modular callable and lambda service.",
       "verifiedByTests": [
         "SemanticAnalyzerTest"
       ]
