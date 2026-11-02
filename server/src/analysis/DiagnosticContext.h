@@ -141,8 +141,21 @@ struct DiagnosticContext
     void EmitAtTypeName(const ParameterInformation& param, const Symbol& parentSym, std::string_view code,
                         std::string_view typeName) const;
 
-    // --- Trace Logging ---
+    /**
+     * @brief Emits a trace log entry for an AST analysis rule evaluation on a symbol.
+     * @param[in] ruleName Name of the diagnostic rule.
+     * @param[in] code Diagnostic code identifier.
+     * @param[in] sym Analyzed symbol descriptor.
+     */
     void LogRule(std::string_view ruleName, std::string_view code, const Symbol& sym) const;
+
+    /**
+     * @brief Emits a trace log entry for a parameter-level diagnostic check.
+     * @param[in] ruleName Name of the diagnostic rule.
+     * @param[in] code Diagnostic code identifier.
+     * @param[in] param Analyzed parameter metadata.
+     * @param[in] parentSym Enclosing parent callable symbol.
+     */
     void LogParam(std::string_view ruleName, std::string_view code, const ParameterInformation& param,
                   const Symbol& parentSym) const;
 

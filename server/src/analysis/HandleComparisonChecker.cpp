@@ -11,62 +11,6 @@
 
 namespace angel_lsp::analysis
 {
-namespace handle_comparison_detail
-{
-enum class ComparisonCategory
-{
-    None,
-    ValueEquality,
-    Relational
-};
-
-/**
- * @brief Represents Comparison operator info.
- */
-struct ComparisonOperatorInfo
-{
-    ComparisonCategory category = ComparisonCategory::None;
-    std::string_view identityEquivalent;
-};
-
-/**
- * @brief Represents Comparison dispatch context.
- */
-struct ComparisonDispatchContext
-{
-    TSNode opNode;
-    std::string_view op;
-    ComparisonOperatorInfo opInfo;
-};
-
-/**
- * @brief Represents Relational check operands.
- */
-struct RelationalCheckOperands
-{
-    bool hasNull = false;
-    bool bothHandles = false;
-    std::string leftType;
-};
-
-/**
- * @brief Represents Comparison operands state.
- */
-struct ComparisonOperandsState
-{
-    bool isLeftNull = false;
-    bool isRightNull = false;
-    bool isLeftHandle = false;
-    bool isRightHandle = false;
-    std::string leftType;
-};
-} // namespace handle_comparison_detail
-
-using ComparisonCategory = handle_comparison_detail::ComparisonCategory;
-using ComparisonOperatorInfo = handle_comparison_detail::ComparisonOperatorInfo;
-using ComparisonDispatchContext = handle_comparison_detail::ComparisonDispatchContext;
-using RelationalCheckOperands = handle_comparison_detail::RelationalCheckOperands;
-using ComparisonOperandsState = handle_comparison_detail::ComparisonOperandsState;
 
 [[nodiscard]] static inline ComparisonOperatorInfo
 ClassifyComparisonOperatorSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept

@@ -19,6 +19,8 @@ struct I18nStringHash
     }
 };
 
+using MessageMap = ankerl::unordered_dense::map<std::string, std::string, I18nStringHash, std::equal_to<>>;
+
 class I18n
 {
   public:
@@ -95,4 +97,12 @@ inline std::string FormatMessage(const I18n* i18n, std::string_view key, std::st
     }
 }
 
+/**
+ * @brief Associates an internationalization translation key with its localized message string.
+ */
+struct LocaleOverlayEntry
+{
+    std::string_view languageSubtag;
+    void (*populate)(MessageMap&);
+};
 } // namespace angel_lsp::i18n

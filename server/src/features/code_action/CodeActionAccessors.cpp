@@ -132,22 +132,6 @@ static std::vector<std::pair<std::string, std::string>> CollectFieldsForGetterSe
     return {};
 }
 
-namespace code_action_accessors_detail
-{
-/**
- * @brief Represents Getter setter context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct GetterSetterContext
-{
-    std::string className;
-    const std::pair<std::string, std::string>& field;
-    TSPoint insertPt;
-};
-} // namespace code_action_accessors_detail
-
-using GetterSetterContext = code_action_accessors_detail::GetterSetterContext;
-
 /**
  * @brief Creates a CodeAction inserting an accessor text edit into the class body.
  * @param[in] uri Document URI.
@@ -200,7 +184,6 @@ static std::pair<bool, bool> CheckFieldAccessors(const analysis::SymbolTable& ta
  * @param[in] request Code action request.
  * @param[in] ctx Getter and setter context.
  * @param[out] actions Destination code actions vector.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static void EmitGetterSetterActionsForField(const CodeActionRequest& request, const GetterSetterContext& ctx,

@@ -3,6 +3,7 @@
 #include "analysis/ScopeTree.h"
 #include "parser/AngelScriptParser.h"
 #include "parser/GrammarSymbols.h"
+#include "utils/Constants.h"
 
 #include <memory>
 #include <string>
@@ -120,7 +121,17 @@ class LocalScopeCollector
      */
     static void DeduplicateCaptures(std::vector<RawCapture>& captures);
 
-    struct OpenScope;
+    /**
+     * @brief Tracks an open lexical scope, its enclosing parent, and boundary byte offsets during scope hierarchy
+     * construction.
+     */
+    struct OpenScope
+    {
+        Scope* scope = nullptr;
+        uint32_t endByte = 0;
+        uint32_t ownNameStartByte = constants::InvalidByteOffset;
+        uint32_t ownNameEndByte = 0;
+    };
 
     /**
      * @brief Processes a scope-opening capture node.
@@ -273,5 +284,17 @@ class LocalScopeCollector
      * @param[out] def LocalDefinition receiving type ranges.
      */
     void PopulateTypeRanges(TSNode tNode, const std::string& sourceCode, LocalDefinition& def) const;
+};
+
+/**
+ * @brief Context for synthesizing implicit 'value' parameters within virtual property accessor bodies.
+ */
+struct VirtualPropertyContext
+{
+    const std::string& propTypeStr;
+    const TypeExtractionResult& typeInfo;
+    Scope* root = nullptr;
+    const parser::GrammarSymbols& gs;
+    std::string_view sourceCode;
 };
 } // namespace angel_lsp::analysis

@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -125,4 +126,67 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& reques
  */
 std::vector<OccurrenceLocation> CollectOccurrences(const CollectOccurrencesRequest& request);
 
+/**
+ * @brief Validation constraints and typing expectations for function call arguments.
+ */
+struct FunctionArgConstraints
+{
+    bool cursorOnCall = false;
+    size_t callArgCount = 0;
+};
+
+/**
+ * @brief Accumulates AST occurrences and byte ranges matching target symbol references.
+ */
+struct OccurrenceCollector
+{
+    std::vector<OccurrenceLocation> results;
+    std::set<std::tuple<std::string, uint32_t, uint32_t>> seen;
+    std::set<std::tuple<std::string, uint32_t, uint32_t>> declRanges;
+
+    /**
+     * @brief Adds a location if not already collected.
+     * @param[in] uri File URI.
+     * @param[in] range Target range.
+     */
+    void Add(const std::string& uri, const SourceRange& range)
+    {
+        if (seen.insert({uri, range.startLine, range.startCharacter}).second)
+        {
+            results.push_back(OccurrenceLocation{uri, range});
+        }
+    }
+
+    /**
+     * @brief Adds a local reference occurrence.
+     * @param[in] uri File URI.
+     * @param[in] ref Reference to add.
+     */
+    void Add(const std::string& uri, const analysis::LocalReference& ref)
+    {
+        Add(uri, SourceRange{ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter});
+    }
+};
+
+/**
+ * @brief Byte range and token metadata identifying a symbol reference in source text.
+ */
+struct SymbolSpan
+{
+    uint32_t sL = 0;
+    uint32_t sC = 0;
+    uint32_t eL = 0;
+    uint32_t eC = 0;
+};
+
+/**
+ * @brief Context for scanning AST nodes for occurrences of a specific symbol target.
+ */
+struct OccurrenceScanContext
+{
+    std::string fileUri;
+    const CollectOccurrencesRequest& request;
+    const std::set<std::tuple<std::string, uint32_t, uint32_t>>& declRanges;
+    OccurrenceCollector& collector;
+};
 } // namespace angel_lsp::analysis

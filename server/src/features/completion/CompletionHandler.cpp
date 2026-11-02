@@ -223,24 +223,6 @@ static std::string GetLinePrefix(const std::string& sourceCode, uint32_t line, u
     return sourceCode.substr(lineStart, prefixLen);
 }
 
-namespace completion_handler_detail
-{
-/**
- * @brief Categorization proximity for deterministic scope- and file-aware completion sorting.
- */
-enum class SymbolProximity : uint8_t
-{
-    Local = 0,
-    CurrentFile = 1,
-    ExternalFile = 2,
-    Predefined = 3,
-    Snippet = 4,
-    Keyword = 5
-};
-} // namespace completion_handler_detail
-
-using SymbolProximity = completion_handler_detail::SymbolProximity;
-
 /**
  * @brief Formats sort text prefix for a symbol proximity tier.
  * @param[in] prox Symbol proximity tier.
@@ -291,59 +273,6 @@ static inline SymbolProximity DetermineSymbolProximity(const analysis::Symbol& s
     }
     return SymbolProximity::ExternalFile;
 }
-
-namespace completion_handler_detail
-{
-/**
- * @brief Candidate completion item metadata for deduplication and insertion.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct CompletionCandidate
-{
-    std::string label;
-    lsp::CompletionItemKind kind = lsp::CompletionItemKind::Variable;
-    std::string detail = {};
-    std::string doc = {};
-    std::string resolveKey = {};
-    std::string snippet = {};
-    std::string sortText = {};
-    std::string insertText = {};
-};
-} // namespace completion_handler_detail
-
-using CompletionCandidate = completion_handler_detail::CompletionCandidate;
-
-namespace completion_handler_detail
-{
-/**
- * @brief Context bundling destination collection vectors and request state.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct CompletionCollector
-{
-    std::vector<lsp::CompletionItem>& items;
-    std::unordered_set<std::string>& seenLabels;
-    const CompletionRequest& request;
-};
-} // namespace completion_handler_detail
-
-using CompletionCollector = completion_handler_detail::CompletionCollector;
-
-namespace completion_handler_detail
-{
-/**
- * @brief Represents Operator snippet.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct OperatorSnippet
-{
-    const char* label;
-    const char* snippet;
-    const char* detail;
-};
-} // namespace completion_handler_detail
-
-using OperatorSnippet = completion_handler_detail::OperatorSnippet;
 
 /**
  * @brief Retrieves configured predefined file extension from completion request.
@@ -502,21 +431,6 @@ static std::string TemplateInsertSnippet(const analysis::Symbol& sym)
     snippet += ">$0";
     return snippet;
 }
-
-namespace completion_handler_detail
-{
-/**
- * @brief Where in the source's lexical structure a byte offset falls.
- */
-enum class LexicalContext
-{
-    Code,
-    Comment,
-    StringLiteral,
-};
-} // namespace completion_handler_detail
-
-using LexicalContext = completion_handler_detail::LexicalContext;
 
 /**
  * @brief Skips single-line comment.
@@ -1266,22 +1180,6 @@ static std::string GetBackwardDeclarationText(std::string_view sourceCode, uint3
     return std::string(sourceCode.substr(start, offset - start));
 }
 
-namespace completion_handler_detail
-{
-/**
- * @brief Represents Inheritance context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct InheritanceContext
-{
-    analysis::SymbolType declKind = analysis::SymbolType::Class;
-    std::string declaringClassName;
-    std::string qualifier;
-};
-} // namespace completion_handler_detail
-
-using InheritanceContext = completion_handler_detail::InheritanceContext;
-
 /**
  * @brief Detects if completion was invoked inside a class or interface base inheritance list.
  */
@@ -1473,22 +1371,6 @@ static std::string SubstituteTypeParameters(std::string text, const analysis::Te
     }
     return text;
 }
-
-namespace completion_handler_detail
-{
-/**
- * @brief Template binding and argument context for member completion.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct MemberTemplateContext
-{
-    const analysis::TemplateBinding& binding;
-    const std::vector<std::string>& templateArgs;
-    std::string_view memberPrefix = "";
-};
-} // namespace completion_handler_detail
-
-using MemberTemplateContext = completion_handler_detail::MemberTemplateContext;
 
 /**
  * @brief Checks if an open parenthesis immediately follows the cursor position.
@@ -2046,21 +1928,6 @@ static std::string ResolveReceiverNodeType(TSNode receiverNode, const Completion
     return analysis::ResolveReceiverType(receiverNode, request.sourceCode, request.symbolTable,
                                          {innermostScope, "", request.uri});
 }
-
-namespace completion_handler_detail
-{
-/**
- * @brief Represents Index peel result.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct IndexPeelResult
-{
-    size_t count = 0;
-    std::string lastIndexExpr;
-};
-} // namespace completion_handler_detail
-
-using IndexPeelResult = completion_handler_detail::IndexPeelResult;
 
 /**
  * @brief Peels index bracket sequences preceding a dot access, capturing the last inner index argument.
@@ -3302,21 +3169,6 @@ static std::string ExtractAssignmentTargetType(std::string_view prefix)
     }
     return std::string(typePart.substr(typeStart, typeEnd - typeStart));
 }
-
-namespace completion_handler_detail
-{
-/**
- * @brief Categorization rank for contextual type-aware completion sorting.
- */
-enum class TypeMatchRank : uint8_t
-{
-    Exact = 0,
-    Convertible = 1,
-    Other = 2
-};
-} // namespace completion_handler_detail
-
-using TypeMatchRank = completion_handler_detail::TypeMatchRank;
 
 /**
  * @brief Formats sort text prefix for a given type match rank.

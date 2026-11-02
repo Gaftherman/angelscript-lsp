@@ -48,6 +48,99 @@
 
 namespace angel_lsp
 {
+/**
+ * @brief Parameters for resolving valid breakpoint positions within a source line range.
+ */
+struct BreakpointLocationsParams
+{
+    std::string uri;
+    uint32_t startLine = 0;
+    uint32_t endLine = std::numeric_limits<uint32_t>::max();
+};
+
+/**
+ * @brief Identifies virtual mixin methods and their backing source declarations for LSP navigation.
+ */
+struct VirtualMixinTarget
+{
+    std::string hostClass;
+    std::string mixinName;
+};
+
+/**
+ * @brief Source location and document URI of a symbol defined within an expanded mixin block.
+ */
+struct MixinSymbolLocation
+{
+    std::string fileUri;
+    uint32_t startLine{0};
+    uint32_t endLine{0};
+    std::string resolvedBaseClass;
+    bool found{false};
+};
+
+/**
+ * @brief Thread-safe snapshot of cached semantic tokens and version metadata for document synchronization.
+ */
+struct CachedTokensSnapshot
+{
+    bool canDiff{false};
+    bool prevHadError{false};
+    int cachedVersion{-1};
+    std::vector<lsp::uint> previous;
+};
+
+/**
+ * @brief RAII timer recording execution duration for LSP server startup phases.
+ *
+ * The workspace scan reports progress as percentages that were written into the source by
+ * hand: "55" for the engine profiles, "70" for the stubs. Those numbers describe the order
+ * of the phases and nothing about their cost, so a report of "2942 ms to load on a small
+ * project" had nowhere to be looked up. This gives every phase a number that came from a
+ * clock.
+ *
+ * Info level, so it is in the log a user is already asked to attach to a report, and off
+ * the wire otherwise.
+ */
+class PhaseTimer
+{
+  public:
+    PhaseTimer(angel_lsp::utils::LspLogger* logger, std::string phase)
+        : m_logger(logger), m_phase(std::move(phase)), m_start(std::chrono::steady_clock::now())
+    {
+    }
+
+    ~PhaseTimer()
+    {
+        if (m_logger == nullptr)
+        {
+            return;
+        }
+
+        const auto elapsed =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_start);
+        m_logger->LogInfo(fmt::format("Startup phase '{}': {}", m_phase,
+                                      angel_lsp::utils::FormatDuration(static_cast<double>(elapsed.count()))));
+    }
+
+    PhaseTimer(const PhaseTimer&) = delete;
+    PhaseTimer& operator=(const PhaseTimer&) = delete;
+
+  private:
+    angel_lsp::utils::LspLogger* m_logger;
+    std::string m_phase;
+    std::chrono::steady_clock::time_point m_start;
+};
+
+/**
+ * @brief Associates a diagnostic code with its user-configured severity setting.
+ */
+struct CodeSettingPair
+{
+    std::string_view code;
+    std::string_view uri;
+};
+
 class Server
 {
   private:
@@ -551,6 +644,26 @@ class Server
     {
         const ModuleView* owner = nullptr;
         std::vector<std::string> alsoClaimedBy;
+    };
+
+    /**
+     * @brief Candidate module file path and workspace configuration state during workspace module indexing.
+     */
+    struct ModuleCandidate
+    {
+        const ModuleView* view = nullptr;
+        int rank = 0;
+        size_t depth = 0;
+    };
+
+    /**
+     * @brief RAII guard re-triggering workspace diagnostic analysis upon background task termination.
+     */
+    struct ReanalyseOnExit
+    {
+        Server* server;
+        const angel_lsp::utils::StopFlag& stopToken;
+        ~ReanalyseOnExit();
     };
 
     /**

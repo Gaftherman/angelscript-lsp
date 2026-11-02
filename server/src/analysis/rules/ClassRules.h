@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/NodeIndex.h"
+#include "analysis/rules/RuleIndex.h"
 #include "document/Document.h"
 #include "parser/AngelScriptParser.h"
 
@@ -17,6 +18,8 @@ class SymbolTable;
 
 namespace rules
 {
+using TransparentStringSet = ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>;
+
 /**
  * @brief Cache entry for parsed mixin source and AST tree.
  */
@@ -54,5 +57,80 @@ void ValidateClass(const Symbol& sym, const DiagnosticContext& ctx, MixinFileCac
  *       interface hierarchies - as a cycle.
  */
 bool HasInheritanceCycle(const std::string& typeName, const SymbolTable& table);
+
+/**
+ * @brief Parameters for validating base class inheritance legality, accessibility, and cycle detection.
+ */
+struct BaseCheckRequest
+{
+    const Symbol& sym;
+    const ClassSignature& sig;
+    const DiagnosticContext& ctx;
+};
+
+/**
+ * @brief Parameters for checking mixin inclusions, conflict detection, and interface requirements.
+ */
+struct MixinCheckContext
+{
+    std::string hostClassName;
+    const Symbol* mixinSym = nullptr;
+    SourceRange hostRange;
+    const TransparentStringSet& hostMembers;
+    const TransparentStringSet& mixinSelfMembers;
+    TransparentStringSet& reported;
+    const NodeIndex* nodeIndex = nullptr;
+};
+
+/**
+ * @brief Tracks function signature validity, override correctness, and default argument rules.
+ */
+struct FunctionCheckState
+{
+    const ankerl::unordered_dense::set<std::string_view>& localNames;
+    MixinCheckContext& mctx;
+};
+
+/**
+ * @brief Aggregated member symbols and signatures collected from a mixin inheritance hierarchy.
+ */
+struct MixinHierarchyMembers
+{
+    std::string hostClassName;
+    TransparentStringSet hostMembers;
+};
+
+/**
+ * @brief Carries property accessor getter/setter lookup state and candidate symbols.
+ */
+struct AccessorLookupContext
+{
+    std::string_view name;
+    std::string_view getView;
+    std::string_view setView;
+};
+
+/**
+ * @brief Parameters for verifying that a class correctly instantiates and satisfies all mixin contracts.
+ */
+struct MixinInstantiationCheckRequest
+{
+    const std::string& mixinName;
+    const Symbol& hostSym;
+    const MixinHierarchyMembers& baseMembers;
+    const DiagnosticContext& ctx;
+    ankerl::unordered_dense::map<std::string, MixinFileCacheEntry>& fileCache;
+};
+
+/**
+ * @brief Identifies a mixin declaration AST node and target class for inline mixin expansion.
+ */
+struct MixinAstTarget
+{
+    std::string_view source;
+    const TSTree* tree = nullptr;
+    const NodeIndex* nodeIndex = nullptr;
+    std::unique_ptr<NodeIndex> localIndex;
+};
 } // namespace rules
 } // namespace angel_lsp::analysis

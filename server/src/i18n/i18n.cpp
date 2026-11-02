@@ -101,8 +101,6 @@ static std::string PrimaryLanguageSubtag(const std::string& locale)
 // scripts/check-diagnostic-codes.py holds this list too and fails the build when the two drift
 // apart, in either direction. It is what found the two entries corrected above.
 // ---------------------------------------------------------------------------------
-using MessageMap = ankerl::unordered_dense::map<std::string, std::string, I18nStringHash, std::equal_to<>>;
-
 /**
  * @brief Populates English diagnostic messages (batch 1).
  * @param[out] m_messages Target message map to populate.
@@ -1004,21 +1002,6 @@ static void PopulateSpanishMessages(MessageMap& m_messages)
     PopulateSpanishActionMessages(m_messages);
     PopulateSpanishHoverMessages(m_messages);
 }
-
-namespace i18n_detail
-{
-/**
- * @brief Entry mapping a primary language subtag to its localization overlay populator.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct LocaleOverlayEntry
-{
-    std::string_view languageSubtag;
-    void (*populate)(MessageMap&);
-};
-} // namespace i18n_detail
-
-using LocaleOverlayEntry = i18n_detail::LocaleOverlayEntry;
 
 constexpr std::array<LocaleOverlayEntry, 1> kLocaleOverlays = {{
     {"es", &PopulateSpanishMessages},

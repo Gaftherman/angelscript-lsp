@@ -13,7 +13,7 @@ namespace angel_lsp::analysis
 struct Symbol;
 
 /**
- * @brief Represents an isolated declaration snippet extracted from source text.
+ * @brief Isolated declaration snippet extracted from source text.
  */
 struct RecoveredDeclarationSnippet
 {

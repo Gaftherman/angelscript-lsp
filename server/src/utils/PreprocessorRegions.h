@@ -205,4 +205,79 @@ std::string BlankExcludedLines(std::string_view sourceCode, const std::vector<Ex
  * @return The defined words, with duplicates left in - the caller is inserting into a set.
  */
 std::vector<std::string> ScanDefinedWords(std::string_view sourceCode);
+
+/**
+ * @brief Tracks an open preprocessor conditional block (#if/#ifdef/#ifndef) and its nesting depth.
+ */
+struct OpenDirective
+{
+    uint32_t branchStart = 0;  ///< Line of the directive that opened the current branch.
+    bool excluded = false;     ///< True when the current branch is the dropped one.
+    bool takenAlready = false; ///< True once some branch of this `#if` has been live.
+};
+
+/**
+ * @brief Discovered preprocessor directive position and directive kind.
+ */
+struct DirectiveHit
+{
+    uint32_t line = 0;
+    uint32_t startColumn = 0; ///< Byte column of the `#`.
+    uint32_t endColumn = 0;   ///< One past the last character of the name.
+    std::string_view name;
+    std::string_view argument;
+    bool touchesHash = true;
+    char firstArgChar = 0;
+};
+
+/**
+ * @brief State tracker for line numbers, byte offsets, and active directive blocks during region scanning.
+ */
+struct LineScanState
+{
+    size_t index{0};
+    uint32_t currentLine{0};
+    size_t lineStart{0};
+    bool atLineStart{true};
+};
+
+/**
+ * @brief Immutable input context and accumulators for preprocessor region scanning.
+ */
+struct PreprocessorScanContext
+{
+    PreprocessorScan& scan;
+    std::vector<OpenDirective> stack;
+    int excludedNesting{0};
+    ankerl::unordered_dense::set<std::string> localWords;
+    const ankerl::unordered_dense::set<std::string>& definedWords;
+    const PreprocessorFeatures& features;
+    bool usingLocalWords{false};
+    bool sawMalformedIf{false};
+    bool reportPragma{false};
+
+    bool IsDefined(std::string_view word) const
+    {
+        const std::string key(word);
+        return usingLocalWords ? localWords.contains(key) : definedWords.contains(key);
+    }
+
+    void CloseBranch(OpenDirective& open, uint32_t boundaryLine)
+    {
+        if (open.excluded)
+        {
+            scan.excluded.push_back(ExcludedLineRange{open.branchStart, boundaryLine});
+        }
+        else
+        {
+            open.takenAlready = true;
+        }
+    }
+
+    void Report(const DirectiveHit& hit, DirectiveProblem problem)
+    {
+        scan.unsupported.push_back(
+            UnsupportedDirective{hit.line, hit.startColumn, hit.endColumn, problem, std::string(hit.name)});
+    }
+};
 } // namespace angel_lsp::utils

@@ -11,16 +11,6 @@ namespace angel_lsp::analysis
 {
 
 /**
- * @brief Evaluated candidate representation used in Pareto dominance and ambiguity calculation.
- */
-struct EvaluatedCandidate
-{
-    const Symbol* symbol = nullptr;
-    std::vector<ArgumentConversion> conversions;
-    int defaultArgs = 0;
-};
-
-/**
  * @brief Function parameter count boundaries.
  */
 struct ArityInfo

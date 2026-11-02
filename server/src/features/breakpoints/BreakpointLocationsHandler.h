@@ -11,7 +11,7 @@ namespace angel_lsp::features
 {
 
 /**
- * @brief Represents a valid 0-based source range where a breakpoint can be placed.
+ * @brief Valid 0-based source range where a breakpoint can be placed.
  */
 struct BreakpointLocationItem
 {

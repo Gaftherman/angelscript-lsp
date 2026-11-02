@@ -12,22 +12,6 @@
 namespace angel_lsp
 {
 
-namespace breakpoint_handlers_detail
-{
-/**
- * @brief Parsed parameters for breakpoint locations requests.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct BreakpointLocationsParams
-{
-    std::string uri;
-    uint32_t startLine = 0;
-    uint32_t endLine = std::numeric_limits<uint32_t>::max();
-};
-} // namespace breakpoint_handlers_detail
-
-using BreakpointLocationsParams = breakpoint_handlers_detail::BreakpointLocationsParams;
-
 /**
  * @brief Extracts the document URI string from the JSON-RPC textDocument object.
  * @param[in] obj JSON-RPC parameters object containing the request payload.

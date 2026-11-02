@@ -49,4 +49,40 @@ struct ImplementationRequest
  *         question applies to.
  */
 std::optional<std::vector<lsp::Location>> GetImplementations(const ImplementationRequest& request);
+
+/**
+ * @brief Accumulates derived classes and interface implementations during type hierarchy search.
+ */
+struct SubtypeAccumulator
+{
+    ankerl::unordered_dense::set<std::string>& seen;
+    std::vector<std::string>& next;
+    std::vector<analysis::Symbol>& subtypes;
+};
+
+/**
+ * @brief Collects LSP location structures for symbol definitions and implementations.
+ */
+struct LocationCollector
+{
+    std::vector<lsp::Location> locations;
+    ankerl::unordered_dense::set<std::pair<std::string, uint64_t>> seenLocs;
+
+    /**
+     * @brief Adds a symbol location if not already collected.
+     * @param[in] sym analysis::Symbol whose location should be captured.
+     */
+    void Add(const analysis::Symbol& sym);
+};
+
+/**
+ * @brief Context for searching overriding member implementations across derived types.
+ */
+struct MemberImplementationContext
+{
+    std::string name;
+    bool isMixinOwner;
+    const analysis::SymbolTable& table;
+    LocationCollector& collector;
+};
 } // namespace angel_lsp::features

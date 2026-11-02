@@ -2,6 +2,7 @@
 
 #include "analysis/ScopeTree.h"
 #include "analysis/SymbolTable.h"
+#include "analysis/VirtualMixinContext.h"
 #include <functional>
 #include <lsp/messages.h>
 #include <lsp/types.h>
@@ -46,4 +47,15 @@ std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest&
  * @return Optional vector of Locations pointing to type declarations.
  */
 std::optional<std::vector<lsp::Location>> GetTypeDefinition(const DefinitionRequest& request);
+
+/**
+ * @brief Resolution parameters and AST context for go-to-definition queries.
+ */
+struct DefinitionContext
+{
+    const DefinitionRequest& request;
+    analysis::VirtualMixinContext vCtx;
+    std::shared_ptr<const analysis::Scope> rootScope;
+    uint32_t queryLine = 0;
+};
 } // namespace angel_lsp::features

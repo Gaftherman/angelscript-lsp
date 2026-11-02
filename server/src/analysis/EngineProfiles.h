@@ -91,4 +91,13 @@ EngineProfileKind DetectEngineProfileFromWorkspace(const std::vector<std::string
  * @return Default EngineProperties for the profile.
  */
 config::EngineProperties GetDefaultEngineProperties(EngineProfileKind kind);
+
+/**
+ * @brief Configures engine profile capabilities, script bindings, and built-in type properties.
+ */
+struct ProfileMapping
+{
+    std::string_view alias;
+    EngineProfileKind kind;
+};
 } // namespace angel_lsp::analysis

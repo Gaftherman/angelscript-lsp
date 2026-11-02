@@ -60,4 +60,15 @@ std::optional<std::vector<lsp::TypeHierarchyItem>> GetSupertypes(const TypeHiera
  * @note Direct subtypes only, for the same reason as GetSupertypes.
  */
 std::optional<std::vector<lsp::TypeHierarchyItem>> GetSubtypes(const TypeHierarchyItemRequest& request);
+
+/**
+ * @brief Parameters and traversal filters for finding subtypes in a type hierarchy.
+ */
+struct SubtypeQueryContext
+{
+    std::string target;
+    std::string qualifiedTarget;
+    std::string itemName;
+    const analysis::SymbolTable& symbolTable;
+};
 } // namespace angel_lsp::features

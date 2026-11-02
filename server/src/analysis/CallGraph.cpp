@@ -1,4 +1,4 @@
-﻿#include "analysis/CallGraph.h"
+#include "analysis/CallGraph.h"
 #include "analysis/SymbolTable.h"
 #include "parser/ASTUtils.h"
 #include "utils/ScopedNameUtils.h"
@@ -9,6 +9,31 @@
 
 namespace angel_lsp::analysis
 {
+uint32_t NamingContext::NextContainer(TSNode node, std::string_view sourceCode, uint32_t current)
+{
+    const std::string name =
+        parser::NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName), sourceCode);
+    if (name.empty())
+    {
+        return current;
+    }
+    const std::string& parent = containers[current];
+    containers.push_back(utils::JoinScopedName(parent, name));
+    return static_cast<uint32_t>(containers.size() - 1);
+}
+
+uint32_t NamingContext::NextCaller(TSNode node, std::string_view sourceCode, uint32_t containerIdx, uint32_t current)
+{
+    const std::string name =
+        parser::NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName), sourceCode);
+    if (name.empty())
+    {
+        return current;
+    }
+    const std::string& parent = containers[containerIdx];
+    callers.push_back(utils::JoinScopedName(parent, name));
+    return static_cast<uint32_t>(callers.size() - 1);
+}
 
 /** @brief The node naming what a call reaches, or a null node when it names nothing stable. */
 static TSNode CalleeNameNode(TSNode callNode)
@@ -54,22 +79,6 @@ static TSNode CalleeNameNode(TSNode callNode)
     return TSNode{};
 }
 
-namespace call_graph_detail
-{
-/**
- * @brief Represents Traversal item.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct TraversalItem
-{
-    TSNode node{};
-    uint32_t containerIndex = 0;
-    uint32_t callerIndex = 0;
-};
-} // namespace call_graph_detail
-
-using TraversalItem = call_graph_detail::TraversalItem;
-
 /**
  * @brief Is container symbol.
  * @param[in] sym Tree-sitter grammar symbol.
@@ -81,47 +90,6 @@ static bool IsContainerSymbol(TSSymbol sym)
     return sym == gs.symClassDeclaration || sym == gs.symInterfaceDeclaration || sym == gs.symMixinDeclaration ||
            sym == gs.symNamespaceDeclaration;
 }
-
-namespace call_graph_detail
-{
-/**
- * @brief Represents Naming context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct NamingContext
-{
-    std::vector<std::string> containers{""};
-    std::vector<std::string> callers{""};
-
-    uint32_t NextContainer(TSNode node, std::string_view sourceCode, uint32_t current)
-    {
-        const std::string name =
-            parser::NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName), sourceCode);
-        if (name.empty())
-        {
-            return current;
-        }
-        const std::string& parent = containers[current];
-        containers.push_back(utils::JoinScopedName(parent, name));
-        return static_cast<uint32_t>(containers.size() - 1);
-    }
-
-    uint32_t NextCaller(TSNode node, std::string_view sourceCode, uint32_t containerIdx, uint32_t current)
-    {
-        const std::string name =
-            parser::NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName), sourceCode);
-        if (name.empty())
-        {
-            return current;
-        }
-        const std::string& parent = containers[containerIdx];
-        callers.push_back(utils::JoinScopedName(parent, name));
-        return static_cast<uint32_t>(callers.size() - 1);
-    }
-};
-} // namespace call_graph_detail
-
-using NamingContext = call_graph_detail::NamingContext;
 
 static void RecordCallSite(TSNode node, std::string_view sourceCode, const std::string& caller,
                            std::vector<CallSite>& out)

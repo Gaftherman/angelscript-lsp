@@ -24,27 +24,6 @@
 namespace angel_lsp::analysis::rules
 {
 
-namespace unused_symbol_checker_detail
-{
-/**
- * @brief Represents Unused check context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct UnusedCheckContext
-{
-    const ankerl::unordered_dense::set<std::string>& refNames;
-    const ankerl::unordered_dense::set<const LocalDefinition*>& usedLocals;
-    const ankerl::unordered_dense::set<std::string>& reflections;
-    const config::UnusedSymbolRules& rules;
-    const ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>& inheritedOrMixedInClasses;
-    const ankerl::unordered_dense::map<std::string, std::vector<std::string>, TransparentStringHash, std::equal_to<>>&
-        derivedClassesByBase;
-    const RuleIndex& ruleIndex;
-};
-} // namespace unused_symbol_checker_detail
-
-using UnusedCheckContext = unused_symbol_checker_detail::UnusedCheckContext;
-
 static inline uint64_t PackLoc(uint32_t line, uint32_t col) noexcept
 {
     return (static_cast<uint64_t>(line) << 32) | static_cast<uint64_t>(col);
@@ -69,22 +48,6 @@ static void CollectDefLocations(const Scope* rootScope, ankerl::unordered_dense:
         }
     }
 }
-
-namespace unused_symbol_checker_detail
-{
-/**
- * @brief Represents Doc ref collect context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct DocRefCollectContext
-{
-    const ankerl::unordered_dense::set<uint64_t>& defLocs;
-    std::string_view sourceCode;
-    std::span<const std::string> delegateProps;
-};
-} // namespace unused_symbol_checker_detail
-
-using DocRefCollectContext = unused_symbol_checker_detail::DocRefCollectContext;
 
 static void CollectDocReferences(const Scope* rootScope, const DocRefCollectContext& docCtx,
                                  ankerl::unordered_dense::set<std::string>& refNames)
@@ -385,7 +348,6 @@ static ankerl::unordered_dense::set<std::string> CollectStringReflection(const S
  * @brief Normalizes a parameter type string by removing whitespace, leading const, and reference decorations.
  * @param[in] type Target type string view to normalize.
  * @return Normalized base parameter type name string.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst. Manually re-evaluates AST for isRef; candidate for
  * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
  */

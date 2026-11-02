@@ -33,4 +33,25 @@ using DocumentSymbolResult = std::vector<lsp::DocumentSymbol>;
  * @return Optional vector of DocumentSymbol objects; nullopt if document cannot be parsed.
  */
 std::optional<DocumentSymbolResult> GetDocumentSymbols(const DocumentSymbolRequest& request);
+
+/**
+ * @brief Recursive visitor state during document symbol hierarchy construction.
+ */
+struct TraversalContext
+{
+    std::string_view sourceCode;
+    bool isInsideClass = false;
+    std::string_view enclosingClassName;
+};
+
+/**
+ * @brief Accessor helpers for extracting return type, name, and parameter list nodes from a function declaration AST.
+ */
+struct FunctionComponents
+{
+    TSNode nameNode;
+    std::string name;
+    TSNode retNode;
+    TSNode paramsNode;
+};
 } // namespace angel_lsp::features

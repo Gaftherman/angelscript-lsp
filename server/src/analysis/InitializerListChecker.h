@@ -3,9 +3,12 @@
 #include "analysis/DiagnosticContext.h"
 #include "analysis/ScopeTree.h"
 
+#include <ankerl/unordered_dense.h>
 #include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
+#include <unordered_set>
+#include <vector>
 
 namespace angel_lsp::analysis
 {
@@ -85,4 +88,98 @@ void CheckInitializerListAgainstType(TSNode listNode, const std::string& targetT
  * @param ctx Diagnostic context.
  */
 void ValidateInitializerList(TSNode listNode, const std::string& expectedType, DiagnosticContext& ctx);
+
+/**
+ * @brief Canonical and instantiated type name spellings for template type arguments.
+ */
+struct TemplateSpelling
+{
+    std::string name;
+    std::vector<std::string> arguments;
+};
+
+/**
+ * @brief Container inspection state for initializer list target types (arrays, dictionaries, or aggregate structs).
+ */
+struct ListContainerInfo
+{
+    bool isContainer = false;
+    uint32_t dimensions = 1;
+    std::string elementType;
+};
+
+/**
+ * @brief Inspection results for member functions and operators supported by a list container type.
+ */
+struct ContainerMemberInspection
+{
+    uint32_t maxIndexParams = 0;
+    std::string indexReturnType;
+    bool hasListConstructor = false;
+};
+
+/**
+ * @brief Extracted key and value type descriptors for dictionary initializer list validation.
+ */
+struct DictInfo
+{
+    bool isDict = false;
+    std::string keyType;
+    std::string valType;
+};
+
+/**
+ * @brief Evaluation state for dictionary key-value pair types during initializer list type checking.
+ */
+struct DictTypeState
+{
+    std::string keyType;
+    std::string valType;
+    bool isAssociative = false;
+};
+
+/**
+ * @brief Field metadata describing member name, declared type, and offset for aggregate struct initialization.
+ */
+struct StructFieldInfo
+{
+    std::string name;
+    std::string type;
+    uint32_t line = 0;
+    uint32_t col = 0;
+};
+
+/**
+ * @brief Extracted field list and initialization layout for aggregate struct initialization.
+ */
+struct AggregateStructInfo
+{
+    bool hasListSupport = false;
+    std::vector<StructFieldInfo> fields;
+};
+
+using StructLayoutCache = ankerl::unordered_dense::map<std::string, AggregateStructInfo>;
+
+/**
+ * @brief Encapsulates initializer list AST node, expected target type, and active diagnostic sinks.
+ */
+struct ListValidationContext
+{
+    DiagnosticContext& ctx;
+    const ElementContext& elements;
+    const std::unordered_set<std::string>& arrayLikeTemplates;
+    StructLayoutCache& cache;
+    int depth = 0;
+};
+
+/**
+ * @brief Context for inspecting and validating nested initializer list expressions.
+ */
+struct InitializerListContext
+{
+    const InitializerListCheckRequest& request;
+    DiagnosticContext& ctx;
+    const std::unordered_set<std::string>& arrayLikeTemplates;
+    StructLayoutCache& structCache;
+};
 } // namespace angel_lsp::analysis

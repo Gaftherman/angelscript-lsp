@@ -8,21 +8,6 @@ extern "C" const TSLanguage* tree_sitter_angelscript();
 
 namespace angel_lsp::parser
 {
-namespace query_registry_detail
-{
-struct QueryDeleter
-{
-    void operator()(TSQuery* q) const noexcept
-    {
-        if (q)
-        {
-            ts_query_delete(q);
-        }
-    }
-};
-} // namespace query_registry_detail
-
-using QueryDeleter = query_registry_detail::QueryDeleter;
 
 using UniqueTSQuery = std::unique_ptr<TSQuery, QueryDeleter>;
 
@@ -34,39 +19,6 @@ static UniqueTSQuery CompileQuery(const char* source)
     TSQuery* query = ts_query_new(lang, source, static_cast<uint32_t>(std::strlen(source)), &errorOffset, &errorType);
     return UniqueTSQuery(query);
 }
-
-namespace query_registry_detail
-{
-/**
- * @brief Represents Cursor holder.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct CursorHolder
-{
-    TSQueryCursor* cursor = nullptr;
-
-    CursorHolder()
-    {
-        cursor = ts_query_cursor_new();
-    }
-
-    ~CursorHolder()
-    {
-        if (cursor)
-        {
-            ts_query_cursor_delete(cursor);
-            cursor = nullptr;
-        }
-    }
-
-    CursorHolder(const CursorHolder&) = delete;
-    CursorHolder& operator=(const CursorHolder&) = delete;
-    CursorHolder(CursorHolder&&) = delete;
-    CursorHolder& operator=(CursorHolder&&) = delete;
-};
-} // namespace query_registry_detail
-
-using CursorHolder = query_registry_detail::CursorHolder;
 
 const TSQuery* QueryRegistry::GetHighlightsQuery()
 {

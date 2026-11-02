@@ -44,4 +44,36 @@ struct MatchContext
                                                      const std::vector<std::string>& argTypes,
                                                      const SymbolTable& symbolTable);
 
+/**
+ * @brief Ranking penalty metrics for fallback overload candidates.
+ */
+struct FallbackCandidateRank
+{
+    bool arityMatches = false;
+    bool exactParamCount = false;
+    uint32_t arityDiff = 0;
+    uint32_t viableArgs = 0;
+    uint32_t incompatibleArgs = 0;
+
+    auto operator<=>(const FallbackCandidateRank& other) const noexcept
+    {
+        if (auto c = arityMatches <=> other.arityMatches; c != 0)
+        {
+            return c;
+        }
+        if (auto c = exactParamCount <=> other.exactParamCount; c != 0)
+        {
+            return c;
+        }
+        if (auto c = other.arityDiff <=> arityDiff; c != 0)
+        {
+            return c;
+        }
+        if (auto c = viableArgs <=> other.viableArgs; c != 0)
+        {
+            return c;
+        }
+        return other.incompatibleArgs <=> incompatibleArgs;
+    }
+};
 } // namespace angel_lsp::analysis

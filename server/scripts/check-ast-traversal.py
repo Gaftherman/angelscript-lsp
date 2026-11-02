@@ -648,12 +648,17 @@ def check_no_doxygen_slop():
     """
     Enforces that zero mechanical or robotic AI slop filler templates exist in Doxygen comments across server/src/.
     Specifically checks for:
-    1. 'True if condition met; otherwise false.'
-    2. 'Result of the operation.' / 'Calculated or extracted result of the operation.'
-    3. '@param... Parameter/Input <name>.'
-    4. Orphaned analysis note fragments (e.g. 'Structural overlap', 'Candidate for unification in' outside of @note).
+    1. '@note [REFACTOR-CANDIDATE]'
+    2. '@brief Represents <symbol>'
+    3. '@brief Helper structure' / '@brief Local helper'
+    4. 'True if condition met; otherwise false.'
+    5. 'Result of the operation.' / 'Calculated or extracted result of the operation.'
+    6. '@param... Parameter/Input <name>.'
+    7. Orphaned analysis note fragments outside of @note.
     """
     violations = []
+    refactor_cand_re = re.compile(r"@note\s+\[REFACTOR-CANDIDATE\]", re.I)
+    slop_brief_re = re.compile(r"@brief\s+(?:Represents\b|Helper\s+structure\b|Local\s+helper\b)", re.I)
     slop_param_re = re.compile(r"@param(\[[^\]]*\])?\s+(\w+)\s+(Parameter|Input)\s+\2\b", re.I)
     slop_cond_re = re.compile(r"true if condition met;\s*otherwise false", re.I)
     slop_res_re = re.compile(r"result of the operation", re.I)
@@ -670,7 +675,11 @@ def check_no_doxygen_slop():
         for idx, line in enumerate(content.splitlines(), 1):
             stripped = line.strip()
             cleaned_tag = stripped.lstrip("* ").strip()
-            if slop_cond_re.search(stripped):
+            if refactor_cand_re.search(stripped):
+                violations.append((file_path, idx, stripped, "Forbidden @note [REFACTOR-CANDIDATE] tag"))
+            elif slop_brief_re.search(stripped):
+                violations.append((file_path, idx, stripped, "Mechanical @brief slop template"))
+            elif slop_cond_re.search(stripped):
                 violations.append((file_path, idx, stripped, "Mechanical filler condition description"))
             elif slop_res_re.search(stripped):
                 violations.append((file_path, idx, stripped, "Mechanical filler return description"))
@@ -680,77 +689,109 @@ def check_no_doxygen_slop():
                 violations.append((file_path, idx, stripped, "Orphaned refactoring note fragment"))
             elif slop_overlap_re.search(stripped) and not cleaned_tag.startswith("@note"):
                 violations.append((file_path, idx, stripped, "Orphaned structural overlap note"))
+    return violations
+
+
+def check_no_detail_namespaces():
+    """
+    Enforces that NO namespace *_detail exists across server/src/.
+    All helper structures must reside in canonical headers or private class scopes.
+    """
+    violations = []
+    detail_ns_re = re.compile(r"\bnamespace\s+([A-Za-z0-9_]*_detail)\b")
+    for fpath in SERVER_SRC.rglob("*.[ch]*"):
+        if not fpath.is_file():
+            continue
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for idx, line in enumerate(content.splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                continue
+            if detail_ns_re.search(stripped):
+                violations.append((fpath, idx, stripped))
+    return violations
+
+
+def check_no_detail_using_aliases():
+    """
+    Enforces that NO 'using ... = ..._detail::...' aliases exist across server/src/.
+    """
+    violations = []
+    using_detail_re = re.compile(r"\busing\s+\w+\s*=\s*[A-Za-z0-9_]*_detail::")
+    for fpath in SERVER_SRC.rglob("*.[ch]*"):
+        if not fpath.is_file():
+            continue
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for idx, line in enumerate(content.splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                continue
+            if using_detail_re.search(stripped):
+                violations.append((fpath, idx, stripped))
+    return violations
+
+
+def check_no_cpp_struct_declarations():
+    """
+    Enforces that ZERO direct struct declarations exist inside .cpp files in Layer 2 (analysis/)
+    and Layer 3 (features/). All structures must reside in canonical module headers.
+    """
+    violations = []
+    struct_decl_re = re.compile(r"^\s*struct\s+([A-Za-z0-9_]+)\s*(?:final\s*)?(?::[^{]+)?\{")
+    scan_dirs = [SERVER_SRC / "analysis", SERVER_SRC / "features"]
+    for sdir in scan_dirs:
+        for fpath in sdir.rglob("*.cpp"):
+            if not fpath.is_file():
+                continue
+            try:
+                content = fpath.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for idx, line in enumerate(content.splitlines(), 1):
+                stripped = line.strip()
+                if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
+                    continue
+                m = struct_decl_re.search(line)
+                if m:
+                    violations.append((fpath, idx, stripped, m.group(1)))
+    return violations
+
+
 def check_cpp_structs_odr_safety():
     """
     Enforces ODR safety for all struct and class definitions in .cpp files:
     1. Zero struct/class name collisions across different .cpp files.
     2. Zero struct/class name collisions with header (.h) definitions.
-    3. Every struct/class declared in a .cpp file must be either:
-       - enclosed within a *_detail namespace, or
-       - a member of an outer class/struct.
     """
-    import tree_sitter
-    import tree_sitter_cpp
-
-    cpp_lang = tree_sitter.Language(tree_sitter_cpp.language())
-    parser = tree_sitter.Parser(cpp_lang)
+    type_decl_re = re.compile(r"\b(?:struct|class)\s+([A-Za-z0-9_]+)\s*(?:final\s*)?(?::[^{]+)?\{")
 
     headers = list(SERVER_SRC.rglob("*.h"))
     h_struct_names = set()
     for h in headers:
         try:
-            tree = parser.parse(h.read_bytes())
+            txt = h.read_text(encoding="utf-8", errors="ignore")
         except Exception:
             continue
-        stack = [tree.root_node]
-        while stack:
-            n = stack.pop()
-            if n.type in ("struct_specifier", "class_specifier"):
-                body = n.child_by_field_name("body")
-                name_node = n.child_by_field_name("name")
-                if body and name_node:
-                    h_struct_names.add(name_node.text.decode("utf-8"))
-            for c in n.children:
-                stack.append(c)
+        for m in type_decl_re.finditer(txt):
+            h_struct_names.add(m.group(1))
 
     cpp_files = sorted(SERVER_SRC.rglob("*.cpp"))
     cpp_structs = {}
-    scope_violations = []
-
     for fpath in cpp_files:
         try:
-            tree = parser.parse(fpath.read_bytes())
+            txt = fpath.read_text(encoding="utf-8", errors="ignore")
         except Exception:
             continue
-        stack = [tree.root_node]
-        while stack:
-            n = stack.pop()
-            if n.type in ("struct_specifier", "class_specifier"):
-                body = n.child_by_field_name("body")
-                name_node = n.child_by_field_name("name")
-                if body and name_node:
-                    s_name = name_node.text.decode("utf-8")
-                    cpp_structs.setdefault(s_name, []).append((fpath, n.start_point[0] + 1))
-
-                    curr = n.parent
-                    in_detail = False
-                    in_class = False
-                    while curr:
-                        if curr.type == "namespace_definition":
-                            ns_name = curr.child_by_field_name("name")
-                            if ns_name and ns_name.text.decode("utf-8").endswith("_detail"):
-                                in_detail = True
-                                break
-                        elif curr.type in ("class_specifier", "struct_specifier"):
-                            in_class = True
-                            break
-                        curr = curr.parent
-                    if "::" in s_name:
-                        in_class = True
-                    if not (in_detail or in_class):
-                        scope_violations.append((fpath, n.start_point[0] + 1, s_name))
-            for c in n.children:
-                stack.append(c)
+        for m in type_decl_re.finditer(txt):
+            s_name = m.group(1)
+            line_num = txt[:m.start()].count("\n") + 1
+            cpp_structs.setdefault(s_name, []).append((fpath, line_num))
 
     cross_collisions = [
         (name, locs) for name, locs in cpp_structs.items() if len(locs) > 1
@@ -760,7 +801,6 @@ def check_cpp_structs_odr_safety():
     ]
 
     return {
-        "scope_violations": scope_violations,
         "cross_collisions": cross_collisions,
         "header_collisions": header_collisions,
     }
@@ -985,8 +1025,32 @@ def main():
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line} -> {reason}")
 
+    detail_ns_violations = check_no_detail_namespaces()
+    if detail_ns_violations:
+        has_errors = True
+        print("[ERROR] namespace *_detail detected in server/src/ (prohibited, all structs must reside in canonical headers or private class scopes):")
+        for f, line_num, line in detail_ns_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
+    detail_using_violations = check_no_detail_using_aliases()
+    if detail_using_violations:
+        has_errors = True
+        print("[ERROR] using alias for *_detail detected in server/src/ (prohibited):")
+        for f, line_num, line in detail_using_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
+    cpp_struct_violations = check_no_cpp_struct_declarations()
+    if cpp_struct_violations:
+        has_errors = True
+        print("[ERROR] Direct struct declaration detected in .cpp in Layer 2 or Layer 3 (prohibited, move to canonical header):")
+        for f, line_num, line, sname in cpp_struct_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: struct '{sname}'")
+
     odr_safety = check_cpp_structs_odr_safety()
-    if odr_safety["scope_violations"] or odr_safety["cross_collisions"] or odr_safety["header_collisions"]:
+    if odr_safety["cross_collisions"] or odr_safety["header_collisions"]:
         has_errors = True
         if odr_safety["cross_collisions"]:
             print("[ERROR] Struct/class name collision between different .cpp files (ODR violation risk):")
@@ -1002,11 +1066,6 @@ def main():
                 for f, line_num in locs:
                     rel = f.relative_to(REPO_ROOT)
                     print(f"    {rel}:{line_num}")
-        if odr_safety["scope_violations"]:
-            print("[ERROR] Struct/class in .cpp declared outside a *_detail namespace or outer class:")
-            for f, line_num, name in odr_safety["scope_violations"]:
-                rel = f.relative_to(REPO_ROOT)
-                print(f"  {rel}:{line_num}: struct/class '{name}'")
 
     if has_errors:
         sys.exit(1)

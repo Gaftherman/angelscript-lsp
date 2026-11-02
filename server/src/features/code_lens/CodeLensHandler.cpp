@@ -25,11 +25,6 @@
 namespace angel_lsp::features
 {
 
-using RangeKey = analysis::SourceRange;
-using RangeKeyHash = analysis::SourceRangeHash;
-
-using EnclosingClassCache = ankerl::unordered_dense::map<std::string, std::vector<parser::AstNodeSpan>>;
-
 /**
  * @brief Finds the name of the class enclosing the given document line, with optional caching.
  * @param[in] symbolTable Symbol table to search.
@@ -84,8 +79,6 @@ static std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTabl
     }
     return symbolTable.FindEnclosingClassName(uri, line);
 }
-
-using DeclRangeSet = ankerl::unordered_dense::set<std::tuple<std::string, uint32_t, uint32_t>>;
 
 /**
  * @brief Checks if a container symbol is a class or interface rather than a namespace.
@@ -154,33 +147,6 @@ static bool IsInsideNamespace(const std::string& fileUri, uint32_t line, const s
     }
     return false;
 }
-
-namespace code_lens_handler_detail
-{
-/**
- * @brief Criteria bundle for filtering and collecting symbol references across scopes.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ReferenceCollectionCriteria
-{
-    std::string targetName;
-    const std::vector<analysis::Symbol>& group;
-    const ankerl::unordered_dense::set<std::string>& compatibleClasses;
-    const DeclRangeSet& allDeclRanges;
-    std::string targetNamespace;
-    std::string targetEnumContainer;
-    bool isEnumConstant = false;
-    analysis::AccessModifier targetAccess = analysis::AccessModifier::Public;
-    bool isFunction = false;
-    size_t minArgs = 0;
-    size_t maxArgs = 0;
-    const analysis::SymbolTable& symbolTable;
-    const CodeLensRequest& request;
-    EnclosingClassCache* classCache = nullptr;
-};
-} // namespace code_lens_handler_detail
-
-using ReferenceCollectionCriteria = code_lens_handler_detail::ReferenceCollectionCriteria;
 
 /**
  * @brief Determines if a reference matches a known declaration or definition site.
@@ -761,57 +727,6 @@ static bool IsValidAccess(const std::string& fileUri, const analysis::LocalRefer
     return !IsLocalShadowingTarget(scope, ref.name, fileUri, criteria);
 }
 
-namespace code_lens_handler_detail
-{
-/**
- * @brief Target item for batched reference counting across workspace scopes.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct SymbolLensTarget
-{
-    RangeKey key;
-    std::string targetName;
-    const std::vector<analysis::Symbol>& group;
-    ankerl::unordered_dense::set<std::string> compatibleClasses;
-    DeclRangeSet allDeclRanges;
-    std::string targetNamespace;
-    std::string targetEnumContainer;
-    bool isEnumConstant = false;
-    analysis::AccessModifier targetAccess = analysis::AccessModifier::Public;
-    bool isFunction = false;
-    size_t minArgs = 0;
-    size_t maxArgs = 0;
-    ankerl::unordered_dense::set<std::pair<std::string, uint64_t>> seenRefs;
-};
-} // namespace code_lens_handler_detail
-
-using SymbolLensTarget = code_lens_handler_detail::SymbolLensTarget;
-
-using TargetIndexMap =
-    ankerl::unordered_dense::map<std::string, std::vector<size_t>, analysis::TransparentStringHash, std::equal_to<>>;
-
-namespace code_lens_handler_detail
-{
-/**
- * @brief Context bundle for batched reference counting across scope trees.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct BatchReferenceContext
-{
-    BatchReferenceContext(std::span<SymbolLensTarget> t, const TargetIndexMap& map, const CodeLensRequest& req)
-        : targets(t), targetsByName(map), request(req)
-    {
-    }
-
-    std::span<SymbolLensTarget> targets;
-    const TargetIndexMap& targetsByName;
-    const CodeLensRequest& request;
-    mutable EnclosingClassCache classCache;
-};
-} // namespace code_lens_handler_detail
-
-using BatchReferenceContext = code_lens_handler_detail::BatchReferenceContext;
-
 /**
  * @brief Evaluates scope references against indexed symbol targets.
  * @param[in] fileUri URI of document owning scope.
@@ -1048,23 +963,6 @@ static std::optional<std::vector<lsp::CodeLens>> HandleVirtualUri(const CodeLens
     return std::vector<lsp::CodeLens>{std::move(lens)};
 }
 
-using GroupMap = ankerl::unordered_dense::map<RangeKey, std::vector<analysis::Symbol>, RangeKeyHash>;
-
-namespace code_lens_handler_detail
-{
-/**
- * @brief Grouped symbols and their sorted document order.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct SymbolGroups
-{
-    std::vector<RangeKey> rangeOrder;
-    GroupMap groups;
-};
-} // namespace code_lens_handler_detail
-
-using SymbolGroups = code_lens_handler_detail::SymbolGroups;
-
 /**
  * @brief Groups symbols in the request document by declaration range and sorts them top-down.
  * @param[in] request Active CodeLens request.
@@ -1280,24 +1178,6 @@ static size_t CountInterfaceImplementations(const analysis::Symbol& sym, const a
         });
     return implCount;
 }
-
-using MixinInclusionMap = ankerl::unordered_dense::map<std::string, std::vector<std::string>>;
-
-namespace code_lens_handler_detail
-{
-/**
- * @brief Context bundling mixin inclusion map and symbol table for compatible class resolution.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct CompatibleClassContext
-{
-    const MixinInclusionMap& mixinMap;
-    const analysis::SymbolTable& symbolTable;
-    std::string_view sourceCode{};
-};
-} // namespace code_lens_handler_detail
-
-using CompatibleClassContext = code_lens_handler_detail::CompatibleClassContext;
 
 /**
  * @brief Precomputes mapping from included mixin names to including classes and their derived classes.
@@ -1650,8 +1530,6 @@ static SymbolLensTarget CreateClassTarget(const RangeKey& key, const analysis::S
     };
 }
 
-using KeyTargetMap = ankerl::unordered_dense::map<RangeKey, size_t, RangeKeyHash>;
-
 /**
  * @brief Registers reference targets for symbols that require reference counts.
  * @param[in] symGroups Symbol groups in the active document.
@@ -1694,22 +1572,6 @@ static void CollectReferenceTargets(const SymbolGroups& symGroups, const Compati
         }
     }
 }
-
-namespace code_lens_handler_detail
-{
-/**
- * @brief Context bundle holding assembled targets and the active request.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct AssembledLensContext
-{
-    const std::vector<SymbolLensTarget>& targets;
-    const KeyTargetMap& keyToTarget;
-    const CodeLensRequest& request;
-};
-} // namespace code_lens_handler_detail
-
-using AssembledLensContext = code_lens_handler_detail::AssembledLensContext;
 
 /**
  * @brief Formats the localized reference count string for a code lens.

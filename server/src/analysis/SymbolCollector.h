@@ -366,7 +366,16 @@ class SymbolCollector
     // Diagnostics & Error Recovery
     // =====================================================================================
 
-    struct ParseErrorReportContext;
+    /**
+     * @brief Encapsulates syntax error classification, missing delimiters, and recovery markers for diagnostics.
+     */
+    struct ParseErrorReportContext
+    {
+        SymbolCollectContext& sCtx;
+        bool missingOpenBrace = false;
+        uint32_t firstErrorLine = UINT32_MAX;
+        std::vector<MissingCaseColon> missingColons;
+    };
     void ReportParseErrors(TSNode rootNode, SymbolCollectContext& sCtx) const;
     void RecoverSwallowedDeclarations(SymbolCollectContext& sCtx);
     void EmitMissingColonDiagnostics(std::span<const MissingCaseColon> missingColons, SymbolCollectContext& sCtx) const;
@@ -401,5 +410,92 @@ class SymbolCollector
     Symbol CreateSymbol(SymbolType type, TSNode node, TSNode nameNode, const SymbolLocationContext& loc) const;
 
     std::vector<std::string> ExtractBases(TSNode classNode, std::string_view sourceCode) const;
+};
+
+/**
+ * @brief Holds extracted AST child nodes representing fields, methods, and properties of a type declaration.
+ */
+struct MemberNodes
+{
+    TSNode declNode;
+    TSNode nameNode;
+};
+
+using RecoveredClassContainer = SymbolCollector::RecoveredClassContainer;
+
+/**
+ * @brief State machine context for recovering broken class definitions during error-tolerant parsing passes.
+ */
+struct RecoverClassContext
+
+{
+    const parser::GrammarSymbols& gs;
+    std::string_view sourceCode;
+    const std::string& fileUri;
+    std::vector<RecoveredClassContainer>& outContainers;
+    std::vector<Symbol>& outSymbols;
+};
+
+/**
+ * @brief Extracted class header metadata containing class name, base inheritance lists, and modifier tokens.
+ */
+struct ScannedClassHeader
+{
+    TSNode headerStart{TSNode{}};
+    TSNode nameNode{TSNode{}};
+    bool isClass{false};
+    bool isInterface{false};
+};
+
+/**
+ * @brief State tracker for scanning and identifying offending syntax tokens in malformed declarations.
+ */
+struct OffendingScanState
+{
+    TSNode lastValidDecl{TSNode{}};
+    TSNode firstOffendingAfterDecl{TSNode{}};
+    TSNode firstNonComment{TSNode{}};
+    TSNode classOpeningBrace{TSNode{}};
+    bool seenClassOrIface{false};
+};
+
+/**
+ * @brief Tracks switch case labels and expression values during switch statement verification.
+ */
+struct CaseExpressionState
+{
+    uint32_t parenDepth = 0;
+    uint32_t ternaryDepth = 0;
+    size_t exprEnd = 0;
+};
+
+/**
+ * @brief Outcome of searching for a case statement colon delimiter during error recovery.
+ */
+enum class ColonResult
+{
+    ScopeResolution,
+    TernaryMatched,
+    CaseColonFound
+};
+
+/**
+ * @brief Action directive for token processing during switch case syntax recovery.
+ */
+enum class CaseTokenAction
+{
+    Continue,
+    Break,
+    CaseColonFound
+};
+
+/**
+ * @brief Encapsulates switch statement AST node, active cases, and fallthrough state during analysis.
+ */
+struct SwitchScanContext
+{
+    TSNode switchNode{TSNode{}};
+    std::string_view sourceCode;
+    size_t closeBraceByte = 0;
 };
 } // namespace angel_lsp::analysis

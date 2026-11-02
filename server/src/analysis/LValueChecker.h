@@ -32,4 +32,14 @@ struct LValueCheckRequest
  * @param ctx Diagnostic sink and context.
  */
 void CheckLValues(const LValueCheckRequest& request, DiagnosticContext& ctx);
+
+/**
+ * @brief Bundles callee candidate signatures, argument expressions, and typing state during call evaluation.
+ */
+struct CallCandidateContext
+{
+    const LValueCheckRequest& request;
+    const Scope* scope = nullptr;
+    DiagnosticContext& ctx;
+};
 } // namespace angel_lsp::analysis

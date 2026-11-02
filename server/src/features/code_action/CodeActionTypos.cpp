@@ -105,22 +105,6 @@ static std::vector<TypoCandidateSuggestion> RankTypoSuggestions(const std::strin
     return ranked;
 }
 
-namespace code_action_typos_detail
-{
-/**
- * @brief Represents Typo fix context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct TypoFixContext
-{
-    const CodeActionRequest& request;
-    const lsp::Diagnostic& diag;
-    TSNode identifier;
-};
-} // namespace code_action_typos_detail
-
-using TypoFixContext = code_action_typos_detail::TypoFixContext;
-
 /**
  * @brief Emits quick-fix code actions for typo suggestions.
  * @param[in] ctx Typo fix context.

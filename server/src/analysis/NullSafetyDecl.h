@@ -23,4 +23,13 @@ void CheckVarDeclaration(TSNode stmt, FlowState& state, NullCheckContext& ctx);
  */
 void CheckAssignmentStmt(TSNode expr, FlowState& state, NullCheckContext& ctx);
 
+/**
+ * @brief Parameters for evaluating whether a declaration or pointer expression can take a null value.
+ */
+struct NullableEvalRequest
+{
+    TSNode val;
+    TSNode typeNode{};
+    std::string_view targetVarName = "";
+};
 } // namespace angel_lsp::analysis

@@ -244,21 +244,6 @@ static std::optional<uint32_t> FindArgumentIndex(TSNode argList, TSNode leaf) no
     return std::nullopt;
 }
 
-namespace document_highlight_handler_detail
-{
-/**
- * @brief Represents Callee info.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct CalleeInfo
-{
-    std::string calleeName;
-    std::string receiverType;
-};
-} // namespace document_highlight_handler_detail
-
-using CalleeInfo = document_highlight_handler_detail::CalleeInfo;
-
 /**
  * @brief Resolves receiver type of an object expression text.
  * @param[in] oText Object text.
@@ -496,36 +481,6 @@ static lsp::DocumentHighlightKind ClassifyOccurrence(const DocumentHighlightRequ
     }
     return ClassifyAncestorExpressions(leaf, request, range.start.line);
 }
-
-namespace document_highlight_handler_detail
-{
-/**
- * @brief Accumulator for highlight coordinate ranges.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct HighlightRangeCollector
-{
-    std::vector<lsp::Range> ranges;
-    std::set<std::pair<uint32_t, uint32_t>> seen;
-
-    /**
-     * @brief Adds a range if not already collected.
-     * @param[in] sL Start line.
-     * @param[in] sC Start character.
-     * @param[in] eL End line.
-     * @param[in] eC End character.
-     */
-    void Add(uint32_t sL, uint32_t sC, uint32_t eL, uint32_t eC)
-    {
-        if (seen.insert({sL, sC}).second)
-        {
-            ranges.push_back(lsp::Range{lsp::Position{sL, sC}, lsp::Position{eL, eC}});
-        }
-    }
-};
-} // namespace document_highlight_handler_detail
-
-using HighlightRangeCollector = document_highlight_handler_detail::HighlightRangeCollector;
 
 /**
  * @brief Collects highlight ranges for a local variable or parameter.
@@ -894,23 +849,6 @@ static bool IsMemberAccessNode(const analysis::LocalReference& ref, [[maybe_unus
 {
     return ref.isMemberAccess;
 }
-
-namespace document_highlight_handler_detail
-{
-/**
- * @brief Context for class member reference matching.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct MemberHighlightContext
-{
-    const analysis::TargetDescriptor& target;
-    const std::unordered_set<std::string>& relatedSet;
-    const DocumentHighlightRequest& request;
-    const analysis::Scope* rootScope = nullptr;
-};
-} // namespace document_highlight_handler_detail
-
-using MemberHighlightContext = document_highlight_handler_detail::MemberHighlightContext;
 
 /**
  * @brief Evaluates whether a reference matches target class member.

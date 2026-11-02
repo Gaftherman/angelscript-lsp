@@ -39,7 +39,7 @@ size_t PositionToOffset(std::string_view text, uint32_t line, uint32_t character
                         PositionEncoding enc = PositionEncoding::Utf16);
 
 /**
- * @brief Represents a zero-indexed text range for an incremental LSP edit.
+ * @brief Zero-indexed text range for an incremental LSP edit.
  */
 struct TextChangeRange
 {
@@ -248,4 +248,14 @@ inline bool MatchKeywordPrefix(std::string_view text, std::string_view keyword) 
     return nextChar == ' ' || nextChar == '\t' || nextChar == '\r' || nextChar == '\n' || nextChar == ';' ||
            nextChar == '{' || nextChar == '(';
 }
+
+/**
+ * @brief Byte range offsets identifying a pattern match within a document.
+ */
+struct PatternSpan
+{
+    size_t openBrace{0};
+    size_t closeBrace{0};
+    size_t nextIndex{0};
+};
 } // namespace angel_lsp::utils

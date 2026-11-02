@@ -47,4 +47,45 @@ class QueryRegistry
      */
     [[nodiscard]] static TSQueryCursor* GetThreadLocalCursor();
 };
+
+/**
+ * @brief Custom deleter for Tree-Sitter query pointers.
+ */
+struct QueryDeleter
+{
+    void operator()(TSQuery* q) const noexcept
+    {
+        if (q)
+        {
+            ts_query_delete(q);
+        }
+    }
+};
+
+/**
+ * @brief RAII wrapper managing lifetime of a Tree-Sitter query cursor.
+ */
+struct CursorHolder
+{
+    TSQueryCursor* cursor = nullptr;
+
+    CursorHolder()
+    {
+        cursor = ts_query_cursor_new();
+    }
+
+    ~CursorHolder()
+    {
+        if (cursor)
+        {
+            ts_query_cursor_delete(cursor);
+            cursor = nullptr;
+        }
+    }
+
+    CursorHolder(const CursorHolder&) = delete;
+    CursorHolder& operator=(const CursorHolder&) = delete;
+    CursorHolder(CursorHolder&&) = delete;
+    CursorHolder& operator=(CursorHolder&&) = delete;
+};
 } // namespace angel_lsp::parser

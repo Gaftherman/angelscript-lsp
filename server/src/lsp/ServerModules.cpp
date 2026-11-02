@@ -282,22 +282,6 @@ bool Server::PathIsInside(const std::string& normalizedPath, const std::string& 
                                 normalizedDirectory);
 }
 
-namespace server_modules_detail
-{
-/**
- * @brief Represents Module Candidate.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ModuleCandidate
-{
-    const Server::ModuleView* view = nullptr;
-    int rank = 0;
-    size_t depth = 0;
-};
-} // namespace server_modules_detail
-
-using ModuleCandidate = server_modules_detail::ModuleCandidate;
-
 Server::ModuleClaim Server::ClaimFor(const std::string& normalizedPath) const
 {
     std::vector<ModuleCandidate> candidates;

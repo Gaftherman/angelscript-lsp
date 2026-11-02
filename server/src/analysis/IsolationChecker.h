@@ -27,4 +27,15 @@ struct IsolationCheckRequest
  * @param ctx Diagnostic context to emit findings.
  */
 void CheckSharedIsolation(const IsolationCheckRequest& request, DiagnosticContext& ctx);
+
+/**
+ * @brief Expression node and evaluation barrier state during variable isolation analysis.
+ */
+struct IsoItem
+{
+    TSNode node;
+    std::string className;
+    bool isClassShared = false;
+    bool inSharedContext = false;
+};
 } // namespace angel_lsp::analysis

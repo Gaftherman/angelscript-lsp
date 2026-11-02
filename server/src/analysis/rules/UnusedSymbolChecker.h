@@ -57,4 +57,28 @@ void CheckUnusedSymbols(const SemanticAnalysisRequest& request, DiagnosticContex
 [[nodiscard]] bool IsEngineManagedFunction(const Symbol& sym, const SymbolTable& symbolTable,
                                            const config::UnusedSymbolRules& unusedRules);
 
+/**
+ * @brief Tracks symbol references, enclosing scopes, and exclusion rules during unused variable detection.
+ */
+struct UnusedCheckContext
+{
+    const ankerl::unordered_dense::set<std::string>& refNames;
+    const ankerl::unordered_dense::set<const LocalDefinition*>& usedLocals;
+    const ankerl::unordered_dense::set<std::string>& reflections;
+    const config::UnusedSymbolRules& rules;
+    const ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>& inheritedOrMixedInClasses;
+    const ankerl::unordered_dense::map<std::string, std::vector<std::string>, TransparentStringHash, std::equal_to<>>&
+        derivedClassesByBase;
+    const RuleIndex& ruleIndex;
+};
+
+/**
+ * @brief Context for collecting documentation references to symbols from markdown and doc comments.
+ */
+struct DocRefCollectContext
+{
+    const ankerl::unordered_dense::set<uint64_t>& defLocs;
+    std::string_view sourceCode;
+    std::span<const std::string> delegateProps;
+};
 } // namespace angel_lsp::analysis::rules

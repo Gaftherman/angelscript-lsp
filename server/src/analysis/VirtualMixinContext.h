@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/SymbolTable.h"
+#include "utils/ScopedNameUtils.h"
 #include <optional>
 #include <string>
 #include <string_view>
@@ -52,7 +53,7 @@ struct VirtualMixinContext
     }
     if (!ctx.mixinSymbol.has_value())
     {
-        std::string shortName = std::string(LastScopeSegment(ctx.mixinName));
+        std::string shortName = std::string(utils::LastScopeSegment(ctx.mixinName));
         auto shortCandidates = symbolTable.FindTypeSymbolsByShortName(shortName);
         for (const auto& cand : shortCandidates)
         {

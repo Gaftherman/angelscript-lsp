@@ -11,43 +11,6 @@
 
 namespace angel_lsp::features::formatting
 {
-namespace predefined_stub_formatter_detail
-{
-/**
- * @brief One namespace declaration found at the top level, in source order.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct Occurrence
-{
-    /// Text between the previous top-level declaration and this one: its comments, and any
-    /// blank lines. Carried across so a comment never parts company with what it describes.
-    std::string lead;
-
-    /// Everything between the body's braces, exactly as written.
-    std::string body;
-};
-} // namespace predefined_stub_formatter_detail
-
-using Occurrence = predefined_stub_formatter_detail::Occurrence;
-
-namespace predefined_stub_formatter_detail
-{
-/**
- * @brief Represents Group.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct Group
-{
-    std::string name;
-    std::vector<Occurrence> occurrences;
-
-    /// Index into the output plan, so a merged namespace lands where it was first written
-    /// rather than being sorted somewhere new.
-    size_t firstSlot = 0;
-};
-} // namespace predefined_stub_formatter_detail
-
-using Group = predefined_stub_formatter_detail::Group;
 
 static std::string_view Slice(const std::string& source, uint32_t from, uint32_t to)
 {
@@ -173,38 +136,6 @@ static std::string_view TrimBlankEdges(std::string_view text)
     }
     return text;
 }
-
-namespace predefined_stub_formatter_detail
-{
-/**
- * @brief Represents Slot.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct Slot
-{
-    bool isGroup = false;
-    std::string literal;   ///< used when isGroup is false
-    std::string groupName; ///< used when isGroup is true
-};
-} // namespace predefined_stub_formatter_detail
-
-using Slot = predefined_stub_formatter_detail::Slot;
-
-namespace predefined_stub_formatter_detail
-{
-/**
- * @brief Represents Formatting plan.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct FormattingPlan
-{
-    std::vector<Slot> slots;
-    std::map<std::string, Group> groups;
-    std::string tail;
-};
-} // namespace predefined_stub_formatter_detail
-
-using FormattingPlan = predefined_stub_formatter_detail::FormattingPlan;
 
 static void ProcessNamespaceChild(TSNode child, std::string_view lead, const std::string& source, FormattingPlan& plan)
 {

@@ -14,75 +14,6 @@
 
 namespace angel_lsp
 {
-namespace workspace_scan_handlers_detail
-{
-/**
- * @brief Logs how long a startup phase took, when it ends.
- *
- * The workspace scan reports progress as percentages that were written into the source by
- * hand: "55" for the engine profiles, "70" for the stubs. Those numbers describe the order
- * of the phases and nothing about their cost, so a report of "2942 ms to load on a small
- * project" had nowhere to be looked up. This gives every phase a number that came from a
- * clock.
- *
- * Info level, so it is in the log a user is already asked to attach to a report, and off
- * the wire otherwise.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-class PhaseTimer
-{
-  public:
-    PhaseTimer(angel_lsp::utils::LspLogger* logger, std::string phase)
-        : m_logger(logger), m_phase(std::move(phase)), m_start(std::chrono::steady_clock::now())
-    {
-    }
-
-    ~PhaseTimer()
-    {
-        if (m_logger == nullptr)
-        {
-            return;
-        }
-
-        const auto elapsed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_start);
-        m_logger->LogInfo(fmt::format("Startup phase '{}': {}", m_phase,
-                                      angel_lsp::utils::FormatDuration(static_cast<double>(elapsed.count()))));
-    }
-
-    PhaseTimer(const PhaseTimer&) = delete;
-    PhaseTimer& operator=(const PhaseTimer&) = delete;
-
-  private:
-    angel_lsp::utils::LspLogger* m_logger;
-    std::string m_phase;
-    std::chrono::steady_clock::time_point m_start;
-};
-
-/**
- * @brief Ensures workspace scan completion flags and open document reanalysis are triggered on exit.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ReanalyseOnExit
-{
-    Server* server;
-    const angel_lsp::utils::StopFlag& stopToken;
-    ~ReanalyseOnExit();
-};
-
-inline ReanalyseOnExit::~ReanalyseOnExit()
-{
-    server->SetPredefinedReady(true);
-    server->SetWorkspaceScanComplete(true);
-    if (!stopToken.stop_requested())
-    {
-        server->ScheduleOpenDocumentsForReanalysis();
-    }
-}
-} // namespace workspace_scan_handlers_detail
-
-using PhaseTimer = workspace_scan_handlers_detail::PhaseTimer;
-using ReanalyseOnExit = workspace_scan_handlers_detail::ReanalyseOnExit;
 
 /**
  * @brief Constructs a TextEdit for replacing an include directive's path substring.
@@ -115,6 +46,16 @@ static std::optional<lsp::TextEdit> TryBuildDirectiveEdit(std::string_view line,
     edit.range.end.character = static_cast<uint32_t>(closePos);
     edit.newText = std::string(replacement);
     return edit;
+}
+
+Server::ReanalyseOnExit::~ReanalyseOnExit()
+{
+    server->SetPredefinedReady(true);
+    server->SetWorkspaceScanComplete(true);
+    if (!stopToken.stop_requested())
+    {
+        server->ScheduleOpenDocumentsForReanalysis();
+    }
 }
 
 void Server::BeginWorkspaceProgress(const std::string& title)

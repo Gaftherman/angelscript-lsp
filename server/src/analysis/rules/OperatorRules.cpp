@@ -53,20 +53,6 @@ static bool IsDeclaredInAClass(const Symbol& sym, const DiagnosticContext& ctx)
     return container && std::any_of(container->begin(), container->end(), [](const Symbol& owner)
                                     { return owner.type == SymbolType::Class || owner.type == SymbolType::Interface; });
 }
-namespace operator_rules_detail
-{
-/**
- * @brief Expected return type and diagnostic code for comparison operator validation.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ExpectedOperatorShape
-{
-    TypeKind expectedReturnKind;
-    std::string_view returnDiagCode;
-};
-} // namespace operator_rules_detail
-
-using ExpectedOperatorShape = operator_rules_detail::ExpectedOperatorShape;
 
 /**
  * @brief Validates a comparison operator method shape and return type.

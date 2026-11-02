@@ -14,22 +14,6 @@
 namespace angel_lsp::analysis
 {
 
-namespace l_value_checker_detail
-{
-/**
- * @brief Represents Call candidate context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct CallCandidateContext
-{
-    const LValueCheckRequest& request;
-    const Scope* scope = nullptr;
-    DiagnosticContext& ctx;
-};
-} // namespace l_value_checker_detail
-
-using CallCandidateContext = l_value_checker_detail::CallCandidateContext;
-
 static void CollectMemberCandidates(TSNode funcNode, const CallCandidateContext& cctx, std::vector<Symbol>& candidates)
 {
     TSNode objNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldObject);
@@ -119,7 +103,6 @@ static void CollectIdentifierCandidates(TSNode funcNode, const CallCandidateCont
  * @param[in] callNode Call expression AST node.
  * @param[in] candidates Candidate symbols or overloads.
  * @param[in,out] ctx Diagnostic collection and analysis context.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
  */
 static void ValidateCandidateReturnTypes(TSNode callNode, const std::vector<Symbol>& candidates, DiagnosticContext& ctx)

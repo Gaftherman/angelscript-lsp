@@ -42,22 +42,6 @@ static std::string GetSimpleIdentifierName(TSNode node, std::string_view sourceC
     return "";
 }
 
-namespace definite_assignment_checker_detail
-{
-/**
- * @brief Represents Definite assignment state.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct DefiniteAssignmentState
-{
-    ankerl::unordered_dense::set<std::string> assignedVars;
-    bool hasReturned = false;
-    bool isTerminated = false;
-};
-} // namespace definite_assignment_checker_detail
-
-using DefiniteAssignmentState = definite_assignment_checker_detail::DefiniteAssignmentState;
-
 /**
  * @brief Merges two branch states by UNION, which is AngelScript's rule and not C#'s.
  *
@@ -88,26 +72,8 @@ static ankerl::unordered_dense::set<std::string> MergeBranchStates(const ankerl:
     return result;
 }
 
-namespace definite_assignment_checker_detail
-{
 /**
- * @brief Represents Call candidate info.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct CallCandidateInfo
-{
-    const std::vector<Symbol>& candidates;
-    const FunctionSignature* sig = nullptr;
-};
-} // namespace definite_assignment_checker_detail
-
-using CallCandidateInfo = definite_assignment_checker_detail::CallCandidateInfo;
-
-namespace definite_assignment_checker_detail
-{
-/**
- * @brief Represents Definite assignment visitor.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ * @brief AST visitor that traverses control flow blocks to compute definite assignment invariants.
  */
 class DefiniteAssignmentVisitor
 {
@@ -282,7 +248,6 @@ class DefiniteAssignmentVisitor
      * @param[in] i Iteration index or parameter position.
      * @param[in] info Candidate symbol or call information.
      * @return True if the condition is satisfied; false otherwise.
-     * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
      * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier /
      * Symbol::modifiers.isReturnReference.
      */
@@ -808,9 +773,6 @@ class DefiniteAssignmentVisitor
         CheckExpressionReads(node, state);
     }
 };
-} // namespace definite_assignment_checker_detail
-
-using DefiniteAssignmentVisitor = definite_assignment_checker_detail::DefiniteAssignmentVisitor;
 
 static void TraverseFunctions(TSNode root, DefiniteAssignmentVisitor& visitor)
 {

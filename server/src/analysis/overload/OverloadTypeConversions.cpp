@@ -101,7 +101,6 @@ bool AreTemplateArgumentsEqual(std::string_view aInner, std::string_view bInner)
  * @brief Iteratively strips trailing handle '@' and reference '&' decorations from a type string.
  * @param[in] result Type name string to strip.
  * @return Stripped type name without reference or handle suffixes.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 std::string StripTypeDecorations(std::string result)
@@ -143,7 +142,6 @@ std::string DesugarArrayBrackets(std::string result, std::string_view arrayTypeN
  * @param[in] typeName Raw type name to normalize.
  * @param[in] arrayTypeName Generic array template name for desugaring bracket syntax.
  * @return Canonical base type name string.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
 std::string NormalizeType(std::string_view typeName, std::string_view arrayTypeName)
@@ -165,7 +163,6 @@ std::string NormalizeType(std::string_view typeName, std::string_view arrayTypeN
  * @brief Has handle modifier.
  * @param[in] typeName Type name to inspect or resolve.
  * @return True if the condition is satisfied; false otherwise.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 bool HasHandleModifier(std::string_view typeName)
@@ -411,7 +408,6 @@ bool IsPrimitiveNarrowing(const std::string& fromType, const std::string& toType
  * @brief Has const modifier.
  * @param[in] typeName Type name to inspect or resolve.
  * @return True if the condition is satisfied; false otherwise.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
 bool HasConstModifier(std::string_view typeName)
@@ -428,7 +424,6 @@ bool IsWildcardParameter(const ParameterInformation& param)
  * @brief Is out parameter.
  * @param[in] param Function parameter information.
  * @return True if the condition is satisfied; false otherwise.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier /
  * Symbol::modifiers.isReturnReference.
  */
@@ -442,7 +437,6 @@ bool IsOutParameter(const ParameterInformation& param)
  * @brief Extract template base name.
  * @param[in] typeName Type name to inspect or resolve.
  * @return Found item if present; std::nullopt otherwise.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
 static std::optional<std::string_view> ExtractTemplateBaseName(std::string_view typeName)

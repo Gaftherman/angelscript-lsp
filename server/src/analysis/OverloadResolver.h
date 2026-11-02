@@ -409,4 +409,25 @@ bool IsPrimitiveNarrowing(const std::string& fromType, const std::string& toType
  * @return True if parameter is wildcard.
  */
 bool IsWildcardParameter(const ParameterInformation& param);
+
+/**
+ * @brief Evaluated candidate representation used in Pareto dominance and ambiguity calculation.
+ */
+struct EvaluatedCandidate
+{
+    const Symbol* symbol = nullptr;
+    std::vector<ArgumentConversion> conversions;
+    int defaultArgs = 0;
+};
+
+/**
+ * @brief Parameters for formatting and emitting diagnostic trace logs during overload candidate ranking.
+ */
+struct OverloadLogRequest
+{
+    std::span<const Symbol* const> candidates;
+    const std::vector<std::string>& argumentTypes;
+    const OverloadMatchResult& result;
+    const std::vector<EvaluatedCandidate>& evaluated;
+};
 } // namespace angel_lsp::analysis

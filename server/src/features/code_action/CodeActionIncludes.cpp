@@ -99,22 +99,6 @@ static std::vector<IncludeCandidate> RankIncludeCandidates(const std::string& in
     return ranked;
 }
 
-namespace code_action_includes_detail
-{
-/**
- * @brief Represents Include fix context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct IncludeFixContext
-{
-    const CodeActionRequest& request;
-    const lsp::Diagnostic& diag;
-    const angel_lsp::utils::IncludeDirective& directive;
-};
-} // namespace code_action_includes_detail
-
-using IncludeFixContext = code_action_includes_detail::IncludeFixContext;
-
 /**
  * @brief Emits quick-fix code actions for unresolved include suggestions.
  * @param[in] ctx Include fix context.
@@ -170,23 +154,6 @@ static void EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vect
         actions.push_back(std::move(action));
     }
 }
-
-namespace code_action_includes_detail
-{
-/**
- * @brief Represents Include ref check context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct IncludeRefCheckContext
-{
-    std::string currentUri;
-    const analysis::SymbolTable& table;
-    const ankerl::unordered_dense::set<std::string>& docReferences;
-    const std::vector<std::string>& allowedRoots;
-};
-} // namespace code_action_includes_detail
-
-using IncludeRefCheckContext = code_action_includes_detail::IncludeRefCheckContext;
 
 /**
  * @brief Checks whether an include directive is referenced by symbols used in the file.

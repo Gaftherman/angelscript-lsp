@@ -1,6 +1,8 @@
 #pragma once
 
+#include <map>
 #include <string>
+#include <vector>
 
 #include "parser/AngelScriptParser.h"
 
@@ -45,4 +47,51 @@ namespace angel_lsp::features::formatting
  */
 std::string FormatPredefinedStub(const std::string& source, angel_lsp::parser::AngelScriptParser& parser,
                                  const std::string& indent = "\t");
+
+/**
+ * @brief Records top-level declaration text and preserved comments in a predefined stub source file.
+ */
+struct Occurrence
+{
+    /// Text between the previous top-level declaration and this one: its comments, and any
+    /// blank lines. Carried across so a comment never parts company with what it describes.
+    std::string lead;
+
+    /// Everything between the body's braces, exactly as written.
+    std::string body;
+};
+
+/**
+ * @brief Groups related namespace declarations and member occurrences for unified stub emission.
+ */
+struct Group
+{
+    std::string name;
+    std::vector<Occurrence> occurrences;
+
+    /// Index into the output plan, so a merged namespace lands where it was first written
+    /// rather than being sorted somewhere new.
+    size_t firstSlot = 0;
+};
+
+/**
+ * @brief Output section slot in a predefined stub formatting plan, mapping namespace chunks to emission targets.
+ */
+struct Slot
+{
+    bool isGroup = false;
+    std::string literal;   ///< used when isGroup is false
+    std::string groupName; ///< used when isGroup is true
+};
+
+/**
+ * @brief Execution plan detailing merged namespaces, reordered declarations, and whitespace layouts for stub
+ * formatting.
+ */
+struct FormattingPlan
+{
+    std::vector<Slot> slots;
+    std::map<std::string, Group> groups;
+    std::string tail;
+};
 } // namespace angel_lsp::features::formatting

@@ -106,23 +106,6 @@ static std::string FindRejectionReason(const Symbol& sym, const std::vector<std:
     return "Type conversion incompatible";
 }
 
-namespace overload_resolver_detail
-{
-/**
- * @brief Represents Overload log request.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct OverloadLogRequest
-{
-    std::span<const Symbol* const> candidates;
-    const std::vector<std::string>& argumentTypes;
-    const OverloadMatchResult& result;
-    const std::vector<EvaluatedCandidate>& evaluated;
-};
-} // namespace overload_resolver_detail
-
-using OverloadLogRequest = overload_resolver_detail::OverloadLogRequest;
-
 static void LogOverloadTelemetry(const OverloadLogRequest& req)
 {
     if (!utils::MultiFileLogger::Instance().IsInitialized() || req.candidates.empty())

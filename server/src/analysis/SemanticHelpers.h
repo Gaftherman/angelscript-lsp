@@ -3,6 +3,7 @@
 #include "analysis/DiagnosticContext.h"
 #include "analysis/ExpressionTypeCache.h"
 #include "analysis/NodeIndex.h"
+#include "analysis/OverloadResolver.h"
 #include "analysis/SymbolTable.h"
 #include "analysis/TypeSanitization.h"
 #include "config/EngineRuleConfig.h"
@@ -1379,4 +1380,105 @@ TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::
  */
 std::string ExtractDatatypeScopePrefix(TSNode datatypeNode, std::string_view sourceCode);
 
+/**
+ * @brief Classified base class inheritance relationship (direct base, virtual base, or mixin).
+ */
+struct HierarchyClassifiedBase
+{
+    std::string name;
+    bool isMixin = false;
+};
+
+/**
+ * @brief Context for tracking mixin expansion targets, imported symbols, and substituted member nodes.
+ */
+struct MixinExpansionContext
+{
+    const std::string& cleanClass;
+    const SymbolTable& symbolTable;
+    ankerl::unordered_dense::set<std::string>& visited;
+    std::vector<std::string>& result;
+};
+
+/**
+ * @brief Result of binary operator overload resolution containing candidate symbol and parameter conversions.
+ */
+struct BinaryOverloadResult
+{
+    bool hasMatch = false;
+    std::vector<ArgumentConversion> bestConversions;
+    std::string returnType;
+};
+
+/**
+ * @brief Resolved types of then and else branches in a conditional ternary expression.
+ */
+struct TernaryBranchTypes
+{
+    std::string t1;
+    std::string t2;
+    std::string c1;
+    std::string c2;
+};
+
+/**
+ * @brief Composite lookup key identifying a local definition by symbol name and lexical scope identifier.
+ */
+struct ActiveLocalDefKey
+{
+    std::string_view name;
+    uint32_t line = 0;
+    uint32_t col = 0;
+};
+
+/**
+ * @brief RAII guard managing active local variable definition tracking within the current scope.
+ */
+struct ActiveLocalDefGuard
+{
+    bool pushed = false;
+    ~ActiveLocalDefGuard();
+};
+
+/**
+ * @brief Carries receiver node and member access metadata for delegate property resolution.
+ */
+struct DelegatePropertyReceiverContext
+{
+    TSNode objNode;
+    std::string_view objText;
+    std::string_view effectiveHostClass;
+    std::string_view sourceCode;
+    std::string_view arrayTypeName;
+};
+
+/**
+ * @brief Tracks opening and closing delimiter positions and nesting depth in argument expressions.
+ */
+struct CallDelimiterState
+{
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
+    int angleDepth = 0;
+    bool inString = false;
+    char stringChar = '\0';
+    bool inLineComment = false;
+    bool inBlockComment = false;
+
+    [[nodiscard]] bool AtTopLevel() const noexcept
+    {
+        return parenDepth == 0 && bracketDepth == 0 && braceDepth == 0 && angleDepth == 0;
+    }
+};
+
+/**
+ * @brief Captures agreement metrics between candidate signatures and expected funcdef signatures.
+ */
+struct FuncdefAgreement
+{
+    std::optional<Symbol> agreed;
+    bool sawCandidate = false;
+    bool conflict = false;
+};
 } // namespace angel_lsp::analysis

@@ -37,7 +37,6 @@ static std::string Trimmed(std::string text)
  *
  * These three are language syntax rather than configuration: AngelScript spells them this
  * way and no host can change it.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst. Manually re-evaluates AST for isHandle; candidate for
  * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle /
  * LocalDefinition::isHandleType.
@@ -65,21 +64,6 @@ static std::string StripDecorations(std::string_view raw)
     }
     return compact;
 }
-
-namespace initializer_list_checker_detail
-{
-/**
- * @brief `Name<A, B>` split into its name and its arguments; arguments empty if none.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct TemplateSpelling
-{
-    std::string name;
-    std::vector<std::string> arguments;
-};
-} // namespace initializer_list_checker_detail
-
-using TemplateSpelling = initializer_list_checker_detail::TemplateSpelling;
 
 static TemplateSpelling ReadTemplateSpelling(const std::string& type)
 {
@@ -193,38 +177,6 @@ static void CheckElementValue(TSNode element, const std::string& wanted, Diagnos
                         StripDecorations(actual), StripDecorations(wanted));
     }
 }
-
-namespace initializer_list_checker_detail
-{
-/**
- * @brief Container structure and dimensionality information.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ListContainerInfo
-{
-    bool isContainer = false;
-    uint32_t dimensions = 1;
-    std::string elementType;
-};
-} // namespace initializer_list_checker_detail
-
-using ListContainerInfo = initializer_list_checker_detail::ListContainerInfo;
-
-namespace initializer_list_checker_detail
-{
-/**
- * @brief Intermediate container member inspection state.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ContainerMemberInspection
-{
-    uint32_t maxIndexParams = 0;
-    std::string indexReturnType;
-    bool hasListConstructor = false;
-};
-} // namespace initializer_list_checker_detail
-
-using ContainerMemberInspection = initializer_list_checker_detail::ContainerMemberInspection;
 
 /**
  * @brief Inspects container member functions for multi-index operators and list constructors.
@@ -376,38 +328,6 @@ static ListContainerInfo InspectContainer(const std::string& type, const Templat
 
     return {false, 1, ""};
 }
-
-namespace initializer_list_checker_detail
-{
-/**
- * @brief Dictionary container key and value type information.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct DictInfo
-{
-    bool isDict = false;
-    std::string keyType;
-    std::string valType;
-};
-} // namespace initializer_list_checker_detail
-
-using DictInfo = initializer_list_checker_detail::DictInfo;
-
-namespace initializer_list_checker_detail
-{
-/**
- * @brief State tracking for dictionary container inspection.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct DictTypeState
-{
-    std::string keyType;
-    std::string valType;
-    bool isAssociative = false;
-};
-} // namespace initializer_list_checker_detail
-
-using DictTypeState = initializer_list_checker_detail::DictTypeState;
 
 /**
  * @brief Inspects a function symbol for associative dictionary signatures (`set`, `get`, `exists`).
@@ -562,40 +482,6 @@ static DictInfo InspectDictionary(const TemplateSpelling& spelling, const Diagno
 
     return {true, StripDecorations(state.keyType), StripDecorations(state.valType)};
 }
-
-namespace initializer_list_checker_detail
-{
-/**
- * @brief Field information for aggregate struct member properties.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct StructFieldInfo
-{
-    std::string name;
-    std::string type;
-    uint32_t line = 0;
-    uint32_t col = 0;
-};
-} // namespace initializer_list_checker_detail
-
-using StructFieldInfo = initializer_list_checker_detail::StructFieldInfo;
-
-namespace initializer_list_checker_detail
-{
-/**
- * @brief Aggregate struct fields and list initialization capability.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct AggregateStructInfo
-{
-    bool hasListSupport = false;
-    std::vector<StructFieldInfo> fields;
-};
-} // namespace initializer_list_checker_detail
-
-using AggregateStructInfo = initializer_list_checker_detail::AggregateStructInfo;
-
-using StructLayoutCache = ankerl::unordered_dense::map<std::string, AggregateStructInfo>;
 
 /**
  * @brief Inspects a member symbol and records it if it represents an aggregate field or list constructor.
@@ -760,24 +646,6 @@ static AggregateStructInfo InspectAggregateStruct(const TemplateSpelling& spelli
     cache.emplace(cacheKey, info);
     return info;
 }
-
-namespace initializer_list_checker_detail
-{
-/**
- * @brief Context for recursive initializer list validation.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ListValidationContext
-{
-    DiagnosticContext& ctx;
-    const ElementContext& elements;
-    const std::unordered_set<std::string>& arrayLikeTemplates;
-    StructLayoutCache& cache;
-    int depth = 0;
-};
-} // namespace initializer_list_checker_detail
-
-using ListValidationContext = initializer_list_checker_detail::ListValidationContext;
 
 static void ValidateList(TSNode listNode, const std::string& targetType, const ListValidationContext& valCtx);
 
@@ -1163,23 +1031,6 @@ static void ValidateList(TSNode listNode, const std::string& targetType, const L
 
     CheckUnknownListPattern(listNode, type, valCtx);
 }
-
-namespace initializer_list_checker_detail
-{
-/**
- * @brief Traversal context for walking documents and validating initializer lists.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct InitializerListContext
-{
-    const InitializerListCheckRequest& request;
-    DiagnosticContext& ctx;
-    const std::unordered_set<std::string>& arrayLikeTemplates;
-    StructLayoutCache& structCache;
-};
-} // namespace initializer_list_checker_detail
-
-using InitializerListContext = initializer_list_checker_detail::InitializerListContext;
 
 /**
  * @brief Computes the element context at the position of an initializer list node.

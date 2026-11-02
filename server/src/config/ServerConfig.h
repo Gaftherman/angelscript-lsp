@@ -898,4 +898,79 @@ void PrintHelp();
  * @brief Prints the version information to standard output.
  */
 void PrintVersion();
+
+/**
+ * @brief Defines a boolean engine property configuration entry.
+ */
+struct BoolEngineProp
+{
+    using PropMember = bool EngineProperties::*;
+    std::string_view name;
+    std::string_view alias;
+    PropMember member;
+};
+
+/**
+ * @brief CLI argument parsing context tracking flags, positional inputs, and error states.
+ */
+struct ArgParseContext
+{
+    int& i;
+    int argc;
+    char** argv;
+    std::string_view key;
+    std::optional<std::string_view> inlineVal;
+
+    bool GetStringValue(std::string_view& out)
+    {
+        if (inlineVal.has_value())
+        {
+            out = *inlineVal;
+            return true;
+        }
+        if (i + 1 < argc && argv[i + 1] != nullptr)
+        {
+            out = argv[++i];
+            return true;
+        }
+        return false;
+    }
+
+    bool GetBoolValue(bool defaultVal = true);
+};
+
+/**
+ * @brief Maps configuration setting keys to internal engine feature flag enumerations.
+ */
+struct FeatureFlagMapping
+{
+    using FeatureMember = bool FeatureFlags::*;
+    std::string_view enableKey;
+    std::string_view enableAlias;
+    std::string_view disableKey;
+    std::string_view disableAlias;
+    FeatureMember member;
+};
+
+/**
+ * @brief Maps configuration setting keys to diagnostic severity overrides and toggle states.
+ */
+struct DiagnosticFlagMapping
+{
+    using DiagMember = bool DiagnosticsConfig::*;
+    std::string_view enableKey;
+    std::string_view disableKey;
+    DiagMember member;
+};
+
+/**
+ * @brief Defines a boolean engine property configuration setting and its default value.
+ */
+struct EngineBoolFlag
+{
+    using FlagMember = bool EngineProperties::*;
+    std::string_view enableFlag;
+    std::string_view disableFlag;
+    FlagMember member;
+};
 } // namespace angel_lsp::config

@@ -354,21 +354,6 @@ static bool IsTrailingPunctuation(char c)
     return c == '.' || c == ',' || c == ';' || c == ':' || c == '!' || c == '?' || c == ')' || c == ']' || c == '}';
 }
 
-namespace doxygen_markdown_detail
-{
-/**
- * @brief Result of matching an inline formatting command.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct MatchedInlineCommand
-{
-    size_t cmdLen = 0;
-    std::string_view cmd;
-};
-} // namespace doxygen_markdown_detail
-
-using MatchedInlineCommand = doxygen_markdown_detail::MatchedInlineCommand;
-
 /** @brief Matches known inline commands (ref, em, c, p, b, a, e) at position i. */
 static MatchedInlineCommand MatchInlineCommandName(std::string_view text, size_t i)
 {
@@ -725,34 +710,6 @@ static std::vector<std::string> ExtractCommentLines(const std::string& rawCommen
     return SplitCommentVerbatimAndNewlines(contents);
 }
 
-namespace doxygen_markdown_detail
-{
-enum class CommentSegmentKind
-{
-    Tag,
-    Text,
-    VerbatimCode
-};
-} // namespace doxygen_markdown_detail
-
-using CommentSegmentKind = doxygen_markdown_detail::CommentSegmentKind;
-
-namespace doxygen_markdown_detail
-{
-/**
- * @brief Represents Comment segment.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct CommentSegment
-{
-    CommentSegmentKind kind = CommentSegmentKind::Text;
-    std::vector<std::string> lines;
-    std::string language;
-};
-} // namespace doxygen_markdown_detail
-
-using CommentSegment = doxygen_markdown_detail::CommentSegment;
-
 /** @brief Checks if a command name is an inline formatting command. */
 static bool IsDoxygenInlineCommandName(std::string_view cmd)
 {
@@ -1062,23 +1019,6 @@ static std::string ExtractBrief(std::vector<std::string>& lines)
 
     return ExtractImplicitBrief(lines, firstContentIdx);
 }
-
-namespace doxygen_markdown_detail
-{
-/**
- * @brief State for comment line segmentation.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct SegmenterState
-{
-    CommentSegment currentSeg;
-    bool hasActiveSeg = false;
-    bool inCode = false;
-    CommentSegment currentCode;
-};
-} // namespace doxygen_markdown_detail
-
-using SegmenterState = doxygen_markdown_detail::SegmenterState;
 
 /** @brief Flushes any active segment in the segmenter state. */
 static void FlushActiveSegment(SegmenterState& state, std::vector<CommentSegment>& segments)
@@ -1515,161 +1455,6 @@ static std::string ProcessCodeBlock(TSNode blockNode, const std::string& sourceC
 
     return "```" + lang + "\n" + joined + "\n```";
 }
-
-namespace doxygen_markdown_detail
-{
-/**
- * @brief Represents Param item.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ParamItem
-{
-    std::vector<std::string> names;
-    std::string direction; // "in", "out", "in,out", or empty
-    std::string description;
-};
-} // namespace doxygen_markdown_detail
-
-using ParamItem = doxygen_markdown_detail::ParamItem;
-
-namespace doxygen_markdown_detail
-{
-/**
- * @brief Represents T param item.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct TParamItem
-{
-    std::string name;
-    std::string description;
-};
-} // namespace doxygen_markdown_detail
-
-using TParamItem = doxygen_markdown_detail::TParamItem;
-
-namespace doxygen_markdown_detail
-{
-/**
- * @brief Represents Ret val item.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct RetValItem
-{
-    std::string value;
-    std::string description;
-};
-} // namespace doxygen_markdown_detail
-
-using RetValItem = doxygen_markdown_detail::RetValItem;
-
-namespace doxygen_markdown_detail
-{
-enum class DocBlockKind
-{
-    Brief,
-    Body,
-    CodeBlock,
-    TParam,
-    Param,
-    Return,
-    RetVal,
-    Admonition
-};
-} // namespace doxygen_markdown_detail
-
-using DocBlockKind = doxygen_markdown_detail::DocBlockKind;
-
-namespace doxygen_markdown_detail
-{
-/**
- * @brief Represents Doc block.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct DocBlock
-{
-    DocBlockKind kind;
-    std::string text;
-    std::string label;
-    TParamItem tparam;
-    ParamItem param;
-    RetValItem retval;
-
-    /**
-     * @brief Creates a documentation block with a specific kind and text content.
-     * @param[in] kind Categorical kind of the documentation block.
-     * @param[in] t Body text for the block.
-     * @return Constructed DocBlock instance.
-     */
-    static DocBlock MakeWithKind(DocBlockKind kind, std::string t)
-    {
-        DocBlock b;
-        b.kind = kind;
-        b.text = std::move(t);
-        return b;
-    }
-
-    static DocBlock MakeBrief(std::string t)
-    {
-        return MakeWithKind(DocBlockKind::Brief, std::move(t));
-    }
-
-    static DocBlock MakeBody(std::string t)
-    {
-        return MakeWithKind(DocBlockKind::Body, std::move(t));
-    }
-
-    static DocBlock MakeCodeBlock(std::string t)
-    {
-        return MakeWithKind(DocBlockKind::CodeBlock, std::move(t));
-    }
-
-    static DocBlock MakeTParam(TParamItem tp)
-    {
-        DocBlock b;
-        b.kind = DocBlockKind::TParam;
-        b.tparam = std::move(tp);
-        return b;
-    }
-
-    static DocBlock MakeParam(ParamItem p)
-    {
-        DocBlock b;
-        b.kind = DocBlockKind::Param;
-        b.param = std::move(p);
-        return b;
-    }
-
-    static DocBlock MakeReturn(std::string t)
-    {
-        return MakeWithKind(DocBlockKind::Return, std::move(t));
-    }
-
-    static DocBlock MakeRetVal(RetValItem r)
-    {
-        DocBlock b;
-        b.kind = DocBlockKind::RetVal;
-        b.retval = std::move(r);
-        return b;
-    }
-
-    /**
-     * @brief Creates an admonition documentation block with a label and text.
-     * @param[in] l Admonition label (e.g. Note, Warning).
-     * @param[in] t Content body of the admonition.
-     * @return Constructed DocBlock configured as an admonition.
-     */
-    static DocBlock MakeAdmonition(std::string l, std::string t)
-    {
-        DocBlock b;
-        b.kind = DocBlockKind::Admonition;
-        b.label = std::move(l);
-        b.text = std::move(t);
-        return b;
-    }
-};
-} // namespace doxygen_markdown_detail
-
-using DocBlock = doxygen_markdown_detail::DocBlock;
 
 /** @brief Normalizes storageclass bracketed parameter direction text. */
 static std::string NormalizeParamDirection(std::string_view rawSc)

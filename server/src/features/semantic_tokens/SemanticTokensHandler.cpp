@@ -21,33 +21,86 @@ extern "C" const TSLanguage* tree_sitter_angelscript();
 
 namespace angel_lsp::features
 {
-enum TokenTypeIndex : uint32_t
+ClassSpanIndex ClassSpanIndex::Build(const analysis::NodeIndex* nodeIndex, std::string_view sourceCode,
+                                     const parser::GrammarSymbols& syms)
 {
-    Type_Namespace = 0,
-    Type_Type = 1,
-    Type_Class = 2,
-    Type_Enum = 3,
-    Type_Interface = 4,
-    Type_Struct = 5,
-    Type_TypeParameter = 6,
-    Type_Parameter = 7,
-    Type_Variable = 8,
-    Type_Property = 9,
-    Type_EnumMember = 10,
-    Type_Event = 11,
-    Type_Function = 12,
-    Type_Method = 13,
-    Type_Macro = 14,
-    Type_Keyword = 15,
-    Type_Modifier = 16,
-    Type_Comment = 17,
-    Type_String = 18,
-    Type_Number = 19,
-    Type_Regexp = 20,
-    Type_Operator = 21,
-    Type_Decorator = 22,
-    Type_TemplatePunctuation = 23
-};
+    ClassSpanIndex index;
+    if (!nodeIndex)
+    {
+        return index;
+    }
+    for (TSNode classDecl : nodeIndex->Nodes(syms.symClassDeclaration))
+    {
+        TSNode classNameNode = parser::GetChildByField(classDecl, parser::GetGrammarSymbols().fieldName);
+        if (!ts_node_is_null(classNameNode))
+        {
+            uint32_t cStart = ts_node_start_byte(classNameNode);
+            uint32_t cEnd = ts_node_end_byte(classNameNode);
+            if (cStart < cEnd && cEnd <= sourceCode.size())
+            {
+                std::string_view bareName(sourceCode.data() + cStart, cEnd - cStart);
+                const auto containers = analysis::GetEnclosingContainers(classDecl, sourceCode);
+                const std::string qName = (!containers.empty() && !containers.front().qualifiedName.empty())
+                                              ? utils::JoinScopedName(containers.front().qualifiedName, bareName)
+                                              : std::string(bareName);
+                index.m_spans.push_back(parser::AstNodeSpan{ts_node_start_byte(classDecl), ts_node_end_byte(classDecl),
+                                                            0, 0, std::move(qName), -1});
+            }
+        }
+    }
+
+    std::sort(index.m_spans.begin(), index.m_spans.end(),
+              [](const parser::AstNodeSpan& a, const parser::AstNodeSpan& b)
+              {
+                  if (a.startByte != b.startByte)
+                  {
+                      return a.startByte < b.startByte;
+                  }
+                  return a.endByte > b.endByte;
+              });
+
+    std::vector<int> spanStack;
+    for (size_t i = 0; i < index.m_spans.size(); ++i)
+    {
+        while (!spanStack.empty() && index.m_spans[spanStack.back()].endByte <= index.m_spans[i].startByte)
+        {
+            spanStack.pop_back();
+        }
+        if (!spanStack.empty() && index.m_spans[spanStack.back()].endByte >= index.m_spans[i].endByte)
+        {
+            index.m_spans[i].parentIndex = spanStack.back();
+        }
+        spanStack.push_back(static_cast<int>(i));
+    }
+    return index;
+}
+
+std::string_view ClassSpanIndex::FindEnclosingClass(uint32_t byteOffset) const
+{
+    if (m_spans.empty())
+    {
+        return {};
+    }
+
+    auto it =
+        std::upper_bound(m_spans.begin(), m_spans.end(), byteOffset,
+                         [](uint32_t offset, const parser::AstNodeSpan& span) { return offset < span.startByte; });
+
+    if (it == m_spans.begin())
+    {
+        return {};
+    }
+
+    const int cand = static_cast<int>(std::distance(m_spans.begin(), it)) - 1;
+    for (int cur = cand; cur != -1; cur = m_spans[cur].parentIndex)
+    {
+        if (byteOffset >= m_spans[cur].startByte && byteOffset < m_spans[cur].endByte)
+        {
+            return m_spans[cur].name;
+        }
+    }
+    return {};
+}
 
 enum TokenModifierBit : uint32_t
 {
@@ -62,22 +115,6 @@ enum TokenModifierBit : uint32_t
     Mod_Documentation = 1 << 8,
     Mod_DefaultLibrary = 1 << 9
 };
-
-namespace semantic_tokens_handler_detail
-{
-/**
- * @brief Metadata associated with a classified semantic token.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct TokenMeta
-{
-    uint32_t tokenType = 0;
-    uint32_t tokenMod = 0;
-    int priority = 0;
-};
-} // namespace semantic_tokens_handler_detail
-
-using TokenMeta = semantic_tokens_handler_detail::TokenMeta;
 
 /**
  * @brief Packs a line and character into a 64-bit coordinate key.
@@ -121,25 +158,6 @@ static void CollectReferenceKinds(const analysis::Scope* scope,
         CollectReferenceKinds(child.get(), out);
     }
 }
-
-namespace semantic_tokens_handler_detail
-{
-/**
- * @brief Represents an intermediate, non-delta-encoded semantic token item.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct RawToken
-{
-    uint32_t line = 0;
-    uint32_t startChar = 0;
-    uint32_t length = 0;
-    uint32_t tokenType = 0;
-    uint32_t tokenModifiers = 0;
-    int priority = 0;
-};
-} // namespace semantic_tokens_handler_detail
-
-using RawToken = semantic_tokens_handler_detail::RawToken;
 
 /**
  * @brief Splits source code into views of individual lines without trailing carriage returns.
@@ -314,24 +332,6 @@ ClassifyOperatorOrPunctuation(TSNode node, std::string_view sourceCode, const pa
     return std::make_pair(Type_Operator, 4);
 }
 
-namespace semantic_tokens_handler_detail
-{
-/**
- * @brief Classification rule for a single tree-sitter query capture pattern.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct CaptureRule
-{
-    uint32_t tokenType = Type_Variable;
-    uint32_t tokenMod = 0;
-    int priority = 1;
-    bool isOperatorOrPunctuation = false;
-    bool valid = false;
-};
-} // namespace semantic_tokens_handler_detail
-
-using CaptureRule = semantic_tokens_handler_detail::CaptureRule;
-
 /**
  * @brief Matches special syntactic capture patterns like comments, literals, or punctuation.
  * @param[in] name Capture name.
@@ -505,21 +505,6 @@ static CaptureRule MakeCaptureRule(std::string_view name)
     return rule;
 }
 
-namespace semantic_tokens_handler_detail
-{
-/**
- * @brief Holds precompiled highlights query and per-capture classification rules.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct HighlightsQueryData
-{
-    TSQuery* query = nullptr;
-    std::vector<CaptureRule> rules;
-};
-} // namespace semantic_tokens_handler_detail
-
-using HighlightsQueryData = semantic_tokens_handler_detail::HighlightsQueryData;
-
 /**
  * @brief Returns precompiled highlights TSQuery and cached capture rules.
  * @return Reference to static HighlightsQueryData.
@@ -552,114 +537,6 @@ static const HighlightsQueryData& GetHighlightsQueryData()
     }();
     return s_data;
 }
-
-namespace semantic_tokens_handler_detail
-{
-/**
- * @brief Index of enclosing class spans for fast byte-offset hierarchy lookup.
- */
-class ClassSpanIndex
-{
-  public:
-    /**
-     * @brief Builds class span index from NodeIndex and source code.
-     * @param[in] nodeIndex Pre-built AST node index, or nullptr.
-     * @param[in] sourceCode Source text buffer.
-     * @param[in] syms Grammar symbol identifiers.
-     * @return Initialized ClassSpanIndex.
-     */
-    static ClassSpanIndex Build(const analysis::NodeIndex* nodeIndex, std::string_view sourceCode,
-                                const parser::GrammarSymbols& syms)
-    {
-        ClassSpanIndex index;
-        if (!nodeIndex)
-        {
-            return index;
-        }
-        for (TSNode classDecl : nodeIndex->Nodes(syms.symClassDeclaration))
-        {
-            TSNode classNameNode = parser::GetChildByField(classDecl, parser::GetGrammarSymbols().fieldName);
-            if (!ts_node_is_null(classNameNode))
-            {
-                uint32_t cStart = ts_node_start_byte(classNameNode);
-                uint32_t cEnd = ts_node_end_byte(classNameNode);
-                if (cStart < cEnd && cEnd <= sourceCode.size())
-                {
-                    std::string_view bareName(sourceCode.data() + cStart, cEnd - cStart);
-                    const auto containers = analysis::GetEnclosingContainers(classDecl, sourceCode);
-                    const std::string qName = (!containers.empty() && !containers.front().qualifiedName.empty())
-                                                  ? utils::JoinScopedName(containers.front().qualifiedName, bareName)
-                                                  : std::string(bareName);
-                    index.m_spans.push_back(parser::AstNodeSpan{
-                        ts_node_start_byte(classDecl), ts_node_end_byte(classDecl), 0, 0, std::move(qName), -1});
-                }
-            }
-        }
-
-        std::sort(index.m_spans.begin(), index.m_spans.end(),
-                  [](const parser::AstNodeSpan& a, const parser::AstNodeSpan& b)
-                  {
-                      if (a.startByte != b.startByte)
-                      {
-                          return a.startByte < b.startByte;
-                      }
-                      return a.endByte > b.endByte;
-                  });
-
-        std::vector<int> spanStack;
-        for (size_t i = 0; i < index.m_spans.size(); ++i)
-        {
-            while (!spanStack.empty() && index.m_spans[spanStack.back()].endByte <= index.m_spans[i].startByte)
-            {
-                spanStack.pop_back();
-            }
-            if (!spanStack.empty() && index.m_spans[spanStack.back()].endByte >= index.m_spans[i].endByte)
-            {
-                index.m_spans[i].parentIndex = spanStack.back();
-            }
-            spanStack.push_back(static_cast<int>(i));
-        }
-        return index;
-    }
-
-    /**
-     * @brief Finds enclosing class name for a byte offset.
-     * @param[in] byteOffset Target byte position in source.
-     * @return Enclosing class name view, or empty if outside classes.
-     */
-    [[nodiscard]] std::string_view FindEnclosingClass(uint32_t byteOffset) const
-    {
-        if (m_spans.empty())
-        {
-            return {};
-        }
-
-        auto it =
-            std::upper_bound(m_spans.begin(), m_spans.end(), byteOffset,
-                             [](uint32_t offset, const parser::AstNodeSpan& span) { return offset < span.startByte; });
-
-        if (it == m_spans.begin())
-        {
-            return {};
-        }
-
-        const int cand = static_cast<int>(std::distance(m_spans.begin(), it)) - 1;
-        for (int cur = cand; cur != -1; cur = m_spans[cur].parentIndex)
-        {
-            if (byteOffset >= m_spans[cur].startByte && byteOffset < m_spans[cur].endByte)
-            {
-                return m_spans[cur].name;
-            }
-        }
-        return {};
-    }
-
-  private:
-    std::vector<parser::AstNodeSpan> m_spans;
-};
-} // namespace semantic_tokens_handler_detail
-
-using ClassSpanIndex = semantic_tokens_handler_detail::ClassSpanIndex;
 
 /**
  * @brief Checks if any symbol in a list is an enum constant.
@@ -862,34 +739,6 @@ PrecalculateScopedEnumUpgrades(const analysis::NodeIndex* nodeIndex, std::string
     }
     return upgrades;
 }
-
-namespace semantic_tokens_handler_detail
-{
-/**
- * @brief Context bundling precomputed indices and request references for token refinement.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct TokenRefinementContext
-{
-    TokenRefinementContext(const SemanticTokensRequest& req,
-                           const ankerl::unordered_dense::map<uint64_t, analysis::LocalDefinitionKind>& refKinds,
-                           const ankerl::unordered_dense::map<uint32_t, uint32_t>& enumUpgrades,
-                           const ClassSpanIndex& spans, std::shared_ptr<const analysis::rules::RuleIndex> rules)
-        : request(req), referenceKinds(refKinds), scopedEnumUpgrades(enumUpgrades), classSpans(spans),
-          ruleIndex(std::move(rules))
-    {
-    }
-
-    const SemanticTokensRequest& request;
-    const ankerl::unordered_dense::map<uint64_t, analysis::LocalDefinitionKind>& referenceKinds;
-    const ankerl::unordered_dense::map<uint32_t, uint32_t>& scopedEnumUpgrades;
-    const ClassSpanIndex& classSpans;
-    std::shared_ptr<const analysis::rules::RuleIndex> ruleIndex;
-    mutable ankerl::unordered_dense::map<std::string_view, std::vector<std::string>> classHierarchyCache;
-};
-} // namespace semantic_tokens_handler_detail
-
-using TokenRefinementContext = semantic_tokens_handler_detail::TokenRefinementContext;
 
 /**
  * @brief Checks whether an identifier is an unqualified member of the enclosing class.

@@ -54,4 +54,66 @@ using InlayHintResult = std::vector<lsp::InlayHint>;
  * @return Optional vector of InlayHint items; nullopt if document cannot be parsed or no hints found.
  */
 std::optional<InlayHintResult> GetInlayHints(const InlayHintRequest& request);
+
+/**
+ * @brief Resolved callee callable and parameter information for inlay hint generation.
+ */
+struct CalleeResolutionResult
+{
+    std::string fileUri;
+    std::string calleeName;
+    std::vector<analysis::ParameterInformation> parameters;
+    std::optional<lsp::Range> selectionRange;
+};
+
+/**
+ * @brief Argument expression AST node and evaluated parameter binding for inlay hints.
+ */
+struct ArgInfo
+{
+    TSNode exprNode;
+    bool isNamed = false;
+    std::string argName;
+    lsp::Position hintPosition;
+    std::string text;
+};
+
+/**
+ * @brief Context for generating parameter name inlay hints at a call site.
+ */
+struct ParamHintContext
+{
+    const CalleeResolutionResult& callee;
+    const InlayHintRequest& request;
+};
+
+/**
+ * @brief Context for suppressing parameter inlay hints on self-explanatory arguments.
+ */
+struct OmittedHintContext
+{
+    const InlayHintRequest& request;
+    std::vector<lsp::InlayHint>& hints;
+};
+
+/**
+ * @brief Position and character offsets of an argument within a call parameter list.
+ */
+struct CallArgPosition
+{
+    TSNode startNode;
+    TSNode endNode;
+    int boundParamIndex = -1;
+};
+
+/**
+ * @brief Tracks reasons for omitting an inlay hint on a specific call argument.
+ */
+struct OmittedParamHint
+{
+    std::string label;
+    std::string tooltip;
+    std::string fileUri;
+    const analysis::ParameterInformation* param = nullptr;
+};
 } // namespace angel_lsp::features

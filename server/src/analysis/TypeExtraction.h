@@ -15,4 +15,33 @@ TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, std::string_view so
  *        or index expressions, so "someFunc(null)" or "a == null" correctly return false.
  */
 bool IsNullInitializer(TSNode valueNode);
+
+/**
+ * @brief Pre-resolved grammar symbols and sentinel IDs used during fast AST type extraction.
+ */
+struct TypeExtractionSymbols
+{
+    TSSymbol symPrimitiveType = 0;
+    TSSymbol symDatatype = 0;
+    TSSymbol symTemplateTypeList = 0;
+    TSSymbol symIdentifier = 0;
+    TSSymbol symType = 0;
+    TSSymbol symScope = 0;
+    TSSymbol symNullLiteral = 0;
+    TSSymbol symParenthesizedExpression = 0;
+
+    ankerl::unordered_dense::map<TSSymbol, TypeKind> primitiveKindMap;
+
+    TypeExtractionSymbols();
+
+    TypeKind LookupPrimitiveKind(TSSymbol symbol) const
+    {
+        auto it = primitiveKindMap.find(symbol);
+        if (it != primitiveKindMap.end())
+        {
+            return it->second;
+        }
+        return TypeKind::Unknown;
+    }
+};
 } // namespace angel_lsp::analysis

@@ -25,4 +25,15 @@ void CheckRepeatedConversions(TSNode rootIfNode, const Scope* scope, DiagnosticC
  * @return Vector of matching AST nodes.
  */
 std::vector<TSNode> FindOccurrencesInIfLadder(TSNode rootIf, std::string_view exprText, std::string_view sourceCode);
+
+/**
+ * @brief Records source line and target type details for repeated type conversion diagnostic reporting.
+ */
+struct ConversionOccurrence
+{
+    TSNode node;
+    std::string exprText;
+    std::string fromType;
+    std::string toType;
+};
 } // namespace angel_lsp::analysis

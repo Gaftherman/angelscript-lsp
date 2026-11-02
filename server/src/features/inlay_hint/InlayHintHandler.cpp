@@ -450,23 +450,6 @@ static const analysis::Symbol* SelectFallbackCandidate(const std::vector<analysi
     return bestSym;
 }
 
-namespace inlay_hint_handler_detail
-{
-/**
- * @brief Bundles callee document URI, callee name, and extracted parameter information.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct CalleeResolutionResult
-{
-    std::string fileUri;
-    std::string calleeName;
-    std::vector<analysis::ParameterInformation> parameters;
-    std::optional<lsp::Range> selectionRange;
-};
-} // namespace inlay_hint_handler_detail
-
-using CalleeResolutionResult = inlay_hint_handler_detail::CalleeResolutionResult;
-
 /**
  * @brief Extracts callee result with URI, name, and parameters from a resolved callable symbol.
  * @param[in] sym Resolved symbol.
@@ -545,24 +528,6 @@ static CalleeResolutionResult ResolveCalleeParameters(TSNode callNode, const Inl
 
     return ExtractCalleeFromSymbol(bestSym);
 }
-
-namespace inlay_hint_handler_detail
-{
-/**
- * @brief Holds parsed information for an argument AST node in a call or constructor.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ArgInfo
-{
-    TSNode exprNode;
-    bool isNamed = false;
-    std::string argName;
-    lsp::Position hintPosition;
-    std::string text;
-};
-} // namespace inlay_hint_handler_detail
-
-using ArgInfo = inlay_hint_handler_detail::ArgInfo;
 
 /**
  * @brief Parses an argument_list node into structured ArgInfo items.
@@ -1094,7 +1059,6 @@ static std::string DeduceBinaryExpressionType(TSNode exprNode, const InlayHintRe
  * @param[in] exprNode Unary expression AST node.
  * @param[in] request Inlay hint request context.
  * @return Deduced type string.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static std::string DeduceUnaryExpressionType(TSNode exprNode, const InlayHintRequest& request)
@@ -1265,21 +1229,6 @@ static std::string FormatParameterTooltip(const analysis::ParameterInformation& 
     }
     return "```angelscript\n(parameter) " + sig + "\n```";
 }
-
-namespace inlay_hint_handler_detail
-{
-/**
- * @brief Context bundle for parameter inlay hint construction.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ParamHintContext
-{
-    const CalleeResolutionResult& callee;
-    const InlayHintRequest& request;
-};
-} // namespace inlay_hint_handler_detail
-
-using ParamHintContext = inlay_hint_handler_detail::ParamHintContext;
 
 /**
  * @brief Parses an LSP URI or converts a local file system path into a document URI.
@@ -1477,54 +1426,6 @@ static void AddParameterHints(const CalleeResolutionResult& callee, const std::v
         }
     }
 }
-
-namespace inlay_hint_handler_detail
-{
-/**
- * @brief Context bundling immutable request and mutable output hints vector.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct OmittedHintContext
-{
-    const InlayHintRequest& request;
-    std::vector<lsp::InlayHint>& hints;
-};
-} // namespace inlay_hint_handler_detail
-
-using OmittedHintContext = inlay_hint_handler_detail::OmittedHintContext;
-
-namespace inlay_hint_handler_detail
-{
-/**
- * @brief Position and bound parameter information for a call argument.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct CallArgPosition
-{
-    TSNode startNode;
-    TSNode endNode;
-    int boundParamIndex = -1;
-};
-} // namespace inlay_hint_handler_detail
-
-using CallArgPosition = inlay_hint_handler_detail::CallArgPosition;
-
-namespace inlay_hint_handler_detail
-{
-/**
- * @brief Bundles formatted label text and hover tooltip for an omitted parameter hint.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct OmittedParamHint
-{
-    std::string label;
-    std::string tooltip;
-    std::string fileUri;
-    const analysis::ParameterInformation* param = nullptr;
-};
-} // namespace inlay_hint_handler_detail
-
-using OmittedParamHint = inlay_hint_handler_detail::OmittedParamHint;
 
 /**
  * @brief Formats label text for an omitted default argument hint.
@@ -1804,7 +1705,6 @@ static void ProcessConstructorCallExpression(TSNode node, const InlayHintRequest
  * @param[in] request Inlay hint request context.
  * @param[in,out] hints Hint vector receiving generated type hints.
  * @param[in] isHandle Whether the auto declaration explicitly carries a handle modifier.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static void ProcessAutoVariableDeclarator(TSNode declarator, const InlayHintRequest& request,
@@ -1937,7 +1837,6 @@ static TSNode FindVariableTypeNode(TSNode varDeclNode)
  * @param[in] node AST variable_declaration node.
  * @param[in] request Inlay hint request context.
  * @param[in,out] hints Hint vector receiving generated inlay hints.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static void ProcessVariableDeclaration(TSNode node, const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)

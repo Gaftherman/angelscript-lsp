@@ -45,6 +45,16 @@ struct ExtractedMethodPlan
     std::string extractedBody;
 };
 
+/**
+ * @brief Context tracking extracted method output parameters, return values, and mutability flags.
+ */
+struct MethodOutputContext
+{
+    const ExtractMethodStatements& stmts;
+    const analysis::Scope* fnScope;
+    const analysis::Scope* stmtScope;
+};
+
 std::optional<ExtractMethodStatements> FindSelectedStatements(TSNode rootNode, const CodeActionRequest& request);
 
 std::vector<VarInfo> CollectMethodInputs(const ExtractMethodStatements& stmts, const analysis::Scope* fnScope);

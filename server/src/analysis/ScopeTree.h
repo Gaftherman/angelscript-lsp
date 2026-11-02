@@ -410,4 +410,14 @@ class ScopeIndex
     mutable std::shared_mutex m_mutex;
     ankerl::unordered_dense::map<std::string, std::shared_ptr<Scope>> m_roots;
 };
+
+/**
+ * @brief Carries symbol lookup parameters, active scope node, and search boundary rules.
+ */
+struct ResolutionContext
+{
+    uint32_t refByte = 0;
+    bool crossedClosure = false;
+    bool respectClosureBarrier = false;
+};
 } // namespace angel_lsp::analysis

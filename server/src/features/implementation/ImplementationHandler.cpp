@@ -27,22 +27,6 @@ static std::string IdentifierAt(const ImplementationRequest& request, TSNode& ou
     return common::FindIdentifierAtPosition(request.tree, request.position, request.sourceCode, outNode);
 }
 
-namespace implementation_handler_detail
-{
-/**
- * @brief Accumulator for subtype collection passes.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct SubtypeAccumulator
-{
-    ankerl::unordered_dense::set<std::string>& seen;
-    std::vector<std::string>& next;
-    std::vector<analysis::Symbol>& subtypes;
-};
-} // namespace implementation_handler_detail
-
-using SubtypeAccumulator = implementation_handler_detail::SubtypeAccumulator;
-
 /**
  * @brief Expands derived types from a list of records and records matches in the accumulator.
  * @param[in] derivedList List of derived type records.
@@ -237,6 +221,21 @@ static lsp::Location ToLocation(const analysis::Symbol& sym)
 
     return lsp::Location{lsp::DocumentUri::parse(sym.fileUri),
                          lsp::Range{lsp::Position{sL, sC}, lsp::Position{eL, eC}}};
+}
+
+void LocationCollector::Add(const analysis::Symbol& sym)
+{
+    const uint32_t sL = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0)
+                            ? sym.selectionRange.startLine
+                            : sym.startLine;
+    const uint32_t sC = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0)
+                            ? sym.selectionRange.startCharacter
+                            : sym.startCharacter;
+    const uint64_t key = (static_cast<uint64_t>(sL) << 32) | sC;
+    if (seenLocs.insert({sym.fileUri, key}).second)
+    {
+        locations.push_back(ToLocation(sym));
+    }
 }
 
 /**
@@ -476,57 +475,6 @@ static bool CheckMixinOwner(const std::string& owner, const std::string& bareOwn
     return ruleIndex &&
            (ruleIndex->hostClassesByMixin.contains(owner) || ruleIndex->hostClassesByMixin.contains(bareOwner));
 }
-
-namespace implementation_handler_detail
-{
-/**
- * @brief Accumulator for deduplicated LSP locations.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct LocationCollector
-{
-    std::vector<lsp::Location> locations;
-    ankerl::unordered_dense::set<std::pair<std::string, uint64_t>> seenLocs;
-
-    /**
-     * @brief Adds a symbol location if not already collected.
-     * @param[in] sym analysis::Symbol whose location should be captured.
-     */
-    void Add(const analysis::Symbol& sym)
-    {
-        const uint32_t sL = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0)
-                                ? sym.selectionRange.startLine
-                                : sym.startLine;
-        const uint32_t sC = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0)
-                                ? sym.selectionRange.startCharacter
-                                : sym.startCharacter;
-        const uint64_t key = (static_cast<uint64_t>(sL) << 32) | sC;
-        if (seenLocs.insert({sym.fileUri, key}).second)
-        {
-            locations.push_back(ToLocation(sym));
-        }
-    }
-};
-} // namespace implementation_handler_detail
-
-using LocationCollector = implementation_handler_detail::LocationCollector;
-
-namespace implementation_handler_detail
-{
-/**
- * @brief Context required to resolve subtype overrides.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct MemberImplementationContext
-{
-    std::string name;
-    bool isMixinOwner;
-    const analysis::SymbolTable& table;
-    LocationCollector& collector;
-};
-} // namespace implementation_handler_detail
-
-using MemberImplementationContext = implementation_handler_detail::MemberImplementationContext;
 
 /**
  * @brief Inspects a subtype for explicit overrides or mixin inclusion.

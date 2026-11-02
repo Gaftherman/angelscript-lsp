@@ -412,22 +412,6 @@ static void CheckFinalOverrides(const Symbol& sym, const ClassSignature& sig, co
     }
 }
 
-namespace class_rules_detail
-{
-/**
- * @brief Input parameters bundled for checking base classes.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct BaseCheckRequest
-{
-    const Symbol& sym;
-    const ClassSignature& sig;
-    const DiagnosticContext& ctx;
-};
-} // namespace class_rules_detail
-
-using BaseCheckRequest = class_rules_detail::BaseCheckRequest;
-
 /** @brief Checks single base class properties (final, mixin class inherit). */
 static bool CheckBaseClassSymbol(const BaseCheckRequest& req, const Symbol& base, const std::string& cleanBase)
 {
@@ -779,58 +763,6 @@ static void CheckPropertyAccessors(const Symbol& sym, const DiagnosticContext& c
     ValidatePropertyAccessorPairs(getters, setters, ctx);
 }
 
-using TransparentStringSet = ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>;
-
-namespace class_rules_detail
-{
-/**
- * @brief Context bundled for inspecting mixin statement resolutions.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct MixinCheckContext
-{
-    std::string hostClassName;
-    const Symbol* mixinSym = nullptr;
-    SourceRange hostRange;
-    const TransparentStringSet& hostMembers;
-    const TransparentStringSet& mixinSelfMembers;
-    TransparentStringSet& reported;
-    const NodeIndex* nodeIndex = nullptr;
-};
-} // namespace class_rules_detail
-
-using MixinCheckContext = class_rules_detail::MixinCheckContext;
-
-namespace class_rules_detail
-{
-/**
- * @brief Execution state for checking inside a mixin function body.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct FunctionCheckState
-{
-    const ankerl::unordered_dense::set<std::string_view>& localNames;
-    MixinCheckContext& mctx;
-};
-} // namespace class_rules_detail
-
-using FunctionCheckState = class_rules_detail::FunctionCheckState;
-
-namespace class_rules_detail
-{
-/**
- * @brief Base context for host class hierarchies.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct MixinHierarchyMembers
-{
-    std::string hostClassName;
-    TransparentStringSet hostMembers;
-};
-} // namespace class_rules_detail
-
-using MixinHierarchyMembers = class_rules_detail::MixinHierarchyMembers;
-
 /** @brief Collects all mixins included via includedMixins or bases. */
 static std::vector<std::string> CollectIncludedMixins(const ClassSignature& sig, const SymbolTable& table)
 {
@@ -1141,22 +1073,6 @@ static bool IsBuiltinOrKeyword(std::string_view name, std::string_view effective
     }
     return IsKeyword(name) || IsPrimitiveTypeName(name);
 }
-
-namespace class_rules_detail
-{
-/**
- * @brief Represents Accessor lookup context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct AccessorLookupContext
-{
-    std::string_view name;
-    std::string_view getView;
-    std::string_view setView;
-};
-} // namespace class_rules_detail
-
-using AccessorLookupContext = class_rules_detail::AccessorLookupContext;
 
 static bool HasSelfOrHostPropertyAccessor(std::string_view getView, std::string_view setView,
                                           const FunctionCheckState& state)
@@ -1503,41 +1419,6 @@ static void CollectMixinSelfMembers(const Symbol& mixinSym, const RuleIndex& rul
         CollectContainerMembers(mixinSym.name, ruleIndex, outMembers);
     }
 }
-
-namespace class_rules_detail
-{
-/**
- * @brief Represents Mixin instantiation check request.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct MixinInstantiationCheckRequest
-{
-    const std::string& mixinName;
-    const Symbol& hostSym;
-    const MixinHierarchyMembers& baseMembers;
-    const DiagnosticContext& ctx;
-    ankerl::unordered_dense::map<std::string, MixinFileCacheEntry>& fileCache;
-};
-} // namespace class_rules_detail
-
-using MixinInstantiationCheckRequest = class_rules_detail::MixinInstantiationCheckRequest;
-
-namespace class_rules_detail
-{
-/**
- * @brief Represents Mixin ast target.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct MixinAstTarget
-{
-    std::string_view source;
-    const TSTree* tree = nullptr;
-    const NodeIndex* nodeIndex = nullptr;
-    std::unique_ptr<NodeIndex> localIndex;
-};
-} // namespace class_rules_detail
-
-using MixinAstTarget = class_rules_detail::MixinAstTarget;
 
 /** @brief Resolves AST tree, source text, and NodeIndex for a mixin symbol. */
 static MixinAstTarget ResolveMixinAstTarget(const Symbol& mixinSym, MixinInstantiationCheckRequest& req)

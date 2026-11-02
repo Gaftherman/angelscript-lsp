@@ -459,7 +459,7 @@
       "originalSymbolOrCode": "DocBlock::MakeBrief, MakeBody, MakeCodeBlock, MakeReturn",
       "whatItDidAndWhyInThatFile": "Individual factory methods constructing DocBlock with kind and text.",
       "whyChangedOrDeleted": "Consolidated via DocBlock::MakeWithKind helper.",
-      "replacedByCanonicalFile": "server/src/analysis/DoxygenMarkdown.cpp",
+      "replacedByCanonicalFile": "server/src/analysis/DoxygenMarkdown.h",
       "replacedByCanonicalSymbol": "MakeWithKind",
       "ramOrCpuImpact": "Reduced function boilerplate and cyclomatic complexity.",
       "verifiedByTests": [
@@ -1108,6 +1108,54 @@
       "verifiedByTests": [
         "TargetResolutionTest",
         "CodeLensTest"
+      ]
+    },
+    {
+      "id": "REF-0067",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/code_action/CodeActionUnusedVariables.cpp",
+      "deletedLineRange": "74-80",
+      "originalSymbolOrCode": "struct ScopeItem",
+      "whatItDidAndWhyInThatFile": "Local scope item tracking scope pointer and function nesting status during unused variable collection.",
+      "whyChangedOrDeleted": "Promoted to canonical header CodeActionInternal.h to prevent ODR violations and satisfy zero-local-struct invariant.",
+      "replacedByCanonicalFile": "server/src/features/code_action/CodeActionInternal.h",
+      "replacedByCanonicalSymbol": "ScopeItem",
+      "ramOrCpuImpact": "Zero overhead, eliminated local struct definition and enabled cross-translation unit reuse.",
+      "verifiedByTests": [
+        "CodeActionTest"
+      ]
+    },
+    {
+      "id": "REF-0068",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/lsp/ServerDiagnostics.cpp",
+      "deletedLineRange": "30-35",
+      "originalSymbolOrCode": "struct CodeSettingPair",
+      "whatItDidAndWhyInThatFile": "Bundled diagnostic code and URI string views for severity setting lookups.",
+      "whyChangedOrDeleted": "Promoted to canonical header Server.h to prevent ODR violations and satisfy zero-local-struct invariant.",
+      "replacedByCanonicalFile": "server/src/lsp/Server.h",
+      "replacedByCanonicalSymbol": "CodeSettingPair",
+      "ramOrCpuImpact": "Zero overhead, eliminated local struct definition in ServerDiagnostics.cpp.",
+      "verifiedByTests": [
+        "ServerConfigTest"
+      ]
+    },
+    {
+      "id": "REF-0069",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/lsp/handlers/WorkspaceScanHandlers.cpp",
+      "deletedLineRange": "360-375",
+      "originalSymbolOrCode": "struct ReanalyseOnExit",
+      "whatItDidAndWhyInThatFile": "RAII guard re-triggering workspace diagnostic analysis upon background task termination.",
+      "whyChangedOrDeleted": "Promoted to canonical class member of Server in Server.h to prevent ODR violations.",
+      "replacedByCanonicalFile": "server/src/lsp/Server.h",
+      "replacedByCanonicalSymbol": "ReanalyseOnExit",
+      "ramOrCpuImpact": "Zero overhead, RAII cleanup consolidated into Server interface.",
+      "verifiedByTests": [
+        "WorkspaceStubSweepTest"
       ]
     }
   ]

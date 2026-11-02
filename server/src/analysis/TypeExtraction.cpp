@@ -10,78 +10,45 @@ namespace angel_lsp::analysis
 {
 #define SYM_NAME(str) str, static_cast<uint32_t>(sizeof(str) - 1)
 
-namespace type_extraction_detail
+TypeExtractionSymbols::TypeExtractionSymbols()
 {
-/**
- * @brief Represents Type extraction symbols.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct TypeExtractionSymbols
-{
-    TSSymbol symPrimitiveType = 0;
-    TSSymbol symDatatype = 0;
-    TSSymbol symTemplateTypeList = 0;
-    TSSymbol symIdentifier = 0;
-    TSSymbol symType = 0;
-    TSSymbol symScope = 0;
-    TSSymbol symNullLiteral = 0;
-    TSSymbol symParenthesizedExpression = 0;
+    const TSLanguage* lang = tree_sitter_angelscript();
 
-    ankerl::unordered_dense::map<TSSymbol, TypeKind> primitiveKindMap;
+    symPrimitiveType = ts_language_symbol_for_name(lang, SYM_NAME("primitive_type"), true);
+    symDatatype = ts_language_symbol_for_name(lang, SYM_NAME("datatype"), true);
+    symTemplateTypeList = ts_language_symbol_for_name(lang, SYM_NAME("template_type_list"), true);
+    symIdentifier = ts_language_symbol_for_name(lang, SYM_NAME("identifier"), true);
+    symType = ts_language_symbol_for_name(lang, SYM_NAME("type"), true);
+    symScope = ts_language_symbol_for_name(lang, SYM_NAME("scope"), true);
+    symNullLiteral = ts_language_symbol_for_name(lang, SYM_NAME("null_literal"), true);
+    symParenthesizedExpression = ts_language_symbol_for_name(lang, SYM_NAME("parenthesized_expression"), true);
 
-    TypeExtractionSymbols()
+    auto addPrimitive = [&](const char* name, uint32_t len, TypeKind kind)
     {
-        const TSLanguage* lang = tree_sitter_angelscript();
-
-        symPrimitiveType = ts_language_symbol_for_name(lang, SYM_NAME("primitive_type"), true);
-        symDatatype = ts_language_symbol_for_name(lang, SYM_NAME("datatype"), true);
-        symTemplateTypeList = ts_language_symbol_for_name(lang, SYM_NAME("template_type_list"), true);
-        symIdentifier = ts_language_symbol_for_name(lang, SYM_NAME("identifier"), true);
-        symType = ts_language_symbol_for_name(lang, SYM_NAME("type"), true);
-        symScope = ts_language_symbol_for_name(lang, SYM_NAME("scope"), true);
-        symNullLiteral = ts_language_symbol_for_name(lang, SYM_NAME("null_literal"), true);
-        symParenthesizedExpression = ts_language_symbol_for_name(lang, SYM_NAME("parenthesized_expression"), true);
-
-        auto addPrimitive = [&](const char* name, uint32_t len, TypeKind kind)
+        TSSymbol sym = ts_language_symbol_for_name(lang, name, len, false);
+        if (sym != 0)
         {
-            TSSymbol sym = ts_language_symbol_for_name(lang, name, len, false);
-            if (sym != 0)
-            {
-                primitiveKindMap.emplace(sym, kind);
-            }
-        };
-
-        addPrimitive("void", 4, TypeKind::Void);
-        addPrimitive("int", 3, TypeKind::Int32);
-        addPrimitive("int32", 5, TypeKind::Int32);
-        addPrimitive("int8", 4, TypeKind::Int8);
-        addPrimitive("int16", 5, TypeKind::Int16);
-        addPrimitive("int64", 5, TypeKind::Int64);
-        addPrimitive("uint", 4, TypeKind::UInt32);
-        addPrimitive("uint32", 6, TypeKind::UInt32);
-        addPrimitive("uint8", 5, TypeKind::UInt8);
-        addPrimitive("uint16", 6, TypeKind::UInt16);
-        addPrimitive("uint64", 6, TypeKind::UInt64);
-        addPrimitive("float", 5, TypeKind::Float);
-        addPrimitive("double", 6, TypeKind::Double);
-        addPrimitive("bool", 4, TypeKind::Bool);
-        addPrimitive("string", 6, TypeKind::String);
-        addPrimitive("auto", 4, TypeKind::Auto);
-    }
-
-    TypeKind LookupPrimitiveKind(TSSymbol symbol) const
-    {
-        auto it = primitiveKindMap.find(symbol);
-        if (it != primitiveKindMap.end())
-        {
-            return it->second;
+            primitiveKindMap.emplace(sym, kind);
         }
-        return TypeKind::Unknown;
-    }
-};
-} // namespace type_extraction_detail
+    };
 
-using TypeExtractionSymbols = type_extraction_detail::TypeExtractionSymbols;
+    addPrimitive("void", 4, TypeKind::Void);
+    addPrimitive("int", 3, TypeKind::Int32);
+    addPrimitive("int32", 5, TypeKind::Int32);
+    addPrimitive("int8", 4, TypeKind::Int8);
+    addPrimitive("int16", 5, TypeKind::Int16);
+    addPrimitive("int64", 5, TypeKind::Int64);
+    addPrimitive("uint", 4, TypeKind::UInt32);
+    addPrimitive("uint32", 6, TypeKind::UInt32);
+    addPrimitive("uint8", 5, TypeKind::UInt8);
+    addPrimitive("uint16", 6, TypeKind::UInt16);
+    addPrimitive("uint64", 6, TypeKind::UInt64);
+    addPrimitive("float", 5, TypeKind::Float);
+    addPrimitive("double", 6, TypeKind::Double);
+    addPrimitive("bool", 4, TypeKind::Bool);
+    addPrimitive("string", 6, TypeKind::String);
+    addPrimitive("auto", 4, TypeKind::Auto);
+}
 
 static const TypeExtractionSymbols& GetTypeExtractionSymbols()
 {

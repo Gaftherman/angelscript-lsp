@@ -195,7 +195,6 @@ void EmitLocationIfInRange(TSPoint start, TSPoint end, const BreakpointLocations
  * @param[in] typeNode AST node under evaluation.
  * @param[in] gs Precompiled grammar symbols.
  * @return True if the condition is satisfied; false otherwise.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 bool IsBarePrimitiveOrHandleType(TSNode typeNode, const parser::GrammarSymbols& gs) noexcept

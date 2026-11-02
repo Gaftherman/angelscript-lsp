@@ -130,22 +130,6 @@ static bool IsIncludeQuote(char c)
     return c == '"' || c == '\'' || c == '<';
 }
 
-namespace include_resolver_detail
-{
-/**
- * @brief Represents Include scan state.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct IncludeScanState
-{
-    size_t index{0};
-    size_t currentLine{0};
-    bool atLineStart{true};
-};
-} // namespace include_resolver_detail
-
-using IncludeScanState = include_resolver_detail::IncludeScanState;
-
 static bool HandleIncludeNewline(std::string_view sourceCode, IncludeScanState& state)
 {
     const char c = sourceCode[state.index];

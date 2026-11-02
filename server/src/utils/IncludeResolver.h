@@ -27,7 +27,7 @@ struct SingleLineIncludeInfo
 };
 
 /**
- * @brief Represents an extracted #include directive from AngelScript source code.
+ * @brief Extracted #include directive from AngelScript source code.
  */
 struct IncludeDirective
 {
@@ -211,5 +211,15 @@ class IncludeResolver
     ResolveAllIncludes(std::string_view rootFilePath, const std::vector<std::string>& searchDirectories,
                        std::function<std::string(const std::string&)> fileReader = nullptr,
                        const std::vector<std::string>& allowedRoots = {});
+};
+
+/**
+ * @brief Tracking state during include directive line scanning and path normalization.
+ */
+struct IncludeScanState
+{
+    size_t index{0};
+    size_t currentLine{0};
+    bool atLineStart{true};
 };
 } // namespace angel_lsp::utils

@@ -11,17 +11,6 @@
 
 namespace angel_lsp::features
 {
-namespace rename_detail
-{
-/**
- * @brief Represents the resolved rename target descriptor and AST node.
- */
-struct RenameTargetResult
-{
-    analysis::TargetDescriptor target;
-    TSNode node{};
-};
-} // namespace rename_detail
 
 /**
  * @brief Checks if all declarations of a class member across related classes reside in predefined headers.
@@ -163,8 +152,7 @@ static lsp::WorkspaceEdit BuildWorkspaceEdit(const std::vector<analysis::Occurre
  * @param[in] request Rename or PrepareRename request payload.
  * @return Found valid rename target result if present; std::nullopt otherwise.
  */
-template <typename RequestT>
-static std::optional<rename_detail::RenameTargetResult> ResolveValidRenameTarget(const RequestT& request)
+template <typename RequestT> static std::optional<RenameTargetResult> ResolveValidRenameTarget(const RequestT& request)
 {
     if (!request.tree || request.sourceCode.empty() || request.predefinedUris.contains(request.uri))
     {
@@ -194,7 +182,7 @@ static std::optional<rename_detail::RenameTargetResult> ResolveValidRenameTarget
         return std::nullopt;
     }
 
-    return rename_detail::RenameTargetResult{std::move(*target), node};
+    return RenameTargetResult{std::move(*target), node};
 }
 
 std::optional<lsp::PrepareRenameResult> PrepareRename(const PrepareRenameRequest& request)

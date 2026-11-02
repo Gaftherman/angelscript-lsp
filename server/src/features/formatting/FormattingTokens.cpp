@@ -99,6 +99,11 @@ static void MarkClangFormatPragmas(std::vector<Token>& tokens)
     }
 }
 
+/**
+ * @brief Checks whether the specified identifier token is a built-in AngelScript type keyword.
+ * @param[in] text Identifier token string view.
+ * @return True if text is a reserved primitive type keyword; otherwise false.
+ */
 static bool IsBuiltInTypeKeyword(std::string_view text)
 {
     static const std::unordered_set<std::string_view> kTypeKeywords = {
@@ -107,6 +112,11 @@ static bool IsBuiltInTypeKeyword(std::string_view text)
     return kTypeKeywords.contains(text);
 }
 
+/**
+ * @brief Checks if the token is a function parameter direction qualifier (in, out, or inout).
+ * @param[in] tok Candidate token.
+ * @return True if token is a direction keyword; otherwise false.
+ */
 static bool IsDirectionKeyword(const Token& tok)
 {
     return tok.type == TokenType::Keyword && (tok.text == "in" || tok.text == "out" || tok.text == "inout");

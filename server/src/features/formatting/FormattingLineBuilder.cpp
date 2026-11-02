@@ -3,92 +3,6 @@
 
 namespace angel_lsp::features
 {
-namespace formatting_line_builder_detail
-{
-enum class ScopeKind
-{
-    Generic,
-    Switch,
-    Enum,
-    Class,
-    Namespace,
-    Function,
-    Control,
-    Value
-};
-} // namespace formatting_line_builder_detail
-
-using ScopeKind = formatting_line_builder_detail::ScopeKind;
-
-namespace formatting_line_builder_detail
-{
-/**
- * @brief Represents Scope entry.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ScopeEntry
-{
-    ScopeKind kind = ScopeKind::Generic;
-    int parenDepthAtOpen = 0;
-    int bracketDepthAtOpen = 0;
-    bool paddedBrace = false;
-    bool didIncrement = true;
-};
-} // namespace formatting_line_builder_detail
-
-using ScopeEntry = formatting_line_builder_detail::ScopeEntry;
-
-namespace formatting_line_builder_detail
-{
-/**
- * @brief Represents Line builder state.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct LineBuilderState
-{
-    std::vector<LineInfo> lines;
-    LineInfo currentLine;
-    int braceLevel = 0;
-    int parenDepth = 0;
-    int bracketDepth = 0;
-    std::vector<ScopeEntry> scopeStack;
-    ScopeKind pendingScope = ScopeKind::Generic;
-    bool insideCaseBody = false;
-    bool inValueContext = false;
-    FormatCodeOptions opts;
-
-    ScopeKind CurrentScopeKind() const
-    {
-        return scopeStack.empty() ? ScopeKind::Generic : scopeStack.back().kind;
-    }
-
-    void FlushCurrentLine()
-    {
-        if (!currentLine.tokenIndices.empty() || currentLine.isBlankLine)
-        {
-            lines.push_back(std::move(currentLine));
-            currentLine = LineInfo{};
-        }
-    }
-
-    void BeginLineIfEmpty()
-    {
-        if (!currentLine.tokenIndices.empty())
-            return;
-        const bool inCaseBody = insideCaseBody && CurrentScopeKind() == ScopeKind::Switch;
-        if (inCaseBody)
-        {
-            currentLine.indentLevel = opts.indentCaseLabels ? braceLevel + 1 : braceLevel;
-        }
-        else
-        {
-            currentLine.indentLevel = braceLevel;
-        }
-    }
-};
-} // namespace formatting_line_builder_detail
-
-using LineBuilderState = formatting_line_builder_detail::LineBuilderState;
 
 static void HandleBlankLines(LineBuilderState& state, const Token& tok)
 {
@@ -108,12 +22,14 @@ static void HandleBlankLines(LineBuilderState& state, const Token& tok)
 
 static void UpdatePendingScopeFromKeyword(LineBuilderState& state, std::string_view text)
 {
-    static constexpr std::pair<std::string_view, ScopeKind> kTable[] = {
-        {"switch", ScopeKind::Switch},   {"enum", ScopeKind::Enum},           {"class", ScopeKind::Class},
-        {"interface", ScopeKind::Class}, {"namespace", ScopeKind::Namespace}, {"if", ScopeKind::Control},
-        {"else", ScopeKind::Control},    {"for", ScopeKind::Control},         {"foreach", ScopeKind::Control},
-        {"while", ScopeKind::Control},   {"do", ScopeKind::Control},          {"try", ScopeKind::Control},
-        {"catch", ScopeKind::Control}};
+    static constexpr std::pair<std::string_view, FormattingScopeKind> kTable[] = {
+        {"switch", FormattingScopeKind::Switch},       {"enum", FormattingScopeKind::Enum},
+        {"class", FormattingScopeKind::Class},         {"interface", FormattingScopeKind::Class},
+        {"namespace", FormattingScopeKind::Namespace}, {"if", FormattingScopeKind::Control},
+        {"else", FormattingScopeKind::Control},        {"for", FormattingScopeKind::Control},
+        {"foreach", FormattingScopeKind::Control},     {"while", FormattingScopeKind::Control},
+        {"do", FormattingScopeKind::Control},          {"try", FormattingScopeKind::Control},
+        {"catch", FormattingScopeKind::Control}};
     for (const auto& [kw, kind] : kTable)
     {
         if (text == kw)
@@ -137,8 +53,8 @@ static void UpdateBracketNesting(LineBuilderState& state, const Token& tok)
     else if (tok.type == TokenType::CloseParen && state.parenDepth > 0)
     {
         state.parenDepth--;
-        if (state.parenDepth == 0 && state.pendingScope == ScopeKind::Generic)
-            state.pendingScope = ScopeKind::Function;
+        if (state.parenDepth == 0 && state.pendingScope == FormattingScopeKind::Generic)
+            state.pendingScope = FormattingScopeKind::Function;
     }
     else if (tok.type == TokenType::OpenBracket)
     {
@@ -155,7 +71,7 @@ static void UpdateValueContext(LineBuilderState& state, const Token& tok)
     const int baseParen = state.scopeStack.empty() ? 0 : state.scopeStack.back().parenDepthAtOpen;
     const int baseBracket = state.scopeStack.empty() ? 0 : state.scopeStack.back().bracketDepthAtOpen;
     if (state.parenDepth == baseParen && state.bracketDepth == baseBracket &&
-        state.CurrentScopeKind() != ScopeKind::Value)
+        state.CurrentScopeKind() != FormattingScopeKind::Value)
     {
         if ((tok.type == TokenType::Operator && tok.text == "=") ||
             (tok.type == TokenType::Keyword && tok.text == "return"))
@@ -209,20 +125,20 @@ static bool HandlePreprocessorOrMetadata(LineBuilderState& state, const std::vec
     return false;
 }
 
-static bool ShouldAttachCustomBrace(ScopeKind kind, const BraceWrappingOptions& wrap)
+static bool ShouldAttachCustomBrace(FormattingScopeKind kind, const BraceWrappingOptions& wrap)
 {
-    if (kind == ScopeKind::Class)
+    if (kind == FormattingScopeKind::Class)
         return !wrap.afterClass;
-    if (kind == ScopeKind::Enum)
+    if (kind == FormattingScopeKind::Enum)
         return !wrap.afterEnum;
-    if (kind == ScopeKind::Function)
+    if (kind == FormattingScopeKind::Function)
         return !wrap.afterFunction;
-    if (kind == ScopeKind::Namespace)
+    if (kind == FormattingScopeKind::Namespace)
         return !wrap.afterNamespace;
     return !wrap.afterControlStatement;
 }
 
-static bool ShouldAttachOpenBrace(ScopeKind kind, const FormatCodeOptions& opts)
+static bool ShouldAttachOpenBrace(FormattingScopeKind kind, const FormatCodeOptions& opts)
 {
     switch (opts.braceStyle)
     {
@@ -235,9 +151,11 @@ static bool ShouldAttachOpenBrace(ScopeKind kind, const FormatCodeOptions& opts)
         return true;
     case BraceStyle::Linux:
     case BraceStyle::WebKit:
-        return kind != ScopeKind::Function && kind != ScopeKind::Class && kind != ScopeKind::Namespace;
+        return kind != FormattingScopeKind::Function && kind != FormattingScopeKind::Class &&
+               kind != FormattingScopeKind::Namespace;
     case BraceStyle::Mozilla:
-        return kind != ScopeKind::Function && kind != ScopeKind::Class && kind != ScopeKind::Enum;
+        return kind != FormattingScopeKind::Function && kind != FormattingScopeKind::Class &&
+               kind != FormattingScopeKind::Enum;
     case BraceStyle::Custom:
         return ShouldAttachCustomBrace(kind, opts.braceWrapping);
     }
@@ -248,7 +166,7 @@ static void HandleOpenBrace(LineBuilderState& state, std::vector<Token>& tokens,
 {
     const int baseParen = state.scopeStack.empty() ? 0 : state.scopeStack.back().parenDepthAtOpen;
     const int baseBracket = state.scopeStack.empty() ? 0 : state.scopeStack.back().bracketDepthAtOpen;
-    const bool isValueBrace = state.CurrentScopeKind() == ScopeKind::Value || state.parenDepth > baseParen ||
+    const bool isValueBrace = state.CurrentScopeKind() == FormattingScopeKind::Value || state.parenDepth > baseParen ||
                               state.bracketDepth > baseBracket || state.inValueContext;
 
     if (isValueBrace)
@@ -257,7 +175,7 @@ static void HandleOpenBrace(LineBuilderState& state, std::vector<Token>& tokens,
         tokens[i].isPaddedBrace = padded;
         state.BeginLineIfEmpty();
         state.currentLine.tokenIndices.push_back(i);
-        state.scopeStack.push_back({ScopeKind::Value, state.parenDepth, state.bracketDepth, padded, false});
+        state.scopeStack.push_back({FormattingScopeKind::Value, state.parenDepth, state.bracketDepth, padded, false});
         return;
     }
 
@@ -276,10 +194,10 @@ static void HandleOpenBrace(LineBuilderState& state, std::vector<Token>& tokens,
         state.lines.push_back(std::move(braceLine));
     }
 
-    bool doInc = !(state.pendingScope == ScopeKind::Namespace &&
+    bool doInc = !(state.pendingScope == FormattingScopeKind::Namespace &&
                    state.opts.namespaceIndentation == NamespaceIndentationStyle::None);
     state.scopeStack.push_back({state.pendingScope, state.parenDepth, state.bracketDepth, false, doInc});
-    state.pendingScope = ScopeKind::Generic;
+    state.pendingScope = FormattingScopeKind::Generic;
     state.insideCaseBody = false;
     state.inValueContext = false;
     if (doInc)
@@ -288,7 +206,7 @@ static void HandleOpenBrace(LineBuilderState& state, std::vector<Token>& tokens,
 
 static void HandleCloseBrace(LineBuilderState& state, std::vector<Token>& tokens, size_t& i)
 {
-    if (state.CurrentScopeKind() == ScopeKind::Value)
+    if (state.CurrentScopeKind() == FormattingScopeKind::Value)
     {
         tokens[i].isPaddedBrace = state.scopeStack.back().paddedBrace;
         state.scopeStack.pop_back();
@@ -406,8 +324,8 @@ static void HandleStatementOrCommentEnd(LineBuilderState& state, const std::vect
         return;
     }
     const bool isTerm = (state.parenDepth == 0 && state.bracketDepth == 0) &&
-                        ((tok.type == TokenType::Semicolon && state.CurrentScopeKind() != ScopeKind::Value) ||
-                         (tok.type == TokenType::Comma && state.CurrentScopeKind() == ScopeKind::Enum));
+                        ((tok.type == TokenType::Semicolon && state.CurrentScopeKind() != FormattingScopeKind::Value) ||
+                         (tok.type == TokenType::Comma && state.CurrentScopeKind() == FormattingScopeKind::Enum));
     if (isTerm)
     {
         ConsumeTrailingComment(state, tokens, i);
@@ -417,7 +335,7 @@ static void HandleStatementOrCommentEnd(LineBuilderState& state, const std::vect
     if (tok.type == TokenType::Colon && IsAccessSpecifierOrLabelColon(tokens, i))
     {
         state.FlushCurrentLine();
-        if (state.CurrentScopeKind() == ScopeKind::Switch)
+        if (state.CurrentScopeKind() == FormattingScopeKind::Switch)
             state.insideCaseBody = true;
     }
 }
@@ -442,7 +360,7 @@ static bool TryHandleEmptyOrShortBlock(LineBuilderState& state, std::vector<Toke
         }
         ConsumeTrailingComment(state, tokens, i);
         state.FlushCurrentLine();
-        state.pendingScope = ScopeKind::Generic;
+        state.pendingScope = FormattingScopeKind::Generic;
         state.insideCaseBody = false;
         state.inValueContext = false;
         return true;

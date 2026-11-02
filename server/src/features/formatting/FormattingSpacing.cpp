@@ -234,6 +234,11 @@ static std::optional<bool> CheckParenAndBracketSpacing(const std::vector<Token>&
     return std::nullopt;
 }
 
+/**
+ * @brief Checks if the given operator spelling corresponds to an assignment operator.
+ * @param[in] op Operator string representation.
+ * @return True if operator is an assignment token; otherwise false.
+ */
 static bool IsAssignmentOperator(std::string_view op)
 {
     static const std::unordered_set<std::string_view> kAssignOps = {
@@ -241,6 +246,11 @@ static bool IsAssignmentOperator(std::string_view op)
     return kAssignOps.contains(op);
 }
 
+/**
+ * @brief Checks if the token represents a standard binary operator, excluding template brackets.
+ * @param[in] tok Candidate token.
+ * @return True if token is a standard binary operator; otherwise false.
+ */
 static bool IsStandardBinaryOperator(const Token& tok)
 {
     return tok.type == TokenType::Operator && !tok.isTemplateOpener && !tok.isTemplateCloser;

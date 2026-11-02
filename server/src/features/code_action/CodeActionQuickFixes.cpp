@@ -65,23 +65,6 @@ static std::string FormatFuncdefDeclarationText(const analysis::FunctionSignatur
     return declaration;
 }
 
-namespace code_action_quick_fixes_detail
-{
-/**
- * @brief Item information for generating a funcdef quick-fix action.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct FuncdefFixItem
-{
-    TSNode typeNode;
-    std::string functionName;
-    std::string funcdefName;
-    std::string declaration;
-};
-} // namespace code_action_quick_fixes_detail
-
-using FuncdefFixItem = code_action_quick_fixes_detail::FuncdefFixItem;
-
 /**
  * @brief Emits a quick fix that prepends a funcdef declaration and renames the type reference.
  * @param[in] request Code action request.
@@ -124,7 +107,6 @@ static void EmitFuncdefCodeAction(const CodeActionRequest& request, const lsp::D
  * @param[in] request Code action request bundle containing AST root, source text, and diagnostics.
  * @param[in] rootNode Root AST node of the document.
  * @param[in,out] actions Output vector where constructed quick fix actions are appended.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 void TryAddHandleOnPrimitiveFix(const CodeActionRequest& request, TSNode rootNode,

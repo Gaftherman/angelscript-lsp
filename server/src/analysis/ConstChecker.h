@@ -55,4 +55,24 @@ struct ConstCheckRequest
  * @param ctx Diagnostic sink and the analysis request behind it.
  */
 void CheckConstCorrectness(const ConstCheckRequest& request, DiagnosticContext& ctx);
+
+/**
+ * @brief Const qualification classification of an expression, member, or return type.
+ */
+enum class Constness
+{
+    Unknown, ///< Nothing could be established. Stay silent.
+    Mutable,
+    Const
+};
+
+/**
+ * @brief Identifies the enclosing method symbol, declaring class, and const-qualifier status during const checks.
+ */
+struct EnclosingMethodInfo
+{
+    bool inClass = false;
+    bool isConstMethod = false;
+    std::string className;
+};
 } // namespace angel_lsp::analysis

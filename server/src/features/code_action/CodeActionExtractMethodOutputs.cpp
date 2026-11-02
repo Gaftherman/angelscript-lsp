@@ -52,7 +52,6 @@ static void CheckIncDecMutation(TSNode curr, std::string_view sourceCode,
  * @param[in] curr Call expression AST node being evaluated.
  * @param[in] sourceCode Document source text buffer.
  * @param[in,out] mutatedVars Output set accumulating identifiers mutated by the call.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier /
  * Symbol::modifiers.isReturnReference.
  */
@@ -167,22 +166,6 @@ static const analysis::LocalDefinition* FindDefinitionInScopeTree(const analysis
     return nullptr;
 }
 
-namespace code_action_extract_method_outputs_detail
-{
-/**
- * @brief Represents Method output context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct MethodOutputContext
-{
-    const ExtractMethodStatements& stmts;
-    const analysis::Scope* fnScope;
-    const analysis::Scope* stmtScope;
-};
-} // namespace code_action_extract_method_outputs_detail
-
-using MethodOutputContext = code_action_extract_method_outputs_detail::MethodOutputContext;
-
 static const analysis::LocalDefinition* FindVariableDefinition(const MethodOutputContext& ctx, const std::string& name)
 {
     if (ctx.stmtScope)
@@ -285,7 +268,6 @@ static void CollectInternalDefinitionsUsedAfter(const ExtractMethodStatements& s
  * @param[in] root Root AST node of the statement subtree to inspect.
  * @param[in] sourceCode Document source text buffer.
  * @param[in,out] mutatedVars Output set accumulating names of variables mutated within the subtree.
- * @note [REFACTOR-CANDIDATE] Structural overlap (93%) with TraverseTree in server/src/analysis/NodeIndex.cpp. Candidate
  * for unification in server/src/analysis/SemanticHelpers.h.
  */
 static void TraverseSubtreeMutations(TSNode root, std::string_view sourceCode,

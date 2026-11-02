@@ -5,7 +5,9 @@
 #include "analysis/ScopeTree.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include <ankerl/unordered_dense.h>
+#include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 // Forward-declared so semantic analysis stays decoupled from <lsp/messages.h> pulled by LspLogger.
@@ -212,5 +214,53 @@ class SemanticAnalyzer
      * @param[in,out] ctx Diagnostic context accumulating emitted diagnostics.
      */
     void CheckLocalTypes(const Scope* scope, DiagnosticContext& ctx) const;
+};
+
+/**
+ * @brief RAII guard managing enter/exit scope stack boundaries during semantic analysis passes.
+ */
+struct AnalysisContextGuards
+{
+    const SemanticAnalysisRequest& req;
+    ExpressionTypeCache* prevCache;
+    const NodeIndex* prevIndex;
+    ExpressionTypeCache localCache;
+    std::unique_ptr<NodeIndex> localNodeIndex;
+
+    explicit AnalysisContextGuards(const SemanticAnalysisRequest& request)
+        : req(request), prevCache(request.exprCache), prevIndex(request.nodeIndex)
+    {
+        if (!req.exprCache)
+        {
+            const size_t typeCapacity = req.sourceCode.size() > 10000 ? (req.sourceCode.size() / 32) : 512;
+            localCache.types.reserve(typeCapacity);
+            localCache.hierarchies.reserve(256);
+            req.exprCache = &localCache;
+        }
+        if (!req.nodeIndex && req.tree)
+        {
+            localNodeIndex = std::make_unique<NodeIndex>(ts_tree_root_node(req.tree), nullptr, req.traversalBudget);
+            req.nodeIndex = localNodeIndex.get();
+        }
+    }
+
+    ~AnalysisContextGuards()
+    {
+        req.exprCache = prevCache;
+        req.nodeIndex = prevIndex;
+    }
+};
+
+using MixinRanges = std::vector<std::pair<uint32_t, uint32_t>>;
+
+/**
+ * @brief Diagnostics context for reporting undefined identifiers and suggesting typo corrections.
+ */
+struct UndefinedIdentifierContext
+{
+    const ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>>& knownGlobalNames;
+    const MixinRanges& mixinRanges;
+    const std::vector<std::string>& usingNamespaces;
+    DiagnosticContext& ctx;
 };
 } // namespace angel_lsp::analysis

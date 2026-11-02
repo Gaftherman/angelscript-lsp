@@ -5,17 +5,6 @@
 
 namespace angel_lsp::utils
 {
-namespace position_encoding_detail
-{
-/**
- * @brief Bytes consumed and UTF-16 code units produced by one UTF-8 sequence.
- */
-struct Utf8Step
-{
-    uint32_t bytes = 1;
-    uint32_t units = 1;
-};
-} // namespace position_encoding_detail
 
 /**
  * @brief Classifies a UTF-8 lead byte.
@@ -24,7 +13,7 @@ struct Utf8Step
  * one-byte, one-unit character so that malformed input still advances instead of looping
  * forever - the columns it produces are meaningless, but so was the input.
  */
-static position_encoding_detail::Utf8Step StepAt(unsigned char lead)
+static Utf8Step StepAt(unsigned char lead)
 {
     if (lead < constants::utf8::AsciiMask)
         return {1, 1};

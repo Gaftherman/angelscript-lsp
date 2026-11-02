@@ -11,7 +11,7 @@ namespace angel_lsp::features
 {
 
 /**
- * @brief Represents an evaluatable expression range and text extracted from AST.
+ * @brief Evaluatable expression range and text extracted from AST.
  */
 struct EvaluatableExpressionItem
 {

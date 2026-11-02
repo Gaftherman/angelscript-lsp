@@ -14,22 +14,6 @@
 namespace angel_lsp::features
 {
 
-namespace document_symbol_handler_detail
-{
-/**
- * @brief Context for document symbol AST traversal.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct TraversalContext
-{
-    std::string_view sourceCode;
-    bool isInsideClass = false;
-    std::string_view enclosingClassName;
-};
-} // namespace document_symbol_handler_detail
-
-using TraversalContext = document_symbol_handler_detail::TraversalContext;
-
 /**
  * @brief Helper to query a child node by its grammar field name.
  * @param node Parent TSNode.
@@ -259,23 +243,6 @@ static std::string BuildFunctionDetail(std::string_view retStr, std::string_view
     }
     return "";
 }
-
-namespace document_symbol_handler_detail
-{
-/**
- * @brief Extracted components of a function or method AST node.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct FunctionComponents
-{
-    TSNode nameNode;
-    std::string name;
-    TSNode retNode;
-    TSNode paramsNode;
-};
-} // namespace document_symbol_handler_detail
-
-using FunctionComponents = document_symbol_handler_detail::FunctionComponents;
 
 /**
  * @brief Extracts standard function components (name, return type, parameters) from an AST node.

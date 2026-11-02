@@ -270,47 +270,6 @@ static void FilterSuppressedDiagnostics(std::vector<Diagnostic>& diagnostics, co
     }
 }
 
-namespace semantic_analyzer_detail
-{
-/**
- * @brief Represents Analysis context guards.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct AnalysisContextGuards
-{
-    const SemanticAnalysisRequest& req;
-    ExpressionTypeCache* prevCache;
-    const NodeIndex* prevIndex;
-    ExpressionTypeCache localCache;
-    std::unique_ptr<NodeIndex> localNodeIndex;
-
-    explicit AnalysisContextGuards(const SemanticAnalysisRequest& request)
-        : req(request), prevCache(request.exprCache), prevIndex(request.nodeIndex)
-    {
-        if (!req.exprCache)
-        {
-            const size_t typeCapacity = req.sourceCode.size() > 10000 ? (req.sourceCode.size() / 32) : 512;
-            localCache.types.reserve(typeCapacity);
-            localCache.hierarchies.reserve(256);
-            req.exprCache = &localCache;
-        }
-        if (!req.nodeIndex && req.tree)
-        {
-            localNodeIndex = std::make_unique<NodeIndex>(ts_tree_root_node(req.tree), nullptr, req.traversalBudget);
-            req.nodeIndex = localNodeIndex.get();
-        }
-    }
-
-    ~AnalysisContextGuards()
-    {
-        req.exprCache = prevCache;
-        req.nodeIndex = prevIndex;
-    }
-};
-} // namespace semantic_analyzer_detail
-
-using AnalysisContextGuards = semantic_analyzer_detail::AnalysisContextGuards;
-
 std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest& request) const
 {
     std::vector<Diagnostic> diagnostics;
@@ -691,8 +650,6 @@ void SemanticAnalyzer::CheckDeclarationRules(const SymbolTable& symbolTable, Dia
         });
 }
 
-using MixinRanges = std::vector<std::pair<uint32_t, uint32_t>>;
-
 static MixinRanges CollectMixinRanges(const SymbolTable& symbolTable, const std::string& fileUri)
 {
     MixinRanges mixinRanges;
@@ -967,23 +924,6 @@ static bool IsAccessorPropertyOrKeyword(const LocalReference& ref, const Diagnos
 
     return false;
 }
-
-namespace semantic_analyzer_detail
-{
-/**
- * @brief Represents Undefined identifier context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct UndefinedIdentifierContext
-{
-    const ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>>& knownGlobalNames;
-    const MixinRanges& mixinRanges;
-    const std::vector<std::string>& usingNamespaces;
-    DiagnosticContext& ctx;
-};
-} // namespace semantic_analyzer_detail
-
-using UndefinedIdentifierContext = semantic_analyzer_detail::UndefinedIdentifierContext;
 
 static bool IsReferenceInSyntaxErrorOrMetadata(TSNode root, const LocalReference& ref, const NodeIndex* nodeIndex)
 {

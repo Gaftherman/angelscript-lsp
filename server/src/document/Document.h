@@ -53,7 +53,7 @@ struct DocumentSnapshot
 };
 
 /**
- * @brief Represents an in-memory document managed by the language server.
+ * @brief In-memory document managed by the language server.
  */
 struct Document
 {

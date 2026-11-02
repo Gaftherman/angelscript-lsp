@@ -373,23 +373,6 @@ static void CollectSupertypesForDeclaration(const analysis::Symbol& declaration,
     }
 }
 
-namespace type_hierarchy_handler_detail
-{
-/**
- * @brief Context for subtype search queries.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct SubtypeQueryContext
-{
-    std::string target;
-    std::string qualifiedTarget;
-    std::string itemName;
-    const analysis::SymbolTable& symbolTable;
-};
-} // namespace type_hierarchy_handler_detail
-
-using SubtypeQueryContext = type_hierarchy_handler_detail::SubtypeQueryContext;
-
 /**
  * @brief Queries rule index for derived subtypes of target and qualifiedTarget.
  * @param[in] ruleIndex Rule index.

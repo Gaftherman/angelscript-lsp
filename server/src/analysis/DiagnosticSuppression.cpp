@@ -10,20 +10,6 @@
 
 namespace angel_lsp::analysis
 {
-namespace diagnostic_suppression_detail
-{
-/**
- * @brief Represents Code alias entry.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct CodeAliasEntry
-{
-    std::string_view alias;
-    std::string_view code;
-};
-} // namespace diagnostic_suppression_detail
-
-using CodeAliasEntry = diagnostic_suppression_detail::CodeAliasEntry;
 
 inline constexpr CodeAliasEntry k_codeAliases[] = {
     // Warnings

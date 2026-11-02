@@ -23,43 +23,6 @@ static std::string ReadFileFromDisk(const std::string& path)
 }
 using FileReader = WorkspaceIncludeGraph::FileReader;
 
-namespace workspace_include_graph_detail
-{
-/**
- * @brief Bundled parameters for include resolution.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct IncludeContext
-{
-    const std::vector<std::string>& searchDirectories;
-    const std::vector<std::string>& allowedRoots;
-    std::string_view implicitExtension;
-};
-} // namespace workspace_include_graph_detail
-
-using IncludeContext = workspace_include_graph_detail::IncludeContext;
-
-namespace workspace_include_graph_detail
-{
-/**
- * @brief Resolved environment containing normalized roots and file reader.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ResolvedIncludeEnv
-{
-    std::vector<std::string> allowedRoots;
-    FileReader fileReader;
-
-    [[nodiscard]] IncludeContext MakeContext(const std::vector<std::string>& searchDirectories,
-                                             std::string_view implicitExtension) const noexcept
-    {
-        return IncludeContext{searchDirectories, allowedRoots, implicitExtension};
-    }
-};
-} // namespace workspace_include_graph_detail
-
-using ResolvedIncludeEnv = workspace_include_graph_detail::ResolvedIncludeEnv;
-
 template <typename TRequest> static ResolvedIncludeEnv PrepareIncludeEnv(const TRequest& request)
 {
     std::vector<std::string> allowedRoots =
@@ -102,38 +65,6 @@ static std::vector<std::string> ResolveDirectives(const std::string& normalizedP
 
     return resolved;
 }
-
-namespace workspace_include_graph_detail
-{
-/**
- * @brief Represents File directives.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct FileDirectives
-{
-    std::string path;
-    std::vector<std::string> targets;
-};
-} // namespace workspace_include_graph_detail
-
-using FileDirectives = workspace_include_graph_detail::FileDirectives;
-
-namespace workspace_include_graph_detail
-{
-/**
- * @brief Represents Directives worker context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct DirectivesWorkerContext
-{
-    const std::vector<std::string>& scriptFiles;
-    const IncludeContext& includeCtx;
-    const WorkspaceIncludeGraph::FileReader& read;
-    const std::function<bool()>& shouldStop;
-};
-} // namespace workspace_include_graph_detail
-
-using DirectivesWorkerContext = workspace_include_graph_detail::DirectivesWorkerContext;
 
 static void ProcessDirectivesRange(const DirectivesWorkerContext& dctx, size_t start, size_t end,
                                    std::vector<FileDirectives>& results)

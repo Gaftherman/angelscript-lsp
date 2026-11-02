@@ -14,22 +14,6 @@
 
 namespace angel_lsp::analysis
 {
-namespace repeated_conversion_checker_detail
-{
-/**
- * @brief Represents Conversion occurrence.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ConversionOccurrence
-{
-    TSNode node;
-    std::string exprText;
-    std::string fromType;
-    std::string toType;
-};
-} // namespace repeated_conversion_checker_detail
-
-using ConversionOccurrence = repeated_conversion_checker_detail::ConversionOccurrence;
 
 static bool IsExtractableCandidate(TSNode node)
 {

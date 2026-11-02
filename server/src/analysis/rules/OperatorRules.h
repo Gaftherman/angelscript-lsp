@@ -16,4 +16,13 @@ namespace angel_lsp::analysis::rules
  * @param ctx Diagnostic sink; also carries the SymbolTable every lookup goes through.
  */
 void ValidateOperator(const Symbol& sym, const DiagnosticContext& ctx);
+
+/**
+ * @brief Defines expected parameter count, return type constraints, and constness for operator overloads.
+ */
+struct ExpectedOperatorShape
+{
+    TypeKind expectedReturnKind;
+    std::string_view returnDiagCode;
+};
 } // namespace angel_lsp::analysis::rules

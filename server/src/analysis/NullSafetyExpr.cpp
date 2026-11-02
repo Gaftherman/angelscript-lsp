@@ -54,35 +54,6 @@ static void CheckMemberDereference(TSNode obj, FlowState& state, NullCheckContex
     }
 }
 
-namespace null_safety_expr_detail
-{
-enum class ExprActionKind : uint8_t
-{
-    Eval,
-    AfterLeftAnd,
-    AfterLeftOr,
-    RestoreVars
-};
-} // namespace null_safety_expr_detail
-
-using ExprActionKind = null_safety_expr_detail::ExprActionKind;
-
-namespace null_safety_expr_detail
-{
-/**
- * @brief Represents Expr stack frame.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ExprStackFrame
-{
-    ExprActionKind kind;
-    TSNode node;
-    decltype(FlowState::vars) savedVars;
-};
-} // namespace null_safety_expr_detail
-
-using ExprStackFrame = null_safety_expr_detail::ExprStackFrame;
-
 static void DispatchNonBinaryExpr(TSNode expr, TSSymbol sym, const parser::GrammarSymbols& gs,
                                   std::vector<ExprStackFrame>& stack, FlowState& state, NullCheckContext& ctx)
 {

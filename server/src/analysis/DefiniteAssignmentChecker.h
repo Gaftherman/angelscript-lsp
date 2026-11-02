@@ -25,4 +25,23 @@ struct DefiniteAssignmentCheckRequest
  * @param ctx Diagnostic sink for emitting warnings/errors.
  */
 void CheckDefiniteAssignment(const DefiniteAssignmentCheckRequest& request, DiagnosticContext& ctx);
+
+/**
+ * @brief Tracks definite assignment status and initialization states for variables across control flow branches.
+ */
+struct DefiniteAssignmentState
+{
+    ankerl::unordered_dense::set<std::string> assignedVars;
+    bool hasReturned = false;
+    bool isTerminated = false;
+};
+
+/**
+ * @brief Bundles candidate callee symbol and argument expression nodes during definite assignment analysis.
+ */
+struct CallCandidateInfo
+{
+    const std::vector<Symbol>& candidates;
+    const FunctionSignature* sig = nullptr;
+};
 } // namespace angel_lsp::analysis

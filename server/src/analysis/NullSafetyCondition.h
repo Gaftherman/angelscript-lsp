@@ -33,4 +33,23 @@ void ExtractConditionAssertions(TSNode condition, std::string_view sourceCode,
                                 std::vector<NullAssertion>& positiveAssertions,
                                 std::vector<NullAssertion>& negativeAssertions);
 
+/**
+ * @brief Receives and records assertion diagnostic occurrences and condition evaluations.
+ */
+struct AssertionSink
+{
+    std::vector<NullAssertion>& positive;
+    std::vector<NullAssertion>& negative;
+};
+
+/**
+ * @brief Bundles binary operand nodes, resolved types, and operator grammar symbols for conditional expression checks.
+ */
+struct BinaryConditionParams
+{
+    TSNode left;
+    TSNode right;
+    TSSymbol opSym;
+    std::string_view sourceCode;
+};
 } // namespace angel_lsp::analysis

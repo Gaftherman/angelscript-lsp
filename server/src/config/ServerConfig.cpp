@@ -44,6 +44,24 @@ static bool IsBoolLiteral(std::string_view val)
            lower == "no" || lower == "off";
 }
 
+bool ArgParseContext::GetBoolValue(bool defaultVal)
+{
+    if (inlineVal.has_value())
+    {
+        return ParseBoolValue(*inlineVal, defaultVal);
+    }
+    if (i + 1 < argc && argv[i + 1] != nullptr)
+    {
+        std::string_view nextArg(argv[i + 1]);
+        if (IsBoolLiteral(nextArg))
+        {
+            ++i;
+            return ParseBoolValue(nextArg, defaultVal);
+        }
+    }
+    return defaultVal;
+}
+
 /** @brief True for the four LSP severity names a diagnostic can be remapped to.
  *  @note Validated here rather than at use: an unrecognised name silently dropped at
  *        startup is far easier to diagnose than one that reaches the analyzer and picks a
@@ -160,23 +178,6 @@ static bool ApplyNumericEngineProperty(EngineProperties& engine, std::string_vie
     }
     return false;
 }
-
-namespace server_config_detail
-{
-/**
- * @brief Represents Bool engine prop.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct BoolEngineProp
-{
-    using PropMember = bool EngineProperties::*;
-    std::string_view name;
-    std::string_view alias;
-    PropMember member;
-};
-} // namespace server_config_detail
-
-using BoolEngineProp = server_config_detail::BoolEngineProp;
 
 static constexpr BoolEngineProp kBoolEngineProps[] = {
     {"allowUnsafeReferences", "allow-unsafe-references", &EngineProperties::allowUnsafeReferences},
@@ -366,57 +367,6 @@ void PrintVersion()
     std::cout << "AngelScript Language Server (AngelLSP) version " ANGELLSP_VERSION "\n";
 }
 
-namespace server_config_detail
-{
-/**
- * @brief Represents Arg parse context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ArgParseContext
-{
-    int& i;
-    int argc;
-    char** argv;
-    std::string_view key;
-    std::optional<std::string_view> inlineVal;
-
-    bool GetStringValue(std::string_view& out)
-    {
-        if (inlineVal.has_value())
-        {
-            out = *inlineVal;
-            return true;
-        }
-        if (i + 1 < argc && argv[i + 1] != nullptr)
-        {
-            out = argv[++i];
-            return true;
-        }
-        return false;
-    }
-
-    bool GetBoolValue(bool defaultVal = true)
-    {
-        if (inlineVal.has_value())
-        {
-            return ParseBoolValue(*inlineVal, defaultVal);
-        }
-        if (i + 1 < argc && argv[i + 1] != nullptr)
-        {
-            std::string_view nextArg(argv[i + 1]);
-            if (IsBoolLiteral(nextArg))
-            {
-                ++i;
-                return ParseBoolValue(nextArg, defaultVal);
-            }
-        }
-        return defaultVal;
-    }
-};
-} // namespace server_config_detail
-
-using ArgParseContext = server_config_detail::ArgParseContext;
-
 static bool TryParseHelpOrVersion(ServerConfig& config, const ArgParseContext& ctx)
 {
     if (ctx.key == "--help" || ctx.key == "-h")
@@ -433,25 +383,6 @@ static bool TryParseHelpOrVersion(ServerConfig& config, const ArgParseContext& c
     }
     return false;
 }
-
-namespace server_config_detail
-{
-/**
- * @brief Represents Feature flag mapping.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct FeatureFlagMapping
-{
-    using FeatureMember = bool FeatureFlags::*;
-    std::string_view enableKey;
-    std::string_view enableAlias;
-    std::string_view disableKey;
-    std::string_view disableAlias;
-    FeatureMember member;
-};
-} // namespace server_config_detail
-
-using FeatureFlagMapping = server_config_detail::FeatureFlagMapping;
 
 static constexpr FeatureFlagMapping kFeatureFlags[] = {
     {"--enable-hover", "", "--disable-hover", "", &FeatureFlags::enableHover},
@@ -644,23 +575,6 @@ static bool TryParseFeatureFlag(ServerConfig& config, ArgParseContext& ctx)
     }
     return TryParseInlayHintFlag(config, ctx);
 }
-
-namespace server_config_detail
-{
-/**
- * @brief Represents Diagnostic flag mapping.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct DiagnosticFlagMapping
-{
-    using DiagMember = bool DiagnosticsConfig::*;
-    std::string_view enableKey;
-    std::string_view disableKey;
-    DiagMember member;
-};
-} // namespace server_config_detail
-
-using DiagnosticFlagMapping = server_config_detail::DiagnosticFlagMapping;
 
 static constexpr DiagnosticFlagMapping kDiagFlags[] = {
     {"--report-unknown-types", "--no-report-unknown-types", &DiagnosticsConfig::reportUnknownTypes},
@@ -1100,23 +1014,6 @@ static bool TryParseDiagnosticSeverity(ServerConfig& config, ArgParseContext& ct
     }
     return true;
 }
-
-namespace server_config_detail
-{
-/**
- * @brief Represents Engine bool flag.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct EngineBoolFlag
-{
-    using FlagMember = bool EngineProperties::*;
-    std::string_view enableFlag;
-    std::string_view disableFlag;
-    FlagMember member;
-};
-} // namespace server_config_detail
-
-using EngineBoolFlag = server_config_detail::EngineBoolFlag;
 
 static constexpr EngineBoolFlag kEngineBoolFlags[] = {
     {"--require-enum-scope", "--no-require-enum-scope", &EngineProperties::requireEnumScope},

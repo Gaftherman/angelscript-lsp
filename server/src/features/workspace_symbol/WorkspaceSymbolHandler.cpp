@@ -26,36 +26,6 @@ static inline std::string ToLower(std::string_view str)
     return result;
 }
 
-namespace workspace_symbol_handler_detail
-{
-/**
- * @brief Container for a scored search match candidate.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ScoredSymbol
-{
-    int score = 0;
-    lsp::SymbolInformation info;
-};
-} // namespace workspace_symbol_handler_detail
-
-using ScoredSymbol = workspace_symbol_handler_detail::ScoredSymbol;
-
-namespace workspace_symbol_handler_detail
-{
-/**
- * @brief Result of matching a symbol against a search query.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct MatchResult
-{
-    bool matched = false;
-    int score = 0;
-};
-} // namespace workspace_symbol_handler_detail
-
-using MatchResult = workspace_symbol_handler_detail::MatchResult;
-
 /**
  * @brief Computes match ranking score between query and symbol.
  * @param queryLower Lowercase query string.

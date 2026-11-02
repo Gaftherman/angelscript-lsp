@@ -181,21 +181,6 @@ bool IsValidIdentifier(std::string_view name)
     return true;
 }
 
-namespace target_resolution_detail
-{
-/**
- * @brief Call argument constraint information inferred from cursor position.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct FunctionArgConstraints
-{
-    bool cursorOnCall = false;
-    size_t callArgCount = 0;
-};
-} // namespace target_resolution_detail
-
-using FunctionArgConstraints = target_resolution_detail::FunctionArgConstraints;
-
 /**
  * @brief Resolves receiver type name from explicit object text.
  * @param[in] objText Object expression text.
@@ -1094,79 +1079,6 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& reques
 
     return target;
 }
-
-namespace target_resolution_detail
-{
-/**
- * @brief Accumulator and deduplication state for occurrence locations.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct OccurrenceCollector
-{
-    std::vector<OccurrenceLocation> results;
-    std::set<std::tuple<std::string, uint32_t, uint32_t>> seen;
-    std::set<std::tuple<std::string, uint32_t, uint32_t>> declRanges;
-
-    /**
-     * @brief Adds a location if not already collected.
-     * @param[in] uri File URI.
-     * @param[in] range Target range.
-     */
-    void Add(const std::string& uri, const SourceRange& range)
-    {
-        if (seen.insert({uri, range.startLine, range.startCharacter}).second)
-        {
-            results.push_back(OccurrenceLocation{uri, range});
-        }
-    }
-
-    /**
-     * @brief Adds a local reference occurrence.
-     * @param[in] uri File URI.
-     * @param[in] ref Reference to add.
-     */
-    void Add(const std::string& uri, const analysis::LocalReference& ref)
-    {
-        Add(uri, SourceRange{ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter});
-    }
-};
-} // namespace target_resolution_detail
-
-using OccurrenceCollector = target_resolution_detail::OccurrenceCollector;
-
-namespace target_resolution_detail
-{
-/**
- * @brief Start and end coordinates for a symbol.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct SymbolSpan
-{
-    uint32_t sL = 0;
-    uint32_t sC = 0;
-    uint32_t eL = 0;
-    uint32_t eC = 0;
-};
-} // namespace target_resolution_detail
-
-using SymbolSpan = target_resolution_detail::SymbolSpan;
-
-namespace target_resolution_detail
-{
-/**
- * @brief Context for scanning documents during occurrence collection.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct OccurrenceScanContext
-{
-    std::string fileUri;
-    const CollectOccurrencesRequest& request;
-    const std::set<std::tuple<std::string, uint32_t, uint32_t>>& declRanges;
-    OccurrenceCollector& collector;
-};
-} // namespace target_resolution_detail
-
-using OccurrenceScanContext = target_resolution_detail::OccurrenceScanContext;
 
 /**
  * @brief Extracts effective selection or full range span for a symbol.

@@ -46,4 +46,18 @@ namespace angel_lsp::analysis::rules
  * @param ctx Diagnostic sink.
  */
 void ValidateStandaloneLambda(const analysis::NodeIndex& nodeIndex, const DiagnosticContext& ctx);
+
+/**
+ * @brief Validation context for function declarations, return types, and parameter modifiers.
+ */
+struct FunctionContext
+{
+    bool isMember = false;    ///< Declared inside a class or an interface.
+    bool isInterface = false; ///< Declared inside an interface.
+    bool isMixin = false;     ///< Declared inside a mixin class.
+    bool isConstructor = false;
+    bool isDestructor = false;
+    std::string ownerName;         ///< Container's last segment, i.e. the bare class name.
+    bool containerIsKnown = false; ///< False means nothing may be concluded from the container.
+};
 } // namespace angel_lsp::analysis::rules

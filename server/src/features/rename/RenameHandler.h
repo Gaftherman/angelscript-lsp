@@ -2,6 +2,7 @@
 
 #include "analysis/ScopeTree.h"
 #include "analysis/SymbolTable.h"
+#include "analysis/TargetResolution.h"
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <optional>
@@ -62,4 +63,13 @@ std::optional<lsp::PrepareRenameResult> PrepareRename(const PrepareRenameRequest
  * @return Optional WorkspaceEdit; nullopt if validation failed or no edits produced.
  */
 std::optional<lsp::WorkspaceEdit> Rename(const RenameRequest& request);
+
+/**
+ * @brief Encapsulates the resolved target symbol descriptor and AST node eligible for symbol renaming.
+ */
+struct RenameTargetResult
+{
+    analysis::TargetDescriptor target;
+    TSNode node{};
+};
 } // namespace angel_lsp::features

@@ -309,14 +309,12 @@ static bool IsDeclarationNameNode(TSNode p, TSNode node, TSSymbol pSym)
     return false;
 }
 
-namespace isolation_checker_detail
-{
 /**
- * @brief Represents Isolation visitor.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ * @brief AST visitor traversing statements and expressions to detect thread isolation and ownership violations.
  */
-struct IsolationVisitor
+class IsolationVisitor
 {
+  public:
     const IsolationCheckRequest& request;
     DiagnosticContext& ctx;
     std::string currentClassName;
@@ -535,18 +533,6 @@ struct IsolationVisitor
         }
     }
 
-    /**
-     * @brief Represents Iso item.
-     * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
-     */
-    struct IsoItem
-    {
-        TSNode node;
-        std::string className;
-        bool isClassShared = false;
-        bool inSharedContext = false;
-    };
-
     void PushChildren(TSNode node, const std::string& className, bool isClassShared, bool inSharedContext,
                       std::vector<IsoItem>& worklist)
     {
@@ -620,9 +606,6 @@ struct IsolationVisitor
         }
     }
 };
-} // namespace isolation_checker_detail
-
-using IsolationVisitor = isolation_checker_detail::IsolationVisitor;
 
 void CheckSharedIsolation(const IsolationCheckRequest& request, DiagnosticContext& ctx)
 {

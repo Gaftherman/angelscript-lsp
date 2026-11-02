@@ -484,23 +484,6 @@ static std::optional<std::vector<lsp::Location>> TryResolveIncludeDirective(cons
     return std::vector<lsp::Location>{lsp::Location{targetUri, lsp::Range{lsp::Position{0, 0}, lsp::Position{0, 0}}}};
 }
 
-namespace definition_handler_detail
-{
-/**
- * @brief Context bundling definition lookup parameters and virtual document state.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct DefinitionContext
-{
-    const DefinitionRequest& request;
-    analysis::VirtualMixinContext vCtx;
-    std::shared_ptr<const analysis::Scope> rootScope;
-    uint32_t queryLine = 0;
-};
-} // namespace definition_handler_detail
-
-using DefinitionContext = definition_handler_detail::DefinitionContext;
-
 /**
  * @brief Constructs a DefinitionContext from a DefinitionRequest.
  * @param[in] request Definition request.

@@ -32,7 +32,7 @@ class NodeIndex;
 [[nodiscard]] std::string FormatDiagnosticDisplayCode(std::string_view canonicalCode);
 
 /**
- * @brief Represents an active suppression range for a diagnostic code.
+ * @brief Active suppression range for a diagnostic code.
  */
 struct DiagnosticSuppression
 {
@@ -66,4 +66,12 @@ class DiagnosticSuppressionMap
  */
 DiagnosticSuppressionMap ParseDiagnosticSuppressions(std::string_view sourceCode, const NodeIndex* nodeIndex = nullptr);
 
+/**
+ * @brief Associates diagnostic code string identifiers with human-readable alias representations.
+ */
+struct CodeAliasEntry
+{
+    std::string_view alias;
+    std::string_view code;
+};
 } // namespace angel_lsp::analysis

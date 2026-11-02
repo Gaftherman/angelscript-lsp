@@ -2,7 +2,9 @@
 
 #include "analysis/ScopeTree.h"
 #include "analysis/SymbolTable.h"
+#include "analysis/VirtualMixinContext.h"
 #include "config/ServerConfig.h"
+#include "utils/Timer.h"
 #include <functional>
 #include <lsp/messages.h>
 #include <lsp/types.h>
@@ -96,4 +98,72 @@ struct HoverRequest
  */
 std::optional<lsp::Hover> GetHover(const HoverRequest& request);
 
+/**
+ * @brief Resolved symbol descriptor and declaration node target for hover presentation.
+ */
+struct HoverTarget
+{
+    TSNode node = {};
+    std::string text;
+    lsp::Range range{};
+};
+
+/**
+ * @brief Parsed include directive metadata containing line index, file path, and angled bracket delimiter flag.
+ */
+struct IncludeDirectiveInfo
+{
+    size_t hash = 0;
+    size_t closeQuote = 0;
+    std::string rawPath;
+};
+
+/**
+ * @brief Trace profiler recording millisecond latency across hover analysis stages.
+ */
+struct HoverProfiler
+{
+    utils::HighResTimer totalTimer;
+    angel_lsp::utils::LspLogger* m_logger = nullptr;
+    uint32_t line = 0;
+    uint32_t character = 0;
+    std::string_view nodeType = "";
+    std::string pathText;
+    std::string symbolName;
+    double nodeMs = 0.0;
+    double symMs = 0.0;
+    double fmtMs = 0.0;
+    bool emitted = false;
+
+    [[nodiscard]] bool IsActive() const noexcept;
+    void Emit();
+    ~HoverProfiler();
+};
+
+/**
+ * @brief Parameters and AST node descriptors for evaluating hover tooltips at a document position.
+ */
+struct HoverQueryContext
+{
+    const HoverRequest& request;
+    HoverProfiler& profiler;
+    TSNode node = {};
+    std::string nodeText;
+    lsp::Range range{};
+    analysis::VirtualMixinContext vctx;
+    std::shared_ptr<const analysis::Scope> rootScope;
+    uint32_t queryLine = 0;
+    const analysis::Scope* scope = nullptr;
+    TSNode parent = {};
+};
+
+/**
+ * @brief Preference ranking for resolving symbols within enclosing container scopes versus imported scopes.
+ */
+enum class ContainerContextPreference
+{
+    None,
+    PreferClass,
+    PreferNamespace
+};
 } // namespace angel_lsp::features

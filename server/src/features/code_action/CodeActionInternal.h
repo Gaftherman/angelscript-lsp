@@ -212,4 +212,64 @@ void TryAddSortAndCleanIncludesAction(const CodeActionRequest& request, std::vec
 
 void TryAddDiagnosticSuppressionFixes(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
 
+/**
+ * @brief Carries accessor generation parameters including property name, type descriptor, and enclosing class scope.
+ */
+struct GetterSetterContext
+{
+    std::string className;
+    const std::pair<std::string, std::string>& field;
+    TSPoint insertPt;
+};
+
+/**
+ * @brief Context for generating automatic #include insertion code actions for undefined symbols.
+ */
+struct IncludeFixContext
+{
+    const CodeActionRequest& request;
+    const lsp::Diagnostic& diag;
+    const angel_lsp::utils::IncludeDirective& directive;
+};
+
+/**
+ * @brief Parameters for checking whether an unresolved symbol can be satisfied by an available include header.
+ */
+struct IncludeRefCheckContext
+{
+    std::string currentUri;
+    const analysis::SymbolTable& table;
+    const ankerl::unordered_dense::set<std::string>& docReferences;
+    const std::vector<std::string>& allowedRoots;
+};
+
+/**
+ * @brief Code action proposal for fixing mismatched funcdef signatures or missing declarations.
+ */
+struct FuncdefFixItem
+{
+    TSNode typeNode;
+    std::string functionName;
+    std::string funcdefName;
+    std::string declaration;
+};
+
+/**
+ * @brief Context holding candidate symbol names and Levenshtein distances for typo correction code actions.
+ */
+struct TypoFixContext
+{
+    const CodeActionRequest& request;
+    const lsp::Diagnostic& diag;
+    TSNode identifier;
+};
+
+/**
+ * @brief Manages an unused variable or parameter candidate within a lexical scope state and operations.
+ */
+struct ScopeItem
+{
+    const analysis::Scope* scope;
+    bool isFuncNested;
+};
 } // namespace angel_lsp::features

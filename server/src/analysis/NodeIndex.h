@@ -68,7 +68,6 @@ static_assert(sizeof(IndexedContainerSpan) <= 20);
  * Traverses an AST once in preorder, bucketing nodes by their Tree-Sitter TSSymbol id
  * and storing a flat preorder list of all nodes. Checkers query this index instead of
  * recursively traversing the full AST tree multiple times per document analysis.
- * @note [REFACTOR-CANDIDATE] Target for memory layout compaction (eliminate struct padding in Phase R1).
  */
 class NodeIndex
 {
@@ -246,7 +245,7 @@ class NodeIndex
     [[nodiscard]] bool Empty() const noexcept;
 
     /**
-     * @brief Represents a half-open byte range [startByte, endByte) containing a syntax error.
+     * @brief Half-open byte range [startByte, endByte) containing a syntax error.
      */
     struct ErrorRange
     {
@@ -255,7 +254,7 @@ class NodeIndex
     };
 
     /**
-     * @brief Represents a half-open byte range [startByte, endByte) containing a comment node.
+     * @brief Half-open byte range [startByte, endByte) containing a comment node.
      */
     struct CommentRange
     {

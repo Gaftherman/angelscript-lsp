@@ -11,21 +11,6 @@
 namespace angel_lsp::features
 {
 
-namespace code_action_unused_variables_detail
-{
-/**
- * @brief Represents Scope item.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ScopeItem
-{
-    const analysis::Scope* scope;
-    bool isFuncNested;
-};
-} // namespace code_action_unused_variables_detail
-
-using ScopeItem = code_action_unused_variables_detail::ScopeItem;
-
 /**
  * @brief Traverses scopes with a worklist to collect referenced definitions.
  * @param[in] rootScope Root of scope subtree.

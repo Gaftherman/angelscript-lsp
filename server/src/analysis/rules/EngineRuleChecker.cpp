@@ -109,7 +109,6 @@ static void ReportStorageViolation(const Symbol& sym, const config::StorageRule&
  * @param[in] sig Variable signature details containing type and modifiers.
  * @param[in] rule Storage rule specifying disallowed scopes and type patterns.
  * @param[in] ctx Diagnostic collection and analysis context.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static void EvaluateStorageRule(const Symbol& sym, const VariableSignature& sig, const config::StorageRule& rule,
@@ -148,7 +147,6 @@ static void EvaluateStorageRule(const Symbol& sym, const VariableSignature& sig,
  * @param[in] index Argument index being checked.
  * @param[in] rule Scheduler rule specifying parameter requirements.
  * @param[in] ctx Diagnostic context used to report unsafe argument warnings.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static void CheckSchedulerArgSafety(const SchedulerCallRequest& req, size_t index, const config::SchedulerRule& rule,

@@ -16,25 +16,6 @@
 
 namespace angel_lsp::analysis::rules
 {
-namespace function_rules_detail
-{
-/**
- * @brief Everything about the declaration's surroundings that more than one rule needs.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct FunctionContext
-{
-    bool isMember = false;    ///< Declared inside a class or an interface.
-    bool isInterface = false; ///< Declared inside an interface.
-    bool isMixin = false;     ///< Declared inside a mixin class.
-    bool isConstructor = false;
-    bool isDestructor = false;
-    std::string ownerName;         ///< Container's last segment, i.e. the bare class name.
-    bool containerIsKnown = false; ///< False means nothing may be concluded from the container.
-};
-} // namespace function_rules_detail
-
-using FunctionContext = function_rules_detail::FunctionContext;
 
 static FunctionContext BuildFunctionContext(const Symbol& sym, const DiagnosticContext& ctx)
 {
@@ -204,7 +185,6 @@ static void CheckVoidReturnType(const Symbol& sym, const FunctionSignature& sig,
  * @param[in] sym Function symbol being checked.
  * @param[in] sig Function signature containing return type and modifiers.
  * @param[in] ctx Diagnostic collection and analysis context.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType. Manually re-evaluates
  * AST for isRef; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo /
  * ParameterInformation::isReference / isReturnReference.

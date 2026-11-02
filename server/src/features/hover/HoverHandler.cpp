@@ -24,12 +24,49 @@
 #include <cmath>
 #include <filesystem>
 #include <iomanip>
+#include <spdlog/fmt/fmt.h>
 #include <sstream>
 #include <unordered_set>
 #include <vector>
 
 namespace angel_lsp::features
 {
+bool HoverProfiler::IsActive() const noexcept
+{
+    return m_logger != nullptr || utils::MultiFileLogger::Instance().IsInitialized();
+}
+
+void HoverProfiler::Emit()
+{
+    if (emitted)
+    {
+        return;
+    }
+    emitted = true;
+    double totalMs = totalTimer.ElapsedMs();
+    if (m_logger)
+    {
+        std::string lspMsg =
+            fmt::format("[Hover Profile] Total: {:.2f} ms (NodeLookup: {:.2f} ms, SymbolResolve: {:.2f} ms, "
+                        "Formatting: {:.2f} ms) at {}:{}",
+                        totalMs, nodeMs, symMs, fmtMs, line, character);
+        m_logger->LogInfo(lspMsg);
+    }
+    if (utils::MultiFileLogger::Instance().IsInitialized())
+    {
+        std::string fileLogMsg =
+            fmt::format("Pos({}:{}) Node='{}' Path='{}' Symbol='{}' [NodeLookup={:.2f}ms SymbolResolve={:.2f}ms "
+                        "Formatting={:.2f}ms Total={:.2f}ms]",
+                        line, character, nodeType, pathText, symbolName, nodeMs, symMs, fmtMs, totalMs);
+        utils::MultiFileLogger::Instance().LogHover(utils::MultiFileLogLevel::Info, fileLogMsg, totalMs);
+    }
+}
+
+HoverProfiler::~HoverProfiler()
+{
+    Emit();
+}
+
 /**
  * @brief The documentation comment above a symbol's declaration, read out of its own file.
  *
@@ -428,22 +465,6 @@ static void RemoveDuplicateSymbols(std::vector<analysis::Symbol>& symbols)
     symbols = std::move(unique);
 }
 
-namespace hover_handler_detail
-{
-/**
- * @brief Represents Hover target.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct HoverTarget
-{
-    TSNode node = {};
-    std::string text;
-    lsp::Range range{};
-};
-} // namespace hover_handler_detail
-
-using HoverTarget = hover_handler_detail::HoverTarget;
-
 static bool IsHoverableIdentifier(std::string_view txt, TSSymbol sym, const parser::GrammarSymbols& gs)
 {
     if (txt == "?" || sym == gs.symDatatype || sym == gs.symIdentifier || sym == gs.symScopedIdentifier ||
@@ -578,22 +599,6 @@ static std::pair<size_t, size_t> FindLineSpan(const std::string& sourceCode, uin
     const size_t end = sourceCode.find('\n', start);
     return {start, end == std::string::npos ? sourceCode.size() : end};
 }
-
-namespace hover_handler_detail
-{
-/**
- * @brief Represents Include directive info.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct IncludeDirectiveInfo
-{
-    size_t hash = 0;
-    size_t closeQuote = 0;
-    std::string rawPath;
-};
-} // namespace hover_handler_detail
-
-using IncludeDirectiveInfo = hover_handler_detail::IncludeDirectiveInfo;
 
 static std::optional<IncludeDirectiveInfo> ParseIncludeDirective(std::string_view line, size_t character)
 {
@@ -769,89 +774,6 @@ static std::optional<analysis::Symbol> ResolveCallOverload(TSNode node, const st
     }
     return std::nullopt;
 }
-
-namespace hover_handler_detail
-{
-/**
- * @brief Represents Hover profiler.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct HoverProfiler
-{
-    utils::HighResTimer totalTimer;
-    angel_lsp::utils::LspLogger* m_logger = nullptr;
-    uint32_t line = 0;
-    uint32_t character = 0;
-    std::string_view nodeType = "";
-    std::string pathText;
-    std::string symbolName;
-    double nodeMs = 0.0;
-    double symMs = 0.0;
-    double fmtMs = 0.0;
-    bool emitted = false;
-
-    [[nodiscard]] bool IsActive() const noexcept
-    {
-        return m_logger != nullptr || utils::MultiFileLogger::Instance().IsInitialized();
-    }
-
-    void Emit()
-    {
-        if (emitted)
-        {
-            return;
-        }
-        emitted = true;
-        double totalMs = totalTimer.ElapsedMs();
-        if (m_logger)
-        {
-            std::string lspMsg =
-                fmt::format("[Hover Profile] Total: {:.2f} ms (NodeLookup: {:.2f} ms, SymbolResolve: {:.2f} ms, "
-                            "Formatting: {:.2f} ms) at {}:{}",
-                            totalMs, nodeMs, symMs, fmtMs, line, character);
-            m_logger->LogInfo(lspMsg);
-        }
-        if (utils::MultiFileLogger::Instance().IsInitialized())
-        {
-            std::string fileLogMsg =
-                fmt::format("Pos({}:{}) Node='{}' Path='{}' Symbol='{}' [NodeLookup={:.2f}ms SymbolResolve={:.2f}ms "
-                            "Formatting={:.2f}ms Total={:.2f}ms]",
-                            line, character, nodeType, pathText, symbolName, nodeMs, symMs, fmtMs, totalMs);
-            utils::MultiFileLogger::Instance().LogHover(utils::MultiFileLogLevel::Info, fileLogMsg, totalMs);
-        }
-    }
-
-    ~HoverProfiler()
-    {
-        Emit();
-    }
-};
-} // namespace hover_handler_detail
-
-using HoverProfiler = hover_handler_detail::HoverProfiler;
-
-namespace hover_handler_detail
-{
-/**
- * @brief Represents Hover query context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct HoverQueryContext
-{
-    const HoverRequest& request;
-    HoverProfiler& profiler;
-    TSNode node = {};
-    std::string nodeText;
-    lsp::Range range{};
-    analysis::VirtualMixinContext vctx;
-    std::shared_ptr<const analysis::Scope> rootScope;
-    uint32_t queryLine = 0;
-    const analysis::Scope* scope = nullptr;
-    TSNode parent = {};
-};
-} // namespace hover_handler_detail
-
-using HoverQueryContext = hover_handler_detail::HoverQueryContext;
 
 /**
  * @brief Formats primitive type documentation including localized description, values or range.
@@ -2517,7 +2439,6 @@ static std::string DeduceAutoDeclaratorType(TSNode declarator, const HoverQueryC
  * @brief Attempts to produce hover documentation for 'auto' keyword showing the deduced type.
  * @param[in] ctx Hover query context.
  * @return Populated Hover if node is 'auto' in an auto declaration, std::nullopt otherwise.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static std::optional<lsp::Hover> TryHoverAutoType(const HoverQueryContext& ctx)
@@ -2638,18 +2559,6 @@ static bool IsQualifiedMemberNode(TSNode node, std::string_view sourceCode = {})
     }
     return false;
 }
-
-namespace hover_handler_detail
-{
-enum class ContainerContextPreference
-{
-    None,
-    PreferClass,
-    PreferNamespace
-};
-} // namespace hover_handler_detail
-
-using ContainerContextPreference = hover_handler_detail::ContainerContextPreference;
 
 /**
  * @brief Determines if an AST node is positioned in a type specifier or using namespace context.

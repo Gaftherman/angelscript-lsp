@@ -10,22 +10,6 @@
 
 namespace angel_lsp
 {
-namespace tokens_and_formatting_handlers_detail
-{
-/**
- * @brief Represents Cached tokens snapshot.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct CachedTokensSnapshot
-{
-    bool canDiff{false};
-    bool prevHadError{false};
-    int cachedVersion{-1};
-    std::vector<lsp::uint> previous;
-};
-} // namespace tokens_and_formatting_handlers_detail
-
-using CachedTokensSnapshot = tokens_and_formatting_handlers_detail::CachedTokensSnapshot;
 
 static bool AreSemanticTokensEditsValid(const std::vector<lsp::SemanticTokensEdit>& edits)
 {

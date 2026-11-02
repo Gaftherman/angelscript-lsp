@@ -2036,6 +2036,11 @@ static inline void HashModifiers(uint64_t& h, const SymbolModifiers& m)
     HashCombine(h, flags);
 }
 
+/**
+ * @brief Mixes parameter information into an ongoing 64-bit signature hash.
+ * @param[in,out] h Ongoing hash accumulator.
+ * @param[in] p Parameter information to hash.
+ */
 static inline void HashParameter(uint64_t& h, const ParameterInformation& p)
 {
     HashString(h, p.name);
@@ -2047,6 +2052,11 @@ static inline void HashParameter(uint64_t& h, const ParameterInformation& p)
     HashString(h, p.defaultValue);
 }
 
+/**
+ * @brief Mixes function signature metadata into an ongoing 64-bit signature hash.
+ * @param[in,out] h Ongoing hash accumulator.
+ * @param[in] fn Function signature descriptor to hash.
+ */
 static void HashFunctionSignature(uint64_t& h, const FunctionSignature& fn)
 {
     HashString(h, fn.returnType);
@@ -2062,6 +2072,11 @@ static void HashFunctionSignature(uint64_t& h, const FunctionSignature& fn)
     }
 }
 
+/**
+ * @brief Mixes variable signature metadata into an ongoing 64-bit signature hash.
+ * @param[in,out] h Ongoing hash accumulator.
+ * @param[in] v Variable signature descriptor to hash.
+ */
 static void HashVariableSignature(uint64_t& h, const VariableSignature& v)
 {
     HashString(h, v.typeName);
@@ -2072,6 +2087,11 @@ static void HashVariableSignature(uint64_t& h, const VariableSignature& v)
     HashModifiers(h, v.modifiers);
 }
 
+/**
+ * @brief Mixes class signature metadata into an ongoing 64-bit signature hash.
+ * @param[in,out] h Ongoing hash accumulator.
+ * @param[in] cls Class signature descriptor to hash.
+ */
 static void HashClassSignature(uint64_t& h, const ClassSignature& cls)
 {
     HashModifiers(h, cls.modifiers);
@@ -2090,6 +2110,11 @@ static void HashClassSignature(uint64_t& h, const ClassSignature& cls)
     h = h * 1099511628211ULL ^ (cls.hasListPattern ? 1ULL : 0ULL);
 }
 
+/**
+ * @brief Mixes interface signature metadata into an ongoing 64-bit signature hash.
+ * @param[in,out] h Ongoing hash accumulator.
+ * @param[in] iface Interface signature descriptor to hash.
+ */
 static void HashInterfaceSignature(uint64_t& h, const InterfaceSignature& iface)
 {
     HashModifiers(h, iface.modifiers);
@@ -2099,6 +2124,11 @@ static void HashInterfaceSignature(uint64_t& h, const InterfaceSignature& iface)
     }
 }
 
+/**
+ * @brief Mixes enum signature metadata into an ongoing 64-bit signature hash.
+ * @param[in,out] h Ongoing hash accumulator.
+ * @param[in] enm Enum signature descriptor to hash.
+ */
 static void HashEnumSignature(uint64_t& h, const EnumSignature& enm)
 {
     HashModifiers(h, enm.modifiers);
@@ -2109,6 +2139,11 @@ static void HashEnumSignature(uint64_t& h, const EnumSignature& enm)
     }
 }
 
+/**
+ * @brief Mixes funcdef signature metadata into an ongoing 64-bit signature hash.
+ * @param[in,out] h Ongoing hash accumulator.
+ * @param[in] fd Funcdef signature descriptor to hash.
+ */
 static void HashFuncdefSignature(uint64_t& h, const FuncdefSignature& fd)
 {
     HashString(h, fd.returnType);

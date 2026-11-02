@@ -991,39 +991,6 @@ Server::HandleRequestsTextDocument_WillSaveWaitUntil(lsp::requests::TextDocument
     return lsp::Array<lsp::TextEdit>{};
 }
 
-namespace text_document_handlers_detail
-{
-/**
- * @brief Represents Virtual mixin target.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct VirtualMixinTarget
-{
-    std::string hostClass;
-    std::string mixinName;
-};
-} // namespace text_document_handlers_detail
-
-using VirtualMixinTarget = text_document_handlers_detail::VirtualMixinTarget;
-
-namespace text_document_handlers_detail
-{
-/**
- * @brief Represents Mixin symbol location.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct MixinSymbolLocation
-{
-    std::string fileUri;
-    uint32_t startLine{0};
-    uint32_t endLine{0};
-    std::string resolvedBaseClass;
-    bool found{false};
-};
-} // namespace text_document_handlers_detail
-
-using MixinSymbolLocation = text_document_handlers_detail::MixinSymbolLocation;
-
 static VirtualMixinTarget ParseVirtualMixinUri(std::string_view uri)
 {
     std::string_view s = uri;

@@ -7,37 +7,6 @@
 
 namespace angel_lsp::analysis
 {
-namespace null_safety_condition_detail
-{
-/**
- * @brief Represents Assertion sink.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct AssertionSink
-{
-    std::vector<NullAssertion>& positive;
-    std::vector<NullAssertion>& negative;
-};
-} // namespace null_safety_condition_detail
-
-using AssertionSink = null_safety_condition_detail::AssertionSink;
-
-namespace null_safety_condition_detail
-{
-/**
- * @brief Represents Binary condition params.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct BinaryConditionParams
-{
-    TSNode left;
-    TSNode right;
-    TSSymbol opSym;
-    std::string_view sourceCode;
-};
-} // namespace null_safety_condition_detail
-
-using BinaryConditionParams = null_safety_condition_detail::BinaryConditionParams;
 
 /**
  * @brief Extracts identifier name if one side is null initializer and the other is an identifier.

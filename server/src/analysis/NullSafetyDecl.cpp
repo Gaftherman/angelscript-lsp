@@ -73,22 +73,6 @@ static bool IsConstructorCall(std::string_view fnName, TSNode typeNode, std::str
     return ctx.diagCtx.request.IsRegisteredSymbol(shortName);
 }
 
-namespace null_safety_decl_detail
-{
-/**
- * @brief Represents Nullable eval request.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct NullableEvalRequest
-{
-    TSNode val;
-    TSNode typeNode{};
-    std::string_view targetVarName = "";
-};
-} // namespace null_safety_decl_detail
-
-using NullableEvalRequest = null_safety_decl_detail::NullableEvalRequest;
-
 static Nullability EvaluateExpressionNullability(const NullableEvalRequest& req, const FlowState& state,
                                                  NullCheckContext& ctx)
 {

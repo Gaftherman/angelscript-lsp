@@ -28,59 +28,6 @@ static bool IsSpaceOrTab(char c)
     return c == ' ' || c == '\t';
 }
 
-namespace preprocessor_regions_detail
-{
-/**
- * @brief One `#if <word>` that has been opened and is waiting for its `#endif`.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct OpenDirective
-{
-    uint32_t branchStart = 0;  ///< Line of the directive that opened the current branch.
-    bool excluded = false;     ///< True when the current branch is the dropped one.
-    bool takenAlready = false; ///< True once some branch of this `#if` has been live.
-};
-} // namespace preprocessor_regions_detail
-
-using OpenDirective = preprocessor_regions_detail::OpenDirective;
-
-namespace preprocessor_regions_detail
-{
-/**
- * @brief One `#name argument` found at the start of a line.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct DirectiveHit
-{
-    uint32_t line = 0;
-    uint32_t startColumn = 0; ///< Byte column of the `#`.
-    uint32_t endColumn = 0;   ///< One past the last character of the name.
-    std::string_view name;
-    std::string_view argument;
-    bool touchesHash = true;
-    char firstArgChar = 0;
-};
-} // namespace preprocessor_regions_detail
-
-using DirectiveHit = preprocessor_regions_detail::DirectiveHit;
-
-namespace preprocessor_regions_detail
-{
-/**
- * @brief State tracking for scanning lines and directives.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct LineScanState
-{
-    size_t index{0};
-    uint32_t currentLine{0};
-    size_t lineStart{0};
-    bool atLineStart{true};
-};
-} // namespace preprocessor_regions_detail
-
-using LineScanState = preprocessor_regions_detail::LineScanState;
-
 /**
  * @brief Advances index past spaces and tabs.
  * @param[in] sourceCode Document text.
@@ -318,52 +265,6 @@ template <typename Fn> static uint32_t ForEachDirective(std::string_view sourceC
 
     return state.currentLine;
 }
-
-namespace preprocessor_regions_detail
-{
-/**
- * @brief Context state for preprocessor scanning and conditional evaluation.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct PreprocessorScanContext
-{
-    PreprocessorScan& scan;
-    std::vector<OpenDirective> stack;
-    int excludedNesting{0};
-    ankerl::unordered_dense::set<std::string> localWords;
-    const ankerl::unordered_dense::set<std::string>& definedWords;
-    const PreprocessorFeatures& features;
-    bool usingLocalWords{false};
-    bool sawMalformedIf{false};
-    bool reportPragma{false};
-
-    bool IsDefined(std::string_view word) const
-    {
-        const std::string key(word);
-        return usingLocalWords ? localWords.contains(key) : definedWords.contains(key);
-    }
-
-    void CloseBranch(OpenDirective& open, uint32_t boundaryLine)
-    {
-        if (open.excluded)
-        {
-            scan.excluded.push_back(ExcludedLineRange{open.branchStart, boundaryLine});
-        }
-        else
-        {
-            open.takenAlready = true;
-        }
-    }
-
-    void Report(const DirectiveHit& hit, DirectiveProblem problem)
-    {
-        scan.unsupported.push_back(
-            UnsupportedDirective{hit.line, hit.startColumn, hit.endColumn, problem, std::string(hit.name)});
-    }
-};
-} // namespace preprocessor_regions_detail
-
-using PreprocessorScanContext = preprocessor_regions_detail::PreprocessorScanContext;
 
 /**
  * @brief Checks if a directive name is one of the recognized preprocessor directives.

@@ -170,7 +170,6 @@ bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx)
  * @brief Has list constructor param.
  * @param[in] p Parameter or path under evaluation.
  * @return True if the condition is satisfied; false otherwise.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier /
  * Symbol::modifiers.isReturnReference.
  */
@@ -1063,7 +1062,6 @@ std::string ResolveIndexedType(std::string_view typeName, size_t indexCount, con
 /**
  * @brief Strip template decorations.
  * @param[in,out] typeName Type name to inspect or resolve.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 void StripTemplateDecorations(std::string_view& typeName)
@@ -1317,21 +1315,6 @@ std::string PropertyTypeFromAccessors(const std::vector<Symbol>& accessors)
 
     return {};
 }
-
-namespace semantic_helpers_detail
-{
-/**
- * @brief Represents Hierarchy classified base.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct HierarchyClassifiedBase
-{
-    std::string name;
-    bool isMixin = false;
-};
-} // namespace semantic_helpers_detail
-
-using HierarchyClassifiedBase = semantic_helpers_detail::HierarchyClassifiedBase;
 
 std::vector<Symbol> FindHierarchyTypeSymbols(const std::string& curType, const SymbolTable& symbolTable)
 {
@@ -1924,23 +1907,6 @@ std::string FindDeclaringRootClass(const std::string& cleanClass, const std::str
     }
     return rootClass;
 }
-
-namespace semantic_helpers_detail
-{
-/**
- * @brief Represents Mixin expansion context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct MixinExpansionContext
-{
-    const std::string& cleanClass;
-    const SymbolTable& symbolTable;
-    ankerl::unordered_dense::set<std::string>& visited;
-    std::vector<std::string>& result;
-};
-} // namespace semantic_helpers_detail
-
-using MixinExpansionContext = semantic_helpers_detail::MixinExpansionContext;
 
 void ExpandMixinFromRuleIndex(const rules::RuleIndex& ruleIndex, const MixinExpansionContext& ctx)
 {
@@ -3164,22 +3130,6 @@ static std::pair<std::string_view, std::string_view> GetBinaryOpMethods(std::str
     return {"", ""};
 }
 
-namespace semantic_helpers_detail
-{
-/**
- * @brief Represents Binary overload result.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct BinaryOverloadResult
-{
-    bool hasMatch = false;
-    std::vector<ArgumentConversion> bestConversions;
-    std::string returnType;
-};
-} // namespace semantic_helpers_detail
-
-using BinaryOverloadResult = semantic_helpers_detail::BinaryOverloadResult;
-
 /**
  * @brief Searches for binary operator overloads on an operand type.
  * @param[in] typeName Base type name of the receiver.
@@ -3639,23 +3589,6 @@ static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContex
     return currentType;
 }
 
-namespace semantic_helpers_detail
-{
-/**
- * @brief Represents Ternary branch types.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct TernaryBranchTypes
-{
-    std::string t1;
-    std::string t2;
-    std::string c1;
-    std::string c2;
-};
-} // namespace semantic_helpers_detail
-
-using TernaryBranchTypes = semantic_helpers_detail::TernaryBranchTypes;
-
 /**
  * @brief Resolves ternary branches using inheritance hierarchies.
  */
@@ -3726,7 +3659,6 @@ static std::string ResolveTernaryEnumPromotion(const std::string& c1, const std:
  * @param[in] c1 Cleaned consequence base type.
  * @param[in] c2 Cleaned alternative base type.
  * @return Resolved handle type or "null", or empty string if not applicable.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static std::string ResolveTernaryNullBranch(const std::string& t1, const std::string& t2, const std::string& c1,
@@ -3745,7 +3677,6 @@ static std::string ResolveTernaryNullBranch(const std::string& t1, const std::st
 
 /**
  * @brief Resolves result type between ternary consequence and alternative branch types.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static std::string ResolveTernaryBranchTypes(std::string_view t1, std::string_view t2, const SymbolTable& symbolTable)
@@ -4441,7 +4372,6 @@ static bool IsFunctionHandleTarget(TSNode target, TSNode exprNode, const Express
  * @param[in] exprNode AST node representing the unary '@' expression.
  * @param[in] ctx Diagnostic collection and expression evaluation context.
  * @return Resolved handle type name ending with '@', or empty string if unresolved.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static std::string ResolveUnaryHandle(TSNode operandNode, TSNode exprNode, const ExpressionTypeContext& ctx)
@@ -4929,45 +4859,19 @@ std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& 
     return ResolveExpressionTypeUncached(sym, exprNode, ctx);
 }
 
-namespace semantic_helpers_detail
-{
-/**
- * @brief Represents Active local def key.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ActiveLocalDefKey
-{
-    std::string_view name;
-    uint32_t line = 0;
-    uint32_t col = 0;
-};
-
 thread_local std::vector<ActiveLocalDefKey> s_activeLocalDefs;
 
-/**
- * @brief Represents Active local def guard.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ActiveLocalDefGuard
+ActiveLocalDefGuard::~ActiveLocalDefGuard()
 {
-    bool pushed = false;
-    ~ActiveLocalDefGuard()
+    if (pushed && !s_activeLocalDefs.empty())
     {
-        if (pushed && !s_activeLocalDefs.empty())
-        {
-            s_activeLocalDefs.pop_back();
-        }
+        s_activeLocalDefs.pop_back();
     }
-};
-} // namespace semantic_helpers_detail
-
-using ActiveLocalDefKey = semantic_helpers_detail::ActiveLocalDefKey;
-using ActiveLocalDefGuard = semantic_helpers_detail::ActiveLocalDefGuard;
+}
 
 static bool IsLocalDefActive(const LocalDefinition& def) noexcept
 {
-    return std::any_of(semantic_helpers_detail::s_activeLocalDefs.begin(),
-                       semantic_helpers_detail::s_activeLocalDefs.end(), [&](const ActiveLocalDefKey& k)
+    return std::any_of(s_activeLocalDefs.begin(), s_activeLocalDefs.end(), [&](const ActiveLocalDefKey& k)
                        { return k.line == def.startLine && k.col == def.startCharacter && k.name == def.name; });
 }
 
@@ -5020,7 +4924,6 @@ static bool IsValidDeducedRhsType(std::string_view rhsType)
  * @param[in] def Local definition containing type and handle qualifier flags.
  * @param[in] rhsType Deduced right-hand-side expression type name.
  * @return Formatted type string matching the definition's handle characteristics.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static std::string FormatDeducedType(const LocalDefinition& def, std::string rhsType)
@@ -5071,12 +4974,12 @@ std::string ResolveLocalDefinitionType(const LocalDefinition& def, const Express
         return def.typeName;
     }
 
-    if (semantic_helpers_detail::s_activeLocalDefs.size() > 8 || IsLocalDefActive(def))
+    if (s_activeLocalDefs.size() > 8 || IsLocalDefActive(def))
     {
         return "";
     }
 
-    semantic_helpers_detail::s_activeLocalDefs.push_back({def.name, def.startLine, def.startCharacter});
+    s_activeLocalDefs.push_back({def.name, def.startLine, def.startCharacter});
     ActiveLocalDefGuard guard{true};
 
     return TryDeduceAutoDefinition(def, ctx);
@@ -5282,24 +5185,6 @@ std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourc
     }
     return "";
 }
-
-namespace semantic_helpers_detail
-{
-/**
- * @brief Represents Delegate property receiver context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct DelegatePropertyReceiverContext
-{
-    TSNode objNode;
-    std::string_view objText;
-    std::string_view effectiveHostClass;
-    std::string_view sourceCode;
-    std::string_view arrayTypeName;
-};
-} // namespace semantic_helpers_detail
-
-using DelegatePropertyReceiverContext = semantic_helpers_detail::DelegatePropertyReceiverContext;
 
 bool IsBaseClassDelegateProperty(std::string_view name, const SymbolTable& symbolTable,
                                  const config::EngineRuleConfig* engineRules)
@@ -5734,32 +5619,6 @@ std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, TS
     return candidateSymbols;
 }
 
-namespace semantic_helpers_detail
-{
-/**
- * @brief Represents Call delimiter state.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct CallDelimiterState
-{
-    int parenDepth = 0;
-    int bracketDepth = 0;
-    int braceDepth = 0;
-    int angleDepth = 0;
-    bool inString = false;
-    char stringChar = '\0';
-    bool inLineComment = false;
-    bool inBlockComment = false;
-
-    [[nodiscard]] bool AtTopLevel() const noexcept
-    {
-        return parenDepth == 0 && bracketDepth == 0 && braceDepth == 0 && angleDepth == 0;
-    }
-};
-} // namespace semantic_helpers_detail
-
-using CallDelimiterState = semantic_helpers_detail::CallDelimiterState;
-
 bool StepCommentState(std::string_view code, size_t& i, size_t cursorByte, CallDelimiterState& state)
 {
     if (state.inLineComment)
@@ -5984,7 +5843,6 @@ static TSNode ResolveLambdaParameterListNode(TSNode node)
  * @param[in] fieldId Structural field ID associated with the child node.
  * @param[in] sourceCode Document source text buffer.
  * @param[in,out] current Lambda parameter metadata struct being populated.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst. Manually re-evaluates AST for isHandle; candidate for
  * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle /
  * LocalDefinition::isHandleType.
@@ -6213,7 +6071,6 @@ std::optional<Symbol> FindFuncdefSymbol(std::string_view typeName, const SymbolT
  * @param[in] typeName Type name to inspect or resolve.
  * @param[in] symbolTable Symbol or grammar symbol.
  * @return True if the condition is satisfied; false otherwise.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 bool IsHandleType(std::string_view typeName, const SymbolTable& symbolTable) noexcept
@@ -6291,22 +6148,6 @@ static TSNode ExtractCallCalleeNode(TSNode call)
 {
     return parser::GetCallCallee(call);
 }
-
-namespace semantic_helpers_detail
-{
-/**
- * @brief Represents Funcdef agreement.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct FuncdefAgreement
-{
-    std::optional<Symbol> agreed;
-    bool sawCandidate = false;
-    bool conflict = false;
-};
-} // namespace semantic_helpers_detail
-
-using FuncdefAgreement = semantic_helpers_detail::FuncdefAgreement;
 
 /**
  * @brief Matches candidate function parameters at position against funcdef symbols.

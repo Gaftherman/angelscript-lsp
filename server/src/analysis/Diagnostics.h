@@ -29,7 +29,7 @@ struct DiagnosticRange
     DiagnosticPosition end;
 };
 
-/** @brief Represents a related information location for an LSP Diagnostic. */
+/** @brief Related information location for an LSP Diagnostic. */
 struct DiagnosticRelatedInformation
 {
     DiagnosticRange range;
@@ -37,7 +37,7 @@ struct DiagnosticRelatedInformation
     std::string fileUri;
 };
 
-/** @brief Represents a single LSP Diagnostic message to be published to the client. */
+/** @brief Single LSP Diagnostic message published to the client. */
 struct Diagnostic
 {
     DiagnosticRange range;

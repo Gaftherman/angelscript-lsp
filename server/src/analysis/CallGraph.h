@@ -89,4 +89,26 @@ class CallGraphIndex
     mutable std::shared_mutex m_mutex;
     ankerl::unordered_dense::map<std::string, std::vector<CallSite>> m_byDocument;
 };
+
+/**
+ * @brief Queue item tracking call graph traversal paths and call hierarchy depth.
+ */
+struct TraversalItem
+{
+    TSNode node{};
+    uint32_t containerIndex = 0;
+    uint32_t callerIndex = 0;
+};
+
+/**
+ * @brief Context for resolving fully-qualified callable names and enclosing class/namespace scopes in call graphs.
+ */
+struct NamingContext
+{
+    std::vector<std::string> containers{""};
+    std::vector<std::string> callers{""};
+
+    uint32_t NextContainer(TSNode node, std::string_view sourceCode, uint32_t current);
+    uint32_t NextCaller(TSNode node, std::string_view sourceCode, uint32_t containerIdx, uint32_t current);
+};
 } // namespace angel_lsp::analysis

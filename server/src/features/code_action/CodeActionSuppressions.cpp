@@ -10,6 +10,13 @@
 namespace angel_lsp::features
 {
 
+/**
+ * @brief Creates a code action offering a line-level diagnostic suppression comment.
+ * @param[in] request Incoming code action request context.
+ * @param[in] diag Target diagnostic to suppress.
+ * @param[in] aliasOrCode Diagnostic code or human-readable alias.
+ * @param[in,out] actions Code action accumulator vector.
+ */
 static void AddLineSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag,
                                   std::string_view aliasOrCode, std::vector<lsp::CodeAction>& actions)
 {
@@ -26,6 +33,13 @@ static void AddLineSuppressionFix(const CodeActionRequest& request, const lsp::D
         request.uri, {std::move(edit)}));
 }
 
+/**
+ * @brief Creates a code action offering a range-level diagnostic suppression block.
+ * @param[in] request Incoming code action request context.
+ * @param[in] diag Target diagnostic to suppress.
+ * @param[in] aliasOrCode Diagnostic code or human-readable alias.
+ * @param[in,out] actions Code action accumulator vector.
+ */
 static void AddRangeSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag,
                                    std::string_view aliasOrCode, std::vector<lsp::CodeAction>& actions)
 {

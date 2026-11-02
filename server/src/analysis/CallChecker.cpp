@@ -169,21 +169,6 @@ static bool IsFunctionSymbol(const Symbol& sym)
     return sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature);
 }
 
-namespace call_checker_detail
-{
-/**
- * @brief What the pass concluded about one call's candidates.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct CandidateSet
-{
-    bool decided = false; ///< False means stay silent: nothing visible to judge against.
-    bool accepts = false; ///< True when some candidate takes the written argument count.
-};
-} // namespace call_checker_detail
-
-using CandidateSet = call_checker_detail::CandidateSet;
-
 /**
  * @brief Evaluates whether candidate set accepts an argument count.
  *
@@ -283,27 +268,6 @@ static std::vector<Symbol> FindMethodCandidates(const std::string& typeName, con
     }
     return candidates;
 }
-
-namespace call_checker_detail
-{
-/**
- * @brief Context bundled for free candidate lookup.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct FreeLookupContext
-{
-    TSNode callNode;
-    std::string_view sourceCode;
-    std::string fileUri;
-    std::string predefinedExtension;
-    const SymbolTable& table;
-    const rules::RuleIndex& index;
-    const ankerl::unordered_dense::set<std::string>& moduleFileUris;
-    const NodeIndex* nodeIndex = nullptr;
-};
-} // namespace call_checker_detail
-
-using FreeLookupContext = call_checker_detail::FreeLookupContext;
 
 /**
  * @brief Collects enclosing namespace scopes up to global scope.
@@ -417,38 +381,6 @@ static std::vector<Symbol> FindFreeCandidates(const std::string& name, const Fre
     CollectUsingNamespaceCandidates(name, reachableScopes, ctx, candidates);
     return candidates;
 }
-
-namespace call_checker_detail
-{
-/**
- * @brief Context bundled for lambda argument verification.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct LambdaCheckContext
-{
-    TSNode callee;
-    TSNode arguments;
-    std::string reportedName;
-    const SymbolTable& table;
-    std::string_view sourceCode;
-    const std::vector<TSNode>& argNodes;
-    std::vector<size_t> lambdaPositions;
-};
-} // namespace call_checker_detail
-
-using LambdaCheckContext = call_checker_detail::LambdaCheckContext;
-
-namespace call_checker_detail
-{
-enum class LambdaCandidateStatus
-{
-    Accepted,
-    Rejected,
-    UnresolvableFuncdef
-};
-} // namespace call_checker_detail
-
-using LambdaCandidateStatus = call_checker_detail::LambdaCandidateStatus;
 
 /**
  * @brief Finds indices of arguments that are lambda expressions.
@@ -576,60 +508,6 @@ static void CheckLambdaArguments(std::span<const Symbol* const> candidates, cons
     ReportLambdaDiagnostics(acceptedShapes, firstAccepted, lctx, ctx);
 }
 
-namespace call_checker_detail
-{
-/**
- * @brief Context bundled for overall call validation.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct CallValidationContext
-{
-    TSNode callNode;
-    TSNode callee;
-    TSNode arguments;
-    const CallCheckRequest& request;
-    const Scope* scope;
-    DiagnosticContext& ctx;
-};
-} // namespace call_checker_detail
-
-using CallValidationContext = call_checker_detail::CallValidationContext;
-
-namespace call_checker_detail
-{
-/**
- * @brief Result of callee resolution stage.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct CalleeResolution
-{
-    std::vector<Symbol> candidates;
-    std::string reportedName;
-    bool candidatesAreFreeFunctions = false;
-    bool isUnqualifiedClassCall = false;
-    bool isReceiverConst = false;
-    bool shouldCheck = true;
-};
-} // namespace call_checker_detail
-
-using CalleeResolution = call_checker_detail::CalleeResolution;
-
-namespace call_checker_detail
-{
-/**
- * @brief Resolved object type and template arguments for member calls.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ObjectTypeInfo
-{
-    std::string objectType;
-    std::vector<std::string> templateArgs;
-    TypeQualifiers qualifiers;
-};
-} // namespace call_checker_detail
-
-using ObjectTypeInfo = call_checker_detail::ObjectTypeInfo;
-
 /**
  * @brief Checks whether an object expression node resolves to a const variable or property.
  *
@@ -678,7 +556,6 @@ static bool IsObjectNodeConst(TSNode objectNode, const CallValidationContext& va
  * @param[in] objectNode AST node of object expression.
  * @param[in] valCtx Call validation context.
  * @return Resolved ObjectTypeInfo.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
 static ObjectTypeInfo ResolveMemberObjectType(TSNode objectNode, const CallValidationContext& valCtx)
@@ -1529,7 +1406,6 @@ static void CheckInitializerListArgs(const CallArgTypes& args, const FunctionSig
  * @param[in] branchType Resolved branch type.
  * @param[in] expected Expected parameter type name.
  * @return True if compatible.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static bool IsTernaryBranchCompatible(const std::string& branchType, const std::string& expected)
@@ -2229,24 +2105,6 @@ static std::string FormatSignatureAttempt(const std::string& targetType, const s
     sig += ")";
     return sig;
 }
-
-namespace call_checker_detail
-{
-/**
- * @brief Context bundled for variable direct initialization verification.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct VarInitContext
-{
-    std::string declaredType;
-    std::string baseName;
-    TemplateTypeInfo tmplInfo;
-    const CallCheckRequest& request;
-    DiagnosticContext& ctx;
-};
-} // namespace call_checker_detail
-
-using VarInitContext = call_checker_detail::VarInitContext;
 
 /**
  * @brief Verifies direct initialization of a primitive type.

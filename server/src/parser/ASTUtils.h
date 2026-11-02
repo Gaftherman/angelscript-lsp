@@ -600,7 +600,7 @@ template <typename Callback> inline void ForEachAncestor(TSNode node, Callback&&
 }
 
 /**
- * @brief Represents a named node span within source text.
+ * @brief Named node span within source text.
  */
 struct AstNodeSpan
 {
@@ -613,7 +613,7 @@ struct AstNodeSpan
 };
 
 /**
- * @brief Represents the global scope qualification of an AST node.
+ * @brief Global scope qualification of an AST node.
  */
 struct GlobalScopeQualifier
 {

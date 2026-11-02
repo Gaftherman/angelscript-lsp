@@ -31,4 +31,22 @@ using WorkspaceSymbolResult = std::vector<lsp::SymbolInformation>;
  * @return Optional vector of SymbolInformation objects matching the query.
  */
 std::optional<WorkspaceSymbolResult> GetWorkspaceSymbols(const WorkspaceSymbolRequest& request);
+
+/**
+ * @brief Symbol descriptor scored by fuzzy matcher for workspace symbol search.
+ */
+struct ScoredSymbol
+{
+    int score = 0;
+    lsp::SymbolInformation info;
+};
+
+/**
+ * @brief Fuzzy matching score and highlighted character intervals for a symbol name.
+ */
+struct MatchResult
+{
+    bool matched = false;
+    int score = 0;
+};
 } // namespace angel_lsp::features

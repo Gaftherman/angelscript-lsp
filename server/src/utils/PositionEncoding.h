@@ -92,4 +92,13 @@ uint32_t LspCharToByteColumn(std::string_view line, uint32_t lspChar, PositionEn
  * @return Character offset in the negotiated encoding.
  */
 uint32_t ByteToLspCharColumn(std::string_view line, uint32_t byteColumn, PositionEncoding enc);
+
+/**
+ * @brief Encapsulates UTF-8 byte step delta and UTF-16 code unit offset calculations.
+ */
+struct Utf8Step
+{
+    uint32_t bytes = 1;
+    uint32_t units = 1;
+};
 } // namespace angel_lsp::utils

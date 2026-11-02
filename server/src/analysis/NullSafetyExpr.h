@@ -24,4 +24,24 @@ struct NullCheckContext
  */
 void CheckNullExpression(TSNode expr, FlowState& state, NullCheckContext& ctx);
 
+/**
+ * @brief Action directive for evaluating intermediate expressions during null-safety traversal.
+ */
+enum class ExprActionKind : uint8_t
+{
+    Eval,
+    AfterLeftAnd,
+    AfterLeftOr,
+    RestoreVars
+};
+
+/**
+ * @brief Stack frame holding intermediate subexpression nodes and typing qualifiers during null-safety traversal.
+ */
+struct ExprStackFrame
+{
+    ExprActionKind kind;
+    TSNode node;
+    decltype(FlowState::vars) savedVars;
+};
 } // namespace angel_lsp::analysis

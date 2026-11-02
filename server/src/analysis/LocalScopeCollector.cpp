@@ -208,20 +208,7 @@ void LocalScopeCollector::DeduplicateCaptures(std::vector<RawCapture>& captures)
 }
 
 /**
- * @brief Represents Local scope collector open scope.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct LocalScopeCollector::OpenScope
-{
-    Scope* scope = nullptr;
-    uint32_t endByte = 0;
-    uint32_t ownNameStartByte = constants::InvalidByteOffset;
-    uint32_t ownNameEndByte = 0;
-};
-
-/**
  * @brief Checks if a function declaration has method qualifiers preventing it from being treated as a variable.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
 static bool HasDisqualifyingMethodQualifiers(TSNode funcNode, TSNode paramsNode, std::string_view sourceCode) noexcept
@@ -247,7 +234,6 @@ static bool HasDisqualifyingMethodQualifiers(TSNode funcNode, TSNode paramsNode,
 
 /**
  * @brief Checks if a function declaration returns a reference or handle.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference. Manually re-evaluates AST
  * for isHandle; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle
  * / LocalDefinition::isHandleType.
@@ -1335,7 +1321,6 @@ static bool ExtractAssignmentLeftVar(TSNode leftNode, const parser::GrammarSymbo
  * @param[in] varName Identifier name or string value.
  * @param[in] typeName Type name to inspect or resolve.
  * @param[in] isHandle True if the declared type is a handle (@).
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static void RegisterRecoveredVariable(Scope* rootScope, TSNode identNode, std::string varName, std::string typeName,
@@ -1367,7 +1352,6 @@ static void RegisterRecoveredVariable(Scope* rootScope, TSNode identNode, std::s
  * @param[in] sourceCode Document source text.
  * @param[in] gs Precompiled grammar symbols.
  * @return True if the condition is satisfied; false otherwise.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static bool TryRecoverSplitIfDeclaration(TSNode node, Scope* rootScope, const std::string& sourceCode,
@@ -1420,7 +1404,6 @@ static bool TryRecoverSplitIfDeclaration(TSNode node, Scope* rootScope, const st
  * @param[in] rootScope Lexical scope for symbol lookup.
  * @param[in] sourceCode Document source text.
  * @param[in] gs Precompiled grammar symbols.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static void TryRecoverErrorIfDeclaration(TSNode node, Scope* rootScope, const std::string& sourceCode,
@@ -1482,24 +1465,6 @@ static void TryRecoverUnbracedIfDeclaration(TSNode node, Scope* rootScope, const
     }
     TryRecoverErrorIfDeclaration(node, rootScope, sourceCode, gs);
 }
-
-namespace local_scope_collector_detail
-{
-/**
- * @brief Represents Virtual property context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct VirtualPropertyContext
-{
-    const std::string& propTypeStr;
-    const TypeExtractionResult& typeInfo;
-    Scope* root = nullptr;
-    const parser::GrammarSymbols& gs;
-    std::string_view sourceCode;
-};
-} // namespace local_scope_collector_detail
-
-using VirtualPropertyContext = local_scope_collector_detail::VirtualPropertyContext;
 
 static void ProcessVirtualPropertySetAccessor(TSNode accNode, const VirtualPropertyContext& ctx)
 {

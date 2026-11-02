@@ -19,15 +19,64 @@ import sys
 import time
 from pathlib import Path
 
-import tree_sitter
-import tree_sitter_cpp
-
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SERVER_SRC = REPO_ROOT / "server" / "src"
 REPORT_PATH = REPO_ROOT / "docs" / "REDUNDANCY_REPORT.json"
 
-CPP_LANGUAGE = tree_sitter.Language(tree_sitter_cpp.language())
-PARSER = tree_sitter.Parser(CPP_LANGUAGE)
+
+def find_matching_brace(text: str, open_pos: int) -> int:
+    """Finds the closing brace corresponding to the opening brace at open_pos."""
+    i = open_pos + 1
+    depth = 1
+    n = len(text)
+    in_line_comment = False
+    in_block_comment = False
+    in_string = False
+    in_char = False
+    escape = False
+
+    while i < n:
+        c = text[i]
+        if in_line_comment:
+            if c == "\n":
+                in_line_comment = False
+        elif in_block_comment:
+            if c == "*" and i + 1 < n and text[i + 1] == "/":
+                in_block_comment = False
+                i += 1
+        elif in_string:
+            if escape:
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif c == '"':
+                in_string = False
+        elif in_char:
+            if escape:
+                escape = False
+            elif c == "\\":
+                escape = True
+            elif c == "'":
+                in_char = False
+        else:
+            if c == "/" and i + 1 < n and text[i + 1] == "/":
+                in_line_comment = True
+                i += 1
+            elif c == "/" and i + 1 < n and text[i + 1] == "*":
+                in_block_comment = True
+                i += 1
+            elif c == '"':
+                in_string = True
+            elif c == "'":
+                in_char = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    return i
+        i += 1
+    return -1
 
 
 def rel_path(p: Path) -> str:
@@ -114,58 +163,66 @@ SEMANTIC_CONCEPT_PATTERNS = {
 }
 
 
-def extract_fields(body_node) -> list[dict]:
+def extract_fields(body_text: str) -> list[dict]:
     fields = []
-    for c in body_node.children:
-        if c.type == "field_declaration":
-            t_node = c.child_by_field_name("type")
-            d_node = c.child_by_field_name("declarator")
-            t_str = t_node.text.decode("utf-8", "ignore") if t_node else ""
-            d_str = d_node.text.decode("utf-8", "ignore") if d_node else ""
-            name = d_str.split("=")[0].strip().lstrip("& *").strip()
-            if name:
-                fields.append({"type": t_str, "name": name})
+    cleaned_lines = []
+    for line in body_text.splitlines():
+        idx = line.find("//")
+        if idx != -1:
+            line = line[:idx]
+        cleaned_lines.append(line)
+    cleaned = "\n".join(cleaned_lines)
+    stmt_re = re.compile(
+        r"^\s*([A-Za-z0-9_<>:*,&\s]+?)\s+([A-Za-z0-9_]+)\s*(?:\{[^}]*\}|=\s*[^;]+)?\s*;\s*$",
+        re.M,
+    )
+    for m in stmt_re.finditer(cleaned):
+        t_str = m.group(1).strip()
+        name = m.group(2).strip()
+        if t_str.startswith("using ") or t_str.startswith("typedef ") or t_str.startswith("friend "):
+            continue
+        if name and not name.startswith("return"):
+            fields.append({"type": t_str, "name": name})
     return fields
 
 
 def scan_local_cpp_structs():
     structs = []
     cpp_files = sorted(SERVER_SRC.rglob("*.cpp"))
+    struct_re = re.compile(r"\bstruct\s+([A-Za-z0-9_:]+)\s*(?:final\s*)?(?::[^{]+)?\{")
 
     for fpath in cpp_files:
         try:
-            code_bytes = fpath.read_bytes()
+            txt = fpath.read_text(encoding="utf-8", errors="ignore")
         except Exception:
             continue
-        tree = PARSER.parse(code_bytes)
 
-        stack = [tree.root_node]
-        while stack:
-            n = stack.pop()
-            if n.type in ("struct_specifier", "class_specifier"):
-                body = n.child_by_field_name("body")
-                name_node = n.child_by_field_name("name")
-                if body and name_node:
-                    s_name = name_node.text.decode("utf-8", "ignore")
-                    flds = extract_fields(body)
-                    if flds:
-                        concepts = set()
-                        for fld in flds:
-                            fname = fld["name"]
-                            for concept, pat in SEMANTIC_CONCEPT_PATTERNS.items():
-                                if pat.search(fname):
-                                    concepts.add(concept)
+        for m in struct_re.finditer(txt):
+            s_name = m.group(1)
+            open_pos = txt.find("{", m.start())
+            close_pos = find_matching_brace(txt, open_pos)
+            if close_pos == -1:
+                continue
+            body = txt[open_pos + 1 : close_pos]
+            flds = extract_fields(body)
+            if flds:
+                concepts = set()
+                for fld in flds:
+                    fname = fld["name"]
+                    for concept, pat in SEMANTIC_CONCEPT_PATTERNS.items():
+                        if pat.search(fname):
+                            concepts.add(concept)
 
-                        structs.append({
-                            "file": rel_path(fpath),
-                            "startLine": n.start_point[0] + 1,
-                            "endLine": n.end_point[0] + 1,
-                            "structName": s_name,
-                            "fields": flds,
-                            "semanticConcepts": sorted(concepts),
-                        })
-            for i in range(n.child_count - 1, -1, -1):
-                stack.append(n.child(i))
+                s_line = txt[: m.start()].count("\n") + 1
+                e_line = txt[: close_pos].count("\n") + 1
+                structs.append({
+                    "file": rel_path(fpath),
+                    "startLine": s_line,
+                    "endLine": e_line,
+                    "structName": s_name,
+                    "fields": flds,
+                    "semanticConcepts": sorted(concepts),
+                })
 
     cluster_definitions = [
         {
@@ -307,29 +364,33 @@ RESERVED_KEYWORDS = {
 }
 
 
-def norm_tokens(body_node) -> tuple[list[str], list[str]]:
+def norm_tokens(body_text: str) -> tuple[list[str], list[str]]:
     tokens = []
     calls = []
-    stack = [body_node]
-    while stack:
-        n = stack.pop()
-        if n.child_count == 0:
-            txt = n.text.decode("utf-8", "ignore").strip()
-            if txt:
-                if n.type in ("number_literal", "char_literal", "string_literal"):
-                    tokens.append("$l")
-                elif txt in RESERVED_KEYWORDS or not txt[0].isalnum():
-                    tokens.append(txt)
-                elif txt.startswith("sym") or txt.startswith("tok") or txt.startswith("gs."):
-                    tokens.append(txt)
-                elif n.parent and n.parent.type in ("call_expression", "field_expression"):
-                    tokens.append(txt)
-                    calls.append(txt)
-                else:
-                    tokens.append("$v")
+    tok_pattern = re.compile(
+        r'("(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|\b\d+(?:\.\d+)?\b|[A-Za-z0-9_]+|[^\sA-Za-z0-9_])'
+    )
+    raw_tokens = tok_pattern.findall(body_text)
+    for idx, t in enumerate(raw_tokens):
+        if not t:
+            continue
+        if (t.startswith('"') and t.endswith('"')) or (t.startswith("'") and t.endswith("'")) or t[0].isdigit():
+            tokens.append("$l")
+        elif t in RESERVED_KEYWORDS or not t[0].isalnum():
+            tokens.append(t)
+        elif t.startswith("sym") or t.startswith("tok") or t.startswith("gs."):
+            tokens.append(t)
         else:
-            for i in range(n.child_count - 1, -1, -1):
-                stack.append(n.child(i))
+            is_call = False
+            if idx + 1 < len(raw_tokens) and raw_tokens[idx + 1] == "(":
+                is_call = True
+                calls.append(t)
+            elif idx > 0 and raw_tokens[idx - 1] in (".", "->"):
+                is_call = True
+            if is_call:
+                tokens.append(t)
+            else:
+                tokens.append("$v")
     return tokens, sorted(set(calls))
 
 
@@ -368,42 +429,47 @@ def scan_similar_functions():
         list((SERVER_SRC / "analysis").rglob("*.cpp")) +
         list((SERVER_SRC / "features").rglob("*.cpp"))
     )
+    func_head_re = re.compile(
+        r"(?:^|\n)[ \t]{0,4}(?P<decl>(?:(?:static|inline|virtual|explicit|constexpr|template\s*<[^>]+>)\s+)*(?P<ret>[A-Za-z0-9_:]+(?:<[^;{}>]+>)?(?:\s*[*&]+)?)\s+(?P<name>(?:[A-Za-z0-9_]+::)*[A-Za-z0-9_~]+)\s*\([^;{}[\]]*\)\s*(?:const\s*)?(?:noexcept\s*)?)\s*\{"
+    )
+    banned_func_names = {"if", "for", "while", "switch", "catch", "do", "return"}
 
     for fpath in scan_files:
         try:
-            code_bytes = fpath.read_bytes()
+            txt = fpath.read_text(encoding="utf-8", errors="ignore")
         except Exception:
             continue
-        tree = PARSER.parse(code_bytes)
 
-        stack = [tree.root_node]
-        while stack:
-            n = stack.pop()
-            if n.type == "function_definition":
-                decl = n.child_by_field_name("declarator")
-                body = n.child_by_field_name("body")
-                if decl and body:
-                    decl_text = decl.text.decode("utf-8", "ignore")
-                    func_name = decl_text.split("(")[0].strip().split("::")[-1].lstrip("*& ")
-                    tokens, calls = norm_tokens(body)
-                    s_line = n.start_point[0] + 1
-                    e_line = n.end_point[0] + 1
-                    nloc = e_line - s_line + 1
-                    if len(tokens) >= 15 and nloc >= 5:
-                        grams = set(tuple(tokens[k:k+3]) for k in range(len(tokens)-2))
-                        functions.append({
-                            "file": rel_path(fpath),
-                            "startLine": s_line,
-                            "endLine": e_line,
-                            "name": func_name,
-                            "signature": decl_text.split("{")[0].strip()[:80],
-                            "tokens": tokens,
-                            "grams": grams,
-                            "calls": calls,
-                            "len": len(tokens),
-                        })
-            for i in range(n.child_count - 1, -1, -1):
-                stack.append(n.child(i))
+        for m in func_head_re.finditer(txt):
+            decl_text = m.group("decl").strip()
+            func_name = m.group("name").split("::")[-1].strip()
+            ret_type = m.group("ret").strip()
+            if func_name in banned_func_names or ret_type in banned_func_names:
+                continue
+            open_pos = txt.find("{", m.end() - 2)
+            close_pos = find_matching_brace(txt, open_pos)
+            if close_pos == -1:
+                continue
+            body_text = txt[open_pos + 1 : close_pos]
+            tokens, calls = norm_tokens(body_text)
+
+            decl_start = m.start("decl")
+            s_line = txt[:decl_start].count("\n") + 1
+            e_line = txt[:close_pos].count("\n") + 1
+            nloc = e_line - s_line + 1
+            if len(tokens) >= 15 and nloc >= 5:
+                grams = set(tuple(tokens[k : k + 3]) for k in range(len(tokens) - 2))
+                functions.append({
+                    "file": rel_path(fpath),
+                    "startLine": s_line,
+                    "endLine": e_line,
+                    "name": func_name,
+                    "signature": decl_text.split("{")[0].strip()[:80],
+                    "tokens": tokens,
+                    "grams": grams,
+                    "calls": calls,
+                    "len": len(tokens),
+                })
 
     # Inverted index of grams
     inv_index = collections.defaultdict(list)
@@ -638,34 +704,32 @@ def compute_memory_layout_audit():
             hpath = REPO_ROOT / item["headerFile"]
         if hpath.is_file():
             try:
-                tree = PARSER.parse(hpath.read_bytes())
-                stack = [tree.root_node]
-                while stack:
-                    n = stack.pop()
-                    if n.type in ("struct_specifier", "class_specifier"):
-                        name_node = n.child_by_field_name("name")
-                        if name_node and name_node.text.decode("utf-8", "ignore") == item["structName"]:
-                            body = n.child_by_field_name("body")
-                            if body:
-                                bools = 0
-                                strings = 0
-                                vectors = 0
-                                for c in body.children:
-                                    if c.type == "field_declaration":
-                                        t_node = c.child_by_field_name("type")
-                                        t_str = t_node.text.decode("utf-8", "ignore") if t_node else ""
-                                        if t_str == "bool" and b":" not in c.text:
-                                            bools += 1
-                                        if "string" in t_str:
-                                            strings += 1
-                                        if "vector" in t_str:
-                                            vectors += 1
-                                item["looseBools"] = bools
-                                item["stringCount"] = strings
-                                item["vectorCount"] = vectors
-                                break
-                    for i in range(n.child_count - 1, -1, -1):
-                        stack.append(n.child(i))
+                txt = hpath.read_text(encoding="utf-8", errors="ignore")
+                target_re = re.compile(
+                    r"\b(?:struct|class)\s+" + re.escape(item["structName"]) + r"\b[^{]*\{"
+                )
+                m = target_re.search(txt)
+                if m:
+                    open_pos = txt.find("{", m.start())
+                    close_pos = find_matching_brace(txt, open_pos)
+                    if close_pos != -1:
+                        body = txt[open_pos + 1 : close_pos]
+                        bools = 0
+                        strings = 0
+                        vectors = 0
+                        for line in body.splitlines():
+                            stripped = line.strip()
+                            if stripped.startswith("//") or stripped.startswith("*"):
+                                continue
+                            if re.search(r"\bbool\s+\w+\s*(?:=\s*[^;]+)?;", stripped) and ":" not in stripped:
+                                bools += 1
+                            if "std::string" in stripped or "std::string_view" in stripped or "string " in stripped:
+                                strings += 1
+                            if "vector<" in stripped:
+                                vectors += 1
+                        item["looseBools"] = bools
+                        item["stringCount"] = strings
+                        item["vectorCount"] = vectors
             except Exception:
                 pass
 
@@ -678,8 +742,31 @@ def compute_memory_layout_audit():
 
 
 # ==============================================================================
-# 5. missingDoxygenCatalog: Doxygen Coverage Audit
-# ==============================================================================
+def check_header_doxygen(f_rel: str, sym_name: str) -> bool:
+    """Checks if the function or struct declaration has Doxygen in the corresponding header."""
+    p = REPO_ROOT / f_rel.replace("/", "\\")
+    if p.suffix == ".cpp":
+        h_candidates = [
+            p.with_suffix(".h"),
+        ]
+        if "features/" in f_rel:
+            feat_dir = p.parent
+            h_candidates.extend(feat_dir.glob("*.h"))
+        elif "lsp/" in f_rel:
+            h_candidates.append(REPO_ROOT / "server" / "src" / "lsp" / "Server.h")
+        for h in h_candidates:
+            if h.is_file():
+                try:
+                    htxt = h.read_text(encoding="utf-8", errors="ignore")
+                    sym_re = re.compile(r"\b" + re.escape(sym_name) + r"\b\s*\(")
+                    for hm in sym_re.finditer(htxt):
+                        hl = htxt[: hm.start()].count("\n") + 1
+                        if has_doxygen_before(htxt.splitlines(), hl):
+                            return True
+                except Exception:
+                    pass
+    return False
+
 
 def scan_missing_doxygen(local_structs, similar_matrix, pass1_reparse):
     """
@@ -698,6 +785,9 @@ def scan_missing_doxygen(local_structs, similar_matrix, pass1_reparse):
         targets_by_file[item["funcB"]["file"]].add(item["funcB"]["startLine"])
 
     # 3. Pass 1 flag reparsing occurrences: find enclosing function declaration line
+    func_head_re = re.compile(
+        r"(?:^|\n)(?P<decl>(?:[A-Za-z0-9_<>:*,&\s]+\s+)?(?P<name>[A-Za-z0-9_]+)\s*\([^;{}]*\)\s*(?:const\s*)?(?:noexcept\s*)?)\{"
+    )
     for item in pass1_reparse.get("occurrences", []):
         fpath = item["file"]
         pline = item["line"]
@@ -706,18 +796,23 @@ def scan_missing_doxygen(local_structs, similar_matrix, pass1_reparse):
             p = REPO_ROOT / fpath
         if p.is_file():
             try:
-                tree = PARSER.parse(p.read_bytes())
-                stack = [tree.root_node]
-                while stack:
-                    n = stack.pop()
-                    if n.type == "function_definition":
-                        sl = n.start_point[0] + 1
-                        el = n.end_point[0] + 1
-                        if sl <= pline <= el:
-                            targets_by_file[fpath].add(sl)
-                            break
-                    for i in range(n.child_count - 1, -1, -1):
-                        stack.append(n.child(i))
+                txt = p.read_text(encoding="utf-8", errors="ignore")
+                for m in func_head_re.finditer(txt):
+                    func_name = m.group("name").strip()
+                    if func_name in ("if", "for", "while", "switch", "catch"):
+                        continue
+                    open_pos = txt.find("{", m.end() - 2)
+                    close_pos = find_matching_brace(txt, open_pos)
+                    if close_pos == -1:
+                        continue
+                    match_start = m.start()
+                    if txt[match_start] == "\n":
+                        match_start += 1
+                    sl = txt[:match_start].count("\n") + 1
+                    el = txt[:close_pos].count("\n") + 1
+                    if sl <= pline <= el:
+                        targets_by_file[fpath].add(sl)
+                        break
             except Exception:
                 pass
 
@@ -733,23 +828,21 @@ def scan_missing_doxygen(local_structs, similar_matrix, pass1_reparse):
         "LocalDefinition", "Scope", "IndexedContainerSpan", "NodeIndex"
     }
 
+    struct_decl_re = re.compile(r"\b(?:struct|class)\s+([A-Za-z0-9_]+)\b[^{]*\{")
     for ch in core_headers:
         p = REPO_ROOT / ch.replace("/", "\\")
         if not p.is_file():
             p = REPO_ROOT / ch
         if p.is_file():
-            tree = PARSER.parse(p.read_bytes())
-            stack = [tree.root_node]
-            while stack:
-                n = stack.pop()
-                if n.type in ("struct_specifier", "class_specifier"):
-                    name_node = n.child_by_field_name("name")
-                    if name_node:
-                        nm = name_node.text.decode("utf-8", "ignore")
-                        if nm in core_struct_names:
-                            targets_by_file[ch].add(n.start_point[0] + 1)
-                for i in range(n.child_count - 1, -1, -1):
-                    stack.append(n.child(i))
+            try:
+                txt = p.read_text(encoding="utf-8", errors="ignore")
+                for m in struct_decl_re.finditer(txt):
+                    nm = m.group(1)
+                    if nm in core_struct_names:
+                        sl = txt[: m.start()].count("\n") + 1
+                        targets_by_file[ch].add(sl)
+            except Exception:
+                pass
 
     missing = []
     for f_rel, target_lines in targets_by_file.items():
@@ -767,15 +860,18 @@ def scan_missing_doxygen(local_structs, similar_matrix, pass1_reparse):
         for tline in sorted(target_lines):
             if not has_doxygen_before(lines, tline):
                 line_idx = tline - 1
-                if 0 <= line_idx < len(lines):
-                    sym_line = lines[line_idx].strip()
-                    kind = "struct" if "struct" in sym_line or "class" in sym_line else "function"
-                    missing.append({
-                        "file": f_rel,
-                        "line": tline,
-                        "symbolOrSnippet": sym_line[:80],
-                        "kind": kind,
-                    })
+                sym_line = lines[line_idx].strip() if 0 <= line_idx < len(lines) else ""
+                sym_m = re.search(r"\b([A-Za-z0-9_~]+)\s*\(", sym_line)
+                sym_name = sym_m.group(1) if sym_m else ""
+                if sym_name and check_header_doxygen(f_rel, sym_name):
+                    continue
+                kind = "struct" if "struct" in sym_line or "class" in sym_line else "function"
+                missing.append({
+                    "file": f_rel,
+                    "line": tline,
+                    "symbolOrSnippet": sym_line[:80],
+                    "kind": kind,
+                })
 
     return {
         "missingCount": len(missing),

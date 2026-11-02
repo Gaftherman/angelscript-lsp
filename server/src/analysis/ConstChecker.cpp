@@ -98,19 +98,6 @@ static std::optional<bool> ParameterIsConst(TSNode node, std::string_view name, 
     return std::nullopt;
 }
 
-namespace const_checker_detail
-{
-/** @brief What one expression is, as far as constness goes. */
-enum class Constness
-{
-    Unknown, ///< Nothing could be established. Stay silent.
-    Mutable,
-    Const
-};
-} // namespace const_checker_detail
-
-using Constness = const_checker_detail::Constness;
-
 using ConstContext = ExpressionTypeContext;
 
 static Constness ResolveConstness(TSNode node, const ConstContext& ctx);
@@ -162,29 +149,12 @@ static Constness ResolveNameConstness(std::string_view name, TSNode node, const 
     return Constness::Unknown;
 }
 
-namespace const_checker_detail
-{
-/**
- * @brief Class and const qualification for enclosing method or accessor.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct EnclosingMethodInfo
-{
-    bool inClass = false;
-    bool isConstMethod = false;
-    std::string className;
-};
-} // namespace const_checker_detail
-
-using EnclosingMethodInfo = const_checker_detail::EnclosingMethodInfo;
-
 /**
  * @brief Identifies enclosing class and whether the enclosing method or accessor is const.
  *
  * @param[in] node AST node inside the method.
  * @param[in] sourceCode Source text.
  * @return EnclosingMethodInfo containing class membership and const qualification.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
 static EnclosingMethodInfo FindEnclosingMethod(TSNode node, std::string_view sourceCode)
@@ -316,7 +286,6 @@ static bool IsIdentifierMemberOfThis(TSNode target, const EnclosingMethodInfo& e
  * @param[in] ctx Const context.
  * @param[out] outMemberName Resolved member name if matched.
  * @return True if target represents a member of 'this'.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
  * Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static bool IsMemberExprOfThis(TSNode target, const EnclosingMethodInfo& encInfo, const ConstContext& ctx,
@@ -478,7 +447,6 @@ using MethodLookup = MemberLookupResult;
  * @param[in] fn Function signature being inspected.
  * @param[in] owner Name of the owning class.
  * @return True if the method returns a reference to the owning class.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isRef; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
  */
 static bool IsSelfReferenceReturn(const FunctionSignature& fn, const std::string& owner)

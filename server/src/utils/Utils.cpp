@@ -242,22 +242,6 @@ static std::optional<size_t> FindMatchingBrace(std::string_view text, size_t ope
     return std::nullopt;
 }
 
-namespace utils_detail
-{
-/**
- * @brief Represents Pattern span.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct PatternSpan
-{
-    size_t openBrace{0};
-    size_t closeBrace{0};
-    size_t nextIndex{0};
-};
-} // namespace utils_detail
-
-using PatternSpan = utils_detail::PatternSpan;
-
 /**
  * @brief Identifies an inline list pattern like '{repeat T}' following a closing paren.
  * @param[in] text Input string.

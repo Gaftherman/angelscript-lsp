@@ -23,6 +23,11 @@ namespace angel_lsp::analysis
 {
 #define SYM_NAME(str) str, static_cast<uint32_t>(sizeof(str) - 1)
 
+/**
+ * @brief Strips leading and trailing ASCII whitespace characters from a string view.
+ * @param[in] sv Input string view to trim.
+ * @return Trimmed string view without leading or trailing whitespace.
+ */
 static std::string_view TrimView(std::string_view sv)
 {
     while (!sv.empty() && isspace(static_cast<unsigned char>(sv.front())))
@@ -36,6 +41,11 @@ static std::string_view TrimView(std::string_view sv)
     return sv;
 }
 
+/**
+ * @brief Advances index past whitespace and comments in text buffer.
+ * @param[in] text Source text buffer.
+ * @param[in,out] i Cursor index advanced past comments and whitespace.
+ */
 static void SkipWhitespaceAndComments(std::string_view text, size_t& i)
 {
     while (i < text.size())
@@ -77,58 +87,7 @@ static std::string ExtractFirstToken(std::string_view rawErrText)
     return firstToken;
 }
 
-namespace symbol_collector_detail
-{
-/**
- * @brief Represents Member nodes.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct MemberNodes
-{
-    TSNode declNode;
-    TSNode nameNode;
-};
-} // namespace symbol_collector_detail
-
-using MemberNodes = symbol_collector_detail::MemberNodes;
-
 using RecoveredClassContainer = SymbolCollector::RecoveredClassContainer;
-
-namespace symbol_collector_detail
-{
-/**
- * @brief Represents Recover class context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct RecoverClassContext
-
-{
-    const parser::GrammarSymbols& gs;
-    std::string_view sourceCode;
-    const std::string& fileUri;
-    std::vector<RecoveredClassContainer>& outContainers;
-    std::vector<Symbol>& outSymbols;
-};
-} // namespace symbol_collector_detail
-
-using RecoverClassContext = symbol_collector_detail::RecoverClassContext;
-
-namespace symbol_collector_detail
-{
-/**
- * @brief Represents Scanned class header.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ScannedClassHeader
-{
-    TSNode headerStart{TSNode{}};
-    TSNode nameNode{TSNode{}};
-    bool isClass{false};
-    bool isInterface{false};
-};
-} // namespace symbol_collector_detail
-
-using ScannedClassHeader = symbol_collector_detail::ScannedClassHeader;
 
 static ScannedClassHeader FindClassHeaderInError(TSNode node, const parser::GrammarSymbols& gs)
 {
@@ -1829,24 +1788,6 @@ static TSNode ResolveOpeningBraceTarget(TSNode classOpeningBrace, const parser::
     return !ts_node_is_null(next) ? next : classOpeningBrace;
 }
 
-namespace symbol_collector_detail
-{
-/**
- * @brief Represents Offending scan state.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct OffendingScanState
-{
-    TSNode lastValidDecl{TSNode{}};
-    TSNode firstOffendingAfterDecl{TSNode{}};
-    TSNode firstNonComment{TSNode{}};
-    TSNode classOpeningBrace{TSNode{}};
-    bool seenClassOrIface{false};
-};
-} // namespace symbol_collector_detail
-
-using OffendingScanState = symbol_collector_detail::OffendingScanState;
-
 static void ScanOffendingChild(TSNode child, const parser::GrammarSymbols& gs, OffendingScanState& state)
 {
     TSSymbol sym = ts_node_symbol(child);
@@ -2052,22 +1993,6 @@ static bool IsContinuationChar(char ch) noexcept
     return k_ops.find(ch) != std::string_view::npos;
 }
 
-namespace symbol_collector_detail
-{
-/**
- * @brief Represents Case expression state.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct CaseExpressionState
-{
-    uint32_t parenDepth = 0;
-    uint32_t ternaryDepth = 0;
-    size_t exprEnd = 0;
-};
-} // namespace symbol_collector_detail
-
-using CaseExpressionState = symbol_collector_detail::CaseExpressionState;
-
 static bool HandleCaseContinuation(std::string_view text, size_t idx, CaseExpressionState& state)
 {
     if (state.parenDepth != 0 || state.ternaryDepth != 0)
@@ -2102,18 +2027,6 @@ static void HandleParenToken(char ch, CaseExpressionState& state, size_t& idx)
     ++idx;
     state.exprEnd = idx;
 }
-
-namespace symbol_collector_detail
-{
-enum class ColonResult
-{
-    ScopeResolution,
-    TernaryMatched,
-    CaseColonFound
-};
-} // namespace symbol_collector_detail
-
-using ColonResult = symbol_collector_detail::ColonResult;
 
 static ColonResult HandleColonToken(std::string_view text, size_t limit, CaseExpressionState& state, size_t& idx)
 {
@@ -2179,18 +2092,6 @@ static void SkipCaseWhitespace(std::string_view text, size_t& idx, size_t limit)
         ++idx;
     }
 }
-
-namespace symbol_collector_detail
-{
-enum class CaseTokenAction
-{
-    Continue,
-    Break,
-    CaseColonFound
-};
-} // namespace symbol_collector_detail
-
-using CaseTokenAction = symbol_collector_detail::CaseTokenAction;
 
 static CaseTokenAction HandleNewlineToken(std::string_view text, size_t& idx, CaseExpressionState& state)
 {
@@ -2292,22 +2193,6 @@ static bool ScanCaseExpression(std::string_view text, size_t& idx, size_t limit,
     outExprEnd = state.exprEnd;
     return false;
 }
-
-namespace symbol_collector_detail
-{
-/**
- * @brief Represents Switch scan context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct SwitchScanContext
-{
-    TSNode switchNode{TSNode{}};
-    std::string_view sourceCode;
-    size_t closeBraceByte = 0;
-};
-} // namespace symbol_collector_detail
-
-using SwitchScanContext = symbol_collector_detail::SwitchScanContext;
 
 /**
  * @brief Scan default clause colon.
@@ -2447,18 +2332,6 @@ static void ScanSwitchStatementCaseColons(TSNode switchNode, std::string_view so
         }
     }
 }
-
-/**
- * @brief Represents Symbol collector parse error report context.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct SymbolCollector::ParseErrorReportContext
-{
-    SymbolCollectContext& sCtx;
-    bool missingOpenBrace = false;
-    uint32_t firstErrorLine = UINT32_MAX;
-    std::vector<MissingCaseColon> missingColons;
-};
 
 void SymbolCollector::EmitMissingColonDiagnostics(std::span<const MissingCaseColon> missingColons,
                                                   SymbolCollectContext& sCtx) const
@@ -2994,7 +2867,6 @@ static void AssignParamLocations(ParameterInformation& paramInfo, TSNode paramNo
  * @param[in] paramNode AST parameter node being evaluated.
  * @param[in] sourceCode Document source text buffer.
  * @return Populated ParameterInformation struct describing the parameter.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst. Manually re-evaluates AST for isRef; candidate for
  * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
  */

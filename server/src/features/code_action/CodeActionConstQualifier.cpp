@@ -125,7 +125,6 @@ static void TryAddMissingConstDiagnosticFix(const CodeActionRequest& request, TS
  * @param[in] bodyNode AST node of the function compound body (or null if abstract).
  * @param[in] fnNode AST node of the enclosing function declaration.
  * @return True if 'const' token is found in the intervening source span, false otherwise.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
 static bool HasConstQualifierBetween(TSNode fnNode)
@@ -225,7 +224,6 @@ static void TryAddIntentionalConstAction(const CodeActionRequest& request, TSNod
  * @param[in] rootNode AST node under evaluation.
  * @param[in] diag LSP Diagnostic triggering the const qualifier action.
  * @param[in,out] actions Output list where constructed CodeAction is appended.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
 static void TryAddConstHandleDiagnosticFix(const CodeActionRequest& request, TSNode rootNode,

@@ -48,7 +48,7 @@ struct ContainerMembers
 };
 
 /**
- * @brief Represents the symbol index contributions from a single document.
+ * @brief Symbol index contributions from a single document.
  */
 struct RuleIndexPartial
 {

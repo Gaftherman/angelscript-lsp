@@ -14,6 +14,11 @@
 
 namespace angel_lsp::analysis
 {
+/**
+ * @brief Maps binary operator spelling to its canonical AngelScript script method and right-hand mirror method names.
+ * @param[in] op Operator symbol spelling.
+ * @return Pair containing the left-hand method name and right-hand fallback method name.
+ */
 static std::pair<std::string_view, std::string_view> GetOpMethods(std::string_view op)
 {
     if (op == parser::keywords::operators::Pipe)

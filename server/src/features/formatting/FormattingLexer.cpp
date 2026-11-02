@@ -16,29 +16,6 @@ static const std::unordered_set<std::string_view> kKeywords = []
 static constexpr std::string_view kTwoCharOperators[] = {
     "==", "!=", "<=", ">=", "&&", "||", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<", ">>", "^^"};
 
-namespace formatting_lexer_detail
-{
-/**
- * @brief Represents Scan state.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ScanState
-{
-    explicit ScanState(std::string_view source) : src(source)
-    {
-    }
-
-    std::string_view src;
-    size_t i = 0;
-    uint32_t curLine = 0;
-    uint32_t curCol = 0;
-    uint32_t newlines = 0;
-    std::vector<Token> tokens;
-};
-} // namespace formatting_lexer_detail
-
-using ScanState = formatting_lexer_detail::ScanState;
-
 static bool TryConsumeWhitespace(ScanState& state)
 {
     char c = state.src[state.i];
@@ -62,6 +39,11 @@ static bool TryConsumeWhitespace(ScanState& state)
     return false;
 }
 
+/**
+ * @brief Attempts to consume a single-line comment sequence ('//') from the lexer stream.
+ * @param[in,out] state Active lexer scan state.
+ * @return True if a line comment was recognized and consumed; otherwise false.
+ */
 static bool TryConsumeLineComment(ScanState& state)
 {
     char c = state.src[state.i];

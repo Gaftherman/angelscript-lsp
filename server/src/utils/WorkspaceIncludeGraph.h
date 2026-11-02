@@ -238,4 +238,49 @@ class WorkspaceIncludeGraph
     /// Reverse edges: file -> the files that include it.
     ankerl::unordered_dense::map<std::string, std::vector<std::string>> m_includedBy;
 };
+
+/**
+ * @brief Context holding active source path and search directories for include directive resolution.
+ */
+struct IncludeContext
+{
+    const std::vector<std::string>& searchDirectories;
+    const std::vector<std::string>& allowedRoots;
+    std::string_view implicitExtension;
+};
+
+/**
+ * @brief Environment holding search roots and file system caches for workspace include graph building.
+ */
+struct ResolvedIncludeEnv
+{
+    std::vector<std::string> allowedRoots;
+    WorkspaceIncludeGraph::FileReader fileReader;
+
+    [[nodiscard]] IncludeContext MakeContext(const std::vector<std::string>& searchDirectories,
+                                             std::string_view implicitExtension) const noexcept
+    {
+        return IncludeContext{searchDirectories, allowedRoots, implicitExtension};
+    }
+};
+
+/**
+ * @brief List of include directives and conditional compilation markers discovered within a source file.
+ */
+struct FileDirectives
+{
+    std::string path;
+    std::vector<std::string> targets;
+};
+
+/**
+ * @brief Parallel worker context for scanning preprocessor directives across workspace source files.
+ */
+struct DirectivesWorkerContext
+{
+    const std::vector<std::string>& scriptFiles;
+    const IncludeContext& includeCtx;
+    const WorkspaceIncludeGraph::FileReader& read;
+    const std::function<bool()>& shouldStop;
+};
 } // namespace angel_lsp::utils
