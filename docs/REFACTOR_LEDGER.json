@@ -1365,6 +1365,22 @@
       "verifiedByTests": [
         "CallHierarchyTest"
       ]
+    },
+    {
+      "id": "REF-0083",
+      "phase": "R5",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/NullSafetyExpr.h",
+      "deletedLineRange": "12-16",
+      "originalSymbolOrCode": "struct NullCheckContext",
+      "whatItDidAndWhyInThatFile": "Evaluation context holding source code, diagnostic context sink, and root scope pointer for null-safety AST traversal.",
+      "whyChangedOrDeleted": "Promoted to canonical header NullSafetyTypes.h to unify null-safety type definitions within the DDD checkers sub-layer.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/null_safety/NullSafetyTypes.h",
+      "replacedByCanonicalSymbol": "NullCheckContext",
+      "ramOrCpuImpact": "Zero overhead, unified null-safety type definitions in domain header.",
+      "verifiedByTests": [
+        "NullSafetyCheckerTest"
+      ]
     }
   ]
 }

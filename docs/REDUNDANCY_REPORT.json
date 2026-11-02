@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-02T07:21:56Z",
+  "generatedAt": "2026-11-02T07:44:14Z",
   "branch": "refactor/architecture-deduplication-and-ram",
   "description": "Deterministic AST and tokenization audit report covering local C++ structs, pass-1 flag re-evaluations, function similarity, hot struct RAM layout, and Doxygen coverage.",
   "localCppStructs": {
@@ -361,8 +361,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/checkers/CallChecker.cpp",
-          "startLine": 2517,
-          "endLine": 2539,
+          "startLine": 2520,
+          "endLine": 2542,
           "name": "CheckCallArguments",
           "signature": "void CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx)"
         },
@@ -404,8 +404,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/checkers/CallChecker.cpp",
-          "startLine": 2517,
-          "endLine": 2539,
+          "startLine": 2520,
+          "endLine": 2542,
           "name": "CheckCallArguments",
           "signature": "void CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx)"
         },
@@ -548,8 +548,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/checkers/InitializerListChecker.cpp",
-          "startLine": 1215,
-          "endLine": 1247,
+          "startLine": 1214,
+          "endLine": 1246,
           "name": "DispatchTreeWalkInitializerLists",
           "signature": "static void DispatchTreeWalkInitializerLists(const InitializerListContext& initC"
         },
