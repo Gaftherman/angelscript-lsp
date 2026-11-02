@@ -1,5 +1,7 @@
 #include "lsp/state/PredefinedStubManager.h"
+
 #include "utils/IncludeResolver.h"
+
 #include <filesystem>
 
 namespace angel_lsp

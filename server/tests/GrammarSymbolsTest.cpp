@@ -1,6 +1,6 @@
-#include <doctest/doctest.h>
-
 #include "parser/GrammarSymbols.h"
+
+#include <doctest/doctest.h>
 
 namespace
 {

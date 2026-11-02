@@ -1,4 +1,5 @@
 #include "analysis/checkers/HandleComparisonChecker.h"
+
 #include "analysis/checkers/BinaryOperatorHelpers.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/resolution/SemanticHelpers.h"
@@ -6,6 +7,7 @@
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "parser/Keywords.h"
+
 #include <string>
 #include <string_view>
 

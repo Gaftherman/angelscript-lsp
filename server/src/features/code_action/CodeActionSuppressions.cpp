@@ -5,6 +5,7 @@
 
 #include "analysis/diagnostics/DiagnosticSuppression.h"
 #include "features/code_action/CodeActionInternal.h"
+
 #include <unordered_set>
 
 namespace angel_lsp::features

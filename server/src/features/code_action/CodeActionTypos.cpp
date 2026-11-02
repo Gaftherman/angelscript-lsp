@@ -31,8 +31,6 @@ static bool IsTypeLikeSymbol(analysis::SymbolType type)
            type == analysis::SymbolType::Funcdef;
 }
 
-using TypoCandidateSuggestion = TypoCandidate;
-
 /**
  * @brief Collects candidate names for typo suggestions from local scopes and symbols.
  * @param[in] request Code action request.
@@ -72,12 +70,12 @@ static std::vector<std::string> CollectTypoCandidates(const CodeActionRequest& r
  * @param[in] candidates Available candidate names.
  * @return Sorted vector of suggestions within distance limit.
  */
-static std::vector<TypoCandidateSuggestion> RankTypoSuggestions(const std::string& typed,
-                                                                const std::vector<std::string>& candidates)
+static std::vector<TypoCandidate> RankTypoSuggestions(const std::string& typed,
+                                                      const std::vector<std::string>& candidates)
 {
     const std::string typedFolded = FoldCase(typed);
     const size_t limit = SuggestionLimit(typed.size());
-    std::vector<TypoCandidateSuggestion> ranked;
+    std::vector<TypoCandidate> ranked;
     ankerl::unordered_dense::set<std::string> seen;
 
     for (const auto& candidate : candidates)
@@ -94,7 +92,7 @@ static std::vector<TypoCandidateSuggestion> RankTypoSuggestions(const std::strin
     }
 
     std::sort(ranked.begin(), ranked.end(),
-              [](const TypoCandidateSuggestion& a, const TypoCandidateSuggestion& b)
+              [](const TypoCandidate& a, const TypoCandidate& b)
               {
                   if (a.distance != b.distance)
                   {
@@ -111,7 +109,7 @@ static std::vector<TypoCandidateSuggestion> RankTypoSuggestions(const std::strin
  * @param[in] ranked Ranked suggestions list.
  * @param[out] actions Destination actions vector.
  */
-static void EmitTypoCodeActions(const TypoFixContext& ctx, const std::vector<TypoCandidateSuggestion>& ranked,
+static void EmitTypoCodeActions(const TypoFixContext& ctx, const std::vector<TypoCandidate>& ranked,
                                 std::vector<lsp::CodeAction>& actions)
 {
     const size_t offered = std::min<size_t>(ranked.size(), 3);

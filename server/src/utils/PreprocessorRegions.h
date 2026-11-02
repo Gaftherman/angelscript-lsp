@@ -1,7 +1,6 @@
 #pragma once
 
 #include <ankerl/unordered_dense.h>
-
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -11,9 +10,7 @@ namespace angel_lsp::utils
 {
 /**
  * @brief A span of lines the preprocessor removes before the compiler sees them.
- *
- * Inclusive on both ends, and covering the `#if` and `#endif` lines themselves - CScriptBuilder
- * blanks those out too.
+ *        Inclusive on both ends, and covering the `#if` and `#endif` lines themselves - CScriptBuilder
  */
 struct ExcludedLineRange
 {
@@ -23,15 +20,7 @@ struct ExcludedLineRange
 
 /**
  * @brief Preprocessor extensions a host has added to CScriptBuilder, all off by default.
- *
- * None of these exist in the stock add-on - each was measured against the real compiler and
- * each is a syntax error or a swallowed line there, which is why every one of them defaults to
- * false and why the defaults reproduce today's behaviour byte for byte.
- *
- * They exist because patching scriptbuilder.cpp is common: it is a sample add-on shipped in the
- * SDK's source tree, hosts copy it into their own tree, and `#else` is the first thing they add.
- * An analyzer that cannot be told about that has to choose between reporting nothing inside
- * every conditional or reporting errors on code the compiler never sees, and both are wrong.
+ *        None of these exist in the stock add-on - each was measured against the real compiler and
  */
 struct PreprocessorFeatures
 {
@@ -60,45 +49,32 @@ std::vector<ExcludedLineRange>
 FindExcludedLineRanges(std::string_view sourceCode, const ankerl::unordered_dense::set<std::string>& definedWords = {},
                        const PreprocessorFeatures& features = {});
 
-/** @brief What is wrong with a directive, which decides what the reader is told. */
+/**
+ * @brief What is wrong with a directive, which decides what the reader is told.
+ */
 enum class DirectiveProblem : uint8_t
 {
     /**
      * @brief A directive CScriptBuilder knows about, that this host's copy does not support.
-     *
-     * The fix is a setting: the host may have patched the add-on, and the reader is the only
-     * one who knows.
+     *        The fix is a setting: the host may have patched the add-on, and the reader is the only
      */
     Unsupported,
 
     /**
      * @brief Not a directive at all - a misspelled name, or no name.
-     *
-     * Measured: `#incude "test"` is `ERROR (1, 1): Unexpected token '<unrecognized token>'`.
-     * The add-on leaves anything it does not recognise in the source, and the compiler then
-     * reads a `#` where a declaration should be. No setting makes this legal; it is a typo.
+     *        Measured: `#incude "test"` is `ERROR (1, 1): Unexpected token '<unrecognized token>'`.
      */
     Unrecognised,
 
     /**
      * @brief A recognised name, with whitespace between it and the `#`.
-     *
-     * Measured, and the surprise of this pass: `# include "helper.as"` and `#  if FOO` are both
-     * `Unexpected token '<unrecognized token>'`, while `#include` and `#if` compile. The add-on
-     * reads the characters immediately after the `#`, so one space stops it being a directive.
-     *
-     * Its own value because the fix is precise and mechanical - delete the space - and a reader
-     * told only "not recognised" about a name spelled perfectly correctly would go looking for
-     * the wrong mistake.
+     *        Measured, and the surprise of this pass: `# include "helper.as"` and `#  if FOO` are both
      */
     SpaceAfterHash,
 
     /**
      * @brief `#include` spelled correctly, with a path that is not in double quotes.
-     *
-     * Measured: `#include helper.as` is `Unexpected token '<unrecognized token>'`, the quoted
-     * form compiles. The add-on reads a string token after the name; without one it copies
-     * nothing and the line reaches the compiler intact.
+     *        Measured: `#include helper.as` is `Unexpected token '<unrecognized token>'`, the quoted
      */
     IncludeNotQuoted,
 };
@@ -112,7 +88,9 @@ struct UnsupportedDirective
     std::string name; ///< "else", "elif", "ifdef", "ifndef", "define", "pragma", "endif".
 };
 
-/** @brief Everything one pass over a document's directives has to say about it. */
+/**
+ * @brief Everything one pass over a document's directives has to say about it.
+ */
 struct PreprocessorScan
 {
     std::vector<ExcludedLineRange> excluded;
@@ -121,14 +99,9 @@ struct PreprocessorScan
 
 /**
  * @brief One pass yielding both the excluded ranges and the directives that will not compile.
- *
- * The two cannot be computed independently: whether a `#else` is an error depends on whether
- * the block around it survives, which is what the exclusion pass is working out.
- *
+ *        The two cannot be computed independently: whether a `#else` is an error depends on whether
  * @param reportPragma Whether a surviving `#pragma` counts as unsupported. A stock host rejects
  *        every one - with no callback registered the add-on substitutes a failure and fails the
- *        whole section - but a host that registered a callback accepts anything, and the caller
- *        is the one that knows which it is.
  */
 PreprocessorScan ScanPreprocessor(std::string_view sourceCode,
                                   const ankerl::unordered_dense::set<std::string>& definedWords = {},
@@ -137,18 +110,13 @@ PreprocessorScan ScanPreprocessor(std::string_view sourceCode,
 /**
  * @brief True when a line falls inside any excluded range.
  * @note Linear in the number of ranges, which is the count of `#if` directives in one file -
- *       small enough that an index would cost more than it saves.
+ *        small enough that an index would cost more than it saves.
  */
 bool IsLineExcluded(const std::vector<ExcludedLineRange>& ranges, uint32_t line);
 
 /**
  * @brief Blanks out characters in excluded line ranges with spaces, preserving newlines (\\r and \\n).
- *
- * Replaces non-newline characters in lines identified by `ranges` with spaces (' ').
- * This matches the official AngelScript CScriptBuilder::ExcludeCode / OverwriteCode model,
- * ensuring that inactive conditional blocks produce zero AST nodes while preserving
- * exact byte offsets, line numbers, and column numbers for active code.
- *
+ *        Replaces non-newline characters in lines identified by `ranges` with spaces (' ').
  * @param sourceCode Document text.
  * @param ranges Non-overlapping line intervals to blank (inclusive startLine and endLine).
  * @return Source code with excluded lines blanked by spaces.
@@ -157,16 +125,7 @@ std::string BlankExcludedLines(std::string_view sourceCode, const std::vector<Ex
 
 /**
  * @brief Words a predefined stub declares with `#define <word>`, in source order.
- *
- * `#define` is *not* an AngelScript directive and this does not make it one: written in a `.as`
- * the compiler rejects it outright, measured - CScriptBuilder leaves it in the source and the
- * tokenizer reports `Unexpected token`. What makes it meaningful in a `.as.predefined` is that
- * the stub is never compiled by AngelScript at all. It is this server's description of how the
- * host set its engine up, and DefineWord() is part of that setup, so `#define FOO` in a stub
- * says exactly one thing: the host calls `builder.DefineWord("FOO")`.
- *
- * Same walk as FindExcludedLineRanges, so a `#define` inside a comment or a string is not one.
- *
+ *        `#define` is *not* an AngelScript directive and this does not make it one: written in a `.as`
  * @param sourceCode Text of a predefined stub.
  * @return The defined words, with duplicates left in - the caller is inserting into a set.
  */

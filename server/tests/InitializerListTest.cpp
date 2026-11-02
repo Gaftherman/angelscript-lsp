@@ -7,9 +7,9 @@
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
-#include <doctest/doctest.h>
 
 #include <algorithm>
+#include <doctest/doctest.h>
 #include <string>
 #include <unordered_set>
 #include <vector>

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "features/hover/HoverHandler.h"
+
 #include <optional>
 #include <string>
 #include <string_view>

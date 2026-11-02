@@ -9,21 +9,18 @@ namespace angel_lsp::analysis
 {
 /**
  * @brief Checks what a function body does with control flow.
- *
- * The only pass here that reads statements rather than declarations. It needs the tree because
- * none of what it judges reaches the symbol table: whether a `break` sits inside a loop, whether
- * two `case` labels name the same value, whether every path out of a non-void function returns.
- *
- * These questions are answerable from one document alone - unlike almost everything else in
- * this analyzer, no host-registered type can change the answer - so the pass says what it finds
- * rather than falling silent on unresolved names.
+ *        The only pass here that reads statements rather than declarations. It needs the tree because
  */
 struct ControlFlowCheckRequest
 {
-    /** @brief Root node of the document's syntax tree. */
+    /**
+     * @brief Root node of the document's syntax tree.
+     */
     TSNode root;
 
-    /** @brief Document source text the tree was parsed from. */
+    /**
+     * @brief Document source text the tree was parsed from.
+     */
     std::string_view sourceCode;
 };
 
@@ -44,10 +41,7 @@ struct ControlFlowState
 
     /**
      * @brief What the enclosing function must return, and the name to say it under.
-     *
-     * Empty means there is nothing to check against - a constructor, or a lambda whose
-     * funcdef this analyzer cannot see - and the rule stays silent, which is the policy
-     * everywhere else the world is only partly visible.
+     *        Empty means there is nothing to check against - a constructor, or a lambda whose
      */
     std::string requiredReturn;
     std::string functionName;
@@ -55,10 +49,6 @@ struct ControlFlowState
     /**
      * @brief True for a function the grammar gives no return type: a constructor or a
      *        destructor.
-     *
-     * Both return void, and `return 42;` in one is "Can't return value when return type is
-     * 'void'" - measured. as-err-void-return-value covers the same mistake in a function
-     * that spells `void` out, and it reads the return type node, so it never fired here.
      */
     bool implicitVoid = false;
 };

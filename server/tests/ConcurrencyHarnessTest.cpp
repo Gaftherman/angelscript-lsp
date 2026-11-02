@@ -1,5 +1,3 @@
-#include <doctest/doctest.h>
-
 #include "document/Document.h"
 #include "helpers/TestUtils.h"
 #include "lsp/state/DocumentStore.h"
@@ -7,6 +5,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <doctest/doctest.h>
 #include <latch>
 #include <random>
 #include <string>

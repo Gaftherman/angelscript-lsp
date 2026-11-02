@@ -5,6 +5,7 @@
 #include "utils/PositionEncoding.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/Utils.h"
+
 #include <spdlog/fmt/fmt.h>
 
 namespace angel_lsp

@@ -1,8 +1,8 @@
 #include "features/formatting/FormattingHandler.h"
 #include "helpers/CorpusDirectory.h"
-#include <doctest/doctest.h>
 
 #include <cctype>
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <sstream>

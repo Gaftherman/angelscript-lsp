@@ -1,4 +1,5 @@
 #include "features/hover/HoverHandler.h"
+
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/VirtualMixinContext.h"
 #include "features/hover/HoverSymbolFormatter.h"
@@ -11,6 +12,7 @@
 #include "utils/LspLogger.h"
 #include "utils/MultiFileLogger.h"
 #include "utils/Timer.h"
+
 #include <spdlog/fmt/fmt.h>
 #include <string>
 #include <string_view>

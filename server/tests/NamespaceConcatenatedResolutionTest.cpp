@@ -1,6 +1,7 @@
 #include "helpers/LspSemanticHarnessFixture.h"
 #include "helpers/TestUtils.h"
 #include "spdlog/fmt/fmt.h"
+
 #include <doctest/doctest.h>
 #include <string>
 

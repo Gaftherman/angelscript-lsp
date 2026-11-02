@@ -1,4 +1,5 @@
 #include "features/semantic_tokens/SemanticTokensHandler.h"
+
 #include <doctest/doctest.h>
 #include <vector>
 

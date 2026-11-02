@@ -1,4 +1,5 @@
 #include "features/selection_range/SelectionRangeHandler.h"
+
 #include "features/common/FeatureSharedUtils.h"
 #include "parser/ASTUtils.h"
 
@@ -10,10 +11,7 @@ namespace angel_lsp::features
 
 /**
  * @brief Assembles one position's chain, innermost first.
- *
- * A position past the end of the document, or in a document the parser could make nothing
- * of, yields the root's own range - which is what the protocol asks for: every position has
- * to be answered, in order, or the client cannot line the results up with what it sent.
+ *        A position past the end of the document, or in a document the parser could make nothing
  */
 static lsp::SelectionRange BuildChain(TSNode root, const lsp::Position& position)
 {

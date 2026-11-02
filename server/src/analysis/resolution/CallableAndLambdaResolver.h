@@ -1,7 +1,10 @@
 #pragma once
 
+#include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/types/ExpressionTypeCache.h"
+
 #include <optional>
 #include <string>
 #include <string_view>
@@ -10,8 +13,6 @@
 
 namespace angel_lsp::analysis
 {
-struct Scope;
-struct ExpressionTypeContext;
 
 struct CallArgumentInfo
 {

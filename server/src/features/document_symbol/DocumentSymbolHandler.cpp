@@ -1,11 +1,12 @@
 #include "features/document_symbol/DocumentSymbolHandler.h"
+
 #include "document/Document.h"
 #include "features/common/FeatureSharedUtils.h"
 #include "parser/ASTUtils.h"
 #include "parser/AngelScriptParser.h"
-
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
+
 #include <algorithm>
 #include <cstring>
 #include <string_view>

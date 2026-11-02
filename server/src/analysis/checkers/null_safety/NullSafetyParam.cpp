@@ -1,9 +1,11 @@
-﻿#include "analysis/checkers/null_safety/NullSafetyParam.h"
+#include "analysis/checkers/null_safety/NullSafetyParam.h"
+
 #include "analysis/checkers/null_safety/NullSafetyCondition.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeExtraction.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
+
 #include <string>
 
 namespace angel_lsp::analysis

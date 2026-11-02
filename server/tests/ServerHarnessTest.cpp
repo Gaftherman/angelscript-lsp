@@ -1,15 +1,13 @@
-#include <doctest/doctest.h>
-
 #include "helpers/LspSemanticHarnessFixture.h"
 #include "helpers/ScriptedStream.h"
 #include "helpers/TestUtils.h"
 #include "lsp/Server.h"
-
 #include "utils/Utils.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <string>

@@ -1,4 +1,5 @@
 #include "features/hover/HoverDocumentationRenderer.h"
+
 #include "analysis/documentation/DocComment.h"
 #include "analysis/documentation/SignatureFormatter.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
@@ -11,6 +12,7 @@
 #include "parser/GrammarSymbols.h"
 #include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
+
 #include <algorithm>
 #include <sstream>
 #include <unordered_set>

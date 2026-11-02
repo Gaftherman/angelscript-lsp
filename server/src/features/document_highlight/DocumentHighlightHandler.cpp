@@ -1,10 +1,12 @@
 #include "features/document_highlight/DocumentHighlightHandler.h"
+
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/resolution/TargetResolution.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/Constants.h"
 #include "utils/ScopedNameUtils.h"
+
 #include <algorithm>
 #include <set>
 #include <string_view>

@@ -144,7 +144,7 @@ inline void AppendScopedName(std::string& buffer, std::string_view name)
  * @brief Splits a scoped name into its qualifier prefix and leaf symbol name.
  * @param[in] full Full scoped path (e.g. "Namespace::Class::Method").
  * @return Pair containing {qualifier ("Namespace::Class"), leaf ("Method")}.
- *         If no "::" exists, qualifier is empty and leaf is the full name.
+ *        If no "::" exists, qualifier is empty and leaf is the full name.
  */
 [[nodiscard]] constexpr std::pair<std::string_view, std::string_view> SplitScopedName(std::string_view full) noexcept
 {

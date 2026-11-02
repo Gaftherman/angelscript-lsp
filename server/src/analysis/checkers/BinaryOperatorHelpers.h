@@ -5,6 +5,7 @@
 #include "analysis/index/SymbolTable.h"
 #include "parser/GrammarSymbols.h"
 #include "parser/Keywords.h"
+
 #include <optional>
 #include <string>
 #include <string_view>

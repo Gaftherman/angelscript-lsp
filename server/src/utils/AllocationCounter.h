@@ -7,9 +7,7 @@ namespace angel_lsp::utils
 {
 /**
  * @brief RAII scoped allocation counter that measures heap allocations, deallocations, and table clones.
- *
- * Employs Windows CRT allocation hooks (_CrtSetAllocHook) when compiled under MSVC Debug,
- * and thread-local tracking with global operator new/delete in release configurations.
+ *        Employs Windows CRT allocation hooks (_CrtSetAllocHook) when compiled under MSVC Debug,
  */
 class ScopedAllocationCounter
 {

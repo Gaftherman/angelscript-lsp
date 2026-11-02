@@ -4,10 +4,9 @@
 
 #include <lsp/messages.h>
 #include <lsp/types.h>
-#include <tree_sitter/api.h>
-
 #include <optional>
 #include <string>
+#include <tree_sitter/api.h>
 #include <vector>
 
 namespace angel_lsp::features
@@ -26,10 +25,7 @@ struct TypeHierarchyPrepareRequest
 
 /**
  * @brief Context for a follow-up supertypes or subtypes request.
- *
- * The client hands back the item it was given, so the symbol table is all that is needed to
- * answer - no document has to be open, which matters because a hierarchy is walked across
- * files the user never opened.
+ *        The client hands back the item it was given, so the symbol table is all that is needed to
  */
 struct TypeHierarchyItemRequest
 {
@@ -39,11 +35,7 @@ struct TypeHierarchyItemRequest
 
 /**
  * @brief Opens a type hierarchy on the type the cursor is looking at.
- *
- * The identifier under the cursor when it names a class or an interface; failing that, the type
- * whose body the cursor sits in, so that asking for the hierarchy from somewhere inside a class
- * works the way a reader would expect rather than requiring the cursor be parked on the name.
- *
+ *        The identifier under the cursor when it names a class or an interface; failing that, the type
  * @return The item, or nullopt when the cursor is looking at no type at all.
  */
 std::optional<std::vector<lsp::TypeHierarchyItem>> PrepareTypeHierarchy(const TypeHierarchyPrepareRequest& request);
@@ -51,7 +43,7 @@ std::optional<std::vector<lsp::TypeHierarchyItem>> PrepareTypeHierarchy(const Ty
 /**
  * @brief The types this one declares as its bases.
  * @note Direct bases only. The client expands the tree one level at a time, and answering
- *       transitively would list every ancestor again under each of its own descendants.
+ *        transitively would list every ancestor again under each of its own descendants.
  */
 std::optional<std::vector<lsp::TypeHierarchyItem>> GetSupertypes(const TypeHierarchyItemRequest& request);
 

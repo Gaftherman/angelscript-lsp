@@ -1,4 +1,5 @@
 #include "analysis/checkers/ControlFlowChecker.h"
+
 #include "analysis/checkers/TypeConversionChecker.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/NodeIndex.h"
@@ -6,11 +7,11 @@
 #include "analysis/rules/RuleIndex.h"
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"
+#include "parser/GrammarNames.h"
+#include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
-#include "parser/GrammarNames.h"
-#include "parser/Primitives.h"
 #include <algorithm>
 #include <cctype>
 #include <optional>
@@ -28,13 +29,7 @@ static TSSymbol NodeSymbol(TSNode node)
 
 /**
  * @brief The keyword a switch clause opens with: "case", "default", or empty if malformed.
- *
- * Read as a node type rather than by matching the clause's source text. The grammar makes
- * both keywords their own anonymous token, so the type is exact; the text is not. Anything
- * the parser steps over on the way to the keyword - a fall-through comment written just
- * before `default:`, say - shifts the text, and the old test then answered "case" for a
- * default clause. That silenced the default-must-be-last rule on exactly the switch
- * statements most likely to carry the bug.
+ *        Read as a node type rather than by matching the clause's source text. The grammar makes
  */
 static TSSymbol ClauseKeyword(TSNode clause)
 {
@@ -45,7 +40,9 @@ static TSSymbol ClauseKeyword(TSNode clause)
     return NodeSymbol(ts_node_child(clause, 0));
 }
 
-/** @brief True when the clause is spelled `default:` rather than `case <expr>:`. */
+/**
+ * @brief True when the clause is spelled `default:` rather than `case <expr>:`.
+ */
 static bool IsDefaultClause(TSNode clause)
 {
     const auto& gs = parser::GetGrammarSymbols();
@@ -54,10 +51,7 @@ static bool IsDefaultClause(TSNode clause)
 
 /**
  * @brief Index of the clause's first statement among its named children.
- *
- * A `case` clause's label expression is a named child sitting where a statement would, so
- * counting children directly reads `case 2:` as a clause with one statement when it is
- * really an empty one falling through to the next.
+ *        A `case` clause's label expression is a named child sitting where a statement would, so
  */
 static uint32_t FirstStatementIndex(TSNode clause)
 {
@@ -66,23 +60,7 @@ static uint32_t FirstStatementIndex(TSNode clause)
 
 /**
  * @brief `if (c);` and `else;` - a bare semicolon where the branch body belongs.
- *
- * AngelScript is stricter here than C++ and stricter than its own loops, which is the whole
- * reason this is worth a rule. Measured, six probes:
- *
- *     if (c);          ERROR   If with empty statement
- *     else;            ERROR   Else with empty statement
- *     if (c) {}        accepted - an empty *block* is fine
- *     while (c);       accepted
- *     for (;;);        accepted
- *     do; while (c);   accepted
- *
- * So it is `if` and `else` and nothing else. The mistake it catches is the one that started
- * this: `if (cond); return true; else return false;` reads as a three-branch decision and is
- * really an empty `if`, a `return` that always runs, and an `else` belonging to no `if`.
- *
- * Skipped inside a parse error, where a `;` in this position is as likely to be tree-sitter
- * recovering as it is to be what somebody typed.
+ *        AngelScript is stricter here than C++ and stricter than its own loops, which is the whole
  */
 static void CheckEmptyBranch(TSNode node, DiagnosticContext& ctx)
 {
@@ -113,10 +91,7 @@ static void CheckEmptyBranch(TSNode node, DiagnosticContext& ctx)
 
 /**
  * @brief True for a return type that null cannot convert to.
- *
- * The primitives, by name. Deliberately not "anything that is not a handle": a value type
- * the host registered may accept null through a conversion this analyzer never sees, and
- * inventing an error there costs more than missing one.
+ *        The primitives, by name. Deliberately not "anything that is not a handle": a value type
  */
 static bool IsNonNullablePrimitiveName(std::string_view typeName)
 {
@@ -331,7 +306,9 @@ bool DefiniteReturnAnalyzer::TryDefinitelyReturns(TSNode node, std::string_view 
 
 // Switch clauses
 
-/** @brief True for a case value shape AngelScript cannot use as a label. */
+/**
+ * @brief True for a case value shape AngelScript cannot use as a label.
+ */
 static bool IsUnusableCaseValue(TSNode expression, std::string_view sourceCode)
 {
     const auto& gs = parser::GetGrammarSymbols();
@@ -416,17 +393,9 @@ static std::pair<std::string_view, std::string_view> SplitEnumeratorQualifier(st
 
 /**
  * @brief The number a case label stands for, when that can be known for certain.
- *
- * `enum E { A = 1, B = 1 }` gives two names to one number, and a switch dispatches on the
- * number - so `case A:` and `case B:` are the same label twice and the compiler says so:
+ *        `enum E { A = 1, B = 1 }` gives two names to one number, and a switch dispatches on the
  * @brief Resolve an enumerator's integer value from the cached RuleIndex.
- *
- * Switch-case duplicate detection needs this so that two cases written with different
- * enumerator names that evaluate to the same number are caught, without falsely flagging
- * an enumerator and a literal, or two enumerators whose value we cannot resolve or that are
- * not one, on code that compiles.
- *
- * Accepts both `A` and `E::A`; the qualifier is dropped before the lookup.
+ *        Switch-case duplicate detection needs this so that two cases written with different
  */
 static std::optional<long long> EnumeratorValue(std::string_view label, const rules::RuleIndex& ruleIndex)
 {
@@ -663,15 +632,7 @@ static void CheckSwitch(TSNode node, std::string_view sourceCode, DiagnosticCont
 
 /**
  * @brief Reports the first statement a block can never reach.
- *
- * Purely structural, and that is the whole rule: anything written after a `return`, a
- * `break` or a `continue` *in the same block* is dead. Compiled against a real engine,
- * which warns - not errors - at exactly those three, and does not warn after an `if` whose
- * body returns, because the false branch still falls through. So no path analysis is
- * involved and none is wanted; DefinitelyReturns exists for the question that does need it.
- *
- * One report per block, at the first dead statement. The engine says it once too, and a
- * warning per line of a dead tail would bury the one that matters.
+ *        Purely structural, and that is the whole rule: anything written after a `return`, a
  */
 static void CheckUnreachable(TSNode block, DiagnosticContext& ctx)
 {

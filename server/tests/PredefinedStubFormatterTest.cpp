@@ -1,9 +1,9 @@
-#include <doctest/doctest.h>
-
-#include <string>
-
 #include "features/formatting/PredefinedStubFormatter.h"
+
 #include "parser/AngelScriptParser.h"
+
+#include <doctest/doctest.h>
+#include <string>
 
 using angel_lsp::features::formatting::FormatPredefinedStub;
 

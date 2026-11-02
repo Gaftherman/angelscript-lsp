@@ -1,10 +1,11 @@
 #include "analysis/checkers/NamespaceChecker.h"
+
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "parser/ASTUtils.h"
+#include "parser/GrammarNames.h"
 #include "utils/ScopedNameUtils.h"
 
-#include "parser/GrammarNames.h"
 #include <cctype>
 #include <string>
 #include <vector>
@@ -13,9 +14,7 @@ namespace angel_lsp::analysis
 {
 /**
  * @brief Whether a node sits inside a `mixin class` body.
- *
- * A mixin is compiled into the class that includes it, so an unqualified name in its body
- * may name a member of a class this file has never seen. See the note at the caller.
+ *        A mixin is compiled into the class that includes it, so an unqualified name in its body
  */
 static bool IsInsideMixinBody(TSNode node)
 {

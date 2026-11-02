@@ -1,13 +1,14 @@
 #include "analysis/checkers/InitializerListChecker.h"
+
 #include "analysis/checkers/TypeConversionChecker.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"
-
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
+
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
 #include <cctype>
@@ -28,15 +29,7 @@ static std::string Trimmed(std::string text)
 
 /**
  * @brief Strips the decorations that do not change which values a type accepts.
- *
- * `const`, `&` and `@` all leave the underlying type - and therefore its list pattern -
- * exactly as it was. The brackets and angle brackets are deliberately kept: those *are* the
- * shape this rule reads. That is also why `SemanticHelpers::CleanBaseType` cannot be used
- * here despite doing most of the same work - it strips `[]` and unwraps `array<...>` down
- * to the element type, which is precisely the information that has to survive.
- *
- * These three are language syntax rather than configuration: AngelScript spells them this
- * way and no host can change it.
+ *        `const`, `&` and `@` all leave the underlying type - and therefore its list pattern -
  */
 static std::string StripDecorations(std::string_view raw)
 {
@@ -177,10 +170,9 @@ static void CheckElementValue(TSNode element, const std::string& wanted, Diagnos
 
 /**
  * @brief Inspects container member functions for multi-index operators and list constructors.
- *
- * @param[in]  containerKey Class key in rule index.
- * @param[in]  className    Short name of the container class.
- * @param[in]  ctx          Diagnostic context.
+ * @param[in] containerKey Class key in rule index.
+ * @param[in] className    Short name of the container class.
+ * @param[in] ctx          Diagnostic context.
  * @param[out] out          Inspection state sink.
  */
 static void InspectContainerMembers(const std::string& containerKey, const std::string& className,
@@ -219,7 +211,6 @@ static void InspectContainerMembers(const std::string& containerKey, const std::
 
 /**
  * @brief Builds a list of candidate container keys for a symbol name lookup.
- *
  * @param[in] sym          Target symbol.
  * @param[in] fallbackName Fallback type name.
  * @return Ordered list of unique candidate container keys.
@@ -244,7 +235,6 @@ static std::vector<std::string> CandidateContainerKeys(const Symbol& sym, std::s
 
 /**
  * @brief Inspects a class symbol to determine whether it behaves as a container.
- *
  * @param[in] sym      Class symbol to inspect.
  * @param[in] spelling Template spelling of the container type.
  * @param[in] ctx      Diagnostic context.
@@ -279,12 +269,7 @@ static std::optional<ListContainerInfo> InspectClassContainer(const Symbol& sym,
 
 /**
  * @brief Inspects whether a type represents a sequence or multi-dimensional container.
- *
- * Identifies containers via:
- * 1. Syntax arrays: `T[]`.
- * 2. Engine-configured array type or `arrayLikeTemplates`.
- * 3. SymbolTable registration with multi-index `opIndex` (e.g. 2D grid/matrix) or list constructors.
- *
+ *        Identifies containers via:
  * @param[in] type               Cleaned type string.
  * @param[in] spelling           Parsed template spelling.
  * @param[in] ctx                Diagnostic context.
@@ -328,8 +313,7 @@ static ListContainerInfo InspectContainer(const std::string& type, const Templat
 
 /**
  * @brief Inspects a function symbol for associative dictionary signatures (`set`, `get`, `exists`).
- *
- * @param[in]     m     Candidate function symbol.
+ * @param[in] m     Candidate function symbol.
  * @param[in,out] state Dictionary type state sink.
  */
 static void UpdateDictValType(const ParameterInformation& param, DictTypeState& state)
@@ -376,10 +360,9 @@ static void InspectDictFunctionSignature(const Symbol& m, DictTypeState& state)
 
 /**
  * @brief Inspects member methods and keys for associative container semantics.
- *
- * @param[in]     containerKey Container key in rule index.
- * @param[in]     argCount     Template argument count.
- * @param[in]     ctx          Diagnostic context.
+ * @param[in] containerKey Container key in rule index.
+ * @param[in] argCount     Template argument count.
+ * @param[in] ctx          Diagnostic context.
  * @param[in,out] state        Dictionary type state sink.
  */
 static void InspectClassDictMembers(const std::string& containerKey, size_t argCount, const DiagnosticContext& ctx,
@@ -410,10 +393,9 @@ static void InspectClassDictMembers(const std::string& containerKey, size_t argC
 
 /**
  * @brief Inspects a single class symbol for dictionary semantics.
- *
- * @param[in]     sym      Candidate class symbol.
- * @param[in]     spelling Parsed template spelling.
- * @param[in]     ctx      Diagnostic context.
+ * @param[in] sym      Candidate class symbol.
+ * @param[in] spelling Parsed template spelling.
+ * @param[in] ctx      Diagnostic context.
  * @param[in,out] state    Dictionary type state sink.
  */
 static void InspectClassDict(const Symbol& sym, const TemplateSpelling& spelling, const DiagnosticContext& ctx,
@@ -432,7 +414,6 @@ static void InspectClassDict(const Symbol& sym, const TemplateSpelling& spelling
 
 /**
  * @brief Inspects whether a type represents an associative container and resolves its key and value types.
- *
  * @param[in] spelling Parsed template spelling of the container.
  * @param[in] ctx      Diagnostic context.
  * @return Resolved dictionary info.
@@ -482,9 +463,8 @@ static DictInfo InspectDictionary(const TemplateSpelling& spelling, const Diagno
 
 /**
  * @brief Inspects a member symbol and records it if it represents an aggregate field or list constructor.
- *
- * @param[in]     s        Member symbol.
- * @param[in]     classSym Containing class symbol.
+ * @param[in] s        Member symbol.
+ * @param[in] classSym Containing class symbol.
  * @param[in,out] info     Aggregate struct info sink.
  */
 static void InspectStructMemberSymbol(const Symbol& s, const Symbol& classSym, AggregateStructInfo& info)
@@ -512,10 +492,9 @@ static void InspectStructMemberSymbol(const Symbol& s, const Symbol& classSym, A
 
 /**
  * @brief Collects aggregate struct fields and list constructors from a container key.
- *
- * @param[in]     container Container name key in rule index.
- * @param[in]     classSym  Containing class symbol.
- * @param[in]     ctx       Diagnostic context.
+ * @param[in] container Container name key in rule index.
+ * @param[in] classSym  Containing class symbol.
+ * @param[in] ctx       Diagnostic context.
  * @param[in,out] info      Aggregate struct info sink.
  */
 static void CollectStructContainerMembers(const std::string& container, const Symbol& classSym,
@@ -536,7 +515,6 @@ static void CollectStructContainerMembers(const std::string& container, const Sy
 
 /**
  * @brief Sorts and deduplicates struct field definitions by declaration order.
- *
  * @param[in,out] fields Vector of struct fields to finalize.
  */
 static void FinalizeStructFields(std::vector<StructFieldInfo>& fields)
@@ -562,10 +540,9 @@ static void FinalizeStructFields(std::vector<StructFieldInfo>& fields)
 
 /**
  * @brief Inspects a single class symbol for aggregate struct fields and list constructors.
- *
- * @param[in]     sym      Class symbol to inspect.
- * @param[in]     spelling Parsed template spelling.
- * @param[in]     ctx      Diagnostic context.
+ * @param[in] sym      Class symbol to inspect.
+ * @param[in] spelling Parsed template spelling.
+ * @param[in] ctx      Diagnostic context.
  * @param[in,out] info     Aggregate struct info sink.
  */
 static void InspectClassAggregate(const Symbol& sym, const TemplateSpelling& spelling, const DiagnosticContext& ctx,
@@ -592,9 +569,8 @@ static void InspectClassAggregate(const Symbol& sym, const TemplateSpelling& spe
 
 /**
  * @brief Dynamically extracts member properties in declaration order for an aggregate struct/class.
- *
- * @param[in]     spelling Parsed template spelling of the struct.
- * @param[in]     ctx      Diagnostic context.
+ * @param[in] spelling Parsed template spelling of the struct.
+ * @param[in] ctx      Diagnostic context.
  * @param[in,out] cache    Layout cache across inspections.
  * @return Aggregate struct field layout and list initialization support.
  */
@@ -646,7 +622,6 @@ static AggregateStructInfo InspectAggregateStruct(const TemplateSpelling& spelli
 
 /**
  * @brief Validates elements of a sequence or multi-dimensional container recursively.
- *
  * @param[in] node      Initializer list node.
  * @param[in] dimension Remaining container dimensions.
  * @param[in] elemType  Expected element type.
@@ -698,7 +673,6 @@ static void ValidateMultiDimensionalContainer(TSNode node, uint32_t dimension, c
 
 /**
  * @brief Validates a single dictionary key-value pair in an initializer list.
- *
  * @param[in] child    Pair initializer list node.
  * @param[in] dictInfo Dictionary key and value type information.
  * @param[in] valCtx   Validation context.
@@ -754,7 +728,6 @@ static void ValidateDictionaryPair(TSNode child, const DictInfo& dictInfo, const
 
 /**
  * @brief Validates an initializer list against expected dictionary key-value semantics.
- *
  * @param[in] listNode Initializer list node.
  * @param[in] dictInfo Dictionary key and value type information.
  * @param[in] valCtx   Validation context.
@@ -791,7 +764,6 @@ static void ValidateDictionaryList(TSNode listNode, const DictInfo& dictInfo, co
 
 /**
  * @brief Validates an initializer list against an aggregate struct or class layout.
- *
  * @param[in] listNode   Initializer list node.
  * @param[in] type       Decorated or unadorned type name.
  * @param[in] structInfo Struct layout information.
@@ -1023,12 +995,11 @@ void InitializerListValidator::ValidateList(TSNode listNode, const std::string& 
 
 /**
  * @brief Computes the element context at the position of an initializer list node.
- *
  * @param[in] node    Target AST node.
  * @param[in] request Analysis request.
  * @return ElementContext with enclosing scope.
  */
-static ElementContext ElementsAt(TSNode node, const InitializerListCheckRequest& request)
+static ElementContext ElementsAt(TSNode node, const AstCheckContext& request)
 {
     const TSPoint start = ts_node_start_point(node);
     return ElementContext{request.sourceCode,
@@ -1037,7 +1008,6 @@ static ElementContext ElementsAt(TSNode node, const InitializerListCheckRequest&
 
 /**
  * @brief Validates typed initializer lists (`Type = { ... }`).
- *
  * @param[in] node    Typed initializer list AST node.
  * @param[in] initCtx Initializer traversal context.
  */
@@ -1056,7 +1026,6 @@ static void ProcessTypedInitializerList(TSNode node, const InitializerListContex
 
 /**
  * @brief Validates assignment expressions with initializer list right-hand sides (`a = { ... }`).
- *
  * @param[in] node    Assignment expression AST node.
  * @param[in] initCtx Initializer traversal context.
  */
@@ -1087,7 +1056,6 @@ static void ProcessAssignmentExpression(TSNode node, const InitializerListContex
 
 /**
  * @brief Validates return statements returning initializer lists (`return { ... };`).
- *
  * @param[in] node    Return statement AST node.
  * @param[in] initCtx Initializer traversal context.
  */
@@ -1120,7 +1088,6 @@ static void ProcessReturnStatement(TSNode node, const InitializerListContext& in
 
 /**
  * @brief Validates variable declarations with initializer list initializers (`Type a = { ... };`).
- *
  * @param[in] node    Variable declaration AST node.
  * @param[in] initCtx Initializer traversal context.
  */
@@ -1160,7 +1127,6 @@ static void ProcessVariableDeclaration(TSNode node, const InitializerListContext
 
 /**
  * @brief Dispatches an AST node to the corresponding initializer list processor.
- *
  * @param[in] node    AST node to process.
  * @param[in] initCtx Initializer traversal context.
  */
@@ -1188,7 +1154,6 @@ static void DispatchInitListNode(TSNode node, const InitializerListContext& init
 
 /**
  * @brief Walks initializer list nodes using the fast NodeIndex cursor merge.
- *
  * @param[in] initCtx Initializer traversal context.
  */
 static void DispatchIndexedInitializerLists(const InitializerListContext& initCtx)
@@ -1201,7 +1166,6 @@ static void DispatchIndexedInitializerLists(const InitializerListContext& initCt
 
 /**
  * @brief Falls back to flat worklist traversal when NodeIndex is unavailable.
- *
  * @param[in] initCtx Initializer traversal context.
  */
 static void DispatchTreeWalkInitializerLists(const InitializerListContext& initCtx)
@@ -1256,7 +1220,7 @@ void ValidateInitializerList(TSNode listNode, const std::string& expectedType, D
     InitializerListValidator::ValidateList(listNode, expectedType, valCtx);
 }
 
-void CheckInitializerLists(const InitializerListCheckRequest& request, DiagnosticContext& ctx)
+void CheckInitializerLists(const AstCheckContext& request, DiagnosticContext& ctx)
 {
     const std::unordered_set<std::string> arrayLikeTemplates = ctx.request.GetArrayLikeTemplateNames();
     StructLayoutCache structCache;

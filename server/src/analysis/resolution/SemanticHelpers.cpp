@@ -1,4 +1,5 @@
 #include "analysis/resolution/SemanticHelpers.h"
+
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
@@ -9,14 +10,14 @@
 #include "analysis/types/TypeSanitization.h"
 #include "config/EngineRuleConfig.h"
 #include "parser/ASTUtils.h"
+#include "parser/GrammarNames.h"
 #include "parser/Keywords.h"
+#include "parser/QueryRegistry.h"
 #include "utils/Constants.h"
+#include "utils/LspLogger.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
-#include "parser/GrammarNames.h"
-#include "parser/QueryRegistry.h"
-#include "utils/LspLogger.h"
 #include <optional>
 #include <spdlog/fmt/fmt.h>
 

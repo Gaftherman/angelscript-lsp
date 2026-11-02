@@ -3,6 +3,8 @@
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/types/VirtualMixinContext.h"
+#include "config/ServerConfig.h"
+
 #include <functional>
 #include <lsp/messages.h>
 #include <lsp/types.h>
@@ -10,8 +12,6 @@
 #include <string>
 #include <tree_sitter/api.h>
 #include <vector>
-
-#include "config/ServerConfig.h"
 
 namespace angel_lsp::features
 {

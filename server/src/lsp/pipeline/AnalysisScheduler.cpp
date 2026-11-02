@@ -1,5 +1,7 @@
 #include "lsp/pipeline/AnalysisScheduler.h"
+
 #include "utils/MultiFileLogger.h"
+
 #include <exception>
 
 namespace angel_lsp

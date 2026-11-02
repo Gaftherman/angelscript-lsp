@@ -241,7 +241,9 @@ struct GrammarSymbols
 
     // Pre-resolved Statement & Expression Sets
 
-    /** @brief Pre-resolved target node symbols for single-pass type conversion checks. */
+    /**
+     * @brief Pre-resolved target node symbols for single-pass type conversion checks.
+     */
     std::array<TSSymbol, 19> conversionTargetSymbols{};
 };
 

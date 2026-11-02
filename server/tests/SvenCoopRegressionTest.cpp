@@ -1,5 +1,3 @@
-#include <doctest/doctest.h>
-
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/CallGraph.h"
@@ -17,10 +15,12 @@
 #include "parser/AngelScriptParser.h"
 #include "parser/Primitives.h"
 #include "utils/IncludeResolver.h"
+#include "utils/MemoryTelemetry.h"
 #include "utils/Utils.h"
 #include "utils/WorkspaceIncludeGraph.h"
 
 #include <chrono>
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -781,6 +781,56 @@ TEST_CASE("SvenCoopRegression - Deep builder pattern and chained calls analyze l
 
     const auto diags = AnalyzeSnippet(script);
     CHECK(diags.empty());
+}
+
+TEST_CASE("SvenCoopRegression - End-to-end LSP feature latency is under 10ms with memory telemetry")
+{
+    const std::string className = GenerateRandomSymbolName("TelemetryPlayer");
+    const std::string methodName = GenerateRandomSymbolName("OnTakeDamage");
+    const std::string code = "namespace Combat\n"
+                             "{\n"
+                             "    class " +
+                             className +
+                             "\n"
+                             "    {\n"
+                             "        int health = 100;\n"
+                             "        void " +
+                             methodName +
+                             "(int dmg)\n"
+                             "        {\n"
+                             "            health -= dmg;\n"
+                             "        }\n"
+                             "    }\n"
+                             "}\n";
+
+    parser::AngelScriptParser parser;
+    TSTree* tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    analysis::SymbolTable table;
+    analysis::SymbolCollector collector(nullptr);
+    collector.CollectSymbols("file:///perf.as", code, parser, table);
+
+    analysis::NodeIndex nodeIndex(ts_tree_root_node(tree));
+
+    const auto t0 = std::chrono::high_resolution_clock::now();
+    features::FoldingRangeRequest foldReq{"file:///perf.as", code, tree};
+    const auto foldingRanges = features::GetFoldingRanges(foldReq);
+    const auto t1 = std::chrono::high_resolution_clock::now();
+    const double foldMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
+
+    CHECK(foldingRanges.has_value());
+    CHECK(foldMs < 10.0);
+
+    const size_t stBytes = table.EstimateMemoryBytes();
+    const size_t niBytes = nodeIndex.EstimateMemoryBytes();
+    const auto report = utils::SampleMemoryTelemetry(stBytes, 0, niBytes, 0, foldMs);
+    CHECK(report.workingSetBytes > 0);
+    CHECK(report.symbolTableBytes > 0);
+    CHECK(report.nodeIndexBytes > 0);
+    CHECK(report.lastAnalysisLatencyMs < 10.0);
+
+    ts_tree_delete(tree);
 }
 
 } // namespace angel_lsp::test

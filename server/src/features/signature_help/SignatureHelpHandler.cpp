@@ -1,9 +1,11 @@
 #include "features/signature_help/SignatureHelpHandler.h"
+
 #include "analysis/resolution/SemanticHelpers.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
+
 #include <algorithm>
 #include <sstream>
 #include <unordered_set>

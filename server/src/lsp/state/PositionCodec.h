@@ -3,7 +3,6 @@
 #include "utils/PositionEncoding.h"
 
 #include <lsp/types.h>
-
 #include <string_view>
 #include <vector>
 
@@ -45,12 +44,7 @@ void Encode(const utils::LineIndex& lineIndex, std::string_view text, utils::Pos
 
 /**
  * @brief Re-encodes a semantic tokens payload in place.
- *
- * The payload is a flat run of 5-tuples (deltaLine, deltaStart, length, type, modifiers) where
- * both `deltaStart` and `length` are measured in the negotiated encoding - so a document with
- * one accented character shifts every token after it on that line. Handled separately from
- * Encode() because the values have to be decoded to absolute positions, converted, and then
- * re-delta-encoded.
+ *        The payload is a flat run of 5-tuples (deltaLine, deltaStart, length, type, modifiers) where
  */
 void EncodeSemanticTokens(std::string_view text, utils::PositionEncoding enc, std::vector<lsp::uint>& data);
 } // namespace angel_lsp::codec

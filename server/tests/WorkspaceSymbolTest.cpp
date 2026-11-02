@@ -1,9 +1,9 @@
-#include <doctest/doctest.h>
-
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "features/workspace_symbol/WorkspaceSymbolHandler.h"
 #include "parser/AngelScriptParser.h"
+
+#include <doctest/doctest.h>
 
 using namespace angel_lsp;
 using namespace angel_lsp::features;

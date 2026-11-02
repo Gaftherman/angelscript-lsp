@@ -1,16 +1,15 @@
-#include <doctest/doctest.h>
-
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 #include "parser/Keywords.h"
-
-#include "helpers/TestUtils.h"
 #include "spdlog/fmt/fmt.h"
+
 #include <algorithm>
 #include <array>
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <lsp/json/json.h>

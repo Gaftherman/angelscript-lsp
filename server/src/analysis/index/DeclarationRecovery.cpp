@@ -1,7 +1,9 @@
 #include "analysis/index/DeclarationRecovery.h"
+
 #include "analysis/index/SymbolTable.h"
 #include "parser/Keywords.h"
 #include "utils/Utils.h"
+
 #include <cctype>
 
 namespace angel_lsp::analysis

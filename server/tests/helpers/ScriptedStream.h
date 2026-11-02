@@ -1,10 +1,9 @@
 #pragma once
 
-#include <lsp/io/stream.h>
-
 #include <condition_variable>
 #include <cstring>
 #include <functional>
+#include <lsp/io/stream.h>
 #include <mutex>
 #include <string>
 #include <vector>

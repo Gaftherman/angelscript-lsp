@@ -5,7 +5,6 @@
 #include "utils/PreprocessorRegions.h"
 
 #include <lsp/types.h>
-
 #include <optional>
 #include <string>
 #include <vector>
@@ -37,26 +36,19 @@ struct DocumentLinkRequest
 
     /**
      * @brief Directories an `#include` is permitted to resolve into. Empty means unconfined.
-     *
-     * A link target is a path the client can be asked to open, and an unresolved-include
-     * diagnostic is a statement about a path - so both have to apply the same confinement the
-     * indexer does, or the feature layer becomes the way to probe for files outside the
-     * workspace. See IncludeResolver::IsWithinRoots.
+     *        A link target is a path the client can be asked to open, and an unresolved-include
      */
     std::vector<std::string> allowedRoots;
 
     /**
      * @brief Lines the preprocessor removes, so a directive inside one is not a directive.
-     *
-     * Empty means nothing is excluded, which is what every caller that does not care gets.
+     *        Empty means nothing is excluded, which is what every caller that does not care gets.
      */
     std::vector<utils::ExcludedLineRange> excludedLineRanges;
 
     /**
      * @brief Suffix an unresolvable include may be retried with, or empty for none.
-     *
-     * Must match what the include graph resolved with, or a link would point at nothing while
-     * the module closure had already found the file - see ServerConfig::implicitIncludeExtension.
+     *        Must match what the include graph resolved with, or a link would point at nothing while
      */
     std::string implicitExtension;
 };
@@ -65,10 +57,7 @@ using DocumentLinkResult = std::vector<lsp::DocumentLink>;
 
 /**
  * @brief Turns every resolvable `#include` directive into a clickable link.
- *
- * Ranges cover just the path inside the quotes or angle brackets, in byte columns like every
- * other handler; the server converts them to the client's encoding on the way out.
- *
+ *        Ranges cover just the path inside the quotes or angle brackets, in byte columns like every
  * @param request Document and include search paths.
  * @return One link per resolvable directive, or std::nullopt when the document has none.
  */
@@ -76,11 +65,7 @@ std::optional<DocumentLinkResult> GetDocumentLinks(const DocumentLinkRequest& re
 
 /**
  * @brief Reports `#include` directives that resolve to no file on disk.
- *
- * A mistyped or stale include is invisible until something downstream fails to find a symbol,
- * and it silently drops the file out of its module (see WorkspaceIncludeGraph), so it is worth
- * saying plainly where the problem is.
- *
+ *        A mistyped or stale include is invisible until something downstream fails to find a symbol,
  * @param request Document and include search paths.
  * @return One warning per unresolvable directive.
  */

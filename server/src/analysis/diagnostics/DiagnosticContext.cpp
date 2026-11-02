@@ -1,9 +1,11 @@
 #include "analysis/diagnostics/DiagnosticContext.h"
+
 #include "analysis/index/NodeIndex.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "utils/Constants.h"
 #include "utils/LspLogger.h"
 #include "utils/Utils.h"
+
 #include <cstdint>
 #include <span>
 #include <spdlog/fmt/fmt.h>
@@ -114,10 +116,7 @@ static void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std
 
 /**
  * @brief The column of `typeName` on `line`, searching from `fromColumn`.
- *
- * Returns the source line's own npos when the line is past the end of the document or the
- * name is not on it - a declaration split across lines, or a type spelled differently from
- * the base name the rule is complaining about.
+ *        Returns the source line's own npos when the line is past the end of the document or the
  */
 static size_t ColumnOfTypeName(std::string_view sourceCode, uint32_t line, uint32_t fromColumn,
                                std::string_view typeName)

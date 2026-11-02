@@ -1,4 +1,5 @@
 #include "SymbolTable.h"
+
 #include "analysis/documentation/SignatureFormatter.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"

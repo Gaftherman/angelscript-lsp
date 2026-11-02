@@ -1,4 +1,5 @@
 #include "features/references/ReferencesHandler.h"
+
 #include "analysis/resolution/TargetResolution.h"
 
 #include <algorithm>

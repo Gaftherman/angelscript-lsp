@@ -4,6 +4,7 @@
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
+
 #include <ankerl/unordered_dense.h>
 #include <string>
 #include <string_view>

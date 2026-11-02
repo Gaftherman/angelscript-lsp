@@ -1,8 +1,8 @@
-#include <doctest/doctest.h>
-
-#include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 
+#include "helpers/TestUtils.h"
+
+#include <doctest/doctest.h>
 #include <string>
 #include <vector>
 

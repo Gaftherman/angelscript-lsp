@@ -4,8 +4,6 @@
  *        reported in Sven Co-op scripts and meta_api::json.
  */
 
-#include <doctest/doctest.h>
-
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/LocalScopeCollector.h"
@@ -13,16 +11,16 @@
 #include "analysis/index/SymbolTable.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
 #include <cstdlib>
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <ostream>
 #include <string>
 #include <vector>
-
-#include "utils/Utils.h"
 
 namespace angel_lsp::test
 {

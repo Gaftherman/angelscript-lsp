@@ -13,28 +13,14 @@
 
 namespace angel_lsp::analysis
 {
-/**
- * @brief Checks that every initializer list is written against a type that accepts one.
- *
- * `{ ... }` is not a general-purpose initializer in AngelScript. It is only valid where the
- * target type registered a list factory, and the primitives never do - so `int x = {5};` and,
- * less obviously, the stray brace in `array<int> a = {1, 2, {3}, 4};` are both errors. The
- * compiler answers each with `Initialization lists cannot be used with 'int'`, because it
- * matches the list against the element pattern and the element there is a plain `int`.
- *
- * This checker validates initializer list nesting and element compatibility
- * against target types per the AngelScript compiler specifications.
- */
-class NodeIndex;
-
-using InitializerListCheckRequest = AstCheckContext;
 
 /**
+
  * @brief Reports initializer lists applied to a type that cannot be built from one.
  * @param request Tree and source text of the document under analysis.
  * @param ctx Diagnostic sink; also carries the TypeConfig naming the array template.
  */
-void CheckInitializerLists(const InitializerListCheckRequest& request, DiagnosticContext& ctx);
+void CheckInitializerLists(const AstCheckContext& request, DiagnosticContext& ctx);
 
 /**
  * @brief AST checker for initializer list nesting and element type compatibility.
@@ -57,20 +43,19 @@ struct InitializerListChecker
  */
 struct ElementContext
 {
-    /** @brief Source text of the document. */
+    /**
+     * @brief Source text of the document.
+     */
     std::string_view sourceCode;
-    /** @brief Scope for looking up named identifiers in element expressions. */
+    /**
+     * @brief Scope for looking up named identifiers in element expressions.
+     */
     const Scope* scopeRoot = nullptr;
 };
 
 /**
  * @brief Checks one list against a target type the caller already knows.
- *
- * A list written as a call argument is compiled against the parameter it lands on, and which
- * parameter that is depends on the overload the compiler picks - a question this pass cannot
- * answer and CallChecker already has. So the argument case is driven from there: it names the
- * type, this names the verdict, and the rules stay in one place.
- *
+ *        A list written as a call argument is compiled against the parameter it lands on, and which
  * @param[in] listNode   The `initializer_list` node.
  * @param[in] targetType The type it initializes, as written; decorations are stripped here.
  * @param[in] elements   Element source and scope context.
@@ -175,7 +160,7 @@ struct ListValidationContext
  */
 struct InitializerListContext
 {
-    const InitializerListCheckRequest& request;
+    const AstCheckContext& request;
     DiagnosticContext& ctx;
     const std::unordered_set<std::string>& arrayLikeTemplates;
     StructLayoutCache& structCache;

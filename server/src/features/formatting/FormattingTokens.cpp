@@ -1,5 +1,7 @@
 #include "features/formatting/FormattingTokens.h"
+
 #include "features/formatting/FormattingLexer.h"
+
 #include <unordered_set>
 
 namespace angel_lsp::features

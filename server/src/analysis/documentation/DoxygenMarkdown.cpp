@@ -1,4 +1,5 @@
 #include "analysis/documentation/DoxygenMarkdown.h"
+
 #include "document/Document.h"
 #include "parser/DoxygenParser.h"
 #include "utils/Utils.h"

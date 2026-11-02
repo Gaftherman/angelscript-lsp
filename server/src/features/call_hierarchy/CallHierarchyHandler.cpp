@@ -1,11 +1,12 @@
 #include "features/call_hierarchy/CallHierarchyHandler.h"
+
 #include "analysis/resolution/SemanticHelpers.h"
 #include "features/common/FeatureSharedUtils.h"
 #include "parser/ASTUtils.h"
+#include "parser/GrammarNames.h"
 #include "utils/Constants.h"
 #include "utils/ScopedNameUtils.h"
 
-#include "parser/GrammarNames.h"
 #include <algorithm>
 #include <string_view>
 #include <utility>
@@ -44,7 +45,9 @@ static lsp::CallHierarchyItem ToItem(const analysis::Symbol& sym)
     return item;
 }
 
-/** @brief The qualified name a follow-up request is about, from the item it was handed. */
+/**
+ * @brief The qualified name a follow-up request is about, from the item it was handed.
+ */
 static std::string QualifiedNameOf(const lsp::CallHierarchyItem& item)
 {
     if (item.data.has_value() && item.data->isString())
@@ -61,7 +64,9 @@ static bool IsFunctionSymbol(const analysis::Symbol& sym)
            std::holds_alternative<analysis::FunctionSignature>(sym.signature);
 }
 
-/** @brief Function declarations whose qualified name is exactly this. */
+/**
+ * @brief Function declarations whose qualified name is exactly this.
+ */
 static std::vector<analysis::Symbol> FindByQualifiedName(const std::string& qualifiedName,
                                                          const analysis::SymbolTable& table)
 {
@@ -83,11 +88,7 @@ static std::vector<analysis::Symbol> FindByQualifiedName(const std::string& qual
 
 /**
  * @brief Function declarations whose bare name is this, wherever they were declared.
- *
- * A call site records `Think`, and the table is keyed by `Entity::Think` - so a bare name
- * costs a full walk. Affordable because a hierarchy request is something the user asked
- * for once, not work done on every keystroke; the per-edit passes all read the RuleIndex
- * instead, which is built for exactly that reason.
+ *        A call site records `Think`, and the table is keyed by `Entity::Think` - so a bare name
  */
 static std::vector<analysis::Symbol> FindByBareName(const std::string& bareName, const analysis::SymbolTable& table)
 {
@@ -111,7 +112,9 @@ static std::vector<analysis::Symbol> FindByBareName(const std::string& bareName,
     return found;
 }
 
-/** @brief The function whose body a node sits in, qualified, or empty when it sits in none. */
+/**
+ * @brief The function whose body a node sits in, qualified, or empty when it sits in none.
+ */
 static std::string EnclosingFunction(TSNode node, std::string_view sourceCode)
 {
     const auto& gs = parser::GetGrammarSymbols();
@@ -135,7 +138,9 @@ static std::string EnclosingFunction(TSNode node, std::string_view sourceCode)
     return name;
 }
 
-/** @brief The identifier the cursor sits on, or empty when it is not on one. */
+/**
+ * @brief The identifier the cursor sits on, or empty when it is not on one.
+ */
 static std::string IdentifierAt(const CallHierarchyPrepareRequest& request, TSNode& outNode)
 {
     outNode = TSNode{};

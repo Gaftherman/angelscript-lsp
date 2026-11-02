@@ -1,7 +1,11 @@
 #pragma once
 
+#include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/index/Symbol.h"
+#include "analysis/index/SymbolTable.h"
 #include "analysis/rules/RuleIndex.h"
+#include "analysis/types/VirtualMixinContext.h"
 #include "document/Document.h"
 #include "parser/AngelScriptParser.h"
 
@@ -11,35 +15,15 @@
 
 namespace angel_lsp::analysis
 {
-struct DiagnosticContext;
-class NodeIndex;
-struct Symbol;
-class SymbolTable;
 
 namespace rules
 {
 using TransparentStringSet = ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>;
 
 /**
- * @brief Cache entry for parsed mixin source and AST tree.
- */
-struct MixinFileCacheEntry
-{
-    std::string source;
-    std::unique_ptr<parser::AngelScriptParser> parser;
-    document::TreePtr tree;
-    std::unique_ptr<NodeIndex> nodeIndex;
-};
 
-using MixinFileCache = ankerl::unordered_dense::map<std::string, MixinFileCacheEntry>;
-
-/**
  * @brief Validates a class or interface declaration.
- *
- * Covers what a declaration says about itself - modifiers, mixin restrictions, template
- * placement - and what it says about its bases: they must exist, be inheritable, be at most
- * one class, not form a cycle, and have their interface methods implemented.
- *
+ *        Covers what a declaration says about itself - modifiers, mixin restrictions, template
  * @param sym Class or interface symbol to validate.
  * @param ctx Diagnostic sink; also carries the SymbolTable every lookup goes through.
  * @param mixinCache Optional shared cache of parsed mixin ASTs across class checks.
@@ -48,13 +32,11 @@ void ValidateClass(const Symbol& sym, const DiagnosticContext& ctx, MixinFileCac
 
 /**
  * @brief Reports whether a type participates in an inheritance cycle.
- *
  * @param typeName Type to start from.
  * @param table Symbol table to resolve bases through.
  * @return True when typeName is reachable from itself.
  * @note Tracks the path being walked rather than every type ever seen. A shared visited set
- *       reports diamond inheritance - two bases with a base in common, which is ordinary in
- *       interface hierarchies - as a cycle.
+ *        reports diamond inheritance - two bases with a base in common, which is ordinary in
  */
 bool HasInheritanceCycle(const std::string& typeName, const SymbolTable& table);
 

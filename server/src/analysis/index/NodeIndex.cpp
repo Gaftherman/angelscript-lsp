@@ -1,4 +1,5 @@
-﻿#include "analysis/index/NodeIndex.h"
+#include "analysis/index/NodeIndex.h"
+
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
@@ -15,6 +16,35 @@ NodeIndex::NodeIndex(TSNode root, const TSLanguage* lang, TraversalBudget* budge
     Build(root, lang, budget);
 }
 
+const ankerl::unordered_dense::map<std::string_view, TSSymbol>& NodeIndex::GetSymbolNameMap() noexcept
+{
+    static const auto s_map = []()
+    {
+        ankerl::unordered_dense::map<std::string_view, TSSymbol> map;
+        const TSLanguage* lang = tree_sitter_angelscript();
+        const uint32_t symCount = ts_language_symbol_count(lang);
+        for (const std::string_view name : parser::k_allNodeTypes)
+        {
+            const TSSymbol sym =
+                ts_language_symbol_for_name(lang, name.data(), static_cast<uint32_t>(name.length()), true);
+            if (sym != 0)
+            {
+                map[name] = sym;
+            }
+        }
+        for (uint32_t s = 0; s < symCount; ++s)
+        {
+            const char* name = ts_language_symbol_name(lang, static_cast<TSSymbol>(s));
+            if (name)
+            {
+                map.try_emplace(std::string_view(name), static_cast<TSSymbol>(s));
+            }
+        }
+        return map;
+    }();
+    return s_map;
+}
+
 void NodeIndex::PopulatePredefinedSymbols(const TSLanguage* lang)
 {
     if (!lang)
@@ -26,32 +56,16 @@ void NodeIndex::PopulatePredefinedSymbols(const TSLanguage* lang)
     {
         m_nodesBySymbol.resize(symCount);
     }
-    for (const std::string_view name : parser::k_allNodeTypes)
-    {
-        const TSSymbol sym = ts_language_symbol_for_name(lang, name.data(), static_cast<uint32_t>(name.length()), true);
-        if (sym != 0)
-        {
-            m_symbolByName[name] = sym;
-        }
-    }
-    for (uint32_t s = 0; s < symCount; ++s)
-    {
-        const char* name = ts_language_symbol_name(lang, static_cast<TSSymbol>(s));
-        if (name)
-        {
-            m_symbolByName.try_emplace(std::string_view(name), static_cast<TSSymbol>(s));
-        }
-    }
 }
 
-void NodeIndex::IndexNode(TSNode node, TraversalBudget* budget)
+void NodeIndex::IndexNode(TSNode node, TraversalBudget* budget, uint16_t parentSpanIdx)
 {
     if (budget)
     {
         budget->RecordVisit(node);
     }
 
-    m_allNodes.push_back(node);
+    ++m_nodeCount;
 
     if (ts_node_is_error(node) || ts_node_is_missing(node))
     {
@@ -60,6 +74,7 @@ void NodeIndex::IndexNode(TSNode node, TraversalBudget* budget)
     }
 
     const TSSymbol sym = ts_node_symbol(node);
+    const auto& gs = parser::GetGrammarSymbols();
     if (m_symComment != 0 && sym == m_symComment)
     {
         TSPoint sp = ts_node_start_point(node);
@@ -67,7 +82,11 @@ void NodeIndex::IndexNode(TSNode node, TraversalBudget* budget)
         m_commentRanges.push_back(
             CommentRange{ts_node_start_byte(node), ts_node_end_byte(node), sp.row, sp.column, ep.row, ep.column});
     }
-    if (sym != static_cast<TSSymbol>(-1) && !ts_node_is_error(node) && sym < 4096)
+
+    const bool isNamed = ts_node_is_named(node);
+    const bool isQueriedAnonymous = (sym == gs.tokShared || sym == gs.tokMixin || sym == m_symComment);
+
+    if ((isNamed || isQueriedAnonymous) && sym != static_cast<TSSymbol>(-1) && !ts_node_is_error(node) && sym < 4096)
     {
         if (sym < m_nodesBySymbol.size())
         {
@@ -79,11 +98,11 @@ void NodeIndex::IndexNode(TSNode node, TraversalBudget* budget)
             m_nodesBySymbol[sym].push_back(node);
         }
 
-        RecordContainerSpan(node, sym);
+        RecordContainerSpan(node, sym, parentSpanIdx);
     }
 }
 
-void NodeIndex::RecordContainerSpan(TSNode node, TSSymbol sym)
+void NodeIndex::RecordContainerSpan(TSNode node, TSSymbol sym, uint16_t parentSpanIdx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (sym == gs.symClassDeclaration || sym == gs.symMixinDeclaration || sym == gs.symInterfaceDeclaration ||
@@ -92,6 +111,7 @@ void NodeIndex::RecordContainerSpan(TSNode node, TSSymbol sym)
         IndexedContainerSpan span;
         span.startByte = ts_node_start_byte(node);
         span.endByte = ts_node_end_byte(node);
+        span.parentSpanIndex = parentSpanIdx;
         span.symbol = sym;
         if (sym != gs.symLambdaExpression)
         {
@@ -103,8 +123,38 @@ void NodeIndex::RecordContainerSpan(TSNode node, TSSymbol sym)
             }
         }
         span.isMixin =
-            (sym == gs.symMixinDeclaration) || !ts_node_is_null(parser::FindChildWithSymbol(node, gs.tokMixin));
+            ((sym == gs.symMixinDeclaration) || !ts_node_is_null(parser::FindChildWithSymbol(node, gs.tokMixin))) ? 1
+                                                                                                                  : 0;
         m_containerSpans.push_back(span);
+    }
+}
+
+static bool AdvanceTreeCursor(TSTreeCursor* cursor) noexcept
+{
+    if (ts_tree_cursor_goto_first_child(cursor))
+    {
+        return true;
+    }
+    if (ts_tree_cursor_goto_next_sibling(cursor))
+    {
+        return true;
+    }
+    while (ts_tree_cursor_goto_parent(cursor))
+    {
+        if (ts_tree_cursor_goto_next_sibling(cursor))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void MaintainActiveContainers(std::vector<uint16_t>& activeContainers,
+                                     std::span<const IndexedContainerSpan> spans, uint32_t startByte)
+{
+    while (!activeContainers.empty() && startByte >= spans[activeContainers.back()].endByte)
+    {
+        activeContainers.pop_back();
     }
 }
 
@@ -116,36 +166,30 @@ void NodeIndex::RecordContainerSpan(TSNode node, TSSymbol sym)
 void NodeIndex::TraverseTree(TSNode root, TraversalBudget* budget)
 {
     TSTreeCursor cursor = ts_tree_cursor_new(root);
-    bool visiting = true;
+    std::vector<uint16_t> activeContainers;
+    const auto& gs = parser::GetGrammarSymbols();
 
-    while (visiting)
+    while (true)
     {
         TSNode node = ts_tree_cursor_current_node(&cursor);
-        IndexNode(node, budget);
+        MaintainActiveContainers(activeContainers, m_containerSpans, ts_node_start_byte(node));
 
-        if (ts_tree_cursor_goto_first_child(&cursor))
-        {
-            continue;
-        }
+        const uint16_t parentSpanIdx = activeContainers.empty() ? 0xFFFF : activeContainers.back();
+        IndexNode(node, budget, parentSpanIdx);
 
-        if (ts_tree_cursor_goto_next_sibling(&cursor))
+        const TSSymbol sym = ts_node_symbol(node);
+        if (sym == gs.symClassDeclaration || sym == gs.symMixinDeclaration || sym == gs.symInterfaceDeclaration ||
+            sym == gs.symNamespaceDeclaration || sym == gs.symLambdaExpression)
         {
-            continue;
-        }
-
-        bool backtracked = false;
-        while (ts_tree_cursor_goto_parent(&cursor))
-        {
-            if (ts_tree_cursor_goto_next_sibling(&cursor))
+            if (!m_containerSpans.empty() && (m_containerSpans.size() - 1) < 0xFFFF)
             {
-                backtracked = true;
-                break;
+                activeContainers.push_back(static_cast<uint16_t>(m_containerSpans.size() - 1));
             }
         }
 
-        if (!backtracked)
+        if (!AdvanceTreeCursor(&cursor))
         {
-            visiting = false;
+            break;
         }
     }
 
@@ -164,7 +208,6 @@ void NodeIndex::Build(TSNode root, const TSLanguage* lang, TraversalBudget* budg
     m_language = lang ? lang : tree_sitter_angelscript();
     PopulatePredefinedSymbols(m_language);
     m_symComment = SymbolForName("comment");
-    m_allNodes.reserve(4096);
     TraverseTree(root, budget);
     PostProcessErrorRanges();
     PostProcessCommentRanges();
@@ -189,8 +232,9 @@ std::span<const TSNode> NodeIndex::Nodes(std::string_view typeName) const noexce
     {
         return m_errorNodes;
     }
-    const auto it = m_symbolByName.find(typeName);
-    if (it != m_symbolByName.end())
+    const auto& map = GetSymbolNameMap();
+    const auto it = map.find(typeName);
+    if (it != map.end())
     {
         return Nodes(it->second);
     }
@@ -199,17 +243,13 @@ std::span<const TSNode> NodeIndex::Nodes(std::string_view typeName) const noexce
 
 TSSymbol NodeIndex::SymbolForName(std::string_view typeName) const noexcept
 {
-    const auto it = m_symbolByName.find(typeName);
-    if (it != m_symbolByName.end())
+    const auto& map = GetSymbolNameMap();
+    const auto it = map.find(typeName);
+    if (it != map.end())
     {
         return it->second;
     }
     return 0;
-}
-
-std::span<const TSNode> NodeIndex::AllNodes() const noexcept
-{
-    return m_allNodes;
 }
 
 TSNode NodeIndex::Root() const noexcept
@@ -219,12 +259,12 @@ TSNode NodeIndex::Root() const noexcept
 
 size_t NodeIndex::NodeCount() const noexcept
 {
-    return m_allNodes.size();
+    return m_nodeCount;
 }
 
 bool NodeIndex::Empty() const noexcept
 {
-    return m_allNodes.empty();
+    return m_nodeCount == 0;
 }
 
 template <typename RangeType> void MergeSortedRanges(std::vector<RangeType>& ranges)
@@ -348,13 +388,12 @@ void NodeIndex::Clear() noexcept
 {
     m_root = TSNode{};
     m_language = nullptr;
-    m_allNodes.clear();
+    m_nodeCount = 0;
     m_errorNodes.clear();
     m_nodesBySymbol.clear();
     m_errorRanges.clear();
     m_commentRanges.clear();
     m_containerSpans.clear();
-    m_symbolByName.clear();
     m_symComment = 0;
 }
 
@@ -543,59 +582,81 @@ void ComputeContainerQualifiedNames(std::vector<ContainerInfo>& containers)
     }
 }
 
-std::vector<ContainerInfo> NodeIndex::CollectEnclosingContainers(uint32_t byteOffset, std::string_view sourceCode) const
+static uint16_t FindInnermostContainerSpanIndex(std::span<const IndexedContainerSpan> spans,
+                                                uint32_t byteOffset) noexcept
 {
-    std::vector<ContainerInfo> rawContainers;
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol containerSymbols[] = {gs.symNamespaceDeclaration, gs.symClassDeclaration, gs.symMixinDeclaration,
-                                         gs.symInterfaceDeclaration};
+    auto it = std::upper_bound(spans.begin(), spans.end(), byteOffset,
+                               [](uint32_t val, const IndexedContainerSpan& s) { return val < s.startByte; });
 
-    std::vector<TSNode> enclosingNodes;
-    for (TSSymbol sym : containerSymbols)
+    while (it != spans.begin())
     {
-        for (TSNode node : Nodes(sym))
+        --it;
+        if (byteOffset < it->endByte)
         {
-            const uint32_t start = ts_node_start_byte(node);
-            if (start > byteOffset)
+            return static_cast<uint16_t>(std::distance(spans.begin(), it));
+        }
+    }
+    return 0xFFFF;
+}
+
+static void AppendContainerFromSpan(const IndexedContainerSpan& span, ContainerKind kind, std::string_view sourceCode,
+                                    std::vector<ContainerInfo>& rawContainers)
+{
+    if (span.nameStartByte >= span.nameEndByte || span.nameEndByte > sourceCode.size())
+    {
+        return;
+    }
+    std::string text(sourceCode.substr(span.nameStartByte, span.nameEndByte - span.nameStartByte));
+    if (kind == ContainerKind::Namespace && utils::ContainsScopeSeparator(text))
+    {
+        auto segs = SplitScopeSegments(text);
+        for (auto rit = segs.rbegin(); rit != segs.rend(); ++rit)
+        {
+            if (!rit->empty())
             {
-                break;
-            }
-            const uint32_t end = ts_node_end_byte(node);
-            if (byteOffset < end)
-            {
-                enclosingNodes.push_back(node);
+                rawContainers.push_back({*rit, "", kind});
             }
         }
     }
+    else
+    {
+        rawContainers.push_back({std::move(text), "", kind});
+    }
+}
 
-    if (enclosingNodes.empty())
+std::vector<ContainerInfo> NodeIndex::CollectEnclosingContainers(uint32_t byteOffset, std::string_view sourceCode) const
+{
+    std::vector<ContainerInfo> rawContainers;
+    if (m_containerSpans.empty())
     {
         return rawContainers;
     }
 
-    std::sort(enclosingNodes.begin(), enclosingNodes.end(),
-              [](TSNode a, TSNode b) { return ts_node_start_byte(a) > ts_node_start_byte(b); });
-
-    const bool insideLambda = IsInsideLambdaClosure(byteOffset);
-    const TSNode lambdaNode = insideLambda ? FindEnclosingCallable(byteOffset) : TSNode{};
-    const uint32_t lambdaStart = insideLambda ? ts_node_start_byte(lambdaNode) : 0;
-
-    for (TSNode node : enclosingNodes)
+    const uint16_t innermostIdx = FindInnermostContainerSpanIndex(m_containerSpans, byteOffset);
+    if (innermostIdx == 0xFFFF)
     {
-        const auto kind = ClassifyContainerKind(ts_node_symbol(node));
-        if (!kind)
-        {
-            continue;
-        }
+        return rawContainers;
+    }
 
-        if (insideLambda && (*kind == ContainerKind::Class || *kind == ContainerKind::Interface) &&
-            ts_node_start_byte(node) < lambdaStart)
-        {
-            continue;
-        }
+    const auto& gs = parser::GetGrammarSymbols();
+    uint16_t curr = innermostIdx;
+    bool crossedLambda = false;
 
-        TSNode nameNode = parser::GetChildByField(node, gs.fieldName);
-        AppendRawContainers(nameNode, *kind, sourceCode, rawContainers);
+    while (curr != 0xFFFF)
+    {
+        const auto& span = m_containerSpans[curr];
+        if (span.symbol == gs.symLambdaExpression)
+        {
+            crossedLambda = true;
+        }
+        else if (const auto kind = ClassifyContainerKind(span.symbol))
+        {
+            if (!(crossedLambda && (*kind == ContainerKind::Class || *kind == ContainerKind::Interface)))
+            {
+                AppendContainerFromSpan(span, *kind, sourceCode, rawContainers);
+            }
+        }
+        curr = span.parentSpanIndex;
     }
 
     ComputeContainerQualifiedNames(rawContainers);

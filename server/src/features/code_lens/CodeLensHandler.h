@@ -2,23 +2,20 @@
 
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
+#include "config/ServerConfig.h"
+#include "i18n/i18n.h"
 #include "parser/ASTUtils.h"
+#include "utils/LspLogger.h"
 
 #include <ankerl/unordered_dense.h>
 #include <lsp/messages.h>
 #include <lsp/types.h>
-#include <span>
-#include <tree_sitter/api.h>
-
 #include <optional>
+#include <span>
 #include <string>
+#include <tree_sitter/api.h>
 #include <tuple>
 #include <vector>
-
-#include "config/ServerConfig.h"
-
-#include "i18n/i18n.h"
-#include "utils/LspLogger.h"
 
 namespace angel_lsp::features
 {

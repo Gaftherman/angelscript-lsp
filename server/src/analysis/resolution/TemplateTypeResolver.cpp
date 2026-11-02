@@ -1,10 +1,12 @@
 #include "analysis/resolution/TemplateTypeResolver.h"
+
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
 #include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
+
 #include <algorithm>
 #include <cctype>
 

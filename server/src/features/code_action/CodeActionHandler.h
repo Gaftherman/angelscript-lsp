@@ -2,15 +2,15 @@
 
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
+#include "config/ServerConfig.h"
+#include "i18n/i18n.h"
+
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <optional>
 #include <string>
 #include <tree_sitter/api.h>
 #include <vector>
-
-#include "config/ServerConfig.h"
-#include "i18n/i18n.h"
 
 namespace angel_lsp::features
 {

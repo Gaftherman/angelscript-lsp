@@ -1,6 +1,7 @@
 #include "utils/WorkspaceScan.h"
 
 #include "utils/Utils.h"
+
 #include <ankerl/unordered_dense.h>
 
 namespace angel_lsp::utils

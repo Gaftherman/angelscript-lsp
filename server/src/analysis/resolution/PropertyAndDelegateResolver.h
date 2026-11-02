@@ -1,7 +1,9 @@
 #pragma once
 
 #include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/ExpressionTypeResolver.h"
 #include "config/EngineRuleConfig.h"
+
 #include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
@@ -26,8 +28,6 @@ struct DelegatePropertyReceiverContext
     std::string_view sourceCode;
     std::string_view arrayTypeName;
 };
-
-struct ReceiverTypeContext;
 
 std::string PropertyNameFromAccessor(const Symbol& sym, bool keywordRequired);
 std::vector<Symbol> FindPropertyAccessors(const std::string& typeName, const std::string& propertyName,

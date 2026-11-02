@@ -14,7 +14,9 @@
 
 namespace angel_lsp::analysis
 {
-/** @brief What kind of declaration a LOCALS_QUERY @local.definition.* capture represents. */
+/**
+ * @brief What kind of declaration a LOCALS_QUERY @local.definition.* capture represents.
+ */
 enum class LocalDefinitionKind : uint8_t
 {
     Parameter,
@@ -28,7 +30,9 @@ enum class LocalDefinitionKind : uint8_t
     Import
 };
 
-/** @brief Range of a template argument within a declared type. */
+/**
+ * @brief Range of a template argument within a declared type.
+ */
 struct LocalTypeArgPosition
 {
     std::string name;
@@ -96,7 +100,9 @@ struct LocalDefinition
 };
 static_assert(sizeof(LocalDefinition) <= 192);
 
-/** @brief A single identifier occurrence inside a Scope, not yet resolved to a definition. */
+/**
+ * @brief A single identifier occurrence inside a Scope, not yet resolved to a definition.
+ */
 struct LocalReference
 {
     std::string name;
@@ -109,38 +115,6 @@ struct LocalReference
     uint32_t startByte = 0;
     uint32_t endByte = 0;
 
-    /**
-     * @brief True when this identifier is the member field of a member_expression (the "y" in
-     *        "x.y"). LOCALS_QUERY's bare (identifier) @local.reference matches every identifier
-     *        node including these, but a member name isn't a lexical reference - resolving it
-     *        needs type-aware member lookup, which nothing here does. Consumers that walk scope
-     *        chains/SymbolTable to resolve references (e.g. undefined-identifier checks) must
-     *        skip these to avoid flagging ordinary member access as undefined.
-     */
-    bool isMemberAccess = false;
-
-    /**
-     * @brief True when this identifier is part of a type annotation (datatype, template_type_list,
-     *        base_class_list, etc.). Type resolution diagnostics are handled by type checking
-     *        passes (as-err-unresolved-type) rather than value identifier resolution
-     *        (as-warn-undeclared-identifier).
-     */
-    bool isTypeSpecifier = false;
-
-    /**
-     * @brief True when this identifier is a parameter name label in a named argument (e.g. "param:" in "Call(param:
-     * value)").
-     */
-    bool isNamedArgument = false;
-
-    /**
-     * @brief True when this reference is the callee of a call_expression.
-     */
-    bool isCall = false;
-
-    /**
-     * @brief Number of arguments passed at the call site when isCall is true.
-     */
     uint32_t argumentCount = 0;
 
     /**
@@ -150,26 +124,37 @@ struct LocalReference
     uint32_t qualifierStartByte = 0;
     uint32_t qualifierEndByte = 0;
 
-    /**
-     * @brief Byte range of the receiver/object expression (e.g. "obj" in "obj.member" or "NS" in "NS::Symbol").
-     *        0 if no receiver/object exists.
-     */
     uint32_t receiverStartByte = 0;
     uint32_t receiverEndByte = 0;
 
-    /**
-     * @brief True if parent node is a scoped_identifier.
-     */
-    bool isScopedIdentifier = false;
+    uint8_t isMemberAccess : 1 = 0;
+    uint8_t isTypeSpecifier : 1 = 0;
+    uint8_t isNamedArgument : 1 = 0;
+    uint8_t isCall : 1 = 0;
+    uint8_t isScopedIdentifier : 1 = 0;
+    uint8_t isSuperBaseCall : 1 = 0;
+    uint8_t isLambdaFunctionKeyword : 1 = 0;
+    uint8_t inMetadataOrError : 1 = 0;
 
-    /**
-     * @brief Text of the leading qualifier if parent node is a scoped_identifier (e.g. "INS2BASE" in
-     * "INS2BASE::SELECTFIRE_SEMI").
-     */
-    std::string scopeQualifier;
+    [[nodiscard]] std::string_view GetScopeQualifier(std::string_view source) const noexcept
+    {
+        if (qualifierStartByte < startByte && startByte <= source.size())
+        {
+            std::string_view q(source.data() + qualifierStartByte, startByte - qualifierStartByte);
+            while (q.ends_with(':') || q.ends_with(' ') || q.ends_with('\t'))
+            {
+                q.remove_suffix(1);
+            }
+            return q;
+        }
+        return {};
+    }
 };
+static_assert(sizeof(LocalReference) <= 80);
 
-/** @brief A string literal call argument occurrence (e.g. SetTimeout("MyFunc", ...), CustomEntity("MyClass", ...)). */
+/**
+ * @brief A string literal call argument occurrence (e.g. SetTimeout("MyFunc", ...), CustomEntity("MyClass", ...)).
+ */
 struct StringLiteralCallRef
 {
     std::string name;
@@ -177,7 +162,9 @@ struct StringLiteralCallRef
     uint32_t column = 0;
 };
 
-/** @brief What kind of syntactic construct created this lexical scope. */
+/**
+ * @brief What kind of syntactic construct created this lexical scope.
+ */
 enum class ScopeKind : uint8_t
 {
     Block,
@@ -191,8 +178,6 @@ enum class ScopeKind : uint8_t
 /**
  * @brief One lexical scope (function body, statement block, loop header, class body, ...) in the
  *        tree built from a document's LOCALS_QUERY matches. Scopes nest by source range: every
- *        definition/reference is attached to the innermost scope whose range contains it, and
- *        every child scope's range is contained within its parent's.
  */
 struct Scope
 {
@@ -207,30 +192,16 @@ struct Scope
     uint32_t endLine = 0;
     uint32_t endCharacter = 0;
 
-    /** @brief Syntactic classification of this scope. */
-    ScopeKind kind = ScopeKind::Block;
-
     /**
-     * @brief True when this scope was opened by a func_declaration or lambda_expression (as
-     * opposed to script/namespace_body/class_body/interface_body/statement_block/for_statement/
-     * foreach_statement/switch_statement). Lets consumers distinguish a true function-body local
-     * from a module/namespace/class-scope declaration - LOCALS_QUERY's @local.definition.var
-     * captures both under the identical LocalDefinitionKind::Variable, with no other way to
-     * tell them apart from a Scope/LocalDefinition alone.
+     * @brief Syntactic classification of this scope.
      */
+    ScopeKind kind = ScopeKind::Block;
     bool isFunctionScope : 1 = false;
+    uint32_t containerSpanIndex = UINT32_MAX;
 
     /**
      * @brief Destroys the subtree iteratively rather than by recursive unique_ptr teardown.
-     *
-     * The default destructor destroys `children`, each element of which destroys its own
-     * children, and so on - one stack frame per level. A document of deeply nested blocks
-     * builds a scope tree as deep as the nesting, so freeing it overflowed the stack in the
-     * destructor, where nothing can be guarded by a depth counter and where throwing is not an
-     * option either.
-     *
-     * Flattening first makes teardown iterative: every descendant is moved into one flat list
-     * whose elements are then destroyed in turn, each already childless.
+     *        The default destructor destroys `children`, each element of which destroys its own
      */
     ~Scope()
     {
@@ -257,6 +228,16 @@ struct Scope
     Scope() = default;
     Scope(const Scope&) = delete;
     Scope& operator=(const Scope&) = delete;
+
+    /**
+     * @brief Estimates total dynamic and structure memory used by this scope in bytes.
+     */
+    [[nodiscard]] size_t EstimateMemoryBytes() const noexcept
+    {
+        return sizeof(Scope) + definitions.capacity() * sizeof(LocalDefinition) +
+               references.capacity() * sizeof(LocalReference) +
+               stringLiteralCallRefs.capacity() * sizeof(StringLiteralCallRef);
+    }
 };
 static_assert(sizeof(Scope) <= 128);
 
@@ -306,7 +287,7 @@ class ScopeTraversalGuard
  * @param refByte Byte offset of reference token.
  * @param owner Optional out-parameter receiving the Scope declaring the definition.
  * @param respectClosureBarrier When true (default), closure scopes cannot capture outer local
- *                              variables or parameters from enclosing functions/closures.
+ *        variables or parameters from enclosing functions/closures.
  * @return The matching definition, or nullptr if no enclosing scope declares name visible at refByte.
  */
 const LocalDefinition* ResolveInScopeAt(const Scope* scope, std::string_view name, uint32_t refByte,
@@ -322,9 +303,7 @@ const LocalDefinition* ResolveInScopeAt(const Scope* scope, std::string_view nam
  * @param name Name of symbol to resolve.
  * @param owner Optional out-parameter receiving the Scope declaring the definition.
  * @param respectClosureBarrier When true (default), closure scopes cannot capture outer local
- *                              variables or parameters from enclosing functions/closures.
- *                              Set to false for lexical editor features (e.g. DocumentHighlight)
- *                              that map identifiers to their textually enclosing declaration.
+ *        variables or parameters from enclosing functions/closures.
  * @return The matching definition, or nullptr if no enclosing scope declares name.
  */
 const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name, const Scope** owner = nullptr,
@@ -342,22 +321,14 @@ const Scope* FindScopeDeclaringDefinition(const Scope* root, const LocalDefiniti
 
 /**
  * @brief Finds the innermost Scope containing the given source line and character.
- *
  * @note Returns `root` when no child contains the point, even if `root` does not contain it
- *       either. FindInnermostScope below is the stricter variant; the two are not
- *       interchangeable and the difference is why both exist.
+ *        either. FindInnermostScope below is the stricter variant; the two are not
  */
 const Scope* FindEnclosingScope(const Scope* root, uint32_t line, uint32_t character);
 
 /**
  * @brief Innermost Scope containing the point, or nullptr when `root` does not contain it.
- *
- * Differs from FindEnclosingScope in the out-of-range case: this reports "no scope" rather than
- * falling back to the root, which is what a checker asking "which scope is this expression in?"
- * needs - resolving a name against the wrong scope is worse than not resolving it.
- *
- * Five checkers had carried byte-identical private copies of this. They are now one function;
- * the copies were verified identical before being removed, so this is a move, not a rewrite.
+ *        Differs from FindEnclosingScope in the out-of-range case: this reports "no scope" rather than
  */
 const Scope* FindInnermostScope(const Scope* root, uint32_t line, uint32_t character);
 
@@ -371,25 +342,26 @@ const Scope* FindEnclosingClosure(const Scope* scope);
 /**
  * @brief Owns one Scope tree per open document, keyed by file URI. Mirrors SymbolTable's
  *        per-document lifecycle (clear-then-recollect on every didOpen/didChange/didSave) but,
- *        unlike SymbolTable's flat qualifiedName map, keys directly by file URI since a scope
- *        tree only ever describes a single file.
  */
 class ScopeIndex
 {
   public:
     ScopeIndex() = default;
 
-    /** @brief Replaces (or sets for the first time) the scope tree for fileUri. */
+    /**
+     * @brief Replaces (or sets for the first time) the scope tree for fileUri.
+     */
     void SetScopeTree(const std::string& fileUri, std::unique_ptr<Scope> root);
     void SetScopeTree(const std::string& fileUri, std::shared_ptr<const Scope> root);
 
-    /** @brief Discards the scope tree for fileUri, if any. */
+    /**
+     * @brief Discards the scope tree for fileUri, if any.
+     */
     void ClearDocument(const std::string& fileUri);
 
     /**
      * @brief Returns a snapshot of the root scope for fileUri, or nullptr if none is recorded.
      *        The returned handle keeps the tree alive even if a concurrent SetScopeTree/
-     *        ClearDocument replaces or removes the index's own entry for fileUri afterward.
      */
     std::shared_ptr<const Scope> GetRoot(const std::string& fileUri) const;
 

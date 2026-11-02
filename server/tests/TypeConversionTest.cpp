@@ -1,5 +1,3 @@
-#include <doctest/doctest.h>
-
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/checkers/TypeConversionChecker.h"
@@ -16,6 +14,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <map>

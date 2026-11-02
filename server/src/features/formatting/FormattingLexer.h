@@ -1,6 +1,7 @@
 #pragma once
 
 #include "features/formatting/FormattingTokens.h"
+
 #include <string_view>
 #include <vector>
 

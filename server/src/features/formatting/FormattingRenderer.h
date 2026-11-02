@@ -3,6 +3,7 @@
 #include "features/formatting/FormattingLineBuilder.h"
 #include "features/formatting/FormattingTokens.h"
 #include "features/formatting/FormattingTypes.h"
+
 #include <string>
 #include <string_view>
 #include <vector>

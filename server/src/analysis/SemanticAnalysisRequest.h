@@ -1,13 +1,15 @@
 #pragma once
 
 #include "analysis/diagnostics/Diagnostics.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
-#include "analysis/rules/ClassRules.h"
 #include "analysis/rules/RuleIndex.h"
 #include "analysis/types/ExpressionTypeCache.h"
+#include "analysis/types/VirtualMixinContext.h"
 #include "config/ServerConfig.h"
 #include "i18n/i18n.h"
+#include "parser/ASTUtils.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/StopFlag.h"
 
@@ -20,9 +22,6 @@
 
 namespace angel_lsp::analysis
 {
-class NodeIndex;
-class TraversalBudget;
-
 /**
  * @brief Context and configuration passed into the semantic analysis process.
  */
@@ -40,32 +39,32 @@ struct SemanticAnalysisRequest
      */
     struct ModuleContext
     {
-        /** @brief Module this document belongs to; empty when it is in none of them. */
+        /**
+         * @brief Module this document belongs to; empty when it is in none of them.
+         */
         std::string name;
 
         /**
          * @brief Names declared `shared` by modules OTHER than this one.
-         *
-         * What an `external shared` declaration is allowed to refer to. Built by the server,
-         * which is the only thing that can see across modules.
+         *        What an `external shared` declaration is allowed to refer to. Built by the server,
          */
         ankerl::unordered_dense::set<std::string> sharedElsewhere;
 
-        /** @brief Every configured module name, for the `import ... from "name"` hint. */
+        /**
+         * @brief Every configured module name, for the `import ... from "name"` hint.
+         */
         std::vector<std::string> moduleNames;
 
         /**
          * @brief Modules that also claimed this file and lost, or empty when only one did.
-         *
-         * A file belongs to exactly one module here, and AngelScript really does allow one file
-         * to be compiled into several - so the rule that picked a winner has to be visible. A
-         * reader who cannot see it has no way to tell a deliberate assignment from an accident
-         * of which folder happens to be deeper.
+         *        A file belongs to exactly one module here, and AngelScript really does allow one file
          */
         std::vector<std::string> alsoClaimedBy;
     };
 
-    /** @brief Module scoping, or empty when the host has not described its modules. */
+    /**
+     * @brief Module scoping, or empty when the host has not described its modules.
+     */
     std::optional<ModuleContext> moduleContext;
 
     const SymbolTable& symbolTable;
@@ -74,16 +73,7 @@ struct SemanticAnalysisRequest
 
     /**
      * @brief Every file in the same module as this one, this one included, keyed as URIs.
-     *
-     * AngelScript compiles a module out of several sections, and a name declared twice across
-     * two of them is a redeclaration: `namespace S { void F() {} }` in two files that reach each
-     * other through an #include is "A function with the same name and parameters already
-     * exists" - measured. Two files that do NOT reach each other are separate modules and may
-     * each declare it, which is why this is the include closure and not the workspace.
-     *
-     * Empty means the caller had no include graph to consult - a unit test, or a document
-     * analysed before the graph was built - and the rule that reads it stays silent, which is
-     * the policy everywhere else the world is only partly visible.
+     *        AngelScript compiles a module out of several sections, and a name declared twice across
      */
     ankerl::unordered_dense::set<std::string> moduleFileUris;
     const i18n::I18n* i18n = nullptr;
@@ -92,84 +82,73 @@ struct SemanticAnalysisRequest
 
     /**
      * @brief The host engine's compile-time options, or nullptr for the engine's own defaults.
-     *
-     * Several AngelScript rules are decided by asIScriptEngine::SetEngineProperty rather than
-     * by anything in the script, so a rule that depends on one is undecidable from text alone.
-     * This is where the answer arrives. Read through the accessors below, which fall back to
-     * the engine's documented defaults when no configuration was supplied - the same shape as
-     * typeConfig, and for the same reason: every test that does not care about engine options
-     * should not have to construct one.
+     *        Several AngelScript rules are decided by asIScriptEngine::SetEngineProperty rather than
      */
     const config::EngineProperties* engineProperties = nullptr;
 
     /**
      * @brief Opt-in diagnostics, or nullptr for the defaults. Owned by the caller, like the two
-     * above and for the same reason: a test that does not care should not have to build one.
+     *        above and for the same reason: a test that does not care should not have to build one.
      */
     const config::DiagnosticsConfig* diagnostics = nullptr;
     const config::EngineRuleConfig* engineRules = nullptr;
 
-    /** @brief Optional traversal budget to enforce bounded AST node visits across checkers. */
+    /**
+     * @brief Optional traversal budget to enforce bounded AST node visits across checkers.
+     */
     TraversalBudget* traversalBudget = nullptr;
 
-    /** @brief Optional cancellation flag to abort long-running semantic passes early. */
+    /**
+     * @brief Optional cancellation flag to abort long-running semantic passes early.
+     */
     const utils::StopFlag* stopFlag = nullptr;
 
-    /** @brief Optional memoization cache for resolved expression types across analysis passes. */
+    /**
+     * @brief Optional memoization cache for resolved expression types across analysis passes.
+     */
     mutable ExpressionTypeCache* exprCache = nullptr;
 
-    /** @brief Optional memoization cache for resolved mixin ASTs across class checks. */
+    /**
+     * @brief Optional memoization cache for resolved mixin ASTs across class checks.
+     */
     mutable rules::MixinFileCache* mixinCache = nullptr;
 
-    /** @brief Kill-switch for the conversion rules (see TypeConversionChecker.h). */
+    /**
+     * @brief Kill-switch for the conversion rules (see TypeConversionChecker.h).
+     */
     bool enableTypeConversionChecks = true;
 
-    /** @brief Whether comment-based suppressions (e.g. // disable W156) are enabled. */
+    /**
+     * @brief Whether comment-based suppressions (e.g. // disable W156) are enabled.
+     */
     bool enableCommentSuppressions = true;
 
-    /** @brief Whether CScriptBuilder metadata blocks '[]' are supported. */
+    /**
+     * @brief Whether CScriptBuilder metadata blocks '[]' are supported.
+     */
     bool enableMetadata = false;
 
     /**
      * @brief Line ranges the preprocessor removes, so no diagnostic is reported inside them.
-     *
-     * CScriptBuilder blanks out every `#if <word>` block whose word the host has not defined
-     * before the compiler sees the file, so code in such a block is not code at all. Analysing
-     * it produced diagnostics about text that never compiles - AS-Harness's json.as keeps
-     * deliberately-broken code in `#if FALSE` for exactly that purpose, and every diagnostic
-     * this analyzer produced for that file came from there.
-     *
-     * Empty means nothing is excluded. Populate with utils::FindExcludedLineRanges.
+     *        CScriptBuilder blanks out every `#if <word>` block whose word the host has not defined
      */
     std::vector<utils::ExcludedLineRange> excludedLineRanges;
 
     /**
      * @brief Directives the preprocessor leaves in the source for the compiler to choke on.
-     *
-     * Populated from the same pass as excludedLineRanges, because the two answers depend on
-     * each other: a `#define` inside an excluded block compiles fine and one line outside it
-     * does not. Left empty for a predefined stub, where `#define` is this server's own syntax
-     * and never reaches AngelScript at all.
+     *        Populated from the same pass as excludedLineRanges, because the two answers depend on
      */
     std::vector<utils::UnsupportedDirective> unsupportedDirectives;
 
     /**
      * @brief Severity for an unsupported `#pragma`. Every other directive is a Warning.
-     *
-     * Its own knob because a pragma is the one case where the stock behaviour and the safe
-     * behaviour disagree: the add-on rejects every pragma when no callback is registered, but
-     * a host that registered one accepts anything, so this defaults to saying nothing at all
-     * and the user chooses hint or error. See ServerConfig::PragmaMode.
+     *        Its own knob because a pragma is the one case where the stock behaviour and the safe
      */
     DiagnosticSeverity pragmaSeverity = DiagnosticSeverity::Warning;
 
     /**
      * @brief Member and enum-member index for the declaration rules, built on first use.
-     *
-     * Mutable and lazy because most passes never ask for it. The build itself lives on the
-     * SymbolTable, which rebuilds only when its version has moved - so an edit costs one walk
-     * and the analyses in between cost none. Held by shared_ptr here so the index stays alive
-     * for the whole request even if a writer supersedes it midway.
+     *        Mutable and lazy because most passes never ask for it. The build itself lives on the
      */
     const rules::RuleIndex& GetRuleIndex() const
     {
@@ -180,51 +159,39 @@ struct SemanticAnalysisRequest
         return *ruleIndex;
     }
 
-    /** @brief Root of the document's lexical Scope tree (see ScopeTree.h), or nullptr if none was collected. */
+    /**
+     * @brief Root of the document's lexical Scope tree (see ScopeTree.h), or nullptr if none was collected.
+     */
     std::shared_ptr<const Scope> scopeRoot;
 
-    /** @brief Optional scope index of workspace documents for cross-file reference checking. */
+    /**
+     * @brief Optional scope index of workspace documents for cross-file reference checking.
+     */
     const ScopeIndex* scopeIndex = nullptr;
 
     /**
      * @brief The same tree as scopeRoot, non-null only while this caller exclusively owns it.
-     *
-     * One rule - `auto` inference in TypeConversionChecker - has to write the deduced type back
-     * into the LocalDefinition, because every consumer downstream (hover, completion, inlay
-     * hints, the other checkers) reads the concrete type from there rather than re-deducing it.
-     *
-     * That write used to go through a const_cast on scopeRoot, which was a data race: the
-     * analysis thread published the tree to ScopeIndex *before* running Analyze, so it was
-     * mutating a std::string that the message loop could be reading for a hover at the same
-     * instant. Setting this field is the caller stating that the tree has not been published
-     * yet and no other thread can reach it; leaving it null makes the rule skip the write.
-     *
+     *        One rule - `auto` inference in TypeConversionChecker - has to write the deduced type back
      * @warning Set this only for a tree you have not yet handed to ScopeIndex::SetScopeTree.
-     *          Publish after Analyze() returns, never before.
+     *        Publish after Analyze() returns, never before.
      */
     Scope* mutableScopeRoot = nullptr;
 
     /**
      * @brief Document source text, owned by the caller and required to outlive Analyze().
-     *
-     * Empty when the caller has no text to offer. Rules that need to read an expression back
-     * (type conversions) are skipped rather than guessed at when it is.
+     *        Empty when the caller has no text to offer. Rules that need to read an expression back
      */
     std::string_view sourceCode;
 
     /**
      * @brief Parsed syntax tree of the document, or nullptr.
-     *
-     * The SymbolTable records declarations, not expressions, so a rule about what an
-     * initializer or a cast actually contains has no other source of truth. Also owned by the
-     * caller: it must not be deleted until Analyze() returns.
+     *        The SymbolTable records declarations, not expressions, so a rule about what an
      */
     const TSTree* tree = nullptr;
 
     /**
      * @brief Optional precomputed single-pass AST node index.
-     *
-     * When null, SemanticAnalyzer builds a local NodeIndex from tree on first use.
+     *        When null, SemanticAnalyzer builds a local NodeIndex from tree on first use.
      */
     mutable const NodeIndex* nodeIndex = nullptr;
 
@@ -317,18 +284,7 @@ struct SemanticAnalysisRequest
 
     /**
      * @brief True when `get_X`/`set_X` is only the property `X` if it carries `property`.
-     *
-     * asEP_PROPERTY_ACCESSOR_MODE. Under 3 - the SDK's own default - an accessor without the
-     * keyword is an ordinary method and `c.V` is "'V' is not a member of 'C'"; under 2 the name
-     * alone is enough.
-     *
-     * This server defaults to 2, the more permissive of the two, and the reasoning is at
-     * EngineProperties::propertyAccessorMode: under 2 the analyzer misses a diagnostic a
-     * mode-3 host would give, and under 3 it would invent one for a mode-2 host. Missing beats
-     * inventing.
-     *
-     * Every rule that treats an accessor as a property has to ask this, or the setting is only
-     * honoured in the one place that remembered to.
+     *        asEP_PROPERTY_ACCESSOR_MODE. Under 3 - the SDK's own default - an accessor without the
      */
     bool RequiresAccessorKeyword() const
     {
@@ -337,18 +293,7 @@ struct SemanticAnalysisRequest
 
     /**
      * @brief False when the host disabled script-defined property accessors entirely.
-     *
-     * asEP_PROPERTY_ACCESSOR_MODE 0 turns accessors off, and 1 keeps only the ones the
-     * application registered in C++ - as_compiler.cpp:14077 skips a candidate with
-     * `if (ep.propertyAccessorMode == 1 && f->funcType == asFUNC_SCRIPT) continue;`. Under
-     * either, `c.X` backed by a script `get_X`/`set_X` is rejected, with the `property` keyword
-     * and without it. Measured across all four modes, both spellings.
-     *
-     * True when nothing is configured, which keeps the default behaviour: resolution still
-     * treats an accessor as a property, and the disagreement is reported as an opt-in hint
-     * rather than by making the member vanish. A host whose configuration here is wrong would
-     * otherwise see errors on code that compiles for it, which is the asymmetry the
-     * zero-false-positives rule exists to prevent.
+     *        asEP_PROPERTY_ACCESSOR_MODE 0 turns accessors off, and 1 keeps only the ones the
      */
     bool ScriptAccessorsAreProperties() const
     {
@@ -357,10 +302,7 @@ struct SemanticAnalysisRequest
 
     /**
      * @brief asEP_BOOL_CONVERSION_MODE: 0 when a class may never stand where a bool is expected.
-     *
-     * Answers 0 with no engine properties at all, which is both the engine's own default and
-     * the conservative reading - a rule that fires under 0 is one the analyzer has to be asked
-     * for anyway, and one that stays silent under 1 cannot be wrong by defaulting to 0.
+     *        Answers 0 with no engine properties at all, which is both the engine's own default and
      */
     int BoolConversionMode() const
     {
@@ -369,9 +311,7 @@ struct SemanticAnalysisRequest
 
     /**
      * @brief True when the host built its engine with asEP_ALLOW_MULTILINE_STRINGS.
-     *
-     * False with no engine properties at all, matching the engine's own default: a plain
-     * "..." spanning lines is rejected unless the host asked for it.
+     *        False with no engine properties at all, matching the engine's own default: a plain
      */
     bool AllowsMultilineStrings() const
     {
@@ -380,8 +320,7 @@ struct SemanticAnalysisRequest
 
     /**
      * @brief asEP_USE_CHARACTER_LITERALS: 0 = 'x' is a string, 1 = 'x' is an integer.
-     *
-     * Answers 0 with no engine properties, matching the engine's default.
+     *        Answers 0 with no engine properties, matching the engine's default.
      */
     int CharacterLiteralMode() const
     {
@@ -398,8 +337,7 @@ struct SemanticAnalysisRequest
 
     /**
      * @brief asEP_ALTER_SYNTAX_NAMED_ARGS: 0 = ':' only, 1 = '=' with warning, 2 = '=' silently.
-     *
-     * Answers 0 with no engine properties, matching the engine's default.
+     *        Answers 0 with no engine properties, matching the engine's default.
      */
     int NamedArgumentSyntaxMode() const
     {
@@ -424,8 +362,7 @@ struct SemanticAnalysisRequest
 
     /**
      * @brief True when the host built its engine with asEP_FOREACH_SUPPORT (default: true).
-     *
-     * Answers true with no engine properties, matching the engine's default.
+     *        Answers true with no engine properties, matching the engine's default.
      */
     bool SupportsForeach() const
     {
@@ -434,14 +371,7 @@ struct SemanticAnalysisRequest
 
     /**
      * @brief What the host's engine does with a warning: 0 drop, 1 emit, 2 promote to error.
-     *
-     * asEP_COMPILER_WARNINGS, and the only engine property that moves a severity rather than
-     * deciding whether something compiles. Measured on a script producing "Signed/Unsigned
-     * mismatch": at 0 the compiler says nothing, at 1 it warns, at 2 the same line is an error
-     * and the build fails.
-     *
-     * Read in one place - DiagnosticContext::Append - because it applies to every warning this
-     * analyzer produces rather than to any one rule.
+     *        asEP_COMPILER_WARNINGS, and the only engine property that moves a severity rather than
      */
     int CompilerWarningMode() const
     {
@@ -450,10 +380,7 @@ struct SemanticAnalysisRequest
 
     /**
      * @brief True when the host built its engine with asEP_REQUIRE_ENUM_SCOPE.
-     *
-     * With it on an unqualified enumerator stops resolving: `enum E { Alpha = 1 } int v = Alpha;`
-     * compiles with it off and answers "No matching symbol 'Alpha'" with it on. The engine's
-     * default is off, which is why this answers false with no properties set.
+     *        With it on an unqualified enumerator stops resolving: `enum E { Alpha = 1 } int v = Alpha;`
      */
     bool RequiresEnumScope() const
     {
@@ -462,15 +389,7 @@ struct SemanticAnalysisRequest
 
     /**
      * @brief True when the engine implements a default constructor for every class (default: true).
-     *
-     * With it OFF, a class declaring only a non-default constructor can no longer be
-     * default-constructed: `class C { C(int a) {} } C c;` answers "No default constructor for
-     * object of type 'C'."
-     *
-     * The engine's default is OFF, which was measured rather than assumed - and assuming the
-     * opposite is exactly what went wrong first time round. Running the oracle with no flag at
-     * all gives the same verdict as running it with the property set to 0, so unset answers
-     * false here and the analyzer matches a host that configures nothing.
+     *        With it OFF, a class declaring only a non-default constructor can no longer be
      */
     bool AlwaysImplementsDefaultConstruct() const
     {
@@ -479,9 +398,7 @@ struct SemanticAnalysisRequest
 
     /**
      * @brief True when the host built its engine with asEP_ALLOW_UNICODE_IDENTIFIERS.
-     *
-     * With it off a non-ASCII identifier is a parse error - an accented `arbol` answers
-     * "Expected '('". The engine's default is off.
+     *        With it off a non-ASCII identifier is a parse error - an accented `arbol` answers
      */
     bool AllowsUnicodeIdentifiers() const
     {
@@ -490,9 +407,7 @@ struct SemanticAnalysisRequest
 
     /**
      * @brief True when the host built its engine with asEP_IGNORE_DUPLICATE_SHARED_INTF.
-     *
-     * Declaring the same shared interface twice answers "Name conflict. 'I' is an interface."
-     * with it off, and compiles with it on. The engine's default is off.
+     *        Declaring the same shared interface twice answers "Name conflict. 'I' is an interface."
      */
     bool IgnoresDuplicateSharedInterface() const
     {
@@ -507,8 +422,10 @@ struct SemanticAnalysisRequest
         return engineProperties && engineProperties->disallowGlobalVars;
     }
 
-    /** @brief Whether an unresolved parameter or return type should be reported. See
-     *         config::DiagnosticsConfig::reportUnknownTypes for why this is off by default. */
+    /**
+     * @brief Whether an unresolved parameter or return type should be reported. See
+     *        config::DiagnosticsConfig::reportUnknownTypes for why this is off by default.
+     */
     bool ReportsUnknownTypes() const
     {
         return diagnostics && diagnostics->reportUnknownTypes;
@@ -522,10 +439,14 @@ struct SemanticAnalysisRequest
         return typeConfig && typeConfig->registeredSymbols.contains(std::string(name));
     }
 
-    /** @brief Cache behind GetRuleIndex(). Never set by a caller; see that accessor. */
+    /**
+     * @brief Cache behind GetRuleIndex(). Never set by a caller; see that accessor.
+     */
     mutable std::shared_ptr<const rules::RuleIndex> ruleIndex;
 
-    /** @brief Lazily populated cache for using namespace strings in this document. */
+    /**
+     * @brief Lazily populated cache for using namespace strings in this document.
+     */
     mutable std::optional<std::vector<std::string>> usingNamespacesCache;
 };
 } // namespace angel_lsp::analysis

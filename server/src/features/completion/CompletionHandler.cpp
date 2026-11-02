@@ -1,4 +1,5 @@
 #include "features/completion/CompletionHandler.h"
+
 #include "analysis/documentation/DocComment.h"
 #include "analysis/documentation/SignatureFormatter.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
@@ -12,6 +13,7 @@
 #include "utils/PositionEncoding.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
+
 #include <algorithm>
 #include <cctype>
 #include <filesystem>

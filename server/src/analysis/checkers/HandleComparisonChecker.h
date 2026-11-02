@@ -1,12 +1,12 @@
 #pragma once
 
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/ScopeTree.h"
+
 #include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
-struct Scope;
-
 /**
  * @brief Validates handle equality and relational operations in binary expressions.
  * @param[in] node Binary expression syntax node.

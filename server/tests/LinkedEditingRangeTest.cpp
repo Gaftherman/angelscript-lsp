@@ -1,10 +1,9 @@
-#include <doctest/doctest.h>
-
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/ScopeTree.h"
 #include "features/linked_editing/LinkedEditingRangeHandler.h"
 #include "parser/AngelScriptParser.h"
 
+#include <doctest/doctest.h>
 #include <string>
 
 using namespace angel_lsp;

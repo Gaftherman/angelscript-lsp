@@ -1,11 +1,10 @@
-#include <doctest/doctest.h>
-
 #include "features/breakpoints/BreakpointLocationsHandler.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/PreprocessorRegions.h"
 
 #include <algorithm>
+#include <doctest/doctest.h>
 #include <string>
 #include <vector>
 

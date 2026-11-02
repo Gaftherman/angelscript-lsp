@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 
@@ -9,7 +10,6 @@
 
 namespace angel_lsp::analysis
 {
-class NodeIndex;
 }
 
 namespace angel_lsp::analysis::rules

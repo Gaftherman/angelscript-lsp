@@ -1,6 +1,7 @@
 #pragma once
 
 #include "document/Document.h"
+
 #include <ankerl/unordered_dense.h>
 #include <atomic>
 #include <chrono>

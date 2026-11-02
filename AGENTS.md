@@ -28,7 +28,9 @@ Layer isolation is strict and enforced by `server/scripts/check-layer-includes.p
 - **Sub-Layer 2.5 (Resolution):** `analysis/resolution/` - Semantic target and overload resolution (`SemanticHelpers`, `TargetResolution`, `OverloadResolver`, `AmbiguityDetector`, `ConversionRankingEngine`, `OverloadTypeConversions`).
 - **Sub-Layer 2.6a (Rules):** `analysis/rules/` - Semantic language rules (`RuleIndex`, `ClassRules`, `EngineRuleChecker`, `FunctionRules`, `OperatorRules`, `TypeRules`, `UnusedSymbolChecker`, `VariableRules`).
 - **Sub-Layer 2.6b (Checkers):** `analysis/checkers/` - Semantic verification checkers (`AccessChecker`, `BinaryOperatorChecker`, `BinaryOperatorHelpers`, `CallChecker`, `ComparisonOperatorChecker`, `ConstChecker`, `ControlFlowChecker`, `DefiniteAssignmentChecker`, `HandleComparisonChecker`, `InitializerListChecker`, `IsolationChecker`, `LValueChecker`, `NamespaceChecker`, `RepeatedConversionChecker`, `TypeConversionChecker`, and `null_safety/` [`NullSafetyTypes`, `NullSafetyChecker`, `NullSafetyCondition`, `NullSafetyDecl`, `NullSafetyExpr`, `NullSafetyParam`]).
-- **Sub-Layer 2.7 (Analysis Coordinator):** `analysis/` root - Semantic coordinator facade (`SemanticAnalyzer`, `SemanticAnalysisRequest`).
+- **Sub-Layer 2.7 (Mediator & Coordinator):** `analysis/mediator/` (`SemanticMediator`) and `analysis/` root - Semantic coordinator facade (`SemanticAnalyzer`, `SemanticAnalysisRequest`).
+- **Mandatory #include Top-Placement & Ordering (Rule 1.2):** All project headers (`#include "..."`) must be placed strictly before system/library headers (`#include <...>`) at the top of every C++ file. No `#include` directives are permitted after C++ declarations or code.
+- **Mandatory SemanticMediator Pattern (Rule 1.3):** Checkers and resolution flows in Layer 2 must coordinate with `SymbolTable`, `ScopeTree`, and `NodeIndex` through the `SemanticMediator` facade (`analysis/mediator/SemanticMediator.h`).
 
 #### Layer 4: Server / LSP (`server/src/lsp/`)
 - **Sub-Layer 4.1 (State):** `lsp/state/` - In-memory LSP document and workspace state (`DocumentStore`, `WorkspaceStateStore`, `ModuleIndex`, `PredefinedStubManager`, `PositionCodec`).
@@ -74,6 +76,7 @@ Layer isolation is strict and enforced by `server/scripts/check-layer-includes.p
    - **Structure Extraction:** Use precompiled `GrammarSymbols` and `NodeIndex::ForEachNodeOrdered(std::span<const TSSymbol>)` without string conversions or runtime map lookups.
    - **Cross-Feature Protocol Helpers:** Use `features/common/FeatureSharedUtils.h` (`ToLspRange`, `SameRange`, `FindIdentifierAtPosition`, `ToLspSymbolKind`) to prevent duplicate mapping or geometry routines across feature handlers.
    - **Type Qualifiers & Canonical Sanitization:** Use `analysis::TypeQualifiers` and `analysis/TypeSanitization.h` (`StripLeadingConst`, `StripTrailingDecorationsView`, `TrimTypeWhitespace`) for zero-allocation AST-based type modifier operations.
+9. **Pass-1 O(1) Context Capture Invariant (Rule 4.9):** Checkers must avoid repeated `ts_node_descendant_for_point_range`, manual scope finds, or `GetEnclosingContainers` climbs; always query `ScopeTree`, `NodeIndex` container spans, or `SemanticMediator` in $O(1)$.
 
 ---
 
@@ -121,7 +124,7 @@ Format: `<type>(<scope>): <short imperative description>`
 
 ---
 
-## 8. The 14 Absolute Prohibitions
+## 8. The 15 Absolute Prohibitions
 
 1. **PROHIBITION 1: No Unprotected Raw AST Pointer Escaping:** Never return or store raw `TSTree*` pointers without an enclosing reader lock or owning `std::shared_ptr<const document::Document>`.
 2. **PROHIBITION 2: No Uncaught Exceptions Escaping Secondary Threads:** Never allow an exception to escape a `std::thread` boundary; unhandled exceptions that invoke `std::terminate()` are classified as critical severity bugs.
@@ -137,6 +140,7 @@ Format: `<type>(<scope>): <short imperative description>`
 12. **PROHIBITION 12: No Unbounded Parent-Climb Loops or Hot-Path `ts_node_parent` Iteration:** Never write `while (!ts_node_is_null(ts_node_parent(node)))` or unbounded climb loops. Always obtain the root node via `parser::GetRootNode(node)` in $O(1)$ time. In hot-path collectors (`LocalScopeCollector`, `SymbolCollector`), upward parent climbing is strictly prohibited; rely on downward query cursor matching, container stacks, and pre-resolved `TSSymbol` IDs.
 13. **PROHIBITION 13: No Hardcoded Predefined Type Names or Blind Namespace Matching in Layer 2:** Never hardcode predefined or add-on type names (`"weakref"`, `"const_weakref"`, `"string"`, `"dictionary"`) in conversion rules, overload rankings, or type checkers (`TypeConversionChecker.cpp`, `OverloadTypeConversions.cpp`, `ConversionRankingEngine.cpp`, `CallChecker.cpp`). All type capabilities (constructors, conversion operators) must be resolved dynamically via `SymbolTable` and template parameter substitution (`BindTemplateArguments`, `SubstituteTemplateParameters`). Furthermore, never use blind `LastScopeSegment(a) == LastScopeSegment(b)` comparisons across different scopes when both types contain explicit namespace qualifiers (`::`).
 14. **PROHIBITION 14: No Unnamed `namespace {}`, No `using namespace`, No ODR-Unsafe `.cpp` Structs, No Mechanical Doxygen Slop:** Never introduce anonymous namespaces `namespace {}` or `using namespace` directives (or `using <ns>::<symbol>` in implementation files). All local helper structs in `.cpp` files must be wrapped in a file-specific `*_detail` namespace (e.g. `namespace <file>_detail`) or declared as private class members to prevent ODR violations, and must not collide with other `.cpp` or `.h` declarations. Doxygen documentation must provide substantive, informative descriptions; mechanical templates (`/// <brief>` followed by regurgitated type and param names) are strictly forbidden.
+15. **PROHIBITION 15: Zero Forward Declarations and Zero Ghost Type Aliases:** Never write standalone struct or class forward declarations (`struct Foo;`, `class Bar;`) in `server/src/`; always include the canonical header. Redundant type aliases aliasing canonical structs within the same namespace (e.g. `using FooRequest = AstCheckContext;`) are strictly prohibited.
 
 ---
 

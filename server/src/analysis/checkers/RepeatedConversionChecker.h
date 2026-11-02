@@ -1,14 +1,14 @@
 #pragma once
 
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/ScopeTree.h"
+
 #include <string_view>
 #include <tree_sitter/api.h>
 #include <vector>
 
 namespace angel_lsp::analysis
 {
-struct Scope;
-
 /**
  * @brief Checks for repeated implicit conversions in conditional statement ladders.
  * @param[in] rootIfNode The root if_statement syntax node.

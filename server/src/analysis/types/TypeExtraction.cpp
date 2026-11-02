@@ -1,5 +1,7 @@
 #include "analysis/types/TypeExtraction.h"
+
 #include "parser/ASTUtils.h"
+
 #include <ankerl/unordered_dense.h>
 #include <string_view>
 #include <tree_sitter/api.h>

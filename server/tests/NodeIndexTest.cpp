@@ -1,6 +1,8 @@
 #include "analysis/index/NodeIndex.h"
+
 #include "helpers/TestUtils.h"
 #include "parser/GrammarNames.h"
+
 #include <doctest/doctest.h>
 
 using namespace angel_lsp::analysis;
@@ -12,7 +14,6 @@ TEST_CASE("NodeIndex - Empty on null root")
     CHECK(index.Empty());
     CHECK(index.NodeCount() == 0);
     CHECK(index.Nodes("call_expression").empty());
-    CHECK(index.AllNodes().empty());
 }
 
 TEST_CASE("NodeIndex - Indexes nodes in document order")
@@ -57,9 +58,7 @@ TEST_CASE("NodeIndex - Indexes nodes in document order")
     CHECK(index.Nodes("nonexistent_node_type").empty());
     CHECK(index.SymbolForName("nonexistent_node_type") == 0);
 
-    // Verify AllNodes contains all nodes
-    auto all = index.AllNodes();
-    CHECK(all.size() == index.NodeCount());
+    CHECK(index.NodeCount() > 0);
     CHECK(index.ErrorRanges().empty());
 }
 

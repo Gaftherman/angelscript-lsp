@@ -1,5 +1,3 @@
-#include <doctest/doctest.h>
-
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
@@ -11,6 +9,7 @@
 #include "utils/Timer.h"
 #include "utils/Utils.h"
 
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <sstream>

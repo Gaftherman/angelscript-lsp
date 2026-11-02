@@ -1,5 +1,3 @@
-#include <doctest/doctest.h>
-
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
@@ -13,6 +11,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <iostream>

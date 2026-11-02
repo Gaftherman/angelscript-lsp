@@ -1,5 +1,3 @@
-#include <doctest/doctest.h>
-
 #include "analysis/index/CallGraph.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
@@ -7,6 +5,7 @@
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
+#include <doctest/doctest.h>
 #include <string>
 
 using namespace angel_lsp;

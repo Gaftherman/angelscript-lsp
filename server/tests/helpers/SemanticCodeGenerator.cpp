@@ -1,4 +1,5 @@
 #include "SemanticCodeGenerator.h"
+
 #include "TestUtils.h"
 
 namespace angel_lsp::test

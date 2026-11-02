@@ -1,8 +1,7 @@
-#include <doctest/doctest.h>
-
 #include "utils/WorkspaceScan.h"
 
 #include <algorithm>
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <string>

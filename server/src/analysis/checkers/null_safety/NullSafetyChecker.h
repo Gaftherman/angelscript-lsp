@@ -10,7 +10,7 @@ namespace angel_lsp::analysis
  * @param[in] request Document AST root, source text, and scope tree.
  * @param[in,out] ctx Diagnostic sink for emitting warnings.
  */
-void CheckNullSafety(const NullSafetyCheckRequest& request, DiagnosticContext& ctx);
+void CheckNullSafety(const AstCheckContext& request, DiagnosticContext& ctx);
 
 /**
  * @brief Analysis engine for verifying null safety conditions across statement blocks.

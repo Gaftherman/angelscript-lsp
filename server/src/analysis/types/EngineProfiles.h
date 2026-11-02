@@ -1,6 +1,7 @@
 #pragma once
 
 #include "config/ServerConfig.h"
+
 #include <string>
 #include <string_view>
 #include <vector>
@@ -24,18 +25,14 @@ enum class EngineProfileKind
 /**
  * @brief Parses an engine profile name string into an EngineProfileKind.
  * @param name Name string (case-insensitive, e.g. "standard", "svencoop", "urho3d", "openxray", "ootp", "none",
- * "auto").
+ *        "auto").
  * @return Resolved EngineProfileKind enum value.
  */
 EngineProfileKind ParseEngineProfileKind(std::string_view name);
 
 /**
  * @brief Whether a profile name is one this server knows, under any of its spellings.
- *
- * ParseEngineProfileKind answers Standard for a name it does not recognise, which is the right
- * profile to fall back to and the wrong thing to do silently: a typo produced a workspace with
- * no host types and no explanation. The two are separate so the fallback stays and the caller
- * can still tell the user.
+ *        ParseEngineProfileKind answers Standard for a name it does not recognise, which is the right
  */
 bool IsKnownEngineProfileName(std::string_view name);
 

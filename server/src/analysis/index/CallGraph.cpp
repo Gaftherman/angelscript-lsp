@@ -1,4 +1,5 @@
 #include "analysis/index/CallGraph.h"
+
 #include "analysis/index/SymbolTable.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"

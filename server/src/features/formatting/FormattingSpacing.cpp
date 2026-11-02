@@ -1,4 +1,5 @@
 #include "features/formatting/FormattingSpacing.h"
+
 #include <optional>
 #include <unordered_set>
 

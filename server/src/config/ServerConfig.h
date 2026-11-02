@@ -71,14 +71,20 @@ struct FeatureFlags
     bool inlayHintsEnumMemberValues = true;
     bool inlayHintsParameterReferenceModifiers = true;
     bool completionCompleteFunctionParens = true;
-    /** @brief Automatically prefix enum name when completing enum values (e.g. 'Enum::Value'). */
+    /**
+     * @brief Automatically prefix enum name when completing enum values (e.g. 'Enum::Value').
+     */
     bool completionQualifyEnumValues = true;
     bool hoverStringLiteralLength = true;
     bool hoverStringLiteralPathResolution = true;
-    /** @brief Whether to display the declaring file location footer in hover tooltips. */
+    /**
+     * @brief Whether to display the declaring file location footer in hover tooltips.
+     */
     bool hoverShowFileLocation = false;
     bool enableCommentSuppressions = true;
-    /** @brief Whether CScriptBuilder metadata blocks '[]' before declarations are supported. */
+    /**
+     * @brief Whether CScriptBuilder metadata blocks '[]' before declarations are supported.
+     */
     bool enableMetadata = false;
     std::vector<std::string> assetSearchPaths;
 };
@@ -91,14 +97,7 @@ struct Info
     std::string name = "AngelScript Language Server";
     /**
      * @brief Version reported by --version and in the LSP handshake.
-     *
-     * Defined by CMake from client/package.json, which is the file that actually reaches users
-     * through the .vsix. It used to be a literal here, and it had already drifted: this said
-     * 1.0.0 while the manifest said 0.1.0, so a release would have been tagged as one and
-     * installed as the other.
-     *
-     * No fallback on purpose. A build that cannot see the manifest should fail to compile
-     * rather than silently report a version nobody chose.
+     *        Defined by CMake from client/package.json, which is the file that actually reaches users
      */
     std::string version = ANGELLSP_VERSION;
     std::string fileExtension = ".as";
@@ -107,19 +106,13 @@ struct Info
 
     /**
      * @brief Log threshold: error | warning | info | debug. Parsed by utils::ParseLogLevel.
-     *
-     * Defaults to info rather than debug because every record is a real window/logMessage
-     * notification over the same connection as the responses - the debug level dumps every
-     * symbol in a document on every analysis and is a genuine throughput cost, not free
-     * instrumentation.
+     *        Defaults to info rather than debug because every record is a real window/logMessage
      */
     std::string logLevel = "info";
 
     /**
      * @brief Multi-sink disk logging (.vscode/lsp/logs/): master.log, hover.log, etc.
-     *
-     * Defaults to false so disk logs are never created by default. In release builds,
-     * this feature is entirely disabled.
+     *        Defaults to false so disk logs are never created by default. In release builds,
      */
     bool enableFileLogging = false;
 
@@ -129,215 +122,121 @@ struct Info
 
 /**
  * @brief Host engine options that change what a script is allowed to say.
- *
- * AngelScript is not one language but a family of them: the host picks its dialect with
- * asIScriptEngine::SetEngineProperty before it compiles anything, and several of those choices
- * decide whether a given line is legal. None of it is observable from script text, which is
- * why the rules that depend on one used to be unimplementable and sat in i18n.cpp as codes
- * nobody emitted. Telling the server which engine it is reading for is the missing input.
- *
- * Only the properties a rule actually consults are listed. AngelScript has forty of them and
- * most decide runtime behaviour - stack sizes, garbage collection, bytecode - which no reader
- * of source can see the effect of. A setting nobody reads is the same mistake as a message
- * nobody emits, so each field here names the rule it gates.
- *
- * Defaults match the engine's own defaults, so a host that sets nothing gets a server that
- * judges its scripts the way its engine will.
+ *        AngelScript is not one language but a family of them: the host picks its dialect with
  */
 struct EngineProperties
 {
     /**
      * @brief asEP_ALLOW_UNSAFE_REFERENCES (engine default: false).
-     *
-     * With it off, `&` on a parameter means `&inout` and is only legal for an object type that
-     * supports handles - `void f(int &x)` and `void f(int &inout x)` are both refused, with the
-     * same message. With it on, primitives may be passed by reference and a script may declare
-     * a standalone reference variable. Gates as-err-inout-on-primitive.
+     *        With it off, `&` on a parameter means `&inout` and is only legal for an object type that
      */
     bool allowUnsafeReferences = false;
 
     /**
      * @brief asEP_PRIVATE_PROP_AS_PROTECTED (engine default: false).
-     *
-     * When set, a private member follows the protected rule instead: a derived class may reach
-     * it. Gates the private branch of AccessChecker.
+     *        When set, a private member follows the protected rule instead: a derived class may reach
      */
     bool privatePropAsProtected = false;
 
     /**
      * @brief asEP_DISALLOW_GLOBAL_VARS (engine default: false).
-     *
-     * Hosts that give each script its own isolated state turn this on, and then a global
-     * variable declaration is a compile error. Gates as-err-global-vars-disallowed.
+     *        Hosts that give each script its own isolated state turn this on, and then a global
      */
     bool disallowGlobalVars = false;
 
     /**
      * @brief asEP_PROPERTY_ACCESSOR_MODE (engine default: 3; this server's default: 2).
-     *
-     * Decides when `get_X()` / `set_X(v)` become the virtual property `X`:
-     *
-     *   0  never - the application disabled property accessors outright
-     *   1  only accessors the application registered in C++; script ones are skipped
-     *   2  always, whether or not the declaration carries the `property` keyword
-     *   3  only where it does - the engine's own default
-     *
-     * 0 and 1 used to be documented here as not worth modelling, on the grounds that neither
-     * changed what a *script* declaration means. That was wrong, and the SDK says so in its own
-     * words: as_compiler.cpp:14077 skips a candidate with `if (ep.propertyAccessorMode == 1 &&
-     * f->funcType == asFUNC_SCRIPT) continue;`, commented "Ignore script functions, if the
-     * application has disabled script defined property accessors". Measured to match: under
-     * both 0 and 1 a `c.X` backed by a script `get_X`/`set_X` is rejected, with the `property`
-     * keyword and without it.
-     *
-     * Worse than the wrong comment was what followed from it: the parser accepted only 2 and 3,
-     * so a host running 0 or 1 had no way to state its configuration at all.
-     *
-     * This server defaults to 2, not to the engine's 3, and the difference is deliberate. Under
-     * 3 a `c.V` whose accessor lacks the keyword is an error the compiler does report, so
-     * defaulting to 3 would be more faithful - and would hand a new diagnostic to every
-     * workspace whose host sets 2, which many do, for code that compiles for them today. Being
-     * lenient here avoids false positive diagnostics for code valid under mode 2.
+     *        Decides when `get_X()` / `set_X(v)` become the virtual property `X`:
      */
     int propertyAccessorMode = 2;
 
     /**
      * @brief asEP_BOOL_CONVERSION_MODE: whether a class can stand where a bool is expected.
-     *
-     * Measured against angelscript_oracle: under mode 0, the engine's own default, `if (h)` on
-     * a *script class* is rejected - "Expression must be of boolean type, instead found 'H&'" -
-     * whether the class declares opImplConv, opConv, or both. Under mode 1 both forms are
-     * accepted.
-     *
-     * The claim that used to sit here, that mode 0 means "never", was broader than the
-     * measurement. Every probe used a script class, which in AngelScript is a reference type,
-     * and the SDK's own comment says mode 0 still allows a **value type** to convert through
-     * opImplConv. So it is "never for reference types, opImplConv only for value types" against
-     * "either operator, either kind" - and the rule behind it cannot tell the two apart,
-     * because no predefined stub can declare a type to be a value type.
-     *
-     * Defaults to 0 to match the engine. A host that sets 1 must say so here, or the analyzer
-     * would report legal code.
+     *        Measured against angelscript_oracle: under mode 0, the engine's own default, `if (h)` on
      */
     int boolConversionMode = 0;
 
     /**
      * @brief asEP_ALLOW_MULTILINE_STRINGS: whether a plain "..." may span lines.
-     *
-     * Off in the engine and off here. A `"..."` carrying a raw newline is rejected with
-     * "Multiline strings are not allowed in this application" - verified against
-     * angelscript_oracle - while a `"""heredoc"""` spans lines under any setting.
-     *
-     * Reported by default rather than opt-in, and the corpus is why: a scanner that tracks
-     * comments, escapes and heredocs found zero true multiline plain strings across all 1,061
-     * files. Nothing legal is at risk, so silence would only cost the user the diagnostic.
-     * A host that sets the property turns this off and the rule goes quiet.
+     *        Off in the engine and off here. A `"..."` carrying a raw newline is rejected with
      */
     bool allowMultilineStrings = false;
 
     /**
      * @brief asEP_USE_CHARACTER_LITERALS: character literal interpretation (engine default: 0).
-     *
-     * 0 = 'x' is treated as a one-character string literal (the default).
-     * 1 = 'x' is treated as an integer value representing the character code.
+     *        0 = 'x' is treated as a one-character string literal (the default).
      */
     int useCharacterLiterals = 0;
 
     /**
      * @brief asEP_DISALLOW_VALUE_ASSIGN_FOR_REF_TYPE (engine default: false).
-     *
-     * When enabled, disallows value assignment for reference types, requiring handle assignment instead.
+     *        When enabled, disallows value assignment for reference types, requiring handle assignment instead.
      */
     bool disallowValueAssignForRef = false;
 
     /**
      * @brief asEP_ALTER_SYNTAX_NAMED_ARGS: syntax for named arguments (engine default: 0).
-     *
-     * 0 = ':' only (standard syntax).
-     * 1 = '=' allowed with a compiler warning.
-     * 2 = '=' allowed silently.
+     *        0 = ':' only (standard syntax).
      */
     int alterSyntaxNamedArgs = 0;
 
     /**
      * @brief asEP_DISABLE_INTEGER_DIVISION: integer division behavior (engine default: false).
-     *
-     * When enabled, division between two integers yields a float rather than truncating to an integer.
+     *        When enabled, division between two integers yields a float rather than truncating to an integer.
      */
     bool disableIntegerDivision = false;
 
     /**
      * @brief asEP_DISALLOW_EMPTY_LIST_ELEMENTS (engine default: false).
-     *
-     * When enabled, empty elements in initialization lists (e.g. `{1, , 3}`) are disallowed.
+     *        When enabled, empty elements in initialization lists (e.g. `{1, , 3}`) are disallowed.
      */
     bool disallowEmptyListElements = false;
 
     /**
      * @brief asEP_FOREACH_SUPPORT (engine default: true).
-     *
-     * Whether the `for each` / `foreach` loop syntax is supported. Enabled by default in the engine.
+     *        Whether the `for each` / `foreach` loop syntax is supported. Enabled by default in the engine.
      */
     bool foreachSupport = true;
 
     /**
      * @brief asEP_REQUIRE_ENUM_SCOPE (engine default: false).
-     *
-     * With it on, an unqualified enumerator stops resolving - `enum E { Alpha = 1 } int v = Alpha;`
-     * compiles with it off and answers "No matching symbol 'Alpha'" with it on. The engine's default
-     * is off.
+     *        With it on, an unqualified enumerator stops resolving - `enum E { Alpha = 1 } int v = Alpha;`
      */
     bool requireEnumScope = false;
 
     /**
      * @brief asEP_ALWAYS_IMPL_DEFAULT_CONSTRUCT (engine default: true).
-     *
-     * With it OFF, a class that declares only a non-default constructor can no longer be
-     * default-constructed - `class C { C(int a) {} } C c;` answers "No default constructor for
-     * object of type 'C'." The engine's default is on, which is why the default here is true.
+     *        With it OFF, a class that declares only a non-default constructor can no longer be
      */
     bool alwaysImplDefaultConstruct = false;
 
     /**
      * @brief asEP_ALLOW_UNICODE_IDENTIFIERS (engine default: false).
-     *
-     * With it off, a non-ASCII identifier is a parse error - `int arbol` spelled with an accented
-     * a answers "Expected '('". The engine's default is off.
+     *        With it off, a non-ASCII identifier is a parse error - `int arbol` spelled with an accented
      */
     bool allowUnicodeIdentifiers = false;
 
     /**
      * @brief asEP_IGNORE_DUPLICATE_SHARED_INTF (engine default: false).
-     *
-     * Declaring the same shared interface twice answers "Name conflict. 'I' is an interface."
-     * with it off, and compiles with it on. The engine's default is off.
+     *        Declaring the same shared interface twice answers "Name conflict. 'I' is an interface."
      */
     bool ignoreDuplicateSharedIntf = false;
 
     /**
      * @brief asEP_COMPILER_WARNINGS (engine default: 1).
-     *
-     * Three values, and all three were measured on a script that produces "Signed/Unsigned mismatch" -
-     * 0 suppresses the warning entirely, 1 emits it (the engine's default), 2 turns it into an error.
-     * This is the only one of the five that changes the SEVERITY of something rather than whether
-     * it is reported.
+     *        Three values, and all three were measured on a script that produces "Signed/Unsigned mismatch" -
      */
     int compilerWarnings = 1;
 
     /**
      * @brief asEP_MEMBER_INIT_MODE (engine default: 0).
-     *
-     * 0 = Member variables are initialized before base class constructor.
-     * 1 = Member variables are initialized after base class constructor.
+     *        0 = Member variables are initialized before base class constructor.
      */
     int memberInitMode = 0;
 
     /**
      * @brief asEP_HEREDOC_TRIM_MODE (engine default: 1).
-     *
-     * 0 = Never trim heredoc strings.
-     * 1 = Trim leading and trailing empty lines.
-     * 2 = Always trim heredoc strings.
+     *        0 = Never trim heredoc strings.
      */
     int heredocTrimMode = 1;
 
@@ -380,104 +279,49 @@ struct EngineProperties
 
 /**
  * @brief Diagnostics this server can emit but does not by default.
- *
- * Not feature switches and not engine options: each one is a rule that is right for a workspace
- * whose declarations are complete and wrong for one whose host registers types in C++. The
- * default is the safe reading in every case, so a workspace that sets nothing keeps the
- * silent-unless-fully-visible policy intact.
+ *        Not feature switches and not engine options: each one is a rule that is right for a workspace
  */
 struct DiagnosticsConfig
 {
     /**
      * @brief Report a parameter or return type that resolves to no declaration (default: on).
-     *
-     * `void f(TypoTypeName x)` is a compile error - "Identifier 'TypoTypeName' is not a data
-     * type in namespace 'TEST' or parent" - and left unreported it surfaces as silence at every
-     * call site instead, since a call whose parameter types are unknown cannot be judged
-     * either. That is what makes it worth reporting: the cost is not one missing diagnostic but
-     * a whole function's worth.
-     *
-     * It is also, from here, indistinguishable from a legitimate engine-registered type -
-     * neither resolves to anything this analyzer can read - which is why this is a setting at
-     * all. Measured on the 1061-file corpus, with the Sven Co-op profile loaded the way such a
-     * workspace would: 1581 findings with this off, 3850 with it on. Without a profile, 4896
-     * against 9791. A workspace whose host registers types in C++ and declares none of them
-     * should turn this off, or better, name its engine profile.
-     *
-     * Local variable declarations are reported regardless, and always were. This aligns
-     * parameters and return types with them.
-     *
-     * See tests/FunctionRulesTest.cpp, "Unknown Type Corpus Audit", to take that measurement
-     * again.
+     *        `void f(TypoTypeName x)` is a compile error - "Identifier 'TypoTypeName' is not a data
      */
     bool reportUnknownTypes = true;
 
     /**
      * @brief Hint on a get_/set_ accessor that carries no `property` keyword (default: off).
-     *
-     * Not a defect. Under asEP_PROPERTY_ACCESSOR_MODE 2, which is this server's default, such an
-     * accessor is a property and the code compiles. Under mode 3, the engine's own default, it is
-     * not, and `c.X` becomes "'X' is not a member of 'C'". Adding the keyword is accepted under
-     * both, so the hint is portability advice with a fix that cannot break the current build.
-     *
-     * Off by default because a workspace that has settled on mode 2 would otherwise see one hint
-     * per accessor for a decision it already made.
+     *        Not a defect. Under asEP_PROPERTY_ACCESSOR_MODE 2, which is this server's default, such an
      */
     bool reportAccessorPortability = false;
 
     /**
      * @brief Hint where a script accessor is used as a property but the host disabled those.
-     *
-     * asEP_PROPERTY_ACCESSOR_MODE 0 turns property accessors off and 1 keeps only the ones the
-     * application registered in C++; under either, `c.X` backed by a script `get_X`/`set_X` is
-     * rejected. Measured across all four modes, with the `property` keyword and without.
-     *
-     * A hint rather than an error even though the compiler rejects it, and off by default even
-     * though the setting it depends on is explicit: the analyzer is being told what the host
-     * does, and a host told wrong would otherwise get errors on code that builds for it. The
-     * failure mode of being lenient is a missed diagnostic; of being strict, an invented one.
-     *
-     * Only meaningful when engine.propertyAccessorMode is 0 or 1. It says nothing under 2 or 3,
-     * where a script accessor really can be a property.
+     *        asEP_PROPERTY_ACCESSOR_MODE 0 turns property accessors off and 1 keeps only the ones the
      */
     bool reportAccessorDisabled = false;
 
     /**
      * @brief Hint on a class used where a bool is expected (default: off).
-     *
-     * Only meaningful when engine.boolConversionMode is 0, where the compiler rejects it. It is
-     * a hint rather than an error because the analyzer cannot see the host's engine setup: a
-     * host running mode 1 makes the same code legal, and reporting it as an error there would
-     * be a false positive on working code.
+     *        Only meaningful when engine.boolConversionMode is 0, where the compiler rejects it. It is
      */
     bool reportBoolConversion = false;
 
     /**
      * @brief Hint when a type position names a function instead of a type (default: off).
-     *
-     * `void Foo(int) {}` followed by `Foo@ h = @Foo;` is rejected - "Identifier 'Foo' is not a
-     * data type", verified against angelscript_oracle - because a function handle needs a
-     * funcdef to name its signature. The intent is unmistakable and the fix is mechanical, so
-     * this is worth offering rather than leaving as a bare unresolved-type complaint.
-     *
-     * Off by default: the name could also belong to a host type this analyzer cannot see, and a
-     * workspace whose engine registers one would get a hint about a type that exists.
+     *        `void Foo(int) {}` followed by `Foo@ h = @Foo;` is rejected - "Identifier 'Foo' is not a
      */
     bool reportMissingFuncdef = false;
 
     /**
      * @brief Hint on integer division expressions (default: off).
-     *
-     * Off by default because it only matters when the host sets the matching engine property
-     * asEP_DISABLE_INTEGER_DIVISION.
+     *        Off by default because it only matters when the host sets the matching engine property
      */
     bool reportIntegerDivision = false;
 
     /**
      * @brief Warn on potential dereference of a null or unchecked handle (default: off).
-     *
-     * Detects when handle parameters, handle cast expressions, or uninitialized handles
-     * are dereferenced via member access or indexing without preceding null checks.
+     *        Detects when handle parameters, handle cast expressions, or uninitialized handles
      */
     bool reportPossibleNullDereference = false;
 
@@ -488,17 +332,13 @@ struct DiagnosticsConfig
 
     /**
      * @brief Warn or error on equality/inequality comparison of handle with null (default: 1).
-     *
-     * 0 = off (suppress)
-     * 1 = warning (compiler parity default)
-     * 2 = error (strict handle checking)
+     *        0 = off (suppress)
      */
     int reportHandleComparisonEquality = 1;
 
     /**
      * @brief Severity for missing asset paths referenced in string literals (default: "off").
-     *
-     * Values can be "off", "hint", "warning", or "error".
+     *        Values can be "off", "hint", "warning", or "error".
      */
     std::string missingAssetPathSeverity = "off";
 
@@ -529,7 +369,7 @@ struct DiagnosticsConfig
 
     /**
      * @brief User-configured regular expression patterns exempting matching function names from unused-function
-     * warnings.
+     *        warnings.
      */
     std::vector<std::string> ignoredUnusedFunctionPatterns;
 
@@ -569,22 +409,15 @@ struct TypeConfig
 
     /**
      * @brief Templates whose initializer list is a plain repeat of their element type.
-     *
-     * Initializer lists are validated against target types (such as array, dictionary, grid,
-     * or struct aggregates) in InitializerListChecker. This configuration allows hosts to specify
-     * additional array-like template types that should be treated as element-wise lists.
-     *
-     * Either way it has to be stated rather than inferred. Reading "one type parameter" as
-     * "array-like" would be wrong: AS-Harness declares `optional<T>` in exactly the same shape
-     * as `array<T>`, yet the real compiler answers `optional<int> o = {1};` with
-     * "Initialization lists cannot be used with 'optional<int>'". Left alone, this holds
-     * arrayTypeName, whose `T[]` spelling the language settles on its own.
+     *        Initializer lists are validated against target types (such as array, dictionary, grid,
      */
     std::unordered_set<std::string> arrayLikeTemplates;
 
     std::unordered_set<std::string> registeredSymbols;
 
-    /** @brief arrayLikeTemplates, with arrayTypeName included whether or not it was listed. */
+    /**
+     * @brief arrayLikeTemplates, with arrayTypeName included whether or not it was listed.
+     */
     std::unordered_set<std::string> ArrayLikeTemplateNames() const
     {
         std::unordered_set<std::string> names = arrayLikeTemplates;
@@ -603,26 +436,13 @@ struct FormatConfig
 {
     /**
      * @brief Where a *block*'s opening brace goes.
-     *
-     * A brace that opens a value - an initializer list, a lambda body - is not governed by
-     * this and never was: it stays on its line in either style. Kept as a string here because
-     * this is Layer 1 and the enum that names the two styles belongs to the formatting
-     * feature; the server maps it once, the way it already does for diagnostic severities.
-     * Anything other than "kr" reads as Allman, so a typo is the default rather than an error.
+     *        A brace that opens a value - an initializer list, a lambda body - is not governed by
      */
     std::string braceStyle = "allman";
 
     /**
      * @brief Format the whole document when the user saves it manually (default: off).
-     *
-     * Drives the answer to `textDocument/willSaveWaitUntil`. OFF by default and that matters:
-     * the editor already has its own format-on-save setting, and a language server that
-     * reformats every manual save regardless would override a choice the user made somewhere
-     * else - silently, and on a file they were only trying to save.
-     *
-     * Only manual saves, never an autosave timer or a focus change, whatever this is set to.
-     * Rewriting a file while the user is still typing in it is not something to offer as an
-     * option.
+     *        Drives the answer to `textDocument/willSaveWaitUntil`. OFF by default and that matters:
      */
     bool formatOnSave = false;
 
@@ -638,10 +458,7 @@ struct FormatConfig
 
     /**
      * @brief Where the handle symbol '@' aligns in declarations ("left", "right", "middle").
-     *
-     * "left" formats as 'Type@ var', matching canonical AngelScript style.
-     * "right" formats as 'Type @var'.
-     * "middle" formats as 'Type @ var'.
+     *        "left" formats as 'Type@ var', matching canonical AngelScript style.
      */
     std::string pointerAlignment = "left";
 };
@@ -658,25 +475,13 @@ struct ServerConfig
 
     /**
      * @brief Preprocessor extensions the host added to its copy of CScriptBuilder.
-     *
-     * Separate from EngineProperties on purpose: those are asEP_* values passed to
-     * SetEngineProperty and the SDK decides what they mean, while these describe a source file
-     * the host is free to have patched. Every one is off by default and the defaults reproduce
-     * the stock add-on exactly - see utils/PreprocessorRegions.h for what each measured.
+     *        Separate from EngineProperties on purpose: those are asEP_* values passed to
      */
     angel_lsp::utils::PreprocessorFeatures preprocessor;
 
     /**
      * @brief What to say about a `#pragma`, which the stock add-on rejects outright.
-     *
-     * Measured: with no pragma callback registered, scriptbuilder.cpp:533 substitutes -1 for
-     * the callback result, writes "Invalid #pragma directive" and fails the whole section. So
-     * on a stock host every `#pragma` is a build failure.
-     *
-     * The default here is Accept anyway, and the reason is the zero-false-positives rule rather
-     * than fidelity: a host that registers a callback is the common case, and defaulting to
-     * Error would put a red squiggle on a pragma that builds fine for most of the people who
-     * write one. Error is available for a host that really registered nothing.
+     *        Measured: with no pragma callback registered, scriptbuilder.cpp:533 substitutes -1 for
      */
     enum class PragmaMode
     {
@@ -692,97 +497,48 @@ struct ServerConfig
 
     /**
      * @brief Directory globs the workspace scans do not descend into.
-     *
-     * Three recursive walks cross every workspace root - the include graph, the predefined-stub
-     * scan and the engine-profile detector - and none of them could be told to stop. On a
-     * repository with a build tree that is most of the work, and the profile detector was the
-     * worst of the three: it collected the name of EVERY file it saw, with no extension filter
-     * at all.
-     *
-     * Applied by pruning the directory rather than filtering the result, which is the whole
-     * point: a filter still walks what it then throws away.
-     *
-     * `?`, `*` within a segment and `**` across segments, which is what the exclude settings
-     * every editor ships already use, so a user can paste what they have. The defaults are the
-     * three directories that are never source and are always large.
+     *        Three recursive walks cross every workspace root - the include graph, the predefined-stub
      */
     std::vector<std::string> exclude = {"**/.git/**", "**/build/**", "**/node_modules/**"};
 
     /**
      * @brief Words treated as defined for `#if <word>`, mirroring CScriptBuilder::DefineWord.
-     *
-     * AngelScript's preprocessor lives in the CScriptBuilder add-on and has exactly one
-     * conditional: `#if <identifier>` ... `#endif`. The identifier is not evaluated - it is
-     * looked up in a set the *host application* populates, and a block whose word is absent is
-     * blanked out before compilation.
-     *
-     * Empty is the correct default: an unconfigured builder defines nothing, so every `#if`
-     * block is excluded. A host that calls DefineWord should list the same words here, or the
-     * server will stay silent about code that really is compiled.
+     *        AngelScript's preprocessor lives in the CScriptBuilder add-on and has exactly one
      */
     std::vector<std::string> definedWords;
 
     /**
      * @brief Predefined stub files to load by path, on top of the workspace scan.
-     *
-     * The scan only ever finds stubs that live inside a workspace folder, but a host
-     * application's declarations usually ship with the application rather than with the
-     * scripts. Absolute entries are used as-is; relative ones are resolved against each
-     * workspace folder. Distinct from Info::predefinedFileExtension, which is the suffix that
-     * decides whether a file found by the scan is a stub at all.
+     *        The scan only ever finds stubs that live inside a workspace folder, but a host
      */
     std::vector<std::string> predefinedFiles;
     /**
      * @brief Dynamic list of active predefined stub files selected by the user.
-     * When non-empty, only stubs matching these filenames or paths are contributing stubs.
+     *        When non-empty, only stubs matching these filenames or paths are contributing stubs.
      */
     std::vector<std::string> activeStubFiles;
 
     /**
      * @brief Files to force-include before analyzing any module or script.
-     *
-     * In hosts like Sven Co-op or specialized game engines, common headers or API bridges
-     * are automatically included into every compilation unit without explicit `#include`.
-     * Listing them here ensures their symbols and declarations are always visible.
+     *        In hosts like Sven Co-op or specialized game engines, common headers or API bridges
      */
     std::vector<std::string> forceIncludeFiles;
 
     /**
      * @brief Global module entry-point script path.
-     *
-     * When configured, restricts the compilation closure of scripts participating in this
-     * entry point to the strictly forward dependency DAG originating from this file,
-     * preventing sibling modules with common includes from merging into one module closure.
+     *        When configured, restricts the compilation closure of scripts participating in this
      */
     std::string moduleEntryPoint;
 
     /**
      * @brief Whether `#include "helper"` may mean `helper.as`.
-     *
-     * Off by default, which is AngelScript's own behaviour: CScriptBuilder opens exactly the
-     * string between the quotes and appends nothing. Measured - with a file named `helper` on
-     * disk `#include "helper"` compiles, and without one it is
-     * `Failed to open script file '.../helper'` even when `helper.as` is sitting beside it.
-     *
-     * On, because some hosts resolve the name themselves before the add-on ever sees it and
-     * require the extension to be left off. Sven Co-op is the reason this exists: there
-     * `#include "helper"` is the *correct* spelling and `helper.as` is what it means, so a
-     * server that reported the short form as unresolved would be wrong about every include in
-     * the project.
-     *
-     * Which of the two is true is a fact about the host, like the engine properties, so it is
-     * configuration rather than something to infer. The extension appended is Info::
-     * fileExtension, so a host using something other than `.as` gets it right for free.
+     *        Off by default, which is AngelScript's own behaviour: CScriptBuilder opens exactly the
      */
     bool implicitIncludeExtension = false;
 
     /**
      * @brief One script module: a name, and the `.as` the host builds it from.
-     *
-     * A module is AngelScript's own unit of compilation - `builder.StartNewModule(engine,
-     * name)` - and everything the entry point pulls in through `#include` is part of it. The
-     * server cannot deduce this: a directory of scripts may be one module, or one module per
-     * file, and only the host knows which.
+     *        A module is AngelScript's own unit of compilation - `builder.StartNewModule(engine,
      */
     struct ModuleDefinition
     {
@@ -790,21 +546,13 @@ struct ServerConfig
 
         /**
          * @brief Absolute path to the module's entry-point script, or empty.
-         *
-         * Everything this file reaches through `#include` is in the module, and it is where a
-         * module-wide analysis starts.
+         *        Everything this file reaches through `#include` is in the module, and it is where a
          */
         std::string entry;
 
         /**
          * @brief Absolute path to a directory whose scripts are all in this module, or empty.
-         *
-         * Sven Co-op is the shape this exists for: `scripts/maps` is the module MapScript and
-         * `scripts/plugins` is Plugin. A directory decides membership, with no entry point to
-         * name. Other hosts do the same with their own paths.
-         *
-         * A definition needs a name and at least one of these two. Both together is the
-         * fourth case: the folder decides who is in, the entry decides where analysis starts.
+         *        Sven Co-op is the shape this exists for: `scripts/maps` is the module MapScript and
          */
         std::string folder = {};
 
@@ -816,41 +564,19 @@ struct ServerConfig
 
     /**
      * @brief The modules this workspace builds, or empty when the host has not said.
-     *
-     * Empty is the default and changes nothing: every rule that reads this stays exactly as
-     * conservative as it was. That is deliberate - see the external-shared rule in
-     * ClassRules.cpp. `external shared class Foo;` is legal only when *another* module already
-     * declares `shared class Foo`, measured, and without knowing the modules this server cannot
-     * tell a correct declaration from a broken one. It stays quiet rather than guessing.
-     *
-     * With modules configured it can tell, and that is the whole point of the setting.
+     *        Empty is the default and changes nothing: every rule that reads this stays exactly as
      */
     std::vector<ModuleDefinition> modules;
 
     /**
      * @brief Predefined stub file to exclusively load during the workspace scan.
-     *
-     * When empty, the server preserves its default behaviour of ingesting every predefined
-     * stub discovered during the workspace walk. Setting this designates a single stub path as
-     * the only one the workspace scan will load.
-     *
-     * This does not affect stubs explicitly listed in predefinedFiles: listing them there is an
-     * intentional opt-in and they continue to load unconditionally. Nor does it affect the
-     * built-in engine profile, which continues to load as the baseline. A host stub describes
-     * the host API rather than the standard library; without the engine profile, fundamental
-     * types such as string, array, and dictionary would be missing.
-     *
-     * This exists because all ingested stubs currently merge into a single symbol table where
-     * deduplication is performed only by canonical file path. If two distinct stub files in the
-     * workspace declare `string`, both land in the symbol table and symbol resolution is left
-     * with two identical candidate declarations.
+     *        When empty, the server preserves its default behaviour of ingesting every predefined
      */
     std::string activePredefined;
 
     /**
      * @brief Built-in predefined engine profile identifier (deprecated; defaults to "none").
-     *
-     * Predefined API stubs on disk (.as.predefined) supersede built-in engine profiles.
+     *        Predefined API stubs on disk (.as.predefined) supersede built-in engine profiles.
      */
     std::string engineProfile = "none";
 
@@ -866,10 +592,7 @@ struct ServerConfig
 
     /**
      * @brief Per-rule diagnostic severity overrides, keyed by diagnostic code.
-     *
-     * Values are the LSP severity names ("error", "warning", "information", "hint"). Kept as
-     * strings because DiagnosticSeverity is a Layer 2 type and this is Layer 1; the server
-     * converts them once at startup.
+     *        Values are the LSP severity names ("error", "warning", "information", "hint"). Kept as
      */
     std::unordered_map<std::string, std::string> diagnosticSeverities;
 };

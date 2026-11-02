@@ -1,11 +1,10 @@
-#include <doctest/doctest.h>
-
 #include "analysis/documentation/DocComment.h"
 #include "analysis/documentation/DoxygenMarkdown.h"
 #include "helpers/TestUtils.h"
 
 #include <algorithm>
 #include <cstdint>
+#include <doctest/doctest.h>
 #include <random>
 #include <string>
 #include <vector>

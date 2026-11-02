@@ -6,6 +6,7 @@
 
 #include "analysis/types/EngineConfigConverter.h"
 #include "lsp/Server.h"
+
 #include <fstream>
 #include <iostream>
 #include <string_view>

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "analysis/diagnostics/Diagnostics.h"
+#include "analysis/index/NodeIndex.h"
+
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -8,8 +10,6 @@
 
 namespace angel_lsp::analysis
 {
-class NodeIndex;
-
 /**
  * @brief Returns the numeric alias (e.g. "W156", "E101") for a canonical diagnostic code.
  * @param canonicalCode Canonical string code (e.g. "as-hint-list-pattern-unknown").

@@ -2,6 +2,7 @@
 
 #include "features/hover/HoverHandler.h"
 #include "parser/ASTUtils.h"
+
 #include <optional>
 #include <string>
 #include <string_view>
@@ -198,7 +199,7 @@ ContainerContextPreference CheckContextPreference(TSNode node);
 
 /**
  * @brief Attempts hover resolution for expressions or local definitions (auto, member access, locals, parameters, named
- * args).
+ *        args).
  * @param[in] ctx Hover query context.
  * @return Populated Hover if node is an expression or local definition, std::nullopt otherwise.
  */

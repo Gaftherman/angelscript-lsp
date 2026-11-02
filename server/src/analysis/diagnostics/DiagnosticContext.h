@@ -3,13 +3,12 @@
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/diagnostics/Diagnostics.h"
 #include "analysis/index/SymbolTable.h"
+#include "utils/LspLogger.h"
 
 #include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
-
-#include "utils/LspLogger.h"
 
 namespace angel_lsp::analysis
 {
@@ -118,22 +117,14 @@ struct DiagnosticContext
 
     /**
      * @brief Emits at the type name inside a declaration, rather than over the declaration.
-     *
-     * `void process(BadType param)` underlined `BadType param`, and
-     * `MissingType getThing() { ... }` underlined the whole signature. Both are the symbol's own
-     * range, which is right for a rule about the declaration and wrong for one about the type
-     * written in it: the reader is shown where to look, and the place to look is the type.
-     *
-     * The name is located in the source between the declaration's start and the end of that
-     * line, which is what keeps `const BadType &in p` pointing at `BadType` rather than at the
-     * first characters of `const`. A name that cannot be found there - a declaration split
-     * across lines, or a type spelled differently from its base name - falls back to the
-     * symbol's range, which is what this replaced and never worse than it.
+     *        `void process(BadType param)` underlined `BadType param`, and
      */
     void EmitAtTypeName(const Symbol& sym, std::string_view code, std::string_view typeName,
                         DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
 
-    /** @brief The same, for a type written inside one parameter. */
+    /**
+     * @brief The same, for a type written inside one parameter.
+     */
     void EmitAtTypeName(const ParameterInformation& param, const Symbol& parentSym, std::string_view code,
                         std::string_view typeName) const;
 
@@ -158,14 +149,7 @@ struct DiagnosticContext
   private:
     /**
      * @brief Appends a finished diagnostic, unless the engine's warning mode says to drop it.
-     *
-     * asEP_COMPILER_WARNINGS is the one engine property that moves a severity rather than
-     * deciding whether something is legal, so it belongs here rather than in any single rule.
-     * Measured on a script producing "Signed/Unsigned mismatch": 0 suppresses the warning
-     * entirely, 1 emits it, 2 turns it into an error.
-     *
-     * Every Emit overload routes through this, which is the point - twelve push_back sites
-     * would otherwise each have had to remember.
+     *        asEP_COMPILER_WARNINGS is the one engine property that moves a severity rather than
      */
     void Append(Diagnostic&& diag) const;
 

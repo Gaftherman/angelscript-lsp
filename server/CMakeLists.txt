@@ -186,6 +186,7 @@ target_include_directories(angel_lsp_core PUBLIC
     src/analysis/rules
     src/analysis/checkers
     src/analysis/checkers/null_safety
+    src/analysis/mediator
     src/lsp/state
     src/lsp/pipeline
     src/lsp/services

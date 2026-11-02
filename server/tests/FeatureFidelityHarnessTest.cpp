@@ -1,5 +1,6 @@
 #include "helpers/LspSemanticHarnessFixture.h"
 #include "helpers/TestUtils.h"
+
 #include <doctest/doctest.h>
 
 using namespace angel_lsp::test;

@@ -1,14 +1,15 @@
 #include "features/implementation/ImplementationHandler.h"
+
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
 #include "features/common/FeatureSharedUtils.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/LspLogger.h"
-#include <spdlog/fmt/fmt.h>
 
 #include <algorithm>
 #include <memory>
+#include <spdlog/fmt/fmt.h>
 #include <string_view>
 #include <utility>
 #include <vector>

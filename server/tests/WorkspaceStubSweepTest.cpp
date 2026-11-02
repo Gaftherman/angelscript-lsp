@@ -1,5 +1,3 @@
-#include <doctest/doctest.h>
-
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/SymbolCollector.h"
@@ -10,6 +8,7 @@
 #include "utils/WorkspaceScan.h"
 
 #include <algorithm>
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <sstream>

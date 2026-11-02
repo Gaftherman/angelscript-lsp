@@ -1,10 +1,10 @@
 #pragma once
 
+#include "utils/LspLogger.h"
+
 #include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
-
-#include "utils/LspLogger.h"
 
 namespace angel_lsp::parser
 {

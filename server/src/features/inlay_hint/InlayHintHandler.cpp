@@ -1,4 +1,5 @@
 #include "features/inlay_hint/InlayHintHandler.h"
+
 #include "analysis/documentation/SignatureFormatter.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
@@ -11,6 +12,7 @@
 #include "utils/LspLogger.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
+
 #include <algorithm>
 #include <cctype>
 #include <spdlog/fmt/fmt.h>

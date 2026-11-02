@@ -1,6 +1,7 @@
 #pragma once
 
-#include "analysis/index/SymbolTable.h"
+#include "analysis/index/Symbol.h"
+#include "utils/TransparentHash.h"
 
 #include <ankerl/unordered_dense.h>
 #include <memory>
@@ -19,7 +20,9 @@ struct DerivedType
     std::string name; ///< Unqualified spelling; callers record both.
 };
 
-/** @brief What the declaration rules need to know about one container's members. */
+/**
+ * @brief What the declaration rules need to know about one container's members.
+ */
 struct ContainerMembers
 {
     ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> methodNames;
@@ -32,7 +35,9 @@ struct ContainerMembers
      */
     std::vector<std::string> memberKeys;
 
-    /** @brief O(1) set of member keys for fast containment checks. */
+    /**
+     * @brief O(1) set of member keys for fast containment checks.
+     */
     ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> memberKeySet;
 
     // Refcounts for incremental maintenance
@@ -96,13 +101,13 @@ struct RuleIndex
 
     /**
      * @brief Symbols of enums containing each member name.
-     * Allows fast O(1) lookup of enum symbols when resolving unqualified enum member references.
+     *        Allows fast O(1) lookup of enum symbols when resolving unqualified enum member references.
      */
     ankerl::unordered_dense::map<std::string, std::vector<Symbol>> enumSymbolsByMemberName;
 
     /**
      * @brief Qualified names of types (classes, interfaces, enums, typedefs, funcdefs) keyed by short name.
-     * Allows fast lookup of types when referenced without their enclosing namespace.
+     *        Allows fast lookup of types when referenced without their enclosing namespace.
      */
     ankerl::unordered_dense::map<std::string, std::vector<std::string>, TransparentStringHash, std::equal_to<>>
         qualifiedTypesByShortName;
@@ -122,7 +127,7 @@ struct RuleIndex
 
     /**
      * @brief Declared names accessible at global/unqualified scope (free functions, global variables,
-     * declared types, namespace root segments), with refcounts for incremental updates.
+     *        declared types, namespace root segments), with refcounts for incremental updates.
      */
     ankerl::unordered_dense::map<std::string, uint32_t, TransparentStringHash, std::equal_to<>> globalNames;
 
@@ -131,14 +136,20 @@ struct RuleIndex
     ankerl::unordered_dense::map<std::string, std::vector<DerivedType>, TransparentStringHash, std::equal_to<>>
         hostClassesByMixin;
 
-    /** @brief SymbolTable bucket key -> file URIs declaring a non-external `shared` class or function body. */
+    /**
+     * @brief SymbolTable bucket key -> file URIs declaring a non-external `shared` class or function body.
+     */
     ankerl::unordered_dense::map<std::string, std::vector<std::string>> sharedDeclarationFilesByKey;
 
-    /** @brief Dynamic delegate property names that dispatch to base classes. */
+    /**
+     * @brief Dynamic delegate property names that dispatch to base classes.
+     */
     std::vector<std::string> baseClassDelegateProperties;
     ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> baseClassDelegatePropertySet;
 
-    /** @brief Members of one container, or an empty set of them when it declares none. */
+    /**
+     * @brief Members of one container, or an empty set of them when it declares none.
+     */
     const ContainerMembers& Members(std::string_view containerName) const;
     const ContainerMembers& Members(const std::string& containerName) const;
     const ContainerMembers& Members(const char* containerName) const
@@ -146,7 +157,9 @@ struct RuleIndex
         return Members(std::string_view(containerName));
     }
 
-    /** @brief Members declared within a class or interface container. */
+    /**
+     * @brief Members declared within a class or interface container.
+     */
     const ContainerMembers& ClassMembers(std::string_view className) const;
     const ContainerMembers& ClassMembers(const std::string& className) const;
     const ContainerMembers& ClassMembers(const char* className) const
@@ -154,7 +167,9 @@ struct RuleIndex
         return ClassMembers(std::string_view(className));
     }
 
-    /** @brief Members declared within a namespace container. */
+    /**
+     * @brief Members declared within a namespace container.
+     */
     const ContainerMembers& NamespaceMembers(std::string_view nsName) const;
     const ContainerMembers& NamespaceMembers(const std::string& nsName) const;
     const ContainerMembers& NamespaceMembers(const char* nsName) const
@@ -162,17 +177,35 @@ struct RuleIndex
         return NamespaceMembers(std::string_view(nsName));
     }
 
-    /** @brief Applies the contributions of a partial index to this index. */
+    /**
+     * @brief Applies the contributions of a partial index to this index.
+     */
     void ApplyPartial(const RuleIndexPartial& partial);
 
-    /** @brief Removes the contributions of a partial index from this index. */
+    /**
+     * @brief Removes the contributions of a partial index from this index.
+     */
     void RemovePartial(const RuleIndexPartial& partial);
 
-    /** @brief Extracts a partial index from the given symbols belonging to fileUri. */
+    /**
+     * @brief Extracts a partial index from the given symbols belonging to fileUri.
+     */
     static RuleIndexPartial BuildPartial(const std::string& fileUri, const std::vector<Symbol>& symbols);
     static RuleIndexPartial BuildPartial(const std::string& fileUri, const std::vector<const Symbol*>& symbols);
 
-    /** @brief Walks the table once and returns the index it yields. */
-    static std::shared_ptr<RuleIndex> Build(const SymbolTable& table);
+    /**
+     * @brief Walks the table once and returns the index it yields.
+     */
+    template <typename TableLike> static std::shared_ptr<RuleIndex> Build(const TableLike& table)
+    {
+        auto index = std::make_shared<RuleIndex>();
+        table.ForEachSymbol(
+            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& symbols)
+            {
+                RuleIndexPartial partial = BuildPartial("", symbols);
+                index->ApplyPartial(partial);
+            });
+        return index;
+    }
 };
 } // namespace angel_lsp::analysis::rules

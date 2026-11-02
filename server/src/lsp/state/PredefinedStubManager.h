@@ -1,6 +1,7 @@
 #pragma once
 
 #include "document/Document.h"
+
 #include <ankerl/unordered_dense.h>
 #include <memory>
 #include <mutex>
@@ -170,11 +171,9 @@ class PredefinedStubManager
     /**
      * @brief Checks if a stub has matching content and defines hashes.
      * @param path Filesystem path.
-
-     * * @param contentHash Content hash.
+     *        * @param contentHash Content hash.
      * @param definesHash Active preprocessor defines hash.
-     * @return
-     * True if hashes match.
+     * @return True if hashes match.
      */
     [[nodiscard]] bool HasMatchingFingerprint(const std::string& path, uint64_t contentHash,
                                               uint64_t definesHash) const;
@@ -182,7 +181,6 @@ class PredefinedStubManager
     /**
      * @brief Records content and defines hashes for a stub path.
      * @param path Filesystem path.
-     *
      * @param contentHash Content hash.
      * @param definesHash Active preprocessor defines hash.
      */

@@ -1,10 +1,3 @@
-#include <doctest/doctest.h>
-#include <iostream>
-#include <string>
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
-
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolCollector.h"
@@ -13,6 +6,13 @@
 #include "features/references/ReferencesHandler.h"
 #include "features/rename/RenameHandler.h"
 #include "parser/AngelScriptParser.h"
+
+#include <doctest/doctest.h>
+#include <iostream>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 using namespace angel_lsp;
 using namespace angel_lsp::features;

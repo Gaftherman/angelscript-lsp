@@ -1,10 +1,12 @@
 #include "analysis/checkers/null_safety/NullSafetyExpr.h"
+
 #include "analysis/checkers/null_safety/NullSafetyCondition.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/types/TypeExtraction.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
+
 #include <memory>
 #include <string>
 #include <vector>

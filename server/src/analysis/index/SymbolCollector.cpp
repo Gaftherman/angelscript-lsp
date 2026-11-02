@@ -1,4 +1,5 @@
 #include "analysis/index/SymbolCollector.h"
+
 #include "analysis/documentation/DocComment.h"
 #include "analysis/documentation/SignatureFormatter.h"
 #include "analysis/index/DeclarationRecovery.h"
@@ -11,6 +12,7 @@
 #include "utils/LspLogger.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
+
 #include <ankerl/unordered_dense.h>
 #include <cctype>
 #include <charconv>

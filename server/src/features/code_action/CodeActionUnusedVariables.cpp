@@ -6,6 +6,7 @@
 #include "analysis/resolution/TargetResolution.h"
 #include "features/code_action/CodeActionInternal.h"
 #include "parser/ASTUtils.h"
+
 #include <variant>
 
 namespace angel_lsp::features

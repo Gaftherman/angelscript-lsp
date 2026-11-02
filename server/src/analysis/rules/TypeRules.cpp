@@ -1,4 +1,5 @@
 #include "analysis/rules/TypeRules.h"
+
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
@@ -37,7 +38,9 @@ static TSNode FindEnumDeclarationNode(const NodeIndex& nodeIndex, const Symbol& 
     return TSNode{};
 }
 
-/** @brief True when the name collides with a keyword or a built-in type name. */
+/**
+ * @brief True when the name collides with a keyword or a built-in type name.
+ */
 static bool IsUnusableName(const std::string& name, const DiagnosticContext& ctx)
 {
     return IsReservedKeyword(name) || IsPrimitiveTypeName(name) || name == ctx.request.GetEffectiveStringTypeName() ||
@@ -62,7 +65,9 @@ static bool IsPrefixedIntegerLiteral(std::string_view text, size_t i)
     return false;
 }
 
-/** @brief True for an integer literal, including signed forms like `-1`. */
+/**
+ * @brief True for an integer literal, including signed forms like `-1`.
+ */
 static bool IsIntegerLiteral(std::string_view text)
 {
     while (!text.empty() && (text.front() == ' ' || text.front() == '\t'))

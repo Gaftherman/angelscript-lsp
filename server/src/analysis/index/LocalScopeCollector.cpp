@@ -1,17 +1,18 @@
 #include "analysis/index/LocalScopeCollector.h"
+
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeExtraction.h"
 #include "analysis/types/TypeSanitization.h"
+#include "document/Document.h"
+#include "parser/ASTUtils.h"
+#include "parser/GrammarNames.h"
+#include "parser/GrammarSymbols.h"
 #include "parser/QueryRegistry.h"
 #include "parser/queries/BuiltQueries.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/Constants.h"
 #include "utils/LspLogger.h"
 
-#include "document/Document.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
-#include "parser/GrammarSymbols.h"
 #include <algorithm>
 #include <cstring>
 
@@ -694,6 +695,36 @@ bool LocalScopeCollector::IsDeclarationContextSymbol(TSSymbol sym) const noexcep
            sym == m_gs.symMixinDeclaration || sym == m_gs.symFuncdefDeclaration;
 }
 
+static void EnrichReferenceContext(TSNode captureNode, TSNode parent, std::string_view sourceCode,
+                                   const parser::GrammarSymbols& gs, LocalReference& ref)
+{
+    if (ref.name == "super")
+    {
+        ref.isSuperBaseCall = IsBaseConstructorCall(captureNode, sourceCode);
+    }
+    else if (ref.name == "function" && ts_node_symbol(parent) == gs.symLambdaExpression)
+    {
+        ref.isLambdaFunctionKeyword = 1;
+    }
+
+    bool inMetaOrErr =
+        ts_node_has_error(captureNode) || ts_node_is_error(parent) || ts_node_symbol(parent) == gs.symMetadata;
+    if (!inMetaOrErr)
+    {
+        parser::ForEachAncestor(parent,
+                                [&](TSNode curr) -> bool
+                                {
+                                    if (ts_node_is_error(curr) || ts_node_symbol(curr) == gs.symMetadata)
+                                    {
+                                        inMetaOrErr = true;
+                                        return false;
+                                    }
+                                    return true;
+                                });
+    }
+    ref.inMetadataOrError = inMetaOrErr ? 1 : 0;
+}
+
 void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Scope* current,
                                                   const std::string& sourceCode) const
 {
@@ -743,14 +774,14 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
         ref.isMemberAccess =
             IsMemberAccessNode(capture.node, parent, m_gs.symMemberExpression, m_gs.symScopedIdentifier);
         DetermineCallReferenceInfo(capture.node, parent, ref);
-        PopulateReceiverQualifierRanges(parent, ref, sourceCode);
+        PopulateReceiverQualifierRanges(parent, ref);
+        EnrichReferenceContext(capture.node, parent, sourceCode, m_gs, ref);
     }
 
     current->references.push_back(std::move(ref));
 }
 
-void LocalScopeCollector::PopulateReceiverQualifierRanges(TSNode parent, LocalReference& ref,
-                                                          const std::string& sourceCode) const
+void LocalScopeCollector::PopulateReceiverQualifierRanges(TSNode parent, LocalReference& ref) const
 {
     const TSSymbol parentSym = ts_node_symbol(parent);
     if (parentSym == m_gs.symScopedIdentifier)
@@ -763,16 +794,6 @@ void LocalScopeCollector::PopulateReceiverQualifierRanges(TSNode parent, LocalRe
         {
             ref.receiverStartByte = ts_node_start_byte(firstChild);
             ref.receiverEndByte = ts_node_end_byte(firstChild);
-        }
-        if (ref.isMemberAccess && ref.qualifierStartByte < ref.startByte && ref.startByte <= sourceCode.size())
-        {
-            std::string_view qualifierView(sourceCode.data() + ref.qualifierStartByte,
-                                           ref.startByte - ref.qualifierStartByte);
-            while (qualifierView.ends_with(':') || qualifierView.ends_with(' ') || qualifierView.ends_with('\t'))
-            {
-                qualifierView.remove_suffix(1);
-            }
-            ref.scopeQualifier = std::string(qualifierView);
         }
     }
     else if (parentSym == m_gs.symMemberExpression)

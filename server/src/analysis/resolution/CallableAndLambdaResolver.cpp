@@ -1,4 +1,5 @@
 #include "analysis/resolution/CallableAndLambdaResolver.h"
+
 #include "analysis/index/ScopeTree.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/resolution/OverloadResolver.h"
@@ -10,6 +11,7 @@
 #include "parser/GrammarSymbols.h"
 #include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
+
 #include <algorithm>
 #include <cctype>
 #include <string>
@@ -414,7 +416,9 @@ std::string LastSegmentOf(const std::string& name)
     return std::string(utils::LastScopeSegment(name));
 }
 
-/** @brief True for a name that denotes a typedef, whose alias no spelling can see through. */
+/**
+ * @brief True for a name that denotes a typedef, whose alias no spelling can see through.
+ */
 bool NamesATypedef(const std::string& name, const SymbolTable& table)
 {
     const auto bucket = table.FindSymbolsPtr(name);

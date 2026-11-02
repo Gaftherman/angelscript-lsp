@@ -10,11 +10,7 @@ namespace angel_lsp::utils
 {
 /**
  * @brief Formats an elapsed duration in milliseconds into a human-readable string.
- *
- * Durations under 1000 ms are formatted as "{:.2f} ms" (e.g. "45.20 ms").
- * Durations of 1000 ms or greater are formatted with both seconds and milliseconds
- * (e.g. "25.00 s (25000.00 ms)").
- *
+ *        Durations under 1000 ms are formatted as "{:.2f} ms" (e.g. "45.20 ms").
  * @param[in] ms Duration in milliseconds.
  * @return Formatted human-readable duration string.
  */

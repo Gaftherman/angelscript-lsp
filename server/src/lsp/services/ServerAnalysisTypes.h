@@ -7,15 +7,16 @@
 #include "analysis/index/SymbolTable.h"
 #include "document/Document.h"
 #include "lsp/state/PositionCodec.h"
+#include "parser/AngelScriptParser.h"
 #include "utils/LspLogger.h"
 #include "utils/StopFlag.h"
 #include "utils/Timer.h"
-#include <lsp/types.h>
 
 #include <chrono>
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <lsp/types.h>
 #include <memory>
 #include <optional>
 #include <spdlog/fmt/fmt.h>
@@ -27,12 +28,6 @@
 
 namespace angel_lsp
 {
-class Server;
-
-namespace parser
-{
-class AngelScriptParser;
-}
 
 /**
  * @brief Parameters for resolving valid breakpoint positions within a source line range.
@@ -134,9 +129,14 @@ struct CodeSettingPair
  */
 struct ReanalyseOnExit
 {
-    Server* server;
-    const angel_lsp::utils::StopFlag& stopToken;
-    ~ReanalyseOnExit();
+    std::function<void()> onExit;
+    ~ReanalyseOnExit()
+    {
+        if (onExit)
+        {
+            onExit();
+        }
+    }
 };
 
 /**

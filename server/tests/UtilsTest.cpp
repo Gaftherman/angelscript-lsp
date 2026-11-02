@@ -1,6 +1,6 @@
-#include <doctest/doctest.h>
-
 #include "utils/Utils.h"
+
+#include <doctest/doctest.h>
 
 using namespace angel_lsp::utils;
 

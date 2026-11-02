@@ -1,4 +1,5 @@
 #include "analysis/checkers/IsolationChecker.h"
+
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
@@ -8,6 +9,7 @@
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/Utils.h"
+
 #include <string_view>
 #include <vector>
 
@@ -57,10 +59,7 @@ static bool IsCoreOrRegisteredType(std::string_view typeName, const SemanticAnal
 
 /**
  * @brief Innermost containing scope, falling back to `root` rather than nullptr.
- *
- * Named apart from analysis::FindInnermostScope on purpose: that one reports "no scope"
- * when the point lies outside the root, this one hands back the root. The shared-isolation
- * walk needs a scope for every node it visits, so the fallback is the behaviour it wants.
+ *        Named apart from analysis::FindInnermostScope on purpose: that one reports "no scope"
  */
 static const Scope* FindEnclosingScopeOrRoot(const Scope* root, uint32_t line, uint32_t character)
 {
@@ -254,7 +253,7 @@ static bool IsValidSharedNode(TSNode sharedNode)
     return false;
 }
 
-static void CheckSharedEntityEligibility(const IsolationCheckRequest& request, DiagnosticContext& ctx)
+static void CheckSharedEntityEligibility(const AstCheckContext& request, DiagnosticContext& ctx)
 {
     if (!request.nodeIndex)
     {
@@ -315,7 +314,7 @@ static bool IsDeclarationNameNode(TSNode p, TSNode node, TSSymbol pSym)
 class IsolationVisitor
 {
   public:
-    const IsolationCheckRequest& request;
+    const AstCheckContext& request;
     DiagnosticContext& ctx;
     std::string currentClassName;
     bool isCurrentClassShared = false;
@@ -607,7 +606,7 @@ class IsolationVisitor
     }
 };
 
-void CheckSharedIsolation(const IsolationCheckRequest& request, DiagnosticContext& ctx)
+void CheckSharedIsolation(const AstCheckContext& request, DiagnosticContext& ctx)
 {
     if (ts_node_is_null(request.rootNode) || request.sourceCode.empty())
     {

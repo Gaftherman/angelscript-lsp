@@ -1,4 +1,5 @@
 #include "config/ServerConfig.h"
+
 #include <algorithm>
 #include <cctype>
 #include <iostream>
@@ -62,10 +63,11 @@ bool ArgParseContext::GetBoolValue(bool defaultVal)
     return defaultVal;
 }
 
-/** @brief True for the four LSP severity names a diagnostic can be remapped to.
- *  @note Validated here rather than at use: an unrecognised name silently dropped at
+/**
+ * @brief True for the four LSP severity names a diagnostic can be remapped to.
+ * @note Validated here rather than at use: an unrecognised name silently dropped at
  *        startup is far easier to diagnose than one that reaches the analyzer and picks a
- *        severity by accident. */
+ */
 static bool IsDiagnosticSeverityName(std::string_view val)
 {
     return val == "error" || val == "warning" || val == "information" || val == "hint";
@@ -73,11 +75,7 @@ static bool IsDiagnosticSeverityName(std::string_view val)
 
 /**
  * @brief Applies one `--preprocessor-feature=<name>=<value>` pair.
- *
- * Deliberately not folded into ApplyEngineProperty: an engine property is an asEP_* value
- * the SDK interprets, while these describe a source file the host may have patched. Sharing
- * the name space would suggest the SDK knows about `#else`, and it does not.
- *
+ *        Deliberately not folded into ApplyEngineProperty: an engine property is an asEP_* value
  * @return False for an unknown name or an unparsable value, so a typo is not silently on.
  */
 static bool ApplyPreprocessorFeature(ServerConfig& config, std::string_view name, std::string_view raw)

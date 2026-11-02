@@ -2040,18 +2040,25 @@ static bool IsUnscopedEnumMemberMatch(const analysis::LocalReference& ref, const
 static bool IsEnumMemberReferenceMatch(const analysis::LocalReference& ref, const analysis::Scope* scope,
                                        const OccurrenceScanContext& ctx)
 {
-    if (ref.isScopedIdentifier && !ref.scopeQualifier.empty())
+    if (ctx.fileUri == ctx.request.currentUri)
     {
-        return EnumQualifierMatches(ref.scopeQualifier, ctx.request.target.declaringEnum);
+        if (ref.isScopedIdentifier && !ref.GetScopeQualifier(ctx.request.sourceCode).empty())
+        {
+            return EnumQualifierMatches(ref.GetScopeQualifier(ctx.request.sourceCode),
+                                        ctx.request.target.declaringEnum);
+        }
+        auto astMatch = CheckAstEnumMemberMatch(ref, ctx);
+        if (astMatch.has_value())
+        {
+            return *astMatch;
+        }
     }
-    auto astMatch = CheckAstEnumMemberMatch(ref, ctx);
-    if (astMatch.has_value())
+    if (ref.isMemberAccess || ref.isScopedIdentifier)
     {
-        return *astMatch;
-    }
-    if (ref.isMemberAccess)
-    {
-        return HasPrecedingEnumQualifier(ref, scope, ctx.request.target.declaringEnum);
+        if (HasPrecedingEnumQualifier(ref, scope, ctx.request.target.declaringEnum))
+        {
+            return true;
+        }
     }
     return IsUnscopedEnumMemberMatch(ref, scope, ctx);
 }

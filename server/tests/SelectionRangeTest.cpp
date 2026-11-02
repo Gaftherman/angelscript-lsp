@@ -1,8 +1,7 @@
-#include <doctest/doctest.h>
-
 #include "features/selection_range/SelectionRangeHandler.h"
 #include "parser/AngelScriptParser.h"
 
+#include <doctest/doctest.h>
 #include <string>
 #include <vector>
 

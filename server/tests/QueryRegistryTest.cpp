@@ -1,11 +1,11 @@
-#include <doctest/doctest.h>
+#include "parser/QueryRegistry.h"
 
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
-#include "parser/QueryRegistry.h"
 
 #include <array>
 #include <atomic>
+#include <doctest/doctest.h>
 #include <latch>
 #include <thread>
 #include <vector>

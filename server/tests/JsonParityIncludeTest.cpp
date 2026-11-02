@@ -15,6 +15,7 @@
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/IncludeResolver.h"
+
 #include <algorithm>
 #include <doctest/doctest.h>
 #include <filesystem>

@@ -1,4 +1,5 @@
 #include "analysis/checkers/DefiniteAssignmentChecker.h"
+
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
@@ -6,6 +7,7 @@
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/Utils.h"
+
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
 #include <cctype>
@@ -44,22 +46,7 @@ static std::string GetSimpleIdentifierName(TSNode node, std::string_view sourceC
 
 /**
  * @brief Merges two branch states by UNION, which is AngelScript's rule and not C#'s.
- *
- * This intersected, implementing "definitely assigned on every path" - the rule C# and
- * Java enforce as an error. AngelScript's is far weaker, and it is a warning: it fires only
- * when NO assignment precedes the read at all. Measured, and the two middle lines are the
- * ones that settle it:
- *
- *     uint c; Use(c);                        WARNING: 'c' is not initialized.
- *     uint c; Use(c); c = 5;                 WARNING - the read comes first
- *     uint c; if (true)  { c = 5; } Use(c);  clean
- *     uint c; if (false) { c = 5; } Use(c);  clean - conditional, and even unreachable
- *     uint c; for (...) { if (...) c = 5; } Use(c);   clean
- *     uint c; while (true) { c = 5; break; } Use(c);  clean
- *
- * So an assignment in one arm is enough, and the join has to keep it rather than require
- * both arms to agree. Intersecting produced 400 findings over the corpus against the
- * compiler's own 7, on the ordinary shape of assigning inside a loop and reading after it.
+ *        This intersected, implementing "definitely assigned on every path" - the rule C# and
  */
 static ankerl::unordered_dense::set<std::string> MergeBranchStates(const ankerl::unordered_dense::set<std::string>& a,
                                                                    const ankerl::unordered_dense::set<std::string>& b)
@@ -78,8 +65,7 @@ static ankerl::unordered_dense::set<std::string> MergeBranchStates(const ankerl:
 class DefiniteAssignmentVisitor
 {
   public:
-    DefiniteAssignmentVisitor(const DefiniteAssignmentCheckRequest& request, DiagnosticContext& ctx)
-        : m_request(request), m_ctx(ctx)
+    DefiniteAssignmentVisitor(const AstCheckContext& request, DiagnosticContext& ctx) : m_request(request), m_ctx(ctx)
     {
     }
 
@@ -114,7 +100,7 @@ class DefiniteAssignmentVisitor
     }
 
   private:
-    const DefiniteAssignmentCheckRequest& m_request;
+    const AstCheckContext& m_request;
     DiagnosticContext& m_ctx;
     ankerl::unordered_dense::set<std::string> m_trackedLocals;
     ankerl::unordered_dense::set<std::string> m_reportedReads;
@@ -810,7 +796,7 @@ static void TraverseFunctions(TSNode root, DefiniteAssignmentVisitor& visitor)
     ts_tree_cursor_delete(&cursor);
 }
 
-void CheckDefiniteAssignment(const DefiniteAssignmentCheckRequest& request, DiagnosticContext& ctx)
+void CheckDefiniteAssignment(const AstCheckContext& request, DiagnosticContext& ctx)
 {
     if (ts_node_is_null(request.rootNode) || request.sourceCode.empty())
     {

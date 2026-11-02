@@ -1,14 +1,16 @@
 #pragma once
 
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/NodeIndex.h"
+#include "analysis/index/ScopeTree.h"
+#include "analysis/mediator/SemanticMediator.h"
+
 #include <concepts>
 #include <string_view>
 #include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
-struct Scope;
-class NodeIndex;
 
 /**
  * @brief Immutable AST and lexical inputs shared across all semantic AST checkers.
@@ -19,6 +21,7 @@ struct AstCheckContext
     std::string_view sourceCode{};
     const Scope* scopeRoot = nullptr;
     const NodeIndex* nodeIndex = nullptr;
+    const SemanticMediator* mediator = nullptr;
 };
 
 /**

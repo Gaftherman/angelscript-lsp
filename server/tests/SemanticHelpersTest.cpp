@@ -1,10 +1,10 @@
-#include <doctest/doctest.h>
+#include "analysis/resolution/SemanticHelpers.h"
 
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
-#include "analysis/resolution/SemanticHelpers.h"
 #include "parser/AngelScriptParser.h"
 
+#include <doctest/doctest.h>
 #include <string>
 
 using namespace angel_lsp::analysis;

@@ -1,6 +1,8 @@
 #include "features/formatting/ClangFormatReader.h"
+
 #include "features/formatting/ClangFormatPresets.h"
 #include "utils/Utils.h"
+
 #include <filesystem>
 #include <fstream>
 #include <sstream>

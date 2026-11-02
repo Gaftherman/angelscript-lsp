@@ -1,4 +1,5 @@
 #include "features/definition/DefinitionHandler.h"
+
 #include "analysis/resolution/ConversionRankingEngine.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
@@ -10,6 +11,7 @@
 #include "utils/IncludeResolver.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
+
 #include <algorithm>
 #include <cmath>
 #include <string_view>

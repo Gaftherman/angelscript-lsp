@@ -2,6 +2,7 @@
 #include "features/formatting/FormattingHandler.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
+
 #include <doctest/doctest.h>
 #include <string>
 #include <vector>

@@ -1,4 +1,5 @@
 #include "features/linked_editing/LinkedEditingRangeHandler.h"
+
 #include "features/common/FeatureSharedUtils.h"
 
 #include <algorithm>
@@ -31,7 +32,9 @@ template <typename T> static bool Covers(const T& item, const lsp::Position& pos
     return true;
 }
 
-/** @brief Innermost scope containing a position, or nullptr when the tree does not cover it. */
+/**
+ * @brief Innermost scope containing a position, or nullptr when the tree does not cover it.
+ */
 static const analysis::Scope* InnermostScope(const analysis::Scope* root, const lsp::Position& position)
 {
     if (!root || !Covers(*root, position))
@@ -58,9 +61,7 @@ static const analysis::Scope* InnermostScope(const analysis::Scope* root, const 
 
 /**
  * @brief The local or parameter the cursor sits on, whether at its declaration or a use.
- *
- * A member access is skipped: the `y` in `x.y` is spelled like a local and is not one, and
- * retyping it together with an unrelated local of the same name would corrupt both.
+ *        A member access is skipped: the `y` in `x.y` is spelled like a local and is not one, and
  */
 static const analysis::LocalDefinition* DefinitionAt(const analysis::Scope* scope, const lsp::Position& position,
                                                      const analysis::Scope** owningScope)
@@ -106,12 +107,7 @@ static const analysis::LocalDefinition* DefinitionAt(const analysis::Scope* scop
 
 /**
  * @brief True when a scope is a function body, or sits inside one.
- *
- * The scope tree captures a module-scope global and a function-body local under the very
- * same analysis::LocalDefinitionKind::Variable - the query cannot tell them apart, and says so. What
- * does tell them apart is where the scope owning the definition sits, and this is the only
- * thing standing between offering linked editing on a local and offering it on a global
- * that half the workspace refers to.
+ *        The scope tree captures a module-scope global and a function-body local under the very
  */
 static bool IsInsideFunction(const analysis::Scope* scope)
 {
@@ -125,7 +121,9 @@ static bool IsInsideFunction(const analysis::Scope* scope)
     return false;
 }
 
-/** @brief Collects every occurrence of a name inside one scope and its children. */
+/**
+ * @brief Collects every occurrence of a name inside one scope and its children.
+ */
 static void CollectIn(const analysis::Scope& scope, const std::string& name, std::vector<lsp::Range>& out)
 {
     for (const auto& definition : scope.definitions)

@@ -1,5 +1,3 @@
-#include <doctest/doctest.h>
-
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolCollector.h"
@@ -11,6 +9,7 @@
 #include "utils/Timer.h"
 
 #include <chrono>
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <regex>

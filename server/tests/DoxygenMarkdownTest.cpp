@@ -1,8 +1,8 @@
-#include <doctest/doctest.h>
-
 #include "analysis/documentation/DoxygenMarkdown.h"
+
 #include "helpers/TestUtils.h"
 
+#include <doctest/doctest.h>
 #include <string>
 
 using namespace angel_lsp::analysis;

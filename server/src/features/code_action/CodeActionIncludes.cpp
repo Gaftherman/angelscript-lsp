@@ -25,8 +25,6 @@ static ankerl::unordered_dense::set<std::string> CollectIndexedFileUris(const an
     return indexedUris;
 }
 
-using IncludeCandidate = TypoCandidate;
-
 /**
  * @brief Searches indexed document URIs for filenames similar to the unresolved include.
  * @param[in] includerPath Absolute filesystem path of current document.
@@ -35,9 +33,9 @@ using IncludeCandidate = TypoCandidate;
  * @param[in] currentUri Current document URI.
  * @return Ranked candidates list sorted by edit distance.
  */
-static std::vector<IncludeCandidate> RankIncludeCandidates(const std::string& includerPath, const std::string& rawPath,
-                                                           const ankerl::unordered_dense::set<std::string>& indexedUris,
-                                                           const std::string& currentUri)
+static std::vector<TypoCandidate> RankIncludeCandidates(const std::string& includerPath, const std::string& rawPath,
+                                                        const ankerl::unordered_dense::set<std::string>& indexedUris,
+                                                        const std::string& currentUri)
 {
     const std::string typedName = std::filesystem::path(rawPath).filename().generic_string();
     if (typedName.empty())
@@ -47,7 +45,7 @@ static std::vector<IncludeCandidate> RankIncludeCandidates(const std::string& in
 
     const std::string typedFolded = FoldCase(typedName);
     const size_t limit = SuggestionLimit(typedName.size());
-    std::vector<IncludeCandidate> ranked;
+    std::vector<TypoCandidate> ranked;
     ankerl::unordered_dense::set<std::string> seen;
 
     for (const std::string& candidateUri : indexedUris)
@@ -88,7 +86,7 @@ static std::vector<IncludeCandidate> RankIncludeCandidates(const std::string& in
     }
 
     std::sort(ranked.begin(), ranked.end(),
-              [](const IncludeCandidate& a, const IncludeCandidate& b)
+              [](const TypoCandidate& a, const TypoCandidate& b)
               {
                   if (a.distance != b.distance)
                   {
@@ -105,7 +103,7 @@ static std::vector<IncludeCandidate> RankIncludeCandidates(const std::string& in
  * @param[in] ranked Ranked include candidates.
  * @param[out] actions Destination actions vector.
  */
-static void EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vector<IncludeCandidate>& ranked,
+static void EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vector<TypoCandidate>& ranked,
                                    std::vector<lsp::CodeAction>& actions)
 {
     const std::string_view line =

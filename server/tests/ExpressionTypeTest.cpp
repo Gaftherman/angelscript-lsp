@@ -4,6 +4,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
+
 #include <doctest/doctest.h>
 
 using namespace angel_lsp::analysis;

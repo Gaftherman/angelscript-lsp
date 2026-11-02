@@ -1,4 +1,5 @@
 #include "lsp/state/DocumentStore.h"
+
 #include <mutex>
 
 namespace angel_lsp

@@ -3,12 +3,13 @@
 #include "analysis/diagnostics/Diagnostics.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/types/TypeExtraction.h"
+#include "config/ServerConfig.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
-
-#include "config/ServerConfig.h"
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
+#include "utils/LspLogger.h"
+
 #include <ankerl/unordered_dense.h>
 #include <cstdint>
 #include <cstring>
@@ -18,8 +19,6 @@
 #include <tree_sitter/api.h>
 #include <vector>
 
-#include "utils/LspLogger.h"
-
 namespace angel_lsp::analysis
 {
 /**
@@ -27,11 +26,17 @@ namespace angel_lsp::analysis
  */
 struct SymbolCollectRequest
 {
-    /** @brief Document URI used to tag every collected symbol and diagnostic. */
+    /**
+     * @brief Document URI used to tag every collected symbol and diagnostic.
+     */
     std::string fileUri;
-    /** @brief Full text of the document. */
+    /**
+     * @brief Full text of the document.
+     */
     std::string_view sourceCode;
-    /** @brief Optional localizer for diagnostic messages; English is used when null. */
+    /**
+     * @brief Optional localizer for diagnostic messages; English is used when null.
+     */
     const angel_lsp::i18n::I18n* i18n = nullptr;
 
     /**
@@ -62,14 +67,6 @@ struct SymbolCollectRequest
 /**
  * @brief Walks a parsed AngelScript tree-sitter AST and populates a SymbolTable with
  *        declarations (functions, classes, variables, ...) and out-of-body call references.
- *
- * SymbolCollector is a Layer 2 (Analysis) component: it depends only on Layer 1
- * (parser/, document/, utils/, config/) and the C++ standard library, and must never
- * include anything from features/ (Layer 3) or lsp/ (Layer 4). It holds no static or
- * global state - all mutable state lives in the instance (cached grammar symbol IDs and
- * the compiled TAGS_QUERY), and every collection entry point takes its inputs by const
- * reference and never throws; parse and validation failures are reported as Diagnostic
- * values instead.
  */
 struct MissingCaseColon
 {
@@ -85,10 +82,14 @@ class SymbolCollector
   public:
     // Public API
 
-    /** @brief Constructs the collector and pre-resolves all tree-sitter grammar symbols and the TAGS_QUERY. */
+    /**
+     * @brief Constructs the collector and pre-resolves all tree-sitter grammar symbols and the TAGS_QUERY.
+     */
     explicit SymbolCollector(angel_lsp::utils::LspLogger* logger);
 
-    /** @brief Releases the compiled TAGS_QUERY. */
+    /**
+     * @brief Releases the compiled TAGS_QUERY.
+     */
     ~SymbolCollector();
 
     /**
@@ -184,7 +185,9 @@ class SymbolCollector
 
     // Internal Bundled Contexts
 
-    /** @brief Tracks the lexical scope a TAGS_QUERY match was found in while it is dispatched. */
+    /**
+     * @brief Tracks the lexical scope a TAGS_QUERY match was found in while it is dispatched.
+     */
     struct CollectionContext
     {
         std::string containerPath;
@@ -194,7 +197,9 @@ class SymbolCollector
         ContainerKind containerKind = ContainerKind::None;
     };
 
-    /** @brief Bundles mutable collectors and immutable request state during AST walks. */
+    /**
+     * @brief Bundles mutable collectors and immutable request state during AST walks.
+     */
     struct SymbolCollectContext
     {
         SymbolCollectContext(const SymbolCollectRequest& req, SymbolTable& table, std::vector<Diagnostic>& diags)
@@ -211,7 +216,9 @@ class SymbolCollector
         bool isRecoveringSwallowed = false;
     };
 
-    /** @brief Bundles URI and source context for symbol creation. */
+    /**
+     * @brief Bundles URI and source context for symbol creation.
+     */
     struct SymbolLocationContext
     {
         std::string_view sourceCode;
@@ -255,16 +262,24 @@ class SymbolCollector
 
     // Query Dispatch Types & Members
 
-    /** @brief Member-function pointer type used to dispatch a TAGS_QUERY capture to its handler. */
+    /**
+     * @brief Member-function pointer type used to dispatch a TAGS_QUERY capture to its handler.
+     */
     using ProcessFn = void (SymbolCollector::*)(TSNode, SymbolCollectContext&, const CollectionContext&);
 
-    /** @brief Maps each TAGS_QUERY capture index to its handler, built once in the constructor. */
+    /**
+     * @brief Maps each TAGS_QUERY capture index to its handler, built once in the constructor.
+     */
     std::vector<ProcessFn> m_captureDispatch;
 
-    /** @brief Member-function pointer type used to dispatch a validation capture to its handler. */
+    /**
+     * @brief Member-function pointer type used to dispatch a validation capture to its handler.
+     */
     using ValidationFn = void (SymbolCollector::*)(TSNode, SymbolCollectContext&) const;
 
-    /** @brief Maps each TAGS_QUERY capture index to its validation handler. */
+    /**
+     * @brief Maps each TAGS_QUERY capture index to its validation handler.
+     */
     std::vector<ValidationFn> m_validationDispatch;
 
     // Initialization Helpers
@@ -276,7 +291,9 @@ class SymbolCollector
 
     // AST Traversal & Scope Helpers
 
-    /** @brief Runs diagnostics and the TAGS_QUERY dispatch loop over a parsed root node. */
+    /**
+     * @brief Runs diagnostics and the TAGS_QUERY dispatch loop over a parsed root node.
+     */
     void CollectFromTree(TSNode rootNode, SymbolCollectContext& sCtx);
     void DispatchMatchCapture(const TSQueryCapture& capture, SymbolCollectContext& sCtx,
                               std::vector<ActiveContainer>& containerStack,

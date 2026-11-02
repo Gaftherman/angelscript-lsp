@@ -1,20 +1,20 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
+#include "analysis/index/SymbolCollector.h"
+
+#include "analysis/index/SymbolTable.h"
 #include "helpers/CorpusDirectory.h"
 #include "helpers/TestUtils.h"
-#include <doctest/doctest.h>
-
-#include "analysis/index/SymbolCollector.h"
-#include "analysis/index/SymbolTable.h"
 #include "parser/AngelScriptParser.h"
-#include <tree_sitter/api.h>
 
 #include <algorithm>
 #include <chrono>
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <regex>
 #include <sstream>
 #include <string>
+#include <tree_sitter/api.h>
 #include <unordered_map>
 #include <vector>
 

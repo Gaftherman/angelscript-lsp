@@ -1,6 +1,7 @@
 #pragma once
 
 #include "utils/WorkspaceIncludeGraph.h"
+
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
 #include <mutex>

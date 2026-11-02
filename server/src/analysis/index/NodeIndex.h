@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/index/SymbolTable.h"
+#include "parser/ASTUtils.h"
 
 #include <ankerl/unordered_dense.h>
 #include <cstdint>
@@ -13,8 +14,6 @@
 
 namespace angel_lsp::analysis
 {
-class TraversalBudget;
-
 /**
  * @brief Information about an enclosing container in the AST hierarchy.
  */
@@ -57,17 +56,15 @@ struct IndexedContainerSpan
     uint32_t endByte = 0;
     uint32_t nameStartByte = 0;
     uint32_t nameEndByte = 0;
-    TSSymbol symbol = 0;
-    bool isMixin = false;
+    uint16_t parentSpanIndex = 0xFFFF;
+    TSSymbol symbol : 15 = 0;
+    uint16_t isMixin : 1 = 0;
 };
 static_assert(sizeof(IndexedContainerSpan) <= 20);
 
 /**
  * @brief Single-pass index of AST nodes grouped by Tree-Sitter symbol for O(1) retrieval.
- *
- * Traverses an AST once in preorder, bucketing nodes by their Tree-Sitter TSSymbol id
- * and storing a flat preorder list of all nodes. Checkers query this index instead of
- * recursively traversing the full AST tree multiple times per document analysis.
+ *        Traverses an AST once in preorder, bucketing nodes by their Tree-Sitter TSSymbol id
  */
 class NodeIndex
 {
@@ -225,9 +222,9 @@ class NodeIndex
     [[nodiscard]] TSSymbol SymbolForName(std::string_view typeName) const noexcept;
 
     /**
-     * @brief Returns all indexed nodes in document (preorder) order.
+     * @brief Process-wide static mapping from grammar symbol name to TSSymbol ID.
      */
-    [[nodiscard]] std::span<const TSNode> AllNodes() const noexcept;
+    [[nodiscard]] static const ankerl::unordered_dense::map<std::string_view, TSSymbol>& GetSymbolNameMap() noexcept;
 
     /**
      * @brief Returns the root node the index was built from.
@@ -243,6 +240,16 @@ class NodeIndex
      * @brief True if index is empty.
      */
     [[nodiscard]] bool Empty() const noexcept;
+
+    /**
+     * @brief Estimates total dynamic and structure memory used by this index in bytes.
+     */
+    [[nodiscard]] size_t EstimateMemoryBytes() const noexcept
+    {
+        return sizeof(NodeIndex) + m_errorNodes.capacity() * sizeof(TSNode) +
+               m_containerSpans.capacity() * sizeof(IndexedContainerSpan) +
+               m_errorRanges.capacity() * sizeof(ErrorRange) + m_commentRanges.capacity() * sizeof(CommentRange);
+    }
 
     /**
      * @brief Half-open byte range [startByte, endByte) containing a syntax error.
@@ -369,21 +376,20 @@ class NodeIndex
 
   private:
     void PopulatePredefinedSymbols(const TSLanguage* lang);
-    void IndexNode(TSNode node, TraversalBudget* budget = nullptr);
-    void RecordContainerSpan(TSNode node, TSSymbol sym);
+    void IndexNode(TSNode node, TraversalBudget* budget = nullptr, uint16_t parentSpanIdx = 0xFFFF);
+    void RecordContainerSpan(TSNode node, TSSymbol sym, uint16_t parentSpanIdx = 0xFFFF);
     void TraverseTree(TSNode root, TraversalBudget* budget = nullptr);
     void PostProcessErrorRanges();
     void PostProcessCommentRanges();
 
     TSNode m_root{};
     const TSLanguage* m_language = nullptr;
-    std::vector<TSNode> m_allNodes;
+    size_t m_nodeCount = 0;
     std::vector<TSNode> m_errorNodes;
     std::vector<std::vector<TSNode>> m_nodesBySymbol;
     std::vector<ErrorRange> m_errorRanges;
     std::vector<CommentRange> m_commentRanges;
     std::vector<IndexedContainerSpan> m_containerSpans;
-    ankerl::unordered_dense::map<std::string_view, TSSymbol> m_symbolByName;
     TSSymbol m_symComment = 0;
 };
 static_assert(sizeof(NodeIndex) <= 248);

@@ -1,10 +1,9 @@
-#include <doctest/doctest.h>
+#include "parser/GrammarNames.h"
 
+#include <doctest/doctest.h>
 #include <ostream>
 #include <string>
 #include <vector>
-
-#include "parser/GrammarNames.h"
 
 extern "C" const TSLanguage* tree_sitter_angelscript();
 

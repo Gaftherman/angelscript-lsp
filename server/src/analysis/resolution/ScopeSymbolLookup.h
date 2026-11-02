@@ -1,8 +1,12 @@
 #pragma once
 
+#include "analysis/SemanticAnalysisRequest.h"
+#include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
+
 #include <optional>
 #include <span>
 #include <string>
@@ -12,9 +16,6 @@
 
 namespace angel_lsp::analysis
 {
-struct SemanticAnalysisRequest;
-struct DiagnosticContext;
-struct Scope;
 
 struct MemberLookupContext
 {

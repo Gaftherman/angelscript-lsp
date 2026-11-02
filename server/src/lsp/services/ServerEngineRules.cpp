@@ -1,6 +1,7 @@
 #include "config/EngineRuleParser.h"
 #include "lsp/Server.h"
 #include "utils/IncludeResolver.h"
+
 #include <algorithm>
 #include <filesystem>
 #include <spdlog/fmt/fmt.h>

@@ -3,6 +3,7 @@
 #include "analysis/index/SymbolTable.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
+
 #include <concepts>
 #include <cstdint>
 #include <lsp/types.h>

@@ -1,4 +1,5 @@
 #include "features/workspace_symbol/WorkspaceSymbolHandler.h"
+
 #include "features/common/FeatureSharedUtils.h"
 
 #include <algorithm>

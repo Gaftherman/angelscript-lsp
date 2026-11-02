@@ -1,4 +1,5 @@
 #include "analysis/checkers/RepeatedConversionChecker.h"
+
 #include "analysis/checkers/BinaryOperatorHelpers.h"
 #include "analysis/checkers/ComparisonOperatorChecker.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"

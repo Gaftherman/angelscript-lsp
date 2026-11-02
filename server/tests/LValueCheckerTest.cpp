@@ -3,6 +3,7 @@
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "parser/AngelScriptParser.h"
+
 #include <algorithm>
 #include <doctest/doctest.h>
 

@@ -1,4 +1,5 @@
 #include "analysis/rules/OperatorRules.h"
+
 #include "analysis/resolution/SemanticHelpers.h"
 
 #include <algorithm>
@@ -10,9 +11,7 @@ namespace angel_lsp::analysis::rules
 {
 /**
  * @brief The binary operator methods, each of which takes exactly one argument.
- *
- * The `_r` forms are the reversed-operand overloads the engine looks for when the left-hand
- * operand is not the object; they take one argument like the others.
+ *        The `_r` forms are the reversed-operand overloads the engine looks for when the left-hand
  */
 constexpr std::array<std::string_view, 34> k_binaryOperators = {
     "opAdd",       "opSub",       "opMul",       "opDiv",       "opMod",       "opPow",       "opAnd",
@@ -21,11 +20,15 @@ constexpr std::array<std::string_view, 34> k_binaryOperators = {
     "opShl_r",     "opShr_r",     "opUShr_r",    "opAddAssign", "opSubAssign", "opMulAssign", "opDivAssign",
     "opModAssign", "opPowAssign", "opAndAssign", "opOrAssign",  "opXorAssign", "opAssign"};
 
-/** @brief The unary operator methods, which take no arguments. */
+/**
+ * @brief The unary operator methods, which take no arguments.
+ */
 constexpr std::array<std::string_view, 6> k_unaryOperators = {"opNeg",    "opCom",     "opPreInc",
                                                               "opPreDec", "opPostInc", "opPostDec"};
 
-/** @brief The conversion operators, whose shape TypeConversionChecker already knows about. */
+/**
+ * @brief The conversion operators, whose shape TypeConversionChecker already knows about.
+ */
 constexpr std::array<std::string_view, 4> k_conversionOperators = {"opConv", "opImplConv", "opCast", "opImplCast"};
 
 static bool Contains(const auto& names, const std::string& name)
@@ -33,7 +36,9 @@ static bool Contains(const auto& names, const std::string& name)
     return std::find(names.begin(), names.end(), name) != names.end();
 }
 
-/** @brief True when the name is one AngelScript gives a fixed meaning to. */
+/**
+ * @brief True when the name is one AngelScript gives a fixed meaning to.
+ */
 static bool IsOperatorName(const std::string& name)
 {
     return Contains(k_binaryOperators, name) || Contains(k_unaryOperators, name) ||
@@ -42,7 +47,9 @@ static bool IsOperatorName(const std::string& name)
            name == "opCall" || name == "opHndlAssign";
 }
 
-/** @brief True when the container resolves to a class or an interface this analyzer can read. */
+/**
+ * @brief True when the container resolves to a class or an interface this analyzer can read.
+ */
 static bool IsDeclaredInAClass(const Symbol& sym, const DiagnosticContext& ctx)
 {
     if (sym.containerName.empty())

@@ -1,5 +1,7 @@
 #include "features/formatting/FormattingLexer.h"
+
 #include "parser/Keywords.h"
+
 #include <cctype>
 #include <unordered_set>
 

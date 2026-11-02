@@ -1,4 +1,5 @@
 #include "Server.h"
+
 #include "analysis/types/EngineProfiles.h"
 #include "features/call_hierarchy/CallHierarchyHandler.h"
 #include "features/code_action/CodeActionHandler.h"
@@ -43,20 +44,13 @@ namespace angel_lsp
 {
 /**
  * @brief How many message errors in a row are tolerated before the session is closed.
- *
- * A malformed frame is recoverable and must not end the session, but a stream that fails
- * identically forever is not: without a ceiling, Run() would spin at full tilt on a frame
- * it can neither consume nor skip. Reset to zero by any message that dispatches cleanly.
+ *        A malformed frame is recoverable and must not end the session, but a stream that fails
  */
 constexpr unsigned k_maxConsecutiveMessageErrors = 64;
 
 /**
  * @brief Reads the configured brace style name.
- *
- * Only "kr" - and its spellings - selects K&R. Anything else, an empty string and a typo
- * alike, is Allman, which is the default and the style every existing test asserts. A
- * setting nobody can misspell into a surprise is worth more here than a diagnostic about
- * a formatter option.
+ *        Only "kr" - and its spellings - selects K&R. Anything else, an empty string and a typo
  */
 static bool BraceStyleIsKR(std::string_view name)
 {

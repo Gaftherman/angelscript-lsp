@@ -2,6 +2,7 @@
 
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/ScopeTree.h"
+
 #include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis

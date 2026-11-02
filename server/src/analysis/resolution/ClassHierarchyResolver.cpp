@@ -1,4 +1,5 @@
 #include "analysis/resolution/ClassHierarchyResolver.h"
+
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
@@ -8,6 +9,7 @@
 #include "parser/GrammarSymbols.h"
 #include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
+
 #include <algorithm>
 #include <vector>
 

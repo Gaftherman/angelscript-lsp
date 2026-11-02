@@ -1,19 +1,22 @@
 #include "analysis/rules/VariableRules.h"
+
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/EngineRuleChecker.h"
 #include "parser/ASTUtils.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
-#include <ankerl/unordered_dense.h>
 
 #include <algorithm>
+#include <ankerl/unordered_dense.h>
 #include <string>
 #include <vector>
 
 namespace angel_lsp::analysis::rules
 {
-/** @brief Looks up what kind of declaration a type name refers to, if this analyzer sees one. */
+/**
+ * @brief Looks up what kind of declaration a type name refers to, if this analyzer sees one.
+ */
 static const Symbol* FindTypeDeclaration(std::string_view typeName, const SymbolTable& table,
                                          std::shared_ptr<const std::vector<Symbol>>& keepAlive,
                                          std::string_view enclosingNs = {})
@@ -86,16 +89,7 @@ static bool IsMixinMember(const Symbol& sym, const SymbolTable& table)
 
 /**
  * @brief Rules about the arguments a template type is instantiated with.
- *
- * Only one argument is invalid for every template, and it is invalid whatever the host
- * registered: `void`. The engine answers "Attempting to instantiate invalid template
- * 'array<void>'" - the message this code has always carried - and accepts everything else
- * this analyzer can see, including a class, a handle, and a nested template.
- *
- * A text comparison rather than a resolution, deliberately. A template argument that
- * resolves to no declaration is an engine-registered type, which is most of them here, and
- * judging one would mean reporting every `array<CBasePlayer@>` in the corpus. `void` is the
- * one answer that needs nothing looked up.
+ *        Only one argument is invalid for every template, and it is invalid whatever the host
  */
 static void CheckTemplateArguments(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
 {
@@ -186,7 +180,9 @@ static void CheckUnresolvedVariableType(const Symbol& sym, std::string_view base
     }
 }
 
-/** @brief Rules about what the declared type may be. */
+/**
+ * @brief Rules about what the declared type may be.
+ */
 static void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
 {
     CheckPrimitiveOrVoidType(sym, sig, ctx);
@@ -234,7 +230,9 @@ static void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, c
     CheckNonInstantiableType(sym, sig, baseType, ctx);
 }
 
-/** @brief Rules about the modifiers a declaration carries where it sits. */
+/**
+ * @brief Rules about the modifiers a declaration carries where it sits.
+ */
 static void CheckPlacement(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
 {
     const bool isClassMember = IsClassOrInterfaceMember(sym, ctx.request.symbolTable);
@@ -264,7 +262,9 @@ static void CheckPlacement(const Symbol& sym, const VariableSignature& sig, cons
     }
 }
 
-/** @brief Rules for a virtual property's accessors. */
+/**
+ * @brief Rules for a virtual property's accessors.
+ */
 static void CheckVirtualProperty(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
 {
     if (!sig.isVirtualProperty)

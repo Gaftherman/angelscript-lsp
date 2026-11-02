@@ -3,6 +3,7 @@
 #include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/resolution/ExpressionTypeResolver.h"
 
 #include <string>
 #include <string_view>
@@ -10,15 +11,9 @@
 
 namespace angel_lsp::analysis
 {
-struct ExpressionTypeContext;
 
 /**
- * @brief Semantic AST checker verifying that mutations and method invocations respect const qualifiers.
- * @note Rejects assignments to const identifiers and non-const method calls on const receivers.
- */
-using ConstCheckRequest = AstCheckContext;
 
-/**
  * @brief Identifies the enclosing method symbol, declaring class, and const-qualifier status during const checks.
  */
 struct EnclosingMethodInfo
@@ -33,7 +28,7 @@ struct EnclosingMethodInfo
  * @param[in] request Tree, source text and scope tree for the document.
  * @param[in,out] ctx Diagnostic sink and the analysis request behind it.
  */
-void CheckConstCorrectness(const ConstCheckRequest& request, DiagnosticContext& ctx);
+void CheckConstCorrectness(const AstCheckContext& request, DiagnosticContext& ctx);
 
 /**
  * @brief AST checker for const-correctness rules.

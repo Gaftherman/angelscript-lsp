@@ -1,4 +1,5 @@
 #include "features/hover/HoverSymbolFormatter.h"
+
 #include "analysis/documentation/DocComment.h"
 #include "analysis/documentation/SignatureFormatter.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
@@ -21,6 +22,7 @@
 #include "utils/Constants.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Timer.h"
+
 #include <algorithm>
 #include <sstream>
 #include <vector>

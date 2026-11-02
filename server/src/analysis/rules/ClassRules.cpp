@@ -1,4 +1,5 @@
 #include "analysis/rules/ClassRules.h"
+
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/OverloadResolver.h"
@@ -20,7 +21,9 @@
 
 namespace angel_lsp::analysis::rules
 {
-/** @brief Checks if a class declaration is missing a body. */
+/**
+ * @brief Checks if a class declaration is missing a body.
+ */
 static void CheckBodyPresence(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
 {
     if (!sig.hasBraces && !sig.modifiers.isExternal)
@@ -89,7 +92,9 @@ static void CheckExternalClass(const Symbol& sym, const ClassSignature& sig, con
     }
 }
 
-/** @brief Validates mixin-specific modifier restrictions. */
+/**
+ * @brief Validates mixin-specific modifier restrictions.
+ */
 static void CheckMixinModifiers(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
 {
     if (!sig.modifiers.isMixin)
@@ -116,7 +121,9 @@ static void CheckMixinModifiers(const Symbol& sym, const ClassSignature& sig, co
     }
 }
 
-/** @brief Modifier and shape rules a class declaration must satisfy on its own. */
+/**
+ * @brief Modifier and shape rules a class declaration must satisfy on its own.
+ */
 static void CheckClassModifiers(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
 {
     CheckBodyPresence(sym, sig, ctx);
@@ -151,7 +158,9 @@ CollectImplementedMethodNames(const std::string& typeName, const SymbolTable& ta
     return names;
 }
 
-/** @brief Collects all interfaces that must be checked for implementation. */
+/**
+ * @brief Collects all interfaces that must be checked for implementation.
+ */
 static void CollectInterfacesToCheck(const std::vector<std::string>& bases, const SymbolTable& table,
                                      ankerl::unordered_dense::set<std::string>& interfacesToCheck)
 {
@@ -185,7 +194,9 @@ static void CollectInterfacesToCheck(const std::vector<std::string>& bases, cons
     }
 }
 
-/** @brief Reports diagnostics for unimplemented interface methods. */
+/**
+ * @brief Reports diagnostics for unimplemented interface methods.
+ */
 static void ReportMissingInterfaceMethods(const Symbol& sym,
                                           const ankerl::unordered_dense::set<std::string>& interfacesToCheck,
                                           const ankerl::unordered_dense::set<std::string>& implemented,
@@ -228,7 +239,9 @@ static void CheckInterfaceImplementation(const Symbol& sym, const ClassSignature
     ReportMissingInterfaceMethods(sym, interfacesToCheck, implemented, ctx);
 }
 
-/** @brief Checks if a method symbol matches a final base function. */
+/**
+ * @brief Checks if a method symbol matches a final base function.
+ */
 static bool MatchesFinalBaseFunction(const Symbol& mSym, const std::string& cleanBase, const std::string& methodName,
                                      const SymbolTable& table)
 {
@@ -251,7 +264,9 @@ static bool MatchesFinalBaseFunction(const Symbol& mSym, const std::string& clea
     return false;
 }
 
-/** @brief Checks if an accessor matches a final base property accessor. */
+/**
+ * @brief Checks if an accessor matches a final base property accessor.
+ */
 static bool MatchesFinalBaseProperty(const std::string& cleanBase, const std::string& methodName,
                                      const SymbolTable& table)
 {
@@ -288,7 +303,9 @@ static bool MatchesFinalBaseProperty(const std::string& cleanBase, const std::st
     return false;
 }
 
-/** @brief Checks if a method symbol matches any final base method or property accessor candidate. */
+/**
+ * @brief Checks if a method symbol matches any final base method or property accessor candidate.
+ */
 static bool MatchesFinalBaseMethod(const Symbol& mSym, const std::string& cleanBase, const std::string& methodName,
                                    const SymbolTable& table)
 {
@@ -296,7 +313,9 @@ static bool MatchesFinalBaseMethod(const Symbol& mSym, const std::string& cleanB
            MatchesFinalBaseProperty(cleanBase, methodName, table);
 }
 
-/** @brief Checks if a container declares a property matching a final accessor. */
+/**
+ * @brief Checks if a container declares a property matching a final accessor.
+ */
 static void CheckFinalPropertyOverride(const std::string& container, const std::string& methodName,
                                        const std::string& reportingBase, const DiagnosticContext& ctx)
 {
@@ -331,7 +350,9 @@ static void CheckFinalPropertyOverride(const std::string& container, const std::
     }
 }
 
-/** @brief Reports methods overriding final methods of a base class or its mixins. */
+/**
+ * @brief Reports methods overriding final methods of a base class or its mixins.
+ */
 static void ReportFinalMethodOverrides(const std::string& container, const std::string& cleanBase,
                                        const std::string& reportingBase, const DiagnosticContext& ctx)
 {
@@ -358,7 +379,9 @@ static void ReportFinalMethodOverrides(const std::string& container, const std::
     }
 }
 
-/** @brief Reports a method that replaces one a visible base class declared final. */
+/**
+ * @brief Reports a method that replaces one a visible base class declared final.
+ */
 static void CheckFinalOverrides(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
 {
     const SymbolTable& table = ctx.request.symbolTable;
@@ -412,7 +435,9 @@ static void CheckFinalOverrides(const Symbol& sym, const ClassSignature& sig, co
     }
 }
 
-/** @brief Checks single base class properties (final, mixin class inherit). */
+/**
+ * @brief Checks single base class properties (final, mixin class inherit).
+ */
 static bool CheckBaseClassSymbol(const BaseCheckRequest& req, const Symbol& base, const std::string& cleanBase)
 {
     if (base.type != SymbolType::Class)
@@ -443,7 +468,9 @@ static bool CheckBaseClassSymbol(const BaseCheckRequest& req, const Symbol& base
     return utils::ParentScopeView(name);
 }
 
-/** @brief Retrieves the base_class_list AST node for a class or interface symbol. */
+/**
+ * @brief Retrieves the base_class_list AST node for a class or interface symbol.
+ */
 static TSNode FindBaseListNode(const Symbol& sym, const DiagnosticContext& ctx)
 {
     if (!ctx.request.nodeIndex)
@@ -462,7 +489,9 @@ static TSNode FindBaseListNode(const Symbol& sym, const DiagnosticContext& ctx)
     return TSNode{};
 }
 
-/** @brief Obtains the exact AST range of the base at index in base_class_list. */
+/**
+ * @brief Obtains the exact AST range of the base at index in base_class_list.
+ */
 static SourceRange GetBaseRange(TSNode baseList, size_t index, const SourceRange& fallbackRange)
 {
     if (ts_node_is_null(baseList))
@@ -487,7 +516,9 @@ static SourceRange GetBaseRange(TSNode baseList, size_t index, const SourceRange
     return result;
 }
 
-/** @brief Checks if base class is synthetic or ignored by engine rules. */
+/**
+ * @brief Checks if base class is synthetic or ignored by engine rules.
+ */
 static bool IsIgnoredOrProxyBase(const std::string& cleanBase, const DiagnosticContext& ctx)
 {
     if (!ctx.request.engineRules)
@@ -502,7 +533,9 @@ static bool IsIgnoredOrProxyBase(const std::string& cleanBase, const DiagnosticC
     return ctx.request.engineRules->unusedRules.baseClassProxyMap.contains(cleanBase);
 }
 
-/** @brief Finds candidate base symbols in qualified, container, using-namespace or global scopes. */
+/**
+ * @brief Finds candidate base symbols in qualified, container, using-namespace or global scopes.
+ */
 static std::shared_ptr<const std::vector<Symbol>>
 FindBaseCandidateSymbols(std::string_view cleanBase, const Symbol& sym, const DiagnosticContext& ctx)
 {
@@ -540,7 +573,9 @@ FindBaseCandidateSymbols(std::string_view cleanBase, const Symbol& sym, const Di
     return table.FindSymbolsPtr(cleanBase);
 }
 
-/** @brief Checks if a qualified base's prefix is an invalid non-namespace type like a class. */
+/**
+ * @brief Checks if a qualified base's prefix is an invalid non-namespace type like a class.
+ */
 static bool IsInvalidClassScopeQualifier(std::string_view cleanBase, const Symbol& sym, const DiagnosticContext& ctx)
 {
     if (!HasScopeQualifier(cleanBase))
@@ -557,7 +592,9 @@ static bool IsInvalidClassScopeQualifier(std::string_view cleanBase, const Symbo
                         [](const Symbol& s) { return s.type == SymbolType::Namespace; });
 }
 
-/** @brief Validates an individual base class entry and returns true if it resolved to a concrete class base. */
+/**
+ * @brief Validates an individual base class entry and returns true if it resolved to a concrete class base.
+ */
 static bool ValidateOneBase(const BaseCheckRequest& req, const std::string& cleanBase, const SourceRange& baseRange)
 {
     if (IsIgnoredOrProxyBase(cleanBase, req.ctx))
@@ -607,7 +644,9 @@ static bool ValidateOneBase(const BaseCheckRequest& req, const std::string& clea
     return sawClassBase;
 }
 
-/** @brief Rules about the base list: existence, kind, count and finality. */
+/**
+ * @brief Rules about the base list: existence, kind, count and finality.
+ */
 static void CheckBases(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
 {
     uint32_t classBaseCount = 0;
@@ -640,7 +679,9 @@ static void CheckBases(const Symbol& sym, const ClassSignature& sig, const Diagn
     }
 }
 
-/** @brief Validates bases declared on an interface. */
+/**
+ * @brief Validates bases declared on an interface.
+ */
 static void CheckInterfaceBases(const Symbol& sym, const InterfaceSignature& sig, const DiagnosticContext& ctx)
 {
     const TSNode baseListNode = FindBaseListNode(sym, ctx);
@@ -692,7 +733,9 @@ static void CheckInterfaceBases(const Symbol& sym, const InterfaceSignature& sig
     }
 }
 
-/** @brief Collects getter and setter functions declared in the specified container. */
+/**
+ * @brief Collects getter and setter functions declared in the specified container.
+ */
 static void CollectPropertyAccessors(const std::string& container, const DiagnosticContext& ctx,
                                      ankerl::unordered_dense::map<std::string, const Symbol*>& getters,
                                      ankerl::unordered_dense::map<std::string, const Symbol*>& setters)
@@ -723,7 +766,9 @@ static void CollectPropertyAccessors(const std::string& container, const Diagnos
         });
 }
 
-/** @brief Validates matching types between getter returns and setter parameter. */
+/**
+ * @brief Validates matching types between getter returns and setter parameter.
+ */
 static void ValidatePropertyAccessorPairs(const ankerl::unordered_dense::map<std::string, const Symbol*>& getters,
                                           const ankerl::unordered_dense::map<std::string, const Symbol*>& setters,
                                           const DiagnosticContext& ctx)
@@ -747,7 +792,9 @@ static void ValidatePropertyAccessorPairs(const ankerl::unordered_dense::map<std
     }
 }
 
-/** @brief Reports property accessor get/set type mismatches within a class/interface. */
+/**
+ * @brief Reports property accessor get/set type mismatches within a class/interface.
+ */
 static void CheckPropertyAccessors(const Symbol& sym, const DiagnosticContext& ctx)
 {
     const std::string container = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
@@ -763,7 +810,9 @@ static void CheckPropertyAccessors(const Symbol& sym, const DiagnosticContext& c
     ValidatePropertyAccessorPairs(getters, setters, ctx);
 }
 
-/** @brief Collects all mixins included via includedMixins or bases. */
+/**
+ * @brief Collects all mixins included via includedMixins or bases.
+ */
 static std::vector<std::string> CollectIncludedMixins(const ClassSignature& sig, const SymbolTable& table)
 {
     std::vector<std::string> includedMixins = sig.includedMixins;
@@ -781,7 +830,9 @@ static std::vector<std::string> CollectIncludedMixins(const ClassSignature& sig,
     return includedMixins;
 }
 
-/** @brief Collects member names for a container and its qualified/short variants. */
+/**
+ * @brief Collects member names for a container and its qualified/short variants.
+ */
 static void CollectContainerMembers(const std::string& containerName, const RuleIndex& ruleIndex,
                                     TransparentStringSet& outMembers)
 {
@@ -808,7 +859,9 @@ static void CollectContainerMembers(const std::string& containerName, const Rule
     }
 }
 
-/** @brief Collects all members across an inheritance hierarchy. */
+/**
+ * @brief Collects all members across an inheritance hierarchy.
+ */
 static void CollectHierarchyMembers(const std::vector<std::string>& hierarchy, const RuleIndex& ruleIndex,
                                     TransparentStringSet& outMembers)
 {
@@ -818,7 +871,9 @@ static void CollectHierarchyMembers(const std::vector<std::string>& hierarchy, c
     }
 }
 
-/** @brief Resolves the symbol representing a mixin class. */
+/**
+ * @brief Resolves the symbol representing a mixin class.
+ */
 static const Symbol* FindMixinSymbol(const std::string& mixinName, const SymbolTable& table,
                                      std::optional<Symbol>& fallback)
 {
@@ -846,7 +901,9 @@ static const Symbol* FindMixinSymbol(const std::string& mixinName, const SymbolT
     return nullptr;
 }
 
-/** @brief Reads or retrieves the source text for a mixin symbol. */
+/**
+ * @brief Reads or retrieves the source text for a mixin symbol.
+ */
 static std::string ReadMixinSource(const Symbol& mixinSym, const DiagnosticContext& ctx)
 {
     if (mixinSym.fileUri == ctx.request.fileUri)
@@ -865,7 +922,9 @@ static std::string ReadMixinSource(const Symbol& mixinSym, const DiagnosticConte
     return {};
 }
 
-/** @brief Finds the AST node declaring the mixin. */
+/**
+ * @brief Finds the AST node declaring the mixin.
+ */
 static TSNode FindMixinAstNode(const TSTree* mixinTree, const Symbol& mixinSym)
 {
     if (!mixinTree)
@@ -881,7 +940,9 @@ static TSNode FindMixinAstNode(const TSTree* mixinTree, const Symbol& mixinSym)
     return parser::FindAncestorWithAnySymbol(mixinNode, targets);
 }
 
-/** @brief Locates the point range where a mixin is included in the host class. */
+/**
+ * @brief Locates the point range where a mixin is included in the host class.
+ */
 static SourceRange FindHostMixinRange(const Symbol& sym, const Symbol& mixinSym, const std::string& mixinName,
                                       const DiagnosticContext& ctx)
 {
@@ -923,7 +984,9 @@ static SourceRange FindHostMixinRange(const Symbol& sym, const Symbol& mixinSym,
     return range;
 }
 
-/** @brief Emits a diagnostic when a mixin refers to a member not present in the host. */
+/**
+ * @brief Emits a diagnostic when a mixin refers to a member not present in the host.
+ */
 static void EmitMixinMemberNotFound(const MixinCheckContext& mctx, std::string_view memberName, TSNode node,
                                     const DiagnosticContext& ctx)
 {
@@ -945,7 +1008,9 @@ static void EmitMixinMemberNotFound(const MixinCheckContext& mctx, std::string_v
     ctx.EmitWithRelated(req);
 }
 
-/** @brief Checks member expressions of form this->member. */
+/**
+ * @brief Checks member expressions of form this->member.
+ */
 static void CheckThisMember(TSNode cur, std::string_view mixinSource, MixinCheckContext& mctx,
                             const DiagnosticContext& ctx)
 {
@@ -974,14 +1039,18 @@ static void CheckThisMember(TSNode cur, std::string_view mixinSource, MixinCheck
     }
 }
 
-/** @brief Checks if a child node matches a named field of the parent by byte offset. */
+/**
+ * @brief Checks if a child node matches a named field of the parent by byte offset.
+ */
 static bool IsNamedChildMatch(TSNode parent, TSFieldId fieldId, TSNode cur)
 {
     TSNode child = ts_node_child_by_field_id(parent, fieldId);
     return !ts_node_is_null(child) && ts_node_start_byte(child) == ts_node_start_byte(cur);
 }
 
-/** @brief Checks if a scoped_identifier context represents an external or qualified lookup. */
+/**
+ * @brief Checks if a scoped_identifier context represents an external or qualified lookup.
+ */
 static bool IsScopedIdentifierIgnored(TSNode parent, const parser::GrammarSymbols& gs)
 {
     if (ts_node_child_count(parent) > 1)
@@ -1001,7 +1070,9 @@ static bool IsScopedIdentifierIgnored(TSNode parent, const parser::GrammarSymbol
     return gpSym == gs.symCallExpression && IsNamedChildMatch(grandparent, gs.fieldFunction, parent);
 }
 
-/** @brief Checks if an identifier is a declaration name or member field name. */
+/**
+ * @brief Checks if an identifier is a declaration name or member field name.
+ */
 static bool IsDeclarationOrFieldChild(TSNode cur, TSNode parent, TSSymbol pSym, const parser::GrammarSymbols& gs)
 {
     if (pSym == gs.symMemberExpression)
@@ -1028,7 +1099,9 @@ static bool IsDeclarationOrFieldChild(TSNode cur, TSNode parent, TSSymbol pSym, 
     return false;
 }
 
-/** @brief Determines if an identifier node is in a non-reference AST context. */
+/**
+ * @brief Determines if an identifier node is in a non-reference AST context.
+ */
 static bool ShouldIgnoreMixinIdentifier(TSNode cur)
 {
     TSNode parent = parser::GetParent(cur);
@@ -1063,7 +1136,9 @@ static bool ShouldIgnoreMixinIdentifier(TSNode cur)
            pSym == gs.symDatatype || pSym == gs.symNestedTypeName;
 }
 
-/** @brief Checks if a name is a built-in symbol, keyword, or primitive type. */
+/**
+ * @brief Checks if a name is a built-in symbol, keyword, or primitive type.
+ */
 static bool IsBuiltinOrKeyword(std::string_view name, std::string_view effectiveStringTypeName)
 {
     if (name.empty() || name == "this" || name == "super" || name == "cast" || name == "null" || name == "true" ||
@@ -1123,7 +1198,9 @@ static bool HasNamespacePropertyAccessor(const AccessorLookupContext& actx, std:
     return hasAccessor(actx.getView) || hasAccessor(actx.setView);
 }
 
-/** @brief Checks if a name matches getter/setter property accessors in mixin, host, global, or namespaces. */
+/**
+ * @brief Checks if a name matches getter/setter property accessors in mixin, host, global, or namespaces.
+ */
 static bool HasPropertyAccessorMatch(std::string_view name, const FunctionCheckState& state,
                                      const DiagnosticContext& ctx)
 {
@@ -1225,7 +1302,9 @@ static bool IsValidInEnclosingOrUsingNamespaces(std::string_view name, const Fun
     return false;
 }
 
-/** @brief Checks if an identifier resolves in local, mixin, host, or global scopes. */
+/**
+ * @brief Checks if an identifier resolves in local, mixin, host, or global scopes.
+ */
 static bool IsValidMixinIdentifier(std::string_view name, const FunctionCheckState& state, const DiagnosticContext& ctx)
 {
     if (IsBuiltinOrKeyword(name, ctx.request.GetEffectiveStringTypeName()))
@@ -1244,7 +1323,9 @@ static bool IsValidMixinIdentifier(std::string_view name, const FunctionCheckSta
     return IsValidInEnclosingOrUsingNamespaces(name, state, ctx);
 }
 
-/** @brief Checks bare function calls without qualifiers. */
+/**
+ * @brief Checks bare function calls without qualifiers.
+ */
 static void CheckCallMember(TSNode cur, std::string_view mixinSource, FunctionCheckState& state,
                             const DiagnosticContext& ctx)
 {
@@ -1273,7 +1354,9 @@ static void CheckCallMember(TSNode cur, std::string_view mixinSource, FunctionCh
     }
 }
 
-/** @brief Checks bare identifier references inside mixin function bodies. */
+/**
+ * @brief Checks bare identifier references inside mixin function bodies.
+ */
 static void CheckIdentifierMember(TSNode cur, std::string_view mixinSource, FunctionCheckState& state,
                                   const DiagnosticContext& ctx)
 {
@@ -1294,7 +1377,9 @@ static void CheckIdentifierMember(TSNode cur, std::string_view mixinSource, Func
     }
 }
 
-/** @brief Collects parameter and local variable names within a mixin function. */
+/**
+ * @brief Collects parameter and local variable names within a mixin function.
+ */
 static void CollectLocalNames(TSNode memNode, std::string_view mixinSource, const MixinCheckContext& mctx,
                               ankerl::unordered_dense::set<std::string_view>& localNames)
 {
@@ -1349,7 +1434,9 @@ static void CollectLocalNames(TSNode memNode, std::string_view mixinSource, cons
     collectForSymbol(gs.symForeachVariable);
 }
 
-/** @brief Walks statements in a mixin function body using bounded NodeIndex scans. */
+/**
+ * @brief Walks statements in a mixin function body using bounded NodeIndex scans.
+ */
 static void CheckFuncBodyStatements(TSNode funcBody, std::string_view mixinSource, FunctionCheckState& state,
                                     const DiagnosticContext& ctx)
 {
@@ -1383,7 +1470,9 @@ static void CheckFuncBodyStatements(TSNode funcBody, std::string_view mixinSourc
                [&](TSNode n) { CheckIdentifierMember(n, mixinSource, state, ctx); });
 }
 
-/** @brief Checks member declarations inside a mixin body. */
+/**
+ * @brief Checks member declarations inside a mixin body.
+ */
 static void CheckMixinBody(TSNode bodyNode, std::string_view mixinSource, MixinCheckContext& mctx,
                            const DiagnosticContext& ctx)
 {
@@ -1409,7 +1498,9 @@ static void CheckMixinBody(TSNode bodyNode, std::string_view mixinSource, MixinC
                              });
 }
 
-/** @brief Collects direct members of a mixin symbol. */
+/**
+ * @brief Collects direct members of a mixin symbol.
+ */
 static void CollectMixinSelfMembers(const Symbol& mixinSym, const RuleIndex& ruleIndex,
                                     TransparentStringSet& outMembers)
 {
@@ -1420,7 +1511,9 @@ static void CollectMixinSelfMembers(const Symbol& mixinSym, const RuleIndex& rul
     }
 }
 
-/** @brief Resolves AST tree, source text, and NodeIndex for a mixin symbol. */
+/**
+ * @brief Resolves AST tree, source text, and NodeIndex for a mixin symbol.
+ */
 static MixinAstTarget ResolveMixinAstTarget(const Symbol& mixinSym, MixinInstantiationCheckRequest& req)
 {
     MixinAstTarget target;
@@ -1463,7 +1556,9 @@ static MixinAstTarget ResolveMixinAstTarget(const Symbol& mixinSym, MixinInstant
     return target;
 }
 
-/** @brief Validates a single mixin instantiation against host class. */
+/**
+ * @brief Validates a single mixin instantiation against host class.
+ */
 static void CheckSingleMixinInstantiation(MixinInstantiationCheckRequest& req)
 {
     std::optional<Symbol> fallbackMixin;

@@ -1,6 +1,4 @@
-﻿#include <doctest/doctest.h>
-
-#include "analysis/SemanticAnalysisRequest.h"
+﻿#include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/checkers/CallChecker.h"
 #include "analysis/index/NodeIndex.h"
@@ -10,6 +8,7 @@
 #include "parser/ASTUtils.h"
 #include "parser/AngelScriptParser.h"
 
+#include <doctest/doctest.h>
 #include <random>
 #include <string>
 #include <vector>

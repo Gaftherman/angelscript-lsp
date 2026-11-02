@@ -4,8 +4,6 @@
  *        for Sven Co-op scripts and meta_api::json.
  */
 
-#include <doctest/doctest.h>
-
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/LocalScopeCollector.h"
@@ -16,6 +14,7 @@
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
+#include <doctest/doctest.h>
 #include <ostream>
 #include <string>
 #include <vector>

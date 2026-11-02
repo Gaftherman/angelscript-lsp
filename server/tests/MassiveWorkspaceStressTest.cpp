@@ -1,5 +1,3 @@
-#include <doctest/doctest.h>
-
 #include "config/ServerConfig.h"
 #include "helpers/ScriptedStream.h"
 #include "lsp/Server.h"
@@ -8,6 +6,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <sstream>

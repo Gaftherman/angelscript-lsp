@@ -1,4 +1,5 @@
 #include "features/type_hierarchy/TypeHierarchyHandler.h"
+
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
 #include "features/common/FeatureSharedUtils.h"
@@ -54,7 +55,9 @@ static lsp::TypeHierarchyItem ToItem(const analysis::Symbol& sym)
     return item;
 }
 
-/** @brief The type declarations a bare name resolves to, if any. */
+/**
+ * @brief The type declarations a bare name resolves to, if any.
+ */
 static std::vector<analysis::Symbol> FindTypeDeclarations(std::string_view name, const analysis::SymbolTable& table)
 {
     std::vector<analysis::Symbol> found;

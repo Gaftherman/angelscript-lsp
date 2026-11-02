@@ -1,4 +1,5 @@
 #include "features/formatting/FormattingLineBuilder.h"
+
 #include <algorithm>
 
 namespace angel_lsp::features

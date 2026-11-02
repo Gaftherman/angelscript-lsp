@@ -17,9 +17,7 @@ inline constexpr std::string_view k_initializerListTypeSentinel = constants::k_i
 
 /**
  * @brief Sentinel type representing a poisoned / broken expression type.
- *
- * When an expression is broken or has syntax errors, it is mapped to k_poisonType
- * so downstream checkers can short-circuit without cascading diagnostics.
+ *        When an expression is broken or has syntax errors, it is mapped to k_poisonType
  */
 inline constexpr std::string_view k_poisonType = "<poison>";
 inline constexpr std::string_view k_unknownType = "unknown";
@@ -104,10 +102,14 @@ struct ExpressionTypeCache
         hierarchies.reserve(64);
     }
 
-    /** @brief Map of AST node keys to evaluated type strings. */
+    /**
+     * @brief Map of AST node keys to evaluated type strings.
+     */
     ankerl::unordered_dense::map<ExpressionCacheKey, std::string, ExpressionCacheKeyHash> types;
 
-    /** @brief Map of type names to their resolved base class/interface inheritance hierarchy. */
+    /**
+     * @brief Map of type names to their resolved base class/interface inheritance hierarchy.
+     */
     ankerl::unordered_dense::map<std::string, std::vector<std::string>> hierarchies;
 };
 } // namespace angel_lsp::analysis

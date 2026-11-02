@@ -1,11 +1,12 @@
 #include "utils/Utils.h"
-#include <optional>
-#include <string_view>
-#include <vector>
 
 #include "parser/Primitives.h"
+
 #include <algorithm>
+#include <optional>
+#include <string_view>
 #include <unordered_set>
+#include <vector>
 
 namespace angel_lsp::utils
 {
@@ -333,7 +334,9 @@ bool IsPrimitiveType(const std::string& typeName)
     return parser::primitives::IsPrimitive(typeName);
 }
 
-/** @brief Splits a `/`-separated path into segments, dropping empties. */
+/**
+ * @brief Splits a `/`-separated path into segments, dropping empties.
+ */
 static std::vector<std::string_view> PathSegments(std::string_view path)
 {
     std::vector<std::string_view> segments;
@@ -352,7 +355,9 @@ static std::vector<std::string_view> PathSegments(std::string_view path)
     return segments;
 }
 
-/** @brief `*` and `?` within one segment. `*` does not cross a separator. */
+/**
+ * @brief `*` and `?` within one segment. `*` does not cross a separator.
+ */
 static bool SegmentMatches(std::string_view segment, std::string_view pattern)
 {
     size_t s = 0;
@@ -389,7 +394,9 @@ static bool SegmentMatches(std::string_view segment, std::string_view pattern)
     return p == pattern.size();
 }
 
-/** @brief Segment-wise match with `**` spanning any number of segments, including none. */
+/**
+ * @brief Segment-wise match with `**` spanning any number of segments, including none.
+ */
 static bool SegmentsMatch(const std::vector<std::string_view>& path, size_t pi,
                           const std::vector<std::string_view>& pattern, size_t qi)
 {

@@ -41,30 +41,12 @@ static bool ShouldIgnoreReference(const LocalReference& ref, const DiagnosticCon
 
     if (ref.name == "super")
     {
-        if (ctx.request.tree)
-        {
-            const TSPoint at{ref.startLine, ref.startCharacter};
-            const TSNode node = ts_node_descendant_for_point_range(ts_tree_root_node(ctx.request.tree), at, at);
-            if (IsBaseConstructorCall(node, ctx.request.sourceCode))
-            {
-                return true;
-            }
-        }
-        else
-        {
-            return true;
-        }
+        return ref.isSuperBaseCall || !ctx.request.tree;
     }
 
-    if (ref.name == "function" && ctx.request.tree)
+    if (ref.name == "function" && ref.isLambdaFunctionKeyword)
     {
-        const TSPoint at{ref.startLine, ref.startCharacter};
-        const TSNode node = ts_node_descendant_for_point_range(ts_tree_root_node(ctx.request.tree), at, at);
-        const TSNode parent = parser::GetParent(node);
-        if (!ts_node_is_null(parent) && ts_node_symbol(parent) == parser::GetGrammarSymbols().symLambdaExpression)
-        {
-            return true;
-        }
+        return true;
     }
 
     return false;
@@ -82,35 +64,14 @@ static bool IsReferenceInMixin(const LocalReference& ref, const MixinRanges& mix
     return false;
 }
 
-static bool IsEnumReferenceQualified(const LocalReference& ref, const DiagnosticContext& ctx)
+static bool IsEnumReferenceQualified(const LocalReference& ref, std::string_view sourceCode)
 {
-    if (!ctx.request.tree)
+    if (ref.isScopedIdentifier && ref.qualifierStartByte < ref.qualifierEndByte &&
+        ref.qualifierEndByte <= sourceCode.size())
     {
-        return false;
-    }
-    const TSPoint at{ref.startLine, ref.startCharacter};
-    const TSNode node = ts_node_descendant_for_point_range(ts_tree_root_node(ctx.request.tree), at, at);
-    if (ts_node_is_null(node))
-    {
-        return false;
-    }
-    const TSNode parent = parser::GetParent(node);
-    if (ts_node_is_null(parent))
-    {
-        return false;
-    }
-    if (ts_node_symbol(parent) == parser::GetGrammarSymbols().symScopedIdentifier)
-    {
-        const uint32_t pStart = ts_node_start_byte(parent);
-        const uint32_t pEnd = ts_node_end_byte(parent);
-        if (pStart < ctx.request.sourceCode.size() && pEnd <= ctx.request.sourceCode.size() && pStart < pEnd)
-        {
-            const std::string_view text = ctx.request.sourceCode.substr(pStart, pEnd - pStart);
-            if (utils::ContainsScopeSeparator(text))
-            {
-                return true;
-            }
-        }
+        const std::string_view scoped =
+            sourceCode.substr(ref.qualifierStartByte, ref.qualifierEndByte - ref.qualifierStartByte);
+        return utils::ContainsScopeSeparator(scoped);
     }
     return false;
 }
@@ -128,7 +89,7 @@ static bool CheckEnumScopeDiagnostic(const LocalReference& ref, const LocalDefin
 
     const bool isOwnDeclaration =
         resolved != nullptr && resolved->startLine == ref.startLine && resolved->startCharacter == ref.startCharacter;
-    if (isOwnDeclaration || IsEnumReferenceQualified(ref, ctx))
+    if (isOwnDeclaration || IsEnumReferenceQualified(ref, ctx.request.sourceCode))
     {
         return false;
     }
@@ -142,15 +103,13 @@ static bool CheckEnumScopeDiagnostic(const LocalReference& ref, const LocalDefin
     return true;
 }
 
-static bool IsContainerAccessorProperty(const TSNode node, std::string_view refName, const DiagnosticContext& ctx)
+static bool IsContainerAccessorProperty(uint32_t byteOffset, std::string_view refName, const DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(node))
-    {
-        return false;
-    }
     const auto& index = ctx.request.GetRuleIndex();
     const bool reqKeyword = ctx.request.RequiresAccessorKeyword();
-    auto containers = GetEnclosingContainers(node, ctx.request.sourceCode);
+    auto containers = ctx.request.nodeIndex
+                          ? ctx.request.nodeIndex->CollectEnclosingContainers(byteOffset, ctx.request.sourceCode)
+                          : std::vector<ContainerInfo>{};
     for (const auto& container : containers)
     {
         if (container.kind == ContainerKind::Namespace)
@@ -183,15 +142,13 @@ static bool IsContainerAccessorProperty(const TSNode node, std::string_view refN
     return false;
 }
 
-static bool IsEnclosingScopeMember(TSNode node, const std::string& refName,
+static bool IsEnclosingScopeMember(uint32_t byteOffset, const std::string& refName,
                                    const std::vector<std::string>& usingNamespaces, const DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(node))
-    {
-        return false;
-    }
     const auto& index = ctx.request.GetRuleIndex();
-    const auto containers = GetEnclosingContainers(node, ctx.request.sourceCode);
+    const auto containers = ctx.request.nodeIndex
+                                ? ctx.request.nodeIndex->CollectEnclosingContainers(byteOffset, ctx.request.sourceCode)
+                                : std::vector<ContainerInfo>{};
     for (const auto& container : containers)
     {
         if (container.kind == ContainerKind::Namespace)
@@ -246,9 +203,7 @@ static bool IsAccessorPropertyOrKeyword(const LocalReference& ref, const Diagnos
 
     if (ctx.request.tree)
     {
-        const TSPoint at{ref.startLine, ref.startCharacter};
-        const TSNode node = ts_node_descendant_for_point_range(ts_tree_root_node(ctx.request.tree), at, at);
-        if (IsContainerAccessorProperty(node, ref.name, ctx))
+        if (IsContainerAccessorProperty(ref.startByte, ref.name, ctx))
         {
             return true;
         }
@@ -262,32 +217,17 @@ static bool IsAccessorPropertyOrKeyword(const LocalReference& ref, const Diagnos
     return false;
 }
 
-static bool IsReferenceInSyntaxErrorOrMetadata(TSNode root, const LocalReference& ref, const NodeIndex* nodeIndex)
+static bool IsReferenceInSyntaxErrorOrMetadata(const LocalReference& ref, const NodeIndex* nodeIndex)
 {
-    const TSPoint atStart{ref.startLine, ref.startCharacter};
-    const TSPoint atEnd{ref.endLine, ref.endCharacter};
-    const TSNode node = ts_node_descendant_for_point_range(root, atStart, atEnd);
-    if (ts_node_is_null(node))
-    {
-        return false;
-    }
-    if (nodeIndex && nodeIndex->NodeHasSyntaxError(node))
+    if (ref.inMetadataOrError)
     {
         return true;
     }
-    bool inErrorOrMeta = false;
-    parser::ForEachAncestor(node,
-                            [&](TSNode walk) -> bool
-                            {
-                                if (ts_node_is_error(walk) ||
-                                    ts_node_symbol(walk) == parser::GetGrammarSymbols().symMetadata)
-                                {
-                                    inErrorOrMeta = true;
-                                    return false;
-                                }
-                                return true;
-                            });
-    return inErrorOrMeta;
+    if (nodeIndex && nodeIndex->IsInsideError(ref.startByte))
+    {
+        return true;
+    }
+    return false;
 }
 
 static void CheckScopeReferences(const Scope* scope, const UndefinedIdentifierContext& uCtx)
@@ -318,14 +258,11 @@ static void CheckScopeReferences(const Scope* scope, const UndefinedIdentifierCo
 
         if (uCtx.ctx.request.tree)
         {
-            const TSNode root = ts_tree_root_node(uCtx.ctx.request.tree);
-            if (IsReferenceInSyntaxErrorOrMetadata(root, ref, uCtx.ctx.request.nodeIndex))
+            if (IsReferenceInSyntaxErrorOrMetadata(ref, uCtx.ctx.request.nodeIndex))
             {
                 continue;
             }
-            const TSPoint at{ref.startLine, ref.startCharacter};
-            const TSNode node = ts_node_descendant_for_point_range(root, at, at);
-            if (IsEnclosingScopeMember(node, ref.name, uCtx.usingNamespaces, uCtx.ctx))
+            if (IsEnclosingScopeMember(ref.startByte, ref.name, uCtx.usingNamespaces, uCtx.ctx))
             {
                 continue;
             }

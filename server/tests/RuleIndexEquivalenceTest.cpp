@@ -1,9 +1,8 @@
-#include <doctest/doctest.h>
-
 #include "analysis/index/SymbolTable.h"
 #include "analysis/rules/RuleIndex.h"
 
 #include <algorithm>
+#include <doctest/doctest.h>
 #include <string>
 #include <vector>
 

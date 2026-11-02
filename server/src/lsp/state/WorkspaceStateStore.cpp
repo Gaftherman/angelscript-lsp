@@ -1,4 +1,5 @@
 #include "lsp/state/WorkspaceStateStore.h"
+
 #include "analysis/index/SymbolTable.h"
 #include "utils/Utils.h"
 

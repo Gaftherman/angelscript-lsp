@@ -5,6 +5,7 @@
 #include "parser/ASTUtils.h"
 #include "parser/AngelScriptParser.h"
 #include "parser/GrammarNames.h"
+
 #include <algorithm>
 #include <doctest/doctest.h>
 #include <ostream>

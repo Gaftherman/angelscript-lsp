@@ -1,10 +1,10 @@
-#include <doctest/doctest.h>
+#include "utils/WorkspaceIncludeGraph.h"
 
 #include "helpers/TestUtils.h"
-#include "utils/WorkspaceIncludeGraph.h"
 
 #include <algorithm>
 #include <chrono>
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <random>

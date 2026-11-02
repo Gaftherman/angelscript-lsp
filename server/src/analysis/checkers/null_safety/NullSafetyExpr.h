@@ -2,13 +2,13 @@
 
 #include "analysis/checkers/null_safety/NullSafetyTypes.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/ScopeTree.h"
+
 #include <string_view>
 #include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
-struct Scope;
-
 /**
  * @brief Checks expressions for potential null handle dereferences.
  * @param[in] expr Expression AST node to check.

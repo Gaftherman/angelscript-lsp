@@ -5,6 +5,7 @@
 #include "utils/Timer.h"
 #include "utils/Utils.h"
 #include "utils/WorkspaceScan.h"
+
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
@@ -50,16 +51,6 @@ static std::optional<lsp::TextEdit> TryBuildDirectiveEdit(std::string_view line,
     edit.range.end.character = static_cast<uint32_t>(closePos);
     edit.newText = std::string(replacement);
     return edit;
-}
-
-ReanalyseOnExit::~ReanalyseOnExit()
-{
-    server->SetPredefinedReady(true);
-    server->SetWorkspaceScanComplete(true);
-    if (!stopToken.stop_requested())
-    {
-        server->ScheduleOpenDocumentsForReanalysis();
-    }
 }
 
 void Server::BeginWorkspaceProgress(const std::string& title)
@@ -323,7 +314,15 @@ void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
         ReportWorkspaceProgress("Building the include graph", 0);
 
         const PhaseTimer scanTimer(m_logger.get(), "workspace scan (total)");
-        ReanalyseOnExit reanalyseOnExit{this, stopToken};
+        ReanalyseOnExit reanalyseOnExit{[this, &stopToken]()
+                                        {
+                                            SetPredefinedReady(true);
+                                            SetWorkspaceScanComplete(true);
+                                            if (!stopToken.stop_requested())
+                                            {
+                                                ScheduleOpenDocumentsForReanalysis();
+                                            }
+                                        }};
 
         LoadWorkspaceEngineRules(roots);
 

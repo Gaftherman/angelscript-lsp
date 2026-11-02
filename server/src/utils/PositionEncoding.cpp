@@ -1,4 +1,5 @@
 #include "utils/PositionEncoding.h"
+
 #include "utils/Constants.h"
 
 #include <algorithm>
@@ -8,10 +9,7 @@ namespace angel_lsp::utils
 
 /**
  * @brief Classifies a UTF-8 lead byte.
- *
- * A byte that is not a valid lead (a stray continuation byte, or 0xF8+) is reported as a
- * one-byte, one-unit character so that malformed input still advances instead of looping
- * forever - the columns it produces are meaningless, but so was the input.
+ *        A byte that is not a valid lead (a stray continuation byte, or 0xF8+) is reported as a
  */
 static Utf8Step StepAt(unsigned char lead)
 {

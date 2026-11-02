@@ -1,6 +1,5 @@
-#include <doctest/doctest.h>
-
 #include "analysis/index/LocalScopeCollector.h"
+
 #include "analysis/index/ScopeTree.h"
 #include "helpers/CorpusDirectory.h"
 #include "helpers/TestUtils.h"
@@ -8,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <memory>

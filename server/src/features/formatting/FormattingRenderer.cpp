@@ -1,5 +1,7 @@
 #include "features/formatting/FormattingRenderer.h"
+
 #include "features/formatting/FormattingSpacing.h"
+
 #include <algorithm>
 
 namespace angel_lsp::features

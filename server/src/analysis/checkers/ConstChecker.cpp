@@ -1,14 +1,15 @@
 #include "analysis/checkers/ConstChecker.h"
+
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"
-#include "utils/Utils.h"
-
 #include "parser/GrammarNames.h"
 #include "parser/Keywords.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/StopFlag.h"
+#include "utils/Utils.h"
+
 #include <algorithm>
 #include <optional>
 #include <string>
@@ -39,14 +40,7 @@ static bool TypeTextIsHandleConst(std::string_view typeText)
 
 /**
  * @brief Constness of a parameter, read off the enclosing declaration's parameter list.
- *
- * The scope tree records a parameter as a definition but not its written type - it fills
- * that in from a variable_declarator, which a parameter is not - so the answer has to come
- * from the tree. Kept here rather than added to LocalDefinition on purpose: typeName there
- * is documented as meaningful only for a variable, and populating it for parameters would
- * quietly change what isHandleType and typeKind mean for every other reader of the scope
- * tree, including the null-assignment rule.
- *
+ *        The scope tree records a parameter as a definition but not its written type - it fills
  * @param[in] node AST node inside the function or method.
  * @param[in] name Identifier name of the variable to search for.
  * @param[in] sourceCode Document source text.
@@ -152,7 +146,6 @@ static Constness ResolveNameConstness(std::string_view name, TSNode node, const 
 
 /**
  * @brief Identifies enclosing class and whether the enclosing method or accessor is const.
- *
  * @param[in] node AST node inside the method.
  * @param[in] sourceCode Source text.
  * @return EnclosingMethodInfo containing class membership and const qualification.
@@ -205,7 +198,6 @@ static EnclosingMethodInfo FindEnclosingMethod(TSNode node, std::string_view sou
 
 /**
  * @brief Finds a member variable or property in a class's inheritance hierarchy.
- *
  * @param[in] className Name of the class to search.
  * @param[in] memberName Member name to look for.
  * @param[in] table Workspace symbol table.
@@ -442,11 +434,7 @@ static Constness ResolveConstness(TSNode node, const ExpressionTypeContext& ctx)
 
 /**
  * @brief Checks whether a method signature returns a reference to its owning type.
- *
- * Methods returning `Type&` (e.g., `string& ToLowercase()`) are fluent / chaining operations.
- * In Sven Co-op stubs and native AngelScript ecosystems, these signatures are registered
- * returning references and can be invoked on const/read-only parameters for value extraction.
- *
+ *        Methods returning `Type&` (e.g., `string& ToLowercase()`) are fluent / chaining operations.
  * @param[in] fn Function signature being inspected.
  * @param[in] owner Name of the owning class.
  * @return True if the method returns a reference to the owning class.
@@ -557,7 +545,7 @@ static Constness ResolveHandleConstness(TSNode node, const ExpressionTypeContext
  * @param[in] scope Lexical scope active at assignment location.
  * @param[in,out] ctx Diagnostic collection and analysis context.
  */
-static void CheckAssignment(TSNode node, const ConstCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
+static void CheckAssignment(TSNode node, const AstCheckContext& request, const Scope* scope, DiagnosticContext& ctx)
 {
     TSNode target = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
     if (ts_node_is_null(target))
@@ -616,7 +604,7 @@ static void CheckAssignment(TSNode node, const ConstCheckRequest& request, const
  * @param[in] scope Lexical scope active at the call site.
  * @param[in,out] ctx Diagnostic collection and analysis context.
  */
-static void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
+static void CheckMethodCall(TSNode node, const AstCheckContext& request, const Scope* scope, DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode callee = parser::GetChildByField(node, gs.fieldFunction);
@@ -661,7 +649,7 @@ static void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const
  * @param[in] request Contextual request bundle containing pre-indexed syntax tree.
  * @param[in,out] ctx Diagnostic collection and analysis context.
  */
-static void CheckConstCorrectnessIndexed(const ConstCheckRequest& request, DiagnosticContext& ctx)
+static void CheckConstCorrectnessIndexed(const AstCheckContext& request, DiagnosticContext& ctx)
 {
     if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
     {
@@ -677,9 +665,11 @@ static void CheckConstCorrectnessIndexed(const ConstCheckRequest& request, Diagn
                                               {
                                                   return;
                                               }
-                                              const TSPoint start = ts_node_start_point(node);
+                                              const TSPoint pt = ts_node_start_point(node);
                                               const Scope* scope =
-                                                  FindInnermostScope(request.scopeRoot, start.row, start.column);
+                                                  request.mediator
+                                                      ? request.mediator->ScopeForNode(node)
+                                                      : FindInnermostScope(request.scopeRoot, pt.row, pt.column);
                                               if (ts_node_symbol(node) == gs.symAssignmentExpression)
                                               {
                                                   CheckAssignment(node, request, scope, ctx);
@@ -696,7 +686,7 @@ static void CheckConstCorrectnessIndexed(const ConstCheckRequest& request, Diagn
  * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
  * @param[in,out] ctx Diagnostic collection and analysis context.
  */
-void CheckConstCorrectness(const ConstCheckRequest& request, DiagnosticContext& ctx)
+void CheckConstCorrectness(const AstCheckContext& request, DiagnosticContext& ctx)
 {
     if (ts_node_is_null(request.rootNode) || request.sourceCode.empty())
     {
@@ -717,7 +707,7 @@ void CheckConstCorrectness(const ConstCheckRequest& request, DiagnosticContext& 
     }
 
     NodeIndex localIndex(request.rootNode);
-    ConstCheckRequest indexedRequest = request;
+    AstCheckContext indexedRequest = request;
     indexedRequest.nodeIndex = &localIndex;
     CheckConstCorrectnessIndexed(indexedRequest, ctx);
 }

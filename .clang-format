@@ -24,3 +24,15 @@ ReferenceAlignment: Left
 SpaceBeforeParens: ControlStatements
 SpaceAfterCStyleCast: false
 SpacesInAngles: false
+
+# Include ordering: project headers ("...") first, system headers (<...>) second
+SortIncludes: CaseSensitive
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^".*"'
+    Priority: 1
+    SortPriority: 1
+  - Regex: '^<.*>'
+    Priority: 2
+    SortPriority: 2
+

@@ -1,11 +1,10 @@
-#include <doctest/doctest.h>
+#include "analysis/rules/ClassRules.h"
 
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
-#include "analysis/rules/ClassRules.h"
 #include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
 #include "helpers/TestUtils.h"
@@ -13,6 +12,7 @@
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
+#include <doctest/doctest.h>
 #include <string>
 #include <vector>
 

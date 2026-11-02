@@ -1,12 +1,11 @@
 #pragma once
+#include "utils/PositionEncoding.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
 #include <spdlog/fmt/fmt.h>
 #include <string>
-
-#include "utils/PositionEncoding.h"
-
 #include <vector>
 
 namespace angel_lsp::utils
@@ -60,13 +59,7 @@ void ApplyIncrementalChange(std::string& buffer, const TextChangeRange& range, c
                             PositionEncoding enc);
 /**
  * @brief Checks whether a file is a predefined stub describing the host application's API.
- *
- * Two spellings count. One is the configured suffix, which this project writes as
- * `<name>.as.predefined`. The other is a file named exactly `as.predefined`, which is
- * AngelScript's own convention and what the community's stubs are called - the extension
- * registers that filename as AngelScript in package.json, so the server recognising it too is
- * what makes the two halves agree.
- *
+ *        Two spellings count. One is the configured suffix, which this project writes as
  * @param fileUri URI or path of the file.
  * @param extension Configured stub suffix, e.g. ".as.predefined". Empty disables suffix matching.
  * @return True if the file should be treated as a stub.
@@ -75,15 +68,7 @@ bool IsPredefinedFile(const std::string_view& fileUri, const std::string_view ex
 
 /**
  * @brief Sanitizes predefined stub content before parsing by blanking inline list patterns.
- *
- * Native AngelScript stubs (.predefined files) can contain documentation notation for list factories:
- *     array(int &in type, int &in list) {repeat T};
- *     dictionary(int &in type, int &in list) {repeat {string, ?}};
- * Tree-Sitter grammar cannot parse `{repeat ...}` tokens inside class bodies and reports syntax errors,
- * which causes the AST parser to drop whole classes (e.g. dictionary).
- * Blanking the `{...}` pattern between `)` and `;` with spaces preserves exact line and column numbers
- * without shifting offsets, allowing Tree-Sitter to parse valid method declarations cleanly.
- *
+ *        Native AngelScript stubs (.predefined files) can contain documentation notation for list factories:
  * @param source The stub's full text.
  * @return Sanitized text where inline patterns are replaced by spaces.
  */
@@ -91,22 +76,19 @@ std::string SanitizePredefinedContent(std::string_view source);
 
 /**
  * @brief Glob match over a `/`-separated path.
- *
- * `?` matches one character, `*` matches within a single segment, and `**` spans any number of
- * segments including none - the same three the exclude settings every editor ships use,
- * so a user can paste what they already have.
+ *        `?` matches one character, `*` matches within a single segment, and `**` spans any number of
  */
 bool MatchesGlob(std::string_view path, std::string_view pattern);
 
-/** @brief True when any pattern matches the path. */
+/**
+ * @brief True when any pattern matches the path.
+ */
 bool IsExcludedPath(std::string_view path, const std::vector<std::string>& patterns);
 
 /**
  * @brief True when a directory should not be descended into.
- *
- * Distinct from IsExcludedPath because a pattern like `**` + `/build/` + `**` names what is INSIDE `build` and never
- * `build` itself, and pruning is the whole point: filtering results afterwards still walks
- * every file under it. The trailing slash-star-star is dropped before the directory is tested.
+ *        Distinct from IsExcludedPath because a pattern like `**` + `/build/` + `**` names what is INSIDE `build` and
+ * never
  */
 bool IsExcludedDirectory(std::string_view path, const std::vector<std::string>& patterns);
 

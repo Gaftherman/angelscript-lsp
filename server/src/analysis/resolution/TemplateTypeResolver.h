@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/index/SymbolTable.h"
+
 #include <string>
 #include <string_view>
 #include <vector>

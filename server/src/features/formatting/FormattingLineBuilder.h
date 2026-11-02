@@ -2,6 +2,7 @@
 
 #include "features/formatting/FormattingTokens.h"
 #include "features/formatting/FormattingTypes.h"
+
 #include <cstdint>
 #include <optional>
 #include <vector>

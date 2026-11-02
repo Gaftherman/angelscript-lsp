@@ -1,4 +1,5 @@
 #include "analysis/types/EngineProfiles.h"
+
 #include <algorithm>
 #include <cctype>
 #include <optional>

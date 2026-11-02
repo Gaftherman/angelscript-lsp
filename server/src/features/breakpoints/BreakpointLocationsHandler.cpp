@@ -1,4 +1,5 @@
 #include "BreakpointLocationsHandler.h"
+
 #include "features/breakpoints/BreakpointStatementClassifier.h"
 
 #include <algorithm>

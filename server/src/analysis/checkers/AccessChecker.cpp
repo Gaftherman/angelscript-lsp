@@ -1,17 +1,18 @@
 #include "analysis/checkers/AccessChecker.h"
+
+#include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
-#include "parser/ASTUtils.h"
-#include "utils/Constants.h"
-#include "utils/Utils.h"
-
-#include "analysis/diagnostics/DiagnosticCodes.h"
 #include "config/EngineRuleConfig.h"
+#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "parser/Keywords.h"
+#include "utils/Constants.h"
 #include "utils/StopFlag.h"
+#include "utils/Utils.h"
+
 #include <algorithm>
 #include <string>
 #include <string_view>
@@ -46,8 +47,6 @@ static bool TryReadAccess(const Symbol& sym, AccessModifier& access)
     }
     return false;
 }
-
-using MemberAccess = MemberLookupResult;
 
 /**
  * @brief Checks whether property accessors (get_X/set_X) are enabled by engine configuration.
@@ -190,7 +189,7 @@ static std::vector<Symbol> CollectOwnerCandidates(const std::string& owner, cons
 }
 
 /**
- * @brief Evaluates access for candidate symbols, updating the resolved MemberAccess result.
+ * @brief Evaluates access for candidate symbols, updating the resolved MemberLookupResult result.
  *
  * @param[in] candidates Candidate symbols found for the owner.
  * @param[in] owner Owner type name.
@@ -199,7 +198,7 @@ static std::vector<Symbol> CollectOwnerCandidates(const std::string& owner, cons
  * @return True if resolution concluded (public access reached).
  */
 static bool ApplyCandidatesAccess(const std::vector<Symbol>& candidates, const std::string& owner,
-                                  const MemberLookupContext& ctx, MemberAccess& result)
+                                  const MemberLookupContext& ctx, MemberLookupResult& result)
 {
     for (const auto& sym : candidates)
     {
@@ -229,10 +228,10 @@ static bool ApplyCandidatesAccess(const std::vector<Symbol>& candidates, const s
     return false;
 }
 
-static MemberAccess FindMember(const std::string& typeName, const std::string& memberName, const SymbolTable& table,
-                               bool accessorKeywordRequired)
+static MemberLookupResult FindMember(const std::string& typeName, const std::string& memberName,
+                                     const SymbolTable& table, bool accessorKeywordRequired)
 {
-    MemberAccess result;
+    MemberLookupResult result;
     if (typeName.empty() || memberName.empty())
     {
         return result;
@@ -308,7 +307,7 @@ static std::string ResolveObjectOwnerType(TSNode objectNode, const Scope* scope,
  * @param[in] objectType Object type name.
  * @param[in,out] ctx Diagnostic context.
  */
-static void MaybeEmitAccessorHint(TSNode memberNode, const MemberAccess& member, const std::string& objectType,
+static void MaybeEmitAccessorHint(TSNode memberNode, const MemberLookupResult& member, const std::string& objectType,
                                   DiagnosticContext& ctx)
 {
     if (member.viaAccessor && !ctx.request.ScriptAccessorsAreProperties() && ctx.request.diagnostics &&
@@ -331,7 +330,7 @@ static void MaybeEmitAccessorHint(TSNode memberNode, const MemberAccess& member,
  * @param[in] ctx Diagnostic context.
  * @return True if member access is allowed, false if access violation.
  */
-static bool IsMemberAccessAllowed(const MemberAccess& member, std::string_view accessingClass,
+static bool IsMemberAccessAllowed(const MemberLookupResult& member, std::string_view accessingClass,
                                   std::string_view objectType, const DiagnosticContext& ctx)
 {
     const bool declaredPrivate = member.access == AccessModifier::Private;
@@ -351,7 +350,7 @@ static bool IsMemberAccessAllowed(const MemberAccess& member, std::string_view a
  * @param[in] memberName Name of the member being accessed.
  * @param[in,out] ctx Diagnostic context.
  */
-static void EmitPrivacyViolation(TSNode memberNode, const MemberAccess& member, std::string_view memberName,
+static void EmitPrivacyViolation(TSNode memberNode, const MemberLookupResult& member, std::string_view memberName,
                                  DiagnosticContext& ctx)
 {
     const TSPoint start = ts_node_start_point(memberNode);
@@ -369,12 +368,12 @@ static void EmitPrivacyViolation(TSNode memberNode, const MemberAccess& member, 
  * @param[in] memberName Member name to look up.
  * @param[in] table Symbol table.
  * @param[in] ctx Diagnostic context containing optional engine rules.
- * @return MemberAccess structure indicating whether the member was found.
+ * @return MemberLookupResult structure indicating whether the member was found.
  */
-static MemberAccess FindMemberWithProxies(const std::string& objectType, const std::string& memberName,
-                                          const SymbolTable& table, const DiagnosticContext& ctx)
+static MemberLookupResult FindMemberWithProxies(const std::string& objectType, const std::string& memberName,
+                                                const SymbolTable& table, const DiagnosticContext& ctx)
 {
-    MemberAccess member = FindMember(objectType, memberName, table, ctx.request.RequiresAccessorKeyword());
+    MemberLookupResult member = FindMember(objectType, memberName, table, ctx.request.RequiresAccessorKeyword());
     if (member.found || !ctx.request.engineRules)
     {
         return member;
@@ -405,7 +404,7 @@ static MemberAccess FindMemberWithProxies(const std::string& objectType, const s
     return member;
 }
 
-static void ValidateMemberPrivacy(TSNode node, const MemberAccess& member, const std::string& objectType,
+static void ValidateMemberPrivacy(TSNode node, const MemberLookupResult& member, const std::string& objectType,
                                   DiagnosticContext& ctx)
 {
     if (!member.decided)
@@ -430,7 +429,7 @@ static void ValidateMemberPrivacy(TSNode node, const MemberAccess& member, const
     }
 }
 
-static void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const Scope* scope,
+static void CheckMemberExpression(TSNode node, const AstCheckContext& request, const Scope* scope,
                                   DiagnosticContext& ctx)
 {
     TSNode objectNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldObject);
@@ -476,7 +475,7 @@ static void CheckMemberExpression(TSNode node, const AccessCheckRequest& request
         return;
     }
 
-    const MemberAccess member = FindMemberWithProxies(objectType, memberName, table, ctx);
+    const MemberLookupResult member = FindMemberWithProxies(objectType, memberName, table, ctx);
     if (!member.found)
     {
         const TSPoint start = ts_node_start_point(memberNode);
@@ -683,7 +682,7 @@ static bool CheckClosureDisallowedAccess(TSNode node, const Scope* scope, std::s
     const std::string_view outerClass = EnclosingClassOfLambda(node, ctx.request.sourceCode, ctx.request.nodeIndex);
     if (!outerClass.empty())
     {
-        const MemberAccess member =
+        const MemberLookupResult member =
             FindMember(std::string(outerClass), std::string(idText), ctx.request.symbolTable, false);
         if (member.found)
         {
@@ -752,7 +751,7 @@ static void CheckImplicitMemberAccess(TSNode node, const Scope* scope, std::stri
         return;
     }
 
-    const MemberAccess member =
+    const MemberLookupResult member =
         FindMember(std::string(accessingClass), std::string(idText), table, ctx.request.RequiresAccessorKeyword());
     if (!member.decided)
     {
@@ -777,7 +776,7 @@ static void CheckImplicitMemberAccess(TSNode node, const Scope* scope, std::stri
     }
 }
 
-static void CheckIdentifierNode(TSNode node, const AccessCheckRequest& request, DiagnosticContext& ctx)
+static void CheckIdentifierNode(TSNode node, const AstCheckContext& request, DiagnosticContext& ctx)
 {
     TSNode parent = parser::GetParent(node);
     if (ShouldSkipIdentifierNode(node, parent))
@@ -807,7 +806,7 @@ static void CheckIdentifierNode(TSNode node, const AccessCheckRequest& request, 
     CheckImplicitMemberAccess(node, scope, idText, ctx);
 }
 
-static void CheckMemberAccessIndexed(const AccessCheckRequest& request, DiagnosticContext& ctx)
+static void CheckMemberAccessIndexed(const AstCheckContext& request, DiagnosticContext& ctx)
 {
     if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
     {
@@ -837,9 +836,11 @@ static void CheckMemberAccessIndexed(const AccessCheckRequest& request, Diagnost
             }
             if (ts_node_symbol(node) == gs.symMemberExpression)
             {
-                const TSPoint start = ts_node_start_point(node);
-                CheckMemberExpression(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column),
-                                      ctx);
+                const Scope* scope = request.mediator
+                                         ? request.mediator->ScopeForNode(node)
+                                         : FindInnermostScope(request.scopeRoot, ts_node_start_point(node).row,
+                                                              ts_node_start_point(node).column);
+                CheckMemberExpression(node, request, scope, ctx);
             }
             else
             {
@@ -853,7 +854,7 @@ static void CheckMemberAccessIndexed(const AccessCheckRequest& request, Diagnost
  * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
  * @param[in,out] ctx Diagnostic collection and analysis context.
  */
-void CheckMemberAccess(const AccessCheckRequest& request, DiagnosticContext& ctx)
+void CheckMemberAccess(const AstCheckContext& request, DiagnosticContext& ctx)
 {
     if (ts_node_is_null(request.rootNode) || request.sourceCode.empty())
     {
@@ -872,7 +873,7 @@ void CheckMemberAccess(const AccessCheckRequest& request, DiagnosticContext& ctx
     }
 
     NodeIndex localIndex(request.rootNode);
-    AccessCheckRequest indexedRequest = request;
+    AstCheckContext indexedRequest = request;
     indexedRequest.nodeIndex = &localIndex;
     CheckMemberAccessIndexed(indexedRequest, ctx);
 }

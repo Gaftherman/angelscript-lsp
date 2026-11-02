@@ -61,9 +61,7 @@ namespace angel_lsp::parser
 
 /**
  * @brief Convertible string slice of an AST node that converts to both std::string_view and std::string.
- *
- * Resolves the conversion barrier where callers needing an owning std::string had to either
- * explicitly construct it or define duplicate translation-unit local functions.
+ *        Resolves the conversion barrier where callers needing an owning std::string had to either
  */
 struct NodeTextResult
 {

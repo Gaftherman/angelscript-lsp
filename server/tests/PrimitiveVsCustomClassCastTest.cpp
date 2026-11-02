@@ -3,8 +3,6 @@
  * @brief Verification suite for scalar primitive casts vs user-defined class constructor resolution.
  */
 
-#include <doctest/doctest.h>
-
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
@@ -17,6 +15,7 @@
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
+#include <doctest/doctest.h>
 #include <string>
 #include <vector>
 

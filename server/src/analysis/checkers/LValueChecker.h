@@ -2,21 +2,19 @@
 
 #include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
+
 #include <string_view>
 #include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
-class NodeIndex;
-
-using LValueCheckRequest = AstCheckContext;
 
 /**
  * @brief Verifies that left-hand side targets of assignment expressions are modifiable l-values.
  * @param request Syntax tree, source code, and lexical scope.
  * @param ctx Diagnostic sink and context.
  */
-void CheckLValues(const LValueCheckRequest& request, DiagnosticContext& ctx);
+void CheckLValues(const AstCheckContext& request, DiagnosticContext& ctx);
 
 /**
  * @brief AST checker for left-hand side modifiable l-value expressions.
@@ -39,7 +37,7 @@ struct LValueChecker
  */
 struct CallCandidateContext
 {
-    const LValueCheckRequest& request;
+    const AstCheckContext& request;
     const Scope* scope = nullptr;
     DiagnosticContext& ctx;
 };

@@ -1,4 +1,5 @@
 #include "features/formatting/PredefinedStubFormatter.h"
+
 #include "document/Document.h"
 #include "parser/GrammarSymbols.h"
 
@@ -21,7 +22,9 @@ static std::string_view Slice(const std::string& source, uint32_t from, uint32_t
     return std::string_view(source).substr(from, to - from);
 }
 
-/** @brief Iterates over each line in text view, invoking consumer with the line slice and last flag. */
+/**
+ * @brief Iterates over each line in text view, invoking consumer with the line slice and last flag.
+ */
 template <typename LineConsumer> static void ForEachLine(std::string_view text, LineConsumer&& consumer)
 {
     size_t lineStart = 0;
@@ -44,7 +47,9 @@ template <typename LineConsumer> static void ForEachLine(std::string_view text, 
     }
 }
 
-/** @brief Drops trailing spaces and tabs from every line, leaving the line breaks alone. */
+/**
+ * @brief Drops trailing spaces and tabs from every line, leaving the line breaks alone.
+ */
 static std::string TrimTrailingSpaceOnEachLine(std::string_view text)
 {
     std::string out;
@@ -69,10 +74,7 @@ static std::string TrimTrailingSpaceOnEachLine(std::string_view text)
 
 /**
  * @brief Re-indents a block of text to one level, keeping its internal shape.
- *
- * Each non-empty line loses whatever leading whitespace it had and gains `indent`. A blank
- * line stays blank rather than becoming a line of whitespace, which is what a formatter
- * that only prepended would produce.
+ *        Each non-empty line loses whatever leading whitespace it had and gains `indent`. A blank
  */
 static std::string Reindent(std::string_view text, const std::string& indent)
 {
@@ -111,7 +113,9 @@ static std::string Reindent(std::string_view text, const std::string& indent)
     return out;
 }
 
-/** @brief Whether a string is entirely whitespace. */
+/**
+ * @brief Whether a string is entirely whitespace.
+ */
 static bool IsBlank(std::string_view text)
 {
     return std::all_of(text.begin(), text.end(), [](unsigned char c) { return std::isspace(c) != 0; });
@@ -119,10 +123,7 @@ static bool IsBlank(std::string_view text)
 
 /**
  * @brief Drops whitespace from both ends, keeping any blank line in the middle.
- *
- * The text between two declarations begins and ends with the line breaks that separated
- * them. Carried into a block unchanged those become blank lines around every member, so a
- * merged namespace would grow a gap for each occurrence it absorbed.
+ *        The text between two declarations begins and ends with the line breaks that separated
  */
 static std::string_view TrimBlankEdges(std::string_view text)
 {

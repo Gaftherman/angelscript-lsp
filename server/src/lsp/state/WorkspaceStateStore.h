@@ -21,13 +21,19 @@ namespace angel_lsp
  */
 struct WorkspaceSnapshot
 {
-    /** @brief Active search directories for include resolution. */
+    /**
+     * @brief Active search directories for include resolution.
+     */
     std::shared_ptr<const std::vector<std::string>> searchDirectories;
 
-    /** @brief Active workspace root directory URIs. */
+    /**
+     * @brief Active workspace root directory URIs.
+     */
     std::vector<std::string> workspaceRoots;
 
-    /** @brief Active preprocessor defined symbols. */
+    /**
+     * @brief Active preprocessor defined symbols.
+     */
     std::shared_ptr<const ankerl::unordered_dense::set<std::string>> definedWords;
 };
 

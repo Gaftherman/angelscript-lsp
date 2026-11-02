@@ -1,6 +1,8 @@
 #include "lsp/state/DocumentStore.h"
+
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
+
 #include <atomic>
 #include <doctest/doctest.h>
 #include <latch>

@@ -19,7 +19,7 @@ std::string FormatAccessPrefix(const SymbolModifiers& modifiers);
  * @param modifiers Modifier set of the symbol.
  * @return Space-terminated keyword run such as "private shared abstract ", or an empty string.
  * @note 'final'/'abstract' are only emitted here when they were written as declaration
- *       modifiers; as function attributes they belong after the parameter list instead.
+ *        modifiers; as function attributes they belong after the parameter list instead.
  */
 std::string FormatDeclarationPrefix(const SymbolModifiers& modifiers);
 
@@ -65,7 +65,7 @@ std::string FormatFunctionDeclaration(const Symbol& sym, bool qualified = true);
  * @param var Variable signature to render.
  * @param name Declared name.
  * @return Text such as "private const string m_name", or, for a virtual property, the accessor
- *         block that makes it one: "string Name { get const; set; }".
+ *        block that makes it one: "string Name { get const; set; }".
  */
 std::string FormatVariableDeclaration(const VariableSignature& var, const std::string& name);
 

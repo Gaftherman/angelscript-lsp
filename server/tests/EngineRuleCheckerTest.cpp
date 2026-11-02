@@ -1,5 +1,3 @@
-#include <doctest/doctest.h>
-
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
@@ -12,6 +10,7 @@
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
+#include <doctest/doctest.h>
 #include <random>
 #include <string>
 #include <vector>

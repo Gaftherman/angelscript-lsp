@@ -1,9 +1,9 @@
+#include "features/folding_range/FoldingRangeHandler.h"
+#include "parser/AngelScriptParser.h"
+
 #include <doctest/doctest.h>
 #include <iostream>
 #include <string>
-
-#include "features/folding_range/FoldingRangeHandler.h"
-#include "parser/AngelScriptParser.h"
 
 using namespace angel_lsp;
 using namespace angel_lsp::features;

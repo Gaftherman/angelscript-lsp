@@ -1,7 +1,6 @@
-#include <doctest/doctest.h>
-
 #include "utils/PreprocessorRegions.h"
 
+#include <doctest/doctest.h>
 #include <string>
 
 // =====================================================================================

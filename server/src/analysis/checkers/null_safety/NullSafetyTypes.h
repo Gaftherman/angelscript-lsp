@@ -2,6 +2,9 @@
 
 #include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/NodeIndex.h"
+#include "analysis/index/ScopeTree.h"
+
 #include <ankerl/unordered_dense.h>
 #include <string>
 #include <string_view>
@@ -10,9 +13,6 @@
 
 namespace angel_lsp::analysis
 {
-class NodeIndex;
-struct Scope;
-
 /**
  * @brief Three-state lattice for variable nullability tracking.
  */
@@ -22,8 +22,6 @@ enum class Nullability
     Nullable,      ///< Variable may be null (handle parameter, cast, or unverified call).
     DefinitelyNull ///< Variable is definitely null (explicit null assignment or null branch).
 };
-
-using NullSafetyCheckRequest = AstCheckContext;
 
 /**
  * @brief Evaluation context passed during null-safety traversal.

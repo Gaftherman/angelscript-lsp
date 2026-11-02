@@ -3,13 +3,13 @@
  * @brief Memory layout audit asserting sizeof limits and quantifying savings for 100k instances.
  */
 
-#include <doctest/doctest.h>
-
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/types/TypeSanitization.h"
 #include "helpers/TestUtils.h"
+
+#include <doctest/doctest.h>
 
 using namespace angel_lsp::analysis;
 
@@ -21,6 +21,7 @@ static_assert(sizeof(FunctionSignature) <= 240, "FunctionSignature layout must n
 static_assert(sizeof(FuncdefSignature) <= 152, "FuncdefSignature layout must not exceed 152 bytes");
 static_assert(sizeof(ClassSignature) <= 80, "ClassSignature layout must not exceed 80 bytes");
 static_assert(sizeof(LocalDefinition) <= 192, "LocalDefinition layout must not exceed 192 bytes");
+static_assert(sizeof(LocalReference) <= 80, "LocalReference layout must not exceed 80 bytes");
 static_assert(sizeof(Scope) <= 128, "Scope layout must not exceed 128 bytes");
 static_assert(sizeof(IndexedContainerSpan) <= 20, "IndexedContainerSpan layout must not exceed 20 bytes");
 static_assert(sizeof(NodeIndex) <= 248, "NodeIndex layout must not exceed 248 bytes");
@@ -38,6 +39,7 @@ TEST_SUITE("MemoryLayoutAudit")
         CHECK(sizeof(FuncdefSignature) <= 152);
         CHECK(sizeof(ClassSignature) <= 80);
         CHECK(sizeof(LocalDefinition) <= 192);
+        CHECK(sizeof(LocalReference) <= 80);
         CHECK(sizeof(Scope) <= 128);
         CHECK(sizeof(IndexedContainerSpan) <= 20);
         CHECK(sizeof(NodeIndex) <= 248);

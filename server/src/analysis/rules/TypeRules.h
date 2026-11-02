@@ -29,11 +29,7 @@ void ValidateInterfaceMembers(const Symbol& sym, const DiagnosticContext& ctx);
 
 /**
  * @brief Reports declarations that collide under one qualified name.
- *
- * Takes the whole overload bucket rather than one symbol: whether a redeclaration is legal is a
- * property of the set. Function overloads differing in parameters are fine; a variable and a
- * function under the same name, or two declarations with the same signature, are not.
- *
+ *        Takes the whole overload bucket rather than one symbol: whether a redeclaration is legal is a
  * @param symbols Every symbol registered under one qualified name.
  */
 void ValidateDuplicates(const std::vector<Symbol>& symbols, const DiagnosticContext& ctx);

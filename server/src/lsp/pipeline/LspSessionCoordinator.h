@@ -7,12 +7,8 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <lsp/messagehandler.h>
 #include <mutex>
-
-namespace lsp
-{
-class MessageHandler;
-}
 
 namespace angel_lsp
 {

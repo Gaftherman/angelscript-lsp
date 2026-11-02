@@ -1,4 +1,5 @@
 #include "features/code_lens/CodeLensHandler.h"
+
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/UnusedSymbolChecker.h"
 #include "config/EngineRuleConfig.h"
@@ -562,10 +563,10 @@ static bool QualifierMatchesEnumContainer(std::string_view q, std::string_view t
 static bool IsValidEnumMemberAccess(const std::string& fileUri, const analysis::LocalReference& ref,
                                     const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
 {
-    if (ref.isScopedIdentifier && !ref.scopeQualifier.empty())
+    if (ref.isScopedIdentifier && !ref.GetScopeQualifier(criteria.request.sourceCode).empty())
     {
-        return QualifierMatchesEnumContainer(ref.scopeQualifier, criteria.targetEnumContainer,
-                                             criteria.targetNamespace);
+        return QualifierMatchesEnumContainer(ref.GetScopeQualifier(criteria.request.sourceCode),
+                                             criteria.targetEnumContainer, criteria.targetNamespace);
     }
     if (fileUri == criteria.request.uri)
     {

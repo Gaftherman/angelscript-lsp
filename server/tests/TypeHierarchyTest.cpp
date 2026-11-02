@@ -1,13 +1,12 @@
-#include "helpers/TestUtils.h"
-#include <doctest/doctest.h>
-#include <random>
-
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "features/type_hierarchy/TypeHierarchyHandler.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
+#include <doctest/doctest.h>
+#include <random>
 #include <string>
 
 using namespace angel_lsp;

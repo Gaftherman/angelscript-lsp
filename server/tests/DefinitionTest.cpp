@@ -1,5 +1,3 @@
-#include <doctest/doctest.h>
-
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/ScopeTree.h"
@@ -7,9 +5,10 @@
 #include "analysis/index/SymbolTable.h"
 #include "config/EngineRuleConfig.h"
 #include "features/definition/DefinitionHandler.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
-#include "helpers/TestUtils.h"
+#include <doctest/doctest.h>
 #include <random>
 
 using namespace angel_lsp;

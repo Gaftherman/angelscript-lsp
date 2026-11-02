@@ -1,4 +1,5 @@
 #include "analysis/index/SemanticNodes.h"
+
 #include "parser/GrammarSymbols.h"
 
 namespace angel_lsp::analysis::ast

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/index/SymbolTable.h"
+
 #include <optional>
 #include <span>
 #include <string>
@@ -201,30 +202,13 @@ enum class OverloadMatchPenalty : int
 
     /**
      * @brief Integer to integer where the signedness differs (int -> uint64, int -> uint8).
-     *
-     * A rank of its own, and size does not refine it. Measured: for an `int` argument, `int64`
-     * beats `uint64` and even `int16` beats `uint64`, while `uint8` against `uint64` is
-     * "Multiple matching signatures" - so any signedness change ranks below every conversion
-     * that keeps it, and two of them tie however far apart their widths are.
-     *
-     * Without this rank int -> int64 and int -> uint64 both scored Widening, which is why a
-     * real script's `Math.min( 255, numBubbles )` was reported as an ambiguous call: the Sven
-     * Co-op stub declares min for float, int64 and uint64 and for no smaller integer.
+     *        A rank of its own, and size does not refine it. Measured: for an `int` argument, `int64`
      */
     SignednessChange = 5,
 
     /**
      * @brief Safe promotion that also crosses from integer to floating point (int -> double).
-     *
-     * Ranked below every integer conversion, including a narrowing one: measured, an `int`
-     * argument picks `int16` over `double` and `int8` over `float`, and picks `uint64` over
-     * `float` even though that changes signedness. Two floating point candidates tie with each
-     * other - `double` against `float` is "Multiple matching signatures".
-     *
-     * The distinction from same-kind widening was introduced for the standard dictionary,
-     * which declares both `set(const string&in, const int64&in)` and `set(const string&in,
-     * const double&in)`: scoring int -> int64 and int -> double identically made every
-     * `dict.set("k", 95)` report as ambiguous. That still resolves, now by two ranks.
+     *        Ranked below every integer conversion, including a narrowing one: measured, an `int`
      */
     WideningAcrossKind = 6,
 
@@ -232,23 +216,13 @@ enum class OverloadMatchPenalty : int
 
     /**
      * @brief Neither type has a declaration this analyzer can read, so nothing can be ruled out.
-     *
-     * `CBasePlayer@` passed where `CBaseEntity@` is expected is an upcast in every Sven Co-op
-     * script, and both classes are registered by the engine in C++ - so the hierarchy walk
-     * finds no relation and, scored Incompatible, the call was reported as having no matching
-     * signature. Thirteen of the corpus findings were exactly this.
-     *
-     * Ranked last among the viable scores so it never displaces a match the analyzer can
-     * actually see: an overload set with one visible match still picks that one. It only keeps
-     * a call from being *rejected* on the strength of declarations that are not there.
+     *        `CBasePlayer@` passed where `CBaseEntity@` is expected is an upcast in every Sven Co-op
      */
     UnknownTypes = 8,
 
     /**
      * @brief R-value passed to an &out or mutable reference parameter.
-     *
-     * Penalized so that by-value or const-reference overloads win, while single-candidate
-     * calls can still proceed to emit specialized l-value required diagnostics.
+     *        Penalized so that by-value or const-reference overloads win, while single-candidate
      */
     RValueToOutParam = 20,
 

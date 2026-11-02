@@ -1,10 +1,12 @@
 #include "features/formatting/FormattingHandler.h"
+
 #include "features/formatting/ClangFormatReader.h"
 #include "features/formatting/FormattingLineBuilder.h"
 #include "features/formatting/FormattingRenderer.h"
 #include "features/formatting/FormattingTokens.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
+
 #include <algorithm>
 
 namespace angel_lsp::features

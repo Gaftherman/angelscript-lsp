@@ -1,9 +1,8 @@
-#include <doctest/doctest.h>
-
 #include "features/document_link/DocumentLinkHandler.h"
 #include "utils/IncludeResolver.h"
 
 #include <chrono>
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <string>

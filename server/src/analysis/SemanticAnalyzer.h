@@ -3,18 +3,18 @@
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/diagnostics/Diagnostics.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
+#include "utils/LspLogger.h"
+
 #include <ankerl/unordered_dense.h>
 #include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "utils/LspLogger.h"
-
 namespace angel_lsp::analysis
 {
-class NodeIndex;
 
 /**
  * @brief Orchestrates semantic analysis on symbol tables by invoking domain-specific rule modules.

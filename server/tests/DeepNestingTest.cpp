@@ -1,7 +1,6 @@
-#include <doctest/doctest.h>
-
 #include "helpers/TestUtils.h"
 
+#include <doctest/doctest.h>
 #include <string>
 
 // =====================================================================================

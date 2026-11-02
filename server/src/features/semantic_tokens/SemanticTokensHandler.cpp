@@ -1,4 +1,5 @@
 #include "features/semantic_tokens/SemanticTokensHandler.h"
+
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
@@ -9,6 +10,7 @@
 #include "parser/queries/BuiltQueries.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
+
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
 #include <cstring>
@@ -1020,7 +1022,9 @@ static uint32_t RefineSyntaxContext(std::string_view tokenText, uint32_t startBy
     return tokenType;
 }
 
-/** @brief Checks if an AST node is the trailing leaf identifier of a scoped_identifier. */
+/**
+ * @brief Checks if an AST node is the trailing leaf identifier of a scoped_identifier.
+ */
 static bool IsScopedIdentifierLeaf(TSNode node, const parser::GrammarSymbols& syms)
 {
     TSNode parent = parser::GetParent(node);
@@ -1037,7 +1041,9 @@ static bool IsScopedIdentifierLeaf(TSNode node, const parser::GrammarSymbols& sy
     return ts_node_start_byte(lastChild) == ts_node_start_byte(node);
 }
 
-/** @brief Suppresses semantic token emission if a scoped_identifier leaf does not exist or has invalid qualifier. */
+/**
+ * @brief Suppresses semantic token emission if a scoped_identifier leaf does not exist or has invalid qualifier.
+ */
 static bool ShouldSuppressScopedLeafToken(TSNode node, std::string_view tokenText, const TokenRefinementContext& ctx,
                                           const parser::GrammarSymbols& syms)
 {

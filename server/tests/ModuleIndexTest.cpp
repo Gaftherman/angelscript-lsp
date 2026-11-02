@@ -1,14 +1,15 @@
 #include "lsp/state/ModuleIndex.h"
+
 #include "helpers/TestUtils.h"
+
 #include <atomic>
+#include <chrono>
 #include <doctest/doctest.h>
+#include <filesystem>
+#include <fstream>
 #include <latch>
 #include <thread>
 #include <vector>
-
-#include <chrono>
-#include <filesystem>
-#include <fstream>
 
 using namespace angel_lsp;
 

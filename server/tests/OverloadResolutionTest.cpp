@@ -3,6 +3,7 @@
 #include "analysis/resolution/OverloadResolver.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
+
 #include <doctest/doctest.h>
 #include <random>
 

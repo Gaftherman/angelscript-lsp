@@ -1,4 +1,5 @@
 #include "analysis/SemanticAnalyzer.h"
+
 #include "analysis/checkers/AccessChecker.h"
 #include "analysis/checkers/AstCheckContext.h"
 #include "analysis/checkers/CallChecker.h"
@@ -15,6 +16,7 @@
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/diagnostics/DiagnosticSuppression.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/mediator/SemanticMediator.h"
 #include "analysis/rules/ClassRules.h"
 #include "analysis/rules/DirectiveRules.h"
 #include "analysis/rules/EngineRuleChecker.h"
@@ -69,7 +71,10 @@ double SemanticAnalyzer::RunScopeRules(const SemanticAnalysisRequest& request, D
     {
         return 0.0;
     }
-    const AstCheckContext ast{SafeGetRootNode(request), request.sourceCode, request.scopeRoot.get(), request.nodeIndex};
+    const SemanticMediator mediator(request.symbolTable, request.scopeRoot.get(), request.nodeIndex, request.sourceCode,
+                                    request.fileUri, request.exprCache);
+    const AstCheckContext ast{SafeGetRootNode(request), request.sourceCode, request.scopeRoot.get(), request.nodeIndex,
+                              &mediator};
     RunChecker<UndefinedIdentifierChecker>(ast, ctx);
 
     utils::HighResTimer unusedTimer;
@@ -95,7 +100,10 @@ void SemanticAnalyzer::RunStatementAndControlFlowRules(const SemanticAnalysisReq
 void SemanticAnalyzer::RunExpressionRules(const SemanticAnalysisRequest& request, const NodeIndex* indexPtr,
                                           DiagnosticContext& ctx) const
 {
-    const AstCheckContext ast{SafeGetRootNode(request), request.sourceCode, request.scopeRoot.get(), indexPtr};
+    const SemanticMediator mediator(request.symbolTable, request.scopeRoot.get(), indexPtr, request.sourceCode,
+                                    request.fileUri, request.exprCache);
+    const AstCheckContext ast{SafeGetRootNode(request), request.sourceCode, request.scopeRoot.get(), indexPtr,
+                              &mediator};
     RunCheckers<AccessChecker, ConstChecker, LValueChecker, CallChecker, DefiniteAssignmentChecker, NullSafetyChecker>(
         ast, ctx);
     if (indexPtr)
@@ -107,7 +115,10 @@ void SemanticAnalyzer::RunExpressionRules(const SemanticAnalysisRequest& request
 void SemanticAnalyzer::RunTypeAndStructureRules(const SemanticAnalysisRequest& request, const NodeIndex* indexPtr,
                                                 DiagnosticContext& ctx) const
 {
-    const AstCheckContext ast{SafeGetRootNode(request), request.sourceCode, request.scopeRoot.get(), indexPtr};
+    const SemanticMediator mediator(request.symbolTable, request.scopeRoot.get(), indexPtr, request.sourceCode,
+                                    request.fileUri, request.exprCache);
+    const AstCheckContext ast{SafeGetRootNode(request), request.sourceCode, request.scopeRoot.get(), indexPtr,
+                              &mediator};
     RunCheckers<IsolationChecker, InitializerListChecker>(ast, ctx);
     CheckNamespacesAndScopes(NamespaceCheckRequest{SafeGetRootNode(request), request.sourceCode, indexPtr}, ctx);
 }

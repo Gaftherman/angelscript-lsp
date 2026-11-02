@@ -3,13 +3,20 @@
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/CallableAndLambdaResolver.h"
+#include "analysis/resolution/ClassHierarchyResolver.h"
+#include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/resolution/OverloadResolver.h"
+#include "analysis/resolution/PropertyAndDelegateResolver.h"
+#include "analysis/resolution/ScopeSymbolLookup.h"
+#include "analysis/resolution/TemplateTypeResolver.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
 #include "config/EngineRuleConfig.h"
 #include "parser/ASTUtils.h"
 #include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
+
 #include <ankerl/unordered_dense.h>
 #include <optional>
 #include <span>
@@ -186,10 +193,7 @@ template <typename RefLike, typename TargetLike>
 
 /**
  * @brief True for AngelScript's integer primitives, signed or unsigned.
- *
- * `int32`/`uint32` are the explicit spellings of `int`/`uint` and are listed alongside them:
- * the parser hands back whichever the source wrote, so a classifier that knew only one of each
- * pair would answer differently for two spellings of the same type.
+ *        `int32`/`uint32` are the explicit spellings of `int`/`uint` and are listed alongside them:
  */
 [[nodiscard]] constexpr bool IsIntegerPrimitive(std::string_view typeName) noexcept
 {
@@ -331,14 +335,7 @@ template <typename RefLike, typename TargetLike>
 
 /**
  * @brief True for any primitive that carries a number - integer or floating point.
- *
- * Excludes `bool`, which converts to and from the numeric types but is not one of them; callers
- * that want that conversion handle it explicitly, because whether it is allowed depends on the
- * direction and on which rule is asking.
- *
- * These three predicates exist so the conversion rules, the overload resolver and the
- * expression resolver classify a type the same way. Each had grown its own list, and the lists
- * had already begun to disagree - one of them was missing `int32`.
+ *        Excludes `bool`, which converts to and from the numeric types but is not one of them; callers
  */
 [[nodiscard]] constexpr bool IsNumericPrimitive(std::string_view typeName) noexcept
 {
@@ -378,16 +375,7 @@ InitializerItemKind ClassifyInitializerItem(std::string_view item);
 
 /**
  * @brief True when the symbol was declared in a predefined stub.
- *
- * Stubs describe a host application's API that the engine already accepted, so the rules about
- * how a declaration may be written do not apply to them - a stub's functions have no bodies by
- * design, and judging one as script produces thousands of findings and no information.
- *
- * Shared rather than reimplemented per module: every rule module had its own copy comparing the
- * URI against the configured suffix directly, which meant a stub recognised by the workspace
- * scanner could still be judged as script by the rules. One implementation, delegating to
- * utils::IsPredefinedFile, keeps the two answers from drifting apart again.
- *
+ *        Stubs describe a host application's API that the engine already accepted, so the rules about
  * @param sym Symbol whose declaring file is in question.
  * @param ctx DiagnosticContext carrying the configured stub suffix.
  */
@@ -405,11 +393,7 @@ bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx);
 
 /**
  * @brief Checks whether a constructor function matches AngelScript's list behavior signature.
- *
- * Conforming to `asBEHAVE_LIST_CONSTRUCT` / `asBEHAVE_LIST_FACTORY`:
- * - Single parameter: integer reference with in modifier (e.g. `const int &in` or `int &in`).
- * - Two parameters: both integer references with in modifier (e.g. `int &in, int &in`).
- *
+ *        Conforming to `asBEHAVE_LIST_CONSTRUCT` / `asBEHAVE_LIST_FACTORY`:
  * @param[in] fn Function signature to inspect.
  * @return True if function signature conforms to a list constructor.
  */
@@ -417,7 +401,6 @@ bool IsListConstructorSignature(const FunctionSignature& fn);
 
 /**
  * @brief Checks whether a symbol represents a list constructor.
- *
  * @param[in] sym Symbol to inspect.
  * @return True if symbol is a function conforming to a list constructor.
  */
@@ -425,13 +408,7 @@ bool IsListConstructor(const Symbol& sym);
 
 /**
  * @brief Names the function attribute a declaration carries, or empty when it carries none.
- *
- * The attributes are five independent flags on SymbolModifiers, but every rule that rejects
- * one wants to say which - "cannot carry the 'explicit' attribute" rather than "carries an
- * attribute". Shared because three rule modules ask the same question of three different
- * declaration kinds, and const is deliberately not among them: it is a qualifier the grammar
- * spells separately and several of those declarations accept it.
- *
+ *        The attributes are five independent flags on SymbolModifiers, but every rule that rejects
  * @param modifiers Modifier set to inspect.
  * @return Attribute name in the order the grammar lists them, or an empty view.
  */
@@ -439,13 +416,7 @@ std::string_view FirstAttributeName(const SymbolModifiers& modifiers);
 
 /**
  * @brief True when a name resolves to a function and to nothing that could be a type.
- *
- * The shape behind `void Foo(int) {}` followed by `Foo@ h`: the compiler answers "Identifier
- * 'Foo' is not a data type" because a function handle needs a funcdef to name its signature.
- *
- * Both halves are required. A name that resolves to nothing at all is an unresolved type and is
- * assumed engine-registered - that is this analyzer's central policy - and a name that resolves
- * to BOTH a function and a type is a legal overload of the two, so neither is worth reporting.
+ *        The shape behind `void Foo(int) {}` followed by `Foo@ h`: the compiler answers "Identifier
  */
 bool NamesAFunctionNotAType(std::string_view name, const class SymbolTable& table);
 
@@ -473,18 +444,7 @@ bool IsFunctionReference(TSNode node, const struct Scope* scope, const class Sym
 
 /**
  * @brief Whether `node` is the callee of a legal `super(...)` base-constructor call.
- *
- * `super` is not a general reference to the base class. The compiler answers
- * "No matching symbol 'super'" for both `super.F()` and `super::F()` - the idiom for a base
- * method is `Base::F()`. The one place the word is legal is a constructor calling its base
- * constructor:
- *
- *     class Derived : Base { Derived() { super(1); } }
- *
- * so this returns true only inside a constructor of a class that names a base. Everywhere else
- * `super` really is an undefined identifier and the diagnostic on it is correct, which is why
- * this is a positive test for one shape rather than a blanket skip of the name.
- *
+ *        `super` is not a general reference to the base class. The compiler answers
  * @param node Any node whose text is the identifier `super` - the callee of a call expression.
  * @param sourceCode Document source text.
  * @return True when the enclosing function is a constructor of a class with a base list.
@@ -508,8 +468,6 @@ struct ConversionTypePair
 bool IsSimpleLiteralExpression(std::string_view expr);
 
 /**
-
-/**
  * @brief Extracts the preceding scope qualifier for a datatype node, if any.
  * @param[in] datatypeNode AST datatype node.
  * @param[in] sourceCode Document source text.
@@ -518,7 +476,6 @@ bool IsSimpleLiteralExpression(std::string_view expr);
 std::string ExtractDatatypeScopePrefix(TSNode datatypeNode, std::string_view sourceCode);
 
 /**
-
  * @brief Result of binary operator overload resolution containing candidate symbol and parameter conversions.
  */
 struct BinaryOverloadResult
@@ -529,10 +486,3 @@ struct BinaryOverloadResult
 };
 
 } // namespace angel_lsp::analysis
-
-#include "analysis/resolution/CallableAndLambdaResolver.h"
-#include "analysis/resolution/ClassHierarchyResolver.h"
-#include "analysis/resolution/ExpressionTypeResolver.h"
-#include "analysis/resolution/PropertyAndDelegateResolver.h"
-#include "analysis/resolution/ScopeSymbolLookup.h"
-#include "analysis/resolution/TemplateTypeResolver.h"

@@ -3,9 +3,11 @@
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
+#include "analysis/rules/RuleIndex.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
 #include "utils/PreprocessorRegions.h"
+
 #include <ankerl/unordered_dense.h>
 #include <lsp/messages.h>
 #include <lsp/types.h>
@@ -15,8 +17,6 @@
 #include <string_view>
 #include <tree_sitter/api.h>
 #include <vector>
-
-#include "analysis/rules/RuleIndex.h"
 
 namespace angel_lsp::features
 {
@@ -38,31 +38,19 @@ struct SemanticTokensRequest
 
     /**
      * @brief Scope tree of the document, used to tell what an identifier reference refers to.
-     *
-     * The highlights query is purely syntactic and cannot distinguish a parameter read from a
-     * field read from a local read - all three are just an identifier in an expression. Given
-     * the scope tree, each reference is resolved to its declaration and reported as whatever
-     * that declaration is. Optional: left null, references fall back to plain "variable".
+     *        The highlights query is purely syntactic and cannot distinguish a parameter read from a
      */
     std::shared_ptr<const analysis::Scope> scopeRoot;
 
     /**
      * @brief Restricts the result to the tokens overlapping this range. Empty means the whole
      *        document, which is what textDocument/semanticTokens/full asks for.
-     *
-     * The token stream is delta-encoded against its own predecessor, so a client cannot slice
-     * a full result itself - the first token of any slice would still be encoded relative to
-     * whatever preceded it. Narrowing has to happen before encoding, which is why it is a
-     * request field rather than post-processing.
      */
     std::optional<lsp::Range> range;
 
     /**
      * @brief Line ranges removed by the preprocessor (#if blocks whose condition is false).
-     *
-     * The compiler never sees code inside these lines, and the server already silences every
-     * diagnostic there. Painting them as comments is the other half of that same truth: the
-     * reader can tell at a glance that the compiler will never visit this code either.
+     *        The compiler never sees code inside these lines, and the server already silences every
      */
     std::vector<angel_lsp::utils::ExcludedLineRange> excludedLineRanges;
 };
@@ -88,12 +76,7 @@ const lsp::SemanticTokensLegend& GetSemanticTokensLegend();
 
 /**
  * @brief Describes how to turn one token stream into another.
- *
- * A whole-document re-tokenisation is cheap here, but sending it is not: the payload is five
- * integers per token, and a typing session re-sends all of them on every keystroke. Since an
- * edit almost always leaves the run before it and the run after it untouched, the difference
- * is expressible as a single splice.
- *
+ *        A whole-document re-tokenisation is cheap here, but sending it is not: the payload is five
  * @param previous Token data the client already has.
  * @param current Token data just computed.
  * @return Edits to apply, in the order given. Empty when the two streams are identical.

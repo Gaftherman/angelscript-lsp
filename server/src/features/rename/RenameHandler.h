@@ -3,6 +3,8 @@
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/resolution/TargetResolution.h"
+#include "utils/LspLogger.h"
+
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <optional>
@@ -10,8 +12,6 @@
 #include <tree_sitter/api.h>
 #include <unordered_set>
 #include <vector>
-
-#include "utils/LspLogger.h"
 
 namespace angel_lsp::features
 {

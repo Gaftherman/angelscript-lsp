@@ -1,8 +1,10 @@
 #include "analysis/diagnostics/DiagnosticSuppression.h"
+
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/NodeIndex.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
+
 #include <doctest/doctest.h>
 #include <ostream>
 #include <string>

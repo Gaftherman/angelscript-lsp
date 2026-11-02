@@ -1,5 +1,3 @@
-#include <doctest/doctest.h>
-
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
@@ -9,6 +7,7 @@
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 
+#include <doctest/doctest.h>
 #include <string>
 #include <vector>
 

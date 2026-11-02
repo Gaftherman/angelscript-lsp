@@ -6,7 +6,9 @@
 
 namespace angel_lsp::analysis
 {
-/** @brief Diagnostic severity level according to the LSP specification. */
+/**
+ * @brief Diagnostic severity level according to the LSP specification.
+ */
 enum class DiagnosticSeverity
 {
     Error = 1,
@@ -15,21 +17,27 @@ enum class DiagnosticSeverity
     Hint = 4
 };
 
-/** @brief Position in a text document (0-indexed line and character). */
+/**
+ * @brief Position in a text document (0-indexed line and character).
+ */
 struct DiagnosticPosition
 {
     uint32_t line = 0;
     uint32_t character = 0;
 };
 
-/** @brief Range in a text document. */
+/**
+ * @brief Range in a text document.
+ */
 struct DiagnosticRange
 {
     DiagnosticPosition start;
     DiagnosticPosition end;
 };
 
-/** @brief Related information location for an LSP Diagnostic. */
+/**
+ * @brief Related information location for an LSP Diagnostic.
+ */
 struct DiagnosticRelatedInformation
 {
     DiagnosticRange range;
@@ -37,7 +45,9 @@ struct DiagnosticRelatedInformation
     std::string fileUri;
 };
 
-/** @brief Single LSP Diagnostic message published to the client. */
+/**
+ * @brief Single LSP Diagnostic message published to the client.
+ */
 struct Diagnostic
 {
     DiagnosticRange range;

@@ -1,8 +1,9 @@
-#include <doctest/doctest.h>
+#include "utils/PositionEncoding.h"
 
 #include "lsp/state/PositionCodec.h"
-#include "utils/PositionEncoding.h"
 #include "utils/Utils.h"
+
+#include <doctest/doctest.h>
 
 using namespace angel_lsp::utils;
 

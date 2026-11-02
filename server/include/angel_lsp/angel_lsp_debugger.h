@@ -17,7 +17,6 @@
 #endif
 
 #include <angelscript.h>
-
 #include <array>
 #include <atomic>
 #include <condition_variable>

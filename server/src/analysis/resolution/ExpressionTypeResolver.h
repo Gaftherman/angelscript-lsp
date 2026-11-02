@@ -2,10 +2,12 @@
 
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
 #include "config/EngineRuleConfig.h"
+
 #include <optional>
 #include <span>
 #include <string>
@@ -15,7 +17,6 @@
 
 namespace angel_lsp::analysis
 {
-struct Scope;
 
 struct ExpressionTypeContext
 {

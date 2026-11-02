@@ -1,4 +1,5 @@
 #include "config/ServerConfig.h"
+
 #include <doctest/doctest.h>
 #include <string>
 #include <vector>

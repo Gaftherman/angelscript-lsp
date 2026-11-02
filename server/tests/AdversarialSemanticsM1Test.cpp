@@ -8,6 +8,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
+
 #include <algorithm>
 #include <doctest/doctest.h>
 #include <string>

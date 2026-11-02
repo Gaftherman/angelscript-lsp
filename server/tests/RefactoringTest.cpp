@@ -1,5 +1,3 @@
-#include <doctest/doctest.h>
-
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolCollector.h"
@@ -7,6 +5,8 @@
 #include "features/code_action/CodeActionHandler.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
+
+#include <doctest/doctest.h>
 
 using namespace angel_lsp;
 using namespace angel_lsp::features;

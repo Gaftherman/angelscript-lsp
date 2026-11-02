@@ -1,12 +1,13 @@
 #pragma once
 
+#include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/NodeIndex.h"
+
 #include <vector>
 
 namespace angel_lsp::analysis
 {
-class NodeIndex;
-struct SemanticAnalysisRequest;
 } // namespace angel_lsp::analysis
 
 namespace angel_lsp::analysis::rules

@@ -1,4 +1,5 @@
 #include "features/hover/HoverTypeInspector.h"
+
 #include "analysis/documentation/SignatureFormatter.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
@@ -14,6 +15,7 @@
 #include "parser/Primitives.h"
 #include "utils/Constants.h"
 #include "utils/Utils.h"
+
 #include <algorithm>
 #include <filesystem>
 #include <iomanip>

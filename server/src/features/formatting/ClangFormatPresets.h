@@ -1,6 +1,7 @@
 #pragma once
 
 #include "features/formatting/FormattingTypes.h"
+
 #include <optional>
 #include <string_view>
 

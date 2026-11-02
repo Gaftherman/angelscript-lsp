@@ -1,4 +1,5 @@
 #include "analysis/resolution/ExpressionTypeResolver.h"
+
 #include "analysis/index/ScopeTree.h"
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
@@ -14,6 +15,7 @@
 #include "parser/Keywords.h"
 #include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
+
 #include <algorithm>
 #include <cctype>
 #include <string>
@@ -1215,8 +1217,6 @@ static std::vector<Symbol> FindMemberSymbolsInType(const std::string& typeName, 
     std::stable_partition(found.begin(), found.end(), IsNonEnumSymbol);
     return found;
 }
-
-/**
 
 /**
  * @brief Extracts the resolved type of an accessor function member.

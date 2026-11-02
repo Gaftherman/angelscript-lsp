@@ -1,5 +1,7 @@
 #include "features/folding_range/FoldingRangeHandler.h"
+
 #include "parser/GrammarSymbols.h"
+
 #include <algorithm>
 #include <array>
 #include <map>
@@ -22,40 +24,6 @@ static std::string_view TrimLeading(std::string_view s)
         start++;
     }
     return s.substr(start);
-}
-
-/**
- * @brief Splits source code into lines (views without trailing \r or \n).
- * @param[in] source Document source text.
- * @return Vector of string views representing each line.
- */
-static std::vector<std::string_view> SplitLines(std::string_view source)
-{
-    std::vector<std::string_view> lines;
-    size_t start = 0;
-    for (size_t i = 0; i < source.size(); ++i)
-    {
-        if (source[i] == '\n')
-        {
-            size_t len = i - start;
-            if (len > 0 && source[start + len - 1] == '\r')
-            {
-                len--;
-            }
-            lines.push_back(source.substr(start, len));
-            start = i + 1;
-        }
-    }
-    if (start <= source.size())
-    {
-        size_t len = source.size() - start;
-        if (len > 0 && source[start + len - 1] == '\r')
-        {
-            len--;
-        }
-        lines.push_back(source.substr(start, len));
-    }
-    return lines;
 }
 
 /**
@@ -211,138 +179,128 @@ static void CollectAstFoldingRanges(TSNode rootNode, std::string_view sourceCode
 }
 
 /**
- * @brief Collects folding ranges for contiguous lines matching a predicate.
- * @tparam Predicate Callable matching a line string view.
- * @param[in] lines Splitted document lines.
- * @param[in] matches Predicate returning true when a line belongs to the contiguous span.
- * @param[in] kind Optional LSP folding range kind.
- * @param[in,out] outRanges Output accumulator for folding ranges.
+ * @brief Updates a contiguous line span matching a predicate.
+ * @param[in] match Whether current line matches the predicate.
+ * @param[in] lineIdx Current zero-based line index.
+ * @param[in,out] start Span start line tracker.
+ * @param[in,out] end Span end line tracker.
+ * @param[in] kind LSP folding range kind.
+ * @param[in,out] outRanges Accumulated folding ranges.
  */
-template <typename Predicate>
-static void CollectContiguousLineRanges(const std::vector<std::string_view>& lines, Predicate&& matches,
-                                        std::optional<lsp::FoldingRangeKind> kind,
-                                        std::vector<lsp::FoldingRange>& outRanges)
+static void UpdateContiguousSpan(bool match, uint32_t lineIdx, int& start, int& end,
+                                 std::optional<lsp::FoldingRangeKind> kind, std::vector<lsp::FoldingRange>& outRanges)
 {
-    int spanStart = -1;
-    int spanEnd = -1;
-
-    for (int i = 0; i < static_cast<int>(lines.size()); ++i)
+    if (match)
     {
-        const std::string_view trimmed = TrimLeading(lines[i]);
-        if (matches(trimmed))
+        if (start == -1)
         {
-            if (spanStart == -1)
-            {
-                spanStart = i;
-            }
-            spanEnd = i;
+            start = static_cast<int>(lineIdx);
         }
-        else
-        {
-            if (spanStart != -1 && spanEnd > spanStart)
-            {
-                lsp::FoldingRange fr;
-                fr.startLine = static_cast<uint32_t>(spanStart);
-                fr.endLine = static_cast<uint32_t>(spanEnd);
-                fr.kind = kind;
-                outRanges.push_back(fr);
-            }
-            spanStart = -1;
-            spanEnd = -1;
-        }
+        end = static_cast<int>(lineIdx);
     }
-    if (spanStart != -1 && spanEnd > spanStart)
+    else
     {
-        lsp::FoldingRange fr;
-        fr.startLine = static_cast<uint32_t>(spanStart);
-        fr.endLine = static_cast<uint32_t>(spanEnd);
-        fr.kind = kind;
-        outRanges.push_back(fr);
+        if (start != -1 && end > start)
+        {
+            lsp::FoldingRange fr;
+            fr.startLine = static_cast<uint32_t>(start);
+            fr.endLine = static_cast<uint32_t>(end);
+            fr.kind = kind;
+            outRanges.push_back(fr);
+        }
+        start = -1;
+        end = -1;
     }
 }
 
 /**
- * @brief Collects folding ranges for contiguous single-line comments (// ...).
- * @param[in] lines Splitted document lines.
- * @param[in,out] outRanges Output accumulator for folding ranges.
+ * @brief Processes preprocessor #region, #if, and matching end directives.
+ * @param[in] trimmed Trimmed line text.
+ * @param[in] lineIdx Current line index.
+ * @param[in,out] regionStack Stack of unclosed #region line indices.
+ * @param[in,out] ifStack Stack of unclosed #if line indices.
+ * @param[in,out] outRanges Accumulated folding ranges.
  */
-static void CollectSingleLineCommentRanges(const std::vector<std::string_view>& lines,
-                                           std::vector<lsp::FoldingRange>& outRanges)
+static void HandlePreprocessorLine(std::string_view trimmed, uint32_t lineIdx, std::vector<uint32_t>& regionStack,
+                                   std::vector<uint32_t>& ifStack, std::vector<lsp::FoldingRange>& outRanges)
 {
-    CollectContiguousLineRanges(
-        lines, [](std::string_view line) noexcept { return line.starts_with("//"); }, lsp::FoldingRangeKind::Comment,
-        outRanges);
+    if (trimmed.starts_with("#region"))
+    {
+        regionStack.push_back(lineIdx);
+    }
+    else if (trimmed.starts_with("#endregion") && !regionStack.empty())
+    {
+        const uint32_t rStart = regionStack.back();
+        regionStack.pop_back();
+        if (rStart < lineIdx)
+        {
+            lsp::FoldingRange fr;
+            fr.startLine = rStart;
+            fr.endLine = lineIdx;
+            fr.kind = lsp::FoldingRangeKind::Region;
+            outRanges.push_back(fr);
+        }
+    }
+    else if (trimmed.starts_with("#if") || trimmed.starts_with("#ifdef") || trimmed.starts_with("#ifndef"))
+    {
+        ifStack.push_back(lineIdx);
+    }
+    else if (trimmed.starts_with("#endif") && !ifStack.empty())
+    {
+        const uint32_t ifStart = ifStack.back();
+        ifStack.pop_back();
+        if (ifStart < lineIdx)
+        {
+            lsp::FoldingRange fr;
+            fr.startLine = ifStart;
+            fr.endLine = lineIdx;
+            fr.kind = std::nullopt;
+            outRanges.push_back(fr);
+        }
+    }
 }
 
 /**
- * @brief Collects folding ranges for contiguous imports and #include directives.
- * @param[in] lines Splitted document lines.
- * @param[in,out] outRanges Output accumulator for folding ranges.
+ * @brief Collects comment, import, and preprocessor folding ranges in a single zero-allocation pass.
+ * @param[in] source Document source text.
+ * @param[in,out] outRanges Accumulated folding ranges.
  */
-static void CollectImportAndIncludeRanges(const std::vector<std::string_view>& lines,
-                                          std::vector<lsp::FoldingRange>& outRanges)
+static void CollectTextBasedFoldingRanges(std::string_view source, std::vector<lsp::FoldingRange>& outRanges)
 {
-    CollectContiguousLineRanges(
-        lines,
-        [](std::string_view line) noexcept { return line.starts_with("import ") || line.starts_with("#include"); },
-        lsp::FoldingRangeKind::Imports, outRanges);
-}
-
-/**
- * @brief Collects folding ranges for preprocessor directives (#region and #if).
- * @param[in] lines Splitted document lines.
- * @param[in,out] outRanges Output accumulator for folding ranges.
- */
-static void CollectPreprocessorFoldingRanges(const std::vector<std::string_view>& lines,
-                                             std::vector<lsp::FoldingRange>& outRanges)
-{
+    int commentStart = -1;
+    int commentEnd = -1;
+    int importStart = -1;
+    int importEnd = -1;
     std::vector<uint32_t> regionStack;
     std::vector<uint32_t> ifStack;
 
-    for (uint32_t i = 0; i < lines.size(); ++i)
+    size_t start = 0;
+    uint32_t lineIdx = 0;
+    while (start < source.size())
     {
-        const std::string_view trimmed = TrimLeading(lines[i]);
-        if (trimmed.starts_with("#region"))
+        size_t end = source.find('\n', start);
+        if (end == std::string_view::npos)
         {
-            regionStack.push_back(i);
+            end = source.size();
         }
-        else if (trimmed.starts_with("#endregion"))
+        size_t len = end - start;
+        if (len > 0 && source[start + len - 1] == '\r')
         {
-            if (!regionStack.empty())
-            {
-                const uint32_t start = regionStack.back();
-                regionStack.pop_back();
-                if (start < i)
-                {
-                    lsp::FoldingRange fr;
-                    fr.startLine = start;
-                    fr.endLine = i;
-                    fr.kind = lsp::FoldingRangeKind::Region;
-                    outRanges.push_back(fr);
-                }
-            }
+            --len;
         }
-        else if (trimmed.starts_with("#if") || trimmed.starts_with("#ifdef") || trimmed.starts_with("#ifndef"))
-        {
-            ifStack.push_back(i);
-        }
-        else if (trimmed.starts_with("#endif"))
-        {
-            if (!ifStack.empty())
-            {
-                const uint32_t start = ifStack.back();
-                ifStack.pop_back();
-                if (start < i)
-                {
-                    lsp::FoldingRange fr;
-                    fr.startLine = start;
-                    fr.endLine = i;
-                    fr.kind = std::nullopt;
-                    outRanges.push_back(fr);
-                }
-            }
-        }
+        const std::string_view trimmed = TrimLeading(source.substr(start, len));
+        UpdateContiguousSpan(trimmed.starts_with("//"), lineIdx, commentStart, commentEnd,
+                             lsp::FoldingRangeKind::Comment, outRanges);
+        UpdateContiguousSpan(trimmed.starts_with("import ") || trimmed.starts_with("#include"), lineIdx, importStart,
+                             importEnd, lsp::FoldingRangeKind::Imports, outRanges);
+        HandlePreprocessorLine(trimmed, lineIdx, regionStack, ifStack, outRanges);
+
+        start = (end < source.size()) ? end + 1 : source.size();
+        ++lineIdx;
     }
+
+    UpdateContiguousSpan(false, lineIdx, commentStart, commentEnd, lsp::FoldingRangeKind::Comment, outRanges);
+    UpdateContiguousSpan(false, lineIdx, importStart, importEnd, lsp::FoldingRangeKind::Imports, outRanges);
 }
 
 /**
@@ -403,11 +361,7 @@ std::optional<FoldingRangeResult> GetFoldingRanges(const FoldingRangeRequest& re
     std::vector<lsp::FoldingRange> rawRanges;
     const TSNode rootNode = ts_tree_root_node(request.tree);
     CollectAstFoldingRanges(rootNode, request.sourceCode, rawRanges);
-
-    const auto lines = SplitLines(request.sourceCode);
-    CollectSingleLineCommentRanges(lines, rawRanges);
-    CollectImportAndIncludeRanges(lines, rawRanges);
-    CollectPreprocessorFoldingRanges(lines, rawRanges);
+    CollectTextBasedFoldingRanges(request.sourceCode, rawRanges);
 
     return DeduplicateAndSortFoldingRanges(rawRanges);
 }

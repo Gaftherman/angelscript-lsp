@@ -1,5 +1,3 @@
-#include <doctest/doctest.h>
-
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolCollector.h"
@@ -10,6 +8,8 @@
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "features/signature_help/SignatureHelpHandler.h"
 #include "parser/AngelScriptParser.h"
+
+#include <doctest/doctest.h>
 #include <optional>
 #include <string>
 #include <vector>

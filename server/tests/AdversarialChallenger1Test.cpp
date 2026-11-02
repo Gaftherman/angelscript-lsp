@@ -1,5 +1,3 @@
-#include <doctest/doctest.h>
-
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "features/document_symbol/DocumentSymbolHandler.h"
@@ -9,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <string>

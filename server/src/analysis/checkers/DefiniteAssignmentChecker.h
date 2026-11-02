@@ -1,23 +1,20 @@
 #pragma once
 
+#include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
+
 #include <string_view>
 #include <tree_sitter/api.h>
 
-#include "analysis/checkers/AstCheckContext.h"
-
 namespace angel_lsp::analysis
 {
-class NodeIndex;
-
-using DefiniteAssignmentCheckRequest = AstCheckContext;
 
 /**
  * @brief Analyzes dataflow in function bodies to detect reads of uninitialized local variables.
  * @param request Document AST root, source text, and scope tree.
  * @param ctx Diagnostic sink for emitting warnings/errors.
  */
-void CheckDefiniteAssignment(const DefiniteAssignmentCheckRequest& request, DiagnosticContext& ctx);
+void CheckDefiniteAssignment(const AstCheckContext& request, DiagnosticContext& ctx);
 
 /**
  * @brief AST checker for definite assignment and uninitialized local reads.

@@ -1,4 +1,5 @@
 #include "analysis/types/TypeSanitization.h"
+
 #include "analysis/resolution/SemanticHelpers.h"
 #include "utils/ScopedNameUtils.h"
 

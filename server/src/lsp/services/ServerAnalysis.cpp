@@ -5,6 +5,7 @@
 #include "utils/PreprocessorRegions.h"
 #include "utils/Timer.h"
 #include "utils/Utils.h"
+
 #include <spdlog/fmt/fmt.h>
 
 namespace angel_lsp

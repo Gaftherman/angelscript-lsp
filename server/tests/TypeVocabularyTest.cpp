@@ -1,13 +1,12 @@
-#include <doctest/doctest.h>
-
-#include <ostream>
-#include <string>
-#include <vector>
-
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/EngineProfiles.h"
 #include "parser/Keywords.h"
 #include "parser/Primitives.h"
+
+#include <doctest/doctest.h>
+#include <ostream>
+#include <string>
+#include <vector>
 
 using namespace angel_lsp;
 

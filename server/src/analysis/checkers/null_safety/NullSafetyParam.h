@@ -2,6 +2,7 @@
 
 #include "analysis/checkers/null_safety/NullSafetyTypes.h"
 #include "analysis/index/ScopeTree.h"
+
 #include <string_view>
 #include <tree_sitter/api.h>
 

@@ -1,8 +1,7 @@
-#include <doctest/doctest.h>
+#include "analysis/checkers/null_safety/NullSafetyChecker.h"
 
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/checkers/null_safety/NullSafetyChecker.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/SymbolCollector.h"
@@ -11,7 +10,9 @@
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
+
 #include <algorithm>
+#include <doctest/doctest.h>
 #include <string>
 #include <vector>
 

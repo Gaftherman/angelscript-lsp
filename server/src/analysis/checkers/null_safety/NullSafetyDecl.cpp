@@ -1,4 +1,5 @@
-﻿#include "analysis/checkers/null_safety/NullSafetyDecl.h"
+#include "analysis/checkers/null_safety/NullSafetyDecl.h"
+
 #include "analysis/checkers/null_safety/NullSafetyCondition.h"
 #include "analysis/checkers/null_safety/NullSafetyExpr.h"
 #include "analysis/index/SymbolTable.h"
@@ -6,6 +7,7 @@
 #include "analysis/types/TypeExtraction.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
+
 #include <string>
 
 namespace angel_lsp::analysis

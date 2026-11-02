@@ -1,4 +1,5 @@
 #include "analysis/rules/DirectiveRules.h"
+
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/diagnostics/DiagnosticSuppression.h"
@@ -7,6 +8,7 @@
 #include "parser/GrammarSymbols.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/Utils.h"
+
 #include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis::rules

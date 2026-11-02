@@ -241,6 +241,5 @@ struct OnTypeFormattingRequest
 };
 
 using FormattingResult = std::vector<lsp::TextEdit>;
-using DocumentFormattingRequest = FormattingRequest;
 using DocumentRangeFormattingRequest = RangeFormattingRequest;
 } // namespace angel_lsp::features

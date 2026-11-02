@@ -1,22 +1,18 @@
 #pragma once
 
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/ScopeTree.h"
+#include "analysis/index/SymbolTable.h"
 
 namespace angel_lsp::analysis
 {
-struct Scope;
-class SymbolTable;
 } // namespace angel_lsp::analysis
 
 namespace angel_lsp::analysis::rules
 {
 /**
  * @brief Validates a variable, field or virtual property declaration.
- *
- * Covers what the declared type allows - void, handles on primitives, funcdefs that must be
- * handles, mixins used as a type - and what the declaration's modifiers allow where it sits.
- * Virtual property accessors are validated here too, since they arrive as VariableSignature.
- *
+ *        Covers what the declared type allows - void, handles on primitives, funcdefs that must be
  * @param sym Variable or property symbol to validate.
  * @param ctx Diagnostic sink; also carries the SymbolTable every lookup goes through.
  */

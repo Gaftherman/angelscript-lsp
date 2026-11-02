@@ -3,7 +3,6 @@
 #include "utils/IncludeResolver.h"
 
 #include <ankerl/unordered_dense.h>
-
 #include <functional>
 #include <mutex>
 #include <shared_mutex>
@@ -16,19 +15,6 @@ namespace angel_lsp::utils
 /**
  * @brief Workspace-wide `#include` graph, used to decide which files have to be indexed
  *        together with the one the user opened.
- *
- * AngelScript `#include` behaves like textual module composition rather than C++ header
- * inclusion: every file pulled into a module shares one namespace, so a symbol declared in the
- * *including* file is visible in the *included* one. Indexing only the opened file, or only its
- * forward includes, therefore misses declarations the file legitimately depends on - opening
- * `weapon_ak47.as` has to bring in `base.as` even though it is `base.as` that includes it, not
- * the other way round.
- *
- * The graph stores both directions so a closure can be computed by walking up to the module's
- * roots and back down from them; see GetModuleClosure.
- *
- * Thread-safe: built on the workspace background thread while the message loop queries it,
- * guarded the same way SymbolTable and ScopeIndex are.
  */
 class WorkspaceIncludeGraph
 {
@@ -127,13 +113,7 @@ class WorkspaceIncludeGraph
 
     /**
      * @brief All files that make up the module the given file participates in.
-     *
-     * Walks reverse edges up to the module's roots (files nothing includes), then forward edges
-     * back down from every root found. A file that neither includes nor is included by anything
-     * is its own module and comes back alone. Cycles and diamonds are tolerated: both walks keep
-     * a visited set, and a cycle with no reachable root falls back to treating every file
-     * reached on the way up as a root.
-     *
+     *        Walks reverse edges up to the module's roots (files nothing includes), then forward edges
      * @param filePath Any file in the module; need not be normalized.
      * @return Normalized paths of every file in the module, including filePath itself.
      */
@@ -141,12 +121,7 @@ class WorkspaceIncludeGraph
 
     /**
      * @brief Computes strictly forward dependency closure originating from an entry point.
-     *
-     * Traverses forward include edges (`m_includes`) and sorts the reachable subgraph
-     * topologically so that prerequisites appear strictly before dependent nodes.
-     * Unlike GetModuleClosure, this never ascends reverse edges, preventing sibling modules
-     * that share common includes from leaking into this module's compilation unit.
-     *
+     *        Traverses forward include edges (`m_includes`) and sorts the reachable subgraph
      * @param[in] entryFilePath Entry-point script path; need not be normalized.
      * @return Deduplicated list of included files including entryFilePath in topological order.
      */
@@ -154,21 +129,13 @@ class WorkspaceIncludeGraph
 
     /**
      * @brief The files whose `#include` lines name this one, directly.
-     *
-     * The graph has always held this edge - it is what GetModuleClosure ascends - but only ever
-     * offered the transitive closure. A rename needs the direct edge and nothing more: the
-     * files to rewrite are the ones that literally spell the old path, not everything that
-     * ends up in the same module.
+     *        The graph has always held this edge - it is what GetModuleClosure ascends - but only ever
      */
     std::vector<std::string> GetFilesIncluding(const std::string& filePath) const;
 
     /**
      * @brief Collects all files transitively depending on filePath in topological order.
-     *
-     * Traverses reverse dependency edges (`m_includedBy`) and sorts the reachable subgraph
-     * such that every dependent node appears strictly after all its prerequisites.
-     * Guarantees zero duplicate entries and O(V + E) algorithmic complexity.
-     *
+     *        Traverses reverse dependency edges (`m_includedBy`) and sorts the reachable subgraph
      * @param[in] filePath Path of the modified or invalidated dependency root.
      * @return Ordered, deduplicated list of dependent file paths in topological order.
      */
@@ -176,12 +143,7 @@ class WorkspaceIncludeGraph
 
     /**
      * @brief Drops one file from the graph, detaching it from both edge directions.
-     *
-     * Called when a file is deleted on disk. Distinct from UpdateFile(path, "", ...), which
-     * only clears what the file includes and would leave it listed as a target of everything
-     * that still includes it - so the deleted file would keep dragging its former module
-     * together long after it stopped existing.
-     *
+     *        Called when a file is deleted on disk. Distinct from UpdateFile(path, "", ...), which
      * @param filePath Path of the removed file; need not be normalized.
      * @return True if the graph had an entry for it.
      */
@@ -199,10 +161,7 @@ class WorkspaceIncludeGraph
 
     /**
      * @brief Every file the graph knows, in no particular order.
-     *
-     * The set an `#include` may name: the walk that built the graph already visited exactly
-     * the files with the script extension, inside the workspace, that the exclude globs let
-     * through - so answering from here costs a copy rather than a second walk of the disk.
+     *        The set an `#include` may name: the walk that built the graph already visited exactly
      */
     std::vector<std::string> AllFiles() const;
 

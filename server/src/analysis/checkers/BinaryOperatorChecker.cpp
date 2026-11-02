@@ -1,4 +1,5 @@
 #include "analysis/checkers/BinaryOperatorChecker.h"
+
 #include "analysis/checkers/BinaryOperatorHelpers.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/resolution/OverloadTypeConversions.h"

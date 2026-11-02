@@ -1,7 +1,6 @@
-#include <doctest/doctest.h>
+#include "analysis/SemanticAnalyzer.h"
 
 #include "analysis/SemanticAnalysisRequest.h"
-#include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
@@ -12,12 +11,13 @@
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/PreprocessorRegions.h"
-#include <functional>
 
 #include <algorithm>
 #include <chrono>
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <string>
 #include <unordered_map>

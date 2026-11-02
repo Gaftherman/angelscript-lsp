@@ -18,13 +18,19 @@ namespace angel_lsp::analysis
  */
 struct CallSite
 {
-    /** @brief Qualified name of the function the call is written inside, e.g. "Entity::Think". */
+    /**
+     * @brief Qualified name of the function the call is written inside, e.g. "Entity::Think".
+     */
     std::string caller;
 
-    /** @brief Bare name of what is called, e.g. "Spawn". Never qualified - see the index. */
+    /**
+     * @brief Bare name of what is called, e.g. "Spawn". Never qualified - see the index.
+     */
     std::string callee;
 
-    /** @brief Range of the callee's name alone, which is what the protocol asks for. */
+    /**
+     * @brief Range of the callee's name alone, which is what the protocol asks for.
+     */
     SourceRange range;
 };
 
@@ -39,17 +45,7 @@ struct DocumentCalls
 
 /**
  * @brief Collects the calls in one parsed document.
- *
- * Kept out of SymbolCollector deliberately. The symbol table records declarations, and a call
- * is not one - CallReference exists there only for the handful of calls written outside any
- * function body, and every rule that walks the table has to filter it out already. A corpus
- * file carries hundreds of calls, so folding them in would grow the table by an order of
- * magnitude and slow down every rule to serve one feature.
- *
- * Names are recorded bare and unresolved. A call site says `Think()` or `e.Think()`, and which
- * declaration that reaches needs the receiver's type - a question the call hierarchy answers
- * later, against the symbol table, and only for the one item the user asked about.
- *
+ *        Kept out of SymbolCollector deliberately. The symbol table records declarations, and a call
  * @param root Root node of the document's tree.
  * @param sourceCode Text the tree was parsed from.
  * @return Every call in the document, in source order.
@@ -58,10 +54,7 @@ std::vector<CallSite> CollectCalls(TSNode root, std::string_view sourceCode);
 
 /**
  * @brief Workspace-wide call index, maintained per document alongside the scope trees.
- *
- * Answers both directions the call hierarchy needs: who calls this name, and what does this
- * function call. Held separately from the SymbolTable so that its size and its lifetime are
- * its own, and so that no declaration rule pays for it.
+ *        Answers both directions the call hierarchy needs: who calls this name, and what does this
  */
 class CallGraphIndex
 {
@@ -86,8 +79,7 @@ class CallGraphIndex
      * @param[in] calleeName Bare name of the callee function to look for.
      * @return Vector of DocumentCalls matching the callee name.
      * @note Returned by value: the index is written from the analysis thread while requests
-     *       read it, and a snapshot is cheaper to reason about than a lock held across a
-     *       whole request.
+     *        read it, and a snapshot is cheaper to reason about than a lock held across a
      */
     std::vector<DocumentCalls> FindCallsTo(const std::string& calleeName) const;
 

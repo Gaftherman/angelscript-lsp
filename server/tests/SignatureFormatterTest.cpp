@@ -1,9 +1,10 @@
-#include <doctest/doctest.h>
-
 #include "analysis/documentation/SignatureFormatter.h"
+
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "parser/AngelScriptParser.h"
+
+#include <doctest/doctest.h>
 
 using namespace angel_lsp::analysis;
 using namespace angel_lsp::parser;

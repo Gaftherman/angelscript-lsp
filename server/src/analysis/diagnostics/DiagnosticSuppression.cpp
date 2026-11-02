@@ -1,8 +1,10 @@
 #include "analysis/diagnostics/DiagnosticSuppression.h"
+
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/NodeIndex.h"
 #include "parser/GrammarNames.h"
 #include "utils/Utils.h"
+
 #include <algorithm>
 #include <array>
 #include <cctype>

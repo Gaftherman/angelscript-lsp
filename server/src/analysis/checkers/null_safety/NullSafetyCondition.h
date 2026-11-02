@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/checkers/null_safety/NullSafetyTypes.h"
+
 #include <string_view>
 #include <tree_sitter/api.h>
 #include <vector>

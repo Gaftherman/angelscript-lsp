@@ -1,4 +1,5 @@
 #include "analysis/resolution/ScopeSymbolLookup.h"
+
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/ScopeTree.h"
@@ -12,6 +13,7 @@
 #include "parser/QueryRegistry.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
+
 #include <algorithm>
 #include <string>
 #include <string_view>

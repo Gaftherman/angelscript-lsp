@@ -7,12 +7,7 @@ namespace angel_lsp::i18n
 {
 /**
  * @brief Reduces a locale tag to its lowercased primary language subtag.
- *
- * The tag arrives from two places and neither is under this server's control: the client's
- * `initialize` params, where BCP 47 is the rule and an editor may send `es-ES`, `es-419` or
- * `es_MX`, and `--locale`, which this project's own README documents as `es-ES`. Comparing
- * the whole tag meant every one of those fell through to English, so a Spanish user got
- * Spanish only by asking for exactly "es".
+ *        The tag arrives from two places and neither is under this server's control: the client's
  */
 static std::string PrimaryLanguageSubtag(const std::string& locale)
 {

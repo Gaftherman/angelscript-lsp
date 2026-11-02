@@ -1,4 +1,5 @@
 #include "analysis/documentation/SignatureFormatter.h"
+
 #include "parser/Keywords.h"
 #include "utils/ScopedNameUtils.h"
 
@@ -6,10 +7,11 @@
 
 namespace angel_lsp::analysis
 {
-/** @brief Re-attaches a modifier the captured type text may already carry.
- *  @note TypeExtraction normally folds 'const' and '@' into typeName, but the flags are the
+/**
+ * @brief Re-attaches a modifier the captured type text may already carry.
+ * @note TypeExtraction normally folds 'const' and '@' into typeName, but the flags are the
  *        authority. Appending unconditionally would produce "const const string", so each
- *        marker is only added when the text does not already show it. */
+ */
 static std::string ApplyConstAndHandle(const std::string& typeName, bool isConst, bool isHandle)
 {
     const bool hasConst =

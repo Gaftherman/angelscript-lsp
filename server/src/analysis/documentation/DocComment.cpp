@@ -1,4 +1,5 @@
 #include "analysis/documentation/DocComment.h"
+
 #include "analysis/documentation/DoxygenMarkdown.h"
 #include "utils/Utils.h"
 
@@ -10,7 +11,9 @@
 
 namespace angel_lsp::analysis
 {
-/** @brief Splits text into line views up to maxLines, dropping a trailing carriage return from each. */
+/**
+ * @brief Splits text into line views up to maxLines, dropping a trailing carriage return from each.
+ */
 static std::vector<std::string_view> SplitLinesUpTo(std::string_view str, size_t maxLines)
 {
     std::vector<std::string_view> lines;
@@ -90,8 +93,7 @@ static bool UpdateQuoteState(char c, bool& inString, bool& inChar)
 
 /**
  * @brief Extracts a trailing comment from a line of code.
- *
- * Skips string and character literals. Ignores synthetic internal `//@listpattern`.
+ *        Skips string and character literals. Ignores synthetic internal `//@listpattern`.
  */
 static std::string ExtractTrailingComment(std::string_view line)
 {

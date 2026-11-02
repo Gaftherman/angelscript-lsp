@@ -1,5 +1,3 @@
-#include <doctest/doctest.h>
-
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolCollector.h"
@@ -11,6 +9,7 @@
 #include "parser/AngelScriptParser.h"
 #include "utils/AllocationCounter.h"
 
+#include <doctest/doctest.h>
 #include <random>
 #include <string>
 #include <vector>

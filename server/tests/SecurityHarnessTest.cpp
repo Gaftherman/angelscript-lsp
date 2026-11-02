@@ -1,5 +1,3 @@
-#include <doctest/doctest.h>
-
 #include "config/ServerConfig.h"
 #include "helpers/ScriptedStream.h"
 #include "helpers/TestUtils.h"
@@ -9,6 +7,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <random>

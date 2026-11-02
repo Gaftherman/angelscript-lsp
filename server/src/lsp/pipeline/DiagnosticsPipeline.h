@@ -21,22 +21,34 @@ namespace angel_lsp
  */
 struct DiagnosticsSnapshot
 {
-    /** @brief Monotonically increasing result ID string for LSP diagnostic pull protocol. */
+    /**
+     * @brief Monotonically increasing result ID string for LSP diagnostic pull protocol.
+     */
     std::string resultId;
 
-    /** @brief Converted LSP protocol diagnostics. */
+    /**
+     * @brief Converted LSP protocol diagnostics.
+     */
     std::vector<lsp::Diagnostic> items;
 
-    /** @brief Hash of the document text these diagnostics were computed from. */
+    /**
+     * @brief Hash of the document text these diagnostics were computed from.
+     */
     size_t textHash = 0;
 
-    /** @brief Document version at the time analysis was performed. */
+    /**
+     * @brief Document version at the time analysis was performed.
+     */
     int version = -1;
 
-    /** @brief Document generation counter. */
+    /**
+     * @brief Document generation counter.
+     */
     uint64_t generation = 0;
 
-    /** @brief Configuration revision at the time analysis was performed. */
+    /**
+     * @brief Configuration revision at the time analysis was performed.
+     */
     uint64_t configRevision = 0;
 };
 

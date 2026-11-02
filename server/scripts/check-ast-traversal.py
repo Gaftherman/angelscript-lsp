@@ -939,9 +939,101 @@ def check_no_over_explained_doxygen_prose():
                 cur_prose += 1
                 if cur_prose > max_in_block:
                     max_in_block = cur_prose
-            if max_in_block >= 8:
+            if max_in_block >= 3:
                 line_no = content[:m.start()].count("\n") + 1
                 violations.append((fpath, line_no, f"Over-explained Doxygen prose paragraph ({max_in_block} consecutive lines)"))
+    return violations
+
+
+def check_include_placement_and_ordering():
+    """
+    Check 28: Enforces that project headers ("...") precede system headers (<...>),
+    and no #include directives appear after C++ declarations/code.
+    """
+    violations = []
+    for fpath in sorted(SERVER_SRC.rglob("*.[ch]*")):
+        if not fpath.is_file():
+            continue
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        lines = content.splitlines()
+        has_seen_angled = False
+        has_seen_code = False
+        in_comment = False
+        for idx, line in enumerate(lines, 1):
+            stripped = line.strip()
+            if in_comment:
+                if "*/" in stripped:
+                    in_comment = False
+                continue
+            if stripped.startswith("/*"):
+                if "*/" not in stripped:
+                    in_comment = True
+                continue
+            if not stripped or stripped.startswith("//") or stripped.startswith("*"):
+                continue
+            if stripped.startswith("#"):
+                if stripped.startswith("#include"):
+                    if has_seen_code:
+                        violations.append((fpath, idx, f"Include after code: {stripped}"))
+                    if "<" in stripped:
+                        has_seen_angled = True
+                    elif '"' in stripped and has_seen_angled:
+                        violations.append((fpath, idx, f"Quoted include after angled include: {stripped}"))
+                continue
+            has_seen_code = True
+    return violations
+
+
+def check_no_forward_declarations():
+    """
+    Check 29: Enforces Zero Forward Declarations across server/src/ (PROHIBITION 15).
+    """
+    violations = []
+    fwd_re = re.compile(r"^\s*(?:class|struct)\s+([A-Za-z0-9_]+)\s*;")
+    for fpath in sorted(SERVER_SRC.rglob("*.[ch]*")):
+        if not fpath.is_file():
+            continue
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        no_comments = re.sub(r"//.*", "", content)
+        no_comments = re.sub(r"/\*.*?\*/", "", no_comments, flags=re.DOTALL)
+        for idx, line in enumerate(no_comments.splitlines(), 1):
+            m = fwd_re.match(line)
+            if m and "friend" not in line:
+                violations.append((fpath, idx, line.strip()))
+    return violations
+
+
+def check_no_ghost_aliases():
+    """
+    Check 30: Enforces Zero Ghost Type Alias Shims (PROHIBITION 15).
+    """
+    violations = []
+    alias_patterns = [
+        re.compile(r"^\s*using\s+\w+Request\s*=\s*AstCheckContext\s*;"),
+        re.compile(r"^\s*using\s+MemberAccess\s*=\s*MemberLookupResult\s*;"),
+        re.compile(r"^\s*using\s+CallArgTypes\s*=\s*CallResolutionContext\s*;"),
+        re.compile(r"^\s*using\s+ConversionTypes\s*=\s*ConversionTypePair\s*;"),
+        re.compile(r"^\s*using\s+IncludeCandidate\s*=\s*TypoCandidate\s*;"),
+        re.compile(r"^\s*using\s+TypoCandidateSuggestion\s*=\s*TypoCandidate\s*;"),
+        re.compile(r"^\s*using\s+DocumentFormattingRequest\s*=\s*FormattingRequest\s*;"),
+    ]
+    for fpath in sorted(SERVER_SRC.rglob("*.[ch]*")):
+        if not fpath.is_file():
+            continue
+        try:
+            content = fpath.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for idx, line in enumerate(content.splitlines(), 1):
+            for pat in alias_patterns:
+                if pat.search(line):
+                    violations.append((fpath, idx, line.strip()))
     return violations
 
 
@@ -1238,10 +1330,34 @@ def main():
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {desc}")
 
+    include_violations = check_include_placement_and_ordering()
+    if include_violations:
+        has_errors = True
+        print("[ERROR] Include ordering/placement violation detected in server/src/ (project headers before system headers, no include after code):")
+        for f, line_num, desc in include_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {desc}")
+
+    fwd_violations = check_no_forward_declarations()
+    if fwd_violations:
+        has_errors = True
+        print("[ERROR] Forward declaration detected in server/src/ (PROHIBITION 15, include canonical header):")
+        for f, line_num, line in fwd_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
+    ghost_violations = check_no_ghost_aliases()
+    if ghost_violations:
+        has_errors = True
+        print("[ERROR] Ghost type alias shim detected in server/src/ (PROHIBITION 15, use canonical type directly):")
+        for f, line_num, line in ghost_violations:
+            rel = f.relative_to(REPO_ROOT)
+            print(f"  {rel}:{line_num}: {line}")
+
     if has_errors:
         sys.exit(1)
 
-    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 ForEachDescendantNode, 0 engine hardcodings, 0 type hardcodings, 0 banned identifiers, 0 unrandomized test BaseClass, 0 manual qualifier reparsing, 0 anonymous namespaces, 0 using directives, 0 doxygen slop templates, 0 ODR struct violations, 0 stacked doxygen blocks, 0 decorative banners, 0 workflow narration comments, 0 over-explained doxygen essays).")
+    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 ForEachDescendantNode, 0 engine hardcodings, 0 type hardcodings, 0 banned identifiers, 0 unrandomized test BaseClass, 0 manual qualifier reparsing, 0 anonymous namespaces, 0 using directives, 0 doxygen slop templates, 0 ODR struct violations, 0 stacked doxygen blocks, 0 decorative banners, 0 workflow narration comments, 0 over-explained doxygen essays, 0 include ordering violations, 0 forward declarations, 0 ghost aliases).")
 
 if __name__ == "__main__":
     main()

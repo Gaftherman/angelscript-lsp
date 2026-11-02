@@ -2,21 +2,21 @@
 
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
-
-#include <tree_sitter/api.h>
+#include "utils/LspLogger.h"
 
 #include <cstdint>
 #include <optional>
 #include <set>
 #include <string>
 #include <string_view>
+#include <tree_sitter/api.h>
 #include <vector>
-
-#include "utils/LspLogger.h"
 
 namespace angel_lsp::analysis
 {
-/** @brief What kind of thing the cursor is on, which decides where its occurrences can be. */
+/**
+ * @brief What kind of thing the cursor is on, which decides where its occurrences can be.
+ */
 enum class TargetKind
 {
     Local,           ///< A variable or parameter, confined to one function scope.
@@ -26,7 +26,9 @@ enum class TargetKind
     EnumMember       ///< An enumerator member of an enum.
 };
 
-/** @brief The symbol under the cursor, resolved far enough to look its occurrences up. */
+/**
+ * @brief The symbol under the cursor, resolved far enough to look its occurrences up.
+ */
 struct TargetDescriptor
 {
     TargetKind kind = TargetKind::GlobalSymbol;
@@ -69,9 +71,7 @@ struct OccurrenceLocation
 
 /**
  * @brief True for a name that is a legal AngelScript identifier and not reserved.
- *
- * Rename needs it for the *new* name as well, which is why it is exported rather than private
- * to this module.
+ *        Rename needs it for the *new* name as well, which is why it is exported rather than private
  * @param[in] name Identifier name candidate.
  * @return True if valid non-reserved AngelScript identifier.
  */
@@ -109,7 +109,6 @@ struct CollectOccurrencesRequest
 
 /**
  * @brief Works out what the cursor is on.
- *
  * @param[in,out] request Immutable request context.
  * @return The target, or nullopt when the position is not on a renameable symbol.
  */
@@ -117,7 +116,6 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& reques
 
 /**
  * @brief Every place the resolved target appears, across every indexed document.
- *
  * @param[in] request Immutable occurrences collection request.
  * @return Locations of all occurrences found.
  */

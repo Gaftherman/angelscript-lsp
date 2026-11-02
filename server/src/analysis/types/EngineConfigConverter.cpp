@@ -1,4 +1,5 @@
 #include "analysis/types/EngineConfigConverter.h"
+
 #include <algorithm>
 #include <charconv>
 #include <sstream>

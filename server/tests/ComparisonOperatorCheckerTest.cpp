@@ -1,8 +1,7 @@
-#include <doctest/doctest.h>
+#include "analysis/checkers/ComparisonOperatorChecker.h"
 
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/checkers/ComparisonOperatorChecker.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/SymbolCollector.h"
@@ -13,6 +12,7 @@
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
+#include <doctest/doctest.h>
 #include <string>
 #include <vector>
 

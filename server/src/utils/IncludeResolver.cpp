@@ -1,4 +1,5 @@
 #include "utils/IncludeResolver.h"
+
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -17,30 +18,7 @@ static std::atomic<bool> s_isolatedHarnessMode{false};
 
 /**
  * @brief Canonical form of a directory, remembered so a workspace walk pays for it once.
- *
- * `weakly_canonical` queries the filesystem for every component of the path it is handed.
- * The workspace walk hands it one path per file, and measured against a generated workspace
- * that is nearly the whole of startup:
- *
- *     files   include-graph phase   of a total scan of
- *     1       1 ms                  16 ms
- *     50      305 ms                316 ms
- *     200     1016 ms               1025 ms
- *
- * Which is where a report of "2942 ms to load a small project" comes from - it is linear in
- * the file count and about 5 ms a file. Replacing the call with a purely lexical normalise
- * took the 200-file case to 146 ms, so ~85% of it was this one function.
- *
- * The files in a directory all share that directory, so canonicalising the directory once
- * turns a per-file cost into a per-directory one, without giving up what the call is for:
- * `..` resolved against the real filesystem, symlinks followed, and on Windows the on-disk
- * case of every directory component.
- *
- * Process-wide and never pruned. It holds one entry per directory a session touches, which
- * is the shape of the workspace rather than of its history. A directory renamed underneath
- * a running server leaves a stale entry - the cost of the cache, and a bounded one: the
- * answer stays the path that directory had when it was first seen, which is also what every
- * document already indexed is keyed by.
+ *        `weakly_canonical` queries the filesystem for every component of the path it is handed.
  */
 static std::mutex& CanonicalDirectoryMutex()
 {

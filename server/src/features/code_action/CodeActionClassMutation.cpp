@@ -4,6 +4,7 @@
  */
 
 #include "features/code_action/CodeActionClassMutation.h"
+
 #include "features/code_action/CodeActionInternal.h"
 
 namespace angel_lsp::features

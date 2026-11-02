@@ -1,6 +1,8 @@
 #include "features/rename/RenameHandler.h"
+
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/resolution/TargetResolution.h"
+
 #include <algorithm>
 #include <cctype>
 #include <map>

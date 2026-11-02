@@ -1,5 +1,3 @@
-#include <doctest/doctest.h>
-
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/resolution/TargetResolution.h"
@@ -14,6 +12,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <doctest/doctest.h>
 #include <future>
 #include <latch>
 #include <random>

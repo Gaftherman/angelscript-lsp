@@ -5,16 +5,13 @@
 
 namespace angel_lsp::analysis
 {
-class NodeIndex;
-
-using AccessCheckRequest = AstCheckContext;
 
 /**
  * @brief Walks the document and reports member accesses the declaring class does not permit.
  * @param request Tree, source text and scope tree of the document under analysis.
  * @param ctx Diagnostic sink; also carries the SymbolTable every lookup goes through.
  */
-void CheckMemberAccess(const AccessCheckRequest& request, DiagnosticContext& ctx);
+void CheckMemberAccess(const AstCheckContext& request, DiagnosticContext& ctx);
 
 /**
  * @brief AST checker for class and interface member access visibility.

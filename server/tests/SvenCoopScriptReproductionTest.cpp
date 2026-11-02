@@ -1,20 +1,18 @@
-#include <doctest/doctest.h>
-
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
 #include "analysis/diagnostics/Diagnostics.h"
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
+#include "config/EngineRuleParser.h"
+#include "features/completion/CompletionHandler.h"
+#include "features/hover/HoverHandler.h"
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 
-#include "config/EngineRuleParser.h"
-#include "features/completion/CompletionHandler.h"
-#include "features/hover/HoverHandler.h"
-
 #include <algorithm>
+#include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
 #include <sstream>

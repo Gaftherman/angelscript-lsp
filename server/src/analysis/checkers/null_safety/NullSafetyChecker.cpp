@@ -1,4 +1,5 @@
 #include "analysis/checkers/null_safety/NullSafetyChecker.h"
+
 #include "analysis/checkers/null_safety/NullSafetyCondition.h"
 #include "analysis/checkers/null_safety/NullSafetyDecl.h"
 #include "analysis/checkers/null_safety/NullSafetyExpr.h"
@@ -9,6 +10,7 @@
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/Utils.h"
+
 #include <string>
 
 namespace angel_lsp::analysis
@@ -138,7 +140,7 @@ static void AnalyzeFunction(TSNode funcNode, const Scope* scopeRoot, NullCheckCo
     NullSafetyEngine::CheckStatement(body, state, ctx);
 }
 
-void CheckNullSafety(const NullSafetyCheckRequest& request, DiagnosticContext& ctx)
+void CheckNullSafety(const AstCheckContext& request, DiagnosticContext& ctx)
 {
     if (ts_node_is_null(request.rootNode) || request.sourceCode.empty() || !request.nodeIndex)
     {

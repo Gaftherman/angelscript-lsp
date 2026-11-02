@@ -1,5 +1,7 @@
 #include "features/formatting/ClangFormatPresets.h"
+
 #include "features/formatting/ClangFormatReader.h"
+
 #include <charconv>
 
 namespace angel_lsp::features

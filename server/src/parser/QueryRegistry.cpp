@@ -1,4 +1,5 @@
 #include "parser/QueryRegistry.h"
+
 #include "parser/queries/BuiltQueries.h"
 
 #include <cstring>

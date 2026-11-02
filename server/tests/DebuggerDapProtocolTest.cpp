@@ -6,9 +6,8 @@
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
-#include <angel_lsp/angel_lsp_debugger.h>
-
 #include <algorithm>
+#include <angel_lsp/angel_lsp_debugger.h>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>

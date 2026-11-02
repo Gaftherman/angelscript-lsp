@@ -10,48 +10,35 @@ namespace angel_lsp::analysis
 {
 /**
  * @brief Checks that every conversion written in a document has a declaration backing it.
- *
- * AngelScript reaches a target type through four routes, and each one is a declaration this
- * analyzer can see when the types involved are visible:
- *
- * | Written as        | Satisfied by                                  |
- * | ----------------- | --------------------------------------------- |
- * | `T v = expr;`     | copy/converting constructor, opImplConv, opAssign |
- * | `T(expr)`         | constructor, opConv, opImplConv                |
- * | `cast<T>(expr)`   | opCast, opImplCast, or an inheritance relation |
- *
- * The pass is deliberately silent unless it can see everything it is judging. A target type
- * that resolves to no declaration is engine-registered as far as this analyzer knows, and an
- * engine type can carry conversions that exist nowhere in the source - so it is skipped rather
- * than guessed at. Same for a source expression whose type does not resolve. That asymmetry is
- * the point: a missed error costs nothing, a false one costs the user's trust in every other
- * diagnostic on screen.
+ *        AngelScript reaches a target type through four routes, and each one is a declaration this
  */
-class NodeIndex;
 
 struct TypeConversionCheckRequest
 {
-    /** @brief Root node of the document's syntax tree. */
+    /**
+     * @brief Root node of the document's syntax tree.
+     */
     TSNode root;
 
-    /** @brief Document source text the tree was parsed from. */
+    /**
+     * @brief Document source text the tree was parsed from.
+     */
     std::string_view sourceCode;
 
-    /** @brief Root of the document's lexical scope tree, or nullptr when none was collected. */
+    /**
+     * @brief Root of the document's lexical scope tree, or nullptr when none was collected.
+     */
     const Scope* scopeRoot = nullptr;
 
     /**
      * @brief The same tree as scopeRoot, non-null only while the caller exclusively owns it.
-     *
-     * `auto` inference writes the deduced type back into the LocalDefinition so that everything
-     * reading the scope tree afterwards sees the concrete type instead of "auto". That write is
-     * only safe on a tree no other thread can reach - see SemanticAnalysisRequest::
-     * mutableScopeRoot for the race it used to be. Null means "published or shared": the
-     * deduction still drives this pass's own diagnostics, it just is not written back.
+     *        `auto` inference writes the deduced type back into the LocalDefinition so that everything
      */
     Scope* mutableScopeRoot = nullptr;
 
-    /** @brief Optional pre-indexed node index for fast single-pass querying. */
+    /**
+     * @brief Optional pre-indexed node index for fast single-pass querying.
+     */
     const NodeIndex* nodeIndex = nullptr;
 };
 
@@ -64,16 +51,7 @@ void CheckTypeConversions(const TypeConversionCheckRequest& request, DiagnosticC
 
 /**
  * @brief Whether a value of `fromType` can reach `toType` implicitly.
- *
- * The same judgement CheckTypeConversions makes internally, exposed for the one caller that has
- * to make it about an expression this pass does not reach: an element of an initializer list.
- * InitializerListChecker owns the list's shape - which nestings the list factory accepts - and
- * had no way to ask about an element's type, so `array<int> a = {"x"}` was silent where the
- * compiler answers "Can't implicitly convert from 'const string' to 'int&'".
- *
- * Carries the same asymmetry as the rest of the pass, and callers depend on it: an empty or
- * unresolved type on either side comes back true. Not knowing is never a reason to report.
- *
+ *        The same judgement CheckTypeConversions makes internally, exposed for the one caller that has
  * @param fromType Source type, as spelled - decorations are stripped internally.
  * @param toType Target type, likewise.
  * @param ctx Diagnostic sink; used only for the SymbolTable and config it carries.
@@ -82,13 +60,7 @@ bool CanConvertImplicitly(const std::string& fromType, const std::string& toType
 
 /**
  * @brief Evaluates whether a type satisfies boolean truthiness in control flow conditions.
- *
- * In AngelScript, conditions (if, while, for, do-while, ternary) accept:
- * - `bool`
- * - Object handles (types ending with `@` or handle definitions)
- * - Class instances declaring `opImplConv` or `opConv` returning `bool`
- * All other types (primitives, string, enum, non-converting classes) return false.
- *
+ *        In AngelScript, conditions (if, while, for, do-while, ternary) accept:
  * @param typeName Type name to evaluate.
  * @param table SymbolTable for looking up class declarations and methods.
  * @return True if the type can evaluate as a condition; false otherwise.
@@ -166,9 +138,8 @@ struct ExpressionType
 
 /**
  * @brief Declaration metadata for a resolved type, including type kind, scope, and modifiers.
- *  @note Deliberately not the Symbol itself: this is looked up for practically every call
+ * @note Deliberately not the Symbol itself: this is looked up for practically every call
  *        expression in a document, and copying a Symbol (strings, parameter vectors, a
- *        variant) that many times dominated the pass.
  */
 struct TypeDeclarationInfo
 {
@@ -214,7 +185,7 @@ struct PropertyAccessInfo
 
 /**
  * @brief Declared type name and qualification attributes extracted from variable or parameter declarations.
- * server/src/analysis/SymbolTable.h.
+ *        server/src/analysis/SymbolTable.h.
  */
 struct DeclaredType
 {
@@ -224,13 +195,7 @@ struct DeclaredType
 
     /**
      * @brief True for `array<T>` and `T[]`, where baseName is the *element* type.
-     *
-     * CleanBaseType answers the element type, which is what the initializer comparisons
-     * below want - `array<int> a = other;` compares element to element. A construction
-     * argument is a different question: `array<PlayerSlide> g(33);` passes 33 to the
-     * container's initial-size constructor, and comparing it against `PlayerSlide` asked
-     * whether an int can become a PlayerSlide. It cannot, so three corpus declarations of
-     * exactly this shape were reported.
+     *        CleanBaseType answers the element type, which is what the initializer comparisons
      */
     bool isTemplateOrArray = false;
 };

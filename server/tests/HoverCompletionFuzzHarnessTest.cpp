@@ -1,6 +1,7 @@
 #include "helpers/LspSemanticHarnessFixture.h"
 #include "helpers/SemanticCodeGenerator.h"
 #include "helpers/TestUtils.h"
+
 #include <algorithm>
 #include <chrono>
 #include <doctest/doctest.h>

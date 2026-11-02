@@ -1,4 +1,5 @@
 #include "analysis/checkers/LValueChecker.h"
+
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
@@ -7,6 +8,7 @@
 #include "parser/GrammarNames.h"
 #include "utils/StopFlag.h"
 #include "utils/Utils.h"
+
 #include <string>
 #include <string_view>
 #include <vector>
@@ -145,8 +147,7 @@ static void ValidateCandidateReturnTypes(TSNode callNode, const std::vector<Symb
     }
 }
 
-static void CheckCallLValue(TSNode callNode, const LValueCheckRequest& request, const Scope* scope,
-                            DiagnosticContext& ctx)
+static void CheckCallLValue(TSNode callNode, const AstCheckContext& request, const Scope* scope, DiagnosticContext& ctx)
 {
     TSNode funcNode = parser::GetCallCallee(callNode);
     if (ts_node_is_null(funcNode))
@@ -339,7 +340,7 @@ bool LValueNodeValidator::IsAssignableLValueNode(TSNode rawNode, const Scope* sc
     return false;
 }
 
-static void CheckAssignmentTarget(TSNode node, const LValueCheckRequest& request, const Scope* scope,
+static void CheckAssignmentTarget(TSNode node, const AstCheckContext& request, const Scope* scope,
                                   DiagnosticContext& ctx)
 {
     TSNode target = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldLeft);
@@ -382,7 +383,7 @@ static void CheckAssignmentTarget(TSNode node, const LValueCheckRequest& request
     }
 }
 
-static void CheckLValuesIndexed(const LValueCheckRequest& request, DiagnosticContext& ctx)
+static void CheckLValuesIndexed(const AstCheckContext& request, DiagnosticContext& ctx)
 {
     if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
     {
@@ -406,7 +407,7 @@ static void CheckLValuesIndexed(const LValueCheckRequest& request, DiagnosticCon
  * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
  * @param[in,out] ctx Diagnostic collection and analysis context.
  */
-void CheckLValues(const LValueCheckRequest& request, DiagnosticContext& ctx)
+void CheckLValues(const AstCheckContext& request, DiagnosticContext& ctx)
 {
     if (ts_node_is_null(request.rootNode) || request.sourceCode.empty())
     {
@@ -425,7 +426,7 @@ void CheckLValues(const LValueCheckRequest& request, DiagnosticContext& ctx)
     }
 
     NodeIndex localIndex(request.rootNode);
-    LValueCheckRequest indexedRequest = request;
+    AstCheckContext indexedRequest = request;
     indexedRequest.nodeIndex = &localIndex;
     CheckLValuesIndexed(indexedRequest, ctx);
 }

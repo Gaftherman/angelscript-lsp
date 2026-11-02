@@ -1,4 +1,5 @@
 #include "analysis/checkers/CallChecker.h"
+
 #include "analysis/checkers/InitializerListChecker.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/NodeIndex.h"
@@ -11,13 +12,13 @@
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"
-#include "utils/Utils.h"
-
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
 #include "parser/Keywords.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/StopFlag.h"
+#include "utils/Utils.h"
+
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
 #include <cctype>
@@ -31,7 +32,6 @@ namespace angel_lsp::analysis
 {
 /**
  * @brief Trims leading and trailing whitespace in place.
- *
  * @param[in,out] s String to trim.
  */
 static void TrimString(std::string& s)
@@ -48,13 +48,7 @@ static void TrimString(std::string& s)
 
 /**
  * @brief Counts the arguments written between one call's parentheses.
- *
- * Counted from the separators rather than from the named children, because a named argument
- * (`Take(a: 1)`) contributes both its name and its value as named children and would count
- * twice. `Take(void)` is one argument too - AngelScript's spelling of "discard this &out" -
- * and it is an anonymous token, so an empty list is only an empty one when nothing at all
- * stands between the parentheses.
- *
+ *        Counted from the separators rather than from the named children, because a named argument
  * @param[in] argumentList AST node representing the argument list.
  * @return Count of written arguments.
  */
@@ -89,10 +83,7 @@ static std::vector<std::string> GetArgumentNames(TSNode argumentList, std::strin
 
 /**
  * @brief Computes the diagnostic source range for a function or method call.
- *
- * Anchors the diagnostic range strictly on the callee identifier or member name,
- * preventing multiline red squiggles from spanning across arguments.
- *
+ *        Anchors the diagnostic range strictly on the callee identifier or member name,
  * @param[in] callee AST node of the callee expression.
  * @return Precise source range of the callee.
  */
@@ -119,13 +110,7 @@ static SourceRange GetCalleeDiagnosticRange(TSNode callee)
 
 /**
  * @brief True when a name also denotes a type, which makes `Name(...)` a construction.
- *
- * `array<int>(5)`, `Foo(1)` and - the one the corpus audit found - `VoteBlocked(this.X)`,
- * where VoteBlocked is a funcdef and the parentheses build a delegate from a method. None
- * of those is a call to a function of that name, and the enclosing class happening to
- * declare a method called VoteBlocked is a coincidence this rule must not read anything
- * into.
- *
+ *        `array<int>(5)`, `Foo(1)` and - the one the corpus audit found - `VoteBlocked(this.X)`,
  * @param[in] name Identifier name.
  * @param[in] table Symbol table.
  * @return True if the name denotes a type.
@@ -160,7 +145,6 @@ static bool NamesAType(const std::string& name, const SymbolTable& table)
 
 /**
  * @brief True when a symbol represents a function with a valid signature.
- *
  * @param[in] sym Symbol to check.
  * @return True if the symbol is a function.
  */
@@ -171,7 +155,6 @@ static bool IsFunctionSymbol(const Symbol& sym)
 
 /**
  * @brief Evaluates whether candidate set accepts an argument count.
- *
  * @param[in] candidates Available function candidates.
  * @param[in] argumentCount Number of arguments provided.
  * @return CandidateSet verdict.
@@ -195,12 +178,7 @@ static CandidateSet JudgeAgainst(const std::vector<Symbol>& candidates, uint32_t
 
 /**
  * @brief True when a member name is its own class's constructor or destructor.
- *
- * Matched by name because that is the convention the analyzer uses throughout - a
- * constructor is an ordinary Function stored under `Class::Class` (see the constructor
- * lookup further down, which relies on the same thing). The type may arrive qualified, so
- * the comparison is against its last `::` segment.
- *
+ *        Matched by name because that is the convention the analyzer uses throughout - a
  * @param[in] memberName Member identifier text.
  * @param[in] typeName Owner type name.
  * @return True if name denotes constructor or destructor.
@@ -224,7 +202,6 @@ static bool IsConstructorOrDestructorName(const std::string& memberName, const s
 
 /**
  * @brief Declarations of a method, across a type's whole visible hierarchy.
- *
  * @param[in] typeName Name of the class type.
  * @param[in] methodName Name of the method.
  * @param[in] table Symbol table.
@@ -271,7 +248,6 @@ static std::vector<Symbol> FindMethodCandidates(const std::string& typeName, con
 
 /**
  * @brief Collects enclosing namespace scopes up to global scope.
- *
  * @param[in] callNode AST node of call expression.
  * @param[in] sourceCode Document source text.
  * @return Ordered list of reachable namespace scopes.
@@ -296,7 +272,6 @@ static std::vector<std::string> CollectReachableScopes(TSNode callNode, std::str
 
 /**
  * @brief Collects function symbols matching name from a specific scope.
- *
  * @param[in] scopeName Name of scope or empty for global.
  * @param[in] name Unqualified symbol name.
  * @param[in] ctx Lookup context.
@@ -326,7 +301,6 @@ static void CollectScopeCandidates(const std::string& scopeName, const std::stri
 
 /**
  * @brief Collects candidates from using namespace directives at document root.
- *
  * @param[in] name Unqualified function name.
  * @param[in] reachableScopes Already visited lexical scopes.
  * @param[in] ctx Lookup context.
@@ -355,7 +329,6 @@ static void CollectUsingNamespaceCandidates(const std::string& name, const std::
 
 /**
  * @brief Declarations an unqualified call can reach, when that question is answerable.
- *
  * @param[in] name Function identifier name.
  * @param[in] ctx Free candidate lookup context.
  * @return Reachable function candidate symbols.
@@ -384,7 +357,6 @@ static std::vector<Symbol> FindFreeCandidates(const std::string& name, const Fre
 
 /**
  * @brief Finds indices of arguments that are lambda expressions.
- *
  * @param[in] argNodes List of argument AST nodes.
  * @return 0-based indices where arguments are lambdas.
  */
@@ -403,7 +375,6 @@ static std::vector<size_t> FindLambdaPositions(const std::vector<TSNode>& argNod
 
 /**
  * @brief Evaluates whether candidate accepts all lambda arguments.
- *
  * @param[in] candidate Function candidate to check.
  * @param[in] lctx Lambda verification context.
  * @param[out] shape Collected funcdef names for matched lambda parameters.
@@ -437,7 +408,6 @@ static LambdaCandidateStatus EvaluateCandidateLambdaShape(const Symbol& candidat
 
 /**
  * @brief Emits diagnostics for lambda shape matching results.
- *
  * @param[in] acceptedShapes Matrix of accepted funcdef shapes per viable candidate.
  * @param[in] priorityCandidate First accepted overload candidate.
  * @param[in] lctx Lambda verification context.
@@ -468,7 +438,6 @@ static void ReportLambdaDiagnostics(const std::vector<std::vector<std::string>>&
 
 /**
  * @brief Judges a lambda argument against the funcdef parameter it lands on.
- *
  * @param[in] candidates Candidate function overloads.
  * @param[in] lctx Lambda verification context.
  * @param[in,out] ctx Diagnostic context.
@@ -510,7 +479,6 @@ static void CheckLambdaArguments(std::span<const Symbol* const> candidates, cons
 
 /**
  * @brief Checks whether an object expression node resolves to a const variable or property.
- *
  * @param[in] objectNode AST node of object expression.
  * @param[in] valCtx Call validation context.
  * @return True if the object node is const.
@@ -552,7 +520,6 @@ static bool IsObjectNodeConst(TSNode objectNode, const CallValidationContext& va
 
 /**
  * @brief Resolves object type and template arguments from member expression.
- *
  * @param[in] objectNode AST node of object expression.
  * @param[in] valCtx Call validation context.
  * @return Resolved ObjectTypeInfo.
@@ -588,7 +555,6 @@ static ObjectTypeInfo ResolveMemberObjectType(TSNode objectNode, const CallValid
 
 /**
  * @brief Replaces template parameter occurrences in a function signature.
- *
  * @param[in,out] fn Signature to mutate.
  * @param[in] paramName Template parameter name (e.g. "T").
  * @param[in] concreteType Concrete type name to substitute.
@@ -606,7 +572,6 @@ static void SubstituteFunctionTemplateParams(FunctionSignature& fn, const std::s
 
 /**
  * @brief Applies template argument substitutions across candidate methods.
- *
  * @param[in,out] candidates Candidate symbols to specialize.
  * @param[in] typeName Owner type name.
  * @param[in] fallbackArgs Fallback template arguments when generic binding is absent.
@@ -651,10 +616,7 @@ static void ApplyTemplateSubstitutions(std::vector<Symbol>& candidates, const st
 
 /**
  * @brief Filters method candidates based on the constness of the receiver.
- *
- * A const receiver can only call const methods. A mutable receiver prefers
- * non-const methods over const methods when parameter signatures are identical.
- *
+ *        A const receiver can only call const methods. A mutable receiver prefers
  * @param[in,out] candidates Candidate symbols to filter.
  * @param[in] isReceiverConst Whether the receiver object is const.
  */
@@ -709,7 +671,6 @@ static void FilterMethodCandidatesConstness(std::vector<Symbol>& candidates, boo
 
 /**
  * @brief Checks if a node is enclosed within a const method declaration.
- *
  * @param[in] node AST node.
  * @return True if enclosed within a const method.
  */
@@ -868,7 +829,6 @@ static bool CheckMemberNonCallableVariable(const std::string& objType, const std
 
 /**
  * @brief Resolves candidates and reports invalid constructors for member calls.
- *
  * @param[in] valCtx Call validation context.
  * @return Resolved CalleeResolution.
  */
@@ -1011,7 +971,6 @@ static std::vector<Symbol> CollectScopedFunctionCandidates(std::string_view writ
 
 /**
  * @brief Finds enclosing class or interface name if inside one.
- *
  * @param[in] node AST node.
  * @param[in] sourceCode Document source text.
  * @return Enclosing class name or empty string.
@@ -1069,10 +1028,7 @@ static bool IsInsideTargetClassOrSubclass(TSNode callNode, std::string_view targ
 
 /**
  * @brief Filters candidates of a scoped call based on caller context and container kinds.
- *
- * Outside a target class, non-static class methods cannot be called via Class::Method;
- * only namespace functions are callable.
- *
+ *        Outside a target class, non-static class methods cannot be called via Class::Method;
  * @param[in,out] candidates Candidate symbols to filter.
  * @param[in] insideTarget True if caller is within the target class or a subclass.
  */
@@ -1152,7 +1108,6 @@ static bool ResolveEnclosingClassCallee(std::string_view written, const CallVali
 
 /**
  * @brief Resolves candidates for identifier and scoped identifier callees.
- *
  * @param[in] valCtx Call validation context.
  * @return Resolved CalleeResolution.
  */
@@ -1215,7 +1170,6 @@ static CalleeResolution ResolveIdentifierCallee(const CallValidationContext& val
 
 /**
  * @brief Validates argument ordering to prevent positional arguments after named ones.
- *
  * @param[in] arguments AST arguments node.
  * @param[out] sawNamedArg True if at least one named argument was found.
  * @param[in,out] ctx Diagnostic context.
@@ -1320,11 +1274,8 @@ static bool CheckArgIsLValue(TSNode argNode, std::string_view sourceCode, const 
     return (aSym == gs.symMemberExpression || aSym == gs.symIndexExpression);
 }
 
-using CallArgTypes = CallResolutionContext;
-
 /**
  * @brief Unwraps a parenthesized expression AST node to its inner child.
- *
  * @param[in] node Input AST node.
  * @return Inner node if parenthesized, otherwise the node itself.
  */
@@ -1345,13 +1296,12 @@ static TSNode UnwrapParenNode(TSNode node)
 
 /**
  * @brief Resolves expression types for each call argument and flags bare types.
- *
  * @param[in] valCtx Call validation context.
- * @return Resolved CallArgTypes structure.
+ * @return Resolved CallResolutionContext structure.
  */
-static CallArgTypes ResolveCallArguments(const CallValidationContext& valCtx)
+static CallResolutionContext ResolveCallArguments(const CallValidationContext& valCtx)
 {
-    CallArgTypes result;
+    CallResolutionContext result;
     result.argNodes = GetArgumentNodes(valCtx.arguments);
     const size_t argCount = result.argNodes.size();
     result.argTypes.reserve(argCount);
@@ -1427,12 +1377,11 @@ std::vector<const Symbol*> FilterMatchingArityCandidates(const std::vector<Symbo
 
 /**
  * @brief Checks initializer list arguments against parameter target types.
- *
  * @param[in] args Resolved call arguments.
  * @param[in] fn Target function signature.
  * @param[in] valCtx Call validation context.
  */
-static void CheckInitializerListArgs(const CallArgTypes& args, const FunctionSignature& fn,
+static void CheckInitializerListArgs(const CallResolutionContext& args, const FunctionSignature& fn,
                                      const CallValidationContext& valCtx)
 {
     const auto& gs = parser::GetGrammarSymbols();
@@ -1472,7 +1421,6 @@ static void CheckInitializerListArgs(const CallArgTypes& args, const FunctionSig
 
 /**
  * @brief Checks if a ternary branch type is compatible with expected parameter type.
- *
  * @param[in] branchType Resolved branch type.
  * @param[in] expected Expected parameter type name.
  * @return True if compatible.
@@ -1496,7 +1444,6 @@ static bool IsTernaryBranchCompatible(const std::string& branchType, const std::
 
 /**
  * @brief Identifies the mismatching type in a malformed ternary expression.
- *
  * @param[in] t1 Consequence branch resolved type.
  * @param[in] t2 Alternative branch resolved type.
  * @param[in] expected Expected parameter type name.
@@ -1517,7 +1464,6 @@ static std::string ResolveTernaryMismatchType(const std::string& t1, const std::
 
 /**
  * @brief Checks malformed ternary expressions used as call arguments.
- *
  * @param[in] argNodes Argument AST nodes.
  * @param[in] argTypes Resolved argument types.
  * @param[in] candidates Available matching candidates.
@@ -1567,7 +1513,6 @@ static void CheckMalformedTernaryArgs(const std::vector<TSNode>& argNodes, const
 
 /**
  * @brief Finds index of first parameter failing conversion in a candidate.
- *
  * @param[in] candidate Candidate function.
  * @param[in] argTypes Argument types.
  * @param[in] table Symbol table.
@@ -1589,7 +1534,6 @@ static size_t FindCandidateBadArgument(const Symbol& candidate, const std::vecto
 
 /**
  * @brief Determines if all candidate overloads agree on a single bad argument index.
- *
  * @param[in] candidates Candidate functions.
  * @param[in] argTypes Argument types.
  * @param[in] table Symbol table.
@@ -1646,14 +1590,14 @@ static std::string FormatCallDescriptionWithNull(const std::string& calleeName,
 
 /**
  * @brief Emits diagnostics when overload resolution finds no viable candidates.
- *
  * @param[in] candidates Candidate functions.
  * @param[in] args Call arguments info.
  * @param[in] reportedName Reported callee name.
  * @param[in] valCtx Call validation context.
  */
-static void ReportOverloadResolutionFailure(std::span<const Symbol* const> candidates, const CallArgTypes& args,
-                                            const std::string& reportedName, const CallValidationContext& valCtx)
+static void ReportOverloadResolutionFailure(std::span<const Symbol* const> candidates,
+                                            const CallResolutionContext& args, const std::string& reportedName,
+                                            const CallValidationContext& valCtx)
 {
     const auto blamedArg = FindAgreedBlamedArgument(candidates, args.argTypes, valCtx.ctx.request.symbolTable);
     if (blamedArg && *blamedArg < args.argNodes.size())
@@ -1686,7 +1630,6 @@ static void ReportOverloadResolutionFailure(std::span<const Symbol* const> candi
 
 /**
  * @brief Validates that arguments passed to &out parameters are assignable L-values.
- *
  * @param[in] candidate Chosen function overload.
  * @param[in] argNodes Call argument AST nodes.
  * @param[in] valCtx Call validation context.
@@ -1799,7 +1742,7 @@ static bool CheckCandidateNamedArgs(const FunctionSignature& sig, const std::vec
  * @param[in] calleeRes Callee resolution details.
  * @param[in] valCtx Call validation context.
  */
-static void HandleNamedCallOverloads(std::span<const Symbol* const> matchingArity, const CallArgTypes& args,
+static void HandleNamedCallOverloads(std::span<const Symbol* const> matchingArity, const CallResolutionContext& args,
                                      const CalleeResolution& calleeRes, const CallValidationContext& valCtx)
 {
     bool matchedAny = false;
@@ -1824,13 +1767,12 @@ static void HandleNamedCallOverloads(std::span<const Symbol* const> matchingArit
 
 /**
  * @brief Dispatches overload resolution and checks ambiguity, conversions, and out parameters.
- *
  * @param[in] matchingArity Candidates of matching arity.
  * @param[in] args Resolved argument types.
  * @param[in] calleeRes Callee resolution details.
  * @param[in] valCtx Call validation context.
  */
-static void CheckCallOverloads(std::span<const Symbol* const> matchingArity, const CallArgTypes& args,
+static void CheckCallOverloads(std::span<const Symbol* const> matchingArity, const CallResolutionContext& args,
                                const CalleeResolution& calleeRes, const CallValidationContext& valCtx)
 {
     if ((args.argTypes.empty() && !calleeRes.candidatesAreFreeFunctions) || matchingArity.empty())
@@ -1882,7 +1824,6 @@ static void CheckCallOverloads(std::span<const Symbol* const> matchingArity, con
 
 /**
  * @brief Resolves callee candidates based on node type.
- *
  * @param[in] valCtx Call validation context.
  * @return Resolved CalleeResolution.
  */
@@ -1943,7 +1884,6 @@ static bool HasFuncdefSymbol(std::string_view name, const SymbolTable& table)
 
 /**
  * @brief Validates argument count against candidate arities and emits diagnostics on failure.
- *
  * @param[in] calleeRes Callee resolution details.
  * @param[in] argumentCount Number of passed arguments.
  * @param[in] valCtx Call validation context.
@@ -1977,13 +1917,12 @@ static bool CheckArgumentCount(const CalleeResolution& calleeRes, uint32_t argum
 
 /**
  * @brief Validates a single function call expression.
- *
  * @param[in] node AST call expression node.
  * @param[in] request Analysis call request.
  * @param[in] scope Lexical scope.
  * @param[in,out] ctx Diagnostic context.
  */
-static void CheckCall(TSNode node, const CallCheckRequest& request, const Scope* scope, DiagnosticContext& ctx)
+static void CheckCall(TSNode node, const AstCheckContext& request, const Scope* scope, DiagnosticContext& ctx)
 {
     const ast::CallExpressionView callView(node, request.sourceCode);
     const TSNode callee = callView.Callee();
@@ -2013,7 +1952,7 @@ static void CheckCall(TSNode node, const CallCheckRequest& request, const Scope*
         return;
     }
 
-    const CallArgTypes args = ResolveCallArguments(valCtx);
+    const CallResolutionContext args = ResolveCallArguments(valCtx);
     if (std::any_of(args.argTypes.begin(), args.argTypes.end(),
                     [](const std::string& t) { return ExpressionTypeCache::IsPoisonType(t); }))
     {
@@ -2046,7 +1985,6 @@ static void CheckCall(TSNode node, const CallCheckRequest& request, const Scope*
 
 /**
  * @brief Finds the type AST node within a variable declaration node.
- *
  * @param[in] varDeclNode AST variable declaration node.
  * @return Type AST node or null node if not found.
  */
@@ -2081,7 +2019,6 @@ static TSNode FindVariableTypeNode(TSNode varDeclNode)
 
 /**
  * @brief Formats an attempted constructor call signature for error reporting.
- *
  * @param[in] targetType Declared type name.
  * @param[in] argTypes Resolved argument types.
  * @return Formatted signature string, e.g. "Type(int, string)".
@@ -2103,7 +2040,6 @@ static std::string FormatSignatureAttempt(const std::string& targetType, const s
 
 /**
  * @brief Verifies direct initialization of a primitive type.
- *
  * @param[in] argListNode Argument list AST node.
  * @param[in] argTypes Resolved argument types.
  * @param[in] vctx Variable initialization context.
@@ -2137,7 +2073,6 @@ static void CheckPrimitiveDirectInit(TSNode argListNode, const std::vector<std::
 
 /**
  * @brief Looks up constructor declarations for a given type name in symbol table.
- *
  * @param[in] baseName Cleaned type name.
  * @param[in] table Symbol table.
  * @return Candidate constructor symbols.
@@ -2202,7 +2137,6 @@ static std::vector<Symbol> LookupRawConstructors(const std::string& baseName, co
 
 /**
  * @brief Checks if a class declaration is visible in script source (not predefined).
- *
  * @param[in] baseName Type name.
  * @param[in] table Symbol table.
  * @param[in] predefinedExt Predefined file extension.
@@ -2238,7 +2172,6 @@ static bool IsClassDeclarationVisible(const std::string& baseName, const SymbolT
 
 /**
  * @brief Retrieves template parameter names declared on a class.
- *
  * @param[in] baseName Class name.
  * @param[in] table Symbol table.
  * @return Template parameter names (e.g. {"T"}).
@@ -2277,7 +2210,6 @@ static std::vector<std::string> GetClassTemplateParams(const std::string& baseNa
 
 /**
  * @brief Specializes a single constructor parameter by replacing template parameters.
- *
  * @param[in,out] param Parameter information to specialize.
  * @param[in] paramName Template parameter name.
  * @param[in] concreteArg Concrete argument type.
@@ -2309,7 +2241,6 @@ static void SpecializeConstructorParam(ParameterInformation& param, const std::s
 
 /**
  * @brief Specializes raw constructor candidates using template argument mappings.
- *
  * @param[in] rawConstructors Unspecialized constructor symbols.
  * @param[in] tmplInfo Parsed template type information.
  * @param[in] baseName Base type name.
@@ -2349,7 +2280,6 @@ static std::vector<Symbol> SpecializeConstructors(const std::vector<Symbol>& raw
 
 /**
  * @brief Verifies constructor candidate overloads against provided arguments.
- *
  * @param[in] argListNode Argument list AST node.
  * @param[in] candidates Candidate constructor symbols.
  * @param[in] argTypes Resolved argument types.
@@ -2382,7 +2312,6 @@ static void CheckConstructorOverload(TSNode argListNode, const std::vector<Symbo
 
 /**
  * @brief Verifies direct initialization arguments for a single variable declarator.
- *
  * @param[in] declarator AST variable declarator node.
  * @param[in] vctx Variable initialization context.
  */
@@ -2440,12 +2369,11 @@ static void CheckDeclaratorDirectInit(TSNode declarator, const VarInitContext& v
 
 /**
  * @brief Checks direct variable initialization syntax against accessible constructors.
- *
  * @param[in] varDeclNode AST variable declaration node.
  * @param[in] request Analysis call request.
  * @param[in,out] ctx Diagnostic context.
  */
-static void CheckVariableDirectInitialization(TSNode varDeclNode, const CallCheckRequest& request,
+static void CheckVariableDirectInitialization(TSNode varDeclNode, const AstCheckContext& request,
                                               DiagnosticContext& ctx)
 {
     TSNode varTypeNode = FindVariableTypeNode(varDeclNode);
@@ -2479,12 +2407,11 @@ static void CheckVariableDirectInitialization(TSNode varDeclNode, const CallChec
 
 /**
  * @brief Non-recursive worklist traversal of AST nodes for call checking.
- *
  * @param[in] root Root AST node.
  * @param[in] request Analysis call request.
  * @param[in,out] ctx Diagnostic context.
  */
-static void CheckCallArgumentsIndexed(const CallCheckRequest& request, DiagnosticContext& ctx)
+static void CheckCallArgumentsIndexed(const AstCheckContext& request, DiagnosticContext& ctx)
 {
     if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
     {
@@ -2517,7 +2444,7 @@ static void CheckCallArgumentsIndexed(const CallCheckRequest& request, Diagnosti
  * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
  * @param[in,out] ctx Diagnostic collection and analysis context.
  */
-void CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx)
+void CheckCallArguments(const AstCheckContext& request, DiagnosticContext& ctx)
 {
     if (ts_node_is_null(request.rootNode) || request.sourceCode.empty())
     {
@@ -2536,7 +2463,7 @@ void CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx)
     }
 
     NodeIndex localIndex(request.rootNode);
-    CallCheckRequest indexedRequest = request;
+    AstCheckContext indexedRequest = request;
     indexedRequest.nodeIndex = &localIndex;
     CheckCallArgumentsIndexed(indexedRequest, ctx);
 }

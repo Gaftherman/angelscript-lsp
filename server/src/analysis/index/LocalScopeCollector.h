@@ -4,33 +4,30 @@
 #include "parser/AngelScriptParser.h"
 #include "parser/GrammarSymbols.h"
 #include "utils/Constants.h"
+#include "utils/LspLogger.h"
 
 #include <memory>
 #include <string>
 #include <tree_sitter/api.h>
 #include <vector>
 
-#include "utils/LspLogger.h"
-
 namespace angel_lsp::analysis
 {
 /**
  * @brief Walks a parsed AngelScript tree-sitter AST and builds a lexical Scope tree from
  *        LOCALS_QUERY matches (nested scopes, definitions, and not-yet-resolved references).
- *
- * LocalScopeCollector is a Layer 2 (Analysis) component, same constraints as SymbolCollector:
- * depends only on Layer 1 and the standard library, holds no static/global state, and never
- * throws. It produces a Scope tree, not a SymbolTable - see ScopeTree.h for why the two are
- * kept separate. This collector only builds the tree; it does not resolve references or emit
- * diagnostics.
  */
 class LocalScopeCollector
 {
   public:
-    /** @brief Constructs the collector and pre-compiles LOCALS_QUERY. */
+    /**
+     * @brief Constructs the collector and pre-compiles LOCALS_QUERY.
+     */
     explicit LocalScopeCollector(angel_lsp::utils::LspLogger* logger = nullptr);
 
-    /** @brief Releases the compiled LOCALS_QUERY. */
+    /**
+     * @brief Releases the compiled LOCALS_QUERY.
+     */
     ~LocalScopeCollector();
 
     /**
@@ -55,7 +52,9 @@ class LocalScopeCollector
 
     const parser::GrammarSymbols& m_gs;
 
-    /** @brief What a LOCALS_QUERY capture index means, resolved once in the constructor by capture name. */
+    /**
+     * @brief What a LOCALS_QUERY capture index means, resolved once in the constructor by capture name.
+     */
     enum class CaptureKind
     {
         None,
@@ -65,14 +64,20 @@ class LocalScopeCollector
         StringCallRef
     };
 
-    /** @brief Maps each LOCALS_QUERY capture index to its CaptureKind, built once in the constructor. */
+    /**
+     * @brief Maps each LOCALS_QUERY capture index to its CaptureKind, built once in the constructor.
+     */
     std::vector<CaptureKind> m_captureKinds;
 
-    /** @brief Maps each LOCALS_QUERY capture index to a LocalDefinitionKind; only meaningful where m_captureKinds[i] ==
-     * Definition. */
+    /**
+     * @brief Maps each LOCALS_QUERY capture index to a LocalDefinitionKind; only meaningful where m_captureKinds[i] ==
+     *        Definition.
+     */
     std::vector<LocalDefinitionKind> m_definitionKinds;
 
-    /** @brief One flattened LOCALS_QUERY match, before matches are sorted and nested into a Scope tree. */
+    /**
+     * @brief One flattened LOCALS_QUERY match, before matches are sorted and nested into a Scope tree.
+     */
     struct RawCapture
     {
         TSNode node;
@@ -93,7 +98,9 @@ class LocalScopeCollector
      */
     std::unique_ptr<Scope> BuildScopeTree(std::vector<RawCapture>& captures, const std::string& sourceCode) const;
 
-    /** @brief Returns the source text spanned by node, or an empty string for a null/degenerate node. */
+    /**
+     * @brief Returns the source text spanned by node, or an empty string for a null/degenerate node.
+     */
     std::string GetNodeText(TSNode node, const std::string& sourceCode) const;
 
     /**
@@ -119,7 +126,7 @@ class LocalScopeCollector
 
     /**
      * @brief Tracks an open lexical scope, its enclosing parent, and boundary byte offsets during scope hierarchy
-     * construction.
+     *        construction.
      */
     struct OpenScope
     {
@@ -198,13 +205,7 @@ class LocalScopeCollector
      */
     CaptureAncestors ResolveCaptureAncestors(CaptureKind kind, LocalDefinitionKind defKind, TSNode node) const;
 
-    /**
-     * @brief Populates qualifier, receiver byte ranges, and scopeQualifier string for member or scoped references.
-     * @param parent AST parent node of the reference.
-     * @param[out] ref LocalReference receiving byte range and qualifier information.
-     * @param sourceCode Source text of the document.
-     */
-    void PopulateReceiverQualifierRanges(TSNode parent, LocalReference& ref, const std::string& sourceCode) const;
+    void PopulateReceiverQualifierRanges(TSNode parent, LocalReference& ref) const;
 
     /**
      * @brief Checks if a grammar symbol belongs to a declaration whose name is a definition rather than a reference.

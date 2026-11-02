@@ -2,6 +2,7 @@
 
 #include "analysis/index/SymbolTable.h"
 #include "utils/Constants.h"
+
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <optional>

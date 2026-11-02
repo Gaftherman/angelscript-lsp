@@ -1,4 +1,5 @@
 #include "lsp/pipeline/AnalysisScheduler.h"
+
 #include <atomic>
 #include <chrono>
 #include <doctest/doctest.h>

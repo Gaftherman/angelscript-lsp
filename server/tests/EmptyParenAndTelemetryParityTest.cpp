@@ -1,5 +1,6 @@
 #include "helpers/TestUtils.h"
 #include "helpers/UnifiedFeatureAuditHarness.h"
+
 #include <doctest/doctest.h>
 
 using namespace angel_lsp::test;

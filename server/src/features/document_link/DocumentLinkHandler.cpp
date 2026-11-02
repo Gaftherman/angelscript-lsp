@@ -9,11 +9,7 @@ namespace angel_lsp::features
 {
 /**
  * @brief Byte span of the path inside an `#include` directive, excluding its delimiters.
- *
- * IncludeDirective records which line a directive is on but not where on it, and the
- * directive may be indented or spaced any way at all, so the delimiters are located by
- * scanning the line rather than assuming a column.
- *
+ *        IncludeDirective records which line a directive is on but not where on it, and the
  * @return Start and end byte columns, or std::nullopt when the line holds no delimited path.
  */
 static std::optional<std::pair<uint32_t, uint32_t>> FindPathSpan(std::string_view line, bool isAngled)

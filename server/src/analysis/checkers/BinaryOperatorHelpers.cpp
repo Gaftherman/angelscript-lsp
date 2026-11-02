@@ -1,4 +1,5 @@
 #include "analysis/checkers/BinaryOperatorHelpers.h"
+
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeExtraction.h"

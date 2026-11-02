@@ -3,13 +3,13 @@
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
-#include "i18n/i18n.h"
-#include "parser/AngelScriptParser.h"
-#include <algorithm>
-#include <doctest/doctest.h>
-
 #include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
+#include "i18n/i18n.h"
+#include "parser/AngelScriptParser.h"
+
+#include <algorithm>
+#include <doctest/doctest.h>
 
 using namespace angel_lsp::analysis;
 using namespace angel_lsp::parser;

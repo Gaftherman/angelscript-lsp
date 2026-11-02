@@ -1,11 +1,10 @@
-#include <doctest/doctest.h>
-
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "features/implementation/ImplementationHandler.h"
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
+#include <doctest/doctest.h>
 #include <string>
 
 using namespace angel_lsp;

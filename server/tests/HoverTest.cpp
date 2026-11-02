@@ -1,15 +1,15 @@
-#include "helpers/TestUtils.h"
-#include <doctest/doctest.h>
-#include <fstream>
-
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "features/hover/HoverHandler.h"
+#include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/Utils.h"
+
+#include <doctest/doctest.h>
+#include <fstream>
 
 using namespace angel_lsp;
 using namespace angel_lsp::features;

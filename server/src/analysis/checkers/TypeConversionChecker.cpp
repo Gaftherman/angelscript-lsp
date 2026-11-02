@@ -1,22 +1,22 @@
 #include "analysis/checkers/TypeConversionChecker.h"
+
 #include "analysis/checkers/BinaryOperatorChecker.h"
 #include "analysis/checkers/ComparisonOperatorChecker.h"
 #include "analysis/checkers/HandleComparisonChecker.h"
 #include "analysis/checkers/RepeatedConversionChecker.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/NodeIndex.h"
-#include "analysis/types/ExpressionTypeCache.h"
-#include "parser/ASTUtils.h"
-
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
-
+#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "parser/Primitives.h"
 #include "utils/LspLogger.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
+
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
 #include <array>
@@ -28,10 +28,10 @@
 namespace angel_lsp::analysis
 {
 
-using ConversionTypes = ConversionTypePair;
-
-/** @brief Visits every symbol registered under a qualified name without copying the bucket.
- *  @param visitor Returns true to stop the walk. */
+/**
+ * @brief Visits every symbol registered under a qualified name without copying the bucket.
+ * @param visitor Returns true to stop the walk.
+ */
 static void ForEachSymbolNamed(std::string_view qualifiedName, const SymbolTable& table,
                                const std::function<bool(const Symbol&)>& visitor)
 {
@@ -49,8 +49,10 @@ static void ForEachSymbolNamed(std::string_view qualifiedName, const SymbolTable
     }
 }
 
-/** @brief Visits every symbol registered under a member of a scope without copying the bucket.
- *  @param visitor Returns true to stop the walk. */
+/**
+ * @brief Visits every symbol registered under a member of a scope without copying the bucket.
+ * @param visitor Returns true to stop the walk.
+ */
 static void ForEachMemberSymbolNamed(std::string_view scope, std::string_view member, const SymbolTable& table,
                                      const std::function<bool(const Symbol&)>& visitor)
 {
@@ -152,9 +154,11 @@ static std::optional<Symbol> FindFuncdef(const std::string& name, const SymbolTa
     return result;
 }
 
-/** @brief Looks up what a type name denotes.
- *  @return found == false when the name resolves to nothing this analyzer can see - which
- *          is the signal to stay silent about anything involving it. */
+/**
+ * @brief Looks up what a type name denotes.
+ * @return found == false when the name resolves to nothing this analyzer can see - which
+ *        is the signal to stay silent about anything involving it.
+ */
 static TypeDeclarationInfo FindTypeDeclaration(const std::string& typeName, const SymbolTable& table)
 {
     TypeDeclarationInfo info;
@@ -197,7 +201,9 @@ static TypeDeclarationInfo FindTypeDeclaration(const std::string& typeName, cons
     return info;
 }
 
-/** @brief True when a name resolves to an enum declared somewhere the analyzer can see. */
+/**
+ * @brief True when a name resolves to an enum declared somewhere the analyzer can see.
+ */
 static bool ResolvesToEnum(const std::string& typeName, const SymbolTable& table)
 {
     bool found = false;
@@ -224,9 +230,11 @@ static bool ResolvesToEnum(const std::string& typeName, const SymbolTable& table
     return found;
 }
 
-/** @brief True when a name resolves to an enum, typedef, funcdef or namespace.
- *  @note Keeps those out of the class-shaped rules below rather than letting them fall
- *        through to "not a class, therefore suspicious". */
+/**
+ * @brief True when a name resolves to an enum, typedef, funcdef or namespace.
+ * @note Keeps those out of the class-shaped rules below rather than letting them fall
+ *        through to "not a class, therefore suspicious".
+ */
 static bool ResolvesToNonClassDeclaration(const std::string& typeName, const SymbolTable& table)
 {
     bool found = false;
@@ -254,8 +262,10 @@ static bool ResolvesToNonClassDeclaration(const std::string& typeName, const Sym
     return found;
 }
 
-/** @brief Visits every overload of a named method visible on a type, base types included.
- *  @param visitor Returns true to stop the walk. */
+/**
+ * @brief Visits every overload of a named method visible on a type, base types included.
+ * @param visitor Returns true to stop the walk.
+ */
 static void ForEachMethod(const std::string& typeName, const std::string& memberName, const SymbolTable& table,
                           const std::function<bool(const Symbol&)>& visitor)
 {
@@ -280,8 +290,10 @@ static void ForEachMethod(const std::string& typeName, const std::string& member
     }
 }
 
-/** @brief Visits the constructors declared directly on a type.
- *  @note Deliberately not hierarchy-wide: AngelScript does not inherit constructors. */
+/**
+ * @brief Visits the constructors declared directly on a type.
+ * @note Deliberately not hierarchy-wide: AngelScript does not inherit constructors.
+ */
 
 static void ForEachConstructor(const std::string& typeName, const SymbolTable& table,
                                const std::function<bool(const Symbol&)>& visitor)
@@ -345,8 +357,7 @@ static void ForEachConstructor(const std::string& typeName, const SymbolTable& t
 /**
  * @brief True when an overload can be called with exactly one argument.
  * @note Parameter count alone is not the test: `CLogger(const string &in name, bool
- *       isStatic = false)` is a one-argument converting constructor, and treating it as a
- *       two-argument one is what made the first corpus run flag a legitimate conversion.
+ *        isStatic = false)` is a one-argument converting constructor, and treating it as a
  */
 static bool AcceptsSingleArgument(const std::vector<ParameterInformation>& parameters)
 {
@@ -358,7 +369,9 @@ static bool AcceptsSingleArgument(const std::vector<ParameterInformation>& param
                        [](const ParameterInformation& param) { return !param.defaultValue.empty(); });
 }
 
-/** @brief The declared type of the single argument such an overload converts from. */
+/**
+ * @brief The declared type of the single argument such an overload converts from.
+ */
 static std::string SingleArgumentType(const std::vector<ParameterInformation>& parameters)
 {
     return parameters.empty() ? "" : CanonicalizeType(parameters[0].typeName);
@@ -366,12 +379,7 @@ static std::string SingleArgumentType(const std::vector<ParameterInformation>& p
 
 /**
  * @brief The overload an assignment operator calls, or empty for one that has none.
- *
- * AngelScript spells each compound assignment as a method: `a += b` is `a.opAddAssign(b)`,
- * and the operand types are that method's business rather than a conversion between the two
- * sides. `@=` is left out on purpose - handle assignment is not an overloadable operator on
- * a script class, measured, and opHndlAssign is a behaviour of application-registered
- * types.
+ *        AngelScript spells each compound assignment as a method: `a += b` is `a.opAddAssign(b)`,
  */
 static std::string_view AssignmentOverloadName(std::string_view op)
 {
@@ -404,7 +412,9 @@ static std::string_view AssignmentOverloadName(std::string_view op)
     return {};
 }
 
-/** @brief Whether `typeName` declares the operator method `methodName` at all. */
+/**
+ * @brief Whether `typeName` declares the operator method `methodName` at all.
+ */
 static bool DeclaresOperatorMethod(const std::string& typeName, std::string_view methodName, const SymbolTable& table)
 {
     if (typeName.empty() || methodName.empty())
@@ -416,11 +426,7 @@ static bool DeclaresOperatorMethod(const std::string& typeName, std::string_view
 
 /**
  * @brief True for a type no `cast<>` may name: a primitive, or an enum.
- *
- * Measured against the compiler, which rejects every one of them the same way -
- * `cast<int>(obj)`, `cast<int>(n)`, `cast<int>(enumValue)` and `cast<E>(n)` are all
- * "Illegal target type for reference cast", and `cast<A@>(n)` is "No conversion from 'int'
- * to 'A@' available". A reference cast is between reference types, and nothing else.
+ *        Measured against the compiler, which rejects every one of them the same way -
  */
 static bool IsScalarCastTarget(const std::string& typeName, const SymbolTable& table)
 {
@@ -434,10 +440,11 @@ static bool IsScalarCastTarget(const std::string& typeName, const SymbolTable& t
                                   [](const Symbol& sym) { return sym.type == SymbolType::Enum; });
 }
 
-/** @brief True when a type declares any cast operator overload.
- *  @note Deliberately coarse. Matching a cast operator to its result type means resolving
+/**
+ * @brief True when a type declares any cast operator overload.
+ * @note Deliberately coarse. Matching a cast operator to its result type means resolving
  *        the engine's template-ish opCast, which no declaration in the source states
- *        precisely enough to bet a diagnostic on. */
+ */
 static bool DeclaresAnyCastOperator(const std::string& typeName, const SymbolTable& table)
 {
     bool found = false;
@@ -455,7 +462,9 @@ static bool DeclaresAnyCastOperator(const std::string& typeName, const SymbolTab
     return found;
 }
 
-/** @brief True when a type declares a conversion operator producing the target type. */
+/**
+ * @brief True when a type declares a conversion operator producing the target type.
+ */
 static bool DeclaresConversionTo(const std::string& fromType, const std::string& toType, const SymbolTable& table,
                                  bool implicitOnly)
 {
@@ -506,7 +515,9 @@ static bool DeclaresConversionTo(const std::string& fromType, const std::string&
     return false;
 }
 
-/** @brief True when derived is derived from base (valid implicit upcast). */
+/**
+ * @brief True when derived is derived from base (valid implicit upcast).
+ */
 static bool IsDerivedFrom(const std::string& derived, const std::string& base, const SymbolTable& table)
 {
     const std::string cleanDerived = CleanBaseType(derived);
@@ -521,9 +532,11 @@ static bool IsDerivedFrom(const std::string& derived, const std::string& base, c
     return false;
 }
 
-/** @brief True when one type appears in the other's inheritance chain, either direction.
- *  @note Both directions count: an upcast is implicit, and a downcast is what cast<> is
- *        for, so neither is worth a diagnostic here. */
+/**
+ * @brief True when one type appears in the other's inheritance chain, either direction.
+ * @note Both directions count: an upcast is implicit, and a downcast is what cast<> is
+ *        for, so neither is worth a diagnostic here.
+ */
 static bool AreHierarchyRelated(const std::string& a, const std::string& b, const SymbolTable& table)
 {
     const std::string cleanA = CleanBaseType(a);
@@ -545,7 +558,9 @@ static bool AreHierarchyRelated(const std::string& a, const std::string& b, cons
     return false;
 }
 
-/** @brief The workspace's string type, which defaults to `string` when unconfigured. */
+/**
+ * @brief The workspace's string type, which defaults to `string` when unconfigured.
+ */
 static bool IsStringType(const std::string& typeName, const DiagnosticContext& ctx)
 {
     return typeName == ctx.request.GetEffectiveStringTypeName();
@@ -565,9 +580,9 @@ static bool IsPoisonOrEmptyType(std::string_view from, std::string_view to)
 /**
  * @brief Decides whether a value of type 'from' can reach type 'to'.
  * @param depth Recursion guard. At depth > 0 only the direct relations are consulted, so
- *              matching a constructor parameter cannot recurse into another constructor.
+ *        matching a constructor parameter cannot recurse into another constructor.
  * @return True whenever a route exists - and also whenever this analyzer cannot see enough
- *         to rule one out.
+ *        to rule one out.
  */
 static bool CanTriviallyConvert(const std::string& from, const std::string& to, const DiagnosticContext& ctx)
 {
@@ -731,7 +746,7 @@ static bool IsUnresolvedOrExternalType(const std::string& typeName, bool isBuilt
  * @param[in,out] state Active conversion depth and cycle tracking state.
  * @return True if a conversion route exists; false otherwise.
  */
-static bool CanConvertUserTypes(const ConversionTypes& types, const DiagnosticContext& ctx, ConversionState& state)
+static bool CanConvertUserTypes(const ConversionTypePair& types, const DiagnosticContext& ctx, ConversionState& state)
 {
     const bool fromBuiltIn = IsBuiltInValueType(types.from, ctx);
     const bool toBuiltIn = IsBuiltInValueType(types.to, ctx);
@@ -825,7 +840,9 @@ static bool IsConvertible(const std::string& from, const std::string& to, const 
     return TypeConversionEvaluator::IsConvertible(from, to, ctx, state);
 }
 
-/** @brief Classifies a numeric literal as integral or floating point. */
+/**
+ * @brief Classifies a numeric literal as integral or floating point.
+ */
 static std::string ClassifyNumberLiteral(std::string_view text)
 {
     const bool isHex = text.size() > 1 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X');
@@ -842,7 +859,9 @@ static std::string ClassifyNumberLiteral(std::string_view text)
     return "int";
 }
 
-/** @brief Finds the class a 'this' expression refers to at a given node. */
+/**
+ * @brief Finds the class a 'this' expression refers to at a given node.
+ */
 static std::string EnclosingClassName(TSNode node, std::string_view sourceCode)
 {
     for (const auto& container : GetEnclosingContainers(node, sourceCode))
@@ -1405,7 +1424,9 @@ static bool IsSignedNumericPrimitive(std::string_view typeName) noexcept
            typeName == "int64" || typeName == "float" || typeName == "double";
 }
 
-/** @brief True for a written-out number, through any parentheses and unary sign. */
+/**
+ * @brief True for a written-out number, through any parentheses and unary sign.
+ */
 static bool IsNumericLiteralExpression(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
@@ -1433,18 +1454,7 @@ static bool IsNumericLiteralExpression(TSNode node)
 
 /**
  * @brief True when the operand is something the compiler folds before it compares.
- *
- * Constants are what lets the mismatch rule stay silent instead of guessing: the compiler
- * knows the value, so it compares values rather than types and no mismatch arises. A name
- * counts as constant here when its declaration says `const` - the one spelling that
- * survives into both LocalDefinition::typeName and VariableSignature::typeName - or when
- * it is a literal.
- *
- * An enum member needs no case of its own. ResolveExpressionType answers a bare `A` with
- * its enum's name rather than `int`, so it never reaches the numeric test at all.
- *
- * An unrecognised shape answers false, which is the emitting side. That is what the
- * corpus audit in TypeConversionTest.cpp exists to hold honest.
+ *        Constants are what lets the mismatch rule stay silent instead of guessing: the compiler
  */
 static bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
@@ -1546,7 +1556,7 @@ static void CheckSignedUnsignedComparison(TSNode node, const Scope* scope, Diagn
 /**
  * @brief `as-warn-float-truncation` where a float value implicitly becomes an integer.
  */
-static void CheckFloatTruncation(TSNode valueNode, const ConversionTypes& types, const Scope* scope,
+static void CheckFloatTruncation(TSNode valueNode, const ConversionTypePair& types, const Scope* scope,
                                  DiagnosticContext& ctx)
 {
     if (ts_node_is_null(valueNode))
@@ -1579,8 +1589,9 @@ static bool IsDeclaredTypeUsable(const std::string& baseName, const DiagnosticCo
     return !ResolvesToNonClassDeclaration(baseName, ctx.request.symbolTable);
 }
 
-/** @brief Reads a 'type' node into the shape the conversion rules can act on.
- *  @note Arrays, templates and anything that does not resolve to a plain class are marked
+/**
+ * @brief Reads a 'type' node into the shape the conversion rules can act on.
+ * @note Arrays, templates and anything that does not resolve to a plain class are marked
  *        unusable: their conversion rules depend on element types this pass does not track.
  */
 static DeclaredType ReadDeclaredType(TSNode typeNode, const DiagnosticContext& ctx)
@@ -1698,7 +1709,9 @@ static void CheckHandleInitializer(TSNode valueNode, const ExpressionType& sourc
     }
 }
 
-/** @brief Rule for `T v = expr;` - the implicit conversion route. */
+/**
+ * @brief Rule for `T v = expr;` - the implicit conversion route.
+ */
 static void CheckInitializer(TSNode declaratorNode, const DeclaredType& declared, const Scope* scope,
                              DiagnosticContext& ctx)
 {
@@ -1743,16 +1756,7 @@ static void CheckInitializer(TSNode declaratorNode, const DeclaredType& declared
 
 /**
  * @brief The type `foreach`'s Nth loop variable takes, from the container's own declaration.
- *
- * AngelScript drives `foreach` through `opForBegin` / `opForEnd` / `opForNext` and one
- * `opForValue<N>` per loop variable, so the Nth variable's type is that method's return
- * type. Reading it back out of the stub is the general rule and needs no per-type knowledge:
- * `array<T>` declares `const T& opForValue0(uint)` and `uint opForValue1(uint)`, and
- * `dictionary` declares `const dictionaryValue& opForValue0(...)` and
- * `const string& opForValue1(...)`, which is exactly what the compiler hands the loop.
- *
- * Returns empty when the container declares no such method, which leaves the variable's
- * written `auto` in place rather than guessing at it.
+ *        AngelScript drives `foreach` through `opForBegin` / `opForEnd` / `opForNext` and one
  */
 static std::string ForeachValueType(const std::string& containerType, uint32_t variableIndex,
                                     const DiagnosticContext& ctx)
@@ -1850,7 +1854,9 @@ static bool IsConstructibleFrom(const std::string& sourceBase, const std::string
     return constructible;
 }
 
-/** @brief Rule for a one-argument construction: `T(expr)` or `T v(expr);`. */
+/**
+ * @brief Rule for a one-argument construction: `T(expr)` or `T v(expr);`.
+ */
 static bool IsTargetTypeIgnoredForConstruction(const std::string& targetType, const SymbolTable& table,
                                                const DiagnosticContext& ctx)
 {
@@ -2199,7 +2205,7 @@ static void CheckConstructorDelegation(TSNode funcNode, DiagnosticContext& ctx)
  * @param[in] ctx Diagnostic collection context.
  * @return True if cast should be evaluated further; false if conversion should be silently assumed.
  */
-static bool CheckCastVisibilityGuards(const ConversionTypes& types, bool sourceIsScalar, bool targetIsScalar,
+static bool CheckCastVisibilityGuards(const ConversionTypePair& types, bool sourceIsScalar, bool targetIsScalar,
                                       const DiagnosticContext& ctx)
 {
     const SymbolTable& table = ctx.request.symbolTable;
@@ -2218,7 +2224,9 @@ static bool CheckCastVisibilityGuards(const ConversionTypes& types, bool sourceI
     return true;
 }
 
-/** @brief Rule for `cast<T>(expr)` - the reinterpreting route. */
+/**
+ * @brief Rule for `cast<T>(expr)` - the reinterpreting route.
+ */
 static void CheckCast(TSNode castNode, const Scope* scope, DiagnosticContext& ctx)
 {
     const std::string targetName = CleanBaseType(parser::NodeText(
@@ -2334,14 +2342,7 @@ static const std::string* BoolConversionOperator(const std::string& typeName, co
 
 /**
  * @brief The sub-expressions a condition actually evaluates for truth.
- *
- * `if (h)` is one operand; `if (h && other)` is two, and `if (!h)` is one behind a negation.
- * Collecting them handles compound conditions like `if (h && true)` - resolving the
- * type of the whole condition there answers `bool`, because `&&` yields one, and the class
- * that cannot convert sits underneath.
- *
- * Only the logical operators recurse. `a == b` also yields a bool but its operands are
- * compared, not converted to bool, and the engine's rules for that are a different question.
+ *        `if (h)` is one operand; `if (h && other)` is two, and `if (!h)` is one behind a negation.
  */
 static bool IsLogicalBinaryOperator(TSSymbol sym, const parser::GrammarSymbols& gs)
 {
@@ -3220,7 +3221,7 @@ static TSNode UnwrapHandleOperand(TSNode expr, bool& isHandleAssignment)
  * @param[in] scope Enclosing lexical scope.
  * @param[in,out] ctx Diagnostic collection context.
  */
-static void CheckHandleConstAssignment(AssignmentOperands operands, const ConversionTypes& types, const Scope* scope,
+static void CheckHandleConstAssignment(AssignmentOperands operands, const ConversionTypePair& types, const Scope* scope,
                                        DiagnosticContext& ctx)
 {
     bool isHandleAssignment = false;
@@ -3249,7 +3250,7 @@ static void CheckHandleConstAssignment(AssignmentOperands operands, const Conver
  * @param[in] types Left and right base types.
  * @param[in,out] ctx Diagnostic collection context.
  */
-static void CheckAssignmentOperatorConversion(TSNode node, TSNode right, const ConversionTypes& types,
+static void CheckAssignmentOperatorConversion(TSNode node, TSNode right, const ConversionTypePair& types,
                                               DiagnosticContext& ctx)
 {
     if (types.to.empty())
@@ -3469,7 +3470,7 @@ static void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest&
     {
         return;
     }
-    const ConversionTypes types{CleanBaseType(rightType), CleanBaseType(leftType)};
+    const ConversionTypePair types{CleanBaseType(rightType), CleanBaseType(leftType)};
 
     CheckFloatTruncation(right, types, scope, ctx);
 

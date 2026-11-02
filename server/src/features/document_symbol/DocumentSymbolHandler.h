@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/index/SymbolTable.h"
+
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <optional>

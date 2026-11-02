@@ -1,25 +1,22 @@
 #pragma once
 
+#include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
+
 #include <string>
 #include <tree_sitter/api.h>
 
-#include "analysis/checkers/AstCheckContext.h"
-
 namespace angel_lsp::analysis
 {
-class NodeIndex;
-
-using IsolationCheckRequest = AstCheckContext;
 
 /**
  * @brief Validates strict isolation boundaries: shared entities cannot access non-shared entities.
  * @param request Immutable context with AST, source code, and scopes.
  * @param ctx Diagnostic context to emit findings.
  */
-void CheckSharedIsolation(const IsolationCheckRequest& request, DiagnosticContext& ctx);
+void CheckSharedIsolation(const AstCheckContext& request, DiagnosticContext& ctx);
 
 /**
  * @brief AST checker for strict shared isolation boundaries.

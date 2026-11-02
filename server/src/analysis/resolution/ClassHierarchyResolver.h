@@ -1,8 +1,10 @@
 #pragma once
 
+#include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "config/EngineRuleConfig.h"
+
 #include <ankerl/unordered_dense.h>
 #include <span>
 #include <string>
@@ -44,8 +46,6 @@ struct MixinExpansionContext
     ankerl::unordered_dense::set<std::string>& visited;
     std::vector<std::string>& result;
 };
-
-struct DiagnosticContext;
 
 bool IsDestructorSymbol(const Symbol& sym);
 bool IsDestructorDeclaration(const Symbol& sym, std::string_view source);

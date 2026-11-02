@@ -1,4 +1,5 @@
 #include "parser/GrammarSymbols.h"
+
 #include "parser/GrammarNames.h"
 
 #include <string_view>

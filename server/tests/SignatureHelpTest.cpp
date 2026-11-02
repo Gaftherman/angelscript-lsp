@@ -1,13 +1,13 @@
-#include "helpers/TestUtils.h"
-#include <doctest/doctest.h>
-#include <random>
-
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "features/signature_help/SignatureHelpHandler.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
+
+#include <doctest/doctest.h>
+#include <random>
 
 using namespace angel_lsp;
 using namespace angel_lsp::features;

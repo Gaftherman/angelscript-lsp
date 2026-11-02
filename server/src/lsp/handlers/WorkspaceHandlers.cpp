@@ -3,6 +3,7 @@
 #include "lsp/Server.h"
 #include "lsp/state/PositionCodec.h"
 #include "utils/Utils.h"
+
 #include <cctype>
 #include <fstream>
 

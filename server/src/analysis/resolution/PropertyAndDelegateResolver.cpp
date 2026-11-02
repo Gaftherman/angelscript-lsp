@@ -1,4 +1,5 @@
 #include "analysis/resolution/PropertyAndDelegateResolver.h"
+
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
@@ -9,6 +10,7 @@
 #include "parser/GrammarSymbols.h"
 #include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
+
 #include <algorithm>
 #include <string>
 #include <string_view>
