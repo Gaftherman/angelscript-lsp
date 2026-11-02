@@ -1,7 +1,7 @@
 #pragma once
 
-#include "analysis/ScopeTree.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/ScopeTree.h"
+#include "analysis/index/SymbolTable.h"
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <optional>
@@ -9,10 +9,7 @@
 #include <tree_sitter/api.h>
 #include <vector>
 
-namespace angel_lsp::utils
-{
-class LspLogger;
-}
+#include "utils/LspLogger.h"
 
 namespace angel_lsp::features
 {

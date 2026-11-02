@@ -1,8 +1,8 @@
 #include <doctest/doctest.h>
 
-#include "analysis/LocalScopeCollector.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "parser/AngelScriptParser.h"
 #include "parser/Keywords.h"

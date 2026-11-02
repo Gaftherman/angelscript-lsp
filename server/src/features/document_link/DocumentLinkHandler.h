@@ -1,6 +1,6 @@
 #pragma once
 
-#include "analysis/Diagnostics.h"
+#include "analysis/diagnostics/Diagnostics.h"
 #include "i18n/i18n.h"
 #include "utils/PreprocessorRegions.h"
 

@@ -177,7 +177,19 @@ list(REMOVE_ITEM BACKEND_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
 add_library(angel_lsp_core STATIC ${BACKEND_SOURCES})
 target_include_directories(angel_lsp_core PUBLIC 
     include
-    src 
+    src
+    src/analysis/index
+    src/analysis/types
+    src/analysis/diagnostics
+    src/analysis/documentation
+    src/analysis/resolution
+    src/analysis/rules
+    src/analysis/checkers
+    src/analysis/checkers/null_safety
+    src/lsp/state
+    src/lsp/pipeline
+    src/lsp/services
+    src/lsp/handlers
     "${tree_sitter_angelscript_SOURCE_DIR}/src" 
     "${tree_sitter_runtime_SOURCE_DIR}/lib/include"
 )

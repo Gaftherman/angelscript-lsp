@@ -5,12 +5,12 @@
  *        custom array desugaring, and request effective type getters.
  */
 
-#include "analysis/DiagnosticCodes.h"
-#include "analysis/OverloadResolver.h"
 #include "analysis/SemanticAnalysisRequest.h"
-#include "analysis/SymbolTable.h"
-#include "analysis/overload/ConversionRankingEngine.h"
-#include "analysis/overload/OverloadTypeConversions.h"
+#include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/ConversionRankingEngine.h"
+#include "analysis/resolution/OverloadResolver.h"
+#include "analysis/resolution/OverloadTypeConversions.h"
 #include "config/ServerConfig.h"
 #include "helpers/TestUtils.h"
 #include "utils/Constants.h"

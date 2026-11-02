@@ -1548,6 +1548,37 @@
         "Maintained immutable audit trail of 60 refactoring actions in docs/REFACTOR_LEDGER.json, verified via check-refactor-ledger.py --check-diff develop.",
         "Verified 100% test pass rate across 2,608 unit tests (35,000+ assertions) and 74 client integration tests, with all 13 static quality gates passing cleanly."
       ]
+    },
+    {
+      "id": "PHASE_52",
+      "name": "Sub-Layer Domain-Driven Design (DDD) Modularization, Multi-Line Note Eradication, CallGraph Deduplication & Zero-Slop Architecture",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "docs/REFACTOR_LEDGER.json",
+        "docs/STEPS.md",
+        "docs/STEPS.json",
+        "AGENTS.md",
+        "server/CMakeLists.txt",
+        "server/scripts/check-layer-includes.py",
+        "server/scripts/check-ast-traversal.py",
+        "server/scripts/check-diagnostic-codes.py",
+        "server/scripts/audit-codebase-redundancy.py",
+        "server/scripts/check-refactor-ledger.py",
+        "server/src/analysis/index/CallGraph.cpp",
+        "server/src/analysis/index/CallGraph.h",
+        "server/src/analysis/checkers/ConstChecker.cpp",
+        "server/src/analysis/checkers/ConstChecker.h",
+        "server/src/analysis/documentation/DoxygenMarkdown.cpp"
+      ],
+      "findings": [
+        "Eradicated 100% of truncated orphan @note [REFACTOR-CANDIDATE] comment fragments across 24 source files in server/src/.",
+        "Deduplicated CallGraph.cpp: unified symmetrical FindCallsTo and FindCallsFrom algorithms into generic FilterCallsByField helper, registered REF-0082 in docs/REFACTOR_LEDGER.json.",
+        "Replaced 14 manual forward declarations of LspLogger and I18n with direct includes of utils/LspLogger.h and i18n/i18n.h.",
+        "Banned using namespace in test headers and namespace aliases (namespace X = Y) across tests and tools in check-ast-traversal.py.",
+        "Reorganized Layer 2 (analysis/) into 7 domain sub-layers: index/ (2.1), types/ (2.2), diagnostics/ (2.3), documentation/ (2.4), resolution/ (2.5), rules/ (2.6a), checkers/ (2.6b including null_safety/), and coordinator (2.7).",
+        "Reorganized Layer 4 (lsp/) into 5 domain sub-layers: state/ (4.1), pipeline/ (4.2), services/ (4.3), handlers/ (4.4), and core (4.5).",
+        "Verified all Lizard complexity limits (CCN <= 15, NLOC <= 70) and all 13 static quality gates green."
+      ]
     }
   ],
   "identifiedGaps": [
@@ -1625,9 +1656,9 @@
     "GAP-RAM-01: Loose struct padding, duplicated helper structs in .cpp files, and 24-byte SymbolModifiers overhead. (RESOLVED in Phase 51 with 4-byte bitfields, NodeIndex Interval Trees, and check_cpp_structs_odr_safety quality gate)."
   ],
   "nextActions": [
-    "Phase 51 Architecture deduplication, RAM compaction, and ODR safety gate completed and merged to develop."
+    "Phase 52 Sub-Layer Domain-Driven Design (DDD) modularization, CallGraph deduplication, and zero-slop architecture completed and verified."
   ],
-  "lastMilestone": "Phase 51 completed: Architecture deduplication, RAM bitfield compaction (SymbolModifiers, ParameterInformation, ScopeTree), interval-tree byte queries in NodeIndex, zero-ODR struct gate, and cluster unification merged to develop.",
+  "lastMilestone": "Phase 52 completed: Sub-Layer Domain-Driven Design (DDD) modularization, CallGraph deduplication, multi-line note eradication, and zero-slop architecture.",
   "gaps": [
     "GAP-AST-01: False-positive W108 on synthetic properties and member variables in deep block structures due to low max climb depth. (RESOLVED in Phase 45 with k_maxAstClimbDepth = 256 and include closure expansion).",
     "GAP-PERF-08: Ad-hoc depth < 64 loops and full-text searches in isolation checking. (RESOLVED in Phase 46 with NodeIndex binary intervals, ASTUtils centralized climbs, and O(1) token isolation checks).",

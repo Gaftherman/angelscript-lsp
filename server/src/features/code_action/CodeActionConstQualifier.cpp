@@ -3,7 +3,7 @@
  * @brief Code action providers for adding const qualifier to methods.
  */
 
-#include "analysis/TypeSanitization.h"
+#include "analysis/types/TypeSanitization.h"
 #include "features/code_action/CodeActionClassMutation.h"
 #include "features/code_action/CodeActionInternal.h"
 #include "parser/ASTUtils.h"
@@ -125,7 +125,6 @@ static void TryAddMissingConstDiagnosticFix(const CodeActionRequest& request, TS
  * @param[in] bodyNode AST node of the function compound body (or null if abstract).
  * @param[in] fnNode AST node of the enclosing function declaration.
  * @return True if 'const' token is found in the intervening source span, false otherwise.
- * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
 static bool HasConstQualifierBetween(TSNode fnNode)
 {
@@ -224,7 +223,6 @@ static void TryAddIntentionalConstAction(const CodeActionRequest& request, TSNod
  * @param[in] rootNode AST node under evaluation.
  * @param[in] diag LSP Diagnostic triggering the const qualifier action.
  * @param[in,out] actions Output list where constructed CodeAction is appended.
- * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
 static void TryAddConstHandleDiagnosticFix(const CodeActionRequest& request, TSNode rootNode,
                                            const lsp::Diagnostic& diag, std::vector<lsp::CodeAction>& actions)

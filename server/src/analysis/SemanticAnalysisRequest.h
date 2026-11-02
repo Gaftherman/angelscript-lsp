@@ -1,11 +1,11 @@
 #pragma once
 
-#include "analysis/Diagnostics.h"
-#include "analysis/ExpressionTypeCache.h"
-#include "analysis/ScopeTree.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/diagnostics/Diagnostics.h"
+#include "analysis/index/ScopeTree.h"
+#include "analysis/index/SymbolTable.h"
 #include "analysis/rules/ClassRules.h"
 #include "analysis/rules/RuleIndex.h"
+#include "analysis/types/ExpressionTypeCache.h"
 #include "config/ServerConfig.h"
 #include "i18n/i18n.h"
 #include "utils/PreprocessorRegions.h"

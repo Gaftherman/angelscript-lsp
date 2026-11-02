@@ -1,4 +1,4 @@
-#include "analysis/TypeSanitization.h"
+#include "analysis/types/TypeSanitization.h"
 #include "features/code_action/CodeActionInternal.h"
 #include "i18n/i18n.h"
 #include "parser/ASTUtils.h"
@@ -184,7 +184,6 @@ static std::pair<bool, bool> CheckFieldAccessors(const analysis::SymbolTable& ta
  * @param[in] request Code action request.
  * @param[in] ctx Getter and setter context.
  * @param[out] actions Destination code actions vector.
- * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static void EmitGetterSetterActionsForField(const CodeActionRequest& request, const GetterSetterContext& ctx,
                                             std::vector<lsp::CodeAction>& actions)

@@ -1,12 +1,12 @@
 #pragma once
 
-#include "analysis/Diagnostics.h"
-#include "analysis/LocalScopeCollector.h"
-#include "analysis/ScopeTree.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/diagnostics/Diagnostics.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/ScopeTree.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
 #include "config/ServerConfig.h"
 #include "document/Document.h"
 #include "i18n/i18n.h"

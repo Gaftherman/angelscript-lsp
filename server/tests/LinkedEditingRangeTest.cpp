@@ -1,7 +1,7 @@
 #include <doctest/doctest.h>
 
-#include "analysis/LocalScopeCollector.h"
-#include "analysis/ScopeTree.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/ScopeTree.h"
 #include "features/linked_editing/LinkedEditingRangeHandler.h"
 #include "parser/AngelScriptParser.h"
 

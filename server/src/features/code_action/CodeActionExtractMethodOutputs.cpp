@@ -52,8 +52,6 @@ static void CheckIncDecMutation(TSNode curr, std::string_view sourceCode,
  * @param[in] curr Call expression AST node being evaluated.
  * @param[in] sourceCode Document source text buffer.
  * @param[in,out] mutatedVars Output set accumulating identifiers mutated by the call.
- * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier /
- * Symbol::modifiers.isReturnReference.
  */
 static void CheckCallMutation(TSNode curr, std::string_view sourceCode,
                               ankerl::unordered_dense::set<std::string>& mutatedVars)

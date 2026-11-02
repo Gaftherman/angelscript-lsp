@@ -1,8 +1,8 @@
 #include <doctest/doctest.h>
 
-#include "analysis/SemanticHelpers.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "parser/AngelScriptParser.h"
 
 #include <string>

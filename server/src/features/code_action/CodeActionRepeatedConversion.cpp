@@ -1,4 +1,4 @@
-#include "analysis/RepeatedConversionChecker.h"
+#include "analysis/checkers/RepeatedConversionChecker.h"
 #include "features/code_action/CodeActionInternal.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"

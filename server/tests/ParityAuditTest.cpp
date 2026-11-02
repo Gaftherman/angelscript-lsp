@@ -1,11 +1,11 @@
 #include <doctest/doctest.h>
 
-#include "analysis/EngineProfiles.h"
-#include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
+#include "analysis/types/EngineProfiles.h"
 #include "config/ServerConfig.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
@@ -56,7 +56,6 @@
 
 namespace
 {
-namespace fs = std::filesystem;
 
 std::string EnvVar(const char* name)
 {
@@ -74,7 +73,7 @@ std::string EnvVar(const char* name)
 #endif
 }
 
-std::string ReadFile(const fs::path& path)
+std::string ReadFile(const std::filesystem::path& path)
 {
     std::ifstream in(path, std::ios::binary);
     if (!in.is_open())
@@ -85,7 +84,7 @@ std::string ReadFile(const fs::path& path)
 }
 
 /** @brief True when the real AngelScript compiler accepts the script (asharness exits 0). */
-bool RealCompilerAccepts(const std::string& harnessExe, const fs::path& script)
+bool RealCompilerAccepts(const std::string& harnessExe, const std::filesystem::path& script)
 {
     // Wrapped in an extra pair of quotes: cmd.exe strips the outermost pair, and both the
     // harness path and the script path can contain spaces.
@@ -100,7 +99,7 @@ bool RealCompilerAccepts(const std::string& harnessExe, const fs::path& script)
 
 struct ParityCase
 {
-    fs::path path;
+    std::filesystem::path path;
     bool realAccepts = false;
     std::vector<angel_lsp::analysis::Diagnostic> ourErrors;
 
@@ -147,7 +146,7 @@ const std::vector<KnownGap>& KnownGaps()
     return gaps;
 }
 
-const KnownGap* FindKnownGap(const fs::path& path)
+const KnownGap* FindKnownGap(const std::filesystem::path& path)
 {
     for (const auto& gap : KnownGaps())
     {
@@ -164,20 +163,20 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" 
     using namespace angel_lsp::parser;
 
     std::string harnessExe = EnvVar("ASHARNESS_EXE");
-    if (harnessExe.empty() || !fs::exists(harnessExe))
+    if (harnessExe.empty() || !std::filesystem::exists(harnessExe))
     {
-        const std::vector<fs::path> candidates = {
-            fs::path(ANGELSCRIPT_REPO_ROOT) / "build" / "Debug" / "angelscript_oracle.exe",
-            fs::path(ANGELSCRIPT_REPO_ROOT) / "build" / "bin" / "angelscript_oracle.exe",
-            fs::path(ANGELSCRIPT_REPO_ROOT) / "build" / "Release" / "angelscript_oracle.exe",
-            fs::path(ANGELSCRIPT_REPO_ROOT) / "build" / "angelscript_oracle",
-            fs::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "Debug" / "angelscript_oracle.exe",
-            fs::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "bin" / "angelscript_oracle.exe",
-            fs::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "Release" / "angelscript_oracle.exe",
-            fs::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "angelscript_oracle"};
+        const std::vector<std::filesystem::path> candidates = {
+            std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "build" / "Debug" / "angelscript_oracle.exe",
+            std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "build" / "bin" / "angelscript_oracle.exe",
+            std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "build" / "Release" / "angelscript_oracle.exe",
+            std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "build" / "angelscript_oracle",
+            std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "Debug" / "angelscript_oracle.exe",
+            std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "bin" / "angelscript_oracle.exe",
+            std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "Release" / "angelscript_oracle.exe",
+            std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "angelscript_oracle"};
         for (const auto& candidate : candidates)
         {
-            if (fs::exists(candidate))
+            if (std::filesystem::exists(candidate))
             {
                 harnessExe = candidate.string();
                 break;
@@ -185,7 +184,7 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" 
         }
     }
 
-    if (harnessExe.empty() || !fs::exists(harnessExe))
+    if (harnessExe.empty() || !std::filesystem::exists(harnessExe))
     {
         MESSAGE("ASHARNESS_EXE is unset and no built oracle found - parity audit skipped.");
         return;
@@ -196,15 +195,15 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" 
     // Defaults to the sibling checkout layout; override for a different one.
     std::string harnessRoot = EnvVar("ASHARNESS_ROOT");
     if (harnessRoot.empty())
-        harnessRoot = (fs::path(ANGELSCRIPT_CORPUS_DIR) / ".." / ".." / "AS-Harness").string();
+        harnessRoot = (std::filesystem::path(ANGELSCRIPT_CORPUS_DIR) / ".." / ".." / "AS-Harness").string();
 
-    const bool haveHarnessRoot = !isOracle && fs::exists(harnessRoot);
+    const bool haveHarnessRoot = !isOracle && std::filesystem::exists(harnessRoot);
 
     // PARITY_SCRIPT_DIR points the audit at any directory of .as files instead of the harness's
     // own. That is what lets the same machinery be run over the snippets extracted from this
     // suite's own tests - a far larger oracle corpus than the ten files AS-Harness ships, and the
     // one that actually says whether the expectations encoded in these tests match the language.
-    std::vector<fs::path> scripts;
+    std::vector<std::filesystem::path> scripts;
     const std::string overrideDir = EnvVar("PARITY_SCRIPT_DIR");
 
     if (!overrideDir.empty())
@@ -212,10 +211,10 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" 
         // Set but missing is a misconfiguration, not a reason to quietly audit something else. It
         // used to fall through to the harness corpus, which meant a typo in the CI variable
         // measured a different set of scripts than the job claimed to.
-        REQUIRE_MESSAGE(fs::exists(overrideDir),
+        REQUIRE_MESSAGE(std::filesystem::exists(overrideDir),
                         "PARITY_SCRIPT_DIR is set but names a directory that does not exist: " << overrideDir);
 
-        for (const auto& entry : fs::directory_iterator(overrideDir))
+        for (const auto& entry : std::filesystem::directory_iterator(overrideDir))
         {
             if (entry.is_regular_file() && entry.path().extension() == ".as")
                 scripts.push_back(entry.path());
@@ -223,9 +222,9 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" 
     }
     else if (isOracle || !haveHarnessRoot)
     {
-        if (fs::exists(ANGELSCRIPT_PARITY_DIR))
+        if (std::filesystem::exists(ANGELSCRIPT_PARITY_DIR))
         {
-            for (const auto& entry : fs::directory_iterator(ANGELSCRIPT_PARITY_DIR))
+            for (const auto& entry : std::filesystem::directory_iterator(ANGELSCRIPT_PARITY_DIR))
             {
                 if (entry.is_regular_file() && entry.path().extension() == ".as")
                     scripts.push_back(entry.path());
@@ -241,11 +240,11 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" 
     {
         for (const char* sub : {"Tests", "examples"})
         {
-            const fs::path dir = fs::path(harnessRoot) / sub;
-            if (!fs::exists(dir))
+            const std::filesystem::path dir = std::filesystem::path(harnessRoot) / sub;
+            if (!std::filesystem::exists(dir))
                 continue;
 
-            for (const auto& entry : fs::directory_iterator(dir))
+            for (const auto& entry : std::filesystem::directory_iterator(dir))
             {
                 if (entry.is_regular_file() && entry.path().extension() == ".as")
                     scripts.push_back(entry.path());
@@ -257,8 +256,9 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" 
     std::sort(scripts.begin(), scripts.end());
 
     static angel_lsp::i18n::I18n i18n;
-    const fs::path predefinedPath = fs::path(harnessRoot) / "as.predefined";
-    const std::string predefinedStub = fs::exists(predefinedPath) ? ReadFile(predefinedPath) : std::string();
+    const std::filesystem::path predefinedPath = std::filesystem::path(harnessRoot) / "as.predefined";
+    const std::string predefinedStub =
+        std::filesystem::exists(predefinedPath) ? ReadFile(predefinedPath) : std::string();
 
     // Each corpus is paired with the stub it was actually written against, and only that one.
     //
@@ -274,11 +274,12 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" 
     // an oracle and a stub that disagree produce findings about the disagreement.
     std::string explicitStubPath = EnvVar("PARITY_PREDEFINED");
     if (explicitStubPath.empty() && (isOracle || !haveHarnessRoot) &&
-        fs::exists(fs::path(ANGELSCRIPT_FIXTURE_DIR) / "sdk-addons.as.predefined"))
+        std::filesystem::exists(std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "sdk-addons.as.predefined"))
     {
-        explicitStubPath = (fs::path(ANGELSCRIPT_FIXTURE_DIR) / "sdk-addons.as.predefined").string();
+        explicitStubPath = (std::filesystem::path(ANGELSCRIPT_FIXTURE_DIR) / "sdk-addons.as.predefined").string();
     }
-    const std::string explicitStub = explicitStubPath.empty() ? std::string() : ReadFile(fs::path(explicitStubPath));
+    const std::string explicitStub =
+        explicitStubPath.empty() ? std::string() : ReadFile(std::filesystem::path(explicitStubPath));
 
     if (!explicitStubPath.empty())
     {
@@ -575,7 +576,7 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" 
     // not evaluated, and one whose file WAS audited has to still be failing or the entry is stale.
     for (const auto& gap : KnownGaps())
     {
-        const bool wasAudited = std::any_of(scripts.begin(), scripts.end(), [&gap](const fs::path& script)
+        const bool wasAudited = std::any_of(scripts.begin(), scripts.end(), [&gap](const std::filesystem::path& script)
                                             { return script.filename().string() == gap.fileName; });
         if (!wasAudited)
             continue;

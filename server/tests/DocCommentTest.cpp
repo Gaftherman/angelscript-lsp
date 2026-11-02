@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
 
-#include "analysis/DocComment.h"
+#include "analysis/documentation/DocComment.h"
 #include "helpers/TestUtils.h"
 
 #include <string>

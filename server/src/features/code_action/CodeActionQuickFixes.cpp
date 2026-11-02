@@ -3,7 +3,7 @@
  * @brief Miscellaneous quick-fix code action providers (primitive handles, funcdefs, bool conversions).
  */
 
-#include "analysis/SignatureFormatter.h"
+#include "analysis/documentation/SignatureFormatter.h"
 #include "features/code_action/CodeActionInternal.h"
 #include "i18n/i18n.h"
 
@@ -107,7 +107,6 @@ static void EmitFuncdefCodeAction(const CodeActionRequest& request, const lsp::D
  * @param[in] request Code action request bundle containing AST root, source text, and diagnostics.
  * @param[in] rootNode Root AST node of the document.
  * @param[in,out] actions Output vector where constructed quick fix actions are appended.
- * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 void TryAddHandleOnPrimitiveFix(const CodeActionRequest& request, TSNode rootNode,
                                 std::vector<lsp::CodeAction>& actions)

@@ -1,5 +1,5 @@
 #include "analysis/rules/OperatorRules.h"
-#include "analysis/SemanticHelpers.h"
+#include "analysis/resolution/SemanticHelpers.h"
 
 #include <algorithm>
 #include <array>

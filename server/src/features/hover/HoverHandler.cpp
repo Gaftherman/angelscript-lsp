@@ -1,12 +1,12 @@
 #include "features/hover/HoverHandler.h"
-#include "analysis/DocComment.h"
-#include "analysis/OverloadResolver.h"
-#include "analysis/SemanticHelpers.h"
-#include "analysis/SignatureFormatter.h"
-#include "analysis/TypeSanitization.h"
-#include "analysis/VirtualMixinContext.h"
-#include "analysis/overload/ConversionRankingEngine.h"
+#include "analysis/documentation/DocComment.h"
+#include "analysis/documentation/SignatureFormatter.h"
+#include "analysis/resolution/ConversionRankingEngine.h"
+#include "analysis/resolution/OverloadResolver.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
+#include "analysis/types/TypeSanitization.h"
+#include "analysis/types/VirtualMixinContext.h"
 #include "config/EngineRuleConfig.h"
 #include "i18n/i18n.h"
 #include "parser/ASTUtils.h"
@@ -2439,7 +2439,6 @@ static std::string DeduceAutoDeclaratorType(TSNode declarator, const HoverQueryC
  * @brief Attempts to produce hover documentation for 'auto' keyword showing the deduced type.
  * @param[in] ctx Hover query context.
  * @return Populated Hover if node is 'auto' in an auto declaration, std::nullopt otherwise.
- * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static std::optional<lsp::Hover> TryHoverAutoType(const HoverQueryContext& ctx)
 {

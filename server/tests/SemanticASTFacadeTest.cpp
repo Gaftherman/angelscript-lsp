@@ -1,4 +1,4 @@
-#include "analysis/ast/SemanticNodes.h"
+#include "analysis/index/SemanticNodes.h"
 #include "document/Document.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"

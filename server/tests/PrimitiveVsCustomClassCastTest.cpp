@@ -5,13 +5,13 @@
 
 #include <doctest/doctest.h>
 
-#include "analysis/DiagnosticCodes.h"
-#include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/SemanticHelpers.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
@@ -23,7 +23,7 @@
 using namespace angel_lsp;
 using namespace angel_lsp::analysis;
 using namespace angel_lsp::parser;
-namespace diag_codes = angel_lsp::diagnostics::codes;
+using namespace angel_lsp::diagnostics;
 
 namespace
 {
@@ -114,7 +114,7 @@ void AssertCharInitFails(const std::string& code)
     bool foundExpectedError = false;
     for (const auto& err : errors)
     {
-        if (err.code == diag_codes::NoMatchingConstructor)
+        if (err.code == codes::NoMatchingConstructor)
         {
             foundExpectedError = true;
             CHECK(err.message.find("char(uint8)") != std::string::npos);

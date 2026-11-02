@@ -1,6 +1,6 @@
 #pragma once
 
-#include "analysis/SymbolTable.h"
+#include "analysis/index/SymbolTable.h"
 
 #include <ankerl/unordered_dense.h>
 #include <memory>

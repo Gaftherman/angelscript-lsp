@@ -1,20 +1,16 @@
 #pragma once
 
-#include "analysis/DiagnosticContext.h"
-#include "analysis/Diagnostics.h"
-#include "analysis/ScopeTree.h"
 #include "analysis/SemanticAnalysisRequest.h"
+#include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/diagnostics/Diagnostics.h"
+#include "analysis/index/ScopeTree.h"
 #include <ankerl/unordered_dense.h>
 #include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
 
-// Forward-declared so semantic analysis stays decoupled from <lsp/messages.h> pulled by LspLogger.
-namespace angel_lsp::utils
-{
-class LspLogger;
-}
+#include "utils/LspLogger.h"
 
 namespace angel_lsp::analysis
 {

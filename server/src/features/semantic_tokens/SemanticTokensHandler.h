@@ -1,8 +1,8 @@
 #pragma once
 
-#include "analysis/NodeIndex.h"
-#include "analysis/ScopeTree.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/NodeIndex.h"
+#include "analysis/index/ScopeTree.h"
+#include "analysis/index/SymbolTable.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
 #include "utils/PreprocessorRegions.h"

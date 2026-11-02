@@ -1,6 +1,6 @@
 #pragma once
 
-#include "analysis/ScopeTree.h"
+#include "analysis/index/ScopeTree.h"
 
 #include <lsp/messages.h>
 #include <lsp/types.h>

@@ -1,5 +1,5 @@
 #include "analysis/rules/VariableRules.h"
-#include "analysis/SemanticHelpers.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/EngineRuleChecker.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/ScopedNameUtils.h"

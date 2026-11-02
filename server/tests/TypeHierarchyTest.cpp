@@ -2,8 +2,8 @@
 #include <doctest/doctest.h>
 #include <random>
 
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
 #include "features/type_hierarchy/TypeHierarchyHandler.h"
 #include "parser/AngelScriptParser.h"
 

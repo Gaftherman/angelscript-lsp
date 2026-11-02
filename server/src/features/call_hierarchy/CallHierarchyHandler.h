@@ -1,7 +1,7 @@
 #pragma once
 
-#include "analysis/CallGraph.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/CallGraph.h"
+#include "analysis/index/SymbolTable.h"
 
 #include <lsp/messages.h>
 #include <lsp/types.h>

@@ -1,7 +1,7 @@
 #include "features/breakpoints/EvaluatableExpressionHandler.h"
 #include "features/completion/CompletionHandler.h"
-#include "lsp/PositionCodec.h"
 #include "lsp/Server.h"
+#include "lsp/state/PositionCodec.h"
 #include "utils/PositionEncoding.h"
 
 #include <optional>

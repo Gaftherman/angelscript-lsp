@@ -1,11 +1,11 @@
-#include "analysis/NodeIndex.h"
+#include "analysis/index/NodeIndex.h"
 #include "features/folding_range/FoldingRangeHandler.h"
 #include "features/inlay_hint/InlayHintHandler.h"
 #include "features/linked_editing/LinkedEditingRangeHandler.h"
 #include "features/selection_range/SelectionRangeHandler.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
-#include "lsp/PositionCodec.h"
 #include "lsp/Server.h"
+#include "lsp/state/PositionCodec.h"
 #include "utils/Utils.h"
 
 namespace angel_lsp

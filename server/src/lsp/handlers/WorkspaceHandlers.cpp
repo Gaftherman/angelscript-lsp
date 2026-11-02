@@ -1,7 +1,7 @@
 #include "features/formatting/PredefinedStubFormatter.h"
 #include "features/workspace_symbol/WorkspaceSymbolHandler.h"
-#include "lsp/PositionCodec.h"
 #include "lsp/Server.h"
+#include "lsp/state/PositionCodec.h"
 #include "utils/Utils.h"
 #include <cctype>
 #include <fstream>

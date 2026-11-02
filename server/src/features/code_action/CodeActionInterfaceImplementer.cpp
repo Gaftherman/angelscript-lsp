@@ -3,7 +3,7 @@
  * @brief Quick-fix provider for generating missing interface method implementations in classes.
  */
 
-#include "analysis/TypeSanitization.h"
+#include "analysis/types/TypeSanitization.h"
 #include "config/ServerConfig.h"
 #include "features/code_action/CodeActionInternal.h"
 #include "parser/ASTUtils.h"
@@ -15,7 +15,6 @@ namespace angel_lsp::features
  * @brief Returns default literal return string for a return type.
  * @param[in] returnType Return type text.
  * @return Default literal return text ("null", "false", "0", "\"\"").
- * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static std::string GetDefaultReturnValue(std::string_view returnType, std::string_view stringTypeName)
 {
@@ -42,7 +41,6 @@ static std::string GetDefaultReturnValue(std::string_view returnType, std::strin
  * @param[in] missingMethods List of missing method symbols.
  * @param[in] stringTypeName Workspace-configured string type name.
  * @return Formatted stub code string.
- * TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
  */
 static std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis::Symbol>& missingMethods,
                                                      std::string_view stringTypeName)

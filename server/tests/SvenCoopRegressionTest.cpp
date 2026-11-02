@@ -1,12 +1,12 @@
 #include <doctest/doctest.h>
 
-#include "analysis/CallGraph.h"
-#include "analysis/DiagnosticCodes.h"
-#include "analysis/LocalScopeCollector.h"
-#include "analysis/OverloadResolver.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/CallGraph.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/OverloadResolver.h"
 #include "config/ServerConfig.h"
 #include "features/code_lens/CodeLensHandler.h"
 #include "features/document_symbol/DocumentSymbolHandler.h"

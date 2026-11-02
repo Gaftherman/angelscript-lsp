@@ -3,7 +3,7 @@
  * @brief Quick-fix code actions to suppress diagnostics via comments.
  */
 
-#include "analysis/DiagnosticSuppression.h"
+#include "analysis/diagnostics/DiagnosticSuppression.h"
 #include "features/code_action/CodeActionInternal.h"
 #include <unordered_set>
 

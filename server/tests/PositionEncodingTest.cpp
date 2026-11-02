@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
 
-#include "lsp/PositionCodec.h"
+#include "lsp/state/PositionCodec.h"
 #include "utils/PositionEncoding.h"
 #include "utils/Utils.h"
 

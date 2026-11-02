@@ -1,4 +1,4 @@
-#include "lsp/DocumentStore.h"
+#include "lsp/state/DocumentStore.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 #include <atomic>

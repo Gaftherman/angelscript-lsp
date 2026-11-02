@@ -1,7 +1,7 @@
 #pragma once
 
-#include "analysis/ScopeTree.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/ScopeTree.h"
+#include "analysis/index/SymbolTable.h"
 #include "config/ServerConfig.h"
 #include <functional>
 #include <lsp/messages.h>

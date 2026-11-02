@@ -1,9 +1,9 @@
 #pragma once
 
-#include "analysis/DiagnosticCodes.h"
-#include "analysis/ScopeTree.h"
-#include "analysis/SemanticHelpers.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/ScopeTree.h"
+#include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "features/code_action/CodeActionHandler.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"

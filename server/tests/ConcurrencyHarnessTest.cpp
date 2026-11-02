@@ -2,7 +2,7 @@
 
 #include "document/Document.h"
 #include "helpers/TestUtils.h"
-#include "lsp/DocumentStore.h"
+#include "lsp/state/DocumentStore.h"
 #include "parser/AngelScriptParser.h"
 
 #include <atomic>

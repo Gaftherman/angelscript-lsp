@@ -3,7 +3,7 @@
  * @brief Quick-fix provider for removing unused local variable declarations.
  */
 
-#include "analysis/TargetResolution.h"
+#include "analysis/resolution/TargetResolution.h"
 #include "features/code_action/CodeActionInternal.h"
 #include "parser/ASTUtils.h"
 #include <variant>

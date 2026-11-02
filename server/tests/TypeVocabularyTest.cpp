@@ -4,8 +4,8 @@
 #include <string>
 #include <vector>
 
-#include "analysis/EngineProfiles.h"
-#include "analysis/SemanticHelpers.h"
+#include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/types/EngineProfiles.h"
 #include "parser/Keywords.h"
 #include "parser/Primitives.h"
 

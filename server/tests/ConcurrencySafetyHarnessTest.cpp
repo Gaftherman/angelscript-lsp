@@ -1,14 +1,14 @@
 #include <doctest/doctest.h>
 
-#include "analysis/ScopeTree.h"
-#include "analysis/SymbolTable.h"
-#include "analysis/TargetResolution.h"
+#include "analysis/index/ScopeTree.h"
+#include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/TargetResolution.h"
 #include "document/Document.h"
 #include "features/document_highlight/DocumentHighlightHandler.h"
 #include "helpers/TestUtils.h"
-#include "lsp/AnalysisScheduler.h"
-#include "lsp/DocumentStore.h"
-#include "lsp/PredefinedStubManager.h"
+#include "lsp/pipeline/AnalysisScheduler.h"
+#include "lsp/state/DocumentStore.h"
+#include "lsp/state/PredefinedStubManager.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/MultiFileLogger.h"
 

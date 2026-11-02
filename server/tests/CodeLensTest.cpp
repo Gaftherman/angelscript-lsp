@@ -1,7 +1,7 @@
 #include <doctest/doctest.h>
 
-#include "analysis/LocalScopeCollector.h"
-#include "analysis/SymbolCollector.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/SymbolCollector.h"
 #include "config/EngineRuleConfig.h"
 #include "features/code_lens/CodeLensHandler.h"
 #include "helpers/TestUtils.h"

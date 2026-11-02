@@ -1,8 +1,8 @@
 #include <doctest/doctest.h>
 
-#include "analysis/LocalScopeCollector.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
 #include "config/ServerConfig.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "helpers/ScriptedStream.h"
@@ -152,14 +152,13 @@ struct TempWorkspace
 
 TEST_CASE("Perf - Baseline Measurements" * doctest::skip(true))
 {
-    namespace fs = std::filesystem;
 
-    fs::path repoRoot(ANGELSCRIPT_REPO_ROOT);
-    fs::path largeScriptPath = repoRoot / "server" / "tests" / "perf" / "large_script_3000.as";
-    fs::path svenStubPath = repoRoot / "predefined" / "sven.as.predefined";
+    std::filesystem::path repoRoot(ANGELSCRIPT_REPO_ROOT);
+    std::filesystem::path largeScriptPath = repoRoot / "server" / "tests" / "perf" / "large_script_3000.as";
+    std::filesystem::path svenStubPath = repoRoot / "predefined" / "sven.as.predefined";
 
-    REQUIRE_MESSAGE(fs::exists(largeScriptPath), "large_script_3000.as must exist");
-    REQUIRE_MESSAGE(fs::exists(svenStubPath), "sven.as.predefined must exist");
+    REQUIRE_MESSAGE(std::filesystem::exists(largeScriptPath), "large_script_3000.as must exist");
+    REQUIRE_MESSAGE(std::filesystem::exists(svenStubPath), "sven.as.predefined must exist");
 
     std::string largeCode;
     {

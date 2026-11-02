@@ -16,7 +16,26 @@ Layer isolation is strict and enforced by `server/scripts/check-layer-includes.p
 | **Layer 4: Server / LSP** | `lsp/`, `main.cpp` | Layers 1, 2, and 3 | None (topmost layer) |
 
 - **Service Placement in Layer 2:** Semantic resolution services (`TargetResolution`, `TypeResolution`, `ScopeLookup`, `OverloadResolver`) belong strictly in Layer 2 (`analysis/`). Feature handlers in Layer 3 (`features/`) must never import sibling features or duplicate data structures (`TargetDescriptor`).
-- **Protocol Isolation:** `analysis/` and `parser/` must compile without the LSP protocol library (`<lsp/...>` or `utils/LspLogger.h`). Loggers must be held by forward declaration in headers (`namespace angel_lsp::utils { class LspLogger; }`).
+- **Protocol Isolation:** `analysis/` and `parser/` must compile without the LSP protocol library (`<lsp/...>`). Shared utilities such as `utils/LspLogger.h` and `i18n/i18n.h` may be included directly.
+
+### Sub-Layer Domain-Driven Design (DDD) Architecture
+
+#### Layer 2: Analysis (`server/src/analysis/`)
+- **Sub-Layer 2.1 (Index):** `analysis/index/` - AST indexing and lexical structure (`NodeIndex`, `SymbolTable`, `SymbolCollector`, `ScopeTree`, `LocalScopeCollector`, `DeclarationRecovery`, `CallGraph`, `SemanticNodes`).
+- **Sub-Layer 2.2 (Types):** `analysis/types/` - Type representation and engine profiles (`TypeExtraction`, `TypeSanitization`, `ExpressionTypeCache`, `EngineProfiles`, `EngineConfigConverter`, `VirtualMixinContext`).
+- **Sub-Layer 2.3 (Diagnostics):** `analysis/diagnostics/` - Diagnostic error codes and context (`Diagnostics`, `DiagnosticCodes`, `DiagnosticContext`, `DiagnosticSuppression`).
+- **Sub-Layer 2.4 (Documentation):** `analysis/documentation/` - Doc comment parsing and markdown formatting (`DocComment`, `DoxygenMarkdown`, `SignatureFormatter`).
+- **Sub-Layer 2.5 (Resolution):** `analysis/resolution/` - Semantic target and overload resolution (`SemanticHelpers`, `TargetResolution`, `OverloadResolver`, `AmbiguityDetector`, `ConversionRankingEngine`, `OverloadTypeConversions`).
+- **Sub-Layer 2.6a (Rules):** `analysis/rules/` - Semantic language rules (`RuleIndex`, `ClassRules`, `EngineRuleChecker`, `FunctionRules`, `OperatorRules`, `TypeRules`, `UnusedSymbolChecker`, `VariableRules`).
+- **Sub-Layer 2.6b (Checkers):** `analysis/checkers/` - Semantic verification checkers (`AccessChecker`, `BinaryOperatorChecker`, `BinaryOperatorHelpers`, `CallChecker`, `ComparisonOperatorChecker`, `ConstChecker`, `ControlFlowChecker`, `DefiniteAssignmentChecker`, `HandleComparisonChecker`, `InitializerListChecker`, `IsolationChecker`, `LValueChecker`, `NamespaceChecker`, `RepeatedConversionChecker`, `TypeConversionChecker`, and `null_safety/` [`NullSafetyTypes`, `NullSafetyChecker`, `NullSafetyCondition`, `NullSafetyDecl`, `NullSafetyExpr`, `NullSafetyParam`]).
+- **Sub-Layer 2.7 (Analysis Coordinator):** `analysis/` root - Semantic coordinator facade (`SemanticAnalyzer`, `SemanticAnalysisRequest`).
+
+#### Layer 4: Server / LSP (`server/src/lsp/`)
+- **Sub-Layer 4.1 (State):** `lsp/state/` - In-memory LSP document and workspace state (`DocumentStore`, `WorkspaceStateStore`, `ModuleIndex`, `PredefinedStubManager`, `PositionCodec`).
+- **Sub-Layer 4.2 (Pipeline):** `lsp/pipeline/` - Scheduling and diagnostics pipeline (`AnalysisScheduler`, `DiagnosticsPipeline`, `LspSessionCoordinator`).
+- **Sub-Layer 4.3 (Services):** `lsp/services/` - Internal domain server services (`ServerAnalysis`, `ServerDiagnostics`, `ServerEngineRules`, `ServerModules`, `ServerPredefined`).
+- **Sub-Layer 4.4 (Handlers):** `lsp/handlers/` - Protocol request and notification handlers (`BreakpointHandlers`, `DebugExpressionHandlers`, `HierarchyHandlers`, `TextDocumentHandlers`, `TextDocumentSyncHandlers`, `TokensAndFormattingHandlers`, `WorkspaceHandlers`, `WorkspaceScanHandlers`).
+- **Sub-Layer 4.5 (Server Core):** `lsp/` root - Server core coordinator (`Server`).
 
 ---
 

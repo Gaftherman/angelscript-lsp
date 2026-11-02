@@ -1,10 +1,10 @@
 #include <doctest/doctest.h>
 
-#include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
@@ -22,18 +22,17 @@ using namespace angel_lsp::parser;
 
 namespace
 {
-namespace fs = std::filesystem;
 
 /**
  * @brief Resolves repository root path.
  * @return Path to repository root.
  */
-fs::path GetRepoRoot()
+std::filesystem::path GetRepoRoot()
 {
 #ifdef ANGELSCRIPT_REPO_ROOT
-    return fs::path(ANGELSCRIPT_REPO_ROOT);
+    return std::filesystem::path(ANGELSCRIPT_REPO_ROOT);
 #else
-    return fs::current_path();
+    return std::filesystem::current_path();
 #endif
 }
 
@@ -42,14 +41,15 @@ fs::path GetRepoRoot()
  * @param[in] relativePath Relative path from repo root or server.
  * @return Located absolute path, or empty path if not found.
  */
-fs::path ResolveStubPath(const std::string& relativePath)
+std::filesystem::path ResolveStubPath(const std::string& relativePath)
 {
-    const fs::path root = GetRepoRoot();
-    const fs::path candidates[] = {root / relativePath, root / "server" / relativePath,
-                                   fs::current_path() / relativePath, fs::current_path() / ".." / relativePath};
+    const std::filesystem::path root = GetRepoRoot();
+    const std::filesystem::path candidates[] = {root / relativePath, root / "server" / relativePath,
+                                                std::filesystem::current_path() / relativePath,
+                                                std::filesystem::current_path() / ".." / relativePath};
     for (const auto& c : candidates)
     {
-        if (fs::exists(c))
+        if (std::filesystem::exists(c))
         {
             return c;
         }
@@ -62,7 +62,7 @@ fs::path ResolveStubPath(const std::string& relativePath)
  * @param[in] path File path to read.
  * @return Sanitized stub source code string.
  */
-std::string ReadStub(const fs::path& path)
+std::string ReadStub(const std::filesystem::path& path)
 {
     std::ifstream in(path, std::ios::binary);
     if (!in.is_open())
@@ -81,7 +81,7 @@ std::string ReadStub(const fs::path& path)
  * @param[out] elapsedMs Measured load and parse elapsed milliseconds.
  * @return True if stub was loaded and parsed without syntax errors.
  */
-bool LoadPredefinedStub(const fs::path& stubPath, SymbolTable& table, double& elapsedMs)
+bool LoadPredefinedStub(const std::filesystem::path& stubPath, SymbolTable& table, double& elapsedMs)
 {
     const std::string content = ReadStub(stubPath);
     if (content.empty())
@@ -147,8 +147,8 @@ std::vector<Diagnostic> AnalyzeScript(const std::string& script, SymbolTable& ta
 
 TEST_CASE("External Predefined Stubs - Trackmania Nations Forever (Sashi0034)")
 {
-    const fs::path stubPath = ResolveStubPath("tests/fixtures/trackmania.as.predefined");
-    REQUIRE_MESSAGE(fs::exists(stubPath), "Trackmania predefined stub fixture not found");
+    const std::filesystem::path stubPath = ResolveStubPath("tests/fixtures/trackmania.as.predefined");
+    REQUIRE_MESSAGE(std::filesystem::exists(stubPath), "Trackmania predefined stub fixture not found");
 
     SymbolTable table;
     double elapsedMs = 0.0;
@@ -169,8 +169,8 @@ TEST_CASE("External Predefined Stubs - Trackmania Nations Forever (Sashi0034)")
 
 TEST_CASE("External Predefined Stubs - OpenSiv3D (Sashi0034)")
 {
-    const fs::path stubPath = ResolveStubPath("tests/fixtures/opensiv3d.as.predefined");
-    REQUIRE_MESSAGE(fs::exists(stubPath), "OpenSiv3D predefined stub fixture not found");
+    const std::filesystem::path stubPath = ResolveStubPath("tests/fixtures/opensiv3d.as.predefined");
+    REQUIRE_MESSAGE(std::filesystem::exists(stubPath), "OpenSiv3D predefined stub fixture not found");
 
     SymbolTable table;
     double elapsedMs = 0.0;
@@ -190,8 +190,8 @@ TEST_CASE("External Predefined Stubs - OpenSiv3D (Sashi0034)")
 
 TEST_CASE("External Predefined Stubs - Sven Co-op Legacy (Sashi0034)")
 {
-    const fs::path stubPath = ResolveStubPath("tests/fixtures/sven-sashi.as.predefined");
-    REQUIRE_MESSAGE(fs::exists(stubPath), "Sven Co-op legacy predefined stub fixture not found");
+    const std::filesystem::path stubPath = ResolveStubPath("tests/fixtures/sven-sashi.as.predefined");
+    REQUIRE_MESSAGE(std::filesystem::exists(stubPath), "Sven Co-op legacy predefined stub fixture not found");
 
     SymbolTable table;
     double elapsedMs = 0.0;
@@ -212,8 +212,8 @@ TEST_CASE("External Predefined Stubs - Sven Co-op Legacy (Sashi0034)")
 
 TEST_CASE("External Predefined Stubs - Sven Co-op Modern (Gaftherman)")
 {
-    const fs::path stubPath = ResolveStubPath("predefined/sven.as.predefined");
-    REQUIRE_MESSAGE(fs::exists(stubPath), "Gaftherman Sven Co-op predefined stub not found");
+    const std::filesystem::path stubPath = ResolveStubPath("predefined/sven.as.predefined");
+    REQUIRE_MESSAGE(std::filesystem::exists(stubPath), "Gaftherman Sven Co-op predefined stub not found");
 
     SymbolTable table;
     double elapsedMs = 0.0;

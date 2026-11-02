@@ -1,8 +1,8 @@
 #include "features/inlay_hint/InlayHintHandler.h"
-#include "analysis/OverloadResolver.h"
-#include "analysis/SemanticHelpers.h"
-#include "analysis/SignatureFormatter.h"
-#include "analysis/TypeSanitization.h"
+#include "analysis/documentation/SignatureFormatter.h"
+#include "analysis/resolution/OverloadResolver.h"
+#include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/types/TypeSanitization.h"
 #include "i18n/i18n.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
@@ -1059,7 +1059,6 @@ static std::string DeduceBinaryExpressionType(TSNode exprNode, const InlayHintRe
  * @param[in] exprNode Unary expression AST node.
  * @param[in] request Inlay hint request context.
  * @return Deduced type string.
- * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static std::string DeduceUnaryExpressionType(TSNode exprNode, const InlayHintRequest& request)
 {
@@ -1705,7 +1704,6 @@ static void ProcessConstructorCallExpression(TSNode node, const InlayHintRequest
  * @param[in] request Inlay hint request context.
  * @param[in,out] hints Hint vector receiving generated type hints.
  * @param[in] isHandle Whether the auto declaration explicitly carries a handle modifier.
- * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static void ProcessAutoVariableDeclarator(TSNode declarator, const InlayHintRequest& request,
                                           std::vector<lsp::InlayHint>& hints, bool isHandle)
@@ -1837,7 +1835,6 @@ static TSNode FindVariableTypeNode(TSNode varDeclNode)
  * @param[in] node AST variable_declaration node.
  * @param[in] request Inlay hint request context.
  * @param[in,out] hints Hint vector receiving generated inlay hints.
- * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static void ProcessVariableDeclaration(TSNode node, const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
 {

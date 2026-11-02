@@ -1,4 +1,4 @@
-#include "analysis/NodeIndex.h"
+#include "analysis/index/NodeIndex.h"
 #include "document/Document.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "helpers/TestUtils.h"

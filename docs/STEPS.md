@@ -2427,3 +2427,50 @@ Settings declared in package.json but not passed to the server:
 - **RAM Optimization**: Total estimated memory savings of ~15-20% across large-scale workspaces.
 - **Deduplication**: 0 ODR struct hazards, redundant pass-1 checks reduced by 66.7% (from 30 to 10), high-similarity function pairs eliminated from matrix, jscpd duplication maintained at ~1.06%.
 
+---
+
+## 52. Phase 52: Sub-Layer Domain-Driven Design (DDD) Modularization, Multi-Line Note Eradication, CallGraph Deduplication & Zero-Slop Architecture
+
+### 52.1. Forensic Diagnosis & Executed Actions
+1. **Multi-Line Note & Orphan Comment Eradication**:
+   - Scanned and cleaned 100% of truncated orphan `@note [REFACTOR-CANDIDATE]` and continuation lines across 24 files in `server/src/`.
+   - Restored and authored exhaustive Doxygen blocks (`@brief`, `@param[in/out]`, `@return`) in `CallGraph.h/.cpp`, `ConstChecker.h/.cpp`, and `DoxygenMarkdown.cpp`.
+   - Hardened `check-ast-traversal.py` and `audit-codebase-redundancy.py` to ban orphan note fragments and test slop.
+
+2. **CallGraph Deduplication & Header Cleanliness**:
+   - Deduplicated `CallGraph.cpp`: unified symmetrical `FindCallsTo` and `FindCallsFrom` algorithms into a single generic `FilterCallsByField` helper with member pointer dispatch. Registered `REF-0082` in `docs/REFACTOR_LEDGER.json`.
+   - Removed redundant `using ConstContext` and eliminated loose forward declarations `static Ret Func(...)` in `ConstChecker.cpp`.
+   - Replaced 14 manual forward declarations of `LspLogger` and `I18n` with canonical `#include "utils/LspLogger.h"` and `#include "i18n/i18n.h"`.
+   - Banned `using namespace` in test headers and `namespace X = Y;` namespace aliases across `server/src/`, `server/tests/`, and `server/tools/`.
+
+3. **Sub-Layer Domain-Driven Design (DDD) Directory Architecture**:
+   - Reorganized Layer 2 (`analysis/`) into cohesive domain sub-layers:
+     - `analysis/index/` (Sub-layer 2.1): `NodeIndex`, `SymbolTable`, `SymbolCollector`, `ScopeTree`, `LocalScopeCollector`, `DeclarationRecovery`, `CallGraph`, `SemanticNodes`.
+     - `analysis/types/` (Sub-layer 2.2): `TypeExtraction`, `TypeSanitization`, `ExpressionTypeCache`, `EngineProfiles`, `EngineConfigConverter`, `VirtualMixinContext`.
+     - `analysis/diagnostics/` (Sub-layer 2.3): `Diagnostics`, `DiagnosticCodes`, `DiagnosticContext`, `DiagnosticSuppression`.
+     - `analysis/documentation/` (Sub-layer 2.4): `DocComment`, `DoxygenMarkdown`, `SignatureFormatter`.
+     - `analysis/resolution/` (Sub-layer 2.5): `SemanticHelpers`, `TargetResolution`, `OverloadResolver`, `AmbiguityDetector`, `ConversionRankingEngine`, `OverloadTypeConversions`.
+     - `analysis/rules/` (Sub-layer 2.6a): `RuleIndex`, `ClassRules`, `EngineRuleChecker`, `FunctionRules`, `OperatorRules`, `TypeRules`, `UnusedSymbolChecker`, `VariableRules`.
+     - `analysis/checkers/` (Sub-layer 2.6b): `AccessChecker`, `BinaryOperatorChecker`, `BinaryOperatorHelpers`, `CallChecker`, `ComparisonOperatorChecker`, `ConstChecker`, `ControlFlowChecker`, `DefiniteAssignmentChecker`, `HandleComparisonChecker`, `InitializerListChecker`, `IsolationChecker`, `LValueChecker`, `NamespaceChecker`, `RepeatedConversionChecker`, `TypeConversionChecker`, and `null_safety/`.
+     - Analysis Root (Sub-layer 2.7): `SemanticAnalysisRequest`, `SemanticAnalyzer`.
+   - Reorganized Layer 4 (`lsp/`) into cohesive domain sub-layers:
+     - `lsp/state/` (Sub-layer 4.1): `DocumentStore`, `WorkspaceStateStore`, `ModuleIndex`, `PredefinedStubManager`, `PositionCodec`.
+     - `lsp/pipeline/` (Sub-layer 4.2): `AnalysisScheduler`, `DiagnosticsPipeline`, `LspSessionCoordinator`.
+     - `lsp/services/` (Sub-layer 4.3): `ServerAnalysis`, `ServerDiagnostics`, `ServerEngineRules`, `ServerModules`, `ServerPredefined`.
+     - `lsp/handlers/` (Sub-layer 4.4): All LSP protocol request and notification handlers.
+     - LSP Root (Sub-layer 4.5): `Server`.
+   - Updated CMake target include directories, all `#include` directives across sources and tests, and updated verification scripts (`check-layer-includes.py`, `check-ast-traversal.py`, `check-diagnostic-codes.py`, `audit-codebase-redundancy.py`, and `check-refactor-ledger.py`).
+
+4. **Complexity & Quality Verification**:
+   - Lizard complexity: 0 functions exceeding CCN 15 or 70 net lines of code.
+   - Zero-duplication: jscpd duplication maintained at ~1.12%.
+   - Quality gates: 13/13 static quality gates green.
+
+### 52.2. Final Metrics for Phase 52
+- **Status**: COMPLETED
+- **Total Unit Tests**: 2,608 / 2,608 passed (35,000+ assertions).
+- **Client Integration Tests**: 74 / 74 passed (`vscode-test`).
+- **Static Quality Gates**: 13/13 gates passed with 0 warnings (`check-quality.py`).
+- **Architecture**: Complete Domain-Driven Design (DDD) sub-layer separation for Layer 2 and Layer 4.
+
+

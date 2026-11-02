@@ -1,0 +1,1484 @@
+#pragma once
+
+#include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/NodeIndex.h"
+#include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/OverloadResolver.h"
+#include "analysis/types/ExpressionTypeCache.h"
+#include "analysis/types/TypeSanitization.h"
+#include "config/EngineRuleConfig.h"
+#include "parser/ASTUtils.h"
+#include "parser/Primitives.h"
+#include "utils/ScopedNameUtils.h"
+#include <ankerl/unordered_dense.h>
+#include <optional>
+#include <span>
+#include <string>
+#include <string_view>
+#include <tree_sitter/api.h>
+#include <vector>
+
+namespace angel_lsp::analysis
+{
+namespace node_types
+{
+constexpr std::string_view StringLiteral = "string_literal";
+constexpr std::string_view LambdaExpression = "lambda_expression";
+constexpr std::string_view BooleanLiteral = "boolean_literal";
+constexpr std::string_view NumberLiteral = "number_literal";
+constexpr std::string_view ImportDeclaration = "import_declaration";
+constexpr std::string_view NullLiteral = "null_literal";
+constexpr std::string_view CallExpression = "call_expression";
+} // namespace node_types
+
+/**
+ * @brief Classification categories for initializer list item expressions.
+ */
+enum class InitializerItemKind
+{
+    NumericOrExpression,
+    StringLiteral,
+    BooleanLiteral,
+    NullLiteral,
+    NestedInitializer
+};
+
+/**
+ * @brief Checks if a symbol with the specified type exists in the symbol table.
+ * @param[in] table Symbol table to query.
+ * @param[in] name Symbol identifier or qualified name.
+ * @param[in] type Target symbol type.
+ * @return True if a matching symbol exists; false otherwise.
+ */
+[[nodiscard]] inline bool HasSymbolOfType(const SymbolTable& table, std::string_view name, SymbolType type) noexcept
+{
+    const auto syms = table.FindSymbolsPtr(name);
+    return syms && std::any_of(syms->begin(), syms->end(), [type](const Symbol& s) { return s.type == type; });
+}
+
+/**
+ * @brief Checks if a symbol's declaring container has the specified symbol type.
+ * @param[in] sym Symbol whose container to inspect.
+ * @param[in] table Symbol table to query.
+ * @param[in] type Target container symbol type.
+ * @return True if the container exists and matches the specified type; false otherwise.
+ */
+[[nodiscard]] inline bool HasContainerOfType(const Symbol& sym, const SymbolTable& table, SymbolType type) noexcept
+{
+    if (sym.containerName.empty())
+    {
+        return false;
+    }
+    const auto container = table.FindSymbolsPtr(sym.containerName);
+    return container && std::any_of(container->begin(), container->end(),
+                                    [type](const Symbol& owner) { return owner.type == type; });
+}
+
+/**
+ * @brief Checks whether a definition's declaring scope is inside any function/method/lambda body.
+ * @param[in] defScope Definition declaring scope.
+ * @return True if enclosed within a function scope.
+ */
+[[nodiscard]] inline bool IsDeclaredInFunctionScope(const Scope* defScope)
+{
+    size_t depth = 0;
+    ankerl::unordered_dense::set<const Scope*> visited;
+    for (const Scope* cur = defScope; cur != nullptr; cur = cur->parent)
+    {
+        if (++depth > kMaxScopeDepth || !visited.insert(cur).second)
+        {
+            break;
+        }
+        if (cur->isFunctionScope)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Extracts a non-allocating string_view corresponding to an AST node's byte range.
+ * @param[in] node Tree-Sitter AST node.
+ * @param[in] sourceCode Document source text buffer.
+ * @return Non-owning string_view of the node's slice, or empty view if node is null.
+ */
+[[nodiscard]] std::string_view GetNodeTextView(TSNode node, std::string_view sourceCode) noexcept;
+
+/**
+ * @brief Information about a parsed generic template type (e.g. array<dictionary<string, int>>).
+ */
+struct TemplateTypeInfo
+{
+    std::string containerName;             ///< Base container name (e.g. "array", "dictionary")
+    std::vector<std::string> templateArgs; ///< Extracted template arguments
+};
+
+/**
+ * @brief Parses a potentially nested template type string into its container name and arguments.
+ * @param typeName Raw or specialized type string.
+ * @return TemplateTypeInfo with container and nested argument strings.
+ */
+TemplateTypeInfo ParseTemplateType(std::string_view typeName);
+
+/**
+ * @brief Checks whether two types are incompatible template instantiations or shapes.
+ * @param[in] from Source type name.
+ * @param[in] to Destination type name.
+ * @return True if incompatible template types.
+ */
+bool AreIncompatibleTemplateTypes(std::string_view from, std::string_view to);
+
+/**
+ * @brief Normalizes a type name by stripping const, references, and whitespace.
+ * @param typeName The raw type name string.
+ * @return Cleaned type name.
+ */
+std::string CleanExpressionType(std::string_view typeName);
+
+/**
+ * @brief Checks whether the given name is a reserved AngelScript keyword.
+ * @param name Symbol name to check.
+ * @return True if name is a reserved keyword.
+ */
+bool IsReservedKeyword(const std::string& name);
+
+/**
+ * @brief Checks whether the given word is any AngelScript keyword (reserved or contextual).
+ * @param word Word to check.
+ * @return True if word is a keyword.
+ */
+[[nodiscard]] bool IsKeyword(std::string_view word) noexcept;
+
+/**
+ * @brief Checks if a tree-sitter operator symbol is a comparison or logical boolean binary operator.
+ * @param[in] sym Grammar symbol of the operator token.
+ * @param[in] gs Precompiled grammar symbols table.
+ * @return True if operator produces a boolean result.
+ */
+[[nodiscard]] bool IsBooleanBinaryOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept;
+
+/**
+ * @brief Checks if an argument count falls within min and max argument bounds for a callable reference.
+ * @param[in] argCount Observed argument count.
+ * @param[in] minArgs Minimum required arguments.
+ * @param[in] maxArgs Maximum permitted arguments.
+ * @return True if argCount is within [minArgs, maxArgs].
+ */
+[[nodiscard]] constexpr bool MatchesArgumentCount(size_t argCount, size_t minArgs, size_t maxArgs) noexcept
+{
+    return argCount >= minArgs && argCount <= maxArgs;
+}
+
+/**
+ * @brief Checks if a call reference satisfies target/criteria argument count bounds.
+ * @tparam RefLike Reference object possessing isCall (bool) and argumentCount (size_t/int).
+ * @tparam TargetLike Target object possessing isFunction (bool), minArgs (int/size_t), and maxArgs (int/size_t).
+ * @param[in] ref Local reference to check.
+ * @param[in] target Target or criteria constraints.
+ * @return True if argument count is within bounds, or reference is not a function call.
+ */
+template <typename RefLike, typename TargetLike>
+    requires requires(const RefLike& r, const TargetLike& t) {
+        { r.isCall } -> std::convertible_to<bool>;
+        { r.argumentCount } -> std::convertible_to<size_t>;
+        { t.isFunction } -> std::convertible_to<bool>;
+        { t.minArgs } -> std::convertible_to<size_t>;
+        { t.maxArgs } -> std::convertible_to<size_t>;
+    }
+[[nodiscard]] constexpr bool MatchesCallArguments(const RefLike& ref, const TargetLike& target) noexcept
+{
+    if (target.isFunction && ref.isCall)
+    {
+        return MatchesArgumentCount(ref.argumentCount, target.minArgs, target.maxArgs);
+    }
+    return true;
+}
+
+/**
+ * @brief Immutable core AngelScript primitive types.
+ */
+[[nodiscard]] constexpr bool IsCorePrimitive(std::string_view typeName) noexcept
+{
+    // `auto` is here and is not a primitive - it is not a type at all, but a stand-in for
+    // whatever the initializer produces. Callers that care about the difference test for it by
+    // name; see the handle-on-primitive rule in SemanticAnalyzer, which had to.
+    return parser::primitives::IsPrimitive(typeName) || typeName == "auto";
+}
+
+/**
+ * @brief True for AngelScript's integer primitives, signed or unsigned.
+ *
+ * `int32`/`uint32` are the explicit spellings of `int`/`uint` and are listed alongside them:
+ * the parser hands back whichever the source wrote, so a classifier that knew only one of each
+ * pair would answer differently for two spellings of the same type.
+ */
+[[nodiscard]] constexpr bool IsIntegerPrimitive(std::string_view typeName) noexcept
+{
+    return parser::primitives::IsInteger(typeName);
+}
+
+/** @brief True for AngelScript's floating point primitives. */
+/**
+ * @brief Strips a namespace qualification, leaving the last segment: `NS::Foo` -> `Foo`.
+ *
+ * Eight files carried a private copy of these two lines, byte for byte, and a ninth open-coded
+ * the same rfind/substr inline. Nothing was wrong with any of them; it is just that a name is
+ * either qualified or it is not, and that is one question.
+ */
+/**
+ * @brief Returns the last unqualified identifier segment of a scoped name.
+ * @param[in] name Qualified or unqualified identifier.
+ * @return View of the last segment without allocations.
+ */
+[[nodiscard]] std::string_view LastScopeSegment(std::string_view name) noexcept;
+
+/**
+ * @brief Returns the parent scope qualifier of a scoped name (everything preceding the last `::`).
+ * @param[in] name Qualified name.
+ * @return Parent scope view, or empty view if name contains no `::`.
+ */
+[[nodiscard]] std::string_view ParentScope(std::string_view name) noexcept;
+
+/**
+ * @brief Checks if two type or class names match directly or by short scope segment.
+ * @param[in] a First type name.
+ * @param[in] b Second type name.
+ * @return True if names match directly or by unqualified segment.
+ */
+[[nodiscard]] inline bool MatchesDeclOrScope(std::string_view a, std::string_view b) noexcept
+{
+    if (a == b)
+    {
+        return true;
+    }
+    auto segA = LastScopeSegment(a);
+    auto segB = LastScopeSegment(b);
+    return a == segB || segA == b || segA == segB;
+}
+
+/**
+ * @brief Checks if container is identical to or nested inside namespace ns without heap allocation.
+ */
+[[nodiscard]] constexpr bool IsSameOrNestedNamespace(std::string_view container, std::string_view ns) noexcept
+{
+    if (ns.empty())
+    {
+        return false;
+    }
+    if (container == ns)
+    {
+        return true;
+    }
+    return container.size() > ns.size() + 2 && container.starts_with(ns) && container[ns.size()] == ':' &&
+           container[ns.size() + 1] == ':';
+}
+
+/**
+ * @brief Checks if full matches suffix or ends with "::" + suffix without heap allocation.
+ */
+[[nodiscard]] constexpr bool EndsWithScopedSuffix(std::string_view full, std::string_view suffix) noexcept
+{
+    if (suffix.empty())
+    {
+        return false;
+    }
+    if (full == suffix)
+    {
+        return true;
+    }
+    return utils::EndsWithScopedMember(full, suffix);
+}
+
+/**
+ * @brief Checks if a scoped identifier exactly equals prefix::suffix without heap string allocation.
+ * @param[in] scoped The full scoped identifier to test.
+ * @param[in] prefix The expected scope prefix.
+ * @param[in] suffix The expected identifier suffix.
+ * @return True if scoped exactly matches prefix + "::" + suffix.
+ */
+[[nodiscard]] constexpr bool MatchesScopedPair(std::string_view scoped, std::string_view prefix,
+                                               std::string_view suffix) noexcept
+{
+    return scoped.size() == prefix.size() + utils::k_scopeSeparator.size() + suffix.size() &&
+           scoped.starts_with(prefix) && scoped.ends_with(suffix) &&
+           scoped.substr(prefix.size(), utils::k_scopeSeparator.size()) == utils::k_scopeSeparator;
+}
+
+/**
+ * @brief Checks if a qualified symbol target ends with suffix preceded by a scope delimiter "::".
+ * @param[in] target Enclosing qualified string.
+ * @param[in] suffix Candidate trailing qualifier segment.
+ * @return True if target ends with "::" + suffix.
+ */
+[[nodiscard]] constexpr bool SuffixMatchesScoped(std::string_view target, std::string_view suffix) noexcept
+{
+    return utils::EndsWithScopedMember(target, suffix);
+}
+
+/**
+ * @brief Checks if an identifier qualifier matches an enum's declaring type or its enclosing namespace.
+ * @param[in] qualifier Qualifier prefix extracted from scoped reference (e.g. "INS2BASE" or "INS2_SELECTFIRE_OPTIONS").
+ * @param[in] declaringEnum Declaring enum qualified name (e.g. "INS2BASE::INS2_SELECTFIRE_OPTIONS").
+ * @return True if qualifier matches the enum name, full enum path, or enclosing namespace.
+ */
+[[nodiscard]] constexpr bool EnumQualifierMatches(std::string_view qualifier, std::string_view declaringEnum) noexcept
+{
+    while (qualifier.starts_with(':') || qualifier.starts_with(' ') || qualifier.starts_with('\t'))
+    {
+        qualifier.remove_prefix(1);
+    }
+    if (qualifier.empty() || declaringEnum.empty())
+    {
+        return false;
+    }
+    if (qualifier == declaringEnum || SuffixMatchesScoped(declaringEnum, qualifier))
+    {
+        return true;
+    }
+    const std::string_view nsPrefix = utils::ParentScopeView(declaringEnum);
+    if (!nsPrefix.empty())
+    {
+        return qualifier == nsPrefix || SuffixMatchesScoped(nsPrefix, qualifier);
+    }
+    return false;
+}
+
+/**
+ * @brief Strips leading '@' or 'this.' from candidate identifier strings.
+ */
+[[nodiscard]] std::string_view CleanCandidateIdentifier(std::string_view text) noexcept;
+
+/**
+ * @brief Validates if string is a valid identifier or qualified scoped identifier (e.g. NS::Class).
+ */
+[[nodiscard]] bool IsValidIdentifierOrQualified(std::string_view text) noexcept;
+
+/**
+ * @brief Collects line ranges of declaring namespace and enclosing containers in fileUri.
+ */
+[[nodiscard]] std::vector<std::pair<uint32_t, uint32_t>>
+CollectNamespaceAndContainerLineRanges(const SymbolTable& symbolTable, const std::string& fileUri,
+                                       std::string_view declaringNamespace);
+
+[[nodiscard]] constexpr bool IsFloatingPointPrimitive(std::string_view typeName) noexcept
+{
+    return parser::primitives::IsFloatingPoint(typeName);
+}
+
+/**
+ * @brief True for any primitive that carries a number - integer or floating point.
+ *
+ * Excludes `bool`, which converts to and from the numeric types but is not one of them; callers
+ * that want that conversion handle it explicitly, because whether it is allowed depends on the
+ * direction and on which rule is asking.
+ *
+ * These three predicates exist so the conversion rules, the overload resolver and the
+ * expression resolver classify a type the same way. Each had grown its own list, and the lists
+ * had already begun to disagree - one of them was missing `int32`.
+ */
+[[nodiscard]] constexpr bool IsNumericPrimitive(std::string_view typeName) noexcept
+{
+    return IsIntegerPrimitive(typeName) || IsFloatingPointPrimitive(typeName);
+}
+
+/**
+ * @brief Configurable type resolution against host TypeConfig.
+ */
+[[nodiscard]] inline bool IsPredefinedOrRegisteredType(std::string_view typeName,
+                                                       const config::TypeConfig& typeConfig) noexcept
+{
+    if (IsCorePrimitive(typeName))
+    {
+        return true;
+    }
+    if (typeName == typeConfig.stringTypeName || typeName == typeConfig.arrayTypeName)
+    {
+        return true;
+    }
+    return typeConfig.registeredSymbols.contains(std::string(typeName));
+}
+
+/**
+ * @brief Checks whether the given name is a primitive AngelScript type name.
+ * @param name Symbol or type name to check.
+ * @return True if name is a primitive type name.
+ */
+bool IsPrimitiveTypeName(std::string_view name);
+
+/**
+ * @brief Semantically classifies the token text of an initializer item.
+ * @param item Token or expression text of the initializer item.
+ * @return InitializerItemKind classification.
+ */
+InitializerItemKind ClassifyInitializerItem(std::string_view item);
+
+/**
+ * @brief True when the symbol was declared in a predefined stub.
+ *
+ * Stubs describe a host application's API that the engine already accepted, so the rules about
+ * how a declaration may be written do not apply to them - a stub's functions have no bodies by
+ * design, and judging one as script produces thousands of findings and no information.
+ *
+ * Shared rather than reimplemented per module: every rule module had its own copy comparing the
+ * URI against the configured suffix directly, which meant a stub recognised by the workspace
+ * scanner could still be judged as script by the rules. One implementation, delegating to
+ * utils::IsPredefinedFile, keeps the two answers from drifting apart again.
+ *
+ * @param sym Symbol whose declaring file is in question.
+ * @param ctx DiagnosticContext carrying the configured stub suffix.
+ */
+bool IsFromPredefinedStub(const Symbol& sym, const DiagnosticContext& ctx);
+
+/**
+ * @brief True when a function symbol is a destructor declaration.
+ *
+ * SymbolCollector records `~Foo()` under the bare name "Foo", so a class with both a
+ * constructor and a destructor puts two zero-parameter functions in one bucket. Nothing on the
+ * signature distinguishes them, so the tilde is read back from the source - which means this
+ * only answers for the document under analysis, where sourceCode is available.
+ *
+ * @param sym Function symbol to classify.
+ * @param ctx DiagnosticContext carrying the request's source text and file URI.
+ * @return True if the declaration is spelled with a leading '~'.
+ */
+/**
+ * @brief Checks whether a function symbol is a destructor declaration given document source text.
+ * @param[in] sym Function symbol to classify.
+ * @param[in] source Document source text.
+ * @return True if the symbol is a destructor declaration.
+ */
+bool IsDestructorDeclaration(const Symbol& sym, std::string_view source);
+
+bool IsDestructorDeclaration(const Symbol& sym, const DiagnosticContext& ctx);
+
+/**
+ * @brief Checks whether a constructor function matches AngelScript's list behavior signature.
+ *
+ * Conforming to `asBEHAVE_LIST_CONSTRUCT` / `asBEHAVE_LIST_FACTORY`:
+ * - Single parameter: integer reference with in modifier (e.g. `const int &in` or `int &in`).
+ * - Two parameters: both integer references with in modifier (e.g. `int &in, int &in`).
+ *
+ * @param[in] fn Function signature to inspect.
+ * @return True if function signature conforms to a list constructor.
+ */
+bool IsListConstructorSignature(const FunctionSignature& fn);
+
+/**
+ * @brief Checks whether a symbol represents a list constructor.
+ *
+ * @param[in] sym Symbol to inspect.
+ * @return True if symbol is a function conforming to a list constructor.
+ */
+bool IsListConstructor(const Symbol& sym);
+
+/**
+ * @brief Names the function attribute a declaration carries, or empty when it carries none.
+ *
+ * The attributes are five independent flags on SymbolModifiers, but every rule that rejects
+ * one wants to say which - "cannot carry the 'explicit' attribute" rather than "carries an
+ * attribute". Shared because three rule modules ask the same question of three different
+ * declaration kinds, and const is deliberately not among them: it is a qualifier the grammar
+ * spells separately and several of those declarations accept it.
+ *
+ * @param modifiers Modifier set to inspect.
+ * @return Attribute name in the order the grammar lists them, or an empty view.
+ */
+std::string_view FirstAttributeName(const SymbolModifiers& modifiers);
+
+/**
+ * @brief Checks if a given base type name resolves to a mixin class symbol.
+ * @param baseTypeName The name of the type to check.
+ * @param table SymbolTable to look up the type.
+ * @return True if baseTypeName resolves to a mixin class.
+ */
+bool IsMixinClass(std::string_view baseTypeName, const class SymbolTable& table);
+
+/**
+ * @brief True when a name resolves to a function and to nothing that could be a type.
+ *
+ * The shape behind `void Foo(int) {}` followed by `Foo@ h`: the compiler answers "Identifier
+ * 'Foo' is not a data type" because a function handle needs a funcdef to name its signature.
+ *
+ * Both halves are required. A name that resolves to nothing at all is an unresolved type and is
+ * assumed engine-registered - that is this analyzer's central policy - and a name that resolves
+ * to BOTH a function and a type is a legal overload of the two, so neither is worth reporting.
+ */
+bool NamesAFunctionNotAType(std::string_view name, const class SymbolTable& table);
+
+/**
+ * @brief Checks whether an AST node is a bare data type identifier used in a value expression context.
+ * @param node AST node to examine.
+ * @param scope Local scope at the node, or nullptr.
+ * @param symbolTable Symbol table for type and value lookup.
+ * @param sourceCode Source text of the document.
+ * @return Resolved data type name if the node is a bare data type without value semantics, or std::nullopt.
+ */
+std::optional<std::string> IsBareDataType(TSNode node, const struct Scope* scope, const class SymbolTable& symbolTable,
+                                          std::string_view sourceCode);
+
+/**
+ * @brief Checks if an expression denotes a bare function or method reference.
+ * @param[in] node AST expression node.
+ * @param[in] scope Lexical scope at the node, or nullptr.
+ * @param[in] symbolTable Symbol table for symbol lookups.
+ * @param[in] sourceCode Source text of the document.
+ * @return True if the expression denotes a bare function or method without invocation.
+ */
+bool IsFunctionReference(TSNode node, const struct Scope* scope, const class SymbolTable& symbolTable,
+                         std::string_view sourceCode);
+
+/** @brief What a type is when it cannot be instantiated, for the message that says so. */
+enum class NonInstantiableKind
+{
+    None,      ///< The type can be instantiated, or this analyzer cannot see its declaration.
+    Abstract,  ///< An abstract class.
+    Interface, ///< An interface.
+    Mixin      ///< A mixin class.
+};
+
+/**
+ * @brief Classifies a type name as an abstract class, an interface, or neither.
+ *
+ * AngelScript refuses to make an instance of either. A handle to one is the whole point of
+ * both and is always legal, so the caller decides that part; this only answers what the type
+ * is. Verified against a real engine, which distinguishes them by name in its own messages:
+ * "Abstract class 'Shape' cannot be instantiated" against "Interface 'IThing' cannot be
+ * instantiated".
+ *
+ * A name with no visible declaration answers None, like every other rule here: an
+ * engine-registered type is exactly what an unresolved name looks like.
+ */
+NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const class SymbolTable& table);
+
+/**
+ * @brief Returns the enclosing namespace prefix for a symbol, if any.
+ * @param[in] sym The symbol whose enclosing namespace is being inspected.
+ * @param[in] table Symbol table to look up declaring class if sym is a class member.
+ * @return Qualified namespace string, or empty if sym is in global namespace.
+ */
+std::string EnclosingNamespaceForSymbol(const Symbol& sym, const SymbolTable& table);
+
+/**
+ * @brief Checks if a type name corresponds to a template parameter of the symbol's enclosing container.
+ * @param[in] typeName Type name to check (e.g. "T").
+ * @param[in] sym Symbol whose container to inspect.
+ * @param[in] table Workspace symbol table.
+ * @return True if typeName matches an enclosing container's template parameter.
+ */
+bool IsTemplateParameterOfContainer(std::string_view typeName, const Symbol& sym, const SymbolTable& table);
+
+/**
+ * @brief Checks whether the given base type name is a known type (primitive, string, array, or in SymbolTable).
+ * @param baseName Type base name to check.
+ * @param ctx DiagnosticContext containing request and SymbolTable.
+ * @param containerScope Optional enclosing namespace/container scope prefix.
+ * @return True if baseName is a known valid type.
+ */
+bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx, std::string_view containerScope = {});
+
+/**
+ * @brief Checks whether the given type name denotes an enum in the symbol table.
+ * @param typeName Name of the type to inspect.
+ * @param table Symbol table to query.
+ * @return True if the type name resolves to an enum symbol.
+ */
+[[nodiscard]] bool ResolvesToEnum(std::string_view typeName, const SymbolTable& table);
+
+/**
+ * @brief True when a type is AngelScript's variable type `?` (as in `const ?&in`, `?&out`).
+ *
+ * `?` is not a type name - it is the engine's wildcard parameter, and a parameter declared with
+ * it accepts a value of *any* type. dictionary::set(const string&in, const ?&in),
+ * dictionary::get(const string&in, ?&out), ref, Dispose and the format/scan helpers are all
+ * declared this way in the standard add-ons.
+ *
+ * Treating `?` as an ordinary named type is why the conversion rules used to report
+ * "Cannot implicitly convert 'int' to '?'" on code the real compiler accepts without complaint:
+ * the analyzer went looking for a declaration named `?`, found none, and blamed the argument.
+ * Anything that compares an argument against a parameter type has to ask this first.
+ */
+bool IsVariableType(std::string_view typeName);
+
+/**
+ * @brief Recursively collects the class and interface inheritance hierarchy for a type.
+ * @param className The starting type name.
+ * @param symbolTable The symbol table to look up class and interface definitions.
+ * @return Vector of type names in the hierarchy including className and its transitive bases.
+ */
+std::vector<std::string> GetInheritedTypeHierarchy(const std::string& className, const SymbolTable& symbolTable,
+                                                   ExpressionTypeCache* cache = nullptr);
+
+/**
+ * @brief Resolves the direct non-mixin base class of a given class according to its inheritance hierarchy.
+ * @param className Qualified or unqualified name of the class.
+ * @param symbolTable Symbol table used to look up hierarchy and mixin information.
+ * @return Name of the direct base class, or empty string if none exists.
+ */
+std::string ResolveBaseClass(std::string_view className, const SymbolTable& symbolTable);
+
+/**
+ * @brief Checks whether derivedClass inherits directly or transitively from baseClass.
+ * @param[in] derivedClass Child class name.
+ * @param[in] baseClass Ancestor class or interface name.
+ * @param[in] symbolTable Symbol table containing hierarchy declarations.
+ * @return True if derivedClass is baseClass or inherits from it.
+ */
+bool IsDerivedFrom(std::string_view derivedClass, std::string_view baseClass, const SymbolTable& symbolTable);
+
+/**
+ * @brief Configuration options for resolving delegate or proxy base classes.
+ */
+struct LinkedBaseOptions
+{
+    std::span<const std::string> delegateProps = {};
+    const config::StringVectorMap* proxyMap = nullptr;
+
+    [[nodiscard]] bool HasActiveOptions() const noexcept
+    {
+        return (proxyMap && !proxyMap->empty()) || !delegateProps.empty();
+    }
+};
+
+/**
+ * @brief Resolves linked proxy or delegate base class names for an ancestor class.
+ * @param[in] className Ancestor or wrapper class name to inspect.
+ * @param[in] symbolTable Global symbol table.
+ * @param[in] options Options containing optional custom delegate properties and proxy map.
+ * @return List of clean delegate/proxy base class names without duplicates.
+ */
+std::vector<std::string> ResolveLinkedBaseClasses(std::string_view className, const SymbolTable& symbolTable,
+                                                  const LinkedBaseOptions& options = {});
+
+/**
+ * @brief Locates candidate base or interface method symbols overridden by a derived method.
+ * @param[in] containerClass Qualified or bare container class name.
+ * @param[in] methodName Name of the overriding method.
+ * @param[in] symbolTable Global symbol table.
+ * @param[in] options Options containing optional custom delegate properties and proxy map.
+ * @return List of matching base method symbols across ancestors and linked base types.
+ */
+std::vector<Symbol> FindOverriddenBaseMethodSymbols(std::string_view containerClass, std::string_view methodName,
+                                                    const SymbolTable& symbolTable,
+                                                    const LinkedBaseOptions& options = {});
+
+/**
+ * @brief Expands an inheritance hierarchy by including ancestors of host classes incorporating the mixin.
+ * @param[in] containerClass Class or mixin name to check.
+ * @param[in] symbolTable Global symbol table.
+ * @param[in,out] hierarchy Target hierarchy list to append host class ancestors to.
+ */
+void ExpandMixinHostHierarchies(std::string_view containerClass, const SymbolTable& symbolTable,
+                                std::vector<std::string>& hierarchy);
+
+/**
+ * @brief Bundled parameters for resolving target base class of a delegate property.
+ */
+struct DelegateTargetClassRequest
+{
+    TSNode node;                                           ///< Delegate property receiver AST node.
+    std::string_view sourceCode;                           ///< Document source code.
+    const SymbolTable& symbolTable;                        ///< Global symbol table.
+    std::string_view virtualHostClass = {};                ///< Host class name for virtual documents.
+    const config::EngineRuleConfig* engineRules = nullptr; ///< Optional engine rule configuration.
+};
+
+/**
+ * @brief Resolves target base class for a delegate property receiver node.
+ * @param[in] req Request containing AST node, source code, symbolTable, and engine rules.
+ * @return Resolved base class name, or empty string if not resolvable.
+ */
+std::string ResolveDelegateTargetBaseClass(const DelegateTargetClassRequest& req);
+
+/**
+ * @brief Checks if an identifier matches any configured base class delegate property.
+ * @param[in] name Identifier to test.
+ * @param[in] symbolTable Global symbol table.
+ * @param[in] engineRules Optional engine rule configuration.
+ * @return True if name matches a delegate property, false otherwise.
+ */
+bool IsBaseClassDelegateProperty(std::string_view name, const SymbolTable& symbolTable,
+                                 const config::EngineRuleConfig* engineRules = nullptr);
+
+/**
+ * @brief The `get_X`/`set_X` methods, anywhere in a type's hierarchy, that stand for `X`.
+ *
+ * `class E { int get_Health() const property; void set_Health(int) property; }` gives `e.Health`
+ * its meaning: measured, the compiler accepts both the read and the write. Nothing about that is
+ * visible in the symbol table, which holds two methods and no member called `Health`, so every
+ * feature that answers a question about `e.Health` has to derive it - and each one that forgot
+ * left the user with a member the compiler accepts and the editor denies.
+ *
+ * @param keywordRequired asEP_PROPERTY_ACCESSOR_MODE 3, where a method is only a property once
+ *        `property` is written. Under mode 2 the name alone is enough. Ask
+ *        SemanticAnalysisRequest::RequiresAccessorKeyword, or the engine config, rather than
+ *        deciding locally - a setting honoured in some places and not others is worse than one
+ *        honoured nowhere.
+ * @return The accessors found, getter first when both exist; empty when `X` is not a property.
+ */
+std::vector<Symbol> FindPropertyAccessors(const std::string& typeName, const std::string& propertyName,
+                                          const SymbolTable& symbolTable, bool keywordRequired);
+
+/**
+ * @brief The global `get_X`/`set_X` functions that stand for virtual property `X`.
+ * @param propertyName Name of the property (without get_/set_ prefix).
+ * @param symbolTable Symbol table to search.
+ * @param keywordRequired True if the `property` modifier is required (accessor mode 3).
+ * @return The accessors found, getter first when both exist; empty when not a property.
+ */
+std::vector<Symbol> FindGlobalPropertyAccessors(const std::string& propertyName, const SymbolTable& symbolTable,
+                                                bool keywordRequired = false);
+
+/**
+ * @brief The type a property backed by these accessors carries.
+ *
+ * The getter's return type, or the setter's parameter when there is no getter - a write-only
+ * property is legal and its type is the one it takes.
+ */
+std::string PropertyTypeFromAccessors(const std::vector<Symbol>& accessors);
+
+/**
+ * @brief The property name behind an accessor method, or empty when it is an ordinary method.
+ *
+ * @param keywordRequired As above.
+ */
+std::string PropertyNameFromAccessor(const Symbol& sym, bool keywordRequired);
+
+/**
+ * @brief True when every ancestor of a type, and every base each of them names, is in the table.
+ *
+ * The precondition for any rule that reasons about what a hierarchy contains. A base this
+ * server cannot see is a base whose members it cannot enumerate, and "I did not find it" is
+ * indistinguishable from "it is not there" - which is how a missing-implementation rule invents
+ * an error about a method the invisible base declares. Every such rule stays silent here
+ * instead, which is the analyzer's standing answer to a partial view.
+ *
+ * @param typeName The type whose hierarchy is being judged.
+ * @param symbolTable The table to resolve each ancestor and its bases in.
+ */
+bool HierarchyIsFullyVisible(const std::string& typeName, const SymbolTable& symbolTable);
+
+/**
+ * @brief Traverses both base classes/interfaces and derived classes in SymbolTable.
+ * @param className The starting class name.
+ * @param symbolTable The symbol table to look up class definitions.
+ * @return Vector of all related class names across the inheritance graph.
+ */
+std::vector<std::string> GetAllRelatedClasses(const std::string& className, const SymbolTable& symbolTable);
+
+/**
+ * @brief Discovers all direct and indirect derived classes of a given class.
+ *
+ * Traverses downwards through the reverse inheritance index (RuleIndex::derivedByBase)
+ * starting strictly from className, excluding base classes and sibling classes.
+ *
+ * @param className The root class name.
+ * @param symbolTable The symbol table containing class definitions and rule index.
+ * @return Vector of derived class names (including qualified and unqualified forms).
+ */
+std::vector<std::string> GetDerivedClasses(const std::string& className, const SymbolTable& symbolTable);
+
+/**
+ * @brief Computes the set of classes compatible with a member based on access rules.
+ *
+ * - Private members: strictly isolated to declaring class (siblings, subclasses, superclasses excluded).
+ * - Protected members: declaring class and its direct/indirect derived classes.
+ * - Public members: root declaring class in hierarchy and its derived classes. Sibling classes
+ *   that independently declare a member of the same name without an ancestor declaration are excluded.
+ *
+ * @param className The class name containing or declaring the member.
+ * @param memberName The member name.
+ * @param access The member's access modifier (Private, Protected, Public).
+ * @param symbolTable Global symbol table.
+ * @return Vector of compatible class names.
+ */
+std::vector<std::string> GetCompatibleMemberClasses(const std::string& className, const std::string& memberName,
+                                                    AccessModifier access, const SymbolTable& symbolTable);
+
+/**
+ * @brief Extracts all enclosing container scopes (classes, interfaces, namespaces) for a given AST node.
+ * @param node The AST node from which to trace enclosing containers.
+ * @param sourceCode Document source text.
+ * @param nodeIndex Optional precomputed NodeIndex for O(K) range queries without parent climbs.
+ * @return Enclosing containers ordered from innermost to outermost.
+ */
+std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view sourceCode,
+                                                  const NodeIndex* nodeIndex = nullptr);
+
+/**
+ * @brief Whether `node` is the callee of a legal `super(...)` base-constructor call.
+ *
+ * `super` is not a general reference to the base class. The compiler answers
+ * "No matching symbol 'super'" for both `super.F()` and `super::F()` - the idiom for a base
+ * method is `Base::F()`. The one place the word is legal is a constructor calling its base
+ * constructor:
+ *
+ *     class Derived : Base { Derived() { super(1); } }
+ *
+ * so this returns true only inside a constructor of a class that names a base. Everywhere else
+ * `super` really is an undefined identifier and the diagnostic on it is correct, which is why
+ * this is a positive test for one shape rather than a blanket skip of the name.
+ *
+ * @param node Any node whose text is the identifier `super` - the callee of a call expression.
+ * @param sourceCode Document source text.
+ * @return True when the enclosing function is a constructor of a class with a base list.
+ */
+bool IsBaseConstructorCall(TSNode node, std::string_view sourceCode);
+
+/**
+ * @brief Collects namespace names introduced via `using namespace X;` using NodeIndex.
+ * @param nodeIndex Pre-indexed syntax tree node index.
+ * @param sourceCode Document source text.
+ * @return Vector of imported namespace names.
+ */
+std::vector<std::string> CollectUsingNamespaces(const NodeIndex& nodeIndex, std::string_view sourceCode);
+
+/**
+ * @brief Collects namespace names introduced via `using namespace X;` declarations.
+ * @param root The root AST node or enclosing container.
+ * @param sourceCode Document source text.
+ * @return Vector of imported namespace names.
+ */
+std::vector<std::string> CollectUsingNamespaces(TSNode root, std::string_view sourceCode);
+
+/**
+ * @brief Retrieves cached using namespace names for the request, computing them at most once.
+ * @param request The semantic analysis request.
+ * @return Reference to the vector of using namespace names.
+ */
+[[nodiscard]] const std::vector<std::string>& GetUsingNamespaces(const SemanticAnalysisRequest& request);
+
+/**
+ * @brief Checks if a scope prefix is a known namespace, class, interface, enum, or typedef.
+ * @param prefix Scope prefix string (e.g. "Geometry", "Parent", "UnknownSpace").
+ * @param node AST node for lexical context.
+ * @param sourceCode Document source text.
+ * @param table Symbol table.
+ * @param precomputedUsings Optional pre-collected using namespaces to avoid tree traversals.
+ * @return True if prefix is a valid known scope.
+ */
+bool IsKnownScope(const std::string& prefix, TSNode node, std::string_view sourceCode, const SymbolTable& table,
+                  std::span<const std::string> precomputedUsings = {});
+
+/**
+ * @brief Resolves an unqualified or qualified name within a container chain and active using namespaces.
+ * @param symbolTable Symbol table.
+ * @param containers Enclosing container hierarchy from GetEnclosingContainers.
+ * @param name Symbol name to resolve.
+ * @param usingNamespaces List of active using namespace directives visible in this scope.
+ * @return Vector of matching Symbol objects.
+ */
+std::vector<Symbol> FindSymbolsInScope(const SymbolTable& symbolTable, const std::vector<ContainerInfo>& containers,
+                                       const std::string& name, const std::vector<std::string>& usingNamespaces = {});
+
+/**
+ * @brief Substitutes a generic type parameter (e.g. "T") with a concrete type argument (e.g. "int" or "array<int>").
+ * @param typeStr The type string to process.
+ * @param paramName The template parameter name to replace (e.g. "T").
+ * @param concreteType The replacement type argument.
+ * @return Transformed type string with exact identifier boundaries.
+ */
+std::string SubstituteTypeParam(std::string_view typeStr, std::string_view paramName, std::string_view concreteType);
+
+/**
+ * @brief A template type's parameters paired with the arguments written at the use site.
+ */
+struct TemplateBinding
+{
+    bool isTemplate = false;
+    bool usable = false; ///< False when the arity does not line up, so nothing may be concluded.
+    std::vector<std::string> parameters;
+    std::vector<std::string> arguments;
+};
+
+/**
+ * @brief Resolves template arguments and parameters for a type from its declaration in the SymbolTable.
+ * @param writtenType The instantiated type string (e.g. "map<string, int>").
+ * @param table The symbol table.
+ * @return TemplateBinding structure.
+ */
+TemplateBinding BindTemplateArguments(const std::string& writtenType, const SymbolTable& table);
+
+/**
+ * @brief Replaces all bound template parameters with their corresponding concrete arguments in a type string.
+ * @param typeStr Type string containing generic parameters.
+ * @param binding The active template binding.
+ * @return Substituted type string.
+ */
+std::string SubstituteTemplateParameters(std::string_view typeStr, const TemplateBinding& binding);
+
+/**
+ * @brief Canonicalizes unqualified types inside container/namespace scope using SymbolTable.
+ * @param[in] typeStr Type string that may contain unqualified member type references.
+ * @param[in] containerScope Namespace or enclosing container name.
+ * @param[in] table Symbol table.
+ * @return Qualified type string where types found in containerScope are prefixed with containerScope + "::".
+ */
+std::string QualifyTypeInContainer(std::string_view typeStr, std::string_view containerScope, const SymbolTable& table);
+
+/**
+ * @brief Resolves the resulting type after applying N indexing operations: `x[0][1]`.
+ *        Queries `opIndex` from the symbol table with template substitution,
+ *        falling back to template arguments or bracket array syntax.
+ * @param typeName Written or resolved type name.
+ * @param indexCount Number of index brackets applied.
+ * @param symbolTable Symbol table.
+ * @param arrayTypeName Array container name from config (defaults to "array").
+ * @return Resulting element or value type.
+ */
+std::string ResolveIndexedType(std::string_view typeName, size_t indexCount, const SymbolTable& symbolTable,
+                               std::string_view arrayTypeName);
+
+/**
+ * @brief Resolves single index element type, matching opIndex overloads with the index argument.
+ * @param[in] typeName Container or array type name.
+ * @param[in] symbolTable Global symbol table.
+ * @param[in] arrayTypeName Array container name from config.
+ * @param[in] indexArgType Inferred type of the index argument.
+ * @return Resulting element or value type, or empty string.
+ */
+std::string ResolveIndexedTypeWithArg(std::string_view typeName, const SymbolTable& symbolTable,
+                                      std::string_view arrayTypeName, std::string_view indexArgType);
+
+/**
+ * @brief Performs container-aware, using-aware and inheritance-aware symbol lookup for a name at an AST node.
+ * @param name Symbol name to resolve.
+ * @param node The AST node providing lexical context.
+ * @param sourceCode Document source text.
+ * @param symbolTable Symbol table.
+ * @return Vector of matching Symbol objects.
+ */
+std::vector<Symbol> FindSymbolsInScope(const std::string& name, TSNode node, std::string_view sourceCode,
+                                       const SymbolTable& symbolTable);
+
+/**
+ * @brief Context bundled for expression type resolution.
+ */
+struct ExpressionTypeContext
+{
+    const Scope* scope = nullptr;
+    const SymbolTable& symbolTable;
+    std::string_view sourceCode;
+    std::string_view uri = "";
+    std::string_view stringTypeName = {};
+    std::string_view arrayTypeName = {};
+    bool disableIntegerDivision = false;
+    ExpressionTypeCache* cache = nullptr;
+    const NodeIndex* nodeIndex = nullptr;
+
+    TSNode rootNode = {};
+
+    ExpressionTypeContext(const Scope* sc, const SymbolTable& st, std::string_view src, std::string_view u = "",
+                          TSNode root = {})
+        : scope(sc), symbolTable(st), sourceCode(src), uri(u), stringTypeName(st.GetStringType()),
+          arrayTypeName(st.GetDefaultArrayType()), rootNode(root)
+    {
+    }
+
+    ExpressionTypeContext(const Scope* sc, const DiagnosticContext& diagCtx)
+        : scope(sc), symbolTable(diagCtx.request.symbolTable), sourceCode(diagCtx.request.sourceCode),
+          uri(diagCtx.request.fileUri), stringTypeName(diagCtx.request.GetEffectiveStringTypeName()),
+          arrayTypeName(diagCtx.request.GetEffectiveArrayTypeName()),
+          disableIntegerDivision(diagCtx.request.DisablesIntegerDivision()), cache(diagCtx.request.exprCache),
+          nodeIndex(diagCtx.request.nodeIndex),
+          rootNode(diagCtx.request.tree ? ts_tree_root_node(diagCtx.request.tree) : TSNode{})
+    {
+    }
+};
+
+/**
+ * @brief Describes a single argument in a call_expression's argument_list.
+ */
+struct CallArgumentInfo
+{
+    std::string name;   ///< Argument name if named (e.g. "param" in "param: value"), else empty.
+    TSNode exprNode{};  ///< AST node of the argument value expression.
+    TSNode nameNode{};  ///< AST node of the argument name identifier if named, else null.
+    uint32_t index = 0; ///< Zero-based argument index in the call.
+};
+
+/**
+ * @brief Enclosing call expression and argument list AST nodes.
+ */
+struct CallNodes
+{
+    TSNode callNode{};
+    TSNode argListNode{};
+};
+
+/**
+ * @brief Context and resolved argument information for call and overload resolution.
+ */
+struct CallResolutionContext
+{
+    std::vector<TSNode> argNodes;
+    std::vector<std::string> argTypes;
+    std::vector<std::string> argNames;
+    std::vector<bool> argIsLValue;
+    bool allArgsResolved = true;
+};
+
+/**
+ * @brief Resolves argument_list node from either argument_list or call_expression.
+ * @param[in] node AST node representing call_expression, construct_call_expression, or argument_list.
+ * @return argument_list node or null node.
+ */
+TSNode ResolveArgumentListNode(TSNode node);
+
+/**
+ * @brief Structurally extracts call arguments from an argument_list AST node.
+ *        Never scans commas or delimiters manually; relies strictly on named child AST structure.
+ * @param[in] argumentList AST node representing argument_list.
+ * @param[in] sourceCode Document source text for extracting argument names.
+ * @return Ordered list of CallArgumentInfo structs.
+ */
+std::vector<CallArgumentInfo> ExtractCallArguments(TSNode argumentList, std::string_view sourceCode);
+
+/**
+ * @brief Returns the number of argument expressions present in an argument_list.
+ * @param[in] argumentList AST node representing argument_list.
+ * @return Count of actual argument expressions.
+ */
+size_t CountCallArguments(TSNode argumentList);
+
+/**
+ * @brief Deduces expression types for all arguments in a call expression.
+ * @param[in] callNode AST node representing the call_expression.
+ * @param[in] ctx Context bundled for expression type resolution.
+ * @return Ordered vector of deduced argument type strings.
+ */
+std::vector<std::string> ExtractCallArgumentTypes(TSNode callNode, const ExpressionTypeContext& ctx);
+
+/**
+ * @brief Collects candidate constructor symbols for direct-initialization.
+ * @param[in] baseName Clean base type name.
+ * @param[in] contextNode AST variable_declarator or context node.
+ * @param[in] sourceCode Document source text.
+ * @param[in] symbolTable Symbol table for symbol resolution.
+ * @return Vector of candidate constructor symbols.
+ */
+std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, TSNode contextNode,
+                                                 std::string_view sourceCode, const SymbolTable& symbolTable);
+
+/**
+ * @brief Determines the zero-based active parameter index for a call given the cursor offset.
+ *        Correctly balances nesting delimiters (parentheses, brackets, braces, template angles)
+ *        and skips comments and string literals even when AST is corrupted by parser recovery.
+ * @param[in] argListNode AST node representing argument_list or enclosing call_expression.
+ * @param[in] cursorByte Byte offset corresponding to request position.
+ * @param[in] sourceCode Document source text.
+ * @return Zero-based active parameter index.
+ */
+uint32_t CalculateActiveCallParameter(TSNode argListNode, size_t cursorByte, std::string_view sourceCode);
+
+/**
+ * @brief Describes a single parameter in a lambda_parameter_list.
+ */
+struct LambdaParamASTInfo
+{
+    TSNode typeNode{};                                    ///< AST node for declared type if present.
+    TSNode nameNode{};                                    ///< AST node for parameter identifier if present.
+    TSNode startNode{};                                   ///< Leading node for range calculation.
+    std::string name;                                     ///< Parameter identifier name.
+    std::string typeName;                                 ///< Declared type name string.
+    uint32_t index = 0;                                   ///< Zero-based parameter position.
+    ParameterModifier modifier = ParameterModifier::None; ///< In/Out parameter modifier.
+    bool hasWrittenType : 1 = false;                      ///< True if parameter has explicit type.
+    bool isConst : 1 = false;                             ///< True if parameter has const qualifier.
+    bool isHandle : 1 = false;                            ///< True if parameter is a handle (@).
+    bool isReference : 1 = false;                         ///< True if parameter is a reference (&).
+};
+
+/**
+ * @brief Structurally extracts parameters from a lambda_parameter_list AST node.
+ * @param[in] lambdaParamList AST node representing lambda_parameter_list.
+ * @param[in] sourceCode Document source text.
+ * @return Ordered vector of LambdaParamASTInfo structs.
+ */
+std::vector<LambdaParamASTInfo> ExtractLambdaParameters(TSNode lambdaParamList, std::string_view sourceCode);
+
+/**
+ * @brief Context bundled for member lookup across type hierarchies.
+ */
+struct MemberLookupContext
+{
+    std::string typeName;
+    const SymbolTable& table;
+    bool accessorKeywordRequired = false;
+};
+
+/**
+ * @brief Unified result of member and method lookup across class and interface hierarchies.
+ */
+struct MemberLookupResult
+{
+    bool found = false;
+    bool decided = false;
+    bool hasConstOverload = false;
+    bool returnsSelfReference = false;
+    bool viaAccessor = false;
+    AccessModifier access = AccessModifier::Public;
+    std::string declaringClass;
+};
+
+/**
+ * @brief Pair of source and destination type names for conversion evaluation.
+ */
+struct ConversionTypePair
+{
+    std::string from;
+    std::string to;
+};
+
+/**
+ * @brief Resolves the cleaned base type of a member variable or function return type on a receiver.
+ * @param[in] receiverType Name of the receiving container type.
+ * @param[in] memberName Identifier of the member being accessed.
+ * @param[in] table Symbol table for looking up members.
+ * @return Cleaned base type name of the member, or empty string if not found.
+ */
+inline std::string ResolveReceiverMemberType(std::string_view receiverType, std::string_view memberName,
+                                             const SymbolTable& table)
+{
+    auto memberSyms = table.FindMemberSymbolPtr(receiverType, memberName);
+    if (memberSyms && !memberSyms->empty())
+    {
+        const auto& m = memberSyms->front();
+        if (m.type == SymbolType::Variable && !m.GetVariable().typeName.empty())
+        {
+            return CleanBaseType(m.GetVariable().typeName);
+        }
+        if (m.type == SymbolType::Function && !m.GetFunction().returnType.empty())
+        {
+            return CleanBaseType(m.GetFunction().returnType);
+        }
+    }
+    return {};
+}
+
+/**
+ * @brief Context bundled for receiver type resolution.
+ */
+struct ReceiverTypeContext
+{
+    const Scope* scope = nullptr;
+    std::string_view virtualHostClass = {};
+    std::string_view fileUri = {};
+    std::string_view arrayTypeName = {};
+    ExpressionTypeCache* cache = nullptr;
+    const config::EngineRuleConfig* engineRules = nullptr;
+    std::span<const std::string> delegateProps = {};
+};
+
+/**
+ * @brief Resolves the type name of an expression AST node.
+ *
+ * Traverses down through parentheses, literals, member accesses, calls, and binary operations
+ * to return the type name that expression produces. Where an operator or call cannot be judged
+ * with certainty the function returns an empty string: the engine has no full
+ * operator-overload resolution, which this analyzer does not do, and every caller treats an
+ * empty answer as "stay silent". A guess here would turn that silence into a wrong sentence,
+ * which costs more than the check that was skipped.
+ *
+ * @param[in] exprNode The expression AST node.
+ * @param[in] ctx The resolution context containing scope, symbol table, source code, and URI.
+ * @return Resolved base type name or empty string if unresolved.
+ */
+std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& ctx);
+
+/**
+ * @brief Resolves the type name of an expression AST node (convenience overload).
+ * @param[in] exprNode The expression AST node.
+ * @param[in] scope Lexical scope if available (can be nullptr).
+ * @param[in] symbolTable Symbol table for lookups.
+ * @param[in] sourceCode Document source text.
+ * @return Resolved base type name or empty string if unresolved.
+ */
+inline std::string ResolveExpressionType(TSNode exprNode, const Scope* scope, const SymbolTable& symbolTable,
+                                         std::string_view sourceCode)
+{
+    return ResolveExpressionType(exprNode, ExpressionTypeContext{scope, symbolTable, sourceCode, ""});
+}
+
+/**
+ * @brief Resolves the effective type of a local definition, deducing auto/auto@ types on demand.
+ * @param[in] def Local definition in scope.
+ * @param[in] ctx Expression type resolution context.
+ * @return Resolved type name with handle modifiers preserved, or empty string.
+ */
+std::string ResolveLocalDefinitionType(const LocalDefinition& def, const ExpressionTypeContext& ctx);
+
+/**
+ * @brief Resolves the type name of a receiver object node in member or call expressions.
+ * @param[in] objNode AST node representing the receiver / object expression.
+ * @param[in] sourceCode Document source text.
+ * @param[in] symbolTable Symbol table for type and member lookups.
+ * @param[in] ctx Context containing optional scope, virtual host class, and file URI.
+ * @return Resolved base type name, or empty string if unresolvable.
+ */
+std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, const SymbolTable& symbolTable,
+                                const ReceiverTypeContext& ctx = {});
+
+/**
+ * @brief Infers the host class for an AST node inside a mixin class from RuleIndex.
+ * @param[in] node AST node within the mixin class.
+ * @param[in] sourceCode Source text of the document.
+ * @param[in] symbolTable Workspace symbol table.
+ * @return Qualified or unqualified name of the first including host class, or empty string.
+ */
+std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourceCode, const SymbolTable& symbolTable);
+
+// --- A lambda against the funcdef it is being handed to ---------------------------------
+//
+// Shared because a lambda reaches a funcdef three ways and the compiler judges all three by
+// the same rule: an assignment or initializer (`CB@ cb = function(...)`), a conversion
+// (`CB(function(...))`), and a call argument (`Take(function(...))`). The first two are
+// TypeConversionChecker's, the third is CallChecker's.
+
+/** @brief One lambda parameter, exactly as the source wrote it. */
+struct LambdaParameter
+{
+    std::string typeName;
+    ParameterModifier modifier = ParameterModifier::None;
+    bool hasWrittenType : 1 = false; ///< False means "inherit from the funcdef", so unjudgeable.
+    bool isConst : 1 = false;
+    bool isHandle : 1 = false;
+    bool isReference : 1 = false;
+};
+
+/**
+ * @brief Reads a `lambda_parameter_list`, which does not wrap its entries.
+ *
+ * The grammar puts `param_type` and `name` directly on the list node, once per parameter, and
+ * leaves `&` and `in`/`out`/`inout` as anonymous tokens between them - so the entries have to
+ * be grouped here, by the commas. `const`, the namespace qualifier and the `@` and `[]`
+ * suffixes are all inside the `param_type` node's own text.
+ *
+ * @see BuiltQueries.h, which needs its own query pattern for the same reason.
+ */
+std::vector<LambdaParameter> ReadLambdaParameters(TSNode listNode, std::string_view sourceCode);
+
+/**
+ * @brief True when a written lambda signature contradicts the funcdef it is handed to.
+ *
+ * The compiler compares the WRITTEN signature and does not convert it, so this is an exact
+ * match rather than a conversion test. Measured against angelscript_oracle:
+ *
+ *     funcdef void CB(const string &in);
+ *     function(s) { }                  // accepted, the type comes from CB
+ *     function(const string &in s) { } // accepted, written and identical
+ *     function(string s) { }           // REJECTED - no const, no &in
+ *     function(string &in s) { }       // REJECTED - no const
+ *     funcdef void CB(int);
+ *     function(uint a) { }             // REJECTED - int does not widen here
+ *
+ * Arity is a hard equality even when every parameter is untyped, and a funcdef's default
+ * argument does not relax it: `funcdef void CB(int a = 1)` still rejects `function() { }`.
+ *
+ * The type NAME is compared by its last `::` segment, and not at all when either side names a
+ * typedef - the alias no spelling comparison can see through. That is not caution for its own
+ * sake: `typedef float real` against `float`, `array<int>@` against `int[]@`, and a namespaced
+ * type written bare inside its namespace are all ACCEPTED by the compiler, and a plain string
+ * comparison reports every one. The decorations, by contrast, are compared whatever the name
+ * is, because none of them can be hidden by a spelling.
+ */
+bool LambdaContradictsFuncdef(const std::vector<LambdaParameter>& lambdaParameters, const FuncdefSignature& funcdefSig,
+                              const SymbolTable& table);
+
+/** @brief The `lambda_expression` overload: reads the parameter list off the node itself. */
+bool LambdaContradictsFuncdef(TSNode lambdaNode, const FuncdefSignature& funcdefSig, const SymbolTable& table,
+                              std::string_view sourceCode);
+
+/** @brief True when the node is a lambda in either of the two spellings the grammar uses. */
+[[nodiscard]] bool IsLambdaExpression(TSNode node) noexcept;
+
+/**
+ * @brief The funcdef a type name denotes, or nullopt.
+ *
+ * Falls back to a last-`::`-segment scan when the qualified name resolves to nothing, the way
+ * a bare name inside a namespace has to.
+ */
+std::optional<Symbol> FindFuncdefSymbol(std::string_view typeName, const SymbolTable& table);
+
+/**
+ * @brief Checks if a resolved type represents an AngelScript handle type.
+ *
+ * An AngelScript type is a handle if:
+ * 1. It contains the handle modifier '@' (e.g., 'Foo@', 'const Bar@', 'array<Foo@>@').
+ * 2. It resolves to a 'funcdef' symbol in the symbol table (funcdefs are implicit function handles).
+ *
+ * @param[in] typeName Resolved type string.
+ * @param[in] symbolTable Symbol table for resolving funcdef declarations.
+ * @return True if the type has handle semantics.
+ */
+[[nodiscard]] bool IsHandleType(std::string_view typeName, const SymbolTable& symbolTable) noexcept;
+
+/**
+ * @brief The funcdef a lambda is being handed to, read from where the lambda is written.
+ *
+ * A lambda has no return type of its own - the grammar gives `lambda_expression` a parameter
+ * list and a body and nothing else - so every question about what its body must return has to
+ * come from the target. Handles the three shapes a lambda reaches a funcdef through: a
+ * declaration whose written type is a funcdef, a funcdef used as a conversion, and an argument
+ * landing on a funcdef parameter. Anything else answers nullopt.
+ */
+std::optional<Symbol> FuncdefTargetOfLambda(TSNode lambdaNode, const SymbolTable& table, std::string_view sourceCode);
+
+/**
+ * @brief Attempts to infer the parameter type of an untyped lambda parameter
+ *        by matching with the enclosing funcdef target.
+ * @param[in] nodeInLambda Any AST node inside the lambda expression (e.g. parameter or body reference).
+ * @param[in] paramName Name of the parameter identifier.
+ * @param[in] symbolTable Global symbol table.
+ * @param[in] sourceCode Document source text.
+ * @return Inferred type name, or empty string if not found.
+ */
+std::string InferLambdaParamType(TSNode nodeInLambda, std::string_view paramName, const SymbolTable& symbolTable,
+                                 std::string_view sourceCode);
+
+struct Scope;
+
+/**
+ * @brief Converts a Funcdef symbol into a synthetic Function symbol for call evaluation.
+ * @param[in] funcdefSym Source symbol of type SymbolType::Funcdef.
+ * @param[in] callName Target function name to assign to the synthesized symbol.
+ * @return Synthesized Symbol of type SymbolType::Function with equivalent signature.
+ */
+Symbol FuncdefToFunctionSymbol(const Symbol& funcdefSym, std::string_view callName);
+
+/**
+ * @brief Checks if an identifier resolves to a callable local or parameter funcdef in scope.
+ * @param[in] refByte Optional reference byte position for sequential lexical visibility.
+ * @return Synthesized function Symbol if callee is a funcdef variable, nullopt otherwise.
+ */
+std::optional<Symbol> TryResolveCallableFuncdef(const std::string& name, const Scope* scope, const SymbolTable& table,
+                                                uint32_t refByte = UINT32_MAX);
+
+/**
+ * @brief Checks whether a text expression represents a simple literal constant value.
+ * @param[in] expr Expression text as written in source code.
+ * @return True if expression is a number, boolean, or string literal.
+ */
+bool IsSimpleLiteralExpression(std::string_view expr);
+
+/**
+ * @brief Locates the AST node where a mixin is included inside a host class declaration (base list or body).
+ * @param[in] hostNode Enclosing class_declaration AST node.
+ * @param[in] mixinName Mixin name as listed on the class (qualified or short).
+ * @param[in] mixinShortName Short identifier of the mixin symbol.
+ * @param[in] sourceCode Document source text.
+ * @return Matching AST node inside base_class_list or class body, or null TSNode if not found.
+ */
+TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::string_view mixinShortName,
+                              std::string_view sourceCode);
+
+/**
+ * @brief Extracts the preceding scope qualifier for a datatype node, if any.
+ * @param[in] datatypeNode AST datatype node.
+ * @param[in] sourceCode Document source text.
+ * @return Scope prefix string ending in "::", or empty if unqualified.
+ */
+std::string ExtractDatatypeScopePrefix(TSNode datatypeNode, std::string_view sourceCode);
+
+/**
+ * @brief Classified base class inheritance relationship (direct base, virtual base, or mixin).
+ */
+struct HierarchyClassifiedBase
+{
+    std::string name;
+    bool isMixin = false;
+};
+
+/**
+ * @brief Context for tracking mixin expansion targets, imported symbols, and substituted member nodes.
+ */
+struct MixinExpansionContext
+{
+    const std::string& cleanClass;
+    const SymbolTable& symbolTable;
+    ankerl::unordered_dense::set<std::string>& visited;
+    std::vector<std::string>& result;
+};
+
+/**
+ * @brief Result of binary operator overload resolution containing candidate symbol and parameter conversions.
+ */
+struct BinaryOverloadResult
+{
+    bool hasMatch = false;
+    std::vector<ArgumentConversion> bestConversions;
+    std::string returnType;
+};
+
+/**
+ * @brief Resolved types of then and else branches in a conditional ternary expression.
+ */
+struct TernaryBranchTypes
+{
+    std::string t1;
+    std::string t2;
+    std::string c1;
+    std::string c2;
+};
+
+/**
+ * @brief Composite lookup key identifying a local definition by symbol name and lexical scope identifier.
+ */
+struct ActiveLocalDefKey
+{
+    std::string_view name;
+    uint32_t line = 0;
+    uint32_t col = 0;
+};
+
+/**
+ * @brief RAII guard managing active local variable definition tracking within the current scope.
+ */
+struct ActiveLocalDefGuard
+{
+    bool pushed = false;
+    ~ActiveLocalDefGuard();
+};
+
+/**
+ * @brief Carries receiver node and member access metadata for delegate property resolution.
+ */
+struct DelegatePropertyReceiverContext
+{
+    TSNode objNode;
+    std::string_view objText;
+    std::string_view effectiveHostClass;
+    std::string_view sourceCode;
+    std::string_view arrayTypeName;
+};
+
+/**
+ * @brief Tracks opening and closing delimiter positions and nesting depth in argument expressions.
+ */
+struct CallDelimiterState
+{
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
+    int angleDepth = 0;
+    bool inString = false;
+    char stringChar = '\0';
+    bool inLineComment = false;
+    bool inBlockComment = false;
+
+    [[nodiscard]] bool AtTopLevel() const noexcept
+    {
+        return parenDepth == 0 && bracketDepth == 0 && braceDepth == 0 && angleDepth == 0;
+    }
+};
+
+/**
+ * @brief Captures agreement metrics between candidate signatures and expected funcdef signatures.
+ */
+struct FuncdefAgreement
+{
+    std::optional<Symbol> agreed;
+    bool sawCandidate = false;
+    bool conflict = false;
+};
+} // namespace angel_lsp::analysis

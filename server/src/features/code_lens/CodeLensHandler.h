@@ -1,7 +1,7 @@
 #pragma once
 
-#include "analysis/ScopeTree.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/ScopeTree.h"
+#include "analysis/index/SymbolTable.h"
 #include "parser/ASTUtils.h"
 
 #include <ankerl/unordered_dense.h>
@@ -21,15 +21,8 @@ struct UnusedSymbolRules;
 struct ServerConfig;
 } // namespace angel_lsp::config
 
-namespace angel_lsp::utils
-{
-class LspLogger;
-}
-
-namespace angel_lsp::i18n
-{
-class I18n;
-}
+#include "i18n/i18n.h"
+#include "utils/LspLogger.h"
 
 namespace angel_lsp::features
 {

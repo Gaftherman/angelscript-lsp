@@ -145,13 +145,12 @@ struct TempStressWorkspace
 
 TEST_CASE("Server - Concurrency Stress Test: 500 rapid edits with interleaved reads")
 {
-    namespace fs = std::filesystem;
 
-    fs::path repoRoot(ANGELSCRIPT_REPO_ROOT);
-    fs::path largeScriptPath = repoRoot / "server" / "tests" / "perf" / "large_script_3000.as";
-    fs::path svenStubPath = repoRoot / "predefined" / "sven.as.predefined";
+    std::filesystem::path repoRoot(ANGELSCRIPT_REPO_ROOT);
+    std::filesystem::path largeScriptPath = repoRoot / "server" / "tests" / "perf" / "large_script_3000.as";
+    std::filesystem::path svenStubPath = repoRoot / "predefined" / "sven.as.predefined";
 
-    REQUIRE_MESSAGE(fs::exists(largeScriptPath), "large_script_3000.as must exist");
+    REQUIRE_MESSAGE(std::filesystem::exists(largeScriptPath), "large_script_3000.as must exist");
 
     std::string largeCode;
     {
@@ -169,7 +168,7 @@ TEST_CASE("Server - Concurrency Stress Test: 500 rapid edits with interleaved re
 
     angel_lsp::config::ServerConfig serverConfig;
     serverConfig.searchDirectories.push_back(ws.dir.string());
-    if (fs::exists(svenStubPath))
+    if (std::filesystem::exists(svenStubPath))
     {
         serverConfig.predefinedFiles.push_back(svenStubPath.string());
     }

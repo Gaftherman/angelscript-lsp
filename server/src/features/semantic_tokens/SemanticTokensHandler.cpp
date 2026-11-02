@@ -1,6 +1,6 @@
 #include "features/semantic_tokens/SemanticTokensHandler.h"
-#include "analysis/NodeIndex.h"
-#include "analysis/SemanticHelpers.h"
+#include "analysis/index/NodeIndex.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"

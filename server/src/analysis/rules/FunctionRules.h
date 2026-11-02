@@ -1,6 +1,6 @@
 #pragma once
 
-#include "analysis/DiagnosticContext.h"
+#include "analysis/diagnostics/DiagnosticContext.h"
 
 #include <tree_sitter/api.h>
 

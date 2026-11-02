@@ -1,16 +1,16 @@
 #include <doctest/doctest.h>
 
-#include "analysis/AccessChecker.h"
-#include "analysis/CallChecker.h"
-#include "analysis/CallGraph.h"
-#include "analysis/ConstChecker.h"
-#include "analysis/ControlFlowChecker.h"
-#include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
-#include "analysis/TypeConversionChecker.h"
+#include "analysis/checkers/AccessChecker.h"
+#include "analysis/checkers/CallChecker.h"
+#include "analysis/checkers/ConstChecker.h"
+#include "analysis/checkers/ControlFlowChecker.h"
+#include "analysis/checkers/TypeConversionChecker.h"
+#include "analysis/index/CallGraph.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
 #include "analysis/rules/ClassRules.h"
 #include "analysis/rules/FunctionRules.h"
 #include "analysis/rules/OperatorRules.h"
@@ -43,10 +43,9 @@ struct Sample
 
 std::vector<Sample> LoadSamples()
 {
-    namespace fs = std::filesystem;
 
-    std::vector<fs::path> paths;
-    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    std::vector<std::filesystem::path> paths;
+    for (const auto& entry : std::filesystem::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
         {

@@ -19,7 +19,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 LEDGER_PATH = REPO_ROOT / "docs" / "REFACTOR_LEDGER.json"
 
-VALID_PHASES = {"R0", "R1", "R2", "R3", "R4"}
+VALID_PHASES = {"R0", "R1", "R2", "R3", "R4", "R5"}
 VALID_ACTIONS = {
     "UNIFY_FUNCTIONS",
     "UNIFY_STRUCT",
@@ -125,7 +125,11 @@ def is_sym_declared_in_file_or_peer(sym: str, rel_path: str) -> bool:
     if not target_path.is_file():
         target_path = REPO_ROOT / rel_path
     if not target_path.is_file():
-        return False
+        matches = list((REPO_ROOT / "server" / "src").rglob(target_path.name))
+        if matches:
+            target_path = matches[0]
+        else:
+            return False
 
     candidates = [target_path]
     if target_path.suffix == ".cpp":

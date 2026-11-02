@@ -1,6 +1,6 @@
 #include <doctest/doctest.h>
 
-#include "analysis/DoxygenMarkdown.h"
+#include "analysis/documentation/DoxygenMarkdown.h"
 #include "helpers/TestUtils.h"
 
 #include <string>

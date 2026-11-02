@@ -231,7 +231,7 @@ def scan_local_cpp_structs():
             "requiredConcepts": {"typeName", "isConst", "isHandle", "isRef"},
             "minMatches": 2,
             "whyInThatCpp": "Ad-hoc parameter bundling for checker recursion and local type inspection instead of using a unified TypeQualifiers/TypeDescriptor structure.",
-            "canonicalTargetHeader": "server/src/analysis/SymbolTable.h",
+            "canonicalTargetHeader": "server/src/analysis/index/SymbolTable.h",
             "canonicalTargetSymbol": "TypeQualifiers",
         },
         {
@@ -240,7 +240,7 @@ def scan_local_cpp_structs():
             "requiredConcepts": {"typeName", "scope", "table", "access"},
             "minMatches": 2,
             "whyInThatCpp": "Checker-local context structs created to satisfy the 4-parameter ceiling (/we4100) for internal recursion without a shared analysis structure.",
-            "canonicalTargetHeader": "server/src/analysis/SemanticHelpers.h",
+            "canonicalTargetHeader": "server/src/analysis/resolution/SemanticHelpers.h",
             "canonicalTargetSymbol": "MemberLookupContext",
         },
         {
@@ -249,7 +249,7 @@ def scan_local_cpp_structs():
             "requiredConcepts": {"node", "call", "typeName"},
             "minMatches": 2,
             "whyInThatCpp": "Independent feature-level overload and call resolution structs created because Layer 3 feature handlers cannot include sibling features.",
-            "canonicalTargetHeader": "server/src/analysis/SemanticHelpers.h",
+            "canonicalTargetHeader": "server/src/analysis/resolution/SemanticHelpers.h",
             "canonicalTargetSymbol": "CallResolutionContext",
         },
         {
@@ -258,7 +258,7 @@ def scan_local_cpp_structs():
             "requiredConcepts": {"startByte", "endByte"},
             "minMatches": 2,
             "whyInThatCpp": "Temporary byte range slices and node interval holders duplicated across features and analysis checkers.",
-            "canonicalTargetHeader": "server/src/analysis/NodeIndex.h",
+            "canonicalTargetHeader": "server/src/analysis/index/NodeIndex.h",
             "canonicalTargetSymbol": "IndexedContainerSpan",
         },
     ]
@@ -517,10 +517,10 @@ def scan_similar_functions():
                 unif_plan = "server/src/features/common/FeatureSharedUtils.h"
                 sep_reason = f"Layer 3 isolation prohibition between features/{featA} and features/{featB}"
             elif is_analysis_dupe:
-                unif_plan = "server/src/analysis/SemanticHelpers.h"
+                unif_plan = "server/src/analysis/resolution/SemanticHelpers.h"
                 sep_reason = "internal analysis checker boundaries within Layer 2"
             else:
-                unif_plan = "server/src/analysis/SemanticHelpers.h"
+                unif_plan = "server/src/analysis/resolution/SemanticHelpers.h"
                 sep_reason = "Layer 3 feature duplicating Layer 2 analysis capability"
 
             if fA["name"] == fB["name"]:
@@ -565,7 +565,7 @@ def compute_memory_layout_audit():
     structs_audit = [
         {
             "structName": "SymbolModifiers",
-            "headerFile": "server/src/analysis/SymbolTable.h",
+            "headerFile": "server/src/analysis/index/SymbolTable.h",
             "looseBools": 14,
             "stringCount": 0,
             "vectorCount": 0,
@@ -577,7 +577,7 @@ def compute_memory_layout_audit():
         },
         {
             "structName": "ParameterInformation",
-            "headerFile": "server/src/analysis/SymbolTable.h",
+            "headerFile": "server/src/analysis/index/SymbolTable.h",
             "looseBools": 9,
             "stringCount": 6,
             "vectorCount": 0,
@@ -589,7 +589,7 @@ def compute_memory_layout_audit():
         },
         {
             "structName": "VariableSignature",
-            "headerFile": "server/src/analysis/SymbolTable.h",
+            "headerFile": "server/src/analysis/index/SymbolTable.h",
             "looseBools": 19,
             "stringCount": 4,
             "vectorCount": 1,
@@ -601,7 +601,7 @@ def compute_memory_layout_audit():
         },
         {
             "structName": "FunctionSignature",
-            "headerFile": "server/src/analysis/SymbolTable.h",
+            "headerFile": "server/src/analysis/index/SymbolTable.h",
             "looseBools": 6,
             "stringCount": 6,
             "vectorCount": 1,
@@ -613,7 +613,7 @@ def compute_memory_layout_audit():
         },
         {
             "structName": "FuncdefSignature",
-            "headerFile": "server/src/analysis/SymbolTable.h",
+            "headerFile": "server/src/analysis/index/SymbolTable.h",
             "looseBools": 3,
             "stringCount": 3,
             "vectorCount": 1,
@@ -625,7 +625,7 @@ def compute_memory_layout_audit():
         },
         {
             "structName": "ClassSignature",
-            "headerFile": "server/src/analysis/SymbolTable.h",
+            "headerFile": "server/src/analysis/index/SymbolTable.h",
             "looseBools": 3,
             "stringCount": 0,
             "vectorCount": 3,
@@ -637,7 +637,7 @@ def compute_memory_layout_audit():
         },
         {
             "structName": "LocalDefinition",
-            "headerFile": "server/src/analysis/ScopeTree.h",
+            "headerFile": "server/src/analysis/index/ScopeTree.h",
             "looseBools": 2,
             "stringCount": 3,
             "vectorCount": 1,
@@ -649,7 +649,7 @@ def compute_memory_layout_audit():
         },
         {
             "structName": "Scope",
-            "headerFile": "server/src/analysis/ScopeTree.h",
+            "headerFile": "server/src/analysis/index/ScopeTree.h",
             "looseBools": 1,
             "stringCount": 0,
             "vectorCount": 4,
@@ -661,7 +661,7 @@ def compute_memory_layout_audit():
         },
         {
             "structName": "IndexedContainerSpan",
-            "headerFile": "server/src/analysis/NodeIndex.h",
+            "headerFile": "server/src/analysis/index/NodeIndex.h",
             "looseBools": 1,
             "stringCount": 0,
             "vectorCount": 0,
@@ -673,7 +673,7 @@ def compute_memory_layout_audit():
         },
         {
             "structName": "NodeIndex",
-            "headerFile": "server/src/analysis/NodeIndex.h",
+            "headerFile": "server/src/analysis/index/NodeIndex.h",
             "looseBools": 0,
             "stringCount": 0,
             "vectorCount": 6,
@@ -685,7 +685,7 @@ def compute_memory_layout_audit():
         },
         {
             "structName": "Symbol",
-            "headerFile": "server/src/analysis/SymbolTable.h",
+            "headerFile": "server/src/analysis/index/SymbolTable.h",
             "looseBools": 2,
             "stringCount": 5,
             "vectorCount": 1,
@@ -818,9 +818,9 @@ def scan_missing_doxygen(local_structs, similar_matrix, pass1_reparse):
 
     # 4. Core memory layout structures
     core_headers = [
-        "server/src/analysis/SymbolTable.h",
-        "server/src/analysis/ScopeTree.h",
-        "server/src/analysis/NodeIndex.h",
+        "server/src/analysis/index/SymbolTable.h",
+        "server/src/analysis/index/ScopeTree.h",
+        "server/src/analysis/index/NodeIndex.h",
     ]
     core_struct_names = {
         "Symbol", "SymbolModifiers", "VariableSignature", "FunctionSignature",
@@ -956,6 +956,9 @@ def main():
     slop_res_re = re.compile(r"result of the operation", re.I)
     slop_unify_re = re.compile(r"candidate for unification in", re.I)
     slop_overlap_re = re.compile(r"structural overlap\s*\(\d+%\)", re.I)
+    orphan_reeval_re = re.compile(r"Manually re-evaluates", re.I)
+    orphan_pass1_re = re.compile(r"candidate for direct Pass 1", re.I)
+    orphan_unif_re = re.compile(r"Candidate for unification", re.I)
     for fpath in sorted(SERVER_SRC.rglob("*.[ch]*")):
         if not fpath.is_file():
             continue
@@ -968,7 +971,9 @@ def main():
             cleaned_tag = stripped.lstrip("* ").strip()
             if slop_cond_re.search(stripped) or slop_res_re.search(stripped) or slop_param_re.search(stripped):
                 slop_violations.append((fpath, idx, stripped))
-            elif (slop_unify_re.search(stripped) or slop_overlap_re.search(stripped)) and not cleaned_tag.startswith("@note"):
+            elif orphan_reeval_re.search(stripped) or orphan_pass1_re.search(stripped):
+                slop_violations.append((fpath, idx, stripped))
+            elif (slop_unify_re.search(stripped) or orphan_unif_re.search(stripped) or slop_overlap_re.search(stripped)) and not cleaned_tag.startswith("@note"):
                 slop_violations.append((fpath, idx, stripped))
     if slop_violations:
         print(f"[ERROR] Found {len(slop_violations)} mechanical Doxygen slop template comments in server/src/:", file=sys.stderr)

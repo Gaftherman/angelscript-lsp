@@ -1,7 +1,7 @@
 #pragma once
 
-#include "analysis/Diagnostics.h"
 #include "analysis/SemanticAnalysisRequest.h"
+#include "analysis/diagnostics/Diagnostics.h"
 
 namespace angel_lsp::analysis
 {

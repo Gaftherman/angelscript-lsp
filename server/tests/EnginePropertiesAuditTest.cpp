@@ -1,12 +1,12 @@
 #include <doctest/doctest.h>
 
-#include "analysis/EngineProfiles.h"
-#include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
-#include "analysis/TypeConversionChecker.h"
+#include "analysis/checkers/TypeConversionChecker.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
+#include "analysis/types/EngineProfiles.h"
 #include "config/EngineRuleConfig.h"
 #include "config/EngineRuleParser.h"
 #include "config/ServerConfig.h"

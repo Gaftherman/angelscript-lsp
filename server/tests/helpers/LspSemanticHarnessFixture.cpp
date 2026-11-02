@@ -1,6 +1,6 @@
 #include "helpers/LspSemanticHarnessFixture.h"
 
-#include "analysis/NodeIndex.h"
+#include "analysis/index/NodeIndex.h"
 #include "features/completion/CompletionHandler.h"
 #include "features/definition/DefinitionHandler.h"
 #include "features/hover/HoverHandler.h"

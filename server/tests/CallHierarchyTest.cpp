@@ -1,8 +1,8 @@
 #include <doctest/doctest.h>
 
-#include "analysis/CallGraph.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/CallGraph.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
 #include "features/call_hierarchy/CallHierarchyHandler.h"
 #include "parser/AngelScriptParser.h"
 

@@ -1,10 +1,10 @@
 #include <doctest/doctest.h>
 
-#include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
 #include "config/ServerConfig.h"
 #include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
@@ -665,10 +665,8 @@ TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Across All angel
         return;
     }
 
-    namespace fs = std::filesystem;
-
-    std::vector<fs::path> files;
-    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    std::vector<std::filesystem::path> files;
+    for (const auto& entry : std::filesystem::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
             files.push_back(entry.path());
@@ -741,10 +739,8 @@ TEST_CASE("SemanticAnalyzer - Unused Variable Corpus Audit Across All angelscrip
         return;
     }
 
-    namespace fs = std::filesystem;
-
-    std::vector<fs::path> files;
-    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    std::vector<std::filesystem::path> files;
+    for (const auto& entry : std::filesystem::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
             files.push_back(entry.path());
@@ -815,10 +811,8 @@ TEST_CASE("SemanticAnalyzer - Null Non Handle Corpus Audit Across All angelscrip
         return;
     }
 
-    namespace fs = std::filesystem;
-
-    std::vector<fs::path> files;
-    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    std::vector<std::filesystem::path> files;
+    for (const auto& entry : std::filesystem::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
             files.push_back(entry.path());
@@ -902,10 +896,8 @@ TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Grouped By Proje
         return;
     }
 
-    namespace fs = std::filesystem;
-
-    std::vector<fs::path> files;
-    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    std::vector<std::filesystem::path> files;
+    for (const auto& entry : std::filesystem::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
             files.push_back(entry.path());
@@ -913,7 +905,7 @@ TEST_CASE("SemanticAnalyzer - Undefined Identifier Corpus Audit Grouped By Proje
     REQUIRE_MESSAGE(!files.empty(), "Expected the angelscript/ corpus directory to contain .as files");
     std::sort(files.begin(), files.end());
 
-    std::unordered_map<std::string, std::vector<fs::path>> groups;
+    std::unordered_map<std::string, std::vector<std::filesystem::path>> groups;
     for (const auto& path : files)
     {
         std::string name = path.filename().string();

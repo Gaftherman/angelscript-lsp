@@ -1,7 +1,7 @@
 #include "helpers/TestUtils.h"
-#include "lsp/DiagnosticsPipeline.h"
-#include "lsp/LspSessionCoordinator.h"
-#include "lsp/WorkspaceStateStore.h"
+#include "lsp/pipeline/DiagnosticsPipeline.h"
+#include "lsp/pipeline/LspSessionCoordinator.h"
+#include "lsp/state/WorkspaceStateStore.h"
 
 #include <doctest/doctest.h>
 #include <string>

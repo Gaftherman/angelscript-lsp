@@ -1,5 +1,5 @@
 #include "features/type_hierarchy/TypeHierarchyHandler.h"
-#include "analysis/SemanticHelpers.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
 #include "features/common/FeatureSharedUtils.h"
 #include "parser/ASTUtils.h"

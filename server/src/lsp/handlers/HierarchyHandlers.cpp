@@ -1,7 +1,7 @@
 #include "features/call_hierarchy/CallHierarchyHandler.h"
 #include "features/type_hierarchy/TypeHierarchyHandler.h"
-#include "lsp/PositionCodec.h"
 #include "lsp/Server.h"
+#include "lsp/state/PositionCodec.h"
 
 namespace angel_lsp
 {

@@ -42,7 +42,7 @@ ENGINE_HARDCODED_SYMBOLS = [
 ]
 
 ENGINE_ALLOWED_FILES = {
-    SERVER_SRC / "analysis" / "EngineProfiles.cpp",
+    SERVER_SRC / "analysis" / "types" / "EngineProfiles.cpp",
 }
 
 BANNED_IDENTIFIER_PATTERNS = [
@@ -294,7 +294,7 @@ def check_no_manual_scope_string_ops():
     allowed_files = {
         SERVER_SRC / "utils" / "ScopedNameUtils.h",
         SERVER_SRC / "utils" / "ScopedNameUtils.cpp",
-        SERVER_SRC / "lsp" / "SignatureFormatter.cpp",
+        SERVER_SRC / "analysis" / "documentation" / "SignatureFormatter.cpp",
     }
     for file_path in SERVER_SRC.rglob("*.[ch]*"):
         if not file_path.is_file() or file_path in allowed_files:
@@ -375,8 +375,8 @@ def check_no_modifier_string_literals():
     violations = []
     pattern = re.compile(r'"(?:class|interface|enum|funcdef|shared)[\s\t]"')
     allowed_files = {
-        SERVER_SRC / "analysis" / "SignatureFormatter.cpp",
-        SERVER_SRC / "analysis" / "EngineConfigConverter.cpp",
+        SERVER_SRC / "analysis" / "documentation" / "SignatureFormatter.cpp",
+        SERVER_SRC / "analysis" / "types" / "EngineConfigConverter.cpp",
     }
     for file_path in (SERVER_SRC / "analysis").rglob("*.[ch]*"):
         if not file_path.is_file() or file_path in allowed_files:
@@ -555,10 +555,10 @@ def check_no_analysis_ast_utils():
     return []
 
 MANUAL_QUALIFIER_ALLOWED_FILES = {
-    SERVER_SRC / "analysis" / "TypeExtraction.cpp",
-    SERVER_SRC / "analysis" / "TypeExtraction.h",
-    SERVER_SRC / "analysis" / "TypeSanitization.cpp",
-    SERVER_SRC / "analysis" / "TypeSanitization.h",
+    SERVER_SRC / "analysis" / "types" / "TypeExtraction.cpp",
+    SERVER_SRC / "analysis" / "types" / "TypeExtraction.h",
+    SERVER_SRC / "analysis" / "types" / "TypeSanitization.cpp",
+    SERVER_SRC / "analysis" / "types" / "TypeSanitization.h",
 }
 
 MANUAL_QUALIFIER_PATTERNS = [
@@ -621,10 +621,14 @@ def check_no_using_namespace_or_declarations():
     Enforces that zero 'using namespace' directives and zero 'using <ns>::<symbol>;'
     declarations exist across server/src/. All namespace access must be fully qualified.
     Only type aliases ('using Alias = Type;') are permitted.
+    Also enforces zero namespace aliases (namespace X = Y;) across server/src/, server/tests/, and server/tools/,
+    and zero 'using namespace' in test headers (server/tests/**/*.h) or tools (server/tools/**).
     """
     violations = []
     using_ns_re = re.compile(r"\busing\s+namespace\b")
     using_sym_re = re.compile(r"\busing\s+(?![^;=]*=)[a-zA-Z0-9_:,\s]+;")
+    ns_alias_re = re.compile(r"\bnamespace\s+[A-Za-z0-9_]+\s*=")
+
     for file_path in SERVER_SRC.rglob("*.[ch]*"):
         if not file_path.is_file():
             continue
@@ -636,8 +640,40 @@ def check_no_using_namespace_or_declarations():
             stripped = line.strip()
             if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*") or stripped.startswith(";"):
                 continue
-            if using_ns_re.search(stripped) or using_sym_re.search(stripped):
+            if using_ns_re.search(stripped) or using_sym_re.search(stripped) or ns_alias_re.search(stripped):
                 violations.append((file_path, idx, stripped))
+
+    # Test headers and tools must have zero using namespace or namespace aliases
+    server_tools = REPO_ROOT / "server" / "tools"
+    for file_path in list(SERVER_TESTS.rglob("*.h")) + list(server_tools.rglob("*.[ch]*")):
+        if not file_path.is_file():
+            continue
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for idx, line in enumerate(content.splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*") or stripped.startswith(";"):
+                continue
+            if using_ns_re.search(stripped) or ns_alias_re.search(stripped):
+                violations.append((file_path, idx, stripped))
+
+    # All test cpp files must have zero namespace aliases (namespace X = Y;)
+    for file_path in SERVER_TESTS.rglob("*.cpp"):
+        if not file_path.is_file():
+            continue
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for idx, line in enumerate(content.splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*") or stripped.startswith(";"):
+                continue
+            if ns_alias_re.search(stripped):
+                violations.append((file_path, idx, stripped))
+
     return violations
 
 
@@ -658,6 +694,9 @@ def check_no_doxygen_slop():
     """
     violations = []
     refactor_cand_re = re.compile(r"\[REFACTOR-CANDIDATE\]", re.I)
+    orphan_reeval_re = re.compile(r"Manually re-evaluates", re.I)
+    orphan_pass1_re = re.compile(r"candidate for direct Pass 1", re.I)
+    orphan_unif_re = re.compile(r"Candidate for unification", re.I)
     slop_brief_re = re.compile(r"@brief\s+(?:Represents\b|Helper\s+structure\b|Local\s+helper\b)", re.I)
     slop_param_re = re.compile(r"@param(\[[^\]]*\])?\s+(\w+)\s+(Parameter|Input)\s+\2\b", re.I)
     slop_cond_re = re.compile(r"true if condition met;\s*otherwise false", re.I)
@@ -677,6 +716,10 @@ def check_no_doxygen_slop():
             cleaned_tag = stripped.lstrip("* ").strip()
             if refactor_cand_re.search(stripped):
                 violations.append((file_path, idx, stripped, "Forbidden [REFACTOR-CANDIDATE] tag"))
+            elif orphan_reeval_re.search(stripped):
+                violations.append((file_path, idx, stripped, "Orphaned manual re-evaluation note fragment"))
+            elif orphan_pass1_re.search(stripped):
+                violations.append((file_path, idx, stripped, "Orphaned pass 1 candidate note fragment"))
             elif slop_brief_re.search(stripped):
                 violations.append((file_path, idx, stripped, "Mechanical @brief slop template"))
             elif slop_cond_re.search(stripped):
@@ -685,7 +728,7 @@ def check_no_doxygen_slop():
                 violations.append((file_path, idx, stripped, "Mechanical filler return description"))
             elif slop_param_re.search(stripped):
                 violations.append((file_path, idx, stripped, "Mechanical filler parameter description"))
-            elif slop_unify_re.search(stripped) and not cleaned_tag.startswith("@note"):
+            elif (slop_unify_re.search(stripped) or orphan_unif_re.search(stripped)) and not cleaned_tag.startswith("@note"):
                 violations.append((file_path, idx, stripped, "Orphaned refactoring note fragment"))
             elif slop_overlap_re.search(stripped) and not cleaned_tag.startswith("@note"):
                 violations.append((file_path, idx, stripped, "Orphaned structural overlap note"))

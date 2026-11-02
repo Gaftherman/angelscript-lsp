@@ -1,7 +1,7 @@
 #include <doctest/doctest.h>
 
-#include "analysis/DocComment.h"
-#include "analysis/DoxygenMarkdown.h"
+#include "analysis/documentation/DocComment.h"
+#include "analysis/documentation/DoxygenMarkdown.h"
 #include "helpers/TestUtils.h"
 
 #include <algorithm>

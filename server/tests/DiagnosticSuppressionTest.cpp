@@ -1,6 +1,6 @@
-#include "analysis/DiagnosticSuppression.h"
-#include "analysis/DiagnosticCodes.h"
-#include "analysis/NodeIndex.h"
+#include "analysis/diagnostics/DiagnosticSuppression.h"
+#include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/NodeIndex.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 #include <doctest/doctest.h>
@@ -8,7 +8,7 @@
 #include <string>
 
 using namespace angel_lsp::analysis;
-namespace codes = angel_lsp::diagnostics::codes;
+using namespace angel_lsp::diagnostics;
 
 TEST_CASE("DiagnosticSuppression - Alias lookup parity")
 {

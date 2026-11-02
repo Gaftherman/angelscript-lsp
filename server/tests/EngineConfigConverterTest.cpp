@@ -1,8 +1,8 @@
 #include <doctest/doctest.h>
 
-#include "analysis/EngineConfigConverter.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
+#include "analysis/types/EngineConfigConverter.h"
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"

@@ -1,7 +1,7 @@
 #include <doctest/doctest.h>
 
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
 #include "features/implementation/ImplementationHandler.h"
 #include "parser/AngelScriptParser.h"
 

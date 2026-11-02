@@ -1,11 +1,11 @@
 #pragma once
 
-#include "analysis/EngineProfiles.h"
-#include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
+#include "analysis/types/EngineProfiles.h"
 #include "config/ServerConfig.h"
 #include "helpers/CorpusDirectory.h"
 #include "i18n/i18n.h"
@@ -70,14 +70,10 @@ RunCorpusAudit(const std::function<bool(const std::string&)>& interesting, size_
                const angel_lsp::config::DiagnosticsConfig* diagConfig = nullptr,
                angel_lsp::analysis::EngineProfileKind profile = angel_lsp::analysis::EngineProfileKind::None)
 {
-    namespace fs = std::filesystem;
-    using namespace angel_lsp::analysis;
-    using namespace angel_lsp::parser;
-
     CorpusResult result;
 
-    std::vector<fs::path> files;
-    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    std::vector<std::filesystem::path> files;
+    for (const auto& entry : std::filesystem::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
         {
@@ -86,7 +82,7 @@ RunCorpusAudit(const std::function<bool(const std::string&)>& interesting, size_
     }
     std::sort(files.begin(), files.end());
 
-    std::unordered_map<std::string, std::vector<fs::path>> groups;
+    std::unordered_map<std::string, std::vector<std::filesystem::path>> groups;
     for (const auto& path : files)
     {
         const std::string name = path.filename().string();
@@ -99,7 +95,7 @@ RunCorpusAudit(const std::function<bool(const std::string&)>& interesting, size_
 
     for (auto& [groupName, groupFiles] : groups)
     {
-        SymbolTable sharedTable;
+        angel_lsp::analysis::SymbolTable sharedTable;
         std::unordered_map<std::string, std::string> sources;
 
         // A workspace of game scripts is analysed against the host's declarations, not in a
@@ -110,8 +106,8 @@ RunCorpusAudit(const std::function<bool(const std::string&)>& interesting, size_
             const std::string stub = angel_lsp::analysis::GetProfileStubText(profile);
             if (!stub.empty())
             {
-                AngelScriptParser stubParser;
-                SymbolCollector stubCollector(nullptr);
+                angel_lsp::parser::AngelScriptParser stubParser;
+                angel_lsp::analysis::SymbolCollector stubCollector(nullptr);
                 stubCollector.CollectSymbols(angel_lsp::analysis::GetProfileSyntheticUri(profile), std::string(stub),
                                              stubParser, sharedTable);
             }
@@ -135,8 +131,8 @@ RunCorpusAudit(const std::function<bool(const std::string&)>& interesting, size_
             const std::string fileUri = "file:///" + path.filename().string();
             sources[fileUri] = sourceCode;
 
-            AngelScriptParser parser;
-            SymbolCollector collector(nullptr);
+            angel_lsp::parser::AngelScriptParser parser;
+            angel_lsp::analysis::SymbolCollector collector(nullptr);
             collector.CollectSymbols(fileUri, sourceCode, parser, sharedTable);
         }
 
@@ -144,13 +140,13 @@ RunCorpusAudit(const std::function<bool(const std::string&)>& interesting, size_
         {
             ++result.filesAnalysed;
 
-            AngelScriptParser parser;
-            LocalScopeCollector scopeCollector(nullptr);
+            angel_lsp::parser::AngelScriptParser parser;
+            angel_lsp::analysis::LocalScopeCollector scopeCollector(nullptr);
 
             const auto start = std::chrono::steady_clock::now();
             TSTree* tree = parser.Parse(sourceCode);
 
-            SemanticAnalysisRequest request{sharedTable, fileUri, "", &i18n};
+            angel_lsp::analysis::SemanticAnalysisRequest request{sharedTable, fileUri, "", &i18n};
             request.diagnostics = diagConfig;
 
             // The server always analyses with a TypeConfig, and several rules read it - which
@@ -161,13 +157,13 @@ RunCorpusAudit(const std::function<bool(const std::string&)>& interesting, size_
 
             // Non-const handle so `auto` deduction is written back - this tree is local to the
             // iteration and reachable by nothing else. See SemanticAnalysisRequest.h.
-            std::shared_ptr<Scope> scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
+            std::shared_ptr<angel_lsp::analysis::Scope> scopeRoot = scopeCollector.CollectScopes(sourceCode, parser);
             request.scopeRoot = scopeRoot;
             request.mutableScopeRoot = scopeRoot.get();
             request.sourceCode = sourceCode;
             request.tree = tree;
 
-            SemanticAnalyzer analyzer(nullptr);
+            angel_lsp::analysis::SemanticAnalyzer analyzer(nullptr);
             const auto diagnostics = analyzer.Analyze(request);
             result.seconds += std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 

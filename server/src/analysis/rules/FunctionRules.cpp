@@ -1,9 +1,9 @@
 #include "analysis/rules/FunctionRules.h"
-#include "analysis/DiagnosticCodes.h"
-#include "analysis/NodeIndex.h"
-#include "analysis/SemanticHelpers.h"
-#include "analysis/TypeSanitization.h"
-#include "analysis/overload/OverloadTypeConversions.h"
+#include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/NodeIndex.h"
+#include "analysis/resolution/OverloadTypeConversions.h"
+#include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "parser/Primitives.h"
@@ -185,9 +185,6 @@ static void CheckVoidReturnType(const Symbol& sym, const FunctionSignature& sig,
  * @param[in] sym Function symbol being checked.
  * @param[in] sig Function signature containing return type and modifiers.
  * @param[in] ctx Diagnostic collection and analysis context.
- * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType. Manually re-evaluates
- * AST for isRef; candidate for direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo /
- * ParameterInformation::isReference / isReturnReference.
  */
 static void CheckReturnTypeLegality(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
 {

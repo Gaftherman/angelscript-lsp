@@ -1,9 +1,9 @@
 #include <doctest/doctest.h>
 
-#include "analysis/LocalScopeCollector.h"
-#include "analysis/ScopeTree.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/ScopeTree.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
 #include "features/hover/HoverHandler.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"

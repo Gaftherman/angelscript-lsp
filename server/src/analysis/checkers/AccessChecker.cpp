@@ -1,0 +1,900 @@
+#include "analysis/checkers/AccessChecker.h"
+#include "analysis/index/NodeIndex.h"
+#include "analysis/index/ScopeTree.h"
+#include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/rules/RuleIndex.h"
+#include "parser/ASTUtils.h"
+#include "utils/Constants.h"
+#include "utils/Utils.h"
+
+#include "analysis/diagnostics/DiagnosticCodes.h"
+#include "config/EngineRuleConfig.h"
+#include "parser/GrammarNames.h"
+#include "parser/Keywords.h"
+#include "utils/StopFlag.h"
+#include <algorithm>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace angel_lsp::analysis
+{
+/** @brief Compares two type names by their last segment, so a qualification cannot hide a match. */
+static bool IsSameType(std::string_view a, std::string_view b)
+{
+    return !a.empty() && (a == b || LastScopeSegment(a) == LastScopeSegment(b));
+}
+
+/** @brief True when derived is base, or reaches it through its declared base chain. */
+static bool DerivesFrom(std::string_view derived, std::string_view base, const SymbolTable& table)
+{
+    return IsDerivedFrom(derived, base, table);
+}
+
+/** @brief The access modifier a declaration carries, whatever kind of declaration it is. */
+static bool TryReadAccess(const Symbol& sym, AccessModifier& access)
+{
+    if (std::holds_alternative<FunctionSignature>(sym.signature))
+    {
+        access = sym.GetFunction().modifiers.access;
+        return true;
+    }
+    if (std::holds_alternative<VariableSignature>(sym.signature))
+    {
+        access = sym.GetVariable().modifiers.access;
+        return true;
+    }
+    return false;
+}
+
+using MemberAccess = MemberLookupResult;
+
+/**
+ * @brief Finds the declaration a member name reaches through a type's inheritance chain.
+ *
+ * Resolves to the least restrictive candidate rather than the first one. A name can carry
+ * overloads with different access - a public `Fire(int)` beside a private `Fire()` is
+ * ordinary - and an access rule that picked the private one would report a call the engine
+ * accepts. Public anywhere in the chain therefore ends the search.
+ *
+ * A member reached through a mixin is attributed to the object's own type rather than to
+ * the mixin, because that is where it actually ends up: including a mixin copies its
+ * members into the including class, so `private string Name` in `mixin class NameGetter`
+ * becomes a private member of every class that includes it. Reading it as the mixin's own
+ * was this rule's only false positive over the corpus, and it hit `this.Name = name;` in a
+ * constructor - as ordinary a line as the corpus contains.
+ */
+/**
+ * @brief True when `get_X`/`set_X` may stand in for the member `X`.
+ *
+ * asEP_PROPERTY_ACCESSOR_MODE decides it, and the two settings really do accept different
+ * programs. Under mode 2 any method named `get_X` is the property `X`; under mode 3 - the
+ * SDK's own default - it is an ordinary method until the `property` keyword is written, and
+ * `c.V` is answered with "'V' is not a member of 'C'". Under mode 3, accessors require
+ * the explicit 'property' keyword decoration, whereas mode 2 accepts implicit accessor methods.
+ */
+static bool AccessorStandsForProperty(const Symbol& sym, bool keywordRequired)
+{
+    if (!keywordRequired)
+    {
+        return true;
+    }
+    return std::holds_alternative<FunctionSignature>(sym.signature) && sym.GetFunction().modifiers.isProperty;
+}
+
+/**
+ * @brief Collects symbols matching the member name directly on the specified owner type.
+ *
+ * @param[in] owner Type name owning the candidate member.
+ * @param[in] memberName Member name to search.
+ * @param[in] ctx Lookup context bundling type hierarchy and symbol table.
+ * @param[out] viaAccessor Set to true if match was via getter/setter accessor.
+ * @return Vector of matched symbols.
+ */
+static std::vector<Symbol> CollectDirectCandidates(const std::string& owner, const std::string& memberName,
+                                                   const MemberLookupContext& ctx, bool& viaAccessor)
+{
+    std::vector<Symbol> candidates;
+    auto candidatesPtr = ctx.table.FindMemberSymbolPtr(owner, memberName);
+    if (candidatesPtr && !candidatesPtr->empty())
+    {
+        candidates.insert(candidates.end(), candidatesPtr->begin(), candidatesPtr->end());
+        const bool hasInstance = std::any_of(candidates.begin(), candidates.end(),
+                                             [](const Symbol& s)
+                                             {
+                                                 return !(s.type == SymbolType::Variable &&
+                                                          std::holds_alternative<VariableSignature>(s.signature) &&
+                                                          s.GetVariable().isEnumConstant);
+                                             });
+        if (hasInstance)
+        {
+            std::stable_partition(candidates.begin(), candidates.end(),
+                                  [](const Symbol& s)
+                                  {
+                                      return !(s.type == SymbolType::Variable &&
+                                               std::holds_alternative<VariableSignature>(s.signature) &&
+                                               s.GetVariable().isEnumConstant);
+                                  });
+            return candidates;
+        }
+    }
+
+    for (const auto& accessorPrefix : {"get_", "set_"})
+    {
+        auto accSyms = ctx.table.FindMemberSymbolPtr(owner, std::string(accessorPrefix) + memberName);
+        if (!accSyms)
+        {
+            continue;
+        }
+        for (const auto& sym : *accSyms)
+        {
+            if (AccessorStandsForProperty(sym, ctx.accessorKeywordRequired))
+            {
+                viaAccessor = true;
+                candidates.push_back(sym);
+            }
+        }
+    }
+    std::stable_partition(candidates.begin(), candidates.end(),
+                          [](const Symbol& s)
+                          {
+                              return !(s.type == SymbolType::Variable &&
+                                       std::holds_alternative<VariableSignature>(s.signature) &&
+                                       s.GetVariable().isEnumConstant);
+                          });
+    return candidates;
+}
+
+/**
+ * @brief Collects symbols matching the member name via container matching on the specified owner type.
+ *
+ * @param[in] owner Type name owning the candidate member.
+ * @param[in] memberName Member name to search.
+ * @param[in] ctx Lookup context bundling type hierarchy and symbol table.
+ * @param[out] viaAccessor Set to true if match was via getter/setter accessor.
+ * @return Vector of matched symbols.
+ */
+static std::vector<Symbol> CollectContainerCandidates(const std::string& owner, const std::string& memberName,
+                                                      const MemberLookupContext& ctx, bool& viaAccessor)
+{
+    std::vector<Symbol> candidates;
+    if (auto memberSyms = ctx.table.FindSymbolsPtr(memberName))
+    {
+        for (const auto& sym : *memberSyms)
+        {
+            if (IsSameType(sym.containerName, owner))
+            {
+                candidates.push_back(sym);
+            }
+        }
+    }
+    if (!candidates.empty())
+    {
+        return candidates;
+    }
+
+    for (const auto& accessorPrefix : {"get_", "set_"})
+    {
+        if (auto syms = ctx.table.FindSymbolsPtr(accessorPrefix + memberName))
+        {
+            for (const auto& sym : *syms)
+            {
+                if (IsSameType(sym.containerName, owner) && AccessorStandsForProperty(sym, ctx.accessorKeywordRequired))
+                {
+                    viaAccessor = true;
+                    candidates.push_back(sym);
+                }
+            }
+        }
+    }
+    return candidates;
+}
+
+/**
+ * @brief Collects all candidate symbols for a member name on an owner type.
+ *
+ * @param[in] owner Type name owning the candidate member.
+ * @param[in] memberName Member name to search.
+ * @param[in] ctx Lookup context bundling type hierarchy and symbol table.
+ * @param[out] viaAccessor Set to true if match was via getter/setter accessor.
+ * @return Vector of candidate symbols.
+ */
+static std::vector<Symbol> CollectOwnerCandidates(const std::string& owner, const std::string& memberName,
+                                                  const MemberLookupContext& ctx, bool& viaAccessor)
+{
+    auto candidates = CollectDirectCandidates(owner, memberName, ctx, viaAccessor);
+    if (candidates.empty())
+    {
+        candidates = CollectContainerCandidates(owner, memberName, ctx, viaAccessor);
+    }
+    return candidates;
+}
+
+/**
+ * @brief Evaluates access for candidate symbols, updating the resolved MemberAccess result.
+ *
+ * @param[in] candidates Candidate symbols found for the owner.
+ * @param[in] owner Owner type name.
+ * @param[in] ctx Lookup context bundling type hierarchy and symbol table.
+ * @param[in,out] result Member access state to update.
+ * @return True if resolution concluded (public access reached).
+ */
+static bool ApplyCandidatesAccess(const std::vector<Symbol>& candidates, const std::string& owner,
+                                  const MemberLookupContext& ctx, MemberAccess& result)
+{
+    for (const auto& sym : candidates)
+    {
+        AccessModifier access = AccessModifier::Public;
+        if (!TryReadAccess(sym, access))
+        {
+            continue;
+        }
+
+        result.found = true;
+
+        if (access == AccessModifier::Public)
+        {
+            result.decided = false;
+            result.access = AccessModifier::Public;
+            result.declaringClass = IsMixinClass(owner, ctx.table) ? ctx.typeName : owner;
+            return true;
+        }
+
+        if (!result.decided || (result.access == AccessModifier::Private && access == AccessModifier::Protected))
+        {
+            result.decided = true;
+            result.access = access;
+            result.declaringClass = IsMixinClass(owner, ctx.table) ? ctx.typeName : owner;
+        }
+    }
+    return false;
+}
+
+static MemberAccess FindMember(const std::string& typeName, const std::string& memberName, const SymbolTable& table,
+                               bool accessorKeywordRequired)
+{
+    MemberAccess result;
+    if (typeName.empty() || memberName.empty())
+    {
+        return result;
+    }
+
+    const auto ruleIndex = table.GetRuleIndex();
+    const MemberLookupContext ctx{typeName, table, accessorKeywordRequired};
+    for (const auto& owner : GetInheritedTypeHierarchy(typeName, table))
+    {
+        if (ruleIndex)
+        {
+            const auto& members = ruleIndex->Members(owner);
+            const bool hasPotential = members.allMemberNames.contains(memberName) ||
+                                      members.allMemberNames.contains("get_" + memberName) ||
+                                      members.allMemberNames.contains("set_" + memberName);
+            if (!hasPotential)
+            {
+                continue;
+            }
+        }
+        auto candidates = CollectOwnerCandidates(owner, memberName, ctx, result.viaAccessor);
+        if (ApplyCandidatesAccess(candidates, owner, ctx, result))
+        {
+            return result;
+        }
+    }
+
+    return result;
+}
+
+/** @brief Innermost class body enclosing a node, or empty when the node sits outside one. */
+static std::string_view EnclosingClass(TSNode node, std::string_view sourceCode, bool& insideMixin,
+                                       const NodeIndex* nodeIndex)
+{
+    insideMixin = false;
+    if (ts_node_is_null(node) || !nodeIndex)
+    {
+        return {};
+    }
+
+    const uint32_t byteOffset = ts_node_start_byte(node);
+    const auto* span = nodeIndex->FindInnermostClassSpan(byteOffset);
+    if (span)
+    {
+        insideMixin = span->isMixin;
+        if (span->nameStartByte < span->nameEndByte && span->nameEndByte <= sourceCode.size())
+        {
+            return sourceCode.substr(span->nameStartByte, span->nameEndByte - span->nameStartByte);
+        }
+    }
+    return {};
+}
+
+/**
+ * @brief Resolves the owning type of a member access object expression.
+ *
+ * @param[in] objectNode AST node of the object expression.
+ * @param[in] scope Current lexical scope.
+ * @param[in] ctx Diagnostic context.
+ * @return Normalized owner type name.
+ */
+static std::string ResolveObjectOwnerType(TSNode objectNode, const Scope* scope, const DiagnosticContext& ctx)
+{
+    const std::string_view arrayContainer = ctx.request.GetEffectiveArrayTypeName();
+    return MemberOwnerType(ResolveExpressionType(objectNode, ExpressionTypeContext(scope, ctx)), arrayContainer);
+}
+
+/**
+ * @brief Emits a hint diagnostic if access was made via a disabled accessor.
+ *
+ * @param[in] memberNode AST node of the member being accessed.
+ * @param[in] member Member resolution outcome.
+ * @param[in] objectType Object type name.
+ * @param[in,out] ctx Diagnostic context.
+ */
+static void MaybeEmitAccessorHint(TSNode memberNode, const MemberAccess& member, const std::string& objectType,
+                                  DiagnosticContext& ctx)
+{
+    if (member.viaAccessor && !ctx.request.ScriptAccessorsAreProperties() && ctx.request.diagnostics &&
+        ctx.request.diagnostics->reportAccessorDisabled)
+    {
+        const TSPoint hintStart = ts_node_start_point(memberNode);
+        const TSPoint hintEnd = ts_node_end_point(memberNode);
+        ctx.EmitAtRange({hintStart.row, hintStart.column, hintEnd.row, hintEnd.column}, "as-hint-accessor-disabled",
+                        {objectType, parser::NodeTextString(memberNode, ctx.request.sourceCode)},
+                        DiagnosticSeverity::Hint);
+    }
+}
+
+/**
+ * @brief Determines whether a member access is permitted based on privacy/protection rules.
+ *
+ * @param[in] member Resolved member access descriptor.
+ * @param[in] accessingClass Enclosing class making the access.
+ * @param[in] objectType Type of the target object expression.
+ * @param[in] ctx Diagnostic context.
+ * @return True if member access is allowed, false if access violation.
+ */
+static bool IsMemberAccessAllowed(const MemberAccess& member, std::string_view accessingClass,
+                                  std::string_view objectType, const DiagnosticContext& ctx)
+{
+    const bool declaredPrivate = member.access == AccessModifier::Private;
+    if (declaredPrivate && !ctx.request.TreatsPrivateAsProtected())
+    {
+        return IsSameType(accessingClass, member.declaringClass);
+    }
+    return !accessingClass.empty() && DerivesFrom(accessingClass, member.declaringClass, ctx.request.symbolTable) &&
+           DerivesFrom(objectType, accessingClass, ctx.request.symbolTable);
+}
+
+/**
+ * @brief Emits a private or protected access violation diagnostic for a member access.
+ *
+ * @param[in] memberNode AST node of the member being accessed.
+ * @param[in] member Member resolution outcome.
+ * @param[in] memberName Name of the member being accessed.
+ * @param[in,out] ctx Diagnostic context.
+ */
+static void EmitPrivacyViolation(TSNode memberNode, const MemberAccess& member, std::string_view memberName,
+                                 DiagnosticContext& ctx)
+{
+    const TSPoint start = ts_node_start_point(memberNode);
+    const TSPoint end = ts_node_end_point(memberNode);
+    const bool declaredPrivate = member.access == AccessModifier::Private;
+    ctx.EmitAtRange({start.row, start.column, end.row, end.column},
+                    declaredPrivate ? diagnostics::codes::PrivateMemberAccess
+                                    : diagnostics::codes::ProtectedMemberAccess,
+                    memberName, member.declaringClass);
+}
+
+/**
+ * @brief Finds a member across type hierarchy and configured engine proxy base classes.
+ * @param[in] objectType Owning object type name.
+ * @param[in] memberName Member name to look up.
+ * @param[in] table Symbol table.
+ * @param[in] ctx Diagnostic context containing optional engine rules.
+ * @return MemberAccess structure indicating whether the member was found.
+ */
+static MemberAccess FindMemberWithProxies(const std::string& objectType, const std::string& memberName,
+                                          const SymbolTable& table, const DiagnosticContext& ctx)
+{
+    MemberAccess member = FindMember(objectType, memberName, table, ctx.request.RequiresAccessorKeyword());
+    if (member.found || !ctx.request.engineRules)
+    {
+        return member;
+    }
+
+    const auto& proxyMap = ctx.request.engineRules->unusedRules.baseClassProxyMap;
+    if (proxyMap.empty())
+    {
+        return member;
+    }
+
+    auto hier = GetInheritedTypeHierarchy(objectType, table);
+    for (const auto& owner : hier)
+    {
+        auto it = proxyMap.find(owner);
+        if (it != proxyMap.end())
+        {
+            for (const auto& proxy : it->second)
+            {
+                member = FindMember(proxy, memberName, table, ctx.request.RequiresAccessorKeyword());
+                if (member.found)
+                {
+                    return member;
+                }
+            }
+        }
+    }
+    return member;
+}
+
+static void ValidateMemberPrivacy(TSNode node, const MemberAccess& member, const std::string& objectType,
+                                  DiagnosticContext& ctx)
+{
+    if (!member.decided)
+    {
+        return;
+    }
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode objectNode = parser::GetChildByField(node, gs.fieldObject);
+    TSNode memberNode = parser::GetChildByField(node, gs.fieldMember);
+    bool insideMixin = false;
+    const std::string_view accessingClass =
+        EnclosingClass(node, ctx.request.sourceCode, insideMixin, ctx.request.nodeIndex);
+    const bool isThisAccess = parser::GetNodeTextView(objectNode, ctx.request.sourceCode) == "this";
+    if (insideMixin && (isThisAccess || IsSameType(accessingClass, member.declaringClass)))
+    {
+        return;
+    }
+    if (!IsMemberAccessAllowed(member, accessingClass, objectType, ctx))
+    {
+        const std::string memberName = parser::NodeText(memberNode, ctx.request.sourceCode);
+        EmitPrivacyViolation(memberNode, member, memberName, ctx);
+    }
+}
+
+static void CheckMemberExpression(TSNode node, const AccessCheckRequest& request, const Scope* scope,
+                                  DiagnosticContext& ctx)
+{
+    TSNode objectNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldObject);
+    TSNode memberNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldMember);
+    if (ts_node_is_null(objectNode) || ts_node_is_null(memberNode))
+    {
+        return;
+    }
+
+    const SymbolTable& table = ctx.request.symbolTable;
+    const std::string objectType = ResolveObjectOwnerType(objectNode, scope, ctx);
+    if (objectType.empty() || objectType == "auto")
+    {
+        return;
+    }
+
+    const std::string memberName = parser::NodeText(memberNode, request.sourceCode);
+    if (memberName.empty())
+    {
+        return;
+    }
+
+    if (parser::keywords::IsReserved(memberName))
+    {
+        const TSPoint start = ts_node_start_point(memberNode);
+        const TSPoint end = ts_node_end_point(memberNode);
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::ReservedKeywordName,
+                        memberName);
+        return;
+    }
+
+    if ((IsCorePrimitive(objectType) && objectType != "auto") || objectType == "void")
+    {
+        const TSPoint start = ts_node_start_point(memberNode);
+        const TSPoint end = ts_node_end_point(memberNode);
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::MemberNotFound, objectType,
+                        memberName);
+        return;
+    }
+
+    if (!HierarchyIsFullyVisible(objectType, table))
+    {
+        return;
+    }
+
+    const MemberAccess member = FindMemberWithProxies(objectType, memberName, table, ctx);
+    if (!member.found)
+    {
+        const TSPoint start = ts_node_start_point(memberNode);
+        const TSPoint end = ts_node_end_point(memberNode);
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::MemberNotFound, objectType,
+                        memberName);
+        return;
+    }
+
+    MaybeEmitAccessorHint(memberNode, member, objectType, ctx);
+    ValidateMemberPrivacy(node, member, objectType, ctx);
+}
+
+/**
+ * @brief Checks if an AST node is a type reference or comment node.
+ *
+ * @param[in] sym Grammar symbol ID.
+ * @return True if node is a type reference or comment.
+ */
+static bool IsTypeRefOrComment(TSSymbol sym)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    return sym == gs.symDatatype || sym == gs.symPrimitiveType || sym == gs.symBaseClassList || sym == gs.symComment;
+}
+
+/**
+ * @brief Checks whether an identifier AST node should be skipped during access validation.
+ *
+ * @param[in] node AST node to check.
+ * @param[in] parent Parent AST node.
+ * @return True if the node is a declaration, type reference or irrelevant context.
+ */
+static bool ShouldSkipIdentifierNode(TSNode node, TSNode parent)
+{
+    if (ts_node_is_null(parent))
+    {
+        return true;
+    }
+
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol parentSym = ts_node_symbol(parent);
+    if (parentSym == gs.symMemberExpression)
+    {
+        TSNode memberField = parser::GetChildByField(parent, gs.fieldMember);
+        return ts_node_eq(node, memberField);
+    }
+
+    if (parser::IsDeclarationSymbol(parentSym))
+    {
+        TSNode nameField = parser::GetChildByField(parent, gs.fieldName);
+        return ts_node_eq(node, nameField);
+    }
+
+    if (IsTypeRefOrComment(parentSym))
+    {
+        return true;
+    }
+
+    return ts_node_symbol(node) == gs.symIdentifier && parentSym == gs.symScopedIdentifier;
+}
+
+/**
+ * @brief Extracts trimmed text view from an identifier AST node without heap allocation.
+ *
+ * @param[in] node AST node of the identifier.
+ * @param[in] sourceCode Document source text.
+ * @return Clean trimmed identifier string_view.
+ */
+static std::string_view ExtractCleanIdentifier(TSNode node, std::string_view sourceCode)
+{
+    std::string_view idText = parser::GetNodeTextView(node, sourceCode);
+    while (!idText.empty() && isspace(static_cast<unsigned char>(idText.front())))
+    {
+        idText.remove_prefix(1);
+    }
+    while (!idText.empty() && isspace(static_cast<unsigned char>(idText.back())))
+    {
+        idText.remove_suffix(1);
+    }
+    return idText;
+}
+
+/**
+ * @brief Checks if a name is declared within the closure's local scope chain.
+ *
+ * @param[in] scope Current inner scope.
+ * @param[in] enclosingClosure Enclosing closure scope.
+ * @param[in] idText Name to check.
+ * @return True if declared within closure.
+ */
+static bool IsDeclaredInClosure(const Scope* scope, const Scope* enclosingClosure, std::string_view idText)
+{
+    for (const Scope* s = scope; s != nullptr; s = s->parent)
+    {
+        for (const auto& def : s->definitions)
+        {
+            if (def.name == idText)
+            {
+                return true;
+            }
+        }
+        if (s == enclosingClosure)
+        {
+            break;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Checks if a name is declared as a local variable or parameter in outer non-class scopes.
+ *
+ * @param[in] enclosingClosure Enclosing closure scope.
+ * @param[in] idText Name to check.
+ * @return True if declared in an outer function scope.
+ */
+static bool IsOuterLocalOrParameter(const Scope* enclosingClosure, std::string_view idText)
+{
+    for (const Scope* s = enclosingClosure->parent; s != nullptr; s = s->parent)
+    {
+        if (s->kind == ScopeKind::Class || s->kind == ScopeKind::Namespace || s->kind == ScopeKind::Global)
+        {
+            break;
+        }
+        for (const auto& def : s->definitions)
+        {
+            if (def.name == idText &&
+                (def.kind == LocalDefinitionKind::Variable || def.kind == LocalDefinitionKind::Parameter))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Finds the innermost class enclosing the closure containing node, if any.
+ *
+ * @param[in] node AST node inside the closure.
+ * @param[in] sourceCode Document source text.
+ * @param[in] nodeIndex Optional pre-indexed node index.
+ * @return Name of the outer class enclosing the lambda, or empty if none.
+ */
+static std::string_view EnclosingClassOfLambda(TSNode node, std::string_view sourceCode, const NodeIndex* nodeIndex)
+{
+    if (ts_node_is_null(node) || !nodeIndex)
+    {
+        return {};
+    }
+
+    TSNode classNode = nodeIndex->FindEnclosingClassOrMixin(ts_node_start_byte(node));
+    if (!ts_node_is_null(classNode))
+    {
+        TSNode nameNode = parser::GetChildByField(classNode, parser::GetGrammarSymbols().fieldName);
+        if (!ts_node_is_null(nameNode))
+        {
+            return parser::GetNodeTextView(nameNode, sourceCode);
+        }
+    }
+    return {};
+}
+
+/**
+ * @brief Checks whether an identifier attempts forbidden outer variable capture in a closure.
+ *
+ * @param[in] node AST identifier node.
+ * @param[in] scope Current lexical scope.
+ * @param[in] idText Identifier name.
+ * @param[in,out] ctx Diagnostic context.
+ * @return True if an error diagnostic was emitted, false otherwise.
+ */
+static bool CheckClosureDisallowedAccess(TSNode node, const Scope* scope, std::string_view idText,
+                                         DiagnosticContext& ctx)
+{
+    const Scope* enclosingClosure = FindEnclosingClosure(scope);
+    if (!enclosingClosure)
+    {
+        return false;
+    }
+
+    if (idText == "this" || idText == "super")
+    {
+        const TSPoint start = ts_node_start_point(node);
+        const TSPoint end = ts_node_end_point(node);
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::LambdaThisDisallowed);
+        return true;
+    }
+
+    if (IsDeclaredInClosure(scope, enclosingClosure, idText))
+    {
+        return false;
+    }
+
+    if (IsOuterLocalOrParameter(enclosingClosure, idText))
+    {
+        const TSPoint start = ts_node_start_point(node);
+        const TSPoint end = ts_node_end_point(node);
+        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::LambdaClosureDisallowed,
+                        idText);
+        return true;
+    }
+
+    const std::string_view outerClass = EnclosingClassOfLambda(node, ctx.request.sourceCode, ctx.request.nodeIndex);
+    if (!outerClass.empty())
+    {
+        const MemberAccess member =
+            FindMember(std::string(outerClass), std::string(idText), ctx.request.symbolTable, false);
+        if (member.found)
+        {
+            const TSPoint start = ts_node_start_point(node);
+            const TSPoint end = ts_node_end_point(node);
+            ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::LambdaMemberAccess,
+                            idText);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * @brief Checks if the lexical scope chain includes a class scope.
+ *
+ * @param[in] scope Lexical scope to inspect.
+ * @return True if scope is null (unknown) or has an enclosing ScopeKind::Class.
+ */
+static bool HasEnclosingClassScope(const Scope* scope)
+{
+    if (!scope)
+    {
+        return true;
+    }
+    for (const Scope* s = scope; s != nullptr; s = s->parent)
+    {
+        if (s->kind == ScopeKind::Class)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * @brief Validates implicit member access on an identifier within an enclosing class.
+ *
+ * @param[in] node AST identifier node.
+ * @param[in] scope Current lexical scope.
+ * @param[in] idText Identifier name.
+ * @param[in,out] ctx Diagnostic context.
+ */
+static void CheckImplicitMemberAccess(TSNode node, const Scope* scope, std::string_view idText, DiagnosticContext& ctx)
+{
+    if (!HasEnclosingClassScope(scope))
+    {
+        return;
+    }
+
+    const LocalDefinition* localDef = ResolveInScopeAt(scope, idText, ts_node_start_byte(node));
+    if (localDef &&
+        (localDef->kind == LocalDefinitionKind::Variable || localDef->kind == LocalDefinitionKind::Parameter))
+    {
+        return;
+    }
+
+    const SymbolTable& table = ctx.request.symbolTable;
+
+    bool insideMixin = false;
+    const std::string_view accessingClass =
+        EnclosingClass(node, ctx.request.sourceCode, insideMixin, ctx.request.nodeIndex);
+    if (accessingClass.empty())
+    {
+        return;
+    }
+
+    const MemberAccess member =
+        FindMember(std::string(accessingClass), std::string(idText), table, ctx.request.RequiresAccessorKeyword());
+    if (!member.decided)
+    {
+        return;
+    }
+
+    const bool declaredPrivate = member.access == AccessModifier::Private;
+    if (declaredPrivate && !ctx.request.TreatsPrivateAsProtected())
+    {
+        if (insideMixin &&
+            (IsSameType(accessingClass, member.declaringClass) || member.declaringClass == accessingClass))
+        {
+            return;
+        }
+        if (!IsSameType(accessingClass, member.declaringClass))
+        {
+            const TSPoint start = ts_node_start_point(node);
+            const TSPoint end = ts_node_end_point(node);
+            ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-private-member-access", idText,
+                            member.declaringClass);
+        }
+    }
+}
+
+static void CheckIdentifierNode(TSNode node, const AccessCheckRequest& request, DiagnosticContext& ctx)
+{
+    TSNode parent = parser::GetParent(node);
+    if (ShouldSkipIdentifierNode(node, parent))
+    {
+        return;
+    }
+
+    const std::string_view idText = ExtractCleanIdentifier(node, request.sourceCode);
+    if (idText == "this" || idText == "super")
+    {
+        const TSPoint start = ts_node_start_point(node);
+        CheckClosureDisallowedAccess(node, FindInnermostScope(request.scopeRoot, start.row, start.column), idText, ctx);
+        return;
+    }
+    if (idText.empty() || IsKeyword(idText) || idText == "value")
+    {
+        return;
+    }
+
+    const TSPoint start = ts_node_start_point(node);
+    const Scope* scope = FindInnermostScope(request.scopeRoot, start.row, start.column);
+    if (CheckClosureDisallowedAccess(node, scope, idText, ctx))
+    {
+        return;
+    }
+
+    CheckImplicitMemberAccess(node, scope, idText, ctx);
+}
+
+static void CheckMemberAccessIndexed(const AccessCheckRequest& request, DiagnosticContext& ctx)
+{
+    if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
+    {
+        return;
+    }
+
+    const auto& gs = parser::GetGrammarSymbols();
+    for (TSNode thisNode : request.nodeIndex->Nodes(gs.symThisExpression))
+    {
+        if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
+        {
+            return;
+        }
+        const TSPoint start = ts_node_start_point(thisNode);
+        CheckClosureDisallowedAccess(thisNode, FindInnermostScope(request.scopeRoot, start.row, start.column), "this",
+                                     ctx);
+    }
+
+    const std::array<TSSymbol, 3> kSymbols = {gs.symMemberExpression, gs.symScopedIdentifier, gs.symIdentifier};
+    request.nodeIndex->ForEachNodeOrdered(
+        std::span<const TSSymbol>(kSymbols.data(), kSymbols.size()),
+        [&](TSNode node)
+        {
+            if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
+            {
+                return;
+            }
+            if (ts_node_symbol(node) == gs.symMemberExpression)
+            {
+                const TSPoint start = ts_node_start_point(node);
+                CheckMemberExpression(node, request, FindInnermostScope(request.scopeRoot, start.row, start.column),
+                                      ctx);
+            }
+            else
+            {
+                CheckIdentifierNode(node, request, ctx);
+            }
+        });
+}
+
+/**
+ * @brief Check member access.
+ * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
+ * @param[in,out] ctx Diagnostic collection and analysis context.
+ */
+void CheckMemberAccess(const AccessCheckRequest& request, DiagnosticContext& ctx)
+{
+    if (ts_node_is_null(request.root) || request.sourceCode.empty())
+    {
+        return;
+    }
+
+    if (utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
+    {
+        return;
+    }
+
+    if (request.nodeIndex)
+    {
+        CheckMemberAccessIndexed(request, ctx);
+        return;
+    }
+
+    NodeIndex localIndex(request.root);
+    AccessCheckRequest indexedRequest = request;
+    indexedRequest.nodeIndex = &localIndex;
+    CheckMemberAccessIndexed(indexedRequest, ctx);
+}
+} // namespace angel_lsp::analysis

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "analysis/NodeIndex.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/rules/RuleIndex.h"
 #include "document/Document.h"
 #include "parser/AngelScriptParser.h"

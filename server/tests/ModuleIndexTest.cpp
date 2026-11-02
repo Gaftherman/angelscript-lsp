@@ -1,4 +1,4 @@
-#include "lsp/ModuleIndex.h"
+#include "lsp/state/ModuleIndex.h"
 #include "helpers/TestUtils.h"
 #include <atomic>
 #include <doctest/doctest.h>

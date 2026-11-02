@@ -1,12 +1,12 @@
 #include <doctest/doctest.h>
 
-#include "analysis/DiagnosticCodes.h"
-#include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
-#include "analysis/TypeConversionChecker.h"
+#include "analysis/checkers/TypeConversionChecker.h"
+#include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
 #include "helpers/CorpusDirectory.h"
 #include "helpers/LspSemanticHarnessFixture.h"
 #include "helpers/TestUtils.h"
@@ -580,10 +580,8 @@ TEST_CASE("TypeConversion - Type Conversion Corpus Audit Across All angelscript 
         return;
     }
 
-    namespace fs = std::filesystem;
-
-    std::vector<fs::path> files;
-    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    std::vector<std::filesystem::path> files;
+    for (const auto& entry : std::filesystem::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
         {
@@ -593,7 +591,7 @@ TEST_CASE("TypeConversion - Type Conversion Corpus Audit Across All angelscript 
     REQUIRE_MESSAGE(!files.empty(), "Expected the angelscript/ corpus directory to contain .as files");
     std::sort(files.begin(), files.end());
 
-    std::unordered_map<std::string, std::vector<fs::path>> groups;
+    std::unordered_map<std::string, std::vector<std::filesystem::path>> groups;
     for (const auto& path : files)
     {
         const std::string name = path.filename().string();
@@ -1616,10 +1614,8 @@ TEST_CASE("LambdaFuncdef - Funcdef Signature Corpus Audit Across All angelscript
         return;
     }
 
-    namespace fs = std::filesystem;
-
-    std::vector<fs::path> files;
-    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    std::vector<std::filesystem::path> files;
+    for (const auto& entry : std::filesystem::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
         {
@@ -1629,7 +1625,7 @@ TEST_CASE("LambdaFuncdef - Funcdef Signature Corpus Audit Across All angelscript
     REQUIRE_MESSAGE(!files.empty(), "Expected the angelscript/ corpus directory to contain .as files");
     std::sort(files.begin(), files.end());
 
-    std::unordered_map<std::string, std::vector<fs::path>> groups;
+    std::unordered_map<std::string, std::vector<std::filesystem::path>> groups;
     for (const auto& path : files)
     {
         const std::string name = path.filename().string();
@@ -1761,10 +1757,8 @@ TEST_CASE("NumericWarnings - Numeric Warning Corpus Audit Across All angelscript
         return;
     }
 
-    namespace fs = std::filesystem;
-
-    std::vector<fs::path> files;
-    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    std::vector<std::filesystem::path> files;
+    for (const auto& entry : std::filesystem::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
         {
@@ -1774,7 +1768,7 @@ TEST_CASE("NumericWarnings - Numeric Warning Corpus Audit Across All angelscript
     REQUIRE_MESSAGE(!files.empty(), "Expected the angelscript/ corpus directory to contain .as files");
     std::sort(files.begin(), files.end());
 
-    std::unordered_map<std::string, std::vector<fs::path>> groups;
+    std::unordered_map<std::string, std::vector<std::filesystem::path>> groups;
     for (const auto& path : files)
     {
         const std::string name = path.filename().string();

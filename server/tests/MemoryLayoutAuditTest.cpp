@@ -5,10 +5,10 @@
 
 #include <doctest/doctest.h>
 
-#include "analysis/NodeIndex.h"
-#include "analysis/ScopeTree.h"
-#include "analysis/SymbolTable.h"
-#include "analysis/TypeSanitization.h"
+#include "analysis/index/NodeIndex.h"
+#include "analysis/index/ScopeTree.h"
+#include "analysis/index/SymbolTable.h"
+#include "analysis/types/TypeSanitization.h"
 #include "helpers/TestUtils.h"
 
 using namespace angel_lsp::analysis;

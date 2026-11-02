@@ -1,9 +1,9 @@
 #include "analysis/rules/EngineRuleChecker.h"
 
-#include "analysis/DiagnosticCodes.h"
-#include "analysis/SemanticHelpers.h"
-#include "analysis/TypeConversionChecker.h"
-#include "analysis/TypeSanitization.h"
+#include "analysis/checkers/TypeConversionChecker.h"
+#include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/types/TypeSanitization.h"
 #include "i18n/i18n.h"
 #include "parser/ASTUtils.h"
 #include "parser/Primitives.h"
@@ -109,7 +109,6 @@ static void ReportStorageViolation(const Symbol& sym, const config::StorageRule&
  * @param[in] sig Variable signature details containing type and modifiers.
  * @param[in] rule Storage rule specifying disallowed scopes and type patterns.
  * @param[in] ctx Diagnostic collection and analysis context.
- * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static void EvaluateStorageRule(const Symbol& sym, const VariableSignature& sig, const config::StorageRule& rule,
                                 const DiagnosticContext& ctx)
@@ -147,7 +146,6 @@ static void EvaluateStorageRule(const Symbol& sym, const VariableSignature& sig,
  * @param[in] index Argument index being checked.
  * @param[in] rule Scheduler rule specifying parameter requirements.
  * @param[in] ctx Diagnostic context used to report unsafe argument warnings.
- * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
  */
 static void CheckSchedulerArgSafety(const SchedulerCallRequest& req, size_t index, const config::SchedulerRule& rule,
                                     const DiagnosticContext& ctx)

@@ -1,4 +1,4 @@
-#include "lsp/PredefinedStubManager.h"
+#include "lsp/state/PredefinedStubManager.h"
 #include <doctest/doctest.h>
 
 using namespace angel_lsp;

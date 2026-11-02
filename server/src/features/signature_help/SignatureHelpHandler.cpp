@@ -1,5 +1,5 @@
 #include "features/signature_help/SignatureHelpHandler.h"
-#include "analysis/SemanticHelpers.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/ScopedNameUtils.h"

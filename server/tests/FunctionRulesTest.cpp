@@ -1,10 +1,10 @@
 #include <doctest/doctest.h>
 
-#include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
 #include "analysis/rules/FunctionRules.h"
 #include "config/ServerConfig.h"
 #include "helpers/CorpusDirectory.h"

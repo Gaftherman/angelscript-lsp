@@ -1,9 +1,9 @@
 #include <doctest/doctest.h>
 
-#include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/Utils.h"

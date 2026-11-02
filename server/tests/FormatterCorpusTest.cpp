@@ -12,8 +12,6 @@
 using namespace angel_lsp;
 using namespace angel_lsp::features;
 
-namespace fs = std::filesystem;
-
 /**
  * @brief The formatter, run over every script whose compiler verdict this project already knows.
  *
@@ -36,7 +34,7 @@ namespace fs = std::filesystem;
  */
 namespace
 {
-std::string ReadWholeFile(const fs::path& path)
+std::string ReadWholeFile(const std::filesystem::path& path)
 {
     std::ifstream in(path, std::ios::binary);
     std::ostringstream ss;
@@ -139,11 +137,11 @@ TEST_SUITE("Formatting")
 {
     TEST_CASE("The formatter corpus keeps every token and settles in one pass")
     {
-        const fs::path parityDir{ANGELSCRIPT_PARITY_DIR};
-        REQUIRE_MESSAGE(fs::exists(parityDir), "parity corpus directory is missing");
+        const std::filesystem::path parityDir{ANGELSCRIPT_PARITY_DIR};
+        REQUIRE_MESSAGE(std::filesystem::exists(parityDir), "parity corpus directory is missing");
 
-        std::vector<fs::path> scripts;
-        for (const auto& entry : fs::directory_iterator(parityDir))
+        std::vector<std::filesystem::path> scripts;
+        for (const auto& entry : std::filesystem::directory_iterator(parityDir))
         {
             if (entry.is_regular_file() && entry.path().extension() == ".as")
             {
@@ -152,12 +150,12 @@ TEST_SUITE("Formatting")
         }
         REQUIRE_MESSAGE(!scripts.empty(), "parity corpus is empty");
 
-        fs::path dumpDir;
+        std::filesystem::path dumpDir;
         if (const char* dump = std::getenv("ANGELLSP_FORMAT_DUMP_DIR"); dump && *dump)
         {
-            dumpDir = fs::path(dump);
+            dumpDir = std::filesystem::path(dump);
             std::error_code ec;
-            fs::create_directories(dumpDir, ec);
+            std::filesystem::create_directories(dumpDir, ec);
         }
 
         lsp::FormattingOptions options;
@@ -219,14 +217,14 @@ TEST_SUITE("Formatting")
             MESSAGE(angel_lsp::test::CorpusMissingMessage());
             return;
         }
-        const fs::path corpusDir = angel_lsp::test::CorpusDirectory();
+        const std::filesystem::path corpusDir = angel_lsp::test::CorpusDirectory();
 
-        fs::path dumpDir;
+        std::filesystem::path dumpDir;
         if (const char* dump = std::getenv("ANGELLSP_FORMAT_DUMP_DIR"); dump && *dump)
         {
-            dumpDir = fs::path(dump);
+            dumpDir = std::filesystem::path(dump);
             std::error_code mkEc;
-            fs::create_directories(dumpDir, mkEc);
+            std::filesystem::create_directories(dumpDir, mkEc);
         }
 
         lsp::FormattingOptions options;
@@ -238,8 +236,9 @@ TEST_SUITE("Formatting")
         size_t unstable = 0;
 
         std::error_code ec;
-        for (fs::recursive_directory_iterator it(corpusDir, fs::directory_options::skip_permission_denied, ec);
-             it != fs::recursive_directory_iterator(); it.increment(ec))
+        for (std::filesystem::recursive_directory_iterator it(
+                 corpusDir, std::filesystem::directory_options::skip_permission_denied, ec);
+             it != std::filesystem::recursive_directory_iterator(); it.increment(ec))
         {
             if (ec || !it->is_regular_file() || it->path().extension() != ".as")
             {

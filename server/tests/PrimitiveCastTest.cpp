@@ -3,13 +3,13 @@
  * @brief Unit tests for constructor-style primitive casting and contextual keyword usage.
  */
 
-#include "analysis/CallChecker.h"
-#include "analysis/DiagnosticCodes.h"
-#include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/SemanticHelpers.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/checkers/CallChecker.h"
+#include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"

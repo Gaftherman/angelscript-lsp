@@ -1,5 +1,5 @@
 #include "analysis/rules/RuleIndex.h"
-#include "analysis/SemanticHelpers.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "utils/ScopedNameUtils.h"
 #include <algorithm>
 

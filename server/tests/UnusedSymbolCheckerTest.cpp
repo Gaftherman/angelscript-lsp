@@ -1,11 +1,11 @@
 #include <doctest/doctest.h>
 
-#include "analysis/DiagnosticCodes.h"
-#include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
 #include "config/EngineRuleConfig.h"
 #include "config/ServerConfig.h"
 #include "helpers/TestUtils.h"
@@ -18,7 +18,7 @@
 
 using namespace angel_lsp::analysis;
 using namespace angel_lsp::parser;
-namespace codes = angel_lsp::diagnostics::codes;
+using namespace angel_lsp::diagnostics;
 
 namespace
 {

@@ -4,7 +4,7 @@
  * @ingroup Server
  */
 
-#include "analysis/EngineConfigConverter.h"
+#include "analysis/types/EngineConfigConverter.h"
 #include "lsp/Server.h"
 #include <fstream>
 #include <iostream>

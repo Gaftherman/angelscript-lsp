@@ -1,4 +1,4 @@
-#include "analysis/DiagnosticSuppression.h"
+#include "analysis/diagnostics/DiagnosticSuppression.h"
 #include "features/code_action/CodeActionInternal.h"
 #include "i18n/i18n.h"
 #include "parser/ASTUtils.h"

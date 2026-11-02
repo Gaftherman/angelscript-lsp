@@ -3,8 +3,8 @@
 #include "helpers/TestUtils.h"
 #include <doctest/doctest.h>
 
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
 #include "parser/AngelScriptParser.h"
 #include <tree_sitter/api.h>
 
@@ -420,10 +420,8 @@ TEST_CASE("SymbolCollector - Corpus Audit Across All angelscript Files" * doctes
         return;
     }
 
-    namespace fs = std::filesystem;
-
-    std::vector<fs::path> files;
-    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    std::vector<std::filesystem::path> files;
+    for (const auto& entry : std::filesystem::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
             files.push_back(entry.path());

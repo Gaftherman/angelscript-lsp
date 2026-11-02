@@ -1,5 +1,5 @@
 #include "features/code_lens/CodeLensHandler.h"
-#include "analysis/SemanticHelpers.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/UnusedSymbolChecker.h"
 #include "config/EngineRuleConfig.h"
 #include "config/ServerConfig.h"

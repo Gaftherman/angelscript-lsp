@@ -1,6 +1,6 @@
 #pragma once
 
-#include "analysis/DiagnosticContext.h"
+#include "analysis/diagnostics/DiagnosticContext.h"
 
 namespace angel_lsp::analysis::rules
 {

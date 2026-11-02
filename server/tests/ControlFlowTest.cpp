@@ -1,11 +1,11 @@
 #include <doctest/doctest.h>
 
-#include "analysis/ControlFlowChecker.h"
-#include "analysis/LocalScopeCollector.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/checkers/ControlFlowChecker.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
 #include "helpers/CorpusDirectory.h"
 #include "helpers/RuleCorpusAudit.h"
 #include "helpers/TestUtils.h"

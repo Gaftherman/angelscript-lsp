@@ -1,6 +1,6 @@
 #pragma once
 
-#include "analysis/SymbolTable.h"
+#include "analysis/index/SymbolTable.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
 #include <concepts>

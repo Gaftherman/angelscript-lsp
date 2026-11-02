@@ -51,6 +51,7 @@ Testing/
 # Graphify & Audit Outputs
 graphify-out/
 server/audit-logs/
+server/scratch/
 
 # Compilation Database & Build Artifacts
 compile_commands.json

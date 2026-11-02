@@ -1,6 +1,6 @@
 #include "features/breakpoints/BreakpointLocationsHandler.h"
-#include "lsp/PositionCodec.h"
 #include "lsp/Server.h"
+#include "lsp/state/PositionCodec.h"
 #include "utils/PositionEncoding.h"
 
 #include <limits>

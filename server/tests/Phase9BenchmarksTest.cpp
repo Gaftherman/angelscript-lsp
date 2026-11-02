@@ -10,13 +10,13 @@
 
 #include <doctest/doctest.h>
 
-#include "analysis/LocalScopeCollector.h"
-#include "analysis/NodeIndex.h"
-#include "analysis/ScopeTree.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
+#include "analysis/index/ScopeTree.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
 #include "features/hover/HoverHandler.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "helpers/TestUtils.h"

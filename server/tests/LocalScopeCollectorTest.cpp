@@ -1,7 +1,7 @@
 #include <doctest/doctest.h>
 
-#include "analysis/LocalScopeCollector.h"
-#include "analysis/ScopeTree.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/ScopeTree.h"
 #include "helpers/CorpusDirectory.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
@@ -712,9 +712,8 @@ TEST_CASE("LocalScopeCollector - Local Scope Corpus Audit Across All angelscript
         return;
     }
 
-    namespace fs = std::filesystem;
-    std::vector<fs::path> files;
-    for (const auto& entry : fs::directory_iterator(angel_lsp::test::CorpusDirectory()))
+    std::vector<std::filesystem::path> files;
+    for (const auto& entry : std::filesystem::directory_iterator(angel_lsp::test::CorpusDirectory()))
     {
         if (entry.is_regular_file() && entry.path().extension() == ".as")
             files.push_back(entry.path());

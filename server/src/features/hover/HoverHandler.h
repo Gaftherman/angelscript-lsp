@@ -1,8 +1,8 @@
 #pragma once
 
-#include "analysis/ScopeTree.h"
-#include "analysis/SymbolTable.h"
-#include "analysis/VirtualMixinContext.h"
+#include "analysis/index/ScopeTree.h"
+#include "analysis/index/SymbolTable.h"
+#include "analysis/types/VirtualMixinContext.h"
 #include "config/ServerConfig.h"
 #include "utils/Timer.h"
 #include <functional>
@@ -12,15 +12,8 @@
 #include <string>
 #include <tree_sitter/api.h>
 
-namespace angel_lsp::utils
-{
-class LspLogger;
-}
-
-namespace angel_lsp::i18n
-{
-class I18n;
-}
+#include "i18n/i18n.h"
+#include "utils/LspLogger.h"
 
 namespace angel_lsp::features
 {

@@ -1,13 +1,13 @@
 #include "analysis/rules/UnusedSymbolChecker.h"
 
-#include "analysis/DiagnosticCodes.h"
-#include "analysis/DiagnosticContext.h"
-#include "analysis/NodeIndex.h"
-#include "analysis/ScopeTree.h"
-#include "analysis/SemanticHelpers.h"
-#include "analysis/SymbolTable.h"
-#include "analysis/TypeSanitization.h"
+#include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/NodeIndex.h"
+#include "analysis/index/ScopeTree.h"
+#include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
+#include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
@@ -348,8 +348,6 @@ static ankerl::unordered_dense::set<std::string> CollectStringReflection(const S
  * @brief Normalizes a parameter type string by removing whitespace, leading const, and reference decorations.
  * @param[in] type Target type string view to normalize.
  * @return Normalized base parameter type name string.
- * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst. Manually re-evaluates AST for isRef; candidate for
- * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / isReturnReference.
  */
 static std::string NormalizeParamType(std::string_view type)
 {

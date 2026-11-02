@@ -1,8 +1,8 @@
 #pragma once
 
-#include "analysis/DiagnosticContext.h"
-#include "analysis/ScopeTree.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/ScopeTree.h"
+#include "analysis/index/SymbolTable.h"
 
 #include <string_view>
 #include <tree_sitter/api.h>

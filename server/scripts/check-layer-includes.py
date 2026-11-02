@@ -48,10 +48,10 @@ LAYER_MAP = {
 }
 
 DECOUPLED_LSP_MODULES = {
-    'lsp/DocumentStore.h',
-    'lsp/AnalysisScheduler.h',
-    'lsp/PredefinedStubManager.h',
-    'lsp/ModuleIndex.h',
+    'lsp/state/DocumentStore.h',
+    'lsp/pipeline/AnalysisScheduler.h',
+    'lsp/state/PredefinedStubManager.h',
+    'lsp/state/ModuleIndex.h',
 }
 
 QUOTED_INCLUDE = re.compile(r'^[ \t]*#[ \t]*include[ \t]*"([^"\r\n]+)"', re.MULTILINE)

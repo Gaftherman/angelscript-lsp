@@ -1,6 +1,6 @@
 #pragma once
 
-#include "analysis/SymbolTable.h"
+#include "analysis/index/SymbolTable.h"
 
 #include <lsp/messages.h>
 #include <lsp/types.h>
@@ -10,10 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace angel_lsp::utils
-{
-class LspLogger;
-}
+#include "utils/LspLogger.h"
 
 namespace angel_lsp::features
 {

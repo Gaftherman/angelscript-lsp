@@ -16,8 +16,6 @@
 #include <string>
 #include <vector>
 
-namespace fs = std::filesystem;
-
 using namespace angel_lsp;
 using namespace angel_lsp::features;
 using namespace angel_lsp::parser;
@@ -273,18 +271,18 @@ TEST_CASE("Debugger DAP Protocol - Bounded Payload & Multi-Frame Scopes Invarian
 TEST_CASE("Breakpoint Locations - AngelScript Oracle Bytecode Parity Execution")
 {
     // Find built oracle binary
-    const std::vector<fs::path> candidates = {
-        fs::path(ANGELSCRIPT_REPO_ROOT) / "build" / "Debug" / "angelscript_oracle.exe",
-        fs::path(ANGELSCRIPT_REPO_ROOT) / "build" / "bin" / "angelscript_oracle.exe",
-        fs::path(ANGELSCRIPT_REPO_ROOT) / "build" / "Release" / "angelscript_oracle.exe",
-        fs::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "Debug" / "angelscript_oracle.exe",
-        fs::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "bin" / "angelscript_oracle.exe",
+    const std::vector<std::filesystem::path> candidates = {
+        std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "build" / "Debug" / "angelscript_oracle.exe",
+        std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "build" / "bin" / "angelscript_oracle.exe",
+        std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "build" / "Release" / "angelscript_oracle.exe",
+        std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "Debug" / "angelscript_oracle.exe",
+        std::filesystem::path(ANGELSCRIPT_REPO_ROOT) / "server" / "build" / "bin" / "angelscript_oracle.exe",
     };
 
     std::string oracleExe;
     for (const auto& c : candidates)
     {
-        if (fs::exists(c))
+        if (std::filesystem::exists(c))
         {
             oracleExe = c.string();
             break;
@@ -343,7 +341,8 @@ TEST_CASE("Breakpoint Locations - AngelScript Oracle Bytecode Parity Execution")
                                "}\n";
 
     // Write temporary script to disk for oracle execution
-    const fs::path tempScript = fs::temp_directory_path() / (test::GenerateRandomSymbolName("bp_oracle") + ".as");
+    const std::filesystem::path tempScript =
+        std::filesystem::temp_directory_path() / (test::GenerateRandomSymbolName("bp_oracle") + ".as");
     {
         std::ofstream out(tempScript);
         out << script;
@@ -370,7 +369,7 @@ TEST_CASE("Breakpoint Locations - AngelScript Oracle Bytecode Parity Execution")
 #else
     pclose(pipe);
 #endif
-    fs::remove(tempScript);
+    std::filesystem::remove(tempScript);
 
     // Collect AST breakpoints from our analyzer
     AngelScriptParser parser;

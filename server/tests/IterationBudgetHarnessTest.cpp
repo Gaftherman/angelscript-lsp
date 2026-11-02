@@ -1,11 +1,11 @@
 ﻿#include <doctest/doctest.h>
 
-#include "analysis/CallChecker.h"
-#include "analysis/NodeIndex.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/checkers/CallChecker.h"
+#include "analysis/index/NodeIndex.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
 #include "helpers/TestUtils.h"
 #include "parser/ASTUtils.h"
 #include "parser/AngelScriptParser.h"

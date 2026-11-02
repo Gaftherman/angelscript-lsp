@@ -4,13 +4,13 @@
  *        across inlay hints, code action interface stubs, and anonymous objects (typed initializer lists).
  */
 
-#include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/SemanticHelpers.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/TypeSanitization.h"
-#include "analysis/overload/OverloadTypeConversions.h"
+#include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/resolution/OverloadTypeConversions.h"
+#include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/types/TypeSanitization.h"
 #include "config/ServerConfig.h"
 #include "features/code_action/CodeActionHandler.h"
 #include "features/inlay_hint/InlayHintHandler.h"

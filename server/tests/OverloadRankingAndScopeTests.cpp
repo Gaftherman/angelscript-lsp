@@ -4,13 +4,13 @@
  *        cyclic auto false-positive elimination, and hover scope cycle defense.
  */
 
-#include "analysis/DiagnosticCodes.h"
-#include "analysis/LocalScopeCollector.h"
-#include "analysis/OverloadResolver.h"
-#include "analysis/ScopeTree.h"
 #include "analysis/SemanticAnalyzer.h"
-#include "analysis/SymbolCollector.h"
-#include "analysis/SymbolTable.h"
+#include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/ScopeTree.h"
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/OverloadResolver.h"
 #include "features/hover/HoverHandler.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"

@@ -1,4 +1,4 @@
-#include "analysis/NodeIndex.h"
+#include "analysis/index/NodeIndex.h"
 #include "helpers/TestUtils.h"
 #include "parser/GrammarNames.h"
 #include <doctest/doctest.h>
