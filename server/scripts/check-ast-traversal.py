@@ -648,7 +648,7 @@ def check_no_doxygen_slop():
     """
     Enforces that zero mechanical or robotic AI slop filler templates exist in Doxygen comments across server/src/.
     Specifically checks for:
-    1. '@note [REFACTOR-CANDIDATE]'
+    1. '[REFACTOR-CANDIDATE]'
     2. '@brief Represents <symbol>'
     3. '@brief Helper structure' / '@brief Local helper'
     4. 'True if condition met; otherwise false.'
@@ -657,7 +657,7 @@ def check_no_doxygen_slop():
     7. Orphaned analysis note fragments outside of @note.
     """
     violations = []
-    refactor_cand_re = re.compile(r"@note\s+\[REFACTOR-CANDIDATE\]", re.I)
+    refactor_cand_re = re.compile(r"\[REFACTOR-CANDIDATE\]", re.I)
     slop_brief_re = re.compile(r"@brief\s+(?:Represents\b|Helper\s+structure\b|Local\s+helper\b)", re.I)
     slop_param_re = re.compile(r"@param(\[[^\]]*\])?\s+(\w+)\s+(Parameter|Input)\s+\2\b", re.I)
     slop_cond_re = re.compile(r"true if condition met;\s*otherwise false", re.I)
@@ -676,7 +676,7 @@ def check_no_doxygen_slop():
             stripped = line.strip()
             cleaned_tag = stripped.lstrip("* ").strip()
             if refactor_cand_re.search(stripped):
-                violations.append((file_path, idx, stripped, "Forbidden @note [REFACTOR-CANDIDATE] tag"))
+                violations.append((file_path, idx, stripped, "Forbidden [REFACTOR-CANDIDATE] tag"))
             elif slop_brief_re.search(stripped):
                 violations.append((file_path, idx, stripped, "Mechanical @brief slop template"))
             elif slop_cond_re.search(stripped):
@@ -743,7 +743,7 @@ def check_no_cpp_struct_declarations():
     and Layer 3 (features/). All structures must reside in canonical module headers.
     """
     violations = []
-    struct_decl_re = re.compile(r"^\s*struct\s+([A-Za-z0-9_]+)\s*(?:final\s*)?(?::[^{]+)?\{")
+    struct_decl_re = re.compile(r"\bstruct\s+([A-Za-z0-9_]+)\s*(?:final\s*)?(?::[^{;]+)?\{")
     scan_dirs = [SERVER_SRC / "analysis", SERVER_SRC / "features"]
     for sdir in scan_dirs:
         for fpath in sdir.rglob("*.cpp"):
@@ -753,13 +753,11 @@ def check_no_cpp_struct_declarations():
                 content = fpath.read_text(encoding="utf-8", errors="ignore")
             except Exception:
                 continue
-            for idx, line in enumerate(content.splitlines(), 1):
-                stripped = line.strip()
-                if stripped.startswith("//") or stripped.startswith("*") or stripped.startswith("/*"):
-                    continue
-                m = struct_decl_re.search(line)
-                if m:
-                    violations.append((fpath, idx, stripped, m.group(1)))
+            cleaned = re.sub(r"/\*.*?\*/", "", content, flags=re.DOTALL)
+            cleaned = re.sub(r"//.*$", "", cleaned, flags=re.MULTILINE)
+            for m in struct_decl_re.finditer(cleaned):
+                line_num = content[:m.start()].count("\n") + 1
+                violations.append((fpath, line_num, f"struct {m.group(1)}", m.group(1)))
     return violations
 
 

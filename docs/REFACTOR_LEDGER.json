@@ -1157,6 +1157,198 @@
       "verifiedByTests": [
         "WorkspaceStubSweepTest"
       ]
+    },
+    {
+      "id": "REF-0070",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/overload/AmbiguityDetector.h",
+      "deletedLineRange": "16-25",
+      "originalSymbolOrCode": "struct EvaluatedCandidate",
+      "whatItDidAndWhyInThatFile": "Evaluated candidate tracking symbol pointer, conversions vector, and default argument count during overload evaluation.",
+      "whyChangedOrDeleted": "Consolidated into canonical OverloadResolver.h to allow full overload resolution pipeline integration without circular header dependencies.",
+      "replacedByCanonicalFile": "server/src/analysis/OverloadResolver.h",
+      "replacedByCanonicalSymbol": "EvaluatedCandidate",
+      "ramOrCpuImpact": "Zero overhead, eliminates duplicate candidate representations.",
+      "verifiedByTests": [
+        "OverloadResolutionTest"
+      ]
+    },
+    {
+      "id": "REF-0071",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/code_action/CodeActionAccessors.cpp",
+      "deletedLineRange": "134-142",
+      "originalSymbolOrCode": "struct GetterSetterContext",
+      "whatItDidAndWhyInThatFile": "Context bundle holding AST nodes, document text, and diagnostic sinks for getter/setter generation.",
+      "whyChangedOrDeleted": "Promoted to canonical header CodeActionInternal.h to eliminate local .cpp struct and comply with PROHIBITION 14.",
+      "replacedByCanonicalFile": "server/src/features/code_action/CodeActionInternal.h",
+      "replacedByCanonicalSymbol": "GetterSetterContext",
+      "ramOrCpuImpact": "Zero overhead, enables reuse across code action helpers.",
+      "verifiedByTests": [
+        "CodeActionTest"
+      ]
+    },
+    {
+      "id": "REF-0072",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/code_action/CodeActionExtractMethodOutputs.cpp",
+      "deletedLineRange": "161-171",
+      "originalSymbolOrCode": "struct MethodOutputContext",
+      "whatItDidAndWhyInThatFile": "Context holding extraction parameters and return type state for extracted method generation.",
+      "whyChangedOrDeleted": "Promoted to canonical header CodeActionExtractMethodAnalysis.h to eliminate local .cpp struct and comply with PROHIBITION 14.",
+      "replacedByCanonicalFile": "server/src/features/code_action/CodeActionExtractMethodAnalysis.h",
+      "replacedByCanonicalSymbol": "MethodOutputContext",
+      "ramOrCpuImpact": "Zero overhead, eliminates translation-unit internal struct.",
+      "verifiedByTests": [
+        "CodeActionExtractMethodTest"
+      ]
+    },
+    {
+      "id": "REF-0073",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/code_action/CodeActionIncludes.cpp",
+      "deletedLineRange": "108-116",
+      "originalSymbolOrCode": "struct IncludeFixContext",
+      "whatItDidAndWhyInThatFile": "Context bundle for include directive insertion and missing symbol quick fix generation.",
+      "whyChangedOrDeleted": "Promoted to canonical header CodeActionInternal.h to eliminate local .cpp struct and comply with PROHIBITION 14.",
+      "replacedByCanonicalFile": "server/src/features/code_action/CodeActionInternal.h",
+      "replacedByCanonicalSymbol": "IncludeFixContext",
+      "ramOrCpuImpact": "Zero overhead, enables reuse across include quick fix actions.",
+      "verifiedByTests": [
+        "CodeActionIncludesTest"
+      ]
+    },
+    {
+      "id": "REF-0074",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/code_action/CodeActionIncludes.cpp",
+      "deletedLineRange": "171-180",
+      "originalSymbolOrCode": "struct IncludeRefCheckContext",
+      "whatItDidAndWhyInThatFile": "Context bundle checking whether an include reference is already satisfied in the current translation unit.",
+      "whyChangedOrDeleted": "Promoted to canonical header CodeActionInternal.h to eliminate local .cpp struct and comply with PROHIBITION 14.",
+      "replacedByCanonicalFile": "server/src/features/code_action/CodeActionInternal.h",
+      "replacedByCanonicalSymbol": "IncludeRefCheckContext",
+      "ramOrCpuImpact": "Zero overhead, eliminates translation-unit internal struct.",
+      "verifiedByTests": [
+        "CodeActionIncludesTest"
+      ]
+    },
+    {
+      "id": "REF-0075",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/code_action/CodeActionQuickFixes.cpp",
+      "deletedLineRange": "71-80",
+      "originalSymbolOrCode": "struct FuncdefFixItem",
+      "whatItDidAndWhyInThatFile": "Bundles suggested funcdef signature fixes and source locations for callback type diagnostics.",
+      "whyChangedOrDeleted": "Promoted to canonical header CodeActionInternal.h to eliminate local .cpp struct and comply with PROHIBITION 14.",
+      "replacedByCanonicalFile": "server/src/features/code_action/CodeActionInternal.h",
+      "replacedByCanonicalSymbol": "FuncdefFixItem",
+      "ramOrCpuImpact": "Zero overhead, eliminates translation-unit internal struct.",
+      "verifiedByTests": [
+        "CodeActionTest"
+      ]
+    },
+    {
+      "id": "REF-0076",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/code_action/CodeActionTypos.cpp",
+      "deletedLineRange": "114-123",
+      "originalSymbolOrCode": "struct TypoFixContext",
+      "whatItDidAndWhyInThatFile": "Context bundle for fuzzy spelling match lookup and typo replacement code action generation.",
+      "whyChangedOrDeleted": "Promoted to canonical header CodeActionInternal.h to eliminate local .cpp struct and comply with PROHIBITION 14.",
+      "replacedByCanonicalFile": "server/src/features/code_action/CodeActionInternal.h",
+      "replacedByCanonicalSymbol": "TypoFixContext",
+      "ramOrCpuImpact": "Zero overhead, eliminates translation-unit internal struct.",
+      "verifiedByTests": [
+        "CodeActionTest"
+      ]
+    },
+    {
+      "id": "REF-0077",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/lsp/handlers/BreakpointHandlers.cpp",
+      "deletedLineRange": "20-27",
+      "originalSymbolOrCode": "struct BreakpointLocationsParams",
+      "whatItDidAndWhyInThatFile": "LSP parameter payload parsed from textDocument/breakpointLocations JSON-RPC request.",
+      "whyChangedOrDeleted": "Promoted to canonical header Server.h to eliminate local .cpp struct and comply with PROHIBITION 14.",
+      "replacedByCanonicalFile": "server/src/lsp/Server.h",
+      "replacedByCanonicalSymbol": "BreakpointLocationsParams",
+      "ramOrCpuImpact": "Zero overhead, consolidates breakpoint parameter models.",
+      "verifiedByTests": [
+        "BreakpointHandlerTest"
+      ]
+    },
+    {
+      "id": "REF-0078",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/lsp/handlers/TextDocumentHandlers.cpp",
+      "deletedLineRange": "996-1001",
+      "originalSymbolOrCode": "struct VirtualMixinTarget",
+      "whatItDidAndWhyInThatFile": "Parsed URI components identifying virtual mixin source files for document link navigation.",
+      "whyChangedOrDeleted": "Promoted to canonical header Server.h to eliminate local .cpp struct and comply with PROHIBITION 14.",
+      "replacedByCanonicalFile": "server/src/lsp/Server.h",
+      "replacedByCanonicalSymbol": "VirtualMixinTarget",
+      "ramOrCpuImpact": "Zero overhead, enables reuse across virtual document handlers.",
+      "verifiedByTests": [
+        "VirtualDocumentTest"
+      ]
+    },
+    {
+      "id": "REF-0079",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/lsp/handlers/TextDocumentHandlers.cpp",
+      "deletedLineRange": "1002-1008",
+      "originalSymbolOrCode": "struct MixinSymbolLocation",
+      "whatItDidAndWhyInThatFile": "Location coordinates of mixin symbol definitions for virtual document link resolution.",
+      "whyChangedOrDeleted": "Promoted to canonical header Server.h to eliminate local .cpp struct and comply with PROHIBITION 14.",
+      "replacedByCanonicalFile": "server/src/lsp/Server.h",
+      "replacedByCanonicalSymbol": "MixinSymbolLocation",
+      "ramOrCpuImpact": "Zero overhead, eliminates translation-unit internal struct.",
+      "verifiedByTests": [
+        "VirtualDocumentTest"
+      ]
+    },
+    {
+      "id": "REF-0080",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/lsp/handlers/TokensAndFormattingHandlers.cpp",
+      "deletedLineRange": "15-22",
+      "originalSymbolOrCode": "struct CachedTokensSnapshot",
+      "whatItDidAndWhyInThatFile": "Snapshot of semantic token integers and version counter for semantic tokens delta calculation.",
+      "whyChangedOrDeleted": "Promoted to canonical header Server.h to eliminate local .cpp struct and comply with PROHIBITION 14.",
+      "replacedByCanonicalFile": "server/src/lsp/Server.h",
+      "replacedByCanonicalSymbol": "CachedTokensSnapshot",
+      "ramOrCpuImpact": "Zero overhead, provides typed semantic token caching across handler methods.",
+      "verifiedByTests": [
+        "SemanticTokensTest"
+      ]
+    },
+    {
+      "id": "REF-0081",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/lsp/handlers/WorkspaceScanHandlers.cpp",
+      "deletedLineRange": "31-48",
+      "originalSymbolOrCode": "class PhaseTimer",
+      "whatItDidAndWhyInThatFile": "RAII execution timer profiling workspace scanning and initialization phases.",
+      "whyChangedOrDeleted": "Promoted to canonical header Server.h to eliminate local .cpp class and provide standard phase profiling.",
+      "replacedByCanonicalFile": "server/src/lsp/Server.h",
+      "replacedByCanonicalSymbol": "PhaseTimer",
+      "ramOrCpuImpact": "Zero overhead, eliminates local timer class definition.",
+      "verifiedByTests": [
+        "WorkspaceStubSweepTest"
+      ]
     }
   ]
 }
