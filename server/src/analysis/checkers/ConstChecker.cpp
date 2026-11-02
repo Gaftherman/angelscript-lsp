@@ -156,7 +156,6 @@ static Constness ResolveNameConstness(std::string_view name, TSNode node, const 
  * @param[in] node AST node inside the method.
  * @param[in] sourceCode Source text.
  * @return EnclosingMethodInfo containing class membership and const qualification.
- * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
 static EnclosingMethodInfo FindEnclosingMethod(TSNode node, std::string_view sourceCode)
 {

@@ -122,7 +122,6 @@ bool HasSameSignature(const Symbol& left, const Symbol& right, std::string_view 
  * @brief Computes parameter arity constraints including minimum, maximum, and variadic flags.
  * @param[in] sig Function signature containing parameter definitions.
  * @return Computed ArityInfo struct representing parameter constraints.
- * for unification in server/src/analysis/SemanticHelpers.h.
  */
 ArityInfo InspectFunctionArity(const FunctionSignature& sig)
 {

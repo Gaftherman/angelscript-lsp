@@ -266,7 +266,6 @@ static void CollectInternalDefinitionsUsedAfter(const ExtractMethodStatements& s
  * @param[in] root Root AST node of the statement subtree to inspect.
  * @param[in] sourceCode Document source text buffer.
  * @param[in,out] mutatedVars Output set accumulating names of variables mutated within the subtree.
- * for unification in server/src/analysis/SemanticHelpers.h.
  */
 static void TraverseSubtreeMutations(TSNode root, std::string_view sourceCode,
                                      ankerl::unordered_dense::set<std::string>& mutatedVars)

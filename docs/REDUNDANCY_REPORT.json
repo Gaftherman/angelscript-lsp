@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-02T07:44:14Z",
+  "generatedAt": "2026-11-02T07:59:01Z",
   "branch": "refactor/architecture-deduplication-and-ram",
   "description": "Deterministic AST and tokenization audit report covering local C++ structs, pass-1 flag re-evaluations, function similarity, hot struct RAM layout, and Doxygen coverage.",
   "localCppStructs": {
@@ -688,8 +688,8 @@
         },
         "funcB": {
           "file": "server/src/features/code_action/CodeActionExtractMethodOutputs.cpp",
-          "startLine": 271,
-          "endLine": 309,
+          "startLine": 270,
+          "endLine": 308,
           "name": "TraverseSubtreeMutations",
           "signature": "static void TraverseSubtreeMutations(TSNode root, std::string_view sourceCode,\n "
         },

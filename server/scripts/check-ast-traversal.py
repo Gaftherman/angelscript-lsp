@@ -697,11 +697,14 @@ def check_no_doxygen_slop():
     orphan_reeval_re = re.compile(r"Manually re-evaluates", re.I)
     orphan_pass1_re = re.compile(r"candidate for direct Pass 1", re.I)
     orphan_unif_re = re.compile(r"Candidate for unification", re.I)
+    orphan_type_extract_re = re.compile(r"TypeExtraction::ExtractTypeInfo", re.I)
+    orphan_handle_type_re = re.compile(r"LocalDefinition::isHandleType", re.I)
+    orphan_symbol_mod_re = re.compile(r"Symbol::modifiers\.", re.I)
     slop_brief_re = re.compile(r"@brief\s+(?:Represents\b|Helper\s+structure\b|Local\s+helper\b)", re.I)
     slop_param_re = re.compile(r"@param(\[[^\]]*\])?\s+(\w+)\s+(Parameter|Input)\s+\2\b", re.I)
     slop_cond_re = re.compile(r"true if condition met;\s*otherwise false", re.I)
     slop_res_re = re.compile(r"result of the operation", re.I)
-    slop_unify_re = re.compile(r"candidate for unification in", re.I)
+    slop_unify_re = re.compile(r"(?:candidate\s+)?for\s+unification\s+in", re.I)
     slop_overlap_re = re.compile(r"structural overlap\s*\(\d+%\)", re.I)
 
     for file_path in SERVER_SRC.rglob("*.[ch]*"):
@@ -714,12 +717,15 @@ def check_no_doxygen_slop():
         for idx, line in enumerate(content.splitlines(), 1):
             stripped = line.strip()
             cleaned_tag = stripped.lstrip("* ").strip()
+            is_comment = stripped.startswith("*") or stripped.startswith("//") or stripped.startswith("/*")
             if refactor_cand_re.search(stripped):
                 violations.append((file_path, idx, stripped, "Forbidden [REFACTOR-CANDIDATE] tag"))
             elif orphan_reeval_re.search(stripped):
                 violations.append((file_path, idx, stripped, "Orphaned manual re-evaluation note fragment"))
             elif orphan_pass1_re.search(stripped):
                 violations.append((file_path, idx, stripped, "Orphaned pass 1 candidate note fragment"))
+            elif is_comment and (orphan_type_extract_re.search(stripped) or orphan_handle_type_re.search(stripped) or orphan_symbol_mod_re.search(stripped)):
+                violations.append((file_path, idx, stripped, "Orphaned type/symbol analysis note fragment"))
             elif slop_brief_re.search(stripped):
                 violations.append((file_path, idx, stripped, "Mechanical @brief slop template"))
             elif slop_cond_re.search(stripped):

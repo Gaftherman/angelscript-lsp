@@ -4127,7 +4127,6 @@ static void ProcessNode(TSNode node, const TypeConversionCheckRequest& request, 
  * @param[in] root Root node of syntax tree or subtree.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
- * for unification in server/src/analysis/SemanticHelpers.h.
  */
 static void VisitNode(TSNode root, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {

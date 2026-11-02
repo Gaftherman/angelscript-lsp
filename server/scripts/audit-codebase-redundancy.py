@@ -954,11 +954,14 @@ def main():
     slop_param_re = re.compile(r"@param(\[[^\]]*\])?\s+(\w+)\s+(Parameter|Input)\s+\2\b", re.I)
     slop_cond_re = re.compile(r"true if condition met;\s*otherwise false", re.I)
     slop_res_re = re.compile(r"result of the operation", re.I)
-    slop_unify_re = re.compile(r"candidate for unification in", re.I)
+    slop_unify_re = re.compile(r"(?:candidate\s+)?for\s+unification\s+in", re.I)
     slop_overlap_re = re.compile(r"structural overlap\s*\(\d+%\)", re.I)
     orphan_reeval_re = re.compile(r"Manually re-evaluates", re.I)
     orphan_pass1_re = re.compile(r"candidate for direct Pass 1", re.I)
     orphan_unif_re = re.compile(r"Candidate for unification", re.I)
+    orphan_type_extract_re = re.compile(r"TypeExtraction::ExtractTypeInfo", re.I)
+    orphan_handle_type_re = re.compile(r"LocalDefinition::isHandleType", re.I)
+    orphan_symbol_mod_re = re.compile(r"Symbol::modifiers\.", re.I)
     for fpath in sorted(SERVER_SRC.rglob("*.[ch]*")):
         if not fpath.is_file():
             continue
@@ -969,9 +972,12 @@ def main():
         for idx, line in enumerate(content.splitlines(), 1):
             stripped = line.strip()
             cleaned_tag = stripped.lstrip("* ").strip()
+            is_comment = stripped.startswith("*") or stripped.startswith("//") or stripped.startswith("/*")
             if slop_cond_re.search(stripped) or slop_res_re.search(stripped) or slop_param_re.search(stripped):
                 slop_violations.append((fpath, idx, stripped))
             elif orphan_reeval_re.search(stripped) or orphan_pass1_re.search(stripped):
+                slop_violations.append((fpath, idx, stripped))
+            elif is_comment and (orphan_type_extract_re.search(stripped) or orphan_handle_type_re.search(stripped) or orphan_symbol_mod_re.search(stripped)):
                 slop_violations.append((fpath, idx, stripped))
             elif (slop_unify_re.search(stripped) or orphan_unif_re.search(stripped) or slop_overlap_re.search(stripped)) and not cleaned_tag.startswith("@note"):
                 slop_violations.append((fpath, idx, stripped))
