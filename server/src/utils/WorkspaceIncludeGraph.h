@@ -40,18 +40,6 @@ class WorkspaceIncludeGraph
     using FileReader = std::function<std::string(const std::string&)>;
 
     /**
-     * @brief Scans the workspace and builds the graph from scratch, discarding any previous one.
-     *
-     * Only `#include` directives are parsed (via IncludeResolver::ExtractIncludes), never the
-     * AST, which is what makes a full-workspace scan cheap enough to run at startup.
-     *
-     * @param workspaceRoots Directories to walk recursively.
-     * @param searchDirectories Extra include search paths, in priority order.
-     * @param scriptExtension Only files ending with this are considered (e.g. ".as").
-     * @param shouldStop Polled between files so a shutdown can interrupt a long scan; may be empty.
-     * @param fileReader Optional content source; reads from disk when not supplied.
-     */
-    /**
      * @brief Parameters for building the workspace include graph from directories.
      */
     struct BuildRequest

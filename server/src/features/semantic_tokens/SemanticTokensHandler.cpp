@@ -1020,13 +1020,6 @@ static uint32_t RefineSyntaxContext(std::string_view tokenText, uint32_t startBy
     return tokenType;
 }
 
-/**
- * @brief Refines the captured token type using scope tree, declaration site, and symbol table.
- * @param[in] node AST capture node.
- * @param[in] tokenType Initial token type.
- * @param[in] ctx Refinement context.
- * @return Final refined token type index.
- */
 /** @brief Checks if an AST node is the trailing leaf identifier of a scoped_identifier. */
 static bool IsScopedIdentifierLeaf(TSNode node, const parser::GrammarSymbols& syms)
 {

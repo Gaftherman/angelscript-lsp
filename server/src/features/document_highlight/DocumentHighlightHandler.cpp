@@ -45,11 +45,6 @@ static bool IsNodeContained(TSNode inner, TSNode outer) noexcept
 }
 
 /**
- * @brief Checks whether leaf node is the name of a declaration.
- * @param[in] leaf AST leaf node.
- * @return DocumentHighlightKind if leaf is a declaration identifier.
- */
-/**
  * @brief Checks if node type is a variable or parameter declarator.
  * @param[in] pType Parent node type.
  * @return True if declarator node.

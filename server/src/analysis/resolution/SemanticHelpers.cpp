@@ -6077,23 +6077,6 @@ bool IsHandleType(std::string_view typeName, const SymbolTable& symbolTable) noe
 }
 
 /**
- * @brief The funcdef a lambda is being handed to, read from where it is written.
- *
- * A lambda has no return type of its own - the grammar gives `lambda_expression` a parameter
- * list and a body and nothing else - so every question about what its body must return has to
- * come from the target. That is what this answers, for the three shapes a lambda reaches a
- * funcdef through:
- *
- *     CB@ cb = function(...) { };      a declaration whose written type is a funcdef
- *     Register(CB(function(...)));     a funcdef used as a conversion
- *     Take(function(...));             an argument landing on a funcdef parameter
- *
- * Anything else answers nullopt, and so does a call with more than one candidate offering a
- * different funcdef at that position: which one the lambda was written against is precisely
- * what is undecided there, and a return-type verdict drawn from a guess would be worse than
- * the silence it replaced.
- */
-/**
  * @brief Finds the target funcdef symbol for a variable declarator.
  */
 static std::optional<Symbol> FindDeclaratorFuncdefTarget(TSNode parent, const SymbolTable& table,

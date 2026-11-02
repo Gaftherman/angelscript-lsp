@@ -109,9 +109,7 @@ static void CheckEmptyBranch(TSNode node, DiagnosticContext& ctx)
     }
 }
 
-// =====================================================================
 // Definite return
-// =====================================================================
 
 /**
  * @brief True for a return type that null cannot convert to.
@@ -331,9 +329,7 @@ bool DefiniteReturnAnalyzer::TryDefinitelyReturns(TSNode node, std::string_view 
     return allReturn;
 }
 
-// =====================================================================
 // Switch clauses
-// =====================================================================
 
 /** @brief True for a case value shape AngelScript cannot use as a label. */
 static bool IsUnusableCaseValue(TSNode expression, std::string_view sourceCode)
@@ -663,9 +659,7 @@ static void CheckSwitch(TSNode node, std::string_view sourceCode, DiagnosticCont
     }
 }
 
-// =====================================================================
 // Traversal
-// =====================================================================
 
 /**
  * @brief Reports the first statement a block can never reach.

@@ -11,9 +11,7 @@ namespace angel_lsp::parser
  */
 struct GrammarSymbols
 {
-    // =========================================================================
     // Named Node Types (sym*)
-    // =========================================================================
 
     // Containers & Structure
     TSSymbol symScript = 0;               ///< script
@@ -103,9 +101,7 @@ struct GrammarSymbols
     TSSymbol symTryStatement = 0;        ///< try_statement
     TSSymbol symExpressionStatement = 0; ///< expression_statement
 
-    // =========================================================================
     // Anonymous Token Symbols (tok*)
-    // =========================================================================
 
     // Logical & Bitwise
     TSSymbol tokAmpAmp = 0;     ///< "&&"
@@ -204,9 +200,7 @@ struct GrammarSymbols
     TSSymbol tokNull = 0;                          ///< "null"
     TSSymbol symError = static_cast<TSSymbol>(-1); ///< ERROR node
 
-    // =========================================================================
     // Pre-resolved Field IDs (field*)
-    // =========================================================================
 
     TSFieldId fieldName = 0;           ///< "name"
     TSFieldId fieldType = 0;           ///< "type"
@@ -245,9 +239,7 @@ struct GrammarSymbols
     TSFieldId fieldParam = 0;          ///< "param"
     TSFieldId fieldUnderlyingType = 0; ///< "underlying_type"
 
-    // =========================================================================
     // Pre-resolved Statement & Expression Sets
-    // =========================================================================
 
     /** @brief Pre-resolved target node symbols for single-pass type conversion checks. */
     std::array<TSSymbol, 19> conversionTargetSymbols{};

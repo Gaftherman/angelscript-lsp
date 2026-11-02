@@ -84,9 +84,7 @@ static bool IsDisallowedInOutType(const ParameterInformation& param, const Symbo
     return false;
 }
 
-// =============================================================================
 // Body
-// =============================================================================
 
 /**
  * @brief True when a bodiless declaration cannot be read as a variable with a constructor
@@ -156,9 +154,7 @@ static void CheckBody(const Symbol& sym, const FunctionSignature& sig, const Fun
     CheckDeleteModifiers(sym, sig, ctx);
 }
 
-// =============================================================================
 // Return type
-// =============================================================================
 
 static void CheckVoidReturnType(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx)
 {
@@ -243,9 +239,7 @@ static void CheckReturnType(const Symbol& sym, const FunctionSignature& sig, con
     CheckReturnTypeResolution(sym, sig, ctx);
 }
 
-// =============================================================================
 // Modifiers and placement
-// =============================================================================
 
 static void CheckModifiers(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
                            const DiagnosticContext& ctx)
@@ -286,15 +280,7 @@ static void CheckModifiers(const Symbol& sym, const FunctionSignature& sig, cons
     }
 }
 
-// =============================================================================
 // Function attributes: explicit, property, delete
-//
-// The grammar accepts `override | final | explicit | property | delete` after any parameter
-// list, so where each one is actually allowed is a semantic question. The three rules below
-// were each read off the engine rather than off the manual: every case in them was compiled
-// with a real AngelScript build and the verdict recorded, which is how the arity limits and
-// the exemptions further down came to be what they are rather than what they look like.
-// =============================================================================
 
 /**
  * @brief True when the deleted declaration names a function the engine auto generates.
@@ -383,9 +369,7 @@ static void CheckAttributes(const Symbol& sym, const FunctionSignature& sig, con
     }
 }
 
-// =============================================================================
 // Constructors and destructors
-// =============================================================================
 
 static void CheckConstructorDestructor(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
                                        const DiagnosticContext& ctx)
@@ -426,9 +410,7 @@ static void CheckConstructorDestructor(const Symbol& sym, const FunctionSignatur
     }
 }
 
-// =============================================================================
 // Override
-// =============================================================================
 
 static void CheckOverride(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
                           const DiagnosticContext& ctx)

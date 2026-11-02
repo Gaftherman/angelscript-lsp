@@ -196,9 +196,7 @@ static void ScanRecoverableClasses(TSNode rootNode, RecoverClassContext& ctx)
     ts_tree_cursor_delete(&cursor);
 }
 
-// =========================================================================================
 // Public API & Lifecycle
-// =========================================================================================
 
 SymbolCollector::SymbolCollector(angel_lsp::utils::LspLogger* logger)
     : m_logger(logger), m_gs(parser::GetGrammarSymbols())
@@ -350,9 +348,7 @@ std::vector<Diagnostic> SymbolCollector::CollectSymbolsWithTree(const std::strin
     return CollectSymbolsWithTree(SymbolCollectRequest(fileUri, sourceCode), tree, symbolTable);
 }
 
-// =========================================================================================
 // AST Traversal & Scope Helpers
-// =========================================================================================
 
 void SymbolCollector::PushClassContainer(TSNode node, const SymbolCollectContext& sCtx,
                                          std::vector<ActiveContainer>& stack) const
@@ -648,9 +644,7 @@ void SymbolCollector::ProcessLambda([[maybe_unused]] TSNode node, [[maybe_unused
 {
 }
 
-// =========================================================================================
 // Declaration Collectors
-// =========================================================================================
 
 /**
  * @brief Symbol collector apply accessor tokens.
@@ -1600,9 +1594,7 @@ void SymbolCollector::ProcessInterface(TSNode node, SymbolCollectContext& sCtx, 
     sCtx.collectedSymbols.push_back(std::move(sym));
 }
 
-// =========================================================================================
 // Reference & Out-of-Body Call Collectors
-// =========================================================================================
 
 void SymbolCollector::ProcessCallReference(TSNode callNode, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
@@ -1644,9 +1636,7 @@ void SymbolCollector::ProcessCallReference(TSNode callNode, SymbolCollectContext
     sCtx.collectedSymbols.push_back(std::move(sym));
 }
 
-// =========================================================================================
 // Validation Collectors
-// =========================================================================================
 
 /**
  * @brief Symbol collector check using declaration capture.
@@ -1735,9 +1725,7 @@ void SymbolCollector::CheckDuplicateModifierGroup(TSNode declNode, SymbolCollect
     ts_tree_cursor_delete(&cursor);
 }
 
-// =========================================================================================
 // Diagnostics & Error Recovery
-// =========================================================================================
 
 /**
  * @brief Checks whether an AST node contains nested ERROR or MISSING child nodes.
@@ -2587,9 +2575,7 @@ std::string SymbolCollector::FormatSyntaxErrorMessage(std::string_view rawErrTex
     return fmt::format(fmt::runtime(pattern), firstToken);
 }
 
-// =========================================================================================
 // AST/Text Extraction Helpers
-// =========================================================================================
 
 std::string SymbolCollector::GetNodeText(TSNode node, std::string_view sourceCode) const
 {

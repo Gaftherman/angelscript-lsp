@@ -87,13 +87,6 @@ std::vector<ExcludedLineRange>
 FindExcludedLineRanges(std::string_view sourceCode, const ankerl::unordered_dense::set<std::string>& definedWords = {},
                        const PreprocessorFeatures& features = {});
 
-/**
- * @brief A directive the compiler will choke on, at a place where it will actually reach it.
- *
- * Only reported for text the preprocessor leaves behind. A `#define` inside an excluded `#if`
- * is blanked with the rest of the block and compiles fine - measured, exit 0 - so it is not one
- * of these; the same `#define` one line outside is a syntax error.
- */
 /** @brief What is wrong with a directive, which decides what the reader is told. */
 enum class DirectiveProblem : uint8_t
 {

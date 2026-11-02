@@ -280,14 +280,6 @@ static bool IsCompatibleNonMemberAccess(const std::string& fileUri, const analys
 }
 
 /**
- * @brief Resolves receiver type name from AST for member expression references in the current document.
- * @param[in] fileUri Document URI.
- * @param[in] ref Reference under test.
- * @param[in] scope Lexical scope.
- * @param[in] request Active CodeLens request.
- * @return Cleaned receiver type name, or empty string if not resolvable.
- */
-/**
  * @brief Resolves the type of an object text identifier within local or global scope.
  * @param[in] oText Identifier text.
  * @param[in] scope Lexical scope.
@@ -963,11 +955,6 @@ static std::optional<std::vector<lsp::CodeLens>> HandleVirtualUri(const CodeLens
     return std::vector<lsp::CodeLens>{std::move(lens)};
 }
 
-/**
- * @brief Groups symbols in the request document by declaration range and sorts them top-down.
- * @param[in] request Active CodeLens request.
- * @return Structured SymbolGroups.
- */
 /**
  * @brief Evaluates whether a symbol's type is enabled for CodeLens under active configuration.
  */

@@ -91,20 +91,7 @@ inline constexpr std::string_view FloatTruncation = "as-warn-float-truncation";
 // writing it is accepted with `WARNING: 'n' is not initialized.` in every shape measured.
 inline constexpr std::string_view UninitializedVariableRead = "as-warn-uninitialized-variable-read";
 
-// =====================================================================================
-// The rest, and why they arrived in one block.
-//
-// This header held 48 constants while 148 codes were being emitted, 100 of them as raw string
-// literals at 333 sites. CLAUDE.md has always said every new diagnostic must be registered
-// here, and nothing checked it: check-diagnostic-codes.py verified that a code and its message
-// agree, which is a different question and passed the whole time.
-//
-// Registering them is what lets the compiler catch a typo. A misspelled literal at an emit site
-// produces a diagnostic the message table has never heard of, and the user sees a raw code.
-// Converting the 333 emit sites to name these constants is mechanical and comes separately;
-// this block is what makes that conversion possible, and what the guard now enforces for
-// anything new.
-// =====================================================================================
+// Diagnostic code constants.
 inline constexpr std::string_view AbstractInstantiated = "as-err-abstract-instantiated";
 inline constexpr std::string_view ArrayInvalidTemplate = "as-err-array-invalid-template";
 inline constexpr std::string_view AttributeRepeated = "as-err-attribute-repeated";

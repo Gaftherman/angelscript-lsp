@@ -9,19 +9,7 @@
 
 namespace angel_lsp::codec
 {
-/**
- * @brief Translates positions between the encoding a client speaks and the byte columns
- *        Tree-sitter reports.
- *
- * Every feature handler works in Tree-sitter's own coordinates: `TSPoint::column` is a byte
- * offset into the line. `lsp::Position::character` is whatever the client and server agreed on
- * in `initialize` - UTF-16 code units unless the client offered UTF-8. On a pure-ASCII line the
- * two coincide, which is why this only ever surfaces on documents containing accented text,
- * emoji, or any other non-ASCII byte earlier in the line.
- *
- * All functions short-circuit to a no-op when `enc` is Utf8, so the negotiated-UTF-8 path costs
- * nothing beyond the branch.
- */
+// Translates positions between client encoding (UTF-16/UTF-8) and Tree-sitter byte columns.
 
 /**
  * @brief Converts an inbound client position into Tree-sitter byte columns.

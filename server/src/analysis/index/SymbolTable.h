@@ -741,7 +741,6 @@ class SymbolTable
 
     void ResolveIncludedMixins();
 
-    /** @brief Controls whether synthetic virtual mixin document URIs are generated during mixin resolution. */
     /** @brief Sets configured type names for array templates and string primitives. */
     void SetConfiguredTypes(std::string_view arrayType, std::string_view stringType)
     {
@@ -1012,8 +1011,6 @@ class SymbolTable
      * not waiting for a tooltip while it happens.
      */
     void EnsureRuleIndex() const;
-
-    void PrintSymbols(angel_lsp::utils::LspLogger* logger) const;
 
     /**
      * @brief Configures delegate property names that dynamically dispatch to the base class.

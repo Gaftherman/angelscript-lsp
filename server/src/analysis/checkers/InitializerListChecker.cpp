@@ -849,13 +849,6 @@ static void ValidateStructAggregateList(TSNode listNode, const std::string& type
 }
 
 /**
- * @brief Validates an initializer list against an expected target type.
- *
- * @param[in] listNode   The `initializer_list` node.
- * @param[in] targetType Target type being initialized.
- * @param[in] valCtx     Validation context.
- */
-/**
  * @brief Checks if a type is a universal variant proxy class with opAssign(?&in) and zero fields.
  */
 static bool IsUniversalProxyClass(const std::string& type, const ListValidationContext& valCtx)
@@ -1001,7 +994,7 @@ void InitializerListValidator::ValidateList(TSNode listNode, const std::string& 
 
     const TemplateSpelling spelling = ReadTemplateSpelling(type);
 
-    // 1. Dictionary types
+    // Dictionary types
     const DictInfo dictInfo = InspectDictionary(spelling, valCtx.ctx);
     if (dictInfo.isDict)
     {
@@ -1009,7 +1002,7 @@ void InitializerListValidator::ValidateList(TSNode listNode, const std::string& 
         return;
     }
 
-    // 2. Sequence & multi-dimensional container types
+    // Sequence & multi-dimensional container types
     const ListContainerInfo containerInfo = InspectContainer(type, spelling, valCtx.ctx, valCtx.arrayLikeTemplates);
     if (containerInfo.isContainer)
     {
@@ -1017,7 +1010,7 @@ void InitializerListValidator::ValidateList(TSNode listNode, const std::string& 
         return;
     }
 
-    // 3. Class / Struct Aggregates
+    // Class / Struct Aggregates
     const AggregateStructInfo structInfo = InspectAggregateStruct(spelling, valCtx.ctx, valCtx.cache);
     if (!structInfo.fields.empty())
     {

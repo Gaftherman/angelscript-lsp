@@ -42,34 +42,34 @@ static MatchResult MatchSymbol(std::string_view queryLower, std::string_view que
 
     std::string nameLower = ToLower(sym.name);
 
-    // 1. Exact match on name
+    // Exact match on name
     if (nameLower == queryLower)
     {
         int score = (sym.name == queryOriginal) ? 110 : 100;
         return {true, score};
     }
 
-    // 2. Prefix match on name
+    // Prefix match on name
     if (nameLower.starts_with(queryLower))
     {
         int score = (sym.name.starts_with(queryOriginal)) ? 85 : 80;
         return {true, score};
     }
 
-    // 3. Substring match on name
+    // Substring match on name
     if (nameLower.find(queryLower) != std::string::npos)
     {
         return {true, 50};
     }
 
-    // 4. Match on qualified name
+    // Match on qualified name
     std::string qualLower = ToLower(sym.qualifiedName);
     if (qualLower.find(queryLower) != std::string::npos)
     {
         return {true, 40};
     }
 
-    // 5. Fuzzy subsequence match on name
+    // Fuzzy subsequence match on name
     size_t qIdx = 0;
     for (size_t i = 0; i < nameLower.size() && qIdx < queryLower.size(); ++i)
     {

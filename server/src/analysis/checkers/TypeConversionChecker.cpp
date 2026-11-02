@@ -545,9 +545,6 @@ static bool AreHierarchyRelated(const std::string& a, const std::string& b, cons
     return false;
 }
 
-/** @brief True for the built-in scalar types plus the configured string type.
- *  @note Conversions among these are the engine's business, not a declaration's, so the
- *        rules below let every primitive-to-primitive pair through. */
 /** @brief The workspace's string type, which defaults to `string` when unconfigured. */
 static bool IsStringType(const std::string& typeName, const DiagnosticContext& ctx)
 {

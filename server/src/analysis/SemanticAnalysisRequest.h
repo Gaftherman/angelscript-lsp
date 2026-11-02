@@ -523,9 +523,6 @@ struct SemanticAnalysisRequest
         return engineProperties && engineProperties->disallowGlobalVars;
     }
 
-    /**
-     * @brief Checks if a symbol name is in the registered engine symbol allowlist.
-     */
     /** @brief Whether an unresolved parameter or return type should be reported. See
      *         config::DiagnosticsConfig::reportUnknownTypes for why this is off by default. */
     bool ReportsUnknownTypes() const
@@ -533,6 +530,9 @@ struct SemanticAnalysisRequest
         return diagnostics && diagnostics->reportUnknownTypes;
     }
 
+    /**
+     * @brief Checks if a symbol name is in the registered engine symbol allowlist.
+     */
     bool IsRegisteredSymbol(std::string_view name) const
     {
         return typeConfig && typeConfig->registeredSymbols.contains(std::string(name));

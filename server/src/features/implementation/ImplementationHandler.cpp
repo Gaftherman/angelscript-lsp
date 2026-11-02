@@ -591,13 +591,13 @@ std::optional<std::vector<lsp::Location>> GetImplementations(const Implementatio
 
     const analysis::SymbolTable& table = request.symbolTable;
 
-    // 1. The cursor on a type's own name
+    // Type name
     if (IsTypeName(name, table))
     {
         return ResolveTypeImplementations(name, table);
     }
 
-    // 2. Member method or field
+    // Member method or field
     const std::string owner = ResolveOwnerType(node, request.sourceCode, request.uri, table);
     if (!owner.empty())
     {
@@ -608,7 +608,7 @@ std::optional<std::vector<lsp::Location>> GetImplementations(const Implementatio
         }
     }
 
-    // 3. Free function fallback
+    // Free function fallback
     return ResolveFunctionImplementations(name, table);
 }
 } // namespace angel_lsp::features

@@ -6,14 +6,6 @@
 
 namespace angel_lsp::analysis
 {
-/**
- * @brief Renders AngelScript declarations back into source-faithful text.
- *
- * Every feature that shows a declaration to the user (hover, signature help, completion
- * detail) has to spell the same modifiers the same way. Keeping the rendering here means a
- * modifier that is captured by SymbolCollector cannot silently go missing in one feature
- * while showing up in another.
- */
 
 /**
  * @brief Renders the access keyword that precedes a class member declaration.

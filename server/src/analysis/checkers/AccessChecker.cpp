@@ -50,28 +50,7 @@ static bool TryReadAccess(const Symbol& sym, AccessModifier& access)
 using MemberAccess = MemberLookupResult;
 
 /**
- * @brief Finds the declaration a member name reaches through a type's inheritance chain.
- *
- * Resolves to the least restrictive candidate rather than the first one. A name can carry
- * overloads with different access - a public `Fire(int)` beside a private `Fire()` is
- * ordinary - and an access rule that picked the private one would report a call the engine
- * accepts. Public anywhere in the chain therefore ends the search.
- *
- * A member reached through a mixin is attributed to the object's own type rather than to
- * the mixin, because that is where it actually ends up: including a mixin copies its
- * members into the including class, so `private string Name` in `mixin class NameGetter`
- * becomes a private member of every class that includes it. Reading it as the mixin's own
- * was this rule's only false positive over the corpus, and it hit `this.Name = name;` in a
- * constructor - as ordinary a line as the corpus contains.
- */
-/**
- * @brief True when `get_X`/`set_X` may stand in for the member `X`.
- *
- * asEP_PROPERTY_ACCESSOR_MODE decides it, and the two settings really do accept different
- * programs. Under mode 2 any method named `get_X` is the property `X`; under mode 3 - the
- * SDK's own default - it is an ordinary method until the `property` keyword is written, and
- * `c.V` is answered with "'V' is not a member of 'C'". Under mode 3, accessors require
- * the explicit 'property' keyword decoration, whereas mode 2 accepts implicit accessor methods.
+ * @brief Checks whether property accessors (get_X/set_X) are enabled by engine configuration.
  */
 static bool AccessorStandsForProperty(const Symbol& sym, bool keywordRequired)
 {

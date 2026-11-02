@@ -83,9 +83,7 @@ struct MissingCaseColon
 class SymbolCollector
 {
   public:
-    // =====================================================================================
     // Public API
-    // =====================================================================================
 
     /** @brief Constructs the collector and pre-resolves all tree-sitter grammar symbols and the TAGS_QUERY. */
     explicit SymbolCollector(angel_lsp::utils::LspLogger* logger);
@@ -135,9 +133,7 @@ class SymbolCollector
     std::vector<Diagnostic> CollectSymbolsWithTree(const std::string& fileUri, const std::string& sourceCode,
                                                    TSTree* tree, SymbolTable& symbolTable);
 
-    // =====================================================================================
     // AST Helpers
-    // =====================================================================================
 
     /**
      * @brief Returns the child of node bound to fieldName, or a null TSNode if absent.
@@ -186,9 +182,7 @@ class SymbolCollector
     const TSQuery* m_tagsQuery = nullptr;
     const parser::GrammarSymbols& m_gs;
 
-    // =====================================================================================
     // Internal Bundled Contexts
-    // =====================================================================================
 
     /** @brief Tracks the lexical scope a TAGS_QUERY match was found in while it is dispatched. */
     struct CollectionContext
@@ -259,9 +253,7 @@ class SymbolCollector
         bool hasSemicolon = false;
     };
 
-    // =====================================================================================
     // Query Dispatch Types & Members
-    // =====================================================================================
 
     /** @brief Member-function pointer type used to dispatch a TAGS_QUERY capture to its handler. */
     using ProcessFn = void (SymbolCollector::*)(TSNode, SymbolCollectContext&, const CollectionContext&);
@@ -275,18 +267,14 @@ class SymbolCollector
     /** @brief Maps each TAGS_QUERY capture index to its validation handler. */
     std::vector<ValidationFn> m_validationDispatch;
 
-    // =====================================================================================
     // Initialization Helpers
-    // =====================================================================================
 
     void InitQueryDispatch();
     void PopulateDispatchTables();
     ProcessFn ResolveCaptureHandler(std::string_view captureName) const;
     ValidationFn ResolveValidationHandler(std::string_view captureName) const;
 
-    // =====================================================================================
     // AST Traversal & Scope Helpers
-    // =====================================================================================
 
     /** @brief Runs diagnostics and the TAGS_QUERY dispatch loop over a parsed root node. */
     void CollectFromTree(TSNode rootNode, SymbolCollectContext& sCtx);
@@ -307,9 +295,7 @@ class SymbolCollector
     void PushFunctionContainer(TSNode node, const SymbolCollectContext& sCtx,
                                std::vector<ActiveContainer>& stack) const;
 
-    // =====================================================================================
     // Declaration Collectors (TAGS_QUERY @definition.* handlers)
-    // =====================================================================================
 
     void ProcessVariable(TSNode varDeclNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
     void ProcessVirtualPropertyVariable(TSNode varDeclNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
@@ -345,22 +331,16 @@ class SymbolCollector
     void ProcessInterface(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx);
     void ProcessLambda(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx);
 
-    // =====================================================================================
     // Reference & Out-of-Body Call Collectors
-    // =====================================================================================
 
     void ProcessCallReference(TSNode callNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
 
-    // =====================================================================================
     // Validation Collectors
-    // =====================================================================================
 
     void CheckUsingDeclarationCapture(TSNode usingNode, SymbolCollectContext& sCtx) const;
     void CheckDuplicateModifierGroup(TSNode declNode, SymbolCollectContext& sCtx) const;
 
-    // =====================================================================================
     // Diagnostics & Error Recovery
-    // =====================================================================================
 
     /**
      * @brief Encapsulates syntax error classification, missing delimiters, and recovery markers for diagnostics.
@@ -381,9 +361,7 @@ class SymbolCollector
     std::string FormatSyntaxErrorMessage(std::string_view rawErrText, std::string& outCode,
                                          const angel_lsp::i18n::I18n* i18n) const;
 
-    // =====================================================================================
     // AST/Text Extraction Helpers
-    // =====================================================================================
 
     std::string GetNodeText(TSNode node, std::string_view sourceCode) const;
     std::string_view GetNodeView(TSNode node, std::string_view sourceCode) const;

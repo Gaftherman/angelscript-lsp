@@ -865,17 +865,6 @@ static void CollectEnumMembersUnderQualifier(const std::string& qualifier, Compl
 }
 
 /**
- * @brief Collects container member symbols under a scope qualifier.
- * @param[in] qualifier Qualifier container name.
- * @param[in,out] collector Completion collector context.
- */
-/**
- * @brief Resolves completion item kind and detail for a container member symbol.
- * @param[in] sym Container member symbol.
- * @param[out] kind Computed LSP completion item kind.
- * @param[out] detail Computed detail string.
- */
-/**
  * @brief Reconstructs the qualified namespace path for a lexical scope node.
  * @param[in] scope Starting lexical scope node.
  * @param[in] request Completion request context.

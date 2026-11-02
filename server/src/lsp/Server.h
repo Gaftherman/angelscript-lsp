@@ -92,15 +92,6 @@ struct CachedTokensSnapshot
 
 /**
  * @brief RAII timer recording execution duration for LSP server startup phases.
- *
- * The workspace scan reports progress as percentages that were written into the source by
- * hand: "55" for the engine profiles, "70" for the stubs. Those numbers describe the order
- * of the phases and nothing about their cost, so a report of "2942 ms to load on a small
- * project" had nowhere to be looked up. This gives every phase a number that came from a
- * clock.
- *
- * Info level, so it is in the log a user is already asked to attach to a report, and off
- * the wire otherwise.
  */
 class PhaseTimer
 {
@@ -149,7 +140,7 @@ class Server
     std::unique_ptr<lsp::MessageHandler> m_messageHandler;
     std::atomic<bool> m_running{false};
 
-    // ---- Runtime-mutable configuration ------------------------------------------------
+    // Runtime-mutable configuration
     // Everything else in m_config is written once in the constructor and can be read from any
     // thread. These three are not: didChangeWorkspaceFolders and didChangeConfiguration both
     // rewrite them on the message loop while the workspace scan and the analysis thread are
@@ -244,37 +235,14 @@ class Server
     uint64_t m_semanticTokensRevision = 0;
 
     /**
-     * @brief The last diagnostics computed for a document, as they went out on the wire.
-     *
-     * Pull diagnostics (`textDocument/diagnostic`) are answered from here rather than by
-     * running the analyzer on the message loop. That is not an optimisation: symbol
-     * collection replaces whole-document state in m_symbolTable, and the analysis thread is
-     * already doing exactly that on its own schedule. Two of them at once is a data race.
-     *
-     * Stored post-conversion - excluded `#if` lines already dropped, ranges already in the
-     * client's encoding - so a pulled diagnostic and a pushed one cannot disagree. They come
-     * from the same vector.
+     * @brief Thread-safe cached diagnostics snapshot sent over LSP wire or served to pull requests.
      */
     struct DiagnosticsSnapshot
     {
         std::string resultId;
         std::vector<lsp::Diagnostic> items;
 
-        /**
-         * @brief Hash of the document text these diagnostics were computed from.
-         *
-         * Without it the pull handler could tell "I have an answer for this document" but not
-         * "I have a *current* one", and it served whatever was last computed however old. The
-         * effect was visible and confusing: finishing a statement with `;` left the missing-`;`
-         * error on screen, because the pull answer still described the text from before the
-         * keystroke while the push notification - a separate diagnostic collection in the
-         * editor - already showed the file was fine. Typing anything else appeared to "fix" it,
-         * which is the shape of a staleness bug rather than an analysis one.
-         *
-         * A hash rather than the text: one per open document, and the worst a collision can do
-         * is serve one stale report, which is the behaviour being fixed rather than a new
-         * failure.
-         */
+        /** @brief Hash of the document text used to verify freshness against pull requests. */
         size_t textHash = 0;
         int version = -1;
         uint64_t generation = 0;
@@ -394,15 +362,7 @@ class Server
     bool m_workDoneProgressSupport = false;
 
     /**
-     * @brief Reports the workspace scan's progress to the client, if it can show it.
-     *
-     * The scan reads and indexes every script and stub under every workspace folder before any
-     * cross-file symbol resolves, and until now it did all of that silently: on a large
-     * workspace the server simply appears to know nothing for a while, which reads as broken
-     * rather than busy.
-     *
-     * Each call is a no-op when the client did not advertise support, so the scan does not have
-     * to care.
+     * @brief Reports workspace scan progress percentage and status message to the client.
      */
     void BeginWorkspaceProgress(const std::string& title);
     void ReportWorkspaceProgress(const std::string& message, unsigned percentage);
@@ -593,22 +553,7 @@ class Server
     bool SetDefinedWordsFrom(const std::string& source, std::vector<std::string> words);
 
     /**
-     * @brief Directories an `#include` in this workspace is permitted to resolve into.
-     *
-     * Workspace folders plus the configured search directories plus the parent directory of
-     * each explicitly configured predefined stub - the three places a script may legitimately
-     * include from. Everything that resolves a directive passes this to IncludeResolver, so an
-     * absolute path or a `../` walk that leaves the workspace resolves to nothing instead of
-     * reading, indexing and then serving back an arbitrary file off the user's disk.
-     *
-     * Safe to call from any thread; recomputed per call from the guarded accessors, which is
-     * cheap next to the filesystem work each resolve does anyway.
-     */
-    /**
      * @brief One configured module, resolved against the include graph.
-     *
-     * Rebuilt whenever the graph is - which is whenever an `#include` line could have moved a
-     * file between modules.
      */
     struct ModuleView
     {
@@ -687,25 +632,13 @@ class Server
     [[nodiscard]] static bool PathIsInside(const std::string& normalizedPath, const std::string& normalizedDirectory);
 
     /**
-     * @brief Re-analyses and republishes every file of every configured module.
-     *
-     * The point of naming a module: an error in a file the entry point includes reaches the
-     * Problems panel instead of waiting until that file is opened. Run on the workspace scan and
-     * on save - not on every keystroke, which would re-analyse a few hundred files after each
-     * typing pause and has not been measured at that size.
-     *
-     * Open documents are skipped. They have their own analysis, from the buffer rather than
-     * from disk, and two publishers for one URI is a race whose loser publishes an older answer.
-     */
-    /**
      * @brief Resolves a configured module path, taking a relative one as workspace-relative.
-     *
-     * Absolute is taken at face value. Relative is tried against each workspace root and the
-     * first that exists wins, matching how a relative predefined file is treated. Falls back to
-     * the path as written when none match, so the caller's error names what the user typed.
      */
     std::string ResolveConfiguredPath(const std::string& configured) const;
 
+    /**
+     * @brief Re-analyses and republishes every file of every configured module.
+     */
     void AnalyzeConfiguredModules();
 
     /** @brief True when the snapshot holds this document. Safe from any thread. */
@@ -750,16 +683,7 @@ class Server
     void AugmentSearchDirectoriesFromModules();
 
     /**
-     * @brief Indexes every file of every configured module.
-     *
-     * Without this a module is a name over an empty set. The symbol table only ever held the
-     * open document's own include closure, and two modules are by definition NOT connected by
-     * an `#include` - so the entities one module shares were invisible to the other, and the
-     * external-shared rule had nothing to find. It reported correct code as broken, which is
-     * how the feature failed its own first test.
-     *
-     * Paid only when angelscript.modules is configured: describing the modules is what asks
-     * for them all to be read.
+     * @brief Indexes every file across all configured modules into the symbol table.
      */
     void IndexConfiguredModules(angel_lsp::parser::AngelScriptParser& parser);
 
@@ -857,24 +781,16 @@ class Server
     void CollectConfiguredAllowedRoots(std::vector<std::string>& roots) const;
 
     /**
-     * @brief The suffix an unresolvable include may be retried with, or empty for none.
-     *
-     * One accessor rather than the rule repeated at each call site: resolution happens in the
-     * include graph, in hover, in document links and in the rename fix-up, and a site that
-     * forgot it would resolve differently from the rest for the same file.
-     */
-    /**
      * @brief Every file an `#include` in this workspace may name, as absolute paths.
-     *
-     * Answered from the include graph rather than by walking the disk: the graph was built by
-     * exactly the walk that decides which files count - the script extension, the workspace
-     * folders, the exclude globs - so a second walk would be both slower and free to disagree.
      */
     [[nodiscard]] std::vector<std::string> IncludableFiles() const
     {
         return m_includeGraph.AllFiles();
     }
 
+    /**
+     * @brief The suffix an unresolvable include may be retried with, or empty for none.
+     */
     [[nodiscard]] std::string_view ImplicitIncludeExtension() const noexcept
     {
         return m_config.implicitIncludeExtension ? std::string_view(m_config.info.fileExtension) : std::string_view{};
@@ -888,14 +804,7 @@ class Server
         lsp::notifications::Workspace_DidChangeConfiguration::Params&& params);
 
     /**
-     * @brief Reacts to files created, changed or deleted outside the editor.
-     *
-     * Without this the index only ever learns about a file the user opened: switching branches,
-     * pulling, or generating scripts from a build step would leave every stale symbol in place
-     * until the file happened to be opened again.
-     *
-     * Documents the client has open are skipped - their in-editor buffer is authoritative and
-     * may hold unsaved edits the copy on disk does not.
+     * @brief Handles external file create/change/delete events, updating include graph and symbol table.
      */
     void HandleNotificationsWorkspace_DidChangeWatchedFiles(
         lsp::notifications::Workspace_DidChangeWatchedFiles::Params&& params);
@@ -1051,48 +960,19 @@ class Server
     [[nodiscard]] bool IsPredefinedReady() const noexcept;
 
     /**
-     * @brief Loads the predefined stubs named by ServerConfig::predefinedFiles.
-     *
-     * Separate from the workspace scan because these are the stubs the scan cannot find: a
-     * host application's declarations normally ship with the application, outside every
-     * workspace folder.
-     *
-     * @param parser Parser to reuse across all of them.
-     * @param stopToken Checked between files, so shutdown does not wait on the whole list.
-     * @return The normalised paths actually loaded, for UnloadUnselectedPredefinedStubs. A
-     *         configured stub stays loaded whatever the active selection is.
+     * @brief Loads configured external predefined stub files from disk.
      */
     std::vector<std::string> LoadConfiguredPredefinedFiles(angel_lsp::parser::AngelScriptParser& parser,
                                                            const angel_lsp::utils::StopFlag& stopToken);
 
     /**
-     * @brief Releases every loaded stub file whose path is not in @p wantedPaths.
-     *
-     * The counterpart, for stubs on disk, of the stale-profile purge in
-     * LoadBuiltinEngineProfiles - and it was missing for years while that one existed.
-     * ClaimPredefinedFile refuses a URI it has already seen, so without this a rescan could
-     * only ever add: switching the active stub left the previous one's declarations resolving
-     * in hover and completion with no diagnostic to say they no longer exist, and the
-     * `#define`s it contributed still keeping `#if` blocks alive.
-     *
-     * Built-in profiles are untouched: their synthetic URIs have no filesystem path, so they
-     * never enter m_predefinedUriByPath.
-     *
-     * @param wantedPaths Normalised paths that survive this scan.
+     * @brief Unloads cached stub files not present in the wanted paths set.
      */
     void UnloadUnselectedPredefinedStubs(const std::vector<std::string>& wantedPaths);
 
     /**
-     * @brief Re-reads the `#define`s of a stub open in the editor, and says whether they moved.
-     *
-     * A stub is this server's description of the host's engine setup, so its `#define FOO`
-     * lines are what decide whether `#if FOO` is live code in every other open document. The
-     * disk path records them (ParserPredefined); the editor path did not, so commenting a
-     * `#define` out and saving changed the stub's symbols and left every `#if` exactly as it
-     * was until the stub was reloaded by hand.
-     *
-     * @return True when the merged set changed, i.e. when the other open documents now compile
-     *         differently and have to be re-analysed.
+     * @brief Refreshes `#define` symbols from open stub text and reports if preprocessor definitions changed.
+     * @return True if the defined words set changed and dependent documents must be re-analyzed.
      */
     bool RefreshStubDefinedWords(const std::string& uriStr, const std::string& text);
 
@@ -1150,17 +1030,7 @@ class Server
     void LogNonDefaultEngineProperties() const;
 
     /**
-     * @brief Assembles the semantic-analysis request for a document.
-     *
-     * Every caller wires the same configuration into it, and forgetting one field is how a rule
-     * silently stops running - so the assembly lives in one place.
-     *
-     * @param uriStr Document URI.
-     * @param text Document text. Must outlive the returned request.
-     * @param tree Parsed tree for that exact text, or nullptr. Must outlive the returned
-     *        request: rules that inspect expressions read through it.
-     * @param customSymbolTable Optional custom or snapshot symbol table to use instead of m_symbolTable.
-     * @return Request wired with the scope tree, type configuration and feature flags.
+     * @brief Constructs an immutable SemanticAnalysisRequest bound to active workspace state.
      */
     angel_lsp::analysis::SemanticAnalysisRequest
     BuildAnalysisRequest(const std::string& uriStr, const std::string& text, const TSTree* tree,
@@ -1198,19 +1068,7 @@ class Server
     bool CommitAnalysisResults(CommitAnalysisRequest req);
 
     /**
-     * @brief Rebuilds one document's symbols as a single atomic replacement.
-     *
-     * ClearDocumentSymbols() followed by N AddSymbol() calls is not equivalent: each takes the
-     * table's write lock on its own, so between them the document exists in the index with only
-     * some of its symbols - or none. A reader on another thread (the analysis thread running a
-     * rule that walks the whole table for a *different* document) can land in that window and
-     * emit cross-file diagnostics against a file that momentarily looks empty.
-     *
-     * Collecting into a staging table and swapping under one lock closes the window. This is
-     * the same discipline AnalyzeDocument already used; these overloads make it the default for
-     * the message-loop paths too.
-     *
-     * @return Diagnostics produced by symbol collection.
+     * @brief Replaces a document's symbols in the symbol table atomically under writer lock.
      */
     std::vector<angel_lsp::analysis::Diagnostic> ReplaceSymbolsFromTree(const std::string& uriStr,
                                                                         const std::string& text, TSTree* tree,
@@ -1249,38 +1107,12 @@ class Server
     std::vector<angel_lsp::analysis::Diagnostic> CollectScopesAndAnalyze(const CollectScopesRequest& request);
 
     /**
-     * @brief Claims a predefined stub file for the given URI, releasing any earlier spelling.
-     *
-     * Two code paths index predefined files: the background workspace scan, which synthesises
-     * a URI from the path, and didOpen, which uses whatever spelling the client sent. Both can
-     * name the same file, so ownership is tracked by canonical path instead of by URI.
-     *
-     * @param uriStr URI the caller intends to index the file under.
-     * @param forceReload Claim even when this URI already owns the file - for a caller that
-     *        knows the contents changed on disk.
-     * @return True if the caller should collect symbols; false if the file is already indexed
-     *         under this exact URI and re-collecting would only duplicate it.
-     * @pre m_predefinedMutex must be held by the caller for the whole claim-and-collect span.
+     * @brief Claims canonical ownership of a predefined stub file URI in the manager.
      */
     bool ClaimPredefinedFile(const std::string& uriStr, bool forceReload = false);
 
     /**
-     * @brief Removes everything one predefined document contributed to the index.
-     *
-     * There was no way to unload a stub at all, and three separate places wanted one: the
-     * re-spelling branch of ClaimPredefinedFile, the file-deleted branch of
-     * didChangeWatchedFiles, and switching engine profile. The first two had a copy each and
-     * the third had nothing, which is why leaving a profile left its symbols behind - a rescan
-     * only ever adds, because ClaimPredefinedFile refuses a URI it has already seen.
-     *
-     * @param uriStr The document to forget, as it was indexed. **By value on purpose**: this
-     *        erases from m_predefinedUris and m_predefinedUriByPath, and the obvious thing to
-     *        pass is a reference into one of them. Doing that dangles mid-call - it did, and
-     *        the symptom was an unload that reported success on an empty URI while the real
-     *        entry stayed. A copy makes the hazard unreachable rather than something to
-     *        remember.
-     * @return True when something was actually unloaded.
-     * @note The caller must hold m_predefinedMutex.
+     * @brief Unloads symbols, defines, and graph edges contributed by a predefined stub.
      */
     bool UnloadPredefinedUri(std::string uriStr);
 
@@ -1294,45 +1126,18 @@ class Server
     static bool PathsAreSameFile(const std::string& a, const std::string& b);
 
     /**
-     * @brief True when this stub's declarations may enter the workspace symbol table.
-     *
-     * The workspace scan honours the selection; opening a stub in the editor did not, and
-     * didOpen/didChange/didSave each loaded whatever file was in front of them. So selecting
-     * host_a and then opening host_b put host_b's types back in the table, where they resolved
-     * happily - which is the opposite of what selecting one stub is for, and invisible, because
-     * the symptom is a name that *works*.
-     *
-     * Empty means nothing has been decided: the scan has not finished, or every stub is being
-     * merged. Both are "load it".
+     * @brief Evaluates whether a predefined stub matches active engine profile and selection rules.
      */
     bool PredefinedStubContributes(const std::string& uriStr) const;
 
     /**
-     * @brief Tells the user which stub is in force, once per scan.
-     *
-     * Two things are worth saying and neither was being said. A selection naming a file the
-     * scan never saw is a typo, and staying silent about it costs the user every host type in
-     * the workspace with nothing on screen to explain why. And several stubs with no selection
-     * is the merge that this setting exists to avoid - legal, and the default, but the user
-     * should know it is happening rather than discover it as a symbol resolving twice.
-     *
-     * @param discovered Canonical paths of every stub the walk found, in walk order.
-     * @param activePath The canonical selection, or empty when there is none.
+     * @brief Sends a localized client notification specifying the active predefined engine stub.
      */
     void ReportPredefinedSelection(const std::vector<std::string>& discovered, const std::string& activePath,
                                    const std::string& autoSelected, bool mergeAll);
 
     /**
-     * @brief Canonical paths of every predefined stub the last workspace scan found.
-     *
-     * Kept so angelscript.listPredefinedStubs can answer from the message loop without walking
-     * the filesystem again - and, more importantly, so the client never has to know what counts
-     * as a stub. IsPredefinedFile matches `as.predefined` by name and `.as.predefined` by
-     * suffix; a second copy of that rule in TypeScript would drift from this one exactly as the
-     * three directory walks drifted from each other.
-     *
-     * Written by the workspace thread and read by the message loop, so it lives under the
-     * runtime-config mutex with the rest of that traffic.
+     * @brief Returns canonical file paths of all predefined stubs discovered in workspace roots.
      */
     std::vector<std::string> m_discoveredPredefined;
 
@@ -1361,15 +1166,7 @@ class Server
     bool m_clientSupportsDiagnosticRefresh = false;
 
     /**
-     * @brief Tells the client which line ranges the preprocessor drops, so it can dim them.
-     *
-     * A custom notification because LSP has none: `angelscript/inactiveRegions`, carrying the
-     * document URI and a list of `{startLine, endLine}`. It is what the C++ extension does with
-     * its own inactive regions, and for the reason this replaced painting them as comments -
-     * a semantic token cannot reach the editor's bracket-pair colouring, which paints `(`, `{`
-     * and `[` from its own feature and ignores both TextMate and semantic scopes. Dead code
-     * therefore kept rainbow brackets no matter what tokens were emitted for it. A decoration
-     * dims whatever is underneath, brackets included.
+     * @brief Sends angelscript/inactiveRegions notification for editor dimming of excluded #if blocks.
      */
     void PublishInactiveRegions(const std::string& uriStr, const std::string& text);
     /**
@@ -2024,20 +1821,7 @@ class Server
     static std::string CanonicalPathFromUri(const std::string& uriStr);
 
     /**
-     * @brief The key every map in this server uses for a document.
-     *
-     * One file arrives spelled several ways and they must not become several documents. VS Code
-     * sends `file:///e%3A/dir/f.as`; the workspace scan synthesises `file:///E:/dir/f.as` from
-     * the path it walked; an `#include` resolves to a third spelling again. Keyed raw, an edit
-     * to a file opened one way left the copy indexed the other way stale, and the predefined
-     * loader had already needed a private map of its own to work around exactly this.
-     *
-     * Answers the raw string unchanged for anything that is not a file URI - `untitled:` has no
-     * fsPath, and a document being edited before it is saved has to keep working.
-     *
-     * @warning This is a KEY, not something to send back. It is not the spelling the client
-     *          uses, so a diagnostic published under it may not reach the document the user is
-     *          looking at. PublishDiagnostics translates it back through m_clientUriByKey.
+     * @brief Returns the normalized, percent-decoded document URI used as canonical key.
      */
     static std::string DocumentKey(const std::string& uriStr);
 
@@ -2073,17 +1857,7 @@ class Server
     std::optional<OpenDocument> LookupPreindexedFallback(const std::string& key);
 
     /**
-     * @brief Resolves an incoming document URI to the open document behind it.
-     *
-     * Twenty-eight handlers opened with the same eight lines: canonicalise the URI, look it up
-     * in m_openDocuments, answer null when it is not there, then fetch the tree. Written once
-     * so a change to any of those four steps - a new encoding rule, a cancellation check - is
-     * one edit rather than twenty-eight.
-     *
-     * @param[in] uriStr Document URI string to resolve.
-     * @return The document, or nullopt when nothing by that URI is open. A request naming a
-     *         document nobody opened is answered with null rather than an error: the client is
-     *         allowed to race a close against a request it already sent.
+     * @brief Resolves an incoming document URI to an open document handle, or nullopt if closed.
      */
     std::optional<OpenDocument> LookupOpenDocument(const std::string& uriStr);
 
@@ -2147,19 +1921,14 @@ class Server
     void HandleNotificationsSetTrace(lsp::notifications::SetTrace::Params&& params);
 
     /**
-     * @brief Re-resolves open documents' `#include` directives when a script file appears.
-     *
-     * Deliberately the reverse direction from what it first looks like. The graph has no edge
-     * INTO a file that did not exist when the edge was built, so asking who includes the new
-     * file answers nobody - which is exactly the case this notification exists for. What
-     * changed is that an OPEN document's directive now names something real.
-     */
-    /**
      * @brief Clears symbols, scopes, and reindexes closure files that were created on disk.
      * @param[in] createdPaths Canonical paths of newly created files.
      */
     void InvalidateCreatedClosureFiles(const std::vector<std::string>& createdPaths);
 
+    /**
+     * @brief Re-resolves open documents' `#include` directives when a script file appears.
+     */
     void HandleNotificationsWorkspace_DidCreateFiles(lsp::notifications::Workspace_DidCreateFiles::Params&& params);
     void HandleNotificationsWorkspace_DidDeleteFiles(lsp::notifications::Workspace_DidDeleteFiles::Params&& params);
 
@@ -2248,14 +2017,7 @@ class Server
     void AppendForceIncludesClosure(std::vector<std::string>& closure) const;
 
     /**
-     * @brief Indexes every other file in the opened document's #include module.
-     *
-     * AngelScript modules are composed textually, so a file can use declarations from the file
-     * that includes it. Opening one member of a module therefore has to index the whole module,
-     * upwards as well as downwards - see WorkspaceIncludeGraph::GetModuleClosure.
-     *
-     * @param[in] openUriStr The URI of the open document whose closure is to be indexed.
-     * @return Number of files newly indexed or restored into the module closure.
+     * @brief Indexes all files within the document's #include closure graph.
      */
     size_t IndexModuleClosure(const std::string& openUriStr);
 
@@ -2497,16 +2259,7 @@ class Server
     void AnalyzeDocument(AnalyzeDocumentRequest req);
 
     /**
-     * @brief Converts handler output from Tree-sitter byte columns into the client's encoding.
-     *
-     * Feature handlers build their ranges straight from TSNode points, so everything they
-     * return is in byte columns. These overloads walk each result shape and rewrite it in
-     * place; all of them return immediately when UTF-8 was negotiated, which makes the whole
-     * layer free on clients that speak Tree-sitter's own coordinates.
-     *
-     * The `text` overloads take the source of the single document a result belongs to. The
-     * `AcrossDocuments` ones cover results that can point into other files (references,
-     * workspace symbols, multi-file rename edits) and look each document's text up by URI.
+     * @brief Encodes Tree-sitter byte positions into negotiated client coordinates (UTF-16/UTF-8).
      */
     void EncodeIn(std::string_view text, lsp::Range& range) const;
     void EncodeIn(std::string_view text, lsp::Hover& hover) const;

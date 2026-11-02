@@ -218,14 +218,6 @@ template <typename RefLike, typename TargetLike>
     return parser::primitives::IsInteger(typeName);
 }
 
-/** @brief True for AngelScript's floating point primitives. */
-/**
- * @brief Strips a namespace qualification, leaving the last segment: `NS::Foo` -> `Foo`.
- *
- * Eight files carried a private copy of these two lines, byte for byte, and a ninth open-coded
- * the same rfind/substr inline. Nothing was wrong with any of them; it is just that a name is
- * either qualified or it is not, and that is one question.
- */
 /**
  * @brief Returns the last unqualified identifier segment of a scoped name.
  * @param[in] name Qualified or unqualified identifier.
@@ -430,18 +422,6 @@ InitializerItemKind ClassifyInitializerItem(std::string_view item);
  */
 bool IsFromPredefinedStub(const Symbol& sym, const DiagnosticContext& ctx);
 
-/**
- * @brief True when a function symbol is a destructor declaration.
- *
- * SymbolCollector records `~Foo()` under the bare name "Foo", so a class with both a
- * constructor and a destructor puts two zero-parameter functions in one bucket. Nothing on the
- * signature distinguishes them, so the tilde is read back from the source - which means this
- * only answers for the document under analysis, where sourceCode is available.
- *
- * @param sym Function symbol to classify.
- * @param ctx DiagnosticContext carrying the request's source text and file URI.
- * @return True if the declaration is spelled with a leading '~'.
- */
 /**
  * @brief Checks whether a function symbol is a destructor declaration given document source text.
  * @param[in] sym Function symbol to classify.

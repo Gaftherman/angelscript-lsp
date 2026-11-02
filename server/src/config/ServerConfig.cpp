@@ -71,18 +71,6 @@ static bool IsDiagnosticSeverityName(std::string_view val)
     return val == "error" || val == "warning" || val == "information" || val == "hint";
 }
 
-/** @brief Applies one `--engine-property=<name>=<value>` pair.
- *  @return False when the name is not one this server reads, or the value does not suit it,
- *          so the caller can drop the pair.
- *  @note Names are the asEEngineProp identifiers without the asEP_ prefix, in lowerCamel -
- *        allowUnsafeReferences for asEP_ALLOW_UNSAFE_REFERENCES. Matching the engine's own
- *        vocabulary means a host author can map its SetEngineProperty calls across without
- *        translating anything, and it leaves room for the other thirty-odd properties to
- *        arrive here the day a rule needs one.
- *  @note The value arrives as text rather than a bool because not every engine property is
- *        one. Most are, and read true/false; asEP_PROPERTY_ACCESSOR_MODE is an integer, and
- *        flattening it to a bool would have made this option lie about the engine's own
- *        vocabulary in exactly the place that vocabulary is the point. */
 /**
  * @brief Applies one `--preprocessor-feature=<name>=<value>` pair.
  *

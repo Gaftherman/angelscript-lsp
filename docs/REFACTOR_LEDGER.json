@@ -1381,6 +1381,57 @@
       "verifiedByTests": [
         "NullSafetyCheckerTest"
       ]
+    },
+    {
+      "id": "REF-0084",
+      "phase": "S1",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/analysis/SemanticAnalyzer.cpp",
+      "deletedLineRange": "1040-1079",
+      "originalSymbolOrCode": "SemanticAnalyzer::CollectUsedDefinitions",
+      "whatItDidAndWhyInThatFile": "Pass 1 recursive scope walker gathering used definitions in SemanticAnalyzer.",
+      "whyChangedOrDeleted": "Superseded by canonical UnusedSymbolChecker in rules/UnusedSymbolChecker.cpp; left as unreferenced dead code in SemanticAnalyzer.",
+      "replacedByCanonicalFile": "server/src/analysis/rules/UnusedSymbolChecker.cpp",
+      "replacedByCanonicalSymbol": "CheckUnusedSymbols",
+      "ramOrCpuImpact": "Eliminated 40 lines of dead code and redundant worklist allocations.",
+      "verifiedByTests": [
+        "SemanticAnalyzerTest",
+        "UnusedSymbolCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0085",
+      "phase": "S1",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/analysis/SemanticAnalyzer.cpp",
+      "deletedLineRange": "1087-1135",
+      "originalSymbolOrCode": "SemanticAnalyzer::CheckUnusedVariables",
+      "whatItDidAndWhyInThatFile": "Pass 2 recursive scope walker emitting as-warn-unused-variable in SemanticAnalyzer.",
+      "whyChangedOrDeleted": "Superseded by canonical UnusedSymbolChecker in rules/UnusedSymbolChecker.cpp; left as unreferenced dead code in SemanticAnalyzer.",
+      "replacedByCanonicalFile": "server/src/analysis/rules/UnusedSymbolChecker.cpp",
+      "replacedByCanonicalSymbol": "CheckUnusedSymbols",
+      "ramOrCpuImpact": "Eliminated 48 lines of dead traversal logic and worklist allocations.",
+      "verifiedByTests": [
+        "SemanticAnalyzerTest",
+        "UnusedSymbolCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0086",
+      "phase": "S1",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/analysis/index/SymbolTable.cpp",
+      "deletedLineRange": "1831-2014",
+      "originalSymbolOrCode": "SymbolTable::PrintSymbols",
+      "whatItDidAndWhyInThatFile": "Diagnostic symbol table printer and text formatting helpers for logger inspection.",
+      "whyChangedOrDeleted": "Dead diagnostic logging functions completely unreferenced across the codebase; SymbolTable inspection is performed via structured SymbolTable query APIs and test assertions.",
+      "replacedByCanonicalFile": "server/src/analysis/index/SymbolTable.h",
+      "replacedByCanonicalSymbol": "ForEachSymbolInFile",
+      "ramOrCpuImpact": "Eliminated 184 lines of dead diagnostic printing code, string allocations, and binary text bloat.",
+      "verifiedByTests": [
+        "SymbolTableIndexTest",
+        "MemoryLayoutAuditTest"
+      ]
     }
   ]
 }

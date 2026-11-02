@@ -369,19 +369,7 @@ OverloadMatchResult ResolveBestOverload(std::span<const Symbol* const> candidate
                                         const std::vector<bool>& argIsLValue = {});
 
 /**
- * @brief Checks whether fromType can be widened to toType without precision loss.
- * @param fromType Source primitive type.
- * @param toType Destination primitive type.
- * @return True if widening conversion is valid.
- */
-/**
- * @brief True when two declarations take the same parameters, whoever declares them.
- *
- * The internal HasSameSignature also compares the qualified name, which is right for its own
- * question - "the same function arriving twice", from two stubs describing one library. This is
- * a different question: a method redeclared in a SUBCLASS. A member lookup walks the hierarchy
- * and finds the base's declaration alongside the derived one that overrides it, and those two
- * are one method rather than a choice between two.
+ * @brief Checks whether two declarations take the same parameters regardless of qualified name.
  */
 bool HasSameParameterList(const Symbol& left, const Symbol& right, std::string_view arrayTypeName);
 bool HasSameParameterList(const Symbol& left, const Symbol& right);
