@@ -195,4 +195,19 @@ void FilterDirectRootGlobalSymbols(std::vector<analysis::Symbol>& symbols, const
  * @return Context preference indicating class, namespace, or neutral.
  */
 ContainerContextPreference CheckContextPreference(TSNode node);
+
+/**
+ * @brief Attempts hover resolution for expressions or local definitions (auto, member access, locals, parameters, named
+ * args).
+ * @param[in] ctx Hover query context.
+ * @return Populated Hover if node is an expression or local definition, std::nullopt otherwise.
+ */
+std::optional<lsp::Hover> TryHoverExpressionOrLocal(const HoverQueryContext& ctx);
+
+/**
+ * @brief Attempts hover resolution for candidate symbols in scope or global hierarchy.
+ * @param[in,out] ctx Hover query context.
+ * @return Populated Hover if candidate symbol matches, std::nullopt otherwise.
+ */
+std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx);
 } // namespace angel_lsp::features
