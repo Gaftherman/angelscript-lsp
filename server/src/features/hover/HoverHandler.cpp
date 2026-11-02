@@ -8,6 +8,9 @@
 #include "analysis/types/TypeSanitization.h"
 #include "analysis/types/VirtualMixinContext.h"
 #include "config/EngineRuleConfig.h"
+#include "features/hover/HoverDocumentationRenderer.h"
+#include "features/hover/HoverSymbolFormatter.h"
+#include "features/hover/HoverTypeInspector.h"
 #include "i18n/i18n.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
@@ -68,522 +71,11 @@ HoverProfiler::~HoverProfiler()
 }
 
 /**
- * @brief The documentation comment above a symbol's declaration, read out of its own file.
- *
- * `request.sourceCode` is the file being hovered over, and a symbol's `startLine` counts
- * lines in the file that *declares* it. Pairing the two showed whatever happened to be at
- * that line number here, which for a cross-file hover is an unrelated comment about
- * something else. Empty rather than wrong when the declaring file's text is not held: the
- * declaration may have been indexed and released, and a hover with no documentation is a
- * hover that simply says less.
- *
- * The same-file case still goes through `request.sourceCode` directly, without a lookup -
- * that is the common path and the URIs match by construction.
+ * @brief Finds the byte span of a target line in the source buffer.
+ * @param[in] sourceCode Source text buffer.
+ * @param[in] targetLine 0-indexed line number.
+ * @return Pair of start and end byte indices, or (npos, npos) if out of bounds.
  */
-static std::string OwnDocComment(const HoverRequest& request, const analysis::Symbol& symbol)
-{
-    if (symbol.fileUri.empty() || symbol.fileUri == request.uri)
-    {
-        return analysis::ExtractDocComment(request.sourceCode, symbol.startLine);
-    }
-
-    if (!request.readDocument)
-    {
-        return "";
-    }
-
-    const std::string* declaringText = request.readDocument(symbol.fileUri);
-    if (!declaringText)
-    {
-        return "";
-    }
-
-    return analysis::ExtractDocComment(*declaringText, symbol.startLine);
-}
-
-/**
- * @brief Retrieves doc comment from a companion property or getter/setter.
- * @param[in] request Hover request context.
- * @param[in] symbol Symbol being hovered.
- * @return Companion doc comment string, or empty if none found.
- */
-static std::string CompanionDocComment(const HoverRequest& request, const analysis::Symbol& symbol)
-{
-    if (symbol.containerName.empty())
-    {
-        return "";
-    }
-    std::string propName = symbol.name;
-    if (propName.starts_with("get_") || propName.starts_with("set_"))
-    {
-        propName = propName.substr(4);
-    }
-    const std::string candidates[] = {utils::JoinScopedName(symbol.containerName, propName),
-                                      utils::JoinScopedName(symbol.containerName, "get_" + propName),
-                                      utils::JoinScopedName(symbol.containerName, "set_" + propName)};
-    for (const auto& candidateName : candidates)
-    {
-        if (candidateName == symbol.qualifiedName)
-        {
-            continue;
-        }
-        const auto companionSyms = request.symbolTable.FindSymbolsPtr(candidateName);
-        if (!companionSyms)
-        {
-            continue;
-        }
-        for (const auto& comp : *companionSyms)
-        {
-            std::string doc = OwnDocComment(request, comp);
-            if (!doc.empty())
-            {
-                return doc;
-            }
-        }
-    }
-    return "";
-}
-
-/**
- * @brief Retrieves doc comment from an overridden method in ancestor types.
- * @param[in] request Hover request context.
- * @param[in] symbol Symbol being hovered.
- * @return Inherited doc comment string, or empty if none found.
- */
-static std::string InheritedDocComment(const HoverRequest& request, const analysis::Symbol& symbol)
-{
-    if (symbol.type != analysis::SymbolType::Function || symbol.containerName.empty())
-    {
-        return "";
-    }
-
-    for (const auto& ancestor : analysis::GetInheritedTypeHierarchy(symbol.containerName, request.symbolTable))
-    {
-        if (ancestor == symbol.containerName)
-        {
-            continue;
-        }
-
-        const auto inherited = request.symbolTable.FindMemberSymbolPtr(ancestor, symbol.name);
-        if (!inherited)
-        {
-            continue;
-        }
-
-        for (const auto& candidate : *inherited)
-        {
-            std::string doc = OwnDocComment(request, candidate);
-            if (!doc.empty())
-            {
-                return doc;
-            }
-        }
-    }
-
-    analysis::LinkedBaseOptions linkedOpts;
-    if (request.config)
-    {
-        linkedOpts.proxyMap = &request.config->engineRules.unusedRules.baseClassProxyMap;
-        linkedOpts.delegateProps = request.config->engineRules.unusedRules.baseClassDelegateProperties;
-    }
-
-    const auto linkedSymbols =
-        analysis::FindOverriddenBaseMethodSymbols(symbol.containerName, symbol.name, request.symbolTable, linkedOpts);
-    for (const auto& candidate : linkedSymbols)
-    {
-        std::string doc = OwnDocComment(request, candidate);
-        if (!doc.empty())
-        {
-            return doc;
-        }
-    }
-
-    return "";
-}
-
-/**
- * @brief The comment on a symbol, or the one on the declaration it overrides.
- *
- * An implementation carries no comment of its own far more often than not - the interface
- * is where the contract is written, and repeating it on every implementer is exactly what
- * nobody does. Inherited only when the method has none itself, and only from an ancestor
- * of its own container, so an unrelated method with the same name elsewhere is never
- * consulted. The hierarchy walk returns the container first, so the loop skips it: it was
- * already asked, and it answered nothing.
- */
-static std::string DocCommentForSymbol(const HoverRequest& request, const analysis::Symbol& symbol)
-{
-    std::string own = OwnDocComment(request, symbol);
-    if (!own.empty())
-    {
-        return own;
-    }
-
-    std::string companion = CompanionDocComment(request, symbol);
-    if (!companion.empty())
-    {
-        return companion;
-    }
-
-    return InheritedDocComment(request, symbol);
-}
-
-static std::string FormatFunctionSignature(const analysis::Symbol& sym)
-{
-    return analysis::FormatFunctionDeclaration(sym);
-}
-
-static std::string FormatClassSignature(const analysis::Symbol& sym)
-{
-    return analysis::FormatTypeDeclaration(sym);
-}
-
-/** @brief Squeezes runs of whitespace into single spaces so a declaration that was wrapped
- *         across lines in source appears on one line in the hover tooltip. */
-static std::string CollapseWhitespace(std::string_view text)
-{
-    std::string result;
-    result.reserve(text.size());
-
-    bool inWhitespace = false;
-    for (char c : text)
-    {
-        if (c == ' ' || c == '\t' || c == '\r' || c == '\n')
-        {
-            if (!inWhitespace)
-            {
-                result.push_back(' ');
-                inWhitespace = true;
-            }
-        }
-        else
-        {
-            result.push_back(c);
-            inWhitespace = false;
-        }
-    }
-
-    auto start = result.find_first_not_of(' ');
-    if (start == std::string::npos)
-    {
-        return "";
-    }
-    auto end = result.find_last_not_of(' ');
-    return result.substr(start, end - start + 1);
-}
-
-/** @brief Finds the declaration node enclosing a point and reads its text back.
- *  @param root Tree-sitter root node of the file containing the declaration.
- *  @param sourceCode Source text of that file.
- *  @param point 0-based row and column of the declaration name.
- *  @param wantedNodeType AST node type to climb to, e.g. "parameter".
- *  @return Whitespace-collapsed declaration text, or an empty string if not found.
- *  @note LocalDefinition only records a type for variables, so a parameter hovered at a use
- *        site inside the body has nothing to show. The declaration position it does record
- *        is enough to find the declaring node and read it back with every modifier the user
- *        wrote ('const', '@', '&in'/'&out'/'&inout') still attached. */
-static std::string ExtractDeclarationTextAt(TSNode root, const std::string& sourceCode, TSPoint point,
-                                            TSSymbol wantedSymbol)
-{
-    if (ts_node_is_null(root))
-    {
-        return "";
-    }
-
-    TSNode current = ts_node_descendant_for_point_range(root, point, point);
-    TSNode declNode = parser::FindAncestorWithSymbol(current, wantedSymbol);
-    if (!ts_node_is_null(declNode))
-    {
-        const uint32_t start = ts_node_start_byte(declNode);
-        const uint32_t end = ts_node_end_byte(declNode);
-        if (start < end && end <= sourceCode.size())
-        {
-            return CollapseWhitespace(sourceCode.substr(start, end - start));
-        }
-    }
-    return "";
-}
-
-/** @brief Renders the hover line for a variable-like symbol, tagged with its role.
- *  @param sym Symbol of type Variable or Property.
- *  @param role Prefix shown to the user, e.g. "(property) " or "(global variable) ". */
-static std::string FormatVariableSignature(const analysis::Symbol& sym, const char* role)
-{
-    if (sym.type != analysis::SymbolType::Variable && sym.type != analysis::SymbolType::Property)
-    {
-        return std::string(role) + sym.name;
-    }
-    if (!std::holds_alternative<analysis::VariableSignature>(sym.signature))
-    {
-        return std::string(role) + sym.name;
-    }
-    if (sym.containerKind == analysis::ContainerKind::Enum || sym.GetVariable().isEnumConstant)
-    {
-        role = "(enum member) ";
-        return std::string(role) + analysis::FormatVariableDeclaration(sym.GetVariable(), sym.name);
-    }
-    std::string displayName = sym.name;
-    if (sym.containerKind == analysis::ContainerKind::Namespace && !sym.containerName.empty())
-    {
-        displayName = utils::JoinScopedName(sym.containerName, sym.name);
-    }
-    return std::string(role) + analysis::FormatVariableDeclaration(sym.GetVariable(), displayName);
-}
-
-static bool IsContainerProperty(std::string_view containerName, const analysis::SymbolTable* symbolTable)
-{
-    if (containerName.empty() || !symbolTable)
-    {
-        return !containerName.empty();
-    }
-    auto containerSyms = symbolTable->FindSymbolsPtr(containerName);
-    if (!containerSyms)
-    {
-        return false;
-    }
-    for (const auto& cs : *containerSyms)
-    {
-        if (cs.type == analysis::SymbolType::Class || cs.type == analysis::SymbolType::Interface)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool IsVariableProperty(const analysis::Symbol& sym, const analysis::SymbolTable* symbolTable)
-{
-    if (sym.containerKind == analysis::ContainerKind::Enum)
-    {
-        return false;
-    }
-    if (std::holds_alternative<analysis::VariableSignature>(sym.signature) && sym.GetVariable().isEnumConstant)
-    {
-        return false;
-    }
-    return IsContainerProperty(sym.containerName, symbolTable);
-}
-
-static std::string FormatNamespaceDeclaration(const analysis::Symbol& sym)
-{
-    if (!sym.qualifiedName.empty())
-    {
-        return "namespace " + sym.qualifiedName;
-    }
-    if (!sym.containerName.empty())
-    {
-        return "namespace " + utils::JoinScopedName(sym.containerName, sym.name);
-    }
-    return "namespace " + sym.name;
-}
-
-static std::string FormatVariableOrProperty(const analysis::Symbol& sym, const analysis::SymbolTable* symbolTable)
-{
-    if (sym.containerKind == analysis::ContainerKind::Enum || sym.GetVariable().isEnumConstant)
-    {
-        return FormatVariableSignature(sym, "(enum member) ");
-    }
-    const bool isProperty = IsVariableProperty(sym, symbolTable);
-    return FormatVariableSignature(sym, isProperty ? "(property) " : "(global variable) ");
-}
-
-static std::string FormatSymbolBody(const analysis::Symbol& sym, const analysis::SymbolTable* symbolTable)
-{
-    switch (sym.type)
-    {
-    case analysis::SymbolType::Function:
-    case analysis::SymbolType::Funcdef:
-        return FormatFunctionSignature(sym);
-    case analysis::SymbolType::Class:
-    case analysis::SymbolType::Interface:
-        return FormatClassSignature(sym);
-    case analysis::SymbolType::Enum:
-    {
-        const std::string enumName =
-            !sym.containerName.empty() ? utils::JoinScopedName(sym.containerName, sym.name) : sym.name;
-        return "enum " + enumName;
-    }
-    case analysis::SymbolType::Variable:
-        return FormatVariableOrProperty(sym, symbolTable);
-    case analysis::SymbolType::Typedef:
-    {
-        const std::string tdName =
-            !sym.containerName.empty() ? utils::JoinScopedName(sym.containerName, sym.name) : sym.name;
-        return "typedef " + sym.GetTypedef().baseType + " " + tdName;
-    }
-    case analysis::SymbolType::Namespace:
-        return FormatNamespaceDeclaration(sym);
-    case analysis::SymbolType::Property:
-        if (std::holds_alternative<analysis::VariableSignature>(sym.signature))
-        {
-            return FormatVariableSignature(sym, "(property) ");
-        }
-        return "(property) " + sym.name;
-    default:
-        return sym.name;
-    }
-}
-
-/** @brief Renders the single hover line that describes a symbol of any kind. */
-static std::string FormatDeclarationText(const analysis::Symbol& sym,
-                                         const analysis::SymbolTable* symbolTable = nullptr)
-{
-    std::string metaPrefix;
-    for (const auto& meta : sym.metadata)
-    {
-        metaPrefix += meta + "\n";
-    }
-    return metaPrefix + FormatSymbolBody(sym, symbolTable);
-}
-
-/** @brief Drops symbols that are the same declaration seen twice.
- *  @note A file reachable under two URI spellings (workspace scan vs. client didOpen) used
- *        to be collected once per spelling, which showed every overload twice in the hover.
- *        The server de-duplicates at index time; this is the last line of defence so a
- *        stale duplicate can never reach the user. */
-static void RemoveDuplicateSymbols(std::vector<analysis::Symbol>& symbols)
-{
-    std::vector<analysis::Symbol> unique;
-    unique.reserve(symbols.size());
-    for (const auto& sym : symbols)
-    {
-        const bool duplicate = std::any_of(unique.begin(), unique.end(),
-                                           [&](const analysis::Symbol& kept)
-                                           {
-                                               if (kept.name != sym.name || kept.type != sym.type)
-                                                   return false;
-                                               if (!sym.fileUri.empty() && !kept.fileUri.empty() &&
-                                                   sym.fileUri == kept.fileUri && sym.startLine == kept.startLine)
-                                                   return true;
-                                               return FormatDeclarationText(kept) == FormatDeclarationText(sym);
-                                           });
-        if (!duplicate)
-        {
-            unique.push_back(sym);
-        }
-    }
-    symbols = std::move(unique);
-}
-
-static bool IsHoverableIdentifier(std::string_view txt, TSSymbol sym, const parser::GrammarSymbols& gs)
-{
-    if (txt == "?" || sym == gs.symDatatype || sym == gs.symIdentifier || sym == gs.symScopedIdentifier ||
-        sym == gs.symPrimitiveType || sym == gs.symStringLiteral || analysis::IsPrimitiveTypeName(std::string(txt)) ||
-        analysis::IsReservedKeyword(std::string(txt)))
-    {
-        return true;
-    }
-
-    if (!txt.empty() && (isalpha(static_cast<unsigned char>(txt[0])) || txt[0] == '_'))
-    {
-        for (char c : txt)
-        {
-            if (!isalnum(static_cast<unsigned char>(c)) && c != '_')
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-    return false;
-}
-
-static std::optional<HoverTarget> TryExtractHoverTarget(TSNode node, const std::string& sourceCode)
-{
-    if (ts_node_is_null(node))
-    {
-        return std::nullopt;
-    }
-    const uint32_t sb = ts_node_start_byte(node);
-    const uint32_t eb = ts_node_end_byte(node);
-    if (sb >= sourceCode.size() || eb > sourceCode.size() || sb >= eb)
-    {
-        return std::nullopt;
-    }
-
-    std::string txt = sourceCode.substr(sb, eb - sb);
-    if (!IsHoverableIdentifier(txt, ts_node_symbol(node), parser::GetGrammarSymbols()))
-    {
-        return std::nullopt;
-    }
-
-    TSPoint sp = ts_node_start_point(node);
-    TSPoint ep = ts_node_end_point(node);
-    return HoverTarget{node, std::move(txt), lsp::Range{{sp.row, sp.column}, {ep.row, ep.column}}};
-}
-
-static std::optional<HoverTarget> ExtractHoverNode(TSNode rootNode, const std::string& sourceCode, TSPoint point)
-{
-    TSNode node = ts_node_descendant_for_point_range(rootNode, point, point);
-    if (ts_node_is_null(node))
-    {
-        return std::nullopt;
-    }
-
-    if (auto target = TryExtractHoverTarget(node, sourceCode))
-    {
-        return target;
-    }
-
-    if (auto target = TryExtractHoverTarget(parser::GetParent(node), sourceCode))
-    {
-        return target;
-    }
-
-    if (point.column > 0)
-    {
-        TSPoint prevPt = {point.row, point.column - 1};
-        TSNode prevNode = ts_node_descendant_for_point_range(rootNode, prevPt, prevPt);
-        if (auto target = TryExtractHoverTarget(prevNode, sourceCode))
-        {
-            return target;
-        }
-        if (!ts_node_is_null(prevNode))
-        {
-            if (auto target = TryExtractHoverTarget(parser::GetParent(prevNode), sourceCode))
-            {
-                return target;
-            }
-        }
-    }
-
-    return std::nullopt;
-}
-
-/**
- * @brief The local definition whose own name spans this position.
- *
- * Null when the cursor is on a use rather than on a declaration, which is the ordinary case
- * and the one ResolveInScope answers. The ranges compared here are the name's, not the whole
- * declaration's, so a position inside one can only ever be that name.
- */
-static const analysis::LocalDefinition* DefinitionAtPosition(const analysis::Scope* scope,
-                                                             const lsp::Position& position)
-{
-    analysis::ScopeTraversalGuard cycleGuard;
-    for (const analysis::Scope* current = scope; current != nullptr; current = current->parent)
-    {
-        if (!cycleGuard.CheckAndInsert(current))
-        {
-            break;
-        }
-        for (const analysis::LocalDefinition& def : current->definitions)
-        {
-            const bool afterStart = position.line > def.startLine ||
-                                    (position.line == def.startLine && position.character >= def.startCharacter);
-            const bool beforeEnd =
-                position.line < def.endLine || (position.line == def.endLine && position.character <= def.endCharacter);
-
-            if (afterStart && beforeEnd)
-            {
-                return &def;
-            }
-        }
-    }
-
-    return nullptr;
-}
-
 static std::pair<size_t, size_t> FindLineSpan(const std::string& sourceCode, uint32_t targetLine)
 {
     size_t start = 0;
@@ -600,6 +92,12 @@ static std::pair<size_t, size_t> FindLineSpan(const std::string& sourceCode, uin
     return {start, end == std::string::npos ? sourceCode.size() : end};
 }
 
+/**
+ * @brief Parses include directive on a line and returns range and path if cursor is on it.
+ * @param[in] line Line text.
+ * @param[in] character Cursor column offset.
+ * @return Parsed include directive info or std::nullopt.
+ */
 static std::optional<IncludeDirectiveInfo> ParseIncludeDirective(std::string_view line, size_t character)
 {
     const auto info = angel_lsp::utils::IncludeResolver::ParseSingleLineInclude(line, character);
@@ -611,17 +109,9 @@ static std::optional<IncludeDirectiveInfo> ParseIncludeDirective(std::string_vie
 }
 
 /**
- * @brief Answers a hover on an `#include` line with the file it actually resolves to.
- *
- * Reported as a want: the line says `#include "helper.as"` and gives no hint which of the
- * search directories won, or whether it resolved at all. The path is the answer.
- *
- * Text-based rather than tree-based on purpose. The grammar produces one opaque
- * `preproc_directive` node for the whole line, so there is nothing inside it to locate a
- * cursor against. This finds the quotes on the cursor's line and answers only when the
- * cursor is on the directive.
- *
- * @return A hover, or nullopt when the line is not an `#include` this can answer.
+ * @brief Produces hover tooltip for #include directives.
+ * @param[in] request Hover request context.
+ * @return Hover result if on an include line, std::nullopt otherwise.
  */
 static std::optional<lsp::Hover> HoverIncludeDirective(const HoverRequest& request)
 {
@@ -670,237 +160,150 @@ static std::optional<lsp::Hover> HoverIncludeDirective(const HoverRequest& reque
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(markdown)}, range};
 }
 
-static bool MatchesTargetNode(TSNode candidate, TSNode target)
+/**
+ * @brief Checks if a token text and symbol match hoverable identifier rules.
+ * @param[in] txt Token string view.
+ * @param[in] sym Grammar symbol ID.
+ * @param[in] gs Precompiled grammar symbols.
+ * @return True if hoverable, false otherwise.
+ */
+static bool IsHoverableIdentifier(std::string_view txt, TSSymbol sym, const parser::GrammarSymbols& gs)
 {
-    return !ts_node_is_null(candidate) &&
-           (ts_node_eq(candidate, target) || ts_node_start_byte(candidate) == ts_node_start_byte(target));
-}
-
-static TSNode FindCallFromParent(TSNode parent, TSNode node)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol pType = ts_node_symbol(parent);
-    if (pType == gs.symCallExpression)
+    if (txt == "?" || sym == gs.symDatatype || sym == gs.symIdentifier || sym == gs.symScopedIdentifier ||
+        sym == gs.symPrimitiveType || sym == gs.symStringLiteral || analysis::IsPrimitiveTypeName(std::string(txt)) ||
+        analysis::IsReservedKeyword(std::string(txt)))
     {
-        TSNode fn = parser::GetChildByField(parent, gs.fieldFunction);
-        if (MatchesTargetNode(fn, node))
+        return true;
+    }
+
+    if (!txt.empty() && (isalpha(static_cast<unsigned char>(txt[0])) || txt[0] == '_'))
+    {
+        for (char c : txt)
         {
-            return parent;
-        }
-    }
-    else if (pType == gs.symConstructCallExpression)
-    {
-        TSNode typeChild = parser::GetChildByField(parent, gs.fieldType);
-        if (MatchesTargetNode(typeChild, node))
-        {
-            return parent;
-        }
-    }
-    return TSNode{};
-}
-
-static TSNode FindEnclosingCallNode(TSNode node)
-{
-    TSNode parent = parser::GetParent(node);
-    if (ts_node_is_null(parent))
-    {
-        return TSNode{};
-    }
-
-    if (TSNode call = FindCallFromParent(parent, node); !ts_node_is_null(call))
-    {
-        return call;
-    }
-
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol pType = ts_node_symbol(parent);
-    if (pType == gs.symDatatype || pType == gs.symMemberExpression || pType == gs.symScopedIdentifier)
-    {
-        TSNode grandParent = parser::GetParent(parent);
-        if (!ts_node_is_null(grandParent))
-        {
-            if (TSNode call = FindCallFromParent(grandParent, parent); !ts_node_is_null(call))
+            if (!isalnum(static_cast<unsigned char>(c)) && c != '_')
             {
-                return call;
+                return false;
             }
         }
+        return true;
     }
-    return TSNode{};
+    return false;
 }
 
 /**
- * @brief If node represents the callee in a call_expression, extracts argument types
- * and resolves the best matching candidate from the overload set.
+ * @brief Attempts to extract hover target descriptor from an AST node.
+ * @param[in] node AST candidate node.
+ * @param[in] sourceCode Source text buffer.
+ * @return Hover target if valid, std::nullopt otherwise.
  */
-static std::optional<analysis::Symbol> ResolveCallOverload(TSNode node, const std::vector<analysis::Symbol>& candidates,
-                                                           const HoverRequest& request, const analysis::Scope* scope)
+static std::optional<HoverTarget> TryExtractHoverTarget(TSNode node, const std::string& sourceCode)
 {
-    if (candidates.empty())
+    if (ts_node_is_null(node))
     {
         return std::nullopt;
     }
-    if (candidates.size() == 1)
-    {
-        return candidates.front();
-    }
-
-    TSNode callNode = FindEnclosingCallNode(node);
-    if (ts_node_is_null(callNode))
+    const uint32_t sb = ts_node_start_byte(node);
+    const uint32_t eb = ts_node_end_byte(node);
+    if (sb >= sourceCode.size() || eb > sourceCode.size() || sb >= eb)
     {
         return std::nullopt;
     }
 
-    std::vector<std::string> argTypes =
-        analysis::ExtractCallArgumentTypes(callNode, {scope, request.symbolTable, request.sourceCode, request.uri});
-
-    auto match = analysis::ResolveBestOverload(candidates, argTypes, request.symbolTable);
-    if (match.bestCandidate != nullptr)
+    std::string txt = sourceCode.substr(sb, eb - sb);
+    if (!IsHoverableIdentifier(txt, ts_node_symbol(node), parser::GetGrammarSymbols()))
     {
-        return *match.bestCandidate;
-    }
-    if (match.priorityCandidate != nullptr)
-    {
-        return *match.priorityCandidate;
+        return std::nullopt;
     }
 
-    const analysis::Symbol* fallback = analysis::FindBestFallbackOverload(candidates, argTypes, request.symbolTable);
-    if (fallback != nullptr)
+    TSPoint sp = ts_node_start_point(node);
+    TSPoint ep = ts_node_end_point(node);
+    return HoverTarget{node, std::move(txt), lsp::Range{{sp.row, sp.column}, {ep.row, ep.column}}};
+}
+
+/**
+ * @brief Extracts the hover target AST node under the cursor point.
+ * @param[in] rootNode Tree root node.
+ * @param[in] sourceCode Source text buffer.
+ * @param[in] point Cursor position coordinates.
+ * @return Hover target if found, std::nullopt otherwise.
+ */
+static std::optional<HoverTarget> ExtractHoverNode(TSNode rootNode, const std::string& sourceCode, TSPoint point)
+{
+    TSNode node = ts_node_descendant_for_point_range(rootNode, point, point);
+    if (ts_node_is_null(node))
     {
-        return *fallback;
+        return std::nullopt;
     }
-    if (!candidates.empty())
+
+    if (auto target = TryExtractHoverTarget(node, sourceCode))
     {
-        return candidates.front();
+        return target;
     }
+
+    if (auto target = TryExtractHoverTarget(parser::GetParent(node), sourceCode))
+    {
+        return target;
+    }
+
+    if (point.column > 0)
+    {
+        TSPoint prevPt = {point.row, point.column - 1};
+        TSNode prevNode = ts_node_descendant_for_point_range(rootNode, prevPt, prevPt);
+        if (auto target = TryExtractHoverTarget(prevNode, sourceCode))
+        {
+            return target;
+        }
+        if (!ts_node_is_null(prevNode))
+        {
+            if (auto target = TryExtractHoverTarget(parser::GetParent(prevNode), sourceCode))
+            {
+                return target;
+            }
+        }
+    }
+
     return std::nullopt;
 }
 
 /**
- * @brief Formats primitive type documentation including localized description, values or range.
- * @param[in] typeName Primitive type name.
- * @param[in] i18n Optional localization dictionary pointer.
- * @return Formatted markdown string.
+ * @brief Locates the local definition whose name spans the specified position.
+ * @param[in] scope Starting lexical scope.
+ * @param[in] position Query position.
+ * @return Matching LocalDefinition pointer, or nullptr if not on declaration name.
  */
-static std::string FormatPrimitiveDoc(std::string_view typeName, const angel_lsp::i18n::I18n* i18n)
+static const analysis::LocalDefinition* DefinitionAtPosition(const analysis::Scope* scope,
+                                                             const lsp::Position& position)
 {
-    auto info = parser::primitives::GetPrimitiveDocInfo(typeName);
-    if (!info)
+    analysis::ScopeTraversalGuard cycleGuard;
+    for (const analysis::Scope* current = scope; current != nullptr; current = current->parent)
     {
-        return {};
-    }
-    std::string key = "hover-primitive-desc-";
-    key += typeName;
-    std::string desc = angel_lsp::i18n::FormatMessage(i18n, key, std::string(info->description));
-    if (info->range.empty())
-    {
-        return desc;
-    }
-    if (typeName == "bool")
-    {
-        return desc + "\n\n" +
-               angel_lsp::i18n::FormatMessage(i18n, "hover-primitive-values", "Values: `{}`", info->range);
-    }
-    return desc + "\n\n" + angel_lsp::i18n::FormatMessage(i18n, "hover-primitive-range", "Range: `{}`", info->range);
-}
-
-static std::optional<lsp::Hover> TryHoverPrimitiveType(std::string_view nodeText, const lsp::Range& range,
-                                                       const angel_lsp::i18n::I18n* i18n, HoverProfiler& profiler)
-{
-    if (!analysis::IsPrimitiveTypeName(nodeText) || nodeText == "auto")
-    {
-        return std::nullopt;
-    }
-    profiler.nodeType = "primitive_type";
-    if (profiler.IsActive())
-    {
-        profiler.pathText = std::string(nodeText);
-        profiler.symbolName = std::string(nodeText);
-    }
-    utils::HighResTimer fmtTimer;
-    std::string md = "```angelscript\n(primitive type) " + std::string(nodeText) + "\n```";
-    std::string doc = FormatPrimitiveDoc(nodeText, i18n);
-    if (!doc.empty())
-    {
-        md += "\n\n" + doc;
-    }
-    profiler.fmtMs += fmtTimer.ElapsedMs();
-    return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, range};
-}
-
-/**
- * @brief Attempts to produce hover documentation for the wildcard type '?'.
- * @param[in] nodeText Text of the hover target.
- * @param[in] range Target range in the document.
- * @param[in] i18n Optional localization dictionary pointer.
- * @param[in,out] profiler Performance profiler.
- * @return Populated Hover if nodeText is '?', std::nullopt otherwise.
- */
-static std::optional<lsp::Hover> TryHoverWildcardType(std::string_view nodeText, const lsp::Range& range,
-                                                      const angel_lsp::i18n::I18n* i18n, HoverProfiler& profiler)
-{
-    if (nodeText != "?")
-    {
-        return std::nullopt;
-    }
-    profiler.nodeType = "wildcard_type";
-    if (profiler.IsActive())
-    {
-        profiler.pathText = "?";
-        profiler.symbolName = "?";
-    }
-    utils::HighResTimer fmtTimer;
-    std::string desc = angel_lsp::i18n::FormatMessage(
-        i18n, "hover-wildcard-type-desc",
-        "The variable type `?` represents any type. It is used in parameter declarations "
-        "to accept arguments of any type by reference (`?& in`, `?& out`, `?& inout`).");
-    std::string md = "```angelscript\n(variable type) ?\n```\n\n" + desc;
-    profiler.fmtMs += fmtTimer.ElapsedMs();
-    return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, range};
-}
-
-static std::optional<lsp::Hover> TryHoverThis(const HoverQueryContext& ctx)
-{
-    if (ctx.nodeText != "this")
-    {
-        return std::nullopt;
-    }
-
-    std::string className;
-    if (ctx.vctx.isVirtual && !ctx.vctx.hostClass.empty())
-    {
-        className = ctx.vctx.hostClass;
-    }
-    else
-    {
-        auto containers = analysis::GetEnclosingContainers(ctx.node, ctx.request.sourceCode);
-        for (const auto& c : containers)
+        if (!cycleGuard.CheckAndInsert(current))
         {
-            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
+            break;
+        }
+        for (const analysis::LocalDefinition& def : current->definitions)
+        {
+            const bool afterStart = position.line > def.startLine ||
+                                    (position.line == def.startLine && position.character >= def.startCharacter);
+            const bool beforeEnd =
+                position.line < def.endLine || (position.line == def.endLine && position.character <= def.endCharacter);
+
+            if (afterStart && beforeEnd)
             {
-                className = c.name;
-                break;
+                return &def;
             }
         }
     }
 
-    if (className.empty())
-    {
-        return std::nullopt;
-    }
-
-    ctx.profiler.nodeType = "this";
-    if (ctx.profiler.IsActive())
-    {
-        ctx.profiler.pathText = "this";
-        ctx.profiler.symbolName = className;
-    }
-
-    utils::HighResTimer fmtTimer;
-    std::string md = fmt::format("```angelscript\n(self) {} {}\n```", className, ctx.nodeText);
-    ctx.profiler.fmtMs += fmtTimer.ElapsedMs();
-    return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, ctx.range};
+    return nullptr;
 }
 
+/**
+ * @brief Tests whether an AST node is the member field of a member_expression parent.
+ * @param[in] node Child AST node.
+ * @param[in] parent Enclosing parent node.
+ * @return True if node is member child, false otherwise.
+ */
 static bool IsMemberChildOfExpression(TSNode node, TSNode parent)
 {
     const auto& gs = parser::GetGrammarSymbols();
@@ -913,6 +316,12 @@ static bool IsMemberChildOfExpression(TSNode node, TSNode parent)
            (ts_node_eq(memNode, node) || ts_node_start_byte(memNode) == ts_node_start_byte(node));
 }
 
+/**
+ * @brief Resolves receiver type name of an object expression node.
+ * @param[in] objectNode Object expression TSNode.
+ * @param[in] ctx Hover query context.
+ * @return Qualified receiver type name or empty string.
+ */
 static std::string ResolveReceiverTypeName(TSNode objectNode, const HoverQueryContext& ctx)
 {
     const config::EngineRuleConfig* engineRules = ctx.request.config ? &ctx.request.config->engineRules : nullptr;
@@ -932,6 +341,13 @@ static std::string ResolveReceiverTypeName(TSNode objectNode, const HoverQueryCo
     return receiverTypeName;
 }
 
+/**
+ * @brief Collects all member symbols matching name across receiver type hierarchy.
+ * @param[in] receiverTypeName Base container type name.
+ * @param[in] memberName Member identifier text.
+ * @param[in] symbolTable Workspace symbol table.
+ * @return Member symbols list with deduplicated overloads.
+ */
 static std::vector<analysis::Symbol> CollectReceiverMemberSymbols(const std::string& receiverTypeName,
                                                                   std::string_view memberName,
                                                                   const analysis::SymbolTable& symbolTable)
@@ -977,450 +393,10 @@ static std::vector<analysis::Symbol> CollectReceiverMemberSymbols(const std::str
 }
 
 /**
- * @brief Appends underlying primitive type description and range for typedef symbols.
- * @param request Hover request context.
- * @param sym Candidate symbol.
- * @param[out] docs Accumulated documentation blocks.
- */
-static void AppendTypedefDoc(const HoverRequest& request, const analysis::Symbol& sym, std::vector<std::string>& docs)
-{
-    if (sym.type != analysis::SymbolType::Typedef)
-    {
-        return;
-    }
-    std::string currentBase = sym.GetTypedef().baseType;
-    std::string primitiveBase;
-    std::unordered_set<std::string> visited;
-    visited.insert(sym.name);
-
-    while (!currentBase.empty() && !visited.contains(currentBase))
-    {
-        visited.insert(currentBase);
-        if (parser::primitives::IsPrimitive(currentBase))
-        {
-            primitiveBase = currentBase;
-            break;
-        }
-        if (auto syms = request.symbolTable.FindSymbolsPtr(currentBase))
-        {
-            if (!syms->empty() && (*syms)[0].type == analysis::SymbolType::Typedef)
-            {
-                currentBase = (*syms)[0].GetTypedef().baseType;
-                continue;
-            }
-        }
-        break;
-    }
-
-    if (!primitiveBase.empty())
-    {
-        if (auto info = parser::primitives::GetPrimitiveDocInfo(primitiveBase))
-        {
-            std::string key = "hover-primitive-desc-";
-            key += primitiveBase;
-            std::string desc = angel_lsp::i18n::FormatMessage(request.i18n, key, std::string(info->description));
-            std::string underlying = angel_lsp::i18n::FormatMessage(request.i18n, "hover-typedef-underlying",
-                                                                    " (underlying type: `{}`)", primitiveBase);
-            std::string doc = desc + underlying;
-            if (!info->range.empty())
-            {
-                if (primitiveBase == "bool")
-                {
-                    doc += "\n\n" + angel_lsp::i18n::FormatMessage(request.i18n, "hover-primitive-values",
-                                                                   "Values: `{}`", info->range);
-                }
-                else
-                {
-                    doc += "\n\n" + angel_lsp::i18n::FormatMessage(request.i18n, "hover-primitive-range", "Range: `{}`",
-                                                                   info->range);
-                }
-            }
-            docs.push_back(std::move(doc));
-        }
-    }
-}
-
-/** @brief Gathers and deduplicates doc comments for overload sets, prioritizing resolved call overloads. */
-static void CollectOverloadDocs(const HoverRequest& request, const std::vector<analysis::Symbol>& symbols,
-                                const std::optional<analysis::Symbol>& best, std::vector<std::string>& docs)
-{
-    if (best)
-    {
-        std::string d = DocCommentForSymbol(request, *best);
-        if (!d.empty())
-        {
-            docs.push_back(std::move(d));
-        }
-        else
-        {
-            for (const auto& sym : symbols)
-            {
-                std::string fallbackDoc = DocCommentForSymbol(request, sym);
-                if (!fallbackDoc.empty())
-                {
-                    docs.push_back(std::move(fallbackDoc));
-                    break;
-                }
-            }
-        }
-        AppendTypedefDoc(request, *best, docs);
-        return;
-    }
-
-    for (const auto& sym : symbols)
-    {
-        AppendTypedefDoc(request, sym, docs);
-        std::string d = DocCommentForSymbol(request, sym);
-        if (d.empty())
-        {
-            continue;
-        }
-        std::string trimmedD = CollapseWhitespace(d);
-        bool alreadyPresent = std::any_of(docs.begin(), docs.end(), [&](const std::string& existing)
-                                          { return CollapseWhitespace(existing) == trimmedD; });
-        if (!alreadyPresent)
-        {
-            docs.push_back(std::move(d));
-        }
-    }
-}
-
-/**
- * @brief Checks whether a symbol represents a callable routine (function, method, constructor).
- * @param[in] sym Symbol to test.
- * @return True if callable routine, false otherwise.
- */
-static bool IsCallableSymbol(const analysis::Symbol& sym)
-{
-    return sym.type == analysis::SymbolType::Function ||
-           std::holds_alternative<analysis::FunctionSignature>(sym.signature);
-}
-
-/**
- * @brief Counts additional callable overloads sharing the primary symbol's name.
- * @param[in] symbols Deduplicated candidate symbols list.
- * @return Count of other overloads with the same name.
- */
-static size_t CountMoreOverloads(const std::vector<analysis::Symbol>& symbols)
-{
-    if (symbols.size() <= 1 || !IsCallableSymbol(symbols.front()))
-    {
-        return 0;
-    }
-    size_t count = 0;
-    const std::string_view primaryName = symbols.front().name;
-    for (size_t i = 1; i < symbols.size(); ++i)
-    {
-        if (symbols[i].name == primaryName && IsCallableSymbol(symbols[i]))
-        {
-            ++count;
-        }
-    }
-    return count;
-}
-
-/**
- * @brief Percent-encodes a JSON string for use inside a VS Code command URI query parameter.
- * @param[in] input Raw JSON text.
- * @return Percent-encoded string safe for Markdown command links.
- */
-static std::string UrlEncodeCommandArgs(std::string_view input)
-{
-    static constexpr char k_hexDigits[] = "0123456789ABCDEF";
-    std::string encoded;
-    encoded.reserve(input.size() * 2);
-    for (unsigned char ch : input)
-    {
-        const bool isUnreserved = (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') ||
-                                  ch == '-' || ch == '_' || ch == '.' || ch == '~';
-        if (isUnreserved)
-        {
-            encoded.push_back(static_cast<char>(ch));
-        }
-        else
-        {
-            encoded.push_back('%');
-            encoded.push_back(k_hexDigits[(ch >> 4) & 0x0F]);
-            encoded.push_back(k_hexDigits[ch & 0x0F]);
-        }
-    }
-    return encoded;
-}
-
-/**
- * @brief Builds a clickable command link that opens VS Code Peek Locations for all overloads.
- * @param[in] symbols Candidate overload symbols.
+ * @brief Attempts hover resolution for a member access expression.
  * @param[in] ctx Hover query context.
- * @return Markdown link invoking angelscript.peekOverloads.
+ * @return Formatted member hover or std::nullopt.
  */
-static std::string BuildPeekOverloadsLink(const std::vector<analysis::Symbol>& symbols, const HoverQueryContext& ctx)
-{
-    std::ostringstream json;
-    json << "[{\"uri\":\"" << ctx.request.uri << "\",\"line\":" << ctx.request.position.line
-         << ",\"character\":" << ctx.request.position.character << ",\"locations\":[";
-
-    const std::string_view primaryName = symbols.front().name;
-    bool first = true;
-    for (const auto& sym : symbols)
-    {
-        if (sym.name != primaryName || !IsCallableSymbol(sym))
-        {
-            continue;
-        }
-        if (!first)
-        {
-            json << ",";
-        }
-        first = false;
-        const std::string_view symUri =
-            sym.fileUri.empty() ? std::string_view(ctx.request.uri) : std::string_view(sym.fileUri);
-        const uint32_t sLine = sym.selectionRange.startLine > 0 ? sym.selectionRange.startLine : sym.startLine;
-        const uint32_t eLine = sym.selectionRange.endLine > 0 ? sym.selectionRange.endLine : sLine;
-        json << "{\"uri\":\"" << symUri << "\",\"startLine\":" << sLine
-             << ",\"startChar\":" << sym.selectionRange.startCharacter << ",\"endLine\":" << eLine
-             << ",\"endChar\":" << sym.selectionRange.endCharacter << "}";
-    }
-    json << "]}]";
-
-    const std::string label =
-        angel_lsp::i18n::FormatMessage(ctx.request.i18n, "hover-peek-overloads", "Peek overloads");
-    return "[" + label + "](command:angelscript.peekOverloads?" + UrlEncodeCommandArgs(json.str()) + ")";
-}
-
-/**
- * @brief Formats the localized overload section and peek command link for additional overloads.
- * @param[in] symbols Deduplicated candidate symbols list.
- * @param[in] count Number of additional overloads (must be >= 1).
- * @param[in] ctx Hover query context.
- * @return Localized overload block and clickable peek link.
- */
-static std::string FormatMoreOverloads(const std::vector<analysis::Symbol>& symbols, size_t count,
-                                       const HoverQueryContext& ctx)
-{
-    const std::string summaryText =
-        (count == 1)
-            ? angel_lsp::i18n::FormatMessage(ctx.request.i18n, "hover-more-overloads-singular", "1 more overload")
-            : angel_lsp::i18n::FormatMessage(ctx.request.i18n, "hover-more-overloads-plural", "{} more overloads",
-                                             count);
-
-    std::ostringstream oss;
-    oss << "**+" << summaryText << "**\n\n" << BuildPeekOverloadsLink(symbols, ctx);
-    return oss.str();
-}
-
-/**
- * @brief Resolves best matching call overload, or finds the declaration matching cursor position.
- * @param[in,out] symbols Candidate symbols list.
- * @param[in] ctx Hover query context.
- * @return Best matching symbol if resolved or matched at declaration, std::nullopt otherwise.
- */
-static std::optional<analysis::Symbol> ResolveOrMatchCandidate(std::vector<analysis::Symbol>& symbols,
-                                                               const HoverQueryContext& ctx)
-{
-    auto best = ResolveCallOverload(ctx.node, symbols, ctx.request, ctx.scope);
-    if (!best)
-    {
-        auto it = std::find_if(symbols.begin(), symbols.end(),
-                               [&](const analysis::Symbol& s)
-                               {
-                                   if (s.fileUri != ctx.request.uri)
-                                   {
-                                       return false;
-                                   }
-                                   return s.startLine == ctx.queryLine || s.selectionRange.startLine == ctx.queryLine;
-                               });
-        if (it != symbols.end())
-        {
-            best = *it;
-            std::rotate(symbols.begin(), it, it + 1);
-        }
-        else if (!symbols.empty())
-        {
-            best = symbols.front();
-        }
-    }
-    else
-    {
-        auto it = std::find_if(symbols.begin(), symbols.end(), [&](const analysis::Symbol& s)
-                               { return s.name == best->name && analysis::HasSameParameterList(s, *best); });
-        if (it != symbols.end())
-        {
-            std::rotate(symbols.begin(), it, it + 1);
-        }
-    }
-    return best;
-}
-
-/**
- * @brief Formats synthesized property header line if property accessor.
- * @param[in] symbols Candidate symbol list.
- * @param[in] accessorPropertyType Synthesized property accessor type.
- * @param[in] nodeText Syntax node text.
- * @return Formatted property header line, or empty string.
- */
-static std::string FormatSynthesizedPropertyHeader(const std::vector<analysis::Symbol>& symbols,
-                                                   std::string_view accessorPropertyType, std::string_view nodeText)
-{
-    if (accessorPropertyType.empty())
-    {
-        return "";
-    }
-    std::string indexParam;
-    for (const auto& sym : symbols)
-    {
-        if (sym.type == analysis::SymbolType::Function &&
-            std::holds_alternative<analysis::FunctionSignature>(sym.signature))
-        {
-            const auto& fn = sym.GetFunction();
-            if ((sym.name.starts_with("get_") && !fn.parameters.empty()) ||
-                (sym.name.starts_with("set_") && fn.parameters.size() > 1))
-            {
-                indexParam = fn.parameters.front().typeName;
-                if (!fn.parameters.front().name.empty())
-                {
-                    indexParam += " " + fn.parameters.front().name;
-                }
-                break;
-            }
-        }
-    }
-    std::ostringstream oss;
-    if (!indexParam.empty())
-    {
-        oss << "(property) " << accessorPropertyType << " " << nodeText << "[" << indexParam << "]\n";
-    }
-    else
-    {
-        oss << "(property) " << accessorPropertyType << " " << nodeText << "\n";
-    }
-    return oss.str();
-}
-
-static void CollectContainerMemberNames(const analysis::rules::RuleIndex& ruleIndex, std::string_view key,
-                                        std::vector<std::string>& outNames)
-{
-    const auto& members = ruleIndex.Members(key);
-    for (const auto& m : members.allMemberNames)
-    {
-        outNames.push_back(m);
-    }
-    for (const auto& acc : members.accessorPropertyNames)
-    {
-        if (std::find(outNames.begin(), outNames.end(), acc) == outNames.end())
-        {
-            outNames.push_back(acc);
-        }
-    }
-}
-
-static void AppendMixinMembersSection(const analysis::Symbol& sym, const HoverQueryContext& ctx,
-                                      std::ostringstream& oss)
-{
-    if (sym.type != analysis::SymbolType::Class || !std::holds_alternative<analysis::ClassSignature>(sym.signature))
-    {
-        return;
-    }
-    if (!sym.GetClass().modifiers.isMixin)
-    {
-        return;
-    }
-    const auto ruleIndex = ctx.request.symbolTable.GetRuleIndex();
-    if (!ruleIndex)
-    {
-        return;
-    }
-    const std::string containerKey = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-    std::vector<std::string> memberNames;
-    CollectContainerMemberNames(*ruleIndex, containerKey, memberNames);
-    if (memberNames.empty() && containerKey != sym.name)
-    {
-        CollectContainerMemberNames(*ruleIndex, sym.name, memberNames);
-    }
-    if (memberNames.empty())
-    {
-        return;
-    }
-    std::sort(memberNames.begin(), memberNames.end());
-    oss << "\n\n---\n**" << i18n::FormatMessage(ctx.request.i18n, "hover-mixin-members", "Mixin Members:") << "**\n";
-    for (const auto& name : memberNames)
-    {
-        oss << "\n- `" << name << "`";
-    }
-}
-
-/**
- * @brief Formats hover information for a resolved set of symbols with single signature and overload summary.
- * @param[in,out] symbols Candidate symbol list.
- * @param[in] accessorPropertyType Optional synthesized property accessor type.
- * @param[in] ctx Hover query context.
- * @return Formatted LSP hover response.
- */
-static lsp::Hover FormatSymbolsHover(std::vector<analysis::Symbol>& symbols, std::string_view accessorPropertyType,
-                                     const HoverQueryContext& ctx)
-{
-    auto best = ResolveOrMatchCandidate(symbols, ctx);
-    RemoveDuplicateSymbols(symbols);
-    if (!symbols.empty() && ctx.profiler.IsActive())
-    {
-        ctx.profiler.symbolName = symbols.front().name;
-    }
-
-    utils::HighResTimer fmtTimer;
-    std::ostringstream oss;
-    oss << "```angelscript\n";
-    oss << FormatSynthesizedPropertyHeader(symbols, accessorPropertyType, ctx.nodeText);
-
-    if (!symbols.empty())
-    {
-        oss << FormatDeclarationText(symbols.front(), &ctx.request.symbolTable);
-    }
-    oss << "\n```";
-
-    const size_t moreCount = CountMoreOverloads(symbols);
-    if (moreCount > 0)
-    {
-        oss << "\n\n" << FormatMoreOverloads(symbols, moreCount, ctx);
-    }
-
-    std::vector<std::string> docs;
-    CollectOverloadDocs(ctx.request, symbols, best, docs);
-    if (!docs.empty())
-    {
-        oss << "\n\n---";
-        for (const auto& d : docs)
-        {
-            oss << "\n\n" << d;
-        }
-    }
-
-    if (!symbols.empty())
-    {
-        AppendMixinMembersSection(symbols.front(), ctx, oss);
-    }
-
-    if (ctx.request.config && ctx.request.config->features.hoverShowFileLocation && !symbols.empty() &&
-        !symbols.front().fileUri.empty())
-    {
-        oss << "\n\n---\n*(" << symbols.front().fileUri << ")*";
-    }
-
-    ctx.profiler.fmtMs += fmtTimer.ElapsedMs();
-    return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str()}, ctx.range};
-}
-
-/**
- * @brief Formats hover information for class member access.
- * @param[in,out] memberSymbols Candidate member symbols list.
- * @param[in] accessorPropertyType Optional synthesized property accessor type.
- * @param[in] ctx Hover query context.
- * @return Formatted LSP hover response.
- */
-static std::optional<lsp::Hover> FormatMemberHover(std::vector<analysis::Symbol>& memberSymbols,
-                                                   std::string_view accessorPropertyType, const HoverQueryContext& ctx)
-{
-    return FormatSymbolsHover(memberSymbols, accessorPropertyType, ctx);
-}
-
 static std::optional<lsp::Hover> TryHoverMemberAccess(const HoverQueryContext& ctx)
 {
     utils::HighResTimer symTimer;
@@ -1473,353 +449,11 @@ static std::optional<lsp::Hover> TryHoverMemberAccess(const HoverQueryContext& c
     return FormatMemberHover(memberSymbols, accessorPropertyType, ctx);
 }
 
-static std::string InferTypeFromAst(TSNode node, const std::string& sourceCode)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const std::array<TSSymbol, 2> declSyms = {gs.symParameter, gs.symVariableDeclaration};
-    TSNode cur = parser::FindAncestorWithAnySymbol(node, declSyms);
-    if (!ts_node_is_null(cur))
-    {
-        TSNode typeNode = parser::GetChildByField(cur, gs.fieldParamType);
-        if (ts_node_is_null(typeNode))
-        {
-            typeNode = parser::GetChildByField(cur, gs.fieldVarType);
-        }
-        if (ts_node_is_null(typeNode))
-        {
-            typeNode = parser::GetChildByField(cur, gs.fieldType);
-        }
-        if (!ts_node_is_null(typeNode))
-        {
-            uint32_t tStart = ts_node_start_byte(typeNode);
-            uint32_t tEnd = ts_node_end_byte(typeNode);
-            if (tStart < sourceCode.size() && tEnd <= sourceCode.size() && tStart < tEnd)
-            {
-                return sourceCode.substr(tStart, tEnd - tStart);
-            }
-        }
-    }
-    return "";
-}
-
 /**
- * @brief Appends funcdef signature declaration to markdown hover text if typeName is a funcdef.
- * @param[in] typeName Base or qualified type name.
- * @param[in] table Symbol table.
- * @param[in,out] md Destination markdown string.
+ * @brief Attempts hover resolution for in-scope local definitions.
+ * @param[in] ctx Hover query context.
+ * @return Formatted hover response or std::nullopt.
  */
-static void TryAppendFuncdefSignature(std::string_view typeName, const analysis::SymbolTable& table, std::string& md)
-{
-    const std::string_view cleanType = analysis::CleanBaseTypeView(typeName);
-    if (cleanType.empty() || parser::primitives::IsPrimitive(cleanType))
-    {
-        return;
-    }
-    if (auto funcdefSym = analysis::FindFuncdefSymbol(cleanType, table))
-    {
-        std::string funcdefDecl = analysis::FormatFunctionDeclaration(*funcdefSym, true);
-        if (!funcdefDecl.empty())
-        {
-            md += "\n";
-            md += funcdefDecl;
-        }
-    }
-}
-
-static void FormatParameterHover(const analysis::LocalDefinition& def, std::string_view typeName,
-                                 const HoverQueryContext& ctx, std::string& md)
-{
-    md += "(parameter) ";
-    TSNode rootNode = ts_tree_root_node(ctx.request.tree);
-    const std::string declText =
-        ExtractDeclarationTextAt(rootNode, ctx.request.sourceCode, {def.startLine, def.startCharacter},
-                                 parser::GetGrammarSymbols().symParameter);
-    if (!declText.empty())
-    {
-        md += declText;
-    }
-    else
-    {
-        if (!typeName.empty())
-        {
-            md += typeName;
-            md += " ";
-        }
-        md += def.name;
-        if (!def.defaultValue.empty())
-        {
-            md += " = ";
-            md += def.defaultValue;
-        }
-    }
-
-    TryAppendFuncdefSignature(typeName, ctx.request.symbolTable, md);
-}
-
-static std::optional<analysis::Symbol> FindMatchingGlobalSymbol(const analysis::LocalDefinition& def,
-                                                                const HoverQueryContext& ctx)
-{
-    auto candidates = analysis::FindSymbolsInScope(def.name, ctx.node, ctx.request.sourceCode, ctx.request.symbolTable);
-    for (const auto& cand : candidates)
-    {
-        if (cand.type == analysis::SymbolType::Variable && cand.fileUri == ctx.request.uri)
-        {
-            return cand;
-        }
-    }
-    for (const auto& cand : candidates)
-    {
-        if (cand.type == analysis::SymbolType::Variable)
-        {
-            return cand;
-        }
-    }
-    auto exactCandidates = ctx.request.symbolTable.FindSymbolsPtr(def.name);
-    if (exactCandidates)
-    {
-        for (const auto& cand : *exactCandidates)
-        {
-            if (cand.type == analysis::SymbolType::Variable && cand.fileUri == ctx.request.uri)
-            {
-                return cand;
-            }
-        }
-    }
-    return std::nullopt;
-}
-
-static const analysis::Scope* FindDefinitionScope(const HoverQueryContext& ctx, const analysis::LocalDefinition& def)
-{
-    analysis::ScopeTraversalGuard cycleGuard;
-    for (const analysis::Scope* s = ctx.scope; s != nullptr; s = s->parent)
-    {
-        if (!cycleGuard.CheckAndInsert(s))
-        {
-            break;
-        }
-        for (const auto& d : s->definitions)
-        {
-            if (d.name == def.name && d.startLine == def.startLine && d.startCharacter == def.startCharacter)
-            {
-                return s;
-            }
-        }
-    }
-    return analysis::FindScopeDeclaringDefinition(ctx.rootScope.get(), def);
-}
-
-static bool IsDirectInitDeclarator(TSNode node)
-{
-    TSNode declarator = node;
-    if (!ts_node_is_null(declarator) && ts_node_symbol(declarator) != parser::GetGrammarSymbols().symVariableDeclarator)
-    {
-        declarator = parser::GetParent(node);
-    }
-    if (ts_node_is_null(declarator) || ts_node_symbol(declarator) != parser::GetGrammarSymbols().symVariableDeclarator)
-    {
-        return false;
-    }
-    TSNode args = parser::GetChildByField(declarator, parser::GetGrammarSymbols().fieldArguments);
-    return !ts_node_is_null(args);
-}
-
-static std::optional<analysis::Symbol> ResolveConstructorForDeclarator(TSNode declarator, std::string_view typeName,
-                                                                       const HoverQueryContext& ctx)
-{
-    TSNode argList = analysis::ResolveArgumentListNode(declarator);
-    if (ts_node_is_null(argList))
-    {
-        return std::nullopt;
-    }
-
-    std::string_view baseName = analysis::CleanBaseTypeView(typeName);
-    if (baseName.empty() || parser::primitives::IsPrimitive(baseName))
-    {
-        return std::nullopt;
-    }
-
-    auto candidates = analysis::CollectConstructorCandidates(std::string(baseName), declarator, ctx.request.sourceCode,
-                                                             ctx.request.symbolTable);
-    if (candidates.empty())
-    {
-        return std::nullopt;
-    }
-
-    if (candidates.size() == 1)
-    {
-        return candidates[0];
-    }
-
-    auto argTypes = analysis::ExtractCallArgumentTypes(
-        argList, {ctx.scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.uri});
-    auto match = analysis::ResolveBestOverload(candidates, argTypes, ctx.request.symbolTable);
-    if (match.bestCandidate != nullptr)
-    {
-        return *match.bestCandidate;
-    }
-    if (match.priorityCandidate != nullptr)
-    {
-        return *match.priorityCandidate;
-    }
-
-    const analysis::Symbol* fallback =
-        analysis::FindBestFallbackOverload(candidates, argTypes, ctx.request.symbolTable);
-    if (fallback != nullptr)
-    {
-        return *fallback;
-    }
-
-    return candidates[0];
-}
-
-static void TryAppendConstructorSignature(TSNode node, std::string_view typeName, const HoverQueryContext& ctx,
-                                          std::string& md)
-{
-    TSNode declarator = node;
-    if (!ts_node_is_null(declarator) && ts_node_symbol(declarator) != parser::GetGrammarSymbols().symVariableDeclarator)
-    {
-        declarator = parser::GetParent(node);
-    }
-    if (!ts_node_is_null(declarator) && ts_node_symbol(declarator) == parser::GetGrammarSymbols().symVariableDeclarator)
-    {
-        if (auto ctorSym = ResolveConstructorForDeclarator(declarator, typeName, ctx))
-        {
-            std::string ctorSig = analysis::FormatFunctionDeclaration(*ctorSym);
-            if (!ctorSig.empty())
-            {
-                md += "\n";
-                md += ctorSig;
-            }
-        }
-    }
-}
-
-static void FormatGlobalVariableHover(const analysis::LocalDefinition& def, std::string_view typeName,
-                                      const HoverQueryContext& ctx, std::string& md)
-{
-    auto globalSym = FindMatchingGlobalSymbol(def, ctx);
-    if (globalSym.has_value())
-    {
-        md += FormatVariableSignature(*globalSym, "(global variable) ");
-        return;
-    }
-    md += "(global variable) ";
-    if (!typeName.empty())
-    {
-        md += typeName;
-        md += " ";
-    }
-    md += def.name;
-    if (!def.defaultValue.empty())
-    {
-        md += " = ";
-        md += def.defaultValue;
-    }
-}
-
-static void FormatVariableHover(const analysis::LocalDefinition& def, std::string_view typeName,
-                                const HoverQueryContext& ctx, std::string& md)
-{
-    const analysis::Scope* declaringScope = FindDefinitionScope(ctx, def);
-
-    bool isInsideFunction = false;
-    analysis::ScopeTraversalGuard cycleGuard;
-    for (const analysis::Scope* s = declaringScope; s != nullptr; s = s->parent)
-    {
-        if (!cycleGuard.CheckAndInsert(s))
-        {
-            break;
-        }
-        if (s->isFunctionScope)
-        {
-            isInsideFunction = true;
-            break;
-        }
-    }
-
-    if (!isInsideFunction)
-    {
-        FormatGlobalVariableHover(def, typeName, ctx, md);
-    }
-    else
-    {
-        md += "(local variable) ";
-        if (!typeName.empty())
-        {
-            md += typeName;
-            md += " ";
-        }
-        md += def.name;
-        if (analysis::IsSimpleLiteralExpression(def.defaultValue))
-        {
-            md += " = ";
-            md += def.defaultValue;
-        }
-    }
-
-    const size_t prevLen = md.size();
-    TryAppendFuncdefSignature(typeName, ctx.request.symbolTable, md);
-    if (md.size() == prevLen && IsDirectInitDeclarator(ctx.node))
-    {
-        TryAppendConstructorSignature(ctx.node, typeName, ctx, md);
-    }
-}
-
-static void AppendLocalDoc(const analysis::LocalDefinition& def, std::string_view typeName,
-                           const HoverQueryContext& ctx, std::string& md)
-{
-    std::string doc = analysis::ExtractDocComment(ctx.request.sourceCode, def.startLine);
-    if (doc.empty() && IsDirectInitDeclarator(ctx.node))
-    {
-        TSNode declarator = ctx.node;
-        if (!ts_node_is_null(declarator) &&
-            ts_node_symbol(declarator) != parser::GetGrammarSymbols().symVariableDeclarator)
-        {
-            declarator = parser::GetParent(ctx.node);
-        }
-        if (auto ctorSym = ResolveConstructorForDeclarator(declarator, typeName, ctx))
-        {
-            doc = DocCommentForSymbol(ctx.request, *ctorSym);
-        }
-    }
-    if (doc.empty())
-    {
-        const std::string_view cleanType = analysis::CleanBaseTypeView(typeName);
-        if (!cleanType.empty() && !parser::primitives::IsPrimitive(cleanType))
-        {
-            if (auto funcdefSym = analysis::FindFuncdefSymbol(cleanType, ctx.request.symbolTable))
-            {
-                doc = DocCommentForSymbol(ctx.request, *funcdefSym);
-            }
-        }
-    }
-    if (!doc.empty())
-    {
-        md += "\n\n---\n\n";
-        md += doc;
-    }
-}
-
-static std::string DeduceLocalDefinitionHoverType(const analysis::LocalDefinition& def, const HoverQueryContext& ctx)
-{
-    if (!def.typeName.empty() && analysis::CleanBaseTypeView(def.typeName) != "auto")
-    {
-        return def.typeName;
-    }
-    analysis::ExpressionTypeContext exprCtx(ctx.scope, ctx.request.symbolTable, ctx.request.sourceCode, ctx.request.uri,
-                                            ctx.request.tree ? ts_tree_root_node(ctx.request.tree) : TSNode{});
-    std::string inferred = analysis::ResolveLocalDefinitionType(def, exprCtx);
-    if (inferred.empty())
-    {
-        inferred = InferTypeFromAst(ctx.node, ctx.request.sourceCode);
-    }
-    if (inferred.empty() && def.kind == analysis::LocalDefinitionKind::Parameter)
-    {
-        inferred = analysis::InferLambdaParamType(ctx.node, def.name, ctx.request.symbolTable, ctx.request.sourceCode);
-    }
-    return !inferred.empty() ? inferred : def.typeName;
-}
-
 static std::optional<lsp::Hover> TryHoverLocalDefinition(const HoverQueryContext& ctx)
 {
     if (!ctx.rootScope || !ctx.scope)
@@ -1951,41 +585,6 @@ static std::vector<analysis::Symbol> ResolveNamedArgCalleeCandidates(TSNode call
     return {};
 }
 
-static std::optional<lsp::Hover> FormatNamedArgHover(const std::vector<analysis::Symbol>& candidates,
-                                                     const HoverQueryContext& ctx)
-{
-    for (const auto& sym : candidates)
-    {
-        if (sym.type != analysis::SymbolType::Function ||
-            !std::holds_alternative<analysis::FunctionSignature>(sym.signature))
-        {
-            continue;
-        }
-        for (const auto& param : sym.GetFunction().parameters)
-        {
-            if (param.name != ctx.nodeText)
-            {
-                continue;
-            }
-            std::string md = "```angelscript\n(parameter) " + param.typeName + " " + param.name;
-            if (!param.defaultValue.empty())
-            {
-                md += " = " + param.defaultValue;
-            }
-            md += "\n```\n" + angel_lsp::i18n::FormatMessage(ctx.request.i18n, "hover-named-arg-parameter-of",
-                                                             "Parameter of `{}`", sym.name);
-            return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)},
-                              ctx.range};
-        }
-    }
-    return std::nullopt;
-}
-
-/**
- * @brief Attempts to provide hover for a named argument parameter label in a call expression.
- * @param[in] ctx Hover query context.
- * @return Parameter hover if node is a named argument label, std::nullopt otherwise.
- */
 static std::optional<lsp::Hover> TryHoverNamedArgument(const HoverQueryContext& ctx)
 {
     if (!IsNamedArgumentLabelAtCursor(ctx.node, ctx.parent))
@@ -2001,6 +600,67 @@ static std::optional<lsp::Hover> TryHoverNamedArgument(const HoverQueryContext& 
 
     auto candidates = ResolveNamedArgCalleeCandidates(callNode, ctx);
     return FormatNamedArgHover(candidates, ctx);
+}
+
+static std::optional<lsp::Hover> TryHoverExpressionOrLocal(const HoverQueryContext& ctx)
+{
+    if (auto autoHover = TryHoverAutoType(ctx))
+    {
+        return autoHover;
+    }
+
+    if (IsMemberChildOfExpression(ctx.node, ctx.parent))
+    {
+        if (auto memberHover = TryHoverMemberAccess(ctx))
+        {
+            return memberHover;
+        }
+    }
+
+    if (auto localHover = TryHoverLocalDefinition(ctx))
+    {
+        return localHover;
+    }
+
+    if (auto paramHover = TryHoverParameterAst(ctx))
+    {
+        return paramHover;
+    }
+
+    if (auto namedArgHover = TryHoverNamedArgument(ctx))
+    {
+        return namedArgHover;
+    }
+
+    return std::nullopt;
+}
+
+static bool IsQualifiedMemberNode(TSNode node, std::string_view sourceCode = {})
+{
+    TSNode parent = parser::GetParent(node);
+    if (ts_node_is_null(parent))
+    {
+        return false;
+    }
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol pType = ts_node_symbol(parent);
+    if (pType == gs.symScopedIdentifier)
+    {
+        TSNode firstChild = ts_node_named_child(parent, 0);
+        return !ts_node_is_null(firstChild) && !ts_node_eq(firstChild, node) &&
+               ts_node_start_byte(firstChild) != ts_node_start_byte(node);
+    }
+    if (pType == gs.symMemberExpression)
+    {
+        TSNode memberField = parser::GetChildByField(parent, gs.fieldMember);
+        return ts_node_eq(memberField, node) ||
+               (!ts_node_is_null(memberField) && ts_node_start_byte(memberField) == ts_node_start_byte(node));
+    }
+    if (pType == gs.symDatatype && !sourceCode.empty())
+    {
+        return !analysis::ExtractDatatypeScopePrefix(parent, sourceCode).empty();
+    }
+    return false;
 }
 
 static void AppendEnclosingClassMethods(TSNode node, std::string_view nodeText, const HoverRequest& request,
@@ -2177,11 +837,6 @@ static std::optional<lsp::Hover> TryHoverScopeFallback(const HoverQueryContext& 
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str()}, ctx.range};
 }
 
-/**
- * @brief Prunes candidate symbols to the enclosing enum when the cursor is in an enum member declaration.
- * @param[in,out] symbols Candidate symbol list to filter.
- * @param[in] ctx Hover query context.
- */
 static void FilterEnumMemberSymbols(std::vector<analysis::Symbol>& symbols, const HoverQueryContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
@@ -2298,624 +953,6 @@ static std::vector<analysis::Symbol> CollectScopedSymbols(HoverQueryContext& ctx
     return symbols;
 }
 
-/**
- * @brief Finds the enclosing lambda_expression node for a given node within shallow depth.
- * @param[in] node AST node.
- * @return Enclosing lambda_expression node, or null node if not within a lambda header.
- */
-static TSNode FindEnclosingLambda(TSNode node)
-{
-    return parser::FindAncestorWithSymbol(node, parser::GetGrammarSymbols().symLambdaExpression);
-}
-
-/**
- * @brief Formats an untyped or fallback lambda signature from its parameter list node.
- * @param[in] lambdaNode Lambda AST node.
- * @param[in] sourceCode Document source string.
- * @param[out] oss Output stream.
- */
-static void FormatLambdaParameters(TSNode lambdaNode, std::string_view sourceCode, std::ostringstream& oss)
-{
-    oss << "(anonymous function) function";
-    TSNode paramListNode = ts_node_child_by_field_name(lambdaNode, "parameters", 10);
-    if (ts_node_is_null(paramListNode))
-    {
-        parser::ForEachNamedChildNodeUntil(lambdaNode,
-                                           [&](TSNode child)
-                                           {
-                                               if (ts_node_symbol(child) ==
-                                                   parser::GetGrammarSymbols().symParameterList)
-                                               {
-                                                   paramListNode = child;
-                                                   return false;
-                                               }
-                                               return true;
-                                           });
-    }
-    if (!ts_node_is_null(paramListNode))
-    {
-        uint32_t sb = ts_node_start_byte(paramListNode);
-        uint32_t eb = ts_node_end_byte(paramListNode);
-        if (sb < eb && eb <= sourceCode.size())
-        {
-            oss << sourceCode.substr(sb, eb - sb);
-            return;
-        }
-    }
-    oss << "()";
-}
-
-/**
- * @brief Attempts to construct hover information when hovering on an anonymous function / lambda header.
- * @param[in] ctx Hover query context.
- * @return Optional hover tooltip if hovering on a lambda keyword or header.
- */
-static std::optional<lsp::Hover> TryHoverLambda(const HoverQueryContext& ctx)
-{
-    if (ctx.nodeText != "function")
-    {
-        return std::nullopt;
-    }
-
-    TSNode lambdaNode = FindEnclosingLambda(ctx.node);
-    if (ts_node_is_null(lambdaNode))
-    {
-        return std::nullopt;
-    }
-
-    utils::HighResTimer fmtTimer;
-    std::ostringstream oss;
-    oss << "```angelscript\n";
-
-    auto targetFuncdef = analysis::FuncdefTargetOfLambda(lambdaNode, ctx.request.symbolTable, ctx.request.sourceCode);
-    if (targetFuncdef)
-    {
-        oss << "(anonymous function) -> " << targetFuncdef->name << "\n";
-        oss << analysis::FormatFunctionDeclaration(*targetFuncdef);
-    }
-    else
-    {
-        FormatLambdaParameters(lambdaNode, ctx.request.sourceCode, oss);
-    }
-    oss << "\n```";
-
-    if (targetFuncdef)
-    {
-        std::string doc = DocCommentForSymbol(ctx.request, *targetFuncdef);
-        if (!doc.empty())
-        {
-            oss << "\n\n---\n\n" << doc;
-        }
-    }
-
-    ctx.profiler.fmtMs += fmtTimer.ElapsedMs();
-    return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str()}, ctx.range};
-}
-
-static TSNode FindEnclosingAutoDeclaration(TSNode node)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const std::array<TSSymbol, 2> declSyms = {gs.symVariableDeclaration, gs.symForeachStatement};
-    return parser::FindAncestorWithAnySymbol(node, declSyms);
-}
-
-static std::string DeduceAutoDeclaratorType(TSNode declarator, const HoverQueryContext& ctx)
-{
-    TSNode nameNode = parser::GetChildByField(declarator, parser::GetGrammarSymbols().fieldName);
-    if (!ts_node_is_null(nameNode) && ctx.scope)
-    {
-        std::string varName = parser::GetNodeText(nameNode, ctx.request.sourceCode);
-        if (const auto* def = analysis::ResolveInScopeAt(ctx.scope, varName, ts_node_start_byte(nameNode)))
-        {
-            std::string deduced = DeduceLocalDefinitionHoverType(*def, ctx);
-            if (!deduced.empty() && deduced != "auto")
-            {
-                return deduced;
-            }
-        }
-    }
-
-    TSNode valNode = parser::GetChildByField(declarator, parser::GetGrammarSymbols().fieldValue);
-    if (ts_node_is_null(valNode))
-    {
-        valNode = parser::GetChildByField(declarator, parser::GetGrammarSymbols().fieldArguments);
-    }
-    if (!ts_node_is_null(valNode))
-    {
-        analysis::ExpressionTypeContext exprCtx(ctx.scope, ctx.request.symbolTable, ctx.request.sourceCode,
-                                                ctx.request.uri,
-                                                ctx.request.tree ? ts_tree_root_node(ctx.request.tree) : TSNode{});
-        std::string res = analysis::ResolveExpressionType(valNode, exprCtx);
-        if (!res.empty() && res != "void" && res != "null" && res != constants::k_initializerListTypeSentinel &&
-            !analysis::ExpressionTypeCache::IsPoisonType(res))
-        {
-            return res;
-        }
-    }
-    return "";
-}
-
-/**
- * @brief Attempts to produce hover documentation for 'auto' keyword showing the deduced type.
- * @param[in] ctx Hover query context.
- * @return Populated Hover if node is 'auto' in an auto declaration, std::nullopt otherwise.
- */
-static std::optional<lsp::Hover> TryHoverAutoType(const HoverQueryContext& ctx)
-{
-    if (ctx.nodeText != "auto" && ctx.nodeText != "auto@")
-    {
-        return std::nullopt;
-    }
-
-    TSNode declNode = FindEnclosingAutoDeclaration(ctx.node);
-    if (ts_node_is_null(declNode))
-    {
-        return std::nullopt;
-    }
-
-    std::string deduced;
-    if (ts_node_symbol(declNode) == parser::GetGrammarSymbols().symVariableDeclaration)
-    {
-        parser::ForEachChildNodeUntil(declNode,
-                                      [&](TSNode child)
-                                      {
-                                          if (ts_node_symbol(child) ==
-                                              parser::GetGrammarSymbols().symVariableDeclarator)
-                                          {
-                                              deduced = DeduceAutoDeclaratorType(child, ctx);
-                                              return false;
-                                          }
-                                          return true;
-                                      });
-    }
-
-    if (!deduced.empty() && deduced != "auto")
-    {
-        TSNode typeNode = parser::GetChildByField(declNode, parser::GetGrammarSymbols().fieldVarType);
-        if (ts_node_is_null(typeNode))
-        {
-            typeNode = parser::GetChildByField(declNode, parser::GetGrammarSymbols().fieldType);
-        }
-        bool isHandleType = analysis::IsHandleTypeView(ctx.nodeText);
-        if (!ts_node_is_null(typeNode) &&
-            analysis::IsHandleTypeView(parser::GetNodeTextView(typeNode, ctx.request.sourceCode)))
-        {
-            isHandleType = true;
-        }
-        if (isHandleType && !analysis::IsHandleTypeView(deduced))
-        {
-            deduced += '@';
-        }
-        std::string md = "```angelscript\n" + std::string(isHandleType ? "auto@" : "auto") + ": " + deduced + "\n```";
-        return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, ctx.range};
-    }
-
-    return std::nullopt;
-}
-
-static std::optional<lsp::Hover> TryHoverExpressionOrLocal(const HoverQueryContext& ctx)
-{
-    if (auto autoHover = TryHoverAutoType(ctx))
-    {
-        return autoHover;
-    }
-
-    if (IsMemberChildOfExpression(ctx.node, ctx.parent))
-    {
-        if (auto memberHover = TryHoverMemberAccess(ctx))
-        {
-            return memberHover;
-        }
-    }
-
-    if (auto localHover = TryHoverLocalDefinition(ctx))
-    {
-        return localHover;
-    }
-
-    if (auto paramHover = TryHoverParameterAst(ctx))
-    {
-        return paramHover;
-    }
-
-    if (auto namedArgHover = TryHoverNamedArgument(ctx))
-    {
-        return namedArgHover;
-    }
-
-    return std::nullopt;
-}
-
-/**
- * @brief Checks if an AST node represents an explicitly qualified member access.
- * @param[in] node AST node to test.
- * @return True if node is the member part of a scoped_identifier or member_expression.
- */
-static bool IsQualifiedMemberNode(TSNode node, std::string_view sourceCode = {})
-{
-    TSNode parent = parser::GetParent(node);
-    if (ts_node_is_null(parent))
-    {
-        return false;
-    }
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol pType = ts_node_symbol(parent);
-    if (pType == gs.symScopedIdentifier)
-    {
-        TSNode firstChild = ts_node_named_child(parent, 0);
-        return !ts_node_is_null(firstChild) && !ts_node_eq(firstChild, node) &&
-               ts_node_start_byte(firstChild) != ts_node_start_byte(node);
-    }
-    if (pType == gs.symMemberExpression)
-    {
-        TSNode memberField = parser::GetChildByField(parent, gs.fieldMember);
-        return ts_node_eq(memberField, node) ||
-               (!ts_node_is_null(memberField) && ts_node_start_byte(memberField) == ts_node_start_byte(node));
-    }
-    if (pType == gs.symDatatype && !sourceCode.empty())
-    {
-        return !analysis::ExtractDatatypeScopePrefix(parent, sourceCode).empty();
-    }
-    return false;
-}
-
-/**
- * @brief Determines if an AST node is positioned in a type specifier or using namespace context.
- * @param[in] node AST node to inspect.
- * @return Context preference indicating class, namespace, or neutral.
- */
-static bool IsScopeQualifier(TSNode node) noexcept
-{
-    TSNode parent = parser::GetParent(node);
-    if (ts_node_is_null(parent))
-    {
-        return false;
-    }
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol parentSym = ts_node_symbol(parent);
-    if (parentSym == gs.symScope)
-    {
-        return true;
-    }
-    if (parentSym == gs.symScopedIdentifier)
-    {
-        TSNode next = ts_node_next_sibling(node);
-        int siblingHops = 0;
-        while (!ts_node_is_null(next) && siblingHops++ < 8)
-        {
-            if (ts_node_symbol(next) == parser::GetGrammarSymbols().tokColonColon)
-            {
-                return true;
-            }
-            next = ts_node_next_sibling(next);
-        }
-    }
-    return false;
-}
-
-static ContainerContextPreference CheckContextPreference(TSNode node)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    if (IsScopeQualifier(node))
-    {
-        TSNode usingDecl = parser::FindAncestorWithSymbol(parser::GetParent(node), gs.symUsingDeclaration);
-        return !ts_node_is_null(usingDecl) ? ContainerContextPreference::PreferNamespace
-                                           : ContainerContextPreference::None;
-    }
-
-    ContainerContextPreference pref = ContainerContextPreference::None;
-    parser::ForEachAncestor(parser::GetParent(node),
-                            [&](TSNode cur) -> bool
-                            {
-                                const TSSymbol sym = ts_node_symbol(cur);
-                                if (sym == gs.symDatatype || sym == gs.symTemplateTypeList ||
-                                    sym == gs.symBaseClassList || sym == gs.symType)
-                                {
-                                    pref = ContainerContextPreference::PreferClass;
-                                    return false;
-                                }
-                                if (sym == gs.symUsingDeclaration)
-                                {
-                                    pref = ContainerContextPreference::PreferNamespace;
-                                    return false;
-                                }
-                                return sym == gs.symScopedIdentifier || sym == gs.symScope;
-                            });
-    return pref;
-}
-
-static bool IsTypeSymbol(const analysis::Symbol& sym) noexcept
-{
-    return sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface ||
-           sym.type == analysis::SymbolType::Enum || sym.type == analysis::SymbolType::Funcdef ||
-           sym.type == analysis::SymbolType::Typedef;
-}
-
-static void PromoteConstructorsToTypes(const HoverQueryContext& ctx, std::vector<analysis::Symbol>& symbols)
-{
-    std::vector<analysis::Symbol> promoted;
-    for (const auto& s : symbols)
-    {
-        if (s.type == analysis::SymbolType::Function && !s.containerName.empty() &&
-            analysis::LastScopeSegment(s.containerName) == s.name)
-        {
-            if (auto classSyms = ctx.request.symbolTable.FindSymbolsPtr(s.containerName))
-            {
-                for (const auto& cs : *classSyms)
-                {
-                    if (cs.type == analysis::SymbolType::Class || cs.type == analysis::SymbolType::Interface)
-                    {
-                        promoted.push_back(cs);
-                    }
-                }
-            }
-        }
-    }
-    symbols.insert(symbols.end(), promoted.begin(), promoted.end());
-}
-
-static void DisambiguateTypeContextSymbols(const HoverQueryContext& ctx, std::vector<analysis::Symbol>& symbols)
-{
-    if (symbols.empty() || CheckContextPreference(ctx.node) != ContainerContextPreference::PreferClass)
-    {
-        return;
-    }
-
-    if (!std::any_of(symbols.begin(), symbols.end(), IsTypeSymbol))
-    {
-        PromoteConstructorsToTypes(ctx, symbols);
-    }
-
-    if (!std::any_of(symbols.begin(), symbols.end(), IsTypeSymbol))
-    {
-        return;
-    }
-
-    std::erase_if(symbols,
-                  [](const analysis::Symbol& s)
-                  {
-                      return s.type == analysis::SymbolType::Function || s.type == analysis::SymbolType::Variable ||
-                             s.type == analysis::SymbolType::Property || s.type == analysis::SymbolType::CallReference;
-                  });
-
-    auto it =
-        std::find_if(symbols.begin(), symbols.end(), [](const analysis::Symbol& s)
-                     { return s.type == analysis::SymbolType::Class || s.type == analysis::SymbolType::Interface; });
-    if (it != symbols.end() && it != symbols.begin())
-    {
-        std::rotate(symbols.begin(), it, it + 1);
-    }
-}
-
-/**
- * @brief Locates the next member AST node immediately following the given node in a scoped_identifier.
- * @param[in] parent Enclosing scoped_identifier AST node.
- * @param[in] node Container segment AST node.
- * @return Next member TSNode or null node if none found.
- */
-static TSNode FindNextScopedMemberNode(TSNode parent, TSNode node)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    if (ts_node_is_null(parent) || ts_node_symbol(parent) != gs.symScopedIdentifier)
-    {
-        return TSNode{};
-    }
-    TSTreeCursor cursor = ts_tree_cursor_new(parent);
-    bool foundCurrent = false;
-    TSNode nextMember{};
-    if (ts_tree_cursor_goto_first_child(&cursor))
-    {
-        do
-        {
-            TSNode current = ts_tree_cursor_current_node(&cursor);
-            if (foundCurrent && ts_node_is_named(current))
-            {
-                nextMember = current;
-                break;
-            }
-            if (!foundCurrent && ts_node_is_named(current) &&
-                (ts_node_eq(current, node) || ts_node_start_byte(current) == ts_node_start_byte(node)))
-            {
-                foundCurrent = true;
-            }
-        } while (ts_tree_cursor_goto_next_sibling(&cursor));
-    }
-    ts_tree_cursor_delete(&cursor);
-    return nextMember;
-}
-
-/**
- * @brief Tests whether a given member name belongs to a class declaration or its inherited hierarchy.
- * @param[in] classSym Class symbol descriptor.
- * @param[in] memberName Member identifier text.
- * @param[in] table Workspace symbol table.
- * @return True if member is declared or inherited by the class.
- */
-static bool MemberBelongsToClass(const analysis::Symbol& classSym, std::string_view memberName,
-                                 const analysis::SymbolTable& table)
-{
-    const std::string qName = classSym.qualifiedName.empty() ? classSym.name : classSym.qualifiedName;
-    auto hierarchy = analysis::GetInheritedTypeHierarchy(qName, table);
-    for (const auto& cls : hierarchy)
-    {
-        if (const auto found = table.FindMemberSymbolPtr(cls, memberName))
-        {
-            for (const auto& sym : *found)
-            {
-                if (sym.containerKind == analysis::ContainerKind::Class ||
-                    sym.containerKind == analysis::ContainerKind::Interface)
-                {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Tests whether a given member name belongs to a namespace declaration.
- * @param[in] nsSym Namespace symbol descriptor.
- * @param[in] memberName Member identifier text.
- * @param[in] table Workspace symbol table.
- * @return True if member is declared inside the namespace.
- */
-static bool MemberBelongsToNamespace(const analysis::Symbol& nsSym, std::string_view memberName,
-                                     const analysis::SymbolTable& table)
-{
-    const std::string qName = nsSym.qualifiedName.empty() ? nsSym.name : nsSym.qualifiedName;
-    if (const auto found = table.FindMemberSymbolPtr(qName, memberName))
-    {
-        for (const auto& sym : *found)
-        {
-            if (sym.containerKind == analysis::ContainerKind::Namespace)
-            {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Disambiguates between Class and Namespace symbols sharing the same identifier.
- * @param[in] ctx Hover query context.
- * @param[in,out] symbols Candidate symbol collection to filter.
- */
-static void DisambiguateContainerSymbols(const HoverQueryContext& ctx, std::vector<analysis::Symbol>& symbols)
-{
-    if (symbols.size() < 2)
-    {
-        return;
-    }
-    auto classIt = std::find_if(symbols.begin(), symbols.end(),
-                                [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::Class; });
-    auto nsIt = std::find_if(symbols.begin(), symbols.end(),
-                             [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::Namespace; });
-    if (classIt == symbols.end() || nsIt == symbols.end() || classIt->name != nsIt->name)
-    {
-        return;
-    }
-
-    auto pref = CheckContextPreference(ctx.node);
-    if (pref == ContainerContextPreference::PreferClass)
-    {
-        std::erase_if(symbols, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::Namespace; });
-        return;
-    }
-    if (pref == ContainerContextPreference::PreferNamespace)
-    {
-        std::erase_if(symbols, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::Class; });
-        return;
-    }
-
-    TSNode memberNode = FindNextScopedMemberNode(ctx.parent, ctx.node);
-    if (ts_node_is_null(memberNode))
-    {
-        return;
-    }
-
-    std::string memberName = parser::GetNodeText(memberNode, ctx.request.sourceCode);
-    const bool inClass = MemberBelongsToClass(*classIt, memberName, ctx.request.symbolTable);
-    const bool inNs = MemberBelongsToNamespace(*nsIt, memberName, ctx.request.symbolTable);
-    if (inClass && !inNs)
-    {
-        std::erase_if(symbols, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::Namespace; });
-    }
-    else if (inNs && !inClass)
-    {
-        std::erase_if(symbols, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::Class; });
-    }
-}
-
-static void FilterAndAddConstructorCandidates(const std::vector<analysis::Symbol>* list,
-                                              const analysis::Symbol& classSym, const std::string& qName,
-                                              std::vector<analysis::Symbol>& ctorSymbols)
-{
-    if (!list)
-    {
-        return;
-    }
-    for (const auto& s : *list)
-    {
-        if (s.type == analysis::SymbolType::Function && s.name == classSym.name &&
-            (s.containerName == qName || s.containerName == classSym.name ||
-             analysis::LastScopeSegment(s.containerName) == classSym.name))
-        {
-            if (std::none_of(ctorSymbols.begin(), ctorSymbols.end(), [&](const analysis::Symbol& existing)
-                             { return existing.name == s.name && analysis::HasSameParameterList(existing, s); }))
-            {
-                ctorSymbols.push_back(s);
-            }
-        }
-    }
-}
-
-static void CollectClassConstructors(const analysis::Symbol& sym, const HoverQueryContext& ctx,
-                                     std::vector<analysis::Symbol>& ctorSymbols)
-{
-    const std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-    auto ctors = ctx.request.symbolTable.FindMemberSymbolPtr(qName, sym.name);
-    if ((!ctors || ctors->empty()) && qName != sym.name)
-    {
-        ctors = ctx.request.symbolTable.FindMemberSymbolPtr(sym.name, sym.name);
-    }
-    if (ctors)
-    {
-        ctorSymbols.insert(ctorSymbols.end(), ctors->begin(), ctors->end());
-    }
-
-    FilterAndAddConstructorCandidates(ctx.request.symbolTable.FindSymbolsPtr(sym.name).get(), sym, qName, ctorSymbols);
-    if (qName != sym.name)
-    {
-        FilterAndAddConstructorCandidates(ctx.request.symbolTable.FindSymbolsPtr(qName).get(), sym, qName, ctorSymbols);
-    }
-}
-
-/**
- * @brief Resolves constructor symbols when hovering over a class name used as a call target.
- * @param[in] ctx Hover query context.
- * @param[in,out] symbols Candidate symbol collection.
- */
-static void AppendConstructorSymbolsIfCall(const HoverQueryContext& ctx, std::vector<analysis::Symbol>& symbols)
-{
-    TSNode callNode = FindEnclosingCallNode(ctx.node);
-    if (ts_node_is_null(callNode))
-    {
-        return;
-    }
-
-    std::vector<analysis::Symbol> ctorSymbols;
-    for (const auto& sym : symbols)
-    {
-        if (sym.type == analysis::SymbolType::Class)
-        {
-            CollectClassConstructors(sym, ctx, ctorSymbols);
-        }
-    }
-    if (!ctorSymbols.empty())
-    {
-        auto best = ResolveCallOverload(ctx.node, ctorSymbols, ctx.request, ctx.scope);
-        if (best.has_value())
-        {
-            auto it = std::find_if(ctorSymbols.begin(), ctorSymbols.end(), [&](const analysis::Symbol& s)
-                                   { return s.name == best->name && analysis::HasSameParameterList(s, *best); });
-            if (it != ctorSymbols.end() && it != ctorSymbols.begin())
-            {
-                std::rotate(ctorSymbols.begin(), it, it + 1);
-            }
-            symbols = std::move(ctorSymbols);
-        }
-        else
-        {
-            for (auto&& cs : ctorSymbols)
-            {
-                symbols.push_back(std::move(cs));
-            }
-        }
-    }
-}
-
 static void PopulateGlobalPropertyAccessors(std::vector<analysis::Symbol>& symbols, std::string& accessorPropertyType,
                                             const HoverQueryContext& ctx)
 {
@@ -2924,16 +961,6 @@ static void PopulateGlobalPropertyAccessors(std::vector<analysis::Symbol>& symbo
     {
         symbols = analysis::FindGlobalPropertyAccessors(ctx.nodeText, ctx.request.symbolTable, accessorMode == 3);
         accessorPropertyType = analysis::PropertyTypeFromAccessors(symbols);
-    }
-}
-
-static void FilterDirectRootGlobalSymbols(std::vector<analysis::Symbol>& symbols,
-                                          const parser::GlobalScopeQualifier& gsq)
-{
-    if (gsq.isGlobal && gsq.isDirectRoot)
-    {
-        std::erase_if(symbols, [](const analysis::Symbol& s)
-                      { return !s.containerName.empty() || s.type == analysis::SymbolType::CallReference; });
     }
 }
 
@@ -3007,6 +1034,7 @@ static std::optional<lsp::Hover> TryHoverSymbolCandidates(HoverQueryContext& ctx
 
     return FormatSymbolsHover(symbols, accessorPropertyType, ctx);
 }
+
 static HoverQueryContext BuildHoverQueryContext(const HoverRequest& request, HoverProfiler& profiler,
                                                 HoverTarget&& target)
 {
@@ -3020,362 +1048,6 @@ static HoverQueryContext BuildHoverQueryContext(const HoverRequest& request, Hov
     return HoverQueryContext{request,      profiler,        target.node,          std::move(target.text),
                              target.range, std::move(vctx), std::move(rootScope), queryLine,
                              scope,        parent};
-}
-static bool IsPathLikeString(std::string_view str)
-{
-    if (str.find('/') != std::string_view::npos || str.find('\\') != std::string_view::npos)
-    {
-        return true;
-    }
-    auto dot = str.rfind('.');
-    if (dot != std::string_view::npos && dot + 1 < str.size())
-    {
-        std::string_view ext = str.substr(dot + 1);
-        if (ext.size() >= 2 && ext.size() <= 4)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-static std::string FormatFileSize(uintmax_t bytes)
-{
-    std::ostringstream ss;
-    if (bytes < 1024)
-    {
-        ss << bytes << " B";
-    }
-    else if (bytes < 1024 * 1024)
-    {
-        ss << std::fixed << std::setprecision(1) << (static_cast<double>(bytes) / 1024.0) << " KB";
-    }
-    else
-    {
-        ss << std::fixed << std::setprecision(1) << (static_cast<double>(bytes) / (1024.0 * 1024.0)) << " MB";
-    }
-    return ss.str();
-}
-
-static std::string ResolveStringLiteralPath(std::string_view unquoted, const HoverRequest& request)
-{
-    std::string unquotedStr(unquoted);
-    if (request.resolveInclude)
-    {
-        std::string resolved = request.resolveInclude(unquotedStr);
-        if (!resolved.empty())
-        {
-            return resolved;
-        }
-    }
-
-    std::error_code ec;
-    std::filesystem::path docPath(utils::UriToPath(request.uri));
-    std::filesystem::path candidate = docPath.parent_path() / unquotedStr;
-    if (std::filesystem::exists(candidate, ec) && !std::filesystem::is_directory(candidate, ec))
-    {
-        return candidate.lexically_normal().string();
-    }
-
-    if (request.config)
-    {
-        for (const auto& searchDir : request.config->features.assetSearchPaths)
-        {
-            std::filesystem::path assetPath = std::filesystem::path(searchDir) / unquotedStr;
-            if (std::filesystem::exists(assetPath, ec) && !std::filesystem::is_directory(assetPath, ec))
-            {
-                return assetPath.lexically_normal().string();
-            }
-        }
-    }
-    return "";
-}
-
-static std::string_view UnquoteStringLiteral(std::string_view txt)
-{
-    return parser::UnquoteStringView(txt);
-}
-
-static std::string FormatResolvedAssetMarkdown(std::string_view unquoted, const std::string& resolved, bool showLength,
-                                               const angel_lsp::i18n::I18n* i18n = nullptr)
-{
-    std::error_code ec;
-    auto fsize = std::filesystem::file_size(resolved, ec);
-    std::string sizeStr = ec ? "Unknown" : FormatFileSize(fsize);
-    std::string normalizedPath = resolved;
-    std::replace(normalizedPath.begin(), normalizedPath.end(), '\\', '/');
-
-    std::string statusBullet =
-        angel_lsp::i18n::FormatMessage(i18n, "hover-asset-status-exists", "- **Status**: Exists");
-    std::string sizeBullet = angel_lsp::i18n::FormatMessage(i18n, "hover-asset-size", "- **Size**: {}", sizeStr);
-    std::string pathBullet =
-        angel_lsp::i18n::FormatMessage(i18n, "hover-asset-path", "- **Path**: `{}`", normalizedPath);
-
-    std::string md =
-        "*(asset)* `" + std::string(unquoted) + "`\n\n" + statusBullet + "\n" + sizeBullet + "\n" + pathBullet;
-    if (showLength)
-    {
-        md += "\n" + angel_lsp::i18n::FormatMessage(i18n, "hover-string-length", "- **Length**: {} characters",
-                                                    unquoted.size());
-    }
-    return md;
-}
-
-/**
- * @brief Finds the topmost binary expression with operator '+' enclosing a node.
- * @param[in] node Starting AST node.
- * @param[in] sourceCode Source text buffer.
- * @return Topmost binary plus node, or the node itself if no binary plus parent exists.
- */
-static TSNode FindTopmostBinaryPlus(TSNode node)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode current = node;
-    parser::ForEachAncestor(parser::GetParent(node),
-                            [&](TSNode parent) -> bool
-                            {
-                                if (ts_node_symbol(parent) == gs.symBinaryExpression)
-                                {
-                                    TSNode opNode = parser::GetChildByField(parent, gs.fieldOperator);
-                                    if (!ts_node_is_null(opNode) && ts_node_symbol(opNode) == gs.tokPlus)
-                                    {
-                                        current = parent;
-                                        return true;
-                                    }
-                                }
-                                return false;
-                            });
-    return current;
-}
-
-/**
- * @brief Looks up the default value of a string variable symbol or local definition.
- * @param[in] name Identifier name.
- * @param[in] node Identifier AST node.
- * @param[in] request Hover request context.
- * @param[in] scope Enclosing lexical scope, or nullptr.
- * @return Resolved default string value if found.
- */
-static std::optional<std::string> ResolveIdentifierDefaultValue(const std::string& name, TSNode node,
-                                                                const HoverRequest& request,
-                                                                const analysis::Scope* scope)
-{
-    if (scope)
-    {
-        const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, name, ts_node_start_byte(node));
-        if (def && !def->defaultValue.empty())
-        {
-            return std::string(UnquoteStringLiteral(def->defaultValue));
-        }
-    }
-    auto candidates = analysis::FindSymbolsInScope(name, node, request.sourceCode, request.symbolTable);
-    for (const auto& sym : candidates)
-    {
-        if (sym.type == analysis::SymbolType::Variable && !sym.GetVariable().defaultValue.empty())
-        {
-            return std::string(UnquoteStringLiteral(sym.GetVariable().defaultValue));
-        }
-    }
-    if (const auto globals = request.symbolTable.FindSymbolsPtr(name))
-    {
-        for (const auto& sym : *globals)
-        {
-            if (sym.type == analysis::SymbolType::Variable && !sym.GetVariable().defaultValue.empty())
-            {
-                return std::string(UnquoteStringLiteral(sym.GetVariable().defaultValue));
-            }
-        }
-    }
-    return std::nullopt;
-}
-
-/**
- * @brief Recursively evaluates a constant string expression AST node.
- * @param[in] node AST node representing an expression.
- * @param[in] request Hover request context.
- * @param[in] scope Enclosing lexical scope, or nullptr.
- * @param[in] depth Recursion depth counter.
- * @return Concatenated string value, or std::nullopt if not fully constant.
- */
-static std::optional<std::string> EvaluateConstantStringExpr(TSNode node, const HoverRequest& request,
-                                                             const analysis::Scope* scope)
-{
-    if (ts_node_is_null(node))
-    {
-        return std::nullopt;
-    }
-
-    const auto& gs = parser::GetGrammarSymbols();
-    std::string result;
-    std::vector<TSNode> stack{node};
-    while (!stack.empty())
-    {
-        TSNode current = stack.back();
-        stack.pop_back();
-        if (ts_node_is_null(current))
-        {
-            return std::nullopt;
-        }
-
-        const TSSymbol type = ts_node_symbol(current);
-        if (type == gs.symStringLiteral)
-        {
-            std::string text = parser::GetNodeText(current, request.sourceCode);
-            result += UnquoteStringLiteral(text);
-        }
-        else if (type == gs.symBinaryExpression)
-        {
-            TSNode opNode = parser::GetChildByField(current, gs.fieldOperator);
-            if (ts_node_is_null(opNode) || ts_node_symbol(opNode) != gs.tokPlus)
-            {
-                return std::nullopt;
-            }
-            TSNode left = parser::GetChildByField(current, gs.fieldLeft);
-            TSNode right = parser::GetChildByField(current, gs.fieldRight);
-            if (ts_node_is_null(left) || ts_node_is_null(right))
-            {
-                return std::nullopt;
-            }
-            stack.push_back(right);
-            stack.push_back(left);
-        }
-        else if (type == gs.symIdentifier || type == gs.symScopedIdentifier)
-        {
-            std::string name = parser::GetNodeText(current, request.sourceCode);
-            auto val = ResolveIdentifierDefaultValue(name, current, request, scope);
-            if (!val.has_value())
-            {
-                return std::nullopt;
-            }
-            result += *val;
-        }
-        else
-        {
-            return std::nullopt;
-        }
-    }
-    return result;
-}
-
-/**
- * @brief Attempts to hover a concatenated string expression if it resolves to a valid asset file.
- * @param[in] target Hover target info.
- * @param[in] request Hover request context.
- * @param[in] showLength Whether to display character length.
- * @return Hover result if asset resolved, std::nullopt otherwise.
- */
-static std::optional<lsp::Hover> TryHoverConcatenatedString(const HoverTarget& target, const HoverRequest& request,
-                                                            bool showLength)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode topPlus = FindTopmostBinaryPlus(target.node);
-    if (ts_node_is_null(topPlus) || ts_node_symbol(topPlus) != gs.symBinaryExpression)
-    {
-        return std::nullopt;
-    }
-
-    auto rootScope = request.scopeIndex.GetRoot(request.uri);
-    TSPoint pt = ts_node_start_point(target.node);
-    const analysis::Scope* scope = rootScope ? FindInnermostScope(rootScope.get(), pt.row, pt.column) : nullptr;
-    auto evalStr = EvaluateConstantStringExpr(topPlus, request, scope);
-    if (!evalStr.has_value() || !IsPathLikeString(*evalStr))
-    {
-        return std::nullopt;
-    }
-
-    const std::string resolved = ResolveStringLiteralPath(*evalStr, request);
-    if (resolved.empty())
-    {
-        return std::nullopt;
-    }
-
-    std::string md = FormatResolvedAssetMarkdown(*evalStr, resolved, showLength, request.i18n);
-    return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, target.range};
-}
-
-static std::optional<lsp::Hover> TryHoverStringLiteral(const HoverTarget& target, const HoverRequest& request)
-{
-    const bool showLength = !request.config || request.config->features.hoverStringLiteralLength;
-    const bool enablePathRes = !request.config || request.config->features.hoverStringLiteralPathResolution;
-
-    if (enablePathRes)
-    {
-        if (auto concatHover = TryHoverConcatenatedString(target, request, showLength))
-        {
-            return concatHover;
-        }
-    }
-
-    if (ts_node_symbol(target.node) == parser::GetGrammarSymbols().symBinaryExpression)
-    {
-        return std::nullopt;
-    }
-
-    const std::string_view txt = target.text;
-    const std::string_view unquoted = UnquoteStringLiteral(txt);
-
-    std::string md;
-    if (enablePathRes && IsPathLikeString(unquoted))
-    {
-        const std::string resolved = ResolveStringLiteralPath(unquoted, request);
-        if (!resolved.empty())
-        {
-            md = FormatResolvedAssetMarkdown(unquoted, resolved, showLength, request.i18n);
-            return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)},
-                              target.range};
-        }
-    }
-
-    md = "```angelscript\n" + std::string(txt) + "\n```";
-    if (showLength)
-    {
-        md += "\n\n" + angel_lsp::i18n::FormatMessage(request.i18n, "hover-string-length",
-                                                      "- **Length**: {} characters", unquoted.size());
-    }
-    return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, target.range};
-}
-
-/**
- * @brief Checks if a hover target corresponds to a string literal or binary expression.
- * @param[in] target Hover target info.
- * @return True if target represents a string literal or binary expression.
- */
-static bool IsStringOrBinaryLiteral(const HoverTarget& target)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol type = ts_node_symbol(target.node);
-    if (type == gs.symStringLiteral || type == gs.symBinaryExpression)
-    {
-        return target.text.size() >= 2 && ((target.text.front() == '"' && target.text.back() == '"') ||
-                                           (target.text.front() == '\'' && target.text.back() == '\''));
-    }
-    return false;
-}
-
-/**
- * @brief Attempts to produce hover for string/binary literals or primitive/wildcard types.
- * @param[in] target Extracted hover target.
- * @param[in] request Original hover request.
- * @param[in,out] profiler Performance profiler.
- * @return Populated Hover if matched, std::nullopt otherwise.
- */
-static std::optional<lsp::Hover> TryHoverLiteralOrType(const HoverTarget& target, const HoverRequest& request,
-                                                       HoverProfiler& profiler)
-{
-    if (IsStringOrBinaryLiteral(target))
-    {
-        if (auto strHover = TryHoverStringLiteral(target, request))
-        {
-            return strHover;
-        }
-    }
-
-    if (auto primHover = TryHoverPrimitiveType(target.text, target.range, request.i18n, profiler))
-    {
-        return primHover;
-    }
-
-    return TryHoverWildcardType(target.text, target.range, request.i18n, profiler);
 }
 
 std::optional<lsp::Hover> GetHover(const HoverRequest& request)
