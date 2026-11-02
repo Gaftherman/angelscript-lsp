@@ -1661,6 +1661,40 @@
       "verifiedByTests": [
         "SemanticAnalyzerTest"
       ]
+    },
+    {
+      "id": "REF-0101",
+      "phase": "S4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/lsp/Server.h",
+      "deletedLineRange": "40-140",
+      "originalSymbolOrCode": "BreakpointLocationsParams, VirtualMixinTarget, MixinSymbolLocation, CachedTokensSnapshot, CodeSettingPair, ServerParseContext, WorkspaceFilesWalkResult, AnalyzeDocumentRequest, PublishDiagnosticsRequest, ScheduleAnalysisRequest, DidOpenPredefinedRequest, PredefinedLoadContext, ReanalyseOnExit, CollectScopesAndAnalyzeRequest",
+      "whatItDidAndWhyInThatFile": "Layer 4 request and context structs declared directly inside Server.h monolithic header.",
+      "whyChangedOrDeleted": "Decoupled into dedicated domain types header ServerAnalysisTypes.h in Sub-Layer 4.3.",
+      "replacedByCanonicalFile": "server/src/lsp/services/ServerAnalysisTypes.h",
+      "replacedByCanonicalSymbol": "AnalyzeDocumentRequest",
+      "ramOrCpuImpact": "Eliminated cyclic header dependencies and decoupled request models from Server coordinator.",
+      "verifiedByTests": [
+        "ServerDomainServicesTest",
+        "ServerHarnessTest"
+      ]
+    },
+    {
+      "id": "REF-0102",
+      "phase": "S4",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/lsp/Server.cpp",
+      "deletedLineRange": "150-250",
+      "originalSymbolOrCode": "ExecuteOnOpenDocument, ExecuteAtDocumentPosition",
+      "whatItDidAndWhyInThatFile": "Duplicated document lookup, encoding, and error handling in LSP text document request handlers.",
+      "whyChangedOrDeleted": "Consolidated into reusable dispatch template methods ExecuteOnOpenDocument and ExecuteAtDocumentPosition in Server.h.",
+      "replacedByCanonicalFile": "server/src/lsp/Server.h",
+      "replacedByCanonicalSymbol": "ExecuteOnOpenDocument",
+      "ramOrCpuImpact": "Reduced duplication across 14 text document handlers and standardized document locking.",
+      "verifiedByTests": [
+        "ServerHarnessTest",
+        "ServerStressTest"
+      ]
     }
   ]
 }

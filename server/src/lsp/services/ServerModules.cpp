@@ -225,12 +225,7 @@ void Server::AugmentSearchDirectoriesFromModules()
 
     if (addedSearchDir)
     {
-        std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
-        m_searchDirectories = std::make_shared<const std::vector<std::string>>(std::move(searchDirs));
-        if (m_workspaceStore)
-        {
-            m_workspaceStore->SetSearchDirectories(*m_searchDirectories);
-        }
+        m_workspaceStore->SetSearchDirectories(std::move(searchDirs));
     }
 }
 

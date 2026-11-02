@@ -11,6 +11,38 @@
 namespace angel_lsp
 {
 /**
+ * @brief One configured module, resolved against the include graph.
+ */
+struct ModuleView
+{
+    std::string name;
+    std::string entryPath;
+    std::string folderPath;
+    ankerl::unordered_dense::set<std::string> memberPaths;
+    ankerl::unordered_dense::set<std::string> closurePaths;
+    bool isImplicitEntryPoint = false;
+};
+
+/**
+ * @brief Which module owns a file, and which others also claimed it.
+ */
+struct ModuleClaim
+{
+    const ModuleView* owner = nullptr;
+    std::vector<std::string> alsoClaimedBy;
+};
+
+/**
+ * @brief Candidate module file path and workspace configuration state during workspace module indexing.
+ */
+struct ModuleCandidate
+{
+    const ModuleView* view = nullptr;
+    int rank = 0;
+    size_t depth = 0;
+};
+
+/**
  * @brief Thread-safe manager for workspace include graphs, module closures, and cross-file indexing.
  */
 class ModuleIndex

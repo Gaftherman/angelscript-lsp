@@ -305,7 +305,7 @@ void Server::RecoverFromScanFailure(const std::string& err)
     LogError(err);
     angel_lsp::utils::MultiFileLogger::Instance().LogCrash(err);
     SetPredefinedReady(true);
-    m_workspaceScanComplete.store(true);
+    m_sessionCoordinator->SetWorkspaceScanComplete(true);
     EndWorkspaceProgress("Failed");
 }
 
@@ -383,22 +383,25 @@ void Server::HandleNotificationsWorkspace_DidChangeWorkspaceFolders(
 {
     size_t rootCount = 0;
     {
-        std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+        auto roots = m_workspaceStore->GetWorkspaceRoots();
 
         for (const auto& removed : params.event.removed)
         {
             const std::string root = angel_lsp::utils::IncludeResolver::NormalizePath(removed.uri.fsPath());
-            std::erase(m_workspacesRoot, root);
+            std::erase(roots, root);
         }
 
         for (const auto& added : params.event.added)
         {
             const std::string root = angel_lsp::utils::IncludeResolver::NormalizePath(added.uri.fsPath());
-            if (std::find(m_workspacesRoot.begin(), m_workspacesRoot.end(), root) == m_workspacesRoot.end())
-                m_workspacesRoot.push_back(root);
+            if (std::find(roots.begin(), roots.end(), root) == roots.end())
+            {
+                roots.push_back(root);
+            }
         }
 
-        rootCount = m_workspacesRoot.size();
+        rootCount = roots.size();
+        m_workspaceStore->SetWorkspaceRoots(roots);
     }
 
     LogInfo(fmt::format("Workspace folders changed (+{} -{}); now {} root(s), rescanning", params.event.added.size(),

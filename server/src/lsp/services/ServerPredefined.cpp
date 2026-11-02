@@ -634,25 +634,16 @@ void Server::SetPredefinedReady(bool ready)
     {
         GetWorkspaceStore().InvalidatePredefinedBaseTable();
     }
-    {
-        std::lock_guard<std::mutex> lock(m_predefinedMutex);
-        m_predefinedReady.store(ready, std::memory_order_release);
-    }
-    m_predefinedCv.notify_all();
+    m_sessionCoordinator->SetPredefinedReady(ready);
 }
 
 bool Server::WaitForPredefinedReady(std::chrono::milliseconds timeout) const
 {
-    if (m_predefinedReady.load(std::memory_order_acquire))
-    {
-        return true;
-    }
-    std::unique_lock<std::mutex> lock(m_predefinedMutex);
-    return m_predefinedCv.wait_for(lock, timeout, [this] { return m_predefinedReady.load(std::memory_order_acquire); });
+    return m_sessionCoordinator->WaitUntilPredefinedReady(timeout);
 }
 
 bool Server::IsPredefinedReady() const noexcept
 {
-    return m_predefinedReady.load(std::memory_order_acquire);
+    return m_sessionCoordinator->IsPredefinedReady();
 }
 } // namespace angel_lsp

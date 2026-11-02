@@ -159,6 +159,25 @@ class DiagnosticsPipeline
     [[nodiscard]] std::optional<DiagnosticsSnapshot> GetCachedSnapshot(const std::string& uri) const;
 
     /**
+     * @brief Checks if background scheduler has pending tasks beyond active analysis.
+     * @return True if additional tasks are queued.
+     */
+    [[nodiscard]] bool HasQueuedWork() const noexcept
+    {
+        return m_scheduler != nullptr && m_scheduler->HasQueuedWork();
+    }
+
+    /**
+     * @brief Retrieves a thread-safe copy of all currently cached diagnostics snapshots.
+     * @return Map of document URI to cached diagnostics snapshot.
+     */
+    [[nodiscard]] ankerl::unordered_dense::map<std::string, DiagnosticsSnapshot> GetAllCachedSnapshots() const
+    {
+        std::lock_guard<std::mutex> lock(m_cacheMutex);
+        return m_diagnosticsCache;
+    }
+
+    /**
      * @brief Removes the cached diagnostics for a document (e.g. on document close).
      * @param[in] uri Document canonical URI.
      */
@@ -188,12 +207,36 @@ class DiagnosticsPipeline
     [[nodiscard]] const ankerl::unordered_dense::map<std::string, analysis::DiagnosticSeverity>&
     GetDiagnosticSeverities() const noexcept;
 
+    /**
+     * @brief Direct mutable reference to diagnostics cache map for Server delegation.
+     */
+    [[nodiscard]] ankerl::unordered_dense::map<std::string, DiagnosticsSnapshot>& GetCacheRef() noexcept
+    {
+        return m_diagnosticsCache;
+    }
+
+    /**
+     * @brief Direct mutable reference to diagnostics cache mutex for Server delegation.
+     */
+    [[nodiscard]] std::mutex& GetCacheMutexRef() noexcept
+    {
+        return m_cacheMutex;
+    }
+
+    /**
+     * @brief Direct mutable reference to diagnostic severities map for Server delegation.
+     */
+    [[nodiscard]] ankerl::unordered_dense::map<std::string, analysis::DiagnosticSeverity>& GetSeveritiesRef() noexcept
+    {
+        return m_diagnosticSeverities;
+    }
+
   private:
     AnalysisScheduler* m_scheduler = nullptr;
     std::unique_ptr<AnalysisScheduler> m_ownedScheduler;
     mutable std::mutex m_cacheMutex;
     ankerl::unordered_dense::map<std::string, DiagnosticsSnapshot> m_diagnosticsCache;
-    uint64_t m_diagnosticsRevision{0};
+    std::atomic<uint64_t> m_diagnosticsRevision{0};
     ankerl::unordered_dense::map<std::string, analysis::DiagnosticSeverity> m_diagnosticSeverities;
 };
 

@@ -144,7 +144,6 @@ void DiagnosticsPipeline::ClearAllDiagnostics()
 
 uint64_t DiagnosticsPipeline::NextRevision() noexcept
 {
-    std::lock_guard<std::mutex> lock(m_cacheMutex);
     return ++m_diagnosticsRevision;
 }
 

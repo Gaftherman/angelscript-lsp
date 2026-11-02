@@ -130,17 +130,31 @@ static std::optional<int> FindSectionInt(const lsp::LSPObject* initSection, cons
 }
 
 Server::Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& stream)
+    : m_config(config), m_workspaceStore(std::make_unique<WorkspaceStateStore>()),
+      m_diagnosticsPipeline(std::make_unique<DiagnosticsPipeline>()),
+      m_sessionCoordinator(std::make_unique<LspSessionCoordinator>()),
+      m_documentStore(m_workspaceStore->GetDocumentStore()), m_includeGraph(m_workspaceStore->GetIncludeGraph()),
+      m_moduleIndex(m_workspaceStore->GetModuleIndex()),
+      m_diagnosticsCacheMutex(m_diagnosticsPipeline->GetCacheMutexRef()),
+      m_diagnosticsCache(m_diagnosticsPipeline->GetCacheRef()),
+      m_diagnosticSeverities(m_diagnosticsPipeline->GetSeveritiesRef()),
+      m_positionEncoding(m_sessionCoordinator->PositionEncodingRef()),
+      m_snippetSupport(m_sessionCoordinator->SnippetSupportRef()),
+      m_workDoneProgressSupport(m_sessionCoordinator->WorkDoneProgressSupportRef()),
+      m_clientPullsDiagnostics(m_sessionCoordinator->ClientPullsDiagnosticsRef()),
+      m_clientSupportsDiagnosticRefresh(m_sessionCoordinator->ClientSupportsDiagnosticRefreshRef())
 {
-    m_config = config;
+    m_sessionCoordinator->Start();
+    m_sessionCoordinator->SetFormatBraceStyleKR(BraceStyleIsKR(m_config.format.braceStyle));
+    m_sessionCoordinator->SetFormatSpacesInsideParentheses(m_config.format.spacesInsideParentheses);
+    m_sessionCoordinator->SetFormatKeepEmptyBlocksOnSingleLine(m_config.format.keepEmptyBlocksOnSingleLine);
     if (!m_config.features.enablePredefinedLoader)
     {
-        m_predefinedReady.store(true);
+        m_sessionCoordinator->SetPredefinedReady(true);
     }
 
     m_connection = std::make_unique<lsp::Connection>(stream);
     m_messageHandler = std::make_unique<lsp::MessageHandler>(*m_connection);
-
-    m_running = true;
 
     m_logger = std::make_unique<angel_lsp::utils::LspLogger>(m_messageHandler.get());
     if (m_logger)
@@ -150,42 +164,16 @@ Server::Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& s
 
     m_parser = std::make_unique<angel_lsp::parser::AngelScriptParser>(m_logger.get());
     m_workerParser = std::make_unique<angel_lsp::parser::AngelScriptParser>(m_logger.get());
-
     m_symbolCollector = std::make_unique<angel_lsp::analysis::SymbolCollector>(m_logger.get());
-
     m_localScopeCollector = std::make_unique<angel_lsp::analysis::LocalScopeCollector>(m_logger.get());
-
     m_semanticAnalyzer = std::make_unique<angel_lsp::analysis::SemanticAnalyzer>(m_logger.get());
-
     m_i18n = std::make_unique<angel_lsp::i18n::I18n>(m_config.info.locale.empty() ? "en" : m_config.info.locale);
 
-    // Seeded from the startup config and mutable from here on. Everything that reads these
-    // three goes through the accessors below; m_config's own copies are not read again.
-    m_searchDirectories = std::make_shared<const std::vector<std::string>>(m_config.searchDirectories);
-    m_engineProfile = m_config.engineProfile;
-
-    // Seeded empty so DefinedWords() never hands back a null snapshot, then filled from the
-    // flag and the client setting. Stubs add theirs as they load.
-    m_definedWords = std::make_shared<const ankerl::unordered_dense::set<std::string>>();
-    SetDefinedWordsFrom(std::string(), m_config.definedWords);
-    m_formatBraceStyleKR.store(BraceStyleIsKR(m_config.format.braceStyle), std::memory_order_relaxed);
-    m_formatSpacesInsideParentheses.store(m_config.format.spacesInsideParentheses, std::memory_order_relaxed);
-    m_formatKeepEmptyBlocksOnSingleLine.store(m_config.format.keepEmptyBlocksOnSingleLine, std::memory_order_relaxed);
-
-    BuildDiagnosticSeverityOverrides();
-
-    InitHandles();
-    InitDomainServices();
-}
-
-void Server::InitDomainServices()
-{
-    m_workspaceStore = std::make_unique<WorkspaceStateStore>();
     m_workspaceStore->SetSearchDirectories(m_config.searchDirectories);
     m_workspaceStore->SetEngineProfile(m_config.engineProfile);
     m_workspaceStore->SetDefinedWordsFrom(std::string(), m_config.definedWords);
 
-    m_analysisScheduler = std::make_unique<angel_lsp::AnalysisScheduler>(
+    m_diagnosticsPipeline->InitScheduler(
         [this](angel_lsp::AnalyzeRequest req)
         {
             AnalyzeDocument({.uriStr = std::move(req.uriStr),
@@ -197,39 +185,29 @@ void Server::InitDomainServices()
                              .configRevision = req.configRevision});
         });
 
-    m_diagnosticsPipeline = std::make_unique<DiagnosticsPipeline>(m_analysisScheduler.get());
-    m_diagnosticsPipeline->SetDiagnosticSeverities(m_diagnosticSeverities);
+    BuildDiagnosticSeverityOverrides();
+    InitHandles();
+}
 
-    m_sessionCoordinator = std::make_unique<LspSessionCoordinator>();
-    m_sessionCoordinator->Start();
-    m_sessionCoordinator->SetFormatBraceStyleKR(BraceStyleIsKR(m_config.format.braceStyle));
-    if (!m_config.features.enablePredefinedLoader)
-    {
-        m_sessionCoordinator->SetPredefinedReady(true);
-    }
+void Server::InitDomainServices()
+{
 }
 
 Server::~Server()
 {
-    m_running = false;
     if (m_sessionCoordinator)
     {
         m_sessionCoordinator->RequestShutdown();
     }
-
     if (m_diagnosticsPipeline)
     {
         m_diagnosticsPipeline->StopScheduler();
     }
-    if (m_analysisScheduler)
-    {
-        m_analysisScheduler->Stop();
-    }
-
     m_workspaceStop.Request();
     if (m_workspaceThread.joinable())
+    {
         m_workspaceThread.join();
-
+    }
     m_documentStore.Clear();
     m_predefinedManager.Clear();
     if (m_workspaceStore)
@@ -238,57 +216,72 @@ Server::~Server()
     }
 }
 
+WorkspaceSnapshot Server::CreateWorkspaceSnapshot() const
+{
+    return m_workspaceStore->CreateSnapshot();
+}
+
 std::vector<std::string> Server::WorkspaceRoots() const
 {
-    std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
-    return m_workspacesRoot;
+    return m_workspaceStore->GetWorkspaceRoots();
 }
 
 std::shared_ptr<const std::vector<std::string>> Server::SearchDirectories() const
 {
-    std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
-    return m_searchDirectories;
+    return m_workspaceStore->GetSearchDirectories();
 }
 
 std::string Server::EngineProfile() const
 {
-    std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
-    return m_engineProfile;
+    return m_workspaceStore->GetEngineProfile();
 }
 
 std::shared_ptr<const ankerl::unordered_dense::set<std::string>> Server::DefinedWords() const
 {
-    std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
-    return m_definedWords;
+    return m_workspaceStore->GetDefinedWords();
 }
 
 bool Server::SetDefinedWordsFrom(const std::string& source, std::vector<std::string> words)
 {
-    auto merged = std::make_shared<ankerl::unordered_dense::set<std::string>>();
+    return m_workspaceStore->SetDefinedWordsFrom(source, std::move(words));
+}
 
-    std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
-
-    if (m_workspaceStore)
+void Server::DrainQueue()
+{
+    if (m_diagnosticsPipeline)
     {
-        m_workspaceStore->SetDefinedWordsFrom(source, words);
+        m_diagnosticsPipeline->DrainQueue();
     }
+}
 
-    if (words.empty())
-        m_definedWordsBySource.erase(source);
-    else
-        m_definedWordsBySource[source] = std::move(words);
+std::string_view Server::ImplicitIncludeExtension() const noexcept
+{
+    return m_config.implicitIncludeExtension ? std::string_view(m_config.info.fileExtension) : std::string_view{};
+}
 
-    for (const auto& [_, contributed] : m_definedWordsBySource)
-    {
-        for (const auto& word : contributed)
-            merged->insert(word);
-    }
+void Server::SetWorkspaceScanComplete(bool complete) noexcept
+{
+    m_sessionCoordinator->SetWorkspaceScanComplete(complete);
+}
 
-    if (m_definedWords && *m_definedWords == *merged)
-        return false;
+features::BraceStyle Server::CurrentBraceStyle() const
+{
+    return m_sessionCoordinator->GetFormatBraceStyleKR() ? features::BraceStyle::KAndR : features::BraceStyle::Allman;
+}
 
-    m_definedWords = std::move(merged);
-    return true;
+bool Server::CurrentSpacesInsideParentheses() const noexcept
+{
+    return m_sessionCoordinator->GetFormatSpacesInsideParentheses();
+}
+
+bool Server::CurrentKeepEmptyBlocksOnSingleLine() const noexcept
+{
+    return m_sessionCoordinator->GetFormatKeepEmptyBlocksOnSingleLine();
+}
+
+features::PointerAlignment Server::CurrentPointerAlignment() const noexcept
+{
+    return m_sessionCoordinator->GetFormatPointerAlignment();
 }
 
 bool Server::ProcessIncomingMessageStep()
@@ -308,13 +301,13 @@ bool Server::ProcessIncomingMessageStep()
             return false;
         }
         LogInfo(fmt::format("Connection closed: {}", e.what()));
-        m_running = false;
+        m_sessionCoordinator->RequestShutdown();
         return false;
     }
     catch (const lsp::io::Error& e)
     {
         LogInfo(fmt::format("Transport closed: {}", e.what()));
-        m_running = false;
+        m_sessionCoordinator->RequestShutdown();
         return false;
     }
     catch (const lsp::json::ParseError& e)
@@ -343,7 +336,7 @@ void Server::Run()
 {
     unsigned consecutiveErrors = 0;
 
-    while (m_running)
+    while (m_sessionCoordinator->IsRunning())
     {
         try
         {
@@ -353,7 +346,7 @@ void Server::Run()
                 continue;
             }
 
-            if (!m_running)
+            if (!m_sessionCoordinator->IsRunning())
             {
                 break;
             }
@@ -364,14 +357,14 @@ void Server::Run()
                                               consecutiveErrors);
                 LogError(err);
                 angel_lsp::utils::MultiFileLogger::Instance().LogCrash(err);
-                m_running = false;
+                m_sessionCoordinator->RequestShutdown();
             }
         }
         catch (const std::exception& e)
         {
-            std::string err = fmt::format("Fatal exception in main server loop recovered: {}", e.what());
-            LogError(err);
-            angel_lsp::utils::MultiFileLogger::Instance().LogCrash(err);
+            LogError(fmt::format("Fatal unhandled exception in main server loop: {}", e.what()));
+            angel_lsp::utils::MultiFileLogger::Instance().LogCrash(
+                fmt::format("Fatal unhandled exception in main server loop: {}", e.what()));
         }
         catch (...)
         {
@@ -385,6 +378,7 @@ void Server::Run()
 void Server::ExtractInitialWorkspaceRoots(const lsp::requests::Initialize::Params& params)
 {
     std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
+    std::vector<std::string> roots;
     if (params.workspaceFolders.has_value() && !params.workspaceFolders.value().isNull())
     {
         for (const auto& workspace : params.workspaceFolders.value().value())
@@ -392,12 +386,12 @@ void Server::ExtractInitialWorkspaceRoots(const lsp::requests::Initialize::Param
             const std::string fsPath = workspace.uri.fsPath();
             if (!fsPath.empty())
             {
-                m_workspacesRoot.push_back(angel_lsp::utils::IncludeResolver::NormalizePath(fsPath));
+                roots.push_back(angel_lsp::utils::IncludeResolver::NormalizePath(fsPath));
             }
         }
     }
 
-    if (m_workspacesRoot.empty())
+    if (roots.empty())
     {
         std::string root;
         if (!params.rootUri.isNull())
@@ -414,16 +408,18 @@ void Server::ExtractInitialWorkspaceRoots(const lsp::requests::Initialize::Param
         }
         if (!root.empty())
         {
-            m_workspacesRoot.push_back(angel_lsp::utils::IncludeResolver::NormalizePath(root));
+            roots.push_back(angel_lsp::utils::IncludeResolver::NormalizePath(root));
         }
     }
 
 #if defined(_DEBUG) || !defined(NDEBUG)
-    if (m_config.info.enableFileLogging && !m_workspacesRoot.empty())
+    if (m_config.info.enableFileLogging && !roots.empty())
     {
-        angel_lsp::utils::MultiFileLogger::Instance().Initialize(m_workspacesRoot.front());
+        angel_lsp::utils::MultiFileLogger::Instance().Initialize(roots.front());
     }
 #endif
+
+    m_workspaceStore->SetWorkspaceRoots(std::move(roots));
 }
 
 void Server::ApplyEngineInitializationOptions(const std::optional<lsp::LSPAny>& initOpts)
@@ -782,18 +778,15 @@ void Server::HandleNotificationsInitialized([[maybe_unused]] lsp::notifications:
 
 lsp::requests::Shutdown::Result Server::HandleRequestsShutdown()
 {
-    m_running = false;
+    m_sessionCoordinator->RequestShutdown();
     m_workspaceStop.Request();
-    if (m_analysisScheduler)
-    {
-        m_analysisScheduler->Stop();
-    }
+    m_diagnosticsPipeline->StopScheduler();
     return lsp::requests::Shutdown::Result{};
 }
 
 void Server::HandleNotificationsExit()
 {
-    m_running = false;
+    m_sessionCoordinator->RequestShutdown();
 }
 
 lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string& uriStr, const std::string& text)

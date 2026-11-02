@@ -79,6 +79,46 @@ bool LspSessionCoordinator::GetFormatBraceStyleKR() const noexcept
     return m_formatBraceStyleKR.load();
 }
 
+void LspSessionCoordinator::SetFormatSpacesInsideParentheses(bool spaces) noexcept
+{
+    m_formatSpacesInsideParentheses.store(spaces);
+}
+
+bool LspSessionCoordinator::GetFormatSpacesInsideParentheses() const noexcept
+{
+    return m_formatSpacesInsideParentheses.load();
+}
+
+void LspSessionCoordinator::SetFormatKeepEmptyBlocksOnSingleLine(bool keep) noexcept
+{
+    m_formatKeepEmptyBlocksOnSingleLine.store(keep);
+}
+
+bool LspSessionCoordinator::GetFormatKeepEmptyBlocksOnSingleLine() const noexcept
+{
+    return m_formatKeepEmptyBlocksOnSingleLine.load();
+}
+
+void LspSessionCoordinator::SetFormatPointerAlignment(features::PointerAlignment align) noexcept
+{
+    m_formatPointerAlignment.store(align);
+}
+
+features::PointerAlignment LspSessionCoordinator::GetFormatPointerAlignment() const noexcept
+{
+    return m_formatPointerAlignment.load();
+}
+
+void LspSessionCoordinator::SetWorkDoneProgressSupport(bool support) noexcept
+{
+    m_workDoneProgressSupport = support;
+}
+
+bool LspSessionCoordinator::GetWorkDoneProgressSupport() const noexcept
+{
+    return m_workDoneProgressSupport;
+}
+
 uint64_t LspSessionCoordinator::IncrementConfigRevision() noexcept
 {
     return ++m_configRevision;

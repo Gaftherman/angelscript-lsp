@@ -150,7 +150,7 @@ void Server::ReanalyzeDependentsOnSave(const std::string& uriStr)
 
         if (isDependent)
         {
-            if (m_analysisScheduler && m_analysisScheduler->ShouldDebouncePeer(openUri))
+            if (m_diagnosticsPipeline->ShouldDebouncePeer(openUri))
             {
                 continue;
             }
@@ -181,10 +181,7 @@ void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDoc
     }
 
     const int version = m_documentStore.GetVersion(uriStr);
-    if (m_analysisScheduler)
-    {
-        m_analysisScheduler->MarkSaved(uriStr, version);
-    }
+    m_diagnosticsPipeline->MarkSaved(uriStr, version);
 
     m_scopeIndex.ClearDocument(uriStr);
     m_callGraph.ClearDocument(uriStr);
@@ -547,10 +544,7 @@ void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDo
     LogInfo(fmt::format("[File Close] Document closed: {}", uriStr));
     m_documentStore.CloseDocument(uriStr);
 
-    if (m_analysisScheduler)
-    {
-        m_analysisScheduler->Cancel(uriStr);
-    }
+    m_diagnosticsPipeline->Cancel(uriStr);
 
     // The cached token payload is only meaningful while the client still holds it.
     {

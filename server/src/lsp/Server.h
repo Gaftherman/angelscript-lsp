@@ -13,11 +13,12 @@
 #include "features/definition/DefinitionHandler.h"
 #include "features/formatting/FormattingHandler.h"
 #include "i18n/i18n.h"
-#include "lsp/pipeline/AnalysisScheduler.h"
 #include "lsp/pipeline/DiagnosticsPipeline.h"
 #include "lsp/pipeline/LspSessionCoordinator.h"
+#include "lsp/services/ServerAnalysisTypes.h"
 #include "lsp/state/DocumentStore.h"
 #include "lsp/state/ModuleIndex.h"
+#include "lsp/state/PositionCodec.h"
 #include "lsp/state/PredefinedStubManager.h"
 #include "lsp/state/WorkspaceStateStore.h"
 #include "parser/AngelScriptParser.h"
@@ -38,190 +39,52 @@
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <tree_sitter/api.h>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace angel_lsp
 {
-/**
- * @brief Parameters for resolving valid breakpoint positions within a source line range.
- */
-struct BreakpointLocationsParams
-{
-    std::string uri;
-    uint32_t startLine = 0;
-    uint32_t endLine = std::numeric_limits<uint32_t>::max();
-};
 
 /**
- * @brief Identifies virtual mixin methods and their backing source declarations for LSP navigation.
+ * @brief High-performance LSP server implementation for the AngelScript language.
  */
-struct VirtualMixinTarget
-{
-    std::string hostClass;
-    std::string mixinName;
-};
-
-/**
- * @brief Source location and document URI of a symbol defined within an expanded mixin block.
- */
-struct MixinSymbolLocation
-{
-    std::string fileUri;
-    uint32_t startLine{0};
-    uint32_t endLine{0};
-    std::string resolvedBaseClass;
-    bool found{false};
-};
-
-/**
- * @brief Thread-safe snapshot of cached semantic tokens and version metadata for document synchronization.
- */
-struct CachedTokensSnapshot
-{
-    bool canDiff{false};
-    bool prevHadError{false};
-    int cachedVersion{-1};
-    std::vector<lsp::uint> previous;
-};
-
-/**
- * @brief RAII timer recording execution duration for LSP server startup phases.
- */
-class PhaseTimer
-{
-  public:
-    PhaseTimer(angel_lsp::utils::LspLogger* logger, std::string phase)
-        : m_logger(logger), m_phase(std::move(phase)), m_start(std::chrono::steady_clock::now())
-    {
-    }
-
-    ~PhaseTimer()
-    {
-        if (m_logger == nullptr)
-        {
-            return;
-        }
-
-        const auto elapsed =
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - m_start);
-        m_logger->LogInfo(fmt::format("Startup phase '{}': {}", m_phase,
-                                      angel_lsp::utils::FormatDuration(static_cast<double>(elapsed.count()))));
-    }
-
-    PhaseTimer(const PhaseTimer&) = delete;
-    PhaseTimer& operator=(const PhaseTimer&) = delete;
-
-  private:
-    angel_lsp::utils::LspLogger* m_logger;
-    std::string m_phase;
-    std::chrono::steady_clock::time_point m_start;
-};
-
-/**
- * @brief Associates a diagnostic code with its user-configured severity setting.
- */
-struct CodeSettingPair
-{
-    std::string_view code;
-    std::string_view uri;
-};
-
 class Server
 {
-  private:
-    angel_lsp::config::ServerConfig m_config;
-    std::unique_ptr<lsp::Connection> m_connection;
-    std::unique_ptr<lsp::MessageHandler> m_messageHandler;
-    std::atomic<bool> m_running{false};
+  public:
+    using BreakpointLocationsParams = angel_lsp::BreakpointLocationsParams;
+    using VirtualMixinTarget = angel_lsp::VirtualMixinTarget;
+    using MixinSymbolLocation = angel_lsp::MixinSymbolLocation;
+    using CachedTokensSnapshot = angel_lsp::CachedTokensSnapshot;
+    using PhaseTimer = angel_lsp::PhaseTimer;
+    using CodeSettingPair = angel_lsp::CodeSettingPair;
+    using ReanalyseOnExit = angel_lsp::ReanalyseOnExit;
+    using PredefinedLoadContext = angel_lsp::PredefinedLoadContext;
+    using PredefinedIndexTiming = angel_lsp::PredefinedIndexTiming;
+    using CommitAnalysisRequest = angel_lsp::CommitAnalysisRequest;
+    using CollectScopesRequest = angel_lsp::CollectScopesRequest;
+    using PublishDiagnosticsRequest = angel_lsp::PublishDiagnosticsRequest;
+    using DidOpenPredefinedRequest = angel_lsp::DidOpenPredefinedRequest;
+    using WorkspaceFilesWalkResult = angel_lsp::WorkspaceFilesWalkResult;
+    using ScheduleAnalysisRequest = angel_lsp::ScheduleAnalysisRequest;
+    using AnalyzeDocumentRequest = angel_lsp::AnalyzeDocumentRequest;
+    using ParseAndCollectResult = angel_lsp::ParseAndCollectResult;
+    using AnalysisTimingProfile = angel_lsp::AnalysisTimingProfile;
+    using OpenDocument = angel_lsp::OpenDocument;
+    using RenameContext = angel_lsp::RenameContext;
+    using ModuleView = angel_lsp::ModuleView;
+    using ModuleClaim = angel_lsp::ModuleClaim;
+    using ModuleCandidate = angel_lsp::ModuleCandidate;
+    using DiagnosticsSnapshot = angel_lsp::DiagnosticsSnapshot;
 
-    // Runtime-mutable configuration
-    // Everything else in m_config is written once in the constructor and can be read from any
-    // thread. These three are not: didChangeWorkspaceFolders and didChangeConfiguration both
-    // rewrite them on the message loop while the workspace scan and the analysis thread are
-    // reading them. Reassigning a std::vector<std::string> frees the buffer a worker may be
-    // iterating, so they live behind this mutex and are reached only through the accessors
-    // below - never off m_config directly.
-    mutable std::mutex m_runtimeConfigMutex;
-    std::vector<std::string> m_workspacesRoot;
-
-    // Held by shared_ptr rather than by value so a reader can keep the buffer alive for the
-    // duration of its call without copying every string, and a writer can swap in a new list
-    // without waiting for readers to finish.
-    std::shared_ptr<const std::vector<std::string>> m_searchDirectories;
-    std::string m_engineProfile;
-
-    // The words `#if` treats as defined, from all three sources at once: the --define flag, the
-    // angelscript.define setting, and `#define` in every loaded predefined stub. The stubs are
-    // what make this mutable - they reload while the analysis thread is reading, so it gets the
-    // same shared_ptr snapshot treatment as m_searchDirectories rather than being read off
-    // m_config, which is what the old comment on ExcludedLineRanges assumed it could do.
-    std::shared_ptr<const ankerl::unordered_dense::set<std::string>> m_definedWords;
-
-    // Contributions keyed by the stub that made them, so reloading one stub replaces its own
-    // words without disturbing another's. The empty key holds the flag and setting words.
-    ankerl::unordered_dense::map<std::string, std::vector<std::string>> m_definedWordsBySource;
-
-    /**
-     * @brief Whether a block's opening brace goes on the statement line (K&R) or its own.
-     *
-     * An atomic bool rather than a member of the mutex-guarded set above: it is one word, the
-     * formatting handlers read it on the message loop, and didChangeConfiguration writes it
-     * there too. Nothing frees a buffer under a reader, which is what that mutex is for.
-     */
-    std::atomic<bool> m_formatBraceStyleKR{false};
-    std::atomic<bool> m_formatSpacesInsideParentheses{false};
-    std::atomic<bool> m_formatKeepEmptyBlocksOnSingleLine{true};
-    std::atomic<features::PointerAlignment> m_formatPointerAlignment{features::PointerAlignment::Left};
-    std::atomic<uint64_t> m_configRevision{0};
-
-    std::unique_ptr<angel_lsp::i18n::I18n> m_i18n;
-    std::thread m_workspaceThread;
-
-    /** @brief Cancels the workspace scan. Rearmed only after the thread reading it was joined. */
-    angel_lsp::utils::StopFlag m_workspaceStop;
-
-    /** @brief Set once the first workspace scan finishes; used to defer initial diagnostics. */
-    std::atomic<bool> m_workspaceScanComplete{false};
-
-    /** @brief Barrier signaling that predefined stubs and engine profiles have loaded. */
-    std::atomic<bool> m_predefinedReady{false};
-    mutable std::mutex m_predefinedMutex;
-    mutable std::condition_variable m_predefinedCv;
-    std::mutex m_messageHandlerMutex;
-    std::unique_ptr<angel_lsp::utils::LspLogger> m_logger;
-    std::unique_ptr<angel_lsp::parser::AngelScriptParser> m_parser;
-    std::unique_ptr<angel_lsp::parser::AngelScriptParser> m_workerParser;
-    angel_lsp::analysis::SymbolTable m_symbolTable;
-    std::unique_ptr<angel_lsp::analysis::SymbolCollector> m_symbolCollector;
-    angel_lsp::analysis::ScopeIndex m_scopeIndex;
-
-    /**
-     * @brief Workspace-wide call index, maintained beside the scope trees.
-     *
-     * Kept out of the SymbolTable on purpose: a call is not a declaration, and folding
-     * hundreds per file into the table would grow it by an order of magnitude and slow every
-     * rule that walks it to serve one feature. See analysis/CallGraph.h.
-     */
-    angel_lsp::analysis::CallGraphIndex m_callGraph;
-    std::unique_ptr<angel_lsp::analysis::LocalScopeCollector> m_localScopeCollector;
-    std::unique_ptr<angel_lsp::analysis::SemanticAnalyzer> m_semanticAnalyzer;
-    angel_lsp::DocumentStore m_documentStore;
-    angel_lsp::PredefinedStubManager m_predefinedManager;
-
-    /**
-     * @brief The last semantic token payload handed to the client for a document.
-     *
-     * Kept so a delta request can be answered with the difference instead of the whole stream.
-     * The id is what the client echoes back; when it does not match what is cached - because
-     * the document was closed, or another request overwrote the entry - the full stream is
-     * sent instead, which is always a valid answer to a delta request.
-     */
     struct SemanticTokensSnapshot
     {
         std::string resultId;
@@ -230,2037 +93,132 @@ class Server
         int version = -1;
     };
 
-    ankerl::unordered_dense::map<std::string, SemanticTokensSnapshot> m_semanticTokensCache;
-    mutable std::mutex m_semanticTokensMutex;
-    uint64_t m_semanticTokensRevision = 0;
-
-    /**
-     * @brief Thread-safe cached diagnostics snapshot sent over LSP wire or served to pull requests.
-     */
-    struct DiagnosticsSnapshot
-    {
-        std::string resultId;
-        std::vector<lsp::Diagnostic> items;
-
-        /** @brief Hash of the document text used to verify freshness against pull requests. */
-        size_t textHash = 0;
-        int version = -1;
-        uint64_t generation = 0;
-        uint64_t configRevision = 0;
-    };
-
-    // Serializes document lifecycle mutations (didOpen, didChange, didSave, didClose)
-    // with background analysis commits (CommitAnalysisResults), eliminating race windows.
-    mutable std::mutex m_lifecycleMutex;
-
-    // Optional test hook invoked right before committing analysis results, for deterministic barrier testing.
-    std::function<void(const std::string& uri, int version, uint64_t generation)> m_onBeforeCommitHook;
-
-    // Written by the analysis thread through PublishDiagnostics, read by the message loop
-    // answering a pull. Its own mutex rather than m_analysisMutex: that one is held across the
-    // debounce wait, and a pull would block behind a sleeping worker.
-    mutable std::mutex m_diagnosticsCacheMutex;
-    ankerl::unordered_dense::map<std::string, DiagnosticsSnapshot> m_diagnosticsCache;
-    uint64_t m_diagnosticsRevision = 0;
-
-    // Per-rule severity overrides, typed from m_config.diagnosticSeverities at startup and
-    // handed to every SemanticAnalysisRequest. Empty means "leave every rule at its own
-    // severity", which is why BuildAnalysisRequest passes nullptr rather than an empty map.
-    ankerl::unordered_dense::map<std::string, angel_lsp::analysis::DiagnosticSeverity> m_diagnosticSeverities;
-
-    angel_lsp::utils::WorkspaceIncludeGraph m_includeGraph;
-    angel_lsp::ModuleIndex m_moduleIndex;
-
-    // Debounced re-analysis. Reparsing is cheap and stays on the message loop so requests
-    // always see a current tree, but symbol collection, scope building and semantic analysis
-    // rebuild whole-document state and are far too heavy to run on every keystroke of a
-    // 3000-line file. They are queued here instead and run once editing pauses.
-    std::unique_ptr<angel_lsp::AnalysisScheduler> m_analysisScheduler;
-
-    void SetDocumentVersion(const std::string& uriStr, int version)
-    {
-        m_documentStore.SetVersion(uriStr, version);
-    }
-
-    int GetDocumentVersion(const std::string& uriStr) const
-    {
-        return m_documentStore.GetVersion(uriStr);
-    }
-
-    void RemoveDocumentVersion(const std::string& uriStr)
-    {
-        m_documentStore.SetVersion(uriStr, -1);
-    }
-
-    // Files pulled in because some open document's #include module needs them, keyed by the URI
-    // they were indexed under. Their text is kept so position conversion can reach them and so a
-    // second open document in the same module does not re-read them off disk.
-    mutable std::mutex m_closureMutex;
-    ankerl::unordered_dense::map<std::string, std::string> m_closureDocuments;
-
-    // Open document URI -> the closure URIs indexed on its behalf. Closure files outlive the
-    // document that pulled them in whenever another open document still needs them, so they are
-    // released by reference rather than on didClose.
-    ankerl::unordered_dense::map<std::string, std::vector<std::string>> m_openDocumentClosures;
-
-    // Canonical filesystem path -> the URI that path is currently indexed under. The client's
-    // spelling of a file URI and the one synthesised from a path need not match byte for byte,
-    // and indexing the same file under both would duplicate every symbol in it.
-    ankerl::unordered_dense::map<std::string, std::string> m_indexedUriByPath;
-
-    // Document URI -> last saved public interface hash. Used to detect whether an on-disk save
-    // actually changed the document's exported interface, avoiding false-negatives when
-    // background keystrokes already committed newer symbols to the live table before didSave.
-    ankerl::unordered_dense::map<std::string, uint64_t> m_lastSavedInterfaceHash;
-
-    /**
-     * @brief Memoization cache for parsed mixin file ASTs during background analysis worker tasks.
-     */
-    angel_lsp::analysis::rules::MixinFileCache m_workerMixinCache;
-
-    /**
-     * @brief Memoization cache for parsed mixin file ASTs during synchronous server-thread analysis.
-     */
-    angel_lsp::analysis::rules::MixinFileCache m_serverMixinCache;
-
-    /**
-     * @brief Atomic signal indicating that the background analysis worker should clear its mixin cache.
-     */
-    std::atomic<bool> m_clearWorkerMixinCache{false};
-
-    /**
-     * @brief Invalidates parsed mixin AST memoization caches across server and worker contexts.
-     */
-    void ClearMixinCaches()
-    {
-        m_serverMixinCache.clear();
-        m_clearWorkerMixinCache.store(true, std::memory_order_release);
-    }
-
-    // Negotiated in HandleRequestsInitialized. UTF-16 is the protocol default and the only
-    // value a server may assume when the client stays silent; UTF-8 makes every conversion in
-    // utils/PositionEncoding.h an identity, because it is what Tree-sitter reports natively.
-    angel_lsp::utils::PositionEncoding m_positionEncoding = angel_lsp::utils::PositionEncoding::Utf16;
-
-    /**
-     * @brief Whether the client renders completion snippets, from its initialize capabilities.
-     *
-     * Only read by completion, and only to decide whether a template class may be offered as
-     * `array<${1:T}>`. Defaults to false so a client that says nothing gets the plain name
-     * rather than the placeholder syntax printed literally into its buffer.
-     */
-    bool m_snippetSupport = false;
-
-    /**
-     * @brief Whether the client asked for server-initiated progress, from its capabilities.
-     *
-     * `window.workDoneProgress`. A client that did not advertise it will not have a place to
-     * put the notifications, so none are sent - the spec is explicit that a server must create
-     * its own token through `window/workDoneProgress/create` first, and that request only
-     * exists where the client supports it.
-     */
-    bool m_workDoneProgressSupport = false;
-
-    /**
-     * @brief Reports workspace scan progress percentage and status message to the client.
-     */
-    void BeginWorkspaceProgress(const std::string& title);
-    void ReportWorkspaceProgress(const std::string& message, unsigned percentage);
-    void EndWorkspaceProgress(const std::string& message);
-
-    /** @brief Token for the scan's progress, unique per scan so a restart does not reuse one. */
-    std::string m_workspaceProgressToken;
-    unsigned m_workspaceProgressCounter = 0;
-
-    std::unique_ptr<WorkspaceStateStore> m_workspaceStore;
-    std::unique_ptr<DiagnosticsPipeline> m_diagnosticsPipeline;
-    std::unique_ptr<LspSessionCoordinator> m_sessionCoordinator;
-
-    /**
-     * @brief Initializes decoupled domain services (WorkspaceStateStore, DiagnosticsPipeline, LspSessionCoordinator).
-     */
-    void InitDomainServices();
-
-    /**
-     * @brief Returns the document text to be parsed and analyzed.
-     */
-    std::string AnalysisTextFor(const std::string& uriStr, const std::string& text) const;
-
-  public:
-    /**
-     * @brief Constructs the server over a JSON-RPC transport.
-     * @param config Parsed configuration.
-     * @param stream Transport to speak LSP over. Defaults to the process's stdio, which is what
-     *        an editor launches; an injected stream is what makes this class testable at all,
-     *        since taking over the test process's stdin and stdout is not an option.
-     */
-    Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& stream = lsp::io::standardIO());
-    ~Server();
-
-    void Run();
-
-    /**
-     * @brief Processes a single iteration of incoming transport messages.
-     * @return True if message processed without error, false on failure or transport close.
-     */
-    bool ProcessIncomingMessageStep();
-    void InitHandles();
-    void RegisterWorkspaceHandlers();
-    void RegisterTextDocumentHandlers();
-    void RegisterHierarchyHandlers();
-    void RegisterTokensAndFormattingHandlers();
-
     using OnBeforeCommitHook = std::function<void(const std::string& uri, int version, uint64_t generation)>;
 
-    /**
-     * @brief Test hook invoked immediately before acquiring lifecycle mutex to commit analysis results.
-     */
-    void SetOnBeforeCommitHook(OnBeforeCommitHook hook)
-    {
-        m_onBeforeCommitHook = std::move(hook);
-    }
+    explicit Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& stream = lsp::io::standardIO());
+    ~Server();
 
-    /**
-     * @brief Const reference to the server symbol table (used for test assertions).
-     */
-    const angel_lsp::analysis::SymbolTable& GetSymbolTable() const
-    {
-        return m_symbolTable;
-    }
+    Server(const Server&) = delete;
+    Server& operator=(const Server&) = delete;
 
-    /**
-     * @brief Reference to the server document store (used for test assertions).
-     */
-    const angel_lsp::DocumentStore& GetDocumentStore() const
-    {
-        return m_documentStore;
-    }
+    void Run();
+    bool ProcessIncomingMessageStep();
+    void InitHandles();
+    void DrainQueue();
 
-    /**
-     * @brief Blocks the calling thread until all pending and currently executing
-     *        background analysis tasks in the scheduler have finished.
-     */
-    void DrainQueue()
-    {
-        if (m_diagnosticsPipeline)
-        {
-            m_diagnosticsPipeline->DrainQueue();
-        }
-        else if (m_analysisScheduler)
-        {
-            m_analysisScheduler->DrainQueue();
-        }
-    }
-
-    /**
-     * @brief Gets reference to the decoupled WorkspaceStateStore domain service.
-     */
     [[nodiscard]] WorkspaceStateStore& GetWorkspaceStore() noexcept
     {
         return *m_workspaceStore;
     }
-
-    /**
-     * @brief Gets const reference to the decoupled WorkspaceStateStore domain service.
-     */
     [[nodiscard]] const WorkspaceStateStore& GetWorkspaceStore() const noexcept
     {
         return *m_workspaceStore;
     }
-
-    /**
-     * @brief Gets reference to the decoupled DiagnosticsPipeline domain service.
-     */
     [[nodiscard]] DiagnosticsPipeline& GetDiagnosticsPipeline() noexcept
     {
         return *m_diagnosticsPipeline;
     }
-
-    /**
-     * @brief Gets const reference to the decoupled DiagnosticsPipeline domain service.
-     */
     [[nodiscard]] const DiagnosticsPipeline& GetDiagnosticsPipeline() const noexcept
     {
         return *m_diagnosticsPipeline;
     }
-
-    /**
-     * @brief Gets reference to the decoupled LspSessionCoordinator domain service.
-     */
     [[nodiscard]] LspSessionCoordinator& GetSessionCoordinator() noexcept
     {
         return *m_sessionCoordinator;
     }
-
-    /**
-     * @brief Gets const reference to the decoupled LspSessionCoordinator domain service.
-     */
     [[nodiscard]] const LspSessionCoordinator& GetSessionCoordinator() const noexcept
     {
         return *m_sessionCoordinator;
     }
-
-    /**
-     * @brief Creates an immutable snapshot of current workspace configuration and preprocessor state.
-     */
-    [[nodiscard]] WorkspaceSnapshot CreateWorkspaceSnapshot() const
+    [[nodiscard]] const analysis::SymbolTable& GetSymbolTable() const
     {
-        if (m_workspaceStore)
-        {
-            return m_workspaceStore->CreateSnapshot();
-        }
-        return WorkspaceSnapshot{m_searchDirectories, WorkspaceRoots(), DefinedWords()};
+        return m_symbolTable;
+    }
+    [[nodiscard]] const DocumentStore& GetDocumentStore() const
+    {
+        return m_documentStore;
     }
 
-    /**
-     * @brief Snapshot of the workspace folder URIs. Safe to call from any thread.
-     *
-     * Returns a copy on purpose: the caller may iterate it while the message loop adds or
-     * removes a folder, and a reference into the live vector would dangle the moment it did.
-     */
-    std::vector<std::string> WorkspaceRoots() const;
-
-    /**
-     * @brief Current `#include` search directories. Safe to call from any thread.
-     *
-     * The handle keeps that revision of the list alive for as long as it is held, so a
-     * concurrent didChangeConfiguration cannot pull it out from under an in-flight resolve.
-     */
-    std::shared_ptr<const std::vector<std::string>> SearchDirectories() const;
-
-    /** @brief Current engine profile name. Safe to call from any thread. */
-    std::string EngineProfile() const;
-
-    /**
-     * @brief Line ranges of `#if` blocks the preprocessor drops, for the configured defines.
-     *
-     * See utils/PreprocessorRegions.h. Safe to call from the analysis thread: it reads the
-     * defined words through DefinedWords(), which hands back an immutable snapshot.
-     */
-    std::vector<angel_lsp::utils::ExcludedLineRange> ExcludedLineRanges(const std::string& text) const;
-
-    /** @brief Snapshot of the words `#if` treats as defined. Safe to call from any thread. */
-    std::shared_ptr<const ankerl::unordered_dense::set<std::string>> DefinedWords() const;
-
-    /**
-     * @brief Records one source's `#define` contributions and rebuilds the snapshot.
-     *
-     * @param source Key identifying the contributor - a stub's path, or "" for the flag and
-     *        the client setting. Passing an empty @p words removes that source's contribution.
-     * @return True when the resulting set differs from the previous one, which is the signal
-     *         that every open document's excluded ranges have changed and it needs reanalysis.
-     */
+    [[nodiscard]] WorkspaceSnapshot CreateWorkspaceSnapshot() const;
+    [[nodiscard]] std::vector<std::string> WorkspaceRoots() const;
+    [[nodiscard]] std::shared_ptr<const std::vector<std::string>> SearchDirectories() const;
+    [[nodiscard]] std::string EngineProfile() const;
+    [[nodiscard]] std::vector<utils::ExcludedLineRange> ExcludedLineRanges(const std::string& text) const;
+    [[nodiscard]] std::shared_ptr<const ankerl::unordered_dense::set<std::string>> DefinedWords() const;
     bool SetDefinedWordsFrom(const std::string& source, std::vector<std::string> words);
-
-    /**
-     * @brief One configured module, resolved against the include graph.
-     */
-    struct ModuleView
-    {
-        std::string name;
-
-        /** @brief Normalised absolute path of the entry script, or empty when there is none. */
-        std::string entryPath;
-
-        /** @brief Normalised absolute path of the module's folder, or empty when there is none. */
-        std::string folderPath;
-
-        /**
-         * @brief Every file in the module: the entry's include closure, the folder's scripts,
-         *        or both.
-         */
-        ankerl::unordered_dense::set<std::string> memberPaths;
-
-        /** @brief The subset reached from the entry point, which a folder does not claim. */
-        ankerl::unordered_dense::set<std::string> closurePaths;
-
-        /** @brief True if module was implicitly created from moduleEntryPoint. */
-        bool isImplicitEntryPoint = false;
-    };
-
-    /**
-     * @brief Which module owns a file, and which others also claimed it.
-     *
-     * A file belongs to exactly one module. AngelScript really does allow one file to be
-     * compiled into several, so this is a simplification - and the ones that lost are reported
-     * back so the server can say so rather than decide in silence.
-     */
-    struct ModuleClaim
-    {
-        const ModuleView* owner = nullptr;
-        std::vector<std::string> alsoClaimedBy;
-    };
-
-    /**
-     * @brief Candidate module file path and workspace configuration state during workspace module indexing.
-     */
-    struct ModuleCandidate
-    {
-        const ModuleView* view = nullptr;
-        int rank = 0;
-        size_t depth = 0;
-    };
-
-    /**
-     * @brief RAII guard re-triggering workspace diagnostic analysis upon background task termination.
-     */
-    struct ReanalyseOnExit
-    {
-        Server* server;
-        const angel_lsp::utils::StopFlag& stopToken;
-        ~ReanalyseOnExit();
-    };
-
-    /**
-     * @brief Resolves module membership for one path, most specific claim winning.
-     *
-     *     an entry point's include closure  >  the deepest folder  >  any folder above it
-     *
-     * One function, because everything else reads it: a second, subtly different copy of this
-     * rule is how the answer starts depending on which caller asked.
-     */
-    [[nodiscard]] ModuleClaim ClaimFor(const std::string& normalizedPath) const;
-
-    /**
-     * @brief True when a normalised path sits under a normalised directory.
-     *
-     * Compared the way every other path comparison here is - case-insensitively on Windows,
-     * where `scripts/Maps` and `scripts/maps` are one directory and comparing bytes would make
-     * them two - and on a component boundary, so `scripts/map` does not contain
-     * `scripts/maps/x.as`.
-     */
-    [[nodiscard]] static bool PathIsInside(const std::string& normalizedPath, const std::string& normalizedDirectory);
-
-    /**
-     * @brief Resolves a configured module path, taking a relative one as workspace-relative.
-     */
-    std::string ResolveConfiguredPath(const std::string& configured) const;
-
-    /**
-     * @brief Re-analyses and republishes every file of every configured module.
-     */
-    void AnalyzeConfiguredModules();
-
-    /** @brief True when the snapshot holds this document. Safe from any thread. */
-    [[nodiscard]] bool IsOpenElsewhere(const std::string& uriStr) const;
-
-    /**
-     * @brief Re-analyses every open document, from the workspace thread.
-     *
-     * Only schedules: the analysis thread does the work and publishes. Deliberately does NOT
-     * index module closures the way ReanalyseOpenDocuments does - that touches message-loop
-     * state, and the scan calling this has just indexed everything anyway.
-     */
-    void ScheduleOpenDocumentsForReanalysis();
-
-    /**
-     * @brief Publishes an empty list for every file that was in a module and no longer is.
-     *
-     * Without this a renamed module, a deleted file, or an `#include` edit that shrinks a
-     * closure leaves its diagnostics in the Problems panel for the rest of the session, on files
-     * the user may not be able to open to clear them by hand.
-     */
-    void WithdrawStaleModuleDiagnostics();
-
-    /** @brief URIs this server has published module diagnostics for, so they can be withdrawn. */
-    mutable std::mutex m_publishedForModulesMutex;
-    ankerl::unordered_dense::set<std::string> m_publishedForModules;
-
-    /** @brief The configured modules, resolved. Empty when angelscript.modules is not set. */
-    std::vector<ModuleView> m_modules;
-
-    /**
-     * @brief Recomputes which files belong to which configured module.
-     *
-     * Cheap and rare: one GetModuleClosure per configured module, run only where the include
-     * graph itself is rebuilt.
-     */
-    void BuildModuleIndex();
-
-    /**
-     * @brief Augments search directories with folders from configured modules and workspace maps.
-     */
-    void AugmentSearchDirectoriesFromModules();
-
-    /**
-     * @brief Indexes every file across all configured modules into the symbol table.
-     */
-    void IndexConfiguredModules(angel_lsp::parser::AngelScriptParser& parser);
-
-    /**
-     * @brief Synchronizes exported module symbols into m_moduleIndex for prefix completion.
-     */
-    void SyncModuleIndexSymbols();
-
-    /**
-     * @brief Purges symbols and state for indexed closure files that no longer belong to
-     *        any configured module and are not required by any open document's include closure.
-     */
-    void PurgeUnusedClosureFiles();
-
-    /**
-     * @brief Sends a warning message to the client when a module definition has an issue.
-     * @param[in] text Warning message to notify and log.
-     */
-    void NotifyModuleWarning(const std::string& text);
-
-    /**
-     * @brief Populates directory members for a module from workspace files.
-     * @param[in] folder Folder path configured for the module.
-     * @param[in,out] view Target module view receiving members.
-     * @param[in] workspaceFiles List of all files discovered in the workspace.
-     * @return True if folder exists and members were populated, false if folder does not exist.
-     */
-    bool PopulateModuleFolderMembers(const std::string& folder, ModuleView& view,
-                                     const std::vector<std::string>& workspaceFiles);
-
-    /**
-     * @brief Populates entry script closure for a module from the include graph.
-     * @param[in] entry Entry script path configured for the module.
-     * @param[in,out] view Target module view receiving entry closure paths.
-     * @return True if entry file exists and closure was resolved, false if entry does not exist.
-     */
-    bool PopulateModuleEntryClosure(const std::string& entry, ModuleView& view);
-
-    /**
-     * @brief Resolves a single module definition against discovered workspace files.
-     * @param[in] definition User-configured module definition.
-     * @param[in] resolved Already resolved modules to check for duplicate names.
-     * @param[in] workspaceFiles List of all files discovered in the workspace.
-     * @return Fully populated module view, or std::nullopt if definition was invalid or duplicate.
-     */
-    [[nodiscard]] std::optional<ModuleView>
-    ResolveModuleDefinition(const config::ServerConfig::ModuleDefinition& definition,
-                            const std::vector<ModuleView>& resolved, const std::vector<std::string>& workspaceFiles);
-
-    /**
-     * @brief Collects all canonical file paths currently needed by open documents and modules.
-     * @return Set of canonical file paths that must remain in memory.
-     */
-    [[nodiscard]] ankerl::unordered_dense::set<std::string> CollectWantedClosurePaths() const;
-
-    /**
-     * @brief Collects URIs of indexed closure files no longer required by any open document or module.
-     * @param[in] wantedPaths Set of canonical file paths currently needed.
-     * @return List of URIs to purge from cache.
-     */
-    [[nodiscard]] std::vector<std::string>
-    CollectStaleClosureUris(const ankerl::unordered_dense::set<std::string>& wantedPaths) const;
-
-    /**
-     * @brief Collects names of symbols declared shared in other modules or outside the owning module.
-     * @param[in] owning Owning module view to exclude from external shared searches.
-     * @param[out] outShared Set of symbol names receiving externally shared declarations.
-     */
-    void CollectSharedSymbolsElsewhere(const ModuleView& owning,
-                                       ankerl::unordered_dense::set<std::string>& outShared) const;
-
-    /**
-     * @brief The module scoping for one document, or nullopt when there is none to give.
-     *
-     * Nullopt when angelscript.modules is unset, and also when the document belongs to none of
-     * the configured modules - a scratch file beside the project is not evidence about the
-     * project, and rules that read this must stay as quiet for it as they were before.
-     */
-    [[nodiscard]] std::optional<angel_lsp::analysis::SemanticAnalysisRequest::ModuleContext>
-    ModuleContextFor(const std::string& uriStr) const;
-
-    std::vector<std::string> IncludeAllowedRoots() const;
-
-    /**
-     * @brief Appends a configured path and its parent directory to the allowed roots list.
-     * @param[in] raw The raw path or variable expression.
-     * @param[in,out] roots The list of allowed include root directories.
-     */
-    void AppendConfiguredPathAndParent(const std::string& raw, std::vector<std::string>& roots) const;
-
-    /**
-     * @brief Collects allowed root directories from configured stubs, modules, and force include files.
-     * @param[in,out] roots The list of allowed include root directories.
-     */
-    void CollectConfiguredAllowedRoots(std::vector<std::string>& roots) const;
-
-    /**
-     * @brief Every file an `#include` in this workspace may name, as absolute paths.
-     */
     [[nodiscard]] std::vector<std::string> IncludableFiles() const
     {
         return m_includeGraph.AllFiles();
     }
+    [[nodiscard]] std::string_view ImplicitIncludeExtension() const noexcept;
 
-    /**
-     * @brief The suffix an unresolvable include may be retried with, or empty for none.
-     */
-    [[nodiscard]] std::string_view ImplicitIncludeExtension() const noexcept
+    void SetOnBeforeCommitHook(OnBeforeCommitHook hook)
     {
-        return m_config.implicitIncludeExtension ? std::string_view(m_config.info.fileExtension) : std::string_view{};
+        m_onBeforeCommitHook = std::move(hook);
     }
-
-    lsp::requests::Initialize::Result HandleRequestsInitialized(lsp::requests::Initialize::Params&& params);
-    void HandleNotificationsInitialized(lsp::notifications::Initialized::Params&& params);
-    lsp::requests::Shutdown::Result HandleRequestsShutdown();
-    void HandleNotificationsExit();
-    void HandleNotificationsWorkspace_DidChangeConfiguration(
-        lsp::notifications::Workspace_DidChangeConfiguration::Params&& params);
-
-    /**
-     * @brief Handles external file create/change/delete events, updating include graph and symbol table.
-     */
-    void HandleNotificationsWorkspace_DidChangeWatchedFiles(
-        lsp::notifications::Workspace_DidChangeWatchedFiles::Params&& params);
-
-    /**
-     * @brief Tracks folders added to or removed from a multi-root workspace.
-     *
-     * Both the include graph and the predefined-stub scan are scoped to the known roots, so a
-     * folder added after initialize would otherwise stay invisible for the whole session.
-     */
-    void HandleNotificationsWorkspace_DidChangeWorkspaceFolders(
-        lsp::notifications::Workspace_DidChangeWorkspaceFolders::Params&& params);
-
-    /**
-     * @brief Restarts the workspace scan on the background thread, cancelling any run in flight.
-     *
-     * Shared by every event that invalidates the whole graph (search paths changed, workspace
-     * folders changed): which files a directive resolves to depends on both, so every edge is
-     * suspect and a full rescan is the only correct answer.
-     */
-    void RestartWorkspaceScan();
-
-    /**
-     * @brief Computes a document's full token stream, encodes it, and records it for delta use.
-     * @param uriStr Document URI.
-     * @param text Document text, needed to encode byte columns into the client's encoding.
-     * @return Tokens carrying the freshly minted result id.
-     */
-    lsp::SemanticTokens ComputeAndCacheSemanticTokens(const std::string& uriStr, const std::string& text);
-
-    /**
-     * @brief Consumes `textDocument/willSave` notifications.
-     *
-     * The server has nothing it must do before a save: analysis is already kept current
-     * on change notifications and document text is already held in memory. This handler
-     * exists so the notification is consumed rather than dropped by a server that advertised
-     * the capability.
-     */
-    void HandleNotificationsTextDocument_WillSave(lsp::notifications::TextDocument_WillSave::Params&& params);
-    void HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDocument_DidSave::Params&& params);
-
-    /**
-     * @brief Updates closure cache, include graph, and module closure for a saved document.
-     * @param[in] uriStr Document URI that was saved.
-     * @param[in] text Document content that was saved.
-     */
-    void UpdateSavedDocumentCaches(const std::string& uriStr, const std::string& text);
-
-    /**
-     * @brief Withdraws stale diagnostics or re-analyzes dependents when a document save alters interface.
-     * @param[in] uriStr Document URI that was saved.
-     * @param[in] interfaceChanged True if the public interface changed on save.
-     */
-    void HandleSavedInterfaceChange(const std::string& uriStr, bool interfaceChanged);
-    void HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params&& params);
-    void HandleNotificationsTextDocument_DidChange(lsp::notifications::TextDocument_DidChange::Params&& params);
-    void HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDocument_DidClose::Params&& params);
-    /**
-     * @brief Cancels any scan in flight and starts a fresh one on the workspace thread.
-     *
-     * The stop flag is shared by every generation of that thread, so the previous one has to be
-     * joined before it is rearmed: clearing it while the old scan still runs would leave that
-     * scan with a cancellation it can no longer see, and two scans reading the workspace at
-     * once. Every start goes through here for that reason.
-     */
-    void StartWorkspaceScan();
-
-    void ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken);
-    void RecoverFromScanFailure(const std::string& err);
-    /**
-     * @brief Reads a predefined stub off disk and indexes it.
-     * @param forceReload Re-collect even when this server already owns the file, which is what
-     *        a change reported by the file watcher needs.
-     */
-    void ParserPredefined(const std::string& filePath, angel_lsp::parser::AngelScriptParser& parser,
-                          bool forceReload = false);
-    /**
-     * @brief Context parameters for recursive predefined stub loading and include parsing.
-     */
-    struct PredefinedLoadContext
-    {
-        angel_lsp::parser::AngelScriptParser& parser;
-        bool forceReload = false;
-        std::unordered_set<std::string>& visited;
-    };
-
-    /**
-     * @brief Resolves and parses `#include` directives discovered inside a predefined stub.
-     * @param[in] content Textual content of the predefined stub.
-     * @param[in] filePath Path of the predefined stub on disk.
-     * @param[in,out] ctx Predefined loading context.
-     */
-    void LoadPredefinedIncludes(const std::string& content, const std::string& filePath, PredefinedLoadContext& ctx);
-
-    /**
-     * @brief Pre-scans preprocessor define directives from candidate predefined stubs.
-     * @param[in] stubPaths Discovered candidate stub file paths.
-     */
-    void PreScanStubDefinedWords(const std::vector<std::string>& stubPaths);
-
-    /**
-     * @brief Recursively loads and indexes a predefined stub with cycle detection.
-     * @param[in] filePath Path of the predefined stub on disk.
-     * @param[in,out] parser Parser instance to reuse.
-     * @param[in] forceReload True to re-index even if already owned.
-     * @param[in,out] visited Set of visited normalized paths.
-     */
-    struct PredefinedIndexTiming
-    {
-        double parseMs = 0.0;
-        double symMs = 0.0;
-        double scopeMs = 0.0;
-    };
-    PredefinedIndexTiming IndexAndCommitPredefinedStub(const std::string& uri, const std::string& content,
-                                                       angel_lsp::parser::AngelScriptParser& parser);
-    void ParserPredefinedInternal(const std::string& filePath, angel_lsp::parser::AngelScriptParser& parser,
-                                  bool forceReload, std::unordered_set<std::string>& visited);
-
-    /**
-     * @brief Commits parsed AST and scopes of a predefined stub to storage.
-     * @param[in] uri Predefined document URI.
-     * @param[in] content Document text content.
-     * @param[in] tree Parsed AST tree handle.
-     */
-    void CommitPredefinedIndex(const std::string& uri, const std::string& content, document::TreePtr tree);
-
-    /**
-     * @brief Marks whether predefined stubs and engine profiles are ready for document analysis.
-     * @param[in] ready True if predefined stubs are loaded and ready.
-     */
+    void SetWorkspaceScanComplete(bool complete) noexcept;
     void SetPredefinedReady(bool ready);
+    [[nodiscard]] bool IsPredefinedReady() const noexcept;
+    bool WaitForPredefinedReady(std::chrono::milliseconds timeout) const;
+    void ScheduleOpenDocumentsForReanalysis();
+    lsp::requests::Initialize::Result HandleRequestsInitialized(lsp::requests::Initialize::Params&& params);
+    static std::string DocumentKey(const std::string& uriStr);
+    void ParserPredefined(const std::string& filePath, parser::AngelScriptParser& parser, bool forceReload = false);
 
-    /**
-     * @brief Sets whether the initial workspace scan has completed.
-     * @param[in] complete True if workspace scan is complete.
-     */
-    void SetWorkspaceScanComplete(bool complete) noexcept
+    [[nodiscard]] features::BraceStyle CurrentBraceStyle() const;
+    [[nodiscard]] bool CurrentSpacesInsideParentheses() const noexcept;
+    [[nodiscard]] bool CurrentKeepEmptyBlocksOnSingleLine() const noexcept;
+    [[nodiscard]] features::PointerAlignment CurrentPointerAlignment() const noexcept;
+
+    template <typename ResultT, typename FeatureFn>
+    ResultT ExecuteOnOpenDocument(const std::string& uriStr, bool featureEnabled, FeatureFn&& fn)
     {
-        m_workspaceScanComplete.store(complete);
+        if (!featureEnabled)
+        {
+            return lsp::Null{};
+        }
+        const auto doc = LookupOpenDocument(uriStr);
+        if (!doc)
+        {
+            return lsp::Null{};
+        }
+        return fn(*doc);
     }
 
-    /**
-     * @brief Waits up to timeout for predefined stubs to finish loading.
-     * @param[in] timeout Maximum duration to wait.
-     * @return True if predefined stubs are ready, false if timed out.
-     */
-    bool WaitForPredefinedReady(std::chrono::milliseconds timeout) const;
-
-    /**
-     * @brief Checks whether predefined stubs have finished loading.
-     * @return True if predefined stubs are loaded.
-     */
-    [[nodiscard]] bool IsPredefinedReady() const noexcept;
-
-    /**
-     * @brief Loads configured external predefined stub files from disk.
-     */
-    std::vector<std::string> LoadConfiguredPredefinedFiles(angel_lsp::parser::AngelScriptParser& parser,
-                                                           const angel_lsp::utils::StopFlag& stopToken);
-
-    /**
-     * @brief Unloads cached stub files not present in the wanted paths set.
-     */
-    void UnloadUnselectedPredefinedStubs(const std::vector<std::string>& wantedPaths);
-
-    /**
-     * @brief Refreshes `#define` symbols from open stub text and reports if preprocessor definitions changed.
-     * @return True if the defined words set changed and dependent documents must be re-analyzed.
-     */
-    bool RefreshStubDefinedWords(const std::string& uriStr, const std::string& text);
-
-    /**
-     * @brief Loads built-in predefined stub profiles (e.g. Standard, SvenCoop, Urho3D, OpenXRay, OOTP).
-     * @param parser Parser to reuse.
-     * @param stopToken Checked between profiles for early exit on cancellation.
-     */
-    void LoadBuiltinEngineProfiles(angel_lsp::parser::AngelScriptParser& parser,
-                                   const angel_lsp::utils::StopFlag& stopToken);
-
-    /**
-     * @brief Determines the engine profile to load based on configuration and workspace contents.
-     * @param[in] stopToken Checked during auto-detection scan for early exit on cancellation.
-     * @return Target engine profile kind, or std::nullopt if disabled, canceled, or kind is None.
-     */
-    [[nodiscard]] std::optional<angel_lsp::analysis::EngineProfileKind>
-    ResolveTargetEngineProfile(const angel_lsp::utils::StopFlag& stopToken);
-
-    /**
-     * @brief Unloads synthetic profile URIs that are no longer in the active profile set.
-     * @param[in] wantedProfiles Active profiles to preserve.
-     */
-    void UnloadStaleBuiltinEngineProfiles(const std::vector<angel_lsp::analysis::EngineProfileKind>& wantedProfiles);
-
-    /**
-     * @brief Loads a single engine profile stub into the symbol and scope tables.
-     * @param[in] pKind Engine profile kind to load.
-     * @param[in,out] parser Parser to reuse for AST generation.
-     */
-    void LoadEngineProfileStub(angel_lsp::analysis::EngineProfileKind pKind,
-                               angel_lsp::parser::AngelScriptParser& parser);
-
-    /**
-     * @brief Discovers and loads engine safety rules (angelscript.rules.json) from workspace roots or config.
-     * @param[in] workspaceRoots Workspace root filesystem paths.
-     */
-    void LoadWorkspaceEngineRules(const std::vector<std::string>& workspaceRoots);
-
-    /**
-     * @brief Converts the configured severity names into the analyzer's enum, once at startup.
-     *
-     * ServerConfig is Layer 1 and cannot name a Layer 2 type, so the override map is carried
-     * as strings and typed here. An unrecognised name is logged and dropped rather than
-     * guessed at.
-     */
-    void BuildDiagnosticSeverityOverrides();
-
-    /**
-     * @brief Logs the engine properties that were configured away from AngelScript's defaults.
-     *
-     * These decide which diagnostics can appear at all, so an unexpectedly quiet - or
-     * unexpectedly loud - session is worth being able to explain from the log alone.
-     */
-    void LogNonDefaultEngineProperties() const;
-
-    /**
-     * @brief Constructs an immutable SemanticAnalysisRequest bound to active workspace state.
-     */
-    angel_lsp::analysis::SemanticAnalysisRequest
-    BuildAnalysisRequest(const std::string& uriStr, const std::string& text, const TSTree* tree,
-                         const angel_lsp::analysis::SymbolTable* customSymbolTable = nullptr) const;
-
-    /**
-     * @brief Parameters required to atomically commit analysis results for a document.
-     */
-    struct CommitAnalysisRequest
+    template <typename ResultT, typename FeatureFn>
+    ResultT ExecuteAtDocumentPosition(const std::string& uriStr, const lsp::Position& rawPos, bool featureEnabled,
+                                      FeatureFn&& fn)
     {
-        std::string uriStr;
-        int version = -1;
-        uint64_t generation = 0;
-        uint64_t configRevision = 0;
-        analysis::SymbolTable* staging = nullptr;
-        std::shared_ptr<const analysis::Scope> scopeRoot;
-        std::vector<analysis::CallSite> calls;
-        std::vector<analysis::Diagnostic> diagnostics;
-        std::string text;
-    };
+        if (!featureEnabled)
+        {
+            return lsp::Null{};
+        }
+        const auto doc = LookupOpenDocument(uriStr);
+        if (!doc)
+        {
+            return lsp::Null{};
+        }
+        const lsp::Position decodedPos = codec::Decode(*doc->text, m_positionEncoding, rawPos);
+        return fn(*doc, decodedPos);
+    }
 
-    /**
-     * @brief Checks if analysis results are stale due to newer document edits, config changes, or cancellation.
-     * @param[in] req Commit request to evaluate.
-     * @return True if the results should be discarded, false if they are current.
-     */
-    [[nodiscard]] bool IsCommitAnalysisStale(const CommitAnalysisRequest& req) const;
-
-    /**
-     * @brief Atomically commits analysis results if and only if the document state is still current.
-     *        Guarded by m_lifecycleMutex to serialize with document lifecycle mutations.
-     * @param[in] req Parameters and analysis products to commit.
-     * @return True if committed, false if rejected due to obsolescence or cancellation.
-     */
-    bool CommitAnalysisResults(CommitAnalysisRequest req);
-
-    /**
-     * @brief Replaces a document's symbols in the symbol table atomically under writer lock.
-     */
-    std::vector<angel_lsp::analysis::Diagnostic> ReplaceSymbolsFromTree(const std::string& uriStr,
-                                                                        const std::string& text, TSTree* tree,
-                                                                        bool* outInterfaceChanged = nullptr);
-
-    /** @brief ReplaceSymbolsFromTree for a caller that has source text but no parsed tree. */
-    std::vector<angel_lsp::analysis::Diagnostic> ReplaceSymbolsFromSource(const std::string& uriStr,
-                                                                          const std::string& text,
-                                                                          angel_lsp::parser::AngelScriptParser& parser);
-
-    /**
-     * @brief Parameters for scope collection and semantic analysis invocation.
-     */
-    struct CollectScopesRequest
-    {
-        std::string uriStr;
-        std::string text;
-        const TSTree* tree = nullptr;
-        double* outScopeMs = nullptr;
-        double* outCheckMs = nullptr;
-        const analysis::NodeIndex* nodeIndex = nullptr;
-    };
-
-    /**
-     * @brief Checks if scope analysis should be skipped (e.g. document too large or predefined).
-     * @param[in] request Scope request to evaluate.
-     * @return True if scope analysis should be skipped.
-     */
-    [[nodiscard]] bool ShouldSkipScopeAnalysis(const CollectScopesRequest& request);
-
-    /**
-     * @brief Collects the document's scopes and calls, analyses it, then publishes the scopes.
-     * @param[in] request Bundled document parameters and timing destinations.
-     * @return Diagnostics produced by semantic analysis.
-     */
-    std::vector<angel_lsp::analysis::Diagnostic> CollectScopesAndAnalyze(const CollectScopesRequest& request);
-
-    /**
-     * @brief Claims canonical ownership of a predefined stub file URI in the manager.
-     */
-    bool ClaimPredefinedFile(const std::string& uriStr, bool forceReload = false);
-
-    /**
-     * @brief Unloads symbols, defines, and graph edges contributed by a predefined stub.
-     */
-    bool UnloadPredefinedUri(std::string uriStr);
-
-    /**
-     * @brief True when two already-normalised paths name the same file.
-     *
-     * Case-insensitive on Windows, where the same file has many spellings and the one the
-     * client sends need not match the one the directory walk produced. Everywhere else an
-     * exact comparison, because everywhere else the case is part of the name.
-     */
-    static bool PathsAreSameFile(const std::string& a, const std::string& b);
-
-    /**
-     * @brief Evaluates whether a predefined stub matches active engine profile and selection rules.
-     */
-    bool PredefinedStubContributes(const std::string& uriStr) const;
-
-    /**
-     * @brief Sends a localized client notification specifying the active predefined engine stub.
-     */
-    void ReportPredefinedSelection(const std::vector<std::string>& discovered, const std::string& activePath,
-                                   const std::string& autoSelected, bool mergeAll);
-
-    /**
-     * @brief Returns canonical file paths of all predefined stubs discovered in workspace roots.
-     */
-    std::vector<std::string> m_discoveredPredefined;
-
-    // The stub actually in force: the chosen one, or the one the scan picked when nothing was
-    // chosen. Empty while every discovered stub is being merged, which is what the picker shows
-    // as "all". Guarded by m_runtimeConfigMutex, like the list above it.
-    std::string m_effectivePredefined;
-
-    // Transitive #include paths discovered inside contributing predefined stubs.
-    // Guarded by m_runtimeConfigMutex.
-    ankerl::unordered_dense::set<std::string> m_predefinedTransitiveIncludes;
-
-    /**
-     * @brief True when the client asked for diagnostics with textDocument/diagnostic.
-     *
-     * The two delivery models are alternatives, not layers. A client that pulls also receives
-     * anything pushed, and VS Code keeps each in its own collection, so every diagnostic
-     * appeared twice - twice in the Problems panel, twice in a hover. Announcing both is right:
-     * it is what lets one server serve either kind of client. Sending both is not.
-     */
-    bool m_clientPullsDiagnostics = false;
-
-    /**
-     * @brief True when the client announced support for workspace/diagnostic/refresh.
-     */
-    bool m_clientSupportsDiagnosticRefresh = false;
-
-    /**
-     * @brief Sends angelscript/inactiveRegions notification for editor dimming of excluded #if blocks.
-     */
-    void PublishInactiveRegions(const std::string& uriStr, const std::string& text);
-    /**
-     * @brief Request bundle for publishing diagnostics for a document.
-     */
-    struct PublishDiagnosticsRequest
-    {
-        std::string uriStr;
-        std::string text;
-        std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
-        int version = -1;
-        uint64_t generation = 0;
-    };
-
-    /**
-     * @brief Checks whether diagnostic publication is stale due to generation or version mismatch.
-     * @param[in] request Publish request to validate.
-     * @return True if diagnostics should be discarded, false if current.
-     */
-    [[nodiscard]] bool IsPublishDiagnosticsStale(const PublishDiagnosticsRequest& request) const;
-
-    /**
-     * @brief Caches diagnostics snapshot for pull diagnostics requests.
-     * @param[in] request Original publish request.
-     * @param[in] protocolDiagnostics Converted protocol diagnostics items.
-     */
-    void CacheDiagnosticsSnapshot(const PublishDiagnosticsRequest& request,
-                                  const std::vector<lsp::Diagnostic>& protocolDiagnostics);
-
-    /**
-     * @brief Sends diagnostic notification to the client or requests workspace refresh.
-     * @param[in] params Publishing parameters.
-     */
-    void NotifyClientDiagnostics(lsp::notifications::TextDocument_PublishDiagnostics::Params params);
-
-    /**
-     * @brief Publishes diagnostics using bundled request parameters.
-     * @param[in] request Publishing parameters and diagnostics.
-     */
-    void PublishDiagnostics(const PublishDiagnosticsRequest& request);
-
-    /**
-     * @brief Publishes diagnostics for an open document, fetching text from document store.
-     * @param[in] uriStr Document URI.
-     * @param[in] diagnostics Diagnostics to report.
-     * @param[in] version Optional document version (-1 to query current version).
-     */
-    void PublishDiagnostics(const std::string& uriStr, const std::vector<angel_lsp::analysis::Diagnostic>& diagnostics,
-                            int version = -1);
-
-    /**
-     * @brief Publishes diagnostics with explicit document text for line offset encoding.
-     * @param[in] uriStr Document URI.
-     * @param[in] text Document buffer text.
-     * @param[in] diagnostics Diagnostics to report.
-     * @param[in] version Optional document version (-1 to query current version).
-     */
-    void PublishDiagnostics(const std::string& uriStr, const std::string& text,
-                            const std::vector<angel_lsp::analysis::Diagnostic>& diagnostics, int version = -1);
-
-    /**
-     * @brief Analyzer diagnostics as the client receives them: filtered, encoded, converted.
-     *
-     * The one place that translation happens. Both the push notification and the pull request
-     * answer from this, which is what keeps them from drifting into two slightly different
-     * answers for the same document.
-     */
-    std::vector<lsp::Diagnostic>
-    ToProtocolDiagnostics(const std::string& text,
-                          const std::vector<angel_lsp::analysis::Diagnostic>& diagnostics) const;
-
-    /**
-     * @brief Answers `textDocument/diagnostic` from the cache the analysis thread fills.
-     *
-     * Reports `unchanged` when the client's previousResultId still matches, which is the whole
-     * point of the pull model - an unedited file costs a result id and nothing else.
-     *
-     * A document whose cached analysis is stale is synchronously analyzed so the client
-     * always receives up-to-date diagnostic reports without freezing stale errors.
-     */
-    lsp::requests::TextDocument_Diagnostic::Result
-    HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagnostic::Params&& params);
-
-    /**
-     * @brief Checks the diagnostic cache for a matching document version or content hash.
-     * @param[in] uriStr Document URI key.
-     * @param[in] currentHash Hash of the current document text.
-     * @param[in] currentVersion Version of the current document (-1 if unknown).
-     * @param[in] previousResultId Previous result id submitted by the LSP client.
-     * @return Cached diagnostic report if current, or std::nullopt.
-     */
-    [[nodiscard]] std::optional<lsp::requests::TextDocument_Diagnostic::Result>
-    TryGetCachedDiagnosticReport(const std::string& uriStr, size_t currentHash, int currentVersion,
-                                 const std::optional<std::string>& previousResultId);
-
-    /**
-     * @brief Answers `workspace/diagnostic` for every document the server has already analysed.
-     *
-     * Deliberately not a workspace scan. It reports what is known - open documents and the
-     * `#include` closure files pulled in on their behalf - rather than parsing the tree from
-     * scratch, which on a 1,061-file corpus is minutes of work for a request the client sends
-     * on a timer.
-     */
-    lsp::requests::Workspace_Diagnostic::Result
-    HandleRequestsWorkspace_Diagnostic(lsp::requests::Workspace_Diagnostic::Params&& params);
-
-    /**
-     * @brief Answers `documentLink/resolve` by returning the link unchanged.
-     *
-     * Document links are resolved eagerly in `textDocument/documentLink` with their target URIs
-     * and ranges fully populated. There is nothing left to compute; this handler exists so a
-     * client that insists on the resolve round-trip gets a valid answer rather than MethodNotFound.
-     */
-    lsp::requests::DocumentLink_Resolve::Result
-    HandleRequestsDocumentLink_Resolve(lsp::requests::DocumentLink_Resolve::Params&& params);
-
-    /**
-     * @brief Answers `inlayHint/resolve` by returning the hint unchanged.
-     *
-     * Inlay hints are computed complete with all labels, tooltips and parts during the
-     * initial `textDocument/inlayHint` request. This handler returns the hint as-is so
-     * clients that send a resolve request receive a valid response instead of MethodNotFound.
-     */
-    lsp::requests::InlayHint_Resolve::Result
-    HandleRequestsInlayHint_Resolve(lsp::requests::InlayHint_Resolve::Params&& params);
-
-    /**
-     * @brief Answers `workspaceSymbol/resolve` by returning the symbol unchanged.
-     *
-     * Workspace symbols already carry their full location and container name when collected
-     * for `workspace/symbol`. Returning the symbol unchanged ensures clients requesting
-     * symbol resolution get a valid response instead of MethodNotFound.
-     */
-    lsp::requests::WorkspaceSymbol_Resolve::Result
-    HandleRequestsWorkspaceSymbol_Resolve(lsp::requests::WorkspaceSymbol_Resolve::Params&& params);
-
-    /**
-     * @brief Answers `textDocument/rangesFormatting` by formatting each requested range.
-     *
-     * Clients supporting LSP 3.18 format multiple disparate selection ranges in a single
-     * round-trip instead of serialising N requests. Range formatting operations are executed
-     * across each range and the resulting edits are merged and encoded into the client's coordinate space.
-     */
-    lsp::requests::TextDocument_RangesFormatting::Result
-    HandleRequestsTextDocument_RangesFormatting(lsp::requests::TextDocument_RangesFormatting::Params&& params);
-
-    /**
-     * @brief Answers `textDocument/willSaveWaitUntil` by formatting the document before save.
-     *
-     * Automatically formats the document on save, but only when manually triggered by the user
-     * (`TextDocumentSaveReason::Manual`). Saves triggered by an autosave timer or focus loss
-     * are ignored and return an empty edit array because an autosave timer would rewrite the
-     * user's file while they are still actively typing in it.
-     */
-    lsp::requests::TextDocument_WillSaveWaitUntil::Result
-    HandleRequestsTextDocument_WillSaveWaitUntil(lsp::requests::TextDocument_WillSaveWaitUntil::Params&& params);
-
-    /**
-     * @brief Answers `workspace/executeCommand` requests.
-     *
-     * Supports explicit workspace rescans (`angelscript.rescanWorkspace`) so external commands
-     * or editor extensions can force an immediate rescan of all search paths and workspace
-     * folders on demand. Unknown commands are rejected with InvalidParams.
-     */
-    lsp::requests::Workspace_ExecuteCommand::Result
-    HandleRequestsWorkspace_ExecuteCommand(lsp::requests::Workspace_ExecuteCommand::Params&& params);
-
-    /**
-     * @brief Generates virtual mixin document content for an angelscript-virtual URI.
-     * @param uri The synthetic virtual URI (e.g. angelscript-virtual://HostClass/MixinName.as).
-     * @return Synthesized AngelScript document text.
-     */
-    std::string GenerateVirtualMixinDocument(std::string_view uri);
-
-    /**
-     * @brief Handles custom JSON-RPC request for angelscript/virtualDocumentContent.
-     * @param params JSON parameter containing the URI.
-     * @return JSON object with { "content": "..." }.
-     */
-    lsp::json::Value HandleRequestsVirtualDocumentContent(lsp::json::Value&& params);
-
-    /** @brief Handles textDocument/prepareCallHierarchy request. */
-    lsp::requests::TextDocument_PrepareCallHierarchy::Result
-    HandleRequestsTextDocument_PrepareCallHierarchy(lsp::requests::TextDocument_PrepareCallHierarchy::Params&& req);
-
-    /** @brief Handles callHierarchy/incomingCalls request. */
-    lsp::requests::CallHierarchy_IncomingCalls::Result
-    HandleRequestsCallHierarchy_IncomingCalls(lsp::requests::CallHierarchy_IncomingCalls::Params&& req);
-
-    /** @brief Handles callHierarchy/outgoingCalls request. */
-    lsp::requests::CallHierarchy_OutgoingCalls::Result
-    HandleRequestsCallHierarchy_OutgoingCalls(lsp::requests::CallHierarchy_OutgoingCalls::Params&& req);
-
-    /** @brief Handles textDocument/prepareTypeHierarchy request. */
-    lsp::requests::TextDocument_PrepareTypeHierarchy::Result
-    HandleRequestsTextDocument_PrepareTypeHierarchy(lsp::requests::TextDocument_PrepareTypeHierarchy::Params&& req);
-
-    /** @brief Handles typeHierarchy/supertypes request. */
-    lsp::requests::TypeHierarchy_Supertypes::Result
-    HandleRequestsTypeHierarchy_Supertypes(lsp::requests::TypeHierarchy_Supertypes::Params&& req);
-
-    /** @brief Handles typeHierarchy/subtypes request. */
-    lsp::requests::TypeHierarchy_Subtypes::Result
-    HandleRequestsTypeHierarchy_Subtypes(lsp::requests::TypeHierarchy_Subtypes::Params&& req);
-
-    /** @brief Handles textDocument/linkedEditingRange request. */
-    lsp::requests::TextDocument_LinkedEditingRange::Result
-    HandleRequestsTextDocument_LinkedEditingRange(lsp::requests::TextDocument_LinkedEditingRange::Params&& req);
-
-    /** @brief Handles textDocument/selectionRange request. */
-    lsp::requests::TextDocument_SelectionRange::Result
-    HandleRequestsTextDocument_SelectionRange(lsp::requests::TextDocument_SelectionRange::Params&& req);
-
-    /** @brief Handles textDocument/semanticTokens/full request. */
-    lsp::requests::TextDocument_SemanticTokens_Full::Result
-    HandleRequestsTextDocument_SemanticTokens_Full(lsp::requests::TextDocument_SemanticTokens_Full::Params&& req);
-
-    /** @brief Handles textDocument/semanticTokens/full/delta request. */
-    lsp::requests::TextDocument_SemanticTokens_Full_Delta::Result HandleRequestsTextDocument_SemanticTokens_Full_Delta(
-        lsp::requests::TextDocument_SemanticTokens_Full_Delta::Params&& req);
-
-    /** @brief Handles textDocument/semanticTokens/range request. */
-    lsp::requests::TextDocument_SemanticTokens_Range::Result
-    HandleRequestsTextDocument_SemanticTokens_Range(lsp::requests::TextDocument_SemanticTokens_Range::Params&& req);
-
-    /** @brief Handles textDocument/foldingRange request. */
-    lsp::requests::TextDocument_FoldingRange::Result
-    HandleRequestsTextDocument_FoldingRange(lsp::requests::TextDocument_FoldingRange::Params&& req);
-
-    /** @brief Handles textDocument/inlayHint request. */
-    lsp::requests::TextDocument_InlayHint::Result
-    HandleRequestsTextDocument_InlayHint(lsp::requests::TextDocument_InlayHint::Params&& req);
-
-    /** @brief Handles workspace/textDocumentContent request. */
-    lsp::requests::Workspace_TextDocumentContent::Result
-    HandleRequestsWorkspace_TextDocumentContent(lsp::requests::Workspace_TextDocumentContent::Params&& req);
-
-    /** @brief Handles workspace/symbol request. */
-    lsp::requests::Workspace_Symbol::Result
-    HandleRequestsWorkspace_Symbol(lsp::requests::Workspace_Symbol::Params&& req);
-
-    void RegisterLifecycleHandlers();
-    void RegisterFileEventHandlers();
-    void RegisterDocumentSyncHandlers();
-    void RegisterWorkspaceActionHandlers();
-    void RegisterNavigationHandlers();
-    void RegisterEditingHandlers();
-    void RegisterFormattingAndSymbolHandlers();
-
-    /** @brief Handles textDocument/hover request. */
-    lsp::requests::TextDocument_Hover::Result
-    HandleRequestsTextDocument_Hover(lsp::requests::TextDocument_Hover::Params&& req);
-
-    /** @brief Handles textDocument/definition request. */
-    lsp::requests::TextDocument_Definition::Result
-    HandleRequestsTextDocument_Definition(lsp::requests::TextDocument_Definition::Params&& req);
-
-    /** @brief Handles textDocument/moniker request. */
-    lsp::requests::TextDocument_Moniker::Result
-    HandleRequestsTextDocument_Moniker(lsp::requests::TextDocument_Moniker::Params&& req);
-
-    /** @brief Handles textDocument/declaration request. */
-    lsp::requests::TextDocument_Declaration::Result
-    HandleRequestsTextDocument_Declaration(lsp::requests::TextDocument_Declaration::Params&& req);
-
-    /** @brief Handles textDocument/implementation request. */
-    lsp::requests::TextDocument_Implementation::Result
-    HandleRequestsTextDocument_Implementation(lsp::requests::TextDocument_Implementation::Params&& req);
-
-    /** @brief Handles textDocument/typeDefinition request. */
-    lsp::requests::TextDocument_TypeDefinition::Result
-    HandleRequestsTextDocument_TypeDefinition(lsp::requests::TextDocument_TypeDefinition::Params&& req);
-
-    /** @brief Handles textDocument/references request. */
-    lsp::requests::TextDocument_References::Result
-    HandleRequestsTextDocument_References(lsp::requests::TextDocument_References::Params&& req);
-
-    /** @brief Handles textDocument/documentHighlight request. */
-    lsp::requests::TextDocument_DocumentHighlight::Result
-    HandleRequestsTextDocument_DocumentHighlight(lsp::requests::TextDocument_DocumentHighlight::Params&& req);
-
-    /** @brief Handles textDocument/completion request. */
-    lsp::requests::TextDocument_Completion::Result
-    HandleRequestsTextDocument_Completion(lsp::requests::TextDocument_Completion::Params&& req);
-
-    /** @brief Handles completionItem/resolve request. */
-    lsp::requests::CompletionItem_Resolve::Result
-    HandleRequestsCompletionItem_Resolve(lsp::requests::CompletionItem_Resolve::Params&& req);
-
-    /** @brief Handles textDocument/signatureHelp request. */
-    lsp::requests::TextDocument_SignatureHelp::Result
-    HandleRequestsTextDocument_SignatureHelp(lsp::requests::TextDocument_SignatureHelp::Params&& req);
-
-    /** @brief Handles textDocument/prepareRename request. */
-    lsp::requests::TextDocument_PrepareRename::Result
-    HandleRequestsTextDocument_PrepareRename(lsp::requests::TextDocument_PrepareRename::Params&& req);
-
-    /** @brief Handles textDocument/rename request. */
-    lsp::requests::TextDocument_Rename::Result
-    HandleRequestsTextDocument_Rename(lsp::requests::TextDocument_Rename::Params&& req);
-
-    /** @brief Handles textDocument/codeAction request. */
-    lsp::requests::TextDocument_CodeAction::Result
-    HandleRequestsTextDocument_CodeAction(lsp::requests::TextDocument_CodeAction::Params&& req);
-
-    /** @brief Handles codeAction/resolve request. */
-    lsp::requests::CodeAction_Resolve::Result
-    HandleRequestsCodeAction_Resolve(lsp::requests::CodeAction_Resolve::Params&& req);
-
-    /** @brief Handles textDocument/documentSymbol request. */
-    lsp::requests::TextDocument_DocumentSymbol::Result
-    HandleRequestsTextDocument_DocumentSymbol(lsp::requests::TextDocument_DocumentSymbol::Params&& req);
-
-    /** @brief Handles textDocument/formatting request. */
-    lsp::requests::TextDocument_Formatting::Result
-    HandleRequestsTextDocument_Formatting(lsp::requests::TextDocument_Formatting::Params&& req);
-
-    /** @brief Handles textDocument/rangeFormatting request. */
-    lsp::requests::TextDocument_RangeFormatting::Result
-    HandleRequestsTextDocument_RangeFormatting(lsp::requests::TextDocument_RangeFormatting::Params&& req);
-
-    /** @brief Handles textDocument/onTypeFormatting request. */
-    lsp::requests::TextDocument_OnTypeFormatting::Result
-    HandleRequestsTextDocument_OnTypeFormatting(lsp::requests::TextDocument_OnTypeFormatting::Params&& req);
-
-    /** @brief Handles textDocument/documentLink request. */
-    lsp::requests::TextDocument_DocumentLink::Result
-    HandleRequestsTextDocument_DocumentLink(lsp::requests::TextDocument_DocumentLink::Params&& req);
-
-    /** @brief Handles textDocument/codeLens request. */
-    lsp::requests::TextDocument_CodeLens::Result
-    HandleRequestsTextDocument_CodeLens(lsp::requests::TextDocument_CodeLens::Params&& req);
-
-    /** @brief Handles codeLens/resolve request. */
-    lsp::requests::CodeLens_Resolve::Result
-    HandleRequestsCodeLens_Resolve(lsp::requests::CodeLens_Resolve::Params&& req);
-
-    /**
-     * @brief Handles textDocument/breakpointLocations and angelscript/breakpointLocations requests.
-     * @param[in] params JSON-RPC request parameters containing document URI and optional range.
-     * @return Array of breakpoint locations with start and end positions.
-     */
-    lsp::json::Value HandleRequestsTextDocument_BreakpointLocations(lsp::json::Value&& params);
-
-    /**
-     * @brief Handles textDocument/evaluatableExpression and angelscript/evaluatableExpression requests.
-     * @param[in] params JSON-RPC request parameters containing document URI and position.
-     * @return Evaluatable expression range and text, or null.
-     */
-    lsp::json::Value HandleRequestsTextDocument_EvaluatableExpression(lsp::json::Value&& params);
-
-    /**
-     * @brief Handles angelscript/debugCompletion requests for breakpoint conditions and debug input.
-     * @param[in] params JSON-RPC request parameters containing document URI, line, and expression.
-     * @return Array of completion items in scope.
-     */
-    lsp::json::Value HandleRequestsAngelscript_DebugCompletion(lsp::json::Value&& params);
-
-    /**
-     * @brief Bundles parameters for processing an open predefined stub file.
-     */
-    struct DidOpenPredefinedRequest
-    {
-        std::string uriStr;
-        std::string text;
-        int version = 0;
-        std::string clientUri;
-        const utils::HighResTimer& totalTimer;
-    };
-
-    /**
-     * @brief Processes saving a predefined file stub.
-     * @param[in] uriStr Document URI key.
-     * @param[in] text Document contents.
-     */
-    void DidSavePredefinedFile(const std::string& uriStr, const std::string& text);
-
-    /**
-     * @brief Reanalyzes dependent documents when an interface change is detected on save.
-     * @param[in] uriStr Saved document URI key.
-     */
-    void ReanalyzeDependentsOnSave(const std::string& uriStr);
-
-    /**
-     * @brief Reanalyzes closed module files that previously had diagnostics published.
-     * @param[in] savedUriStr URI of the saved document triggering the cascade.
-     * @param[in] savedClaim Module claim of the saved document.
-     * @param[in] closureSet Set of canonical paths in the saved document's closure.
-     */
-    void ReanalyzeClosedModuleDependents(const std::string& savedUriStr, const ModuleClaim& savedClaim,
-                                         const ankerl::unordered_dense::set<std::string>& closureSet);
-
-    /**
-     * @brief Reads content for a closed document from cache or disk.
-     * @param[in] uriStr Document URI key.
-     * @return Document text content, or empty string on read failure.
-     */
-    std::string ReadClosedDocumentContent(const std::string& uriStr);
-
-    /**
-     * @brief Processes opening of a predefined file stub and publishes empty diagnostics.
-     * @param[in] req Request containing URI, document text, version, parse tree and timers.
-     */
-    void DidOpenPredefinedFile(const DidOpenPredefinedRequest& req);
-
-    /**
-     * @brief Applies an incremental or full content change event to a document buffer and parse tree.
-     * @param[in,out] buffer Target text buffer to modify.
-     * @param[in,out] workingTree Target AST tree to update incrementally.
-     * @param[in] change LSP change event.
-     * @param[in] isPredefined True if the document is a predefined stub.
-     */
-    void ApplyContentChange(std::string& buffer, document::TreePtr& workingTree,
-                            const lsp::TextDocumentContentChangeEvent& change, bool isPredefined);
-
-    /**
-     * @brief Restores a closed document as an on-disk closure file if claimed by an active module.
-     * @param[in] uriStr Document URI key.
-     * @param[in] path Canonical filesystem path.
-     * @return True if file was restored and re-analyzed as a module closure file.
-     */
-    bool RestoreClosedModuleFile(const std::string& uriStr, const std::string& path);
-
-    /**
-     * @brief Extracts initial workspace folder paths from initialization parameters.
-     * @param[in] params LSP initialize request parameters.
-     */
-    void ExtractInitialWorkspaceRoots(const lsp::requests::Initialize::Params& params);
-
-    /**
-     * @brief Parses and applies engine configuration from initialization options.
-     * @param[in] initOpts Optional initialization options from client.
-     */
-    void ApplyEngineInitializationOptions(const std::optional<lsp::LSPAny>& initOpts);
-
-    /**
-     * @brief Negotiates protocol capabilities supported by the client.
-     * @param[in] capabilities Client capabilities payload.
-     */
-    void NegotiateClientCapabilities(const lsp::ClientCapabilities& capabilities);
-
-    /**
-     * @brief Configures navigation and editing provider capabilities.
-     * @param[in,out] caps Server capabilities structure to populate.
-     */
-    void ConfigureNavigationAndEditingCapabilities(lsp::ServerCapabilities& caps) const;
-
-    /**
-     * @brief Configures symbol, completion, and semantic token capabilities.
-     * @param[in,out] caps Server capabilities structure to populate.
-     */
-    void ConfigureEditingAndSymbolCapabilities(lsp::ServerCapabilities& caps) const;
-
-    /**
-     * @brief Configures formatting, code action, and diagnostics capabilities.
-     * @param[in,out] caps Server capabilities structure to populate.
-     */
-    void ConfigureFormattingAndDiagnosticCapabilities(lsp::ServerCapabilities& caps) const;
-
-    /**
-     * @brief Configures workspace folders, file operations, and command capabilities.
-     * @param[in,out] caps Server capabilities structure to populate.
-     */
-    void ConfigureWorkspaceCapabilities(lsp::ServerCapabilities& caps) const;
-
-    /**
-     * @brief Constructs full server capabilities responding to initialization request.
-     * @return Populated server capabilities object.
-     */
-    lsp::ServerCapabilities BuildServerCapabilities() const;
-
-    /**
-     * @brief Updates format brace style settings from the workspace configuration.
-     * @param[in] section Configuration object.
-     */
-    void UpdateFormatConfiguration(const lsp::LSPObject& section);
-
-    /**
-     * @brief Updates AngelScript engine settings from the workspace configuration.
-     * @param[in] section Configuration object.
-     * @return True if any engine setting was changed.
-     */
-    bool UpdateEngineConfiguration(const lsp::LSPObject& section);
-
-    /**
-     * @brief Iterates all engine configuration bindings for initialization and updates.
-     * @param[in] applyBool Callback for boolean settings.
-     * @param[in] applyInt Callback for integer settings.
-     */
-    void BindEngineConfiguration(const std::function<void(std::string_view, bool&)>& applyBool,
-                                 const std::function<void(std::string_view, int&)>& applyInt);
-
-    /**
-     * @brief Updates diagnostics toggle flags from the workspace configuration.
-     * @param[in] section Configuration object.
-     * @return True if any diagnostic setting was changed.
-     */
-    bool UpdateDiagnosticsConfiguration(const lsp::LSPObject& section);
-
-    /**
-
-     * @brief Updates feature toggle flags from the workspace configuration.
-     * @param[in] section Configuration object.
-     */
-    void UpdateFeatureConfiguration(const lsp::LSPObject& section);
-
-    /**
-     * @brief Updates module definitions from the workspace configuration.
-     * @param[in] section Configuration object.
-     * @return True if module list changed and requires a workspace rescan.
-     */
-    bool UpdateModulesConfiguration(const lsp::LSPObject& section);
-
-    /**
-     * @brief Updates include extension settings from configuration.
-     * @param[in] section Configuration object.
-     * @return True if include settings changed requiring a rescan.
-     */
-    bool UpdateIncludeConfiguration(const lsp::LSPObject& section);
-
-    /**
-     * @brief Updates active predefined stub and engine profile settings from configuration.
-     * @param[in] section Configuration object.
-     * @return True if predefined or engine profile changed requiring a rescan.
-     */
-    bool UpdatePredefinedAndProfileConfiguration(const lsp::LSPObject& section);
-
-    /**
-     * @brief Updates include search directories from configuration.
-     * @param[in] section Configuration object.
-     * @return True if search directories changed requiring a rescan.
-     */
-    bool UpdateSearchDirectoriesConfiguration(const lsp::LSPObject& section);
-
-    /**
-     * @brief Formats a predefined stub file requested via workspace/executeCommand.
-     * @param[in] args Command arguments containing target stub URI.
-     * @return Result value containing format status and modified text.
-     */
-    lsp::requests::Workspace_ExecuteCommand::Result
-    ExecuteFormatPredefinedStub(const std::optional<lsp::Array<lsp::LSPAny>>& args);
-
-    /**
-     * @brief Lists available predefined stubs requested via workspace/executeCommand.
-     * @return Result value containing discovered stubs list.
-     */
-    lsp::requests::Workspace_ExecuteCommand::Result ExecuteListPredefinedStubs() const;
-
-    /**
-     * @brief Bundles discovered file collections from a unified workspace filesystem walk.
-     */
-    struct WorkspaceFilesWalkResult
-    {
-        std::vector<std::string> allScriptFiles;
-        std::vector<std::string> allFileNames;
-        std::vector<std::string> discoveredStubPaths;
-    };
-
-    /**
-     * @brief Collects all script and stub files across workspace roots in a single pass.
-     * @param[in] roots Workspace root directory paths.
-     * @param[in] stopToken Cancellation token.
-     * @param[out] outFiles Container to receive discovered file paths.
-     * @return True if walk completed without cancellation.
-     */
-    bool CollectWorkspaceFiles(const std::vector<std::string>& roots, const angel_lsp::utils::StopFlag& stopToken,
-                               WorkspaceFilesWalkResult& outFiles);
-
-    /**
-     * @brief Loads engine profiles and configured stubs, then processes discovered stubs.
-     * @param[in] discoveredStubPaths Paths of stubs found during filesystem walk.
-     * @param[in] stopToken Cancellation token.
-     * @param[in,out] parser Parser instance for reading stub contents.
-     * @return True if completed without cancellation.
-     */
-    bool LoadAndProcessPredefinedStubs(const std::vector<std::string>& discoveredStubPaths,
-                                       const angel_lsp::utils::StopFlag& stopToken,
-                                       angel_lsp::parser::AngelScriptParser& parser);
-
-    /**
-     * @brief Discovers, parses, and unloads predefined stubs according to configuration.
-     * @param[in] discoveredStubPaths Paths of stubs found during filesystem walk.
-     * @param[in] configuredPaths Paths of explicitly configured stubs.
-     * @param[in] stopToken Cancellation token.
-     * @param[in,out] parser Parser instance for reading stub contents.
-     */
-    void ProcessDiscoveredPredefinedStubs(const std::vector<std::string>& discoveredStubPaths,
-                                          const std::vector<std::string>& configuredPaths,
-                                          const angel_lsp::utils::StopFlag& stopToken,
-                                          angel_lsp::parser::AngelScriptParser& parser);
-
-    /**
-     * @brief Builds include graph and indexes configured modules during workspace scan.
-     * @param[in] allScriptFiles Discovered script files.
-     * @param[in] roots Workspace root directory paths.
-     * @param[in] stopToken Cancellation token.
-     * @param[in,out] parser Parser instance for indexing module files.
-     */
-    void BuildIncludeGraphAndModules(const std::vector<std::string>& allScriptFiles,
-                                     const std::vector<std::string>& roots, const angel_lsp::utils::StopFlag& stopToken,
-                                     angel_lsp::parser::AngelScriptParser& parser);
-
-    /**
-     * @brief Handles a deleted file event reported by the watched files notification.
-     * @param[in] path Canonical filesystem path of deleted file.
-     * @param[in] uriStr Document URI key of deleted file.
-     * @param[in] isPredefined True if file is a predefined stub.
-     * @param[in,out] stubSelectionInvalidated Set to true if the deleted file was the active stub.
-     * @return True if the include graph or symbols changed.
-     */
-    bool HandleWatchedFileDeleted(const std::string& path, const std::string& uriStr, bool isPredefined,
-                                  bool& stubSelectionInvalidated);
-
-    /**
-     * @brief Handles a changed or created file event reported by the watched files notification.
-     * @param[in] path Canonical filesystem path of changed file.
-     * @param[in] isPredefined True if file is a predefined stub.
-     * @param[in,out] parser Parser instance for reading changed stub or closure.
-     * @return True if the include graph or symbols changed.
-     */
-    bool HandleWatchedFileChanged(const std::string& path, bool isPredefined,
-                                  angel_lsp::parser::AngelScriptParser& parser);
-
-    /**
-     * @brief Replaces an active predefined stub that was deleted on disk with the next candidate.
-     * @param[in,out] parser Parser instance to index replacement stub.
-     */
-    void ReplaceDeletedPredefinedStub(angel_lsp::parser::AngelScriptParser& parser);
-
-    /**
-     * @brief Refreshes include directives for all open documents after filesystem changes.
-     */
-    void RefreshOpenDocumentIncludes();
-
-    /**
-     * @brief Full text of an indexed document, or nullptr when the server holds none.
-     *
-     * Needed by every position conversion: translating a Tree-sitter byte column into the
-     * client's encoding requires the bytes of that line. Results pointing at a document the
-     * server has no text for are handed back in byte columns unchanged - wrong only on
-     * non-ASCII lines, and strictly better than dropping the result.
-     */
-    std::shared_ptr<const std::string> FindDocumentText(const std::string& uri) const;
-
-    /**
-     * @brief Canonical filesystem path behind a document URI, or empty for a non-file URI.
-     *
-     * The include graph is keyed by path while the rest of the server is keyed by URI, and the
-     * same file can legitimately arrive spelled several ways (percent-encoded drive letters,
-     * mixed separators). Everything crossing between the two goes through this.
-     */
-    static std::string CanonicalPathFromUri(const std::string& uriStr);
-
-    /**
-     * @brief Returns the normalized, percent-decoded document URI used as canonical key.
-     */
-    static std::string DocumentKey(const std::string& uriStr);
-
-    /**
-     * @brief The three things nearly every document request starts by working out.
-     *
-     * `text` points into m_openDocuments and is valid only while the message loop owns it,
-     * which is the whole lifetime of a synchronous handler. `tree` is null for a document that
-     * has not been parsed yet, which every caller already had to tolerate.
-     */
-    struct OpenDocument
-    {
-        std::string uri;
-        const std::string* text = nullptr;
-        TSTree* tree = nullptr;
-        std::shared_ptr<const document::Document> docHandle;
-        std::shared_ptr<const std::string> predefinedHandle;
-    };
-
-    /**
-     * @brief Synthesizes and opens a virtual mixin document.
-     * @param[in] key Canonical document key.
-     * @param[in] uriStr Original request URI.
-     * @return Opened document handle, or nullptr on failure.
-     */
-    std::shared_ptr<const document::Document> ResolveVirtualDocument(const std::string& key, const std::string& uriStr);
-
-    /**
-     * @brief Looks up a preindexed document snapshot from predefined or workspace stores.
-     * @param[in] key Canonical document key.
-     * @return OpenDocument snapshot if preindexed, std::nullopt otherwise.
-     */
-    std::optional<OpenDocument> LookupPreindexedFallback(const std::string& key);
-
-    /**
-     * @brief Resolves an incoming document URI to an open document handle, or nullopt if closed.
-     */
-    std::optional<OpenDocument> LookupOpenDocument(const std::string& uriStr);
-
-    /**
-     * @brief Constructs a DefinitionRequest bound to the lifetime of an open document.
-     * @param[in] doc Open document handle.
-     * @param[in] position LSP cursor position.
-     * @return Prepared DefinitionRequest.
-     */
-    features::DefinitionRequest MakeDefinitionRequest(const OpenDocument& doc, const lsp::Position& position);
-
-    /**
-     * @brief Dispatches a document definition query with boilerplate deduplicated.
-     * @tparam FeatureFn Invocable returning std::optional<std::vector<lsp::Location>>.
-     * @param[in] uriStr Document URI string.
-     * @param[in] position LSP cursor position.
-     * @param[in] fn Feature query invocable.
-     * @return Result locations or lsp::Null.
-     */
     template <typename FeatureFn>
     lsp::requests::TextDocument_Definition::Result
     DispatchDefinitionQuery(const std::string& uriStr, const lsp::Position& position, FeatureFn&& fn);
 
-    /**
-     * @brief Context bundle for prepare-rename and rename operations.
-     */
-    struct RenameContext
+    template <typename ItemT> void EncodeItemRanges(ItemT& item) const
     {
-        OpenDocument doc;
-        std::unordered_set<std::string> predefinedUris;
-        lsp::Position decodedPosition;
-    };
-
-    /**
-     * @brief Prepares common context for rename operations.
-     * @param[in] uriStr Document URI string.
-     * @param[in] rawPos LSP cursor position before decoding.
-     * @return Prepared RenameContext if valid and enabled, std::nullopt otherwise.
-     */
-    std::optional<RenameContext> SetupRenameContext(const std::string& uriStr, const lsp::Position& rawPos);
-
-    void HandleNotificationsWorkspace_DidRenameFiles(lsp::notifications::Workspace_DidRenameFiles::Params&& params);
-
-    /**
-     * @brief Stops the workspace scan when the user dismisses its progress notification.
-     *
-     * The scan already polls a stop flag on every file so a folder change or a shutdown can
-     * interrupt it; this is that flag reached from the other side. Compared against the token
-     * the scan announced, because a client may run several progress operations at once.
-     */
-    void HandleNotificationsWindow_WorkDoneProgress_Cancel(
-        lsp::notifications::Window_WorkDoneProgress_Cancel::Params&& params);
-
-    /**
-     * @brief Raises or lowers log verbosity without a restart.
-     *
-     * The protocol's three trace values are mapped onto this server's levels rather than parsed
-     * into them - `off` still reports real failures, because a log that hides errors is not
-     * what a user asking for less noise meant.
-     */
-    void HandleNotificationsSetTrace(lsp::notifications::SetTrace::Params&& params);
-
-    /**
-     * @brief Clears symbols, scopes, and reindexes closure files that were created on disk.
-     * @param[in] createdPaths Canonical paths of newly created files.
-     */
-    void InvalidateCreatedClosureFiles(const std::vector<std::string>& createdPaths);
-
-    /**
-     * @brief Re-resolves open documents' `#include` directives when a script file appears.
-     */
-    void HandleNotificationsWorkspace_DidCreateFiles(lsp::notifications::Workspace_DidCreateFiles::Params&& params);
-    void HandleNotificationsWorkspace_DidDeleteFiles(lsp::notifications::Workspace_DidDeleteFiles::Params&& params);
-
-    /**
-     * @brief One file's `#include` lines rewritten to a renamed target, or nullopt.
-     *
-     * Returns an edit for the editor to apply rather than writing the file: the change belongs
-     * on the undo stack beside the rename that caused it, and a server editing files behind the
-     * user's back is not something they can undo.
-     */
-    std::optional<lsp::TextDocumentEdit> BuildIncludeRewrite(const std::string& includerPath,
-                                                             const std::string& oldTargetPath,
-                                                             const std::string& newTargetPath);
-
-    /** @brief Recomputes every open document's module closure and re-diagnoses it. */
-    void ReanalyseOpenDocuments();
-
-    /**
-     * @brief Document URI for a filesystem path, in the spelling used for synthesised entries.
-     */
-    static std::string UriFromPath(const std::string& path);
-
-    /** @brief The brace style the formatting handlers should use right now. */
-    features::BraceStyle CurrentBraceStyle() const
-    {
-        return m_formatBraceStyleKR.load(std::memory_order_relaxed) ? features::BraceStyle::KAndR
-                                                                    : features::BraceStyle::Allman;
+        if (m_positionEncoding == utils::PositionEncoding::Utf8)
+        {
+            return;
+        }
+        if (auto text = FindDocumentText(item.uri.toString()))
+        {
+            EncodeIn(*text, item.range);
+            EncodeIn(*text, item.selectionRange);
+        }
     }
 
-    /** @brief Whether formatting handlers should insert spaces inside parentheses. */
-    bool CurrentSpacesInsideParentheses() const noexcept
-    {
-        return m_formatSpacesInsideParentheses.load(std::memory_order_relaxed);
-    }
-
-    /** @brief Whether formatting handlers should keep empty blocks on a single line. */
-    bool CurrentKeepEmptyBlocksOnSingleLine() const noexcept
-    {
-        return m_formatKeepEmptyBlocksOnSingleLine.load(std::memory_order_relaxed);
-    }
-
-    /** @brief Where handle '@' attaches in declarations. */
-    features::PointerAlignment CurrentPointerAlignment() const noexcept
-    {
-        return m_formatPointerAlignment.load(std::memory_order_relaxed);
-    }
-
-    /**
-     * @brief Computes the module closure paths for an open document path.
-     *
-     * Considers entry-point forward scoping if configured, otherwise falls back
-     * to full module closure, and appends any forced includes and their closures.
-     *
-     * @param[in] openPath Canonical path of the opened file.
-     * @return Vector of canonical file paths belonging to the module closure.
-     */
-    std::vector<std::string> ComputeModuleClosure(const std::string& openPath) const;
-
-    /**
-     * @brief Computes all file URIs in the module closure for uriStr (including uriStr itself).
-     * @param[in] uriStr Document URI.
-     * @return Set of URIs belonging to this module's closure.
-     */
-    ankerl::unordered_dense::set<std::string> ComputeModuleClosureUris(const std::string& uriStr) const;
-
-    /**
-     * @brief Appends module member paths for enclosing folder modules.
-     * @param[in] openPath Canonical path of the opened file.
-     * @param[in] claim Module ownership claim for the opened file.
-     * @param[in,out] closure Destination list of closure paths.
-     */
-    void AppendEnclosingFolderModuleMembers(const std::string& openPath, const ModuleClaim& claim,
-                                            std::vector<std::string>& closure) const;
-
-    /**
-     * @brief Appends include-graph module closure paths.
-     * @param[in] openPath Canonical path of the opened file.
-     * @param[in,out] closure Destination list of closure paths.
-     */
-    void AppendIncludeGraphClosure(const std::string& openPath, std::vector<std::string>& closure) const;
-
-    /**
-     * @brief Appends force-include file paths and their closures.
-     * @param[in,out] closure Destination list of closure paths.
-     */
-    void AppendForceIncludesClosure(std::vector<std::string>& closure) const;
-
-    /**
-     * @brief Indexes all files within the document's #include closure graph.
-     */
-    size_t IndexModuleClosure(const std::string& openUriStr);
-
-    /**
-     * @brief Drops the closure files an open document pulled in, unless another open document
-     *        still needs them.
-     */
-    void ReleaseModuleClosure(const std::string& openUriStr);
-
-    /**
-     * @brief Parses one closure file and adds its symbols and scopes to the index.
-     */
-    void IndexClosureFile(const std::string& path, angel_lsp::parser::AngelScriptParser& parser);
-
-    /**
-     * @brief Removes a closure file's symbols, scopes and cached text.
-     */
-    void PurgeClosureFile(const std::string& uriStr);
-
-    /**
-     * @brief Appends a warning for every #include in the document that resolves to no file.
-     *
-     * Lives here rather than in SemanticAnalyzer because resolution depends on the configured
-     * search directories, which are server state rather than anything the AST knows about.
-     */
-    void AppendIncludeDiagnostics(const std::string& uriStr, const std::string& text,
-                                  std::vector<angel_lsp::analysis::Diagnostic>& diagnostics) const;
-
-    /**
-     * @brief Queues a document for re-analysis once the user stops typing.
-     *
-     * Funnel for all background analysis: callers pass raw mirror text, and ScheduleAnalysis
-     * applies AnalysisTextFor before queueing so that stub rewrites happen exactly once and
-     * callers need not know about them. Coalescing is by URI, so a burst of keystrokes collapses
-     * into a single run against the latest text.
-     */
-    // `force` says the answer can differ even though the bytes did not - the symbol table
-    // moved, not the buffer. Without it the dedupe drops the request as a duplicate of the
-    // analysis whose answer is exactly the one being replaced.
-    /**
-     * @brief Request bundle for queueing background or immediate document analysis.
-     */
-    struct ScheduleAnalysisRequest
-    {
-        std::string uriStr;
-        std::string text;
-        bool force = false;
-        angel_lsp::document::TreePtr tree = angel_lsp::document::MakeTreePtr(nullptr);
-        int version = -1;
-        uint64_t generation = 0;
-    };
-
-    /**
-     * @brief Queues a document for re-analysis once debounce expires.
-     * @param[in] req Analysis scheduling parameters.
-     */
-    void ScheduleAnalysis(ScheduleAnalysisRequest req);
-
-    /**
-     * @brief Convenience overload for queueing document re-analysis with default options.
-     * @param[in] uriStr Document URI.
-     * @param[in] text Document text.
-     * @param[in] force True to force re-analysis even if content is unchanged.
-     */
-    void ScheduleAnalysis(const std::string& uriStr, const std::string& text, bool force = false);
-
-    /**
-     * @brief Queues a document for immediate re-analysis without debounce delay.
-     * @param[in] req Immediate analysis scheduling parameters.
-     */
-    void ScheduleAnalysisImmediate(ScheduleAnalysisRequest req);
-
-    /**
-     * @brief Convenience overload for immediate document re-analysis with default options.
-     * @param[in] uriStr Document URI.
-     * @param[in] text Document text.
-     * @param[in] force True to force re-analysis even if content is unchanged.
-     */
-    void ScheduleAnalysisImmediate(const std::string& uriStr, const std::string& text, bool force = false);
-
-    /**
-     * @brief Request bundle for analyzing a document in the worker thread.
-     */
-    struct AnalyzeDocumentRequest
-    {
-        std::string uriStr;
-        std::string text;
-        angel_lsp::parser::AngelScriptParser& parser;
-        angel_lsp::document::TreePtr treeCopy = angel_lsp::document::MakeTreePtr(nullptr);
-        int version = -1;
-        uint64_t generation = 0;
-        uint64_t configRevision = 0;
-    };
-
-    /**
-     * @brief Checks if document analysis in worker thread has become stale before starting.
-     * @param[in] req Analysis request to validate.
-     * @return True if stale or cancelled.
-     */
-    [[nodiscard]] bool IsAnalyzeDocumentStale(const AnalyzeDocumentRequest& req) const;
-
-    /**
-     * @brief Persists preindexed document snapshots and manager state for a stub.
-     * @param[in] req Analysis request.
-     * @param[in] analysisText Preprocessed stub content.
-     * @param[in] tree Document parse tree.
-     * @param[in] contributes True if stub contributes to symbols.
-     */
-    void StorePredefinedSnapshot(const AnalyzeDocumentRequest& req, const std::string& analysisText,
-                                 const document::TreePtr& tree, bool contributes);
-
-    /**
-     * @brief Checks if a predefined document's text is unchanged and performs a zero-copy fast commit.
-     * @param[in] req Analysis request bundle.
-     * @param[in] analysisText Preprocessed analysis text.
-     * @param[in] totalTimer High-resolution timer tracking total analysis time.
-     * @return True if zero-copy fast path was committed, false if re-analysis is needed.
-     */
-    bool TryZeroCopyPredefinedAnalysis(const AnalyzeDocumentRequest& req, const std::string& analysisText,
-                                       const utils::HighResTimer& totalTimer);
-
-    /**
-     * @brief Analyzes a predefined stub document and commits its symbols and defined words.
-     * @param[in] req Analysis request bundle.
-     * @param[in] totalTimer High-resolution timer tracking total analysis time.
-     */
-    void AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer);
-
-    struct ParseAndCollectResult
-    {
-        document::TreePtr tree;
-        std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
-        double parseMs = 0.0;
-        double colMs = 0.0;
-    };
-
-    /**
-     * @brief Parses document text and collects symbols into a staging table.
-     * @param[in,out] req Analysis request bundle containing text and parser.
-     * @param[out] staging SymbolTable receiving collected symbols.
-     * @return Parse and collection result metrics.
-     */
-    ParseAndCollectResult ParseAndCollectSymbols(AnalyzeDocumentRequest& req,
-                                                 angel_lsp::analysis::SymbolTable& staging);
-
-    /**
-     * @brief Prepares and parses a worker analysis request, verifying stales and predefined status.
-     * @param[in,out] req Analysis request bundle.
-     * @param[out] staging Staging table populated with document symbols.
-     * @return Parse result if document should proceed to semantic analysis, or std::nullopt.
-     */
-    std::optional<ParseAndCollectResult> PrepareWorkerDocument(AnalyzeDocumentRequest& req,
-                                                               angel_lsp::analysis::SymbolTable& staging);
-
-    struct AnalysisTimingProfile
-    {
-        double totalMs = 0.0;
-        double snapshotMs = 0.0;
-        double parseMs = 0.0;
-        double colMs = 0.0;
-        double scopeMs = 0.0;
-        double checkMs = 0.0;
-    };
-
-    /**
-     * @brief Logs detailed and profile telemetry for document analysis phases.
-     * @param[in] prefix Log category prefix (e.g. "[Analysis]" or "[File Open]").
-     * @param[in] uriStr Document URI being reported.
-     * @param[in] profile Aggregated phase timings.
-     */
-    void LogAnalysisProfile(std::string_view prefix, const std::string& uriStr,
-                            const AnalysisTimingProfile& profile) const;
-
-    /**
-     * @brief Logs analysis profiling timings and module closure duration if non-trivial.
-     * @param[in] uriStr Document URI being reported.
-     * @param[in] closureMs Elapsed time for module closure indexing.
-     * @param[in] profile Aggregated phase timings.
-     */
-    void LogAnalysisProfileAndClosure(const std::string& uriStr, double closureMs,
-                                      const AnalysisTimingProfile& profile) const;
-
-    /**
-     * @brief Executes semantic analysis passes using worker-thread mixin memoization caches.
-     * @param[in] baseReq Fully prepared analysis request payload.
-     * @param[out] outCheckMs Output duration of the semantic analyzer run in milliseconds.
-     * @return Semantic diagnostics emitted for the document.
-     */
-    std::vector<analysis::Diagnostic> AnalyzeWorkerSemantics(angel_lsp::analysis::SemanticAnalysisRequest baseReq,
-                                                             double& outCheckMs);
-
-    /**
-     * @brief Analyzes a normal AngelScript document and commits its symbols, scopes, and diagnostics.
-     * @param[in] req Analysis request bundle.
-     * @param[in] totalTimer High-resolution timer tracking total analysis time.
-     */
-    void AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer);
-
-    /**
-     * @brief Prepares the active symbol table snapshot for document analysis.
-     * @param[in] uriStr Document URI.
-     * @param[in] unchangedClosedFile True if the document is closed and unchanged.
-     * @param[in] staging Staged symbols from the parsed tree.
-     * @param[out] outSnapshot Owning pointer to the created snapshot if created.
-     * @return Non-owning pointer to the active SymbolTable to query.
-     */
-    const analysis::SymbolTable* PrepareAnalysisSnapshot(const std::string& uriStr, bool unchangedClosedFile,
-                                                         const analysis::SymbolTable& staging,
-                                                         std::unique_ptr<analysis::SymbolTable>& outSnapshot) const;
-
-    /**
-     * @brief Checks if an analysis request has been superseded by a newer version or cancellation.
-     * @param[in] req Analysis request bundle.
-     * @return True if the request is stale and analysis should abort.
-     */
-    bool IsAnalysisRequestStale(const AnalyzeDocumentRequest& req) const;
-
-    /**
-     * @brief Commits syntax-only diagnostics when stubs or rules are still indexing.
-     * @param[in] req Analysis request bundle.
-     * @param[in] diags Syntax diagnostics to commit.
-     */
-    void CommitSyntaxOnlyResults(const AnalyzeDocumentRequest& req, std::vector<analysis::Diagnostic> diags);
-
-    /**
-     * @brief Checks if a closed document's interface hash is identical to its indexed symbols.
-     * @param[in] uriStr Document URI.
-     * @param[in] generation Edit generation of the request.
-     * @param[in] staging Staged symbols from the parsed tree.
-     * @return True if symbols can be preserved without updating the active symbol table.
-     */
-    bool IsUnchangedClosedDocument(const std::string& uriStr, uint64_t generation,
-                                   const angel_lsp::analysis::SymbolTable& staging) const;
-
-    /**
-     * @brief Rebuilds symbols, scopes and diagnostics for one document and publishes them.
-     * @param[in] req Bundled document parameters and parser references.
-     */
-    void AnalyzeDocument(AnalyzeDocumentRequest req);
-
-    /**
-     * @brief Encodes Tree-sitter byte positions into negotiated client coordinates (UTF-16/UTF-8).
-     */
     void EncodeIn(std::string_view text, lsp::Range& range) const;
     void EncodeIn(std::string_view text, lsp::Hover& hover) const;
     void EncodeIn(std::string_view text, std::vector<lsp::TextEdit>& edits) const;
@@ -2275,77 +233,450 @@ class Server
     void EncodeAcrossDocuments(std::vector<lsp::SymbolInformation>& symbols) const;
     void EncodeAcrossDocuments(lsp::WorkspaceEdit& edit) const;
     void EncodeAcrossDocuments(std::vector<lsp::CodeAction>& actions) const;
-
-    /**
-     * @brief Converts the two ranges a hierarchy item carries, against its own document.
-     *
-     * A hierarchy walks across files the user never opened, so the item's text is looked up by
-     * URI like every other AcrossDocuments conversion. Templated because CallHierarchyItem and
-     * TypeHierarchyItem share the shape and nothing else - the protocol declares them as two
-     * unrelated structs.
-     */
-    template <typename ItemT> void EncodeItemRanges(ItemT& item) const
-    {
-        if (m_positionEncoding == angel_lsp::utils::PositionEncoding::Utf8)
-            return;
-
-        if (auto text = FindDocumentText(item.uri.toString()))
-        {
-            EncodeIn(*text, item.range);
-            EncodeIn(*text, item.selectionRange);
-        }
-    }
-
-    /**
-     * @brief Converts a list of ranges that all belong to one named document.
-     *
-     * The call hierarchy's fromRanges are ranges in the caller, which is not always the
-     * document the entry points at - so the document is named explicitly rather than taken
-     * from the item.
-     */
     void EncodeRangesIn(const std::string& uri, std::vector<lsp::Range>& ranges) const;
 
-    /**
-     * @brief Null-safe logging forwarding helpers.
-     */
     void LogInfo(std::string_view message) const
     {
         if (m_logger)
-        {
             m_logger->LogInfo(message);
-        }
     }
-
     void LogWarning(std::string_view message) const
     {
         if (m_logger)
-        {
             m_logger->LogWarning(message);
-        }
     }
-
     void LogError(std::string_view message) const
     {
         if (m_logger)
-        {
             m_logger->LogError(message);
-        }
     }
-
     void LogDebug(std::string_view message) const
     {
         if (m_logger)
-        {
             m_logger->LogDebug(message);
-        }
     }
-
     void LogTrace(std::string_view message) const
     {
         if (m_logger)
-        {
             m_logger->LogTrace(message);
-        }
     }
+
+  private:
+    angel_lsp::config::ServerConfig m_config;
+    std::unique_ptr<lsp::Connection> m_connection;
+    std::unique_ptr<lsp::MessageHandler> m_messageHandler;
+
+    std::unique_ptr<WorkspaceStateStore> m_workspaceStore;
+    std::unique_ptr<DiagnosticsPipeline> m_diagnosticsPipeline;
+    std::unique_ptr<LspSessionCoordinator> m_sessionCoordinator;
+
+    DocumentStore& m_documentStore;
+    utils::WorkspaceIncludeGraph& m_includeGraph;
+    ModuleIndex& m_moduleIndex;
+    std::mutex& m_diagnosticsCacheMutex;
+    ankerl::unordered_dense::map<std::string, DiagnosticsSnapshot>& m_diagnosticsCache;
+    ankerl::unordered_dense::map<std::string, analysis::DiagnosticSeverity>& m_diagnosticSeverities;
+    utils::PositionEncoding& m_positionEncoding;
+    bool& m_snippetSupport;
+    bool& m_workDoneProgressSupport;
+    bool& m_clientPullsDiagnostics;
+    bool& m_clientSupportsDiagnosticRefresh;
+
+    mutable std::mutex m_lifecycleMutex;
+    mutable std::mutex m_runtimeConfigMutex;
+    std::function<void(const std::string& uri, int version, uint64_t generation)> m_onBeforeCommitHook;
+    std::thread m_workspaceThread;
+    utils::StopFlag m_workspaceStop;
+    std::mutex m_messageHandlerMutex;
+
+    std::unique_ptr<utils::LspLogger> m_logger;
+    std::unique_ptr<i18n::I18n> m_i18n;
+    std::unique_ptr<parser::AngelScriptParser> m_parser;
+    std::unique_ptr<parser::AngelScriptParser> m_workerParser;
+    analysis::SymbolTable m_symbolTable;
+    std::unique_ptr<analysis::SymbolCollector> m_symbolCollector;
+    analysis::ScopeIndex m_scopeIndex;
+    analysis::CallGraphIndex m_callGraph;
+    std::unique_ptr<analysis::LocalScopeCollector> m_localScopeCollector;
+    std::unique_ptr<analysis::SemanticAnalyzer> m_semanticAnalyzer;
+    PredefinedStubManager m_predefinedManager;
+
+    ankerl::unordered_dense::map<std::string, SemanticTokensSnapshot> m_semanticTokensCache;
+    mutable std::mutex m_semanticTokensMutex;
+    uint64_t m_semanticTokensRevision = 0;
+
+    mutable std::mutex m_closureMutex;
+    ankerl::unordered_dense::map<std::string, std::string> m_closureDocuments;
+    ankerl::unordered_dense::map<std::string, std::vector<std::string>> m_openDocumentClosures;
+    ankerl::unordered_dense::map<std::string, std::string> m_indexedUriByPath;
+    ankerl::unordered_dense::map<std::string, uint64_t> m_lastSavedInterfaceHash;
+
+    analysis::rules::MixinFileCache m_workerMixinCache;
+    analysis::rules::MixinFileCache m_serverMixinCache;
+    std::atomic<bool> m_clearWorkerMixinCache{false};
+
+    mutable std::mutex m_publishedForModulesMutex;
+    ankerl::unordered_dense::set<std::string> m_publishedForModules;
+    std::vector<ModuleView> m_modules;
+
+    std::vector<std::string> m_discoveredPredefined;
+    std::string m_effectivePredefined;
+    ankerl::unordered_dense::set<std::string> m_predefinedTransitiveIncludes;
+
+    std::string m_workspaceProgressToken;
+    unsigned m_workspaceProgressCounter = 0;
+
+    void InitDomainServices();
+    void RegisterWorkspaceHandlers();
+    void RegisterTextDocumentHandlers();
+    void RegisterHierarchyHandlers();
+    void RegisterTokensAndFormattingHandlers();
+    void RegisterLifecycleHandlers();
+    void RegisterFileEventHandlers();
+    void RegisterDocumentSyncHandlers();
+    void RegisterWorkspaceActionHandlers();
+    void RegisterNavigationHandlers();
+    void RegisterEditingHandlers();
+    void RegisterFormattingAndSymbolHandlers();
+
+    void BeginWorkspaceProgress(const std::string& title);
+    void ReportWorkspaceProgress(const std::string& message, unsigned percentage);
+    void EndWorkspaceProgress(const std::string& message);
+
+    void SetDocumentVersion(const std::string& uriStr, int version)
+    {
+        m_documentStore.SetVersion(uriStr, version);
+    }
+    [[nodiscard]] int GetDocumentVersion(const std::string& uriStr) const
+    {
+        return m_documentStore.GetVersion(uriStr);
+    }
+    void RemoveDocumentVersion(const std::string& uriStr)
+    {
+        m_documentStore.SetVersion(uriStr, -1);
+    }
+    void ClearMixinCaches()
+    {
+        m_serverMixinCache.clear();
+        m_clearWorkerMixinCache.store(true, std::memory_order_release);
+    }
+
+    std::string AnalysisTextFor(const std::string& uriStr, const std::string& text) const;
+    [[nodiscard]] ModuleClaim ClaimFor(const std::string& normalizedPath) const;
+    [[nodiscard]] static bool PathIsInside(const std::string& normalizedPath, const std::string& normalizedDirectory);
+    std::string ResolveConfiguredPath(const std::string& configured) const;
+    void AnalyzeConfiguredModules();
+    [[nodiscard]] bool IsOpenElsewhere(const std::string& uriStr) const;
+    void WithdrawStaleModuleDiagnostics();
+    void BuildModuleIndex();
+    void AugmentSearchDirectoriesFromModules();
+    void IndexConfiguredModules(parser::AngelScriptParser& parser);
+    void SyncModuleIndexSymbols();
+    void PurgeUnusedClosureFiles();
+    void NotifyModuleWarning(const std::string& text);
+    bool PopulateModuleFolderMembers(const std::string& folder, ModuleView& view,
+                                     const std::vector<std::string>& workspaceFiles);
+    bool PopulateModuleEntryClosure(const std::string& entry, ModuleView& view);
+    [[nodiscard]] std::optional<ModuleView>
+    ResolveModuleDefinition(const config::ServerConfig::ModuleDefinition& definition,
+                            const std::vector<ModuleView>& resolved, const std::vector<std::string>& workspaceFiles);
+    [[nodiscard]] ankerl::unordered_dense::set<std::string> CollectWantedClosurePaths() const;
+    [[nodiscard]] std::vector<std::string>
+    CollectStaleClosureUris(const ankerl::unordered_dense::set<std::string>& wantedPaths) const;
+    void CollectSharedSymbolsElsewhere(const ModuleView& owning,
+                                       ankerl::unordered_dense::set<std::string>& outShared) const;
+    [[nodiscard]] std::optional<analysis::SemanticAnalysisRequest::ModuleContext>
+    ModuleContextFor(const std::string& uriStr) const;
+    std::vector<std::string> IncludeAllowedRoots() const;
+    void AppendConfiguredPathAndParent(const std::string& raw, std::vector<std::string>& roots) const;
+    void CollectConfiguredAllowedRoots(std::vector<std::string>& roots) const;
+
+    void HandleNotificationsInitialized(lsp::notifications::Initialized::Params&& params);
+    lsp::requests::Shutdown::Result HandleRequestsShutdown();
+    void HandleNotificationsExit();
+    void HandleNotificationsWorkspace_DidChangeConfiguration(
+        lsp::notifications::Workspace_DidChangeConfiguration::Params&& params);
+    void HandleNotificationsWorkspace_DidChangeWatchedFiles(
+        lsp::notifications::Workspace_DidChangeWatchedFiles::Params&& params);
+    void HandleNotificationsWorkspace_DidChangeWorkspaceFolders(
+        lsp::notifications::Workspace_DidChangeWorkspaceFolders::Params&& params);
+    void RestartWorkspaceScan();
+
+    lsp::SemanticTokens ComputeAndCacheSemanticTokens(const std::string& uriStr, const std::string& text);
+    void HandleNotificationsTextDocument_WillSave(lsp::notifications::TextDocument_WillSave::Params&& params);
+    void HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDocument_DidSave::Params&& params);
+    void UpdateSavedDocumentCaches(const std::string& uriStr, const std::string& text);
+    void HandleSavedInterfaceChange(const std::string& uriStr, bool interfaceChanged);
+    void HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params&& params);
+    void HandleNotificationsTextDocument_DidChange(lsp::notifications::TextDocument_DidChange::Params&& params);
+    void HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDocument_DidClose::Params&& params);
+
+    void StartWorkspaceScan();
+    void ReadWorkspaceFiles(const utils::StopFlag& stopToken);
+    void RecoverFromScanFailure(const std::string& err);
+    void LoadPredefinedIncludes(const std::string& content, const std::string& filePath, PredefinedLoadContext& ctx);
+    void PreScanStubDefinedWords(const std::vector<std::string>& stubPaths);
+    PredefinedIndexTiming IndexAndCommitPredefinedStub(const std::string& uri, const std::string& content,
+                                                       parser::AngelScriptParser& parser);
+    void ParserPredefinedInternal(const std::string& filePath, parser::AngelScriptParser& parser, bool forceReload,
+                                  std::unordered_set<std::string>& visited);
+    void CommitPredefinedIndex(const std::string& uri, const std::string& content, document::TreePtr tree);
+    std::vector<std::string> LoadConfiguredPredefinedFiles(parser::AngelScriptParser& parser,
+                                                           const utils::StopFlag& stopToken);
+    void UnloadUnselectedPredefinedStubs(const std::vector<std::string>& wantedPaths);
+    bool RefreshStubDefinedWords(const std::string& uriStr, const std::string& text);
+    void LoadBuiltinEngineProfiles(parser::AngelScriptParser& parser, const utils::StopFlag& stopToken);
+    [[nodiscard]] std::optional<analysis::EngineProfileKind>
+    ResolveTargetEngineProfile(const utils::StopFlag& stopToken);
+    void UnloadStaleBuiltinEngineProfiles(const std::vector<analysis::EngineProfileKind>& wantedProfiles);
+    void LoadEngineProfileStub(analysis::EngineProfileKind pKind, parser::AngelScriptParser& parser);
+    void LoadWorkspaceEngineRules(const std::vector<std::string>& workspaceRoots);
+    void BuildDiagnosticSeverityOverrides();
+    void LogNonDefaultEngineProperties() const;
+
+    analysis::SemanticAnalysisRequest
+    BuildAnalysisRequest(const std::string& uriStr, const std::string& text, const TSTree* tree,
+                         const analysis::SymbolTable* customSymbolTable = nullptr) const;
+    [[nodiscard]] bool IsCommitAnalysisStale(const CommitAnalysisRequest& req) const;
+    bool CommitAnalysisResults(CommitAnalysisRequest req);
+    std::vector<analysis::Diagnostic> ReplaceSymbolsFromTree(const std::string& uriStr, const std::string& text,
+                                                             TSTree* tree, bool* outInterfaceChanged = nullptr);
+    std::vector<analysis::Diagnostic> ReplaceSymbolsFromSource(const std::string& uriStr, const std::string& text,
+                                                               parser::AngelScriptParser& parser);
+    [[nodiscard]] bool ShouldSkipScopeAnalysis(const CollectScopesRequest& request);
+    std::vector<analysis::Diagnostic> CollectScopesAndAnalyze(const CollectScopesRequest& request);
+    bool ClaimPredefinedFile(const std::string& uriStr, bool forceReload = false);
+    bool UnloadPredefinedUri(std::string uriStr);
+    static bool PathsAreSameFile(const std::string& a, const std::string& b);
+    bool PredefinedStubContributes(const std::string& uriStr) const;
+    void ReportPredefinedSelection(const std::vector<std::string>& discovered, const std::string& activePath,
+                                   const std::string& autoSelected, bool mergeAll);
+
+    void PublishInactiveRegions(const std::string& uriStr, const std::string& text);
+    [[nodiscard]] bool IsPublishDiagnosticsStale(const PublishDiagnosticsRequest& request) const;
+    void CacheDiagnosticsSnapshot(const PublishDiagnosticsRequest& request,
+                                  const std::vector<lsp::Diagnostic>& protocolDiagnostics);
+    void NotifyClientDiagnostics(lsp::notifications::TextDocument_PublishDiagnostics::Params params);
+    void PublishDiagnostics(const PublishDiagnosticsRequest& request);
+    void PublishDiagnostics(const std::string& uriStr, const std::vector<analysis::Diagnostic>& diagnostics,
+                            int version = -1);
+    void PublishDiagnostics(const std::string& uriStr, const std::string& text,
+                            const std::vector<analysis::Diagnostic>& diagnostics, int version = -1);
+    std::vector<lsp::Diagnostic> ToProtocolDiagnostics(const std::string& text,
+                                                       const std::vector<analysis::Diagnostic>& diagnostics) const;
+
+    lsp::requests::TextDocument_Diagnostic::Result
+    HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagnostic::Params&& params);
+    [[nodiscard]] std::optional<lsp::requests::TextDocument_Diagnostic::Result>
+    TryGetCachedDiagnosticReport(const std::string& uriStr, size_t currentHash, int currentVersion,
+                                 const std::optional<std::string>& previousResultId);
+    lsp::requests::Workspace_Diagnostic::Result
+    HandleRequestsWorkspace_Diagnostic(lsp::requests::Workspace_Diagnostic::Params&& params);
+
+    lsp::requests::DocumentLink_Resolve::Result
+    HandleRequestsDocumentLink_Resolve(lsp::requests::DocumentLink_Resolve::Params&& params);
+    lsp::requests::InlayHint_Resolve::Result
+    HandleRequestsInlayHint_Resolve(lsp::requests::InlayHint_Resolve::Params&& params);
+    lsp::requests::WorkspaceSymbol_Resolve::Result
+    HandleRequestsWorkspaceSymbol_Resolve(lsp::requests::WorkspaceSymbol_Resolve::Params&& params);
+    lsp::requests::TextDocument_RangesFormatting::Result
+    HandleRequestsTextDocument_RangesFormatting(lsp::requests::TextDocument_RangesFormatting::Params&& params);
+    lsp::requests::TextDocument_WillSaveWaitUntil::Result
+    HandleRequestsTextDocument_WillSaveWaitUntil(lsp::requests::TextDocument_WillSaveWaitUntil::Params&& params);
+    lsp::requests::Workspace_ExecuteCommand::Result
+    HandleRequestsWorkspace_ExecuteCommand(lsp::requests::Workspace_ExecuteCommand::Params&& params);
+
+    std::string GenerateVirtualMixinDocument(std::string_view uri);
+    lsp::json::Value HandleRequestsVirtualDocumentContent(lsp::json::Value&& params);
+    lsp::requests::TextDocument_PrepareCallHierarchy::Result
+    HandleRequestsTextDocument_PrepareCallHierarchy(lsp::requests::TextDocument_PrepareCallHierarchy::Params&& req);
+    lsp::requests::CallHierarchy_IncomingCalls::Result
+    HandleRequestsCallHierarchy_IncomingCalls(lsp::requests::CallHierarchy_IncomingCalls::Params&& req);
+    lsp::requests::CallHierarchy_OutgoingCalls::Result
+    HandleRequestsCallHierarchy_OutgoingCalls(lsp::requests::CallHierarchy_OutgoingCalls::Params&& req);
+    lsp::requests::TextDocument_PrepareTypeHierarchy::Result
+    HandleRequestsTextDocument_PrepareTypeHierarchy(lsp::requests::TextDocument_PrepareTypeHierarchy::Params&& req);
+    lsp::requests::TypeHierarchy_Supertypes::Result
+    HandleRequestsTypeHierarchy_Supertypes(lsp::requests::TypeHierarchy_Supertypes::Params&& req);
+    lsp::requests::TypeHierarchy_Subtypes::Result
+    HandleRequestsTypeHierarchy_Subtypes(lsp::requests::TypeHierarchy_Subtypes::Params&& req);
+    lsp::requests::TextDocument_LinkedEditingRange::Result
+    HandleRequestsTextDocument_LinkedEditingRange(lsp::requests::TextDocument_LinkedEditingRange::Params&& req);
+    lsp::requests::TextDocument_SelectionRange::Result
+    HandleRequestsTextDocument_SelectionRange(lsp::requests::TextDocument_SelectionRange::Params&& req);
+    lsp::requests::TextDocument_SemanticTokens_Full::Result
+    HandleRequestsTextDocument_SemanticTokens_Full(lsp::requests::TextDocument_SemanticTokens_Full::Params&& req);
+    lsp::requests::TextDocument_SemanticTokens_Full_Delta::Result HandleRequestsTextDocument_SemanticTokens_Full_Delta(
+        lsp::requests::TextDocument_SemanticTokens_Full_Delta::Params&& req);
+    lsp::requests::TextDocument_SemanticTokens_Range::Result
+    HandleRequestsTextDocument_SemanticTokens_Range(lsp::requests::TextDocument_SemanticTokens_Range::Params&& req);
+    lsp::requests::TextDocument_FoldingRange::Result
+    HandleRequestsTextDocument_FoldingRange(lsp::requests::TextDocument_FoldingRange::Params&& req);
+    lsp::requests::TextDocument_InlayHint::Result
+    HandleRequestsTextDocument_InlayHint(lsp::requests::TextDocument_InlayHint::Params&& req);
+    lsp::requests::Workspace_TextDocumentContent::Result
+    HandleRequestsWorkspace_TextDocumentContent(lsp::requests::Workspace_TextDocumentContent::Params&& req);
+    lsp::requests::Workspace_Symbol::Result
+    HandleRequestsWorkspace_Symbol(lsp::requests::Workspace_Symbol::Params&& req);
+
+    lsp::requests::TextDocument_Hover::Result
+    HandleRequestsTextDocument_Hover(lsp::requests::TextDocument_Hover::Params&& req);
+    lsp::requests::TextDocument_Definition::Result
+    HandleRequestsTextDocument_Definition(lsp::requests::TextDocument_Definition::Params&& req);
+    lsp::requests::TextDocument_Moniker::Result
+    HandleRequestsTextDocument_Moniker(lsp::requests::TextDocument_Moniker::Params&& req);
+    lsp::requests::TextDocument_Declaration::Result
+    HandleRequestsTextDocument_Declaration(lsp::requests::TextDocument_Declaration::Params&& req);
+    lsp::requests::TextDocument_Implementation::Result
+    HandleRequestsTextDocument_Implementation(lsp::requests::TextDocument_Implementation::Params&& req);
+    lsp::requests::TextDocument_TypeDefinition::Result
+    HandleRequestsTextDocument_TypeDefinition(lsp::requests::TextDocument_TypeDefinition::Params&& req);
+    lsp::requests::TextDocument_References::Result
+    HandleRequestsTextDocument_References(lsp::requests::TextDocument_References::Params&& req);
+    lsp::requests::TextDocument_DocumentHighlight::Result
+    HandleRequestsTextDocument_DocumentHighlight(lsp::requests::TextDocument_DocumentHighlight::Params&& req);
+    lsp::requests::TextDocument_Completion::Result
+    HandleRequestsTextDocument_Completion(lsp::requests::TextDocument_Completion::Params&& req);
+    lsp::requests::CompletionItem_Resolve::Result
+    HandleRequestsCompletionItem_Resolve(lsp::requests::CompletionItem_Resolve::Params&& req);
+    lsp::requests::TextDocument_SignatureHelp::Result
+    HandleRequestsTextDocument_SignatureHelp(lsp::requests::TextDocument_SignatureHelp::Params&& req);
+    lsp::requests::TextDocument_PrepareRename::Result
+    HandleRequestsTextDocument_PrepareRename(lsp::requests::TextDocument_PrepareRename::Params&& req);
+    lsp::requests::TextDocument_Rename::Result
+    HandleRequestsTextDocument_Rename(lsp::requests::TextDocument_Rename::Params&& req);
+    lsp::requests::TextDocument_CodeAction::Result
+    HandleRequestsTextDocument_CodeAction(lsp::requests::TextDocument_CodeAction::Params&& req);
+    lsp::requests::CodeAction_Resolve::Result
+    HandleRequestsCodeAction_Resolve(lsp::requests::CodeAction_Resolve::Params&& req);
+    lsp::requests::TextDocument_DocumentSymbol::Result
+    HandleRequestsTextDocument_DocumentSymbol(lsp::requests::TextDocument_DocumentSymbol::Params&& req);
+    lsp::requests::TextDocument_Formatting::Result
+    HandleRequestsTextDocument_Formatting(lsp::requests::TextDocument_Formatting::Params&& req);
+    lsp::requests::TextDocument_RangeFormatting::Result
+    HandleRequestsTextDocument_RangeFormatting(lsp::requests::TextDocument_RangeFormatting::Params&& req);
+    lsp::requests::TextDocument_OnTypeFormatting::Result
+    HandleRequestsTextDocument_OnTypeFormatting(lsp::requests::TextDocument_OnTypeFormatting::Params&& req);
+    lsp::requests::TextDocument_DocumentLink::Result
+    HandleRequestsTextDocument_DocumentLink(lsp::requests::TextDocument_DocumentLink::Params&& req);
+    lsp::requests::TextDocument_CodeLens::Result
+    HandleRequestsTextDocument_CodeLens(lsp::requests::TextDocument_CodeLens::Params&& req);
+    lsp::requests::CodeLens_Resolve::Result
+    HandleRequestsCodeLens_Resolve(lsp::requests::CodeLens_Resolve::Params&& req);
+    lsp::json::Value HandleRequestsTextDocument_BreakpointLocations(lsp::json::Value&& params);
+    lsp::json::Value HandleRequestsTextDocument_EvaluatableExpression(lsp::json::Value&& params);
+    lsp::json::Value HandleRequestsAngelscript_DebugCompletion(lsp::json::Value&& params);
+
+    void DidSavePredefinedFile(const std::string& uriStr, const std::string& text);
+    void ReanalyzeDependentsOnSave(const std::string& uriStr);
+    void ReanalyzeClosedModuleDependents(const std::string& savedUriStr, const ModuleClaim& savedClaim,
+                                         const ankerl::unordered_dense::set<std::string>& closureSet);
+    std::string ReadClosedDocumentContent(const std::string& uriStr);
+    void DidOpenPredefinedFile(const DidOpenPredefinedRequest& req);
+    void ApplyContentChange(std::string& buffer, document::TreePtr& workingTree,
+                            const lsp::TextDocumentContentChangeEvent& change, bool isPredefined);
+    bool RestoreClosedModuleFile(const std::string& uriStr, const std::string& path);
+    void ExtractInitialWorkspaceRoots(const lsp::requests::Initialize::Params& params);
+    void ApplyEngineInitializationOptions(const std::optional<lsp::LSPAny>& initOpts);
+    void NegotiateClientCapabilities(const lsp::ClientCapabilities& capabilities);
+    void ConfigureNavigationAndEditingCapabilities(lsp::ServerCapabilities& caps) const;
+    void ConfigureEditingAndSymbolCapabilities(lsp::ServerCapabilities& caps) const;
+    void ConfigureFormattingAndDiagnosticCapabilities(lsp::ServerCapabilities& caps) const;
+    void ConfigureWorkspaceCapabilities(lsp::ServerCapabilities& caps) const;
+    lsp::ServerCapabilities BuildServerCapabilities() const;
+
+    void UpdateFormatConfiguration(const lsp::LSPObject& section);
+    bool UpdateEngineConfiguration(const lsp::LSPObject& section);
+    void BindEngineConfiguration(const std::function<void(std::string_view, bool&)>& applyBool,
+                                 const std::function<void(std::string_view, int&)>& applyInt);
+    bool UpdateDiagnosticsConfiguration(const lsp::LSPObject& section);
+    void UpdateFeatureConfiguration(const lsp::LSPObject& section);
+    bool UpdateModulesConfiguration(const lsp::LSPObject& section);
+    bool UpdateIncludeConfiguration(const lsp::LSPObject& section);
+    bool UpdatePredefinedAndProfileConfiguration(const lsp::LSPObject& section);
+    bool UpdateSearchDirectoriesConfiguration(const lsp::LSPObject& section);
+
+    lsp::requests::Workspace_ExecuteCommand::Result
+    ExecuteFormatPredefinedStub(const std::optional<lsp::Array<lsp::LSPAny>>& args);
+    lsp::requests::Workspace_ExecuteCommand::Result ExecuteListPredefinedStubs() const;
+    bool CollectWorkspaceFiles(const std::vector<std::string>& roots, const utils::StopFlag& stopToken,
+                               WorkspaceFilesWalkResult& outFiles);
+    bool LoadAndProcessPredefinedStubs(const std::vector<std::string>& discoveredStubPaths,
+                                       const utils::StopFlag& stopToken, parser::AngelScriptParser& parser);
+    void ProcessDiscoveredPredefinedStubs(const std::vector<std::string>& discoveredStubPaths,
+                                          const std::vector<std::string>& configuredPaths,
+                                          const utils::StopFlag& stopToken, parser::AngelScriptParser& parser);
+    void BuildIncludeGraphAndModules(const std::vector<std::string>& allScriptFiles,
+                                     const std::vector<std::string>& roots, const utils::StopFlag& stopToken,
+                                     parser::AngelScriptParser& parser);
+    bool HandleWatchedFileDeleted(const std::string& path, const std::string& uriStr, bool isPredefined,
+                                  bool& stubSelectionInvalidated);
+    bool HandleWatchedFileChanged(const std::string& path, bool isPredefined, parser::AngelScriptParser& parser);
+    void ReplaceDeletedPredefinedStub(parser::AngelScriptParser& parser);
+    void RefreshOpenDocumentIncludes();
+
+    std::shared_ptr<const std::string> FindDocumentText(const std::string& uri) const;
+    static std::string CanonicalPathFromUri(const std::string& uriStr);
+    std::shared_ptr<const document::Document> ResolveVirtualDocument(const std::string& key, const std::string& uriStr);
+    std::optional<OpenDocument> LookupPreindexedFallback(const std::string& key);
+    std::optional<OpenDocument> LookupOpenDocument(const std::string& uriStr);
+    features::DefinitionRequest MakeDefinitionRequest(const OpenDocument& doc, const lsp::Position& position);
+    std::optional<RenameContext> SetupRenameContext(const std::string& uriStr, const lsp::Position& rawPos);
+
+    void HandleNotificationsWorkspace_DidRenameFiles(lsp::notifications::Workspace_DidRenameFiles::Params&& params);
+    void HandleNotificationsWindow_WorkDoneProgress_Cancel(
+        lsp::notifications::Window_WorkDoneProgress_Cancel::Params&& params);
+    void HandleNotificationsSetTrace(lsp::notifications::SetTrace::Params&& params);
+    void InvalidateCreatedClosureFiles(const std::vector<std::string>& createdPaths);
+    void HandleNotificationsWorkspace_DidCreateFiles(lsp::notifications::Workspace_DidCreateFiles::Params&& params);
+    void HandleNotificationsWorkspace_DidDeleteFiles(lsp::notifications::Workspace_DidDeleteFiles::Params&& params);
+    std::optional<lsp::TextDocumentEdit> BuildIncludeRewrite(const std::string& includerPath,
+                                                             const std::string& oldTargetPath,
+                                                             const std::string& newTargetPath);
+    void ReanalyseOpenDocuments();
+    static std::string UriFromPath(const std::string& path);
+
+    std::vector<std::string> ComputeModuleClosure(const std::string& openPath) const;
+    ankerl::unordered_dense::set<std::string> ComputeModuleClosureUris(const std::string& uriStr) const;
+    void AppendEnclosingFolderModuleMembers(const std::string& openPath, const ModuleClaim& claim,
+                                            std::vector<std::string>& closure) const;
+    void AppendIncludeGraphClosure(const std::string& openPath, std::vector<std::string>& closure) const;
+    void AppendForceIncludesClosure(std::vector<std::string>& closure) const;
+    size_t IndexModuleClosure(const std::string& openUriStr);
+    void ReleaseModuleClosure(const std::string& openUriStr);
+    void IndexClosureFile(const std::string& path, parser::AngelScriptParser& parser);
+    void PurgeClosureFile(const std::string& uriStr);
+    void AppendIncludeDiagnostics(const std::string& uriStr, const std::string& text,
+                                  std::vector<analysis::Diagnostic>& diagnostics) const;
+
+    void ScheduleAnalysis(ScheduleAnalysisRequest req);
+    void ScheduleAnalysis(const std::string& uriStr, const std::string& text, bool force = false);
+    void ScheduleAnalysisImmediate(ScheduleAnalysisRequest req);
+    void ScheduleAnalysisImmediate(const std::string& uriStr, const std::string& text, bool force = false);
+    [[nodiscard]] bool IsAnalyzeDocumentStale(const AnalyzeDocumentRequest& req) const;
+    void StorePredefinedSnapshot(const AnalyzeDocumentRequest& req, const std::string& analysisText,
+                                 const document::TreePtr& tree, bool contributes);
+    bool TryZeroCopyPredefinedAnalysis(const AnalyzeDocumentRequest& req, const std::string& analysisText,
+                                       const utils::HighResTimer& totalTimer);
+    void AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer);
+    ParseAndCollectResult ParseAndCollectSymbols(AnalyzeDocumentRequest& req, analysis::SymbolTable& staging);
+    std::optional<ParseAndCollectResult> PrepareWorkerDocument(AnalyzeDocumentRequest& req,
+                                                               analysis::SymbolTable& staging);
+    void LogAnalysisProfile(std::string_view prefix, const std::string& uriStr,
+                            const AnalysisTimingProfile& profile) const;
+    void LogAnalysisProfileAndClosure(const std::string& uriStr, double closureMs,
+                                      const AnalysisTimingProfile& profile) const;
+    std::vector<analysis::Diagnostic> AnalyzeWorkerSemantics(analysis::SemanticAnalysisRequest baseReq,
+                                                             double& outCheckMs);
+    void AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer);
+    const analysis::SymbolTable* PrepareAnalysisSnapshot(const std::string& uriStr, bool unchangedClosedFile,
+                                                         const analysis::SymbolTable& staging,
+                                                         std::unique_ptr<analysis::SymbolTable>& outSnapshot) const;
+    bool IsAnalysisRequestStale(const AnalyzeDocumentRequest& req) const;
+    void CommitSyntaxOnlyResults(const AnalyzeDocumentRequest& req, std::vector<analysis::Diagnostic> diags);
+    bool IsUnchangedClosedDocument(const std::string& uriStr, uint64_t generation,
+                                   const analysis::SymbolTable& staging) const;
+    void AnalyzeDocument(AnalyzeDocumentRequest req);
 };
+
 } // namespace angel_lsp

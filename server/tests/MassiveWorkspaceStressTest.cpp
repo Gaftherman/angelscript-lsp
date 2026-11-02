@@ -248,7 +248,7 @@ void PushOpenDocuments(angel_lsp::test::ScriptedStream& stream, const TempStress
     {
         const std::string rStr = std::to_string(i);
         const std::string fileUri = ws.Uri("root_" + rStr + ".as");
-        const std::string text = "#include \"chain_" + rStr + "_1.as\"\nvoid RootEntry_" + rStr + "() {}\n";
+        const std::string text = "#include \\\"chain_" + rStr + "_1.as\\\"\\nvoid RootEntry_" + rStr + "() {}\\n";
         stream.Push(
             "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":\"" +
             fileUri + "\",\"languageId\":\"angelscript\",\"version\":1,\"text\":\"" + text + "\"}}}");

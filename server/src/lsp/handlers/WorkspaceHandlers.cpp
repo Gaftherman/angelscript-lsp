@@ -316,20 +316,22 @@ void Server::UpdateFormatConfiguration(const lsp::LSPObject& section)
     if (auto styleVal = FindSectionString(section, formatObj, "braceStyle", "format"); styleVal.has_value())
     {
         const bool wantsKR = BraceStyleIsKR(*styleVal);
-        if (wantsKR != m_formatBraceStyleKR.exchange(wantsKR, std::memory_order_relaxed))
+        const bool prevKR = m_sessionCoordinator->GetFormatBraceStyleKR();
+        if (wantsKR != prevKR)
         {
+            m_sessionCoordinator->SetFormatBraceStyleKR(wantsKR);
             LogInfo(fmt::format("Format brace style changed to '{}'", *styleVal));
         }
     }
     if (auto spacesVal = FindSectionBool(section, formatObj, "spacesInsideParentheses", "format");
         spacesVal.has_value())
     {
-        m_formatSpacesInsideParentheses.store(*spacesVal, std::memory_order_relaxed);
+        m_sessionCoordinator->SetFormatSpacesInsideParentheses(*spacesVal);
     }
     if (auto keepEmpty = FindSectionBool(section, formatObj, "keepEmptyBlocksOnSingleLine", "format");
         keepEmpty.has_value())
     {
-        m_formatKeepEmptyBlocksOnSingleLine.store(*keepEmpty, std::memory_order_relaxed);
+        m_sessionCoordinator->SetFormatKeepEmptyBlocksOnSingleLine(*keepEmpty);
     }
     if (auto fosVal = FindSectionBool(section, formatObj, "onSave", "format"); fosVal.has_value())
     {
@@ -346,7 +348,7 @@ void Server::UpdateFormatConfiguration(const lsp::LSPObject& section)
         {
             align = features::PointerAlignment::Middle;
         }
-        m_formatPointerAlignment.store(align, std::memory_order_relaxed);
+        m_sessionCoordinator->SetFormatPointerAlignment(align);
     }
 }
 
@@ -858,10 +860,7 @@ bool Server::UpdatePredefinedAndProfileConfiguration(const lsp::LSPObject& secti
     {
         if (!profileVal->string().empty() && profileVal->string() != EngineProfile())
         {
-            {
-                std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
-                m_engineProfile = profileVal->string();
-            }
+            m_workspaceStore->SetEngineProfile(profileVal->string());
             LogInfo(fmt::format("Engine profile changed to '{}'; reloading predefineds", profileVal->string()));
             shouldRescan = true;
         }
@@ -900,10 +899,7 @@ bool Server::UpdateSearchDirectoriesConfiguration(const lsp::LSPObject& section)
     if (updated != *SearchDirectories())
     {
         const size_t count = updated.size();
-        {
-            std::lock_guard<std::mutex> lock(m_runtimeConfigMutex);
-            m_searchDirectories = std::make_shared<const std::vector<std::string>>(std::move(updated));
-        }
+        m_workspaceStore->SetSearchDirectories(std::move(updated));
         LogInfo(fmt::format("Search directories changed ({} entries); rebuilding the include graph", count));
         return true;
     }

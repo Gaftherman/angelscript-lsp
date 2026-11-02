@@ -242,14 +242,11 @@ void Server::ScheduleAnalysis(ScheduleAnalysisRequest req)
         req.generation = m_documentStore.GetGeneration(req.uriStr);
     }
 
-    const uint64_t configRevision = m_configRevision.load();
+    const uint64_t configRevision = m_sessionCoordinator->GetConfigRevision();
     const std::string analysisText = AnalysisTextFor(req.uriStr, req.text);
 
-    if (m_analysisScheduler)
-    {
-        m_analysisScheduler->Schedule(
-            {req.uriStr, analysisText, req.force, std::move(req.tree), req.version, req.generation, configRevision});
-    }
+    m_diagnosticsPipeline->Schedule(
+        {req.uriStr, analysisText, req.force, std::move(req.tree), req.version, req.generation, configRevision});
 }
 
 void Server::ScheduleAnalysis(const std::string& uriStr, const std::string& text, bool force)
@@ -269,14 +266,11 @@ void Server::ScheduleAnalysisImmediate(ScheduleAnalysisRequest req)
         req.generation = m_documentStore.GetGeneration(req.uriStr);
     }
 
-    const uint64_t configRevision = m_configRevision.load();
+    const uint64_t configRevision = m_sessionCoordinator->GetConfigRevision();
     const std::string analysisText = AnalysisTextFor(req.uriStr, req.text);
 
-    if (m_analysisScheduler)
-    {
-        m_analysisScheduler->ScheduleImmediate(
-            {req.uriStr, analysisText, req.force, std::move(req.tree), req.version, req.generation, configRevision});
-    }
+    m_diagnosticsPipeline->ScheduleImmediate(
+        {req.uriStr, analysisText, req.force, std::move(req.tree), req.version, req.generation, configRevision});
 }
 
 void Server::ScheduleAnalysisImmediate(const std::string& uriStr, const std::string& text, bool force)
@@ -290,11 +284,11 @@ bool Server::IsCommitAnalysisStale(const CommitAnalysisRequest& req) const
     {
         return true;
     }
-    if (req.configRevision != m_configRevision.load())
+    if (req.configRevision != m_sessionCoordinator->GetConfigRevision())
     {
         return true;
     }
-    if (m_analysisScheduler && m_analysisScheduler->IsCancelled(req.uriStr))
+    if (m_diagnosticsPipeline->IsCancelled(req.uriStr))
     {
         return true;
     }
@@ -356,7 +350,7 @@ bool Server::IsAnalyzeDocumentStale(const AnalyzeDocumentRequest& req) const
     {
         return true;
     }
-    if (m_analysisScheduler && m_analysisScheduler->IsCancelled(req.uriStr))
+    if (m_diagnosticsPipeline->IsCancelled(req.uriStr))
     {
         return true;
     }
@@ -571,7 +565,7 @@ bool Server::IsAnalysisRequestStale(const AnalyzeDocumentRequest& req) const
     {
         return true;
     }
-    return m_analysisScheduler && m_analysisScheduler->IsCancelled(req.uriStr);
+    return m_diagnosticsPipeline->IsCancelled(req.uriStr);
 }
 
 const analysis::SymbolTable* Server::PrepareAnalysisSnapshot(const std::string& uriStr, bool unchangedClosedFile,

@@ -138,6 +138,15 @@ def is_sym_declared_in_file_or_peer(sym: str, rel_path: str) -> bool:
     elif target_path.suffix == ".h":
         candidates.append(target_path.with_suffix(".cpp"))
 
+    # Also check sibling files in the same directory (for decomposed domain modules)
+    if target_path.parent.is_dir():
+        for sibling in target_path.parent.glob("*.h"):
+            if sibling not in candidates:
+                candidates.append(sibling)
+        for sibling in target_path.parent.glob("*.cpp"):
+            if sibling not in candidates:
+                candidates.append(sibling)
+
     func_pattern = re.compile(rf"(?:^|\n)\s*(?:[A-Za-z0-9_:<>&*\[\]]+\s+)+{re.escape(sym)}\s*\(")
     struct_pattern = re.compile(rf"\b(?:struct|class)\s+{re.escape(sym)}\b")
 

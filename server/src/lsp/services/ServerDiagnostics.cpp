@@ -471,12 +471,12 @@ void Server::CacheDiagnosticsSnapshot(const PublishDiagnosticsRequest& request,
 {
     std::lock_guard<std::mutex> cacheLock(m_diagnosticsCacheMutex);
     DiagnosticsSnapshot snapshot;
-    snapshot.resultId = std::to_string(++m_diagnosticsRevision);
+    snapshot.resultId = std::to_string(m_diagnosticsPipeline->NextRevision());
     snapshot.items = protocolDiagnostics;
     snapshot.textHash = std::hash<std::string>{}(request.text);
     snapshot.version = request.version;
     snapshot.generation = request.generation;
-    snapshot.configRevision = m_configRevision.load();
+    snapshot.configRevision = m_sessionCoordinator->GetConfigRevision();
     m_diagnosticsCache[request.uriStr] = std::move(snapshot);
 }
 
@@ -484,8 +484,8 @@ void Server::NotifyClientDiagnostics(lsp::notifications::TextDocument_PublishDia
 {
     if (m_clientPullsDiagnostics)
     {
-        const bool isBatchQueued = m_analysisScheduler && m_analysisScheduler->HasQueuedWork() &&
-                                   !m_documentStore.IsOpen(DocumentKey(params.uri.toString()));
+        const bool isBatchQueued =
+            m_diagnosticsPipeline->HasQueuedWork() && !m_documentStore.IsOpen(DocumentKey(params.uri.toString()));
         if (m_clientSupportsDiagnosticRefresh && !isBatchQueued)
         {
             std::lock_guard<std::mutex> lock(m_messageHandlerMutex);

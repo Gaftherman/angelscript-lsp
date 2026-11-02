@@ -1,5 +1,6 @@
 #pragma once
 
+#include "features/formatting/FormattingTypes.h"
 #include "utils/PositionEncoding.h"
 
 #include <atomic>
@@ -103,6 +104,46 @@ class LspSessionCoordinator
     [[nodiscard]] bool GetFormatBraceStyleKR() const noexcept;
 
     /**
+     * @brief Configures whether formatter inserts spaces inside parentheses.
+     */
+    void SetFormatSpacesInsideParentheses(bool spaces) noexcept;
+
+    /**
+     * @brief Checks whether formatter inserts spaces inside parentheses.
+     */
+    [[nodiscard]] bool GetFormatSpacesInsideParentheses() const noexcept;
+
+    /**
+     * @brief Configures whether formatter keeps empty blocks on a single line.
+     */
+    void SetFormatKeepEmptyBlocksOnSingleLine(bool keep) noexcept;
+
+    /**
+     * @brief Checks whether formatter keeps empty blocks on a single line.
+     */
+    [[nodiscard]] bool GetFormatKeepEmptyBlocksOnSingleLine() const noexcept;
+
+    /**
+     * @brief Configures pointer/handle alignment style.
+     */
+    void SetFormatPointerAlignment(features::PointerAlignment align) noexcept;
+
+    /**
+     * @brief Gets pointer/handle alignment style.
+     */
+    [[nodiscard]] features::PointerAlignment GetFormatPointerAlignment() const noexcept;
+
+    /**
+     * @brief Records whether client supports work done progress.
+     */
+    void SetWorkDoneProgressSupport(bool support) noexcept;
+
+    /**
+     * @brief Checks whether client supports work done progress.
+     */
+    [[nodiscard]] bool GetWorkDoneProgressSupport() const noexcept;
+
+    /**
      * @brief Atomically increments and returns the configuration revision counter.
      * @return Incremented revision number.
      */
@@ -175,6 +216,46 @@ class LspSessionCoordinator
     [[nodiscard]] bool GetClientSupportsDiagnosticRefresh() const noexcept;
 
     /**
+     * @brief Direct mutable reference to position encoding for Server delegation.
+     */
+    [[nodiscard]] utils::PositionEncoding& PositionEncodingRef() noexcept
+    {
+        return m_positionEncoding;
+    }
+
+    /**
+     * @brief Direct mutable reference to snippet support flag for Server delegation.
+     */
+    [[nodiscard]] bool& SnippetSupportRef() noexcept
+    {
+        return m_clientSupportsSnippets;
+    }
+
+    /**
+     * @brief Direct mutable reference to work done progress support flag for Server delegation.
+     */
+    [[nodiscard]] bool& WorkDoneProgressSupportRef() noexcept
+    {
+        return m_workDoneProgressSupport;
+    }
+
+    /**
+     * @brief Direct mutable reference to client diagnostic pull flag for Server delegation.
+     */
+    [[nodiscard]] bool& ClientPullsDiagnosticsRef() noexcept
+    {
+        return m_clientPullsDiagnostics;
+    }
+
+    /**
+     * @brief Direct mutable reference to diagnostic refresh flag for Server delegation.
+     */
+    [[nodiscard]] bool& ClientSupportsDiagnosticRefreshRef() noexcept
+    {
+        return m_clientSupportsDiagnosticRefresh;
+    }
+
+    /**
      * @brief Processes a single iteration of incoming transport messages.
      * @param[in,out] handler Message handler to process incoming RPCs.
      * @return True if message processed without error, false on failure or transport closed.
@@ -189,6 +270,9 @@ class LspSessionCoordinator
     mutable std::condition_variable m_predefinedCv;
 
     std::atomic<bool> m_formatBraceStyleKR{false};
+    std::atomic<bool> m_formatSpacesInsideParentheses{false};
+    std::atomic<bool> m_formatKeepEmptyBlocksOnSingleLine{true};
+    std::atomic<features::PointerAlignment> m_formatPointerAlignment{features::PointerAlignment::Left};
     std::atomic<uint64_t> m_configRevision{0};
 
     utils::PositionEncoding m_positionEncoding{utils::PositionEncoding::Utf16};
@@ -196,6 +280,7 @@ class LspSessionCoordinator
     bool m_clientSupportsMarkdown{false};
     bool m_clientPullsDiagnostics{false};
     bool m_clientSupportsDiagnosticRefresh{false};
+    bool m_workDoneProgressSupport{false};
 };
 
 } // namespace angel_lsp
