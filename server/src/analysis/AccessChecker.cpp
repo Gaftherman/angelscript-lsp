@@ -47,32 +47,7 @@ static bool TryReadAccess(const Symbol& sym, AccessModifier& access)
     return false;
 }
 
-namespace access_checker_detail
-{
-/**
- * @brief What the pass concluded about one `object.member` pair.
- */
-struct MemberAccess
-{
-    bool found = false;   ///< True if any member of this name exists in the hierarchy.
-    bool decided = false; ///< True if an access restriction (private/protected) was found.
-    AccessModifier access = AccessModifier::Public;
-    std::string declaringClass;
-
-    /**
-     * @brief True when the name resolved through a `get_`/`set_` pair, not a real member.
-     *
-     * Recorded because whether that pair *is* a property is the host's decision, not the
-     * script's: under asEP_PROPERTY_ACCESSOR_MODE 0 and 1 a script accessor is not one, and
-     * `c.X` does not compile. Resolution deliberately still succeeds there - see
-     * SemanticAnalysisRequest::ScriptAccessorsAreProperties - and this is what lets the
-     * disagreement be reported as a hint instead of by making the member disappear.
-     */
-    bool viaAccessor = false;
-};
-} // namespace access_checker_detail
-
-using MemberAccess = access_checker_detail::MemberAccess;
+using MemberAccess = MemberLookupResult;
 
 /**
  * @brief Finds the declaration a member name reaches through a type's inheritance chain.
@@ -537,21 +512,6 @@ static void CheckMemberExpression(TSNode node, const AccessCheckRequest& request
 }
 
 /**
- * @brief Checks if an AST node type corresponds to a declaration name node.
- *
- * @param[in] type AST node type name.
- * @return True if node type defines a declared symbol name.
- */
-static bool IsDeclarationNodeType(TSSymbol sym)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    return sym == gs.symVariableDeclarator || sym == gs.symParameter || sym == gs.symFuncDeclaration ||
-           sym == gs.symClassDeclaration || sym == gs.symInterfaceDeclaration || sym == gs.symEnumDeclaration ||
-           sym == gs.symEnumMember || sym == gs.symVirtualProperty || sym == gs.symTypedefDeclaration ||
-           sym == gs.symFuncdefDeclaration || sym == gs.symImportDeclaration || sym == gs.symMixinDeclaration;
-}
-
-/**
  * @brief Checks if an AST node is a type reference or comment node.
  *
  * @param[in] sym Grammar symbol ID.
@@ -585,7 +545,7 @@ static bool ShouldSkipIdentifierNode(TSNode node, TSNode parent)
         return ts_node_eq(node, memberField);
     }
 
-    if (IsDeclarationNodeType(parentSym))
+    if (parser::IsDeclarationSymbol(parentSym))
     {
         TSNode nameField = parser::GetChildByField(parent, gs.fieldName);
         return ts_node_eq(node, nameField);

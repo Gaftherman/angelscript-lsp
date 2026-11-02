@@ -1,6 +1,7 @@
 #include "analysis/DoxygenMarkdown.h"
 #include "document/Document.h"
 #include "parser/DoxygenParser.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
 #include <cctype>
@@ -14,20 +15,9 @@
 
 namespace angel_lsp::analysis
 {
-/**
- * @brief Strips leading and trailing ASCII whitespace.
- * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Trim in server/src/analysis/DocComment.cpp. Candidate for
- * unification in server/src/analysis/SemanticHelpers.h.
- */
-static std::string Trim(const std::string& str)
+static inline std::string Trim(std::string_view str)
 {
-    size_t first = str.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos)
-    {
-        return "";
-    }
-    size_t last = str.find_last_not_of(" \t\r\n");
-    return str.substr(first, last - first + 1);
+    return std::string(utils::TrimView(str));
 }
 
 /** @brief Strips leading ASCII whitespace. */

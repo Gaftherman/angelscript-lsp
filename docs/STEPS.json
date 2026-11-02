@@ -1,6 +1,6 @@
 {
   "project": "angelscript-lsp",
-  "currentPhase": "PHASE_50_V1_1_7_STABLE_RELEASE",
+  "currentPhase": "PHASE_51_ARCHITECTURE_DEDUPLICATION_AND_RAM",
   "status": "COMPLETED",
   "baselineMetrics": {
     "largeScript3000ParseAndAnalysisMs": 25.12,
@@ -1484,6 +1484,70 @@
         "Verified full test suite (2,608 unit tests, 35,000+ assertions passing), 12/12 static quality gates passing, and 74/74 client integration tests passing.",
         "Merged develop branch into main, pushed main, and published annotated git tag v1.1.7 with official release notes."
       ]
+    },
+    {
+      "id": "PHASE_51",
+      "name": "Architecture Deduplication, Memory Compaction (RAM Bitfields & NodeIndex Interval Trees), ODR Struct Safety & Cluster Unification",
+      "status": "COMPLETED",
+      "modifiedFiles": [
+        "AGENTS.md",
+        "docs/REFACTOR_LEDGER.json",
+        "docs/REDUNDANCY_REPORT.json",
+        "docs/STEPS.md",
+        "docs/STEPS.json",
+        "server/scripts/check-ast-traversal.py",
+        "server/scripts/check-quality.py",
+        "server/scripts/check-refactor-ledger.py",
+        "server/scripts/audit-codebase-redundancy.py",
+        "server/src/analysis/AccessChecker.cpp",
+        "server/src/analysis/BinaryOperatorHelpers.h",
+        "server/src/analysis/CallChecker.cpp",
+        "server/src/analysis/ConstChecker.cpp",
+        "server/src/analysis/ControlFlowChecker.cpp",
+        "server/src/analysis/DefiniteAssignmentChecker.cpp",
+        "server/src/analysis/DocComment.cpp",
+        "server/src/analysis/DoxygenMarkdown.cpp",
+        "server/src/analysis/LocalScopeCollector.cpp",
+        "server/src/analysis/NodeIndex.cpp",
+        "server/src/analysis/NodeIndex.h",
+        "server/src/analysis/RepeatedConversionChecker.cpp",
+        "server/src/analysis/ScopeTree.h",
+        "server/src/analysis/SemanticAnalyzer.cpp",
+        "server/src/analysis/SemanticHelpers.cpp",
+        "server/src/analysis/SemanticHelpers.h",
+        "server/src/analysis/SymbolTable.h",
+        "server/src/analysis/TargetResolution.cpp",
+        "server/src/analysis/TypeConversionChecker.cpp",
+        "server/src/analysis/rules/UnusedSymbolChecker.cpp",
+        "server/src/features/code_action/CodeActionConstQualifier.cpp",
+        "server/src/features/code_action/CodeActionIncludes.cpp",
+        "server/src/features/code_action/CodeActionInternal.h",
+        "server/src/features/code_action/CodeActionRepeatedConversion.cpp",
+        "server/src/features/code_action/CodeActionTypos.cpp",
+        "server/src/features/code_lens/CodeLensHandler.cpp",
+        "server/src/features/common/FeatureSharedUtils.h",
+        "server/src/features/definition/DefinitionHandler.cpp",
+        "server/src/features/document_symbol/DocumentSymbolHandler.cpp",
+        "server/src/features/formatting/ClangFormatReader.cpp",
+        "server/src/features/inlay_hint/InlayHintHandler.cpp",
+        "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
+        "server/src/features/workspace_symbol/WorkspaceSymbolHandler.cpp",
+        "server/src/lsp/Server.h",
+        "server/src/lsp/ServerModules.cpp",
+        "server/src/lsp/handlers/WorkspaceScanHandlers.cpp",
+        "server/src/parser/ASTUtils.h",
+        "server/src/utils/Utils.h",
+        "server/tests/MemoryLayoutAuditTest.cpp"
+      ],
+      "findings": [
+        "Compacted core semantic data structures with C++20 uint8_t bitfields: SymbolModifiers (24B -> 4B, -83.3%), ParameterInformation (248B -> 200B, -19.4%), FunctionSignature (264B -> 232B, -12.1%), VariableSignature (216B -> 168B, -22.2%), FuncdefSignature (176B -> 144B, -18.2%), ClassSignature (104B -> 80B, -23.1%), Symbol (528B -> 488B, -7.6%), LocalDefinition (208B -> 184B, -11.5%), and Scope (128B). Estimated workspace RAM savings of 15-20%.",
+        "Accelerated NodeIndex AST spatial queries from O(N) linear scans to O(log N + K) with augmented Interval Trees and binary search over FlatInterval structures.",
+        "Implemented check_cpp_structs_odr_safety() blocking quality gate in check-ast-traversal.py and enforced Prohibition 14 in AGENTS.md, eliminating all file-scope struct definitions and ODR hazards across all 60 translation units.",
+        "Unified duplicate data structures and functions across clusters: CLUSTER-AST-BYTE-INTERVALS, CLUSTER-MEMBER-LOOKUP (MemberLookupResult), CLUSTER-CALL-RESOLUTION (MatchesArgumentCount), IsBooleanBinaryOpSym, ToLspSymbolKind, IsDeclarationSymbol, and canonical TrimView.",
+        "Reduced redundant pass-1 flag reparsings across checkers from 30 down to 20.",
+        "Maintained immutable audit trail of 60 refactoring actions in docs/REFACTOR_LEDGER.json, verified via check-refactor-ledger.py --check-diff develop.",
+        "Verified 100% test pass rate across 2,608 unit tests (35,000+ assertions) and 74 client integration tests, with all 13 static quality gates passing cleanly."
+      ]
     }
   ],
   "identifiedGaps": [
@@ -1557,12 +1621,13 @@
     "GAP-TOKENS-02: scoped_identifier in namespace A::B emitting monolithic token instead of distinct namespace tokens. (RESOLVED in Phase 43).",
     "GAP-AUTHOR-01: tree-sitter-angelscript commit history containing non-user account commits. (RESOLVED in Phase 44 with git reset --hard to 37544e4, force push to develop/main/master, and author config Gaftherman).",
     "GAP-ANTIPATTERN-01: Line-range heuristics and string concatenations in MemberBelongsToClass / MemberBelongsToNamespace. (RESOLVED in Phase 44 with FindMemberSymbolPtr and sym.containerKind).",
-    "GAP-I18N-01: Hardcoded English text in HoverHandler.cpp for unresolved includes, primitive types, typedefs, and named arguments. (RESOLVED in Phase 44 with i18n::FormatMessage and 100% EN/ES dictionary parity)."
+    "GAP-I18N-01: Hardcoded English text in HoverHandler.cpp for unresolved includes, primitive types, typedefs, and named arguments. (RESOLVED in Phase 44 with i18n::FormatMessage and 100% EN/ES dictionary parity).",
+    "GAP-RAM-01: Loose struct padding, duplicated helper structs in .cpp files, and 24-byte SymbolModifiers overhead. (RESOLVED in Phase 51 with 4-byte bitfields, NodeIndex Interval Trees, and check_cpp_structs_odr_safety quality gate)."
   ],
   "nextActions": [
-    "Official v1.1.7 stable release completed and published."
+    "Phase 51 Architecture deduplication, RAM compaction, and ODR safety gate completed and merged to develop."
   ],
-  "lastMilestone": "Phase 50 completed: official v1.1.7 stable release merged to main with 2,608 unit tests passing, all 12 quality gates passing, sub-100ms module analysis, sub-1.0ms warm hover, sub-5.0ms completion/definition/references/code actions, sub-20ms semantic tokens, 0 clones, and 100% release compare links synchronized.",
+  "lastMilestone": "Phase 51 completed: Architecture deduplication, RAM bitfield compaction (SymbolModifiers, ParameterInformation, ScopeTree), interval-tree byte queries in NodeIndex, zero-ODR struct gate, and cluster unification merged to develop.",
   "gaps": [
     "GAP-AST-01: False-positive W108 on synthetic properties and member variables in deep block structures due to low max climb depth. (RESOLVED in Phase 45 with k_maxAstClimbDepth = 256 and include closure expansion).",
     "GAP-PERF-08: Ad-hoc depth < 64 loops and full-text searches in isolation checking. (RESOLVED in Phase 46 with NodeIndex binary intervals, ASTUtils centralized climbs, and O(1) token isolation checks).",
@@ -1578,6 +1643,7 @@
     "GAP-ISSUE-04: Initializer list argument passing to overloaded functions selecting arbitrary candidate instead of flagging ambiguity E118. (RESOLVED in Phase 50 with equal user-defined ranking tiers in ConversionRankingEngine).",
     "GAP-ISSUE-07: Const handle to mutable handle initialization unflagged and passing null to A&in failing with incorrect error. (RESOLVED in Phase 50 with CheckHandleConstAssignment, CodeActionConstQualifier, and CallChecker E119).",
     "GAP-ISSUE-08: Accessing private members via this inside mixin class emitting false E113. (RESOLVED in Phase 50 with AccessChecker mixin container matching).",
-    "GAP-ISSUE-09: Overridden property getter in derived class blocking access to inherited property setter. (RESOLVED in Phase 50 with TypeConversionChecker and LValueChecker inheritance traversal)."
+    "GAP-ISSUE-09: Overridden property getter in derived class blocking access to inherited property setter. (RESOLVED in Phase 50 with TypeConversionChecker and LValueChecker inheritance traversal).",
+    "GAP-RAM-01: Loose struct padding, duplicated helper structs in .cpp files, and 24-byte SymbolModifiers overhead. (RESOLVED in Phase 51 with 4-byte bitfields, NodeIndex Interval Trees, and check_cpp_structs_odr_safety quality gate)."
   ]
 }

@@ -1,43 +1,10 @@
 {
-  "generatedAt": "2026-11-01T20:22:46Z",
+  "generatedAt": "2026-11-02T01:14:23Z",
   "branch": "refactor/architecture-deduplication-and-ram",
   "description": "Deterministic AST and tokenization audit report covering local C++ structs, pass-1 flag re-evaluations, function similarity, hot struct RAM layout, and Doxygen coverage.",
   "localCppStructs": {
-    "totalLocalStructs": 186,
+    "totalLocalStructs": 178,
     "structs": [
-      {
-        "file": "server/src/analysis/AccessChecker.cpp",
-        "startLine": 55,
-        "endLine": 72,
-        "structName": "MemberAccess",
-        "fields": [
-          {
-            "type": "bool",
-            "name": "found"
-          },
-          {
-            "type": "bool",
-            "name": "decided"
-          },
-          {
-            "type": "AccessModifier",
-            "name": "access"
-          },
-          {
-            "type": "std::string",
-            "name": "declaringClass"
-          },
-          {
-            "type": "bool",
-            "name": "viaAccessor"
-          }
-        ],
-        "semanticConcepts": [
-          "access",
-          "scope",
-          "typeName"
-        ]
-      },
       {
         "file": "server/src/analysis/CallChecker.cpp",
         "startLine": 178,
@@ -238,8 +205,8 @@
       },
       {
         "file": "server/src/analysis/CallChecker.cpp",
-        "startLine": 2243,
-        "endLine": 2250,
+        "startLine": 2239,
+        "endLine": 2246,
         "structName": "VarInitContext",
         "fields": [
           {
@@ -309,36 +276,8 @@
       },
       {
         "file": "server/src/analysis/ConstChecker.cpp",
-        "startLine": 119,
-        "endLine": 125,
-        "structName": "ConstContext",
-        "fields": [
-          {
-            "type": "Scope",
-            "name": "scope"
-          },
-          {
-            "type": "SymbolTable",
-            "name": "table"
-          },
-          {
-            "type": "std::string_view",
-            "name": "sourceCode"
-          },
-          {
-            "type": "ExpressionTypeCache",
-            "name": "cache"
-          }
-        ],
-        "semanticConcepts": [
-          "scope",
-          "table"
-        ]
-      },
-      {
-        "file": "server/src/analysis/ConstChecker.cpp",
-        "startLine": 185,
-        "endLine": 190,
+        "startLine": 171,
+        "endLine": 176,
         "structName": "EnclosingMethodInfo",
         "fields": [
           {
@@ -357,38 +296,10 @@
         "semanticConcepts": []
       },
       {
-        "file": "server/src/analysis/ConstChecker.cpp",
-        "startLine": 488,
-        "endLine": 495,
-        "structName": "MethodLookup",
-        "fields": [
-          {
-            "type": "bool",
-            "name": "found"
-          },
-          {
-            "type": "bool",
-            "name": "hasConstOverload"
-          },
-          {
-            "type": "bool",
-            "name": "returnsSelfReference"
-          },
-          {
-            "type": "std::string",
-            "name": "declaringClass"
-          }
-        ],
-        "semanticConcepts": [
-          "scope",
-          "typeName"
-        ]
-      },
-      {
         "file": "server/src/analysis/ControlFlowChecker.cpp",
         "startLine": 699,
         "endLine": 723,
-        "structName": "FlowState",
+        "structName": "ControlFlowState",
         "fields": [
           {
             "type": "uint32_t",
@@ -441,7 +352,7 @@
             "name": "node"
           },
           {
-            "type": "FlowState",
+            "type": "ControlFlowState",
             "name": "state"
           }
         ],
@@ -453,7 +364,7 @@
         "file": "server/src/analysis/DefiniteAssignmentChecker.cpp",
         "startLine": 51,
         "endLine": 56,
-        "structName": "FlowState",
+        "structName": "DefiniteAssignmentState",
         "fields": [
           {
             "type": "ankerl::unordered_dense::set<std::string>",
@@ -492,7 +403,7 @@
       {
         "file": "server/src/analysis/DefiniteAssignmentChecker.cpp",
         "startLine": 112,
-        "endLine": 809,
+        "endLine": 810,
         "structName": "DefiniteAssignmentVisitor",
         "fields": [
           {
@@ -533,8 +444,8 @@
       },
       {
         "file": "server/src/analysis/DoxygenMarkdown.cpp",
-        "startLine": 373,
-        "endLine": 377,
+        "startLine": 363,
+        "endLine": 367,
         "structName": "MatchedInlineCommand",
         "fields": [
           {
@@ -550,8 +461,8 @@
       },
       {
         "file": "server/src/analysis/DoxygenMarkdown.cpp",
-        "startLine": 756,
-        "endLine": 761,
+        "startLine": 746,
+        "endLine": 751,
         "structName": "CommentSegment",
         "fields": [
           {
@@ -571,8 +482,8 @@
       },
       {
         "file": "server/src/analysis/DoxygenMarkdown.cpp",
-        "startLine": 1082,
-        "endLine": 1088,
+        "startLine": 1072,
+        "endLine": 1078,
         "structName": "SegmenterState",
         "fields": [
           {
@@ -596,8 +507,8 @@
       },
       {
         "file": "server/src/analysis/DoxygenMarkdown.cpp",
-        "startLine": 1535,
-        "endLine": 1540,
+        "startLine": 1525,
+        "endLine": 1530,
         "structName": "ParamItem",
         "fields": [
           {
@@ -617,8 +528,8 @@
       },
       {
         "file": "server/src/analysis/DoxygenMarkdown.cpp",
-        "startLine": 1551,
-        "endLine": 1555,
+        "startLine": 1541,
+        "endLine": 1545,
         "structName": "TParamItem",
         "fields": [
           {
@@ -634,8 +545,8 @@
       },
       {
         "file": "server/src/analysis/DoxygenMarkdown.cpp",
-        "startLine": 1566,
-        "endLine": 1570,
+        "startLine": 1556,
+        "endLine": 1560,
         "structName": "RetValItem",
         "fields": [
           {
@@ -651,8 +562,8 @@
       },
       {
         "file": "server/src/analysis/DoxygenMarkdown.cpp",
-        "startLine": 1598,
-        "endLine": 1679,
+        "startLine": 1588,
+        "endLine": 1669,
         "structName": "DocBlock",
         "fields": [
           {
@@ -788,8 +699,8 @@
       },
       {
         "file": "server/src/analysis/EngineProfiles.cpp",
-        "startLine": 756,
-        "endLine": 760,
+        "startLine": 755,
+        "endLine": 759,
         "structName": "ProfileMapping",
         "fields": [
           {
@@ -1172,8 +1083,8 @@
       },
       {
         "file": "server/src/analysis/LocalScopeCollector.cpp",
-        "startLine": 1496,
-        "endLine": 1503,
+        "startLine": 1492,
+        "endLine": 1499,
         "structName": "VirtualPropertyContext",
         "fields": [
           {
@@ -1366,8 +1277,8 @@
       },
       {
         "file": "server/src/analysis/RepeatedConversionChecker.cpp",
-        "startLine": 22,
-        "endLine": 28,
+        "startLine": 23,
+        "endLine": 29,
         "structName": "ConversionOccurrence",
         "fields": [
           {
@@ -1390,23 +1301,6 @@
         "semanticConcepts": [
           "node"
         ]
-      },
-      {
-        "file": "server/src/analysis/RepeatedConversionChecker.cpp",
-        "startLine": 51,
-        "endLine": 55,
-        "structName": "ConversionTypePair",
-        "fields": [
-          {
-            "type": "std::string",
-            "name": "fromType"
-          },
-          {
-            "type": "std::string",
-            "name": "toType"
-          }
-        ],
-        "semanticConcepts": []
       },
       {
         "file": "server/src/analysis/rules/ClassRules.cpp",
@@ -1631,8 +1525,8 @@
       },
       {
         "file": "server/src/analysis/rules/UnusedSymbolChecker.cpp",
-        "startLine": 32,
-        "endLine": 42,
+        "startLine": 33,
+        "endLine": 43,
         "structName": "UnusedCheckContext",
         "fields": [
           {
@@ -1668,8 +1562,8 @@
       },
       {
         "file": "server/src/analysis/rules/UnusedSymbolChecker.cpp",
-        "startLine": 78,
-        "endLine": 83,
+        "startLine": 79,
+        "endLine": 84,
         "structName": "DocRefCollectContext",
         "fields": [
           {
@@ -1710,8 +1604,8 @@
       },
       {
         "file": "server/src/analysis/SemanticAnalyzer.cpp",
-        "startLine": 277,
-        "endLine": 307,
+        "startLine": 279,
+        "endLine": 309,
         "structName": "AnalysisContextGuards",
         "fields": [
           {
@@ -1739,8 +1633,8 @@
       },
       {
         "file": "server/src/analysis/SemanticAnalyzer.cpp",
-        "startLine": 972,
-        "endLine": 978,
+        "startLine": 977,
+        "endLine": 983,
         "structName": "UndefinedIdentifierContext",
         "fields": [
           {
@@ -1764,8 +1658,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 1325,
-        "endLine": 1329,
+        "startLine": 1327,
+        "endLine": 1331,
         "structName": "HierarchyClassifiedBase",
         "fields": [
           {
@@ -1781,8 +1675,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 1927,
-        "endLine": 1933,
+        "startLine": 1934,
+        "endLine": 1940,
         "structName": "MixinExpansionContext",
         "fields": [
           {
@@ -1808,8 +1702,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 3161,
-        "endLine": 3166,
+        "startLine": 3173,
+        "endLine": 3178,
         "structName": "BinaryOverloadResult",
         "fields": [
           {
@@ -1831,8 +1725,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 3631,
-        "endLine": 3637,
+        "startLine": 3648,
+        "endLine": 3654,
         "structName": "TernaryBranchTypes",
         "fields": [
           {
@@ -1856,8 +1750,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 4916,
-        "endLine": 4921,
+        "startLine": 4938,
+        "endLine": 4943,
         "structName": "ActiveLocalDefKey",
         "fields": [
           {
@@ -1877,8 +1771,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 4929,
-        "endLine": 4939,
+        "startLine": 4951,
+        "endLine": 4961,
         "structName": "ActiveLocalDefGuard",
         "fields": [
           {
@@ -1890,8 +1784,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 5263,
-        "endLine": 5270,
+        "startLine": 5292,
+        "endLine": 5299,
         "structName": "DelegatePropertyReceiverContext",
         "fields": [
           {
@@ -1919,8 +1813,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 5709,
-        "endLine": 5724,
+        "startLine": 5743,
+        "endLine": 5758,
         "structName": "CallDelimiterState",
         "fields": [
           {
@@ -1960,8 +1854,8 @@
       },
       {
         "file": "server/src/analysis/SemanticHelpers.cpp",
-        "startLine": 6262,
-        "endLine": 6267,
+        "startLine": 6301,
+        "endLine": 6306,
         "structName": "FuncdefAgreement",
         "fields": [
           {
@@ -2284,25 +2178,8 @@
       },
       {
         "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "startLine": 71,
-        "endLine": 75,
-        "structName": "ConversionTypes",
-        "fields": [
-          {
-            "type": "std::string",
-            "name": "from"
-          },
-          {
-            "type": "std::string",
-            "name": "to"
-          }
-        ],
-        "semanticConcepts": []
-      },
-      {
-        "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "startLine": 682,
-        "endLine": 686,
+        "startLine": 669,
+        "endLine": 673,
         "structName": "ConversionState",
         "fields": [
           {
@@ -2318,8 +2195,8 @@
       },
       {
         "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "startLine": 794,
-        "endLine": 802,
+        "startLine": 781,
+        "endLine": 789,
         "structName": "EdgeGuard",
         "fields": [
           {
@@ -2335,8 +2212,8 @@
       },
       {
         "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "startLine": 1172,
-        "endLine": 1180,
+        "startLine": 1159,
+        "endLine": 1167,
         "structName": "PropertyAccessInfo",
         "fields": [
           {
@@ -2368,8 +2245,8 @@
       },
       {
         "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "startLine": 1656,
-        "endLine": 1673,
+        "startLine": 1643,
+        "endLine": 1660,
         "structName": "DeclaredType",
         "fields": [
           {
@@ -2393,8 +2270,8 @@
       },
       {
         "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "startLine": 2033,
-        "endLine": 2037,
+        "startLine": 2020,
+        "endLine": 2024,
         "structName": "ZeroArgConstructorStatus",
         "fields": [
           {
@@ -2410,8 +2287,8 @@
       },
       {
         "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "startLine": 2570,
-        "endLine": 2574,
+        "startLine": 2557,
+        "endLine": 2561,
         "structName": "AssignmentOperands",
         "fields": [
           {
@@ -2427,8 +2304,8 @@
       },
       {
         "file": "server/src/analysis/TypeExtraction.cpp",
-        "startLine": 17,
-        "endLine": 79,
+        "startLine": 19,
+        "endLine": 81,
         "structName": "TypeExtractionSymbols",
         "fields": [
           {
@@ -2635,25 +2512,8 @@
       },
       {
         "file": "server/src/features/code_action/CodeActionIncludes.cpp",
-        "startLine": 34,
-        "endLine": 38,
-        "structName": "IncludeCandidate",
-        "fields": [
-          {
-            "type": "std::string",
-            "name": "spelling"
-          },
-          {
-            "type": "size_t",
-            "name": "distance"
-          }
-        ],
-        "semanticConcepts": []
-      },
-      {
-        "file": "server/src/features/code_action/CodeActionIncludes.cpp",
-        "startLine": 121,
-        "endLine": 126,
+        "startLine": 108,
+        "endLine": 113,
         "structName": "IncludeFixContext",
         "fields": [
           {
@@ -2673,8 +2533,8 @@
       },
       {
         "file": "server/src/features/code_action/CodeActionIncludes.cpp",
-        "startLine": 193,
-        "endLine": 199,
+        "startLine": 180,
+        "endLine": 186,
         "structName": "IncludeRefCheckContext",
         "fields": [
           {
@@ -2724,47 +2584,9 @@
         "semanticConcepts": []
       },
       {
-        "file": "server/src/features/code_action/CodeActionRepeatedConversion.cpp",
-        "startLine": 20,
-        "endLine": 25,
-        "structName": "ExtractedDiagInfo",
-        "fields": [
-          {
-            "type": "std::string",
-            "name": "exprText"
-          },
-          {
-            "type": "std::string",
-            "name": "fromType"
-          },
-          {
-            "type": "std::string",
-            "name": "toType"
-          }
-        ],
-        "semanticConcepts": []
-      },
-      {
         "file": "server/src/features/code_action/CodeActionTypos.cpp",
-        "startLine": 40,
-        "endLine": 44,
-        "structName": "TypoCandidateSuggestion",
-        "fields": [
-          {
-            "type": "std::string",
-            "name": "name"
-          },
-          {
-            "type": "size_t",
-            "name": "distance"
-          }
-        ],
-        "semanticConcepts": []
-      },
-      {
-        "file": "server/src/features/code_action/CodeActionTypos.cpp",
-        "startLine": 127,
-        "endLine": 132,
+        "startLine": 114,
+        "endLine": 119,
         "structName": "TypoFixContext",
         "fields": [
           {
@@ -2784,8 +2606,8 @@
       },
       {
         "file": "server/src/features/code_action/CodeActionUnusedVariables.cpp",
-        "startLine": 76,
-        "endLine": 80,
+        "startLine": 20,
+        "endLine": 24,
         "structName": "ScopeItem",
         "fields": [
           {
@@ -3079,8 +2901,29 @@
       },
       {
         "file": "server/src/features/completion/CompletionHandler.cpp",
-        "startLine": 1259,
-        "endLine": 1264,
+        "startLine": 338,
+        "endLine": 343,
+        "structName": "OperatorSnippet",
+        "fields": [
+          {
+            "type": "char",
+            "name": "label"
+          },
+          {
+            "type": "char",
+            "name": "snippet"
+          },
+          {
+            "type": "char",
+            "name": "detail"
+          }
+        ],
+        "semanticConcepts": []
+      },
+      {
+        "file": "server/src/features/completion/CompletionHandler.cpp",
+        "startLine": 1275,
+        "endLine": 1280,
         "structName": "InheritanceContext",
         "fields": [
           {
@@ -3100,8 +2943,8 @@
       },
       {
         "file": "server/src/features/completion/CompletionHandler.cpp",
-        "startLine": 1467,
-        "endLine": 1472,
+        "startLine": 1483,
+        "endLine": 1488,
         "structName": "MemberTemplateContext",
         "fields": [
           {
@@ -3121,8 +2964,8 @@
       },
       {
         "file": "server/src/features/completion/CompletionHandler.cpp",
-        "startLine": 2040,
-        "endLine": 2044,
+        "startLine": 2056,
+        "endLine": 2060,
         "structName": "IndexPeelResult",
         "fields": [
           {
@@ -3132,27 +2975,6 @@
           {
             "type": "std::string",
             "name": "lastIndexExpr"
-          }
-        ],
-        "semanticConcepts": []
-      },
-      {
-        "file": "server/src/features/completion/CompletionHandler.cpp",
-        "startLine": 2901,
-        "endLine": 2906,
-        "structName": "OperatorSnippet",
-        "fields": [
-          {
-            "type": "char",
-            "name": "label"
-          },
-          {
-            "type": "char",
-            "name": "snippet"
-          },
-          {
-            "type": "char",
-            "name": "detail"
           }
         ],
         "semanticConcepts": []
@@ -3694,8 +3516,8 @@
       },
       {
         "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-        "startLine": 455,
-        "endLine": 461,
+        "startLine": 459,
+        "endLine": 465,
         "structName": "CalleeResolutionResult",
         "fields": [
           {
@@ -3719,8 +3541,8 @@
       },
       {
         "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-        "startLine": 551,
-        "endLine": 558,
+        "startLine": 555,
+        "endLine": 562,
         "structName": "ArgInfo",
         "fields": [
           {
@@ -3750,8 +3572,8 @@
       },
       {
         "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-        "startLine": 1284,
-        "endLine": 1288,
+        "startLine": 1275,
+        "endLine": 1279,
         "structName": "ParamHintContext",
         "fields": [
           {
@@ -3769,8 +3591,8 @@
       },
       {
         "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-        "startLine": 1496,
-        "endLine": 1500,
+        "startLine": 1487,
+        "endLine": 1491,
         "structName": "OmittedHintContext",
         "fields": [
           {
@@ -3786,8 +3608,8 @@
       },
       {
         "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-        "startLine": 1511,
-        "endLine": 1516,
+        "startLine": 1502,
+        "endLine": 1507,
         "structName": "CallArgPosition",
         "fields": [
           {
@@ -3807,8 +3629,8 @@
       },
       {
         "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-        "startLine": 1527,
-        "endLine": 1533,
+        "startLine": 1518,
+        "endLine": 1524,
         "structName": "OmittedParamHint",
         "fields": [
           {
@@ -3851,8 +3673,8 @@
       },
       {
         "file": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
-        "startLine": 71,
-        "endLine": 76,
+        "startLine": 72,
+        "endLine": 77,
         "structName": "TokenMeta",
         "fields": [
           {
@@ -3872,8 +3694,8 @@
       },
       {
         "file": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
-        "startLine": 130,
-        "endLine": 138,
+        "startLine": 131,
+        "endLine": 139,
         "structName": "RawToken",
         "fields": [
           {
@@ -3907,8 +3729,8 @@
       },
       {
         "file": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
-        "startLine": 331,
-        "endLine": 338,
+        "startLine": 323,
+        "endLine": 330,
         "structName": "CaptureRule",
         "fields": [
           {
@@ -3936,8 +3758,8 @@
       },
       {
         "file": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
-        "startLine": 522,
-        "endLine": 526,
+        "startLine": 514,
+        "endLine": 518,
         "structName": "HighlightsQueryData",
         "fields": [
           {
@@ -3953,8 +3775,8 @@
       },
       {
         "file": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
-        "startLine": 569,
-        "endLine": 667,
+        "startLine": 561,
+        "endLine": 659,
         "structName": "ClassSpanIndex",
         "fields": [
           {
@@ -3966,8 +3788,8 @@
       },
       {
         "file": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
-        "startLine": 880,
-        "endLine": 897,
+        "startLine": 872,
+        "endLine": 889,
         "structName": "TokenRefinementContext",
         "fields": [
           {
@@ -4026,8 +3848,8 @@
       },
       {
         "file": "server/src/features/workspace_symbol/WorkspaceSymbolHandler.cpp",
-        "startLine": 67,
-        "endLine": 71,
+        "startLine": 35,
+        "endLine": 39,
         "structName": "ScoredSymbol",
         "fields": [
           {
@@ -4043,8 +3865,8 @@
       },
       {
         "file": "server/src/features/workspace_symbol/WorkspaceSymbolHandler.cpp",
-        "startLine": 82,
-        "endLine": 86,
+        "startLine": 50,
+        "endLine": 54,
         "structName": "MatchResult",
         "fields": [
           {
@@ -4196,8 +4018,8 @@
       },
       {
         "file": "server/src/lsp/handlers/WorkspaceScanHandlers.cpp",
-        "startLine": 364,
-        "endLine": 377,
+        "startLine": 66,
+        "endLine": 71,
         "structName": "ReanalyseOnExit",
         "fields": [
           {
@@ -4213,8 +4035,8 @@
       },
       {
         "file": "server/src/lsp/ServerDiagnostics.cpp",
-        "startLine": 78,
-        "endLine": 82,
+        "startLine": 73,
+        "endLine": 77,
         "structName": "CodeSettingPair",
         "fields": [
           {
@@ -4232,10 +4054,10 @@
         "file": "server/src/lsp/ServerModules.cpp",
         "startLine": 291,
         "endLine": 296,
-        "structName": "Candidate",
+        "structName": "ModuleCandidate",
         "fields": [
           {
-            "type": "ModuleView",
+            "type": "Server::ModuleView",
             "name": "view"
           },
           {
@@ -4555,43 +4377,11 @@
           "table",
           "typeName"
         ],
-        "structCount": 3,
+        "structCount": 0,
         "whyInThatCpp": "Checker-local context structs created to satisfy the 4-parameter ceiling (/we4100) for internal recursion without a shared analysis structure.",
         "canonicalTargetHeader": "server/src/analysis/SemanticHelpers.h",
         "canonicalTargetSymbol": "MemberLookupContext",
-        "structs": [
-          {
-            "file": "server/src/analysis/AccessChecker.cpp",
-            "structName": "MemberAccess",
-            "startLine": 55,
-            "endLine": 72,
-            "matchedConcepts": [
-              "access",
-              "scope",
-              "typeName"
-            ]
-          },
-          {
-            "file": "server/src/analysis/ConstChecker.cpp",
-            "structName": "ConstContext",
-            "startLine": 119,
-            "endLine": 125,
-            "matchedConcepts": [
-              "scope",
-              "table"
-            ]
-          },
-          {
-            "file": "server/src/analysis/ConstChecker.cpp",
-            "structName": "MethodLookup",
-            "startLine": 488,
-            "endLine": 495,
-            "matchedConcepts": [
-              "scope",
-              "typeName"
-            ]
-          }
-        ]
+        "structs": []
       },
       {
         "clusterId": "CLUSTER-CALL-RESOLUTION",
@@ -4675,53 +4465,25 @@
     ]
   },
   "pass1FlagReparsing": {
-    "totalFlagReparseOccurrences": 30,
+    "totalFlagReparseOccurrences": 20,
     "occurrences": [
       {
-        "file": "server/src/analysis/CallChecker.cpp",
-        "line": 851,
-        "flagKind": "isConst",
-        "codeSnippet": "bool isConst = false;",
-        "canonicalPass1Source": "Symbol::modifiers.isConst / ParameterInformation::isConst"
-      },
-      {
-        "file": "server/src/analysis/CallChecker.cpp",
-        "line": 859,
-        "flagKind": "isConst",
-        "codeSnippet": "isConst = (parser::NodeText(child, sourceCode).find(\"const\") != std::string::npos);",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst"
-      },
-      {
         "file": "server/src/analysis/ConstChecker.cpp",
-        "line": 239,
-        "flagKind": "isConst",
-        "codeSnippet": "(sym == gs.symFuncAttributes && parser::NodeText(child, sourceCode).find(\"const\") != std::string::np",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst"
-      },
-      {
-        "file": "server/src/analysis/ConstChecker.cpp",
-        "line": 358,
+        "line": 344,
         "flagKind": "isHandle",
         "codeSnippet": "bool isHandle = false;",
         "canonicalPass1Source": "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
       },
       {
         "file": "server/src/analysis/LocalScopeCollector.cpp",
-        "line": 243,
-        "flagKind": "isConst",
-        "codeSnippet": "if (afterParams.find(\"const\") != std::string_view::npos)",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst"
-      },
-      {
-        "file": "server/src/analysis/LocalScopeCollector.cpp",
-        "line": 1411,
+        "line": 1407,
         "flagKind": "isHandle",
         "codeSnippet": "bool isHandle = false;",
         "canonicalPass1Source": "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
       },
       {
         "file": "server/src/analysis/LocalScopeCollector.cpp",
-        "line": 1472,
+        "line": 1468,
         "flagKind": "isHandle",
         "codeSnippet": "bool isHandle = false;",
         "canonicalPass1Source": "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
@@ -4739,34 +4501,6 @@
         "flagKind": "isConst",
         "codeSnippet": "constexpr ArgumentConversion(ConversionRank r, uint8_t sub = 0, uint8_t dist = 0, bool isConst = fal",
         "canonicalPass1Source": "Symbol::modifiers.isConst / ParameterInformation::isConst"
-      },
-      {
-        "file": "server/src/analysis/rules/UnusedSymbolChecker.cpp",
-        "line": 401,
-        "flagKind": "isConst",
-        "codeSnippet": "if (sv.starts_with(\"const\"))",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst"
-      },
-      {
-        "file": "server/src/analysis/rules/UnusedSymbolChecker.cpp",
-        "line": 403,
-        "flagKind": "isRef",
-        "codeSnippet": "if (sv.ends_with(\"&inout\"))",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
-      },
-      {
-        "file": "server/src/analysis/rules/UnusedSymbolChecker.cpp",
-        "line": 405,
-        "flagKind": "isRef",
-        "codeSnippet": "else if (sv.ends_with(\"&in\") || sv.ends_with(\"&out\"))",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
-      },
-      {
-        "file": "server/src/analysis/rules/UnusedSymbolChecker.cpp",
-        "line": 407,
-        "flagKind": "isRef",
-        "codeSnippet": "else if (sv.ends_with('&'))",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
       },
       {
         "file": "server/src/analysis/SymbolCollector.cpp",
@@ -4812,38 +4546,31 @@
       },
       {
         "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "line": 999,
+        "line": 986,
         "flagKind": "isConst",
         "codeSnippet": "const bool isConst = IsConstTypeView(fn.returnType);",
         "canonicalPass1Source": "Symbol::modifiers.isConst / ParameterInformation::isConst"
       },
       {
         "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "line": 1070,
+        "line": 1057,
         "flagKind": "isConst",
         "codeSnippet": "const bool isConst = IsConstTypeView(rawText);",
         "canonicalPass1Source": "Symbol::modifiers.isConst / ParameterInformation::isConst"
       },
       {
         "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "line": 1124,
+        "line": 1111,
         "flagKind": "isConst",
         "codeSnippet": "const bool isConst = IsConstTypeView(resolved);",
         "canonicalPass1Source": "Symbol::modifiers.isConst / ParameterInformation::isConst"
       },
       {
         "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "line": 2695,
+        "line": 2682,
         "flagKind": "isHandle",
         "codeSnippet": "bool isHandle = false;",
         "canonicalPass1Source": "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
-      },
-      {
-        "file": "server/src/analysis/TypeConversionChecker.cpp",
-        "line": 3990,
-        "flagKind": "isRef",
-        "codeSnippet": "return headText.find('&') != std::string_view::npos;",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / ParameterInformation::isReference / ParameterInformation::modifier / Symbol::modifiers.isReturnReference"
       },
       {
         "file": "server/src/features/breakpoints/BreakpointStatementClassifier.cpp",
@@ -4851,13 +4578,6 @@
         "flagKind": "isHandle",
         "codeSnippet": "bool isHandle = false;",
         "canonicalPass1Source": "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
-      },
-      {
-        "file": "server/src/features/code_action/CodeActionConstQualifier.cpp",
-        "line": 138,
-        "flagKind": "isConst",
-        "codeSnippet": "return between.find(\"const\") != std::string::npos;",
-        "canonicalPass1Source": "TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst"
       },
       {
         "file": "server/src/features/code_action/CodeActionExtractMethodOutputs.cpp",
@@ -4882,7 +4602,7 @@
       },
       {
         "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-        "line": 1962,
+        "line": 1953,
         "flagKind": "isHandle",
         "codeSnippet": "bool isHandle = analysis::IsHandleTypeView(typeText);",
         "canonicalPass1Source": "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
@@ -4890,21 +4610,21 @@
     ]
   },
   "similarFunctionsMatrix": {
-    "totalEvaluatedFunctions": 2497,
-    "similarPairsCount": 142,
+    "totalEvaluatedFunctions": 2488,
+    "similarPairsCount": 134,
     "matrix": [
       {
         "funcA": {
           "file": "server/src/analysis/DoxygenMarkdown.cpp",
-          "startLine": 1771,
-          "endLine": 1804,
+          "startLine": 1761,
+          "endLine": 1794,
           "name": "ProcessTParamTag",
           "signature": "ProcessTParamTag(TSNode tagNode, const std::string& sourceCode)"
         },
         "funcB": {
           "file": "server/src/analysis/DoxygenMarkdown.cpp",
-          "startLine": 1911,
-          "endLine": 1944,
+          "startLine": 1901,
+          "endLine": 1934,
           "name": "ProcessRetValTag",
           "signature": "ProcessRetValTag(TSNode tagNode, const std::string& sourceCode)"
         },
@@ -4964,31 +4684,6 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/DocComment.cpp",
-          "startLine": 47,
-          "endLine": 56,
-          "name": "Trim",
-          "signature": "Trim(std::string_view str)"
-        },
-        "funcB": {
-          "file": "server/src/analysis/DoxygenMarkdown.cpp",
-          "startLine": 22,
-          "endLine": 31,
-          "name": "Trim",
-          "signature": "Trim(const std::string& str)"
-        },
-        "similarityScore": 0.984,
-        "sharedCalls": [
-          "find_first_not_of",
-          "find_last_not_of",
-          "str",
-          "substr"
-        ],
-        "whatTheyDo": "Both implementations executes Trim logic via [find_first_not_of, find_last_not_of, str]. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/analysis/DiagnosticContext.cpp",
           "startLine": 266,
           "endLine": 273,
@@ -5018,15 +4713,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/AccessChecker.cpp",
-          "startLine": 917,
-          "endLine": 939,
+          "startLine": 877,
+          "endLine": 899,
           "name": "CheckMemberAccess",
           "signature": "CheckMemberAccess(const AccessCheckRequest& request, DiagnosticContext& ctx)"
         },
         "funcB": {
           "file": "server/src/analysis/CallChecker.cpp",
-          "startLine": 2671,
-          "endLine": 2693,
+          "startLine": 2667,
+          "endLine": 2689,
           "name": "CheckCallArguments",
           "signature": "CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx)"
         },
@@ -5049,8 +4744,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/AccessChecker.cpp",
-          "startLine": 917,
-          "endLine": 939,
+          "startLine": 877,
+          "endLine": 899,
           "name": "CheckMemberAccess",
           "signature": "CheckMemberAccess(const AccessCheckRequest& request, DiagnosticContext& ctx)"
         },
@@ -5080,8 +4775,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/CallChecker.cpp",
-          "startLine": 2671,
-          "endLine": 2693,
+          "startLine": 2667,
+          "endLine": 2689,
           "name": "CheckCallArguments",
           "signature": "CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx)"
         },
@@ -5170,15 +4865,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/DoxygenMarkdown.cpp",
-          "startLine": 1319,
-          "endLine": 1336,
+          "startLine": 1309,
+          "endLine": 1326,
           "name": "RenderCodeWordNode",
           "signature": "RenderCodeWordNode(TSNode node, const std::string& sourceCode)"
         },
         "funcB": {
           "file": "server/src/analysis/DoxygenMarkdown.cpp",
-          "startLine": 1341,
-          "endLine": 1358,
+          "startLine": 1331,
+          "endLine": 1348,
           "name": "RenderEmphasisNode",
           "signature": "RenderEmphasisNode(TSNode node, const std::string& sourceCode)"
         },
@@ -5198,15 +4893,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/AccessChecker.cpp",
-          "startLine": 917,
-          "endLine": 939,
+          "startLine": 877,
+          "endLine": 899,
           "name": "CheckMemberAccess",
           "signature": "CheckMemberAccess(const AccessCheckRequest& request, DiagnosticContext& ctx)"
         },
         "funcB": {
           "file": "server/src/analysis/ConstChecker.cpp",
-          "startLine": 733,
-          "endLine": 757,
+          "startLine": 704,
+          "endLine": 728,
           "name": "CheckConstCorrectness",
           "signature": "CheckConstCorrectness(const ConstCheckRequest& request, DiagnosticContext& ctx)"
         },
@@ -5229,15 +4924,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/CallChecker.cpp",
-          "startLine": 2671,
-          "endLine": 2693,
+          "startLine": 2667,
+          "endLine": 2689,
           "name": "CheckCallArguments",
           "signature": "CheckCallArguments(const CallCheckRequest& request, DiagnosticContext& ctx)"
         },
         "funcB": {
           "file": "server/src/analysis/ConstChecker.cpp",
-          "startLine": 733,
-          "endLine": 757,
+          "startLine": 704,
+          "endLine": 728,
           "name": "CheckConstCorrectness",
           "signature": "CheckConstCorrectness(const ConstCheckRequest& request, DiagnosticContext& ctx)"
         },
@@ -5260,8 +4955,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/ConstChecker.cpp",
-          "startLine": 733,
-          "endLine": 757,
+          "startLine": 704,
+          "endLine": 728,
           "name": "CheckConstCorrectness",
           "signature": "CheckConstCorrectness(const ConstCheckRequest& request, DiagnosticContext& ctx)"
         },
@@ -5291,15 +4986,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 992,
-          "endLine": 1013,
+          "startLine": 988,
+          "endLine": 1009,
           "name": "ReadForeachVariableTypeInfo",
           "signature": "LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, const st"
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1166,
-          "endLine": 1186,
+          "startLine": 1162,
+          "endLine": 1182,
           "name": "ReadEmptyParenVariableTypeInfo",
           "signature": "LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const std::"
         },
@@ -5332,8 +5027,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/EngineProfiles.cpp",
-          "startLine": 810,
-          "endLine": 830,
+          "startLine": 816,
+          "endLine": 836,
           "name": "EngineProfileKindToString",
           "signature": "EngineProfileKindToString(EngineProfileKind kind)"
         },
@@ -5408,15 +5103,15 @@
       {
         "funcA": {
           "file": "server/src/features/completion/CompletionHandler.cpp",
-          "startLine": 530,
-          "endLine": 539,
+          "startLine": 546,
+          "endLine": 555,
           "name": "SkipBlockComment",
           "signature": "SkipBlockComment(std::string_view source, size_t& i, size_t end)"
         },
         "funcB": {
           "file": "server/src/features/completion/CompletionHandler.cpp",
-          "startLine": 548,
-          "endLine": 557,
+          "startLine": 564,
+          "endLine": 573,
           "name": "SkipHeredoc",
           "signature": "SkipHeredoc(std::string_view source, size_t& i, size_t end)"
         },
@@ -5635,8 +5330,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/CallChecker.cpp",
-          "startLine": 1147,
-          "endLine": 1157,
+          "startLine": 1143,
+          "endLine": 1153,
           "name": "FindEnclosingClassOrInterface",
           "signature": "FindEnclosingClassOrInterface(TSNode node, std::string_view sourceCode)"
         },
@@ -5715,15 +5410,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SemanticAnalyzer.cpp",
-          "startLine": 1142,
-          "endLine": 1190,
+          "startLine": 1147,
+          "endLine": 1195,
           "name": "CheckUnusedVariables",
           "signature": "SemanticAnalyzer::CheckUnusedVariables(const Scope* rootScope,\r\n                "
         },
         "funcB": {
           "file": "server/src/analysis/SemanticAnalyzer.cpp",
-          "startLine": 1223,
-          "endLine": 1272,
+          "startLine": 1228,
+          "endLine": 1277,
           "name": "CheckNullAssignedToNonHandleInScope",
           "signature": "SemanticAnalyzer::CheckNullAssignedToNonHandleInScope(const Scope* rootScope, Di"
         },
@@ -5785,8 +5480,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/rules/UnusedSymbolChecker.cpp",
-          "startLine": 323,
-          "endLine": 346,
+          "startLine": 324,
+          "endLine": 347,
           "name": "CollectScopeStringLiteralRefs",
           "signature": "CollectScopeStringLiteralRefs(const Scope* root, ankerl::unordered_dense::set<st"
         },
@@ -5941,43 +5636,16 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/TargetResolution.cpp",
-          "startLine": 1588,
-          "endLine": 1595,
-          "name": "MatchesCallArguments",
-          "signature": "MatchesCallArguments(const analysis::LocalReference& ref, const TargetDescriptor"
-        },
-        "funcB": {
-          "file": "server/src/features/code_lens/CodeLensHandler.cpp",
-          "startLine": 545,
-          "endLine": 552,
-          "name": "MatchesCallArguments",
-          "signature": "MatchesCallArguments(const analysis::LocalReference& ref, const ReferenceCollect"
-        },
-        "similarityScore": 0.912,
-        "sharedCalls": [
-          "argumentCount",
-          "isCall",
-          "isFunction",
-          "maxArgs",
-          "minArgs",
-          "ref"
-        ],
-        "whatTheyDo": "Both implementations evaluates equality and operator compatibility via [argumentCount, isCall, isFunction]. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1166,
-          "endLine": 1186,
+          "startLine": 1162,
+          "endLine": 1182,
           "name": "ReadEmptyParenVariableTypeInfo",
           "signature": "LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const std::"
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1241,
-          "endLine": 1266,
+          "startLine": 1237,
+          "endLine": 1262,
           "name": "ReadVirtualPropertyTypeInfo",
           "signature": "LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const std:"
         },
@@ -6113,15 +5781,15 @@
       {
         "funcA": {
           "file": "server/src/features/completion/CompletionHandler.cpp",
-          "startLine": 2115,
-          "endLine": 2123,
+          "startLine": 2131,
+          "endLine": 2139,
           "name": "ExtractIdentifierBackward",
           "signature": "ExtractIdentifierBackward(const std::string& text, size_t end)"
         },
         "funcB": {
           "file": "server/src/features/completion/CompletionHandler.cpp",
-          "startLine": 2742,
-          "endLine": 2750,
+          "startLine": 2758,
+          "endLine": 2766,
           "name": "ExtractQueryPrefix",
           "signature": "ExtractQueryPrefix(std::string_view linePrefix)"
         },
@@ -6201,15 +5869,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/EngineProfiles.cpp",
-          "startLine": 810,
-          "endLine": 830,
+          "startLine": 816,
+          "endLine": 836,
           "name": "EngineProfileKindToString",
           "signature": "EngineProfileKindToString(EngineProfileKind kind)"
         },
         "funcB": {
           "file": "server/src/analysis/EngineProfiles.cpp",
-          "startLine": 840,
-          "endLine": 860,
+          "startLine": 846,
+          "endLine": 866,
           "name": "RawProfileStub",
           "signature": "RawProfileStub(EngineProfileKind kind)"
         },
@@ -6217,31 +5885,6 @@
         "sharedCalls": [],
         "whatTheyDo": "EngineProfileKindToString (formats text representations of symbols) and RawProfileStub (executes RawProfileStub logic) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-          "startLine": 28,
-          "endLine": 39,
-          "name": "TrimNodeText",
-          "signature": "TrimNodeText(std::string text)"
-        },
-        "funcB": {
-          "file": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
-          "startLine": 211,
-          "endLine": 223,
-          "name": "TrimWhitespace",
-          "signature": "TrimWhitespace(std::string_view text) noexcept"
-        },
-        "similarityScore": 0.895,
-        "sharedCalls": [
-          "back",
-          "empty",
-          "front",
-          "text"
-        ],
-        "whatTheyDo": "TrimNodeText (executes TrimNodeText logic via [back, begin, erase]) and TrimWhitespace (executes TrimWhitespace logic via [back, front, remove_prefix]) share algorithmic structure. Separated due to Layer 3 isolation prohibition between features/inlay_hint and features/semantic_tokens.",
-        "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
       },
       {
         "funcA": {
@@ -6273,15 +5916,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 992,
-          "endLine": 1013,
+          "startLine": 988,
+          "endLine": 1009,
           "name": "ReadForeachVariableTypeInfo",
           "signature": "LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, const st"
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1241,
-          "endLine": 1266,
+          "startLine": 1237,
+          "endLine": 1262,
           "name": "ReadVirtualPropertyTypeInfo",
           "signature": "LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const std:"
         },
@@ -6353,8 +5996,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/TypeConversionChecker.cpp",
-          "startLine": 4329,
-          "endLine": 4360,
+          "startLine": 4309,
+          "endLine": 4340,
           "name": "VisitNode",
           "signature": "VisitNode(TSNode root, const TypeConversionCheckRequest& request, DiagnosticCont"
         },
@@ -6399,35 +6042,9 @@
       },
       {
         "funcA": {
-          "file": "server/src/features/formatting/ClangFormatReader.cpp",
-          "startLine": 14,
-          "endLine": 21,
-          "name": "Trim",
-          "signature": "Trim(std::string_view s)"
-        },
-        "funcB": {
-          "file": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
-          "startLine": 211,
-          "endLine": 223,
-          "name": "TrimWhitespace",
-          "signature": "TrimWhitespace(std::string_view text) noexcept"
-        },
-        "similarityScore": 0.884,
-        "sharedCalls": [
-          "back",
-          "empty",
-          "front",
-          "remove_prefix",
-          "remove_suffix"
-        ],
-        "whatTheyDo": "Trim (executes Trim logic via [back, front, remove_prefix]) and TrimWhitespace (executes TrimWhitespace logic via [back, front, remove_prefix]) share algorithmic structure. Separated due to Layer 3 isolation prohibition between features/formatting and features/semantic_tokens.",
-        "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/analysis/EngineProfiles.cpp",
-          "startLine": 840,
-          "endLine": 860,
+          "startLine": 846,
+          "endLine": 866,
           "name": "RawProfileStub",
           "signature": "RawProfileStub(EngineProfileKind kind)"
         },
@@ -6782,8 +6399,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1068,
-          "endLine": 1085,
+          "startLine": 1064,
+          "endLine": 1081,
           "name": "CountVariableDeclarators",
           "signature": "CountVariableDeclarators(TSNode declarationNode, TSSymbol declaratorSym)"
         },
@@ -6810,15 +6427,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/rules/UnusedSymbolChecker.cpp",
-          "startLine": 129,
-          "endLine": 153,
+          "startLine": 130,
+          "endLine": 154,
           "name": "CollectUsedLocals",
           "signature": "CollectUsedLocals(const Scope* rootScope, ankerl::unordered_dense::set<const Loc"
         },
         "funcB": {
           "file": "server/src/analysis/SemanticAnalyzer.cpp",
-          "startLine": 1095,
-          "endLine": 1134,
+          "startLine": 1100,
+          "endLine": 1139,
           "name": "CollectUsedDefinitions",
           "signature": "SemanticAnalyzer::CollectUsedDefinitions(const Scope* rootScope,\r\n              "
         },
@@ -6998,15 +6615,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 3309,
-          "endLine": 3328,
+          "startLine": 3324,
+          "endLine": 3343,
           "name": "ResolveBinary64OrFloat",
           "signature": "ResolveBinary64OrFloat(const std::string& cleanLeft, const std::string& cleanRig"
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 3677,
-          "endLine": 3690,
+          "startLine": 3697,
+          "endLine": 3710,
           "name": "ResolveTernaryNumericPromotion",
           "signature": "ResolveTernaryNumericPromotion(const std::string& c1, const std::string& c2)"
         },
@@ -7017,16 +6634,43 @@
       },
       {
         "funcA": {
+          "file": "server/src/analysis/TargetResolution.cpp",
+          "startLine": 1588,
+          "endLine": 1595,
+          "name": "MatchesCallArguments",
+          "signature": "MatchesCallArguments(const analysis::LocalReference& ref, const TargetDescriptor"
+        },
+        "funcB": {
+          "file": "server/src/features/code_lens/CodeLensHandler.cpp",
+          "startLine": 545,
+          "endLine": 552,
+          "name": "MatchesCallArguments",
+          "signature": "MatchesCallArguments(const analysis::LocalReference& ref, const ReferenceCollect"
+        },
+        "similarityScore": 0.853,
+        "sharedCalls": [
+          "argumentCount",
+          "isCall",
+          "isFunction",
+          "maxArgs",
+          "minArgs",
+          "ref"
+        ],
+        "whatTheyDo": "Both implementations evaluates equality and operator compatibility via [MatchesArgumentCount, argumentCount, isCall]. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
+        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
           "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-          "startLine": 1787,
-          "endLine": 1808,
+          "startLine": 1778,
+          "endLine": 1799,
           "name": "ProcessConstructorCallExpression",
           "signature": "ProcessConstructorCallExpression(TSNode node, const InlayHintRequest& request,\n "
         },
         "funcB": {
           "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-          "startLine": 1903,
-          "endLine": 1918,
+          "startLine": 1894,
+          "endLine": 1909,
           "name": "ProcessConstructorInitDeclarator",
           "signature": "ProcessConstructorInitDeclarator(const std::string& typeText, TSNode declarator,"
         },
@@ -7180,15 +6824,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/DoxygenMarkdown.cpp",
-          "startLine": 407,
-          "endLine": 418,
+          "startLine": 397,
+          "endLine": 408,
           "name": "FormatInlineCommand",
           "signature": "FormatInlineCommand(std::string_view cmd, std::string_view arg)"
         },
         "funcB": {
           "file": "server/src/analysis/DoxygenMarkdown.cpp",
-          "startLine": 2121,
-          "endLine": 2136,
+          "startLine": 2111,
+          "endLine": 2126,
           "name": "FormatInlineWord",
           "signature": "FormatInlineWord(std::string_view cmd, std::string_view word)"
         },
@@ -7229,38 +6873,16 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 3415,
-          "endLine": 3420,
-          "name": "IsBooleanBinaryOpSym",
-          "signature": "IsBooleanBinaryOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept"
-        },
-        "funcB": {
-          "file": "server/src/features/inlay_hint/InlayHintHandler.cpp",
-          "startLine": 1027,
-          "endLine": 1032,
-          "name": "IsBooleanBinaryOperator",
-          "signature": "IsBooleanBinaryOperator(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept"
-        },
-        "similarityScore": 0.839,
-        "sharedCalls": [
-          "gs"
-        ],
-        "whatTheyDo": "IsBooleanBinaryOpSym (evaluates AST node or symbol predicate properties via [gs]) and IsBooleanBinaryOperator (evaluates AST node or symbol predicate properties via [gs]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
-          "startLine": 349,
-          "endLine": 386,
+          "startLine": 341,
+          "endLine": 378,
           "name": "MatchSpecialCaptureRule",
           "signature": "MatchSpecialCaptureRule(std::string_view name, CaptureRule& rule)"
         },
         "funcB": {
           "file": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
-          "startLine": 394,
-          "endLine": 426,
+          "startLine": 386,
+          "endLine": 418,
           "name": "MatchKeywordOrConstantRule",
           "signature": "MatchKeywordOrConstantRule(std::string_view name, CaptureRule& rule)"
         },
@@ -7378,26 +7000,6 @@
       },
       {
         "funcA": {
-          "file": "server/src/features/document_symbol/DocumentSymbolHandler.cpp",
-          "startLine": 593,
-          "endLine": 614,
-          "name": "MapSymbolTypeToKind",
-          "signature": "MapSymbolTypeToKind(analysis::SymbolType type) noexcept"
-        },
-        "funcB": {
-          "file": "server/src/features/workspace_symbol/WorkspaceSymbolHandler.cpp",
-          "startLine": 34,
-          "endLine": 59,
-          "name": "ToSymbolKind",
-          "signature": "ToSymbolKind(analysis::SymbolType type, const std::string& containerName)"
-        },
-        "similarityScore": 0.801,
-        "sharedCalls": [],
-        "whatTheyDo": "MapSymbolTypeToKind (executes MapSymbolTypeToKind logic) and ToSymbolKind (executes ToSymbolKind logic via [containerName]) share algorithmic structure. Separated due to Layer 3 isolation prohibition between features/document_symbol and features/workspace_symbol.",
-        "unificationPlan": "server/src/features/common/FeatureSharedUtils.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/features/code_lens/CodeLensHandler.cpp",
           "startLine": 562,
           "endLine": 594,
@@ -7434,15 +7036,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 1746,
-          "endLine": 1783,
+          "startLine": 1751,
+          "endLine": 1788,
           "name": "TraverseDerivedClasses",
           "signature": "TraverseDerivedClasses(const std::vector<std::string>& initialFrontier, const Sy"
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 1809,
-          "endLine": 1862,
+          "startLine": 1814,
+          "endLine": 1867,
           "name": "GetDerivedClasses",
           "signature": "GetDerivedClasses(const std::string& className, const SymbolTable& symbolTable)"
         },
@@ -7471,15 +7073,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TypeConversionChecker.cpp",
-          "startLine": 3824,
-          "endLine": 3864,
+          "startLine": 3811,
+          "endLine": 3851,
           "name": "ProcessMemberExpressionNode",
           "signature": "ProcessMemberExpressionNode(TSNode node, const TypeConversionCheckRequest& reque"
         },
         "funcB": {
           "file": "server/src/analysis/TypeConversionChecker.cpp",
-          "startLine": 3872,
-          "endLine": 3909,
+          "startLine": 3859,
+          "endLine": 3896,
           "name": "ProcessIndexExpressionNode",
           "signature": "ProcessIndexExpressionNode(TSNode node, const TypeConversionCheckRequest& reques"
         },
@@ -7506,15 +7108,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/DoxygenMarkdown.cpp",
-          "startLine": 1613,
-          "endLine": 1619,
+          "startLine": 1603,
+          "endLine": 1609,
           "name": "MakeWithKind",
           "signature": "MakeWithKind(DocBlockKind kind, std::string t)"
         },
         "funcB": {
           "file": "server/src/analysis/DoxygenMarkdown.cpp",
-          "startLine": 1671,
-          "endLine": 1678,
+          "startLine": 1661,
+          "endLine": 1668,
           "name": "MakeAdmonition",
           "signature": "MakeAdmonition(std::string l, std::string t)"
         },
@@ -7612,8 +7214,8 @@
         },
         "funcB": {
           "file": "server/src/features/code_action/CodeActionConstQualifier.cpp",
-          "startLine": 162,
-          "endLine": 179,
+          "startLine": 161,
+          "endLine": 178,
           "name": "BuildAddConstAction",
           "signature": "BuildAddConstAction(TSNode paramList, const CodeActionRequest& request)"
         },
@@ -7714,8 +7316,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/TypeConversionChecker.cpp",
-          "startLine": 439,
-          "endLine": 449,
+          "startLine": 426,
+          "endLine": 436,
           "name": "IsScalarCastTarget",
           "signature": "IsScalarCastTarget(const std::string& typeName, const SymbolTable& table)"
         },
@@ -7774,8 +7376,8 @@
         },
         "funcB": {
           "file": "server/src/features/code_action/CodeActionConstQualifier.cpp",
-          "startLine": 162,
-          "endLine": 179,
+          "startLine": 161,
+          "endLine": 178,
           "name": "BuildAddConstAction",
           "signature": "BuildAddConstAction(TSNode paramList, const CodeActionRequest& request)"
         },
@@ -7857,15 +7459,15 @@
       {
         "funcA": {
           "file": "server/src/features/completion/CompletionHandler.cpp",
-          "startLine": 2100,
-          "endLine": 2107,
+          "startLine": 2116,
+          "endLine": 2123,
           "name": "SkipInlineWhitespaceBackward",
           "signature": "SkipInlineWhitespaceBackward(const std::string& text, size_t pos)"
         },
         "funcB": {
           "file": "server/src/features/completion/CompletionHandler.cpp",
-          "startLine": 2115,
-          "endLine": 2123,
+          "startLine": 2131,
+          "endLine": 2139,
           "name": "ExtractIdentifierBackward",
           "signature": "ExtractIdentifierBackward(const std::string& text, size_t end)"
         },
@@ -7910,38 +7512,16 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/AccessChecker.cpp",
-          "startLine": 545,
-          "endLine": 552,
-          "name": "IsDeclarationNodeType",
-          "signature": "IsDeclarationNodeType(TSSymbol sym)"
-        },
-        "funcB": {
-          "file": "server/src/features/definition/DefinitionHandler.cpp",
-          "startLine": 1099,
-          "endLine": 1107,
-          "name": "IsDeclarationNode",
-          "signature": "IsDeclarationNode(TSSymbol sym)"
-        },
-        "similarityScore": 0.753,
-        "sharedCalls": [
-          "gs"
-        ],
-        "whatTheyDo": "IsDeclarationNodeType (evaluates AST node or symbol predicate properties via [gs]) and IsDeclarationNode (evaluates AST node or symbol predicate properties via [gs]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/analysis/TypeConversionChecker.cpp",
-          "startLine": 1482,
-          "endLine": 1486,
+          "startLine": 1469,
+          "endLine": 1473,
           "name": "IsSignedNumericPrimitive",
           "signature": "IsSignedNumericPrimitive(std::string_view typeName) noexcept"
         },
         "funcB": {
           "file": "server/src/features/completion/CompletionHandler.cpp",
-          "startLine": 3307,
-          "endLine": 3311,
+          "startLine": 3311,
+          "endLine": 3315,
           "name": "IsNumericTypeName",
           "signature": "IsNumericTypeName(std::string_view t)"
         },
@@ -8045,15 +7625,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 5522,
-          "endLine": 5589,
+          "startLine": 5554,
+          "endLine": 5621,
           "name": "ExtractCallArguments",
           "signature": "ExtractCallArguments(TSNode argumentList, std::string_view sourceCode)"
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 5991,
-          "endLine": 6056,
+          "startLine": 6028,
+          "endLine": 6093,
           "name": "ExtractLambdaParameters",
           "signature": "ExtractLambdaParameters(TSNode lambdaParamList, std::string_view sourceCode)"
         },
@@ -8153,15 +7733,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 943,
-          "endLine": 984,
+          "startLine": 939,
+          "endLine": 980,
           "name": "ReadParameterTypeInfo",
           "signature": "LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std::str"
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 992,
-          "endLine": 1013,
+          "startLine": 988,
+          "endLine": 1009,
           "name": "ReadForeachVariableTypeInfo",
           "signature": "LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, const st"
         },
@@ -8194,15 +7774,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 943,
-          "endLine": 984,
+          "startLine": 939,
+          "endLine": 980,
           "name": "ReadParameterTypeInfo",
           "signature": "LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std::str"
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1166,
-          "endLine": 1186,
+          "startLine": 1162,
+          "endLine": 1182,
           "name": "ReadEmptyParenVariableTypeInfo",
           "signature": "LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const std::"
         },
@@ -8268,15 +7848,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 2833,
-          "endLine": 2849,
+          "startLine": 2843,
+          "endLine": 2859,
           "name": "ExtractVariableOrPropertyType",
           "signature": "ExtractVariableOrPropertyType(std::span<const Symbol> syms, const SymbolTable& t"
         },
         "funcB": {
           "file": "server/src/analysis/SemanticHelpers.cpp",
-          "startLine": 3925,
-          "endLine": 3946,
+          "startLine": 3945,
+          "endLine": 3966,
           "name": "ExtractMemberSymbolType",
           "signature": "ExtractMemberSymbolType(const Symbol& sym, const SymbolTable& table)"
         },
@@ -8316,15 +7896,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1121,
-          "endLine": 1158,
+          "startLine": 1117,
+          "endLine": 1154,
           "name": "ReadVariableDeclaratorTypeInfo",
           "signature": "LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, TSNod"
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1166,
-          "endLine": 1186,
+          "startLine": 1162,
+          "endLine": 1182,
           "name": "ReadEmptyParenVariableTypeInfo",
           "signature": "LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const std::"
         },
@@ -8389,15 +7969,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/TypeConversionChecker.cpp",
-          "startLine": 3930,
-          "endLine": 3966,
+          "startLine": 3917,
+          "endLine": 3953,
           "name": "CheckLambdaReturnStatement",
           "signature": "CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Scope* scope, D"
         },
         "funcB": {
           "file": "server/src/analysis/TypeConversionChecker.cpp",
-          "startLine": 4051,
-          "endLine": 4103,
+          "startLine": 4031,
+          "endLine": 4083,
           "name": "CheckFuncDeclarationReturnStatement",
           "signature": "CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Scope* s"
         },
@@ -8433,8 +8013,8 @@
         },
         "funcB": {
           "file": "server/src/features/code_action/CodeActionUnusedVariables.cpp",
-          "startLine": 268,
-          "endLine": 292,
+          "startLine": 274,
+          "endLine": 298,
           "name": "MakeIgnoreUnusedSymbolAction",
           "signature": "MakeIgnoreUnusedSymbolAction(const lsp::Diagnostic& diag, std::string_view symbo"
         },
@@ -8485,6 +8065,52 @@
       },
       {
         "funcA": {
+          "file": "server/src/features/code_action/CodeActionIncludes.cpp",
+          "startLine": 124,
+          "endLine": 172,
+          "name": "EmitIncludeSuggestions",
+          "signature": "EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vector<IncludeCa"
+        },
+        "funcB": {
+          "file": "server/src/features/code_action/CodeActionTypos.cpp",
+          "startLine": 130,
+          "endLine": 164,
+          "name": "EmitTypoCodeActions",
+          "signature": "EmitTypoCodeActions(const TypoFixContext& ctx, const std::vector<TypoCandidateSu"
+        },
+        "similarityScore": 0.693,
+        "sharedCalls": [
+          "action",
+          "actions",
+          "changes",
+          "character",
+          "ctx",
+          "diag",
+          "diagnostics",
+          "distance",
+          "edit",
+          "end",
+          "i18n",
+          "isPreferred",
+          "kind",
+          "line",
+          "name",
+          "newText",
+          "push_back",
+          "range",
+          "ranked",
+          "request",
+          "size",
+          "start",
+          "title",
+          "uri",
+          "wsEdit"
+        ],
+        "whatTheyDo": "EmitIncludeSuggestions (constructs and emits diagnostics via [action, actions, changes]) and EmitTypoCodeActions (constructs and emits diagnostics via [action, actions, changes]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
+        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
           "file": "server/src/analysis/TargetResolution.cpp",
           "startLine": 1633,
           "endLine": 1682,
@@ -8529,51 +8155,6 @@
       },
       {
         "funcA": {
-          "file": "server/src/features/code_action/CodeActionIncludes.cpp",
-          "startLine": 137,
-          "endLine": 185,
-          "name": "EmitIncludeSuggestions",
-          "signature": "EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vector<IncludeCa"
-        },
-        "funcB": {
-          "file": "server/src/features/code_action/CodeActionTypos.cpp",
-          "startLine": 143,
-          "endLine": 177,
-          "name": "EmitTypoCodeActions",
-          "signature": "EmitTypoCodeActions(const TypoFixContext& ctx, const std::vector<TypoCandidateSu"
-        },
-        "similarityScore": 0.688,
-        "sharedCalls": [
-          "action",
-          "actions",
-          "changes",
-          "character",
-          "ctx",
-          "diag",
-          "diagnostics",
-          "distance",
-          "edit",
-          "end",
-          "i18n",
-          "isPreferred",
-          "kind",
-          "line",
-          "newText",
-          "push_back",
-          "range",
-          "ranked",
-          "request",
-          "size",
-          "start",
-          "title",
-          "uri",
-          "wsEdit"
-        ],
-        "whatTheyDo": "EmitIncludeSuggestions (constructs and emits diagnostics via [action, actions, changes]) and EmitTypoCodeActions (constructs and emits diagnostics via [action, actions, changes]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/features/code_action/CodeActionConstQualifier.cpp",
           "startLine": 52,
           "endLine": 87,
@@ -8582,8 +8163,8 @@
         },
         "funcB": {
           "file": "server/src/features/code_action/CodeActionConstQualifier.cpp",
-          "startLine": 232,
-          "endLine": 282,
+          "startLine": 231,
+          "endLine": 281,
           "name": "TryAddConstHandleDiagnosticFix",
           "signature": "TryAddConstHandleDiagnosticFix(const CodeActionRequest& request, TSNode rootNode"
         },
@@ -8615,15 +8196,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 943,
-          "endLine": 984,
+          "startLine": 939,
+          "endLine": 980,
           "name": "ReadParameterTypeInfo",
           "signature": "LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std::str"
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1241,
-          "endLine": 1266,
+          "startLine": 1237,
+          "endLine": 1262,
           "name": "ReadVirtualPropertyTypeInfo",
           "signature": "LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const std:"
         },
@@ -8656,15 +8237,15 @@
       {
         "funcA": {
           "file": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
-          "startLine": 434,
-          "endLine": 459,
+          "startLine": 426,
+          "endLine": 451,
           "name": "MatchCallableOrPropertyRule",
           "signature": "MatchCallableOrPropertyRule(std::string_view name, CaptureRule& rule)"
         },
         "funcB": {
           "file": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
-          "startLine": 467,
-          "endLine": 497,
+          "startLine": 459,
+          "endLine": 489,
           "name": "MatchEntityCaptureRule",
           "signature": "MatchEntityCaptureRule(std::string_view name, CaptureRule& rule)"
         },
@@ -8687,8 +8268,8 @@
         },
         "funcB": {
           "file": "server/src/features/definition/DefinitionHandler.cpp",
-          "startLine": 1530,
-          "endLine": 1543,
+          "startLine": 1515,
+          "endLine": 1528,
           "name": "ContainerKindMatches",
           "signature": "ContainerKindMatches(analysis::SymbolType containerType, analysis::ContainerKind"
         },
@@ -8722,15 +8303,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1022,
-          "endLine": 1060,
+          "startLine": 1018,
+          "endLine": 1056,
           "name": "ReadLambdaParameterTypeInfo",
           "signature": "LocalScopeCollector::ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode declara"
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1166,
-          "endLine": 1186,
+          "startLine": 1162,
+          "endLine": 1182,
           "name": "ReadEmptyParenVariableTypeInfo",
           "signature": "LocalScopeCollector::ReadEmptyParenVariableTypeInfo(TSNode funcNode, const std::"
         },
@@ -8841,15 +8422,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1121,
-          "endLine": 1158,
+          "startLine": 1117,
+          "endLine": 1154,
           "name": "ReadVariableDeclaratorTypeInfo",
           "signature": "LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, TSNod"
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1241,
-          "endLine": 1266,
+          "startLine": 1237,
+          "endLine": 1262,
           "name": "ReadVirtualPropertyTypeInfo",
           "signature": "LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const std:"
         },
@@ -8884,15 +8465,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 992,
-          "endLine": 1013,
+          "startLine": 988,
+          "endLine": 1009,
           "name": "ReadForeachVariableTypeInfo",
           "signature": "LocalScopeCollector::ReadForeachVariableTypeInfo(TSNode declaratorNode, const st"
         },
         "funcB": {
           "file": "server/src/analysis/LocalScopeCollector.cpp",
-          "startLine": 1121,
-          "endLine": 1158,
+          "startLine": 1117,
+          "endLine": 1154,
           "name": "ReadVariableDeclaratorTypeInfo",
           "signature": "LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, TSNod"
         },
@@ -8920,26 +8501,6 @@
           "typeName"
         ],
         "whatTheyDo": "ReadForeachVariableTypeInfo (executes ReadForeachVariableTypeInfo logic via [ExtractTypeInfoFromAST, PopulateTypeRanges, column]) and ReadVariableDeclaratorTypeInfo (executes ReadVariableDeclaratorTypeInfo logic via [CountVariableDeclarators, ExtractTypeInfoFromAST, FindDeclarationTypeNode]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/EngineProfiles.cpp",
-          "startLine": 840,
-          "endLine": 860,
-          "name": "RawProfileStub",
-          "signature": "RawProfileStub(EngineProfileKind kind)"
-        },
-        "funcB": {
-          "file": "server/src/features/document_symbol/DocumentSymbolHandler.cpp",
-          "startLine": 593,
-          "endLine": 614,
-          "name": "MapSymbolTypeToKind",
-          "signature": "MapSymbolTypeToKind(analysis::SymbolType type) noexcept"
-        },
-        "similarityScore": 0.663,
-        "sharedCalls": [],
-        "whatTheyDo": "RawProfileStub (executes RawProfileStub logic) and MapSymbolTypeToKind (executes MapSymbolTypeToKind logic) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
         "unificationPlan": "server/src/analysis/SemanticHelpers.h"
       },
       {
@@ -9014,8 +8575,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/EngineProfiles.cpp",
-          "startLine": 840,
-          "endLine": 860,
+          "startLine": 846,
+          "endLine": 866,
           "name": "RawProfileStub",
           "signature": "RawProfileStub(EngineProfileKind kind)"
         },
@@ -9055,36 +8616,16 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/rules/TypeRules.cpp",
-          "startLine": 98,
-          "endLine": 119,
-          "name": "KindWord",
-          "signature": "KindWord(SymbolType type)"
-        },
-        "funcB": {
-          "file": "server/src/features/document_symbol/DocumentSymbolHandler.cpp",
-          "startLine": 593,
-          "endLine": 614,
-          "name": "MapSymbolTypeToKind",
-          "signature": "MapSymbolTypeToKind(analysis::SymbolType type) noexcept"
-        },
-        "similarityScore": 0.63,
-        "sharedCalls": [],
-        "whatTheyDo": "KindWord (executes KindWord logic) and MapSymbolTypeToKind (executes MapSymbolTypeToKind logic) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
-        "unificationPlan": "server/src/analysis/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
-          "startLine": 394,
-          "endLine": 426,
+          "startLine": 386,
+          "endLine": 418,
           "name": "MatchKeywordOrConstantRule",
           "signature": "MatchKeywordOrConstantRule(std::string_view name, CaptureRule& rule)"
         },
         "funcB": {
           "file": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
-          "startLine": 434,
-          "endLine": 459,
+          "startLine": 426,
+          "endLine": 451,
           "name": "MatchCallableOrPropertyRule",
           "signature": "MatchCallableOrPropertyRule(std::string_view name, CaptureRule& rule)"
         },
@@ -9100,8 +8641,8 @@
       {
         "funcA": {
           "file": "server/src/features/definition/DefinitionHandler.cpp",
-          "startLine": 1530,
-          "endLine": 1543,
+          "startLine": 1515,
+          "endLine": 1528,
           "name": "ContainerKindMatches",
           "signature": "ContainerKindMatches(analysis::SymbolType containerType, analysis::ContainerKind"
         },

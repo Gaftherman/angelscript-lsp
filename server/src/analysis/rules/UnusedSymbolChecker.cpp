@@ -6,6 +6,7 @@
 #include "analysis/ScopeTree.h"
 #include "analysis/SemanticHelpers.h"
 #include "analysis/SymbolTable.h"
+#include "analysis/TypeSanitization.h"
 #include "analysis/rules/RuleIndex.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
@@ -390,24 +391,18 @@ static ankerl::unordered_dense::set<std::string> CollectStringReflection(const S
  */
 static std::string NormalizeParamType(std::string_view type)
 {
+    const std::string_view unconst = StripLeadingConst(type);
+    const std::string_view stripped = StripTrailingDecorationsView(unconst);
     std::string res;
-    res.reserve(type.size());
-    for (char c : type)
+    res.reserve(stripped.size());
+    for (char c : stripped)
     {
         if (!std::isspace(static_cast<unsigned char>(c)))
+        {
             res.push_back(c);
+        }
     }
-    std::string_view sv = res;
-    if (sv.starts_with("const"))
-        sv.remove_prefix(5);
-    if (sv.ends_with("&inout"))
-        sv.remove_suffix(6);
-    else if (sv.ends_with("&in") || sv.ends_with("&out"))
-        sv.remove_suffix(3);
-    else if (sv.ends_with('&'))
-        sv.remove_suffix(1);
-
-    return std::string(sv);
+    return res;
 }
 
 bool MatchesEngineCallbackSignature(const Symbol& sym, const std::vector<std::vector<std::string>>& signatures)

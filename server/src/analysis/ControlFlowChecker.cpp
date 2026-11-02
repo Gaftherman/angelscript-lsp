@@ -693,10 +693,10 @@ static void CheckSwitch(TSNode node, std::string_view sourceCode, DiagnosticCont
 namespace control_flow_checker_detail
 {
 /**
- * @brief Represents Flow state.
+ * @brief Represents Control flow state.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
-struct FlowState
+struct ControlFlowState
 {
     uint32_t loopDepth = 0;
     uint32_t switchDepth = 0;
@@ -723,7 +723,7 @@ struct FlowState
 };
 } // namespace control_flow_checker_detail
 
-using FlowState = control_flow_checker_detail::FlowState;
+using ControlFlowState = control_flow_checker_detail::ControlFlowState;
 
 /**
  * @brief Reports the first statement a block can never reach.
@@ -801,7 +801,7 @@ class ControlFlowVisitor
 
     void Run(TSNode root)
     {
-        Visit(root, FlowState{});
+        Visit(root, ControlFlowState{});
     }
 
   private:
@@ -815,7 +815,7 @@ class ControlFlowVisitor
      * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isHandle; candidate for direct Pass 1 flag read via
      * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isHandle / LocalDefinition::isHandleType.
      */
-    void CheckReturnStatement(TSNode node, const FlowState& state)
+    void CheckReturnStatement(TSNode node, const ControlFlowState& state)
     {
         // A bare `return;` in a function that owes a value. Measured: the compiler answers
         // "Must return a value" and rejects the file, and nothing here saw it -
@@ -848,11 +848,11 @@ class ControlFlowVisitor
         }
     }
 
-    void CheckFunctionDeclaration(TSNode node, FlowState& state)
+    void CheckFunctionDeclaration(TSNode node, ControlFlowState& state)
     {
         // A nested function opens its own flow: a loop enclosing the declaration does not
         // make a `break` inside the nested body legal.
-        state = FlowState{};
+        state = ControlFlowState{};
 
         TSNode body = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldBody);
         TSNode returnType = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldReturnType);
@@ -901,7 +901,7 @@ class ControlFlowVisitor
             ts_node_is_null(returnType) && NodeSymbol(node) != parser::GetGrammarSymbols().symLambdaExpression;
     }
 
-    bool CheckLoopControl(TSNode node, TSSymbol sym, const FlowState& state)
+    bool CheckLoopControl(TSNode node, TSSymbol sym, const ControlFlowState& state)
     {
         const auto& gs = parser::GetGrammarSymbols();
         if (sym == gs.symBreakStatement)
@@ -923,7 +923,7 @@ class ControlFlowVisitor
         return false;
     }
 
-    void UpdateBranchState(TSNode node, TSSymbol sym, FlowState& state)
+    void UpdateBranchState(TSNode node, TSSymbol sym, ControlFlowState& state)
     {
         const auto& gs = parser::GetGrammarSymbols();
         if (sym == gs.symWhileStatement || sym == gs.symForStatement || sym == gs.symForeachStatement ||
@@ -949,10 +949,10 @@ class ControlFlowVisitor
     struct FlowItem
     {
         TSNode node;
-        FlowState state;
+        ControlFlowState state;
     };
 
-    void Visit(TSNode rootNode, FlowState initialState)
+    void Visit(TSNode rootNode, ControlFlowState initialState)
     {
         if (ts_node_is_null(rootNode))
         {
@@ -970,7 +970,7 @@ class ControlFlowVisitor
             worklist.pop_back();
 
             TSNode node = item.node;
-            FlowState state = std::move(item.state);
+            ControlFlowState state = std::move(item.state);
             const TSSymbol sym = ts_node_symbol(node);
 
             if (CheckLoopControl(node, sym, state))

@@ -150,6 +150,26 @@ bool IsReservedKeyword(const std::string& name);
 [[nodiscard]] bool IsKeyword(std::string_view word) noexcept;
 
 /**
+ * @brief Checks if a tree-sitter operator symbol is a comparison or logical boolean binary operator.
+ * @param[in] sym Grammar symbol of the operator token.
+ * @param[in] gs Precompiled grammar symbols table.
+ * @return True if operator produces a boolean result.
+ */
+[[nodiscard]] bool IsBooleanBinaryOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept;
+
+/**
+ * @brief Checks if an argument count falls within min and max argument bounds for a callable reference.
+ * @param[in] argCount Observed argument count.
+ * @param[in] minArgs Minimum required arguments.
+ * @param[in] maxArgs Maximum permitted arguments.
+ * @return True if argCount is within [minArgs, maxArgs].
+ */
+[[nodiscard]] constexpr bool MatchesArgumentCount(size_t argCount, size_t minArgs, size_t maxArgs) noexcept
+{
+    return argCount >= minArgs && argCount <= maxArgs;
+}
+
+/**
  * @brief Immutable core AngelScript primitive types.
  */
 [[nodiscard]] constexpr bool IsCorePrimitive(std::string_view typeName) noexcept
@@ -1059,6 +1079,29 @@ struct MemberLookupContext
     std::string typeName;
     const SymbolTable& table;
     bool accessorKeywordRequired = false;
+};
+
+/**
+ * @brief Unified result of member and method lookup across class and interface hierarchies.
+ */
+struct MemberLookupResult
+{
+    bool found = false;
+    bool decided = false;
+    bool hasConstOverload = false;
+    bool returnsSelfReference = false;
+    bool viaAccessor = false;
+    AccessModifier access = AccessModifier::Public;
+    std::string declaringClass;
+};
+
+/**
+ * @brief Pair of source and destination type names for conversion evaluation.
+ */
+struct ConversionTypePair
+{
+    std::string from;
+    std::string to;
 };
 
 /**

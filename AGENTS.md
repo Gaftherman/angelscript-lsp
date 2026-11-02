@@ -53,6 +53,8 @@ Layer isolation is strict and enforced by `server/scripts/check-layer-includes.p
    - **Scoped Name Manipulation:** Use `utils::ScopedNameUtils` (`StripGlobalPrefix`, `HasLeadingGlobalPrefix`, `ParentScopeView`, `SplitScopedName`, `ForEachEnclosingScope`, `AreEquivalentGlobalOrScopedNames`) operating entirely on `std::string_view` with zero heap allocations.
    - **Zero-Allocation Symbol Table Lookups:** Member lookups must use `SymbolTable::FindMemberSymbolPtr(container, name)` or `SymbolTable::FindMemberSymbols(container, name)`. Reachability in enclosing scopes must use `SymbolTable::HasScopedSymbol(scope, name)` or `SymbolTable::IsReachableInContainerScope(name, containerScope)`. Ad-hoc string concatenations like `+ "::" +` passed into symbol search APIs are strictly prohibited.
    - **Structure Extraction:** Use precompiled `GrammarSymbols` and `NodeIndex::ForEachNodeOrdered(std::span<const TSSymbol>)` without string conversions or runtime map lookups.
+   - **Cross-Feature Protocol Helpers:** Use `features/common/FeatureSharedUtils.h` (`ToLspRange`, `SameRange`, `FindIdentifierAtPosition`, `ToLspSymbolKind`) to prevent duplicate mapping or geometry routines across feature handlers.
+   - **Type Qualifiers & Canonical Sanitization:** Use `analysis::TypeQualifiers` and `analysis/TypeSanitization.h` (`StripLeadingConst`, `StripTrailingDecorationsView`, `TrimTypeWhitespace`) for zero-allocation AST-based type modifier operations.
 
 ---
 
@@ -100,7 +102,7 @@ Format: `<type>(<scope>): <short imperative description>`
 
 ---
 
-## 8. The 13 Absolute Prohibitions
+## 8. The 14 Absolute Prohibitions
 
 1. **PROHIBITION 1: No Unprotected Raw AST Pointer Escaping:** Never return or store raw `TSTree*` pointers without an enclosing reader lock or owning `std::shared_ptr<const document::Document>`.
 2. **PROHIBITION 2: No Uncaught Exceptions Escaping Secondary Threads:** Never allow an exception to escape a `std::thread` boundary; unhandled exceptions that invoke `std::terminate()` are classified as critical severity bugs.
@@ -115,6 +117,7 @@ Format: `<type>(<scope>): <short imperative description>`
 11. **PROHIBITION 11: No Hardcoded User-Facing Text or Ad-Hoc Bilingual Conditionals:** Every string displayed to the end user (hover markdown tooltips, diagnostics, code action titles, document link titles, notifications) must be externalized in `server/src/i18n/i18n.cpp` and resolved via `angel_lsp::i18n::FormatMessage(i18n, key, fallback, ...)` (or `bundle.l10n.json` via `l10n.t()` in the client). Hardcoding raw user-facing natural language strings directly in C++ feature handlers or writing ad-hoc language branching (`if (locale == "es")`) is strictly prohibited.
 12. **PROHIBITION 12: No Unbounded Parent-Climb Loops or Hot-Path `ts_node_parent` Iteration:** Never write `while (!ts_node_is_null(ts_node_parent(node)))` or unbounded climb loops. Always obtain the root node via `parser::GetRootNode(node)` in $O(1)$ time. In hot-path collectors (`LocalScopeCollector`, `SymbolCollector`), upward parent climbing is strictly prohibited; rely on downward query cursor matching, container stacks, and pre-resolved `TSSymbol` IDs.
 13. **PROHIBITION 13: No Hardcoded Predefined Type Names or Blind Namespace Matching in Layer 2:** Never hardcode predefined or add-on type names (`"weakref"`, `"const_weakref"`, `"string"`, `"dictionary"`) in conversion rules, overload rankings, or type checkers (`TypeConversionChecker.cpp`, `OverloadTypeConversions.cpp`, `ConversionRankingEngine.cpp`, `CallChecker.cpp`). All type capabilities (constructors, conversion operators) must be resolved dynamically via `SymbolTable` and template parameter substitution (`BindTemplateArguments`, `SubstituteTemplateParameters`). Furthermore, never use blind `LastScopeSegment(a) == LastScopeSegment(b)` comparisons across different scopes when both types contain explicit namespace qualifiers (`::`).
+14. **PROHIBITION 14: No Unnamed `namespace {}`, No `using namespace`, No ODR-Unsafe `.cpp` Structs, No Mechanical Doxygen Slop:** Never introduce anonymous namespaces `namespace {}` or `using namespace` directives (or `using <ns>::<symbol>` in implementation files). All local helper structs in `.cpp` files must be wrapped in a file-specific `*_detail` namespace (e.g. `namespace <file>_detail`) or declared as private class members to prevent ODR violations, and must not collide with other `.cpp` or `.h` declarations. Doxygen documentation must provide substantive, informative descriptions; mechanical templates (`/// <brief>` followed by regurgitated type and param names) are strictly forbidden.
 
 ---
 
@@ -135,6 +138,8 @@ When writing or refactoring C++ code in `server/src/`, all contributions MUST ad
    - If any gate fails, inspect the report, fix root causes, and re-verify.
 5. **Compulsory Build Verification Pre-Commit Invariant (Golden Workflow):**
    - Never commit or push changes after running `format-code.py`, Lizard refactoring, or Python refactoring scripts without running a full compilation (`cmake --build build --config Release`) and verifying 0 compilation errors and 0 warnings under `/W4 /WX /we4100`.
+6. **Mandatory Refactor Ledger & Redundancy Audit Gate:**
+   - All struct unifications, function consolidations, flag reparsing eliminations, and layout compactions must be logged in `docs/REFACTOR_LEDGER.json` and validated via `python server/scripts/check-refactor-ledger.py --check-diff develop` and `python server/scripts/audit-codebase-redundancy.py`.
 
 ---
 

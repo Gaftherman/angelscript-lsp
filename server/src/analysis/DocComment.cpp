@@ -1,5 +1,6 @@
 #include "analysis/DocComment.h"
 #include "analysis/DoxygenMarkdown.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -39,20 +40,9 @@ static std::vector<std::string_view> SplitLinesUpTo(std::string_view str, size_t
     return lines;
 }
 
-/**
- * @brief Strips leading and trailing whitespace.
- * @note [REFACTOR-CANDIDATE] Structural overlap (98%) with Trim in server/src/analysis/DoxygenMarkdown.cpp. Candidate
- * for unification in server/src/analysis/SemanticHelpers.h.
- */
-static std::string_view Trim(std::string_view str)
+static inline std::string_view Trim(std::string_view str) noexcept
 {
-    size_t first = str.find_first_not_of(" \t\r\n");
-    if (first == std::string_view::npos)
-    {
-        return "";
-    }
-    size_t last = str.find_last_not_of(" \t\r\n");
-    return str.substr(first, (last - first + 1));
+    return utils::TrimView(str);
 }
 
 static std::string ExtractLineComment(std::string_view rem)

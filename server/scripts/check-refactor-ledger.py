@@ -19,7 +19,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 LEDGER_PATH = REPO_ROOT / "docs" / "REFACTOR_LEDGER.json"
 
-VALID_PHASES = {"R0", "R1", "R2", "R3"}
+VALID_PHASES = {"R0", "R1", "R2", "R3", "R4"}
 VALID_ACTIONS = {
     "UNIFY_FUNCTIONS",
     "UNIFY_STRUCT",

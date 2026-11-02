@@ -1092,21 +1092,6 @@ TryResolveDelegatePropertyDefinition(TSNode node, const std::string& nodeText, c
 }
 
 /**
- * @brief Checks if a tree-sitter node symbol corresponds to an entity declaration.
- * @param[in] sym Tree-sitter grammar symbol.
- * @return True if symbol is a recognized declaration node.
- */
-static bool IsDeclarationNode(TSSymbol sym)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    return sym == gs.symFuncDeclaration || sym == gs.symVariableDeclarator || sym == gs.symParameter ||
-           sym == gs.symClassDeclaration || sym == gs.symInterfaceDeclaration || sym == gs.symInterfaceMethod ||
-           sym == gs.symEnumDeclaration || sym == gs.symEnumMember || sym == gs.symFuncdefDeclaration ||
-           sym == gs.symNamespaceDeclaration || sym == gs.symForeachVariable || sym == gs.symVirtualProperty ||
-           sym == gs.symMixinDeclaration;
-}
-
-/**
  * @brief Resolves the enclosing class or interface name for overridden method resolution.
  * @param[in] ctx Definition context.
  * @return Qualified or bare class/interface name, or empty string.
@@ -1223,7 +1208,7 @@ static std::optional<std::vector<lsp::Location>> TryResolveDeclarationFallback(T
             pSym = ts_node_symbol(p);
         }
     }
-    if (!IsDeclarationNode(pSym))
+    if (!parser::IsDeclarationSymbol(pSym))
     {
         return std::nullopt;
     }

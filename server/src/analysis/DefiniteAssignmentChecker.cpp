@@ -45,10 +45,10 @@ static std::string GetSimpleIdentifierName(TSNode node, std::string_view sourceC
 namespace definite_assignment_checker_detail
 {
 /**
- * @brief Represents Flow state.
+ * @brief Represents Definite assignment state.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
  */
-struct FlowState
+struct DefiniteAssignmentState
 {
     ankerl::unordered_dense::set<std::string> assignedVars;
     bool hasReturned = false;
@@ -56,7 +56,7 @@ struct FlowState
 };
 } // namespace definite_assignment_checker_detail
 
-using FlowState = definite_assignment_checker_detail::FlowState;
+using DefiniteAssignmentState = definite_assignment_checker_detail::DefiniteAssignmentState;
 
 /**
  * @brief Merges two branch states by UNION, which is AngelScript's rule and not C#'s.
@@ -143,7 +143,7 @@ class DefiniteAssignmentVisitor
             return;
         }
 
-        FlowState state;
+        DefiniteAssignmentState state;
         AnalyzeStatement(bodyNode, state);
     }
 
@@ -153,7 +153,7 @@ class DefiniteAssignmentVisitor
     ankerl::unordered_dense::set<std::string> m_trackedLocals;
     ankerl::unordered_dense::set<std::string> m_reportedReads;
 
-    void CheckIdentifierRead(TSNode node, const FlowState& state)
+    void CheckIdentifierRead(TSNode node, const DefiniteAssignmentState& state)
     {
         std::string name = GetSimpleIdentifierName(node, m_request.sourceCode);
         if (!name.empty() && m_trackedLocals.contains(name) && !state.assignedVars.contains(name))
@@ -169,7 +169,7 @@ class DefiniteAssignmentVisitor
         }
     }
 
-    void CheckAssignmentExpressionReads(TSNode node, FlowState& state)
+    void CheckAssignmentExpressionReads(TSNode node, DefiniteAssignmentState& state)
     {
         const auto& gs = parser::GetGrammarSymbols();
         TSNode left = parser::GetChildByField(node, gs.fieldLeft);
@@ -260,7 +260,7 @@ class DefiniteAssignmentVisitor
         }
     }
 
-    bool HasAnyUnassignedTrackedLocal(const std::vector<TSNode>& argNodes, const FlowState& state) const
+    bool HasAnyUnassignedTrackedLocal(const std::vector<TSNode>& argNodes, const DefiniteAssignmentState& state) const
     {
         if (m_trackedLocals.empty())
         {
@@ -314,7 +314,8 @@ class DefiniteAssignmentVisitor
         return false;
     }
 
-    void CheckCallArguments(const std::vector<TSNode>& argNodes, const CallCandidateInfo& info, FlowState& state)
+    void CheckCallArguments(const std::vector<TSNode>& argNodes, const CallCandidateInfo& info,
+                            DefiniteAssignmentState& state)
     {
         for (size_t i = 0; i < argNodes.size(); ++i)
         {
@@ -342,7 +343,7 @@ class DefiniteAssignmentVisitor
         }
     }
 
-    void CheckCallExpressionReads(TSNode node, FlowState& state)
+    void CheckCallExpressionReads(TSNode node, DefiniteAssignmentState& state)
     {
         TSNode funcNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldFunction);
         TSNode argsNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldArguments);
@@ -388,7 +389,7 @@ class DefiniteAssignmentVisitor
         CheckCallArguments(argNodes, info, state);
     }
 
-    void CheckExpressionReads(TSNode node, FlowState& state)
+    void CheckExpressionReads(TSNode node, DefiniteAssignmentState& state)
     {
         if (ts_node_is_null(node))
         {
@@ -430,7 +431,7 @@ class DefiniteAssignmentVisitor
         }
     }
 
-    void AnalyzeBlock(TSNode node, FlowState& state)
+    void AnalyzeBlock(TSNode node, DefiniteAssignmentState& state)
     {
         uint32_t count = ts_node_named_child_count(node);
         for (uint32_t i = 0; i < count && !state.isTerminated && !state.hasReturned; ++i)
@@ -439,7 +440,7 @@ class DefiniteAssignmentVisitor
         }
     }
 
-    void AnalyzeVariableDeclarator(TSNode child, bool isPrimitive, FlowState& state)
+    void AnalyzeVariableDeclarator(TSNode child, bool isPrimitive, DefiniteAssignmentState& state)
     {
         TSNode nameNode = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldName);
         if (ts_node_is_null(nameNode) && ts_node_named_child_count(child) > 0)
@@ -491,7 +492,7 @@ class DefiniteAssignmentVisitor
         }
     }
 
-    void AnalyzeVariableDeclaration(TSNode node, FlowState& state)
+    void AnalyzeVariableDeclaration(TSNode node, DefiniteAssignmentState& state)
     {
         TSNode typeNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldVarType);
         if (ts_node_is_null(typeNode))
@@ -519,7 +520,7 @@ class DefiniteAssignmentVisitor
         }
     }
 
-    void AnalyzeIfStatement(TSNode node, FlowState& state)
+    void AnalyzeIfStatement(TSNode node, DefiniteAssignmentState& state)
     {
         TSNode cond = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldCondition);
         if (ts_node_is_null(cond))
@@ -531,10 +532,10 @@ class DefiniteAssignmentVisitor
 
         CheckExpressionReads(cond, state);
 
-        FlowState thenState = state;
+        DefiniteAssignmentState thenState = state;
         AnalyzeStatement(consequence, thenState);
 
-        FlowState elseState = state;
+        DefiniteAssignmentState elseState = state;
         if (!ts_node_is_null(alternative))
         {
             AnalyzeStatement(alternative, elseState);
@@ -558,7 +559,7 @@ class DefiniteAssignmentVisitor
         }
     }
 
-    void AnalyzeWhileStatement(TSNode node, FlowState& state)
+    void AnalyzeWhileStatement(TSNode node, DefiniteAssignmentState& state)
     {
         TSNode cond = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldCondition);
         if (ts_node_is_null(cond))
@@ -569,7 +570,7 @@ class DefiniteAssignmentVisitor
 
         CheckExpressionReads(cond, state);
 
-        FlowState bodyState = state;
+        DefiniteAssignmentState bodyState = state;
         AnalyzeStatement(body, bodyState);
 
         state.assignedVars = MergeBranchStates(state.assignedVars, bodyState.assignedVars);
@@ -581,7 +582,7 @@ class DefiniteAssignmentVisitor
         }
     }
 
-    void AnalyzeDoWhileStatement(TSNode node, FlowState& state)
+    void AnalyzeDoWhileStatement(TSNode node, DefiniteAssignmentState& state)
     {
         TSNode body = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldBody);
         TSNode cond = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldCondition);
@@ -594,7 +595,7 @@ class DefiniteAssignmentVisitor
         CheckExpressionReads(cond, state);
     }
 
-    void AnalyzeForStatement(TSNode node, FlowState& state)
+    void AnalyzeForStatement(TSNode node, DefiniteAssignmentState& state)
     {
         TSNode init = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldInit);
         TSNode cond = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldCondition);
@@ -616,7 +617,7 @@ class DefiniteAssignmentVisitor
 
         CheckExpressionReads(cond, state);
 
-        FlowState bodyState = state;
+        DefiniteAssignmentState bodyState = state;
         AnalyzeStatement(body, bodyState);
         CheckExpressionReads(step, bodyState);
 
@@ -631,10 +632,10 @@ class DefiniteAssignmentVisitor
         }
     }
 
-    FlowState AnalyzeCaseClause(TSNode child, const FlowState& parentState)
+    DefiniteAssignmentState AnalyzeCaseClause(TSNode child, const DefiniteAssignmentState& parentState)
     {
         TSNode kw = ts_node_child(child, 0);
-        FlowState caseState = parentState;
+        DefiniteAssignmentState caseState = parentState;
         const auto& gs = parser::GetGrammarSymbols();
         uint32_t stmtCount = ts_node_named_child_count(child);
         uint32_t first = (ts_node_symbol(kw) == gs.tokDefault) ? 0u : 1u;
@@ -650,7 +651,7 @@ class DefiniteAssignmentVisitor
         return caseState;
     }
 
-    void MergeSwitchCaseStates(const std::vector<FlowState>& caseStates, FlowState& state)
+    void MergeSwitchCaseStates(const std::vector<DefiniteAssignmentState>& caseStates, DefiniteAssignmentState& state)
     {
         if (caseStates.empty())
         {
@@ -684,7 +685,7 @@ class DefiniteAssignmentVisitor
         }
     }
 
-    void AnalyzeSwitchStatement(TSNode node, FlowState& state)
+    void AnalyzeSwitchStatement(TSNode node, DefiniteAssignmentState& state)
     {
         TSNode cond = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldCondition);
         if (ts_node_is_null(cond))
@@ -693,7 +694,7 @@ class DefiniteAssignmentVisitor
         }
         CheckExpressionReads(cond, state);
 
-        std::vector<FlowState> caseStates;
+        std::vector<DefiniteAssignmentState> caseStates;
         uint32_t count = ts_node_named_child_count(node);
 
         const auto& gs = parser::GetGrammarSymbols();
@@ -709,7 +710,7 @@ class DefiniteAssignmentVisitor
         MergeSwitchCaseStates(caseStates, state);
     }
 
-    bool AnalyzeLoopStatement(TSSymbol sym, TSNode node, FlowState& state)
+    bool AnalyzeLoopStatement(TSSymbol sym, TSNode node, DefiniteAssignmentState& state)
     {
         const auto& gs = parser::GetGrammarSymbols();
         if (sym == gs.symWhileStatement)
@@ -730,7 +731,7 @@ class DefiniteAssignmentVisitor
         return false;
     }
 
-    bool AnalyzeJumpStatement(TSSymbol sym, TSNode node, FlowState& state)
+    bool AnalyzeJumpStatement(TSSymbol sym, TSNode node, DefiniteAssignmentState& state)
     {
         const auto& gs = parser::GetGrammarSymbols();
         if (sym == gs.symReturnStatement)
@@ -756,7 +757,7 @@ class DefiniteAssignmentVisitor
         return false;
     }
 
-    void AnalyzeStatement(TSNode node, FlowState& state)
+    void AnalyzeStatement(TSNode node, DefiniteAssignmentState& state)
     {
         if (ts_node_is_null(node) || state.isTerminated || state.hasReturned)
         {

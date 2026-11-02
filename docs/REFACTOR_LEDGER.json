@@ -809,6 +809,206 @@
       "verifiedByTests": [
         "OverloadResolverTest"
       ]
+    },
+    {
+      "id": "REF-0049",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/AccessChecker.cpp",
+      "deletedLineRange": "40-52",
+      "originalSymbolOrCode": "struct MemberAccess",
+      "whatItDidAndWhyInThatFile": "Stored member lookup result for property and method access validation.",
+      "whyChangedOrDeleted": "Consolidated into canonical MemberLookupResult in analysis/SemanticHelpers.h.",
+      "replacedByCanonicalFile": "server/src/analysis/SemanticHelpers.h",
+      "replacedByCanonicalSymbol": "MemberLookupResult",
+      "ramOrCpuImpact": "Eliminated duplicate member lookup struct across AccessChecker and ConstChecker.",
+      "verifiedByTests": [
+        "AccessCheckerTest",
+        "ConstCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0050",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/ConstChecker.cpp",
+      "deletedLineRange": "45-58",
+      "originalSymbolOrCode": "struct ConstContext",
+      "whatItDidAndWhyInThatFile": "Bundled Scope and DiagnosticContext for const checking.",
+      "whyChangedOrDeleted": "Replaced with canonical ExpressionTypeContext in analysis/SemanticHelpers.h.",
+      "replacedByCanonicalFile": "server/src/analysis/SemanticHelpers.h",
+      "replacedByCanonicalSymbol": "ExpressionTypeContext",
+      "ramOrCpuImpact": "Zero duplicate analysis context wrappers.",
+      "verifiedByTests": [
+        "ConstCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0051",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/RepeatedConversionChecker.cpp",
+      "deletedLineRange": "45-58",
+      "originalSymbolOrCode": "struct ConversionTypePair",
+      "whatItDidAndWhyInThatFile": "Paired source and destination type names for conversion tracking.",
+      "whyChangedOrDeleted": "Consolidated canonical ConversionTypePair into analysis/SemanticHelpers.h.",
+      "replacedByCanonicalFile": "server/src/analysis/SemanticHelpers.h",
+      "replacedByCanonicalSymbol": "ConversionTypePair",
+      "ramOrCpuImpact": "Eliminated duplicate type pair struct across TypeConversionChecker and RepeatedConversionChecker.",
+      "verifiedByTests": [
+        "TypeConversionTest",
+        "RepeatedConversionCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0052",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/code_action/CodeActionIncludes.cpp",
+      "deletedLineRange": "28-40",
+      "originalSymbolOrCode": "struct IncludeCandidate",
+      "whatItDidAndWhyInThatFile": "Stored spelling and edit distance for include fix candidates.",
+      "whyChangedOrDeleted": "Consolidated into canonical TypoCandidate in features/code_action/CodeActionInternal.h.",
+      "replacedByCanonicalFile": "server/src/features/code_action/CodeActionInternal.h",
+      "replacedByCanonicalSymbol": "TypoCandidate",
+      "ramOrCpuImpact": "Eliminated duplicate typo/include candidate struct in CodeActionIncludes and CodeActionTypos.",
+      "verifiedByTests": [
+        "CodeActionTest"
+      ]
+    },
+    {
+      "id": "REF-0053",
+      "phase": "R4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/code_action/CodeActionRepeatedConversion.cpp",
+      "deletedLineRange": "14-26",
+      "originalSymbolOrCode": "struct ExtractedDiagInfo",
+      "whatItDidAndWhyInThatFile": "Held extracted diagnostic message tokens for repeated conversion code actions.",
+      "whyChangedOrDeleted": "Elevated to canonical ExtractedDiagInfo in features/code_action/CodeActionInternal.h.",
+      "replacedByCanonicalFile": "server/src/features/code_action/CodeActionInternal.h",
+      "replacedByCanonicalSymbol": "ExtractedDiagInfo",
+      "ramOrCpuImpact": "Eliminated local struct redeclaration in code action feature unit.",
+      "verifiedByTests": [
+        "CodeActionTest"
+      ]
+    },
+    {
+      "id": "REF-0054",
+      "phase": "R4",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/AccessChecker.cpp",
+      "deletedLineRange": "515-528",
+      "originalSymbolOrCode": "IsDeclarationNodeType, IsDeclarationNode",
+      "whatItDidAndWhyInThatFile": "Tested if grammar symbol represents a declaration AST node in AccessChecker.",
+      "whyChangedOrDeleted": "Unified with canonical parser::IsDeclarationSymbol in parser/ASTUtils.h.",
+      "replacedByCanonicalFile": "server/src/parser/ASTUtils.h",
+      "replacedByCanonicalSymbol": "IsDeclarationSymbol",
+      "ramOrCpuImpact": "Single canonical declaration symbol classifier across AccessChecker and DefinitionHandler.",
+      "verifiedByTests": [
+        "AccessCheckerTest",
+        "DefinitionTest"
+      ]
+    },
+    {
+      "id": "REF-0055",
+      "phase": "R4",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/inlay_hint/InlayHintHandler.cpp",
+      "deletedLineRange": "1025-1035",
+      "originalSymbolOrCode": "static bool IsBooleanBinaryOperator(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept",
+      "whatItDidAndWhyInThatFile": "Classified boolean comparison and logical operators in InlayHintHandler.",
+      "whyChangedOrDeleted": "Replaced with canonical analysis::IsBooleanBinaryOpSym in analysis/SemanticHelpers.h.",
+      "replacedByCanonicalFile": "server/src/analysis/SemanticHelpers.h",
+      "replacedByCanonicalSymbol": "IsBooleanBinaryOpSym",
+      "ramOrCpuImpact": "Eliminated duplicated 14-operator symbol comparison switch.",
+      "verifiedByTests": [
+        "InlayHintTest",
+        "SemanticHelpersTest"
+      ]
+    },
+    {
+      "id": "REF-0056",
+      "phase": "R4",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/workspace_symbol/WorkspaceSymbolHandler.cpp",
+      "deletedLineRange": "28-60",
+      "originalSymbolOrCode": "ToSymbolKind, MapSymbolTypeToKind",
+      "whatItDidAndWhyInThatFile": "Mapped internal analysis SymbolType enum to LSP SymbolKind in WorkspaceSymbolHandler.",
+      "whyChangedOrDeleted": "Consolidated into canonical common::ToLspSymbolKind in features/common/FeatureSharedUtils.h.",
+      "replacedByCanonicalFile": "server/src/features/common/FeatureSharedUtils.h",
+      "replacedByCanonicalSymbol": "ToLspSymbolKind",
+      "ramOrCpuImpact": "Unified symbol kind conversion logic across DocumentSymbol and WorkspaceSymbol handlers.",
+      "verifiedByTests": [
+        "WorkspaceSymbolTest",
+        "DocumentSymbolTest"
+      ]
+    },
+    {
+      "id": "REF-0057",
+      "phase": "R4",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/TargetResolution.cpp",
+      "deletedLineRange": "1588-1595",
+      "originalSymbolOrCode": "MatchesCallArguments range check",
+      "whatItDidAndWhyInThatFile": "Checked whether call argument count fell within min/max target parameter limits.",
+      "whyChangedOrDeleted": "Consolidated into constexpr analysis::MatchesArgumentCount in analysis/SemanticHelpers.h.",
+      "replacedByCanonicalFile": "server/src/analysis/SemanticHelpers.h",
+      "replacedByCanonicalSymbol": "MatchesArgumentCount",
+      "ramOrCpuImpact": "Unified argument count bound verification between TargetResolution and CodeLensHandler.",
+      "verifiedByTests": [
+        "TargetResolutionTest",
+        "CodeLensTest"
+      ]
+    },
+    {
+      "id": "REF-0058",
+      "phase": "R4",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/DocComment.cpp",
+      "deletedLineRange": "45-57",
+      "originalSymbolOrCode": "static std::string_view Trim(std::string_view str)",
+      "whatItDidAndWhyInThatFile": "Trimmed whitespace from documentation comment lines.",
+      "whyChangedOrDeleted": "Consolidated into canonical utils::TrimView in utils/Utils.h.",
+      "replacedByCanonicalFile": "server/src/utils/Utils.h",
+      "replacedByCanonicalSymbol": "TrimView",
+      "ramOrCpuImpact": "Eliminated duplicate manual whitespace trim loops across analysis and feature units.",
+      "verifiedByTests": [
+        "DocCommentTest",
+        "DoxygenMarkdownTest"
+      ]
+    },
+    {
+      "id": "REF-0059",
+      "phase": "R4",
+      "action": "DELETE_REDUNDANT_FLAG_CHECK",
+      "sourceFile": "server/src/analysis/rules/UnusedSymbolChecker.cpp",
+      "deletedLineRange": "400-410",
+      "originalSymbolOrCode": "if (sv.starts_with(\"const\")) / if (sv.ends_with(\"&inout\")) manual string parsing",
+      "whatItDidAndWhyInThatFile": "Manually reparsed const and reference qualifiers from parameter type string.",
+      "whyChangedOrDeleted": "Replaced with canonical analysis::StripLeadingConst and analysis::StripTrailingDecorationsView in TypeSanitization.h.",
+      "replacedByCanonicalFile": "server/src/analysis/TypeSanitization.h",
+      "replacedByCanonicalSymbol": "StripTrailingDecorationsView",
+      "ramOrCpuImpact": "Zero heap allocations; direct string_view qualification stripping.",
+      "verifiedByTests": [
+        "UnusedSymbolCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-0060",
+      "phase": "R4",
+      "action": "DELETE_REDUNDANT_FLAG_CHECK",
+      "sourceFile": "server/src/analysis/CallChecker.cpp",
+      "deletedLineRange": "855-865",
+      "originalSymbolOrCode": "isConst = (parser::NodeText(child, sourceCode).find(\"const\") != std::string::npos);",
+      "whatItDidAndWhyInThatFile": "Checked const qualification of enclosing method by searching source substring.",
+      "whyChangedOrDeleted": "Replaced with direct AST symbol check parser::FindChildWithSymbol(child, gs.tokConst).",
+      "replacedByCanonicalFile": "server/src/parser/ASTUtils.h",
+      "replacedByCanonicalSymbol": "FindChildWithSymbol",
+      "ramOrCpuImpact": "Eliminated source code string allocations on call method qualification checks.",
+      "verifiedByTests": [
+        "CallCheckerTest",
+        "ConstCheckerTest"
+      ]
     }
   ]
 }

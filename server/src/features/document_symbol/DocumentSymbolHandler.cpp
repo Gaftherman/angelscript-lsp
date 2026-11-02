@@ -585,34 +585,6 @@ static std::vector<lsp::DocumentSymbol> ProcessChildren(TSNode containerNode, co
     return symbols;
 }
 
-/**
- * @brief Maps internal symbol type to the corresponding LSP SymbolKind.
- * @param[in] type Internal analysis SymbolType enumeration value.
- * @return Corresponding LSP SymbolKind enum value.
- */
-static inline lsp::SymbolKind MapSymbolTypeToKind(analysis::SymbolType type) noexcept
-{
-    switch (type)
-    {
-    case analysis::SymbolType::Class:
-        return lsp::SymbolKind::Class;
-    case analysis::SymbolType::Interface:
-        return lsp::SymbolKind::Interface;
-    case analysis::SymbolType::Enum:
-        return lsp::SymbolKind::Enum;
-    case analysis::SymbolType::Namespace:
-        return lsp::SymbolKind::Namespace;
-    case analysis::SymbolType::Funcdef:
-    case analysis::SymbolType::Typedef:
-    case analysis::SymbolType::Function:
-        return lsp::SymbolKind::Function;
-    case analysis::SymbolType::Property:
-        return lsp::SymbolKind::Property;
-    default:
-        return lsp::SymbolKind::Variable;
-    }
-}
-
 std::optional<DocumentSymbolResult> GetDocumentSymbols(const DocumentSymbolRequest& request)
 {
     if (request.sourceCode.empty())
@@ -658,7 +630,7 @@ std::optional<DocumentSymbolResult> GetDocumentSymbols(const DocumentSymbolReque
                     {
                         lsp::DocumentSymbol ds;
                         ds.name = sym.name;
-                        ds.kind = MapSymbolTypeToKind(sym.type);
+                        ds.kind = common::ToLspSymbolKind(sym.type, !sym.containerName.empty());
                         ds.range.start.line = sym.startLine;
                         ds.range.start.character = sym.startCharacter;
                         ds.range.end.line = sym.endLine;

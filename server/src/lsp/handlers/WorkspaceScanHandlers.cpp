@@ -58,9 +58,31 @@ class PhaseTimer
     std::string m_phase;
     std::chrono::steady_clock::time_point m_start;
 };
+
+/**
+ * @brief Ensures workspace scan completion flags and open document reanalysis are triggered on exit.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
+struct ReanalyseOnExit
+{
+    Server* server;
+    const angel_lsp::utils::StopFlag& stopToken;
+    ~ReanalyseOnExit();
+};
+
+inline ReanalyseOnExit::~ReanalyseOnExit()
+{
+    server->SetPredefinedReady(true);
+    server->SetWorkspaceScanComplete(true);
+    if (!stopToken.stop_requested())
+    {
+        server->ScheduleOpenDocumentsForReanalysis();
+    }
+}
 } // namespace workspace_scan_handlers_detail
 
 using PhaseTimer = workspace_scan_handlers_detail::PhaseTimer;
+using ReanalyseOnExit = workspace_scan_handlers_detail::ReanalyseOnExit;
 
 /**
  * @brief Constructs a TextEdit for replacing an include directive's path substring.
@@ -355,26 +377,8 @@ void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
         BeginWorkspaceProgress("AngelScript: indexing workspace");
         ReportWorkspaceProgress("Building the include graph", 0);
 
-        /**
-         * @brief Represents Reanalyse on exit.
-         * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
-         */
         const PhaseTimer scanTimer(m_logger.get(), "workspace scan (total)");
-
-        struct ReanalyseOnExit
-        {
-            Server* server;
-            const angel_lsp::utils::StopFlag& stopToken;
-            ~ReanalyseOnExit()
-            {
-                server->SetPredefinedReady(true);
-                server->m_workspaceScanComplete.store(true);
-                if (!stopToken.stop_requested())
-                {
-                    server->ScheduleOpenDocumentsForReanalysis();
-                }
-            }
-        } reanalyseOnExit{this, stopToken};
+        ReanalyseOnExit reanalyseOnExit{this, stopToken};
 
         LoadWorkspaceEngineRules(roots);
 

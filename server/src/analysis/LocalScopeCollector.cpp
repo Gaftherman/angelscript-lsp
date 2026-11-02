@@ -235,15 +235,11 @@ static bool HasDisqualifyingMethodQualifiers(TSNode funcNode, TSNode paramsNode,
     }
     if (!ts_node_is_null(paramsNode))
     {
-        uint32_t pEnd = ts_node_end_byte(paramsNode);
-        uint32_t fEnd = ts_node_end_byte(funcNode);
-        if (pEnd < fEnd && fEnd <= sourceCode.size())
+        const auto& gs = parser::GetGrammarSymbols();
+        if (!ts_node_is_null(parser::FindChildWithSymbol(funcNode, gs.symFuncAttributes)) ||
+            !ts_node_is_null(parser::FindChildWithSymbol(funcNode, gs.tokConst)))
         {
-            std::string_view afterParams = sourceCode.substr(pEnd, fEnd - pEnd);
-            if (afterParams.find("const") != std::string_view::npos)
-            {
-                return true;
-            }
+            return true;
         }
     }
     return false;

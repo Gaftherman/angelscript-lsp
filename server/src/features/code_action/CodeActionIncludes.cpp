@@ -25,20 +25,7 @@ static ankerl::unordered_dense::set<std::string> CollectIndexedFileUris(const an
     return indexedUris;
 }
 
-namespace code_action_includes_detail
-{
-/**
- * @brief Represents Include candidate.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct IncludeCandidate
-{
-    std::string spelling;
-    size_t distance = 0;
-};
-} // namespace code_action_includes_detail
-
-using IncludeCandidate = code_action_includes_detail::IncludeCandidate;
+using IncludeCandidate = TypoCandidate;
 
 /**
  * @brief Searches indexed document URIs for filenames similar to the unresolved include.
@@ -107,7 +94,7 @@ static std::vector<IncludeCandidate> RankIncludeCandidates(const std::string& in
                   {
                       return a.distance < b.distance;
                   }
-                  return a.spelling < b.spelling;
+                  return a.name < b.name;
               });
     return ranked;
 }
@@ -159,7 +146,7 @@ static void EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vect
     {
         lsp::CodeAction action;
         action.title = i18n::FormatMessage(ctx.request.i18n, "action-did-you-mean", "Did you mean '{}'?",
-                                           std::string_view(ranked[i].spelling));
+                                           std::string_view(ranked[i].name));
         action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
         action.diagnostics = std::vector<lsp::Diagnostic>{ctx.diag};
         if (i == 0 && hasClearWinner)
@@ -172,7 +159,7 @@ static void EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vect
         edit.range.start.character = static_cast<uint32_t>(openPos + 1);
         edit.range.end.line = static_cast<uint32_t>(ctx.directive.line);
         edit.range.end.character = static_cast<uint32_t>(closePos);
-        edit.newText = ranked[i].spelling;
+        edit.newText = ranked[i].name;
 
         lsp::WorkspaceEdit wsEdit;
         lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;

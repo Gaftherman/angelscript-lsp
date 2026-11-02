@@ -680,7 +680,90 @@ def check_no_doxygen_slop():
                 violations.append((file_path, idx, stripped, "Orphaned refactoring note fragment"))
             elif slop_overlap_re.search(stripped) and not cleaned_tag.startswith("@note"):
                 violations.append((file_path, idx, stripped, "Orphaned structural overlap note"))
-    return violations
+def check_cpp_structs_odr_safety():
+    """
+    Enforces ODR safety for all struct and class definitions in .cpp files:
+    1. Zero struct/class name collisions across different .cpp files.
+    2. Zero struct/class name collisions with header (.h) definitions.
+    3. Every struct/class declared in a .cpp file must be either:
+       - enclosed within a *_detail namespace, or
+       - a member of an outer class/struct.
+    """
+    import tree_sitter
+    import tree_sitter_cpp
+
+    cpp_lang = tree_sitter.Language(tree_sitter_cpp.language())
+    parser = tree_sitter.Parser(cpp_lang)
+
+    headers = list(SERVER_SRC.rglob("*.h"))
+    h_struct_names = set()
+    for h in headers:
+        try:
+            tree = parser.parse(h.read_bytes())
+        except Exception:
+            continue
+        stack = [tree.root_node]
+        while stack:
+            n = stack.pop()
+            if n.type in ("struct_specifier", "class_specifier"):
+                body = n.child_by_field_name("body")
+                name_node = n.child_by_field_name("name")
+                if body and name_node:
+                    h_struct_names.add(name_node.text.decode("utf-8"))
+            for c in n.children:
+                stack.append(c)
+
+    cpp_files = sorted(SERVER_SRC.rglob("*.cpp"))
+    cpp_structs = {}
+    scope_violations = []
+
+    for fpath in cpp_files:
+        try:
+            tree = parser.parse(fpath.read_bytes())
+        except Exception:
+            continue
+        stack = [tree.root_node]
+        while stack:
+            n = stack.pop()
+            if n.type in ("struct_specifier", "class_specifier"):
+                body = n.child_by_field_name("body")
+                name_node = n.child_by_field_name("name")
+                if body and name_node:
+                    s_name = name_node.text.decode("utf-8")
+                    cpp_structs.setdefault(s_name, []).append((fpath, n.start_point[0] + 1))
+
+                    curr = n.parent
+                    in_detail = False
+                    in_class = False
+                    while curr:
+                        if curr.type == "namespace_definition":
+                            ns_name = curr.child_by_field_name("name")
+                            if ns_name and ns_name.text.decode("utf-8").endswith("_detail"):
+                                in_detail = True
+                                break
+                        elif curr.type in ("class_specifier", "struct_specifier"):
+                            in_class = True
+                            break
+                        curr = curr.parent
+                    if "::" in s_name:
+                        in_class = True
+                    if not (in_detail or in_class):
+                        scope_violations.append((fpath, n.start_point[0] + 1, s_name))
+            for c in n.children:
+                stack.append(c)
+
+    cross_collisions = [
+        (name, locs) for name, locs in cpp_structs.items() if len(locs) > 1
+    ]
+    header_collisions = [
+        (name, locs) for name, locs in cpp_structs.items() if name in h_struct_names
+    ]
+
+    return {
+        "scope_violations": scope_violations,
+        "cross_collisions": cross_collisions,
+        "header_collisions": header_collisions,
+    }
 
 
 def main():
@@ -902,10 +985,34 @@ def main():
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line} -> {reason}")
 
+    odr_safety = check_cpp_structs_odr_safety()
+    if odr_safety["scope_violations"] or odr_safety["cross_collisions"] or odr_safety["header_collisions"]:
+        has_errors = True
+        if odr_safety["cross_collisions"]:
+            print("[ERROR] Struct/class name collision between different .cpp files (ODR violation risk):")
+            for name, locs in odr_safety["cross_collisions"]:
+                print(f"  Struct '{name}' duplicated in:")
+                for f, line_num in locs:
+                    rel = f.relative_to(REPO_ROOT)
+                    print(f"    {rel}:{line_num}")
+        if odr_safety["header_collisions"]:
+            print("[ERROR] Struct/class in .cpp collides with header .h declaration (ODR violation risk):")
+            for name, locs in odr_safety["header_collisions"]:
+                print(f"  Struct '{name}' also exists in a header, declared in:")
+                for f, line_num in locs:
+                    rel = f.relative_to(REPO_ROOT)
+                    print(f"    {rel}:{line_num}")
+        if odr_safety["scope_violations"]:
+            print("[ERROR] Struct/class in .cpp declared outside a *_detail namespace or outer class:")
+            for f, line_num, name in odr_safety["scope_violations"]:
+                rel = f.relative_to(REPO_ROOT)
+                print(f"  {rel}:{line_num}: struct/class '{name}'")
+
     if has_errors:
         sys.exit(1)
 
-    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 ForEachDescendantNode, 0 engine hardcodings, 0 type hardcodings, 0 banned identifiers, 0 unrandomized test BaseClass, 0 manual qualifier reparsing, 0 anonymous namespaces, 0 using directives, 0 doxygen slop templates).")
+    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 ForEachDescendantNode, 0 engine hardcodings, 0 type hardcodings, 0 banned identifiers, 0 unrandomized test BaseClass, 0 manual qualifier reparsing, 0 anonymous namespaces, 0 using directives, 0 doxygen slop templates, 0 ODR struct violations).")
 
 if __name__ == "__main__":
     main()
+

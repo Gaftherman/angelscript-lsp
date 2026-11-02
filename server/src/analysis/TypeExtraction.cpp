@@ -10,6 +10,8 @@ namespace angel_lsp::analysis
 {
 #define SYM_NAME(str) str, static_cast<uint32_t>(sizeof(str) - 1)
 
+namespace type_extraction_detail
+{
 /**
  * @brief Represents Type extraction symbols.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -77,6 +79,9 @@ struct TypeExtractionSymbols
         return TypeKind::Unknown;
     }
 };
+} // namespace type_extraction_detail
+
+using TypeExtractionSymbols = type_extraction_detail::TypeExtractionSymbols;
 
 static const TypeExtractionSymbols& GetTypeExtractionSymbols()
 {

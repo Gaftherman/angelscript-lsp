@@ -10,6 +10,7 @@
 #include "parser/Keywords.h"
 #include "utils/LspLogger.h"
 #include "utils/ScopedNameUtils.h"
+#include "utils/Utils.h"
 #include <algorithm>
 #include <cctype>
 #include <spdlog/fmt/fmt.h>
@@ -27,15 +28,18 @@ namespace angel_lsp::features
  */
 static std::string TrimNodeText(std::string text)
 {
-    while (!text.empty() && (text.front() == ' ' || text.front() == '\t' || text.front() == '('))
+    std::string_view sv = utils::TrimView(text);
+    while (!sv.empty() && (sv.front() == '(' || std::isspace(static_cast<unsigned char>(sv.front()))))
     {
-        text.erase(text.begin());
+        sv.remove_prefix(1);
+        sv = utils::TrimView(sv);
     }
-    while (!text.empty() && (text.back() == ' ' || text.back() == '\t' || text.back() == ')' || text.back() == ';'))
+    while (!sv.empty() && (sv.back() == ')' || sv.back() == ';' || std::isspace(static_cast<unsigned char>(sv.back()))))
     {
-        text.pop_back();
+        sv.remove_suffix(1);
+        sv = utils::TrimView(sv);
     }
-    return text;
+    return std::string(sv);
 }
 
 /**
@@ -1019,19 +1023,6 @@ static std::string DeduceIdentifierType(TSNode exprNode, const InlayHintRequest&
 }
 
 /**
- * @brief Checks if an operator produces a boolean result.
- * @param[in] sym Operator grammar symbol.
- * @param[in] gs Pre-resolved grammar symbols reference.
- * @return True if operator is comparison or logical.
- */
-static bool IsBooleanBinaryOperator(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
-{
-    return sym == gs.tokEqEq || sym == gs.tokBangEq || sym == gs.tokLt || sym == gs.tokLtEq || sym == gs.tokGt ||
-           sym == gs.tokGtEq || sym == gs.tokAmpAmp || sym == gs.tokAnd || sym == gs.tokPipePipe || sym == gs.tokOr ||
-           sym == gs.tokCaretCaret || sym == gs.tokXor || sym == gs.tokIs || sym == gs.tokBangIs;
-}
-
-/**
  * @brief Selects the wider numeric/string type from binary operand types.
  * @param[in] leftT Left operand type string.
  * @param[in] rightT Right operand type string.
@@ -1084,7 +1075,7 @@ static std::string DeduceBinaryExpressionType(TSNode exprNode, const InlayHintRe
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode opNode = parser::GetChildByField(exprNode, gs.fieldOperator);
-    if (!ts_node_is_null(opNode) && IsBooleanBinaryOperator(ts_node_symbol(opNode), gs))
+    if (!ts_node_is_null(opNode) && analysis::IsBooleanBinaryOpSym(ts_node_symbol(opNode), gs))
     {
         return "bool";
     }

@@ -955,6 +955,21 @@ inline void SkipLiteral(std::string_view sourceCode, size_t& i, int& currentLine
     return count;
 }
 
+/**
+ * @brief Checks if a tree-sitter node symbol corresponds to an entity declaration.
+ * @param[in] sym Tree-sitter grammar symbol.
+ * @return True if symbol is a recognized declaration node.
+ */
+[[nodiscard]] inline bool IsDeclarationSymbol(TSSymbol sym) noexcept
+{
+    const auto& gs = GetGrammarSymbols();
+    return sym == gs.symFuncDeclaration || sym == gs.symVariableDeclarator || sym == gs.symParameter ||
+           sym == gs.symClassDeclaration || sym == gs.symInterfaceDeclaration || sym == gs.symInterfaceMethod ||
+           sym == gs.symEnumDeclaration || sym == gs.symEnumMember || sym == gs.symFuncdefDeclaration ||
+           sym == gs.symTypedefDeclaration || sym == gs.symNamespaceDeclaration || sym == gs.symForeachVariable ||
+           sym == gs.symVirtualProperty || sym == gs.symImportDeclaration || sym == gs.symMixinDeclaration;
+}
+
 } // namespace angel_lsp::parser
 
 namespace angel_lsp::analysis

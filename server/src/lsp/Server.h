@@ -916,6 +916,15 @@ class Server
     void SetPredefinedReady(bool ready);
 
     /**
+     * @brief Sets whether the initial workspace scan has completed.
+     * @param[in] complete True if workspace scan is complete.
+     */
+    void SetWorkspaceScanComplete(bool complete) noexcept
+    {
+        m_workspaceScanComplete.store(complete);
+    }
+
+    /**
      * @brief Waits up to timeout for predefined stubs to finish loading.
      * @param[in] timeout Maximum duration to wait.
      * @return True if predefined stubs are ready, false if timed out.

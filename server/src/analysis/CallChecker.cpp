@@ -835,20 +835,16 @@ static void FilterMethodCandidatesConstness(std::vector<Symbol>& candidates, boo
  * @brief Checks if a node is enclosed within a const method declaration.
  *
  * @param[in] node AST node.
- * @param[in] sourceCode Document source text.
  * @return True if enclosed within a const method.
- * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
- * Symbol::modifiers.isConst / ParameterInformation::isConst. Manually re-evaluates AST for isConst; candidate for
- * direct Pass 1 flag read via TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
-static bool IsEnclosingMethodConst(TSNode node, std::string_view sourceCode)
+static bool IsEnclosingMethodConst(TSNode node)
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSNode curr = parser::FindAncestorWithSymbol(node, gs.symFuncDeclaration);
     if (!ts_node_is_null(curr))
     {
         TSTreeCursor cursor = ts_tree_cursor_new(curr);
-        bool isConst = false;
+        bool isConstMethod = false;
         if (ts_tree_cursor_goto_first_child(&cursor))
         {
             do
@@ -856,13 +852,13 @@ static bool IsEnclosingMethodConst(TSNode node, std::string_view sourceCode)
                 TSNode child = ts_tree_cursor_current_node(&cursor);
                 if (ts_node_symbol(child) == gs.symFuncAttributes)
                 {
-                    isConst = (parser::NodeText(child, sourceCode).find("const") != std::string::npos);
+                    isConstMethod = !ts_node_is_null(parser::FindChildWithSymbol(child, gs.tokConst));
                     break;
                 }
             } while (ts_tree_cursor_goto_next_sibling(&cursor));
         }
         ts_tree_cursor_delete(&cursor);
-        return isConst;
+        return isConstMethod;
     }
     return false;
 }
@@ -1261,7 +1257,7 @@ static bool ResolveEnclosingClassCallee(std::string_view written, const CallVali
     {
         res.candidatesAreFreeFunctions = false;
         res.isUnqualifiedClassCall = true;
-        res.isReceiverConst = IsEnclosingMethodConst(valCtx.callNode, valCtx.request.sourceCode);
+        res.isReceiverConst = IsEnclosingMethodConst(valCtx.callNode);
         FilterMethodCandidatesConstness(res.candidates, res.isReceiverConst);
         ApplyTemplateSubstitutions(res.candidates, enclosingClass, {}, valCtx.ctx.request.symbolTable);
         return true;

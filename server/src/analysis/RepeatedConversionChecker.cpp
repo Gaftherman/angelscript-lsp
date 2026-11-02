@@ -1,4 +1,5 @@
-﻿#include "analysis/RepeatedConversionChecker.h"
+#include "analysis/RepeatedConversionChecker.h"
+#include "analysis/BinaryOperatorHelpers.h"
 #include "analysis/ComparisonOperatorChecker.h"
 #include "analysis/DiagnosticCodes.h"
 #include "analysis/SemanticHelpers.h"
@@ -42,21 +43,6 @@ static bool IsExtractableCandidate(TSNode node)
            sym == gs.symIndexExpression || sym == gs.symScopedIdentifier;
 }
 
-namespace repeated_conversion_checker_detail
-{
-/**
- * @brief Represents Conversion type pair.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ConversionTypePair
-{
-    std::string fromType;
-    std::string toType;
-};
-} // namespace repeated_conversion_checker_detail
-
-using ConversionTypePair = repeated_conversion_checker_detail::ConversionTypePair;
-
 static void TryRecordOccurrence(TSNode operand, const ConversionTypePair& types, const DiagnosticContext& ctx,
                                 std::vector<ConversionOccurrence>& out)
 {
@@ -64,9 +50,9 @@ static void TryRecordOccurrence(TSNode operand, const ConversionTypePair& types,
     {
         return;
     }
-    if (TypeHasOpImplConvTo(types.fromType, types.toType, ctx.request.symbolTable))
+    if (TypeHasOpImplConvTo(types.from, types.to, ctx.request.symbolTable))
     {
-        out.push_back({operand, parser::GetNodeText(operand, ctx.request.sourceCode), types.fromType, types.toType});
+        out.push_back({operand, parser::GetNodeText(operand, ctx.request.sourceCode), types.from, types.to});
     }
 }
 

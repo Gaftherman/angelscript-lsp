@@ -1,5 +1,6 @@
 #include "features/formatting/ClangFormatReader.h"
 #include "features/formatting/ClangFormatPresets.h"
+#include "utils/Utils.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -11,13 +12,9 @@ namespace angel_lsp::features
  * @param[in] s Source string view to trim.
  * @return Trimmed substring view without leading or trailing whitespace.
  */
-static std::string_view Trim(std::string_view s)
+static inline std::string_view Trim(std::string_view s) noexcept
 {
-    while (!s.empty() && (s.front() == ' ' || s.front() == '\t' || s.front() == '\r' || s.front() == '\n'))
-        s.remove_prefix(1);
-    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '\r' || s.back() == '\n'))
-        s.remove_suffix(1);
-    return s;
+    return utils::TrimView(s);
 }
 
 static void ApplyBraceWrappingSubKey(std::string_view key, std::string_view val, BraceWrappingOptions& wrap)

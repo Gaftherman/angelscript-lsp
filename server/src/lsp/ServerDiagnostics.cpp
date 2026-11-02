@@ -64,6 +64,21 @@ static std::string FormatPrefixedDiagnosticMessage(angel_lsp::analysis::Diagnost
  * @param[in] code Canonical or alias diagnostic code.
  * @return Settings deep-link URI string or empty string when no code is present.
  */
+namespace server_diagnostics_detail
+{
+/**
+ * @brief Represents Code setting pair.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
+struct CodeSettingPair
+{
+    std::string_view code;
+    std::string_view uri;
+};
+} // namespace server_diagnostics_detail
+
+using CodeSettingPair = server_diagnostics_detail::CodeSettingPair;
+
 static std::string_view GetDiagnosticSettingsUri(std::string_view code)
 {
     if (code.empty())
@@ -71,15 +86,6 @@ static std::string_view GetDiagnosticSettingsUri(std::string_view code)
         return {};
     }
     namespace codes = angel_lsp::diagnostics::codes;
-    /**
-     * @brief Represents Code setting pair.
-     * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
-     */
-    struct CodeSettingPair
-    {
-        std::string_view code;
-        std::string_view uri;
-    };
     static constexpr CodeSettingPair kCodeUris[] = {
         {codes::AccessorPortability, "vscode://settings/angelscript.diagnostics.reportAccessorPortability"},
         {"H402", "vscode://settings/angelscript.diagnostics.reportAccessorPortability"},

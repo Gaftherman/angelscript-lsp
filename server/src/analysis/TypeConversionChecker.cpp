@@ -62,20 +62,7 @@ struct TypeDeclarationInfo
 
 using TypeDeclarationInfo = type_conversion_checker_detail::TypeDeclarationInfo;
 
-namespace type_conversion_checker_detail
-{
-/**
- * @brief Represents Conversion types.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ConversionTypes
-{
-    std::string from{};
-    std::string to{};
-};
-} // namespace type_conversion_checker_detail
-
-using ConversionTypes = type_conversion_checker_detail::ConversionTypes;
+using ConversionTypes = ConversionTypePair;
 
 /** @brief Visits every symbol registered under a qualified name without copying the bucket.
  *  @param visitor Returns true to stop the walk. */
@@ -3981,15 +3968,8 @@ static bool IsFunctionReturnRef(TSNode funcNode, TSNode retTypeNode, std::string
     {
         return true;
     }
-    const TSNode nameNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldName);
-    const uint32_t headEnd = ts_node_is_null(nameNode) ? ts_node_end_byte(retTypeNode) : ts_node_start_byte(nameNode);
-    const uint32_t headStart = ts_node_start_byte(funcNode);
-    if (headEnd > headStart && headEnd <= sourceCode.size())
-    {
-        const std::string_view headText = sourceCode.substr(headStart, headEnd - headStart);
-        return headText.find('&') != std::string_view::npos;
-    }
-    return false;
+    const auto& gs = parser::GetGrammarSymbols();
+    return !ts_node_is_null(parser::FindChildWithSymbol(funcNode, gs.tokAmp));
 }
 
 /**

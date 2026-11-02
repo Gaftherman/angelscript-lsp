@@ -282,30 +282,35 @@ bool Server::PathIsInside(const std::string& normalizedPath, const std::string& 
                                 normalizedDirectory);
 }
 
+namespace server_modules_detail
+{
+/**
+ * @brief Represents Module Candidate.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
+struct ModuleCandidate
+{
+    const Server::ModuleView* view = nullptr;
+    int rank = 0;
+    size_t depth = 0;
+};
+} // namespace server_modules_detail
+
+using ModuleCandidate = server_modules_detail::ModuleCandidate;
+
 Server::ModuleClaim Server::ClaimFor(const std::string& normalizedPath) const
 {
-    /**
-     * @brief Represents Candidate.
-     * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
-     */
-    struct Candidate
-    {
-        const ModuleView* view;
-        int rank;
-        size_t depth;
-    };
-
-    std::vector<Candidate> candidates;
+    std::vector<ModuleCandidate> candidates;
 
     for (const auto& view : m_modules)
     {
         if (view.closurePaths.contains(normalizedPath))
         {
-            candidates.push_back(Candidate{&view, 2, 0});
+            candidates.push_back(ModuleCandidate{&view, 2, 0});
         }
         else if (PathIsInside(normalizedPath, view.folderPath))
         {
-            candidates.push_back(Candidate{&view, 1, view.folderPath.size()});
+            candidates.push_back(ModuleCandidate{&view, 1, view.folderPath.size()});
         }
     }
 
@@ -316,7 +321,7 @@ Server::ModuleClaim Server::ClaimFor(const std::string& normalizedPath) const
     }
 
     const auto best = std::max_element(candidates.begin(), candidates.end(),
-                                       [](const Candidate& a, const Candidate& b)
+                                       [](const ModuleCandidate& a, const ModuleCandidate& b)
                                        {
                                            if (a.rank != b.rank)
                                                return a.rank < b.rank;

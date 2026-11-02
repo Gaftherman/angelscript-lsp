@@ -1,4 +1,5 @@
 #include "features/workspace_symbol/WorkspaceSymbolHandler.h"
+#include "features/common/FeatureSharedUtils.h"
 
 #include <algorithm>
 #include <cctype>
@@ -23,39 +24,6 @@ static inline std::string ToLower(std::string_view str)
         result.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
     }
     return result;
-}
-
-/**
- * @brief Maps AngelScript SymbolType to corresponding LSP SymbolKind.
- * @param type Internal SymbolType enum.
- * @param containerName Enclosing container name.
- * @return Equivalent LSP SymbolKind.
- */
-static inline lsp::SymbolKind ToSymbolKind(analysis::SymbolType type, const std::string& containerName)
-{
-    switch (type)
-    {
-    case analysis::SymbolType::Class:
-        return lsp::SymbolKind::Class;
-    case analysis::SymbolType::Interface:
-        return lsp::SymbolKind::Interface;
-    case analysis::SymbolType::Enum:
-        return lsp::SymbolKind::Enum;
-    case analysis::SymbolType::Namespace:
-        return lsp::SymbolKind::Namespace;
-    case analysis::SymbolType::Funcdef:
-        return lsp::SymbolKind::Function;
-    case analysis::SymbolType::Typedef:
-        return lsp::SymbolKind::Class;
-    case analysis::SymbolType::Property:
-        return lsp::SymbolKind::Property;
-    case analysis::SymbolType::Function:
-        return containerName.empty() ? lsp::SymbolKind::Function : lsp::SymbolKind::Method;
-    case analysis::SymbolType::Variable:
-        return containerName.empty() ? lsp::SymbolKind::Variable : lsp::SymbolKind::Field;
-    default:
-        return lsp::SymbolKind::Variable;
-    }
 }
 
 namespace workspace_symbol_handler_detail
@@ -179,7 +147,7 @@ std::optional<WorkspaceSymbolResult> GetWorkspaceSymbols(const WorkspaceSymbolRe
 
                     lsp::SymbolInformation info;
                     info.name = sym.name;
-                    info.kind = ToSymbolKind(sym.type, sym.containerName);
+                    info.kind = common::ToLspSymbolKind(sym.type, !sym.containerName.empty());
 
                     if (!sym.containerName.empty())
                     {

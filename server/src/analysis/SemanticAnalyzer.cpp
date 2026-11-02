@@ -270,6 +270,8 @@ static void FilterSuppressedDiagnostics(std::vector<Diagnostic>& diagnostics, co
     }
 }
 
+namespace semantic_analyzer_detail
+{
 /**
  * @brief Represents Analysis context guards.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -305,6 +307,9 @@ struct AnalysisContextGuards
         req.nodeIndex = prevIndex;
     }
 };
+} // namespace semantic_analyzer_detail
+
+using AnalysisContextGuards = semantic_analyzer_detail::AnalysisContextGuards;
 
 std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest& request) const
 {

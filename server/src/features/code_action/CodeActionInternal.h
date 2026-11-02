@@ -94,6 +94,25 @@ void CollectAllReferences(const analysis::Scope* rootScope, ankerl::unordered_de
 TSPoint FindClassClosingBracePoint(TSNode classBody);
 
 /**
+ * @brief Candidate name with an associated edit distance for typo and include suggestions.
+ */
+struct TypoCandidate
+{
+    std::string name;
+    size_t distance = 0;
+};
+
+/**
+ * @brief Extracted diagnostic parameters for repeated conversion warnings.
+ */
+struct ExtractedDiagInfo
+{
+    std::string exprText;
+    std::string fromType;
+    std::string toType;
+};
+
+/**
  * @brief Options bundle for creating a diagnostic disabling quick-fix action.
  */
 struct DisableDiagnosticActionOptions

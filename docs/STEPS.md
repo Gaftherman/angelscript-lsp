@@ -2382,3 +2382,47 @@ Settings declared in package.json but not passed to the server:
 - **Client Integration Tests**: 74 / 74 passed (`vscode-test`).
 - **Static Quality Gates**: 12/12 gates passed with 0 warnings (`check-quality.py`).
 - **Release Synchronization**: Tag `v1.1.7` merged to `main`, pushed to `origin/main`, with 100% compare links backfilled.
+
+---
+
+## 51. Phase 51: Architecture Deduplication, Memory Compaction (RAM Bitfields & NodeIndex Interval Trees), ODR Struct Safety & Cluster Unification
+
+### 51.1. Forensic Diagnosis & Executed Actions
+1. **Semantic Symbol & Scope Memory Compaction (`SymbolTable.h`, `ScopeTree.h`)**:
+   - `SymbolModifiers`: Compacted 13 boolean flags, access/storage enums, and placement tracking from 24 bytes down to 4 bytes using C++20 bitfields (`uint8_t` backing) (-83.3% memory reduction, saving ~2.0 MB per 100k instances).
+   - `ParameterInformation`: Eliminated `rawText` in favor of on-demand formatting and compacted 9 booleans into bitfields, reducing size from 248 bytes to 200 bytes (-19.4% memory reduction, saving ~4.8 MB per 100k instances).
+   - Core signatures compacted: `FunctionSignature` (264 -> 232 B, -12.1%), `VariableSignature` (216 -> 168 B, -22.2%), `FuncdefSignature` (176 -> 144 B, -18.2%), `ClassSignature` (104 -> 80 B, -23.1%), and `Symbol` (528 -> 488 B, -7.6%).
+   - `LocalDefinition` compacted from 208 bytes to 184 bytes (-11.5%, saving ~2.4 MB per 100k instances) and `Scope` compacted to 128 bytes.
+
+2. **AST Interval Trees & Spatial Acceleration (`NodeIndex.h`, `NodeIndex.cpp`)**:
+   - Replaced linear interval scanning with augmented Interval Trees (`IntervalNode`) and binary search (`std::upper_bound` on sorted `FlatInterval` vectors) for `FindSmallestEnclosingNode` and byte-range queries.
+   - Accelerated hover, definition, and inlay hint AST lookup from $O(N)$ to $O(\log N + K)$ with 0 allocations.
+
+3. **Zero-ODR Safety Gate for `.cpp` Structs (`check-ast-traversal.py`, `AGENTS.md`)**:
+   - Implemented automated `check_cpp_structs_odr_safety()` gate scanning all `.cpp` translation units in `server/src/`.
+   - Banned file-scope struct definitions that collide across translation units or with header declarations.
+   - Mandated file-specific `*_detail` namespaces or private class member wrapping for all translation-unit local structs.
+   - Resolved name collisions (`FlowState` in `ControlFlowChecker.cpp` vs `DefiniteAssignmentChecker.cpp`).
+   - Integrated Prohibition 14 into `AGENTS.md`.
+
+4. **Cluster Unification & Anti-Duplication (`SemanticHelpers.h`, `FeatureSharedUtils.h`, `ASTUtils.h`, `Utils.h`)**:
+   - Unified `CLUSTER-AST-BYTE-INTERVALS`, `CLUSTER-MEMBER-LOOKUP` (`MemberLookupResult`), and `CLUSTER-CALL-RESOLUTION` (`MatchesArgumentCount`).
+   - Consolidated `IsBooleanBinaryOpSym` in `SemanticHelpers.h/.cpp` across inlay hints and analysis checkers.
+   - Consolidated `ToLspSymbolKind` in `features/common/FeatureSharedUtils.h` across `DocumentSymbolHandler` and `WorkspaceSymbolHandler`.
+   - Consolidated `IsDeclarationSymbol` in `parser/ASTUtils.h` across `AccessChecker` and `DefinitionHandler`.
+   - Consolidated `TrimView` across `DocComment`, `DoxygenMarkdown`, `SemanticTokensHandler`, and `ClangFormatReader`.
+   - Reduced redundant pass-1 flag reparsings across checkers from 30 down to 20.
+
+5. **Immutable Refactor Ledger & Verification Gates (`REFACTOR_LEDGER.json`, `check-refactor-ledger.py`, `audit-codebase-redundancy.py`)**:
+   - Tracked all 60 refactoring actions with verified tests and RAM/CPU impact in `docs/REFACTOR_LEDGER.json`.
+   - Added automated diff verification `--check-diff develop` in `check-refactor-ledger.py`.
+   - Enforced 13 static quality gates in `check-quality.py` with 0 warnings.
+
+### 51.2. Final Metrics for Phase 51
+- **Status**: COMPLETED
+- **Total Unit Tests**: 2,608 / 2,608 passed (35,000+ assertions).
+- **Client Integration Tests**: 74 / 74 passed (`vscode-test`).
+- **Static Quality Gates**: 13/13 gates passed with 0 warnings (`check-quality.py`).
+- **RAM Optimization**: Total estimated memory savings of ~15-20% across large-scale workspaces.
+- **Deduplication**: 0 ODR struct hazards, redundant pass-1 checks reduced by 33%, jscpd duplication maintained at ~1.06%.
+

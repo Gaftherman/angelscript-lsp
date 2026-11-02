@@ -1,4 +1,4 @@
-﻿#include "analysis/RepeatedConversionChecker.h"
+#include "analysis/RepeatedConversionChecker.h"
 #include "features/code_action/CodeActionInternal.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
@@ -11,21 +11,6 @@
 
 namespace angel_lsp::features
 {
-namespace code_action_repeated_conversion_detail
-{
-/**
- * @brief Represents Extracted diag info.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct ExtractedDiagInfo
-{
-    std::string exprText;
-    std::string fromType;
-    std::string toType;
-};
-} // namespace code_action_repeated_conversion_detail
-
-using ExtractedDiagInfo = code_action_repeated_conversion_detail::ExtractedDiagInfo;
 
 static std::optional<ExtractedDiagInfo> ParseDiagnosticMessage(const lsp::Diagnostic& diag)
 {

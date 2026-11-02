@@ -546,7 +546,7 @@ static bool MatchesCallArguments(const analysis::LocalReference& ref, const Refe
 {
     if (criteria.isFunction && ref.isCall)
     {
-        return ref.argumentCount >= criteria.minArgs && ref.argumentCount <= criteria.maxArgs;
+        return analysis::MatchesArgumentCount(ref.argumentCount, criteria.minArgs, criteria.maxArgs);
     }
     return true;
 }

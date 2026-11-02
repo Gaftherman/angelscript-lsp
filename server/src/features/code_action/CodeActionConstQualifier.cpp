@@ -128,16 +128,15 @@ static void TryAddMissingConstDiagnosticFix(const CodeActionRequest& request, TS
  * @note [REFACTOR-CANDIDATE] Manually re-evaluates AST for isConst; candidate for direct Pass 1 flag read via
  * TypeExtraction::ExtractTypeInfo / Symbol::modifiers.isConst.
  */
-static bool HasConstQualifierBetween(std::string_view sourceCode, TSNode paramList, TSNode bodyNode, TSNode fnNode)
+static bool HasConstQualifierBetween(TSNode fnNode)
 {
-    uint32_t pEndByte = ts_node_end_byte(paramList);
-    uint32_t bStartByte = !ts_node_is_null(bodyNode) ? ts_node_start_byte(bodyNode) : ts_node_end_byte(fnNode);
-    if (pEndByte < bStartByte && bStartByte <= sourceCode.size())
+    const auto& gs = parser::GetGrammarSymbols();
+    TSNode attr = parser::FindChildWithSymbol(fnNode, gs.symFuncAttributes);
+    if (!ts_node_is_null(attr) && !ts_node_is_null(parser::FindChildWithSymbol(attr, gs.tokConst)))
     {
-        std::string between = std::string(sourceCode.substr(pEndByte, bStartByte - pEndByte));
-        return between.find("const") != std::string::npos;
+        return true;
     }
-    return false;
+    return !ts_node_is_null(parser::FindChildWithSymbol(fnNode, gs.tokConst));
 }
 
 static bool FindEnclosingMethodAndClass(TSNode leaf, TSNode& outFn, TSNode& outClass, const parser::GrammarSymbols& gs)
@@ -202,7 +201,7 @@ static void TryAddIntentionalConstAction(const CodeActionRequest& request, TSNod
     {
         return;
     }
-    if (HasConstQualifierBetween(request.sourceCode, paramList, bodyNode, fnNode))
+    if (HasConstQualifierBetween(fnNode))
     {
         return;
     }

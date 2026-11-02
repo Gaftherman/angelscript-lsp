@@ -1318,6 +1318,8 @@ std::string PropertyTypeFromAccessors(const std::vector<Symbol>& accessors)
     return {};
 }
 
+namespace semantic_helpers_detail
+{
 /**
  * @brief Represents Hierarchy classified base.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1327,6 +1329,9 @@ struct HierarchyClassifiedBase
     std::string name;
     bool isMixin = false;
 };
+} // namespace semantic_helpers_detail
+
+using HierarchyClassifiedBase = semantic_helpers_detail::HierarchyClassifiedBase;
 
 std::vector<Symbol> FindHierarchyTypeSymbols(const std::string& curType, const SymbolTable& symbolTable)
 {
@@ -1920,6 +1925,8 @@ std::string FindDeclaringRootClass(const std::string& cleanClass, const std::str
     return rootClass;
 }
 
+namespace semantic_helpers_detail
+{
 /**
  * @brief Represents Mixin expansion context.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -1931,6 +1938,9 @@ struct MixinExpansionContext
     ankerl::unordered_dense::set<std::string>& visited;
     std::vector<std::string>& result;
 };
+} // namespace semantic_helpers_detail
+
+using MixinExpansionContext = semantic_helpers_detail::MixinExpansionContext;
 
 void ExpandMixinFromRuleIndex(const rules::RuleIndex& ruleIndex, const MixinExpansionContext& ctx)
 {
@@ -3154,6 +3164,8 @@ static std::pair<std::string_view, std::string_view> GetBinaryOpMethods(std::str
     return {"", ""};
 }
 
+namespace semantic_helpers_detail
+{
 /**
  * @brief Represents Binary overload result.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -3164,6 +3176,9 @@ struct BinaryOverloadResult
     std::vector<ArgumentConversion> bestConversions;
     std::string returnType;
 };
+} // namespace semantic_helpers_detail
+
+using BinaryOverloadResult = semantic_helpers_detail::BinaryOverloadResult;
 
 /**
  * @brief Searches for binary operator overloads on an operand type.
@@ -3412,7 +3427,7 @@ static std::string ResolveBinaryPrimitivePromotion(std::string_view op, const st
  * @param[in] gs Precompiled grammar symbols.
  * @return True if the condition is satisfied; false otherwise.
  */
-static bool IsBooleanBinaryOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
+bool IsBooleanBinaryOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
 {
     return sym == gs.tokEqEq || sym == gs.tokBangEq || sym == gs.tokLt || sym == gs.tokLtEq || sym == gs.tokGt ||
            sym == gs.tokGtEq || sym == gs.tokIs || sym == gs.tokBangIs || sym == gs.tokAmpAmp ||
@@ -3624,6 +3639,8 @@ static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContex
     return currentType;
 }
 
+namespace semantic_helpers_detail
+{
 /**
  * @brief Represents Ternary branch types.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -3635,6 +3652,9 @@ struct TernaryBranchTypes
     std::string c1;
     std::string c2;
 };
+} // namespace semantic_helpers_detail
+
+using TernaryBranchTypes = semantic_helpers_detail::TernaryBranchTypes;
 
 /**
  * @brief Resolves ternary branches using inheritance hierarchies.
@@ -4909,6 +4929,8 @@ std::string ResolveExpressionType(TSNode exprNode, const ExpressionTypeContext& 
     return ResolveExpressionTypeUncached(sym, exprNode, ctx);
 }
 
+namespace semantic_helpers_detail
+{
 /**
  * @brief Represents Active local def key.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -4937,10 +4959,15 @@ struct ActiveLocalDefGuard
         }
     }
 };
+} // namespace semantic_helpers_detail
+
+using ActiveLocalDefKey = semantic_helpers_detail::ActiveLocalDefKey;
+using ActiveLocalDefGuard = semantic_helpers_detail::ActiveLocalDefGuard;
 
 static bool IsLocalDefActive(const LocalDefinition& def) noexcept
 {
-    return std::any_of(s_activeLocalDefs.begin(), s_activeLocalDefs.end(), [&](const ActiveLocalDefKey& k)
+    return std::any_of(semantic_helpers_detail::s_activeLocalDefs.begin(),
+                       semantic_helpers_detail::s_activeLocalDefs.end(), [&](const ActiveLocalDefKey& k)
                        { return k.line == def.startLine && k.col == def.startCharacter && k.name == def.name; });
 }
 
@@ -5044,12 +5071,12 @@ std::string ResolveLocalDefinitionType(const LocalDefinition& def, const Express
         return def.typeName;
     }
 
-    if (s_activeLocalDefs.size() > 8 || IsLocalDefActive(def))
+    if (semantic_helpers_detail::s_activeLocalDefs.size() > 8 || IsLocalDefActive(def))
     {
         return "";
     }
 
-    s_activeLocalDefs.push_back({def.name, def.startLine, def.startCharacter});
+    semantic_helpers_detail::s_activeLocalDefs.push_back({def.name, def.startLine, def.startCharacter});
     ActiveLocalDefGuard guard{true};
 
     return TryDeduceAutoDefinition(def, ctx);
@@ -5256,6 +5283,8 @@ std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourc
     return "";
 }
 
+namespace semantic_helpers_detail
+{
 /**
  * @brief Represents Delegate property receiver context.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -5268,6 +5297,9 @@ struct DelegatePropertyReceiverContext
     std::string_view sourceCode;
     std::string_view arrayTypeName;
 };
+} // namespace semantic_helpers_detail
+
+using DelegatePropertyReceiverContext = semantic_helpers_detail::DelegatePropertyReceiverContext;
 
 bool IsBaseClassDelegateProperty(std::string_view name, const SymbolTable& symbolTable,
                                  const config::EngineRuleConfig* engineRules)
@@ -5702,6 +5734,8 @@ std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, TS
     return candidateSymbols;
 }
 
+namespace semantic_helpers_detail
+{
 /**
  * @brief Represents Call delimiter state.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -5722,6 +5756,9 @@ struct CallDelimiterState
         return parenDepth == 0 && bracketDepth == 0 && braceDepth == 0 && angleDepth == 0;
     }
 };
+} // namespace semantic_helpers_detail
+
+using CallDelimiterState = semantic_helpers_detail::CallDelimiterState;
 
 bool StepCommentState(std::string_view code, size_t& i, size_t cursorByte, CallDelimiterState& state)
 {
@@ -6255,6 +6292,8 @@ static TSNode ExtractCallCalleeNode(TSNode call)
     return parser::GetCallCallee(call);
 }
 
+namespace semantic_helpers_detail
+{
 /**
  * @brief Represents Funcdef agreement.
  * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
@@ -6265,6 +6304,9 @@ struct FuncdefAgreement
     bool sawCandidate = false;
     bool conflict = false;
 };
+} // namespace semantic_helpers_detail
+
+using FuncdefAgreement = semantic_helpers_detail::FuncdefAgreement;
 
 /**
  * @brief Matches candidate function parameters at position against funcdef symbols.

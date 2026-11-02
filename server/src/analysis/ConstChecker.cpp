@@ -111,21 +111,7 @@ enum class Constness
 
 using Constness = const_checker_detail::Constness;
 
-namespace const_checker_detail
-{
-/**
- * @brief Context bundled for constness resolution queries.
- */
-struct ConstContext
-{
-    const Scope* scope = nullptr;
-    const SymbolTable& table;
-    std::string_view sourceCode;
-    ExpressionTypeCache* cache = nullptr;
-};
-} // namespace const_checker_detail
-
-using ConstContext = const_checker_detail::ConstContext;
+using ConstContext = ExpressionTypeContext;
 
 static Constness ResolveConstness(TSNode node, const ConstContext& ctx);
 
@@ -160,7 +146,7 @@ static Constness ResolveNameConstness(std::string_view name, TSNode node, const 
         }
     }
 
-    const auto symbols = ctx.table.FindSymbolsPtr(name);
+    const auto symbols = ctx.symbolTable.FindSymbolsPtr(name);
     if (!symbols)
     {
         return Constness::Unknown;
@@ -236,7 +222,7 @@ static EnclosingMethodInfo FindEnclosingMethod(TSNode node, std::string_view sou
             TSNode child = ts_tree_cursor_current_node(&cursor);
             const TSSymbol sym = ts_node_symbol(child);
             if (sym == gs.tokConst ||
-                (sym == gs.symFuncAttributes && parser::NodeText(child, sourceCode).find("const") != std::string::npos))
+                (sym == gs.symFuncAttributes && !ts_node_is_null(parser::FindChildWithSymbol(child, gs.tokConst))))
             {
                 info.isConstMethod = true;
                 break;
@@ -314,7 +300,7 @@ static bool IsIdentifierMemberOfThis(TSNode target, const EnclosingMethodInfo& e
             return false;
         }
     }
-    if (FindClassMemberVariable(encInfo.className, name, ctx.table, ctx.cache))
+    if (FindClassMemberVariable(encInfo.className, name, ctx.symbolTable, ctx.cache))
     {
         outMemberName = name;
         return true;
@@ -356,7 +342,7 @@ static bool IsMemberExprOfThis(TSNode target, const EnclosingMethodInfo& encInfo
     if (IsMemberOfThis(obj, encInfo, ctx, parentMember))
     {
         bool isHandle = false;
-        if (const auto* var = FindClassMemberVariable(encInfo.className, parentMember, ctx.table, ctx.cache))
+        if (const auto* var = FindClassMemberVariable(encInfo.className, parentMember, ctx.symbolTable, ctx.cache))
         {
             isHandle = var->modifiers.isHandle;
         }
@@ -480,22 +466,7 @@ static Constness ResolveConstness(TSNode node, const ConstContext& ctx)
     return Constness::Unknown;
 }
 
-namespace const_checker_detail
-{
-/**
- * @brief What the pass concluded about a method name looked up on a type.
- */
-struct MethodLookup
-{
-    bool found = false; ///< False means no declaration was visible. Stay silent.
-    bool hasConstOverload = false;
-    bool returnsSelfReference =
-        false; ///< True if a declaration returns a reference to its own type (e.g. Type& Method()).
-    std::string declaringClass;
-};
-} // namespace const_checker_detail
-
-using MethodLookup = const_checker_detail::MethodLookup;
+using MethodLookup = MemberLookupResult;
 
 /**
  * @brief Checks whether a method signature returns a reference to its owning type.
@@ -589,7 +560,7 @@ static Constness ResolveHandleConstness(TSNode node, const ConstContext& ctx)
                 }
             }
         }
-        if (const auto symbols = ctx.table.FindSymbolsPtr(name))
+        if (const auto symbols = ctx.symbolTable.FindSymbolsPtr(name))
         {
             for (const auto& sym : *symbols)
             {
@@ -628,7 +599,7 @@ static void CheckAssignment(TSNode node, const ConstCheckRequest& request, const
         }
     }
 
-    const ConstContext constCtx{scope, ctx.request.symbolTable, request.sourceCode, ctx.request.exprCache};
+    const ConstContext constCtx(scope, ctx);
     const auto encInfo = FindEnclosingMethod(node, request.sourceCode);
 
     std::string memberName;
@@ -672,7 +643,7 @@ static void CheckMethodCall(TSNode node, const ConstCheckRequest& request, const
     }
 
     const SymbolTable& table = ctx.request.symbolTable;
-    const ConstContext constCtx{scope, table, request.sourceCode, ctx.request.exprCache};
+    const ConstContext constCtx(scope, ctx);
     if (ResolveConstness(objectNode, constCtx) != Constness::Const)
     {
         return;

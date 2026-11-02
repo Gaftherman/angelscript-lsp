@@ -329,6 +329,22 @@ struct CompletionCollector
 
 using CompletionCollector = completion_handler_detail::CompletionCollector;
 
+namespace completion_handler_detail
+{
+/**
+ * @brief Represents Operator snippet.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
+struct OperatorSnippet
+{
+    const char* label;
+    const char* snippet;
+    const char* detail;
+};
+} // namespace completion_handler_detail
+
+using OperatorSnippet = completion_handler_detail::OperatorSnippet;
+
 /**
  * @brief Retrieves configured predefined file extension from completion request.
  * @param[in] request Completion request.
@@ -2893,18 +2909,6 @@ static void CollectClassOperatorSnippets(const analysis::Scope* innermostScope, 
     {
         return;
     }
-
-    /**
-     * @brief Represents Operator snippet.
-     * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
-     */
-    struct OperatorSnippet
-    {
-        const char* label;
-        const char* snippet;
-        const char* detail;
-    };
-
     static constexpr OperatorSnippet k_operatorSnippets[] = {
         {"opCall", "${1:void} opCall(${2})\n{\n    $0\n}", "Call operator overload"},
         {"opIndex", "${1:int}& opIndex(${2:uint} index)\n{\n    $0\n}", "Index operator overload"},

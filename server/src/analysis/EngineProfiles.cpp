@@ -746,18 +746,24 @@ class OOTPContext
 OOTPContext g_OOTP;
 )angelscript";
 
+namespace engine_profiles_detail
+{
+/**
+ * @brief Represents Profile mapping.
+ * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
+ */
+struct ProfileMapping
+{
+    std::string_view alias;
+    EngineProfileKind kind;
+};
+} // namespace engine_profiles_detail
+
+using ProfileMapping = engine_profiles_detail::ProfileMapping;
+
 EngineProfileKind ParseEngineProfileKind(std::string_view name)
 {
-    /**
-     * @brief Represents Profile mapping.
-     * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
-     */
     const std::string lower = ToLowerString(name);
-    struct ProfileMapping
-    {
-        std::string_view alias;
-        EngineProfileKind kind;
-    };
     static constexpr ProfileMapping kMappings[] = {
         {"none", EngineProfileKind::None},          {"standard", EngineProfileKind::Standard},
         {"std", EngineProfileKind::Standard},       {"default", EngineProfileKind::Standard},

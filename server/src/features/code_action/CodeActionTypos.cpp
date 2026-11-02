@@ -31,20 +31,7 @@ static bool IsTypeLikeSymbol(analysis::SymbolType type)
            type == analysis::SymbolType::Funcdef;
 }
 
-namespace code_action_typos_detail
-{
-/**
- * @brief Represents Typo candidate suggestion.
- * @note [REFACTOR-CANDIDATE] Local helper structure candidate for structural deduplication.
- */
-struct TypoCandidateSuggestion
-{
-    std::string name;
-    size_t distance = 0;
-};
-} // namespace code_action_typos_detail
-
-using TypoCandidateSuggestion = code_action_typos_detail::TypoCandidateSuggestion;
+using TypoCandidateSuggestion = TypoCandidate;
 
 /**
  * @brief Collects candidate names for typo suggestions from local scopes and symbols.

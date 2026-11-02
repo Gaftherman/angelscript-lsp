@@ -1589,7 +1589,7 @@ static bool MatchesCallArguments(const analysis::LocalReference& ref, const Targ
 {
     if (target.isFunction && ref.isCall)
     {
-        return ref.argumentCount >= target.minArgs && ref.argumentCount <= target.maxArgs;
+        return MatchesArgumentCount(ref.argumentCount, target.minArgs, target.maxArgs);
     }
     return true;
 }

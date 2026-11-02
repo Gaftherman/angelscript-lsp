@@ -8,6 +8,7 @@
 #include "parser/QueryRegistry.h"
 #include "parser/queries/BuiltQueries.h"
 #include "utils/ScopedNameUtils.h"
+#include "utils/Utils.h"
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
 #include <cstring>
@@ -210,16 +211,7 @@ static std::vector<std::string_view> SplitLinesView(std::string_view str)
  */
 [[nodiscard]] static inline std::string_view TrimWhitespace(std::string_view text) noexcept
 {
-    while (!text.empty() &&
-           (text.front() == ' ' || text.front() == '\t' || text.front() == '\r' || text.front() == '\n'))
-    {
-        text.remove_prefix(1);
-    }
-    while (!text.empty() && (text.back() == ' ' || text.back() == '\t' || text.back() == '\r' || text.back() == '\n'))
-    {
-        text.remove_suffix(1);
-    }
-    return text;
+    return utils::TrimView(text);
 }
 
 /**
