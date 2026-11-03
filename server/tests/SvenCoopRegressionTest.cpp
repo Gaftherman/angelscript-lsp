@@ -893,4 +893,56 @@ TEST_CASE("SvenCoopRegression - Unresolved call emits undefined identifier and s
     CHECK_FALSE(HasDiagCode(diags, "as-warn-undeclared-identifier"));
 }
 
+TEST_CASE("SvenCoopRegression - Derived class calling inherited method does not emit undefined identifier")
+{
+    const std::string baseName = GenerateRandomSymbolName("BaseEntity");
+    const std::string derivedName = GenerateRandomSymbolName("DerivedEntity");
+    const std::string methodName = GenerateRandomSymbolName("Deploy");
+
+    const std::string code = "class " + baseName +
+                             " {\n"
+                             "    void " +
+                             methodName +
+                             "() {}\n"
+                             "}\n"
+                             "class " +
+                             derivedName + " : " + baseName +
+                             " {\n"
+                             "    void Test() {\n"
+                             "        " +
+                             methodName +
+                             "();\n"
+                             "    }\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSnippet(code);
+    CHECK_FALSE(HasDiagCode(diags, "as-err-undefined-identifier"));
+    CHECK_FALSE(HasDiagCode(diags, "as-warn-undeclared-identifier"));
+}
+
+TEST_CASE("SvenCoopRegression - Function call from using namespace does not emit undefined identifier")
+{
+    const std::string nsName = GenerateRandomSymbolName("MathUtils");
+    const std::string fnName = GenerateRandomSymbolName("CalculateDistance");
+
+    const std::string code = "namespace " + nsName +
+                             " {\n"
+                             "    void " +
+                             fnName +
+                             "() {}\n"
+                             "}\n"
+                             "using namespace " +
+                             nsName +
+                             ";\n"
+                             "void Test() {\n"
+                             "    " +
+                             fnName +
+                             "();\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSnippet(code);
+    CHECK_FALSE(HasDiagCode(diags, "as-err-undefined-identifier"));
+    CHECK_FALSE(HasDiagCode(diags, "as-warn-undeclared-identifier"));
+}
+
 } // namespace angel_lsp::test

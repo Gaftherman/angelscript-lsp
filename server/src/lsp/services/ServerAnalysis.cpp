@@ -282,7 +282,8 @@ bool Server::IsCommitAnalysisStale(const CommitAnalysisRequest& req) const
     {
         return true;
     }
-    if (req.configRevision != m_sessionCoordinator->GetConfigRevision())
+    if (!angel_lsp::utils::IsPredefinedFile(req.uriStr, m_config.info.predefinedFileExtension) &&
+        req.configRevision != m_sessionCoordinator->GetConfigRevision())
     {
         return true;
     }

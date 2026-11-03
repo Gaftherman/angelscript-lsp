@@ -2,6 +2,7 @@
 
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/rules/RuleIndex.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/ScopedNameUtils.h"
@@ -70,51 +71,60 @@ static std::string_view ExtractCalleeName(TSNode node, std::string_view sourceCo
     return parser::Trim(parser::GetNodeTextView(funcNode, sourceCode));
 }
 
+static bool CheckNamespaceOrClassMembers(std::string_view name, const rules::ContainerMembers& members, bool reqKeyword)
+{
+    const auto& accSet = reqKeyword ? members.keywordAccessorPropertyNames : members.accessorPropertyNames;
+    return accSet.contains(name) || members.allMemberNames.contains(name);
+}
+
+static bool IsEnclosingContainerCallee(std::string_view name, TSNode node, const NamespaceCheckRequest& request,
+                                       const DiagnosticContext& ctx)
+{
+    if (!request.nodeIndex)
+    {
+        return false;
+    }
+    const auto& ruleIndex = ctx.request.GetRuleIndex();
+    const uint32_t byteOffset = ts_node_start_byte(node);
+    const bool reqKeyword = ctx.request.RequiresAccessorKeyword();
+    const auto containers = request.nodeIndex->CollectEnclosingContainers(byteOffset, request.sourceCode);
+    for (const auto& container : containers)
+    {
+        if (container.kind == ContainerKind::Namespace)
+        {
+            const std::string nsName = container.qualifiedName.empty() ? container.name : container.qualifiedName;
+            if (CheckNamespaceOrClassMembers(name, ruleIndex.NamespaceMembers(nsName), reqKeyword))
+            {
+                return true;
+            }
+            continue;
+        }
+        if (container.kind != ContainerKind::Class && container.kind != ContainerKind::Interface)
+        {
+            continue;
+        }
+        const auto hierarchy = GetInheritedTypeHierarchy(
+            container.qualifiedName.empty() ? container.name : container.qualifiedName, ctx.request.symbolTable);
+        for (const auto& typeName : hierarchy)
+        {
+            if (CheckNamespaceOrClassMembers(name, ruleIndex.ClassMembers(typeName), reqKeyword))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 static bool IsCalleeAccessorProperty(std::string_view name, TSNode node, const NamespaceCheckRequest& request,
                                      const DiagnosticContext& ctx)
 {
     const auto& ruleIndex = ctx.request.GetRuleIndex();
     const auto& globalAccessors = ctx.request.RequiresAccessorKeyword() ? ruleIndex.keywordGlobalAccessorPropertyNames
                                                                         : ruleIndex.globalAccessorPropertyNames;
-    if (globalAccessors.contains(name))
+    if (globalAccessors.contains(name) || IsEnclosingContainerCallee(name, node, request, ctx))
     {
         return true;
-    }
-
-    if (request.nodeIndex)
-    {
-        const uint32_t byteOffset = ts_node_start_byte(node);
-        const bool reqKeyword = ctx.request.RequiresAccessorKeyword();
-        const auto containers = request.nodeIndex->CollectEnclosingContainers(byteOffset, request.sourceCode);
-        for (const auto& container : containers)
-        {
-            if (container.kind == ContainerKind::Namespace)
-            {
-                const std::string nsName = container.qualifiedName.empty() ? container.name : container.qualifiedName;
-                const auto& members = ruleIndex.NamespaceMembers(nsName);
-                const auto& accSet = reqKeyword ? members.keywordAccessorPropertyNames : members.accessorPropertyNames;
-                if (accSet.contains(name))
-                {
-                    return true;
-                }
-                continue;
-            }
-            if (container.kind != ContainerKind::Class && container.kind != ContainerKind::Interface)
-            {
-                continue;
-            }
-            const auto hierarchy = GetInheritedTypeHierarchy(
-                container.qualifiedName.empty() ? container.name : container.qualifiedName, ctx.request.symbolTable);
-            for (const auto& typeName : hierarchy)
-            {
-                const auto& members = ruleIndex.ClassMembers(typeName);
-                const auto& accSet = reqKeyword ? members.keywordAccessorPropertyNames : members.accessorPropertyNames;
-                if (accSet.contains(name))
-                {
-                    return true;
-                }
-            }
-        }
     }
 
     return !FindGlobalPropertyAccessors(std::string(name), ctx.request.symbolTable,

@@ -252,6 +252,7 @@ void Server::BuildIncludeGraphAndModules(const std::vector<std::string>& allScri
     m_symbolTable.EnsureRuleIndex();
     SyncModuleIndexSymbols();
     SetPredefinedReady(true);
+    m_sessionCoordinator->IncrementConfigRevision();
 
     WithdrawStaleModuleDiagnostics();
     AnalyzeConfiguredModules();
@@ -462,7 +463,7 @@ bool Server::HandleWatchedFileDeleted(const std::string& path, const std::string
         wasPublished = m_publishedForModules.erase(targetUri) > 0;
     }
     m_diagnosticsPipeline->InvalidateDiagnostics(targetUri);
-    if (wasPublished)
+    if (wasPublished || GetDocumentStore().IsOpen(targetUri))
     {
         PublishDiagnostics(targetUri, {});
     }
@@ -482,6 +483,7 @@ bool Server::HandleWatchedFileChanged(const std::string& path, bool isPredefined
     {
         if (m_config.features.enablePredefinedLoader)
         {
+            GetWorkspaceStore().InvalidatePredefinedBaseTable();
             ParserPredefined(path, parser, true);
             SetPredefinedReady(true);
             return true;
@@ -547,6 +549,7 @@ void Server::ReplaceDeletedPredefinedStub(angel_lsp::parser::AngelScriptParser& 
     {
         LogInfo("The predefined stub in force was deleted, and no other was found");
     }
+    GetWorkspaceStore().InvalidatePredefinedBaseTable();
     SetPredefinedReady(true);
 }
 

@@ -625,11 +625,14 @@ void Server::SetPredefinedReady(bool ready)
 {
     if (ready)
     {
-        m_symbolTable.EnsureRuleIndex();
-        auto base = std::make_unique<analysis::SymbolTable>();
-        base->ClonePredefinedBaseFrom(m_symbolTable, m_config.info.predefinedFileExtension);
-        base->EnsureRuleIndex();
-        GetWorkspaceStore().SetPredefinedBaseTable(std::move(base));
+        if (!IsPredefinedReady() || !GetWorkspaceStore().GetPredefinedBaseTable())
+        {
+            m_symbolTable.EnsureRuleIndex();
+            auto base = std::make_unique<analysis::SymbolTable>();
+            base->ClonePredefinedBaseFrom(m_symbolTable, m_config.info.predefinedFileExtension);
+            base->EnsureRuleIndex();
+            GetWorkspaceStore().SetPredefinedBaseTable(std::move(base));
+        }
     }
     else
     {
