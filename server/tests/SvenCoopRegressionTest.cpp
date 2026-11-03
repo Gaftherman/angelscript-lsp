@@ -833,4 +833,64 @@ TEST_CASE("SvenCoopRegression - End-to-end LSP feature latency is under 10ms wit
     ts_tree_delete(tree);
 }
 
+TEST_CASE("SvenCoopRegression - Enum inside homonymous namespace does not emit class member const")
+{
+    const std::string name = GenerateRandomSymbolName("Logger");
+    const std::string enumName = GenerateRandomSymbolName("State");
+    const std::string valName = GenerateRandomSymbolName("Active");
+
+    const std::string code = "class " + name +
+                             " { void DoSomething() {} }\n"
+                             "namespace " +
+                             name +
+                             " {\n"
+                             "    enum " +
+                             enumName +
+                             " {\n"
+                             "        " +
+                             valName +
+                             " = 1\n"
+                             "    }\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSnippet(code);
+    CHECK_FALSE(HasDiagCode(diags, "as-err-class-member-const"));
+}
+
+TEST_CASE("SvenCoopRegression - Array of abstract class handles does not emit abstract instantiated")
+{
+    const std::string name = GenerateRandomSymbolName("EntityOverriden");
+    const std::string varName = GenerateRandomSymbolName("gpEntities");
+
+    const std::string code = "abstract class " + name +
+                             " { void Update() {} }\n"
+                             "namespace " +
+                             name +
+                             " {\n"
+                             "    array<" +
+                             name + "@> " + varName +
+                             "(0);\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSnippet(code);
+    CHECK_FALSE(HasDiagCode(diags, "as-err-abstract-instantiated"));
+}
+
+TEST_CASE("SvenCoopRegression - Unresolved call emits undefined identifier and suppresses undeclared warning")
+{
+    const std::string funcName = GenerateRandomSymbolName("MissingCall");
+    const std::string callerName = GenerateRandomSymbolName("Caller");
+
+    const std::string code = "void " + callerName +
+                             "() {\n"
+                             "    " +
+                             funcName +
+                             "(123);\n"
+                             "}\n";
+
+    const auto diags = AnalyzeSnippet(code);
+    CHECK(HasDiagCode(diags, "as-err-undefined-identifier"));
+    CHECK_FALSE(HasDiagCode(diags, "as-warn-undeclared-identifier"));
+}
+
 } // namespace angel_lsp::test

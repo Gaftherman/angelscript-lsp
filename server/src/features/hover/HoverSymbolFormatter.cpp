@@ -62,13 +62,17 @@ static bool IsContainerProperty(std::string_view containerName, const analysis::
 
 static bool IsVariableProperty(const analysis::Symbol& sym, const analysis::SymbolTable* symbolTable)
 {
-    if (sym.containerKind == analysis::ContainerKind::Enum)
+    if (sym.containerKind == analysis::ContainerKind::Enum || sym.containerKind == analysis::ContainerKind::Namespace)
     {
         return false;
     }
     if (std::holds_alternative<analysis::VariableSignature>(sym.signature) && sym.GetVariable().isEnumConstant)
     {
         return false;
+    }
+    if (sym.containerKind == analysis::ContainerKind::Class || sym.containerKind == analysis::ContainerKind::Interface)
+    {
+        return true;
     }
     return IsContainerProperty(sym.containerName, symbolTable);
 }

@@ -484,8 +484,9 @@ void Server::NotifyClientDiagnostics(lsp::notifications::TextDocument_PublishDia
 {
     if (m_sessionCoordinator->GetClientPullsDiagnostics())
     {
-        const bool isBatchQueued =
-            m_diagnosticsPipeline->HasQueuedWork() && !GetDocumentStore().IsOpen(DocumentKey(params.uri.toString()));
+        const std::string docKey = DocumentKey(params.uri.toString());
+        const bool isDocOpen = GetDocumentStore().IsOpen(docKey);
+        const bool isBatchQueued = m_diagnosticsPipeline->HasQueuedWork() && !isDocOpen;
         if (m_sessionCoordinator->GetClientSupportsDiagnosticRefresh() && !isBatchQueued)
         {
             std::lock_guard<std::mutex> lock(m_messageHandlerMutex);
@@ -496,7 +497,7 @@ void Server::NotifyClientDiagnostics(lsp::notifications::TextDocument_PublishDia
                     [](const lsp::ResponseError&) {});
             }
         }
-        if (params.diagnostics.empty())
+        if (!isDocOpen || params.diagnostics.empty())
         {
             std::lock_guard<std::mutex> lock(m_messageHandlerMutex);
             if (m_messageHandler)

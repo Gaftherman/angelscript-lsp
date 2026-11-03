@@ -220,6 +220,7 @@ void Server::BuildIncludeGraphAndModules(const std::vector<std::string>& allScri
                                          const angel_lsp::utils::StopFlag& stopToken,
                                          angel_lsp::parser::AngelScriptParser& parser)
 {
+    AugmentSearchDirectoriesFromModules();
     const auto searchDirectories = SearchDirectories();
     std::optional<PhaseTimer> phase;
     phase.emplace(m_logger.get(), "include graph");
@@ -316,15 +317,16 @@ void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
         const PhaseTimer scanTimer(m_logger.get(), "workspace scan (total)");
         ReanalyseOnExit reanalyseOnExit{[this, &stopToken]()
                                         {
-                                            SetPredefinedReady(true);
+                                            if (!IsPredefinedReady())
+                                            {
+                                                SetPredefinedReady(true);
+                                            }
                                             SetWorkspaceScanComplete(true);
                                             if (!stopToken.stop_requested())
                                             {
                                                 ScheduleOpenDocumentsForReanalysis();
                                             }
                                         }};
-
-        LoadWorkspaceEngineRules(roots);
 
         WorkspaceFilesWalkResult walkResult;
         if (!CollectWorkspaceFiles(roots, stopToken, walkResult))
@@ -342,7 +344,10 @@ void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
         }
         LoadWorkspaceEngineRules(roots);
         m_symbolTable.EnsureRuleIndex();
-        SetPredefinedReady(true);
+        if (m_config.modules.empty() && m_config.moduleEntryPoint.empty())
+        {
+            SetPredefinedReady(true);
+        }
 
         BuildIncludeGraphAndModules(walkResult.allScriptFiles, roots, stopToken, backgroundParser);
         if (stopToken.stop_requested())
@@ -450,8 +455,23 @@ bool Server::HandleWatchedFileDeleted(const std::string& path, const std::string
         return false;
     }
 
+    const std::string targetUri = !uriStr.empty() ? uriStr : UriFromPath(path);
+    bool wasPublished = false;
+    {
+        std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
+        wasPublished = m_publishedForModules.erase(targetUri) > 0;
+    }
+    m_diagnosticsPipeline->InvalidateDiagnostics(targetUri);
+    if (wasPublished)
+    {
+        PublishDiagnostics(targetUri, {});
+    }
+
     PurgeClosureFile(UriFromPath(path));
-    PurgeClosureFile(uriStr);
+    if (!uriStr.empty())
+    {
+        PurgeClosureFile(uriStr);
+    }
     return GetIncludeGraph().RemoveFile(path);
 }
 
@@ -725,6 +745,17 @@ void Server::HandleNotificationsWorkspace_DidDeleteFiles(lsp::notifications::Wor
         const std::string path = CanonicalPathFromUri(uriStr);
         if (path.empty())
             continue;
+
+        bool wasPublished = false;
+        {
+            std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
+            wasPublished = m_publishedForModules.erase(uriStr) > 0;
+        }
+        m_diagnosticsPipeline->InvalidateDiagnostics(uriStr);
+        if (wasPublished || GetDocumentStore().IsOpen(uriStr))
+        {
+            PublishDiagnostics(uriStr, {});
+        }
 
         PurgeClosureFile(uriStr);
         anythingChanged = GetIncludeGraph().RemoveFile(path) || anythingChanged;

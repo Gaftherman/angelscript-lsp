@@ -348,15 +348,22 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
 
 void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params&& params)
 {
+    const std::string clientUri = params.textDocument.uri.toString();
+    std::string uriStr = DocumentKey(clientUri);
+    const bool isPredefined = angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension);
+
+    if (!isPredefined && m_config.features.enablePredefinedLoader && !IsPredefinedReady())
+    {
+        WaitForPredefinedReady(std::chrono::milliseconds(5000));
+    }
+
     std::lock_guard<std::mutex> lifecycleLock(m_lifecycleMutex);
     utils::HighResTimer totalTimer;
-    std::string uriStr = DocumentKey(params.textDocument.uri.toString());
-    const std::string clientUri = params.textDocument.uri.toString();
     const int version = params.textDocument.version;
     std::string text = std::move(params.textDocument.text);
     LogInfo(fmt::format("[File Open] Opening document: {}", uriStr));
 
-    if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
+    if (isPredefined)
     {
         DidOpenPredefinedFile(DidOpenPredefinedRequest{uriStr, text, version, clientUri, totalTimer});
         return;
@@ -369,11 +376,6 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
     double parseMs = parseTimer.ElapsedMs();
     GetDocumentStore().OpenDocument(
         DocumentStore::OpenDocumentRequest{uriStr, text, version, document::MakeTreePtr(tree), clientUri});
-
-    if (m_config.features.enablePredefinedLoader && !IsPredefinedReady())
-    {
-        WaitForPredefinedReady(std::chrono::milliseconds(5000));
-    }
 
     utils::HighResTimer colTimer;
     auto syntaxDiagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, tree);
@@ -594,6 +596,7 @@ void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDo
 
     if (!isModuleFile)
     {
+        m_diagnosticsPipeline->InvalidateDiagnostics(uriStr);
         PublishDiagnostics(uriStr, {});
     }
 }

@@ -817,8 +817,9 @@ Server::TryGetCachedDiagnosticReport(const std::string& uriStr, size_t currentHa
         return std::nullopt;
     }
 
-    const bool isCurrent = (it->second.textHash == currentHash) ||
-                           (currentVersion >= 0 && it->second.version >= 0 && it->second.version == currentVersion);
+    const bool isCurrent = (it->second.configRevision == m_sessionCoordinator->GetConfigRevision()) &&
+                           ((it->second.textHash == currentHash) ||
+                            (currentVersion >= 0 && it->second.version >= 0 && it->second.version == currentVersion));
     if (!isCurrent)
     {
         return std::nullopt;
@@ -847,11 +848,18 @@ Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagno
 
     const std::string uriStr = DocumentKey(params.textDocument.uri.toString());
 
-    // The cached answer is only usable while it still describes the text the client is asking
-    // about. This used to check only that an entry existed, which is true from the first
-    // analysis onward, so every later pull was answered from whatever had been computed before
-    // the edit in hand. The editor renders push and pull as two separate collections, so the
-    // stale pull answer sat beside the correct push one and only cleared on the next keystroke.
+    if (!m_config.modules.empty() && !GetDocumentStore().IsOpen(uriStr))
+    {
+        const std::string path = CanonicalPathFromUri(uriStr);
+        if (ClaimFor(path).owner == nullptr)
+        {
+            m_diagnosticsPipeline->InvalidateDiagnostics(uriStr);
+            lsp::RelatedFullDocumentDiagnosticReport emptyReport;
+            emptyReport.items = {};
+            return emptyReport;
+        }
+    }
+
     const auto current = FindDocumentText(uriStr);
     const size_t currentHash = current ? std::hash<std::string>{}(*current) : 0;
     const int currentVersion = GetDocumentVersion(uriStr);
@@ -869,6 +877,7 @@ Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagno
             .parser = *m_parser,
             .version = currentVersion,
             .generation = GetDocumentStore().GetGeneration(uriStr),
+            .configRevision = m_sessionCoordinator->GetConfigRevision(),
         });
 
         if (auto fresh = TryGetCachedDiagnosticReport(uriStr, currentHash, currentVersion, params.previousResultId))

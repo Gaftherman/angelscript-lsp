@@ -526,6 +526,31 @@ static TSNode FindArgumentList(TSNode callNode)
     return argsChild;
 }
 
+static bool IsCallableChildNode(TSNode walkParent, TSSymbol wpSym, TSNode prev, const parser::GrammarSymbols& syms)
+{
+    if (wpSym == syms.symMemberAccess)
+    {
+        TSNode memberField = parser::GetChildByField(walkParent, syms.fieldMember);
+        return !ts_node_is_null(memberField) &&
+               (ts_node_eq(memberField, prev) || ts_node_start_byte(memberField) == ts_node_start_byte(prev));
+    }
+    if (wpSym == syms.symScopedIdentifier)
+    {
+        TSNode nameField = parser::GetChildByField(walkParent, syms.fieldName);
+        if (ts_node_is_null(nameField))
+        {
+            const uint32_t count = ts_node_named_child_count(walkParent);
+            if (count > 0)
+            {
+                nameField = ts_node_named_child(walkParent, count - 1);
+            }
+        }
+        return !ts_node_is_null(nameField) &&
+               (ts_node_eq(nameField, prev) || ts_node_start_byte(nameField) == ts_node_start_byte(prev));
+    }
+    return false;
+}
+
 void LocalScopeCollector::DetermineCallReferenceInfo(TSNode refNode, TSNode parent, LocalReference& ref)
 {
     const auto& syms = parser::GetGrammarSymbols();
@@ -561,8 +586,12 @@ void LocalScopeCollector::DetermineCallReferenceInfo(TSNode refNode, TSNode pare
             }
             if (wpSym == syms.symMemberAccess || wpSym == syms.symScopedIdentifier)
             {
-                prev = walkParent;
-                return true;
+                if (IsCallableChildNode(walkParent, wpSym, prev, syms))
+                {
+                    prev = walkParent;
+                    return true;
+                }
+                return false;
             }
             return false;
         });

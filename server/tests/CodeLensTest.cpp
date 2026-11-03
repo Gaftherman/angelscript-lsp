@@ -1413,3 +1413,42 @@ TEST_CASE("CodeLens - Zero CodeLenses emitted inside multiline license comment w
         }
     }
 }
+
+TEST_CASE("CodeLens - Symbol in namespace homonymous with class has references counted")
+{
+    const std::string name = test::GenerateRandomSymbolName("EntityOverriden");
+    const std::string varName = test::GenerateRandomSymbolName("gpEntities");
+    const std::string fnName = test::GenerateRandomSymbolName("Init");
+
+    const std::string code = "abstract class " + name +
+                             " { void Update() {} }\n"
+                             "namespace " +
+                             name +
+                             " {\n"
+                             "    int " +
+                             varName +
+                             " = 0;\n"
+                             "    void " +
+                             fnName +
+                             "() {\n"
+                             "        " +
+                             varName +
+                             " = 42;\n"
+                             "    }\n"
+                             "}\n";
+
+    CodeLensFixture fixture(code);
+    const auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+
+    bool foundLens = false;
+    for (const auto& lens : *lenses)
+    {
+        if (lens.command.has_value() && lens.range.start.line == 2)
+        {
+            foundLens = true;
+            CHECK(lens.command->title.find("1 reference") != std::string::npos);
+        }
+    }
+    CHECK(foundLens);
+}

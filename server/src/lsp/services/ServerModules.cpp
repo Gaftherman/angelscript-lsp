@@ -203,6 +203,32 @@ void Server::AugmentSearchDirectoriesFromModules()
     std::vector<std::string> searchDirs = *SearchDirectories();
     bool addedSearchDir = false;
 
+    auto appendPathOrParent = [&](const std::string& rawPath, bool takeParent)
+    {
+        if (rawPath.empty())
+        {
+            return;
+        }
+        std::filesystem::path p(rawPath);
+        if (p.is_absolute())
+        {
+            AppendUniqueDirectory(searchDirs, takeParent ? p.parent_path().string() : p.string(), addedSearchDir);
+        }
+        else
+        {
+            for (const auto& wsRoot : WorkspaceRoots())
+            {
+                const std::string wsPath = angel_lsp::utils::UriToPath(wsRoot);
+                if (!wsPath.empty())
+                {
+                    const auto fullP = std::filesystem::path(wsPath) / p;
+                    AppendUniqueDirectory(searchDirs, takeParent ? fullP.parent_path().string() : fullP.string(),
+                                          addedSearchDir);
+                }
+            }
+        }
+    };
+
     for (const auto& view : m_modules)
     {
         if (!view.folderPath.empty())
@@ -218,6 +244,13 @@ void Server::AugmentSearchDirectoriesFromModules()
             }
         }
     }
+
+    for (const auto& def : m_config.modules)
+    {
+        appendPathOrParent(def.folder, false);
+        appendPathOrParent(def.entry, true);
+    }
+    appendPathOrParent(m_config.moduleEntryPoint, true);
 
     for (const auto& wsRoot : WorkspaceRoots())
     {

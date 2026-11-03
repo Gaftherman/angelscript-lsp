@@ -1500,28 +1500,33 @@ export function synchronizeDiagnosticTabs(targetClient: LanguageClient): void {
 
         const tabs = diagFeature.tabs;
         if (tabs && tabs.open instanceof Set) {
+            const currentlyOpenUris = new Set<string>();
             for (const editor of window.visibleTextEditors) {
-                tabs.open.add(editor.document.uri.toString());
+                currentlyOpenUris.add(editor.document.uri.toString());
             }
             if (window.activeTextEditor) {
-                tabs.open.add(window.activeTextEditor.document.uri.toString());
-            }
-            for (const doc of workspace.textDocuments) {
-                if (doc.languageId === 'angelscript' || doc.languageId === 'angelscript-predefined') {
-                    tabs.open.add(doc.uri.toString());
-                }
+                currentlyOpenUris.add(window.activeTextEditor.document.uri.toString());
             }
             for (const group of window.tabGroups.all) {
                 for (const tab of group.tabs) {
                     const input = tab.input;
                     if (input instanceof TabInputText) {
-                        tabs.open.add(input.uri.toString());
+                        currentlyOpenUris.add(input.uri.toString());
                     } else if (input instanceof TabInputTextDiff) {
-                        tabs.open.add(input.modified.toString());
+                        currentlyOpenUris.add(input.modified.toString());
                     } else if (input instanceof TabInputCustom) {
-                        tabs.open.add(input.uri.toString());
+                        currentlyOpenUris.add(input.uri.toString());
                     }
                 }
+            }
+
+            for (const uri of Array.from(tabs.open)) {
+                if (!currentlyOpenUris.has(uri)) {
+                    tabs.open.delete(uri);
+                }
+            }
+            for (const uri of currentlyOpenUris) {
+                tabs.open.add(uri);
             }
 
             if (typeof tabs.isVisible === 'function' && !tabs.__angelscriptPatched) {

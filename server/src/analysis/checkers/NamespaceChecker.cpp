@@ -70,19 +70,94 @@ static std::string_view ExtractCalleeName(TSNode node, std::string_view sourceCo
     return parser::Trim(parser::GetNodeTextView(funcNode, sourceCode));
 }
 
+static bool IsCalleeAccessorProperty(std::string_view name, TSNode node, const NamespaceCheckRequest& request,
+                                     const DiagnosticContext& ctx)
+{
+    const auto& ruleIndex = ctx.request.GetRuleIndex();
+    const auto& globalAccessors = ctx.request.RequiresAccessorKeyword() ? ruleIndex.keywordGlobalAccessorPropertyNames
+                                                                        : ruleIndex.globalAccessorPropertyNames;
+    if (globalAccessors.contains(name))
+    {
+        return true;
+    }
+
+    if (request.nodeIndex)
+    {
+        const uint32_t byteOffset = ts_node_start_byte(node);
+        const bool reqKeyword = ctx.request.RequiresAccessorKeyword();
+        const auto containers = request.nodeIndex->CollectEnclosingContainers(byteOffset, request.sourceCode);
+        for (const auto& container : containers)
+        {
+            if (container.kind == ContainerKind::Namespace)
+            {
+                const std::string nsName = container.qualifiedName.empty() ? container.name : container.qualifiedName;
+                const auto& members = ruleIndex.NamespaceMembers(nsName);
+                const auto& accSet = reqKeyword ? members.keywordAccessorPropertyNames : members.accessorPropertyNames;
+                if (accSet.contains(name))
+                {
+                    return true;
+                }
+                continue;
+            }
+            if (container.kind != ContainerKind::Class && container.kind != ContainerKind::Interface)
+            {
+                continue;
+            }
+            const auto hierarchy = GetInheritedTypeHierarchy(
+                container.qualifiedName.empty() ? container.name : container.qualifiedName, ctx.request.symbolTable);
+            for (const auto& typeName : hierarchy)
+            {
+                const auto& members = ruleIndex.ClassMembers(typeName);
+                const auto& accSet = reqKeyword ? members.keywordAccessorPropertyNames : members.accessorPropertyNames;
+                if (accSet.contains(name))
+                {
+                    return true;
+                }
+            }
+        }
+    }
+
+    return !FindGlobalPropertyAccessors(std::string(name), ctx.request.symbolTable,
+                                        ctx.request.RequiresAccessorKeyword())
+                .empty();
+}
+
+static bool IsSpecialContextCallee(std::string_view name, TSNode node, const NamespaceCheckRequest& request)
+{
+    if (IsReservedKeyword(std::string(name)))
+    {
+        return true;
+    }
+
+    if (request.nodeIndex && request.nodeIndex->IsInsideError(ts_node_start_byte(node)))
+    {
+        return true;
+    }
+
+    if (name == "super")
+    {
+        TSNode funcNode = parser::GetCallCallee(node);
+        return IsBaseConstructorCall(funcNode, request.sourceCode);
+    }
+
+    return false;
+}
+
+static bool IsKnownCalleeSymbol(std::string_view name, std::string_view getterName, const DiagnosticContext& ctx)
+{
+    return ctx.request.IsRegisteredSymbol(name) || ctx.request.symbolTable.HasSymbol(name) ||
+           ctx.request.IsRegisteredSymbol(getterName) || ctx.request.symbolTable.HasSymbol(getterName);
+}
+
 /**
  * @brief Checks if a callee name is known in scope, registered, or excused by context.
  */
 static bool IsKnownCallee(std::string_view name, TSNode node, const NamespaceCheckRequest& request,
                           const DiagnosticContext& ctx)
 {
-    if (name == "super")
+    if (IsSpecialContextCallee(name, node, request))
     {
-        TSNode funcNode = parser::GetCallCallee(node);
-        if (IsBaseConstructorCall(funcNode, request.sourceCode))
-        {
-            return true;
-        }
+        return true;
     }
 
     const Scope* scope = ctx.request.scopeRoot
@@ -105,8 +180,12 @@ static bool IsKnownCallee(std::string_view name, TSNode node, const NamespaceChe
         return true;
     }
 
-    if (ctx.request.IsRegisteredSymbol(name) || ctx.request.symbolTable.HasSymbol(name) ||
-        ctx.request.IsRegisteredSymbol(getterName) || ctx.request.symbolTable.HasSymbol(getterName))
+    if (IsKnownCalleeSymbol(name, getterName, ctx))
+    {
+        return true;
+    }
+
+    if (IsCalleeAccessorProperty(name, node, request, ctx))
     {
         return true;
     }

@@ -5738,6 +5738,76 @@ TEST_CASE("Server - A symlink does not put one file in two modules twice over")
     CHECK(published <= 1);
 }
 
+TEST_CASE("Server - Closing and pulling a file outside configured modules clears diagnostics")
+{
+    WorkspaceFixture fixture;
+    const std::string orphanSource = "void OrphanBroken() { UnknownOrphanType x; }\n";
+    fixture.Write("module_main.as", "void Main() { }\n");
+    fixture.Write("orphan.as", orphanSource);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    stream.Push(DidOpenMessage(fixture.Uri("orphan.as"), orphanSource));
+    stream.PushAction([&stream]() { WaitForCount(stream, "orphan.as", 1); });
+
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didClose","params":{"textDocument":{"uri":")" +
+                fixture.Uri("orphan.as") + R"("}}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "orphan.as", 2); });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":100,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                fixture.Uri("orphan.as") + R"("}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":101,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.engineProfile = "standard";
+    serverConfig.modules = {{"MyModule", fixture.Path("module_main.as"), ""}};
+
+    RunScript(serverConfig, stream);
+
+    const std::string output = stream.Output();
+    INFO(PublishedFrames(output));
+
+    const std::string lastPublished = LastPublishedFor(output, "orphan.as");
+    CHECK(lastPublished.find("\"diagnostics\":[]") != std::string::npos);
+
+    const std::string pullReport = stream.ResponseFor(100);
+    INFO("pull report: " << pullReport);
+    CHECK(pullReport.find("\"items\":[]") != std::string::npos);
+}
+
+TEST_CASE("Server - Configured module entry resolves sibling includes during initial scan")
+{
+    WorkspaceFixture fixture;
+    const std::string helperName = test::GenerateRandomSymbolName("Helper");
+    fixture.Write("scripts/maps/main.as", "#include \"util.as\"\nvoid Main() { " + helperName + "(); }\n");
+    fixture.Write("scripts/maps/util.as", "void " + helperName + "() { }\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    stream.Push(DidOpenMessage(fixture.Uri("scripts/maps/main.as"),
+                               "#include \"util.as\"\nvoid Main() { " + helperName + "(); }\n"));
+    stream.PushAction([&stream]() { WaitForCount(stream, "main.as", 1); });
+    stream.Push(R"({"jsonrpc":"2.0","id":10,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.engineProfile = "standard";
+    serverConfig.modules = {{"MapModule", fixture.Path("scripts/maps/main.as"), ""}};
+
+    RunScript(serverConfig, stream);
+
+    const std::string output = stream.Output();
+    INFO(PublishedFrames(output));
+    const std::string published = LastPublishedFor(output, "main.as");
+    CHECK(published.find("as-err-undefined-identifier") == std::string::npos);
+    CHECK(published.find("as-warn-include-not-found") == std::string::npos);
+}
+
 TEST_CASE("Server - The cost of a module-wide pass is measured rather than assumed")
 {
     // The design accepts that a save re-analyses the whole module. Accepting a cost is not the same

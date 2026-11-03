@@ -105,6 +105,26 @@ static bool IsContainerClass(std::string_view container, const analysis::SymbolT
 }
 
 /**
+ * @brief Checks if a symbol belongs to a class or interface container.
+ * @param[in] sym Target symbol.
+ * @param[in] symbolTable Global symbol table.
+ * @return True if container is a class or interface.
+ */
+static bool IsSymbolInClassContainer(const analysis::Symbol& sym, const analysis::SymbolTable& symbolTable)
+{
+    if (sym.containerKind == analysis::ContainerKind::Class || sym.containerKind == analysis::ContainerKind::Interface)
+    {
+        return true;
+    }
+    if (sym.containerKind == analysis::ContainerKind::Namespace || sym.containerKind == analysis::ContainerKind::Enum ||
+        sym.containerName.empty())
+    {
+        return false;
+    }
+    return IsContainerClass(sym.containerName, symbolTable);
+}
+
+/**
  * @brief Checks whether a reference at given line in fileUri is inside a named namespace.
  * @param[in] fileUri Document URI.
  * @param[in] line Reference line.
@@ -1220,7 +1240,7 @@ static ankerl::unordered_dense::set<std::string> CollectCompatibleClasses(const 
     ankerl::unordered_dense::set<std::string> compatibleClasses;
     for (const auto& s : symGroup)
     {
-        if (!s.containerName.empty() && IsContainerClass(s.containerName, ctx.symbolTable))
+        if (IsSymbolInClassContainer(s, ctx.symbolTable))
         {
             compatibleClasses.insert(s.containerName);
             compatibleClasses.insert(std::string(analysis::LastScopeSegment(s.containerName)));
@@ -1458,7 +1478,7 @@ static SymbolLensTarget CreateFunctionOrVariableTarget(const RangeKey& key, cons
     {
         targetNamespace = std::string(utils::ParentScopeView(targetEnumContainer));
     }
-    else if (!sym.containerName.empty() && !IsContainerClass(sym.containerName, ctx.symbolTable))
+    else if (!sym.containerName.empty() && !IsSymbolInClassContainer(sym, ctx.symbolTable))
     {
         targetNamespace = sym.containerName;
     }
@@ -1496,7 +1516,7 @@ static SymbolLensTarget CreateClassTarget(const RangeKey& key, const analysis::S
     AddSymbolDeclRanges(symGroup, allDeclRanges);
 
     std::string targetNamespace;
-    if (!sym.containerName.empty() && !IsContainerClass(sym.containerName, ctx.symbolTable))
+    if (!sym.containerName.empty() && !IsSymbolInClassContainer(sym, ctx.symbolTable))
     {
         targetNamespace = sym.containerName;
     }

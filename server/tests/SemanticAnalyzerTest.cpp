@@ -106,13 +106,14 @@ std::vector<Diagnostic> AnalyzeSourceWithMetadata(const std::string& sourceCode,
     return diagnostics;
 }
 
-/** @brief True if diagnostics contains an as-warn-undeclared-identifier flagging exactly name. */
+/** @brief True if diagnostics contains undeclared or undefined identifier diagnostic flagging exactly name. */
 bool HasUndefinedIdentifierDiagnostic(const std::vector<Diagnostic>& diagnostics, const std::string& name)
 {
     std::string quoted = "'" + name + "'";
     for (const auto& diag : diagnostics)
     {
-        if (diag.code == "as-warn-undeclared-identifier" && diag.message.find(quoted) != std::string::npos)
+        if ((diag.code == "as-warn-undeclared-identifier" || diag.code == "as-err-undefined-identifier") &&
+            diag.message.find(quoted) != std::string::npos)
             return true;
     }
     return false;

@@ -64,7 +64,8 @@ static bool IsClassOrInterfaceMember(const Symbol& sym, const SymbolTable& table
     {
         return true;
     }
-    if (sym.containerKind == ContainerKind::Namespace || sym.containerName.empty())
+    if (sym.containerKind == ContainerKind::Namespace || sym.containerKind == ContainerKind::Enum ||
+        sym.containerName.empty())
     {
         return false;
     }
@@ -339,9 +340,7 @@ void ValidateVariable(const Symbol& sym, const DiagnosticContext& ctx)
 
     const auto& sig = sym.GetVariable();
 
-    // Function-body locals are not reached through the symbol table at all; anything marked
-    // local here came in some other way and is not this module's business.
-    if (sig.isLocal)
+    if (sig.isLocal || sig.isEnumConstant || sym.containerKind == ContainerKind::Enum)
     {
         return;
     }

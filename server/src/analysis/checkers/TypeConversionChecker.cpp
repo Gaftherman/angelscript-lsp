@@ -3039,6 +3039,11 @@ static void ProcessAutoVariableDeclarators(TSNode node, const TypeConversionChec
 static void CheckDeclaratorConstruction(TSNode child, const DeclaredType& declared, const Scope* scope,
                                         DiagnosticContext& ctx)
 {
+    if (declared.isTemplateOrArray)
+    {
+        return;
+    }
+
     const NonInstantiableKind nonInst = ClassifyNonInstantiable(declared.baseName, ctx.request.symbolTable);
     if (nonInst == NonInstantiableKind::Abstract)
     {
@@ -3052,7 +3057,7 @@ static void CheckDeclaratorConstruction(TSNode child, const DeclaredType& declar
     {
         CheckDefaultConstructor(child, declared.baseName, ctx);
     }
-    else if (!ts_node_is_null(argsNode) && !declared.isTemplateOrArray)
+    else if (!ts_node_is_null(argsNode))
     {
         CheckConstruction(argsNode, declared.baseName, scope, ctx);
     }

@@ -49,6 +49,11 @@ static bool ShouldIgnoreReference(const LocalReference& ref, const DiagnosticCon
         return true;
     }
 
+    if (ref.isCall && ref.name != "super" && ctx.request.tree != nullptr)
+    {
+        return true;
+    }
+
     return false;
 }
 
