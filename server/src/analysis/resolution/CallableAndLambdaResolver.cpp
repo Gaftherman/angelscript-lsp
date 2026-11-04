@@ -497,8 +497,9 @@ void ApplyLambdaParamChild(TSNode child, TSFieldId fieldId, std::string_view sou
     {
         current.isReference = true;
     }
-    else if (sym == gs.tokIn || sym == gs.tokOut || sym == gs.tokInout)
+    else if (fieldId == gs.fieldDirection || sym == gs.tokIn || sym == gs.tokOut || sym == gs.tokInout)
     {
+        current.isReference = true;
         current.modifier = (sym == gs.tokIn)    ? ParameterModifier::In
                            : (sym == gs.tokOut) ? ParameterModifier::Out
                                                 : ParameterModifier::InOut;

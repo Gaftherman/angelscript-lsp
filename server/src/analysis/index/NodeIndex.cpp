@@ -534,7 +534,7 @@ void NodeIndex::FlowFactCollector::CaptureSyntaxNode(Frame& frame, TSNode node, 
     frame.captureOperands = frame.isNamed && CapturesOperands(frame.symbol);
     Frame* parent = m_frames.empty() ? nullptr : &m_frames.back();
     const bool hasParent = parent && parent->syntaxId != NoSyntaxNode && (frame.inCallable || parent->captureOperands);
-    const bool afterAssign = hasParent && ObserveAssignmentChild(*parent, frame.symbol);
+    const bool afterAssign = hasParent && ObserveAssignmentChild(*parent, frame.symbol, frame.field);
     const bool callable = IsFlowCallable(frame.symbol, m_grammar);
     const bool linkedOperand = hasParent && (frame.isNamed || frame.field != 0 || afterAssign ||
                                              CapturesAnonymousOperands(parent->symbol, m_grammar));
@@ -586,11 +586,12 @@ void NodeIndex::FlowFactCollector::CaptureInitializerIdentifier(Frame& frame, TS
 }
 
 /// Remembers the child after '=' in a recovered declarator and the keyword of a case clause.
-bool NodeIndex::FlowFactCollector::ObserveAssignmentChild(Frame& parent, TSSymbol symbol)
+bool NodeIndex::FlowFactCollector::ObserveAssignmentChild(Frame& parent, TSSymbol symbol, TSFieldId field)
 {
     if (parent.symbol == m_grammar.symCaseClause && !parent.hasChild)
     {
-        m_index.MutableFlowFacts().syntaxNodes[parent.syntaxId].defaultClause = symbol == m_grammar.tokDefault;
+        m_index.MutableFlowFacts().syntaxNodes[parent.syntaxId].defaultClause =
+            (field == m_grammar.fieldDefaultClause || symbol == m_grammar.tokDefault);
     }
     const bool afterAssign = parent.takeInitializer;
     if (parent.symbol == m_grammar.symVariableDeclarator)
@@ -697,7 +698,7 @@ void NodeIndex::FlowFactCollector::AddChild(Frame& parent, const Frame& child, b
 {
     if (!parent.hasChild)
     {
-        parent.isDefault = child.symbol == m_grammar.tokDefault;
+        parent.isDefault = child.field == m_grammar.fieldDefaultClause || child.symbol == m_grammar.tokDefault;
         parent.isCase = child.symbol == m_grammar.tokCase;
         parent.hasChild = true;
     }

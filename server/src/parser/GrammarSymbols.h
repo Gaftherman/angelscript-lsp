@@ -238,6 +238,8 @@ struct GrammarSymbols
     TSFieldId fieldModifier = 0;       ///< "modifier"
     TSFieldId fieldParam = 0;          ///< "param"
     TSFieldId fieldUnderlyingType = 0; ///< "underlying_type"
+    TSFieldId fieldDefaultClause = 0;  ///< "default_clause"
+    TSFieldId fieldDirection = 0;      ///< "direction"
 
     // Pre-resolved Statement & Expression Sets
 

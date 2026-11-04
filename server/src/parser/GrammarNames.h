@@ -109,7 +109,9 @@ inline constexpr std::string_view Body = "body";
 inline constexpr std::string_view Collection = "collection";
 inline constexpr std::string_view Condition = "condition";
 inline constexpr std::string_view Consequence = "consequence";
+inline constexpr std::string_view DefaultClause = "default_clause";
 inline constexpr std::string_view DefaultValue = "default_value";
+inline constexpr std::string_view Direction = "direction";
 inline constexpr std::string_view Function = "function";
 inline constexpr std::string_view Handler = "handler";
 inline constexpr std::string_view Index = "index";
@@ -280,13 +282,13 @@ inline constexpr std::string_view k_allNodeTypes[] = {
  * @brief Every constant in fields::, same purpose.
  */
 inline constexpr std::string_view k_allFieldNames[] = {
-    fields::Alternative,    fields::ArgName,    fields::Arguments,      fields::Base,        fields::BaseType,
-    fields::Body,           fields::Collection, fields::Condition,      fields::Consequence, fields::DefaultValue,
-    fields::Function,       fields::Handler,    fields::Index,          fields::IndexName,   fields::Init,
-    fields::Kind,           fields::Left,       fields::Member,         fields::Modifier,    fields::Name,
-    fields::Object,         fields::Operand,    fields::Operator,       fields::Param,       fields::ParamType,
-    fields::Parameters,     fields::PropType,   fields::ReturnType,     fields::Right,       fields::Source,
-    fields::TemplateParams, fields::Type,       fields::UnderlyingType, fields::Update,      fields::Value,
-    fields::VarType,
+    fields::Alternative,  fields::ArgName,    fields::Arguments,      fields::Base,        fields::BaseType,
+    fields::Body,         fields::Collection, fields::Condition,      fields::Consequence, fields::DefaultClause,
+    fields::DefaultValue, fields::Direction,  fields::Function,       fields::Handler,     fields::Index,
+    fields::IndexName,    fields::Init,       fields::Kind,           fields::Left,        fields::Member,
+    fields::Modifier,     fields::Name,       fields::Object,         fields::Operand,     fields::Operator,
+    fields::Param,        fields::ParamType,  fields::Parameters,     fields::PropType,    fields::ReturnType,
+    fields::Right,        fields::Source,     fields::TemplateParams, fields::Type,        fields::UnderlyingType,
+    fields::Update,       fields::Value,      fields::VarType,
 };
 } // namespace angel_lsp::parser

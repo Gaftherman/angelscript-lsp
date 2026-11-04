@@ -252,6 +252,8 @@ static void PopulateFields(const TSLanguage* lang, GrammarSymbols& gs) noexcept
     gs.fieldModifier = FieldId(lang, parser::fields::Modifier);
     gs.fieldParam = FieldId(lang, parser::fields::Param);
     gs.fieldUnderlyingType = FieldId(lang, parser::fields::UnderlyingType);
+    gs.fieldDefaultClause = FieldId(lang, parser::fields::DefaultClause);
+    gs.fieldDirection = FieldId(lang, parser::fields::Direction);
 }
 
 const GrammarSymbols& GetGrammarSymbols() noexcept

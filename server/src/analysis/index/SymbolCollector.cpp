@@ -2756,6 +2756,25 @@ void SymbolCollector::ExtractParamTypeRefAndConst(TSNode pTypeNode, std::string_
 void SymbolCollector::ExtractParamModifierTokens(TSNode paramNode, std::string_view sourceCode,
                                                  ParameterInformation& paramInfo, uint32_t& refCount) const
 {
+    TSNode dirNode = GetChildByFieldId(paramNode, m_gs.fieldDirection);
+    if (!ts_node_is_null(dirNode))
+    {
+        std::string_view dirTok = GetNodeView(dirNode, sourceCode);
+        paramInfo.isReference = true;
+        if (dirTok == "inout")
+        {
+            paramInfo.modifier = ParameterModifier::InOut;
+        }
+        else if (dirTok == "in")
+        {
+            paramInfo.modifier = ParameterModifier::In;
+        }
+        else if (dirTok == "out")
+        {
+            paramInfo.modifier = ParameterModifier::Out;
+        }
+    }
+
     TSTreeCursor cursor = ts_tree_cursor_new(paramNode);
     if (ts_tree_cursor_goto_first_child(&cursor))
     {

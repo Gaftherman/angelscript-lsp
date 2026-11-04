@@ -46,15 +46,9 @@ void ForEachMemberSymbolNamed(std::string_view scope, std::string_view member, c
 
 std::string TrimString(std::string str)
 {
-    while (!str.empty() && isspace(static_cast<unsigned char>(str.front())))
-    {
-        str.erase(str.begin());
-    }
-    while (!str.empty() && isspace(static_cast<unsigned char>(str.back())))
-    {
-        str.pop_back();
-    }
-    return str;
+    std::string_view view = str;
+    TrimTypeWhitespace(view);
+    return std::string(view);
 }
 
 std::vector<Symbol> CollectFunctionCandidates(const std::string& funcName, const SymbolTable& table)

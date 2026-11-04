@@ -615,7 +615,7 @@ class NodeIndex
         [[nodiscard]] bool CapturesOperands(TSSymbol symbol) const noexcept;
         [[nodiscard]] size_t StoreUnbucketedSyntax(TSNode node);
         [[nodiscard]] SyntaxNodeId AddSyntaxFact(Frame& frame, TSNode node, size_t syntaxSlot, bool afterAssign);
-        bool ObserveAssignmentChild(Frame& parent, TSSymbol symbol);
+        bool ObserveAssignmentChild(Frame& parent, TSSymbol symbol, TSFieldId field = 0);
         void LinkSyntaxChild(Frame& parent, SyntaxNodeId child);
         [[nodiscard]] bool IsAssignmentStatement(TSSymbol symbol) const noexcept;
         [[nodiscard]] bool IsBreakBoundary(TSSymbol symbol) const;
