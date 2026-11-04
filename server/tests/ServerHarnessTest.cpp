@@ -109,6 +109,17 @@ std::string InitializeMessage(const std::string& rootUri)
            rootUri + R"(","name":"fixture"}]}})";
 }
 
+std::string InitializeForPull(std::string message)
+{
+    const auto pos = message.find(R"("capabilities":{)");
+    message.insert(pos + std::string_view(R"("capabilities":{)").size(), R"("textDocument":{"diagnostic":{}},)");
+    if (const auto empty = message.find(R"("diagnostic":{}},})"); empty != std::string::npos)
+    {
+        message.replace(empty, std::string_view(R"("diagnostic":{}},})").size(), R"("diagnostic":{}}})");
+    }
+    return message;
+}
+
 /** @brief Escapes a document so it can be carried inside a JSON string literal. */
 std::string JsonEscape(const std::string& text)
 {
@@ -1600,10 +1611,11 @@ TEST_CASE("Server - Announces the pull-diagnostic capabilities")
     WorkspaceFixture fixture;
 
     test::ScriptedStream stream;
-    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(InitializeForPull(InitializeMessage(fixture.RootUri())));
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
+    serverConfig.features.enablePullDiagnostics = true;
     RunScript(serverConfig, stream);
 
     const std::string initializeReply = stream.ResponseFor(1);
@@ -1616,7 +1628,7 @@ TEST_CASE("Server - Announces the pull-diagnostic capabilities")
     CHECK(initializeReply.find("\"workspaceDiagnostics\":true") != std::string::npos);
 }
 
-TEST_CASE("Server - A pulled diagnostic carries what the pushed one carried")
+TEST_CASE("Server - Pull diagnostics return findings without publishing a second collection")
 {
     // Same document, same finding, both routes. If these two ever diverge the server is telling two
     // different stories about one file depending on which way the client asked.
@@ -1626,7 +1638,7 @@ TEST_CASE("Server - A pulled diagnostic carries what the pushed one carried")
     fixture.Write("main.as", source);
 
     test::ScriptedStream stream;
-    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(InitializeForPull(InitializeMessage(fixture.RootUri())));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
 
@@ -1636,13 +1648,13 @@ TEST_CASE("Server - A pulled diagnostic carries what the pushed one carried")
     // processed.
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
-    stream.PushAction([&stream]() { stream.WaitForCount("publishDiagnostics", 1); });
 
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
                 fixture.Uri("main.as") + R"("}}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
+    serverConfig.features.enablePullDiagnostics = true;
     RunScript(serverConfig, stream);
 
     const std::string pulled = stream.ResponseFor(2);
@@ -1653,7 +1665,7 @@ TEST_CASE("Server - A pulled diagnostic carries what the pushed one carried")
 
     // The finding itself, and it must be the same code the push route carried.
     CHECK(pulled.find("UndefinedThingy") != std::string::npos);
-    CHECK(Published(stream.Output(), "as-err-undefined-identifier"));
+    CHECK_FALSE(stream.OutputContains("textDocument/publishDiagnostics"));
     CHECK(pulled.find("as-err-undefined-identifier") != std::string::npos);
 }
 
@@ -1672,7 +1684,7 @@ TEST_CASE("Server - Pull diagnostics on closed file blanks excluded preprocessor
     fixture.Write("scripts/maps/main.as", "#include \"equipment.as\"\nvoid Main() {}\n");
 
     test::ScriptedStream stream;
-    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(InitializeForPull(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true)));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
 
@@ -1682,6 +1694,7 @@ TEST_CASE("Server - Pull diagnostics on closed file blanks excluded preprocessor
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
+    serverConfig.features.enablePullDiagnostics = true;
     serverConfig.engineProfile = "standard";
     serverConfig.modules = {{"MapScript", "", (fixture.dir / "scripts/maps").generic_string()}};
     RunScript(serverConfig, stream);
@@ -1720,6 +1733,7 @@ TEST_CASE("Server - Pull diagnostics client receives workspace/diagnostic/refres
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
+    serverConfig.features.enablePullDiagnostics = true;
     RunScript(serverConfig, stream);
 
     CHECK(stream.OutputContains("workspace/diagnostic/refresh"));
@@ -1744,13 +1758,12 @@ TEST_CASE("Server - A second pull of an unedited document is answered unchanged"
         fixture.Write("main.as", source);
 
         test::ScriptedStream stream;
-        stream.Push(InitializeMessage(fixture.RootUri()));
+        stream.Push(InitializeForPull(InitializeMessage(fixture.RootUri())));
         stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
         stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
 
         stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
         stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
-        stream.PushAction([&stream]() { stream.WaitForCount("publishDiagnostics", 1); });
 
         std::string request =
             R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
@@ -1763,6 +1776,7 @@ TEST_CASE("Server - A second pull of an unedited document is answered unchanged"
         stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
         config::ServerConfig serverConfig;
+        serverConfig.features.enablePullDiagnostics = true;
         RunScript(serverConfig, stream);
         return stream.ResponseFor(2);
     };
@@ -1797,13 +1811,14 @@ TEST_CASE("Server - Pulling a document the analyzer has not reached asks the cli
     fixture.Write("never-opened.as", "void Main() { }\n");
 
     test::ScriptedStream stream;
-    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(InitializeForPull(InitializeMessage(fixture.RootUri())));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
                 fixture.Uri("never-opened.as") + R"("}}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
+    serverConfig.features.enablePullDiagnostics = true;
     RunScript(serverConfig, stream);
 
     const std::string reply = stream.ResponseFor(2);
@@ -1825,18 +1840,20 @@ TEST_CASE("Server - workspace/diagnostic reports the documents already analysed"
     fixture.Write("main.as", source);
 
     test::ScriptedStream stream;
-    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(InitializeForPull(InitializeMessage(fixture.RootUri())));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), source));
 
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"$/setTrace","params":{"value":"off"}})");
-    stream.PushAction([&stream]() { stream.WaitForCount("publishDiagnostics", 1); });
 
+    stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("}}})");
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"workspace/diagnostic","params":{"previousResultIds":[]}})");
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
+    serverConfig.features.enablePullDiagnostics = true;
     RunScript(serverConfig, stream);
 
     const std::string reply = stream.ResponseFor(2);
@@ -3030,19 +3047,16 @@ TEST_CASE("Server - A pull answer is never about text the analyzer has not seen"
     const std::string broken = "void main() { float f }\n";
     const std::string fixed = "void main() { float f; }\n";
 
-    const auto waitFor = [](test::ScriptedStream& stream, const std::string& needle)
-    { stream.WaitForCount(needle, 1); };
-
     WorkspaceFixture fixture;
     fixture.Write("main.as", broken);
 
     test::ScriptedStream stream;
-    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(InitializeForPull(InitializeMessage(fixture.RootUri())));
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
     stream.Push(DidOpenMessage(fixture.Uri("main.as"), broken));
 
-    // Let the broken text be analysed, so the cache holds a real answer to go stale.
-    stream.PushAction([&]() { waitFor(stream, "as-syntax-error"); });
+    stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                fixture.Uri("main.as") + R"("}}})");
 
     // The fix arrives, and the client pulls immediately - before the debounced analysis can run.
     stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didChange","params":{"textDocument":{"uri":")" +
@@ -3053,8 +3067,10 @@ TEST_CASE("Server - A pull answer is never about text the analyzer has not seen"
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
+    serverConfig.features.enablePullDiagnostics = true;
     RunScript(serverConfig, stream);
 
+    CHECK(stream.ResponseFor(4).find("as-syntax-error") != std::string::npos);
     const std::string pulled = stream.ResponseFor(2);
     INFO(pulled);
 
@@ -3135,7 +3151,7 @@ TEST_CASE("Server - An edit reaches the client while a polling editor keeps aski
     // And the client was answered rather than told to ask again for the whole second.
     const std::string lastPoll = stream.ResponseFor(k_firstPollId + k_polls - 1);
     INFO(lastPoll);
-    CHECK(lastPoll.find("\"result\"") != std::string::npos);
+    CHECK(lastPoll.find("-32601") != std::string::npos);
 }
 
 // =====================================================================================
@@ -3245,6 +3261,7 @@ TEST_CASE("Server - A client that pulls diagnostics is not also sent them")
     stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
+    serverConfig.features.enablePullDiagnostics = true;
     RunScript(serverConfig, stream);
 
     const std::string output = stream.Output();
@@ -3281,7 +3298,7 @@ TEST_CASE("Server - A client that does not pull is still sent its diagnostics")
 }
 
 // =====================================================================================
-TEST_CASE("Server - A pulling client receives empty publishDiagnostics when clean on string recovery")
+TEST_CASE("Server - A pulling client receives an empty report when clean on string recovery")
 {
     WorkspaceFixture fixture;
     const std::string varName = test::GenerateRandomSymbolName("var");
@@ -3310,6 +3327,7 @@ TEST_CASE("Server - A pulling client receives empty publishDiagnostics when clea
     stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
+    serverConfig.features.enablePullDiagnostics = true;
     RunScript(serverConfig, stream);
 
     const std::string output = stream.Output();
@@ -3325,11 +3343,10 @@ TEST_CASE("Server - A pulling client receives empty publishDiagnostics when clea
     INFO(fixedPull);
     CHECK(fixedPull.find("\"items\":[]") != std::string::npos);
 
-    // And publishDiagnostics with empty diagnostics array was pushed to dismiss client collection
-    CHECK(output.find("\"diagnostics\":[]") != std::string::npos);
+    CHECK(output.find("textDocument/publishDiagnostics") == std::string::npos);
 }
 
-TEST_CASE("Server - A pulling client receives empty publishDiagnostics when clean on heredoc recovery")
+TEST_CASE("Server - A pulling client receives an empty report when clean on heredoc recovery")
 {
     WorkspaceFixture fixture;
     const std::string varName = test::GenerateRandomSymbolName("var");
@@ -3358,6 +3375,7 @@ TEST_CASE("Server - A pulling client receives empty publishDiagnostics when clea
     stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
+    serverConfig.features.enablePullDiagnostics = true;
     RunScript(serverConfig, stream);
 
     const std::string output = stream.Output();
@@ -3373,8 +3391,7 @@ TEST_CASE("Server - A pulling client receives empty publishDiagnostics when clea
     INFO(fixedPull);
     CHECK(fixedPull.find("\"items\":[]") != std::string::npos);
 
-    // And publishDiagnostics with empty diagnostics array was pushed to dismiss client collection
-    CHECK(output.find("\"diagnostics\":[]") != std::string::npos);
+    CHECK(output.find("textDocument/publishDiagnostics") == std::string::npos);
 }
 
 // Opening a stub is not the same as selecting it.
@@ -5150,6 +5167,8 @@ std::string RunEditingOpenStub(const std::string& editedStub, bool expectNewFram
                                "{\n"
                                "    UndefinedThingy();\n"
                                "}\n"
+                               "#else\n"
+                               "int ClientBranch() { return 1; }\n"
                                "#endif\n";
 
     WorkspaceFixture fixture;
@@ -5157,6 +5176,7 @@ std::string RunEditingOpenStub(const std::string& editedStub, bool expectNewFram
     fixture.Write("main.as", source);
 
     config::ServerConfig serverConfig;
+    serverConfig.diagnostics.reportUnusedFunctions = false;
     test::ScriptedStream stream;
     Server server(serverConfig, stream);
 
@@ -5206,6 +5226,7 @@ std::string RunEditingOpenStub(const std::string& editedStub, bool expectNewFram
             });
     }
 
+    stream.Push(R"({"jsonrpc":"2.0","id":1501,"method":"workspace/symbol","params":{"query":"ClientBranch"}})");
     stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"shutdown"})");
 
     server.Run();
@@ -5228,6 +5249,7 @@ TEST_CASE("Server - Commenting out a #define in an open stub re-evaluates every 
     const std::string last = LastPublishedFor(output, "main.as");
     INFO(last);
     CHECK(last.find(R"("diagnostics":[])") != std::string::npos);
+    CHECK(output.find(R"("name":"ClientBranch")") != std::string::npos);
 }
 
 TEST_CASE("Server - An edit that leaves the #defines alone does not change what the #if says")
@@ -5774,7 +5796,7 @@ TEST_CASE("Server - A symlink does not put one file in two modules twice over")
     CHECK(published <= 1);
 }
 
-TEST_CASE("Server - Closing and pulling a file outside configured modules clears diagnostics")
+TEST_CASE("Server - Closing a file outside configured modules clears Push diagnostics")
 {
     WorkspaceFixture fixture;
     const std::string orphanSource = "void OrphanBroken() { UnknownOrphanType x; }\n";
@@ -5811,7 +5833,7 @@ TEST_CASE("Server - Closing and pulling a file outside configured modules clears
 
     const std::string pullReport = stream.ResponseFor(100);
     INFO("pull report: " << pullReport);
-    CHECK(pullReport.find("\"items\":[]") != std::string::npos);
+    CHECK(pullReport.find("-32601") != std::string::npos);
 }
 
 TEST_CASE("Server - Configured module entry resolves sibling includes during initial scan")
@@ -6160,6 +6182,141 @@ TEST_CASE("Telemetry - FormatDuration formats milliseconds and converts seconds 
     CHECK(angel_lsp::utils::FormatDuration(25000.0) == "25.00 s (25000.00 ms)");
 }
 
+TEST_CASE("Server - Closed analysis reuses lexical scopes from the exact preprocessed revision")
+{
+    WorkspaceFixture fixture;
+    fixture.Write("closed_scope.as", R"(#if INACTIVE_CLOSED_BRANCH
+void Hidden() { HiddenMissing(); }
+#endif
+void Main()
+{
+    int value;
+    int result = value;
+}
+)");
+    fixture.Write("malformed.as", "void Broken() { int value = ; }\n");
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction(
+        [&stream]()
+        {
+            stream.WaitForCondition(
+                [](const std::string& output)
+                {
+                    return CountPublishedFor(output, "closed_scope.as") >= 1 &&
+                           CountPublishedFor(output, "malformed.as") >= 1;
+                });
+        });
+    stream.Push(R"({"jsonrpc":"2.0","id":20,"method":"shutdown"})");
+
+    config::ServerConfig config;
+    config.engineProfile = "standard";
+    config.modules = {{"Closed", "", fixture.dir.generic_string()}};
+    const std::string output = RunScript(config, stream);
+    CHECK(output.find("[Analysis] Reused closed lexical scopes for file:") != std::string::npos);
+    CHECK(output.find("[Analysis] Reused closed indexed symbols for file:") != std::string::npos);
+    CHECK(LastPublishedFor(output, "malformed.as").find("as-syntax-error") != std::string::npos);
+    const auto report = LastPublishedFor(output, "closed_scope.as");
+    CHECK(report.find("as-warn-uninitialized-variable-read") != std::string::npos);
+    CHECK(report.find("HiddenMissing") == std::string::npos);
+}
+
+TEST_CASE("SyntaxRevisionCache - Closed entries require exact parser input and disk revision")
+{
+    const std::string uri = "file:///closed_cache.as";
+    const std::string source = "void Main() {}";
+    parser::AngelScriptParser parser;
+    const auto syntax = std::make_shared<const ParsedDocumentSyntax>(document::MakeTreePtr(parser.Parse(source)));
+    REQUIRE(syntax->tree);
+    SyntaxRevisionCache cache;
+    cache.Remember({uri, source, 0, 9}, syntax);
+    CHECK(cache.Find({uri, source, 0, 9}) == syntax);
+    CHECK_FALSE(cache.Find({uri, source, 0, 10}));
+    CHECK_FALSE(cache.Find({uri, source, 9, 0}));
+    CHECK_FALSE(cache.Find({uri, "void Other() {}", 0, 9}));
+}
+
+TEST_CASE("Server - Semantic configuration reanalysis reuses the exact worker extraction")
+{
+    WorkspaceFixture fixture;
+    const std::string uri = fixture.Uri("reuse_syntax.as");
+    const std::string source = "void Probe() {}\n";
+    fixture.Write("reuse_syntax.as", source);
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+    stream.Push(DidOpenMessage(uri, source));
+    stream.PushAction([&stream]() { WaitForCount(stream, "[Open/Change Profile]", 1); });
+    stream.Push(DidChangeMessage(uri, 2, "void Probe() { float value = 1 / 2; }\n"));
+    stream.Push(R"({"jsonrpc":"2.0","id":21,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":")" +
+                uri + R"("}}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "[Open/Change Profile]", 2); });
+    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeConfiguration","params":)"
+                R"({"settings":{"angelscript":{"diagnostics":{"reportIntegerDivision":true}}}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":22,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":")" +
+                uri + R"("}}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "AST extraction nodes: 0", 1); });
+    stream.PushAction(
+        [&stream]()
+        {
+            stream.WaitForCondition(
+                [](const std::string& output)
+                {
+                    return LastPublishedFor(output, "reuse_syntax.as").find("as-hint-integer-division") !=
+                           std::string::npos;
+                });
+        });
+    stream.Push(R"({"jsonrpc":"2.0","id":23,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    const std::string output = RunScript(serverConfig, stream);
+    CHECK(output.find("AST extraction nodes: 0") != std::string::npos);
+    CHECK(LastPublishedFor(output, "reuse_syntax.as").find("as-hint-integer-division") != std::string::npos);
+}
+
+TEST_CASE("Server - Inactive regions are published from the worker's prepared source")
+{
+    WorkspaceFixture fixture;
+    const std::string uri = fixture.Uri("prepared_regions.as");
+    const std::string source = "#if PREPARED_REGION\nvoid Conditional() {}\n#endif\n";
+    fixture.Write("prepared_regions.as", source);
+
+    config::ServerConfig serverConfig;
+    test::ScriptedStream stream;
+    Server server(serverConfig, stream);
+    server.SetOnBeforeCommitHook(
+        [&server](const std::string&, int version, uint64_t)
+        {
+            if (version == 2)
+            {
+                // Change the live define provider after analysis to verify publication uses the work item's ranges.
+                server.SetDefinedWordsFrom("prepared-regions-test", {"PREPARED_REGION"});
+            }
+        });
+
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+    stream.Push(DidOpenMessage(uri, source));
+    stream.PushAction([&stream]() { WaitForCount(stream, "angelscript/inactiveRegions", 1); });
+    stream.Push(DidChangeMessage(uri, 2, "\n" + source));
+    stream.Push(R"({"jsonrpc":"2.0","id":21,"method":"textDocument/documentSymbol","params":{"textDocument":{"uri":")" +
+                uri + R"("}}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "angelscript/inactiveRegions", 2); });
+    stream.Push(R"({"jsonrpc":"2.0","id":22,"method":"shutdown"})");
+    server.Run();
+
+    const std::string output = stream.Output();
+    const auto last = output.rfind("angelscript/inactiveRegions");
+    REQUIRE(last != std::string::npos);
+    const auto frame = output.substr(last, output.find("Content-Length:", last) - last);
+    CHECK(frame.find(R"("startLine":1)") != std::string::npos);
+    CHECK(frame.find(R"("endLine":3)") != std::string::npos);
+}
+
 TEST_CASE("Telemetry - didOpen produces [File Open] and [Open/Change Profile] structured logs")
 {
     WorkspaceFixture fixture;
@@ -6179,6 +6336,46 @@ TEST_CASE("Telemetry - didOpen produces [File Open] and [Open/Change Profile] st
     CHECK(output.find("[File Open] Opening document:") != std::string::npos);
     CHECK(output.find("[File Open] Finished opening document:") != std::string::npos);
     CHECK(output.find("[Open/Change Profile]") != std::string::npos);
+}
+
+TEST_CASE("Server - Save and semantic tokens reuse exact protocol syntax revisions")
+{
+    WorkspaceFixture fixture;
+    const std::string uri = fixture.Uri("protocol_revision.as");
+    const std::string openText = "void Probe() {}\n";
+    fixture.Write("protocol_revision.as", openText);
+    const std::string document = R"("textDocument":{"uri":")" + uri + R"("})";
+    const std::string save = R"({"jsonrpc":"2.0","method":"textDocument/didSave","params":{)" + document + "}}";
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeMessage(fixture.RootUri()));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.Push(DidOpenMessage(uri, openText));
+    stream.Push(save);
+    stream.Push(DidChangeMessage(uri, 2, "void Probe() { int first = 1; }\n"));
+    stream.Push(save);
+    stream.Push(DidChangeMessage(uri, 3, "void Probe() { bool next = true; }\n"));
+    stream.Push(R"({"jsonrpc":"2.0","id":19,"method":"textDocument/semanticTokens/full","params":{)" + document + "}}");
+    stream.Push(save);
+    stream.Push(R"({"jsonrpc":"2.0","id":20,"method":"shutdown"})");
+
+    config::ServerConfig config;
+    config.features.enableSemanticTokens = true;
+    const std::string output = RunScript(config, stream);
+    CHECK(stream.ResponseFor(19).find("\"data\"") != std::string::npos);
+
+    const std::string_view marker = "[File Save] Finished save analysis";
+    size_t start = 0;
+    for (const bool reused : {true, false, true})
+    {
+        const size_t saveLog = output.find(marker, start);
+        REQUIRE(saveLog != std::string::npos);
+        const size_t end = output.find("Content-Length:", saveLog);
+        const std::string_view frame = std::string_view(output).substr(saveLog, end - saveLog);
+        REQUIRE(frame.find("AST extraction nodes: ") != std::string_view::npos);
+        CHECK((frame.find("AST extraction nodes: 0)") != std::string_view::npos) == reused);
+        start = end;
+    }
 }
 
 TEST_CASE("Server - Saving an open file in a module does not re-analyze closed files or unchanged peers")
@@ -7093,6 +7290,7 @@ TEST_CASE("Server - Pull diagnostics recovers to zero errors when unclosed strin
     stream.Push(R"({"jsonrpc":"2.0","id":4,"method":"shutdown"})");
 
     config::ServerConfig serverConfig;
+    serverConfig.features.enablePullDiagnostics = true;
     RunScript(serverConfig, stream);
 
     const std::string pulledBroken = stream.ResponseFor(2);

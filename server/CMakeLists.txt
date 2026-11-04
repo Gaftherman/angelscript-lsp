@@ -224,6 +224,18 @@ target_compile_definitions(angel_lsp_core PUBLIC ANGELLSP_VERSION="${ANGELLSP_VE
 
 # Compile-blocking AST traversal, parent-climb, and grammar symbol integrity gate
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(ANGELLSP_LOCALES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/src/i18n/locales")
+set(ANGELLSP_I18N_DATA "${CMAKE_CURRENT_BINARY_DIR}/generated/I18nLocaleData.inc")
+add_custom_command(
+    OUTPUT "${ANGELLSP_I18N_DATA}"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate-i18n-data.py"
+        "${ANGELLSP_LOCALES_DIR}" "${ANGELLSP_I18N_DATA}"
+    DEPENDS scripts/generate-i18n-data.py
+        "${ANGELLSP_LOCALES_DIR}/en.json" "${ANGELLSP_LOCALES_DIR}/es.json"
+    VERBATIM
+)
+target_sources(angel_lsp_core PRIVATE "${ANGELLSP_I18N_DATA}")
+target_include_directories(angel_lsp_core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 add_custom_target(angel_lsp_anti_slop_gate ALL
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-ast-traversal.py"
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check-grammar-names.py" --binary-dir "${CMAKE_BINARY_DIR}"

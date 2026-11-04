@@ -494,7 +494,7 @@ static void CollectLocalHighlightRanges(const analysis::TargetDescriptor& target
         return;
     }
 
-    std::vector<std::pair<const analysis::Scope*, bool>> stack{{target.definingScope, true}};
+    std::vector<std::pair<const analysis::Scope*, bool>> stack{{target.definingScope.get(), true}};
     while (!stack.empty())
     {
         auto [scope, isRoot] = stack.back();
@@ -961,30 +961,6 @@ static bool IsRefInsideNamespaceScope(const analysis::LocalReference& ref,
 }
 
 /**
- * @brief Checks if a local definition shadows a namespace or global symbol.
- * @param[in] scope Current lexical scope.
- * @param[in] name Symbol name.
- * @param[in] rootScope Root scope.
- * @return True if shadowed by a function-local variable or parameter.
- */
-static bool IsShadowedByFunctionLocal(const analysis::Scope* scope, const std::string& name,
-                                      const analysis::Scope* rootScope)
-{
-    const analysis::LocalDefinition* localDef = analysis::ResolveInScope(scope, name);
-    if (!localDef)
-    {
-        return false;
-    }
-    if (localDef->kind != analysis::LocalDefinitionKind::Parameter &&
-        localDef->kind != analysis::LocalDefinitionKind::Variable)
-    {
-        return false;
-    }
-    const analysis::Scope* defScope = analysis::FindScopeDeclaringDefinition(rootScope, *localDef);
-    return defScope && analysis::IsDeclaredInFunctionScope(defScope);
-}
-
-/**
  * @brief Collects symbol declarations matching a name in the current file.
  * @param[in] name Symbol name or qualified name to look up.
  * @param[in] request Highlight request.
@@ -1085,7 +1061,7 @@ static void CollectNamespaceHighlightRanges(const analysis::TargetDescriptor& ta
                           {
                               if (ref.name == target.name && !ref.isMemberAccess &&
                                   IsRefInsideNamespaceScope(ref, nsRanges, target, request) &&
-                                  !IsShadowedByFunctionLocal(s, target.name, rootScope))
+                                  !analysis::IsShadowedByFunctionLocal(s, target.name))
                               {
                                   collector.Add(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter);
                               }
@@ -1120,7 +1096,7 @@ static void CollectGlobalHighlightRanges(const analysis::TargetDescriptor& targe
                           [&](const analysis::Scope* s, const analysis::LocalReference& ref)
                           {
                               if (ref.name == target.name && !ref.isMemberAccess &&
-                                  !IsShadowedByFunctionLocal(s, target.name, rootScope))
+                                  !analysis::IsShadowedByFunctionLocal(s, target.name))
                               {
                                   collector.Add(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter);
                               }
@@ -1195,7 +1171,7 @@ static void CollectEnumMemberScopeReferences(const analysis::TargetDescriptor& t
             {
                 continue;
             }
-            if (!ref.isMemberAccess && !IsShadowedByFunctionLocal(s, target.name, rootScope))
+            if (!ref.isMemberAccess && !analysis::IsShadowedByFunctionLocal(s, target.name))
             {
                 collector.Add(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter);
             }

@@ -18,13 +18,12 @@ namespace angel_lsp::analysis
 void CheckRepeatedConversions(TSNode rootIfNode, const Scope* scope, DiagnosticContext& ctx);
 
 /**
- * @brief Finds all AST node occurrences of an expression text within an if statement ladder's conditions.
- * @param[in] rootIf Root if_statement node.
- * @param[in] exprText Target expression text to find.
- * @param[in] sourceCode Source document content.
- * @return Vector of matching AST nodes.
+ * @brief Collects condition handles along the alternative links of an if-else ladder.
+ * @param[in] rootIf First conditional statement.
+ * @param[in] index Extracted syntax for diagnostics, or nullptr for an interactive query.
+ * @return Nonempty conditions in source order, excluding the final else body.
  */
-std::vector<TSNode> FindOccurrencesInIfLadder(TSNode rootIf, std::string_view exprText, std::string_view sourceCode);
+[[nodiscard]] std::vector<TSNode> CollectIfLadderConditions(TSNode rootIf, const NodeIndex* index);
 
 /**
  * @brief Records source line and target type details for repeated type conversion diagnostic reporting.

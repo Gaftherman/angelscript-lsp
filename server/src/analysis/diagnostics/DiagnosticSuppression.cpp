@@ -263,6 +263,55 @@ std::string_view GetCanonicalDiagnosticCode(std::string_view aliasOrCode) noexce
     return aliasOrCode;
 }
 
+std::string_view NormalizeDiagnosticSelector(std::string_view selector) noexcept
+{
+    constexpr std::pair<std::string_view, std::string_view> groups[] = {
+        {"unused", "as-warn-unused"},
+        {"engine", "as-warn-engine"},
+        {"conversion", "as-warn-conversion"},
+        {"null", "as-warn-null"},
+        {"shadow", "as-warn-shadow"},
+        {"hints", "as-hint"},
+        {"warnings", "as-warn"},
+        {"all", "all"},
+    };
+    for (const auto& [name, alias] : groups)
+    {
+        if (EqualsCaseInsensitive(name, selector) || EqualsCaseInsensitive(alias, selector))
+        {
+            return name;
+        }
+    }
+    return GetCanonicalDiagnosticCode(selector);
+}
+
+std::string_view GetDiagnosticGroup(std::string_view code) noexcept
+{
+    code = GetCanonicalDiagnosticCode(code);
+    if (code.starts_with("as-warn-unused-"))
+        return "unused";
+    if (code.starts_with("as-warn-engine-") || code == diagnostics::codes::EngineTypeSuggestion)
+        return "engine";
+    if (code == diagnostics::codes::SignedUnsignedMismatch || code == diagnostics::codes::FloatTruncation ||
+        code == diagnostics::codes::BoolConversion || code == diagnostics::codes::RepeatedConversion)
+        return "conversion";
+    if (code == diagnostics::codes::PossibleNullDereference)
+        return "null";
+    if (code == diagnostics::codes::ShadowGlobal)
+        return "shadow";
+    return {};
+}
+
+std::string_view GetDiagnosticCategory(std::string_view code) noexcept
+{
+    code = GetCanonicalDiagnosticCode(code);
+    if (code.starts_with("as-warn-"))
+        return "warnings";
+    if (code.starts_with("as-hint-"))
+        return "hints";
+    return {};
+}
+
 std::string FormatDiagnosticDisplayCode(std::string_view canonicalCode)
 {
     std::string_view alias = GetDiagnosticAlias(canonicalCode);
@@ -271,17 +320,19 @@ std::string FormatDiagnosticDisplayCode(std::string_view canonicalCode)
 
 void DiagnosticSuppressionMap::AddSuppression(std::string_view code, uint32_t startLine, uint32_t endLine)
 {
-    m_suppressions.push_back({std::string(code), startLine, endLine});
+    m_suppressions.push_back({std::string(NormalizeDiagnosticSelector(code)), startLine, endLine});
 }
 
 bool DiagnosticSuppressionMap::IsSuppressed(std::string_view code, uint32_t line) const
 {
-    std::string_view canonical = GetCanonicalDiagnosticCode(code);
+    const auto canonical = GetCanonicalDiagnosticCode(code);
+    const auto group = GetDiagnosticGroup(canonical);
+    const auto category = GetDiagnosticCategory(canonical);
     for (const auto& s : m_suppressions)
     {
         if (line >= s.startLine && line <= s.endLine)
         {
-            if (s.code == "all" || s.code == code || s.code == canonical)
+            if (s.code == "all" || s.code == canonical || s.code == group || s.code == category)
                 return true;
         }
     }
@@ -307,8 +358,7 @@ static void ProcessCommentDirective(std::string_view rawText, uint32_t line, Dia
 
     for (size_t k = 1; k < tokens.size(); ++k)
     {
-        std::string codeKey =
-            EqualsCaseInsensitive(tokens[k], "all") ? "all" : std::string(GetCanonicalDiagnosticCode(tokens[k]));
+        const std::string codeKey(NormalizeDiagnosticSelector(tokens[k]));
         if (isDisableLine)
         {
             map.AddSuppression(codeKey, line, line);

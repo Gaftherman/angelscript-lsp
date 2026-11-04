@@ -1,6 +1,7 @@
 #pragma once
 
 #include "document/Document.h"
+#include "utils/PreprocessorRegions.h"
 
 #include <ankerl/unordered_dense.h>
 #include <atomic>
@@ -23,6 +24,7 @@ struct AnalysisMetadata
     int version = -1;
     uint64_t generation = 0;
     uint64_t configRevision = 0;
+    uint64_t closedRevision = 0;
 };
 
 /**
@@ -37,6 +39,8 @@ struct ScheduleRequest
     int version = -1;
     uint64_t generation = 0;
     uint64_t configRevision = 0;
+    uint64_t closedRevision = 0;
+    std::shared_ptr<const utils::PreprocessorScan> preprocessing = {};
 };
 
 /**
@@ -50,6 +54,8 @@ struct AnalyzeRequest
     int version = -1;
     uint64_t generation = 0;
     uint64_t configRevision = 0;
+    uint64_t closedRevision = 0;
+    std::shared_ptr<const utils::PreprocessorScan> preprocessing = {};
 };
 
 /**
@@ -62,11 +68,14 @@ struct PendingAnalysisEntry
     int version = -1;
     uint64_t generation = 0;
     uint64_t configRevision = 0;
+    uint64_t closedRevision = 0;
+    std::shared_ptr<const utils::PreprocessorScan> preprocessing = {};
 
     PendingAnalysisEntry() = default;
-    PendingAnalysisEntry(std::string t, document::TreePtr tr, AnalysisMetadata meta)
+    PendingAnalysisEntry(std::string t, document::TreePtr tr, AnalysisMetadata meta,
+                         std::shared_ptr<const utils::PreprocessorScan> scan = {})
         : text(std::move(t)), tree(std::move(tr)), version(meta.version), generation(meta.generation),
-          configRevision(meta.configRevision)
+          configRevision(meta.configRevision), closedRevision(meta.closedRevision), preprocessing(std::move(scan))
     {
     }
     PendingAnalysisEntry(std::string t, document::TreePtr tr, int v = -1)
@@ -225,8 +234,7 @@ class AnalysisScheduler
 
     std::string m_currentlyAnalyzingUri;
     std::string m_currentlyAnalyzingText;
-    int m_currentlyAnalyzingVersion = -1;
-    uint64_t m_currentlyAnalyzingGeneration = 0;
+    AnalysisMetadata m_currentlyAnalyzing;
 
     std::mutex m_peerMutex;
     ankerl::unordered_dense::map<std::string, std::chrono::steady_clock::time_point> m_peerTimestamps;

@@ -233,6 +233,7 @@ void Server::BuildIncludeGraphAndModules(const std::vector<std::string>& allScri
         .fileReader = {},
         .implicitExtension = std::string(ImplicitIncludeExtension()),
         .allowedRoots = IncludeAllowedRoots(),
+        .preprocessor = {DefinedWords(), m_config.preprocessor},
     });
 
     if (stopToken.stop_requested())
@@ -456,18 +457,46 @@ bool Server::HandleWatchedFileDeleted(const std::string& path, const std::string
         std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
         wasPublished = m_publishedForModules.erase(targetUri) > 0;
     }
-    m_diagnosticsPipeline->InvalidateDiagnostics(targetUri);
+    const auto physicalUri = UriFromPath(path);
+    PurgeClosureFile(physicalUri);
+    if (targetUri != physicalUri)
+    {
+        PurgeClosureFile(targetUri);
+    }
     if (wasPublished)
     {
         PublishDiagnostics(targetUri, {});
     }
-
-    PurgeClosureFile(UriFromPath(path));
-    if (!uriStr.empty())
-    {
-        PurgeClosureFile(uriStr);
-    }
     return GetIncludeGraph().RemoveFile(path);
+}
+
+void Server::ReindexTrackedClosureFile(const std::string& path, angel_lsp::parser::AngelScriptParser& parser)
+{
+    const auto uri = UriFromPath(path);
+    std::string previous;
+    {
+        std::lock_guard lock(m_closureMutex);
+        if (const auto indexed = m_indexedUriByPath.find(path); indexed != m_indexedUriByPath.end())
+        {
+            previous = indexed->second;
+        }
+        else if (m_closureDocuments.contains(uri))
+        {
+            previous = uri;
+        }
+    }
+    if (previous.empty())
+    {
+        return;
+    }
+
+    PurgeClosureFile(previous);
+    IndexClosureFile(path, parser);
+    const auto claim = ClaimFor(path);
+    if (claim.owner && !claim.owner->isImplicitEntryPoint)
+    {
+        ScheduleAnalysis(uri, ReadClosedDocumentContent(uri));
+    }
 }
 
 bool Server::HandleWatchedFileChanged(const std::string& path, bool isPredefined,
@@ -496,25 +525,15 @@ bool Server::HandleWatchedFileChanged(const std::string& path, bool isPredefined
     const std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     LogInfo(fmt::format("[File Read] Finished reading watched file: {} in {} ({} bytes)", path,
                         utils::FormatDuration(readTimer.ElapsedMs()), content.size()));
-    GetIncludeGraph().UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
-        path, content, *SearchDirectories(), IncludeAllowedRoots(), std::string(ImplicitIncludeExtension())});
+    GetIncludeGraph().UpdateFile(
+        utils::WorkspaceIncludeGraph::UpdateFileRequest{path,
+                                                        content,
+                                                        *SearchDirectories(),
+                                                        IncludeAllowedRoots(),
+                                                        std::string(ImplicitIncludeExtension()),
+                                                        {DefinedWords(), m_config.preprocessor}});
 
-    std::string indexedUriToReindex;
-    {
-        std::lock_guard<std::mutex> lock(m_closureMutex);
-        if (const auto indexed = m_indexedUriByPath.find(path); indexed != m_indexedUriByPath.end())
-        {
-            indexedUriToReindex = indexed->second;
-            m_closureDocuments.erase(indexedUriToReindex);
-        }
-    }
-    if (!indexedUriToReindex.empty())
-    {
-        m_symbolTable.ClearDocumentSymbols(indexedUriToReindex);
-        m_scopeIndex.ClearDocument(indexedUriToReindex);
-        m_callGraph.ClearDocument(indexedUriToReindex);
-        IndexClosureFile(path, parser);
-    }
+    ReindexTrackedClosureFile(path, parser);
     return true;
 }
 
@@ -553,9 +572,13 @@ void Server::RefreshOpenDocumentIncludes()
     {
         if (const std::string openPath = CanonicalPathFromUri(openUri); !openPath.empty())
         {
-            GetIncludeGraph().UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
-                openPath, openText, *SearchDirectories(), IncludeAllowedRoots(),
-                std::string(ImplicitIncludeExtension())});
+            GetIncludeGraph().UpdateFile(
+                utils::WorkspaceIncludeGraph::UpdateFileRequest{openPath,
+                                                                openText,
+                                                                *SearchDirectories(),
+                                                                IncludeAllowedRoots(),
+                                                                std::string(ImplicitIncludeExtension()),
+                                                                {DefinedWords(), m_config.preprocessor}});
         }
     }
 }
@@ -566,6 +589,7 @@ void Server::HandleNotificationsWorkspace_DidChangeWatchedFiles(
     angel_lsp::parser::AngelScriptParser watchedParser(m_logger.get());
     bool graphChanged = false;
     bool stubSelectionInvalidated = false;
+    const auto previousWords = DefinedWords();
 
     for (const auto& event : params.changes)
     {
@@ -606,6 +630,11 @@ void Server::HandleNotificationsWorkspace_DidChangeWatchedFiles(
         graphChanged = true;
     }
 
+    if (previousWords != DefinedWords())
+    {
+        RestartWorkspaceScan();
+        return;
+    }
     if (!graphChanged)
     {
         return;
@@ -672,22 +701,7 @@ void Server::InvalidateCreatedClosureFiles(const std::vector<std::string>& creat
     angel_lsp::parser::AngelScriptParser createdParser(m_logger.get());
     for (const std::string& path : createdPaths)
     {
-        std::string indexedUri;
-        {
-            std::lock_guard<std::mutex> lock(m_closureMutex);
-            if (const auto indexed = m_indexedUriByPath.find(path); indexed != m_indexedUriByPath.end())
-            {
-                indexedUri = indexed->second;
-                m_closureDocuments.erase(indexedUri);
-            }
-        }
-        if (!indexedUri.empty())
-        {
-            m_symbolTable.ClearDocumentSymbols(indexedUri);
-            m_scopeIndex.ClearDocument(indexedUri);
-            m_callGraph.ClearDocument(indexedUri);
-            IndexClosureFile(path, createdParser);
-        }
+        ReindexTrackedClosureFile(path, createdParser);
     }
 }
 
@@ -721,8 +735,13 @@ void Server::HandleNotificationsWorkspace_DidCreateFiles(lsp::notifications::Wor
         const std::string openPath = CanonicalPathFromUri(openUri);
         if (!openPath.empty())
         {
-            GetIncludeGraph().UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
-                openPath, text, *searchDirectories, IncludeAllowedRoots(), {}});
+            GetIncludeGraph().UpdateFile(
+                utils::WorkspaceIncludeGraph::UpdateFileRequest{openPath,
+                                                                text,
+                                                                *searchDirectories,
+                                                                IncludeAllowedRoots(),
+                                                                std::string(ImplicitIncludeExtension()),
+                                                                {DefinedWords(), m_config.preprocessor}});
         }
     }
 
@@ -748,13 +767,11 @@ void Server::HandleNotificationsWorkspace_DidDeleteFiles(lsp::notifications::Wor
             std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
             wasPublished = m_publishedForModules.erase(uriStr) > 0;
         }
-        m_diagnosticsPipeline->InvalidateDiagnostics(uriStr);
+        PurgeClosureFile(uriStr);
         if (wasPublished || GetDocumentStore().IsOpen(uriStr))
         {
             PublishDiagnostics(uriStr, {});
         }
-
-        PurgeClosureFile(uriStr);
         anythingChanged = GetIncludeGraph().RemoveFile(path) || anythingChanged;
         GetDocumentStore().RemoveClientUri(uriStr);
     }

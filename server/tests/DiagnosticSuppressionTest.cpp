@@ -117,3 +117,17 @@ TEST_CASE("DiagnosticSuppression - AST NodeIndex accelerated parsing")
     CHECK(map.IsSuppressed(codes::ListPatternUnknown, 1));
     CHECK_FALSE(map.IsSuppressed(codes::ListPatternUnknown, 3));
 }
+
+TEST_CASE("DiagnosticSuppression - Thematic and category selectors can overlap independently")
+{
+    const auto map = angel_lsp::analysis::ParseDiagnosticSuppressions(
+        "// disable warnings\n// disable AS-WARN-UNUSED\n// enable warnings\n"
+        "// disable-next-line conversion\nvoid Fn() {}\n// enable unused\n");
+    CHECK(map.IsSuppressed("W103", 2));
+    CHECK_FALSE(map.IsSuppressed("W101", 2));
+    CHECK(map.IsSuppressed("W153", 4));
+    CHECK_FALSE(map.IsSuppressed("W153", 5));
+    CHECK_FALSE(map.IsSuppressed("W103", 5));
+    CHECK(angel_lsp::analysis::GetDiagnosticGroup("W104") == "shadow");
+    CHECK(angel_lsp::analysis::GetDiagnosticGroup("W101").empty());
+}

@@ -87,8 +87,14 @@ static bool PopulateModuleEntryClosure(Server& server, const std::string& entry,
     if (view.closurePaths.empty())
     {
         const auto searchDirs = server.SearchDirectories();
-        for (const auto& member : angel_lsp::utils::IncludeResolver::ResolveAllIncludes(view.entryPath, *searchDirs, {},
-                                                                                        server.IncludeAllowedRoots()))
+        const auto allowedRoots = server.IncludeAllowedRoots();
+        const utils::IncludeTraversalRequest includeRequest{view.entryPath,
+                                                            *searchDirs,
+                                                            allowedRoots,
+                                                            {},
+                                                            server.ImplicitIncludeExtension(),
+                                                            {server.DefinedWords(), server.GetConfig().preprocessor}};
+        for (const auto& member : utils::IncludeResolver::ResolveAllIncludes(includeRequest))
         {
             view.closurePaths.insert(member);
             view.memberPaths.insert(member);
@@ -456,9 +462,10 @@ void Server::AnalyzeConfiguredModules()
             std::string content;
             {
                 std::lock_guard<std::mutex> lock(m_closureMutex);
-                if (const auto cached = m_closureDocuments.find(uriStr); cached != m_closureDocuments.end())
+                if (const auto cached = m_closureDocuments.find(uriStr);
+                    cached != m_closureDocuments.end() && cached->second.text)
                 {
-                    content = cached->second;
+                    content = *cached->second.text;
                 }
             }
             if (content.empty())
@@ -525,9 +532,10 @@ std::string Server::ReadClosedDocumentContent(const std::string& uriStr)
 {
     {
         std::lock_guard<std::mutex> lock(m_closureMutex);
-        if (const auto cached = m_closureDocuments.find(uriStr); cached != m_closureDocuments.end())
+        if (const auto cached = m_closureDocuments.find(uriStr);
+            cached != m_closureDocuments.end() && cached->second.text)
         {
-            return cached->second;
+            return *cached->second.text;
         }
     }
     const std::string path = CanonicalPathFromUri(uriStr);
@@ -678,7 +686,8 @@ void Server::IndexConfiguredModules(angel_lsp::parser::AngelScriptParser& parser
                 if (const auto indexed = m_indexedUriByPath.find(path);
                     indexed != m_indexedUriByPath.end() && indexed->second == uriStr)
                 {
-                    alreadyIndexed = true;
+                    const auto cached = m_closureDocuments.find(uriStr);
+                    alreadyIndexed = cached != m_closureDocuments.end() && cached->second.text;
                 }
             }
             if (alreadyIndexed)
@@ -687,10 +696,6 @@ void Server::IndexConfiguredModules(angel_lsp::parser::AngelScriptParser& parser
             }
 
             IndexClosureFile(path, parser);
-            {
-                std::lock_guard<std::mutex> lock(m_closureMutex);
-                m_indexedUriByPath[path] = uriStr;
-            }
         }
     }
     m_symbolTable.EnsureRuleIndex();
@@ -892,48 +897,68 @@ std::vector<angel_lsp::utils::ExcludedLineRange> Server::ExcludedLineRanges(cons
     return angel_lsp::utils::FindExcludedLineRanges(text, *DefinedWords(), m_config.preprocessor);
 }
 
-void Server::IndexClosureFile(const std::string& path, angel_lsp::parser::AngelScriptParser& parser)
+void Server::IndexClosureFile(const std::string& path, angel_lsp::parser::AngelScriptParser& parser,
+                              SyntaxRevisionCache* syntaxCache)
 {
-    std::ifstream file(path, std::ios::binary);
-    if (!file.is_open())
-        return;
+    const std::string uriStr = UriFromPath(path);
+    uint64_t revision;
+    {
+        std::lock_guard lock(m_closureMutex);
+        if (GetDocumentStore().IsOpen(uriStr))
+        {
+            return;
+        }
+        revision = ++m_nextClosedRevision;
+        m_closureDocuments[uriStr] = {nullptr, revision};
+        m_scopeIndex.InvalidateDocumentOccurrences(uriStr);
+    }
 
+    std::ifstream file(path, std::ios::binary);
     std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     if (content.empty())
+    {
+        std::lock_guard lock(m_closureMutex);
+        if (IsClosedRevisionCurrentLocked(uriStr, revision))
+        {
+            m_closureDocuments.erase(uriStr);
+        }
         return;
-
-    const std::string uriStr = UriFromPath(path);
-    const std::string analysisText = AnalysisTextFor(uriStr, content);
-
-    document::TreePtr tree = document::MakeTreePtr(parser.Parse(analysisText));
-
-    ReplaceSymbolsFromTree(uriStr, analysisText, tree.get());
-
-    m_scopeIndex.ClearDocument(uriStr);
-    m_callGraph.ClearDocument(uriStr);
-    if (tree)
-    {
-        auto scopes = m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree.get()), analysisText);
-        if (scopes)
-        {
-            m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCallsFromScopeTree(*scopes));
-            m_scopeIndex.SetScopeTree(uriStr, std::move(scopes));
-        }
-        else
-        {
-            m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree.get()), analysisText));
-        }
     }
 
+    auto prepared = PrepareAnalysisSource(uriStr, content);
+    AnalyzeDocumentRequest request{
+        .uriStr = uriStr, .text = std::move(prepared.text), .parser = parser, .closedRevision = revision};
+    analysis::SymbolTable staging;
+    auto parsed = ParseAndCollectSymbols(request, staging, syntaxCache);
+    const auto* index = parsed.syntax ? &parsed.syntax->index : nullptr;
+    const TSNode root = index ? index->Root() : TSNode{};
+    auto scopes = m_localScopeCollector->CollectScopesFromTree(root, request.text, index);
+    auto calls = scopes ? analysis::CollectCallsFromScopeTree(*scopes) : analysis::CollectCalls(root, request.text);
+
+    std::lock_guard lock(m_closureMutex);
+    if (!IsClosedRevisionCurrentLocked(uriStr, revision) || GetDocumentStore().IsOpen(uriStr))
     {
-        std::lock_guard<std::mutex> lock(m_closureMutex);
-        m_closureDocuments[uriStr] = std::move(content);
-        m_indexedUriByPath[path] = uriStr;
-        m_lastSavedInterfaceHash[uriStr] = m_symbolTable.ComputeDocumentInterfaceHash(uriStr);
+        return;
     }
+    m_symbolTable.ReplaceDocumentSymbols(uriStr, std::move(staging));
+    auto& closed = m_closureDocuments[uriStr];
+    closed.text = std::make_shared<const std::string>(std::move(content));
+    if (parsed.syntax)
+    {
+        auto source =
+            *closed.text == request.text ? closed.text : std::make_shared<const std::string>(std::move(request.text));
+        closed.indexedSyntax = std::make_shared<const ClosedIndexedSyntax>(
+            ClosedIndexedSyntax{std::move(source), std::move(parsed.diagnostics)});
+        closed.lexicalScopes = std::move(scopes);
+    }
+    m_scopeIndex.SetScopeTree(uriStr, closed.lexicalScopes);
+    m_callGraph.SetDocumentCalls(uriStr, std::move(calls));
+    m_indexedUriByPath[path] = uriStr;
+    m_lastSavedInterfaceHash[uriStr] = m_symbolTable.ComputeDocumentInterfaceHash(uriStr);
 }
 
 void Server::AppendIncludeDiagnostics(const std::string& uriStr, const std::string& text,
+                                      const std::vector<utils::ExcludedLineRange>& excluded,
                                       std::vector<angel_lsp::analysis::Diagnostic>& diagnostics) const
 {
     if (!m_config.features.enableDocumentLink)
@@ -943,15 +968,23 @@ void Server::AppendIncludeDiagnostics(const std::string& uriStr, const std::stri
 
     features::DocumentLinkRequest request{uriStr, text, *searchDirectories, m_i18n.get()};
     request.allowedRoots = IncludeAllowedRoots();
-    request.excludedLineRanges = ExcludedLineRanges(text);
+    request.excludedLineRanges = excluded;
     request.implicitExtension = std::string(ImplicitIncludeExtension());
 
     auto includeDiagnostics = features::GetUnresolvedIncludeDiagnostics(request);
     diagnostics.insert(diagnostics.end(), includeDiagnostics.begin(), includeDiagnostics.end());
 }
 
+void Server::WithdrawClosedSnapshot(const std::string& uriStr)
+{
+    std::lock_guard lock(m_closureMutex);
+    m_closureDocuments.erase(uriStr);
+}
+
 void Server::PurgeClosureFile(const std::string& uriStr)
 {
+    std::lock_guard closureLock(m_closureMutex);
+    m_closureDocuments.erase(uriStr);
     {
         std::lock_guard<std::mutex> lock(m_diagnosticsPipeline->GetCacheMutexRef());
         m_diagnosticsPipeline->GetCacheRef().erase(uriStr);
@@ -961,16 +994,10 @@ void Server::PurgeClosureFile(const std::string& uriStr)
     m_scopeIndex.ClearDocument(uriStr);
     m_callGraph.ClearDocument(uriStr);
 
+    const std::string path = CanonicalPathFromUri(uriStr);
+    if (const auto it = m_indexedUriByPath.find(path); it != m_indexedUriByPath.end() && it->second == uriStr)
     {
-        std::lock_guard<std::mutex> lock(m_closureMutex);
-        m_closureDocuments.erase(uriStr);
-
-        const std::string path = CanonicalPathFromUri(uriStr);
-        if (!path.empty())
-        {
-            if (const auto it = m_indexedUriByPath.find(path); it != m_indexedUriByPath.end() && it->second == uriStr)
-                m_indexedUriByPath.erase(it);
-        }
+        m_indexedUriByPath.erase(it);
     }
 }
 
@@ -1055,7 +1082,7 @@ std::vector<std::string> Server::ComputeModuleClosure(const std::string& openPat
     return closure;
 }
 
-size_t Server::IndexModuleClosure(const std::string& openUriStr)
+size_t Server::IndexModuleClosure(const std::string& openUriStr, SyntaxRevisionCache* syntaxCache)
 {
     const std::string openPath = CanonicalPathFromUri(openUriStr);
     if (openPath.empty())
@@ -1102,7 +1129,7 @@ size_t Server::IndexModuleClosure(const std::string& openUriStr)
 
         if (!alreadyIndexed)
         {
-            IndexClosureFile(path, closureParser);
+            IndexClosureFile(path, closureParser, syntaxCache);
             ++newlyIndexed;
         }
 

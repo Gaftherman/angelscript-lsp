@@ -3,6 +3,7 @@
 #include "analysis/resolution/ConversionRankingEngine.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/resolution/TargetResolution.h"
 #include "analysis/types/VirtualMixinContext.h"
 #include "config/EngineRuleConfig.h"
 #include "parser/ASTUtils.h"
@@ -723,28 +724,6 @@ static lsp::Location MakeLocalDefinitionLocation(const analysis::LocalDefinition
 }
 
 /**
- * @brief Checks whether a local definition resides inside an enclosing function scope.
- * @param[in] rootScope Root scope of the document.
- * @param[in] def Local definition to check.
- * @return True if definition is declared within a function body.
- */
-static bool IsDefinitionInsideFunction(const analysis::Scope* rootScope, const analysis::LocalDefinition& def)
-{
-    const analysis::Scope* declaringScope = analysis::FindScopeDeclaringDefinition(rootScope, def);
-    size_t depth = 0;
-    ankerl::unordered_dense::set<const analysis::Scope*> visited;
-    for (const analysis::Scope* s = declaringScope;
-         s != nullptr && visited.insert(s).second && ++depth <= analysis::kMaxScopeDepth; s = s->parent)
-    {
-        if (s->isFunctionScope)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
  * @brief Attempts to resolve definition of a local variable or parameter declared in a function.
  * @param[in] nodeText Symbol name.
  * @param[in] ctx Definition context.
@@ -764,14 +743,14 @@ static std::optional<std::vector<lsp::Location>> TryResolveLocalDefinition(TSNod
         return std::nullopt;
     }
     uint32_t cursorByte = !ts_node_is_null(node) ? ts_node_start_byte(node) : UINT32_MAX;
-    const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, nodeText, cursorByte);
+    const analysis::Scope* owner = nullptr;
+    const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, nodeText, cursorByte, &owner);
     if (def &&
-        (def->kind == analysis::LocalDefinitionKind::Parameter || def->kind == analysis::LocalDefinitionKind::Variable))
+        (def->kind == analysis::LocalDefinitionKind::Parameter ||
+         def->kind == analysis::LocalDefinitionKind::Variable) &&
+        analysis::IsDeclaredInFunctionScope(owner))
     {
-        if (IsDefinitionInsideFunction(ctx.rootScope.get(), *def))
-        {
-            return std::vector<lsp::Location>{MakeLocalDefinitionLocation(*def, ctx)};
-        }
+        return std::vector<lsp::Location>{MakeLocalDefinitionLocation(*def, ctx)};
     }
     return std::nullopt;
 }
@@ -985,10 +964,10 @@ TryResolveLocalDefinitionFallback(TSNode node, const std::string& nodeText, cons
         return std::nullopt;
     }
     uint32_t cursorByte = !ts_node_is_null(node) ? ts_node_start_byte(node) : UINT32_MAX;
-    if (const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, nodeText, cursorByte))
+    const analysis::Scope* owner = nullptr;
+    if (const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, nodeText, cursorByte, &owner))
     {
-        if (def->kind == analysis::LocalDefinitionKind::Parameter &&
-            !IsDefinitionInsideFunction(ctx.rootScope.get(), *def))
+        if (def->kind == analysis::LocalDefinitionKind::Parameter && !analysis::IsDeclaredInFunctionScope(owner))
         {
             return std::nullopt;
         }
@@ -1681,7 +1660,15 @@ std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest&
         return std::nullopt;
     }
 
-    DefinitionContext ctx = MakeDefinitionContext(request);
+    const DefinitionContext ctx = MakeDefinitionContext(request);
+    const auto* physicalScope = ctx.vCtx.isVirtual ? nullptr : ctx.rootScope.get();
+    if (const auto bound = analysis::ResolveIndexedCall(request.symbolTable, physicalScope, ts_node_start_byte(node),
+                                                        request.callBindingRevision);
+        bound && bound->name == nodeText)
+    {
+        return std::vector<lsp::Location>{MakeLocation(*bound, request)};
+    }
+
     if (auto early = TryResolveContextualOrDeclFallback(node, nodeText, ctx))
     {
         return early;

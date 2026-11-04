@@ -2,6 +2,7 @@
 
 #include "analysis/checkers/BinaryOperatorHelpers.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/SyntaxOperands.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "parser/ASTUtils.h"
@@ -15,24 +16,12 @@
 namespace angel_lsp::analysis
 {
 
-static bool IsHandleAddressOperand(TSNode node)
+static bool ShouldSkipAddressComparison(const BinaryExpressionOperands& operands, bool isRelational,
+                                        const NodeIndex* index)
 {
-    if (ts_node_is_null(node))
-    {
-        return false;
-    }
-    const auto& gs = parser::GetGrammarSymbols();
-    if (ts_node_symbol(node) != gs.symUnaryExpression)
-    {
-        return false;
-    }
-    TSNode op = parser::GetChildByField(node, gs.fieldOperator);
-    return !ts_node_is_null(op) && ts_node_symbol(op) == gs.tokAt;
-}
-
-static bool ShouldSkipAddressComparison(TSNode left, TSNode right, bool isRelational)
-{
-    return !isRelational && (IsHandleAddressOperand(left) || IsHandleAddressOperand(right));
+    const auto handleOperator = parser::GetGrammarSymbols().tokAt;
+    return !isRelational && (SyntaxOperands(operands.left, index).HasUnaryOperator(handleOperator) ||
+                             SyntaxOperands(operands.right, index).HasUnaryOperator(handleOperator));
 }
 
 static bool AreCustomTypesCompatible(std::string_view op, const std::string& left, const std::string& right,
@@ -199,16 +188,11 @@ static void EmitComparisonDiagnostics(TSNode opNode, std::string_view op, const 
  * @param[in] scope Enclosing lexical scope.
  * @param[in,out] ctx Diagnostic collection and analysis context.
  */
-void CheckComparisonOperatorCompatibility(TSNode node, const Scope* scope, DiagnosticContext& ctx)
+void CheckComparisonOperatorCompatibility(const BinaryExpressionOperands& operands, const Scope* scope,
+                                          DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
-    TSNode left = parser::GetChildByField(node, gs.fieldLeft);
-    TSNode right = parser::GetChildByField(node, gs.fieldRight);
-    if (ts_node_is_null(opNode) || ts_node_is_null(left) || ts_node_is_null(right))
-    {
-        return;
-    }
+    const auto& [opNode, left, right] = operands;
 
     const TSSymbol opSym = ts_node_symbol(opNode);
     if (!IsComparisonOpSym(opSym, gs))
@@ -216,14 +200,15 @@ void CheckComparisonOperatorCompatibility(TSNode node, const Scope* scope, Diagn
         return;
     }
 
-    if (ShouldSkipAddressComparison(left, right, IsRelationalOpSym(opSym, gs)))
+    if (ShouldSkipAddressComparison(operands, IsRelationalOpSym(opSym, gs), ctx.request.nodeIndex))
     {
         return;
     }
 
     const std::string_view op = GetNodeTextView(opNode, ctx.request.sourceCode);
 
-    if (const auto dt = IsBareDataType(left, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+    const ExpressionTypeContext exprCtx(scope, ctx);
+    if (const auto dt = IsBareDataType(left, exprCtx))
     {
         const TSPoint start = ts_node_start_point(left);
         const TSPoint end = ts_node_end_point(left);
@@ -231,7 +216,7 @@ void CheckComparisonOperatorCompatibility(TSNode node, const Scope* scope, Diagn
                         diagnostics::codes::ExpressionIsDataType, *dt);
         return;
     }
-    if (const auto dt = IsBareDataType(right, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+    if (const auto dt = IsBareDataType(right, exprCtx))
     {
         const TSPoint start = ts_node_start_point(right);
         const TSPoint end = ts_node_end_point(right);
@@ -239,8 +224,7 @@ void CheckComparisonOperatorCompatibility(TSNode node, const Scope* scope, Diagn
                         diagnostics::codes::ExpressionIsDataType, *dt);
         return;
     }
-    if (IsFunctionReference(left, scope, ctx.request.symbolTable, ctx.request.sourceCode) ||
-        IsFunctionReference(right, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+    if (IsFunctionReference(left, exprCtx) || IsFunctionReference(right, exprCtx))
     {
         const TSPoint start = ts_node_start_point(opNode);
         const TSPoint end = ts_node_end_point(opNode);

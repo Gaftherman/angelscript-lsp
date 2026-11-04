@@ -66,21 +66,28 @@ void AnalysisScheduler::UpdateActiveTasksLocked()
     }
 }
 
+template <typename Entry> static bool SameAnalysisContext(const Entry& entry, const ScheduleRequest& request)
+{
+    return entry.generation == request.generation && entry.configRevision == request.configRevision &&
+           entry.closedRevision == request.closedRevision;
+}
+
 bool AnalysisScheduler::IsRedundantWithActiveOrInFlightLocked(const ScheduleRequest& request) const
 {
-    if (request.force)
+    if (request.force || request.version < 0)
     {
         return false;
     }
-    if (m_currentlyAnalyzingUri == request.uriStr && m_currentlyAnalyzingVersion >= request.version &&
-        request.version >= 0 && m_currentlyAnalyzingText == request.text)
+    if (m_currentlyAnalyzingUri == request.uriStr && !m_cancelCurrentAnalysis.load() &&
+        SameAnalysisContext(m_currentlyAnalyzing, request) && m_currentlyAnalyzing.version >= request.version &&
+        m_currentlyAnalyzingText == request.text)
     {
         return true;
     }
 
     const auto running = m_inFlight.find(request.uriStr);
-    return (running != m_inFlight.end() && running->second.version >= request.version && request.version >= 0 &&
-            running->second.text == request.text);
+    return running != m_inFlight.end() && SameAnalysisContext(running->second, request) &&
+           running->second.version >= request.version && running->second.text == request.text;
 }
 
 bool AnalysisScheduler::UpdatePendingOrDiscardLocked(ScheduleRequest& request)
@@ -88,30 +95,36 @@ bool AnalysisScheduler::UpdatePendingOrDiscardLocked(ScheduleRequest& request)
     const auto it = m_pending.find(request.uriStr);
     if (it == m_pending.end())
     {
-        m_pending.emplace(request.uriStr, PendingAnalysisEntry{std::move(request.text), std::move(request.tree),
-                                                               AnalysisMetadata{request.version, request.generation,
-                                                                                request.configRevision}});
+        m_pending.emplace(request.uriStr,
+                          PendingAnalysisEntry{std::move(request.text), std::move(request.tree),
+                                               AnalysisMetadata{request.version, request.generation,
+                                                                request.configRevision, request.closedRevision},
+                                               std::move(request.preprocessing)});
         return true;
     }
 
-    if (!request.force && it->second.text == request.text)
+    if (!request.force && it->second.text == request.text && SameAnalysisContext(it->second, request))
     {
         if (request.version > it->second.version)
         {
             it->second.version = request.version;
             it->second.generation = request.generation;
             it->second.configRevision = request.configRevision;
+            it->second.preprocessing = std::move(request.preprocessing);
         }
         return false;
     }
 
-    if (!request.force && it->second.version > request.version && request.version >= 0)
+    if (!request.force && it->second.generation == request.generation && it->second.version > request.version &&
+        request.version >= 0)
     {
         return false;
     }
 
-    it->second = PendingAnalysisEntry{std::move(request.text), std::move(request.tree),
-                                      AnalysisMetadata{request.version, request.generation, request.configRevision}};
+    it->second = PendingAnalysisEntry{
+        std::move(request.text), std::move(request.tree),
+        AnalysisMetadata{request.version, request.generation, request.configRevision, request.closedRevision},
+        std::move(request.preprocessing)};
     return true;
 }
 
@@ -173,7 +186,7 @@ void AnalysisScheduler::MarkSaved(const std::string& uriStr, int version)
     {
         m_savedVersions[uriStr] = version;
     }
-    if (m_currentlyAnalyzingUri == uriStr && (version < 0 || m_currentlyAnalyzingVersion <= version))
+    if (m_currentlyAnalyzingUri == uriStr && (version < 0 || m_currentlyAnalyzing.version <= version))
     {
         m_cancelCurrentAnalysis = true;
     }
@@ -288,8 +301,8 @@ std::optional<std::pair<std::string, PendingAnalysisEntry>> AnalysisScheduler::P
 
         m_currentlyAnalyzingUri = currentUri;
         m_currentlyAnalyzingText = currentEntry.text;
-        m_currentlyAnalyzingVersion = currentEntry.version;
-        m_currentlyAnalyzingGeneration = currentEntry.generation;
+        m_currentlyAnalyzing = {currentEntry.version, currentEntry.generation, currentEntry.configRevision,
+                                currentEntry.closedRevision};
         m_cancelCurrentAnalysis = false;
         UpdateActiveTasksLocked();
         return std::make_pair(std::move(currentUri), std::move(currentEntry));
@@ -302,8 +315,7 @@ void AnalysisScheduler::FinishActiveAnalysis()
     std::lock_guard<std::mutex> workLock(m_mutex);
     m_currentlyAnalyzingUri.clear();
     m_currentlyAnalyzingText.clear();
-    m_currentlyAnalyzingVersion = -1;
-    m_currentlyAnalyzingGeneration = 0;
+    m_currentlyAnalyzing = {};
     m_cancelCurrentAnalysis = false;
     UpdateActiveTasksLocked();
 }
@@ -329,7 +341,8 @@ void AnalysisScheduler::DrainInFlightWork()
             try
             {
                 m_callback(AnalyzeRequest{uri, std::move(entry.text), std::move(entry.tree), entry.version,
-                                          entry.generation, entry.configRevision});
+                                          entry.generation, entry.configRevision, entry.closedRevision,
+                                          std::move(entry.preprocessing)});
             }
             catch (const std::exception& e)
             {

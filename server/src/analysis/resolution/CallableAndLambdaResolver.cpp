@@ -1,6 +1,7 @@
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 
 #include "analysis/index/ScopeTree.h"
+#include "analysis/index/SyntaxOperands.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
@@ -1124,25 +1125,26 @@ bool IsListConstructor(const Symbol& sym)
     return IsListConstructorSignature(sym.GetFunction());
 }
 
-static bool IsMemberMethodSymbol(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
-                                 std::string_view sourceCode)
+static bool IsMemberMethodSymbol(TSNode node, const ExpressionTypeContext& ctx)
 {
-    TSNode objNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldObject);
-    TSNode memNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldMember);
+    const auto& gs = parser::GetGrammarSymbols();
+    const SyntaxOperands syntax(node, ctx.nodeIndex);
+    const TSNode objNode = syntax.Field(gs.fieldObject);
+    const TSNode memNode = syntax.Field(gs.fieldMember);
     if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
     {
         return false;
     }
-    const std::string memName = parser::NodeText(memNode, sourceCode);
-    const std::string objType = ResolveExpressionType(objNode, ExpressionTypeContext(scope, symbolTable, sourceCode));
+    const std::string memName = parser::NodeText(memNode, ctx.sourceCode);
+    const std::string objType = ResolveExpressionType(objNode, ctx);
     const std::string cleanObj = CleanBaseType(objType);
     if (cleanObj.empty() || memName.empty())
     {
         return false;
     }
-    for (const auto& cls : GetInheritedTypeHierarchy(cleanObj, symbolTable))
+    for (const auto& cls : GetInheritedTypeHierarchy(cleanObj, ctx.symbolTable))
     {
-        if (const auto syms = symbolTable.FindMemberSymbolPtr(cls, memName))
+        if (const auto syms = ctx.symbolTable.FindMemberSymbolPtr(cls, memName))
         {
             bool hasFunc = false;
             bool hasVarOrProp = false;
@@ -1233,14 +1235,10 @@ static bool IsIdentifierFunctionSymbol(TSNode node, const Scope* scope, const Sy
     return HasGlobalFunctionSymbol(name, symbolTable);
 }
 
-bool IsFunctionReference(TSNode node, const Scope* scope, const SymbolTable& symbolTable, std::string_view sourceCode)
+bool IsFunctionReference(TSNode node, const ExpressionTypeContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    while (!ts_node_is_null(node) && ts_node_symbol(node) == gs.symParenthesizedExpression &&
-           ts_node_named_child_count(node) > 0)
-    {
-        node = ts_node_named_child(node, 0);
-    }
+    node = UnwrapIndexedParentheses(node, ctx.nodeIndex);
     if (ts_node_is_null(node))
     {
         return false;
@@ -1252,11 +1250,11 @@ bool IsFunctionReference(TSNode node, const Scope* scope, const SymbolTable& sym
     }
     if (sym == gs.symMemberExpression)
     {
-        return IsMemberMethodSymbol(node, scope, symbolTable, sourceCode);
+        return IsMemberMethodSymbol(node, ctx);
     }
     if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier)
     {
-        return IsIdentifierFunctionSymbol(node, scope, symbolTable, sourceCode);
+        return IsIdentifierFunctionSymbol(node, ctx.scope, ctx.symbolTable, ctx.sourceCode);
     }
     return false;
 }

@@ -1,6 +1,6 @@
 {
+  "Server Actions": "Acciones del servidor",
   "Show Log": "Ver registro",
-  "Click for the log, a restart, or the stub picker.": "Haz clic para el registro, reiniciar o elegir el stub.",
   "no language server binary for {0}. Editor features are unavailable.": "no hay binario del servidor de lenguaje para {0}. Las funciones del editor no están disponibles.",
   "Starting the AngelScript language server.": "Iniciando el servidor de lenguaje AngelScript.",
   "the language server connection keeps failing, so it has been shut down.": "la conexión con el servidor de lenguaje sigue fallando, así que se ha detenido.",
@@ -21,7 +21,6 @@
   "All stubs (merged)": "Todos los stubs (combinados)",
   "Loads every discovered stub. Declarations they share will resolve more than once.": "Carga todos los stubs descubiertos. Las declaraciones que comparten se resolverán más de una vez.",
   "Select the predefined stub that describes the host application API": "Selecciona el stub predefinido que describe la API de la aplicación host",
-  "Stub: {0}": "Stub: {0}",
   "Enter the module name for this entry point": "Nombre del módulo para este punto de entrada",
   "Enter the module name for this folder": "Nombre del módulo para esta carpeta",
   "Module name": "Nombre del módulo",
@@ -84,7 +83,6 @@
   "Activated all workspace modules.": "Todos los módulos del espacio de trabajo han sido activados.",
   "Isolated active module: {0}": "Módulo activo aislado: {0}",
   "Reload and rescan module files": "Recargar y re-escanear archivos del módulo",
-  "Rescan": "Reescanear",
   "Select": "Seleccionar",
   "Switch": "Cambiar",
   "Workspace": "Espacio de trabajo",

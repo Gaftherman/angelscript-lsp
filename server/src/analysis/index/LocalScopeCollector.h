@@ -246,8 +246,6 @@ class LocalScopeCollector
      */
     CaptureAncestors ResolveCaptureAncestors(CaptureKind kind, LocalDefinitionKind defKind, TSNode node) const;
 
-    void PopulateReceiverQualifierRanges(TSNode parent, LocalReference& ref) const;
-
     /**
      * @brief Checks if a grammar symbol belongs to a declaration whose name is a definition rather than a reference.
      * @param sym Grammar symbol of parent node.

@@ -781,7 +781,10 @@ std::unique_ptr<SymbolTable> SymbolTable::CreateAnalysisSnapshot(const AnalysisS
         }
     }
 
-    snapshot->ReplaceDocumentSymbols(request.uriStr, request.staging);
+    if (request.staging)
+    {
+        snapshot->ReplaceDocumentSymbols(request.uriStr, *request.staging);
+    }
     return snapshot;
 }
 
@@ -792,7 +795,7 @@ SymbolTable::CreateAnalysisSnapshot(const std::string& uriStr, const SymbolTable
 {
     return CreateAnalysisSnapshot(AnalysisSnapshotRequest{
         .uriStr = uriStr,
-        .staging = staging,
+        .staging = &staging,
         .allowedModuleFileUris = allowedModuleFileUris,
         .predefinedExtension = predefinedExtension,
         .predefinedBase = nullptr,

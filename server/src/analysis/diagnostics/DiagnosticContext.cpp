@@ -1,5 +1,6 @@
 #include "analysis/diagnostics/DiagnosticContext.h"
 
+#include "analysis/diagnostics/DiagnosticSuppression.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "utils/Constants.h"
@@ -210,6 +211,22 @@ Diagnostic DiagnosticContext::CreateDiagnostic(SourceRange range, std::string_vi
     if (request.severityOverrides)
     {
         auto it = request.severityOverrides->find(codeStr);
+        if (it == request.severityOverrides->end())
+        {
+            const auto group = GetDiagnosticGroup(codeStr);
+            if (!group.empty())
+            {
+                it = request.severityOverrides->find(std::string(group));
+            }
+        }
+        if (it == request.severityOverrides->end())
+        {
+            const auto category = GetDiagnosticCategory(codeStr);
+            if (!category.empty())
+            {
+                it = request.severityOverrides->find(std::string(category));
+            }
+        }
         if (it != request.severityOverrides->end())
         {
             diag.severity = it->second;

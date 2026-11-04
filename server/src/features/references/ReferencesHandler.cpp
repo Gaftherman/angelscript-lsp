@@ -69,6 +69,8 @@ std::optional<ReferencesResult> GetReferences(const ReferencesRequest& request)
         .scopeIndex = request.scopeIndex,
         .outNode = node,
         .logger = request.logger,
+        .useCallBindings = true,
+        .callBindingRevision = request.callBindingRevision,
     };
     const auto target = analysis::ResolveTargetSymbol(resolveReq);
 
@@ -86,6 +88,7 @@ std::optional<ReferencesResult> GetReferences(const ReferencesRequest& request)
         .scopeIndex = request.scopeIndex,
         .includeDeclaration = request.includeDeclaration,
         .logger = request.logger,
+        .occurrenceModule = request.occurrenceModule,
     };
     const auto occurrences = analysis::CollectOccurrences(occReq);
 

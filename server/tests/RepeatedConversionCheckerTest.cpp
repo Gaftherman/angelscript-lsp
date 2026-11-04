@@ -97,6 +97,33 @@ TEST_SUITE("RepeatedConversionChecker")
         CHECK(count == 2);
     }
 
+    TEST_CASE("Indexed conversion candidates stay inside each ladder condition")
+    {
+        const std::string script = "class " + GenerateRandomSymbolName() + R"( : ScriptBaseEntity
+{
+    void Test()
+    {
+        if ((self.pev.target == "A" || self.pev.target != "B") && true)
+        {
+            bool ignored = self.pev.target == "Body";
+        }
+        else if (self.pev.target == "C") {}
+        else { bool ignored = self.pev.target == "Else"; }
+    }
+}
+)";
+        const auto diagnostics = AnalyzeScriptWithSvenProfile(script);
+        std::vector<uint32_t> lines;
+        for (const auto& diagnostic : diagnostics)
+        {
+            if (diagnostic.code == diagnostics::codes::RepeatedConversion)
+            {
+                lines.push_back(diagnostic.range.start.line);
+            }
+        }
+        CHECK(lines == std::vector<uint32_t>{4, 4, 8});
+    }
+
     TEST_CASE("Single string_t comparison emits zero hints")
     {
         const std::string className = GenerateRandomSymbolName();

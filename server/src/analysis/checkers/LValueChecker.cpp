@@ -65,7 +65,8 @@ static void CollectIdentifierCandidates(TSNode funcNode, const CallCandidateCont
                                         std::vector<Symbol>& candidates)
 {
     std::string name = parser::NodeText(funcNode, cctx.request.sourceCode);
-    for (const auto& sym : FindSymbolsInScope(name, funcNode, cctx.request.sourceCode, cctx.ctx.request.symbolTable))
+    for (const auto& sym : FindSymbolsInScope(name, funcNode, cctx.request.sourceCode, cctx.ctx.request.symbolTable,
+                                              cctx.request.nodeIndex))
     {
         if (sym.type == SymbolType::Function)
         {
@@ -76,7 +77,7 @@ static void CollectIdentifierCandidates(TSNode funcNode, const CallCandidateCont
     {
         return;
     }
-    for (const auto& c : GetEnclosingContainers(funcNode, cctx.request.sourceCode))
+    for (const auto& c : GetEnclosingContainers(funcNode, cctx.request.sourceCode, cctx.request.nodeIndex))
     {
         if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
         {
@@ -372,7 +373,7 @@ static void CheckAssignmentTarget(TSNode node, const AstCheckContext& request, c
 
     if (!LValueNodeValidator::IsAssignableLValueNode(target, scope, ctx))
     {
-        if (const auto dt = IsBareDataType(target, scope, ctx.request.symbolTable, request.sourceCode))
+        if (const auto dt = IsBareDataType(target, ExpressionTypeContext(scope, ctx)))
         {
             ctx.EmitAtNode(target, diagnostics::codes::ExpressionIsDataType, *dt);
         }

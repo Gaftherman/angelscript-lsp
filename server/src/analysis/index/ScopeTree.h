@@ -1,15 +1,16 @@
 #pragma once
 
+#include "analysis/index/CallBindings.h"
 #include "analysis/index/SymbolTable.h"
 
 #include <ankerl/unordered_dense.h>
-#include <array>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace angel_lsp::analysis
@@ -135,20 +136,6 @@ struct LocalReference
     uint8_t isSuperBaseCall : 1 = 0;
     uint8_t isLambdaFunctionKeyword : 1 = 0;
     uint8_t inMetadataOrError : 1 = 0;
-
-    [[nodiscard]] std::string_view GetScopeQualifier(std::string_view source) const noexcept
-    {
-        if (qualifierStartByte < startByte && startByte <= source.size())
-        {
-            std::string_view q(source.data() + qualifierStartByte, startByte - qualifierStartByte);
-            while (q.ends_with(':') || q.ends_with(' ') || q.ends_with('\t'))
-            {
-                q.remove_suffix(1);
-            }
-            return q;
-        }
-        return {};
-    }
 };
 static_assert(sizeof(LocalReference) <= 80);
 
@@ -193,6 +180,7 @@ struct IndexedReferenceReceivers
 {
     std::vector<IndexedReceiverExpression> expressions;
     ankerl::unordered_dense::map<uint32_t, uint32_t> byReference;
+    ankerl::unordered_dense::map<uint32_t, std::string> qualifiers;
 };
 
 /**
@@ -204,6 +192,7 @@ struct ScopeEnclosingContext
     std::string enclosingNamespace;
     std::string caller;
     std::shared_ptr<const IndexedReferenceReceivers> receivers;
+    std::shared_ptr<const CallBindings> callBindings;
 };
 
 /**
@@ -232,6 +221,11 @@ struct Scope
     uint32_t containerSpanIndex = UINT32_MAX;
 
     std::shared_ptr<const ScopeEnclosingContext> enclosingContext;
+
+    [[nodiscard]] const CallBindings* GetCallBindings() const noexcept
+    {
+        return enclosingContext ? enclosingContext->callBindings.get() : nullptr;
+    }
 
     [[nodiscard]] std::string_view GetEnclosingClass() const noexcept
     {
@@ -290,42 +284,42 @@ struct Scope
 };
 static_assert(sizeof(Scope) <= 128);
 
-/**
- * @brief Maximum recursion or traversal depth allowed when walking scope hierarchies.
- */
-inline constexpr size_t kMaxScopeDepth = 32;
+/// Copies extracted lexical records into a mutable tree with its own enclosing links.
+[[nodiscard]] std::shared_ptr<Scope> CopyLexicalScopeTree(const Scope& root);
 
 /**
- * @brief Zero-allocation stack cycle guard for scope hierarchy parent traversals.
+ * @brief Detects cycles in consecutive parent traversal without imposing a depth limit.
  */
 class ScopeTraversalGuard
 {
   public:
     /**
-     * @brief Records a visited scope pointer and checks for cycle formation.
-     * @param[in] scope Scope pointer being traversed.
-     * @return True if scope is novel and within depth limits; false if cycle or limit reached.
+     * @brief Advances the fast pointer along the same parent chain as the caller.
+     * @param[in] scope The caller's current scope, starting at the first visited scope.
+     * @return True while the parent chain can still be traversed safely.
      */
     bool CheckAndInsert(const Scope* scope) noexcept
     {
-        if (scope == nullptr || m_count >= kMaxScopeDepth)
+        if (!scope)
         {
             return false;
         }
-        for (size_t i = 0; i < m_count; ++i)
+        if (!m_started)
         {
-            if (m_visited[i] == scope)
-            {
-                return false;
-            }
+            m_fast = scope;
+            m_started = true;
         }
-        m_visited[m_count++] = scope;
+        else if (m_fast == scope)
+        {
+            return false;
+        }
+        m_fast = m_fast && m_fast->parent ? m_fast->parent->parent : nullptr;
         return true;
     }
 
   private:
-    std::array<const Scope*, kMaxScopeDepth> m_visited{};
-    size_t m_count = 0;
+    const Scope* m_fast = nullptr;
+    bool m_started = false;
 };
 
 /**
@@ -359,6 +353,12 @@ const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name,
                                       bool respectClosureBarrier = true);
 
 const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name, bool respectClosureBarrier);
+
+/// Tests the enclosing scope chain for a function without allocating a visited set.
+[[nodiscard]] bool IsDeclaredInFunctionScope(const Scope* scope) noexcept;
+
+/// Checks whether the visible name resolves to a variable or parameter declared in a function.
+[[nodiscard]] bool IsShadowedByFunctionLocal(const Scope* scope, std::string_view name);
 
 /**
  * @brief Searches the scope tree starting from root for the scope that declares def.
@@ -414,22 +414,75 @@ class ScopeIndex
      */
     std::shared_ptr<const Scope> GetRoot(const std::string& fileUri) const;
 
-    /**
-     * @brief Invokes a callback for every recorded scope tree under a shared lock.
-     * @param callback Function accepting (const std::string &uri, const std::shared_ptr<const Scope> &root).
-     */
-    template <typename Fn> void ForEachScopeTree(Fn&& callback) const
+    /// Retires the published occurrences while keeping the last lexical scope available for editing features.
+    void InvalidateDocumentOccurrences(const std::string& fileUri);
+
+    [[nodiscard]] std::shared_ptr<const Scope>
+    GetOccurrenceRoot(const std::string& fileUri, const std::optional<std::string>& module = std::nullopt) const;
+
+    template <typename Fn> void ForEachOccurrenceScope(const std::optional<std::string>& module, Fn&& callback) const
     {
         std::shared_lock<std::shared_mutex> lock(m_mutex);
-        for (const auto& [uri, root] : m_roots)
+        for (const auto& [uri, entry] : m_roots)
         {
-            callback(uri, std::shared_ptr<const Scope>(root));
+            if (entry.occurrencesCurrent && MatchesModule(*entry.root, module))
+            {
+                callback(uri, entry.root);
+            }
+        }
+    }
+
+    /// Visits the current physical call ranges for a declaration under the index's shared lock.
+    template <typename Fn>
+    void ForEachBoundUse(const CallDeclaration& declaration, const std::optional<std::string>& module,
+                         Fn&& callback) const
+    {
+        std::shared_lock<std::shared_mutex> lock(m_mutex);
+        const auto visitModule = [&](const ModuleCallUses& calls)
+        {
+            const auto group = calls.find(declaration);
+            if (group != calls.end())
+            {
+                for (const auto& [uri, ranges] : group->second)
+                {
+                    callback(*uri, ranges);
+                }
+            }
+        };
+        if (module)
+        {
+            if (const auto calls = m_callUses.find(*module); calls != m_callUses.end())
+            {
+                visitModule(calls->second);
+            }
+        }
+        else
+        {
+            for (const auto& [name, calls] : m_callUses)
+            {
+                visitModule(calls);
+            }
         }
     }
 
   private:
+    struct ScopeEntry
+    {
+        std::shared_ptr<const Scope> root;
+        bool occurrencesCurrent = false;
+    };
+
+    using DocumentCallUses = ankerl::unordered_dense::map<const std::string*, std::span<const SourceRange>>;
+    using ModuleCallUses = ankerl::unordered_dense::map<CallDeclaration, DocumentCallUses, CallDeclarationHash>;
+
+    static bool MatchesModule(const Scope& scope, const std::optional<std::string>& module);
+    void RemoveCallUses(const std::string& uri, const ScopeEntry& entry);
+    void AddCallUses(const std::string& uri, const Scope& scope);
+
     mutable std::shared_mutex m_mutex;
-    ankerl::unordered_dense::map<std::string, std::shared_ptr<Scope>> m_roots;
+    // Node storage keeps URI addresses stable until their postings are retired.
+    std::unordered_map<std::string, ScopeEntry> m_roots;
+    ankerl::unordered_dense::map<std::string, ModuleCallUses> m_callUses;
 };
 
 /**

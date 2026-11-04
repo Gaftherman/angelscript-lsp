@@ -111,5 +111,6 @@ std::optional<Symbol> TryResolveCallableFuncdef(const std::string& name, const S
 
 bool IsListConstructorSignature(const FunctionSignature& fn);
 bool IsListConstructor(const Symbol& sym);
-bool IsFunctionReference(TSNode node, const Scope* scope, const SymbolTable& symbolTable, std::string_view sourceCode);
+/// Tests whether an expression denotes a function or method without invoking it.
+[[nodiscard]] bool IsFunctionReference(TSNode node, const ExpressionTypeContext& ctx);
 } // namespace angel_lsp::analysis

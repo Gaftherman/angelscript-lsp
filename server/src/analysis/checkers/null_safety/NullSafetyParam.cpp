@@ -1,6 +1,7 @@
 #include "analysis/checkers/null_safety/NullSafetyParam.h"
 
 #include "analysis/checkers/null_safety/NullSafetyCondition.h"
+#include "analysis/index/SyntaxOperands.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeExtraction.h"
 #include "parser/ASTUtils.h"
@@ -55,7 +56,7 @@ static TSNode FindParameterListNode(TSNode funcNode)
     return TSNode{};
 }
 
-static void CollectRegularParameters(TSNode params, std::string_view sourceCode, FlowState& state)
+static void CollectRegularParameters(TSNode params, const NullCheckContext& ctx, FlowState& state)
 {
     const uint32_t count = ts_node_named_child_count(params);
     for (uint32_t i = 0; i < count; ++i)
@@ -83,20 +84,20 @@ static void CollectRegularParameters(TSNode params, std::string_view sourceCode,
             continue;
         }
 
-        const auto typeInfo = ExtractTypeInfoFromAST(typeNode, sourceCode);
+        const auto typeInfo = ExtractTypeInfoFromAST(typeNode, ctx.sourceCode);
         if (!typeInfo.isHandle)
         {
             continue;
         }
 
         std::string name =
-            parser::NodeText(parser::GetChildByField(param, parser::GetGrammarSymbols().fieldName), sourceCode);
+            parser::NodeText(parser::GetChildByField(param, parser::GetGrammarSymbols().fieldName), ctx.sourceCode);
         if (name.empty())
         {
             for (uint32_t j = ts_node_named_child_count(param); j > 0; --j)
             {
                 TSNode ch = ts_node_named_child(param, j - 1);
-                std::string ident = GetIdentifierName(ch, sourceCode);
+                std::string ident = GetIdentifierName(ch, ctx);
                 if (!ident.empty())
                 {
                     name = ident;
@@ -111,7 +112,7 @@ static void CollectRegularParameters(TSNode params, std::string_view sourceCode,
     }
 }
 
-static void CollectParametersFromAST(TSNode funcNode, std::string_view sourceCode, FlowState& state)
+static void CollectParametersFromAST(TSNode funcNode, const NullCheckContext& ctx, FlowState& state)
 {
     TSNode params = FindParameterListNode(funcNode);
     if (ts_node_is_null(params))
@@ -122,7 +123,7 @@ static void CollectParametersFromAST(TSNode funcNode, std::string_view sourceCod
     const auto& gs = parser::GetGrammarSymbols();
     if (ts_node_symbol(params) == gs.symLambdaParameterList)
     {
-        const auto lambdaParams = ExtractLambdaParameters(params, sourceCode);
+        const auto lambdaParams = ExtractLambdaParameters(params, ctx.sourceCode);
         for (const auto& lp : lambdaParams)
         {
             if (lp.isHandle && !lp.name.empty())
@@ -133,33 +134,25 @@ static void CollectParametersFromAST(TSNode funcNode, std::string_view sourceCod
         return;
     }
 
-    CollectRegularParameters(params, sourceCode, state);
+    CollectRegularParameters(params, ctx, state);
 }
 
-TSNode FindFunctionBody(TSNode funcNode)
+TSNode FindFunctionBody(TSNode funcNode, const NodeIndex& index)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode body = parser::GetChildByField(funcNode, gs.fieldBody);
+    const SyntaxOperands syntax(funcNode, &index);
+    const TSNode body = syntax.Field(gs.fieldBody);
     if (!ts_node_is_null(body) && ts_node_symbol(body) == gs.symStatementBlock)
     {
         return body;
     }
-    const uint32_t count = ts_node_named_child_count(funcNode);
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode child = ts_node_named_child(funcNode, i);
-        if (ts_node_symbol(child) == gs.symStatementBlock)
-        {
-            return child;
-        }
-    }
-    return TSNode{};
+    return syntax.FirstNamed(gs.symStatementBlock);
 }
 
-void CollectParameters(TSNode funcNode, const Scope* scopeRoot, std::string_view sourceCode, FlowState& state)
+void CollectParameters(TSNode funcNode, TSNode body, const NullCheckContext& ctx, FlowState& state)
 {
-    CollectParametersFromScope(FindFunctionBody(funcNode), scopeRoot, state);
-    CollectParametersFromAST(funcNode, sourceCode, state);
+    CollectParametersFromScope(body, ctx.scopeRoot, state);
+    CollectParametersFromAST(funcNode, ctx, state);
 }
 
 } // namespace angel_lsp::analysis

@@ -364,10 +364,9 @@ void Server::PublishDiagnostics(const std::string& uriStr,
 }
 
 std::vector<lsp::Diagnostic>
-Server::ToProtocolDiagnostics(const std::string& text,
-                              const std::vector<angel_lsp::analysis::Diagnostic>& diagnostics) const
+Server::ToProtocolDiagnostics(const std::string& text, const std::vector<angel_lsp::analysis::Diagnostic>& diagnostics,
+                              const std::vector<utils::ExcludedLineRange>& excluded) const
 {
-    const auto excluded = ExcludedLineRanges(text);
 
     std::vector<lsp::Diagnostic> converted;
     converted.reserve(diagnostics.size());
@@ -421,12 +420,8 @@ Server::ToProtocolDiagnostics(const std::string& text,
     return converted;
 }
 
-void Server::PublishInactiveRegions(const std::string& uriStr, const std::string& text)
+void Server::PublishInactiveRegions(const std::string& uriStr, const std::vector<utils::ExcludedLineRange>& excluded)
 {
-    const auto rawTextOpt = GetDocumentStore().GetText(uriStr);
-    const std::string& effectiveText = rawTextOpt ? *rawTextOpt : text;
-    const auto excluded = ExcludedLineRanges(effectiveText);
-
     lsp::json::Array regions;
     for (const auto& range : excluded)
     {
@@ -477,6 +472,7 @@ void Server::CacheDiagnosticsSnapshot(const PublishDiagnosticsRequest& request,
     snapshot.version = request.version;
     snapshot.generation = request.generation;
     snapshot.configRevision = m_sessionCoordinator->GetConfigRevision();
+    snapshot.closedRevision = request.closedRevision;
     m_diagnosticsPipeline->CacheDiagnosticsSnapshot(request.uriStr, std::move(snapshot));
 }
 
@@ -495,15 +491,6 @@ void Server::NotifyClientDiagnostics(lsp::notifications::TextDocument_PublishDia
                 m_messageHandler->sendRequest(
                     "workspace/diagnostic/refresh", std::nullopt, [](lsp::json::Value&&) {},
                     [](const lsp::ResponseError&) {});
-            }
-        }
-        if (!isDocOpen || params.diagnostics.empty())
-        {
-            std::lock_guard<std::mutex> lock(m_messageHandlerMutex);
-            if (m_messageHandler)
-            {
-                m_messageHandler->sendNotification<lsp::notifications::TextDocument_PublishDiagnostics>(
-                    std::move(params));
             }
         }
         return;
@@ -532,14 +519,17 @@ void Server::PublishDiagnostics(const PublishDiagnosticsRequest& request)
     const std::string outgoingUri = GetDocumentStore().GetClientUri(request.uriStr);
     params.uri = lsp::DocumentUri(lsp::Uri::parse(outgoingUri));
 
-    const auto rawTextOpt = GetDocumentStore().GetText(request.uriStr);
-    const std::string& effectiveText = rawTextOpt ? *rawTextOpt : request.text;
+    const auto rawText = GetDocumentStore().GetTextShared(request.uriStr);
+    const std::string& effectiveText = rawText ? *rawText : request.text;
 
-    params.diagnostics = ToProtocolDiagnostics(effectiveText, request.diagnostics);
+    const auto fallback =
+        request.preprocessing ? std::vector<utils::ExcludedLineRange>{} : ExcludedLineRanges(effectiveText);
+    const auto& excluded = request.preprocessing ? request.preprocessing->excluded : fallback;
+    params.diagnostics = ToProtocolDiagnostics(effectiveText, request.diagnostics, excluded);
 
     if (GetDocumentStore().IsOpen(request.uriStr))
     {
-        PublishInactiveRegions(request.uriStr, effectiveText);
+        PublishInactiveRegions(request.uriStr, excluded);
     }
 
     CacheDiagnosticsSnapshot(request, params.diagnostics);
@@ -548,7 +538,8 @@ void Server::PublishDiagnostics(const PublishDiagnosticsRequest& request)
 }
 
 void Server::PublishDiagnostics(const std::string& uriStr, const std::string& text,
-                                const std::vector<angel_lsp::analysis::Diagnostic>& diagnostics, int version)
+                                const std::vector<angel_lsp::analysis::Diagnostic>& diagnostics, int version,
+                                std::shared_ptr<const utils::PreprocessorScan> preprocessing)
 {
     PublishDiagnostics(PublishDiagnosticsRequest{
         .uriStr = uriStr,
@@ -556,6 +547,7 @@ void Server::PublishDiagnostics(const std::string& uriStr, const std::string& te
         .diagnostics = diagnostics,
         .version = version,
         .generation = GetDocumentStore().GetGeneration(uriStr),
+        .preprocessing = std::move(preprocessing),
     });
 }
 } // namespace angel_lsp

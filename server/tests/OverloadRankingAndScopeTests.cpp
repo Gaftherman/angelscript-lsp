@@ -220,6 +220,30 @@ TEST_SUITE("OverloadRankingAndScope")
         CHECK(HasDiagCode(cyclicDiags, "as-err-cyclic-auto-dependency"));
     }
 
+    TEST_CASE("Cyclic auto binds only unqualified initializer names to the declarator")
+    {
+        const auto diagnostics = AnalyzeSnippet(R"(
+namespace Storage { int value = 1; }
+class Container { int value; }
+void Probe(Container@ object) {
+    auto value = object.value;
+    {
+        auto value = Storage::value;
+    }
+    auto selfValue = (selfValue + 1);
+}
+)");
+        std::vector<uint32_t> cyclicLines;
+        for (const auto& diagnostic : diagnostics)
+        {
+            if (diagnostic.code == "as-err-cyclic-auto-dependency")
+            {
+                cyclicLines.push_back(diagnostic.range.start.line);
+            }
+        }
+        CHECK(cyclicLines == std::vector<uint32_t>{8});
+    }
+
     TEST_CASE("Scope parent cycle defense terminates safely without recursion or hang")
     {
         Scope s1;

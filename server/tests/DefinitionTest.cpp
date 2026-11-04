@@ -1105,3 +1105,21 @@ TEST_CASE("Definition - Disambiguates unscoped enum member in namespace with ide
     REQUIRE(def->size() == 1);
     CHECK((*def)[0].range.start.line == 1);
 }
+
+TEST_CASE("DefinitionHandler - Deep function local shadows a global declaration")
+{
+    const std::string name = angel_lsp::test::GenerateRandomSymbolName("Value");
+    constexpr size_t depth = 48;
+    std::string source = "int " + name + ";\nvoid Probe() {\n";
+    source.append(depth, '{');
+    source += "\nint " + name + " = 1;\nint result = " + name + ";\n";
+    source.append(depth + 1, '}');
+
+    TestEnvironment env(source);
+    REQUIRE_FALSE(ts_node_has_error(ts_tree_root_node(env.tree)));
+    const auto use = FindPos(source, name, source.find("int result"));
+    const auto result = env.DefAt(use.line, use.character);
+    REQUIRE(result);
+    REQUIRE(result->size() == 1);
+    CHECK(result->front().range.start.line == 3);
+}

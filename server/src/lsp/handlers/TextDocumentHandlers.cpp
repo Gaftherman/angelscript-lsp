@@ -84,12 +84,33 @@ Server::HandleRequestsTextDocument_Hover(lsp::requests::TextDocument_Hover::Para
     return lsp::Null{};
 }
 
+std::optional<std::string> Server::OccurrenceModuleFor(const std::string& uri) const
+{
+    if (m_modules.empty())
+    {
+        return std::nullopt;
+    }
+    const auto claim = ClaimFor(CanonicalPathFromUri(uri));
+    return claim.owner ? std::optional(claim.owner->name) : std::nullopt;
+}
+
+static std::optional<analysis::CallBindingRevision> OpenCallBindingRevision(const OpenDocument& doc,
+                                                                            uint64_t configRevision)
+{
+    if (!doc.docHandle || doc.docHandle->generation == 0)
+    {
+        return std::nullopt;
+    }
+    return analysis::CallBindingRevision{doc.docHandle->generation, doc.docHandle->version, configRevision};
+}
+
 features::DefinitionRequest Server::MakeDefinitionRequest(const OpenDocument& doc, const lsp::Position& position)
 {
     features::DefinitionRequest dr{doc.uri,      *doc.text,
                                    doc.tree,     m_symbolTable,
                                    m_scopeIndex, codec::Decode(*doc.text, GetPositionEncoding(), position)};
     dr.engineRules = &m_config.engineRules;
+    dr.callBindingRevision = OpenCallBindingRevision(doc, m_sessionCoordinator->GetConfigRevision());
     dr.predefinedExtension = m_config.info.predefinedFileExtension;
     dr.resolveInclude = [this, uri = doc.uri](const std::string& rawPath)
     {
@@ -248,7 +269,9 @@ Server::HandleRequestsTextDocument_References(lsp::requests::TextDocument_Refere
                                    req.context.includeDeclaration,
                                    m_symbolTable,
                                    m_scopeIndex,
-                                   m_logger.get()};
+                                   m_logger.get(),
+                                   OpenCallBindingRevision(*doc, m_sessionCoordinator->GetConfigRevision()),
+                                   OccurrenceModuleFor(doc->uri)};
     auto refs = features::GetReferences(rr);
     if (refs.has_value())
     {
@@ -642,6 +665,7 @@ Server::HandleRequestsTextDocument_CodeLens(lsp::requests::TextDocument_CodeLens
         return lsp::Null{};
     }
 
+    const std::string clientUri = req.textDocument.uri.toString();
     features::CodeLensRequest clr{doc->uri,
                                   *doc->text,
                                   doc->tree,
@@ -651,7 +675,9 @@ Server::HandleRequestsTextDocument_CodeLens(lsp::requests::TextDocument_CodeLens
                                   m_config.info.predefinedFileExtension,
                                   &m_config.engineRules.unusedRules,
                                   m_i18n.get(),
-                                  &m_config};
+                                  &m_config,
+                                  clientUri,
+                                  OccurrenceModuleFor(doc->uri)};
     auto lenses = features::GetCodeLenses(clr);
     if (lenses.has_value())
     {
@@ -806,10 +832,30 @@ void Server::RegisterTextDocumentHandlers()
     RegisterFormattingAndSymbolHandlers(*this, *m_messageHandler);
 }
 
+std::optional<uint64_t> Server::ClosedDiagnosticRevision(const std::string& uriStr, const std::string* source) const
+{
+    std::lock_guard lock(m_closureMutex);
+    const auto entry = m_closureDocuments.find(uriStr);
+    if (entry == m_closureDocuments.end() || entry->second.text.get() != source)
+    {
+        return std::nullopt;
+    }
+    return entry->second.revision;
+}
+
 std::optional<lsp::requests::TextDocument_Diagnostic::Result>
 Server::TryGetCachedDiagnosticReport(const std::string& uriStr, size_t currentHash, int currentVersion,
-                                     const std::optional<std::string>& previousResultId)
+                                     uint64_t closedRevision, const std::optional<std::string>& previousResultId)
 {
+    std::unique_lock closureLock(m_closureMutex, std::defer_lock);
+    if (closedRevision != 0)
+    {
+        closureLock.lock();
+        if (!IsClosedRevisionCurrentLocked(uriStr, closedRevision))
+        {
+            return std::nullopt;
+        }
+    }
     std::lock_guard<std::mutex> lock(m_diagnosticsPipeline->GetCacheMutexRef());
     const auto it = m_diagnosticsPipeline->GetCacheRef().find(uriStr);
     if (it == m_diagnosticsPipeline->GetCacheRef().end())
@@ -817,9 +863,9 @@ Server::TryGetCachedDiagnosticReport(const std::string& uriStr, size_t currentHa
         return std::nullopt;
     }
 
-    const bool isCurrent = (it->second.configRevision == m_sessionCoordinator->GetConfigRevision()) &&
-                           ((it->second.textHash == currentHash) ||
-                            (currentVersion >= 0 && it->second.version >= 0 && it->second.version == currentVersion));
+    const bool isCurrent = it->second.configRevision == m_sessionCoordinator->GetConfigRevision() &&
+                           it->second.version == currentVersion && it->second.textHash == currentHash &&
+                           it->second.closedRevision == closedRevision;
     if (!isCurrent)
     {
         return std::nullopt;
@@ -841,7 +887,7 @@ Server::TryGetCachedDiagnosticReport(const std::string& uriStr, size_t currentHa
 lsp::requests::TextDocument_Diagnostic::Result
 Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagnostic::Params&& params)
 {
-    if (!m_config.features.enablePullDiagnostics)
+    if (!m_sessionCoordinator->GetClientPullsDiagnostics())
     {
         throw lsp::RequestError(lsp::MessageError::MethodNotFound, "Pull diagnostics are disabled");
     }
@@ -862,26 +908,34 @@ Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagno
 
     const auto current = FindDocumentText(uriStr);
     const int currentVersion = GetDocumentVersion(uriStr);
-    const std::string textToAnalyze = current ? AnalysisTextFor(uriStr, *current) : std::string{};
-    const size_t currentHash = current ? std::hash<std::string>{}(textToAnalyze) : 0;
+    const bool isClosedScript =
+        currentVersion < 0 && !utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension);
+    const auto closedRevision =
+        isClosedScript && current ? ClosedDiagnosticRevision(uriStr, current.get()) : std::optional<uint64_t>{0};
 
-    if (current && m_parser)
+    if (current && closedRevision && m_parser)
     {
-        if (auto cached = TryGetCachedDiagnosticReport(uriStr, currentHash, currentVersion, params.previousResultId))
+        auto prepared = PrepareAnalysisSource(uriStr, *current);
+        const size_t currentHash = std::hash<std::string>{}(prepared.text);
+        if (auto cached = TryGetCachedDiagnosticReport(uriStr, currentHash, currentVersion, *closedRevision,
+                                                       params.previousResultId))
         {
             return std::move(*cached);
         }
 
         AnalyzeDocument({
             .uriStr = uriStr,
-            .text = textToAnalyze,
+            .text = std::move(prepared.text),
             .parser = *m_parser,
             .version = currentVersion,
             .generation = GetDocumentStore().GetGeneration(uriStr),
             .configRevision = m_sessionCoordinator->GetConfigRevision(),
+            .closedRevision = *closedRevision,
+            .preprocessing = std::move(prepared.preprocessing),
         });
 
-        if (auto fresh = TryGetCachedDiagnosticReport(uriStr, currentHash, currentVersion, params.previousResultId))
+        if (auto fresh = TryGetCachedDiagnosticReport(uriStr, currentHash, currentVersion, *closedRevision,
+                                                      params.previousResultId))
         {
             return std::move(*fresh);
         }

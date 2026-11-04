@@ -102,24 +102,13 @@ static void DispatchComparisonCheck(const ComparisonDispatchContext& dispatch, c
     CheckRelationalComparison(dispatch.opNode, ops, ctx);
 }
 
-void CheckHandleComparison(TSNode node, const Scope* scope, DiagnosticContext& ctx)
+void CheckHandleComparison(const BinaryExpressionOperands& operands, const Scope* scope, DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
-    if (ts_node_is_null(opNode))
-    {
-        return;
-    }
+    const auto& [opNode, left, right] = operands;
     const TSSymbol opSym = ts_node_symbol(opNode);
     const ComparisonOperatorInfo opInfo = ClassifyComparisonOperatorSym(opSym, gs);
     if (opInfo.category == ComparisonCategory::None)
-    {
-        return;
-    }
-
-    TSNode left = parser::GetChildByField(node, gs.fieldLeft);
-    TSNode right = parser::GetChildByField(node, gs.fieldRight);
-    if (ts_node_is_null(left) || ts_node_is_null(right))
     {
         return;
     }
@@ -128,8 +117,8 @@ void CheckHandleComparison(TSNode node, const Scope* scope, DiagnosticContext& c
     const std::string rightType = ResolveExpressionType(right, ExpressionTypeContext(scope, ctx));
 
     const ComparisonOperandsState operandsState{
-        .isLeftNull = IsNullOperand(left, leftType),
-        .isRightNull = IsNullOperand(right, rightType),
+        .isLeftNull = IsNullOperand(left, leftType, ctx.request.nodeIndex),
+        .isRightNull = IsNullOperand(right, rightType, ctx.request.nodeIndex),
         .isLeftHandle = IsHandleType(leftType, ctx.request.symbolTable) || ts_node_symbol(left) == gs.symThisExpression,
         .isRightHandle =
             IsHandleType(rightType, ctx.request.symbolTable) || ts_node_symbol(right) == gs.symThisExpression,

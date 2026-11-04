@@ -38,6 +38,7 @@ class WorkspaceIncludeGraph
         std::vector<std::string> excludeGlobs = {};
         std::string implicitExtension = {};
         std::vector<std::string> allowedRoots = {};
+        IncludePreprocessor preprocessor = {};
     };
 
     /**
@@ -52,6 +53,7 @@ class WorkspaceIncludeGraph
         FileReader fileReader = {};
         std::string implicitExtension = {};
         std::vector<std::string> allowedRoots = {};
+        IncludePreprocessor preprocessor = {};
     };
 
     /**
@@ -64,6 +66,8 @@ class WorkspaceIncludeGraph
         std::vector<std::string> searchDirectories;
         std::vector<std::string> allowedRoots = {};
         std::string implicitExtension = {};
+        IncludePreprocessor preprocessor = {};
+        const std::vector<ExcludedLineRange>* excluded = nullptr; ///< Prepared ranges for this source, when available.
     };
 
     /**
@@ -194,6 +198,7 @@ struct IncludeContext
     const std::vector<std::string>& searchDirectories;
     const std::vector<std::string>& allowedRoots;
     std::string_view implicitExtension;
+    const IncludePreprocessor& preprocessor;
 };
 
 /**
@@ -205,9 +210,10 @@ struct ResolvedIncludeEnv
     WorkspaceIncludeGraph::FileReader fileReader;
 
     [[nodiscard]] IncludeContext MakeContext(const std::vector<std::string>& searchDirectories,
-                                             std::string_view implicitExtension) const noexcept
+                                             std::string_view implicitExtension,
+                                             const IncludePreprocessor& preprocessor) const noexcept
     {
-        return IncludeContext{searchDirectories, allowedRoots, implicitExtension};
+        return IncludeContext{searchDirectories, allowedRoots, implicitExtension, preprocessor};
     }
 };
 

@@ -221,8 +221,6 @@ El aislamiento de capas es estrictamente validado por `server/scripts/check-laye
 | :--- | :--- | :--- |
 | `angelscript.server.executablePath` | `""` | Ruta personalizada al binario `angel_lsp`. Deshabilitada en espacios no confiables. |
 | `angelscript.server.logLevel` | `"debug"` | Nivel de detalle: `"error"`, `"warn"`, `"info"`, `"debug"` o `"trace"`. |
-| `angelscript.statusBar.enabled` | `true` | Controla si el elemento de AngelScript en la barra de estado es visible. |
-| `angelscript.statusBar.alignment` | `"left"` | Alineación del elemento en la barra de estado (`"left"` o `"right"`). |
 | `angelscript.dimInactiveRegions` | `true` | Atenúa bloques excluidos por el preprocesador (`#if / #else / #endif`). |
 | `angelscript.inactiveRegionOpacity` | `0.55` | Opacidad de regiones inactivas (entre `0.1` y `1.0`). |
 

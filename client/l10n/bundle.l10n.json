@@ -1,6 +1,6 @@
 {
+  "Server Actions": "Server Actions",
   "Show Log": "Show Log",
-  "Click for the log, a restart, or the stub picker.": "Click for the log, a restart, or the stub picker.",
   "no language server binary for {0}. Editor features are unavailable.": "no language server binary for {0}. Editor features are unavailable.",
   "Starting the AngelScript language server.": "Starting the AngelScript language server.",
   "the language server connection keeps failing, so it has been shut down.": "the language server connection keeps failing, so it has been shut down.",
@@ -21,7 +21,6 @@
   "All stubs (merged)": "All stubs (merged)",
   "Loads every discovered stub. Declarations they share will resolve more than once.": "Loads every discovered stub. Declarations they share will resolve more than once.",
   "Select the predefined stub that describes the host application API": "Select the predefined stub that describes the host application API",
-  "Stub: {0}": "Stub: {0}",
   "Enter the module name for this entry point": "Enter the module name for this entry point",
   "Enter the module name for this folder": "Enter the module name for this folder",
   "Module name": "Module name",
@@ -84,7 +83,6 @@
   "Activated all workspace modules.": "Activated all workspace modules.",
   "Isolated active module: {0}": "Isolated active module: {0}",
   "Reload and rescan module files": "Reload and rescan module files",
-  "Rescan": "Rescan",
   "Select": "Select",
   "Switch": "Switch",
   "Workspace": "Workspace",

@@ -1,8 +1,12 @@
 #include "analysis/index/NodeIndex.h"
 
+#include "analysis/index/SymbolCollector.h"
+#include "analysis/index/SyntaxOperands.h"
+#include "analysis/resolution/ScopeSymbolLookup.h"
 #include "helpers/TestUtils.h"
 #include "parser/GrammarNames.h"
 
+#include <array>
 #include <doctest/doctest.h>
 
 using namespace angel_lsp::analysis;
@@ -182,4 +186,216 @@ TEST_CASE("NodeIndex - Container spans and innermost class lookup")
     std::string extractedMixinName =
         code.substr(spanMixin->nameStartByte, spanMixin->nameEndByte - spanMixin->nameStartByte);
     CHECK(extractedMixinName == mixinName);
+}
+
+TEST_CASE("NodeIndex - Namespace imports follow the enclosing block and its later declarations")
+{
+    const std::string code = R"(
+        using namespace RootFirst;
+        namespace Project {
+            void probe() {
+                { leftCall(); using namespace Left; }
+                { rightCall(); using namespace Right; }
+                outerCall();
+            }
+            using namespace OuterLater;
+        }
+        using namespace RootLast;
+    )";
+    const auto doc = angel_lsp::test::CreateTestDocument("file:///lexical_imports.as", code);
+    const auto root = ts_tree_root_node(doc->GetTree());
+    const NodeIndex index(root);
+    REQUIRE(index.ErrorRanges().empty());
+    const auto calls = index.Nodes(GetGrammarSymbols().symCallExpression);
+    REQUIRE(calls.size() == 3);
+    const auto left = CollectVisibleUsingNamespaces(calls[0], code, &index);
+    const auto right = CollectVisibleUsingNamespaces(calls[1], code, &index);
+    const auto outer = CollectVisibleUsingNamespaces(calls[2], code, &index);
+    CHECK(left == std::vector<std::string>{"Left", "OuterLater", "RootFirst", "RootLast"});
+    CHECK(right == std::vector<std::string>{"Right", "OuterLater", "RootFirst", "RootLast"});
+    CHECK(outer == std::vector<std::string>{"OuterLater", "RootFirst", "RootLast"});
+    for (const TSNode call : calls)
+    {
+        CHECK(CollectVisibleUsingNamespaces(call, code, &index) == CollectVisibleUsingNamespaces(call, code, nullptr));
+    }
+    CHECK(index.CollectUsingNamespaces(code) ==
+          std::vector<std::string>{"RootFirst", "Left", "Right", "OuterLater", "RootLast"});
+}
+
+TEST_CASE("NodeIndex - Lookup containers match declaration names, base lists and lambda barriers")
+{
+    const std::string code = R"(
+        namespace Project::Nested {
+            class Parent {}
+            class Derived : Parent {
+                int member;
+                void run() {
+                    auto callback = function() { int local = 1; };
+                }
+            }
+        }
+    )";
+    const auto doc = angel_lsp::test::CreateTestDocument("file:///lexical_container_headers.as", code);
+    const TSNode root = ts_tree_root_node(doc->GetTree());
+    const NodeIndex index(root);
+    REQUIRE(index.ErrorRanges().empty());
+
+    const auto& gs = GetGrammarSymbols();
+    for (const TSSymbol symbol :
+         {gs.symScript, gs.symNamespaceDeclaration, gs.symClassDeclaration, gs.symBaseClassList, gs.symScopedIdentifier,
+          gs.symIdentifier, gs.symLambdaExpression, gs.symStatementBlock})
+    {
+        for (const TSNode node : index.Nodes(symbol))
+        {
+            INFO(NodeText(node, code));
+            const auto oldContainers = GetEnclosingContainers(node, code);
+            const auto indexedContainers = GetEnclosingContainers(node, code, &index);
+            REQUIRE(indexedContainers.size() == oldContainers.size());
+            for (size_t i = 0; i < oldContainers.size(); ++i)
+            {
+                CHECK(indexedContainers[i].qualifiedName == oldContainers[i].qualifiedName);
+                CHECK(indexedContainers[i].kind == oldContainers[i].kind);
+            }
+        }
+    }
+}
+
+TEST_CASE("NodeIndex - Indexed operands preserve child fields and recovery order")
+{
+    const std::string code = R"(
+        int global = 1;
+        void probe(int value) {
+            for (; value < global; ++value) { consume(value /* retained comment */); }
+            auto incomplete = ;
+            if ((value)) { return; }
+        }
+    )";
+    const auto doc = angel_lsp::test::CreateTestDocument("file:///indexed_operands.as", code);
+    REQUIRE(doc->GetTree() != nullptr);
+    const NodeIndex index(ts_tree_root_node(doc->GetTree()));
+    REQUIRE_FALSE(index.ErrorRanges().empty());
+    const auto& gs = GetGrammarSymbols();
+    for (const TSSymbol symbol : {gs.symVariableDeclaration, gs.symVariableDeclarator, gs.symForStatement,
+                                  gs.symIfStatement, gs.symArgumentList, gs.symCallExpression, gs.symReturnStatement})
+    {
+        REQUIRE_FALSE(index.Nodes(symbol).empty());
+        for (const TSNode node : index.Nodes(symbol))
+        {
+            INFO(NodeText(node, code));
+            REQUIRE(index.FindOperandSyntax(node) != nullptr);
+            const SyntaxOperands operands(node, &index);
+            const SyntaxOperands treeOnly(node, nullptr);
+            for (const TSFieldId field : {gs.fieldName, gs.fieldValue, gs.fieldVarType, gs.fieldCondition, gs.fieldBody,
+                                          gs.fieldFunction, gs.fieldArguments})
+            {
+                CHECK(ts_node_eq(operands.Field(field), treeOnly.Field(field)));
+            }
+            const uint32_t count = ts_node_named_child_count(node);
+            uint32_t ordinal = 0;
+            operands.ForEachNamed(
+                [&](TSNode child)
+                {
+                    CHECK(ts_node_eq(child, ts_node_named_child(node, ordinal++)));
+                    return true;
+                });
+            CHECK(ordinal == count);
+            CHECK(ts_node_eq(operands.OnlyNamed(), treeOnly.OnlyNamed()));
+            CHECK(ts_node_eq(operands.NamedAt(count), treeOnly.NamedAt(count)));
+            if (symbol == gs.symVariableDeclarator)
+            {
+                CHECK(ts_node_eq(operands.DeclaratorValue(code), treeOnly.DeclaratorValue(code)));
+            }
+        }
+    }
+}
+
+TEST_CASE("NodeIndex - Conversion context preserves callable boundaries and operand roles")
+{
+    const std::string code = R"(
+        class Holder {
+            int stored;
+            int &borrow(bool ready) {
+                auto callback = function() {
+                    if (ready) { return stored; }
+                    return stored;
+                };
+                do { this.stored = 1; } while (ready);
+                if (ready) { this.stored++; }
+                else if (!ready) { consume(this.stored); }
+                for (; ready; ) { return stored; }
+                return stored;
+            }
+        }
+        int outside() { return 1; }
+    )";
+    const auto doc = angel_lsp::test::CreateTestDocument("file:///conversion_context.as", code);
+    const NodeIndex index(ts_tree_root_node(doc->GetTree()));
+    CHECK_FALSE(index.HasSyntaxErrors());
+    const auto& gs = GetGrammarSymbols();
+    const std::array callableKinds{gs.symFuncDeclaration, gs.symLambdaExpression};
+    size_t references = 0;
+    for (const TSNode node : index.Nodes(gs.symFuncDeclaration))
+    {
+        const TSNode expected = FindAncestorWithSymbol(GetParent(node), gs.symClassDeclaration);
+        CHECK(ts_node_eq(index.EnclosingDeclaration(node), expected));
+        const auto* facts = index.FindOperandSyntax(node);
+        REQUIRE(facts);
+        const bool hasRef = !ts_node_is_null(FindChildWithSymbol(node, gs.tokAmp));
+        CHECK(facts->hasReturnReferenceToken == hasRef);
+        references += hasRef;
+    }
+    CHECK(references == 1);
+
+    REQUIRE(index.Nodes(gs.symReturnStatement).size() == 5);
+    for (const TSNode node : index.Nodes(gs.symReturnStatement))
+    {
+        const TSNode expected = FindAncestorWithAnySymbol(GetParent(node), callableKinds);
+        CHECK(ts_node_eq(index.EnclosingDeclaration(node), expected));
+    }
+
+    const std::array conditionalKinds{gs.symIfStatement, gs.symWhileStatement, gs.symForStatement};
+    for (const auto symbol : {gs.symIfStatement, gs.symMemberExpression, gs.symReturnStatement})
+    {
+        REQUIRE_FALSE(index.Nodes(symbol).empty());
+        for (const TSNode node : index.Nodes(symbol))
+        {
+            const auto* facts = index.FindOperandSyntax(node);
+            REQUIRE(facts);
+            const auto parent = GetParent(node);
+            REQUIRE_FALSE(ts_node_is_null(parent));
+            CHECK(facts->parentSymbol == ts_node_symbol(parent));
+            CHECK(index.IsInsideConditionalStatement(ts_node_start_byte(node)) ==
+                  !ts_node_is_null(FindAncestorWithAnySymbol(node, conditionalKinds)));
+        }
+    }
+}
+
+TEST_CASE("Indexed namespace lookup reaches enclosing declarations beyond 32 scopes")
+{
+    const std::string outer = angel_lsp::test::GenerateRandomSymbolName("Outer");
+    const std::string name = angel_lsp::test::GenerateRandomSymbolName("Visible");
+    const std::string uri = "file:///deep_namespace.as";
+    constexpr int depth = 48;
+    std::string source = "namespace " + outer + " { void " + name + "() {}\n";
+    for (int level = 0; level < depth; ++level)
+    {
+        source += "namespace Nested" + std::to_string(level) + " {\n";
+    }
+    source += "void Probe() { " + name + "(); }\n";
+    source.append(depth + 1, '}');
+
+    const auto doc = angel_lsp::test::CreateTestDocument(uri, source);
+    REQUIRE(doc->GetTree());
+    const NodeIndex index(ts_tree_root_node(doc->GetTree()));
+    REQUIRE_FALSE(index.HasSyntaxErrors());
+    const auto calls = index.Nodes(GetGrammarSymbols().symCallExpression);
+    REQUIRE(calls.size() == 1);
+
+    SymbolTable table;
+    SymbolCollector collector(nullptr);
+    const auto diagnostics = collector.CollectSymbolsWithIndex({uri, source}, index, table);
+    CHECK(diagnostics.empty());
+    const auto found = FindSymbolsInScope(name, calls.front(), source, table, &index);
+    REQUIRE(found.size() == 1);
+    CHECK(found.front().qualifiedName == outer + "::" + name);
 }

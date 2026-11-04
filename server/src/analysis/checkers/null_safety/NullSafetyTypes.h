@@ -30,7 +30,8 @@ struct NullCheckContext
 {
     std::string_view sourceCode;
     DiagnosticContext& diagCtx;
-    const Scope* scopeRoot = nullptr;
+    const Scope* scopeRoot;
+    const NodeIndex& index;
 };
 
 /**
@@ -64,5 +65,29 @@ inline void ApplyAssertions(FlowState& state, const std::vector<NullAssertion>& 
         state.vars[a.varName] = a.state;
     }
 }
+
+/// Worklist actions for null checking.
+enum class NullStatementAction : uint8_t
+{
+    Statement,
+    Children,
+    Else,
+    Join
+};
+
+/// A pending step in the null checking worklist.
+struct NullStatementWork
+{
+    NullStatementAction action;
+    TSNode node{};
+    SyntaxNodeId child = NoSyntaxNode;
+};
+
+/// Separate states retained while evaluating the arms of an if statement.
+struct NullBranchState
+{
+    FlowState thenState;
+    FlowState elseState;
+};
 
 } // namespace angel_lsp::analysis

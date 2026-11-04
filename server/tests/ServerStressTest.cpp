@@ -5,9 +5,11 @@
 #include "utils/Utils.h"
 
 #include <chrono>
+#include <condition_variable>
 #include <doctest/doctest.h>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -182,7 +184,8 @@ TEST_CASE("Server - Concurrency Stress Test: 500 rapid edits with interleaved re
     const int initId = nextReqId++;
     stream.Push(R"({"jsonrpc":"2.0","id":)" + std::to_string(initId) +
                 R"(,"method":"initialize","params":{"processId":null,"rootUri":")" + ws.RootUri() +
-                R"(","capabilities":{},"workspaceFolders":[{"uri":")" + ws.RootUri() + R"(","name":"fixture"}]}})");
+                R"(","capabilities":{"textDocument":{"diagnostic":{}}},"workspaceFolders":[{"uri":")" + ws.RootUri() +
+                R"(","name":"fixture"}]}})");
     stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
 
     // 2. Open document
@@ -669,4 +672,96 @@ TEST_CASE("Server - Barrier: Identical text with higher version updates version 
 
     CHECK(stream.ResponseFor(initId).find("\"capabilities\"") != std::string::npos);
     CHECK(stream.ResponseFor(shutdownId).find("\"result\":null") != std::string::npos);
+}
+
+TEST_CASE("Server - Closed analysis cannot publish after a disk revision is withdrawn")
+{
+    bool replace = false;
+    SUBCASE("deleted")
+    {
+    }
+    SUBCASE("replaced at the same URI")
+    {
+        replace = true;
+    }
+
+    TempStressWorkspace ws;
+    const std::string entry = "#include \"uses.as\"\nvoid Root() {}\n";
+    ws.Write("entry.as", entry);
+    ws.Write("uses.as", "int Ghost() { Root(); }\n");
+    const auto entryUri = ws.Uri("entry.as");
+    const auto useUri = ws.Uri("uses.as");
+
+    angel_lsp::config::ServerConfig config;
+    config.modules = {{"TestModule", (ws.dir / "entry.as").string(), ""}};
+    config.searchDirectories.push_back(ws.dir.string());
+
+    angel_lsp::test::ScriptedStream stream;
+    angel_lsp::Server server(config, stream);
+    const auto useKey = server.DocumentKey(useUri);
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool paused = false;
+    bool release = false;
+    bool observed = false;
+    server.SetOnBeforeCommitHook(
+        [&](const std::string& uri, int version, [[maybe_unused]] uint64_t generation)
+        {
+            if (uri != useKey || version != -1)
+            {
+                return;
+            }
+            std::unique_lock lock(mutex);
+            paused = true;
+            condition.notify_all();
+            condition.wait(lock, [&]() { return release; });
+        });
+
+    stream.Push(R"({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"processId":null,"rootUri":")" +
+                ws.RootUri() + R"(","capabilities":{}}})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction(
+        [&]()
+        {
+            std::unique_lock lock(mutex);
+            observed = condition.wait_for(lock, std::chrono::seconds(8), [&]() { return paused; });
+        });
+    stream.PushAction(
+        [&]()
+        {
+            if (replace)
+            {
+                ws.Write("uses.as", "void Fresh() {}\n");
+            }
+            else
+            {
+                std::error_code error;
+                std::filesystem::remove(ws.dir / "uses.as", error);
+            }
+        });
+    stream.Push(R"({"jsonrpc":"2.0","method":"workspace/didChangeWatchedFiles","params":{"changes":[{"uri":")" +
+                useUri + R"(","type":)" + (replace ? "2" : "3") + R"(}]}})");
+    stream.PushAction(
+        [&]()
+        {
+            {
+                std::lock_guard lock(mutex);
+                release = true;
+            }
+            condition.notify_all();
+            server.DrainQueue();
+        });
+    stream.Push(R"({"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{"uri":")" + entryUri +
+                R"(","languageId":"angelscript","version":1,"text":")" + JsonEscape(entry) + R"("}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/references","params":{"textDocument":{"uri":")" +
+                entryUri + R"("},"position":{"line":1,"character":6},"context":{"includeDeclaration":false}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+    stream.Push(R"({"jsonrpc":"2.0","method":"exit"})");
+    server.Run();
+
+    REQUIRE(observed);
+    CHECK(server.GetSymbolTable().FindSymbols("Ghost").empty());
+    CHECK(server.GetSymbolTable().FindSymbols("Fresh").empty() == !replace);
+    CHECK(stream.Output().find("as-err-not-all-paths-return") == std::string::npos);
+    CHECK(stream.ResponseFor(2).find("\"result\":null") != std::string::npos);
 }

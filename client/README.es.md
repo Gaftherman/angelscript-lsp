@@ -184,9 +184,6 @@ Las configuraciones de rutas admiten expansión dinámica de variables según el
 | :--- | :--- | :--- |
 | `angelscript.server.executablePath` | `""` | Ruta al archivo ejecutable del servidor de lenguaje AngelScript. |
 | `angelscript.server.logLevel` | `"debug"` | Especifica el nivel de detalle para los registros de salida del servidor de lenguaje. |
-| `angelscript.statusBar.alignment` | `"left"` | De qué lado de la barra de estado se coloca el elemento de AngelScript. Es la vía para llegar al registro del servidor, al reinicio y al selector de stub, así que la izquierda es el valor por defecto: ahí están los contadores de problemas, y ahí es donde ya está la vista cuando un diagnóstico te manda a mirar. |
-| `angelscript.statusBar.enabled` | `true` | Indica si se debe mostrar el elemento de AngelScript en la barra de estado del editor. |
-| `angelscript.statusBar.showStub` | `false` | Indica si se debe mostrar el nombre del stub predefinido activo en el elemento de la barra de estado en lugar de solo el nombre del lenguaje. |
 | `angelscript.dimInactiveRegions` | `true` | Atenúa el código dentro de un bloque `#if` que el preprocesador descarta, igual que la extensión de C++ atenúa sus regiones inactivas. Es una decoración, no un color: atenúa lo que haya producido el resaltado de sintaxis, corchetes incluidos, algo que un token semántico no puede hacer - el editor pinta `(`, `{` y `[` con su propia función de emparejado de corchetes. |
 | `angelscript.inactiveRegionOpacity` | `0.55` | Cuánto se sigue viendo el código atenuado dentro de un bloque `#if` descartado. 1 es sin atenuar. Va con `#angelscript.dimInactiveRegions#`, que tiene que estar activo para que esto haga algo. |
 
@@ -270,7 +267,6 @@ Las configuraciones de rutas admiten expansión dinámica de variables según el
 | `angelscript.features.typeHierarchy` | `true` | Jerarquía de tipos: las bases que declara una clase o interfaz, y los tipos que la declaran como suya. |
 | `angelscript.features.linkedEditing` | `true` | Edición vinculada: reescribir una variable local o un parámetro y sus usos juntos, en vivo. Se ofrece solo para nombres que un ámbito léxico mantiene dentro de un solo archivo - cualquier elemento en el ámbito de archivo pasa por Cambiar nombre en su lugar, que busca a través de documentos. |
 | `angelscript.features.codeLens` | `true` | Mostrar lentes de código interactivos (referencias, implementaciones) en línea sobre las declaraciones. |
-| `angelscript.features.pullDiagnostics` | `true` | Responder a `textDocument/diagnostic` y `workspace/diagnostic` (LSP 3.17). El editor solicita diagnósticos en lugar de esperar a que se le notifiquen. Las notificaciones push se envían de cualquier forma, por lo que desactivar esto no hace perder nada que un cliente que no solicite diagnósticos estuviera utilizando. |
 | `angelscript.features.typeConversionChecks` | `true` | Reportar conversiones que no cuenten con un constructor, `opConv`/`opImplConv` o `opCast`/`opImplCast` que las respalde. |
 | `angelscript.features.predefinedLoader` | `true` | Cargar archivos de stubs predefinidos que describen la API de la aplicación host. |
 | `angelscript.features.enableCommentSuppressions` | `true` | Habilitar la supresión de diagnósticos mediante comentarios usando '// disable <CÓDIGO>' y '// enable <CÓDIGO>' (ej. '// disable W156'). |

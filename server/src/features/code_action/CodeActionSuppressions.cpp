@@ -93,6 +93,7 @@ void TryAddDiagnosticSuppressionFixes(const CodeActionRequest& request, std::vec
     }
 
     std::unordered_set<std::string> seenCodes;
+    std::unordered_set<std::string_view> seenGroups;
     for (const auto& diag : request.context.diagnostics)
     {
         if (!diag.code.has_value() || !std::holds_alternative<lsp::String>(diag.code.value()))
@@ -113,6 +114,11 @@ void TryAddDiagnosticSuppressionFixes(const CodeActionRequest& request, std::vec
         AddLineSuppressionFix(request, diag, displayCode, actions);
         AddRangeSuppressionFix(request, diag, displayCode, actions);
         AddFileSuppressionFix(request, diag, displayCode, actions);
+        const auto group = analysis::GetDiagnosticGroup(rawCode);
+        if (!group.empty() && seenGroups.insert(group).second)
+        {
+            AddFileSuppressionFix(request, diag, group, actions);
+        }
     }
 }
 

@@ -2,55 +2,78 @@
 
 #include "analysis/checkers/null_safety/NullSafetyTypes.h"
 
-#include <string_view>
 #include <tree_sitter/api.h>
+#include <utility>
 #include <vector>
 
 namespace angel_lsp::analysis
 {
-/**
- * @brief Unwraps parenthesized or handle-operator unary nodes to find the core expression.
- * @param[in] expr Expression AST node to unwrap.
- * @return Unwrapped child AST node.
- */
-TSNode UnwrapNullExpression(TSNode expr);
-
-/**
- * @brief Extracts the simple identifier name from an identifier or scoped_identifier node.
- * @param[in] node AST node to inspect.
- * @param[in] sourceCode Source text of the document.
- * @return Simple variable or parameter identifier name, or empty string.
- */
-std::string GetIdentifierName(TSNode node, std::string_view sourceCode);
-
-/**
- * @brief Evaluates an AST condition node to extract positive and negative null assertions.
- * @param[in] condition Condition AST node (e.g. from if_statement or while_statement).
- * @param[in] sourceCode Source text of the document.
- * @param[out] positiveAssertions Assertions that hold if the condition is true.
- * @param[out] negativeAssertions Assertions that hold if the condition is false.
- */
-void ExtractConditionAssertions(TSNode condition, std::string_view sourceCode,
-                                std::vector<NullAssertion>& positiveAssertions,
-                                std::vector<NullAssertion>& negativeAssertions);
-
-/**
- * @brief Receives and records assertion diagnostic occurrences and condition evaluations.
- */
-struct AssertionSink
+/// Positive and negative facts produced by one condition.
+struct NullConditionAssertions
 {
-    std::vector<NullAssertion>& positive;
-    std::vector<NullAssertion>& negative;
+    std::vector<NullAssertion> positive;
+    std::vector<NullAssertion> negative;
+};
+
+/// Follows captured expression links to find the value used for null tracking.
+TSNode UnwrapNullExpression(TSNode expr, const NodeIndex& index);
+
+/// Extracts a simple identifier using the captured expression operands.
+std::string GetIdentifierName(TSNode node, const NullCheckContext& ctx);
+
+/// Worklist actions for null checking.
+enum class NullConditionAction : uint8_t
+{
+    Evaluate,
+    Negate,
+    And,
+    Or
+};
+
+/// A pending step in the null checking worklist.
+struct NullConditionWork
+{
+    NullConditionAction action;
+    TSNode node{};
 };
 
 /**
- * @brief Bundles binary operand nodes, resolved types, and operator grammar symbols for conditional expression checks.
+ * @brief Computes null facts over indexed operands and reuses them during one expression check.
+ * @note The worklist and its transient node keys are confined to one live revision.
  */
-struct BinaryConditionParams
+class NullConditionWorklist
 {
-    TSNode left;
-    TSNode right;
-    TSSymbol opSym;
-    std::string_view sourceCode;
+  public:
+    /** @brief Initializes an empty worklist for one expression. */
+    explicit NullConditionWorklist(const NullCheckContext& ctx) : m_ctx(ctx)
+    {
+    }
+
+    /**
+     * @brief Computes facts and retains them for a subsequent enclosing condition.
+     * @param[in] condition Condition whose facts are needed for short-circuit evaluation.
+     * @return Facts valid until the next call to Take or Remember.
+     */
+    const NullConditionAssertions& Remember(TSNode condition);
+
+    /**
+     * @brief Computes facts, consuming any already evaluated descendant summaries.
+     * @param[in] condition Condition whose positive and negative facts are needed.
+     * @return Assertions for both outcomes.
+     */
+    NullConditionAssertions Take(TSNode condition);
+
+  private:
+    using NodeKey = std::pair<const void*, uint32_t>;
+
+    void Merge(bool isAnd);
+    void EvaluateBinary(TSNode node);
+    void Evaluate(TSNode condition);
+
+    const NullCheckContext& m_ctx;
+    std::vector<NullConditionWork> m_pending;
+    std::vector<NullConditionAssertions> m_values;
+    ankerl::unordered_dense::map<NodeKey, NullConditionAssertions> m_summaries;
 };
+
 } // namespace angel_lsp::analysis

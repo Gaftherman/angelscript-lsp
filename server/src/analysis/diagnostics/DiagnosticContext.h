@@ -6,6 +6,7 @@
 #include "utils/LspLogger.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -32,6 +33,7 @@ struct DiagnosticContext
     const SemanticAnalysisRequest& request;
     std::vector<Diagnostic>& diagnostics;
     utils::LspLogger* logger = nullptr;
+    std::shared_ptr<CallBindings> callBindings;
 
     /**
      * @brief Constructs a DiagnosticContext binding a semantic request and output diagnostics list.

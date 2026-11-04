@@ -2,10 +2,12 @@
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/TargetResolution.h"
 #include "features/references/ReferencesHandler.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
+#include <algorithm>
 #include <doctest/doctest.h>
 #include <random>
 #include <string>
@@ -1029,4 +1031,86 @@ TEST_CASE("References - Enum member occurrences isolated between different names
     {
         CHECK(ref.uri.toString() == "file:///weapon_a.as");
     }
+}
+
+TEST_CASE("References - A local target retains the scope revision it resolved against")
+{
+    TestEnvironment env("void Probe() {\n"
+                        "    int count = 0;\n"
+                        "    count++;\n"
+                        "}\n");
+    auto& workspace = env.multiEnv;
+    const auto& source = workspace.sources.at(env.uri);
+    auto* tree = workspace.trees.at(env.uri);
+    TSNode node{};
+    ResolveTargetRequest request{env.uri, source, tree, {1, 8}, workspace.symbolTable, workspace.scopeIndex, node};
+    const auto target = ResolveTargetSymbol(request);
+    REQUIRE(target.has_value());
+    REQUIRE(target->kind == TargetKind::Local);
+
+    workspace.scopeIndex.ClearDocument(env.uri);
+    const auto occurrences =
+        CollectOccurrences({*target, env.uri, source, tree, workspace.symbolTable, workspace.scopeIndex, false});
+    REQUIRE(occurrences.size() == 1);
+    CHECK(occurrences.front().range.startLine == 2);
+    CHECK(occurrences.front().range.startCharacter == 4);
+}
+
+TEST_CASE("References - Bound calls are published and withdrawn by document and module")
+{
+    ScopeIndex index;
+    Symbol declaration;
+    declaration.name = "Pick";
+    declaration.qualifiedName = "Pick";
+    declaration.fileUri = "file:///shared.as";
+    declaration.selectionRange = {2, 4, 2, 8};
+
+    const auto makeRoot = [&](const std::string& module, uint32_t row)
+    {
+        auto scope = std::make_shared<Scope>();
+        auto enclosing = std::make_shared<ScopeEnclosingContext>();
+        auto bindings = std::make_shared<CallBindings>(std::nullopt, module);
+        bindings->Add(10, {row, 4, row, 8}, declaration);
+        enclosing->callBindings = std::move(bindings);
+        scope->enclosingContext = std::move(enclosing);
+        return scope;
+    };
+    const auto rows = [&](const std::optional<std::string>& module)
+    {
+        std::vector<uint32_t> result;
+        index.ForEachBoundUse(CallDeclaration(declaration), module,
+                              [&](const std::string& uri, std::span<const SourceRange> ranges)
+                              {
+                                  CHECK((uri == "file:///first.as" || uri == "file:///second.as"));
+                                  for (const auto& range : ranges)
+                                  {
+                                      result.push_back(range.startLine);
+                                  }
+                              });
+        std::ranges::sort(result);
+        return result;
+    };
+    const std::string firstUri = "file:///first.as";
+    const std::string secondUri = "file:///second.as";
+    const auto first = makeRoot("alpha", 3);
+    index.SetScopeTree(firstUri, first);
+    index.SetScopeTree(secondUri, makeRoot("beta", 5));
+    CHECK(rows("alpha") == std::vector<uint32_t>{3});
+    CHECK(rows("beta") == std::vector<uint32_t>{5});
+    CHECK(rows(std::nullopt) == std::vector<uint32_t>{3, 5});
+
+    index.InvalidateDocumentOccurrences(firstUri);
+    CHECK(index.GetRoot(firstUri).get() == first.get());
+    CHECK_FALSE(static_cast<bool>(index.GetOccurrenceRoot(firstUri)));
+    CHECK(rows("alpha").empty());
+    CHECK(rows(std::nullopt) == std::vector<uint32_t>{5});
+
+    index.SetScopeTree(firstUri, makeRoot("beta", 7));
+    CHECK(rows("beta") == std::vector<uint32_t>{5, 7});
+    index.SetScopeTree(firstUri, makeRoot("alpha", 9));
+    CHECK(rows("alpha") == std::vector<uint32_t>{9});
+    CHECK(rows("beta") == std::vector<uint32_t>{5});
+    index.ClearDocument(firstUri);
+    index.ClearDocument(secondUri);
+    CHECK(rows(std::nullopt).empty());
 }

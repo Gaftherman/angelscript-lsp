@@ -434,6 +434,28 @@ TEST_CASE("ControlFlow - Code after a switch whose cases return is reachable")
     CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-warn-unreachable-code"));
 }
 
+TEST_CASE("ControlFlow - Nested switches have independent labels")
+{
+    const std::string code = "void Select(int choice) {\n"
+                             "    switch (choice) {\n"
+                             "        case 1: switch (choice) { case 1: break; } break;\n"
+                             "        case 2: break;\n"
+                             "    }\n"
+                             "}\n";
+    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
+}
+
+TEST_CASE("ControlFlow - An oversized decimal case label does not abort diagnostics")
+{
+    const std::string code = "void Select(int choice) {\n"
+                             "    switch (choice) {\n"
+                             "        case 99999999999999999999999999: break;\n"
+                             "        case 99999999999999999999999999: break;\n"
+                             "    }\n"
+                             "}\n";
+    CHECK(HasCode(AnalyzeFlowSnippet(code), "as-err-duplicate-case-value"));
+}
+
 TEST_CASE("ControlFlow - A comment after a return is not unreachable code")
 {
     // A comment is an extra rather than a statement, and one after a return is usually what
@@ -521,6 +543,16 @@ TEST_CASE("ControlFlow - A try and its catch both returning is a returning path"
                              "    try { return 1; }\n"
                              "    catch { return 2; }\n"
                              "}\n";
+
+    CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
+}
+
+TEST_CASE("ControlFlow - Deeply nested branches preserve definite return facts")
+{
+    const std::string openBlocks(512, '{');
+    const std::string closeBlocks(512, '}');
+    const std::string code = "int F(bool value) { if (value) " + openBlocks + "return 1;" + closeBlocks + "else " +
+                             openBlocks + "return 2;" + closeBlocks + " }";
 
     CHECK_FALSE(HasCode(AnalyzeFlowSnippet(code), "as-err-not-all-paths-return"));
 }

@@ -12,9 +12,9 @@
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
-#include <algorithm>
+#include <ankerl/unordered_dense.h>
 #include <array>
-#include <cctype>
+#include <charconv>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -26,37 +26,6 @@ namespace angel_lsp::analysis
 static TSSymbol NodeSymbol(TSNode node)
 {
     return ts_node_is_null(node) ? 0 : ts_node_symbol(node);
-}
-
-/**
- * @brief The keyword a switch clause opens with: "case", "default", or empty if malformed.
- *        Read as a node type rather than by matching the clause's source text. The grammar makes
- */
-static TSSymbol ClauseKeyword(TSNode clause)
-{
-    if (ts_node_is_null(clause) || ts_node_child_count(clause) == 0)
-    {
-        return 0;
-    }
-    return NodeSymbol(ts_node_child(clause, 0));
-}
-
-/**
- * @brief True when the clause is spelled `default:` rather than `case <expr>:`.
- */
-static bool IsDefaultClause(TSNode clause)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    return ClauseKeyword(clause) == gs.tokDefault;
-}
-
-/**
- * @brief Index of the clause's first statement among its named children.
- *        A `case` clause's label expression is a named child sitting where a statement would, so
- */
-static uint32_t FirstStatementIndex(TSNode clause)
-{
-    return IsDefaultClause(clause) ? 0u : 1u;
 }
 
 /**
@@ -99,212 +68,6 @@ static bool IsNonNullablePrimitiveName(std::string_view typeName)
     return parser::primitives::IsNonNullable(typeName);
 }
 
-/**
- * @brief True when control cannot fall off the end of this statement.
- */
-bool DefiniteReturnAnalyzer::DefinitelyReturns(TSNode node, std::string_view sourceCode)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(node);
-
-    if (sym == gs.symReturnStatement)
-    {
-        return true;
-    }
-
-    if (sym == gs.symStatementBlock || sym == gs.symCaseClause)
-    {
-        return BlockOrClauseDefinitelyReturns(node, sym, sourceCode);
-    }
-
-    if (sym == gs.symIfStatement)
-    {
-        return IfDefinitelyReturns(node, sourceCode);
-    }
-
-    if (sym == gs.symSwitchStatement)
-    {
-        return SwitchDefinitelyReturns(node, sourceCode);
-    }
-
-    if (sym == gs.symWhileStatement || sym == gs.symDoWhileStatement || sym == gs.symForStatement ||
-        sym == gs.symForeachStatement)
-    {
-        return false;
-    }
-
-    if (sym == gs.symTryStatement)
-    {
-        return TryDefinitelyReturns(node, sourceCode);
-    }
-
-    return false;
-}
-
-bool DefiniteReturnAnalyzer::BlockOrClauseDefinitelyReturns(TSNode node, TSSymbol sym, std::string_view sourceCode)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const bool isCaseClause = (sym == gs.symCaseClause);
-    const bool isDefault = isCaseClause && IsDefaultClause(node);
-    bool skippedLabel = false;
-    bool returned = false;
-
-    parser::ForEachNamedChildNodeUntil(node,
-                                       [&](TSNode child)
-                                       {
-                                           if (isCaseClause && !isDefault && !skippedLabel)
-                                           {
-                                               skippedLabel = true;
-                                               return true;
-                                           }
-                                           if (DefinitelyReturns(child, sourceCode))
-                                           {
-                                               returned = true;
-                                               return false;
-                                           }
-                                           return true;
-                                       });
-
-    return returned;
-}
-
-bool DefiniteReturnAnalyzer::IfDefinitelyReturns(TSNode node, std::string_view sourceCode)
-{
-    TSNode alternative = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldAlternative);
-    if (ts_node_is_null(alternative))
-    {
-        return false;
-    }
-    TSNode consequence = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldConsequence);
-    return DefinitelyReturns(consequence, sourceCode) && DefinitelyReturns(alternative, sourceCode);
-}
-
-/**
- * @brief Checks if a switch clause contains an escaping break statement.
- * @param[in] clause The case_clause AST node.
- * @return True if a break statement targets this switch statement; false otherwise.
- */
-static bool ClauseHasEscapingBreak(TSNode clause)
-{
-    TSTreeCursor cursor = ts_tree_cursor_new(clause);
-    if (!ts_tree_cursor_goto_first_child(&cursor))
-    {
-        ts_tree_cursor_delete(&cursor);
-        return false;
-    }
-
-    const auto& gs = parser::GetGrammarSymbols();
-    bool hasBreak = false;
-    while (true)
-    {
-        TSNode node = ts_tree_cursor_current_node(&cursor);
-        if (!ts_node_is_null(node))
-        {
-            const TSSymbol sym = ts_node_symbol(node);
-            if (sym == gs.symBreakStatement)
-            {
-                hasBreak = true;
-                break;
-            }
-            const bool isInnerEnclosure = sym == gs.symWhileStatement || sym == gs.symDoWhileStatement ||
-                                          sym == gs.symForStatement || sym == gs.symForeachStatement ||
-                                          sym == gs.symSwitchStatement;
-            if (!isInnerEnclosure && ts_tree_cursor_goto_first_child(&cursor))
-            {
-                continue;
-            }
-        }
-
-        while (!ts_tree_cursor_goto_next_sibling(&cursor))
-        {
-            if (!ts_tree_cursor_goto_parent(&cursor))
-            {
-                goto done;
-            }
-            if (ts_node_eq(ts_tree_cursor_current_node(&cursor), clause))
-            {
-                goto done;
-            }
-        }
-    }
-
-done:
-    ts_tree_cursor_delete(&cursor);
-    return hasBreak;
-}
-
-bool DefiniteReturnAnalyzer::SwitchDefinitelyReturns(TSNode node, std::string_view sourceCode)
-{
-    bool hasDefault = false;
-    bool hasEscapingBreak = false;
-    bool defaultReturns = false;
-    bool allClausesReturnDirectly = true;
-    uint32_t clauseCount = 0;
-
-    parser::ForEachNamedChildNode(node,
-                                  [&](TSNode clause)
-                                  {
-                                      if (NodeSymbol(clause) != parser::GetGrammarSymbols().symCaseClause)
-                                      {
-                                          return;
-                                      }
-                                      ++clauseCount;
-                                      const bool isDef = IsDefaultClause(clause);
-                                      if (isDef)
-                                      {
-                                          hasDefault = true;
-                                          defaultReturns = DefinitelyReturns(clause, sourceCode);
-                                      }
-                                      if (ClauseHasEscapingBreak(clause))
-                                      {
-                                          hasEscapingBreak = true;
-                                      }
-                                      const bool hasStatements =
-                                          ts_node_named_child_count(clause) > FirstStatementIndex(clause);
-                                      if (hasStatements && !DefinitelyReturns(clause, sourceCode))
-                                      {
-                                          allClausesReturnDirectly = false;
-                                      }
-                                  });
-
-    if (clauseCount == 0 || hasEscapingBreak)
-    {
-        return false;
-    }
-    if (allClausesReturnDirectly && hasDefault)
-    {
-        return true;
-    }
-    return hasDefault && defaultReturns;
-}
-
-bool DefiniteReturnAnalyzer::TryDefinitelyReturns(TSNode node, std::string_view sourceCode)
-{
-    // Every block has to return, because either one of them can be the path taken: the
-    // try block runs to its end, or an exception hands control to the catch block. The
-    // real compiler answers `try { return 1; } catch { }` with "Not all paths return a
-    // value" and accepts it once the catch returns too.
-    //
-    // The grammar gives `try` and `catch` a `statement_block` each and no fields, so the
-    // named children are exactly the blocks to check.
-    if (ts_node_named_child_count(node) == 0)
-    {
-        return false;
-    }
-    bool allReturn = true;
-    parser::ForEachNamedChildNodeUntil(node,
-                                       [&](TSNode block)
-                                       {
-                                           if (!DefinitelyReturns(block, sourceCode))
-                                           {
-                                               allReturn = false;
-                                               return false;
-                                           }
-                                           return true;
-                                       });
-    return allReturn;
-}
-
 // Switch clauses
 
 /**
@@ -334,34 +97,27 @@ static bool IsUnusableCaseValue(TSNode expression, std::string_view sourceCode)
 
 static std::optional<long long> ParseDecimalInteger(std::string_view text)
 {
+    if (text.starts_with('+'))
+    {
+        text.remove_prefix(1);
+        if (text.starts_with('-'))
+        {
+            return std::nullopt;
+        }
+    }
     if (text.empty())
     {
         return std::nullopt;
     }
 
-    size_t index = 0;
-    bool negative = false;
-    if (text[index] == '-' || text[index] == '+')
-    {
-        negative = text[index] == '-';
-        ++index;
-    }
-    if (index >= text.size())
+    long long result = 0;
+    const auto end = text.data() + text.size();
+    const auto parsed = std::from_chars(text.data(), end, result);
+    if (parsed.ec != std::errc{} || parsed.ptr != end)
     {
         return std::nullopt;
     }
-
-    long long parsed = 0;
-    for (; index < text.size(); ++index)
-    {
-        if (text[index] < '0' || text[index] > '9')
-        {
-            return std::nullopt;
-        }
-        parsed = parsed * 10 + (text[index] - '0');
-    }
-
-    return negative ? -parsed : parsed;
+    return result;
 }
 
 static std::optional<long long> ExtractMemberValue(const EnumSignature& enumSig, std::string_view label, bool& matched)
@@ -495,7 +251,8 @@ static void CheckCaseConstantness(TSNode value, std::string_view sourceCode, Dia
         const std::string_view idText = utils::TrimView(parser::GetNodeTextView(value, sourceCode));
 
         bool reported = false;
-        auto syms = FindSymbolsInScope(std::string(idText), value, sourceCode, ctx.request.symbolTable);
+        auto syms =
+            FindSymbolsInScope(std::string(idText), value, sourceCode, ctx.request.symbolTable, ctx.request.nodeIndex);
         for (const auto& s : syms)
         {
             if (s.type == SymbolType::Variable && !s.GetVariable().modifiers.isConst)
@@ -523,164 +280,48 @@ static std::string ComputeCaseKey(std::string_view text, const rules::RuleIndex&
     {
         return "#" + std::to_string(*resolved);
     }
-    if (text.find_first_not_of("-+0123456789") == std::string::npos)
+    if (const auto parsed = ParseDecimalInteger(text))
     {
-        return "#" + std::to_string(std::stoll(std::string(text)));
+        return "#" + std::to_string(*parsed);
     }
     return std::string(text);
 }
 
-static void ProcessCaseClause(TSNode clause, std::string_view sourceCode, std::vector<std::string>& seenValues,
-                              DiagnosticContext& ctx)
+static void CheckSwitchLabels(std::span<const TSNode> labels, std::string_view sourceCode, DiagnosticContext& ctx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode value = ts_node_named_child(clause, 0);
-    if (ts_node_is_null(value) || ClauseKeyword(clause) != gs.tokCase)
+    ankerl::unordered_dense::set<std::string> seenValues;
+    for (const TSNode value : labels)
     {
-        return;
-    }
+        if (IsUnusableCaseValue(value, sourceCode))
+        {
+            ctx.EmitAtNode(value, "as-err-invalid-case-type");
+        }
 
-    if (IsUnusableCaseValue(value, sourceCode))
-    {
-        ctx.EmitAtNode(value, "as-err-invalid-case-type");
-    }
-
-    CheckCaseConstantness(value, sourceCode, ctx);
-
-    std::string text(parser::Trim(parser::NodeText(value, sourceCode)));
-    if (!text.empty())
-    {
-        std::string key = ComputeCaseKey(text, ctx.request.GetRuleIndex());
-        if (std::find(seenValues.begin(), seenValues.end(), key) != seenValues.end())
+        CheckCaseConstantness(value, sourceCode, ctx);
+        const auto text = utils::TrimView(parser::GetNodeTextView(value, sourceCode));
+        if (!text.empty() && !seenValues.insert(ComputeCaseKey(text, ctx.request.GetRuleIndex())).second)
         {
             ctx.EmitAtNode(value, "as-err-duplicate-case-value", text);
         }
-        else
-        {
-            seenValues.push_back(std::move(key));
-        }
     }
 }
 
-/**
- * @brief Reports any variable declared directly inside a switch case or default clause without a statement block.
- * @param[in] clause The case_clause AST node.
- * @param[in,out] ctx Diagnostic collection context.
- */
-static void CheckVariablesInClause(TSNode clause, DiagnosticContext& ctx)
+static void ReportFlowFindings(std::span<const IndexedFlowFinding> findings, DiagnosticContext& ctx)
 {
-    const bool isDefault = IsDefaultClause(clause);
-    bool skippedLabel = false;
-    parser::ForEachNamedChildNode(clause,
-                                  [&](TSNode stmt)
-                                  {
-                                      if (!isDefault && !skippedLabel)
-                                      {
-                                          skippedLabel = true;
-                                          return;
-                                      }
-                                      if (NodeSymbol(stmt) == parser::GetGrammarSymbols().symVariableDeclaration)
-                                      {
-                                          ctx.EmitAtNode(stmt, diagnostics::codes::VariableInSwitchCase);
-                                      }
-                                  });
-}
-
-static void CheckSwitch(TSNode node, std::string_view sourceCode, DiagnosticContext& ctx)
-{
-    std::vector<std::string> seenValues;
-    TSNode defaultClause = {};
-    bool haveDefault = false;
-    bool defaultIsLast = true;
-
-    parser::ForEachNamedChildNode(node,
-                                  [&](TSNode clause)
-                                  {
-                                      if (NodeSymbol(clause) != parser::GetGrammarSymbols().symCaseClause)
-                                      {
-                                          if (NodeSymbol(clause) == parser::GetGrammarSymbols().symVariableDeclaration)
-                                          {
-                                              ctx.EmitAtNode(clause, diagnostics::codes::VariableInSwitchCase);
-                                          }
-                                          return;
-                                      }
-
-                                      CheckVariablesInClause(clause, ctx);
-
-                                      if (IsDefaultClause(clause))
-                                      {
-                                          defaultClause = clause;
-                                          haveDefault = true;
-                                          defaultIsLast = true;
-                                          return;
-                                      }
-
-                                      if (haveDefault)
-                                      {
-                                          defaultIsLast = false;
-                                      }
-
-                                      ProcessCaseClause(clause, sourceCode, seenValues, ctx);
-                                  });
-
-    if (haveDefault && !defaultIsLast)
+    for (const auto& finding : findings)
     {
-        ctx.EmitAtNode(defaultClause, "as-err-default-must-be-last");
-    }
-}
-
-// Traversal
-
-/**
- * @brief Reports the first statement a block can never reach.
- *        Purely structural, and that is the whole rule: anything written after a `return`, a
- */
-static void CheckUnreachable(TSNode block, DiagnosticContext& ctx)
-{
-    // A block the parser could not make sense of has a shape that is error recovery's
-    // guess, not the author's, and reading a terminator out of it says nothing. Found by
-    // the corpus audit on a file whose `if(...); return true; else return false;` is not
-    // AngelScript at all.
-    if (ts_node_has_error(block))
-    {
-        return;
-    }
-
-    const auto& gs = parser::GetGrammarSymbols();
-    const uint32_t count = ts_node_named_child_count(block);
-    bool terminated = false;
-
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode child = ts_node_named_child(block, i);
-        const TSSymbol childSym = ts_node_symbol(child);
-
-        // Comments are extras rather than statements, and a comment after a return is
-        // ordinary - it is usually what explains the return.
-        if (childSym == gs.symComment)
+        switch (finding.kind)
         {
-            continue;
+        case IndexedFlowFindingKind::Unreachable:
+            ctx.EmitAtRange(finding.range, "as-warn-unreachable-code", DiagnosticSeverity::Warning);
+            break;
+        case IndexedFlowFindingKind::VariableInCase:
+            ctx.EmitAtRange(finding.range, diagnostics::codes::VariableInSwitchCase);
+            break;
+        case IndexedFlowFindingKind::DefaultNotLast:
+            ctx.EmitAtRange(finding.range, "as-err-default-must-be-last");
+            break;
         }
-
-        // A conditional compilation directive is an opaque line to this grammar, so which
-        // statements around it are live is not something this pass can know. The corpus
-        // has `#if FALSE ... return value; #endif` followed by the real code, and every
-        // statement after it read as dead. One directive anywhere in the block retires the
-        // question for the whole block, because a `#endif` alone gives no clue what its
-        // `#if` decided.
-        if (childSym == gs.symPreprocDirective)
-        {
-            return;
-        }
-
-        if (terminated)
-        {
-            ctx.EmitAtNode(child, "as-warn-unreachable-code", DiagnosticSeverity::Warning);
-            return;
-        }
-
-        terminated = childSym == gs.symReturnStatement || childSym == gs.symBreakStatement ||
-                     childSym == gs.symContinueStatement;
     }
 }
 
@@ -690,25 +331,27 @@ static void CheckUnreachable(TSNode block, DiagnosticContext& ctx)
 class ControlFlowVisitor
 {
   public:
-    ControlFlowVisitor(std::string_view sourceCode, DiagnosticContext& ctx) : m_sourceCode(sourceCode), m_ctx(ctx)
+    ControlFlowVisitor(std::string_view sourceCode, DiagnosticContext& ctx, const NodeIndex& index)
+        : m_sourceCode(sourceCode), m_ctx(ctx), m_index(index)
     {
     }
 
-    void Run(const NodeIndex& index)
+    void Run()
     {
         const auto& grammar = parser::GetGrammarSymbols();
-        const std::array nodes{grammar.symFuncDeclaration,  grammar.symLambdaExpression, grammar.symStatementBlock,
-                               grammar.symCaseClause,       grammar.symIfStatement,      grammar.symSwitchStatement,
-                               grammar.symWhileStatement,   grammar.symDoWhileStatement, grammar.symForStatement,
-                               grammar.symForeachStatement, grammar.symReturnStatement,  grammar.symBreakStatement,
-                               grammar.symContinueStatement};
+        ReportFlowFindings(m_index.FlowFindings(), m_ctx);
+        const std::array nodes{grammar.symFuncDeclaration, grammar.symLambdaExpression, grammar.symIfStatement,
+                               grammar.symSwitchStatement, grammar.symWhileStatement,   grammar.symDoWhileStatement,
+                               grammar.symForStatement,    grammar.symForeachStatement, grammar.symReturnStatement,
+                               grammar.symBreakStatement,  grammar.symContinueStatement};
         std::vector<Frame> frames;
-        index.ForEachNodeOrdered(nodes, [&](TSNode node) { Visit(node, frames); });
+        m_index.ForEachNodeOrdered(nodes, [&](TSNode node) { Visit(node, frames); });
     }
 
   private:
     std::string_view m_sourceCode;
     DiagnosticContext& m_ctx;
+    const NodeIndex& m_index;
 
     /**
      * @brief Check return statement.
@@ -786,7 +429,7 @@ class ControlFlowVisitor
         {
             const bool hasSyntaxError = ts_node_has_error(body) ||
                                         (m_ctx.request.nodeIndex && m_ctx.request.nodeIndex->NodeHasSyntaxError(body));
-            if (!hasSyntaxError && !DefiniteReturnAnalyzer::DefinitelyReturns(body, m_sourceCode))
+            if (!hasSyntaxError && !m_index.CallableBodyDefinitelyReturns(ts_node_start_byte(body)))
             {
                 m_ctx.EmitAtNode(ts_node_is_null(name) ? node : name, "as-err-not-all-paths-return", reportedName);
             }
@@ -833,7 +476,7 @@ class ControlFlowVisitor
         }
         else if (sym == gs.symSwitchStatement)
         {
-            CheckSwitch(node, m_sourceCode, m_ctx);
+            CheckSwitchLabels(m_index.SwitchLabels(ts_node_start_byte(node)), m_sourceCode, m_ctx);
             ++state.switchDepth;
         }
         else if (sym == gs.symIfStatement)
@@ -861,11 +504,7 @@ class ControlFlowVisitor
             return;
         }
 
-        if (symbol == grammar.symStatementBlock || symbol == grammar.symCaseClause)
-        {
-            CheckUnreachable(node, m_ctx);
-        }
-        else if (symbol == grammar.symReturnStatement)
+        if (symbol == grammar.symReturnStatement)
         {
             CheckReturnStatement(node, enclosing);
         }
@@ -894,14 +533,13 @@ void CheckControlFlow(const ControlFlowCheckRequest& request, DiagnosticContext&
         return;
     }
 
-    ControlFlowVisitor visitor(request.sourceCode, ctx);
     if (ctx.request.nodeIndex)
     {
-        visitor.Run(*ctx.request.nodeIndex);
+        ControlFlowVisitor(request.sourceCode, ctx, *ctx.request.nodeIndex).Run();
     }
     else
     {
-        visitor.Run(NodeIndex(request.root));
+        ControlFlowVisitor(request.sourceCode, ctx, NodeIndex(request.root)).Run();
     }
 }
 } // namespace angel_lsp::analysis

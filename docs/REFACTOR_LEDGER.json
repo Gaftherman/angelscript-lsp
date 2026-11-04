@@ -2,5 +2,427 @@
   "schemaVersion": "1.0",
   "branch": "refactor/architecture-deduplication-and-ram",
   "description": "Active burn-down queue tracking pending functions and structs to be unified or deleted until 0 remaining.",
-  "entries": []
+  "entries": [
+    {
+      "id": "REF-V118-I18N",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/i18n/i18n.cpp",
+      "deletedLineRange": "27-945",
+      "originalSymbolOrCode": "MessageMap LocaleOverlayEntry I18nStringHash PopulateEnglishMessages1 PopulateEnglishMessages2 PopulateEnglishMessages3 PopulateEnglishMessages4 PopulateEnglishMessages5 PopulateEnglishMessages6 PopulateEnglishMessages7 PopulateSpanishMessages1 PopulateSpanishMessages2 PopulateSpanishMessages3 PopulateSpanishMessages4 PopulateSpanishMessages5 PopulateSpanishMessages6 PopulateSpanishMessages7 PopulateEnglishMessages PopulateEnglishActionMessages PopulateEnglishHoverMessages PopulateSpanishMessages PopulateSpanishActionMessages PopulateSpanishHoverMessages",
+      "whatItDidAndWhyInThatFile": "Constructed one hash map per locale instance from C++ assignment functions.",
+      "whyChangedOrDeleted": "Preserve effective translations in validated JSON catalogs and embed immutable tables.",
+      "replacedByCanonicalFile": "server/src/i18n/i18n.cpp",
+      "replacedByCanonicalSymbol": "GetMessageView",
+      "ramOrCpuImpact": "Eliminates per-instance dictionary allocations. Binary search per key.",
+      "verifiedByTests": [
+        "I18n locale and fallback tests"
+      ]
+    },
+    {
+      "id": "REF-V118-INTERFACES",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/rules/ClassRules.cpp",
+      "deletedLineRange": "134-240",
+      "originalSymbolOrCode": "CollectImplementedMethodNames CollectInterfacesToCheck ReportMissingInterfaceMethods CollectMissingInterfaceMethods",
+      "whatItDidAndWhyInThatFile": "Diagnostics compared method names and the Quick Fix scanned all symbols independently.",
+      "whyChangedOrDeleted": "Share signature-aware interface obligations and enumerate indexed members.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/InterfaceImplementation.cpp",
+      "replacedByCanonicalSymbol": "FindMissingInterfaceMethods",
+      "ramOrCpuImpact": "Avoids the Quick Fix scan over the entire symbol table.",
+      "verifiedByTests": [
+        "Class rules and interface Quick Fix tests"
+      ]
+    },
+    {
+      "id": "REF-V118-DEFINITE-RETURN",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/ControlFlowChecker.cpp",
+      "deletedLineRange": "105-310",
+      "originalSymbolOrCode": "DefinitelyReturns BlockOrClauseDefinitelyReturns IfDefinitelyReturns ClauseHasEscapingBreak SwitchDefinitelyReturns TryDefinitelyReturns FirstStatementIndex",
+      "whatItDidAndWhyInThatFile": "Inspected statements recursively and scanned each switch clause for escaping breaks during diagnostics.",
+      "whyChangedOrDeleted": "Fold return and break facts when the existing indexing cursor leaves each node.",
+      "replacedByCanonicalFile": "server/src/analysis/index/NodeIndex.cpp",
+      "replacedByCanonicalSymbol": "FlowFactCollector",
+      "ramOrCpuImpact": "One O(N) cursor traversal with O(depth) temporary frames. O(F) storage for callable bodies and O(log F) lookup by body position.",
+      "verifiedByTests": [
+        "Control flow and deep nesting tests"
+      ]
+    },
+    {
+      "id": "REF-V118-QUALIFIED-OCCURRENCES",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/resolution/TargetResolution.cpp",
+      "deletedLineRange": "1672-1718",
+      "originalSymbolOrCode": "MatchesScopeNamespaceQualifier MatchesAstScopedIdentifier CheckAstEnumMemberMatch HasPrecedingEnumQualifier GetMemberObjectText QualifierMatchesEnumContainer",
+      "whatItDidAndWhyInThatFile": "Matched qualifiers from the active text or unrelated earlier references on the same line.",
+      "whyChangedOrDeleted": "Capture qualifiers from scope syntax and share the qualifier matcher between CodeLens and references.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/ReferenceReceiver.cpp",
+      "replacedByCanonicalSymbol": "MatchesReferenceQualifier",
+      "ramOrCpuImpact": "Stores an owned qualifier for qualified occurrences and removes linear scans of sibling references during queries.",
+      "verifiedByTests": [
+        "Closed-file same-line qualification, multiline qualifier and CodeLens parity"
+      ]
+    },
+    {
+      "id": "REF-V118-BOUND-CALLS",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/resolution/TargetResolution.cpp",
+      "deletedLineRange": "1550-1850",
+      "originalSymbolOrCode": "ScanDocumentForClassMember ScanDocumentForNamespace ScanDocumentForGlobal",
+      "whatItDidAndWhyInThatFile": "Each scanner repeated the arity-based prefilter, even for calls whose typed overload the semantic pass had already selected.",
+      "whyChangedOrDeleted": "Publish physical call bindings with the analyzed scope revision and share the fallback prefilter for occurrences without a binding.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/TargetResolution.cpp",
+      "replacedByCanonicalSymbol": "IsUnboundSearchCandidate",
+      "ramOrCpuImpact": "One per-document declaration key per selected overload. Reverse lookup returns the existing range span without rescoring overloads.",
+      "verifiedByTests": [
+        "CodeLens and references distinguish typed overloads in an analyzed closed file",
+        "Navigation from a bound call and rejection of mismatched generation, text version and configuration"
+      ]
+    },
+    {
+      "id": "REF-V118-WORKSPACE-CALL-USES",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/index/CallBindings.cpp",
+      "deletedLineRange": "46-50",
+      "originalSymbolOrCode": "CallBindings::Uses",
+      "whatItDidAndWhyInThatFile": "Looked up one declaration inside a single document after the caller enumerated every published scope.",
+      "whyChangedOrDeleted": "Publish reverse contributions by module and declaration together with the scope and use one lookup for both references and CodeLens.",
+      "replacedByCanonicalFile": "server/src/analysis/index/ScopeTree.h",
+      "replacedByCanonicalSymbol": "ForEachBoundUse",
+      "ramOrCpuImpact": "Shares ranges owned by immutable scope revisions. A module lookup visits only documents with a contribution to the requested declaration.",
+      "verifiedByTests": [
+        "Bound calls are published and withdrawn by document and module",
+        "CodeLens and references distinguish typed overloads in an analyzed closed file"
+      ]
+    },
+    {
+      "id": "REF-V118-CLOSED-REVISION",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/lsp/services/ServerAnalysis.cpp",
+      "deletedLineRange": "242-282",
+      "originalSymbolOrCode": "ScheduleAnalysis ScheduleAnalysisImmediate",
+      "whatItDidAndWhyInThatFile": "Duplicated request preparation and queued closed documents without a disk revision.",
+      "whyChangedOrDeleted": "Capture the immutable cached disk snapshot and carry its revision through the worker to the protected commit.",
+      "replacedByCanonicalFile": "server/src/lsp/services/ServerAnalysis.cpp",
+      "replacedByCanonicalSymbol": "MakeScheduleRequest",
+      "ramOrCpuImpact": "Revision checks are constant-time keyed lookups. Closed source text is shared with navigation and parse work remains outside the publication lock.",
+      "verifiedByTests": [
+        "Closed analysis cannot publish after a disk revision is withdrawn"
+      ]
+    },
+    {
+      "id": "REF-V118-FLOW-FINDINGS",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/ControlFlowChecker.cpp",
+      "deletedLineRange": "318-474",
+      "originalSymbolOrCode": "ClauseKeyword IsDefaultClause ProcessCaseClause CheckVariablesInClause CheckSwitch CheckUnreachable",
+      "whatItDidAndWhyInThatFile": "Revisited each switch clause and each block to collect direct structural findings and locate case expressions.",
+      "whyChangedOrDeleted": "Capture structural findings and switch label groups in the existing first-pass cursor. Preserve semantic checks on case values.",
+      "replacedByCanonicalFile": "server/src/analysis/index/NodeIndex.cpp",
+      "replacedByCanonicalSymbol": "FlowFactCollector",
+      "ramOrCpuImpact": "Eliminates the block and clause child walks. Switch labels are grouped during extraction and duplicate detection uses a hash set.",
+      "verifiedByTests": [
+        "ControlFlow switch and unreachable diagnostics",
+        "Nested switch label isolation and oversized decimal labels"
+      ]
+    },
+    {
+      "id": "REF-V118-ASSIGNMENT-STATEMENT-INDEX",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/DefiniteAssignmentChecker.cpp",
+      "deletedLineRange": "378-826",
+      "originalSymbolOrCode": "AnalyzeBlock AnalyzeIfStatement AnalyzeWhileStatement AnalyzeDoWhileStatement AnalyzeForStatement AnalyzeCaseClause MergeSwitchCaseStates AnalyzeSwitchStatement AnalyzeLoopStatement AnalyzeJumpStatement AnalyzeStatement TraverseFunctions",
+      "whatItDidAndWhyInThatFile": "Walked statement child nodes and nested branches recursively, with a separate cursor fallback for function discovery.",
+      "whyChangedOrDeleted": "Capture callable entries, direct statement edges and expression operands during the index cursor traversal. Execute branch continuations on an explicit worklist.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/DefiniteAssignmentChecker.cpp",
+      "replacedByCanonicalSymbol": "DefiniteAssignmentVisitor",
+      "ramOrCpuImpact": "The statement worklist grows with nesting on the heap. Direct operand edges trade bounded storage per captured child for eliminating repeated Tree-sitter statement navigation.",
+      "verifiedByTests": [
+        "Recorded statement worklist reaches a deeply nested read",
+        "A long switch case visits every statement after its label"
+      ]
+    },
+    {
+      "id": "REF-V118-ASSIGNMENT-EXPRESSION-INDEX",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/DefiniteAssignmentChecker.cpp",
+      "deletedLineRange": "19-445",
+      "originalSymbolOrCode": "GetSimpleIdentifierName CheckAssignmentExpressionReads ExtractRawArgNodes CheckCallArguments CheckCallExpressionReads",
+      "whatItDidAndWhyInThatFile": "Recursively inspected syntax child nodes to find reads, evaluate assignments and process argument effects.",
+      "whyChangedOrDeleted": "Share the same local node records for statement structure and expression operands. Execute read, assignment and call continuations in language evaluation order.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/DefiniteAssignmentChecker.cpp",
+      "replacedByCanonicalSymbol": "EvaluateReadTask",
+      "ramOrCpuImpact": "The read stack grows on the heap with expression nesting. A single node record replaces separate statement and operand records, and its links replace repeat Tree-sitter child lookups.",
+      "verifiedByTests": [
+        "Recorded expression worklist reaches a deeply parenthesized read",
+        "Recorded reads respect right hand sides and argument order"
+      ]
+    },
+    {
+      "id": "REF-V118-LEXICAL-LOOKUP-INDEX",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/resolution/ScopeSymbolLookup.cpp",
+      "deletedLineRange": "245-726",
+      "originalSymbolOrCode": "CollectUsingNamespaces FindSymbolsInScope",
+      "whatItDidAndWhyInThatFile": "Revisited using declarations and lexical ancestors during semantic symbol lookup, including a separate traversal for unqualified calls.",
+      "whyChangedOrDeleted": "Capture imports with their owning scopes in the first-pass cursor, and reuse container ancestry from the same index. Preserve source order within each owner, with closer owners first.",
+      "replacedByCanonicalFile": "server/src/analysis/index/NodeIndex.cpp",
+      "replacedByCanonicalSymbol": "CollectUsingNamespaces",
+      "ramOrCpuImpact": "Import and container lookup use binary search plus enclosing links. Semantic resolution avoids AST ancestor and sibling scans for these contexts. Persistent import records only retain scopes that declare imports.",
+      "verifiedByTests": [
+        "NodeIndex - Namespace imports follow the enclosing block and its later declarations",
+        "NodeIndex - Lookup containers match declaration names, base lists and lambda barriers",
+        "Call bindings resolve each sibling block using its own namespace imports"
+      ]
+    },
+    {
+      "id": "REF-V118-EXPRESSION-OPERAND-REUSE",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/resolution/ExpressionTypeResolver.cpp",
+      "deletedLineRange": "104-2227",
+      "originalSymbolOrCode": "ResolveBinaryExpr ResolveCallExpr ResolveConstructCallExpr UnwrapParenthesizedExpression",
+      "whatItDidAndWhyInThatFile": "Rediscovered direct operands with Tree-sitter fields and named child access each time expression types were resolved.",
+      "whyChangedOrDeleted": "Reuse links captured in the first-pass cursor for both definite assignment and expression type resolution, including expressions outside callable bodies.",
+      "replacedByCanonicalFile": "server/src/analysis/index/SyntaxOperands.h",
+      "replacedByCanonicalSymbol": "SyntaxOperands",
+      "ramOrCpuImpact": "Syntax facts refer to existing indexed tree handles by slot. An expression lookup uses a hash and traverses only its recorded operand links.",
+      "verifiedByTests": [
+        "Captured operands resolve a global binary chain outside callable bodies",
+        "ExpressionTypeDeduction indexed and editor-only parity"
+      ]
+    },
+    {
+      "id": "REF-V118-DECLARATION-EXTRACTION",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/index/SymbolCollector.cpp",
+      "deletedLineRange": "208-2425",
+      "originalSymbolOrCode": "InitQueryDispatch PopulateDispatchTables ResolveCaptureHandler ResolveValidationHandler CollectFromTree DispatchMatchCapture ReportParseErrors AdvanceCursorAfterError",
+      "whatItDidAndWhyInThatFile": "Ran a declaration query across the AST and walked error-bearing branches again to collect parse diagnostics.",
+      "whyChangedOrDeleted": "Capture declaration slots and error candidates in the common index cursor. Opening, saving, worker analysis and closure indexing supply that same index to symbol and scope extraction.",
+      "replacedByCanonicalFile": "server/src/analysis/index/SymbolCollector.cpp",
+      "replacedByCanonicalSymbol": "CollectFromIndex",
+      "ramOrCpuImpact": "Eliminates the tags query and error-branch walk from the document pipeline. Symbol-only clients use the same cursor without retaining flow or type operand facts.",
+      "verifiedByTests": [
+        "SymbolCollector - Reuses the document extraction for declarations and syntax errors",
+        "SymbolCollector declaration, recovery and call-reference suites"
+      ]
+    },
+    {
+      "id": "REF-V118-PREPROCESSED-SYNTAX-REUSE",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/lsp/services/ServerAnalysis.cpp",
+      "deletedLineRange": "13-544",
+      "originalSymbolOrCode": "ReanalyseOpenDocuments MakeScheduleRequest ParseAndCollectSymbols AnalyzeWorkerSemantics",
+      "whatItDidAndWhyInThatFile": "Repeated preprocessing during edit scheduling and supplied copied document trees without checking which preprocessed bytes they represented.",
+      "whyChangedOrDeleted": "Validate copied trees against their parsed source and reuse worker-owned extraction for exact preprocessed text in the same open generation. Continue running semantic rules against current dependencies.",
+      "replacedByCanonicalFile": "server/src/lsp/state/SyntaxRevisionCache.h",
+      "replacedByCanonicalSymbol": "SyntaxRevisionCache",
+      "ramOrCpuImpact": "Avoids duplicate edit preprocessing and repeat cursor visits on cache hits. Retention is bounded by entry count, source bytes and visited nodes, and no borrowed index crosses threads.",
+      "verifiedByTests": [
+        "Server - Semantic configuration reanalysis reuses the exact worker extraction",
+        "AnalysisScheduler - Same text with a new semantic revision survives an active analysis",
+        "Server - Commenting out a #define in an open stub re-evaluates every #if at once"
+      ]
+    },
+    {
+      "id": "REF-V118-PREPROCESSOR-SNAPSHOT",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/lsp/services/ServerDiagnostics.cpp",
+      "deletedLineRange": "367-537",
+      "originalSymbolOrCode": "AnalysisTextFor BuildAnalysisRequest ToProtocolDiagnostics PublishInactiveRegions AppendIncludeDiagnostics",
+      "whatItDidAndWhyInThatFile": "Rescanned source separately for masking, semantic checks, include diagnostics and protocol publication.",
+      "whyChangedOrDeleted": "Carry the original directive scan with the prepared parser source and share its ranges with consumers of the same revision.",
+      "replacedByCanonicalFile": "server/src/lsp/handlers/TextDocumentSyncHandlers.cpp",
+      "replacedByCanonicalSymbol": "PrepareAnalysisSource",
+      "ramOrCpuImpact": "Normal analysis scans directives once per preparation. Empty results are shared and publication borrows the open text without making another copy.",
+      "verifiedByTests": [
+        "Server - Inactive regions are published from the worker's prepared source",
+        "AnalysisScheduler - Coalesced text keeps the newest preprocessor result"
+      ]
+    },
+    {
+      "id": "REF-V118-CONVERSION-INITIALIZER-FACTS",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/TypeConversionChecker.cpp",
+      "deletedLineRange": "2795-4164",
+      "originalSymbolOrCode": "IsMemberFieldMatch IsScopedIdentifierQualified IsQualifiedOrMemberIdentifier AdvanceCursorSkipChildren AdvanceCursor IsCyclicAutoDependency IsConversionRelevantSymbol VisitNode",
+      "whatItDidAndWhyInThatFile": "Walked individual initializers to detect self-reference and walked the document when the caller did not supply an index.",
+      "whyChangedOrDeleted": "Use the extraction's conversion sites and byte ranges for candidate initializer names, then apply the existing lexical binding test.",
+      "replacedByCanonicalFile": "server/src/analysis/index/NodeIndex.cpp",
+      "replacedByCanonicalSymbol": "InitializerIdentifiers",
+      "ramOrCpuImpact": "The conversion checker creates zero tree cursors. Candidate reads consume two byte ranges per retained identifier, and a lookup uses two binary searches before checking source spellings.",
+      "verifiedByTests": [
+        "Cyclic auto binds only unqualified initializer names to the declarator",
+        "Cyclic auto resolution eliminates false positives on member access, string literals, and comments"
+      ]
+    },
+    {
+      "id": "REF-V118-SHARED-SYNTAX-OPERANDS",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/TypeConversionChecker.cpp",
+      "deletedLineRange": "926-3860",
+      "originalSymbolOrCode": "ExpressionSyntax UnwrapParenthesizedExpression ResolveCalleeNode GetCallCallee ts_node_named_child_count ts_node_named_child GetChildByField",
+      "whatItDidAndWhyInThatFile": "Conversion rules separately located direct child nodes to identify operands and statement values.",
+      "whyChangedOrDeleted": "Share the first-pass child links and recovery ordering between expression resolution and conversion analysis.",
+      "replacedByCanonicalFile": "server/src/analysis/index/SyntaxOperands.h",
+      "replacedByCanonicalSymbol": "SyntaxOperands",
+      "ramOrCpuImpact": "Indexed consumers follow the captured child links. Additional conversion sites retain the links they need, including declarators outside function bodies.",
+      "verifiedByTests": [
+        "NodeIndex - Indexed operands preserve child fields and recovery order",
+        "Cyclic auto binds only unqualified initializer names to the declarator"
+      ]
+    },
+    {
+      "id": "REF-V118-CONVERSION-ANCESTORS",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/TypeConversionChecker.cpp",
+      "deletedLineRange": "1355-3848",
+      "originalSymbolOrCode": "EmitExpressionIsDataType CheckConstructorDelegation ProcessConditionNode ProcessMemberExpressionNode ProcessIndexExpressionNode IsFunctionReturnRef ProcessReturnStatementNode",
+      "whatItDidAndWhyInThatFile": "Revisited ancestors for callable or class ownership, operand roles and suppression of bare-type diagnostics.",
+      "whyChangedOrDeleted": "Capture ownership and operand roles in the cursor frame and store outer conditional spans in document order.",
+      "replacedByCanonicalFile": "server/src/analysis/index/NodeIndex.cpp",
+      "replacedByCanonicalSymbol": "CaptureEnclosingContext",
+      "ramOrCpuImpact": "Immediate parent symbols fit existing record padding. Callable and class owners add one ID per return or function, and conditional containment uses binary search over outer spans.",
+      "verifiedByTests": [
+        "NodeIndex - Conversion context preserves callable boundaries and operand roles"
+      ]
+    },
+    {
+      "id": "REF-V118-INDEXED-OPERATOR-CHECKS",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/RepeatedConversionChecker.cpp",
+      "deletedLineRange": "44-222",
+      "originalSymbolOrCode": "CollectConditionConversions GetIfCondition GetIfAlternative CollectLadderIfNodes FindOccurrencesInIfLadder IsHandleAddressOperand IsFunctionReference IsBareDataType IsNullInitializer",
+      "whatItDidAndWhyInThatFile": "Queried each condition subtree for binary expressions while operator checks independently retrieved the operator and operands.",
+      "whyChangedOrDeleted": "Use the ordered binary bucket for diagnostics and pass the captured operands through the operator dispatch. Retain a targeted query at the editor Quick Fix entry point.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/BinaryOperatorHelpers.cpp",
+      "replacedByCanonicalSymbol": "ReadBinaryOperands",
+      "ramOrCpuImpact": "One set of direct links is read per dispatched binary operator. Condition diagnostics search the binary bucket by byte bounds and inspect only the candidates in that slice.",
+      "verifiedByTests": [
+        "Indexed conversion candidates stay inside each ladder condition",
+        "CodeActionHandler - Repeated conversion quick fix initializes local variable"
+      ]
+    },
+    {
+      "id": "REF-V118-PROTOCOL-SYNTAX-REVISIONS",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/lsp/services/ServerAnalysis.cpp",
+      "deletedLineRange": "532-577",
+      "originalSymbolOrCode": "WorkerSyntaxEntry FindWorkerSyntax RememberWorkerSyntax ParseSavedSource",
+      "whatItDidAndWhyInThatFile": "Retained exact worker syntax but left open, save and token requests with independent extractions.",
+      "whyChangedOrDeleted": "Share bounded revision retention across thread owners, and reuse the same tree and extracted facts for protocol requests whose parser input matches.",
+      "replacedByCanonicalFile": "server/src/lsp/state/SyntaxRevisionCache.h",
+      "replacedByCanonicalSymbol": "SyntaxRevisionCache",
+      "ramOrCpuImpact": "The protocol owner keeps up to eight recent revisions within the source and node budgets. Cache hits skip extraction, and token scope collection uses the same index without publishing scratch state.",
+      "verifiedByTests": [
+        "Server - Save and semantic tokens reuse exact protocol syntax revisions",
+        "Server - Semantic configuration reanalysis reuses the exact worker extraction"
+      ]
+    },
+    {
+      "id": "REF-V118-CLOSED-LEXICAL-REUSE",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/lsp/services/ServerAnalysis.cpp",
+      "deletedLineRange": "744-784",
+      "originalSymbolOrCode": "CollectScopesAndCalls ParseAndCollectSymbols",
+      "whatItDidAndWhyInThatFile": "Collected lexical scopes again during closed diagnostics and limited the worker syntax cache to open generations.",
+      "whyChangedOrDeleted": "Reuse the lexical records published by closure indexing for the matching disk and parser-input revision, and retain eligible closed syntax on its owning worker.",
+      "replacedByCanonicalFile": "server/src/lsp/services/ServerAnalysis.cpp",
+      "replacedByCanonicalSymbol": "FindClosedAnalysisInputs",
+      "ramOrCpuImpact": "The first closed analysis copies lexical facts without walking the AST to collect scopes. The staging reference is released on commit, and the existing worker budget also covers closed syntax.",
+      "verifiedByTests": [
+        "Server - Closed analysis reuses lexical scopes from the exact preprocessed revision",
+        "SyntaxRevisionCache - Closed entries require exact parser input and disk revision"
+      ]
+    },
+    {
+      "id": "REF-V118-CLOSED-SYMBOL-REUSE",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/lsp/services/ServerAnalysis.cpp",
+      "deletedLineRange": "532-682",
+      "originalSymbolOrCode": "IsUnchangedClosedDocument FindClosedLexicalScopes PrepareAnalysisSnapshot",
+      "whatItDidAndWhyInThatFile": "Recollected closed symbols to compare public interface hashes and compared masked input against original source bytes.",
+      "whyChangedOrDeleted": "Reuse symbols and syntax diagnostics only when the exact published parser input and disk revision match. Preserve the active module filter even when no staging symbols replace the published file.",
+      "replacedByCanonicalFile": "server/src/lsp/services/ServerAnalysis.cpp",
+      "replacedByCanonicalSymbol": "FindClosedAnalysisInputs",
+      "ramOrCpuImpact": "An exact closed revision skips symbol and call collection. The retained source aliases the disk text when masking left it intact.",
+      "verifiedByTests": [
+        "Server - Closed analysis reuses lexical scopes from the exact preprocessed revision",
+        "SymbolTable - Published document snapshots keep module boundaries"
+      ]
+    },
+    {
+      "id": "REF-V118-SCOPE-OWNER-REUSE",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/resolution/TargetResolution.cpp",
+      "deletedLineRange": "291-1742",
+      "originalSymbolOrCode": "kMaxScopeDepth IsDeclaredInFunctionScope IsDefinitionInsideFunction IsShadowedInFunctionScope IsShadowedByFunctionLocal FindLocalDefinitionAtLine",
+      "whatItDidAndWhyInThatFile": "Stopped several lexical lookups after 32 ancestors and searched the whole scope tree again to identify the owner of a resolved definition.",
+      "whyChangedOrDeleted": "Use the cycle-safe parent traversal and the owner already returned by lexical resolution. Visit all distinct enclosing containers in their recorded order.",
+      "replacedByCanonicalFile": "server/src/analysis/index/ScopeTree.cpp",
+      "replacedByCanonicalSymbol": "IsShadowedByFunctionLocal",
+      "ramOrCpuImpact": "Local owner checks use constant auxiliary memory and avoid a second tree search. Namespace lookup keeps string views for duplicate detection.",
+      "verifiedByTests": [
+        "Indexed namespace lookup reaches enclosing declarations beyond 32 scopes",
+        "DefinitionHandler - Deep function local shadows a global declaration"
+      ]
+    },
+    {
+      "id": "REF-V118-NULL-SAFETY-WORKLISTS",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/null_safety/NullSafetyChecker.cpp",
+      "deletedLineRange": "41-133",
+      "originalSymbolOrCode": "NullSafetyEngine CheckIfStmt ProcessLogicalBinary ProcessBinaryCondition ProcessUnaryCondition IfPart",
+      "whatItDidAndWhyInThatFile": "Followed statement and condition nesting recursively and read child links from the tree during null checking.",
+      "whyChangedOrDeleted": "Use worklists and the same indexed operands as conversion and operator checks. Preserve branch exits, assertion order and diagnostic ranges.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/null_safety/NullSafetyChecker.cpp",
+      "replacedByCanonicalSymbol": "NullStatementWorklist",
+      "ramOrCpuImpact": "Statement and condition nesting no longer consumes the native stack. Indexed links replace direct AST navigation for these paths. Flow state size still depends on tracked handles and branch depth. In 30 alternating Release runs with 20 functions and 80 nested branches and conjunctions each, open p50/p95 was 58.66/61.45 ms before and 64.75/66.30 ms after. Edit p50/p95 was 269.64/274.92 ms before and 270.13/279.34 ms after. Peak working set p50/p95 was 13.19/13.34 MiB before and 13.12/13.26 MiB after. The initial short-circuit checks still revisited prefixes of indexed conditions.",
+      "verifiedByTests": [
+        "NullSafetyChecker - Deep null guards preserve branch exits and the unguarded range",
+        "NullSafetyChecker - Short Circuit Conjunction Guard"
+      ]
+    },
+    {
+      "id": "REF-V118-NULL-CONDITION-REUSE",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/null_safety/NullSafetyExpr.cpp",
+      "deletedLineRange": "134-145",
+      "originalSymbolOrCode": "ExtractConditionAssertions",
+      "whatItDidAndWhyInThatFile": "Reevaluated each left condition before the right operand and rebuilt the entire condition summary before analyzing the branch body.",
+      "whyChangedOrDeleted": "Share the indexed summaries between short-circuit checks and the branch. Move previously computed descendant facts into the enclosing condition and discard its consumed entries.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/null_safety/NullSafetyCondition.cpp",
+      "replacedByCanonicalSymbol": "NullConditionWorklist::Remember",
+      "ramOrCpuImpact": "In 30 alternating Release runs per variant with the same 20 functions and 80 nested branches and conjunctions each, open p50/p95 was 58.86/59.94 ms before the worklists, 63.58/65.94 ms with the initial worklists, and 46.04/47.05 ms with reuse. Edit p50/p95 was 269.71/274.26, 272.51/278.63, and 254.58/260.04 ms. Peak working set p50/p95 was 13.20/13.32, 13.21/13.35, and 13.12/13.22 MiB. The three variants emitted identical diagnostics.",
+      "verifiedByTests": [
+        "NullSafetyChecker - Nested short-circuit operands keep the common guard across alternatives",
+        "NullSafetyChecker - Deep null guards preserve branch exits and the unguarded range"
+      ]
+    }
+  ]
 }

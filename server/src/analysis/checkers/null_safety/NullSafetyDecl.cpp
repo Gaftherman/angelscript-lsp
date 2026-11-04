@@ -3,6 +3,7 @@
 #include "analysis/checkers/null_safety/NullSafetyCondition.h"
 #include "analysis/checkers/null_safety/NullSafetyExpr.h"
 #include "analysis/index/SymbolTable.h"
+#include "analysis/index/SyntaxOperands.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeExtraction.h"
 #include "parser/ASTUtils.h"
@@ -82,8 +83,8 @@ static Nullability EvaluateExpressionNullability(const NullableEvalRequest& req,
     {
         return Nullability::DefinitelyNull;
     }
-    TSNode unwrapped = UnwrapNullExpression(req.val);
-    if (ts_node_is_null(unwrapped) || IsNullInitializer(unwrapped))
+    TSNode unwrapped = UnwrapNullExpression(req.val, ctx.index);
+    if (ts_node_is_null(unwrapped) || IsNullInitializer(unwrapped, &ctx.index))
     {
         return Nullability::DefinitelyNull;
     }
@@ -95,7 +96,7 @@ static Nullability EvaluateExpressionNullability(const NullableEvalRequest& req,
         return Nullability::NonNull;
     }
 
-    const std::string rhsVarName = GetIdentifierName(unwrapped, ctx.sourceCode);
+    const std::string rhsVarName = GetIdentifierName(unwrapped, ctx);
     if (!rhsVarName.empty())
     {
         auto it = state.vars.find(rhsVarName);
@@ -107,8 +108,8 @@ static Nullability EvaluateExpressionNullability(const NullableEvalRequest& req,
 
     if (sym == gs.symCallExpression)
     {
-        TSNode fn = parser::GetChildByField(unwrapped, gs.fieldFunction);
-        std::string fnName = GetIdentifierName(fn, ctx.sourceCode);
+        TSNode fn = SyntaxOperands(unwrapped, &ctx.index).Field(gs.fieldFunction);
+        std::string fnName = GetIdentifierName(fn, ctx);
         if (fnName.empty() && !ts_node_is_null(fn))
         {
             fnName = parser::NodeText(fn, ctx.sourceCode);
@@ -124,46 +125,49 @@ static Nullability EvaluateExpressionNullability(const NullableEvalRequest& req,
 
 void CheckVarDeclaration(TSNode stmt, FlowState& state, NullCheckContext& ctx)
 {
-    TSNode typeNode = parser::GetChildByField(stmt, parser::GetGrammarSymbols().fieldVarType);
+    const auto& gs = parser::GetGrammarSymbols();
+    const SyntaxOperands declaration(stmt, &ctx.index);
+    TSNode typeNode = declaration.Field(gs.fieldVarType);
     if (ts_node_is_null(typeNode))
     {
-        typeNode = parser::GetChildByField(stmt, parser::GetGrammarSymbols().fieldType);
+        typeNode = declaration.Field(gs.fieldType);
     }
-    const auto typeInfo = ExtractTypeInfoFromAST(typeNode, ctx.sourceCode);
-    const bool isHandle = typeInfo.isHandle;
+    const bool isHandle = ExtractTypeInfoFromAST(typeNode, ctx.sourceCode).isHandle;
 
-    const uint32_t childCount = ts_node_named_child_count(stmt);
-    for (uint32_t i = 0; i < childCount; ++i)
-    {
-        TSNode child = ts_node_named_child(stmt, i);
-        if (ts_node_symbol(child) != parser::GetGrammarSymbols().symVariableDeclarator)
+    declaration.ForEachNamed(
+        [&](TSNode child)
         {
-            continue;
-        }
-        std::string name =
-            parser::NodeText(parser::GetChildByField(child, parser::GetGrammarSymbols().fieldName), ctx.sourceCode);
-        TSNode val = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldValue);
-        if (ts_node_is_null(val))
-        {
-            val = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldInit);
-        }
-        CheckNullExpression(val, state, ctx);
+            if (ts_node_symbol(child) != gs.symVariableDeclarator)
+            {
+                return true;
+            }
+            const SyntaxOperands declarator(child, &ctx.index);
+            const std::string name = parser::NodeText(declarator.Field(gs.fieldName), ctx.sourceCode);
+            TSNode val = declarator.Field(gs.fieldValue);
+            if (ts_node_is_null(val))
+            {
+                val = declarator.Field(gs.fieldInit);
+            }
+            CheckNullExpression(val, state, ctx);
 
-        if (isHandle && !name.empty())
-        {
-            state.vars[name] = EvaluateExpressionNullability({val, typeNode, name}, state, ctx);
-        }
-    }
+            if (isHandle && !name.empty())
+            {
+                state.vars[name] = EvaluateExpressionNullability({val, typeNode, name}, state, ctx);
+            }
+            return true;
+        });
 }
 
 void CheckAssignmentStmt(TSNode expr, FlowState& state, NullCheckContext& ctx)
 {
-    TSNode left = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldLeft);
-    TSNode right = parser::GetChildByField(expr, parser::GetGrammarSymbols().fieldRight);
+    const auto& gs = parser::GetGrammarSymbols();
+    const SyntaxOperands assignment(expr, &ctx.index);
+    TSNode left = assignment.Field(gs.fieldLeft);
+    TSNode right = assignment.Field(gs.fieldRight);
     CheckNullExpression(right, state, ctx);
 
-    TSNode unwrappedLeft = UnwrapNullExpression(left);
-    std::string name = GetIdentifierName(unwrappedLeft, ctx.sourceCode);
+    TSNode unwrappedLeft = UnwrapNullExpression(left, ctx.index);
+    std::string name = GetIdentifierName(unwrappedLeft, ctx);
     if (!name.empty())
     {
         const Nullability assignedNullability = EvaluateExpressionNullability({right, {}, name}, state, ctx);

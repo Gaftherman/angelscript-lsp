@@ -3,11 +3,11 @@ import * as os from 'os';
 import * as fs from 'fs';
 import {
     ExtensionContext, window, workspace, env, commands, OutputChannel, ExtensionMode,
-    StatusBarAlignment, StatusBarItem, ThemeColor, ConfigurationTarget, QuickPickItem, QuickPickItemKind, Uri, l10n,
+    Disposable, RelativePattern, ConfigurationTarget, QuickPickItem, QuickPickItemKind, Uri, l10n,
     TextEditorDecorationType, Range, TextEditor, WorkspaceEdit, TextDocumentContentProvider,
     CancellationToken, Position, Selection, ViewColumn, TextEditorRevealType, Location,
     languages, LanguageStatusItem, LanguageStatusSeverity,
-    TabInputText, TabInputTextDiff, TabInputCustom, debug, CompletionItem, CompletionItemKind
+    debug, CompletionItem, CompletionItemKind
 } from 'vscode';
 import {
     AngelScriptConfigurationProvider,
@@ -111,7 +111,6 @@ function timed<T>(phase: string, body: () => T): T {
 
 let client: LanguageClient | undefined;
 let lspOutputChannel: OutputChannel;
-let statusBarItem: StatusBarItem;
 
 /** @brief Command that reveals the server log. The status bar item and every error offer it. */
 const SHOW_LOG_COMMAND = 'angelscript.showServerLog';
@@ -298,102 +297,31 @@ let runningServerArgs: string[] = [];
  */
 let lastStatus: { state: 'starting' | 'running' | 'failed'; tooltip: string } | undefined;
 
-/**
- * @brief Which side of the status bar the item currently sits on.
- *
- * Tracked because VS Code fixes an item's alignment when it is created: moving it is creating a
- * new one, so the old has to be disposed and the last known state replayed onto the replacement.
- * Undefined until the first createStatusBarItem call.
- */
-let statusBarAlignmentInUse: StatusBarAlignment | undefined;
-
-/**
- * @brief Creates the status bar item on the configured side, replacing the existing one if it moved.
- *
- * Defaults to the left. The item is the way to reach the log, a restart and the stub picker, and
- * on the right it sits past whatever else the window has to say; on the left it is next to the
- * problem counts, which is where the user is already looking. `angelscript.statusBar.alignment`
- * moves it back for anyone who disagrees.
- */
-function createStatusBarItem(context: ExtensionContext): void {
-    const configured = workspace.getConfiguration('angelscript').get<string>('statusBar.alignment', 'left');
-    const alignment = configured === 'right' ? StatusBarAlignment.Right : StatusBarAlignment.Left;
-
-    if (statusBarItem && statusBarAlignmentInUse === alignment) {
-        return;
-    }
-
-    // Disposed rather than hidden: an item left alive on the other side is a second copy of the
-    // same control, and the user moved it precisely because they did not want it there.
-    statusBarItem?.dispose();
-
-    statusBarItem = window.createStatusBarItem(alignment, 100);
-    statusBarItem.command = STATUS_MENU_COMMAND;
-    context.subscriptions.push(statusBarItem);
-    statusBarAlignmentInUse = alignment;
-
-    // The new item starts blank, and nothing else will speak until the server changes state - which
-    // it need not ever do again - so the last thing it said is replayed onto it.
-    if (lastStatus) {
-        setStatus(lastStatus.state, lastStatus.tooltip);
-    }
-}
-
 function setStatus(state: 'starting' | 'running' | 'failed', tooltip: string): void {
     lastStatus = { state, tooltip };
-
-    if (!statusBarItem) {
-        return;
-    }
-
-    const config = workspace.getConfiguration('angelscript');
-    const enabled = config.get<boolean>('statusBar.enabled', true);
-    if (!enabled) {
-        statusBarItem.hide();
-        updateLanguageStatus(state === 'starting');
-        return;
-    }
-
-    const label = {
-        starting: '$(sync~spin) AngelLSP',
-        running: '$(server-process) AngelLSP',
-        failed: '$(error) AngelLSP'
-    };
-
-    const showStub = config.get<boolean>('statusBar.showStub', false);
-    statusBarItem.text = state === 'running' && showStub && activeStubLabel.length > 0
-        ? `${label[state]}: ${activeStubLabel}`
-        : label[state];
-
-    const stubLine = state === 'running' && activeStubPath.length > 0
-        ? `\n${l10n.t('Stub: {0}', activeStubPath)}`
-        : '';
-    statusBarItem.tooltip =
-        `${tooltip}${stubLine}\n${l10n.t('Click for the log, a restart, or the stub picker.')}`;
-    statusBarItem.backgroundColor = state === 'failed'
-        ? new ThemeColor('statusBarItem.errorBackground')
-        : undefined;
-    statusBarItem.show();
     updateLanguageStatus(state === 'starting');
 }
 
 let languageStatusItem: LanguageStatusItem | undefined;
 let stubsStatusItem: LanguageStatusItem | undefined;
 let moduleStatusItem: LanguageStatusItem | undefined;
+let environmentStatusItem: LanguageStatusItem | undefined;
+let refreshRestartFileWatchers: (() => void) | undefined;
 
 function createLanguageStatusItem(context: ExtensionContext): void {
     if (typeof languages.createLanguageStatusItem !== 'function') {
         return;
     }
-    languageStatusItem = languages.createLanguageStatusItem('angelscript.status', { language: 'angelscript' });
+    const selector = [{ language: 'angelscript' }, { language: 'angelscript-predefined' }];
+    languageStatusItem = languages.createLanguageStatusItem('angelscript.status', selector);
     languageStatusItem.name = l10n.t('AngelScript IntelliSense');
     languageStatusItem.command = {
-        command: RESCAN_WORKSPACE_COMMAND,
-        title: l10n.t('Rescan')
+        command: STATUS_MENU_COMMAND,
+        title: l10n.t('Server Actions')
     };
     context.subscriptions.push(languageStatusItem);
 
-    stubsStatusItem = languages.createLanguageStatusItem('angelscript.stubs', { language: 'angelscript' });
+    stubsStatusItem = languages.createLanguageStatusItem('angelscript.stubs', selector);
     stubsStatusItem.name = l10n.t('AngelScript Predefined Stubs');
     stubsStatusItem.command = {
         command: SELECT_STUBS_COMMAND,
@@ -401,7 +329,7 @@ function createLanguageStatusItem(context: ExtensionContext): void {
     };
     context.subscriptions.push(stubsStatusItem);
 
-    moduleStatusItem = languages.createLanguageStatusItem('angelscript.module', { language: 'angelscript' });
+    moduleStatusItem = languages.createLanguageStatusItem('angelscript.module', selector);
     moduleStatusItem.name = l10n.t('AngelScript Active Module');
     moduleStatusItem.command = {
         command: SWITCH_ACTIVE_MODULE_COMMAND,
@@ -409,12 +337,26 @@ function createLanguageStatusItem(context: ExtensionContext): void {
     };
     context.subscriptions.push(moduleStatusItem);
 
+    environmentStatusItem = languages.createLanguageStatusItem('angelscript.environment', selector);
+    environmentStatusItem.name = l10n.t('Configure Engine Environment');
+    environmentStatusItem.command = {
+        command: CONFIGURE_HOST_ENVIRONMENT_COMMAND,
+        title: l10n.t('Configure Engine Environment')
+    };
+    context.subscriptions.push(environmentStatusItem);
     updateLanguageStatus();
 }
 
 function updateLanguageStatus(isIndexing = false): void {
     const activeStubs = getActiveStubFiles();
     const stubsCount = activeStubs.length > 0 ? activeStubs.length : (activeStubLabel.length > 0 ? 1 : 0);
+
+    if (environmentStatusItem) {
+        const config = workspace.getConfiguration('angelscript');
+        const rules = config.get<string>('rulesFile', '');
+        environmentStatusItem.text = '$(gear) ' + l10n.t('Configure Engine Environment');
+        environmentStatusItem.detail = rules || undefined;
+    }
 
     if (languageStatusItem) {
         const trigger = workspace.getConfiguration('angelscript').get<string>('diagnostics.trigger', 'automatic');
@@ -427,12 +369,13 @@ function updateLanguageStatus(isIndexing = false): void {
         } else if (lastStatus?.state === 'running' || clientIsRunning()) {
             languageStatusItem.severity = LanguageStatusSeverity.Information;
             languageStatusItem.text = '$(check) IntelliSense';
-            languageStatusItem.detail = triggerDetail;
+            languageStatusItem.detail = lastStatus?.tooltip || triggerDetail;
             languageStatusItem.busy = false;
         } else {
-            languageStatusItem.severity = LanguageStatusSeverity.Warning;
+            languageStatusItem.severity = lastStatus?.state === 'failed'
+                ? LanguageStatusSeverity.Error : LanguageStatusSeverity.Warning;
             languageStatusItem.text = `$(alert) ${l10n.t('Inactive')}`;
-            languageStatusItem.detail = l10n.t('Server stopped');
+            languageStatusItem.detail = lastStatus?.tooltip || l10n.t('Server stopped');
             languageStatusItem.busy = false;
         }
     }
@@ -748,7 +691,6 @@ const FEATURE_FLAGS: ReadonlyArray<readonly [string, string]> = [
     ['typeConversionChecks', '--disable-type-conversion-checks'],
     ['codeLens', '--disable-code-lens'],
     ['onTypeFormatting', '--disable-on-type-formatting'],
-    ['pullDiagnostics', '--disable-pull-diagnostics'],
     ['enableCommentSuppressions', '--disable-comment-suppressions']
 ];
 
@@ -1490,88 +1432,6 @@ export function buildServerArgs(): string[] {
 }
 
 /**
- * @brief Ensures the client's tab and document tracking recognizes all open, restored, and visible editors.
- * @param targetClient The active language client instance.
- */
-export function synchronizeDiagnosticTabs(targetClient: LanguageClient): void {
-    try {
-        const diagFeature = (targetClient as unknown as { getFeature?: (id: string) => unknown })?.getFeature?.('textDocument/diagnostic') as {
-            tabs?: {
-                open?: Set<string>;
-                isVisible?: (doc: unknown) => boolean;
-                __angelscriptPatched?: boolean;
-            };
-            getAllProviders?: () => Array<{ onDidChangeDiagnosticsEmitter?: { fire: () => void } }>;
-        } | undefined;
-
-        if (!diagFeature) {
-            return;
-        }
-
-        const tabs = diagFeature.tabs;
-        if (tabs && tabs.open instanceof Set) {
-            const currentlyOpenUris = new Set<string>();
-            for (const editor of window.visibleTextEditors) {
-                currentlyOpenUris.add(editor.document.uri.toString());
-            }
-            if (window.activeTextEditor) {
-                currentlyOpenUris.add(window.activeTextEditor.document.uri.toString());
-            }
-            for (const group of window.tabGroups.all) {
-                for (const tab of group.tabs) {
-                    const input = tab.input;
-                    if (input instanceof TabInputText) {
-                        currentlyOpenUris.add(input.uri.toString());
-                    } else if (input instanceof TabInputTextDiff) {
-                        currentlyOpenUris.add(input.modified.toString());
-                    } else if (input instanceof TabInputCustom) {
-                        currentlyOpenUris.add(input.uri.toString());
-                    }
-                }
-            }
-
-            for (const uri of Array.from(tabs.open)) {
-                if (!currentlyOpenUris.has(uri)) {
-                    tabs.open.delete(uri);
-                }
-            }
-            for (const uri of currentlyOpenUris) {
-                tabs.open.add(uri);
-            }
-
-            if (typeof tabs.isVisible === 'function' && !tabs.__angelscriptPatched) {
-                tabs.__angelscriptPatched = true;
-                const origIsVisible = tabs.isVisible.bind(tabs);
-                tabs.isVisible = (document: unknown): boolean => {
-                    const uri = document instanceof Uri ? document : (document as { uri?: Uri })?.uri;
-                    if (!uri) {
-                        return false;
-                    }
-                    const uriStr = uri.toString();
-                    if (tabs.open && tabs.open.has(uriStr)) {
-                        return true;
-                    }
-                    if (window.activeTextEditor?.document.uri.toString() === uriStr ||
-                        window.visibleTextEditors.some(e => e.document.uri.toString() === uriStr)) {
-                        tabs.open?.add(uriStr);
-                        return true;
-                    }
-                    return origIsVisible(document);
-                };
-            }
-        }
-
-        if (typeof diagFeature.getAllProviders === 'function') {
-            for (const provider of diagFeature.getAllProviders()) {
-                provider?.onDidChangeDiagnosticsEmitter?.fire();
-            }
-        }
-    } catch {
-        // Degrade gracefully if language client internal layout changes in future versions
-    }
-}
-
-/**
  * @brief Builds and starts a language client against the settings in force right now.
  *
  * Separate from activate() because most `angelscript.*` settings become server command-line
@@ -1647,16 +1507,6 @@ async function startClient(context: ExtensionContext): Promise<void> {
     };
 
     const clientOptions: LanguageClientOptions = {
-        diagnosticPullOptions: {
-            onChange: true,
-            onSave: true,
-            onTabs: true,
-            match: (_selector, resource) => {
-                const fsPath = resource.fsPath.toLowerCase();
-                return fsPath.endsWith('.as') || fsPath.endsWith('.angelscript') ||
-                       fsPath.endsWith('.predefined') || resource.scheme === 'angelscript-virtual';
-            }
-        },
         documentSelector: [
             { scheme: 'file', language: 'angelscript' },
             { scheme: 'file', language: 'angelscript-predefined' },
@@ -1701,7 +1551,6 @@ async function startClient(context: ExtensionContext): Promise<void> {
 
         // Synchronize tab tracking so restored editor tabs are immediately registered
         // and pull diagnostics on startup.
-        synchronizeDiagnosticTabs(client);
 
         // One line, because a user asked to attach one. `clientStart` is the process spawn plus the
         // initialize handshake, and on a slow machine it is expected to dominate the rest.
@@ -1962,40 +1811,11 @@ export async function activate(context: ExtensionContext) {
     context.subscriptions.push(
         window.onDidChangeVisibleTextEditors(editors => editors.forEach(applyInactiveRegions)));
 
-    context.subscriptions.push(
-        window.onDidChangeActiveTextEditor(() => {
-            const active = activeClient();
-            if (active) {
-                synchronizeDiagnosticTabs(active);
-            }
-        }),
-        window.onDidChangeVisibleTextEditors(() => {
-            const active = activeClient();
-            if (active) {
-                synchronizeDiagnosticTabs(active);
-            }
-        }),
-        window.tabGroups.onDidChangeTabGroups(() => {
-            const active = activeClient();
-            if (active) {
-                synchronizeDiagnosticTabs(active);
-            }
-        }));
+    context.subscriptions.push(watchRestartFiles());
+    context.subscriptions.push(commands.registerCommand('angelscript.showReferences',
+        (uri: string, line: number, character: number) =>
+            commands.executeCommand('editor.action.findReferences', Uri.parse(uri), new Position(line, character))));
 
-    context.subscriptions.push(
-        workspace.onDidSaveTextDocument(async (doc) => {
-            const fileName = path.basename(doc.fileName);
-            if (fileName === 'angelscript.rules.json' || fileName.endsWith('.angelscript.rules.json') || fileName.endsWith('.as.predefined') || fileName.endsWith('.predefined')) {
-                const restartAction = l10n.t('Restart Server');
-                const message = l10n.t('Rules or predefined definitions modified. Restart the AngelScript server to apply changes?');
-                const choice = await window.showInformationMessage(message, restartAction);
-                if (choice === restartAction) {
-                    void commands.executeCommand(RESTART_COMMAND);
-                }
-            }
-        }));
-
-    timed('statusBarItem', () => createStatusBarItem(context));
     timed('languageStatusItem', () => createLanguageStatusItem(context));
     timed('checkExtensionUpdate', () => checkExtensionUpdate(context));
 
@@ -2046,18 +1866,6 @@ export async function activate(context: ExtensionContext) {
                 window.visibleTextEditors.forEach(applyInactiveRegions);
             }
 
-            // Purely a client-side control, so it moves without touching the server. Handled before
-            // the command-line comparison below, which would otherwise decide nothing changed and
-            // leave the item where it was.
-            if (event.affectsConfiguration('angelscript.statusBar.alignment')) {
-                createStatusBarItem(context);
-            }
-            if (event.affectsConfiguration('angelscript.statusBar.enabled') ||
-                event.affectsConfiguration('angelscript.statusBar.showStub')) {
-                if (lastStatus) {
-                    setStatus(lastStatus.state, lastStatus.tooltip);
-                }
-            }
             if (event.affectsConfiguration('angelscript.stubs') ||
                 event.affectsConfiguration('angelscript.predefined') ||
                 event.affectsConfiguration('angelscript.configurationTarget')) {
@@ -2092,6 +1900,77 @@ export async function activate(context: ExtensionContext) {
         getClient: () => activeClient(),
         isClientRunning: () => clientIsRunning(),
     };
+}
+
+/** Watches configuration inputs and coalesces duplicate filesystem notifications. */
+function watchRestartFiles(): Disposable {
+    const workspaceWatcher = workspace.createFileSystemWatcher('**/{*angelscript.rules.json,*.predefined}');
+    const configuredWatchers: Disposable[] = [];
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let promptOpen = false;
+
+    const onChange = (): void => {
+        if (timer) {
+            clearTimeout(timer);
+        }
+        timer = setTimeout(async () => {
+            timer = undefined;
+            if (promptOpen) {
+                return;
+            }
+            promptOpen = true;
+            try {
+                const restart = l10n.t('Restart Server');
+                const message = l10n.t('Rules or predefined definitions modified. Restart the AngelScript server to apply changes?');
+                if (await window.showInformationMessage(message, restart) === restart) {
+                    await commands.executeCommand(RESTART_COMMAND);
+                }
+            } finally {
+                promptOpen = false;
+            }
+        }, 350);
+    };
+
+    const subscribe = (watcher: ReturnType<typeof workspace.createFileSystemWatcher>,
+                       accepts: (uri: Uri) => boolean = () => true): Disposable => {
+        const changed = (uri: Uri) => { if (accepts(uri)) { onChange(); } };
+        return Disposable.from(watcher, watcher.onDidChange(changed), watcher.onDidCreate(changed),
+                               watcher.onDidDelete(changed));
+    };
+
+    const rebuild = (): void => {
+        configuredWatchers.splice(0).forEach(watcher => watcher.dispose());
+        const config = workspace.getConfiguration('angelscript');
+        const files = [config.get<string>('rulesFile', ''), getActivePredefinedStub(),
+                       ...config.get<string[]>('predefinedFiles', []), ...getActiveStubFiles()];
+        const key = (value: string) => process.platform === 'win32' ? value.toLowerCase() : value;
+        const byDirectory = new Map<string, Set<string>>();
+        for (const file of new Set(files.filter(Boolean).flatMap(resolveAgainstWorkspace))) {
+            const directory = path.dirname(file);
+            const names = byDirectory.get(directory) ?? new Set<string>();
+            names.add(key(path.basename(file)));
+            byDirectory.set(directory, names);
+        }
+        for (const [directory, names] of byDirectory) {
+            const watcher = workspace.createFileSystemWatcher(new RelativePattern(directory, '*'));
+            configuredWatchers.push(subscribe(watcher, uri => names.has(key(path.basename(uri.fsPath)))));
+        }
+    };
+    rebuild();
+    refreshRestartFileWatchers = rebuild;
+
+    return Disposable.from(subscribe(workspaceWatcher), workspace.onDidChangeWorkspaceFolders(rebuild),
+        workspace.onDidChangeConfiguration(event => {
+            if (event.affectsConfiguration('angelscript')) {
+                rebuild();
+            }
+        }), new Disposable(() => {
+            if (timer) {
+                clearTimeout(timer);
+            }
+            configuredWatchers.splice(0).forEach(watcher => watcher.dispose());
+            refreshRestartFileWatchers = undefined;
+        }));
 }
 
 /**
@@ -2360,6 +2239,7 @@ function getEffectiveAngelscriptConfig(): Record<string, unknown> {
 }
 
 async function applyLocalStateChanges(): Promise<void> {
+    refreshRestartFileWatchers?.();
     const next = buildServerArgs();
     const withoutHotReloadable = (args: string[]) =>
         args.filter(arg => !arg.startsWith('--predefined-active=') &&

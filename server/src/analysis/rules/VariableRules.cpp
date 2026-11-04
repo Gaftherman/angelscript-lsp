@@ -539,7 +539,7 @@ static std::string ResolveEnclosingNamespaceForDefinition(const LocalDefinition&
     {
         return "";
     }
-    for (const auto& container : GetEnclosingContainers(node, ctx.request.sourceCode))
+    for (const auto& container : GetEnclosingContainers(node, ctx.request.sourceCode, ctx.request.nodeIndex))
     {
         if (container.kind == ContainerKind::Namespace)
         {

@@ -3,6 +3,7 @@
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/ScopeTree.h"
+#include "analysis/index/SyntaxOperands.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
@@ -251,7 +252,8 @@ std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view 
 
     if (nodeIndex)
     {
-        return nodeIndex->CollectEnclosingContainers(ts_node_start_byte(node), sourceCode);
+        return nodeIndex->CollectLookupContainers(ts_node_start_byte(node), ts_node_end_byte(node),
+                                                  ts_node_symbol(node), sourceCode);
     }
 
     std::vector<ContainerInfo> rawContainers;
@@ -284,28 +286,7 @@ std::vector<ContainerInfo> GetEnclosingContainers(TSNode node, std::string_view 
 
 std::vector<std::string> CollectUsingNamespaces(const NodeIndex& nodeIndex, std::string_view sourceCode)
 {
-    std::vector<std::string> usings;
-    for (TSNode cur : nodeIndex.Nodes(parser::GetGrammarSymbols().symUsingDeclaration))
-    {
-        TSNode nameNode = parser::GetChildByField(cur, parser::GetGrammarSymbols().fieldName);
-        if (!ts_node_is_null(nameNode))
-        {
-            std::string uName = parser::GetNodeText(nameNode, sourceCode);
-            while (!uName.empty() && isspace(static_cast<unsigned char>(uName.front())))
-            {
-                uName.erase(uName.begin());
-            }
-            while (!uName.empty() && isspace(static_cast<unsigned char>(uName.back())))
-            {
-                uName.pop_back();
-            }
-            if (!uName.empty())
-            {
-                usings.push_back(uName);
-            }
-        }
-    }
-    return usings;
+    return nodeIndex.CollectUsingNamespaces(sourceCode);
 }
 
 std::vector<std::string> CollectUsingNamespaces(TSNode root, std::string_view sourceCode)
@@ -348,11 +329,7 @@ const std::vector<std::string>& GetUsingNamespaces(const SemanticAnalysisRequest
 {
     if (!request.usingNamespacesCache.has_value())
     {
-        if (request.sourceCode.find("using") == std::string_view::npos)
-        {
-            request.usingNamespacesCache = std::vector<std::string>{};
-        }
-        else if (request.nodeIndex)
+        if (request.nodeIndex)
         {
             request.usingNamespacesCache = CollectUsingNamespaces(*request.nodeIndex, request.sourceCode);
         }
@@ -395,9 +372,9 @@ static bool HasContainerMatchingPrefix(const SymbolTable& table, const std::stri
  * @brief Checks if the prefix is known relative to enclosing containers.
  */
 static bool IsKnownInEnclosingContainers(const SymbolTable& table, const std::string& prefix, TSNode node,
-                                         std::string_view sourceCode)
+                                         std::string_view sourceCode, const NodeIndex* nodeIndex)
 {
-    auto containers = GetEnclosingContainers(node, sourceCode);
+    auto containers = GetEnclosingContainers(node, sourceCode, nodeIndex);
     for (const auto& c : containers)
     {
         std::string q = utils::JoinScopedName(c.qualifiedName, prefix);
@@ -413,9 +390,10 @@ static bool IsKnownInEnclosingContainers(const SymbolTable& table, const std::st
  * @brief Checks if the prefix is known relative to using namespaces.
  */
 static bool IsKnownInUsingNamespaces(const SymbolTable& table, const std::string& prefix, TSNode node,
-                                     std::string_view sourceCode, std::span<const std::string> precomputedUsings)
+                                     std::string_view sourceCode, std::span<const std::string> precomputedUsings,
+                                     const NodeIndex* nodeIndex)
 {
-    if (!precomputedUsings.empty())
+    if (nodeIndex || !precomputedUsings.empty())
     {
         for (const auto& ns : precomputedUsings)
         {
@@ -446,7 +424,7 @@ static bool IsKnownInUsingNamespaces(const SymbolTable& table, const std::string
 }
 
 bool IsKnownScope(const std::string& prefix, TSNode node, std::string_view sourceCode, const SymbolTable& table,
-                  std::span<const std::string> precomputedUsings)
+                  std::span<const std::string> precomputedUsings, const NodeIndex* nodeIndex)
 {
     if (prefix.empty() || table.HasSymbol(prefix) || table.HasSymbolAnywhere(prefix))
     {
@@ -458,12 +436,12 @@ bool IsKnownScope(const std::string& prefix, TSNode node, std::string_view sourc
         return true;
     }
 
-    if (IsKnownInEnclosingContainers(table, prefix, node, sourceCode))
+    if (IsKnownInEnclosingContainers(table, prefix, node, sourceCode, nodeIndex))
     {
         return true;
     }
 
-    return IsKnownInUsingNamespaces(table, prefix, node, sourceCode, precomputedUsings);
+    return IsKnownInUsingNamespaces(table, prefix, node, sourceCode, precomputedUsings, nodeIndex);
 }
 
 /**
@@ -558,14 +536,9 @@ static std::vector<Symbol> FindSymbolInContainerHierarchy(const SymbolTable& sym
                                                           const std::vector<ContainerInfo>& containers,
                                                           const std::string& name)
 {
-    size_t hops = 0;
-    ankerl::unordered_dense::set<std::string> visitedContainers;
+    ankerl::unordered_dense::set<std::string_view> visitedContainers;
     for (const auto& container : containers)
     {
-        if (++hops > kMaxScopeDepth)
-        {
-            break;
-        }
         if (!visitedContainers.insert(container.qualifiedName).second)
         {
             continue;
@@ -713,17 +686,35 @@ static void CollectUsingsFromAncestor(TSNode p, std::string_view sourceCode, std
     ts_tree_cursor_delete(&cursor);
 }
 
-std::vector<Symbol> FindSymbolsInScope(const std::string& name, TSNode node, std::string_view sourceCode,
-                                       const SymbolTable& symbolTable)
+std::vector<std::string> CollectVisibleUsingNamespaces(TSNode node, std::string_view sourceCode,
+                                                       const NodeIndex* nodeIndex)
 {
+    if (ts_node_is_null(node))
+    {
+        return {};
+    }
+    if (nodeIndex)
+    {
+        return nodeIndex->CollectUsingNamespaces(sourceCode, ts_node_start_byte(node));
+    }
+
     std::vector<std::string> usings;
     if (sourceCode.find("using") != std::string_view::npos)
     {
         parser::ForEachAncestor(node, [&](TSNode p) { CollectUsingsFromAncestor(p, sourceCode, usings); });
     }
+    return usings;
+}
 
-    std::vector<ContainerInfo> containers = GetEnclosingContainers(node, sourceCode);
-    return FindSymbolsInScope(symbolTable, containers, name, usings);
+std::vector<Symbol> FindSymbolsInScope(const std::string& name, TSNode node, std::string_view sourceCode,
+                                       const SymbolTable& symbolTable, const NodeIndex* nodeIndex)
+{
+    if (name.empty())
+    {
+        return {};
+    }
+    return FindSymbolsInScope(symbolTable, GetEnclosingContainers(node, sourceCode, nodeIndex), name,
+                              CollectVisibleUsingNamespaces(node, sourceCode, nodeIndex));
 }
 
 bool IsVariableType(std::string_view typeName)
@@ -898,11 +889,10 @@ static std::string ExtractTrimmedIdentifier(TSNode node, std::string_view source
     return name;
 }
 
-std::optional<std::string> IsBareDataType(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
-                                          std::string_view sourceCode)
+std::optional<std::string> IsBareDataType(TSNode node, const ExpressionTypeContext& ctx)
 {
-    node = parser::UnwrapParentheses(node);
-    std::string name = ExtractTrimmedIdentifier(node, sourceCode);
+    node = UnwrapIndexedParentheses(node, ctx.nodeIndex);
+    std::string name = ExtractTrimmedIdentifier(node, ctx.sourceCode);
     if (name.empty())
     {
         return std::nullopt;
@@ -913,15 +903,15 @@ std::optional<std::string> IsBareDataType(TSNode node, const Scope* scope, const
         return name;
     }
 
-    if (scope)
+    if (ctx.scope)
     {
-        if (const LocalDefinition* def = ResolveInScopeAt(scope, name, ts_node_start_byte(node)))
+        if (const LocalDefinition* def = ResolveInScopeAt(ctx.scope, name, ts_node_start_byte(node)))
         {
             return def->kind == LocalDefinitionKind::Type ? std::optional<std::string>(name) : std::nullopt;
         }
     }
 
-    const auto syms = LookupTypeCandidateSymbols(name, symbolTable);
+    const auto syms = LookupTypeCandidateSymbols(name, ctx.symbolTable);
     if (AreAllSymbolsPureTypes(syms))
     {
         return name;

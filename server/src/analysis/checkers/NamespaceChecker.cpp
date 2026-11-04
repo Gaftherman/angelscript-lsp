@@ -49,7 +49,7 @@ static void CheckScopedIdentifier(TSNode node, std::string_view sourceCode, cons
         prefix.pop_back();
     }
     const auto& usings = GetUsingNamespaces(ctx.request);
-    if (!prefix.empty() && !IsKnownScope(prefix, node, sourceCode, table, usings))
+    if (!prefix.empty() && !IsKnownScope(prefix, node, sourceCode, table, usings, ctx.request.nodeIndex))
     {
         TSPoint startPt = ts_node_start_point(firstChild);
         TSPoint endPt = ts_node_end_point(firstChild);
@@ -179,13 +179,14 @@ static bool IsKnownCallee(std::string_view name, TSNode node, const NamespaceChe
         return true;
     }
 
-    if (!FindSymbolsInScope(std::string(name), node, request.sourceCode, ctx.request.symbolTable).empty())
+    if (!FindSymbolsInScope(std::string(name), node, request.sourceCode, ctx.request.symbolTable, request.nodeIndex)
+             .empty())
     {
         return true;
     }
 
     std::string getterName = "get_" + std::string(name);
-    if (!FindSymbolsInScope(getterName, node, request.sourceCode, ctx.request.symbolTable).empty())
+    if (!FindSymbolsInScope(getterName, node, request.sourceCode, ctx.request.symbolTable, request.nodeIndex).empty())
     {
         return true;
     }

@@ -1,135 +1,20 @@
 #include "analysis/checkers/null_safety/NullSafetyCondition.h"
 
+#include "analysis/checkers/BinaryOperatorHelpers.h"
+#include "analysis/index/SyntaxOperands.h"
 #include "analysis/types/TypeExtraction.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/ScopedNameUtils.h"
 
+#include <algorithm>
+#include <iterator>
 #include <string>
+#include <utility>
 
 namespace angel_lsp::analysis
 {
-
-/**
- * @brief Extracts identifier name if one side is null initializer and the other is an identifier.
- * @param[in] left Left expression AST node.
- * @param[in] right Right expression AST node.
- * @param[in] sourceCode Document source code.
- * @return Extracted identifier name, or empty string if not a null comparison.
- */
-static std::string ExtractNullComparedIdentifier(TSNode left, TSNode right, std::string_view sourceCode)
-{
-    if (IsNullInitializer(right))
-    {
-        return GetIdentifierName(left, sourceCode);
-    }
-    if (IsNullInitializer(left))
-    {
-        return GetIdentifierName(right, sourceCode);
-    }
-    return {};
-}
-
-/**
- * @brief Records null assertions for an equality or inequality comparison against null.
- * @param[in] name Variable or identifier name.
- * @param[in,out] sink Positive and negative null assertion targets.
- * @param[in] isEquality True if comparison is '==' or 'is'; false if '!=' or '!is'.
- */
-static void ApplyNullComparison(const std::string& name, AssertionSink& sink, bool isEquality)
-{
-    if (name.empty())
-    {
-        return;
-    }
-    sink.positive.push_back({name, isEquality ? Nullability::DefinitelyNull : Nullability::NonNull});
-    sink.negative.push_back({name, isEquality ? Nullability::NonNull : Nullability::DefinitelyNull});
-}
-
-static void ProcessLogicalBinary(const BinaryConditionParams& params, AssertionSink& sink)
-{
-    std::vector<NullAssertion> posL;
-    std::vector<NullAssertion> negL;
-    std::vector<NullAssertion> posR;
-    std::vector<NullAssertion> negR;
-
-    ExtractConditionAssertions(params.left, params.sourceCode, posL, negL);
-    ExtractConditionAssertions(params.right, params.sourceCode, posR, negR);
-
-    const auto& gs = parser::GetGrammarSymbols();
-    if (params.opSym == gs.tokAmpAmp || params.opSym == gs.tokAnd)
-    {
-        sink.positive.insert(sink.positive.end(), posL.begin(), posL.end());
-        sink.positive.insert(sink.positive.end(), posR.begin(), posR.end());
-        sink.negative.insert(sink.negative.end(), negL.begin(), negL.end());
-        sink.negative.insert(sink.negative.end(), negR.begin(), negR.end());
-    }
-    else if (params.opSym == gs.tokPipePipe || params.opSym == gs.tokOr)
-    {
-        for (const auto& l : posL)
-        {
-            for (const auto& r : posR)
-            {
-                if (l.varName == r.varName && l.state == r.state)
-                {
-                    sink.positive.push_back(l);
-                    break;
-                }
-            }
-        }
-        sink.negative.insert(sink.negative.end(), negL.begin(), negL.end());
-        sink.negative.insert(sink.negative.end(), negR.begin(), negR.end());
-    }
-}
-
-static void ProcessBinaryCondition(TSNode condition, std::string_view sourceCode, AssertionSink& sink)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode left = parser::GetChildByField(condition, gs.fieldLeft);
-    TSNode opNode = parser::GetChildByField(condition, gs.fieldOperator);
-    TSNode right = parser::GetChildByField(condition, gs.fieldRight);
-    if (ts_node_is_null(left) || ts_node_is_null(right))
-    {
-        return;
-    }
-
-    const TSSymbol opSym = ts_node_symbol(opNode);
-    if (opSym == gs.tokIs || opSym == gs.tokEqEq)
-    {
-        ApplyNullComparison(ExtractNullComparedIdentifier(left, right, sourceCode), sink, true);
-    }
-    else if (opSym == gs.tokBangIs || opSym == gs.tokBangEq)
-    {
-        ApplyNullComparison(ExtractNullComparedIdentifier(left, right, sourceCode), sink, false);
-    }
-    else if (opSym == gs.tokAmpAmp || opSym == gs.tokAnd || opSym == gs.tokPipePipe || opSym == gs.tokOr)
-    {
-        ProcessLogicalBinary({left, right, opSym, sourceCode}, sink);
-    }
-}
-
-static void ProcessUnaryCondition(TSNode condition, std::string_view sourceCode, AssertionSink& sink)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode opNode = parser::GetChildByField(condition, gs.fieldOperator);
-    TSNode operand = parser::GetChildByField(condition, gs.fieldOperand);
-    if (ts_node_is_null(operand))
-    {
-        return;
-    }
-
-    const TSSymbol opSym = ts_node_symbol(opNode);
-    if (opSym == gs.tokBang || opSym == gs.tokNot)
-    {
-        std::vector<NullAssertion> innerPos;
-        std::vector<NullAssertion> innerNeg;
-        ExtractConditionAssertions(operand, sourceCode, innerPos, innerNeg);
-        sink.positive.insert(sink.positive.end(), innerNeg.begin(), innerNeg.end());
-        sink.negative.insert(sink.negative.end(), innerPos.begin(), innerPos.end());
-    }
-}
-
-TSNode UnwrapNullExpression(TSNode expr)
+TSNode UnwrapNullExpression(TSNode expr, const NodeIndex& index)
 {
     const auto& gs = parser::GetGrammarSymbols();
     while (!ts_node_is_null(expr))
@@ -137,16 +22,18 @@ TSNode UnwrapNullExpression(TSNode expr)
         const TSSymbol sym = ts_node_symbol(expr);
         if (sym == gs.symParenthesizedExpression)
         {
-            if (ts_node_named_child_count(expr) == 1)
+            const TSNode child = SyntaxOperands(expr, &index).OnlyNamed();
+            if (!ts_node_is_null(child))
             {
-                expr = ts_node_named_child(expr, 0);
+                expr = child;
                 continue;
             }
         }
         else if (sym == gs.symUnaryExpression)
         {
-            TSNode op = parser::GetChildByField(expr, gs.fieldOperator);
-            TSNode operand = parser::GetChildByField(expr, gs.fieldOperand);
+            const SyntaxOperands syntax(expr, &index);
+            TSNode op = syntax.Field(gs.fieldOperator);
+            TSNode operand = syntax.Field(gs.fieldOperand);
             if (!ts_node_is_null(op) && !ts_node_is_null(operand) && ts_node_end_byte(op) - ts_node_start_byte(op) == 1)
             {
                 expr = operand;
@@ -155,7 +42,7 @@ TSNode UnwrapNullExpression(TSNode expr)
         }
         else if (sym == gs.symAssignmentExpression)
         {
-            TSNode left = parser::GetChildByField(expr, gs.fieldLeft);
+            TSNode left = SyntaxOperands(expr, &index).Field(gs.fieldLeft);
             if (!ts_node_is_null(left))
             {
                 expr = left;
@@ -167,9 +54,8 @@ TSNode UnwrapNullExpression(TSNode expr)
     return expr;
 }
 
-std::string GetIdentifierName(TSNode node, std::string_view sourceCode)
+static std::string ReadUnwrappedIdentifier(TSNode unwrapped, std::string_view sourceCode)
 {
-    TSNode unwrapped = UnwrapNullExpression(node);
     if (ts_node_is_null(unwrapped))
     {
         return "";
@@ -191,36 +77,168 @@ std::string GetIdentifierName(TSNode node, std::string_view sourceCode)
     return "";
 }
 
-void ExtractConditionAssertions(TSNode condition, std::string_view sourceCode,
-                                std::vector<NullAssertion>& positiveAssertions,
-                                std::vector<NullAssertion>& negativeAssertions)
+std::string GetIdentifierName(TSNode node, const NullCheckContext& ctx)
 {
-    if (ts_node_is_null(condition))
-    {
-        return;
-    }
+    return ReadUnwrappedIdentifier(UnwrapNullExpression(node, ctx.index), ctx.sourceCode);
+}
 
-    TSNode unwrapped = UnwrapNullExpression(condition);
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(unwrapped);
-    AssertionSink sink{positiveAssertions, negativeAssertions};
-
-    if (sym == gs.symBinaryExpression)
+static std::string ExtractNullComparedIdentifier(const BinaryExpressionOperands& operands, const NullCheckContext& ctx)
+{
+    if (IsNullInitializer(operands.right, &ctx.index))
     {
-        ProcessBinaryCondition(unwrapped, sourceCode, sink);
+        return GetIdentifierName(operands.left, ctx);
     }
-    else if (sym == gs.symUnaryExpression)
+    if (IsNullInitializer(operands.left, &ctx.index))
     {
-        ProcessUnaryCondition(unwrapped, sourceCode, sink);
+        return GetIdentifierName(operands.right, ctx);
+    }
+    return {};
+}
+
+static NullConditionAssertions AssertionsFor(std::string name, bool isEquality)
+{
+    if (name.empty())
+    {
+        return {};
+    }
+    return {{{name, isEquality ? Nullability::DefinitelyNull : Nullability::NonNull}},
+            {{std::move(name), isEquality ? Nullability::NonNull : Nullability::DefinitelyNull}}};
+}
+
+static void AppendAssertions(std::vector<NullAssertion>& target, std::vector<NullAssertion>& source)
+{
+    target.insert(target.end(), std::make_move_iterator(source.begin()), std::make_move_iterator(source.end()));
+}
+
+static void KeepCommonAssertions(std::vector<NullAssertion>& left, const std::vector<NullAssertion>& right)
+{
+    std::erase_if(left,
+                  [&](const NullAssertion& item)
+                  {
+                      return std::ranges::none_of(
+                          right, [&](const NullAssertion& other)
+                          { return item.varName == other.varName && item.state == other.state; });
+                  });
+}
+
+const NullConditionAssertions& NullConditionWorklist::Remember(TSNode condition)
+{
+    const TSNode node = UnwrapNullExpression(condition, m_ctx.index);
+    if (ts_node_is_null(node))
+    {
+        static const NullConditionAssertions empty;
+        return empty;
+    }
+    const NodeKey key{node.id, ts_node_start_byte(node)};
+    auto assertions = Take(node);
+    return m_summaries.try_emplace(key, std::move(assertions)).first->second;
+}
+
+NullConditionAssertions NullConditionWorklist::Take(TSNode condition)
+{
+    m_pending.push_back({NullConditionAction::Evaluate, condition});
+    while (!m_pending.empty())
+    {
+        const NullConditionWork work = m_pending.back();
+        m_pending.pop_back();
+        if (work.action == NullConditionAction::Evaluate)
+        {
+            Evaluate(work.node);
+        }
+        else if (work.action == NullConditionAction::Negate)
+        {
+            auto& value = m_values.back();
+            value.positive.swap(value.negative);
+        }
+        else
+        {
+            Merge(work.action == NullConditionAction::And);
+        }
+    }
+    auto result = std::move(m_values.back());
+    m_values.pop_back();
+    return result;
+}
+
+void NullConditionWorklist::Merge(bool isAnd)
+{
+    auto right = std::move(m_values.back());
+    m_values.pop_back();
+    auto& left = m_values.back();
+    if (isAnd)
+    {
+        AppendAssertions(left.positive, right.positive);
     }
     else
     {
-        std::string name = GetIdentifierName(unwrapped, sourceCode);
-        if (!name.empty())
+        KeepCommonAssertions(left.positive, right.positive);
+    }
+    AppendAssertions(left.negative, right.negative);
+}
+
+void NullConditionWorklist::EvaluateBinary(TSNode node)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    const auto operands = ReadBinaryOperands(node, &m_ctx.index);
+    if (!operands.Complete())
+    {
+        m_values.emplace_back();
+        return;
+    }
+    const auto op = ts_node_symbol(operands.op);
+    if (op == gs.tokIs || op == gs.tokEqEq || op == gs.tokBangIs || op == gs.tokBangEq)
+    {
+        m_values.push_back(
+            AssertionsFor(ExtractNullComparedIdentifier(operands, m_ctx), op == gs.tokIs || op == gs.tokEqEq));
+        return;
+    }
+    const bool isAnd = op == gs.tokAmpAmp || op == gs.tokAnd;
+    if (isAnd || op == gs.tokPipePipe || op == gs.tokOr)
+    {
+        m_pending.push_back({isAnd ? NullConditionAction::And : NullConditionAction::Or});
+        m_pending.push_back({NullConditionAction::Evaluate, operands.right});
+        m_pending.push_back({NullConditionAction::Evaluate, operands.left});
+        return;
+    }
+    m_values.emplace_back();
+}
+
+void NullConditionWorklist::Evaluate(TSNode condition)
+{
+    const TSNode node = UnwrapNullExpression(condition, m_ctx.index);
+    if (ts_node_is_null(node))
+    {
+        m_values.emplace_back();
+        return;
+    }
+    if (const auto it = m_summaries.find(NodeKey{node.id, ts_node_start_byte(node)}); it != m_summaries.end())
+    {
+        m_values.push_back(std::move(it->second));
+        m_summaries.erase(it);
+        return;
+    }
+    const auto& gs = parser::GetGrammarSymbols();
+    const auto symbol = ts_node_symbol(node);
+    if (symbol == gs.symBinaryExpression)
+    {
+        EvaluateBinary(node);
+    }
+    else if (symbol == gs.symUnaryExpression)
+    {
+        const SyntaxOperands syntax(node, &m_ctx.index);
+        if (syntax.HasUnaryOperator(gs.tokBang) || syntax.HasUnaryOperator(gs.tokNot))
         {
-            sink.positive.push_back({name, Nullability::NonNull});
-            sink.negative.push_back({name, Nullability::DefinitelyNull});
+            m_pending.push_back({NullConditionAction::Negate});
+            m_pending.push_back({NullConditionAction::Evaluate, syntax.Field(gs.fieldOperand)});
         }
+        else
+        {
+            m_values.emplace_back();
+        }
+    }
+    else
+    {
+        m_values.push_back(AssertionsFor(ReadUnwrappedIdentifier(node, m_ctx.sourceCode), false));
     }
 }
 

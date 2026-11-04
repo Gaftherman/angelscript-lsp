@@ -292,14 +292,9 @@ static const analysis::LocalDefinition* FindLocalDefinitionAtLine(const analysis
                                                                   const std::string& nodeText, uint32_t line,
                                                                   const analysis::Scope*& outDeclScope)
 {
-    size_t depth = 0;
-    ankerl::unordered_dense::set<const analysis::Scope*> visited;
-    for (const analysis::Scope* cur = innerScope; cur != nullptr; cur = cur->parent)
+    analysis::ScopeTraversalGuard guard;
+    for (const analysis::Scope* cur = innerScope; guard.CheckAndInsert(cur); cur = cur->parent)
     {
-        if (++depth > analysis::kMaxScopeDepth || !visited.insert(cur).second)
-        {
-            break;
-        }
         for (const auto& d : cur->definitions)
         {
             if (d.name == nodeText && line >= d.startLine && line <= d.endLine)
@@ -328,7 +323,6 @@ static void PopulateLocalTargetDescriptor(const analysis::LocalDefinition& match
         if (IsDeclaredInFunctionScope(declScope))
         {
             target.kind = TargetKind::Local;
-            target.definingScope = declScope;
             target.localDef = matchedDef;
             target.localUri = request.uri;
         }
@@ -366,16 +360,16 @@ static void ResolveLocalTarget(const std::shared_ptr<const analysis::Scope>& roo
         const uint32_t cursorByte =
             !ts_node_is_null(request.outNode) ? ts_node_start_byte(request.outNode) : UINT32_MAX;
         matchedDef = analysis::ResolveInScopeAt(innerScope, nodeText, cursorByte, &declScope, false);
-        if (matchedDef && !declScope)
-        {
-            declScope = analysis::FindScopeDeclaringDefinition(rootScope.get(), *matchedDef);
-        }
     }
     if (!matchedDef || !declScope)
     {
         return;
     }
     PopulateLocalTargetDescriptor(*matchedDef, declScope, request, target);
+    if (target.kind == TargetKind::Local)
+    {
+        target.definingScope = std::shared_ptr<const Scope>(rootScope, declScope);
+    }
 }
 
 /**
@@ -1027,6 +1021,85 @@ static bool ResolveGlobalScopedTarget(const ResolveTargetRequest& request, const
     return false;
 }
 
+std::shared_ptr<const Symbol> ResolveIndexedCall(const SymbolTable& symbols, const Scope* root, uint32_t nameByte,
+                                                 const std::optional<CallBindingRevision>& revision)
+{
+    const auto* bindings = root ? root->GetCallBindings() : nullptr;
+    if (!bindings || !revision || !bindings->IsFrom(revision))
+    {
+        return {};
+    }
+    const auto* binding = bindings->Find(nameByte);
+    if (!binding)
+    {
+        return {};
+    }
+    const auto candidates = symbols.FindSymbolsPtr(binding->qualifiedName);
+    if (!candidates)
+    {
+        return {};
+    }
+    for (const auto& symbol : *candidates)
+    {
+        if (symbol.type == SymbolType::Function && !symbol.isSynthesized && binding->Matches(symbol))
+        {
+            return {candidates, &symbol};
+        }
+    }
+    return {};
+}
+
+static bool ResolveTargetFromCall(const ResolveTargetRequest& request, const Scope* root, TargetDescriptor& target)
+{
+    if (!request.useCallBindings)
+    {
+        return false;
+    }
+    const auto symbol =
+        ResolveIndexedCall(request.symbolTable, root, ts_node_start_byte(request.outNode), request.callBindingRevision);
+    if (!symbol || symbol->name != target.name)
+    {
+        return false;
+    }
+    AssignTargetFromContainerKind(*symbol, target);
+    ApplyFunctionSignature(target, symbol->GetFunction());
+    target.callDeclaration.emplace(*symbol);
+    if (target.kind == TargetKind::ClassMember)
+    {
+        target.access = symbol->GetFunction().modifiers.access;
+        target.relatedClasses =
+            GetCompatibleMemberClasses(target.declaringClass, target.name, target.access, request.symbolTable);
+    }
+    return true;
+}
+
+static void CaptureCallDeclaration(TargetDescriptor& target, const ResolveTargetRequest& request)
+{
+    if (!request.useCallBindings || !target.isFunction)
+    {
+        return;
+    }
+    const auto start = ts_node_start_point(request.outNode);
+    const auto end = ts_node_end_point(request.outNode);
+    const SourceRange selection{start.row, start.column, end.row, end.column};
+    const auto query = target.kind == TargetKind::ClassMember
+                           ? utils::JoinScopedName(target.declaringClass, target.name)
+                           : (target.qualifiedName.empty() ? target.name : target.qualifiedName);
+    if (const auto candidates = request.symbolTable.FindSymbolsPtr(query))
+    {
+        for (const auto& symbol : *candidates)
+        {
+            if (symbol.type == SymbolType::Function && symbol.fileUri == request.uri &&
+                symbol.selectionRange == selection && !symbol.isSynthesized)
+            {
+                target.callDeclaration.emplace(symbol);
+                ApplyFunctionSignature(target, symbol.GetFunction());
+                return;
+            }
+        }
+    }
+}
+
 std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& request)
 {
     if (request.logger && request.logger->IsDebugEnabled())
@@ -1041,10 +1114,15 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& reques
         return std::nullopt;
     }
 
-    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+    auto rootScope = request.useCallBindings ? request.scopeIndex.GetOccurrenceRoot(request.uri)
+                                             : request.scopeIndex.GetRoot(request.uri);
 
     TargetDescriptor target;
     target.name = nodeText;
+    if (ResolveTargetFromCall(request, rootScope.get(), target))
+    {
+        return target;
+    }
 
     const auto gsq = parser::GetGlobalScopeQualifier(request.outNode, request.sourceCode);
     if (gsq.isGlobal)
@@ -1077,6 +1155,7 @@ std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& reques
 
     FunctionArgConstraints callInfo = GetCallArgumentConstraints(request.outNode);
     ResolveTargetSignature(target, request, callInfo);
+    CaptureCallDeclaration(target, request);
 
     return target;
 }
@@ -1105,6 +1184,11 @@ static SymbolSpan GetSymbolSpan(const analysis::Symbol& sym) noexcept
  */
 static bool FunctionMatchesTarget(const analysis::Symbol& sym, const TargetDescriptor& target)
 {
+    if (target.callDeclaration &&
+        (target.kind != TargetKind::ClassMember || target.callDeclaration->qualifiedName == sym.qualifiedName))
+    {
+        return target.callDeclaration->Matches(sym);
+    }
     if (!target.isFunction)
     {
         return true;
@@ -1187,7 +1271,7 @@ static void CollectLocalOccurrences(const TargetDescriptor& target, bool include
         return;
     }
 
-    std::vector<std::pair<const analysis::Scope*, bool>> stack{{target.definingScope, true}};
+    std::vector<std::pair<const analysis::Scope*, bool>> stack{{target.definingScope.get(), true}};
     while (!stack.empty())
     {
         auto [scope, isRoot] = stack.back();
@@ -1519,6 +1603,25 @@ static bool IsClassMemberReferenceMatch(const analysis::LocalReference& ref, con
     return CheckImplicitMemberAccess(ref, scope, relatedSet, ctx);
 }
 
+static bool IsBoundCallOccurrence(const Scope& root, const LocalReference& ref, const TargetDescriptor& target)
+{
+    const auto* bindings = root.GetCallBindings();
+    if (!target.callDeclaration || !ref.isCall || !bindings)
+    {
+        return false;
+    }
+    const auto* bound = bindings->Find(ref.startByte);
+    return bound &&
+           (target.kind != TargetKind::ClassMember || target.callDeclaration->qualifiedName == bound->qualifiedName);
+}
+
+static bool IsUnboundSearchCandidate(const Scope& root, const LocalReference& ref, const OccurrenceScanContext& ctx)
+{
+    return ref.name == ctx.request.target.name &&
+           !ctx.declRanges.contains({ctx.fileUri, ref.startLine, ref.startCharacter}) &&
+           !IsBoundCallOccurrence(root, ref, ctx.request.target) && MatchesCallArguments(ref, ctx.request.target);
+}
+
 /**
  * @brief Scans a document scope tree for class member occurrences.
  * @param[in] root Document root scope.
@@ -1541,12 +1644,7 @@ static void ScanDocumentForClassMember(const analysis::Scope* root,
 
         for (const auto& ref : s->references)
         {
-            if (ref.name != ctx.request.target.name ||
-                ctx.declRanges.contains({ctx.fileUri, ref.startLine, ref.startCharacter}))
-            {
-                continue;
-            }
-            if (!MatchesCallArguments(ref, ctx.request.target))
+            if (!IsUnboundSearchCandidate(*root, ref, ctx))
             {
                 continue;
             }
@@ -1596,7 +1694,7 @@ static void CollectClassMemberOccurrences(const CollectOccurrencesRequest& reque
     auto allUris = GetAllIndexedFileUris(request.symbolTable, request.currentUri);
     for (const auto& fileUri : allUris)
     {
-        auto docScopeRoot = request.scopeIndex.GetRoot(fileUri);
+        auto docScopeRoot = request.scopeIndex.GetOccurrenceRoot(fileUri, request.occurrenceModule);
         if (!docScopeRoot)
         {
             continue;
@@ -1609,30 +1707,6 @@ static void CollectClassMemberOccurrences(const CollectOccurrencesRequest& reque
         };
         ScanDocumentForClassMember(docScopeRoot.get(), relatedSet, ctx);
     }
-}
-
-/**
- * @brief Checks whether a local definition in scope shadows a global or namespace symbol.
- * @param[in] scope Current lexical scope.
- * @param[in] name Symbol identifier name.
- * @param[in] root Root scope of document.
- * @return True if shadowed by a function-local variable or parameter.
- */
-static bool IsShadowedInFunctionScope(const analysis::Scope* scope, const std::string& name,
-                                      const analysis::Scope* root)
-{
-    const analysis::LocalDefinition* localDef = analysis::ResolveInScope(scope, name);
-    if (!localDef)
-    {
-        return false;
-    }
-    if (localDef->kind != analysis::LocalDefinitionKind::Parameter &&
-        localDef->kind != analysis::LocalDefinitionKind::Variable)
-    {
-        return false;
-    }
-    const analysis::Scope* defScope = analysis::FindScopeDeclaringDefinition(root, *localDef);
-    return defScope && IsDeclaredInFunctionScope(defScope);
 }
 
 /**
@@ -1670,52 +1744,6 @@ static void CollectDeclarations(const std::string& symQuery, const CollectOccurr
 }
 
 /**
- * @brief Checks if a scope reference is preceded by a matching target namespace qualifier.
- * @param[in] ref Reference to check.
- * @param[in] scope Lexical scope.
- * @param[in] targetNs Declaring namespace name.
- * @return True if qualified by target namespace.
- */
-static bool MatchesScopeNamespaceQualifier(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                                           std::string_view targetNs)
-{
-    if (!scope || targetNs.empty())
-    {
-        return false;
-    }
-    for (const auto& candRef : scope->references)
-    {
-        if (candRef.startLine == ref.startLine && candRef.endCharacter <= ref.startCharacter)
-        {
-            if (candRef.name == targetNs || EndsWithScopedSuffix(candRef.name, targetNs) ||
-                EndsWithScopedSuffix(targetNs, candRef.name))
-            {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Checks if an AST reference node is enclosed in a matching scoped_identifier.
- * @param[in] ref Reference to check.
- * @param[in] ctx Occurrence scan context.
- * @return True if qualified name matches target.
- */
-static bool MatchesAstScopedIdentifier(const analysis::LocalReference& ref, const OccurrenceScanContext& ctx)
-{
-    if (ctx.fileUri != ctx.request.currentUri || !ref.isScopedIdentifier ||
-        ref.qualifierStartByte >= ref.qualifierEndByte || ref.qualifierEndByte > ctx.request.sourceCode.size())
-    {
-        return false;
-    }
-    return std::string_view(ctx.request.sourceCode)
-               .substr(ref.qualifierStartByte, ref.qualifierEndByte - ref.qualifierStartByte) ==
-           ctx.request.target.qualifiedName;
-}
-
-/**
  * @brief Checks whether a reference is enclosed within a namespace region or explicitly scoped.
  * @param[in] ref Reference to check.
  * @param[in] nsRanges Line ranges of declaring namespace.
@@ -1727,18 +1755,13 @@ static bool IsRefInsideNamespace(const analysis::LocalReference& ref,
                                  const std::vector<std::pair<uint32_t, uint32_t>>& nsRanges,
                                  const OccurrenceScanContext& ctx, const analysis::Scope* scope)
 {
-    for (const auto& nr : nsRanges)
+    const auto qualifier = GetIndexedReferenceQualifier(ref, *scope);
+    if (ref.isMemberAccess || !qualifier.empty())
     {
-        if (ref.startLine >= nr.first && ref.startLine <= nr.second && !ref.isMemberAccess)
-        {
-            return true;
-        }
+        return MatchesReferenceQualifier(qualifier, ctx.request.target.declaringNamespace, *scope);
     }
-    if (MatchesScopeNamespaceQualifier(ref, scope, ctx.request.target.declaringNamespace))
-    {
-        return true;
-    }
-    return MatchesAstScopedIdentifier(ref, ctx);
+    return std::ranges::any_of(nsRanges, [&](const auto& range)
+                               { return ref.startLine >= range.first && ref.startLine <= range.second; });
 }
 
 /**
@@ -1763,12 +1786,7 @@ static void ScanDocumentForNamespace(const analysis::Scope* root,
 
         for (const auto& ref : s->references)
         {
-            if (ref.name != ctx.request.target.name ||
-                ctx.declRanges.contains({ctx.fileUri, ref.startLine, ref.startCharacter}))
-            {
-                continue;
-            }
-            if (!MatchesCallArguments(ref, ctx.request.target))
+            if (!IsUnboundSearchCandidate(*root, ref, ctx))
             {
                 continue;
             }
@@ -1776,7 +1794,7 @@ static void ScanDocumentForNamespace(const analysis::Scope* root,
             {
                 continue;
             }
-            if (IsShadowedInFunctionScope(s, ctx.request.target.name, root))
+            if (analysis::IsShadowedByFunctionLocal(s, ctx.request.target.name))
             {
                 continue;
             }
@@ -1806,7 +1824,7 @@ static void CollectNamespaceOccurrences(const CollectOccurrencesRequest& request
     auto allUris = GetAllIndexedFileUris(request.symbolTable, request.currentUri);
     for (const auto& fileUri : allUris)
     {
-        auto docScopeRoot = request.scopeIndex.GetRoot(fileUri);
+        auto docScopeRoot = request.scopeIndex.GetOccurrenceRoot(fileUri, request.occurrenceModule);
         if (!docScopeRoot)
         {
             continue;
@@ -1844,16 +1862,11 @@ static void ScanDocumentForGlobal(const analysis::Scope* root, OccurrenceScanCon
 
         for (const auto& ref : s->references)
         {
-            if (ref.name != ctx.request.target.name || ref.isMemberAccess ||
-                ctx.declRanges.contains({ctx.fileUri, ref.startLine, ref.startCharacter}))
+            if (ref.isMemberAccess || !IsUnboundSearchCandidate(*root, ref, ctx))
             {
                 continue;
             }
-            if (!MatchesCallArguments(ref, ctx.request.target))
-            {
-                continue;
-            }
-            if (IsShadowedInFunctionScope(s, ctx.request.target.name, root))
+            if (analysis::IsShadowedByFunctionLocal(s, ctx.request.target.name))
             {
                 continue;
             }
@@ -1883,7 +1896,7 @@ static void CollectGlobalOccurrences(const CollectOccurrencesRequest& request, O
     auto allUris = GetAllIndexedFileUris(request.symbolTable, request.currentUri);
     for (const auto& fileUri : allUris)
     {
-        auto docScopeRoot = request.scopeIndex.GetRoot(fileUri);
+        auto docScopeRoot = request.scopeIndex.GetOccurrenceRoot(fileUri, request.occurrenceModule);
         if (!docScopeRoot)
         {
             continue;
@@ -1896,73 +1909,6 @@ static void CollectGlobalOccurrences(const CollectOccurrencesRequest& request, O
         };
         ScanDocumentForGlobal(docScopeRoot.get(), ctx);
     }
-}
-
-/**
- * @brief Checks if an AST reference node matches the target enum member qualification.
- * @param[in] ref Local reference.
- * @param[in] ctx Occurrence scan context.
- * @return True/false if definitive AST match/mismatch determined, or std::nullopt.
- */
-static std::optional<bool> CheckAstEnumMemberMatch(const analysis::LocalReference& ref,
-                                                   const OccurrenceScanContext& ctx)
-{
-    if (ctx.fileUri != ctx.request.currentUri)
-    {
-        return std::nullopt;
-    }
-    if (ref.isScopedIdentifier && ref.qualifierStartByte < ref.qualifierEndByte &&
-        ref.qualifierEndByte <= ctx.request.sourceCode.size())
-    {
-        std::string_view scoped = std::string_view(ctx.request.sourceCode)
-                                      .substr(ref.qualifierStartByte, ref.qualifierEndByte - ref.qualifierStartByte);
-        if (utils::ContainsScopeSeparator(scoped))
-        {
-            if (scoped == ctx.request.target.qualifiedName ||
-                MatchesScopedPair(scoped, ctx.request.target.declaringEnum, ctx.request.target.name))
-            {
-                return true;
-            }
-            const auto [qualifier, name] = utils::SplitScopedName(scoped);
-            if (!qualifier.empty())
-            {
-                if (name == ctx.request.target.name &&
-                    EnumQualifierMatches(qualifier, ctx.request.target.declaringEnum))
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-    }
-    if (ref.isMemberAccess && !ref.isScopedIdentifier)
-    {
-        return false;
-    }
-    return std::nullopt;
-}
-
-/**
- * @brief Checks if a member access reference has a preceding qualifier matching declaringEnum.
- * @param[in] ref Local reference.
- * @param[in] scope Scope containing candidate references.
- * @param[in] declaringEnum Declaring enum qualified name.
- * @return True if qualified by the declaring enum.
- */
-static bool HasPrecedingEnumQualifier(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                                      std::string_view declaringEnum)
-{
-    for (const auto& candRef : scope->references)
-    {
-        if (candRef.startLine == ref.startLine && candRef.endCharacter <= ref.startCharacter)
-        {
-            if (EnumQualifierMatches(candRef.name, declaringEnum))
-            {
-                return true;
-            }
-        }
-    }
-    return false;
 }
 
 static bool MatchesDeclaringNamespace(const analysis::LocalReference& ref, std::string_view declaringNamespace,
@@ -2000,8 +1946,7 @@ static bool MatchesDeclaringNamespace(const analysis::LocalReference& ref, std::
 static bool IsUnscopedEnumMemberMatch(const analysis::LocalReference& ref, const analysis::Scope* scope,
                                       const OccurrenceScanContext& ctx)
 {
-    auto docScopeRoot = ctx.request.scopeIndex.GetRoot(ctx.fileUri);
-    if (docScopeRoot && IsShadowedInFunctionScope(scope, ctx.request.target.name, docScopeRoot.get()))
+    if (analysis::IsShadowedByFunctionLocal(scope, ctx.request.target.name))
     {
         return false;
     }
@@ -2045,25 +1990,10 @@ static bool IsUnscopedEnumMemberMatch(const analysis::LocalReference& ref, const
 static bool IsEnumMemberReferenceMatch(const analysis::LocalReference& ref, const analysis::Scope* scope,
                                        const OccurrenceScanContext& ctx)
 {
-    if (ctx.fileUri == ctx.request.currentUri)
+    const auto qualifier = GetIndexedReferenceQualifier(ref, *scope);
+    if (ref.isMemberAccess || !qualifier.empty())
     {
-        if (ref.isScopedIdentifier && !ref.GetScopeQualifier(ctx.request.sourceCode).empty())
-        {
-            return EnumQualifierMatches(ref.GetScopeQualifier(ctx.request.sourceCode),
-                                        ctx.request.target.declaringEnum);
-        }
-        auto astMatch = CheckAstEnumMemberMatch(ref, ctx);
-        if (astMatch.has_value())
-        {
-            return *astMatch;
-        }
-    }
-    if (ref.isMemberAccess || ref.isScopedIdentifier)
-    {
-        if (HasPrecedingEnumQualifier(ref, scope, ctx.request.target.declaringEnum))
-        {
-            return true;
-        }
+        return MatchesEnumReferenceQualifier(qualifier, ctx.request.target.declaringEnum, *scope);
     }
     return IsUnscopedEnumMemberMatch(ref, scope, ctx);
 }
@@ -2139,7 +2069,7 @@ static void CollectEnumMemberOccurrences(const CollectOccurrencesRequest& reques
     auto allUris = GetAllIndexedFileUris(request.symbolTable, request.currentUri);
     for (const auto& fileUri : allUris)
     {
-        auto docScopeRoot = request.scopeIndex.GetRoot(fileUri);
+        auto docScopeRoot = request.scopeIndex.GetOccurrenceRoot(fileUri, request.occurrenceModule);
         if (!docScopeRoot)
         {
             continue;
@@ -2154,6 +2084,22 @@ static void CollectEnumMemberOccurrences(const CollectOccurrencesRequest& reques
     }
 }
 
+static void CollectBoundCallOccurrences(const CollectOccurrencesRequest& request, OccurrenceCollector& collector)
+{
+    if (!request.target.callDeclaration)
+    {
+        return;
+    }
+    request.scopeIndex.ForEachBoundUse(*request.target.callDeclaration, request.occurrenceModule,
+                                       [&](const std::string& uri, std::span<const SourceRange> ranges)
+                                       {
+                                           for (const auto& use : ranges)
+                                           {
+                                               collector.Add(uri, use);
+                                           }
+                                       });
+}
+
 std::vector<OccurrenceLocation> CollectOccurrences(const CollectOccurrencesRequest& request)
 {
     if (request.logger && request.logger->IsDebugEnabled())
@@ -2164,6 +2110,7 @@ std::vector<OccurrenceLocation> CollectOccurrences(const CollectOccurrencesReque
     }
 
     OccurrenceCollector collector;
+    CollectBoundCallOccurrences(request, collector);
 
     if (request.target.kind == TargetKind::Local)
     {

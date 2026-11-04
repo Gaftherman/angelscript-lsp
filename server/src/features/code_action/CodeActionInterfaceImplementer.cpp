@@ -3,10 +3,13 @@
  * @brief Quick-fix provider for generating missing interface method implementations in classes.
  */
 
+#include "analysis/documentation/SignatureFormatter.h"
+#include "analysis/resolution/InterfaceImplementation.h"
 #include "analysis/types/TypeSanitization.h"
 #include "config/ServerConfig.h"
 #include "features/code_action/CodeActionInternal.h"
 #include "parser/ASTUtils.h"
+#include "parser/Primitives.h"
 
 namespace angel_lsp::features
 {
@@ -31,9 +34,7 @@ static std::string GetDefaultReturnValue(std::string_view returnType, std::strin
     {
         return "\"\"";
     }
-    static const ankerl::unordered_dense::set<std::string_view> kNumericTypes = {
-        "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64", "float", "double"};
-    return kNumericTypes.contains(cleanRet) ? "0" : "null";
+    return parser::primitives::IsNumeric(cleanRet) ? "0" : "";
 }
 
 /**
@@ -62,15 +63,9 @@ static std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis:
                 stubs += ", ";
             }
             const auto& param = fn.parameters[p];
-            stubs += param.typeName;
-            if (!param.name.empty())
-            {
-                stubs += " " + param.name;
-            }
-            if (!param.defaultValue.empty())
-            {
-                stubs += " = " + param.defaultValue;
-            }
+            auto parameter = param;
+            parameter.defaultValue.clear();
+            stubs += analysis::FormatParameter(parameter);
         }
         stubs += ")";
         if (fn.modifiers.isConst)
@@ -80,72 +75,16 @@ static std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis:
         stubs += " override\n    {\n";
         if (ret != "void")
         {
-            stubs += "        return " + GetDefaultReturnValue(ret, stringTypeName) + ";\n";
+            const auto value = GetDefaultReturnValue(ret, stringTypeName);
+            if (value.empty() || fn.modifiers.isReturnReference)
+            {
+                return {};
+            }
+            stubs += "        return " + value + ";\n";
         }
         stubs += "    }\n";
     }
     return stubs;
-}
-
-/**
- * @brief Identifies which interface methods are not implemented by a class.
- * @param[in] className Name of implementing class.
- * @param[in] cleanIface Cleaned interface type name.
- * @param[in] table Symbol table.
- * @return Vector of missing interface method symbols.
- */
-static std::vector<analysis::Symbol> CollectMissingInterfaceMethods(const std::string& className,
-                                                                    const std::string& cleanIface,
-                                                                    const analysis::SymbolTable& table)
-{
-    auto ifaceHierarchy = analysis::GetInheritedTypeHierarchy(cleanIface, table);
-    if (ifaceHierarchy.empty())
-    {
-        return {};
-    }
-
-    std::vector<analysis::Symbol> ifaceMethods;
-    std::vector<analysis::Symbol> classMethods;
-    const ankerl::unordered_dense::set<std::string> ifaceSet(ifaceHierarchy.begin(), ifaceHierarchy.end());
-    table.ForEachSymbol(
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& mSyms)
-        {
-            for (const auto& m : mSyms)
-            {
-                if (m.type != analysis::SymbolType::Function)
-                {
-                    continue;
-                }
-                if (ifaceSet.contains(m.containerName))
-                {
-                    ifaceMethods.push_back(m);
-                }
-                else if (m.containerName == className)
-                {
-                    classMethods.push_back(m);
-                }
-            }
-        });
-
-    std::vector<analysis::Symbol> missingMethods;
-    for (const auto& ifMethod : ifaceMethods)
-    {
-        bool implemented = false;
-        for (const auto& cMethod : classMethods)
-        {
-            if (cMethod.name == ifMethod.name &&
-                cMethod.GetFunction().parameters.size() == ifMethod.GetFunction().parameters.size())
-            {
-                implemented = true;
-                break;
-            }
-        }
-        if (!implemented)
-        {
-            missingMethods.push_back(ifMethod);
-        }
-    }
-    return missingMethods;
 }
 
 /**
@@ -250,22 +189,28 @@ void TryAddImplementInterfaceFixes(const CodeActionRequest& request, TSNode root
                     continue;
                 }
 
-                const auto& cls = clsSym.GetClass();
-                for (const auto& baseName : cls.bases)
+                const auto missing = analysis::FindMissingInterfaceMethods(clsSym, request.symbolTable);
+                ankerl::unordered_dense::map<std::string, std::vector<analysis::Symbol>> byInterface;
+                ankerl::unordered_dense::set<std::string> blocked;
+                for (const auto& entry : missing)
                 {
-                    std::string cleanIface = analysis::CleanBaseType(baseName);
-                    if (cleanIface.empty())
+                    if (!entry.canOverride)
+                    {
+                        blocked.insert(entry.interfaceName);
+                    }
+                    byInterface[entry.interfaceName].push_back(entry.method);
+                }
+                for (const auto& [cleanIface, methods] : byInterface)
+                {
+                    if (blocked.contains(cleanIface))
                     {
                         continue;
                     }
-
-                    auto missingMethods = CollectMissingInterfaceMethods(clsSym.name, cleanIface, request.symbolTable);
-                    if (missingMethods.empty())
+                    auto stubs = FormatMissingInterfaceMethodStubs(methods, strType);
+                    if (stubs.empty())
                     {
                         continue;
                     }
-
-                    std::string stubs = FormatMissingInterfaceMethodStubs(missingMethods, strType);
                     lsp::Position insertPos = FindClassInterfaceInsertionPosition(rootNode, clsSym);
 
                     lsp::CodeAction action;

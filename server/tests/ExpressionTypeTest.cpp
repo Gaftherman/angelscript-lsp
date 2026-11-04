@@ -1,4 +1,5 @@
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/resolution/SemanticHelpers.h"
@@ -12,6 +13,16 @@ using namespace angel_lsp::parser;
 
 namespace
 {
+
+std::string CheckIndexedType(TSNode expr, ExpressionTypeContext context, const NodeIndex& index)
+{
+    const auto withoutIndex = ResolveExpressionType(expr, context);
+    context.nodeIndex = &index;
+    const auto withIndex = ResolveExpressionType(expr, context);
+    INFO("Expression starts at byte " << ts_node_start_byte(expr));
+    CHECK(withIndex == withoutIndex);
+    return withIndex;
+}
 
 /**
  * @brief Helper to parse code and deduce the expression type for the first expression statement in main().
@@ -32,6 +43,7 @@ std::string DeduceTypeInMain(const std::string& code)
     if (tree)
     {
         TSNode root = ts_tree_root_node(tree);
+        const NodeIndex index(root);
         // Search for the last expression_statement or return_statement in main
         uint32_t count = ts_node_named_child_count(root);
         for (uint32_t i = 0; i < count; ++i)
@@ -52,16 +64,16 @@ std::string DeduceTypeInMain(const std::string& code)
                             TSNode expr = ts_node_named_child(stmt, 0);
                             TSPoint pt = ts_node_start_point(expr);
                             const Scope* innerScope = FindInnermostScope(scopeRoot.get(), pt.row, pt.column);
-                            result = ResolveExpressionType(
-                                expr, {innerScope ? innerScope : scopeRoot.get(), table, code, fileUri});
+                            result = CheckIndexedType(
+                                expr, {innerScope ? innerScope : scopeRoot.get(), table, code, fileUri}, index);
                         }
                         else if (stmtType == "return_statement" && ts_node_named_child_count(stmt) > 0)
                         {
                             TSNode expr = ts_node_named_child(stmt, 0);
                             TSPoint pt = ts_node_start_point(expr);
                             const Scope* innerScope = FindInnermostScope(scopeRoot.get(), pt.row, pt.column);
-                            result = ResolveExpressionType(
-                                expr, {innerScope ? innerScope : scopeRoot.get(), table, code, fileUri});
+                            result = CheckIndexedType(
+                                expr, {innerScope ? innerScope : scopeRoot.get(), table, code, fileUri}, index);
                         }
                     }
                 }
@@ -75,6 +87,29 @@ std::string DeduceTypeInMain(const std::string& code)
 
 TEST_SUITE("ExpressionTypeDeduction")
 {
+    TEST_CASE("Captured operands resolve a global binary chain outside callable bodies")
+    {
+        std::string code = "double total = 0.5";
+        for (size_t i = 0; i < 2500; ++i)
+        {
+            code += " + 1";
+        }
+        code += ";";
+
+        const std::string uri = "file:///global_expression_operands.as";
+        const auto doc = angel_lsp::test::CreateTestDocument(uri, code);
+        REQUIRE(doc->GetTree() != nullptr);
+        const TSNode root = ts_tree_root_node(doc->GetTree());
+        const NodeIndex index(root);
+        const auto binaries = index.Nodes(GetGrammarSymbols().symBinaryExpression);
+        REQUIRE(binaries.size() == 2500);
+        REQUIRE(index.FindOperandSyntax(binaries.front()) != nullptr);
+        REQUIRE(index.FindOperandSyntax(binaries.back()) != nullptr);
+
+        const SymbolTable table;
+        CHECK(CheckIndexedType(binaries.front(), {nullptr, table, code, uri, root}, index) == "double");
+    }
+
     TEST_CASE("Primitive Arithmetic Promotion")
     {
         CHECK(DeduceTypeInMain("void main() { 10 + 20; }") == "int");

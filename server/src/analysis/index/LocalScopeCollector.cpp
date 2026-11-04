@@ -927,48 +927,11 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
         ref.isMemberAccess =
             IsMemberAccessNode(capture.node, parent, m_gs.symMemberExpression, m_gs.symScopedIdentifier);
         DetermineCallReferenceInfo(capture.node, parent, grandparent, ref);
-        PopulateReceiverQualifierRanges(parent, ref);
-        if (ref.isMemberAccess && ts_node_symbol(parent) == m_gs.symMemberExpression)
-        {
-            const TSNode receiver = parser::GetChildByField(parent, m_gs.fieldObject);
-            const uint32_t id = IndexReceiverExpression(receiver, sourceCode, docCtx);
-            if (id != UINT32_MAX)
-            {
-                docCtx.receivers->byReference.try_emplace(ref.startByte, id);
-            }
-        }
+        IndexReferenceReceiver(parent, sourceCode, ref, docCtx);
         EnrichReferenceContext(capture.node, parent, sourceCode, m_gs, ref, docCtx);
     }
 
     current->references.push_back(std::move(ref));
-}
-
-void LocalScopeCollector::PopulateReceiverQualifierRanges(TSNode parent, LocalReference& ref) const
-{
-    const TSSymbol parentSym = ts_node_symbol(parent);
-    if (parentSym == m_gs.symScopedIdentifier)
-    {
-        ref.isScopedIdentifier = true;
-        ref.qualifierStartByte = ts_node_start_byte(parent);
-        ref.qualifierEndByte = ts_node_end_byte(parent);
-        TSNode firstChild = ts_node_named_child(parent, 0);
-        if (!ts_node_is_null(firstChild))
-        {
-            ref.receiverStartByte = ts_node_start_byte(firstChild);
-            ref.receiverEndByte = ts_node_end_byte(firstChild);
-        }
-    }
-    else if (parentSym == m_gs.symMemberExpression)
-    {
-        ref.qualifierStartByte = ts_node_start_byte(parent);
-        ref.qualifierEndByte = ts_node_end_byte(parent);
-        TSNode objNode = parser::GetChildByField(parent, parser::GetGrammarSymbols().fieldObject);
-        if (!ts_node_is_null(objNode))
-        {
-            ref.receiverStartByte = ts_node_start_byte(objNode);
-            ref.receiverEndByte = ts_node_end_byte(objNode);
-        }
-    }
 }
 
 void LocalScopeCollector::ProcessStringCallRefCapture(const RawCapture& capture, Scope* current,

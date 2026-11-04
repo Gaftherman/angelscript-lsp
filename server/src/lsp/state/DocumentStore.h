@@ -43,6 +43,7 @@ class DocumentStore
         int version = 0;
         document::TreePtr tree = document::MakeTreePtr(nullptr);
         std::string clientUri;
+        std::shared_ptr<const std::string> transformedSource;
     };
 
     /**
@@ -76,7 +77,8 @@ class DocumentStore
      * @param version New document version.
      * @param tree Newly parsed syntax tree.
      */
-    void UpdateDocument(const std::string& uri, std::string text, int version, document::TreePtr tree);
+    void UpdateDocument(const std::string& uri, std::string text, int version, document::TreePtr tree,
+                        std::shared_ptr<const std::string> transformedSource = {});
 
     /**
      * @brief Removes a document when closed.

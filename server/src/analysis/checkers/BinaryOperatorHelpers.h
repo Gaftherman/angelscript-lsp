@@ -13,6 +13,23 @@
 
 namespace angel_lsp::analysis
 {
+/// Transient handles for the three indexed children of a binary expression.
+struct BinaryExpressionOperands
+{
+    TSNode op;
+    TSNode left;
+    TSNode right;
+
+    /// Reports whether the operator and both operands were present in the parsed revision.
+    [[nodiscard]] bool Complete() const noexcept
+    {
+        return !ts_node_is_null(op) && !ts_node_is_null(left) && !ts_node_is_null(right);
+    }
+};
+
+/// Reads the binary operator and operands from the revision's direct child links.
+[[nodiscard]] BinaryExpressionOperands ReadBinaryOperands(TSNode node, const NodeIndex* index);
+
 /**
  * @brief Cleaned operand types for binary operations.
  */
@@ -160,7 +177,7 @@ bool IsKnownType(std::string_view type, const SymbolTable& table, std::string_vi
  * @param[in] type Resolved expression type name.
  * @return True if operand represents null.
  */
-bool IsNullOperand(TSNode node, std::string_view type);
+bool IsNullOperand(TSNode node, std::string_view type, const NodeIndex* index);
 
 /**
  * @brief Resolves cleaned left and right operand types for a binary expression.

@@ -2,6 +2,7 @@
 
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/resolution/InterfaceImplementation.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "document/Document.h"
@@ -132,90 +133,6 @@ static void CheckClassModifiers(const Symbol& sym, const ClassSignature& sig, co
 }
 
 /**
- * @brief Collects the method names a type actually provides, base *classes* included.
- */
-static ankerl::unordered_dense::set<std::string>
-CollectImplementedMethodNames(const std::string& typeName, const SymbolTable& table, const RuleIndex& index)
-{
-    ankerl::unordered_dense::set<std::string> names;
-
-    for (const auto& ancestor : GetInheritedTypeHierarchy(typeName, table))
-    {
-        const auto ancestorSymbols = table.FindSymbolsPtr(ancestor);
-        const bool isInterface =
-            ancestorSymbols && std::any_of(ancestorSymbols->begin(), ancestorSymbols->end(),
-                                           [](const Symbol& sym) { return sym.type == SymbolType::Interface; });
-        if (isInterface)
-        {
-            continue;
-        }
-
-        for (const auto& name : index.Members(ancestor).methodNames)
-        {
-            names.insert(name);
-        }
-    }
-    return names;
-}
-
-/**
- * @brief Collects all interfaces that must be checked for implementation.
- */
-static void CollectInterfacesToCheck(const std::vector<std::string>& bases, const SymbolTable& table,
-                                     ankerl::unordered_dense::set<std::string>& interfacesToCheck)
-{
-    for (const auto& baseName : bases)
-    {
-        const std::string cleanBase = CleanBaseType(baseName);
-        const auto baseSymbols = table.FindSymbolsPtr(cleanBase);
-        if (!baseSymbols)
-        {
-            continue;
-        }
-
-        for (const auto& base : *baseSymbols)
-        {
-            if (base.type == SymbolType::Interface)
-            {
-                interfacesToCheck.insert(cleanBase);
-            }
-            else if (base.type == SymbolType::Class && base.GetClass().modifiers.isMixin)
-            {
-                const auto mixinAncestors = GetInheritedTypeHierarchy(cleanBase, table);
-                for (const auto& ancestor : mixinAncestors)
-                {
-                    if (HasSymbolOfType(table, ancestor, SymbolType::Interface))
-                    {
-                        interfacesToCheck.insert(ancestor);
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * @brief Reports diagnostics for unimplemented interface methods.
- */
-static void ReportMissingInterfaceMethods(const Symbol& sym,
-                                          const ankerl::unordered_dense::set<std::string>& interfacesToCheck,
-                                          const ankerl::unordered_dense::set<std::string>& implemented,
-                                          const DiagnosticContext& ctx)
-{
-    for (const auto& cleanBase : interfacesToCheck)
-    {
-        for (const auto& methodName : ctx.request.GetRuleIndex().Members(cleanBase).methodNames)
-        {
-            if (!implemented.contains(methodName))
-            {
-                ctx.LogRule("CheckInterfaceImplementation", "as-err-interface-impl-missing", sym);
-                ctx.Emit(sym, "as-err-interface-impl-missing", {sym.name, methodName, cleanBase});
-            }
-        }
-    }
-}
-
-/**
  * @brief Reports interface methods a class declares nowhere in its hierarchy.
  */
 static void CheckInterfaceImplementation(const Symbol& sym, const ClassSignature& sig, const DiagnosticContext& ctx)
@@ -233,10 +150,11 @@ static void CheckInterfaceImplementation(const Symbol& sym, const ClassSignature
         return;
     }
 
-    const auto implemented = CollectImplementedMethodNames(container, table, ctx.request.GetRuleIndex());
-    ankerl::unordered_dense::set<std::string> interfacesToCheck;
-    CollectInterfacesToCheck(sig.bases, table, interfacesToCheck);
-    ReportMissingInterfaceMethods(sym, interfacesToCheck, implemented, ctx);
+    for (const auto& missing : FindMissingInterfaceMethods(sym, table))
+    {
+        ctx.LogRule("CheckInterfaceImplementation", "as-err-interface-impl-missing", sym);
+        ctx.Emit(sym, "as-err-interface-impl-missing", {sym.name, missing.method.name, missing.interfaceName});
+    }
 }
 
 /**

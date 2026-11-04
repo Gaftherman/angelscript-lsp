@@ -221,8 +221,6 @@ Layer isolation is strictly enforced by `server/scripts/check-layer-includes.py`
 | :--- | :--- | :--- |
 | `angelscript.server.executablePath` | `""` | Custom path to the `angel_lsp` executable binary. Disabled in untrusted workspaces. |
 | `angelscript.server.logLevel` | `"debug"` | Logging verbosity: `"error"`, `"warn"`, `"info"`, `"debug"`, or `"trace"`. |
-| `angelscript.statusBar.enabled` | `true` | Controls whether the AngelScript status bar item is visible. |
-| `angelscript.statusBar.alignment` | `"left"` | Alignment of the AngelScript status bar item (`"left"` or `"right"`). |
 | `angelscript.dimInactiveRegions` | `true` | Visually dims inactive preprocessor code blocks (`#if / #else / #endif`). |
 | `angelscript.inactiveRegionOpacity` | `0.55` | Opacity of dimmed inactive preprocessor regions (between `0.1` and `1.0`). |
 

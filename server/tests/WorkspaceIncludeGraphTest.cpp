@@ -467,3 +467,29 @@ TEST_CASE("WorkspaceIncludeGraph - Invariant: Randomized DAG topological orderin
         }
     }
 }
+
+TEST_CASE("Conditional includes are filtered on rebuild and update")
+{
+    GraphFixture fixture;
+    const auto define = angel_lsp::test::GenerateRandomSymbolName("FEATURE");
+    const std::string source = "#if " + define + "\n#include \"leaf.as\"\n#endif\n";
+    fixture.Write("main.as", source);
+    fixture.Write("leaf.as", "void Leaf() {}\n");
+
+    fixture.Build();
+    CHECK(fixture.graph.GetForwardClosure(fixture.Path("main.as")).size() == 1);
+    auto words = std::make_shared<ankerl::unordered_dense::set<std::string>>();
+    words->insert(define);
+    fixture.graph.UpdateFile({.filePath = fixture.Path("main.as"),
+                              .sourceCode = source,
+                              .searchDirectories = {},
+                              .allowedRoots = {fixture.Root()},
+                              .preprocessor = {words, {}}});
+    const auto closure = fixture.graph.GetForwardClosure(fixture.Path("main.as"));
+    CHECK(std::find(closure.begin(), closure.end(), fixture.Path("leaf.as")) != closure.end());
+    fixture.graph.UpdateFile({.filePath = fixture.Path("main.as"),
+                              .sourceCode = source,
+                              .searchDirectories = {},
+                              .allowedRoots = {fixture.Root()}});
+    CHECK(fixture.graph.GetForwardClosure(fixture.Path("main.as")).size() == 1);
+}

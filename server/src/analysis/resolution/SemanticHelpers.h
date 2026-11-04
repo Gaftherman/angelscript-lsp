@@ -82,29 +82,6 @@ enum class InitializerItemKind
 }
 
 /**
- * @brief Checks whether a definition's declaring scope is inside any function/method/lambda body.
- * @param[in] defScope Definition declaring scope.
- * @return True if enclosed within a function scope.
- */
-[[nodiscard]] inline bool IsDeclaredInFunctionScope(const Scope* defScope)
-{
-    size_t depth = 0;
-    ankerl::unordered_dense::set<const Scope*> visited;
-    for (const Scope* cur = defScope; cur != nullptr; cur = cur->parent)
-    {
-        if (++depth > kMaxScopeDepth || !visited.insert(cur).second)
-        {
-            break;
-        }
-        if (cur->isFunctionScope)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
  * @brief Extracts a non-allocating string_view corresponding to an AST node's byte range.
  * @param[in] node Tree-Sitter AST node.
  * @param[in] sourceCode Document source text buffer.
@@ -419,28 +396,6 @@ std::string_view FirstAttributeName(const SymbolModifiers& modifiers);
  *        The shape behind `void Foo(int) {}` followed by `Foo@ h`: the compiler answers "Identifier
  */
 bool NamesAFunctionNotAType(std::string_view name, const class SymbolTable& table);
-
-/**
- * @brief Checks whether an AST node is a bare data type identifier used in a value expression context.
- * @param node AST node to examine.
- * @param scope Local scope at the node, or nullptr.
- * @param symbolTable Symbol table for type and value lookup.
- * @param sourceCode Source text of the document.
- * @return Resolved data type name if the node is a bare data type without value semantics, or std::nullopt.
- */
-std::optional<std::string> IsBareDataType(TSNode node, const struct Scope* scope, const class SymbolTable& symbolTable,
-                                          std::string_view sourceCode);
-
-/**
- * @brief Checks if an expression denotes a bare function or method reference.
- * @param[in] node AST expression node.
- * @param[in] scope Lexical scope at the node, or nullptr.
- * @param[in] symbolTable Symbol table for symbol lookups.
- * @param[in] sourceCode Source text of the document.
- * @return True if the expression denotes a bare function or method without invocation.
- */
-bool IsFunctionReference(TSNode node, const struct Scope* scope, const class SymbolTable& symbolTable,
-                         std::string_view sourceCode);
 
 /**
  * @brief Whether `node` is the callee of a legal `super(...)` base-constructor call.

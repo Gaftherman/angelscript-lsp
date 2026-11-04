@@ -1,8 +1,10 @@
+#include "analysis/checkers/BinaryOperatorHelpers.h"
 #include "analysis/checkers/RepeatedConversionChecker.h"
 #include "features/code_action/CodeActionInternal.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "parser/Keywords.h"
+#include "parser/QueryRegistry.h"
 
 #include <cctype>
 #include <string>
@@ -61,6 +63,40 @@ static TSNode FindRootIfStatement(TSNode node)
     return parser::FindOutermostAncestorWithSymbol(node, gs.symIfStatement);
 }
 
+/// Reads the binary operands under the selected ladder's conditions on demand.
+static std::vector<TSNode> FindOccurrencesInIfLadder(TSNode rootIf, std::string_view exprText,
+                                                     std::string_view sourceCode)
+{
+    std::vector<TSNode> results;
+    const TSQuery* query = parser::QueryRegistry::GetBinaryExpressionQuery();
+    TSQueryCursor* cursor = parser::QueryRegistry::GetThreadLocalCursor();
+    if (exprText.empty() || !query || !cursor)
+    {
+        return results;
+    }
+
+    for (TSNode condition : analysis::CollectIfLadderConditions(rootIf, nullptr))
+    {
+        ts_query_cursor_exec(cursor, query, condition);
+        TSQueryMatch match;
+        while (ts_query_cursor_next_match(cursor, &match))
+        {
+            for (uint16_t i = 0; i < match.capture_count; ++i)
+            {
+                const auto operands = analysis::ReadBinaryOperands(match.captures[i].node, nullptr);
+                for (const TSNode operand : {operands.left, operands.right})
+                {
+                    if (!ts_node_is_null(operand) && parser::GetNodeTextView(operand, sourceCode) == exprText)
+                    {
+                        results.push_back(operand);
+                    }
+                }
+            }
+        }
+    }
+    return results;
+}
+
 static void BuildCodeActionEdits(TSNode rootIf, const ExtractedDiagInfo& info, const CodeActionRequest& request,
                                  std::vector<lsp::CodeAction>& actions)
 {
@@ -72,7 +108,7 @@ static void BuildCodeActionEdits(TSNode rootIf, const ExtractedDiagInfo& info, c
     declEdit.range = lsp::Range{{stmtRow, 0}, {stmtRow, 0}};
     declEdit.newText = indent + info.toType + " " + varName + " = " + info.exprText + ";\n";
 
-    const auto occNodes = analysis::FindOccurrencesInIfLadder(rootIf, info.exprText, request.sourceCode);
+    const auto occNodes = FindOccurrencesInIfLadder(rootIf, info.exprText, request.sourceCode);
 
     std::vector<lsp::TextEdit> edits;
     edits.push_back(std::move(declEdit));

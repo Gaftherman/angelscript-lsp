@@ -140,4 +140,46 @@ std::string ResolveIndexedReferenceReceiver(const LocalReference& reference, con
     }
     return type;
 }
+
+std::string_view GetIndexedReferenceQualifier(const LocalReference& reference, const Scope& scope) noexcept
+{
+    if (!reference.isScopedIdentifier || !scope.enclosingContext || !scope.enclosingContext->receivers)
+    {
+        return {};
+    }
+    const auto& qualifiers = scope.enclosingContext->receivers->qualifiers;
+    const auto qualifier = qualifiers.find(reference.startByte);
+    return qualifier == qualifiers.end() ? std::string_view{} : std::string_view(qualifier->second);
+}
+
+bool MatchesReferenceQualifier(std::string_view qualifier, std::string_view container, const Scope& scope) noexcept
+{
+    if (qualifier.empty() || container.empty())
+    {
+        return false;
+    }
+    if (utils::HasLeadingGlobalPrefix(qualifier))
+    {
+        return utils::StripGlobalPrefix(qualifier) == container;
+    }
+    if (qualifier == container)
+    {
+        return true;
+    }
+    for (auto enclosing = scope.GetEnclosingNamespace(); !enclosing.empty();
+         enclosing = utils::ParentScopeView(enclosing))
+    {
+        if (MatchesScopedPair(container, enclosing, qualifier))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool MatchesEnumReferenceQualifier(std::string_view qualifier, std::string_view enumType, const Scope& scope) noexcept
+{
+    return MatchesReferenceQualifier(qualifier, enumType, scope) ||
+           MatchesReferenceQualifier(qualifier, utils::ParentScopeView(enumType), scope);
+}
 } // namespace angel_lsp::analysis

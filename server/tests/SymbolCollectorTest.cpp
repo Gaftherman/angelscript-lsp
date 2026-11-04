@@ -66,6 +66,42 @@ std::string ReadCorpusFile(const std::string& fileName)
 // Out-of-body call reference tests
 // =====================================================================================
 
+TEST_CASE("SymbolCollector - Reuses the document extraction for declarations and syntax errors")
+{
+    const std::string uri = "file:///shared_declaration_extraction.as";
+    const std::string code = "namespace Captured {\n"
+                             "    class Box { int Value; }\n"
+                             "    int Initial = Build();\n"
+                             "    int Build() { return 3; }\n"
+                             "    void Broken() { int value = ; }\n"
+                             "}\n";
+    const auto doc = angel_lsp::test::CreateTestDocument(uri, code);
+    REQUIRE(doc->GetTree() != nullptr);
+    const TSNode root = ts_tree_root_node(doc->GetTree());
+    const NodeIndex full(root);
+    const NodeIndex declarations(root, nullptr, nullptr, NodeIndexContents::Declarations);
+    CHECK(full.NodeCount() == declarations.NodeCount());
+    CHECK_FALSE(declarations.Nodes(GetGrammarSymbols().symIdentifier).size());
+
+    SymbolCollector collector(nullptr);
+    SymbolTable fullSymbols;
+    SymbolTable declarationSymbols;
+    const SymbolCollectRequest request(uri, code);
+    const auto fullDiagnostics = collector.CollectSymbolsWithIndex(request, full, fullSymbols);
+    const auto declarationDiagnostics = collector.CollectSymbolsWithIndex(request, declarations, declarationSymbols);
+    CHECK(fullSymbols.ComputeDocumentInterfaceHash(uri) == declarationSymbols.ComputeDocumentInterfaceHash(uri));
+    CHECK(fullSymbols.HasSymbol("Captured::Box"));
+    CHECK(fullSymbols.HasSymbol("Captured::Build"));
+    REQUIRE(!fullDiagnostics.empty());
+    REQUIRE(fullDiagnostics.size() == declarationDiagnostics.size());
+    for (size_t i = 0; i < fullDiagnostics.size(); ++i)
+    {
+        CHECK(fullDiagnostics[i].code == declarationDiagnostics[i].code);
+        CHECK(fullDiagnostics[i].range.start.line == declarationDiagnostics[i].range.start.line);
+        CHECK(fullDiagnostics[i].range.start.character == declarationDiagnostics[i].range.start.character);
+    }
+}
+
 TEST_CASE("SymbolCollector - Global Function Call In Variable Initializer Is Captured As Reference")
 {
     // "int g = Foo();" - Foo() is called outside of any function body.

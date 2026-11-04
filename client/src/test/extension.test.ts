@@ -508,7 +508,7 @@ suite('activation timings', () => {
         console.log('    activation: ' + report);
 
         for (const phase of ['moduleToActivate', 'outputChannel', 'registerCommands',
-                             'statusBarItem', 'resolveServerBinary']) {
+                             'languageStatusItem', 'resolveServerBinary']) {
             assert.ok(phase in timings, `no measurement recorded for '${phase}'`);
             assert.ok(Number.isFinite(timings[phase]) && timings[phase] >= 0,
                       `'${phase}' recorded ${timings[phase]}, which is not a duration`);

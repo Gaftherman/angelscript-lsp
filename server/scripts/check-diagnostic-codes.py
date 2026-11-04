@@ -13,12 +13,14 @@ without the documentation being updated.
 Run from server/:  python scripts/check-diagnostic-codes.py
 """
 
+import json
 import re
 import sys
 from pathlib import Path
 
 SERVER = Path(__file__).resolve().parent.parent
 I18N = SERVER / 'src' / 'i18n' / 'i18n.cpp'
+ENGLISH_CATALOG = I18N.parent / 'locales' / 'en.json'
 CODES_HEADER = SERVER / 'src' / 'analysis' / 'diagnostics' / 'DiagnosticCodes.h'
 SUPPRESSION_TABLE = SERVER / 'src' / 'analysis' / 'diagnostics' / 'DiagnosticSuppression.cpp'
 
@@ -37,8 +39,8 @@ CODE_PATTERN = re.compile(r'"(as-(?:err|warn|syntax|hint)-[a-z0-9-]+)"')
 
 def declared_codes() -> set:
     """Codes the message table defines, which is what the user can be shown."""
-    text = I18N.read_text(encoding='utf-8')
-    return {m.group(1) for m in re.finditer(r'm_messages\["(as-[a-z0-9-]+)"\]', text)}
+    messages = json.loads(ENGLISH_CATALOG.read_text(encoding='utf-8'))
+    return {key for key in messages if key.startswith('as-')}
 
 
 def referenced_codes() -> set:
@@ -127,7 +129,7 @@ def main() -> int:
     referenced = referenced_codes()
 
     if not declared:
-        print('Found no diagnostic codes in i18n.cpp - has the message table moved?', file=sys.stderr)
+        print('Found no diagnostic codes in the English catalog.', file=sys.stderr)
         return 2
 
     dead = declared - referenced

@@ -29,6 +29,25 @@ PARENT_LOOP_ALLOWED_FILES = {
     SERVER_SRC / "parser" / "ASTUtils.h",
 }
 
+INDEXED_CHECKERS = (
+    SERVER_SRC / "analysis" / "checkers" / "BinaryOperatorChecker.cpp",
+    SERVER_SRC / "analysis" / "checkers" / "BinaryOperatorHelpers.cpp",
+    SERVER_SRC / "analysis" / "checkers" / "ComparisonOperatorChecker.cpp",
+    SERVER_SRC / "analysis" / "checkers" / "HandleComparisonChecker.cpp",
+    SERVER_SRC / "analysis" / "checkers" / "RepeatedConversionChecker.cpp",
+    SERVER_SRC / "analysis" / "checkers" / "TypeConversionChecker.cpp",
+    SERVER_SRC / "analysis" / "checkers" / "null_safety" / "NullSafetyChecker.cpp",
+    SERVER_SRC / "analysis" / "checkers" / "null_safety" / "NullSafetyCondition.cpp",
+    SERVER_SRC / "analysis" / "checkers" / "null_safety" / "NullSafetyDecl.cpp",
+    SERVER_SRC / "analysis" / "checkers" / "null_safety" / "NullSafetyExpr.cpp",
+)
+
+DIRECT_AST_NAVIGATION = re.compile(
+    r"\b(?:ts_(?:tree|query)_cursor_\w+|ts_node_(?:parent|(?:named_)?child\w*|descendant\w*|"
+    r"(?:next|prev)_(?:named_)?sibling)|parser::(?:GetParent|GetChildByField|GetCallCallee|"
+    r"FindAncestor\w*|FindChildWithSymbol|ForEach(?:Ancestor|(?:Named)?ChildNode\w*)|UnwrapParentheses))\s*\("
+)
+
 ENGINE_HARDCODED_SYMBOLS = [
     '"BaseClass"',
     '"self"',
@@ -144,6 +163,18 @@ def check_no_raw_ts_node_parent():
             if raw_parent_pattern.search(line):
                 violations.append((file_path, line_num, stripped))
     return violations
+
+def check_indexed_checkers_use_facts():
+    violations = []
+    for path in INDEXED_CHECKERS:
+        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            code = line.strip()
+            if code.startswith(("//", "*", "/*")):
+                continue
+            if DIRECT_AST_NAVIGATION.search(code):
+                violations.append((path, line_number, code))
+    return violations
+
 
 def check_no_engine_hardcoding():
     violations = []
@@ -1064,6 +1095,10 @@ def main():
             rel = f.relative_to(REPO_ROOT)
             print(f"  {rel}:{line_num}: {line}")
 
+    for path, line_number, line in check_indexed_checkers_use_facts():
+        has_errors = True
+        print(f"[ERROR] {path.relative_to(REPO_ROOT)}:{line_number}: use indexed facts for navigation: {line}")
+
     engine_violations = check_no_engine_hardcoding()
     if engine_violations:
         has_errors = True
@@ -1357,7 +1392,7 @@ def main():
     if has_errors:
         sys.exit(1)
 
-    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 ForEachDescendantNode, 0 engine hardcodings, 0 type hardcodings, 0 banned identifiers, 0 unrandomized test BaseClass, 0 manual qualifier reparsing, 0 anonymous namespaces, 0 using directives, 0 doxygen slop templates, 0 ODR struct violations, 0 stacked doxygen blocks, 0 decorative banners, 0 workflow narration comments, 0 over-explained doxygen essays, 0 include ordering violations, 0 forward declarations, 0 ghost aliases).")
+    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 ForEachDescendantNode, 0 engine hardcodings, 0 type hardcodings, 0 banned identifiers, 0 unrandomized test BaseClass, 0 manual qualifier reparsing, 0 anonymous namespaces, 0 using directives, 0 doxygen slop templates, 0 ODR struct violations, 0 stacked doxygen blocks, 0 decorative banners, 0 workflow narration comments, 0 over-explained doxygen essays, 0 include ordering violations, 0 forward declarations, 0 ghost aliases, 0 direct navigation calls in indexed checkers).")
 
 if __name__ == "__main__":
     main()

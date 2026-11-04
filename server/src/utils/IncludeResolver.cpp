@@ -697,12 +697,25 @@ std::vector<std::string> IncludeResolver::ResolveAllIncludes(std::string_view ro
                                                              std::function<std::string(const std::string&)> fileReader,
                                                              const std::vector<std::string>& allowedRoots)
 {
+    return ResolveAllIncludes(
+        IncludeTraversalRequest{rootFilePath, searchDirectories, allowedRoots, std::move(fileReader), {}, {}});
+}
+
+std::vector<ExcludedLineRange> IncludePreprocessor::ExcludedLines(std::string_view source) const
+{
+    static const ankerl::unordered_dense::set<std::string> empty;
+    return FindExcludedLineRanges(source, definedWords ? *definedWords : empty, features);
+}
+
+std::vector<std::string> IncludeResolver::ResolveAllIncludes(const IncludeTraversalRequest& request)
+{
     std::vector<std::string> resolvedFiles;
-    if (rootFilePath.empty())
+    if (request.entry.empty())
     {
         return resolvedFiles;
     }
 
+    auto fileReader = request.fileReader;
     if (!fileReader)
     {
         fileReader = [](const std::string& path) -> std::string
@@ -718,7 +731,7 @@ std::vector<std::string> IncludeResolver::ResolveAllIncludes(std::string_view ro
         };
     }
 
-    std::filesystem::path rootP(rootFilePath);
+    std::filesystem::path rootP(request.entry);
     std::string rootNorm = NormalizePathString(rootP);
 
     std::unordered_set<std::string> visited;
@@ -737,10 +750,11 @@ std::vector<std::string> IncludeResolver::ResolveAllIncludes(std::string_view ro
             continue;
         }
 
-        std::vector<IncludeDirective> includes = ExtractIncludes(content);
+        auto includes = ExtractIncludes(content, request.preprocessor.ExcludedLines(content));
         for (const auto& inc : includes)
         {
-            std::string resolved = ResolveIncludePath(inc.rawPath, currentPath, searchDirectories, allowedRoots);
+            std::string resolved = ResolveIncludePath(IncludeResolveRequest{
+                inc.rawPath, currentPath, request.searchDirectories, request.allowedRoots, request.implicitExtension});
             if (resolved.empty())
             {
                 continue;

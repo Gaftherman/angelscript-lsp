@@ -4,6 +4,7 @@
 #include <mutex>
 #include <shared_mutex>
 #include <string>
+#include <string_view>
 #include <tree_sitter/api.h>
 #include <utility>
 
@@ -50,6 +51,7 @@ struct DocumentSnapshot
     std::string text;
     int version = 0;
     uint64_t generation = 0;
+    std::shared_ptr<const std::string> transformedSource = {};
 };
 
 /**
@@ -80,6 +82,7 @@ struct Document
     Document(DocumentSnapshot snapshot, TreePtr tr)
         : uri(std::move(snapshot.uri)), text(std::move(snapshot.text)), version(snapshot.version),
           generation(snapshot.generation), tree(std::move(tr)),
+          transformedSource_(std::move(snapshot.transformedSource)),
           astTree_(tree ? SharedTree(ts_tree_copy(tree.get()), TSTreeDeleter{}) : nullptr)
     {
     }
@@ -87,13 +90,14 @@ struct Document
     Document(const Document& other)
         : uri(other.uri), text(other.text), version(other.version), generation(other.generation),
           tree(other.tree ? MakeTreePtr(ts_tree_copy(other.tree.get())) : MakeTreePtr(nullptr)),
-          astTree_(other.getAST())
+          transformedSource_(other.transformedSource_), astTree_(other.getAST())
     {
     }
 
     Document(Document&& other) noexcept
         : uri(std::move(other.uri)), text(std::move(other.text)), version(other.version), generation(other.generation),
-          tree(std::move(other.tree)), astTree_(std::move(other.astTree_))
+          tree(std::move(other.tree)), transformedSource_(std::move(other.transformedSource_)),
+          astTree_(std::move(other.astTree_))
     {
     }
 
@@ -106,6 +110,7 @@ struct Document
             version = other.version;
             generation = other.generation;
             tree = other.tree ? MakeTreePtr(ts_tree_copy(other.tree.get())) : MakeTreePtr(nullptr);
+            transformedSource_ = other.transformedSource_;
             astTree_ = other.getAST();
         }
         return *this;
@@ -120,9 +125,21 @@ struct Document
             version = other.version;
             generation = other.generation;
             tree = std::move(other.tree);
+            transformedSource_ = std::move(other.transformedSource_);
             astTree_ = std::move(other.astTree_);
         }
         return *this;
+    }
+
+    /// Returns the exact bytes parsed into the document tree.
+    [[nodiscard]] std::string_view ParsedSource() const noexcept
+    {
+        return transformedSource_ ? std::string_view(*transformedSource_) : std::string_view(text);
+    }
+
+    [[nodiscard]] const std::shared_ptr<const std::string>& TransformedSource() const noexcept
+    {
+        return transformedSource_;
     }
 
     /**
@@ -165,6 +182,7 @@ struct Document
     }
 
   private:
+    std::shared_ptr<const std::string> transformedSource_;
     mutable std::shared_mutex treeMutex_;
     SharedTree astTree_;
 };

@@ -287,3 +287,26 @@ TEST_CASE("SymbolTable - ForEachSymbolWithPrefix matches case-insensitively")
                                   { matchesForLower.push_back(name); });
     CHECK(Contains(matchesForLower, upperName));
 }
+
+TEST_CASE("SymbolTable - Published document snapshots keep module boundaries")
+{
+    const std::string own = "file:///active/entry.as";
+    const std::string peer = "file:///active/peer.as";
+    const std::string foreign = "file:///other/entry.as";
+    const std::string name = angel_lsp::test::GenerateRandomSymbolName("SharedName");
+    SymbolTable table;
+    table.AddSymbol(MakeSymbol(SymbolType::Function, name, own));
+    table.AddSymbol(MakeSymbol(SymbolType::Function, name, foreign));
+    table.AddSymbol(MakeSymbol(SymbolType::Class, "PeerType", peer));
+    table.AddSymbol(MakeSymbol(SymbolType::Class, "ForeignType", foreign));
+
+    const ankerl::unordered_dense::set<std::string> module{own, peer};
+    const auto snapshot = table.CreateAnalysisSnapshot({.uriStr = own, .allowedModuleFileUris = &module});
+    REQUIRE(snapshot);
+    const auto functions = snapshot->FindSymbols(name);
+    REQUIRE(functions.size() == 1);
+    CHECK(functions.front().fileUri == own);
+    CHECK(Contains(NamesInFile(*snapshot, peer), "PeerType"));
+    CHECK(NamesInFile(*snapshot, foreign).empty());
+    CHECK(table.FindSymbols(name).size() == 2);
+}

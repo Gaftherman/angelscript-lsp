@@ -1041,3 +1041,26 @@ TEST_CASE("LocalScopeCollector - Field and Virtual Property definitions contain 
     CHECK(defProp->typeName == "int");
     CHECK(defProp->kind == LocalDefinitionKind::Field);
 }
+
+TEST_CASE("Local scope lookup reaches both ends of a deeply nested scope tree")
+{
+    const auto identifier = angel_lsp::test::GenerateRandomSymbolName("Visible");
+    angel_lsp::analysis::Scope root;
+    root.endLine = 200;
+    angel_lsp::analysis::LocalDefinition definition;
+    definition.name = identifier;
+    root.definitions.push_back(std::move(definition));
+
+    auto* innermost = &root;
+    for (uint32_t level = 1; level < 90; ++level)
+    {
+        auto child = std::make_unique<angel_lsp::analysis::Scope>();
+        child->parent = innermost;
+        child->startLine = level;
+        child->endLine = 200 - level;
+        innermost->children.push_back(std::move(child));
+        innermost = innermost->children.back().get();
+    }
+    CHECK(angel_lsp::analysis::FindInnermostScope(&root, 100, 0) == innermost);
+    CHECK(angel_lsp::analysis::ResolveInScopeAt(innermost, identifier, 100) == &root.definitions.front());
+}

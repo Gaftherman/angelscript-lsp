@@ -4,6 +4,7 @@
 #include <chrono>
 #include <doctest/doctest.h>
 #include <mutex>
+#include <semaphore>
 #include <string>
 #include <thread>
 #include <vector>
@@ -44,6 +45,53 @@ TEST_CASE("AnalysisScheduler - Debouncing collapses rapid edits")
     }
 
     scheduler.Stop();
+}
+
+TEST_CASE("AnalysisScheduler - Same text with a new semantic revision survives an active analysis")
+{
+    std::binary_semaphore entered(0);
+    std::binary_semaphore resume(0);
+    std::vector<uint64_t> revisions;
+    AnalysisScheduler scheduler(
+        [&](AnalyzeRequest request)
+        {
+            if (request.configRevision == 1)
+            {
+                entered.release();
+                resume.acquire();
+            }
+            revisions.push_back(request.configRevision);
+        });
+
+    const std::string uri = "file:///revision.as";
+    scheduler.ScheduleImmediate(
+        {.uriStr = uri, .text = "int value;", .version = 3, .generation = 1, .configRevision = 1});
+    const bool started = entered.try_acquire_for(std::chrono::seconds(2));
+    if (started)
+    {
+        scheduler.ScheduleImmediate(
+            {.uriStr = uri, .text = "int value;", .version = 3, .generation = 1, .configRevision = 2});
+    }
+    resume.release();
+    REQUIRE(started);
+    scheduler.DrainQueue();
+    CHECK(revisions == std::vector<uint64_t>{1, 2});
+}
+
+TEST_CASE("AnalysisScheduler - Coalesced text keeps the newest preprocessor result")
+{
+    auto first = std::make_shared<utils::PreprocessorScan>();
+    first->excluded.push_back({1, 2});
+    auto second = std::make_shared<utils::PreprocessorScan>();
+    second->excluded.push_back({3, 4});
+    std::shared_ptr<const utils::PreprocessorScan> delivered;
+    AnalysisScheduler scheduler([&](AnalyzeRequest request) { delivered = std::move(request.preprocessing); });
+
+    const std::string uri = "file:///preprocessed.as";
+    scheduler.Schedule({.uriStr = uri, .text = "int value;", .version = 1, .generation = 7, .preprocessing = first});
+    scheduler.Schedule({.uriStr = uri, .text = "int value;", .version = 2, .generation = 7, .preprocessing = second});
+    scheduler.DrainQueue();
+    CHECK(delivered.get() == second.get());
 }
 
 TEST_CASE("AnalysisScheduler - MarkSaved cancels pending work")

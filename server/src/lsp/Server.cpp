@@ -1,5 +1,6 @@
 #include "Server.h"
 
+#include "analysis/diagnostics/DiagnosticSuppression.h"
 #include "analysis/types/EngineProfiles.h"
 #include "features/call_hierarchy/CallHierarchyHandler.h"
 #include "features/code_action/CodeActionHandler.h"
@@ -169,7 +170,10 @@ Server::Server(const angel_lsp::config::ServerConfig& config, lsp::io::Stream& s
                              .treeCopy = std::move(req.tree),
                              .version = req.version,
                              .generation = req.generation,
-                             .configRevision = req.configRevision});
+                             .configRevision = req.configRevision,
+                             .closedRevision = req.closedRevision,
+                             .fromScheduler = true,
+                             .preprocessing = std::move(req.preprocessing)});
         });
 
     BuildDiagnosticSeverityOverrides(m_diagnosticsPipeline.get(), m_config, m_logger.get());
@@ -627,7 +631,7 @@ static void ConfigureEditingAndSymbolCapabilities(const angel_lsp::config::Serve
 }
 
 static void ConfigureFormattingAndDiagnosticCapabilities(const angel_lsp::config::ServerConfig& config,
-                                                         lsp::ServerCapabilities& caps)
+                                                         lsp::ServerCapabilities& caps, bool usePullDiagnostics)
 {
     if (config.features.enableCodeAction)
     {
@@ -663,7 +667,7 @@ static void ConfigureFormattingAndDiagnosticCapabilities(const angel_lsp::config
         caps.documentLinkProvider = linkOpts;
     }
 
-    if (config.features.enablePullDiagnostics)
+    if (usePullDiagnostics)
     {
         lsp::DiagnosticOptions diagnosticOpts;
         diagnosticOpts.identifier = std::string("angelscript");
@@ -715,7 +719,7 @@ static void ConfigureWorkspaceCapabilities(const angel_lsp::config::ServerConfig
 }
 
 static lsp::ServerCapabilities BuildServerCapabilities(const angel_lsp::config::ServerConfig& config,
-                                                       utils::PositionEncoding enc)
+                                                       utils::PositionEncoding enc, bool usePullDiagnostics)
 {
     lsp::ServerCapabilities caps;
     caps.positionEncoding = (enc == angel_lsp::utils::PositionEncoding::Utf8) ? lsp::PositionEncodingKind::UTF8
@@ -734,7 +738,7 @@ static lsp::ServerCapabilities BuildServerCapabilities(const angel_lsp::config::
 
     ConfigureNavigationAndEditingCapabilities(config, caps);
     ConfigureEditingAndSymbolCapabilities(config, caps);
-    ConfigureFormattingAndDiagnosticCapabilities(config, caps);
+    ConfigureFormattingAndDiagnosticCapabilities(config, caps, usePullDiagnostics);
     ConfigureWorkspaceCapabilities(config, caps);
 
     return caps;
@@ -803,6 +807,9 @@ lsp::requests::Initialize::Result Server::HandleRequestsInitialized(lsp::request
         params.locale.value_or(m_config.info.locale.empty() ? "en" : m_config.info.locale));
 
     NegotiateClientCapabilities(*m_sessionCoordinator, params.capabilities);
+    const bool usePullDiagnostics =
+        m_config.features.enablePullDiagnostics && m_sessionCoordinator->GetClientPullsDiagnostics();
+    m_sessionCoordinator->SetClientPullsDiagnostics(usePullDiagnostics);
 
     const bool useUtf8 = (m_sessionCoordinator->GetPositionEncoding() == angel_lsp::utils::PositionEncoding::Utf8);
     LogInfo(fmt::format("Negotiated position encoding: {}", useUtf8 ? "utf-8" : "utf-16"));
@@ -814,7 +821,8 @@ lsp::requests::Initialize::Result Server::HandleRequestsInitialized(lsp::request
     info.name = m_config.info.name;
     info.version = m_config.info.version;
     result.serverInfo = info;
-    result.capabilities = BuildServerCapabilities(m_config, m_sessionCoordinator->GetPositionEncoding());
+    result.capabilities =
+        BuildServerCapabilities(m_config, m_sessionCoordinator->GetPositionEncoding(), usePullDiagnostics);
 
     return result;
 }
@@ -842,24 +850,19 @@ void Server::HandleNotificationsExit()
 lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string& uriStr, const std::string& text)
 {
     const auto docHandle = GetDocumentStore().GetDocument(uriStr);
-    TSTree* tree = docHandle ? docHandle->tree.get() : nullptr;
-    int currentVersion = docHandle ? docHandle->version : GetDocumentStore().GetVersion(uriStr);
-
-    analysis::NodeIndex localNodeIndex;
-    const analysis::NodeIndex* nodeIndexPtr = nullptr;
-    if (tree)
-    {
-        localNodeIndex.Build(ts_tree_root_node(tree));
-        nodeIndexPtr = &localNodeIndex;
-    }
+    const auto syntax = docHandle && docHandle->tree
+                            ? ResolveProtocolSyntax(uriStr, docHandle->ParsedSource(), docHandle.get()).syntax
+                            : nullptr;
+    TSTree* tree = syntax ? syntax->tree.get() : nullptr;
+    const int currentVersion = docHandle ? docHandle->version : GetDocumentStore().GetVersion(uriStr);
 
     features::SemanticTokensRequest request{uriStr, text, tree, m_symbolTable};
-    if (tree != nullptr && m_localScopeCollector != nullptr && !m_scopeIndex.GetRoot(uriStr))
-    {
-        m_scopeIndex.SetScopeTree(uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree), text));
-    }
     request.scopeRoot = m_scopeIndex.GetRoot(uriStr);
-    request.nodeIndex = nodeIndexPtr;
+    request.nodeIndex = syntax ? &syntax->index : nullptr;
+    if (tree && m_localScopeCollector && !request.scopeRoot)
+    {
+        request.scopeRoot = m_localScopeCollector->CollectScopesFromTree(syntax->index.Root(), text, request.nodeIndex);
+    }
     request.excludedLineRanges = ExcludedLineRanges(text);
     lsp::SemanticTokens tokens = features::GetSemanticTokens(request);
     codec::EncodeSemanticTokens(text, m_sessionCoordinator->GetPositionEncoding(), tokens.data);
@@ -884,14 +887,20 @@ static void BuildDiagnosticSeverityOverrides(DiagnosticsPipeline* pipeline,
 
     for (const auto& [code, severityName] : config.diagnosticSeverities)
     {
+        const auto selector = angel_lsp::analysis::NormalizeDiagnosticSelector(code);
+        if (selector != code && config.diagnosticSeverities.contains(std::string(selector)))
+        {
+            continue;
+        }
+        const std::string key(selector);
         if (severityName == "error")
-            severities[code] = angel_lsp::analysis::DiagnosticSeverity::Error;
+            severities[key] = angel_lsp::analysis::DiagnosticSeverity::Error;
         else if (severityName == "warning")
-            severities[code] = angel_lsp::analysis::DiagnosticSeverity::Warning;
+            severities[key] = angel_lsp::analysis::DiagnosticSeverity::Warning;
         else if (severityName == "information")
-            severities[code] = angel_lsp::analysis::DiagnosticSeverity::Information;
+            severities[key] = angel_lsp::analysis::DiagnosticSeverity::Information;
         else if (severityName == "hint")
-            severities[code] = angel_lsp::analysis::DiagnosticSeverity::Hint;
+            severities[key] = angel_lsp::analysis::DiagnosticSeverity::Hint;
         else if (logger)
             logger->LogError(fmt::format("Unknown diagnostic severity '{}' for '{}'; ignored", severityName, code));
     }
@@ -955,7 +964,7 @@ std::shared_ptr<const std::string> Server::FindDocumentText(const std::string& u
         std::lock_guard<std::mutex> lock(m_closureMutex);
         if (const auto closure = m_closureDocuments.find(key); closure != m_closureDocuments.end())
         {
-            return std::make_shared<const std::string>(closure->second);
+            return closure->second.text;
         }
     }
 

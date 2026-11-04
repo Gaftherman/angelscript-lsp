@@ -334,22 +334,6 @@ static std::string ResolveObjectTextType(std::string_view oText, const analysis:
 }
 
 /**
- * @brief Extracts the object expression text for a member expression from AST.
- * @param[in] request Active CodeLens request.
- * @param[in] ref Reference to check.
- * @return Object text or empty string.
- */
-static std::string GetMemberObjectText(const CodeLensRequest& request, const analysis::LocalReference& ref)
-{
-    if (ref.receiverStartByte >= ref.receiverEndByte || ref.receiverEndByte > request.sourceCode.size())
-    {
-        return "";
-    }
-    return std::string(std::string_view(request.sourceCode)
-                           .substr(ref.receiverStartByte, ref.receiverEndByte - ref.receiverStartByte));
-}
-
-/**
  * @brief Attempts fast-path receiver type resolution using pre-indexed slice bounds.
  * @param[in] ref Reference containing receiver byte slice.
  * @param[in] criteria Active search criteria.
@@ -515,108 +499,13 @@ static bool IsCompatibleMemberAccess(const std::string& fileUri, const analysis:
 }
 
 /**
- * @brief Checks if a qualified member reference matches a target namespace.
- * @param[in] fileUri Document URI.
- * @param[in] ref Reference to check.
- * @param[in] scope Lexical scope.
- * @param[in] criteria Active search criteria.
- * @return True if reference is qualified by the target namespace.
+ * @brief Uses the qualifier captured in the occurrence document to test namespace access.
  */
-static bool MatchesTargetNamespaceQualifier(const std::string& fileUri, const analysis::LocalReference& ref,
-                                            const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
+static bool MatchesTargetNamespaceQualifier(const analysis::LocalReference& ref, const analysis::Scope* scope,
+                                            const ReferenceCollectionCriteria& criteria)
 {
-    if (criteria.targetNamespace.empty())
-    {
-        return false;
-    }
-    if (fileUri == criteria.request.uri)
-    {
-        std::string q = GetMemberObjectText(criteria.request, ref);
-        if (q == criteria.targetNamespace || analysis::EndsWithScopedSuffix(q, criteria.targetNamespace) ||
-            analysis::EndsWithScopedSuffix(criteria.targetNamespace, q))
-        {
-            return true;
-        }
-    }
-    if (scope)
-    {
-        for (const auto& candRef : scope->references)
-        {
-            if (candRef.startLine == ref.startLine && candRef.endCharacter <= ref.startCharacter)
-            {
-                if (candRef.name == criteria.targetNamespace ||
-                    analysis::EndsWithScopedSuffix(candRef.name, criteria.targetNamespace) ||
-                    analysis::EndsWithScopedSuffix(criteria.targetNamespace, candRef.name))
-                {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Checks if a qualifier string matches the target enum container or target namespace.
- * @param[in] q Qualifier string.
- * @param[in] targetEnumContainer Target enum container name.
- * @param[in] targetNamespace Target namespace name.
- * @return True if qualifier matches.
- */
-static bool QualifierMatchesEnumContainer(std::string_view q, std::string_view targetEnumContainer,
-                                          std::string_view targetNamespace)
-{
-    if (q.empty())
-    {
-        return false;
-    }
-    if (q == targetEnumContainer || analysis::EndsWithScopedSuffix(q, targetEnumContainer) ||
-        analysis::EndsWithScopedSuffix(targetEnumContainer, q))
-    {
-        return true;
-    }
-    return !targetNamespace.empty() && (q == targetNamespace || analysis::EndsWithScopedSuffix(q, targetNamespace));
-}
-
-/**
- * @brief Validates member or scoped access to an enum constant.
- * @param[in] fileUri Document URI.
- * @param[in] ref Reference under test.
- * @param[in] scope Lexical scope.
- * @param[in] criteria Active search criteria.
- * @return True if member qualifier matches target enum container.
- */
-static bool IsValidEnumMemberAccess(const std::string& fileUri, const analysis::LocalReference& ref,
-                                    const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
-{
-    if (ref.isScopedIdentifier && !ref.GetScopeQualifier(criteria.request.sourceCode).empty())
-    {
-        return QualifierMatchesEnumContainer(ref.GetScopeQualifier(criteria.request.sourceCode),
-                                             criteria.targetEnumContainer, criteria.targetNamespace);
-    }
-    if (fileUri == criteria.request.uri)
-    {
-        std::string q = GetMemberObjectText(criteria.request, ref);
-        if (QualifierMatchesEnumContainer(q, criteria.targetEnumContainer, criteria.targetNamespace))
-        {
-            return true;
-        }
-    }
-    if (scope)
-    {
-        for (const auto& candRef : scope->references)
-        {
-            if (candRef.startLine == ref.startLine && candRef.endCharacter <= ref.startCharacter)
-            {
-                if (candRef.name == criteria.targetEnumContainer ||
-                    analysis::EndsWithScopedSuffix(criteria.targetEnumContainer, candRef.name))
-                {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
+    const auto qualifier = analysis::GetIndexedReferenceQualifier(ref, *scope);
+    return analysis::MatchesReferenceQualifier(qualifier, criteria.targetNamespace, *scope);
 }
 
 /**
@@ -636,7 +525,8 @@ static bool IsValidEnumAccess(const std::string& fileUri, const analysis::LocalR
     }
     if (ref.isMemberAccess)
     {
-        return IsValidEnumMemberAccess(fileUri, ref, scope, criteria);
+        const auto qualifier = analysis::GetIndexedReferenceQualifier(ref, *scope);
+        return analysis::MatchesEnumReferenceQualifier(qualifier, criteria.targetEnumContainer, *scope);
     }
 
     if (!criteria.targetNamespace.empty())
@@ -691,7 +581,7 @@ static bool IsValidConstructorAccess(const std::string& fileUri, const analysis:
     }
     if (ref.isMemberAccess)
     {
-        return MatchesTargetNamespaceQualifier(fileUri, ref, scope, criteria);
+        return MatchesTargetNamespaceQualifier(ref, scope, criteria);
     }
     if (!criteria.targetNamespace.empty() &&
         !IsInsideNamespace(fileUri, ref.startLine, criteria.targetNamespace, criteria.symbolTable, criteria.classCache))
@@ -731,7 +621,7 @@ static bool IsValidAccess(const std::string& fileUri, const analysis::LocalRefer
 
     if (ref.isMemberAccess)
     {
-        return MatchesTargetNamespaceQualifier(fileUri, ref, scope, criteria);
+        return MatchesTargetNamespaceQualifier(ref, scope, criteria);
     }
 
     if (!criteria.targetNamespace.empty())
@@ -746,14 +636,32 @@ static bool IsValidAccess(const std::string& fileUri, const analysis::LocalRefer
     return !IsLocalShadowingTarget(scope, ref.name, fileUri, criteria);
 }
 
+static void CountStringLiteralReferences(const std::string& fileUri, const analysis::Scope& scope,
+                                         const BatchReferenceContext& ctx)
+{
+    for (const auto& strRef : scope.stringLiteralCallRefs)
+    {
+        auto it = ctx.targetsByName.find(strRef.name);
+        if (it != ctx.targetsByName.end())
+        {
+            const uint64_t pos = (static_cast<uint64_t>(strRef.line) << 32) | strRef.column;
+            for (size_t targetIdx : it->second)
+            {
+                ctx.targets[targetIdx].seenRefs.insert({fileUri, pos});
+            }
+        }
+    }
+}
+
 /**
  * @brief Evaluates scope references against indexed symbol targets.
  * @param[in] fileUri URI of document owning scope.
  * @param[in] scope Lexical scope to evaluate.
  * @param[in] ctx Batched reference context.
+ * @param[in] bindings Calls already bound by semantic analysis for the document.
  */
 static void ProcessScopeReferencesBatch(const std::string& fileUri, const analysis::Scope* scope,
-                                        const BatchReferenceContext& ctx)
+                                        const BatchReferenceContext& ctx, const analysis::CallBindings* bindings)
 {
     for (const auto& ref : scope->references)
     {
@@ -763,11 +671,17 @@ static void ProcessScopeReferencesBatch(const std::string& fileUri, const analys
             continue;
         }
 
+        const auto* bound = ref.isCall && bindings ? bindings->Find(ref.startByte) : nullptr;
         const uint64_t pos = (static_cast<uint64_t>(ref.startLine) << 32) | ref.startCharacter;
         for (size_t targetIdx : it->second)
         {
             auto& target = ctx.targets[targetIdx];
             if (target.seenRefs.contains({fileUri, pos}))
+            {
+                continue;
+            }
+            if (bound && target.isFunction &&
+                (target.compatibleClasses.empty() || target.group.front().qualifiedName == bound->qualifiedName))
             {
                 continue;
             }
@@ -787,33 +701,14 @@ static void ProcessScopeReferencesBatch(const std::string& fileUri, const analys
                 .request = ctx.request,
                 .classCache = &ctx.classCache,
             };
-            if (IsDeclarationOrDefinition(fileUri, ref, scope, criteria))
+            if (!IsDeclarationOrDefinition(fileUri, ref, scope, criteria) &&
+                analysis::MatchesCallArguments(ref, criteria) && IsValidAccess(fileUri, ref, scope, criteria))
             {
-                continue;
-            }
-            if (!analysis::MatchesCallArguments(ref, criteria))
-            {
-                continue;
-            }
-            if (!IsValidAccess(fileUri, ref, scope, criteria))
-            {
-                continue;
-            }
-            target.seenRefs.insert({fileUri, pos});
-        }
-    }
-    for (const auto& strRef : scope->stringLiteralCallRefs)
-    {
-        auto it = ctx.targetsByName.find(strRef.name);
-        if (it != ctx.targetsByName.end())
-        {
-            const uint64_t pos = (static_cast<uint64_t>(strRef.line) << 32) | strRef.column;
-            for (size_t targetIdx : it->second)
-            {
-                ctx.targets[targetIdx].seenRefs.insert({fileUri, pos});
+                target.seenRefs.insert({fileUri, pos});
             }
         }
     }
+    CountStringLiteralReferences(fileUri, *scope, ctx);
 }
 
 /**
@@ -834,7 +729,7 @@ static void CollectReferencesInScopeTreeBatch(const std::string& fileUri, const 
     {
         const analysis::Scope* scope = stack.back();
         stack.pop_back();
-        ProcessScopeReferencesBatch(fileUri, scope, ctx);
+        ProcessScopeReferencesBatch(fileUri, scope, ctx, root->GetCallBindings());
         for (const auto& child : scope->children)
         {
             if (child)
@@ -842,6 +737,31 @@ static void CollectReferencesInScopeTreeBatch(const std::string& fileUri, const 
                 stack.push_back(child.get());
             }
         }
+    }
+}
+
+static void CountBoundCalls(SymbolLensTarget& target, const CodeLensRequest& request)
+{
+    if (!target.isFunction)
+    {
+        return;
+    }
+    for (const auto& symbol : target.group)
+    {
+        if (symbol.type != analysis::SymbolType::Function || symbol.isSynthesized)
+        {
+            continue;
+        }
+        request.scopeIndex.ForEachBoundUse(
+            analysis::CallDeclaration(symbol), request.occurrenceModule,
+            [&](const std::string& uri, std::span<const analysis::SourceRange> ranges)
+            {
+                for (const auto& range : ranges)
+                {
+                    const uint64_t position = (static_cast<uint64_t>(range.startLine) << 32) | range.startCharacter;
+                    target.seenRefs.insert({uri, position});
+                }
+            });
     }
 }
 
@@ -854,8 +774,13 @@ static void CollectReferencesInScopeTreeBatch(const std::string& fileUri, const 
 static void BatchCountReferencesAcrossScopes(std::span<SymbolLensTarget> targets, const TargetIndexMap& targetsByName,
                                              const CodeLensRequest& request)
 {
+    for (auto& target : targets)
+    {
+        CountBoundCalls(target, request);
+    }
     BatchReferenceContext ctx{targets, targetsByName, request};
-    request.scopeIndex.ForEachScopeTree(
+    request.scopeIndex.ForEachOccurrenceScope(
+        request.occurrenceModule,
         [&](const std::string& fileUri, const std::shared_ptr<const analysis::Scope>& root)
         {
             if (root && !angel_lsp::utils::IsPredefinedFile(fileUri, request.predefinedExtension))
@@ -1646,7 +1571,22 @@ static void AppendReferenceLens(const RangeKey& key, const analysis::Symbol& sym
     {
         return;
     }
-    lenses.push_back(MakeCommandLens(key, FormatReferenceCount(refCount, ctx.request.i18n)));
+    auto lens = MakeCommandLens(key, FormatReferenceCount(refCount, ctx.request.i18n));
+    if (!ctx.request.config || ctx.request.config->features.enableReferences)
+    {
+        const auto& selection = sym.selectionRange == analysis::SourceRange{} ? key : sym.selectionRange;
+        const auto line = ctx.lines.Line(ctx.request.sourceCode, selection.startLine);
+        const auto character =
+            utils::ByteToLspCharColumn(line, selection.startCharacter, utils::PositionEncoding::Utf16);
+        const auto uri = ctx.request.clientUri.empty() ? std::string_view(ctx.request.uri) : ctx.request.clientUri;
+        lsp::json::Array arguments;
+        arguments.emplace_back(std::string(uri));
+        arguments.emplace_back(static_cast<lsp::json::Integer>(selection.startLine));
+        arguments.emplace_back(static_cast<lsp::json::Integer>(character));
+        lens.command->command = "angelscript.showReferences";
+        lens.command->arguments = std::move(arguments);
+    }
+    lenses.push_back(std::move(lens));
 }
 
 /**
@@ -1736,7 +1676,7 @@ static std::vector<lsp::CodeLens> BuildSymbolGroupLenses(const SymbolGroups& sym
     }
 
     std::vector<lsp::CodeLens> lenses;
-    AssembledLensContext assembledCtx{targets, keyToTarget, request};
+    AssembledLensContext assembledCtx{targets, keyToTarget, request, utils::LineIndex::Build(request.sourceCode)};
     for (const auto& key : symGroups.rangeOrder)
     {
         auto it = symGroups.groups.find(key);

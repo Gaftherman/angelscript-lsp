@@ -2,14 +2,17 @@
 
 #include "analysis/index/SymbolTable.h"
 #include "parser/ASTUtils.h"
+#include "parser/GrammarSymbols.h"
 
 #include <ankerl/unordered_dense.h>
 #include <cstdint>
 #include <initializer_list>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
+#include <utility>
 #include <vector>
 
 namespace angel_lsp::analysis
@@ -62,6 +65,64 @@ struct IndexedContainerSpan
 };
 static_assert(sizeof(IndexedContainerSpan) <= 24);
 
+enum class IndexedFlowFindingKind : uint8_t
+{
+    Unreachable,
+    VariableInCase,
+    DefaultNotLast
+};
+
+struct IndexedFlowFinding
+{
+    SourceRange range;
+    IndexedFlowFindingKind kind;
+};
+
+/// A document-local key into the extracted syntax links for this revision.
+using SyntaxNodeId = size_t;
+inline constexpr SyntaxNodeId NoSyntaxNode = SIZE_MAX;
+
+/// A syntax fact whose child and sibling links are local to this extraction.
+struct IndexedSyntaxNode
+{
+    size_t syntaxSlot = SIZE_MAX; ///< Index into the symbol bucket or the transient syntax side table.
+    SyntaxNodeId first = NoSyntaxNode;
+    SyntaxNodeId next = NoSyntaxNode;
+    TSSymbol symbol = 0;
+    TSFieldId field = 0;
+    TSSymbol parentSymbol = 0;
+    bool named = false;
+    bool afterAssign = false;
+    bool statement = false;
+    bool defaultClause = false;
+    bool inSymbolBucket = false;
+    bool hasReturnReferenceToken = false;
+};
+static_assert(sizeof(IndexedSyntaxNode) <= 40);
+
+enum class NodeIndexContents : uint8_t
+{
+    Full,
+    Declarations
+};
+
+enum class IndexedDeclarationKind : uint8_t
+{
+    None,
+    Function,
+    Class,
+    Interface,
+    Namespace,
+    Enum,
+    Typedef,
+    Funcdef,
+    Property,
+    Variable,
+    Lambda,
+    Call,
+    Using
+};
+
 /**
  * @brief Single-pass index of AST nodes grouped by Tree-Sitter symbol for O(1) retrieval.
  *        Traverses an AST once in preorder, bucketing nodes by their Tree-Sitter TSSymbol id
@@ -77,7 +138,8 @@ class NodeIndex
      * @param lang The language definition (defaults to tree_sitter_angelscript() if null).
      * @param budget Optional traversal budget to track and enforce node visits.
      */
-    explicit NodeIndex(TSNode root, const TSLanguage* lang = nullptr, TraversalBudget* budget = nullptr);
+    explicit NodeIndex(TSNode root, const TSLanguage* lang = nullptr, TraversalBudget* budget = nullptr,
+                       NodeIndexContents contents = NodeIndexContents::Full);
 
     ~NodeIndex() = default;
     NodeIndex(const NodeIndex&) = default;
@@ -91,7 +153,20 @@ class NodeIndex
      * @param lang The language definition (defaults to tree_sitter_angelscript() if null).
      * @param budget Optional traversal budget to track and enforce node visits.
      */
-    void Build(TSNode root, const TSLanguage* lang = nullptr, TraversalBudget* budget = nullptr);
+    void Build(TSNode root, const TSLanguage* lang = nullptr, TraversalBudget* budget = nullptr,
+               NodeIndexContents contents = NodeIndexContents::Full);
+
+    /// Visits declaration and validation candidates in cursor order using the stored symbol slots.
+    template <typename Visitor> void ForEachDeclaration(Visitor&& visitor) const
+    {
+        if (m_flowFacts)
+        {
+            for (const auto& entry : m_flowFacts->declarations)
+            {
+                visitor(m_nodesBySymbol[entry.symbol][entry.slot], entry.kind);
+            }
+        }
+    }
 
     /**
      * @brief Returns all nodes of a given grammar symbol id in document (preorder) order.
@@ -374,13 +449,191 @@ class NodeIndex
      */
     void Clear() noexcept;
 
+    /// Uses the parent context of container names and base-class clauses when resolving declarations.
+    [[nodiscard]] std::vector<ContainerInfo>
+    CollectLookupContainers(uint32_t startByte, uint32_t endByte, TSSymbol symbol, std::string_view sourceCode) const;
+
+    /// Lists file imports, or just imports in the enclosing scopes at a byte position, innermost first.
+    [[nodiscard]] std::vector<std::string> CollectUsingNamespaces(std::string_view sourceCode,
+                                                                  std::optional<uint32_t> byteOffset = {}) const;
+
+    /// Looks up a callable body start byte in the first-pass return facts.
+    [[nodiscard]] bool CallableBodyDefinitelyReturns(uint32_t bodyStartByte) const noexcept;
+
+    [[nodiscard]] std::span<const IndexedFlowFinding> FlowFindings() const noexcept;
+
+    /// Returns transient expression handles for semantic checks of a switch's case labels.
+    [[nodiscard]] std::span<const TSNode> SwitchLabels(uint32_t switchStartByte) const noexcept;
+
+    /// Returns the function or lambda entry points in source order within that category.
+    [[nodiscard]] std::span<const SyntaxNodeId> AssignmentCallables(bool lambdas) const noexcept;
+    [[nodiscard]] const IndexedSyntaxNode* SyntaxNode(SyntaxNodeId id) const noexcept;
+
+    /// A name inside a declarator, with the full spelling of its optional scoped identifier.
+    struct InitializerIdentifier
+    {
+        ErrorRange name;
+        ErrorRange scopedName{};
+    };
+
+    /**
+     * @brief Returns candidate unqualified names inside an initializer's byte interval.
+     * @param[in] startByte First byte of the initializer.
+     * @param[in] endByte Exclusive end of the initializer.
+     * @return Source-ordered candidates, found by two binary searches. Candidates with a scoped spelling
+     *         still need to be checked for a scope separator in the source.
+     */
+    [[nodiscard]] std::span<const InitializerIdentifier> InitializerIdentifiers(uint32_t startByte,
+                                                                                uint32_t endByte) const noexcept;
+
+    /// Finds captured operands for a syntax site from the same tree.
+    [[nodiscard]] const IndexedSyntaxNode* FindOperandSyntax(TSNode node) const noexcept;
+    [[nodiscard]] TSNode SyntaxHandle(const IndexedSyntaxNode& node) const noexcept;
+
+    /// Returns the nearest function or lambda for a return, or the nearest class for a function.
+    [[nodiscard]] TSNode EnclosingDeclaration(TSNode node) const noexcept;
+
+    /// Reports whether the parsed root has a syntax error anywhere in the document.
+    [[nodiscard]] bool HasSyntaxErrors() const noexcept
+    {
+        return m_hasSyntaxErrors;
+    }
+
+    /// Tests a byte position against disjoint outermost if, while and for statement spans.
+    [[nodiscard]] bool IsInsideConditionalStatement(uint32_t byteOffset) const noexcept;
+
   private:
+    struct IndexedSwitch
+    {
+        uint32_t startByte = 0;
+        std::vector<TSNode> labels;
+    };
+
+    struct IndexedUsingName
+    {
+        ErrorRange name;
+        size_t next = SIZE_MAX;
+    };
+
+    struct IndexedUsingScope
+    {
+        uint32_t startByte;
+        uint32_t endByte;
+        size_t firstName = SIZE_MAX;
+        size_t parentSpanIndex = SIZE_MAX;
+    };
+
+    struct IndexedDeclaration
+    {
+        size_t slot;
+        TSSymbol symbol;
+        IndexedDeclarationKind kind;
+    };
+
+    struct FlowFacts
+    {
+        std::vector<IndexedDeclaration> declarations;
+        std::vector<uint32_t> returningBodies;
+        std::vector<IndexedFlowFinding> findings;
+        std::vector<IndexedSwitch> switches;
+        std::vector<ErrorRange> baseClassLists;
+        std::vector<IndexedUsingName> usingNames;
+        std::vector<IndexedUsingScope> usingScopes;
+        std::vector<InitializerIdentifier> initializerIdentifiers;
+        std::vector<IndexedSyntaxNode> syntaxNodes;
+        std::vector<TSNode> unbucketedSyntax;
+        ankerl::unordered_dense::map<std::pair<const void*, uint32_t>, SyntaxNodeId> operandSyntax;
+        std::vector<SyntaxNodeId> assignmentFunctions;
+        std::vector<SyntaxNodeId> assignmentLambdas;
+        std::vector<SyntaxNodeId> classByFunctionSlot;
+        std::vector<SyntaxNodeId> callableByReturnSlot;
+        std::vector<ErrorRange> conditionalStatements;
+    };
+
+    FlowFacts& MutableFlowFacts();
+
+    class FlowFactCollector
+    {
+      public:
+        explicit FlowFactCollector(NodeIndex& index);
+        void Enter(TSNode node, const TSTreeCursor& cursor, size_t syntaxSlot);
+        bool Advance(TSTreeCursor& cursor, bool full);
+        void FinishUsingScopes();
+
+      private:
+        struct Frame
+        {
+            size_t bodySlot = SIZE_MAX;
+            size_t switchSlot = SIZE_MAX;
+            size_t usingScope = SIZE_MAX;
+            size_t lastUsingName = SIZE_MAX;
+            SyntaxNodeId syntaxId = NoSyntaxNode;
+            SyntaxNodeId lastSyntaxChild = NoSyntaxNode;
+            SyntaxNodeId enclosingClass = NoSyntaxNode;
+            SyntaxNodeId enclosingCallable = NoSyntaxNode;
+            SourceRange clauseRange;
+            uint32_t namedChildren = 0;
+            TSSymbol symbol = 0;
+            TSSymbol parentSymbol = 0;
+            TSFieldId field = 0;
+            bool isNamed = false;
+            bool inCallable = false;
+            bool inDeclarator = false;
+            bool inConditionalStatement = false;
+            bool captureOperands = false;
+            bool takeInitializer = false;
+            bool hasChild = false;
+            bool isDefault = false;
+            bool isCase = false;
+            bool defaultIsLast = true;
+            bool checkUnreachable = false;
+            bool terminated = false;
+            bool returnsFromChild = false;
+            bool allChildrenReturn = true;
+            bool hasEscapingBreak = false;
+            bool hasDefault = false;
+            bool defaultReturns = false;
+            bool consequenceReturns = false;
+            bool alternativeReturns = false;
+        };
+
+        const parser::GrammarSymbols& m_grammar = parser::GetGrammarSymbols();
+        std::vector<Frame> m_frames;
+        std::vector<IndexedUsingScope> m_usingScopes;
+        NodeIndex& m_index;
+
+        void Leave();
+        void ObserveChild(Frame& parent, const Frame& child, TSNode node);
+        void ObserveUnreachable(Frame& parent, TSSymbol symbol, TSNode node);
+        void ObserveSwitchChild(const Frame& parent, TSSymbol symbol, TSNode node);
+        void CaptureUsingFacts(Frame& frame, TSNode node);
+        void CaptureUsingName(TSNode node);
+        void CaptureSyntaxNode(Frame& frame, TSNode node, size_t syntaxSlot);
+        void CaptureEnclosingContext(Frame& frame, TSNode node);
+        void ObserveFunctionReturnToken(const Frame& parent, TSSymbol child);
+        void CaptureInitializerIdentifier(Frame& frame, TSNode node);
+        [[nodiscard]] bool CapturesOperands(TSSymbol symbol) const noexcept;
+        [[nodiscard]] size_t StoreUnbucketedSyntax(TSNode node);
+        [[nodiscard]] SyntaxNodeId AddSyntaxFact(Frame& frame, TSNode node, size_t syntaxSlot, bool afterAssign);
+        bool ObserveAssignmentChild(Frame& parent, TSSymbol symbol);
+        void LinkSyntaxChild(Frame& parent, SyntaxNodeId child);
+        [[nodiscard]] bool IsAssignmentStatement(TSSymbol symbol) const noexcept;
+        [[nodiscard]] bool IsBreakBoundary(TSSymbol symbol) const;
+        void AddChild(Frame& parent, const Frame& child, bool returns) const;
+        void AddSwitchClause(Frame& parent, const Frame& clause, bool returns) const;
+        [[nodiscard]] bool Returns(const Frame& frame) const;
+    };
+
     void PopulatePredefinedSymbols(const TSLanguage* lang);
-    void IndexNode(TSNode node, TraversalBudget* budget = nullptr, uint32_t parentSpanIdx = UINT32_MAX);
+    size_t IndexNode(TSNode node, TraversalBudget* budget, uint32_t parentSpanIdx, bool full);
+    size_t IndexBucketNode(TSNode node, TSSymbol symbol, IndexedDeclarationKind kind);
     void RecordContainerSpan(TSNode node, TSSymbol sym, uint32_t parentSpanIdx = UINT32_MAX);
-    void TraverseTree(TSNode root, TraversalBudget* budget = nullptr);
+    void TraverseTree(TSNode root, TraversalBudget* budget, bool full);
     void PostProcessErrorRanges();
     void PostProcessCommentRanges();
+    [[nodiscard]] bool IsInsideBaseClassList(uint32_t startByte, uint32_t endByte) const noexcept;
+    [[nodiscard]] std::vector<ContainerInfo> CollectContainersFrom(const IndexedContainerSpan* span,
+                                                                   std::string_view sourceCode) const;
 
     TSNode m_root{};
     const TSLanguage* m_language = nullptr;
@@ -390,7 +643,9 @@ class NodeIndex
     std::vector<ErrorRange> m_errorRanges;
     std::vector<CommentRange> m_commentRanges;
     std::vector<IndexedContainerSpan> m_containerSpans;
+    std::shared_ptr<FlowFacts> m_flowFacts;
     TSSymbol m_symComment = 0;
+    bool m_hasSyntaxErrors = false;
 };
 static_assert(sizeof(NodeIndex) <= 248);
 } // namespace angel_lsp::analysis

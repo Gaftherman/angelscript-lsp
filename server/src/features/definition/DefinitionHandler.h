@@ -29,6 +29,7 @@ struct DefinitionRequest
     std::function<std::string(const std::string& rawPath)> resolveInclude = {};
     std::string predefinedExtension = ".as.predefined";
     const config::EngineRuleConfig* engineRules = nullptr;
+    std::optional<analysis::CallBindingRevision> callBindingRevision = std::nullopt;
 };
 
 /**

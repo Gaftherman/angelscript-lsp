@@ -6,12 +6,13 @@
 #include "analysis/checkers/null_safety/NullSafetyParam.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/NodeIndex.h"
-#include "analysis/index/SemanticNodes.h"
+#include "analysis/index/SyntaxOperands.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/Utils.h"
 
-#include <string>
+#include <utility>
+#include <vector>
 
 namespace angel_lsp::analysis
 {
@@ -38,106 +39,148 @@ static FlowState MergeFlowStates(const FlowState& s1, const FlowState& s2)
     return result;
 }
 
-static void CheckIfStmt(TSNode stmt, FlowState& state, NullCheckContext& ctx)
+/** @brief Evaluates captured statements in order and joins the states of each branch. */
+class NullStatementWorklist
 {
-    const ast::IfStatementView ifView(stmt, ctx.sourceCode);
-    const TSNode cond = ifView.Condition();
-    const TSNode conseq = ifView.Consequence();
-    const TSNode alt = ifView.Alternative();
-
-    CheckNullExpression(cond, state, ctx);
-    std::vector<NullAssertion> posAssertions;
-    std::vector<NullAssertion> negAssertions;
-    ExtractConditionAssertions(cond, ctx.sourceCode, posAssertions, negAssertions);
-
-    FlowState thenState = state;
-    ApplyAssertions(thenState, posAssertions);
-    NullSafetyEngine::CheckStatement(conseq, thenState, ctx);
-
-    FlowState elseState = state;
-    ApplyAssertions(elseState, negAssertions);
-
-    if (ifView.HasAlternative())
+  public:
+    explicit NullStatementWorklist(NullCheckContext& ctx) : m_ctx(ctx)
     {
-        NullSafetyEngine::CheckStatement(alt, elseState, ctx);
-        if (thenState.isTerminated && elseState.isTerminated)
+    }
+
+    void Run(TSNode statement, FlowState& state)
+    {
+        m_pending.push_back({NullStatementAction::Statement, statement});
+        while (!m_pending.empty())
         {
+            const NullStatementWork work = m_pending.back();
+            m_pending.pop_back();
+            switch (work.action)
+            {
+            case NullStatementAction::Statement:
+                CheckStatement(work.node, state);
+                break;
+            case NullStatementAction::Children:
+                if (!state.isTerminated)
+                {
+                    PushNextChild(work.child);
+                }
+                break;
+            case NullStatementAction::Else:
+                StartElse(work.node, state);
+                break;
+            case NullStatementAction::Join:
+                Join(state);
+                break;
+            }
+        }
+    }
+
+  private:
+    void PushNextChild(SyntaxNodeId id)
+    {
+        const auto* child = m_ctx.index.SyntaxNode(id);
+        while (child && !child->named)
+        {
+            child = m_ctx.index.SyntaxNode(child->next);
+        }
+        if (child)
+        {
+            m_pending.push_back({NullStatementAction::Children, {}, child->next});
+            m_pending.push_back({NullStatementAction::Statement, m_ctx.index.SyntaxHandle(*child)});
+        }
+    }
+
+    void BeginBranch(const SyntaxOperands& syntax, FlowState& state)
+    {
+        const auto& gs = parser::GetGrammarSymbols();
+        const TSNode condition = syntax.FieldOrNamed(gs.fieldCondition, 0);
+        NullConditionAssertions assertions;
+        CheckNullExpression(condition, state, m_ctx, &assertions);
+        auto& branch = m_branches.emplace_back();
+        branch.elseState = state;
+        ApplyAssertions(branch.elseState, assertions.negative);
+        ApplyAssertions(state, assertions.positive);
+        m_pending.push_back({NullStatementAction::Else, syntax.FieldOrNamed(gs.fieldAlternative, 2)});
+        m_pending.push_back({NullStatementAction::Statement, syntax.FieldOrNamed(gs.fieldConsequence, 1)});
+    }
+
+    void StartElse(TSNode alternative, FlowState& state)
+    {
+        auto& branch = m_branches.back();
+        branch.thenState = std::move(state);
+        state = std::move(branch.elseState);
+        m_pending.push_back({NullStatementAction::Join});
+        m_pending.push_back({NullStatementAction::Statement, alternative});
+    }
+
+    void Join(FlowState& state)
+    {
+        auto& thenState = m_branches.back().thenState;
+        if (!thenState.isTerminated)
+        {
+            state = state.isTerminated ? std::move(thenState) : MergeFlowStates(thenState, state);
+        }
+        m_branches.pop_back();
+    }
+
+    void CheckStatement(TSNode statement, FlowState& state)
+    {
+        if (state.isTerminated || ts_node_is_null(statement))
+        {
+            return;
+        }
+        const auto& gs = parser::GetGrammarSymbols();
+        const auto symbol = ts_node_symbol(statement);
+        if (symbol == gs.symStatementBlock)
+        {
+            if (const auto* block = m_ctx.index.FindOperandSyntax(statement))
+            {
+                PushNextChild(block->first);
+            }
+        }
+        else if (symbol == gs.symVariableDeclaration)
+        {
+            CheckVarDeclaration(statement, state, m_ctx);
+        }
+        else if (symbol == gs.symExpressionStatement)
+        {
+            const TSNode expr = SyntaxOperands(statement, &m_ctx.index).FirstNamed();
+            if (!ts_node_is_null(expr) && ts_node_symbol(expr) == gs.symAssignmentExpression)
+            {
+                CheckAssignmentStmt(expr, state, m_ctx);
+            }
+            else
+            {
+                CheckNullExpression(expr, state, m_ctx);
+            }
+        }
+        else if (symbol == gs.symIfStatement)
+        {
+            BeginBranch(SyntaxOperands(statement, &m_ctx.index), state);
+        }
+        else if (symbol == gs.symReturnStatement)
+        {
+            CheckNullExpression(SyntaxOperands(statement, &m_ctx.index).Field(gs.fieldValue), state, m_ctx);
             state.isTerminated = true;
         }
-        else if (thenState.isTerminated)
-        {
-            state = elseState;
-        }
-        else if (elseState.isTerminated)
-        {
-            state = thenState;
-        }
-        else
-        {
-            state = MergeFlowStates(thenState, elseState);
-        }
     }
-    else
-    {
-        state = thenState.isTerminated ? elseState : MergeFlowStates(thenState, elseState);
-    }
-}
 
-void NullSafetyEngine::CheckStatement(TSNode stmt, FlowState& state, NullCheckContext& ctx)
-{
-    if (ts_node_is_null(stmt) || state.isTerminated)
-    {
-        return;
-    }
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol stmtSym = ts_node_symbol(stmt);
-    if (stmtSym == gs.symStatementBlock)
-    {
-        const uint32_t count = ts_node_named_child_count(stmt);
-        for (uint32_t i = 0; i < count && !state.isTerminated; ++i)
-        {
-            CheckStatement(ts_node_named_child(stmt, i), state, ctx);
-        }
-    }
-    else if (stmtSym == gs.symVariableDeclaration)
-    {
-        CheckVarDeclaration(stmt, state, ctx);
-    }
-    else if (stmtSym == gs.symExpressionStatement)
-    {
-        TSNode expr = ts_node_named_child(stmt, 0);
-        if (!ts_node_is_null(expr) && ts_node_symbol(expr) == gs.symAssignmentExpression)
-        {
-            CheckAssignmentStmt(expr, state, ctx);
-        }
-        else
-        {
-            CheckNullExpression(expr, state, ctx);
-        }
-    }
-    else if (stmtSym == gs.symIfStatement)
-    {
-        CheckIfStmt(stmt, state, ctx);
-    }
-    else if (stmtSym == gs.symReturnStatement)
-    {
-        const ast::ReturnStatementView retView(stmt, ctx.sourceCode);
-        CheckNullExpression(retView.Value(), state, ctx);
-        state.isTerminated = true;
-    }
-}
+    NullCheckContext& m_ctx;
+    std::vector<NullStatementWork> m_pending;
+    std::vector<NullBranchState> m_branches;
+};
 
-static void AnalyzeFunction(TSNode funcNode, const Scope* scopeRoot, NullCheckContext& ctx)
+static void AnalyzeFunction(TSNode funcNode, NullCheckContext& ctx)
 {
-    TSNode body = FindFunctionBody(funcNode);
+    TSNode body = FindFunctionBody(funcNode, ctx.index);
     if (ts_node_is_null(body))
     {
         return;
     }
 
     FlowState state;
-    CollectParameters(funcNode, scopeRoot, ctx.sourceCode, state);
-    NullSafetyEngine::CheckStatement(body, state, ctx);
+    CollectParameters(funcNode, body, ctx, state);
+    NullStatementWorklist(ctx).Run(body, state);
 }
 
 void CheckNullSafety(const AstCheckContext& request, DiagnosticContext& ctx)
@@ -151,15 +194,15 @@ void CheckNullSafety(const AstCheckContext& request, DiagnosticContext& ctx)
         return;
     }
 
-    NullCheckContext checkCtx{request.sourceCode, ctx, request.scopeRoot};
+    NullCheckContext checkCtx{request.sourceCode, ctx, request.scopeRoot, *request.nodeIndex};
     const auto& gs = parser::GetGrammarSymbols();
     for (TSNode funcNode : request.nodeIndex->Nodes(gs.symFuncDeclaration))
     {
-        AnalyzeFunction(funcNode, request.scopeRoot, checkCtx);
+        AnalyzeFunction(funcNode, checkCtx);
     }
     for (TSNode lambdaNode : request.nodeIndex->Nodes(gs.symLambdaExpression))
     {
-        AnalyzeFunction(lambdaNode, request.scopeRoot, checkCtx);
+        AnalyzeFunction(lambdaNode, checkCtx);
     }
 }
 

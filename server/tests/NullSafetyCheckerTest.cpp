@@ -134,6 +134,59 @@ TEST_CASE("Short Circuit Conjunction Guard")
     CHECK_FALSE(HasNullDereferenceWarning(diags, paramName));
 }
 
+TEST_CASE("Deep null guards preserve branch exits and the unguarded range")
+{
+    constexpr int depth = 80;
+    std::string code = "class GuardedObject { void Touch() {} }\nvoid Probe(GuardedObject@ object) {\n";
+    for (int i = 0; i < depth; ++i)
+    {
+        code += "if (true) {\n";
+    }
+    code += "if (object !is null";
+    for (int i = 0; i < depth; ++i)
+    {
+        code += " && true";
+    }
+    code += ") { object.Touch(); } else { return; }\nobject.Touch();\n";
+    for (int i = 0; i < depth; ++i)
+    {
+        code += "}\n";
+    }
+    const auto unguardedLine = std::ranges::count(code, '\n');
+    code += "object.Touch();\n}\n";
+
+    auto diagnostics = AnalyzeScript(code);
+    std::erase_if(diagnostics, [](const Diagnostic& diagnostic)
+                  { return diagnostic.code != diagnostics::codes::PossibleNullDereference; });
+    REQUIRE(diagnostics.size() == 1);
+    CHECK(diagnostics.front().range.start.line == unguardedLine);
+    CHECK(diagnostics.front().range.start.character == 0);
+}
+
+TEST_CASE("Nested short-circuit operands keep the common guard across alternatives")
+{
+    const std::string code = R"(class GuardedObject { bool Ready() { return true; } void Touch() {} }
+void Probe(GuardedObject@ first, GuardedObject@ second) {
+    if ((first !is null && first.Ready()) ||
+        (first !is null && (second is null || second.Ready()))) {
+        first.Touch();
+        second.Touch();
+    }
+}
+)";
+
+    config::DiagnosticsConfig config;
+    config.reportPossibleNullDereference = true;
+    config.reportAllNullDereferences = true;
+    auto diagnostics = AnalyzeScript(code, &config);
+    std::erase_if(diagnostics, [](const Diagnostic& diagnostic)
+                  { return diagnostic.code != diagnostics::codes::PossibleNullDereference; });
+    REQUIRE(diagnostics.size() == 1);
+    CHECK(diagnostics.front().range.start.line == 5);
+    CHECK(diagnostics.front().range.start.character == 8);
+    CHECK(diagnostics.front().range.end.character == 14);
+}
+
 TEST_CASE("Lambda Expression Parameter Dereference Unguarded vs Guarded")
 {
     const std::string typeName = GenerateRandomSymbolName("CBasePlayer");

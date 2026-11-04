@@ -1,6 +1,6 @@
 #pragma once
 
-#include <ankerl/unordered_dense.h>
+#include <span>
 #include <spdlog/fmt/fmt.h>
 #include <string>
 #include <string_view>
@@ -8,19 +8,6 @@
 
 namespace angel_lsp::i18n
 {
-struct I18nStringHash
-{
-    using is_transparent = void;
-    using is_avalanching = void;
-
-    [[nodiscard]] uint64_t operator()(std::string_view sv) const noexcept
-    {
-        return ankerl::unordered_dense::hash<std::string_view>{}(sv);
-    }
-};
-
-using MessageMap = ankerl::unordered_dense::map<std::string, std::string, I18nStringHash, std::equal_to<>>;
-
 class I18n
 {
   public:
@@ -65,7 +52,7 @@ class I18n
 
   private:
     std::string m_locale;
-    ankerl::unordered_dense::map<std::string, std::string, I18nStringHash, std::equal_to<>> m_messages;
+    std::span<const std::pair<std::string_view, std::string_view>> m_messages;
 };
 
 /**
@@ -97,12 +84,4 @@ inline std::string FormatMessage(const I18n* i18n, std::string_view key, std::st
     }
 }
 
-/**
- * @brief Associates an internationalization translation key with its localized message string.
- */
-struct LocaleOverlayEntry
-{
-    std::string_view languageSubtag;
-    void (*populate)(MessageMap&) = nullptr;
-};
 } // namespace angel_lsp::i18n

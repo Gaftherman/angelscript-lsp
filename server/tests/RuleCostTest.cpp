@@ -110,6 +110,7 @@ TEST_CASE("Analysis - Rule Cost Over 300 Corpus Files" * doctest::skip(true))
 
     SymbolTable table;
     std::vector<TSTree*> trees;
+    std::vector<NodeIndex> indexes;
     std::vector<std::shared_ptr<const Scope>> scopes;
 
     // Front-end cost, measured but not attributed to any rule: this has to happen whether or not a
@@ -119,6 +120,7 @@ TEST_CASE("Analysis - Rule Cost Over 300 Corpus Files" * doctest::skip(true))
     {
         collector.CollectSymbols(sample.fileUri, sample.sourceCode, parser, table);
         trees.push_back(parser.Parse(sample.sourceCode));
+        indexes.emplace_back(ts_tree_root_node(trees.back()));
         scopes.push_back(std::shared_ptr<const Scope>(scopeCollector.CollectScopes(sample.sourceCode, parser)));
     }
     const double frontEndMs = Milliseconds(frontEndStart);
@@ -269,7 +271,8 @@ TEST_CASE("Analysis - Rule Cost Over 300 Corpus Files" * doctest::skip(true))
             std::vector<Diagnostic> diagnostics;
             SemanticAnalysisRequest request = makeRequest(i);
             DiagnosticContext ctx{request, diagnostics, nullptr};
-            CheckTypeConversions({ts_tree_root_node(trees[i]), samples[i].sourceCode, scopes[i].get()}, ctx);
+            request.nodeIndex = &indexes[i];
+            CheckTypeConversions({indexes[i], samples[i].sourceCode, scopes[i].get()}, ctx);
         }
         conversionMs = Milliseconds(start);
     }

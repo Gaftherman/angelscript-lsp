@@ -1,14 +1,17 @@
 #include "analysis/checkers/null_safety/NullSafetyExpr.h"
 
+#include "analysis/checkers/BinaryOperatorHelpers.h"
 #include "analysis/checkers/null_safety/NullSafetyCondition.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
-#include "analysis/index/SymbolTable.h"
+#include "analysis/index/SyntaxOperands.h"
 #include "analysis/types/TypeExtraction.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 
-#include <memory>
+#include <algorithm>
+#include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace angel_lsp::analysis
@@ -19,7 +22,7 @@ static void CheckMemberDereference(TSNode obj, FlowState& state, NullCheckContex
     {
         return;
     }
-    std::string name = GetIdentifierName(obj, ctx.sourceCode);
+    std::string name = GetIdentifierName(obj, ctx);
     if (!name.empty())
     {
         auto it = state.vars.find(name);
@@ -45,7 +48,7 @@ static void CheckMemberDereference(TSNode obj, FlowState& state, NullCheckContex
     const TSSymbol objSym = ts_node_symbol(obj);
     if (objSym == gs.symCastExpression)
     {
-        TSNode typeNode = parser::GetChildByField(obj, gs.fieldType);
+        TSNode typeNode = SyntaxOperands(obj, &ctx.index).Field(gs.fieldType);
         const auto typeInfo = ExtractTypeInfoFromAST(typeNode, ctx.sourceCode);
         if (typeInfo.isHandle)
         {
@@ -56,98 +59,103 @@ static void CheckMemberDereference(TSNode obj, FlowState& state, NullCheckContex
     }
 }
 
-static void DispatchNonBinaryExpr(TSNode expr, TSSymbol sym, const parser::GrammarSymbols& gs,
-                                  std::vector<ExprStackFrame>& stack, FlowState& state, NullCheckContext& ctx)
+static void DispatchNonBinaryExpr(TSNode expr, std::vector<ExprStackFrame>& stack, FlowState& state,
+                                  NullCheckContext& ctx)
 {
+    const auto& gs = parser::GetGrammarSymbols();
+    const auto sym = ts_node_symbol(expr);
+    const SyntaxOperands syntax(expr, &ctx.index);
     if (sym == gs.symMemberExpression)
     {
-        TSNode obj = parser::GetChildByField(expr, gs.fieldObject);
+        TSNode obj = syntax.Field(gs.fieldObject);
         CheckMemberDereference(obj, state, ctx);
-        stack.push_back({ExprActionKind::Eval, obj, {}});
+        stack.push_back({ExprActionKind::Eval, obj});
     }
     else if (sym == gs.symIndexExpression)
     {
-        TSNode obj = parser::GetChildByField(expr, gs.fieldObject);
+        TSNode obj = syntax.Field(gs.fieldObject);
         CheckMemberDereference(obj, state, ctx);
-        stack.push_back({ExprActionKind::Eval, parser::GetChildByField(expr, gs.fieldIndex), {}});
-        stack.push_back({ExprActionKind::Eval, obj, {}});
+        stack.push_back({ExprActionKind::Eval, syntax.Field(gs.fieldIndex)});
+        stack.push_back({ExprActionKind::Eval, obj});
     }
     else if (sym == gs.symCallExpression)
     {
-        TSNode argsNode = parser::GetChildByField(expr, gs.fieldArguments);
-        const uint32_t count = ts_node_is_null(argsNode) ? 0 : ts_node_named_child_count(argsNode);
-        for (uint32_t i = count; i > 0; --i)
-        {
-            stack.push_back({ExprActionKind::Eval, ts_node_named_child(argsNode, i - 1), {}});
-        }
-        stack.push_back({ExprActionKind::Eval, parser::GetChildByField(expr, gs.fieldFunction), {}});
+        TSNode argsNode = syntax.Field(gs.fieldArguments);
+        const auto firstArgument = stack.size();
+        SyntaxOperands(argsNode, &ctx.index)
+            .ForEachNamed(
+                [&](TSNode argument)
+                {
+                    stack.push_back({ExprActionKind::Eval, argument});
+                    return true;
+                });
+        std::ranges::reverse(std::span(stack).subspan(firstArgument));
+        stack.push_back({ExprActionKind::Eval, syntax.Field(gs.fieldFunction)});
     }
     else if (sym == gs.symCastExpression)
     {
-        stack.push_back({ExprActionKind::Eval, parser::GetChildByField(expr, gs.fieldValue), {}});
+        stack.push_back({ExprActionKind::Eval, syntax.Field(gs.fieldValue)});
     }
     else if (sym == gs.symParenthesizedExpression)
     {
-        stack.push_back({ExprActionKind::Eval, ts_node_named_child(expr, 0), {}});
+        stack.push_back({ExprActionKind::Eval, syntax.FirstNamed()});
     }
     else if (sym == gs.symTernaryExpression)
     {
-        stack.push_back({ExprActionKind::Eval, parser::GetChildByField(expr, gs.fieldAlternative), {}});
-        stack.push_back({ExprActionKind::Eval, parser::GetChildByField(expr, gs.fieldConsequence), {}});
-        stack.push_back({ExprActionKind::Eval, parser::GetChildByField(expr, gs.fieldCondition), {}});
+        stack.push_back({ExprActionKind::Eval, syntax.Field(gs.fieldAlternative)});
+        stack.push_back({ExprActionKind::Eval, syntax.Field(gs.fieldConsequence)});
+        stack.push_back({ExprActionKind::Eval, syntax.Field(gs.fieldCondition)});
     }
 }
 
-static void DispatchBinaryExpr(TSNode expr, const parser::GrammarSymbols& gs, std::vector<ExprStackFrame>& stack)
+static void DispatchBinaryExpr(TSNode expr, std::vector<ExprStackFrame>& stack, const NodeIndex& index)
 {
-    TSNode opNode = parser::GetChildByField(expr, gs.fieldOperator);
-    const TSSymbol opSym = ts_node_symbol(opNode);
-    TSNode left = parser::GetChildByField(expr, gs.fieldLeft);
-    TSNode right = parser::GetChildByField(expr, gs.fieldRight);
+    const auto& gs = parser::GetGrammarSymbols();
+    const auto [op, left, right] = ReadBinaryOperands(expr, &index);
+    const TSSymbol opSym = ts_node_is_null(op) ? 0 : ts_node_symbol(op);
 
     if (opSym == gs.tokAmpAmp || opSym == gs.tokAnd)
     {
-        stack.push_back({ExprActionKind::AfterLeftAnd, expr, {}});
-        stack.push_back({ExprActionKind::Eval, left, {}});
+        stack.push_back({ExprActionKind::AfterLeftAnd, left, right});
+        stack.push_back({ExprActionKind::Eval, left});
     }
     else if (opSym == gs.tokPipePipe || opSym == gs.tokOr)
     {
-        stack.push_back({ExprActionKind::AfterLeftOr, expr, {}});
-        stack.push_back({ExprActionKind::Eval, left, {}});
+        stack.push_back({ExprActionKind::AfterLeftOr, left, right});
+        stack.push_back({ExprActionKind::Eval, left});
     }
     else
     {
-        stack.push_back({ExprActionKind::Eval, right, {}});
-        stack.push_back({ExprActionKind::Eval, left, {}});
+        stack.push_back({ExprActionKind::Eval, right});
+        stack.push_back({ExprActionKind::Eval, left});
     }
 }
 
-static void ProcessAfterLeft(const ExprStackFrame& frame, bool isAnd, const parser::GrammarSymbols& gs,
-                             std::vector<ExprStackFrame>& stack, FlowState& state, NullCheckContext& ctx)
+static void ProcessAfterLeft(const ExprStackFrame& frame, std::vector<ExprStackFrame>& stack, FlowState& state,
+                             NullConditionWorklist& conditions)
 {
-    TSNode left = parser::GetChildByField(frame.node, gs.fieldLeft);
-    TSNode right = parser::GetChildByField(frame.node, gs.fieldRight);
-
-    std::vector<NullAssertion> posAssertions;
-    std::vector<NullAssertion> negAssertions;
-    ExtractConditionAssertions(left, ctx.sourceCode, posAssertions, negAssertions);
-
+    const auto& assertions = conditions.Remember(frame.node);
     auto savedVars = state.vars;
-    ApplyAssertions(state, isAnd ? posAssertions : negAssertions);
+    ApplyAssertions(state, frame.kind == ExprActionKind::AfterLeftAnd ? assertions.positive : assertions.negative);
 
-    stack.push_back({ExprActionKind::RestoreVars, TSNode{}, std::move(savedVars)});
-    stack.push_back({ExprActionKind::Eval, right, {}});
+    stack.push_back({ExprActionKind::RestoreVars, {}, {}, std::move(savedVars)});
+    stack.push_back({ExprActionKind::Eval, frame.right});
 }
 
-void CheckNullExpression(TSNode expr, FlowState& state, NullCheckContext& ctx)
+void CheckNullExpression(TSNode expr, FlowState& state, NullCheckContext& ctx, NullConditionAssertions* assertions)
 {
     if (ts_node_is_null(expr))
     {
+        if (assertions)
+        {
+            *assertions = {};
+        }
         return;
     }
     const auto& gs = parser::GetGrammarSymbols();
+    NullConditionWorklist conditions(ctx);
     std::vector<ExprStackFrame> stack;
-    stack.push_back({ExprActionKind::Eval, expr, {}});
+    stack.push_back({ExprActionKind::Eval, expr});
 
     while (!stack.empty())
     {
@@ -159,14 +167,9 @@ void CheckNullExpression(TSNode expr, FlowState& state, NullCheckContext& ctx)
             state.vars = std::move(frame.savedVars);
             continue;
         }
-        if (frame.kind == ExprActionKind::AfterLeftAnd)
+        if (frame.kind == ExprActionKind::AfterLeftAnd || frame.kind == ExprActionKind::AfterLeftOr)
         {
-            ProcessAfterLeft(frame, true, gs, stack, state, ctx);
-            continue;
-        }
-        if (frame.kind == ExprActionKind::AfterLeftOr)
-        {
-            ProcessAfterLeft(frame, false, gs, stack, state, ctx);
+            ProcessAfterLeft(frame, stack, state, conditions);
             continue;
         }
 
@@ -179,12 +182,16 @@ void CheckNullExpression(TSNode expr, FlowState& state, NullCheckContext& ctx)
         const TSSymbol sym = ts_node_symbol(node);
         if (sym == gs.symBinaryExpression)
         {
-            DispatchBinaryExpr(node, gs, stack);
+            DispatchBinaryExpr(node, stack, ctx.index);
         }
         else
         {
-            DispatchNonBinaryExpr(node, sym, gs, stack, state, ctx);
+            DispatchNonBinaryExpr(node, stack, state, ctx);
         }
+    }
+    if (assertions)
+    {
+        *assertions = conditions.Take(expr);
     }
 }
 

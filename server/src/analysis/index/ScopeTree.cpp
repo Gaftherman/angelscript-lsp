@@ -7,13 +7,9 @@ namespace angel_lsp::analysis
  */
 static bool IsFunctionLocal(const Scope* defScope)
 {
-    size_t depth = 0;
-    for (const Scope* s = defScope; s != nullptr; s = s->parent)
+    ScopeTraversalGuard guard;
+    for (const Scope* s = defScope; guard.CheckAndInsert(s); s = s->parent)
     {
-        if (++depth > kMaxScopeDepth)
-        {
-            break;
-        }
         if (s->kind == ScopeKind::Function || s->kind == ScopeKind::Closure)
         {
             return true;
@@ -125,6 +121,27 @@ const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name,
     return ResolveInScopeAt(scope, name, UINT32_MAX, nullptr, respectClosureBarrier);
 }
 
+bool IsDeclaredInFunctionScope(const Scope* scope) noexcept
+{
+    ScopeTraversalGuard guard;
+    for (const Scope* current = scope; guard.CheckAndInsert(current); current = current->parent)
+    {
+        if (current->isFunctionScope)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool IsShadowedByFunctionLocal(const Scope* scope, std::string_view name)
+{
+    const Scope* owner = nullptr;
+    const auto* def = ResolveInScope(scope, name, &owner);
+    return def && (def->kind == LocalDefinitionKind::Variable || def->kind == LocalDefinitionKind::Parameter) &&
+           IsDeclaredInFunctionScope(owner);
+}
+
 const Scope* FindScopeDeclaringDefinition(const Scope* root, const LocalDefinition& def)
 {
     if (!root)
@@ -162,13 +179,9 @@ const Scope* FindScopeDeclaringDefinition(const Scope* root, const LocalDefiniti
 
 const Scope* FindEnclosingClosure(const Scope* scope)
 {
-    size_t depth = 0;
-    for (const Scope* current = scope; current != nullptr; current = current->parent)
+    ScopeTraversalGuard guard;
+    for (const Scope* current = scope; guard.CheckAndInsert(current); current = current->parent)
     {
-        if (++depth > kMaxScopeDepth)
-        {
-            break;
-        }
         if (current->kind == ScopeKind::Closure)
         {
             return current;
@@ -184,9 +197,7 @@ const Scope* FindEnclosingScope(const Scope* root, uint32_t line, uint32_t chara
         return nullptr;
     }
     const Scope* current = root;
-    size_t depth = 0;
-
-    while (current && ++depth <= kMaxScopeDepth)
+    while (true)
     {
         const Scope* next = nullptr;
         for (const auto& child : current->children)
@@ -248,7 +259,7 @@ const Scope* FindInnermostScope(const Scope* root, uint32_t line, uint32_t chara
     }
 
     const Scope* current = root;
-    for (size_t depth = 0; depth < kMaxScopeDepth; ++depth)
+    while (true)
     {
         bool descended = false;
         for (const auto& child : current->children)
@@ -268,32 +279,147 @@ const Scope* FindInnermostScope(const Scope* root, uint32_t line, uint32_t chara
     return current;
 }
 
+bool ScopeIndex::MatchesModule(const Scope& scope, const std::optional<std::string>& module)
+{
+    const auto* bindings = scope.GetCallBindings();
+    return !module || !bindings || bindings->Module() == *module;
+}
+
+void ScopeIndex::AddCallUses(const std::string& uri, const Scope& scope)
+{
+    if (const auto* bindings = scope.GetCallBindings())
+    {
+        auto& calls = m_callUses[bindings->Module()];
+        bindings->ForEachDeclaration([&](const CallDeclaration& declaration, std::span<const SourceRange> ranges)
+                                     { calls[declaration].try_emplace(&uri, ranges); });
+    }
+}
+
+void ScopeIndex::RemoveCallUses(const std::string& uri, const ScopeEntry& entry)
+{
+    if (!entry.occurrencesCurrent || !entry.root->GetCallBindings())
+    {
+        return;
+    }
+    const auto& bindings = *entry.root->GetCallBindings();
+    const auto module = m_callUses.find(bindings.Module());
+    if (module == m_callUses.end())
+    {
+        return;
+    }
+    auto& calls = module->second;
+    bindings.ForEachDeclaration(
+        [&](const CallDeclaration& declaration, [[maybe_unused]] std::span<const SourceRange> ranges)
+        {
+            auto group = calls.find(declaration);
+            if (group != calls.end())
+            {
+                group->second.erase(&uri);
+                if (group->second.empty())
+                {
+                    calls.erase(group);
+                }
+            }
+        });
+    if (calls.empty())
+    {
+        m_callUses.erase(module);
+    }
+}
+
+/// Copies one scope's extracted data, leaving its child links to the worklist.
+static void CopyLexicalScope(const Scope& source, Scope& target)
+{
+    target.definitions = source.definitions;
+    target.references = source.references;
+    target.stringLiteralCallRefs = source.stringLiteralCallRefs;
+    target.startLine = source.startLine;
+    target.startCharacter = source.startCharacter;
+    target.endLine = source.endLine;
+    target.endCharacter = source.endCharacter;
+    target.kind = source.kind;
+    target.isFunctionScope = source.isFunctionScope;
+    target.isConstMethod = source.isConstMethod;
+    target.containerSpanIndex = source.containerSpanIndex;
+    target.enclosingContext = source.enclosingContext;
+}
+
+std::shared_ptr<Scope> CopyLexicalScopeTree(const Scope& root)
+{
+    auto copy = std::make_shared<Scope>();
+    std::vector<std::pair<const Scope*, Scope*>> pending{{&root, copy.get()}};
+    while (!pending.empty())
+    {
+        const auto [source, target] = pending.back();
+        pending.pop_back();
+        CopyLexicalScope(*source, *target);
+        target->children.reserve(source->children.size());
+        for (const auto& child : source->children)
+        {
+            auto next = std::make_unique<Scope>();
+            next->parent = target;
+            pending.emplace_back(child.get(), next.get());
+            target->children.push_back(std::move(next));
+        }
+    }
+    return copy;
+}
+
 void ScopeIndex::SetScopeTree(const std::string& fileUri, std::unique_ptr<Scope> root)
 {
-    std::unique_lock<std::shared_mutex> lock(m_mutex);
-    m_roots[fileUri] = std::shared_ptr<Scope>(std::move(root));
+    SetScopeTree(fileUri, std::shared_ptr<const Scope>(std::move(root)));
 }
 
 void ScopeIndex::SetScopeTree(const std::string& fileUri, std::shared_ptr<const Scope> root)
 {
-    std::unique_lock<std::shared_mutex> lock(m_mutex);
-    m_roots[fileUri] = std::const_pointer_cast<Scope>(root);
+    if (!root)
+    {
+        ClearDocument(fileUri);
+        return;
+    }
+    std::unique_lock lock(m_mutex);
+    const auto entry = m_roots.try_emplace(fileUri).first;
+    RemoveCallUses(entry->first, entry->second);
+    entry->second = {std::move(root), true};
+    AddCallUses(entry->first, *entry->second.root);
 }
 
 void ScopeIndex::ClearDocument(const std::string& fileUri)
 {
-    std::unique_lock<std::shared_mutex> lock(m_mutex);
-    m_roots.erase(fileUri);
+    std::unique_lock lock(m_mutex);
+    if (const auto entry = m_roots.find(fileUri); entry != m_roots.end())
+    {
+        RemoveCallUses(entry->first, entry->second);
+        m_roots.erase(entry);
+    }
+}
+
+void ScopeIndex::InvalidateDocumentOccurrences(const std::string& fileUri)
+{
+    std::unique_lock lock(m_mutex);
+    if (const auto entry = m_roots.find(fileUri); entry != m_roots.end())
+    {
+        RemoveCallUses(entry->first, entry->second);
+        entry->second.occurrencesCurrent = false;
+    }
 }
 
 std::shared_ptr<const Scope> ScopeIndex::GetRoot(const std::string& fileUri) const
 {
-    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    std::shared_lock lock(m_mutex);
+    const auto entry = m_roots.find(fileUri);
+    return entry == m_roots.end() ? nullptr : entry->second.root;
+}
 
-    auto it = m_roots.find(fileUri);
-    if (it == m_roots.end())
+std::shared_ptr<const Scope> ScopeIndex::GetOccurrenceRoot(const std::string& fileUri,
+                                                           const std::optional<std::string>& module) const
+{
+    std::shared_lock lock(m_mutex);
+    const auto entry = m_roots.find(fileUri);
+    if (entry == m_roots.end() || !entry->second.occurrencesCurrent || !MatchesModule(*entry->second.root, module))
+    {
         return nullptr;
-
-    return it->second;
+    }
+    return entry->second.root;
 }
 } // namespace angel_lsp::analysis

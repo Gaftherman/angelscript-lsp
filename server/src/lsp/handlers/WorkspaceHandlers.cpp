@@ -932,8 +932,16 @@ void Server::HandleNotificationsWorkspace_DidChangeConfiguration(
     }
 
     UpdateFormatConfiguration(*this, *section);
-    bool shouldReanalyse = UpdateEngineConfiguration(*this, *section);
-    shouldReanalyse = UpdateDiagnosticsConfiguration(*this, *section) || shouldReanalyse;
+    bool shouldReanalyse;
+    {
+        std::lock_guard lock(m_lifecycleMutex);
+        shouldReanalyse = UpdateEngineConfiguration(*this, *section);
+        shouldReanalyse = UpdateDiagnosticsConfiguration(*this, *section) || shouldReanalyse;
+        if (shouldReanalyse)
+        {
+            m_sessionCoordinator->IncrementConfigRevision();
+        }
+    }
     if (shouldReanalyse)
     {
         ReanalyseOpenDocuments();
@@ -955,7 +963,7 @@ void Server::HandleNotificationsWorkspace_DidChangeConfiguration(
 lsp::requests::Workspace_Diagnostic::Result
 Server::HandleRequestsWorkspace_Diagnostic(lsp::requests::Workspace_Diagnostic::Params&& params)
 {
-    if (!m_config.features.enablePullDiagnostics)
+    if (!m_sessionCoordinator->GetClientPullsDiagnostics())
     {
         return lsp::WorkspaceDiagnosticReport{};
     }

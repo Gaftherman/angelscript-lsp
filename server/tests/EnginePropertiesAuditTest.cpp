@@ -49,14 +49,14 @@ PipelineResult RunPipeline(const std::string& sourceCode, const EngineProperties
     req.sourceCode = sourceCode;
     req.tree = treeParser.Parse(sourceCode);
 
+    const NodeIndex index(ts_tree_root_node(req.tree));
+    req.nodeIndex = &index;
+
     SemanticAnalyzer analyzer(nullptr);
     PipelineResult res;
     res.diagnostics = analyzer.Analyze(req);
 
-    TypeConversionCheckRequest tcReq;
-    tcReq.root = ts_tree_root_node(req.tree);
-    tcReq.sourceCode = sourceCode;
-    tcReq.scopeRoot = req.scopeRoot.get();
+    const TypeConversionCheckRequest tcReq{index, sourceCode, req.scopeRoot.get()};
 
     DiagnosticContext tcCtx{req, res.diagnostics};
     CheckTypeConversions(tcReq, tcCtx);

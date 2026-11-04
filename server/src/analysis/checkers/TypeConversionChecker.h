@@ -16,9 +16,9 @@ namespace angel_lsp::analysis
 struct TypeConversionCheckRequest
 {
     /**
-     * @brief Root node of the document's syntax tree.
+     * @brief Extracted syntax from the same revision as the source and scope tree.
      */
-    TSNode root;
+    const NodeIndex& nodeIndex;
 
     /**
      * @brief Document source text the tree was parsed from.
@@ -35,15 +35,10 @@ struct TypeConversionCheckRequest
      *        `auto` inference writes the deduced type back into the LocalDefinition so that everything
      */
     Scope* mutableScopeRoot = nullptr;
-
-    /**
-     * @brief Optional pre-indexed node index for fast single-pass querying.
-     */
-    const NodeIndex* nodeIndex = nullptr;
 };
 
 /**
- * @brief Walks the document and reports conversions with no declaration to back them.
+ * @brief Evaluates indexed conversion sites and reports unsupported conversions.
  * @param request Tree, source text and scope tree of the document under analysis.
  * @param ctx Diagnostic sink; also carries the SymbolTable every lookup goes through.
  */

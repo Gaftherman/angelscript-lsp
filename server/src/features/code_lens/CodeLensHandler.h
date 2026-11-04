@@ -6,6 +6,7 @@
 #include "i18n/i18n.h"
 #include "parser/ASTUtils.h"
 #include "utils/LspLogger.h"
+#include "utils/PositionEncoding.h"
 
 #include <ankerl/unordered_dense.h>
 #include <lsp/messages.h>
@@ -43,6 +44,8 @@ struct CodeLensRequest
     const config::UnusedSymbolRules* unusedRules = nullptr;
     const i18n::I18n* i18n = nullptr;
     const config::ServerConfig* config = nullptr;
+    std::string_view clientUri{};
+    std::optional<std::string> occurrenceModule = std::nullopt;
 };
 
 /**
@@ -154,5 +157,6 @@ struct AssembledLensContext
     const std::vector<SymbolLensTarget>& targets;
     const KeyTargetMap& keyToTarget;
     const CodeLensRequest& request;
+    utils::LineIndex lines;
 };
 } // namespace angel_lsp::features

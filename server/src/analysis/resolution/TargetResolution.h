@@ -5,6 +5,7 @@
 #include "utils/LspLogger.h"
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <set>
 #include <string>
@@ -35,7 +36,7 @@ struct TargetDescriptor
     std::string name;
     std::string qualifiedName;
 
-    const Scope* definingScope = nullptr;
+    std::shared_ptr<const Scope> definingScope;
     LocalDefinition localDef;
     std::string localUri;
 
@@ -46,6 +47,7 @@ struct TargetDescriptor
     std::string declaringNamespace;
     std::string declaringEnum;
 
+    std::optional<CallDeclaration> callDeclaration;
     bool isFunction = false;
     size_t minArgs = 0;
     size_t maxArgs = 0;
@@ -90,6 +92,8 @@ struct ResolveTargetRequest
     const ScopeIndex& scopeIndex;
     TSNode& outNode;
     angel_lsp::utils::LspLogger* logger = nullptr;
+    bool useCallBindings = false;
+    std::optional<CallBindingRevision> callBindingRevision = std::nullopt;
 };
 
 /**
@@ -105,6 +109,7 @@ struct CollectOccurrencesRequest
     const ScopeIndex& scopeIndex;
     bool includeDeclaration = true;
     angel_lsp::utils::LspLogger* logger = nullptr;
+    std::optional<std::string> occurrenceModule = std::nullopt;
 };
 
 /**
@@ -113,6 +118,10 @@ struct CollectOccurrencesRequest
  * @return The target, or nullopt when the position is not on a renameable symbol.
  */
 std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& request);
+
+/** @brief Looks up the selected declaration only for the revision that supplied the queried byte offset. */
+std::shared_ptr<const Symbol> ResolveIndexedCall(const SymbolTable& symbols, const Scope* root, uint32_t nameByte,
+                                                 const std::optional<CallBindingRevision>& revision);
 
 /**
  * @brief Every place the resolved target appears, across every indexed document.

@@ -1,5 +1,6 @@
 #include "analysis/types/TypeExtraction.h"
 
+#include "analysis/index/SyntaxOperands.h"
 #include "parser/ASTUtils.h"
 
 #include <ankerl/unordered_dense.h>
@@ -22,8 +23,6 @@ TypeExtractionSymbols::TypeExtractionSymbols()
     symIdentifier = ts_language_symbol_for_name(lang, SYM_NAME("identifier"), true);
     symType = ts_language_symbol_for_name(lang, SYM_NAME("type"), true);
     symScope = ts_language_symbol_for_name(lang, SYM_NAME("scope"), true);
-    symNullLiteral = ts_language_symbol_for_name(lang, SYM_NAME("null_literal"), true);
-    symParenthesizedExpression = ts_language_symbol_for_name(lang, SYM_NAME("parenthesized_expression"), true);
 
     auto addPrimitive = [&](const char* name, uint32_t len, TypeKind kind)
     {
@@ -246,20 +245,9 @@ TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, std::string_view so
     return result;
 }
 
-bool IsNullInitializer(TSNode valueNode)
+bool IsNullInitializer(TSNode valueNode, const NodeIndex* index)
 {
-    if (ts_node_is_null(valueNode))
-        return false;
-
-    const auto& symbols = GetTypeExtractionSymbols();
-    TSNode node = valueNode;
-    while (ts_node_symbol(node) == symbols.symParenthesizedExpression)
-    {
-        TSNode inner = ts_node_named_child(node, 0);
-        if (ts_node_is_null(inner))
-            break;
-        node = inner;
-    }
-    return ts_node_symbol(node) == symbols.symNullLiteral;
+    const TSNode node = UnwrapIndexedParentheses(valueNode, index);
+    return !ts_node_is_null(node) && ts_node_symbol(node) == parser::GetGrammarSymbols().symNullLiteral;
 }
 } // namespace angel_lsp::analysis

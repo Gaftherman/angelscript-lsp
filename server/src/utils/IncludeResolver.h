@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -35,6 +36,30 @@ struct IncludeDirective
     size_t line = 0;          ///< 0-indexed line number in the source file where the directive occurs.
     std::string resolvedPath; ///< Canonical/normalized filesystem path if resolved, or empty string if not found.
     bool isAngled = false;    ///< True for <path>, false for "path".
+};
+
+/**
+ * @brief Immutable inputs for evaluating conditional includes.
+ */
+struct IncludePreprocessor
+{
+    std::shared_ptr<const ankerl::unordered_dense::set<std::string>> definedWords;
+    PreprocessorFeatures features;
+
+    [[nodiscard]] std::vector<ExcludedLineRange> ExcludedLines(std::string_view source) const;
+};
+
+/**
+ * @brief Inputs for resolving all active includes from an entry file.
+ */
+struct IncludeTraversalRequest
+{
+    std::string_view entry;
+    std::span<const std::string> searchDirectories;
+    std::span<const std::string> allowedRoots;
+    std::function<std::string(const std::string&)> fileReader;
+    std::string_view implicitExtension;
+    IncludePreprocessor preprocessor;
 };
 
 /**
@@ -163,6 +188,8 @@ class IncludeResolver
      *        If not provided or null, defaults to reading from disk via std::ifstream.
      * @return Ordered vector of unique resolved file paths discovered in the include tree.
      */
+    static std::vector<std::string> ResolveAllIncludes(const IncludeTraversalRequest& request);
+
     static std::vector<std::string>
     ResolveAllIncludes(std::string_view rootFilePath, const std::vector<std::string>& searchDirectories,
                        std::function<std::string(const std::string&)> fileReader = nullptr,

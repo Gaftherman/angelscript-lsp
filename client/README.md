@@ -184,9 +184,6 @@ Path-valued settings support dynamic variable expansions matching VS Code's `lau
 | :--- | :--- | :--- |
 | `angelscript.server.executablePath` | `""` | Path to the AngelScript Language Server executable. |
 | `angelscript.server.logLevel` | `"debug"` | Specifies the verbosity level for language server logging output. |
-| `angelscript.statusBar.alignment` | `"left"` | Which side of the status bar the AngelScript item sits on. It is the way to reach the server log, a restart and the stub picker, so the left is the default: that is where the problem counts are, and where the eye already is when a diagnostic sends you looking. |
-| `angelscript.statusBar.enabled` | `true` | Whether to display the AngelScript status bar item in the editor status bar. |
-| `angelscript.statusBar.showStub` | `false` | Whether to display the active predefined stub name in the status bar item instead of only the language name. |
 | `angelscript.dimInactiveRegions` | `true` | Dim the code inside a `#if` block the preprocessor drops, the way the C++ extension dims its inactive regions. A decoration rather than a colour: it dims whatever the syntax highlighting produced, brackets included, which a semantic token cannot do - the editor paints `(`, `{` and `[` from its own bracket-pair feature. |
 | `angelscript.inactiveRegionOpacity` | `0.55` | How visible the dimmed code inside a dropped `#if` block stays. 1 is no dimming at all. Matches `#angelscript.dimInactiveRegions#`, which has to be on for this to do anything. |
 
@@ -270,7 +267,6 @@ Path-valued settings support dynamic variable expansions matching VS Code's `lau
 | `angelscript.features.typeHierarchy` | `true` | Type hierarchy: the bases a class or interface declares, and the types that declare it as theirs. |
 | `angelscript.features.linkedEditing` | `true` | Linked editing: retype a local variable or a parameter and its uses together, live. Offered only for names a lexical scope keeps inside one file - anything at file scope goes through Rename instead, which looks across documents. |
 | `angelscript.features.codeLens` | `true` | Show actionable code lenses (references, implementations) inline above declarations. |
-| `angelscript.features.pullDiagnostics` | `true` | Answer `textDocument/diagnostic` and `workspace/diagnostic` (LSP 3.17). The editor asks for diagnostics instead of waiting to be told. Push notifications are sent either way, so turning this off loses nothing a client that does not pull was using. |
 | `angelscript.features.typeConversionChecks` | `true` | Report conversions with no constructor, `opConv`/`opImplConv` or `opCast`/`opImplCast` to back them. |
 | `angelscript.features.predefinedLoader` | `true` | Load predefined stub files describing the host application's API. |
 | `angelscript.features.enableCommentSuppressions` | `true` | Enable comment-based diagnostic suppressions using '// disable <CODE>' and '// enable <CODE>' (e.g. '// disable W156'). |

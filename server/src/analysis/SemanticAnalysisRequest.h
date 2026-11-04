@@ -66,6 +66,7 @@ struct SemanticAnalysisRequest
      * @brief Module scoping, or empty when the host has not described its modules.
      */
     std::optional<ModuleContext> moduleContext;
+    std::optional<CallBindingRevision> callBindingRevision;
 
     const SymbolTable& symbolTable;
     std::string fileUri;

@@ -1,5 +1,6 @@
 #include "analysis/checkers/BinaryOperatorHelpers.h"
 
+#include "analysis/index/SyntaxOperands.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeExtraction.h"
@@ -107,13 +108,16 @@ bool IsKnownType(std::string_view type, const SymbolTable& table, std::string_vi
     return symbols && !symbols->empty();
 }
 
-bool IsNullOperand(TSNode node, std::string_view type)
+BinaryExpressionOperands ReadBinaryOperands(TSNode node, const NodeIndex* index)
 {
-    if (type == parser::keywords::Null || IsNullInitializer(node))
-    {
-        return true;
-    }
-    return !ts_node_is_null(node) && ts_node_symbol(node) == parser::GetGrammarSymbols().symNullLiteral;
+    const auto& gs = parser::GetGrammarSymbols();
+    const SyntaxOperands syntax(node, index);
+    return {syntax.Field(gs.fieldOperator), syntax.Field(gs.fieldLeft), syntax.Field(gs.fieldRight)};
+}
+
+bool IsNullOperand(TSNode node, std::string_view type, const NodeIndex* index)
+{
+    return type == parser::keywords::Null || IsNullInitializer(node, index);
 }
 
 /**
@@ -143,8 +147,8 @@ std::optional<BinaryOperandTypes> ResolveCleanBinaryOperandTypes(TSNode left, TS
     {
         return std::nullopt;
     }
-    std::string cleanLeft = IsNullOperand(left, rawLeft) ? "null" : StripModifiers(rawLeft);
-    std::string cleanRight = IsNullOperand(right, rawRight) ? "null" : StripModifiers(rawRight);
+    std::string cleanLeft = IsNullOperand(left, rawLeft, ctx.request.nodeIndex) ? "null" : StripModifiers(rawLeft);
+    std::string cleanRight = IsNullOperand(right, rawRight, ctx.request.nodeIndex) ? "null" : StripModifiers(rawRight);
     if (cleanLeft.empty() || cleanRight.empty())
     {
         return std::nullopt;

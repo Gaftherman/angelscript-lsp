@@ -25,6 +25,27 @@ namespace angel_lsp::analysis
 [[nodiscard]] std::string_view GetCanonicalDiagnosticCode(std::string_view aliasOrCode) noexcept;
 
 /**
+ * @brief Normalizes a code, group, or historical alias to its stable selector.
+ * @param[in] selector Code or group as written in a comment or configuration.
+ * @return Normalized selector or the original spelling for an unrecognized value.
+ */
+[[nodiscard]] std::string_view NormalizeDiagnosticSelector(std::string_view selector) noexcept;
+
+/**
+ * @brief Returns the thematic group for a diagnostic.
+ * @param[in] code Canonical code or numeric alias.
+ * @return Group name, or an empty view for diagnostics without a thematic group.
+ */
+[[nodiscard]] std::string_view GetDiagnosticGroup(std::string_view code) noexcept;
+
+/**
+ * @brief Returns the broad diagnostic category determined by the canonical code.
+ * @param[in] code Canonical code or numeric alias.
+ * @return Category name for warnings and hints, or an empty view otherwise.
+ */
+[[nodiscard]] std::string_view GetDiagnosticCategory(std::string_view code) noexcept;
+
+/**
  * @brief Formats a display code for LSP diagnostics (e.g. "W156" or "as-err-...").
  * @param canonicalCode Canonical string code.
  * @return Display string preferring the numeric alias when available.

@@ -6,14 +6,17 @@
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
+#include <array>
+#include <bitset>
+#include <limits>
 
 extern "C" const TSLanguage* tree_sitter_angelscript();
 
 namespace angel_lsp::analysis
 {
-NodeIndex::NodeIndex(TSNode root, const TSLanguage* lang, TraversalBudget* budget)
+NodeIndex::NodeIndex(TSNode root, const TSLanguage* lang, TraversalBudget* budget, NodeIndexContents contents)
 {
-    Build(root, lang, budget);
+    Build(root, lang, budget, contents);
 }
 
 const ankerl::unordered_dense::map<std::string_view, TSSymbol>& NodeIndex::GetSymbolNameMap() noexcept
@@ -58,7 +61,51 @@ void NodeIndex::PopulatePredefinedSymbols(const TSLanguage* lang)
     }
 }
 
-void NodeIndex::IndexNode(TSNode node, TraversalBudget* budget, uint32_t parentSpanIdx)
+static IndexedDeclarationKind DeclarationKind(TSSymbol symbol)
+{
+    static const auto bySymbol = []
+    {
+        using Kind = IndexedDeclarationKind;
+        const auto& gs = parser::GetGrammarSymbols();
+        std::array<Kind, UINT16_MAX + size_t{1}> kinds{};
+        kinds[gs.symFuncDeclaration] = Kind::Function;
+        kinds[gs.symInterfaceMethod] = Kind::Function;
+        kinds[gs.symImportDeclaration] = Kind::Function;
+        kinds[gs.symClassDeclaration] = Kind::Class;
+        kinds[gs.symMixinDeclaration] = Kind::Class;
+        kinds[gs.symInterfaceDeclaration] = Kind::Interface;
+        kinds[gs.symNamespaceDeclaration] = Kind::Namespace;
+        kinds[gs.symEnumDeclaration] = Kind::Enum;
+        kinds[gs.symTypedefDeclaration] = Kind::Typedef;
+        kinds[gs.symFuncdefDeclaration] = Kind::Funcdef;
+        kinds[gs.symVirtualProperty] = Kind::Property;
+        kinds[gs.symVariableDeclaration] = Kind::Variable;
+        kinds[gs.symLambdaExpression] = Kind::Lambda;
+        kinds[gs.symCallExpression] = Kind::Call;
+        kinds[gs.symUsingDeclaration] = Kind::Using;
+        kinds[0] = Kind::None;
+        return kinds;
+    }();
+    return bySymbol[symbol];
+}
+
+size_t NodeIndex::IndexBucketNode(TSNode node, TSSymbol symbol, IndexedDeclarationKind kind)
+{
+    if (symbol >= m_nodesBySymbol.size())
+    {
+        m_nodesBySymbol.resize(static_cast<size_t>(symbol) + 1);
+    }
+    auto& bucket = m_nodesBySymbol[symbol];
+    const size_t slot = bucket.size();
+    bucket.push_back(node);
+    if (kind != IndexedDeclarationKind::None)
+    {
+        MutableFlowFacts().declarations.push_back({slot, symbol, kind});
+    }
+    return slot;
+}
+
+size_t NodeIndex::IndexNode(TSNode node, TraversalBudget* budget, uint32_t parentSpanIdx, bool full)
 {
     if (budget)
     {
@@ -66,8 +113,8 @@ void NodeIndex::IndexNode(TSNode node, TraversalBudget* budget, uint32_t parentS
     }
 
     ++m_nodeCount;
-
-    if (ts_node_is_error(node) || ts_node_is_missing(node))
+    const bool isError = ts_node_is_error(node);
+    if (isError || ts_node_is_missing(node))
     {
         m_errorRanges.push_back(ErrorRange{ts_node_start_byte(node), ts_node_end_byte(node)});
         m_errorNodes.push_back(node);
@@ -75,7 +122,16 @@ void NodeIndex::IndexNode(TSNode node, TraversalBudget* budget, uint32_t parentS
 
     const TSSymbol sym = ts_node_symbol(node);
     const auto& gs = parser::GetGrammarSymbols();
-    if (m_symComment != 0 && sym == m_symComment)
+    const auto kind = DeclarationKind(sym);
+    if (!full)
+    {
+        if (kind != IndexedDeclarationKind::None || (sym == gs.symSwitchStatement && ts_node_has_error(node)))
+        {
+            return IndexBucketNode(node, sym, kind);
+        }
+        return SIZE_MAX;
+    }
+    if (sym == m_symComment)
     {
         TSPoint sp = ts_node_start_point(node);
         TSPoint ep = ts_node_end_point(node);
@@ -83,23 +139,13 @@ void NodeIndex::IndexNode(TSNode node, TraversalBudget* budget, uint32_t parentS
             CommentRange{ts_node_start_byte(node), ts_node_end_byte(node), sp.row, sp.column, ep.row, ep.column});
     }
 
-    const bool isNamed = ts_node_is_named(node);
-    const bool isQueriedAnonymous = (sym == gs.tokShared || sym == gs.tokMixin || sym == m_symComment);
-
-    if ((isNamed || isQueriedAnonymous) && sym != static_cast<TSSymbol>(-1) && !ts_node_is_error(node) && sym < 4096)
+    const bool isQueriedAnonymous = sym == gs.tokShared || sym == gs.tokMixin || sym == m_symComment;
+    if ((ts_node_is_named(node) || isQueriedAnonymous) && !isError && sym < 4096)
     {
-        if (sym < m_nodesBySymbol.size())
-        {
-            m_nodesBySymbol[sym].push_back(node);
-        }
-        else
-        {
-            m_nodesBySymbol.resize(static_cast<size_t>(sym) + 1);
-            m_nodesBySymbol[sym].push_back(node);
-        }
-
         RecordContainerSpan(node, sym, parentSpanIdx);
+        return IndexBucketNode(node, sym, kind);
     }
+    return SIZE_MAX;
 }
 
 void NodeIndex::RecordContainerSpan(TSNode node, TSSymbol sym, uint32_t parentSpanIdx)
@@ -129,23 +175,594 @@ void NodeIndex::RecordContainerSpan(TSNode node, TSSymbol sym, uint32_t parentSp
     }
 }
 
-static bool AdvanceTreeCursor(TSTreeCursor* cursor) noexcept
+static SourceRange FlowRange(TSNode node)
 {
-    if (ts_tree_cursor_goto_first_child(cursor))
+    const auto start = ts_node_start_point(node);
+    const auto end = ts_node_end_point(node);
+    return {start.row, start.column, end.row, end.column};
+}
+
+NodeIndex::FlowFacts& NodeIndex::MutableFlowFacts()
+{
+    if (!m_flowFacts)
+    {
+        m_flowFacts = std::make_shared<FlowFacts>();
+    }
+    return *m_flowFacts;
+}
+
+std::span<const IndexedFlowFinding> NodeIndex::FlowFindings() const noexcept
+{
+    return m_flowFacts ? std::span<const IndexedFlowFinding>(m_flowFacts->findings)
+                       : std::span<const IndexedFlowFinding>{};
+}
+
+std::span<const SyntaxNodeId> NodeIndex::AssignmentCallables(bool lambdas) const noexcept
+{
+    if (!m_flowFacts)
+    {
+        return {};
+    }
+    return lambdas ? m_flowFacts->assignmentLambdas : m_flowFacts->assignmentFunctions;
+}
+
+const IndexedSyntaxNode* NodeIndex::SyntaxNode(SyntaxNodeId id) const noexcept
+{
+    return id == NoSyntaxNode ? nullptr : &m_flowFacts->syntaxNodes[id];
+}
+
+std::span<const NodeIndex::InitializerIdentifier> NodeIndex::InitializerIdentifiers(uint32_t startByte,
+                                                                                    uint32_t endByte) const noexcept
+{
+    if (!m_flowFacts || startByte >= endByte)
+    {
+        return {};
+    }
+    const auto& names = m_flowFacts->initializerIdentifiers;
+    const auto startOf = [](const InitializerIdentifier& item) { return item.name.startByte; };
+    const auto first = std::ranges::lower_bound(names, startByte, {}, startOf);
+    const auto last = std::ranges::lower_bound(first, names.end(), endByte, {}, startOf);
+    return {first, last};
+}
+
+const IndexedSyntaxNode* NodeIndex::FindOperandSyntax(TSNode node) const noexcept
+{
+    if (!m_flowFacts || ts_node_is_null(node) || node.tree != m_root.tree)
+    {
+        return nullptr;
+    }
+    const auto& operands = m_flowFacts->operandSyntax;
+    const auto found = operands.find({node.id, ts_node_start_byte(node)});
+    return found == operands.end() ? nullptr : SyntaxNode(found->second);
+}
+
+TSNode NodeIndex::SyntaxHandle(const IndexedSyntaxNode& node) const noexcept
+{
+    return node.inSymbolBucket ? m_nodesBySymbol[node.symbol][node.syntaxSlot]
+                               : m_flowFacts->unbucketedSyntax[node.syntaxSlot];
+}
+
+TSNode NodeIndex::EnclosingDeclaration(TSNode node) const noexcept
+{
+    const auto* fact = FindOperandSyntax(node);
+    if (!fact || !fact->inSymbolBucket)
+    {
+        return {};
+    }
+
+    const auto& gs = parser::GetGrammarSymbols();
+    if (fact->symbol != gs.symFuncDeclaration && fact->symbol != gs.symReturnStatement)
+    {
+        return {};
+    }
+
+    const auto& owners =
+        fact->symbol == gs.symFuncDeclaration ? m_flowFacts->classByFunctionSlot : m_flowFacts->callableByReturnSlot;
+    if (fact->syntaxSlot >= owners.size())
+    {
+        return {};
+    }
+    const auto* enclosing = SyntaxNode(owners[fact->syntaxSlot]);
+    return enclosing ? SyntaxHandle(*enclosing) : TSNode{};
+}
+
+bool NodeIndex::IsInsideConditionalStatement(uint32_t byteOffset) const noexcept
+{
+    if (!m_flowFacts)
+    {
+        return false;
+    }
+    const auto& ranges = m_flowFacts->conditionalStatements;
+    const auto after = std::ranges::upper_bound(ranges, byteOffset, {}, &ErrorRange::startByte);
+    return after != ranges.begin() && byteOffset < std::prev(after)->endByte;
+}
+
+NodeIndex::FlowFactCollector::FlowFactCollector(NodeIndex& index) : m_index(index)
+{
+}
+
+static bool IsFlowCallable(TSSymbol symbol, const parser::GrammarSymbols& grammar)
+{
+    return symbol == grammar.symFuncDeclaration || symbol == grammar.symLambdaExpression;
+}
+
+void NodeIndex::FlowFactCollector::Enter(TSNode node, const TSTreeCursor& cursor, size_t syntaxSlot)
+{
+    const auto symbol = ts_node_symbol(node);
+    Frame frame;
+    frame.symbol = symbol;
+    frame.isNamed = ts_node_is_named(node);
+    frame.inCallable = IsFlowCallable(symbol, m_grammar) || (!m_frames.empty() && m_frames.back().inCallable);
+    CaptureEnclosingContext(frame, node);
+    if (symbol == m_grammar.symStatementBlock || symbol == m_grammar.symCaseClause)
+    {
+        frame.checkUnreachable = !ts_node_has_error(node);
+    }
+    if (!m_frames.empty())
+    {
+        auto& parentFrame = m_frames.back();
+        const auto parent = parentFrame.symbol;
+        ObserveFunctionReturnToken(parentFrame, symbol);
+        ObserveChild(parentFrame, frame, node);
+        if (symbol == m_grammar.symCaseClause && parent == m_grammar.symSwitchStatement)
+        {
+            frame.switchSlot = parentFrame.switchSlot;
+            frame.clauseRange = FlowRange(node);
+        }
+        if (parentFrame.syntaxId != NoSyntaxNode || parent == m_grammar.symIfStatement)
+        {
+            frame.field = ts_tree_cursor_current_field_id(&cursor);
+        }
+        if (symbol == m_grammar.symStatementBlock && frame.field == m_grammar.fieldBody &&
+            IsFlowCallable(parent, m_grammar))
+        {
+            auto& bodies = m_index.MutableFlowFacts().returningBodies;
+            frame.bodySlot = bodies.size();
+            bodies.push_back(ts_node_start_byte(node));
+        }
+    }
+    if (symbol == m_grammar.symSwitchStatement)
+    {
+        auto& switches = m_index.MutableFlowFacts().switches;
+        frame.switchSlot = switches.size();
+        switches.push_back({ts_node_start_byte(node), {}});
+    }
+    CaptureSyntaxNode(frame, node, syntaxSlot);
+    CaptureInitializerIdentifier(frame, node);
+    CaptureUsingFacts(frame, node);
+    m_frames.push_back(frame);
+}
+
+/// Carries lexical context down the cursor stack and stores only the outermost conditional spans.
+void NodeIndex::FlowFactCollector::CaptureEnclosingContext(Frame& frame, TSNode node)
+{
+    if (!m_frames.empty())
+    {
+        const auto& parent = m_frames.back();
+        frame.parentSymbol = parent.symbol;
+        frame.enclosingClass = parent.enclosingClass;
+        frame.enclosingCallable = parent.enclosingCallable;
+        frame.inConditionalStatement = parent.inConditionalStatement;
+    }
+
+    const auto& gs = m_grammar;
+    if (!frame.inConditionalStatement && (frame.symbol == gs.symIfStatement || frame.symbol == gs.symWhileStatement ||
+                                          frame.symbol == gs.symForStatement))
+    {
+        frame.inConditionalStatement = true;
+        m_index.MutableFlowFacts().conditionalStatements.push_back({ts_node_start_byte(node), ts_node_end_byte(node)});
+    }
+}
+
+void NodeIndex::FlowFactCollector::ObserveFunctionReturnToken(const Frame& parent, TSSymbol child)
+{
+    if (parent.symbol == m_grammar.symFuncDeclaration && child == m_grammar.tokAmp && parent.syntaxId != NoSyntaxNode)
+    {
+        m_index.MutableFlowFacts().syntaxNodes[parent.syntaxId].hasReturnReferenceToken = true;
+    }
+}
+
+void NodeIndex::FlowFactCollector::CaptureUsingFacts(Frame& frame, TSNode node)
+{
+    const auto symbol = frame.symbol;
+    if (symbol == m_grammar.symScript || symbol == m_grammar.symNamespaceBody ||
+        symbol == m_grammar.symStatementBlock || symbol == m_grammar.symError)
+    {
+        frame.usingScope = m_usingScopes.size();
+        m_usingScopes.push_back({ts_node_start_byte(node), ts_node_end_byte(node)});
+    }
+    if (symbol == m_grammar.symUsingDeclaration)
+    {
+        CaptureUsingName(node);
+    }
+    if (symbol == m_grammar.symBaseClassList)
+    {
+        m_index.MutableFlowFacts().baseClassLists.push_back({ts_node_start_byte(node), ts_node_end_byte(node)});
+    }
+}
+
+void NodeIndex::FlowFactCollector::CaptureUsingName(TSNode node)
+{
+    const TSNode name = parser::GetChildByField(node, m_grammar.fieldName);
+    if (ts_node_is_null(name))
+    {
+        return;
+    }
+    auto& names = m_index.MutableFlowFacts().usingNames;
+    const size_t id = names.size();
+    names.push_back({{ts_node_start_byte(name), ts_node_end_byte(name)}});
+    if (m_frames.empty() || m_frames.back().usingScope == SIZE_MAX)
+    {
+        return;
+    }
+
+    auto& owner = m_frames.back();
+    if (owner.lastUsingName == SIZE_MAX)
+    {
+        m_usingScopes[owner.usingScope].firstName = id;
+    }
+    else
+    {
+        names[owner.lastUsingName].next = id;
+    }
+    owner.lastUsingName = id;
+}
+
+/// Keeps only scopes with imports and links them in preorder, including imports declared after nested blocks.
+void NodeIndex::FlowFactCollector::FinishUsingScopes()
+{
+    if (!m_index.m_flowFacts || m_index.m_flowFacts->usingNames.empty())
+    {
+        return;
+    }
+    auto& scopes = m_index.m_flowFacts->usingScopes;
+    size_t enclosing = SIZE_MAX;
+    for (auto scope : m_usingScopes)
+    {
+        if (scope.firstName == SIZE_MAX)
+        {
+            continue;
+        }
+        while (enclosing != SIZE_MAX && scope.startByte >= scopes[enclosing].endByte)
+        {
+            enclosing = scopes[enclosing].parentSpanIndex;
+        }
+        scope.parentSpanIndex = enclosing;
+        enclosing = scopes.size();
+        scopes.push_back(scope);
+    }
+}
+
+bool NodeIndex::FlowFactCollector::IsAssignmentStatement(TSSymbol symbol) const noexcept
+{
+    const auto& gs = m_grammar;
+    return IsFlowCallable(symbol, gs) || symbol == gs.symStatementBlock || symbol == gs.symExpressionStatement ||
+           symbol == gs.symVariableDeclaration || symbol == gs.symVariableDeclarator || symbol == gs.symIfStatement ||
+           symbol == gs.symSwitchStatement || symbol == gs.symCaseClause || symbol == gs.symWhileStatement ||
+           symbol == gs.symDoWhileStatement || symbol == gs.symForStatement || symbol == gs.symReturnStatement ||
+           symbol == gs.symBreakStatement || symbol == gs.symContinueStatement;
+}
+
+/// Uses a grammar-symbol mask so capture eligibility is constant per visited node.
+bool NodeIndex::FlowFactCollector::CapturesOperands(TSSymbol symbol) const noexcept
+{
+    static const auto operandParents = []
+    {
+        const auto& gs = parser::GetGrammarSymbols();
+        std::bitset<static_cast<size_t>(std::numeric_limits<TSSymbol>::max()) + 1> symbols;
+        for (const auto site : gs.conversionTargetSymbols)
+        {
+            symbols.set(site);
+        }
+        for (const auto site :
+             {gs.symForeachVariable, gs.symStatementBlock, gs.symVariableDeclarator, gs.symLambdaExpression,
+              gs.symClassDeclaration, gs.symScopedIdentifier, gs.symArgumentList, gs.symParenthesizedExpression,
+              gs.symFunctionalCastExpression, gs.symTypedInitializerList})
+        {
+            symbols.set(site);
+        }
+        symbols.reset(0);
+        return symbols;
+    }();
+    return operandParents[symbol];
+}
+
+size_t NodeIndex::FlowFactCollector::StoreUnbucketedSyntax(TSNode node)
+{
+    auto& extra = m_index.MutableFlowFacts().unbucketedSyntax;
+    const size_t slot = extra.size();
+    extra.push_back(node);
+    return slot;
+}
+
+SyntaxNodeId NodeIndex::FlowFactCollector::AddSyntaxFact(Frame& frame, TSNode node, size_t syntaxSlot, bool afterAssign)
+{
+    const bool inBucket = syntaxSlot != SIZE_MAX;
+    auto& facts = m_index.MutableFlowFacts();
+    const SyntaxNodeId id = facts.syntaxNodes.size();
+    facts.syntaxNodes.push_back({inBucket ? syntaxSlot : StoreUnbucketedSyntax(node), NoSyntaxNode, NoSyntaxNode,
+                                 frame.symbol, frame.field, frame.parentSymbol, frame.isNamed, afterAssign,
+                                 frame.inCallable && frame.isNamed && IsAssignmentStatement(frame.symbol), false,
+                                 inBucket});
+    if (frame.captureOperands)
+    {
+        facts.operandSyntax.try_emplace(std::make_pair(node.id, ts_node_start_byte(node)), id);
+    }
+    if (frame.symbol == m_grammar.symFuncDeclaration)
+    {
+        facts.assignmentFunctions.push_back(id);
+        facts.classByFunctionSlot.push_back(frame.enclosingClass);
+        frame.enclosingCallable = id;
+    }
+    else if (frame.symbol == m_grammar.symLambdaExpression)
+    {
+        facts.assignmentLambdas.push_back(id);
+        frame.enclosingCallable = id;
+    }
+    else if (frame.symbol == m_grammar.symClassDeclaration)
+    {
+        frame.enclosingClass = id;
+    }
+    else if (frame.symbol == m_grammar.symReturnStatement)
+    {
+        facts.callableByReturnSlot.push_back(frame.enclosingCallable);
+    }
+    return id;
+}
+
+void NodeIndex::FlowFactCollector::CaptureSyntaxNode(Frame& frame, TSNode node, size_t syntaxSlot)
+{
+    frame.captureOperands = frame.isNamed && CapturesOperands(frame.symbol);
+    Frame* parent = m_frames.empty() ? nullptr : &m_frames.back();
+    const bool hasParent = parent && parent->syntaxId != NoSyntaxNode && (frame.inCallable || parent->captureOperands);
+    const bool afterAssign = hasParent && ObserveAssignmentChild(*parent, frame.symbol);
+    const bool callable = IsFlowCallable(frame.symbol, m_grammar);
+    const bool linkedOperand = hasParent && (frame.isNamed || frame.field != 0 || afterAssign);
+    if (!callable && !frame.captureOperands && !linkedOperand)
+    {
+        return;
+    }
+
+    frame.syntaxId = AddSyntaxFact(frame, node, syntaxSlot, afterAssign);
+    if (hasParent)
+    {
+        LinkSyntaxChild(*parent, frame.syntaxId);
+    }
+}
+
+/// Captures read candidates without including member selectors, parameter names or text literals.
+void NodeIndex::FlowFactCollector::CaptureInitializerIdentifier(Frame& frame, TSNode node)
+{
+    const auto& gs = m_grammar;
+    if (m_frames.empty() || frame.symbol == gs.symComment || frame.symbol == gs.symStringLiteral ||
+        frame.symbol == gs.symConcatenatedString)
+    {
+        return;
+    }
+
+    const auto& parent = m_frames.back();
+    frame.inDeclarator = parent.inDeclarator || parent.symbol == gs.symVariableDeclarator;
+    if (!frame.inDeclarator || frame.symbol != gs.symIdentifier || parent.symbol == gs.symParameter)
+    {
+        return;
+    }
+    if (parent.symbol == gs.symMemberExpression && frame.field == gs.fieldMember)
+    {
+        return;
+    }
+
+    InitializerIdentifier name{{ts_node_start_byte(node), ts_node_end_byte(node)}};
+    if (parent.symbol == gs.symScopedIdentifier)
+    {
+        if (m_frames.size() >= 2 && m_frames[m_frames.size() - 2].symbol == gs.symMemberExpression &&
+            parent.field == gs.fieldMember)
+        {
+            return;
+        }
+        const TSNode scoped = m_index.SyntaxHandle(*m_index.SyntaxNode(parent.syntaxId));
+        name.scopedName = {ts_node_start_byte(scoped), ts_node_end_byte(scoped)};
+    }
+    m_index.MutableFlowFacts().initializerIdentifiers.push_back(name);
+}
+
+/// Remembers the child after '=' in a recovered declarator and the keyword of a case clause.
+bool NodeIndex::FlowFactCollector::ObserveAssignmentChild(Frame& parent, TSSymbol symbol)
+{
+    if (parent.symbol == m_grammar.symCaseClause && !parent.hasChild)
+    {
+        m_index.MutableFlowFacts().syntaxNodes[parent.syntaxId].defaultClause = symbol == m_grammar.tokDefault;
+    }
+    const bool afterAssign = parent.takeInitializer;
+    if (parent.symbol == m_grammar.symVariableDeclarator)
+    {
+        parent.takeInitializer = symbol == m_grammar.tokAssign;
+    }
+    return afterAssign;
+}
+
+void NodeIndex::FlowFactCollector::LinkSyntaxChild(Frame& parent, SyntaxNodeId child)
+{
+    auto& nodes = m_index.MutableFlowFacts().syntaxNodes;
+    if (parent.lastSyntaxChild == NoSyntaxNode)
+    {
+        nodes[parent.syntaxId].first = child;
+    }
+    else
+    {
+        nodes[parent.lastSyntaxChild].next = child;
+    }
+    parent.lastSyntaxChild = child;
+}
+
+void NodeIndex::FlowFactCollector::ObserveChild(Frame& parent, const Frame& child, TSNode node)
+{
+    if (!child.isNamed)
+    {
+        return;
+    }
+    if (parent.checkUnreachable)
+    {
+        ObserveUnreachable(parent, child.symbol, node);
+    }
+    if (parent.switchSlot != SIZE_MAX)
+    {
+        ObserveSwitchChild(parent, child.symbol, node);
+    }
+}
+
+void NodeIndex::FlowFactCollector::ObserveUnreachable(Frame& parent, TSSymbol symbol, TSNode node)
+{
+    if (symbol == m_grammar.symComment)
+    {
+        return;
+    }
+    if (symbol == m_grammar.symPreprocDirective)
+    {
+        parent.checkUnreachable = false;
+        return;
+    }
+    if (parent.terminated)
+    {
+        m_index.MutableFlowFacts().findings.push_back({FlowRange(node), IndexedFlowFindingKind::Unreachable});
+        parent.checkUnreachable = false;
+        return;
+    }
+    parent.terminated = symbol == m_grammar.symReturnStatement || symbol == m_grammar.symBreakStatement ||
+                        symbol == m_grammar.symContinueStatement;
+}
+
+void NodeIndex::FlowFactCollector::ObserveSwitchChild(const Frame& parent, TSSymbol symbol, TSNode node)
+{
+    if (parent.symbol == m_grammar.symCaseClause && !parent.isDefault && parent.namedChildren == 0)
+    {
+        if (parent.isCase)
+        {
+            m_index.MutableFlowFacts().switches[parent.switchSlot].labels.push_back(node);
+        }
+        return;
+    }
+    if (symbol == m_grammar.symVariableDeclaration)
+    {
+        m_index.MutableFlowFacts().findings.push_back({FlowRange(node), IndexedFlowFindingKind::VariableInCase});
+    }
+}
+
+void NodeIndex::FlowFactCollector::Leave()
+{
+    const Frame frame = m_frames.back();
+    m_frames.pop_back();
+    const bool returns = Returns(frame);
+    if (!returns && frame.bodySlot != SIZE_MAX)
+    {
+        m_index.MutableFlowFacts().returningBodies[frame.bodySlot] = UINT32_MAX;
+    }
+    if (frame.symbol == m_grammar.symSwitchStatement && frame.hasDefault && !frame.defaultIsLast)
+    {
+        m_index.MutableFlowFacts().findings.push_back({frame.clauseRange, IndexedFlowFindingKind::DefaultNotLast});
+    }
+    if (!m_frames.empty())
+    {
+        AddChild(m_frames.back(), frame, returns);
+    }
+}
+
+bool NodeIndex::FlowFactCollector::IsBreakBoundary(TSSymbol symbol) const
+{
+    return symbol == m_grammar.symWhileStatement || symbol == m_grammar.symDoWhileStatement ||
+           symbol == m_grammar.symForStatement || symbol == m_grammar.symForeachStatement ||
+           symbol == m_grammar.symSwitchStatement;
+}
+
+void NodeIndex::FlowFactCollector::AddChild(Frame& parent, const Frame& child, bool returns) const
+{
+    if (!parent.hasChild)
+    {
+        parent.isDefault = child.symbol == m_grammar.tokDefault;
+        parent.isCase = child.symbol == m_grammar.tokCase;
+        parent.hasChild = true;
+    }
+    if (parent.symbol != m_grammar.symSwitchStatement || child.symbol == m_grammar.symCaseClause)
+    {
+        parent.hasEscapingBreak |=
+            child.symbol == m_grammar.symBreakStatement || (child.hasEscapingBreak && !IsBreakBoundary(child.symbol));
+    }
+    if (!child.isNamed)
+    {
+        return;
+    }
+
+    ++parent.namedChildren;
+    if (parent.symbol == m_grammar.symSwitchStatement)
+    {
+        AddSwitchClause(parent, child, returns);
+    }
+    else if (parent.symbol == m_grammar.symIfStatement)
+    {
+        parent.consequenceReturns |= child.field == m_grammar.fieldConsequence && returns;
+        parent.alternativeReturns |= child.field == m_grammar.fieldAlternative && returns;
+    }
+    else if (parent.symbol != m_grammar.symCaseClause || parent.isDefault || parent.namedChildren > 1)
+    {
+        parent.returnsFromChild |= returns;
+        parent.allChildrenReturn &= returns;
+    }
+}
+
+void NodeIndex::FlowFactCollector::AddSwitchClause(Frame& parent, const Frame& clause, bool returns) const
+{
+    if (clause.symbol != m_grammar.symCaseClause)
+    {
+        return;
+    }
+    if (clause.isDefault)
+    {
+        parent.hasDefault = true;
+        parent.defaultReturns = returns;
+        parent.clauseRange = clause.clauseRange;
+    }
+    parent.defaultIsLast = clause.isDefault;
+    const uint32_t labelCount = clause.isDefault ? 0u : 1u;
+    parent.allChildrenReturn &= clause.namedChildren <= labelCount || returns;
+}
+
+bool NodeIndex::FlowFactCollector::Returns(const Frame& frame) const
+{
+    if (frame.symbol == m_grammar.symReturnStatement)
     {
         return true;
     }
-    if (ts_tree_cursor_goto_next_sibling(cursor))
+    if (frame.symbol == m_grammar.symStatementBlock || frame.symbol == m_grammar.symCaseClause)
+    {
+        return frame.returnsFromChild;
+    }
+    if (frame.symbol == m_grammar.symIfStatement)
+    {
+        return frame.consequenceReturns && frame.alternativeReturns;
+    }
+    if (frame.symbol == m_grammar.symSwitchStatement)
+    {
+        return frame.hasDefault && !frame.hasEscapingBreak && (frame.allChildrenReturn || frame.defaultReturns);
+    }
+    return frame.symbol == m_grammar.symTryStatement && frame.namedChildren != 0 && frame.allChildrenReturn;
+}
+
+bool NodeIndex::FlowFactCollector::Advance(TSTreeCursor& cursor, bool full)
+{
+    if (ts_tree_cursor_goto_first_child(&cursor))
     {
         return true;
     }
-    while (ts_tree_cursor_goto_parent(cursor))
+    do
     {
-        if (ts_tree_cursor_goto_next_sibling(cursor))
+        if (full)
+        {
+            Leave();
+        }
+        if (ts_tree_cursor_goto_next_sibling(&cursor))
         {
             return true;
         }
-    }
+    } while (ts_tree_cursor_goto_parent(&cursor));
     return false;
 }
 
@@ -163,10 +780,11 @@ static void MaintainActiveContainers(std::vector<uint32_t>& activeContainers,
  * @param[in] root Root AST node to traverse.
  * @param[in] budget Traversal budget guard to prevent runaway recursion or unbounded visits.
  */
-void NodeIndex::TraverseTree(TSNode root, TraversalBudget* budget)
+void NodeIndex::TraverseTree(TSNode root, TraversalBudget* budget, bool full)
 {
     TSTreeCursor cursor = ts_tree_cursor_new(root);
     std::vector<uint32_t> activeContainers;
+    FlowFactCollector flow(*this);
 
     while (true)
     {
@@ -175,22 +793,51 @@ void NodeIndex::TraverseTree(TSNode root, TraversalBudget* budget)
 
         const uint32_t parentSpanIdx = activeContainers.empty() ? UINT32_MAX : activeContainers.back();
         const size_t containerCount = m_containerSpans.size();
-        IndexNode(node, budget, parentSpanIdx);
+        const size_t syntaxSlot = IndexNode(node, budget, parentSpanIdx, full);
+        if (full)
+        {
+            flow.Enter(node, cursor, syntaxSlot);
+        }
         if (m_containerSpans.size() > containerCount)
         {
             activeContainers.push_back(static_cast<uint32_t>(containerCount));
         }
 
-        if (!AdvanceTreeCursor(&cursor))
+        if (!flow.Advance(cursor, full))
         {
             break;
         }
     }
 
     ts_tree_cursor_delete(&cursor);
+    flow.FinishUsingScopes();
+    if (m_flowFacts)
+    {
+        std::erase(m_flowFacts->returningBodies, UINT32_MAX);
+    }
 }
 
-void NodeIndex::Build(TSNode root, const TSLanguage* lang, TraversalBudget* budget)
+bool NodeIndex::CallableBodyDefinitelyReturns(uint32_t bodyStartByte) const noexcept
+{
+    return m_flowFacts && std::ranges::binary_search(m_flowFacts->returningBodies, bodyStartByte);
+}
+
+std::span<const TSNode> NodeIndex::SwitchLabels(uint32_t switchStartByte) const noexcept
+{
+    if (!m_flowFacts)
+    {
+        return {};
+    }
+    const auto& switches = m_flowFacts->switches;
+    const auto entry = std::ranges::lower_bound(switches, switchStartByte, {}, &IndexedSwitch::startByte);
+    if (entry == switches.end() || entry->startByte != switchStartByte)
+    {
+        return {};
+    }
+    return entry->labels;
+}
+
+void NodeIndex::Build(TSNode root, const TSLanguage* lang, TraversalBudget* budget, NodeIndexContents contents)
 {
     Clear();
     m_root = root;
@@ -199,10 +846,11 @@ void NodeIndex::Build(TSNode root, const TSLanguage* lang, TraversalBudget* budg
         return;
     }
 
+    m_hasSyntaxErrors = ts_node_has_error(root) || ts_node_is_error(root);
     m_language = lang ? lang : tree_sitter_angelscript();
     PopulatePredefinedSymbols(m_language);
     m_symComment = SymbolForName("comment");
-    TraverseTree(root, budget);
+    TraverseTree(root, budget, contents == NodeIndexContents::Full);
     PostProcessErrorRanges();
     PostProcessCommentRanges();
 }
@@ -381,6 +1029,7 @@ std::span<const NodeIndex::ErrorRange> NodeIndex::ErrorRanges() const noexcept
 void NodeIndex::Clear() noexcept
 {
     m_root = TSNode{};
+    m_hasSyntaxErrors = false;
     m_language = nullptr;
     m_nodeCount = 0;
     m_errorNodes.clear();
@@ -388,6 +1037,7 @@ void NodeIndex::Clear() noexcept
     m_errorRanges.clear();
     m_commentRanges.clear();
     m_containerSpans.clear();
+    m_flowFacts.reset();
     m_symComment = 0;
 }
 
@@ -451,32 +1101,31 @@ TSNode NodeIndex::FindEnclosingClassOrMixin(uint32_t byteOffset) const noexcept
     return FindEnclosingNodeAny(byteOffset, targets);
 }
 
-const IndexedContainerSpan* NodeIndex::FindInnermostClassSpan(uint32_t byteOffset) const noexcept
+/// The last span to start at the position can only be enclosed by its recorded ancestors.
+template <typename Span> static const Span* FindInnermostSpan(std::span<const Span> spans, uint32_t byteOffset)
 {
-    if (m_containerSpans.empty())
+    const auto upper = std::ranges::upper_bound(spans, byteOffset, {}, &Span::startByte);
+    if (upper == spans.begin())
     {
         return nullptr;
     }
-    const auto& gs = parser::GetGrammarSymbols();
-    auto it = std::upper_bound(m_containerSpans.begin(), m_containerSpans.end(), byteOffset,
-                               [](uint32_t val, const IndexedContainerSpan& s) { return val < s.startByte; });
-    while (it != m_containerSpans.begin())
+    const Span* span = &*(upper - 1);
+    while (byteOffset >= span->endByte)
     {
-        --it;
-        if (byteOffset < it->endByte)
+        if (span->parentSpanIndex >= spans.size())
         {
-            if (it->symbol == gs.symLambdaExpression)
-            {
-                return nullptr;
-            }
-            if (it->symbol == gs.symClassDeclaration || it->symbol == gs.symMixinDeclaration)
-            {
-                return &(*it);
-            }
             return nullptr;
         }
+        span = &spans[span->parentSpanIndex];
     }
-    return nullptr;
+    return span;
+}
+
+const IndexedContainerSpan* NodeIndex::FindInnermostClassSpan(uint32_t byteOffset) const noexcept
+{
+    const auto* span = FindInnermostSpan(std::span<const IndexedContainerSpan>(m_containerSpans), byteOffset);
+    const auto& gs = parser::GetGrammarSymbols();
+    return span && (span->symbol == gs.symClassDeclaration || span->symbol == gs.symMixinDeclaration) ? span : nullptr;
 }
 
 TSNode NodeIndex::FindEnclosingCallable(uint32_t byteOffset) const noexcept
@@ -561,36 +1210,16 @@ void AppendRawContainers(TSNode nameNode, ContainerKind kind, std::string_view s
  */
 void ComputeContainerQualifiedNames(std::vector<ContainerInfo>& containers)
 {
-    for (size_t i = 0; i < containers.size(); ++i)
+    std::string qualified;
+    for (auto it = containers.rbegin(); it != containers.rend(); ++it)
     {
-        std::string qName;
-        for (size_t j = containers.size(); j > i; --j)
+        if (!qualified.empty())
         {
-            if (!qName.empty())
-            {
-                qName += "::";
-            }
-            qName += containers[j - 1].name;
+            qualified += "::";
         }
-        containers[i].qualifiedName = std::move(qName);
+        qualified += it->name;
+        it->qualifiedName = qualified;
     }
-}
-
-static uint32_t FindInnermostContainerSpanIndex(std::span<const IndexedContainerSpan> spans,
-                                                uint32_t byteOffset) noexcept
-{
-    auto it = std::upper_bound(spans.begin(), spans.end(), byteOffset,
-                               [](uint32_t val, const IndexedContainerSpan& s) { return val < s.startByte; });
-
-    while (it != spans.begin())
-    {
-        --it;
-        if (byteOffset < it->endByte)
-        {
-            return static_cast<uint32_t>(std::distance(spans.begin(), it));
-        }
-    }
-    return UINT32_MAX;
 }
 
 static void AppendContainerFromSpan(const IndexedContainerSpan& span, ContainerKind kind, std::string_view sourceCode,
@@ -618,42 +1247,115 @@ static void AppendContainerFromSpan(const IndexedContainerSpan& span, ContainerK
     }
 }
 
-std::vector<ContainerInfo> NodeIndex::CollectEnclosingContainers(uint32_t byteOffset, std::string_view sourceCode) const
+std::vector<ContainerInfo> NodeIndex::CollectContainersFrom(const IndexedContainerSpan* span,
+                                                            std::string_view sourceCode) const
 {
     std::vector<ContainerInfo> rawContainers;
-    if (m_containerSpans.empty())
-    {
-        return rawContainers;
-    }
-
-    const uint32_t innermostIdx = FindInnermostContainerSpanIndex(m_containerSpans, byteOffset);
-    if (innermostIdx == UINT32_MAX)
-    {
-        return rawContainers;
-    }
-
     const auto& gs = parser::GetGrammarSymbols();
-    uint32_t curr = innermostIdx;
     bool crossedLambda = false;
-
-    while (curr != UINT32_MAX)
+    while (span)
     {
-        const auto& span = m_containerSpans[curr];
-        if (span.symbol == gs.symLambdaExpression)
+        if (span->symbol == gs.symLambdaExpression)
         {
             crossedLambda = true;
         }
-        else if (const auto kind = ClassifyContainerKind(span.symbol))
+        else if (const auto kind = ClassifyContainerKind(span->symbol))
         {
             if (!(crossedLambda && (*kind == ContainerKind::Class || *kind == ContainerKind::Interface)))
             {
-                AppendContainerFromSpan(span, *kind, sourceCode, rawContainers);
+                AppendContainerFromSpan(*span, *kind, sourceCode, rawContainers);
             }
         }
-        curr = span.parentSpanIndex;
+        span = span->parentSpanIndex == UINT32_MAX ? nullptr : &m_containerSpans[span->parentSpanIndex];
     }
-
     ComputeContainerQualifiedNames(rawContainers);
     return rawContainers;
+}
+
+std::vector<ContainerInfo> NodeIndex::CollectEnclosingContainers(uint32_t byteOffset, std::string_view sourceCode) const
+{
+    return CollectContainersFrom(FindInnermostSpan(std::span<const IndexedContainerSpan>(m_containerSpans), byteOffset),
+                                 sourceCode);
+}
+
+bool NodeIndex::IsInsideBaseClassList(uint32_t startByte, uint32_t endByte) const noexcept
+{
+    if (!m_flowFacts)
+    {
+        return false;
+    }
+    const auto& lists = m_flowFacts->baseClassLists;
+    const auto upper = std::ranges::upper_bound(lists, startByte, {}, &ErrorRange::startByte);
+    return upper != lists.begin() && startByte < (upper - 1)->endByte && endByte <= (upper - 1)->endByte;
+}
+
+std::vector<ContainerInfo> NodeIndex::CollectLookupContainers(uint32_t startByte, uint32_t endByte, TSSymbol symbol,
+                                                              std::string_view sourceCode) const
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    if (symbol == gs.symScript)
+    {
+        return {};
+    }
+
+    auto* span = FindInnermostSpan(std::span<const IndexedContainerSpan>(m_containerSpans), startByte);
+    while (span && endByte > span->endByte)
+    {
+        span = span->parentSpanIndex == UINT32_MAX ? nullptr : &m_containerSpans[span->parentSpanIndex];
+    }
+    if (span)
+    {
+        const bool onDeclaration = span->symbol == symbol && span->startByte == startByte && span->endByte == endByte;
+        const bool onName =
+            span->nameStartByte == startByte && span->nameEndByte == endByte && span->nameStartByte < span->nameEndByte;
+        const bool onBaseClass = symbol != gs.symBaseClassList && IsInsideBaseClassList(startByte, endByte);
+        if (onDeclaration || onName || onBaseClass)
+        {
+            span = span->parentSpanIndex == UINT32_MAX ? nullptr : &m_containerSpans[span->parentSpanIndex];
+        }
+    }
+    return CollectContainersFrom(span, sourceCode);
+}
+
+static void AppendUsingName(std::vector<std::string>& names, std::string_view sourceCode, uint32_t start, uint32_t end)
+{
+    if (start < end && end <= sourceCode.size())
+    {
+        const auto text = parser::Trim(sourceCode.substr(start, end - start));
+        if (!text.empty())
+        {
+            names.emplace_back(text);
+        }
+    }
+}
+
+std::vector<std::string> NodeIndex::CollectUsingNamespaces(std::string_view sourceCode,
+                                                           std::optional<uint32_t> byteOffset) const
+{
+    std::vector<std::string> result;
+    if (!m_flowFacts)
+    {
+        return result;
+    }
+    const auto& names = m_flowFacts->usingNames;
+    if (!byteOffset)
+    {
+        result.reserve(names.size());
+        for (const auto& entry : names)
+        {
+            AppendUsingName(result, sourceCode, entry.name.startByte, entry.name.endByte);
+        }
+        return result;
+    }
+    const auto& scopes = m_flowFacts->usingScopes;
+    auto* scope = FindInnermostSpan(std::span<const IndexedUsingScope>(scopes), *byteOffset);
+    for (; scope; scope = scope->parentSpanIndex == SIZE_MAX ? nullptr : &scopes[scope->parentSpanIndex])
+    {
+        for (size_t id = scope->firstName; id != SIZE_MAX; id = names[id].next)
+        {
+            AppendUsingName(result, sourceCode, names[id].name.startByte, names[id].name.endByte);
+        }
+    }
+    return result;
 }
 } // namespace angel_lsp::analysis

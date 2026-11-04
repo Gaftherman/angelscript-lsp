@@ -1,7 +1,11 @@
+#include "analysis/SemanticAnalyzer.h"
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/SymbolCollector.h"
+#include "analysis/resolution/TargetResolution.h"
 #include "config/EngineRuleConfig.h"
+#include "document/Document.h"
 #include "features/code_lens/CodeLensHandler.h"
+#include "features/definition/DefinitionHandler.h"
 #include "features/references/ReferencesHandler.h"
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
@@ -9,6 +13,7 @@
 #include "spdlog/fmt/fmt.h"
 
 #include <algorithm>
+#include <array>
 #include <doctest/doctest.h>
 #include <string>
 #include <vector>
@@ -58,6 +63,28 @@ struct CodeLensFixture
         {
             scopeIndex.SetScopeTree(fileUri, std::move(scopeRoot));
         }
+    }
+
+    auto AddAnalyzedDocument(const std::string& fileUri, const std::string& code, CallBindingRevision revision)
+    {
+        symbolCollector.CollectSymbols(fileUri, code, parser, symbolTable);
+        auto scope = std::shared_ptr<Scope>(scopeCollector.CollectScopes(code, parser));
+        REQUIRE(static_cast<bool>(scope));
+        auto syntax = document::MakeTreePtr(parser.Parse(code));
+        REQUIRE(static_cast<bool>(syntax));
+        const NodeIndex index(ts_tree_root_node(syntax.get()));
+        SemanticAnalysisRequest analysis(symbolTable, fileUri);
+        analysis.tree = syntax.get();
+        analysis.sourceCode = code;
+        analysis.scopeRoot = scope;
+        analysis.mutableScopeRoot = scope.get();
+        analysis.nodeIndex = &index;
+        analysis.moduleFileUris = {fileUri, uri};
+        analysis.callBindingRevision = revision;
+        const SemanticAnalyzer analyzer(nullptr);
+        analyzer.Analyze(analysis);
+        scopeIndex.SetScopeTree(fileUri, std::move(scope));
+        return syntax;
     }
 
     std::optional<std::vector<lsp::CodeLens>> GetLenses(const config::UnusedSymbolRules* unusedRules = nullptr,
@@ -859,6 +886,11 @@ TEST_CASE("CodeLens and References resolve a closed-file chain through an inheri
     REQUIRE(found != lenses->end());
     REQUIRE(found->command.has_value());
     CHECK(found->command->title == "1 reference");
+    CHECK(found->command->command == "angelscript.showReferences");
+    REQUIRE(found->command->arguments.has_value());
+    REQUIRE(found->command->arguments->size() == 3);
+    CHECK((*found->command->arguments)[1].integer() == 1);
+    CHECK((*found->command->arguments)[2].integer() == 7);
 }
 
 TEST_CASE("CodeLens - Operator overloads without call sites are suppressed")
@@ -1475,4 +1507,137 @@ TEST_CASE("CodeLens - Symbol in namespace homonymous with class has references c
         }
     }
     CHECK(foundLens);
+}
+
+TEST_CASE("CodeLens and references use the explicit qualifier of each closed-file occurrence")
+{
+    CodeLensFixture fixture("namespace FirstChoice {\n"
+                            "    int Pick() { return 1; }\n"
+                            "    enum Mode { Ready }\n"
+                            "}\n");
+    fixture.AddDocument("file:///other.as", "namespace SecondChoice {\n"
+                                            "    int Pick() { return 2; }\n"
+                                            "    enum Mode { Ready }\n"
+                                            "}\n");
+    const std::string useUri = "file:///qualified_uses.as";
+    const std::string uses = "int Query() {\n"
+                             "    FirstChoice:: /* qualifier trivia */\n"
+                             "        Pick(); SecondChoice::Pick();\n"
+                             "    return FirstChoice::Mode::Ready + SecondChoice::Mode::Ready;\n"
+                             "}\n";
+    fixture.AddDocument(useUri, uses);
+
+    const auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+    const std::array declarations{lsp::Position{1, 8}, lsp::Position{2, 16}};
+    for (const auto& declaration : declarations)
+    {
+        const ReferencesRequest request{fixture.uri, fixture.sourceCode,  fixture.tree,      declaration,
+                                        false,       fixture.symbolTable, fixture.scopeIndex};
+        const auto references = GetReferences(request);
+        REQUIRE(references.has_value());
+        REQUIRE(references->size() == 1);
+        CHECK(references->front().uri.toString() == useUri);
+        const bool isMethod = declaration.line == 1;
+        CHECK(references->front().range.start.line == (isMethod ? 2u : 3u));
+        CHECK(references->front().range.start.character == (isMethod ? 8u : 30u));
+        CHECK(std::ranges::any_of(*lenses,
+                                  [&](const lsp::CodeLens& lens)
+                                  {
+                                      return lens.range.start.line == declaration.line && lens.command &&
+                                             lens.command->title == "1 reference";
+                                  }));
+    }
+}
+
+TEST_CASE("CodeLens and references distinguish typed overloads in an analyzed closed file")
+{
+    CodeLensFixture fixture("int Pick(int value, int bonus = 0) { return value + bonus; }\n"
+                            "int Pick(bool value) { return value ? 1 : 0; }\n");
+    const std::string uri = "file:///typed_uses.as";
+    const std::string source = "void Use() {\n"
+                               "    Pick(7);\n"
+                               "    Pick(true);\n"
+                               "    Pick(9, 2);\n"
+                               "}\n";
+    const CallBindingRevision revision{7, 1, 2};
+    const auto tree = fixture.AddAnalyzedDocument(uri, source, revision);
+
+    const auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+    for (uint32_t line = 0; line < 2; ++line)
+    {
+        const ReferencesRequest request{fixture.uri, fixture.sourceCode,  fixture.tree,      {line, 4},
+                                        false,       fixture.symbolTable, fixture.scopeIndex};
+        const auto refs = GetReferences(request);
+        REQUIRE(refs.has_value());
+        REQUIRE(refs->size() == (line == 0 ? 2 : 1));
+        CHECK(refs->front().uri.toString() == uri);
+        CHECK(refs->front().range.start.line == (line == 0 ? 1 : 2));
+        if (line == 0)
+        {
+            CHECK(refs->back().range.start.line == 3);
+        }
+        const std::string expectedTitle = line == 0 ? "2 references" : "1 reference";
+        CHECK(std::ranges::any_of(
+            *lenses, [&](const lsp::CodeLens& lens)
+            { return lens.range.start.line == line && lens.command && lens.command->title == expectedTitle; }));
+    }
+    const auto root = fixture.scopeIndex.GetRoot(uri);
+    REQUIRE(static_cast<bool>(root));
+    const auto callByte = static_cast<uint32_t>(source.find("Pick(true)"));
+    const auto selected = ResolveIndexedCall(fixture.symbolTable, root.get(), callByte, revision);
+    REQUIRE(static_cast<bool>(selected));
+    CHECK(selected->selectionRange.startLine == 1);
+    CHECK_FALSE(static_cast<bool>(ResolveIndexedCall(fixture.symbolTable, root.get(), callByte, std::nullopt)));
+    CHECK_FALSE(
+        static_cast<bool>(ResolveIndexedCall(fixture.symbolTable, root.get(), callByte, CallBindingRevision{7, 2, 2})));
+    CHECK_FALSE(
+        static_cast<bool>(ResolveIndexedCall(fixture.symbolTable, root.get(), callByte, CallBindingRevision{8, 1, 2})));
+    CHECK_FALSE(
+        static_cast<bool>(ResolveIndexedCall(fixture.symbolTable, root.get(), callByte, CallBindingRevision{7, 1, 3})));
+
+    DefinitionRequest definition{uri, source, tree.get(), fixture.symbolTable, fixture.scopeIndex, {2, 4}};
+    definition.callBindingRevision = revision;
+    const auto destinations = GetDefinition(definition);
+    REQUIRE(destinations.has_value());
+    REQUIRE(destinations->size() == 1);
+    CHECK(destinations->front().uri.toString() == fixture.uri);
+    CHECK(destinations->front().range.start.line == 1);
+
+    const ReferencesRequest fromCall{
+        uri, source, tree.get(), {2, 4}, false, fixture.symbolTable, fixture.scopeIndex, nullptr, revision};
+    const auto references = GetReferences(fromCall);
+    REQUIRE(references.has_value());
+    REQUIRE(references->size() == 1);
+    CHECK(references->front().uri.toString() == uri);
+    CHECK(references->front().range.start.line == 2);
+}
+
+TEST_CASE("Call bindings resolve each sibling block using its own namespace imports")
+{
+    CodeLensFixture fixture("namespace FromLeft { int Pick() { return 1; } }\n"
+                            "namespace FromRight { int Pick() { return 2; } }\n");
+    const std::string uri = "file:///lexical_uses.as";
+    const std::string source = "void Use() {\n"
+                               "    { using namespace FromLeft; Pick(); }\n"
+                               "    { using namespace FromRight; Pick(); }\n"
+                               "    Pick();\n"
+                               "}\n";
+    const CallBindingRevision revision{8, 1, 2};
+    fixture.AddAnalyzedDocument(uri, source, revision);
+    const auto root = fixture.scopeIndex.GetRoot(uri);
+    REQUIRE(static_cast<bool>(root));
+
+    const size_t leftByte = source.find("Pick");
+    const size_t rightByte = source.find("Pick", leftByte + 1);
+    const size_t outerByte = source.find("Pick", rightByte + 1);
+    const auto left = ResolveIndexedCall(fixture.symbolTable, root.get(), static_cast<uint32_t>(leftByte), revision);
+    const auto right = ResolveIndexedCall(fixture.symbolTable, root.get(), static_cast<uint32_t>(rightByte), revision);
+    REQUIRE(static_cast<bool>(left));
+    REQUIRE(static_cast<bool>(right));
+    CHECK(left->qualifiedName == "FromLeft::Pick");
+    CHECK(right->qualifiedName == "FromRight::Pick");
+    CHECK_FALSE(static_cast<bool>(
+        ResolveIndexedCall(fixture.symbolTable, root.get(), static_cast<uint32_t>(outerByte), revision)));
 }

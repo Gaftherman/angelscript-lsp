@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/diagnostics/Diagnostics.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/types/TypeExtraction.h"
 #include "config/ServerConfig.h"
@@ -83,12 +84,12 @@ class SymbolCollector
     // Public API
 
     /**
-     * @brief Constructs the collector and pre-resolves all tree-sitter grammar symbols and the TAGS_QUERY.
+     * @brief Constructs the collector and uses the shared Tree-sitter grammar symbols.
      */
     explicit SymbolCollector(angel_lsp::utils::LspLogger* logger);
 
     /**
-     * @brief Releases the compiled TAGS_QUERY.
+     * @brief Destroys the collector.
      */
     ~SymbolCollector();
 
@@ -112,6 +113,10 @@ class SymbolCollector
      */
     std::vector<Diagnostic> CollectSymbols(const std::string& fileUri, const std::string& sourceCode,
                                            angel_lsp::parser::AngelScriptParser& parser, SymbolTable& symbolTable);
+
+    /// Uses the declarations and syntax errors captured for the document's parse.
+    std::vector<Diagnostic> CollectSymbolsWithIndex(const SymbolCollectRequest& request, const NodeIndex& index,
+                                                    SymbolTable& symbolTable);
 
     /**
      * @brief Collects symbols from an already-parsed tree, without owning or freeing it.
@@ -180,13 +185,12 @@ class SymbolCollector
 
   private:
     utils::LspLogger* m_logger;
-    const TSQuery* m_tagsQuery = nullptr;
     const parser::GrammarSymbols& m_gs;
 
     // Internal Bundled Contexts
 
     /**
-     * @brief Tracks the lexical scope a TAGS_QUERY match was found in while it is dispatched.
+     * @brief Tracks the lexical container at a declaration candidate.
      */
     struct CollectionContext
     {
@@ -260,46 +264,14 @@ class SymbolCollector
         bool hasSemicolon = false;
     };
 
-    // Query Dispatch Types & Members
-
-    /**
-     * @brief Member-function pointer type used to dispatch a TAGS_QUERY capture to its handler.
-     */
     using ProcessFn = void (SymbolCollector::*)(TSNode, SymbolCollectContext&, const CollectionContext&);
 
-    /**
-     * @brief Maps each TAGS_QUERY capture index to its handler, built once in the constructor.
-     */
-    std::vector<ProcessFn> m_captureDispatch;
-
-    /**
-     * @brief Member-function pointer type used to dispatch a validation capture to its handler.
-     */
-    using ValidationFn = void (SymbolCollector::*)(TSNode, SymbolCollectContext&) const;
-
-    /**
-     * @brief Maps each TAGS_QUERY capture index to its validation handler.
-     */
-    std::vector<ValidationFn> m_validationDispatch;
-
-    // Initialization Helpers
-
-    void InitQueryDispatch();
-    void PopulateDispatchTables();
-    ProcessFn ResolveCaptureHandler(std::string_view captureName) const;
-    ValidationFn ResolveValidationHandler(std::string_view captureName) const;
-
-    // AST Traversal & Scope Helpers
-
-    /**
-     * @brief Runs diagnostics and the TAGS_QUERY dispatch loop over a parsed root node.
-     */
-    void CollectFromTree(TSNode rootNode, SymbolCollectContext& sCtx);
-    void DispatchMatchCapture(const TSQueryCapture& capture, SymbolCollectContext& sCtx,
-                              std::vector<ActiveContainer>& containerStack,
-                              const std::vector<RecoveredClassContainer>& recoveredClasses);
-
-    void PushContainerIfApplicable(uint32_t captureIdx, TSNode node, const SymbolCollectContext& sCtx,
+    static ProcessFn DeclarationHandler(IndexedDeclarationKind kind);
+    void CollectFromIndex(const NodeIndex& index, SymbolCollectContext& sCtx);
+    void DispatchDeclaration(TSNode node, IndexedDeclarationKind kind, SymbolCollectContext& sCtx,
+                             std::vector<ActiveContainer>& containerStack,
+                             const std::vector<RecoveredClassContainer>& recoveredClasses);
+    void PushContainerIfApplicable(ProcessFn handler, TSNode node, const SymbolCollectContext& sCtx,
                                    std::vector<ActiveContainer>& stack) const;
     void SyncRecoveredContainers(uint32_t nodeStart, const std::vector<RecoveredClassContainer>& recoveredClasses,
                                  std::vector<ActiveContainer>& containerStack) const;
@@ -312,7 +284,7 @@ class SymbolCollector
     void PushFunctionContainer(TSNode node, const SymbolCollectContext& sCtx,
                                std::vector<ActiveContainer>& stack) const;
 
-    // Declaration Collectors (TAGS_QUERY @definition.* handlers)
+    // Declaration handlers
 
     void ProcessVariable(TSNode varDeclNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
     void ProcessVirtualPropertyVariable(TSNode varDeclNode, SymbolCollectContext& sCtx, const CollectionContext& ctx);
@@ -369,7 +341,7 @@ class SymbolCollector
         uint32_t firstErrorLine = UINT32_MAX;
         std::vector<MissingCaseColon> missingColons;
     };
-    void ReportParseErrors(TSNode rootNode, SymbolCollectContext& sCtx) const;
+    void ReportParseErrors(const NodeIndex& index, SymbolCollectContext& sCtx) const;
     void RecoverSwallowedDeclarations(SymbolCollectContext& sCtx);
     void EmitMissingColonDiagnostics(std::span<const MissingCaseColon> missingColons, SymbolCollectContext& sCtx) const;
     void HandleParseErrorNode(TSNode node, ParseErrorReportContext& errCtx) const;

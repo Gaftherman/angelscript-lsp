@@ -1279,8 +1279,7 @@ TEST_CASE("CodeActionHandler - QuickFix localization in Spanish")
     REQUIRE(explicitCallFixEn != nullptr);
 }
 
-TEST_CASE(
-    "CodeActionHandler - Implement Interface with reference return, const qualifier, and override at top of class")
+TEST_CASE("CodeActionHandler - Implement Interface with const qualifier and override at top of class")
 {
     const std::string ifaceName = angel_lsp::test::GenerateRandomSymbolName("IConfigurable");
     const std::string className = angel_lsp::test::GenerateRandomSymbolName("ASDataTracker");
@@ -1288,7 +1287,7 @@ TEST_CASE(
 
     std::string code = "interface " + ifaceName +
                        " {\n"
-                       "    const string& " +
+                       "    const string " +
                        methodName +
                        "() const;\n"
                        "    const string GetSchema() const;\n"
@@ -1318,7 +1317,7 @@ TEST_CASE(
             const auto& edits = changes[lsp::DocumentUri::parse(env.uri)];
             REQUIRE(!edits.empty());
             const std::string& newText = edits[0].newText;
-            CHECK(newText.find("const string& " + methodName + "() const override") != std::string::npos);
+            CHECK(newText.find("const string " + methodName + "() const override") != std::string::npos);
             CHECK(newText.find("const string GetSchema() const override") != std::string::npos);
             CHECK(newText.find("bool Register(btson@ config) override") != std::string::npos);
             // Insertion position must be at line 6 (right after opening brace '{'), before line 7 (m_existingField)
@@ -1326,6 +1325,37 @@ TEST_CASE(
         }
     }
     CHECK(foundAction);
+}
+
+TEST_CASE("CodeActionHandler - Interface Quick Fix skips a reference return without a valid stub")
+{
+    const auto iface = angel_lsp::test::GenerateRandomSymbolName("Interface");
+    const auto type = angel_lsp::test::GenerateRandomSymbolName("Implementation");
+    const auto method = angel_lsp::test::GenerateRandomSymbolName("GetValue");
+    TestEnvironment env("interface " + iface + " { const int& " + method + "() const; }\nclass " + type + " : " +
+                        iface + " {}\n");
+    const auto actions = env.CodeActions(lsp::Range{{1, 0}, {1, 1}});
+    CHECK(ActionTitled(actions, "Implement missing interface methods") == nullptr);
+}
+
+TEST_CASE("CodeActionHandler - Interface Quick Fix distinguishes inherited overloads of the same arity")
+{
+    const auto iface = angel_lsp::test::GenerateRandomSymbolName("Interface");
+    const auto base = angel_lsp::test::GenerateRandomSymbolName("Parent");
+    const auto type = angel_lsp::test::GenerateRandomSymbolName("Implementation");
+    const auto method = angel_lsp::test::GenerateRandomSymbolName("SetValue");
+    TestEnvironment env("interface " + iface + " { void " + method + "(int input); void " + method +
+                        "(float input); }\nclass " + base + " { void " + method + "(int input) final {} }\nclass " +
+                        type + " : " + base + ", " + iface + " {}\n");
+    const auto actions = env.CodeActions(lsp::Range{{2, 0}, {2, 1}});
+    const auto* fix = ActionTitled(actions, "Implement missing interface methods");
+    REQUIRE(fix != nullptr);
+    REQUIRE(fix->edit.has_value());
+    REQUIRE(fix->edit->changes.has_value());
+    const auto& edits = fix->edit->changes->at(lsp::DocumentUri::parse(env.uri));
+    REQUIRE(edits.size() == 1);
+    CHECK(edits.front().newText.find(method + "(float input)") != std::string::npos);
+    CHECK(edits.front().newText.find(method + "(int input)") == std::string::npos);
 }
 
 TEST_CASE("CodeActionHandler - QuickFix ignore unused symbol for functions, methods, globals, and classes")

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/checkers/BinaryOperatorHelpers.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/ScopeTree.h"
 
@@ -10,9 +11,10 @@ namespace angel_lsp::analysis
 /**
  * @brief Validates operand type compatibility for non-comparison binary operators
  *        (bitwise, arithmetic, modulo).
- * @param[in] node Syntax tree node of a binary_expression.
+ * @param[in] operands Complete operator, left and right handles for the expression.
  * @param[in] scope Lexical scope enclosing the binary expression.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void CheckBinaryOperatorCompatibility(TSNode node, const Scope* scope, DiagnosticContext& ctx);
+void CheckBinaryOperatorCompatibility(const BinaryExpressionOperands& operands, const Scope* scope,
+                                      DiagnosticContext& ctx);
 } // namespace angel_lsp::analysis

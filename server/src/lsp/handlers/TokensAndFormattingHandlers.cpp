@@ -188,22 +188,17 @@ Server::HandleRequestsTextDocument_SemanticTokens_Range(lsp::requests::TextDocum
         return lsp::Null{};
     }
 
-    analysis::NodeIndex localNodeIndex;
-    const analysis::NodeIndex* nodeIndexPtr = nullptr;
-    if (doc->tree)
-    {
-        localNodeIndex.Build(ts_tree_root_node(doc->tree));
-        nodeIndexPtr = &localNodeIndex;
-    }
-
-    features::SemanticTokensRequest sr{doc->uri, *doc->text, doc->tree, m_symbolTable};
-    if (doc->tree != nullptr && m_localScopeCollector != nullptr)
-    {
-        m_scopeIndex.SetScopeTree(
-            doc->uri, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(doc->tree), *doc->text));
-    }
+    const auto syntax =
+        doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
+                  : nullptr;
+    TSTree* tree = syntax ? syntax->tree.get() : nullptr;
+    features::SemanticTokensRequest sr{doc->uri, *doc->text, tree, m_symbolTable};
     sr.scopeRoot = m_scopeIndex.GetRoot(doc->uri);
-    sr.nodeIndex = nodeIndexPtr;
+    sr.nodeIndex = syntax ? &syntax->index : nullptr;
+    if (tree && m_localScopeCollector)
+    {
+        sr.scopeRoot = m_localScopeCollector->CollectScopesFromTree(syntax->index.Root(), *doc->text, sr.nodeIndex);
+    }
     sr.excludedLineRanges = ExcludedLineRanges(*doc->text);
     sr.range = codec::Decode(*doc->text, GetPositionEncoding(), req.range);
 

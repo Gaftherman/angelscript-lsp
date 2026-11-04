@@ -1,13 +1,13 @@
 #include "analysis/checkers/RepeatedConversionChecker.h"
 
 #include "analysis/checkers/BinaryOperatorHelpers.h"
-#include "analysis/checkers/ComparisonOperatorChecker.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/SyntaxOperands.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
-#include "parser/QueryRegistry.h"
 
+#include <algorithm>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -45,20 +45,14 @@ static void InspectComparisonNode(TSNode binNode, const Scope* scope, Diagnostic
                                   std::vector<ConversionOccurrence>& out)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode opNode = parser::GetChildByField(binNode, gs.fieldOperator);
-    if (ts_node_is_null(opNode))
+    const auto operands = ReadBinaryOperands(binNode, ctx.request.nodeIndex);
+    if (!operands.Complete())
     {
         return;
     }
+    const auto& [opNode, left, right] = operands;
     const TSSymbol opSym = ts_node_symbol(opNode);
     if (opSym != gs.tokEqEq && opSym != gs.tokBangEq)
-    {
-        return;
-    }
-
-    TSNode left = parser::GetChildByField(binNode, gs.fieldLeft);
-    TSNode right = parser::GetChildByField(binNode, gs.fieldRight);
-    if (ts_node_is_null(left) || ts_node_is_null(right))
     {
         return;
     }
@@ -75,63 +69,40 @@ static void InspectComparisonNode(TSNode binNode, const Scope* scope, Diagnostic
     TryRecordOccurrence(right, {cleanRight, cleanLeft}, ctx, out);
 }
 
-static void CollectConditionConversions(TSNode condNode, const Scope* scope, DiagnosticContext& ctx,
+/// Visits only indexed binary candidates contained in the condition's byte interval.
+static void CollectConditionConversions(TSNode condition, const Scope* scope, DiagnosticContext& ctx,
                                         std::vector<ConversionOccurrence>& out)
 {
-    if (ts_node_is_null(condNode))
+    const auto& gs = parser::GetGrammarSymbols();
+    const auto candidates = ctx.request.nodeIndex->Nodes(gs.symBinaryExpression);
+    const auto start = ts_node_start_byte(condition);
+    const auto end = ts_node_end_byte(condition);
+    const auto first = std::ranges::lower_bound(candidates, start, {}, ts_node_start_byte);
+    const auto last = std::ranges::lower_bound(first, candidates.end(), end, {}, ts_node_start_byte);
+    for (auto it = first; it != last; ++it)
     {
-        return;
-    }
-
-    const TSQuery* query = parser::QueryRegistry::GetBinaryExpressionQuery();
-    TSQueryCursor* cursor = parser::QueryRegistry::GetThreadLocalCursor();
-    if (!query || !cursor)
-    {
-        return;
-    }
-
-    ts_query_cursor_exec(cursor, query, condNode);
-    TSQueryMatch match;
-    while (ts_query_cursor_next_match(cursor, &match))
-    {
-        for (uint16_t i = 0; i < match.capture_count; ++i)
+        if (ts_node_end_byte(*it) <= end)
         {
-            InspectComparisonNode(match.captures[i].node, scope, ctx, out);
+            InspectComparisonNode(*it, scope, ctx, out);
         }
     }
 }
 
-static TSNode GetIfCondition(TSNode ifNode)
+std::vector<TSNode> CollectIfLadderConditions(TSNode rootIf, const NodeIndex* index)
 {
-    TSNode cond = parser::GetChildByField(ifNode, parser::GetGrammarSymbols().fieldCondition);
-    if (!ts_node_is_null(cond))
-    {
-        return cond;
-    }
-    return (ts_node_named_child_count(ifNode) > 0) ? ts_node_named_child(ifNode, 0) : TSNode{};
-}
-
-static TSNode GetIfAlternative(TSNode ifNode)
-{
-    TSNode alt = parser::GetChildByField(ifNode, parser::GetGrammarSymbols().fieldAlternative);
-    if (!ts_node_is_null(alt))
-    {
-        return alt;
-    }
-    return (ts_node_named_child_count(ifNode) >= 3) ? ts_node_named_child(ifNode, 2) : TSNode{};
-}
-
-static std::vector<TSNode> CollectLadderIfNodes(TSNode rootIfNode)
-{
-    std::vector<TSNode> ifNodes;
-    TSNode curr = rootIfNode;
+    std::vector<TSNode> conditions;
     const auto& gs = parser::GetGrammarSymbols();
-    while (!ts_node_is_null(curr) && ts_node_symbol(curr) == gs.symIfStatement)
+    for (TSNode current = rootIf; !ts_node_is_null(current) && ts_node_symbol(current) == gs.symIfStatement;)
     {
-        ifNodes.push_back(curr);
-        curr = GetIfAlternative(curr);
+        const SyntaxOperands syntax(current, index);
+        const TSNode condition = syntax.FieldOrNamed(gs.fieldCondition, 0);
+        if (!ts_node_is_null(condition))
+        {
+            conditions.push_back(condition);
+        }
+        current = syntax.FieldOrNamed(gs.fieldAlternative, 2);
     }
-    return ifNodes;
+    return conditions;
 }
 
 static void EmitRepeatedHints(const std::vector<ConversionOccurrence>& occurrences, DiagnosticContext& ctx)
@@ -161,66 +132,16 @@ static void EmitRepeatedHints(const std::vector<ConversionOccurrence>& occurrenc
 
 void CheckRepeatedConversions(TSNode rootIfNode, const Scope* scope, DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(rootIfNode))
+    if (!ctx.request.nodeIndex)
     {
         return;
     }
 
-    const auto ifNodes = CollectLadderIfNodes(rootIfNode);
     std::vector<ConversionOccurrence> occurrences;
-    for (TSNode ifNode : ifNodes)
+    for (TSNode condition : CollectIfLadderConditions(rootIfNode, ctx.request.nodeIndex))
     {
-        TSNode cond = GetIfCondition(ifNode);
-        CollectConditionConversions(cond, scope, ctx, occurrences);
+        CollectConditionConversions(condition, scope, ctx, occurrences);
     }
-
     EmitRepeatedHints(occurrences, ctx);
-}
-
-std::vector<TSNode> FindOccurrencesInIfLadder(TSNode rootIf, std::string_view exprText, std::string_view sourceCode)
-{
-    std::vector<TSNode> results;
-    if (ts_node_is_null(rootIf) || exprText.empty())
-    {
-        return results;
-    }
-
-    const TSQuery* query = parser::QueryRegistry::GetBinaryExpressionQuery();
-    TSQueryCursor* cursor = parser::QueryRegistry::GetThreadLocalCursor();
-    if (!query || !cursor)
-    {
-        return results;
-    }
-
-    for (TSNode ifNode : CollectLadderIfNodes(rootIf))
-    {
-        TSNode cond = GetIfCondition(ifNode);
-        if (ts_node_is_null(cond))
-        {
-            continue;
-        }
-
-        ts_query_cursor_exec(cursor, query, cond);
-        TSQueryMatch match;
-        const auto& gs = parser::GetGrammarSymbols();
-        while (ts_query_cursor_next_match(cursor, &match))
-        {
-            for (uint16_t i = 0; i < match.capture_count; ++i)
-            {
-                TSNode bin = match.captures[i].node;
-                TSNode left = parser::GetChildByField(bin, gs.fieldLeft);
-                TSNode right = parser::GetChildByField(bin, gs.fieldRight);
-                if (!ts_node_is_null(left) && GetNodeTextView(left, sourceCode) == exprText)
-                {
-                    results.push_back(left);
-                }
-                if (!ts_node_is_null(right) && GetNodeTextView(right, sourceCode) == exprText)
-                {
-                    results.push_back(right);
-                }
-            }
-        }
-    }
-    return results;
 }
 } // namespace angel_lsp::analysis

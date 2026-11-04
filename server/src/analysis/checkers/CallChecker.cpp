@@ -302,7 +302,7 @@ static void CollectScopeCandidates(const std::string& scopeName, const std::stri
 }
 
 /**
- * @brief Collects candidates from using namespace directives at document root.
+ * @brief Collects candidates from namespace imports visible at the call site.
  * @param[in] name Unqualified function name.
  * @param[in] reachableScopes Already visited lexical scopes.
  * @param[in] ctx Lookup context.
@@ -311,13 +311,7 @@ static void CollectScopeCandidates(const std::string& scopeName, const std::stri
 static void CollectUsingNamespaceCandidates(const std::string& name, const std::vector<std::string>& reachableScopes,
                                             const FreeLookupContext& ctx, std::vector<Symbol>& candidates)
 {
-    if (ctx.sourceCode.find("using") == std::string_view::npos)
-    {
-        return;
-    }
-
-    const auto usings = ctx.nodeIndex ? CollectUsingNamespaces(*ctx.nodeIndex, ctx.sourceCode)
-                                      : CollectUsingNamespaces(parser::GetRootNode(ctx.callNode), ctx.sourceCode);
+    const auto usings = CollectVisibleUsingNamespaces(ctx.callNode, ctx.sourceCode, ctx.nodeIndex);
 
     for (const auto& imported : usings)
     {
@@ -1352,8 +1346,7 @@ static CallResolutionContext ResolveCallArguments(const CallValidationContext& v
         result.argIsLValue.push_back(
             CheckArgIsLValue(argNode, valCtx.request.sourceCode, valCtx.scope, valCtx.ctx.request.symbolTable));
 
-        if (auto dataTypeName =
-                IsBareDataType(argNode, valCtx.scope, valCtx.ctx.request.symbolTable, valCtx.request.sourceCode))
+        if (auto dataTypeName = IsBareDataType(argNode, ExpressionTypeContext(valCtx.scope, valCtx.ctx)))
         {
             if (*dataTypeName == "void")
             {
@@ -1774,6 +1767,54 @@ static bool CheckCandidateNamedArgs(const FunctionSignature& sig, const std::vec
     return CheckUnmatchedDefaultParameters(sig, matchedParams);
 }
 
+static TSNode GetBoundCallName(TSNode callee)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    const auto symbol = ts_node_symbol(callee);
+    if (symbol == gs.symMemberExpression)
+    {
+        return parser::GetChildByField(callee, gs.fieldMember);
+    }
+    if (symbol == gs.symScopedIdentifier)
+    {
+        TSNode name{};
+        parser::ForEachNamedChildNode(callee,
+                                      [&](TSNode child)
+                                      {
+                                          if (ts_node_symbol(child) == gs.symIdentifier)
+                                          {
+                                              name = child;
+                                          }
+                                      });
+        return name;
+    }
+    return symbol == gs.symIdentifier ? callee : TSNode{};
+}
+
+static void RecordBoundCall(const Symbol& declaration, const CallValidationContext& valCtx)
+{
+    if (!valCtx.ctx.request.mutableScopeRoot || declaration.type != SymbolType::Function || declaration.isSynthesized ||
+        declaration.fileUri.empty() || declaration.selectionRange == SourceRange{})
+    {
+        return;
+    }
+    const TSNode name = GetBoundCallName(valCtx.callee);
+    if (ts_node_is_null(name) || parser::GetNodeTextView(name, valCtx.request.sourceCode) != declaration.name)
+    {
+        return;
+    }
+    auto& bindings = valCtx.ctx.callBindings;
+    if (!bindings)
+    {
+        const auto& request = valCtx.ctx.request;
+        bindings = std::make_shared<CallBindings>(request.callBindingRevision,
+                                                  request.moduleContext ? request.moduleContext->name : std::string{});
+    }
+    const TSPoint start = ts_node_start_point(name);
+    const TSPoint end = ts_node_end_point(name);
+    bindings->Add(ts_node_start_byte(name), {start.row, start.column, end.row, end.column}, declaration);
+}
+
 /**
  * @brief Checks overload resolution for calls specifying named arguments.
  * @param[in] matchingArity Candidates of matching arity.
@@ -1784,23 +1825,46 @@ static bool CheckCandidateNamedArgs(const FunctionSignature& sig, const std::vec
 static void HandleNamedCallOverloads(std::span<const Symbol* const> matchingArity, const CallResolutionContext& args,
                                      const CalleeResolution& calleeRes, const CallValidationContext& valCtx)
 {
-    bool matchedAny = false;
+    const Symbol* matched = nullptr;
     for (const Symbol* cand : matchingArity)
     {
-        if (cand && std::holds_alternative<FunctionSignature>(cand->signature))
+        if (cand && std::holds_alternative<FunctionSignature>(cand->signature) &&
+            CheckCandidateNamedArgs(cand->GetFunction(), args.argNames, args.argTypes, valCtx.ctx.request.symbolTable))
         {
-            if (CheckCandidateNamedArgs(cand->GetFunction(), args.argNames, args.argTypes,
-                                        valCtx.ctx.request.symbolTable))
+            if (matched)
             {
-                matchedAny = true;
-                break;
+                return;
             }
+            matched = cand;
         }
     }
-    if (!matchedAny && args.allArgsResolved)
+    if (!args.allArgsResolved)
+    {
+        return;
+    }
+    if (matched)
+    {
+        RecordBoundCall(*matched, valCtx);
+    }
+    else
     {
         valCtx.ctx.EmitAtRange(GetCalleeDiagnosticRange(valCtx.callee), "as-err-call-no-matching-signature",
                                calleeRes.reportedName);
+    }
+}
+
+static void ValidateResolvedCall(const OverloadMatchResult& match, size_t candidateCount,
+                                 const CallResolutionContext& args, const CallValidationContext& valCtx)
+{
+    const auto& selected = *match.bestCandidate;
+    if (!match.isAmbiguous && args.allArgsResolved)
+    {
+        RecordBoundCall(selected, valCtx);
+    }
+    ValidateOutArguments(selected, args.argNodes, valCtx);
+    if (candidateCount > 1)
+    {
+        CheckInitializerListArgs(args, selected.GetFunction(), valCtx);
     }
 }
 
@@ -1814,8 +1878,16 @@ static void HandleNamedCallOverloads(std::span<const Symbol* const> matchingArit
 static void CheckCallOverloads(std::span<const Symbol* const> matchingArity, const CallResolutionContext& args,
                                const CalleeResolution& calleeRes, const CallValidationContext& valCtx)
 {
-    if ((args.argTypes.empty() && !calleeRes.candidatesAreFreeFunctions) || matchingArity.empty())
+    if (matchingArity.empty())
     {
+        return;
+    }
+    if (args.argTypes.empty() && !calleeRes.candidatesAreFreeFunctions)
+    {
+        if (matchingArity.size() == 1)
+        {
+            RecordBoundCall(*matchingArity.front(), valCtx);
+        }
         return;
     }
 
@@ -1853,11 +1925,7 @@ static void CheckCallOverloads(std::span<const Symbol* const> matchingArity, con
     }
     else
     {
-        ValidateOutArguments(*match.bestCandidate, args.argNodes, valCtx);
-        if (matchingArity.size() > 1)
-        {
-            CheckInitializerListArgs(args, match.bestCandidate->GetFunction(), valCtx);
-        }
+        ValidateResolvedCall(match, matchingArity.size(), args, valCtx);
     }
 }
 

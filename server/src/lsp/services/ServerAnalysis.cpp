@@ -6,6 +6,7 @@
 #include "utils/Timer.h"
 #include "utils/Utils.h"
 
+#include <algorithm>
 #include <spdlog/fmt/fmt.h>
 
 namespace angel_lsp
@@ -20,12 +21,9 @@ void Server::ReanalyseOpenDocuments()
             continue;
         }
         IndexModuleClosure(doc->uri);
-        SharedTree astSnapshot = doc->getAST();
-        document::TreePtr treeCopy = document::MakeTreePtr(astSnapshot ? ts_tree_copy(astSnapshot.get()) : nullptr);
         ScheduleAnalysis(ScheduleAnalysisRequest{.uriStr = doc->uri,
                                                  .text = doc->text,
-                                                 .force = false,
-                                                 .tree = std::move(treeCopy),
+                                                 .force = true,
                                                  .version = doc->version,
                                                  .generation = doc->generation});
     }
@@ -58,6 +56,7 @@ ankerl::unordered_dense::set<std::string> Server::ComputeModuleClosureUris(const
 
 angel_lsp::analysis::SemanticAnalysisRequest
 Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text, const TSTree* tree,
+                             const utils::PreprocessorScan& preprocessing,
                              const angel_lsp::analysis::SymbolTable* customSymbolTable) const
 {
     angel_lsp::analysis::SemanticAnalysisRequest request{customSymbolTable ? *customSymbolTable : m_symbolTable, uriStr,
@@ -82,16 +81,8 @@ Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
     request.sourceCode = text;
     request.tree = tree;
 
-    const auto rawTextOpt = GetDocumentStore().GetText(uriStr);
-    const std::string_view preprocessorSource = rawTextOpt ? std::string_view(*rawTextOpt) : std::string_view(text);
-
-    auto scan = angel_lsp::utils::ScanPreprocessor(preprocessorSource, *DefinedWords(), m_config.preprocessor,
-                                                   m_config.pragmaMode != config::ServerConfig::PragmaMode::Accept);
-
-    request.excludedLineRanges = std::move(scan.excluded);
-
-    if (!angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
-        request.unsupportedDirectives = std::move(scan.unsupported);
+    request.excludedLineRanges = preprocessing.excluded;
+    request.unsupportedDirectives = preprocessing.unsupported;
 
     request.pragmaSeverity = m_config.pragmaMode == config::ServerConfig::PragmaMode::Error
                                  ? angel_lsp::analysis::DiagnosticSeverity::Error
@@ -102,10 +93,13 @@ Server::BuildAnalysisRequest(const std::string& uriStr, const std::string& text,
 
 std::vector<angel_lsp::analysis::Diagnostic> Server::ReplaceSymbolsFromTree(const std::string& uriStr,
                                                                             const std::string& text, TSTree* tree,
-                                                                            bool* outInterfaceChanged)
+                                                                            bool* outInterfaceChanged,
+                                                                            const analysis::NodeIndex* index)
 {
     angel_lsp::analysis::SymbolTable staging;
-    auto diagnostics = m_symbolCollector->CollectSymbolsWithTree({uriStr, text, m_i18n.get()}, tree, staging);
+    const analysis::SymbolCollectRequest request{uriStr, text, m_i18n.get()};
+    auto diagnostics = index ? m_symbolCollector->CollectSymbolsWithIndex(request, *index, staging)
+                             : m_symbolCollector->CollectSymbolsWithTree(request, tree, staging);
     if (tree && ts_node_has_error(ts_tree_root_node(tree)))
     {
         m_symbolTable.RetainLastKnownGoodTypes(uriStr, staging);
@@ -142,10 +136,10 @@ Server::ReplaceSymbolsFromSource(const std::string& uriStr, const std::string& t
 
 bool Server::ShouldSkipScopeAnalysis(const CollectScopesRequest& request)
 {
-    if (request.text.size() > angel_lsp::constants::limits::MaxAnalysedDocumentBytes)
+    if (request.source.text.size() > angel_lsp::constants::limits::MaxAnalysedDocumentBytes)
     {
         LogWarning(fmt::format("Skipping analysis of {}: {} bytes exceeds the {} byte limit. Navigation still works.",
-                               request.uriStr, request.text.size(),
+                               request.uriStr, request.source.text.size(),
                                angel_lsp::constants::limits::MaxAnalysedDocumentBytes));
 
         m_scopeIndex.ClearDocument(request.uriStr);
@@ -185,25 +179,18 @@ std::vector<angel_lsp::analysis::Diagnostic> Server::CollectScopesAndAnalyze(con
     }
 
     std::shared_ptr<angel_lsp::analysis::Scope> scopeRoot;
-    std::optional<analysis::NodeIndex> localNodeIndex;
-    const analysis::NodeIndex* nodeIndex = request.nodeIndex;
-
     utils::HighResTimer scopeTimer;
     if (request.tree)
     {
-        const TSNode root = ts_tree_root_node(request.tree);
-        if (!nodeIndex)
-        {
-            nodeIndex = &localNodeIndex.emplace(root);
-        }
-        scopeRoot = m_localScopeCollector->CollectScopesFromTree(root, request.text, nodeIndex);
+        const TSNode root = request.nodeIndex.Root();
+        scopeRoot = m_localScopeCollector->CollectScopesFromTree(root, request.source.text, &request.nodeIndex);
         if (scopeRoot)
         {
             m_callGraph.SetDocumentCalls(request.uriStr, analysis::CollectCallsFromScopeTree(*scopeRoot));
         }
         else
         {
-            m_callGraph.SetDocumentCalls(request.uriStr, analysis::CollectCalls(root, request.text));
+            m_callGraph.SetDocumentCalls(request.uriStr, analysis::CollectCalls(root, request.source.text));
         }
     }
     else
@@ -216,10 +203,12 @@ std::vector<angel_lsp::analysis::Diagnostic> Server::CollectScopesAndAnalyze(con
         *request.outScopeMs = scopeTimer.ElapsedMs();
     }
 
-    auto analysisReq = BuildAnalysisRequest(request.uriStr, request.text, request.tree);
+    auto analysisReq =
+        BuildAnalysisRequest(request.uriStr, request.source.text, request.tree, *request.source.preprocessing);
     analysisReq.scopeRoot = scopeRoot;
     analysisReq.mutableScopeRoot = scopeRoot.get();
-    analysisReq.nodeIndex = nodeIndex;
+    analysisReq.nodeIndex = &request.nodeIndex;
+    analysisReq.callBindingRevision = request.callBindingRevision;
     analysisReq.mixinCache = &m_serverMixinCache;
 
     utils::HighResTimer checkTimer;
@@ -238,23 +227,64 @@ std::vector<angel_lsp::analysis::Diagnostic> Server::CollectScopesAndAnalyze(con
     return diagnostics;
 }
 
-void Server::ScheduleAnalysis(ScheduleAnalysisRequest req)
+static bool MatchesOpenRevision(const ScheduleAnalysisRequest& request, const document::Document& open)
 {
-    if (req.version < 0)
-    {
-        req.version = GetDocumentVersion(req.uriStr);
-    }
+    return request.text == open.text && (request.version < 0 || request.version == open.version) &&
+           (request.generation == 0 || request.generation == open.generation);
+}
 
-    if (req.generation == 0)
+std::optional<ScheduleRequest> Server::MakeScheduleRequest(ScheduleAnalysisRequest req) const
+{
+    const auto open = GetDocumentStore().GetDocument(req.uriStr);
+    uint64_t closedRevision = 0;
+    if (open)
     {
-        req.generation = GetDocumentStore().GetGeneration(req.uriStr);
+        if (!MatchesOpenRevision(req, *open))
+        {
+            return std::nullopt;
+        }
+        req.version = open->version;
+        req.generation = open->generation;
+    }
+    else
+    {
+        if (req.generation != 0 || req.version >= 0)
+        {
+            return std::nullopt;
+        }
+        std::lock_guard lock(m_closureMutex);
+        const auto entry = m_closureDocuments.find(req.uriStr);
+        if (entry == m_closureDocuments.end() || !entry->second.text || *entry->second.text != req.text)
+        {
+            return std::nullopt;
+        }
+        closedRevision = entry->second.revision;
     }
 
     const uint64_t configRevision = m_sessionCoordinator->GetConfigRevision();
-    const std::string analysisText = AnalysisTextFor(req.uriStr, req.text);
+    auto prepared = req.preparedSource ? std::move(*req.preparedSource) : PrepareAnalysisSource(req.uriStr, req.text);
+    document::TreePtr tree = document::MakeTreePtr();
+    if (open && open->tree && open->ParsedSource() == prepared.text)
+    {
+        tree = document::MakeTreePtr(ts_tree_copy(open->tree.get()));
+    }
+    return ScheduleRequest{std::move(req.uriStr),
+                           std::move(prepared.text),
+                           req.force,
+                           std::move(tree),
+                           req.version,
+                           req.generation,
+                           configRevision,
+                           closedRevision,
+                           std::move(prepared.preprocessing)};
+}
 
-    m_diagnosticsPipeline->Schedule(
-        {req.uriStr, analysisText, req.force, std::move(req.tree), req.version, req.generation, configRevision});
+void Server::ScheduleAnalysis(ScheduleAnalysisRequest req)
+{
+    if (auto scheduled = MakeScheduleRequest(std::move(req)))
+    {
+        m_diagnosticsPipeline->Schedule(std::move(*scheduled));
+    }
 }
 
 void Server::ScheduleAnalysis(const std::string& uriStr, const std::string& text, bool force)
@@ -264,21 +294,16 @@ void Server::ScheduleAnalysis(const std::string& uriStr, const std::string& text
 
 void Server::ScheduleAnalysisImmediate(ScheduleAnalysisRequest req)
 {
-    if (req.version < 0)
+    if (auto scheduled = MakeScheduleRequest(std::move(req)))
     {
-        req.version = GetDocumentVersion(req.uriStr);
+        m_diagnosticsPipeline->ScheduleImmediate(std::move(*scheduled));
     }
+}
 
-    if (req.generation == 0)
-    {
-        req.generation = GetDocumentStore().GetGeneration(req.uriStr);
-    }
-
-    const uint64_t configRevision = m_sessionCoordinator->GetConfigRevision();
-    const std::string analysisText = AnalysisTextFor(req.uriStr, req.text);
-
-    m_diagnosticsPipeline->ScheduleImmediate(
-        {req.uriStr, analysisText, req.force, std::move(req.tree), req.version, req.generation, configRevision});
+bool Server::IsClosedRevisionCurrentLocked(const std::string& uri, uint64_t revision) const
+{
+    const auto entry = m_closureDocuments.find(uri);
+    return entry != m_closureDocuments.end() && entry->second.revision == revision;
 }
 
 bool Server::IsCommitAnalysisStale(const CommitAnalysisRequest& req) const
@@ -318,6 +343,17 @@ bool Server::CommitAnalysisResults(CommitAnalysisRequest req)
 
     std::lock_guard<std::mutex> lock(m_lifecycleMutex);
 
+    // The disk revision stays valid until the related symbols, occurrences and diagnostics are published.
+    std::unique_lock closedLock(m_closureMutex, std::defer_lock);
+    if (req.closedRevision != 0)
+    {
+        closedLock.lock();
+        if (!IsClosedRevisionCurrentLocked(req.uriStr, req.closedRevision))
+        {
+            return false;
+        }
+    }
+
     if (IsCommitAnalysisStale(req))
     {
         return false;
@@ -338,23 +374,31 @@ bool Server::CommitAnalysisResults(CommitAnalysisRequest req)
         m_scopeIndex.ClearDocument(req.uriStr);
     }
 
+    if (closedLock.owns_lock())
+    {
+        auto& closed = m_closureDocuments.at(req.uriStr);
+        closed.lexicalScopes.reset();
+        if (req.staging)
+        {
+            closed.indexedSyntax.reset();
+        }
+    }
+
     PublishDiagnostics(PublishDiagnosticsRequest{
         .uriStr = req.uriStr,
         .text = req.text,
         .diagnostics = std::move(req.diagnostics),
         .version = req.version,
         .generation = req.generation,
+        .preprocessing = std::move(req.preprocessing),
+        .closedRevision = req.closedRevision,
     });
     return true;
 }
 
 bool Server::IsAnalyzeDocumentStale(const AnalyzeDocumentRequest& req) const
 {
-    if (req.generation > 0 && !GetDocumentStore().IsCurrent(req.uriStr, req.generation, req.version))
-    {
-        return true;
-    }
-    if (m_diagnosticsPipeline->IsCancelled(req.uriStr))
+    if (IsAnalysisRequestStale(req))
     {
         return true;
     }
@@ -427,6 +471,7 @@ bool Server::TryZeroCopyPredefinedAnalysis(const AnalyzeDocumentRequest& req, co
         .calls = {},
         .diagnostics = {},
         .text = req.text,
+        .closedRevision = req.closedRevision,
     });
     return true;
 }
@@ -434,7 +479,7 @@ bool Server::TryZeroCopyPredefinedAnalysis(const AnalyzeDocumentRequest& req, co
 void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer)
 {
     LogInfo(fmt::format("[Analysis] Starting predefined analysis for file: {}", req.uriStr));
-    const std::string analysisText = AnalysisTextFor(req.uriStr, req.text);
+    const std::string& analysisText = req.text;
     if (TryZeroCopyPredefinedAnalysis(req, analysisText, totalTimer))
     {
         return;
@@ -479,6 +524,7 @@ void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::
         .calls = std::move(calls),
         .diagnostics = {},
         .text = req.text,
+        .closedRevision = req.closedRevision,
     });
 
     if (!committed)
@@ -494,27 +540,51 @@ void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::
 }
 
 ParseAndCollectResult Server::ParseAndCollectSymbols(AnalyzeDocumentRequest& req,
-                                                     angel_lsp::analysis::SymbolTable& staging)
+                                                     angel_lsp::analysis::SymbolTable& staging,
+                                                     SyntaxRevisionCache* syntaxCache)
 {
-    utils::HighResTimer parseTimer;
-    document::TreePtr tree = req.treeCopy ? std::move(req.treeCopy) : document::MakeTreePtr(req.parser.Parse(req.text));
-    double parseMs = parseTimer.ElapsedMs();
-    if (!tree)
+    const SyntaxRevisionKey key{req.uriStr, req.text, req.generation, req.closedRevision};
+    auto syntax = syntaxCache ? syntaxCache->Find(key) : nullptr;
+    double parseMs = 0.0;
+    auto tree = document::MakeTreePtr();
+    if (!syntax)
     {
-        return {document::MakeTreePtr(nullptr), {}, parseMs, 0.0};
+        utils::HighResTimer parseTimer;
+        tree = req.treeCopy ? std::move(req.treeCopy) : document::MakeTreePtr(req.parser.Parse(req.text));
+        parseMs = parseTimer.ElapsedMs();
+        if (!tree)
+        {
+            return {.parseMs = parseMs};
+        }
     }
 
     utils::HighResTimer colTimer;
-    auto diagnostics =
-        m_symbolCollector->CollectSymbolsWithTree({req.uriStr, req.text, m_i18n.get()}, tree.get(), staging);
-    double colMs = colTimer.ElapsedMs();
+    size_t extractedNodes = 0;
+    if (tree)
+    {
+        syntax = std::make_shared<const ParsedDocumentSyntax>(std::move(tree));
+        extractedNodes = syntax->index.NodeCount();
+        if (syntaxCache)
+        {
+            syntaxCache->Remember(key, syntax);
+        }
+    }
+    auto closed = FindClosedAnalysisInputs(req);
+    if (closed.indexedSyntax)
+    {
+        LogInfo(fmt::format("[Analysis] Reused closed indexed symbols for file: {}", req.uriStr));
+        auto diagnostics = closed.indexedSyntax->diagnostics;
+        return {std::move(syntax),    std::move(diagnostics), parseMs,
+                colTimer.ElapsedMs(), extractedNodes,         std::move(closed)};
+    }
 
-    if (tree && ts_node_has_error(ts_tree_root_node(tree.get())))
+    auto diagnostics =
+        m_symbolCollector->CollectSymbolsWithIndex({req.uriStr, req.text, m_i18n.get()}, syntax->index, staging);
+    if (ts_node_has_error(syntax->index.Root()))
     {
         m_symbolTable.RetainLastKnownGoodTypes(req.uriStr, staging);
     }
-
-    return {std::move(tree), std::move(diagnostics), parseMs, colMs};
+    return {std::move(syntax), std::move(diagnostics), parseMs, colTimer.ElapsedMs(), extractedNodes};
 }
 
 void Server::LogAnalysisProfile(std::string_view prefix, const std::string& uriStr,
@@ -527,29 +597,11 @@ void Server::LogAnalysisProfile(std::string_view prefix, const std::string& uriS
                         utils::FormatDuration(profile.colMs), utils::FormatDuration(profile.scopeMs),
                         utils::FormatDuration(profile.checkMs)));
     LogInfo(fmt::format("[Open/Change Profile] File: {} | Total: {} (Snapshot: {}, Parse: {}, Collector: {}, "
-                        "Scopes: {}, Checkers: {})",
+                        "Scopes: {}, Checkers: {}, AST extraction nodes: {})",
                         uriStr, utils::FormatDuration(profile.totalMs), utils::FormatDuration(profile.snapshotMs),
                         utils::FormatDuration(profile.parseMs), utils::FormatDuration(profile.colMs),
-                        utils::FormatDuration(profile.scopeMs), utils::FormatDuration(profile.checkMs)));
-}
-
-bool Server::IsUnchangedClosedDocument(const AnalyzeDocumentRequest& request,
-                                       const angel_lsp::analysis::SymbolTable& staging) const
-{
-    if (request.generation != 0 || GetDocumentStore().IsOpen(request.uriStr))
-    {
-        return false;
-    }
-    {
-        std::lock_guard<std::mutex> lock(m_closureMutex);
-        const auto cached = m_closureDocuments.find(request.uriStr);
-        if (cached == m_closureDocuments.end() || cached->second != request.text)
-        {
-            return false;
-        }
-    }
-    return m_symbolTable.ComputeDocumentInterfaceHash(request.uriStr) ==
-           staging.ComputeDocumentInterfaceHash(request.uriStr);
+                        utils::FormatDuration(profile.scopeMs), utils::FormatDuration(profile.checkMs),
+                        profile.extractedNodes));
 }
 
 void Server::CommitSyntaxOnlyResults(const AnalyzeDocumentRequest& req, std::vector<analysis::Diagnostic> diags)
@@ -562,34 +614,44 @@ void Server::CommitSyntaxOnlyResults(const AnalyzeDocumentRequest& req, std::vec
                            .scopeRoot = nullptr,
                            .calls = {},
                            .diagnostics = std::move(diags),
-                           .text = req.text});
+                           .text = req.text,
+                           .closedRevision = req.closedRevision,
+                           .preprocessing = req.preprocessing});
 }
 
 bool Server::IsAnalysisRequestStale(const AnalyzeDocumentRequest& req) const
 {
+    if (!utils::IsPredefinedFile(req.uriStr, m_config.info.predefinedFileExtension) &&
+        req.configRevision != m_sessionCoordinator->GetConfigRevision())
+    {
+        return true;
+    }
     if (req.generation > 0 && !GetDocumentStore().IsCurrent(req.uriStr, req.generation, req.version))
     {
         return true;
     }
+    if (req.closedRevision != 0)
+    {
+        std::lock_guard lock(m_closureMutex);
+        if (!IsClosedRevisionCurrentLocked(req.uriStr, req.closedRevision))
+        {
+            return true;
+        }
+    }
     return m_diagnosticsPipeline->IsCancelled(req.uriStr);
 }
 
-const analysis::SymbolTable* Server::PrepareAnalysisSnapshot(const std::string& uriStr, bool unchangedClosedFile,
-                                                             const analysis::SymbolTable& staging,
+const analysis::SymbolTable* Server::PrepareAnalysisSnapshot(const std::string& uriStr,
+                                                             const analysis::SymbolTable* staging,
                                                              std::unique_ptr<analysis::SymbolTable>& outSnapshot) const
 {
-    if (unchangedClosedFile)
+    const auto moduleUris = ComputeModuleClosureUris(uriStr);
+    const bool sameInterface =
+        !staging || m_symbolTable.ComputeDocumentInterfaceHash(uriStr) == staging->ComputeDocumentInterfaceHash(uriStr);
+    if (sameInterface && (moduleUris.empty() || m_config.modules.empty() ||
+                          m_symbolTable.ContainsOnlyFiles(moduleUris, m_config.info.predefinedFileExtension)))
     {
         return &m_symbolTable;
-    }
-    const auto moduleUris = ComputeModuleClosureUris(uriStr);
-    if (m_symbolTable.ComputeDocumentInterfaceHash(uriStr) == staging.ComputeDocumentInterfaceHash(uriStr))
-    {
-        if (moduleUris.empty() || m_config.modules.empty() ||
-            m_symbolTable.ContainsOnlyFiles(moduleUris, m_config.info.predefinedFileExtension))
-        {
-            return &m_symbolTable;
-        }
     }
     const auto predefinedBase = GetWorkspaceStore().GetPredefinedBaseTable();
     outSnapshot = m_symbolTable.CreateAnalysisSnapshot({
@@ -613,15 +675,26 @@ static void LogAnalysisProfileAndClosure(const Server& server, const std::string
     }
 }
 
-std::vector<analysis::Diagnostic> Server::AnalyzeWorkerSemantics(angel_lsp::analysis::SemanticAnalysisRequest baseReq,
-                                                                 double& outCheckMs)
+std::vector<analysis::Diagnostic> Server::RunDocumentSemantics(angel_lsp::analysis::SemanticAnalysisRequest baseReq,
+                                                               double& outCheckMs, bool fromScheduler)
 {
     utils::HighResTimer checkTimer;
-    if (m_clearWorkerMixinCache.exchange(false, std::memory_order_acq_rel))
+    if (fromScheduler && m_clearWorkerMixinCache.exchange(false, std::memory_order_acq_rel))
     {
         m_workerMixinCache.clear();
     }
-    baseReq.mixinCache = &m_workerMixinCache;
+    config::DiagnosticsConfig diagnosticConfig;
+    config::EngineProperties engineProperties;
+    {
+        std::lock_guard lock(m_lifecycleMutex);
+        diagnosticConfig = m_config.diagnostics;
+        engineProperties = m_config.engine;
+    }
+    baseReq.diagnostics = &diagnosticConfig;
+    baseReq.engineProperties = &engineProperties;
+
+    analysis::rules::MixinFileCache inlineCache;
+    baseReq.mixinCache = fromScheduler ? &m_workerMixinCache : &inlineCache;
     auto diagnostics = m_semanticAnalyzer->Analyze(baseReq);
     outCheckMs = checkTimer.ElapsedMs();
     return diagnostics;
@@ -637,8 +710,8 @@ std::optional<ParseAndCollectResult> Server::PrepareWorkerDocument(AnalyzeDocume
         WaitForPredefinedReady(std::chrono::milliseconds(5000));
     }
 
-    auto parsed = ParseAndCollectSymbols(req, staging);
-    if (!parsed.tree)
+    auto parsed = ParseAndCollectSymbols(req, staging, req.fromScheduler ? &m_workerSyntax : nullptr);
+    if (!parsed.syntax)
     {
         return std::nullopt;
     }
@@ -657,20 +730,44 @@ std::optional<ParseAndCollectResult> Server::PrepareWorkerDocument(AnalyzeDocume
     return parsed;
 }
 
-static std::pair<std::shared_ptr<angel_lsp::analysis::Scope>, std::vector<angel_lsp::analysis::CallSite>>
-CollectScopesAndCalls(angel_lsp::analysis::LocalScopeCollector* collector, const analysis::NodeIndex& nodeIndex,
-                      const std::string& text, bool unchangedClosedFile)
+ClosedAnalysisInputs Server::FindClosedAnalysisInputs(const AnalyzeDocumentRequest& req) const
 {
-    const TSNode root = nodeIndex.Root();
-    std::shared_ptr<angel_lsp::analysis::Scope> scopeRoot =
-        collector ? collector->CollectScopesFromTree(root, text, &nodeIndex) : nullptr;
-    std::vector<angel_lsp::analysis::CallSite> calls;
-    if (!unchangedClosedFile)
+    if (req.closedRevision == 0)
     {
-        calls = scopeRoot ? angel_lsp::analysis::CollectCallsFromScopeTree(*scopeRoot)
-                          : angel_lsp::analysis::CollectCalls(root, text);
+        return {};
     }
-    return {std::move(scopeRoot), std::move(calls)};
+    std::lock_guard lock(m_closureMutex);
+    const auto entry = m_closureDocuments.find(req.uriStr);
+    if (entry == m_closureDocuments.end() || entry->second.revision != req.closedRevision ||
+        !entry->second.indexedSyntax || *entry->second.indexedSyntax->source != req.text)
+    {
+        return {};
+    }
+    return {entry->second.indexedSyntax, entry->second.lexicalScopes};
+}
+
+std::pair<std::shared_ptr<analysis::Scope>, std::vector<analysis::CallSite>>
+Server::CollectScopesAndCalls(const AnalyzeDocumentRequest& req, const ParseAndCollectResult& parsed)
+{
+    const auto& index = parsed.syntax->index;
+    const TSNode root = index.Root();
+    std::shared_ptr<analysis::Scope> scopes;
+    if (const auto& extracted = parsed.closed.lexicalScopes)
+    {
+        scopes = analysis::CopyLexicalScopeTree(*extracted);
+        LogInfo(fmt::format("[Analysis] Reused closed lexical scopes for file: {}", req.uriStr));
+    }
+    else if (m_localScopeCollector)
+    {
+        scopes = m_localScopeCollector->CollectScopesFromTree(root, req.text, &index);
+    }
+
+    std::vector<analysis::CallSite> calls;
+    if (!parsed.closed.indexedSyntax)
+    {
+        calls = scopes ? analysis::CollectCallsFromScopeTree(*scopes) : analysis::CollectCalls(root, req.text);
+    }
+    return {std::move(scopes), std::move(calls)};
 }
 
 void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer)
@@ -683,62 +780,63 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     }
     auto parsed = std::move(*parsedOpt);
 
-    const TSNode root = ts_tree_root_node(parsed.tree.get());
-    analysis::NodeIndex nodeIndex(root);
-    const bool unchangedClosedFile = IsUnchangedClosedDocument(req, staging);
+    const auto& nodeIndex = parsed.syntax->index;
+    auto* replacement = parsed.closed.indexedSyntax ? nullptr : &staging;
     utils::HighResTimer closureTimer;
-    if (!unchangedClosedFile)
+    if (replacement)
     {
-        IndexModuleClosure(req.uriStr);
+        IndexModuleClosure(req.uriStr, req.fromScheduler ? &m_workerSyntax : nullptr);
     }
     const double closureMs = closureTimer.ElapsedMs();
 
     utils::HighResTimer snapshotTimer;
     std::unique_ptr<analysis::SymbolTable> analysisSnapshot;
-    const analysis::SymbolTable* activeTable =
-        PrepareAnalysisSnapshot(req.uriStr, unchangedClosedFile, staging, analysisSnapshot);
+    const analysis::SymbolTable* activeTable = PrepareAnalysisSnapshot(req.uriStr, replacement, analysisSnapshot);
     const double snapshotMs = snapshotTimer.ElapsedMs();
 
     utils::HighResTimer scopeTimer;
-    auto [scopeRoot, calls] =
-        CollectScopesAndCalls(m_localScopeCollector.get(), nodeIndex, req.text, unchangedClosedFile);
+    auto [scopeRoot, calls] = CollectScopesAndCalls(req, parsed);
     const double scopeMs = scopeTimer.ElapsedMs();
 
     if (!m_config.modules.empty() && ClaimFor(CanonicalPathFromUri(req.uriStr)).owner == nullptr)
     {
-        LogAnalysisProfileAndClosure(
-            *this, req.uriStr, closureMs,
-            AnalysisTimingProfile{totalTimer.ElapsedMs(), snapshotMs, parsed.parseMs, parsed.colMs, scopeMs, 0.0});
+        LogAnalysisProfileAndClosure(*this, req.uriStr, closureMs,
+                                     AnalysisTimingProfile{totalTimer.ElapsedMs(), snapshotMs, parsed.parseMs,
+                                                           parsed.colMs, scopeMs, 0.0, parsed.extractedNodes});
         CommitAnalysisResults({req.uriStr,
                                req.version,
                                req.generation,
                                req.configRevision,
-                               unchangedClosedFile ? nullptr : &staging,
+                               replacement,
                                std::move(scopeRoot),
                                std::move(calls),
                                {},
-                               req.text});
+                               req.text,
+                               req.closedRevision,
+                               req.preprocessing});
         return;
     }
 
-    auto request = BuildAnalysisRequest(req.uriStr, req.text, parsed.tree.get(), activeTable);
+    const auto& preprocessing = *req.preprocessing;
+    auto request = BuildAnalysisRequest(req.uriStr, req.text, parsed.syntax->tree.get(), preprocessing, activeTable);
     request.scopeRoot = scopeRoot;
     request.mutableScopeRoot = scopeRoot.get();
     request.nodeIndex = &nodeIndex;
+    request.callBindingRevision = analysis::CallBindingRevision{req.generation, req.version, req.configRevision};
 
     double checkMs = 0.0;
-    auto semanticDiagnostics = AnalyzeWorkerSemantics(std::move(request), checkMs);
+    auto semanticDiagnostics = RunDocumentSemantics(std::move(request), checkMs, req.fromScheduler);
 
     parsed.diagnostics.insert(parsed.diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
-    AppendIncludeDiagnostics(req.uriStr, req.text, parsed.diagnostics);
+    AppendIncludeDiagnostics(req.uriStr, req.text, preprocessing.excluded, parsed.diagnostics);
 
-    LogAnalysisProfileAndClosure(
-        *this, req.uriStr, closureMs,
-        AnalysisTimingProfile{totalTimer.ElapsedMs(), snapshotMs, parsed.parseMs, parsed.colMs, scopeMs, checkMs});
+    LogAnalysisProfileAndClosure(*this, req.uriStr, closureMs,
+                                 AnalysisTimingProfile{totalTimer.ElapsedMs(), snapshotMs, parsed.parseMs, parsed.colMs,
+                                                       scopeMs, checkMs, parsed.extractedNodes});
 
-    CommitAnalysisResults({req.uriStr, req.version, req.generation, req.configRevision,
-                           unchangedClosedFile ? nullptr : &staging, std::move(scopeRoot), std::move(calls),
-                           std::move(parsed.diagnostics), req.text});
+    CommitAnalysisResults({req.uriStr, req.version, req.generation, req.configRevision, replacement,
+                           std::move(scopeRoot), std::move(calls), std::move(parsed.diagnostics), req.text,
+                           req.closedRevision, req.preprocessing});
 }
 
 void Server::AnalyzeDocument(AnalyzeDocumentRequest req)

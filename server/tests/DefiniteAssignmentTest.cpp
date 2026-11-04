@@ -1,5 +1,6 @@
 #include "analysis/SemanticAnalysisRequest.h"
 #include "analysis/SemanticAnalyzer.h"
+#include "analysis/checkers/DefiniteAssignmentChecker.h"
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
@@ -10,6 +11,7 @@
 
 #include <algorithm>
 #include <doctest/doctest.h>
+#include <memory>
 
 using namespace angel_lsp::analysis;
 using namespace angel_lsp::parser;
@@ -67,6 +69,65 @@ TEST_SUITE("DefiniteAssignment")
                                "    Print(x);\n"
                                "}\n";
         CHECK_FALSE(HasUninitializedRead(AnalyzeCode(goodCode)));
+    }
+
+    TEST_CASE("Recorded statement worklist reaches a deeply nested read")
+    {
+        constexpr size_t depth = 2048;
+        std::string code = "int Deep() { int value; ";
+        code.append(depth, '{');
+        code.append("return value;");
+        code.append(depth, '}');
+        code.append("}");
+
+        AngelScriptParser parser;
+        const std::unique_ptr<TSTree, decltype(&ts_tree_delete)> tree(parser.Parse(code), ts_tree_delete);
+        REQUIRE(tree);
+        const TSNode root = ts_tree_root_node(tree.get());
+        const NodeIndex index(root);
+        SymbolTable table;
+        static angel_lsp::i18n::I18n i18n;
+        const SemanticAnalysisRequest request{table, "file:///deep_assignment.as", ".as.predefined", &i18n};
+        std::vector<Diagnostic> diagnostics;
+        DiagnosticContext ctx(request, diagnostics);
+        CheckDefiniteAssignment({root, code, nullptr, &index}, ctx);
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(HasUninitializedRead(diagnostics));
+    }
+
+    TEST_CASE("Recorded expression worklist reaches a deeply parenthesized read")
+    {
+        constexpr size_t depth = 3072;
+        std::string code = "int Deep() { int value; return ";
+        code.append(depth, '(');
+        code.append("value");
+        code.append(depth, ')');
+        code.append("; }");
+
+        AngelScriptParser parser;
+        const std::unique_ptr<TSTree, decltype(&ts_tree_delete)> tree(parser.Parse(code), ts_tree_delete);
+        REQUIRE(tree);
+        const TSNode root = ts_tree_root_node(tree.get());
+        const NodeIndex index(root);
+        SymbolTable table;
+        static angel_lsp::i18n::I18n i18n;
+        const SemanticAnalysisRequest request{table, "file:///deep_expression.as", ".as.predefined", &i18n};
+        std::vector<Diagnostic> diagnostics;
+        DiagnosticContext ctx(request, diagnostics);
+        CheckDefiniteAssignment({root, code, nullptr, &index}, ctx);
+        REQUIRE(diagnostics.size() == 1);
+        CHECK(HasUninitializedRead(diagnostics));
+    }
+
+    TEST_CASE("A long switch case visits every statement after its label")
+    {
+        std::string code = "int Read(int selector) { int value; switch (selector) { case 1:\n";
+        for (size_t i = 0; i < 255; ++i)
+        {
+            code.append("    selector = 1;\n");
+        }
+        code.append("    return value;\n default: return 0; } }\n");
+        CHECK(HasUninitializedRead(AnalyzeCode(code)));
     }
 
     TEST_CASE("Branching If Else")
@@ -136,6 +197,28 @@ TEST_SUITE("DefiniteAssignment")
                                "    Print(x);\n"
                                "}\n";
         CHECK_FALSE(HasUninitializedRead(AnalyzeCode(outParam)));
+    }
+
+    TEST_CASE("Recorded reads respect right hand sides and argument order")
+    {
+        const std::string code = "void ReadThenWrite(int input, int &out output) { output = input; }\n"
+                                 "void WriteThenRead(int &out output, int input) { output = input; }\n"
+                                 "void Run() {\n"
+                                 "    int a, b, c, d;\n"
+                                 "    ReadThenWrite(a, a);\n"
+                                 "    WriteThenRead(b, b);\n"
+                                 "    c = c;\n"
+                                 "    d = (d = 1);\n"
+                                 "}\n";
+        std::vector<uint32_t> warningLines;
+        for (const auto& diagnostic : AnalyzeCode(code))
+        {
+            if (diagnostic.code == "as-warn-uninitialized-variable-read")
+            {
+                warningLines.push_back(diagnostic.range.start.line);
+            }
+        }
+        CHECK(warningLines == std::vector<uint32_t>{4, 6});
     }
 
     TEST_CASE("Loops Dataflow")

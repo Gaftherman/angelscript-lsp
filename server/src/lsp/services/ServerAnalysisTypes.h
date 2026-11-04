@@ -7,8 +7,10 @@
 #include "analysis/index/SymbolTable.h"
 #include "document/Document.h"
 #include "lsp/state/PositionCodec.h"
+#include "lsp/state/SyntaxRevisionCache.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/LspLogger.h"
+#include "utils/PreprocessorRegions.h"
 #include "utils/StopFlag.h"
 #include "utils/Timer.h"
 
@@ -159,6 +161,13 @@ struct PredefinedIndexTiming
     double scopeMs = 0.0;
 };
 
+/// Source passed to the parser and the directive scan that produced it.
+struct PreparedAnalysisSource
+{
+    std::string text;
+    std::shared_ptr<const utils::PreprocessorScan> preprocessing;
+};
+
 /**
  * @brief Parameters required to atomically commit analysis results for a document.
  */
@@ -173,6 +182,8 @@ struct CommitAnalysisRequest
     std::vector<analysis::CallSite> calls;
     std::vector<analysis::Diagnostic> diagnostics;
     std::string text;
+    uint64_t closedRevision = 0;
+    std::shared_ptr<const utils::PreprocessorScan> preprocessing = {};
 };
 
 /**
@@ -181,11 +192,12 @@ struct CommitAnalysisRequest
 struct CollectScopesRequest
 {
     std::string uriStr;
-    std::string text;
+    const PreparedAnalysisSource& source;
     const TSTree* tree = nullptr;
     double* outScopeMs = nullptr;
     double* outCheckMs = nullptr;
-    const analysis::NodeIndex* nodeIndex = nullptr;
+    const analysis::NodeIndex& nodeIndex;
+    std::optional<analysis::CallBindingRevision> callBindingRevision = std::nullopt;
 };
 
 /**
@@ -198,6 +210,8 @@ struct PublishDiagnosticsRequest
     std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
     int version = -1;
     uint64_t generation = 0;
+    std::shared_ptr<const utils::PreprocessorScan> preprocessing = {};
+    uint64_t closedRevision = 0;
 };
 
 /**
@@ -230,9 +244,9 @@ struct ScheduleAnalysisRequest
     std::string uriStr;
     std::string text;
     bool force = false;
-    angel_lsp::document::TreePtr tree = angel_lsp::document::MakeTreePtr(nullptr);
     int version = -1;
     uint64_t generation = 0;
+    std::optional<PreparedAnalysisSource> preparedSource = {};
 };
 
 /**
@@ -247,17 +261,36 @@ struct AnalyzeDocumentRequest
     int version = -1;
     uint64_t generation = 0;
     uint64_t configRevision = 0;
+    uint64_t closedRevision = 0;
+    bool fromScheduler = false;
+    std::shared_ptr<const utils::PreprocessorScan> preprocessing = {};
+};
+
+/// Value-only syntax results published for a closed document's exact parser input.
+struct ClosedIndexedSyntax
+{
+    std::shared_ptr<const std::string> source;
+    std::vector<analysis::Diagnostic> diagnostics;
+};
+
+/// Closed analysis can borrow immutable lexical records and use the published symbols.
+struct ClosedAnalysisInputs
+{
+    std::shared_ptr<const ClosedIndexedSyntax> indexedSyntax;
+    std::shared_ptr<const analysis::Scope> lexicalScopes;
 };
 
 /**
- * @brief Metrics produced during parsing and symbol collection.
+ * @brief Per-request syntax diagnostics and timings, including whether a cursor ran.
  */
 struct ParseAndCollectResult
 {
-    document::TreePtr tree;
+    std::shared_ptr<const ParsedDocumentSyntax> syntax;
     std::vector<angel_lsp::analysis::Diagnostic> diagnostics;
     double parseMs = 0.0;
     double colMs = 0.0;
+    size_t extractedNodes = 0;
+    ClosedAnalysisInputs closed = {};
 };
 
 /**
@@ -271,6 +304,7 @@ struct AnalysisTimingProfile
     double colMs = 0.0;
     double scopeMs = 0.0;
     double checkMs = 0.0;
+    size_t extractedNodes = 0;
 };
 
 /**

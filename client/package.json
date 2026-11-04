@@ -400,28 +400,6 @@
         "*.as.predefined": "angelscript-predefined",
         "as.predefined": "angelscript-predefined",
         "*.predefined": "angelscript-predefined"
-      },
-      "[angelscript]": {
-        "editor.quickSuggestions": {
-          "other": "on",
-          "comments": "off",
-          "strings": "off"
-        },
-        "editor.suggestOnTriggerCharacters": true,
-        "editor.wordBasedSuggestions": "off",
-        "editor.semanticHighlighting.enabled": true,
-        "editor.autoIndentOnPaste": false
-      },
-      "[angelscript-predefined]": {
-        "editor.quickSuggestions": {
-          "other": "on",
-          "comments": "off",
-          "strings": "off"
-        },
-        "editor.suggestOnTriggerCharacters": true,
-        "editor.wordBasedSuggestions": "off",
-        "editor.semanticHighlighting.enabled": true,
-        "editor.autoIndentOnPaste": false
       }
     },
     "configuration": [
@@ -453,29 +431,6 @@
               "%config.server.logLevel.debug%",
               "%config.server.logLevel.trace%"
             ]
-          },
-          "angelscript.statusBar.alignment": {
-            "type": "string",
-            "enum": [
-              "left",
-              "right"
-            ],
-            "enumDescriptions": [
-              "%config.statusBar.alignment.left%",
-              "%config.statusBar.alignment.right%"
-            ],
-            "default": "left",
-            "markdownDescription": "%config.statusBar.alignment.description%"
-          },
-          "angelscript.statusBar.enabled": {
-            "type": "boolean",
-            "default": true,
-            "markdownDescription": "%config.statusBar.enabled.description%"
-          },
-          "angelscript.statusBar.showStub": {
-            "type": "boolean",
-            "default": false,
-            "markdownDescription": "%config.statusBar.showStub.description%"
           },
           "angelscript.dimInactiveRegions": {
             "type": "boolean",
@@ -947,11 +902,6 @@
             "type": "boolean",
             "default": true,
             "markdownDescription": "%config.features.codeLens.description%"
-          },
-          "angelscript.features.pullDiagnostics": {
-            "type": "boolean",
-            "default": true,
-            "markdownDescription": "%config.features.pullDiagnostics.description%"
           },
           "angelscript.features.typeConversionChecks": {
             "type": "boolean",

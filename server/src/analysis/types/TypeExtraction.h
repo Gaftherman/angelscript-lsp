@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolTable.h"
 
 #include <string>
@@ -14,7 +15,7 @@ TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, std::string_view so
  * @brief True if valueNode's own top-level value is a null literal, e.g. "null" or "(null)".
  *        Unlike a full-tree scan, this does NOT recurse into call arguments, binary operands,
  */
-bool IsNullInitializer(TSNode valueNode);
+bool IsNullInitializer(TSNode valueNode, const NodeIndex* index = nullptr);
 
 /**
  * @brief Pre-resolved grammar symbols and sentinel IDs used during fast AST type extraction.
@@ -27,8 +28,6 @@ struct TypeExtractionSymbols
     TSSymbol symIdentifier = 0;
     TSSymbol symType = 0;
     TSSymbol symScope = 0;
-    TSSymbol symNullLiteral = 0;
-    TSSymbol symParenthesizedExpression = 0;
 
     ankerl::unordered_dense::map<TSSymbol, TypeKind> primitiveKindMap;
 

@@ -123,6 +123,24 @@ void SemanticAnalyzer::RunTypeAndStructureRules(const SemanticAnalysisRequest& r
     CheckNamespacesAndScopes(NamespaceCheckRequest{SafeGetRootNode(request), request.sourceCode, indexPtr}, ctx);
 }
 
+/// Supplies extracted sites even for standalone analyzer callers that only provide a tree.
+static void RunTypeConversions(const SemanticAnalysisRequest& request, const NodeIndex* indexPtr,
+                               DiagnosticContext& ctx)
+{
+    if (indexPtr)
+    {
+        CheckTypeConversions({*indexPtr, request.sourceCode, request.scopeRoot.get(), request.mutableScopeRoot}, ctx);
+        return;
+    }
+
+    const NodeIndex localIndex(SafeGetRootNode(request));
+    auto indexedRequest = request;
+    indexedRequest.nodeIndex = &localIndex;
+    DiagnosticContext indexedContext(indexedRequest, ctx.diagnostics, ctx.logger);
+    CheckTypeConversions({localIndex, request.sourceCode, request.scopeRoot.get(), request.mutableScopeRoot},
+                         indexedContext);
+}
+
 SemanticAnalyzer::TimedAstBreakdown SemanticAnalyzer::RunTimedAstRules(const SemanticAnalysisRequest& request,
                                                                        const NodeIndex* indexPtr,
                                                                        DiagnosticContext& ctx) const
@@ -137,10 +155,7 @@ SemanticAnalyzer::TimedAstBreakdown SemanticAnalyzer::RunTimedAstRules(const Sem
         if (request.enableTypeConversionChecks)
         {
             utils::HighResTimer typeConvTimer;
-            const TypeConversionCheckRequest conversionRequest{SafeGetRootNode(request), request.sourceCode,
-                                                               request.scopeRoot.get(), request.mutableScopeRoot,
-                                                               indexPtr};
-            CheckTypeConversions(conversionRequest, ctx);
+            RunTypeConversions(request, indexPtr, ctx);
             breakdown.typeConvMs = typeConvTimer.ElapsedMs();
         }
 
@@ -209,6 +224,23 @@ void SemanticAnalyzer::CheckDeclarationRules(const SymbolTable& symbolTable, Dia
         });
 }
 
+static void StoreCallBindings(const SemanticAnalysisRequest& request, DiagnosticContext& ctx)
+{
+    if (!request.mutableScopeRoot)
+    {
+        return;
+    }
+    auto& enclosing = request.mutableScopeRoot->enclosingContext;
+    if (!ctx.callBindings && (!enclosing || !enclosing->callBindings))
+    {
+        return;
+    }
+    auto updated =
+        enclosing ? std::make_shared<ScopeEnclosingContext>(*enclosing) : std::make_shared<ScopeEnclosingContext>();
+    updated->callBindings = std::move(ctx.callBindings);
+    enclosing = std::move(updated);
+}
+
 std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest& request) const
 {
     std::vector<Diagnostic> diagnostics;
@@ -230,6 +262,7 @@ std::vector<Diagnostic> SemanticAnalyzer::Analyze(const SemanticAnalysisRequest&
         breakdown.unusedMs = unusedMs;
         rules::CheckDirectivesAndModules(request, ctx);
         rules::CheckMetadataSupport(request, indexPtr, ctx);
+        StoreCallBindings(request, ctx);
 
         if (m_logger && m_logger->IsEnabled(utils::LogLevel::Info))
         {

@@ -97,7 +97,7 @@ class SymbolTable
     struct AnalysisSnapshotRequest
     {
         const std::string& uriStr;
-        const SymbolTable& staging;
+        const SymbolTable* staging = nullptr; ///< Optional replacement for the already published document.
         const ankerl::unordered_dense::set<std::string>* allowedModuleFileUris = nullptr;
         std::string_view predefinedExtension = {};
         const SymbolTable* predefinedBase = nullptr;

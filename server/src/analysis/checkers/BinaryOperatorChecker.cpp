@@ -205,16 +205,11 @@ static bool AreBinaryOperandsCompatible(std::string_view op, const BinaryOperand
  * @param[in] scope Enclosing lexical scope.
  * @param[in,out] ctx Diagnostic collection and analysis context.
  */
-void CheckBinaryOperatorCompatibility(TSNode node, const Scope* scope, DiagnosticContext& ctx)
+void CheckBinaryOperatorCompatibility(const BinaryExpressionOperands& operands, const Scope* scope,
+                                      DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
-    TSNode left = parser::GetChildByField(node, gs.fieldLeft);
-    TSNode right = parser::GetChildByField(node, gs.fieldRight);
-    if (ts_node_is_null(opNode) || ts_node_is_null(left) || ts_node_is_null(right))
-    {
-        return;
-    }
+    const auto& [opNode, left, right] = operands;
 
     const TSSymbol opSym = ts_node_symbol(opNode);
     if (!IsBitwiseOpSym(opSym, gs) && !IsArithmeticOpSym(opSym, gs))
@@ -223,7 +218,8 @@ void CheckBinaryOperatorCompatibility(TSNode node, const Scope* scope, Diagnosti
     }
     const std::string_view op = GetNodeTextView(opNode, ctx.request.sourceCode);
 
-    if (const auto dt = IsBareDataType(left, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+    const ExpressionTypeContext exprCtx(scope, ctx);
+    if (const auto dt = IsBareDataType(left, exprCtx))
     {
         const TSPoint start = ts_node_start_point(left);
         const TSPoint end = ts_node_end_point(left);
@@ -231,7 +227,7 @@ void CheckBinaryOperatorCompatibility(TSNode node, const Scope* scope, Diagnosti
                         diagnostics::codes::ExpressionIsDataType, *dt);
         return;
     }
-    if (const auto dt = IsBareDataType(right, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+    if (const auto dt = IsBareDataType(right, exprCtx))
     {
         const TSPoint start = ts_node_start_point(right);
         const TSPoint end = ts_node_end_point(right);
@@ -239,8 +235,7 @@ void CheckBinaryOperatorCompatibility(TSNode node, const Scope* scope, Diagnosti
                         diagnostics::codes::ExpressionIsDataType, *dt);
         return;
     }
-    if (IsFunctionReference(left, scope, ctx.request.symbolTable, ctx.request.sourceCode) ||
-        IsFunctionReference(right, scope, ctx.request.symbolTable, ctx.request.sourceCode))
+    if (IsFunctionReference(left, exprCtx) || IsFunctionReference(right, exprCtx))
     {
         const TSPoint start = ts_node_start_point(opNode);
         const TSPoint end = ts_node_end_point(opNode);

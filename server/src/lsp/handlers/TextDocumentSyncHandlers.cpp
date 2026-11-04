@@ -78,12 +78,12 @@ void Server::HandleNotificationsTextDocument_WillSave(
 
 void Server::DidSavePredefinedFile(const std::string& uriStr, const std::string& text)
 {
-    const std::string analysisText = AnalysisTextFor(uriStr, text);
+    const std::string analysisText = PrepareAnalysisSource(uriStr, text).text;
     document::TreePtr savedTree = document::MakeTreePtr(m_parser->Parse(analysisText));
 
     {
         std::lock_guard<std::mutex> lock(m_closureMutex);
-        m_closureDocuments[uriStr] = text;
+        m_closureDocuments[uriStr] = {std::make_shared<const std::string>(text), ++m_nextClosedRevision};
     }
 
     if (PredefinedStubContributes(uriStr))
@@ -105,13 +105,10 @@ void Server::DidSavePredefinedFile(const std::string& uriStr, const std::string&
     const bool wordsChanged = RefreshStubDefinedWords(uriStr, text);
 
     PublishDiagnostics(uriStr, {});
-
-    if (wordsChanged)
+    if (!wordsChanged)
     {
-        ReanalyseOpenDocuments();
+        AnalyzeConfiguredModules();
     }
-
-    AnalyzeConfiguredModules();
 }
 
 void Server::ReanalyzeDependentsOnSave(const std::string& uriStr)
@@ -164,9 +161,26 @@ void Server::ReanalyzeDependentsOnSave(const std::string& uriStr)
     ReanalyzeClosedModuleDependents(uriStr, savedClaim, closureSet);
 }
 
+SyntaxRevision Server::ResolveProtocolSyntax(std::string_view uri, std::string_view source,
+                                             const document::Document* open)
+{
+    const SyntaxRevisionKey key{uri, source, open ? open->generation : 0};
+    if (auto cached = m_protocolSyntax.Find(key))
+    {
+        return {std::move(cached), 0};
+    }
+
+    const bool hasExactTree = open && open->tree && open->ParsedSource() == source;
+    auto tree = document::MakeTreePtr(hasExactTree ? ts_tree_copy(open->tree.get()) : m_parser->Parse(source));
+    auto syntax = std::make_shared<const ParsedDocumentSyntax>(std::move(tree));
+    const size_t extractedNodes = syntax->index.NodeCount();
+    m_protocolSyntax.Remember(key, syntax);
+    return {std::move(syntax), extractedNodes};
+}
+
 void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDocument_DidSave::Params&& params)
 {
-    std::lock_guard<std::mutex> lifecycleLock(m_lifecycleMutex);
+    std::unique_lock<std::mutex> lifecycleLock(m_lifecycleMutex);
     utils::HighResTimer totalTimer;
     std::string uriStr = DocumentKey(params.textDocument.uri.toString());
     LogInfo(fmt::format("[File Save] Processing save and re-analysis for: {}", uriStr));
@@ -189,50 +203,67 @@ void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDoc
 
     if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
     {
+        const auto previousWords = DefinedWords();
         DidSavePredefinedFile(uriStr, text);
+        lifecycleLock.unlock();
+        if (previousWords != DefinedWords())
+        {
+            RestartWorkspaceScan();
+        }
         return;
     }
 
-    const std::string analysisText = AnalysisTextFor(uriStr, text);
-    document::TreePtr savedTree = document::MakeTreePtr(m_parser->Parse(analysisText));
+    const auto prepared = PrepareAnalysisSource(uriStr, text);
+    const auto savedDocument = GetDocumentStore().GetDocument(uriStr);
+    const auto revision = ResolveProtocolSyntax(uriStr, prepared.text, savedDocument.get());
+    const auto& syntax = *revision.syntax;
 
-    UpdateSavedDocumentCaches(uriStr, text);
+    UpdateSavedDocumentCaches(uriStr, text, prepared.preprocessing->excluded);
 
     bool interfaceChanged = false;
-    auto diagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, savedTree.get(), &interfaceChanged);
+    auto diagnostics =
+        ReplaceSymbolsFromTree(uriStr, prepared.text, syntax.tree.get(), &interfaceChanged, &syntax.index);
 
-    double scopeMs = 0.0;
-    double checkMs = 0.0;
-    analysis::NodeIndex nodeIndex(ts_tree_root_node(savedTree.get()));
+    const auto bindingRevision =
+        savedDocument && savedDocument->text == text
+            ? std::optional(analysis::CallBindingRevision{savedDocument->generation, savedDocument->version,
+                                                          m_sessionCoordinator->GetConfigRevision()})
+            : std::nullopt;
     auto semanticDiagnostics = CollectScopesAndAnalyze({.uriStr = uriStr,
-                                                        .text = analysisText,
-                                                        .tree = savedTree.get(),
-                                                        .outScopeMs = &scopeMs,
-                                                        .outCheckMs = &checkMs,
-                                                        .nodeIndex = &nodeIndex});
+                                                        .source = prepared,
+                                                        .tree = syntax.tree.get(),
+                                                        .nodeIndex = syntax.index,
+                                                        .callBindingRevision = bindingRevision});
     diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
 
-    AppendIncludeDiagnostics(uriStr, analysisText, diagnostics);
+    AppendIncludeDiagnostics(uriStr, prepared.text, prepared.preprocessing->excluded, diagnostics);
 
-    PublishDiagnostics(uriStr, analysisText, diagnostics, version);
+    PublishDiagnostics(uriStr, prepared.text, diagnostics, version, prepared.preprocessing);
 
-    LogInfo(fmt::format("[File Save] Finished save analysis for: {} in {}", uriStr,
-                        utils::FormatDuration(totalTimer.ElapsedMs())));
+    LogInfo(fmt::format("[File Save] Finished save analysis for: {} in {} (AST extraction nodes: {})", uriStr,
+                        utils::FormatDuration(totalTimer.ElapsedMs()), revision.extractedNodes));
 
     HandleSavedInterfaceChange(uriStr, interfaceChanged);
 }
 
-void Server::UpdateSavedDocumentCaches(const std::string& uriStr, const std::string& text)
+void Server::UpdateSavedDocumentCaches(const std::string& uriStr, const std::string& text,
+                                       const std::vector<utils::ExcludedLineRange>& excluded)
 {
     {
         std::lock_guard<std::mutex> lock(m_closureMutex);
-        m_closureDocuments[uriStr] = text;
+        m_closureDocuments[uriStr] = {std::make_shared<const std::string>(text), ++m_nextClosedRevision};
     }
 
     if (const std::string savedPath = CanonicalPathFromUri(uriStr); !savedPath.empty())
     {
-        GetIncludeGraph().UpdateFile(utils::WorkspaceIncludeGraph::UpdateFileRequest{
-            savedPath, text, *SearchDirectories(), IncludeAllowedRoots(), std::string(ImplicitIncludeExtension())});
+        GetIncludeGraph().UpdateFile(
+            utils::WorkspaceIncludeGraph::UpdateFileRequest{savedPath,
+                                                            text,
+                                                            *SearchDirectories(),
+                                                            IncludeAllowedRoots(),
+                                                            std::string(ImplicitIncludeExtension()),
+                                                            {DefinedWords(), m_config.preprocessor},
+                                                            &excluded});
     }
 
     IndexModuleClosure(uriStr);
@@ -256,29 +287,31 @@ void Server::HandleSavedInterfaceChange(const std::string& uriStr, bool interfac
     }
 }
 
-std::string Server::AnalysisTextFor(const std::string& uriStr, const std::string& text) const
+PreparedAnalysisSource Server::PrepareAnalysisSource(const std::string& uriStr, const std::string& text) const
 {
     if (angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension))
     {
         if (angel_lsp::analysis::IsOfficialEngineConfig(text))
         {
-            return angel_lsp::analysis::ConvertEngineConfigToPredefined(text).predefinedContent;
+            return {angel_lsp::analysis::ConvertEngineConfigToPredefined(text).predefinedContent, {}};
         }
-        return angel_lsp::utils::SanitizePredefinedContent(text);
+        return {angel_lsp::utils::SanitizePredefinedContent(text), {}};
     }
 
-    const auto excluded = ExcludedLineRanges(text);
-    if (!excluded.empty())
+    auto scan = utils::ScanPreprocessor(text, *DefinedWords(), m_config.preprocessor,
+                                        m_config.pragmaMode != config::ServerConfig::PragmaMode::Accept);
+    if (scan.excluded.empty() && scan.unsupported.empty())
     {
-        return angel_lsp::utils::BlankExcludedLines(text, excluded);
+        static const auto empty = std::make_shared<const utils::PreprocessorScan>();
+        return {text, empty};
     }
-
-    return text;
+    auto parsed = scan.excluded.empty() ? text : utils::BlankExcludedLines(text, scan.excluded);
+    return {std::move(parsed), std::make_shared<const utils::PreprocessorScan>(std::move(scan))};
 }
 
 void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
 {
-    const std::string analysisText = AnalysisTextFor(req.uriStr, req.text);
+    const std::string analysisText = PrepareAnalysisSource(req.uriStr, req.text).text;
     const bool contributes = PredefinedStubContributes(req.uriStr);
 
     if (!contributes)
@@ -337,13 +370,17 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
         .uriStr = req.uriStr,
         .text = req.text,
         .force = true,
-        .tree = document::MakeTreePtr(nullptr),
         .version = req.version,
     });
 
     const double totalMs = req.totalTimer.ElapsedMs();
     LogInfo(fmt::format("[File Open] Predefined file opened and indexed: {} in {}", req.uriStr,
                         utils::FormatDuration(totalMs)));
+}
+
+static std::shared_ptr<const std::string> TransformedSource(std::string_view original, const std::string& parsed)
+{
+    return original == parsed ? nullptr : std::make_shared<const std::string>(parsed);
 }
 
 void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDocument_DidOpen::Params&& params)
@@ -369,18 +406,19 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
         return;
     }
 
-    const std::string analysisText = AnalysisTextFor(uriStr, text);
-
+    const auto prepared = PrepareAnalysisSource(uriStr, text);
     utils::HighResTimer parseTimer;
-    TSTree* tree = m_parser->Parse(analysisText);
-    double parseMs = parseTimer.ElapsedMs();
-    GetDocumentStore().OpenDocument(
-        DocumentStore::OpenDocumentRequest{uriStr, text, version, document::MakeTreePtr(tree), clientUri});
-
+    auto parsedTree = document::MakeTreePtr(m_parser->Parse(prepared.text));
+    const double parseMs = parseTimer.ElapsedMs();
+    GetDocumentStore().OpenDocument(DocumentStore::OpenDocumentRequest{
+        uriStr, text, version, std::move(parsedTree), clientUri, TransformedSource(text, prepared.text)});
+    WithdrawClosedSnapshot(uriStr);
     utils::HighResTimer colTimer;
-    auto syntaxDiagnostics = ReplaceSymbolsFromTree(uriStr, analysisText, tree);
-    double colMs = colTimer.ElapsedMs();
-
+    const auto open = GetDocumentStore().GetDocument(uriStr);
+    const auto revision = ResolveProtocolSyntax(uriStr, prepared.text, open.get());
+    const auto& syntax = *revision.syntax;
+    auto diagnostics = ReplaceSymbolsFromTree(uriStr, prepared.text, syntax.tree.get(), nullptr, &syntax.index);
+    const double colMs = colTimer.ElapsedMs();
     m_scopeIndex.ClearDocument(uriStr);
     m_callGraph.ClearDocument(uriStr);
 
@@ -390,28 +428,30 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
     if (m_config.features.enablePredefinedLoader && !IsPredefinedReady())
     {
         LogInfo(fmt::format("Predefined stubs/workspace still indexing; publishing syntax diagnostics for {}", uriStr));
-        PublishDiagnostics(uriStr, analysisText, syntaxDiagnostics, version);
     }
     else
     {
-        auto diagnostics = syntaxDiagnostics;
         IndexModuleClosure(uriStr);
 
-        analysis::NodeIndex nodeIndex(ts_tree_root_node(tree));
+        const analysis::CallBindingRevision bindingRevision{open->generation, version,
+                                                            m_sessionCoordinator->GetConfigRevision()};
         auto semanticDiagnostics = CollectScopesAndAnalyze({.uriStr = uriStr,
-                                                            .text = analysisText,
-                                                            .tree = tree,
+                                                            .source = prepared,
+                                                            .tree = syntax.tree.get(),
                                                             .outScopeMs = &scopeMs,
                                                             .outCheckMs = &checkMs,
-                                                            .nodeIndex = &nodeIndex});
+                                                            .nodeIndex = syntax.index,
+                                                            .callBindingRevision = bindingRevision});
         diagnostics.insert(diagnostics.end(), semanticDiagnostics.begin(), semanticDiagnostics.end());
-        AppendIncludeDiagnostics(uriStr, analysisText, diagnostics);
-        PublishDiagnostics(uriStr, analysisText, diagnostics, version);
+        AppendIncludeDiagnostics(uriStr, prepared.text, prepared.preprocessing->excluded, diagnostics);
     }
+
+    PublishDiagnostics(uriStr, prepared.text, diagnostics, version, prepared.preprocessing);
 
     const double totalMs = totalTimer.ElapsedMs();
     LogInfo(fmt::format("[File Open] Finished opening document: {} in {}", uriStr, utils::FormatDuration(totalMs)));
-    LogAnalysisProfile("[File Open]", uriStr, AnalysisTimingProfile{totalMs, 0.0, parseMs, colMs, scopeMs, checkMs});
+    LogAnalysisProfile("[File Open]", uriStr,
+                       AnalysisTimingProfile{totalMs, 0.0, parseMs, colMs, scopeMs, checkMs, revision.extractedNodes});
 }
 
 static void ApplyContentChange(std::string& buffer, document::TreePtr& workingTree,
@@ -459,37 +499,40 @@ void Server::HandleNotificationsTextDocument_DidChange(lsp::notifications::TextD
     std::string buffer = doc->text;
 
     const bool isPredefined = angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension);
-    document::TreePtr workingTree =
-        document::MakeTreePtr((doc->tree && !isPredefined) ? ts_tree_copy(doc->tree.get()) : nullptr);
+    const bool canEditTree = doc->tree && !isPredefined && doc->ParsedSource() == doc->text;
+    auto workingTree = document::MakeTreePtr(canEditTree ? ts_tree_copy(doc->tree.get()) : nullptr);
 
     for (const auto& change : params.contentChanges)
     {
         ApplyContentChange(buffer, workingTree, change, isPredefined, GetPositionEncoding());
     }
 
-    const std::string analysisText = AnalysisTextFor(uriStr, buffer);
+    auto prepared = PrepareAnalysisSource(uriStr, buffer);
 
     utils::HighResTimer parseTimer;
-    // For a predefined stub, reparse cleanly without reusing incremental state.
-    TSTree* oldTree = (isPredefined || !workingTree) ? nullptr : workingTree.get();
-    TSTree* newTree = m_parser->Parse(analysisText, oldTree);
-    GetDocumentStore().UpdateDocument(uriStr, buffer, version, document::MakeTreePtr(newTree));
+    // Preprocessing may change other lines that the editor's incremental edits did not cover.
+    TSTree* oldTree = prepared.text == buffer ? workingTree.get() : nullptr;
+    TSTree* newTree = m_parser->Parse(prepared.text, oldTree);
+    if (buffer != doc->text)
+    {
+        m_scopeIndex.InvalidateDocumentOccurrences(uriStr);
+    }
+    GetDocumentStore().UpdateDocument(uriStr, buffer, version, document::MakeTreePtr(newTree),
+                                      TransformedSource(buffer, prepared.text));
     double parseMs = parseTimer.ElapsedMs();
     LogInfo(fmt::format("[DidChange Incremental Parse] File: {} | Parse: {:.2f} ms", uriStr, parseMs));
 
     if (isPredefined)
     {
-        m_predefinedManager.SetDocumentText(uriStr, analysisText);
+        m_predefinedManager.SetDocumentText(uriStr, prepared.text);
     }
 
-    // The reparse above is incremental and cheap, and stays on this thread so a request
     ScheduleAnalysis(ScheduleAnalysisRequest{
         .uriStr = uriStr,
-        .text = buffer,
-        .force = false,
-        .tree = angel_lsp::document::MakeTreePtr(newTree ? ts_tree_copy(newTree) : nullptr),
+        .text = std::move(buffer),
         .version = version,
-        .generation = 0,
+        .generation = doc->generation,
+        .preparedSource = std::move(prepared),
     });
 }
 
@@ -547,6 +590,7 @@ void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDo
     std::string uriStr = DocumentKey(params.textDocument.uri.toString());
     LogInfo(fmt::format("[File Close] Document closed: {}", uriStr));
     GetDocumentStore().CloseDocument(uriStr);
+    m_protocolSyntax.Forget(uriStr);
 
     m_diagnosticsPipeline->Cancel(uriStr);
 
@@ -568,10 +612,7 @@ void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDo
     m_symbolTable.ClearDocumentSymbols(uriStr);
     m_scopeIndex.ClearDocument(uriStr);
     m_callGraph.ClearDocument(uriStr);
-    {
-        std::lock_guard<std::mutex> lock(m_closureMutex);
-        m_closureDocuments.erase(uriStr);
-    }
+    WithdrawClosedSnapshot(uriStr);
 
     const std::string path = CanonicalPathFromUri(uriStr);
     const bool isOwnedModule = (!m_config.modules.empty() && ClaimFor(path).owner != nullptr);

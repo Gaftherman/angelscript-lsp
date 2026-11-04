@@ -6,8 +6,6 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "document/Document.h"
 #include "parser/ASTUtils.h"
-#include "parser/QueryRegistry.h"
-#include "parser/queries/BuiltQueries.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/LspLogger.h"
 #include "utils/ScopedNameUtils.h"
@@ -203,75 +201,36 @@ static void ScanRecoverableClasses(TSNode rootNode, RecoverClassContext& ctx)
 SymbolCollector::SymbolCollector(angel_lsp::utils::LspLogger* logger)
     : m_logger(logger), m_gs(parser::GetGrammarSymbols())
 {
-    InitQueryDispatch();
 }
 
-void SymbolCollector::InitQueryDispatch()
+SymbolCollector::ProcessFn SymbolCollector::DeclarationHandler(IndexedDeclarationKind kind)
 {
-    m_tagsQuery = angel_lsp::parser::QueryRegistry::GetTagsQuery();
-    if (!m_tagsQuery)
+    switch (kind)
     {
-        if (m_logger)
-        {
-            m_logger->LogError("Failed to get TAGS_QUERY from QueryRegistry");
-        }
-        return;
-    }
-
-    PopulateDispatchTables();
-}
-
-SymbolCollector::ProcessFn SymbolCollector::ResolveCaptureHandler(std::string_view captureName) const
-{
-    if (captureName == "definition.function" || captureName == "definition.import" ||
-        captureName == "local.definition.import")
+    case IndexedDeclarationKind::Function:
         return &SymbolCollector::ProcessFunction;
-    if (captureName == "definition.class")
+    case IndexedDeclarationKind::Class:
         return &SymbolCollector::ProcessClass;
-    if (captureName == "definition.variable")
-        return &SymbolCollector::ProcessVariable;
-    if (captureName == "definition.namespace")
-        return &SymbolCollector::ProcessNamespace;
-    if (captureName == "definition.enum")
-        return &SymbolCollector::ProcessEnum;
-    if (captureName == "definition.typedef")
-        return &SymbolCollector::ProcessTypedef;
-    if (captureName == "definition.funcdef")
-        return &SymbolCollector::ProcessFuncdef;
-    if (captureName == "definition.interface")
+    case IndexedDeclarationKind::Interface:
         return &SymbolCollector::ProcessInterface;
-    if (captureName == "definition.property")
+    case IndexedDeclarationKind::Namespace:
+        return &SymbolCollector::ProcessNamespace;
+    case IndexedDeclarationKind::Enum:
+        return &SymbolCollector::ProcessEnum;
+    case IndexedDeclarationKind::Typedef:
+        return &SymbolCollector::ProcessTypedef;
+    case IndexedDeclarationKind::Funcdef:
+        return &SymbolCollector::ProcessFuncdef;
+    case IndexedDeclarationKind::Property:
         return &SymbolCollector::ProcessProperty;
-    if (captureName == "reference.call")
-        return &SymbolCollector::ProcessCallReference;
-    if (captureName == "definition.lambda")
+    case IndexedDeclarationKind::Variable:
+        return &SymbolCollector::ProcessVariable;
+    case IndexedDeclarationKind::Lambda:
         return &SymbolCollector::ProcessLambda;
-    return nullptr;
-}
-
-SymbolCollector::ValidationFn SymbolCollector::ResolveValidationHandler(std::string_view captureName) const
-{
-    if (captureName == "validation.using")
-        return &SymbolCollector::CheckUsingDeclarationCapture;
-    if (captureName == "validation.modifiers")
-        return &SymbolCollector::CheckDuplicateModifierGroup;
-    return nullptr;
-}
-
-void SymbolCollector::PopulateDispatchTables()
-{
-    uint32_t captureCount = ts_query_capture_count(m_tagsQuery);
-    m_captureDispatch.assign(captureCount, nullptr);
-    m_validationDispatch.assign(captureCount, nullptr);
-
-    for (uint32_t i = 0; i < captureCount; ++i)
-    {
-        uint32_t nameLen = 0;
-        const char* name = ts_query_capture_name_for_id(m_tagsQuery, i, &nameLen);
-        std::string_view captureName(name, nameLen);
-
-        m_captureDispatch[i] = ResolveCaptureHandler(captureName);
-        m_validationDispatch[i] = ResolveValidationHandler(captureName);
+    case IndexedDeclarationKind::Call:
+        return &SymbolCollector::ProcessCallReference;
+    default:
+        return nullptr;
     }
 }
 
@@ -288,24 +247,8 @@ std::vector<Diagnostic> SymbolCollector::CollectSymbols(const SymbolCollectReque
                                                         angel_lsp::parser::AngelScriptParser& parser,
                                                         SymbolTable& symbolTable)
 {
-    std::vector<Diagnostic> diagnostics;
-    document::TreePtr tree = document::MakeTreePtr(parser.Parse(request.sourceCode));
-
-    if (!tree)
-        return diagnostics;
-
-    if (request.sourceCode.size() > 16384)
-    {
-        symbolTable.Reserve(request.sourceCode.size() / 128);
-    }
-
-    TSNode rootNode = ts_tree_root_node(tree.get());
-    SymbolCollectContext sCtx{request, symbolTable, diagnostics};
-    sCtx.isPredefined = angel_lsp::utils::IsPredefinedFile(request.fileUri, ".as.predefined");
-    CollectFromTree(rootNode, sCtx);
-    symbolTable.ResolveIncludedMixins();
-
-    return diagnostics;
+    const auto tree = document::MakeTreePtr(parser.Parse(request.sourceCode));
+    return CollectSymbolsWithTree(request, tree.get(), symbolTable);
 }
 
 std::vector<Diagnostic> SymbolCollector::CollectSymbols(const std::string& fileUri, const std::string& sourceCode,
@@ -315,32 +258,35 @@ std::vector<Diagnostic> SymbolCollector::CollectSymbols(const std::string& fileU
     return CollectSymbols(SymbolCollectRequest(fileUri, sourceCode), parser, symbolTable);
 }
 
-/**
- * @brief Traverses an existing AST tree and populates the symbol table with declarations.
- * @param[in] request Request containing document source code and file URI.
- * @param[in] tree Pre-parsed Tree-sitter AST tree pointer.
- * @param[in,out] symbolTable Destination symbol table to populate with discovered declarations.
- * @return Vector of diagnostics discovered during AST symbol collection.
- */
-std::vector<Diagnostic> SymbolCollector::CollectSymbolsWithTree(const SymbolCollectRequest& request, TSTree* tree,
-                                                                SymbolTable& symbolTable)
+std::vector<Diagnostic> SymbolCollector::CollectSymbolsWithIndex(const SymbolCollectRequest& request,
+                                                                 const NodeIndex& index, SymbolTable& symbolTable)
 {
     std::vector<Diagnostic> diagnostics;
-    if (!tree)
+    if (index.Empty())
+    {
         return diagnostics;
-
+    }
     if (request.sourceCode.size() > 16384)
     {
         symbolTable.Reserve(request.sourceCode.size() / 100);
     }
 
-    TSNode rootNode = ts_tree_root_node(tree);
     SymbolCollectContext sCtx{request, symbolTable, diagnostics};
     sCtx.isPredefined = angel_lsp::utils::IsPredefinedFile(request.fileUri, ".as.predefined");
-    CollectFromTree(rootNode, sCtx);
+    CollectFromIndex(index, sCtx);
     symbolTable.ResolveIncludedMixins();
-
     return diagnostics;
+}
+
+std::vector<Diagnostic> SymbolCollector::CollectSymbolsWithTree(const SymbolCollectRequest& request, TSTree* tree,
+                                                                SymbolTable& symbolTable)
+{
+    if (!tree)
+    {
+        return {};
+    }
+    const NodeIndex index(ts_tree_root_node(tree), nullptr, nullptr, NodeIndexContents::Declarations);
+    return CollectSymbolsWithIndex(request, index, symbolTable);
 }
 
 std::vector<Diagnostic> SymbolCollector::CollectSymbolsWithTree(const std::string& fileUri,
@@ -472,10 +418,9 @@ void SymbolCollector::PushFunctionContainer(TSNode node, const SymbolCollectCont
     stack.push_back({ts_node_end_byte(bodyNode), std::move(funcCtx)});
 }
 
-void SymbolCollector::PushContainerIfApplicable(uint32_t captureIdx, TSNode node, const SymbolCollectContext& sCtx,
+void SymbolCollector::PushContainerIfApplicable(ProcessFn fn, TSNode node, const SymbolCollectContext& sCtx,
                                                 std::vector<ActiveContainer>& stack) const
 {
-    ProcessFn fn = (captureIdx < m_captureDispatch.size()) ? m_captureDispatch[captureIdx] : nullptr;
     if (fn == &SymbolCollector::ProcessClass)
     {
         PushClassContainer(node, sCtx, stack);
@@ -529,13 +474,14 @@ void SymbolCollector::SyncRecoveredContainers(uint32_t nodeStart,
     }
 }
 
-void SymbolCollector::CollectFromTree(TSNode rootNode, SymbolCollectContext& sCtx)
+void SymbolCollector::CollectFromIndex(const NodeIndex& index, SymbolCollectContext& sCtx)
 {
+    const TSNode rootNode = index.Root();
     sCtx.sourceHasBrackets = !sCtx.isPredefined && (sCtx.request.sourceCode.find('[') != std::string_view::npos);
     const size_t estimatedCapacity =
         sCtx.request.sourceCode.size() > 16384 ? (sCtx.request.sourceCode.size() / 128) : 256;
     sCtx.collectedSymbols.reserve(estimatedCapacity);
-    ReportParseErrors(rootNode, sCtx);
+    ReportParseErrors(index, sCtx);
 
     std::vector<RecoveredClassContainer> recoveredClasses;
     if (ts_node_has_error(rootNode))
@@ -545,20 +491,10 @@ void SymbolCollector::CollectFromTree(TSNode rootNode, SymbolCollectContext& sCt
         ScanRecoverableClasses(rootNode, recCtx);
     }
 
-    TSQueryCursor* cursor = angel_lsp::parser::QueryRegistry::GetThreadLocalCursor();
-    ts_query_cursor_exec(cursor, m_tagsQuery, rootNode);
-
     std::vector<ActiveContainer> containerStack;
     containerStack.reserve(16);
-
-    TSQueryMatch match;
-    while (ts_query_cursor_next_match(cursor, &match))
-    {
-        for (uint32_t i = 0; i < match.capture_count; ++i)
-        {
-            DispatchMatchCapture(match.captures[i], sCtx, containerStack, recoveredClasses);
-        }
-    }
+    index.ForEachDeclaration([&](TSNode node, IndexedDeclarationKind kind)
+                             { DispatchDeclaration(node, kind, sCtx, containerStack, recoveredClasses); });
 
     if (ts_node_has_error(rootNode) && !sCtx.isRecoveringSwallowed)
     {
@@ -573,32 +509,38 @@ void SymbolCollector::CollectFromTree(TSNode rootNode, SymbolCollectContext& sCt
     sCtx.symbolTable.AddSymbols(std::move(sCtx.collectedSymbols));
 }
 
-void SymbolCollector::DispatchMatchCapture(const TSQueryCapture& capture, SymbolCollectContext& sCtx,
-                                           std::vector<ActiveContainer>& containerStack,
-                                           const std::vector<RecoveredClassContainer>& recoveredClasses)
+void SymbolCollector::DispatchDeclaration(TSNode node, IndexedDeclarationKind kind, SymbolCollectContext& sCtx,
+                                          std::vector<ActiveContainer>& containerStack,
+                                          const std::vector<RecoveredClassContainer>& recoveredClasses)
 {
-    const uint32_t captureIdx = capture.index;
-    if (captureIdx < m_captureDispatch.size() && m_captureDispatch[captureIdx])
+    if (kind == IndexedDeclarationKind::Using)
     {
-        const TSNode node = capture.node;
-        const uint32_t nodeStart = ts_node_start_byte(node);
-        while (!containerStack.empty() && containerStack.back().endByte <= nodeStart)
-        {
-            containerStack.pop_back();
-        }
-
-        if (!recoveredClasses.empty())
-        {
-            SyncRecoveredContainers(nodeStart, recoveredClasses, containerStack);
-        }
-
-        CollectionContext ctx = containerStack.empty() ? CollectionContext{} : containerStack.back().ctx;
-        (this->*m_captureDispatch[captureIdx])(node, sCtx, ctx);
-        PushContainerIfApplicable(captureIdx, node, sCtx, containerStack);
+        CheckUsingDeclarationCapture(node, sCtx);
+        return;
     }
-    else if (captureIdx < m_validationDispatch.size() && m_validationDispatch[captureIdx])
+
+    const ProcessFn handler = DeclarationHandler(kind);
+    if (!handler)
     {
-        (this->*m_validationDispatch[captureIdx])(capture.node, sCtx);
+        return;
+    }
+
+    const uint32_t nodeStart = ts_node_start_byte(node);
+    while (!containerStack.empty() && containerStack.back().endByte <= nodeStart)
+    {
+        containerStack.pop_back();
+    }
+    if (!recoveredClasses.empty())
+    {
+        SyncRecoveredContainers(nodeStart, recoveredClasses, containerStack);
+    }
+
+    const CollectionContext ctx = containerStack.empty() ? CollectionContext{} : containerStack.back().ctx;
+    (this->*handler)(node, sCtx, ctx);
+    PushContainerIfApplicable(handler, node, sCtx, containerStack);
+    if (kind == IndexedDeclarationKind::Class || kind == IndexedDeclarationKind::Interface)
+    {
+        CheckDuplicateModifierGroup(node, sCtx);
     }
 }
 
@@ -631,7 +573,9 @@ void SymbolCollector::RecoverSwallowedDeclarations(SymbolCollectContext& sCtx)
         snippetCtx.isPredefined = sCtx.isPredefined;
         snippetCtx.isRecoveringSwallowed = true;
 
-        CollectFromTree(ts_tree_root_node(snippetTree.get()), snippetCtx);
+        const NodeIndex snippetIndex(ts_tree_root_node(snippetTree.get()), nullptr, nullptr,
+                                     NodeIndexContents::Declarations);
+        CollectFromIndex(snippetIndex, snippetCtx);
 
         for (auto& sym : snippetCtx.collectedSymbols)
         {
@@ -1620,8 +1564,10 @@ void SymbolCollector::ProcessCallReference(TSNode callNode, SymbolCollectContext
     if (functionNodeSym == m_gs.symMemberExpression)
     {
         TSNode memberNode = GetChildByFieldName(functionNode, "member");
-        if (ts_node_is_null(memberNode))
+        if (ts_node_is_null(memberNode) || ts_node_symbol(memberNode) != m_gs.symIdentifier)
+        {
             return;
+        }
 
         callSig.isMethodCall = true;
         callSig.objectExpression =
@@ -1859,22 +1805,6 @@ static TSNode PinpointOffendingNode(TSNode errorNode, const parser::GrammarSymbo
         return state.firstNonComment;
     }
     return errorNode;
-}
-
-static bool AdvanceCursorAfterError(TSTreeCursor& cursor)
-{
-    if (ts_tree_cursor_goto_next_sibling(&cursor))
-    {
-        return true;
-    }
-    while (ts_tree_cursor_goto_parent(&cursor))
-    {
-        if (ts_tree_cursor_goto_next_sibling(&cursor))
-        {
-            return true;
-        }
-    }
-    return false;
 }
 
 static TSPoint ComputeLocalPoint(std::string_view sourceCode, TSNode baseNode, size_t targetOffset)
@@ -2377,68 +2307,32 @@ void SymbolCollector::HandleParseErrorNode(TSNode node, ParseErrorReportContext&
     }
 }
 
-void SymbolCollector::ReportParseErrors(TSNode rootNode, SymbolCollectContext& sCtx) const
+void SymbolCollector::ReportParseErrors(const NodeIndex& index, SymbolCollectContext& sCtx) const
 {
-    if (!ts_node_has_error(rootNode))
+    if (!ts_node_has_error(index.Root()))
     {
         return;
     }
 
     const auto braceBalance = parser::ComputeBraceBalance(sCtx.request.sourceCode);
     ParseErrorReportContext errCtx{sCtx, braceBalance.HasMissingOpenBrace(), UINT32_MAX, {}};
-
-    TSTreeCursor cursor = ts_tree_cursor_new(rootNode);
-    while (true)
-    {
-        TSNode current = ts_tree_cursor_current_node(&cursor);
-
-        if (ts_node_symbol(current) == m_gs.symSwitchStatement && ts_node_has_error(current))
+    const TSSymbol candidates[] = {m_gs.symSwitchStatement, m_gs.symError};
+    index.ForEachNodeOrdered(
+        candidates,
+        [&](TSNode node)
         {
-            const size_t prevCount = errCtx.missingColons.size();
-            ScanSwitchStatementCaseColons(current, sCtx.request.sourceCode, m_gs, errCtx.missingColons);
-            if (errCtx.missingColons.size() > prevCount)
+            if (ts_node_is_missing(node) || (ts_node_is_error(node) && !HasNestedErrorOrMissing(node)))
             {
-                EmitMissingColonDiagnostics(std::span<const MissingCaseColon>(errCtx.missingColons.data() + prevCount,
-                                                                              errCtx.missingColons.size() - prevCount),
+                HandleParseErrorNode(node, errCtx);
+            }
+            else if (ts_node_symbol(node) == m_gs.symSwitchStatement && ts_node_has_error(node))
+            {
+                const size_t prevCount = errCtx.missingColons.size();
+                ScanSwitchStatementCaseColons(node, sCtx.request.sourceCode, m_gs, errCtx.missingColons);
+                EmitMissingColonDiagnostics(std::span<const MissingCaseColon>(errCtx.missingColons).subspan(prevCount),
                                             sCtx);
             }
-        }
-
-        if (ts_node_is_missing(current))
-        {
-            HandleParseErrorNode(current, errCtx);
-            if (!AdvanceCursorAfterError(cursor))
-            {
-                break;
-            }
-            continue;
-        }
-
-        if (ts_node_is_error(current))
-        {
-            if (HasNestedErrorOrMissing(current) && ts_tree_cursor_goto_first_child(&cursor))
-            {
-                continue;
-            }
-            HandleParseErrorNode(current, errCtx);
-            if (!AdvanceCursorAfterError(cursor))
-            {
-                break;
-            }
-            continue;
-        }
-
-        if (ts_node_has_error(current) && ts_tree_cursor_goto_first_child(&cursor))
-        {
-            continue;
-        }
-
-        if (!AdvanceCursorAfterError(cursor))
-        {
-            break;
-        }
-    }
-    ts_tree_cursor_delete(&cursor);
+        });
 }
 
 /**

@@ -20,6 +20,7 @@
 #include "lsp/state/ModuleIndex.h"
 #include "lsp/state/PositionCodec.h"
 #include "lsp/state/PredefinedStubManager.h"
+#include "lsp/state/SyntaxRevisionCache.h"
 #include "lsp/state/WorkspaceStateStore.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/LspLogger.h"
@@ -278,10 +279,21 @@ class Server
     mutable std::mutex m_semanticTokensMutex;
     uint64_t m_semanticTokensRevision = 0;
     mutable std::mutex m_closureMutex;
-    ankerl::unordered_dense::map<std::string, std::string> m_closureDocuments;
+    struct ClosedDocumentSnapshot
+    {
+        std::shared_ptr<const std::string> text;
+        uint64_t revision = 0;
+        std::shared_ptr<const ClosedIndexedSyntax> indexedSyntax = {};
+        std::shared_ptr<const analysis::Scope> lexicalScopes = {};
+    };
+
+    ankerl::unordered_dense::map<std::string, ClosedDocumentSnapshot> m_closureDocuments;
+    uint64_t m_nextClosedRevision = 0;
     ankerl::unordered_dense::map<std::string, std::vector<std::string>> m_openDocumentClosures;
     ankerl::unordered_dense::map<std::string, std::string> m_indexedUriByPath;
     ankerl::unordered_dense::map<std::string, uint64_t> m_lastSavedInterfaceHash;
+    SyntaxRevisionCache m_workerSyntax;   ///< Accessed only by the scheduler callback.
+    SyntaxRevisionCache m_protocolSyntax; ///< Accessed only on the LSP message loop.
     analysis::rules::MixinFileCache m_workerMixinCache;
     analysis::rules::MixinFileCache m_serverMixinCache;
     std::atomic<bool> m_clearWorkerMixinCache{false};
@@ -304,7 +316,7 @@ class Server
     void EndWorkspaceProgress(const std::string& message);
     [[nodiscard]] int GetDocumentVersion(const std::string& uriStr) const;
     void ClearMixinCaches();
-    std::string AnalysisTextFor(const std::string& uriStr, const std::string& text) const;
+    PreparedAnalysisSource PrepareAnalysisSource(const std::string& uriStr, const std::string& text) const;
     [[nodiscard]] ModuleClaim ClaimFor(const std::string& normalizedPath) const;
     void AnalyzeConfiguredModules();
     [[nodiscard]] bool IsOpenElsewhere(const std::string& uriStr) const;
@@ -322,7 +334,8 @@ class Server
     ModuleContextFor(const std::string& uriStr) const;
     void RestartWorkspaceScan();
     lsp::SemanticTokens ComputeAndCacheSemanticTokens(const std::string& uriStr, const std::string& text);
-    void UpdateSavedDocumentCaches(const std::string& uriStr, const std::string& text);
+    void UpdateSavedDocumentCaches(const std::string& uriStr, const std::string& text,
+                                   const std::vector<utils::ExcludedLineRange>& excluded);
     void HandleSavedInterfaceChange(const std::string& uriStr, bool interfaceChanged);
     void StartWorkspaceScan();
     void ReadWorkspaceFiles(const utils::StopFlag& stopToken);
@@ -346,11 +359,13 @@ class Server
     void LoadWorkspaceEngineRules(const std::vector<std::string>& workspaceRoots);
     analysis::SemanticAnalysisRequest
     BuildAnalysisRequest(const std::string& uriStr, const std::string& text, const TSTree* tree,
+                         const utils::PreprocessorScan& preprocessing,
                          const analysis::SymbolTable* customSymbolTable = nullptr) const;
     [[nodiscard]] bool IsCommitAnalysisStale(const CommitAnalysisRequest& req) const;
     bool CommitAnalysisResults(CommitAnalysisRequest req);
     std::vector<analysis::Diagnostic> ReplaceSymbolsFromTree(const std::string& uriStr, const std::string& text,
-                                                             TSTree* tree, bool* outInterfaceChanged = nullptr);
+                                                             TSTree* tree, bool* outInterfaceChanged = nullptr,
+                                                             const analysis::NodeIndex* index = nullptr);
     std::vector<analysis::Diagnostic> ReplaceSymbolsFromSource(const std::string& uriStr, const std::string& text,
                                                                parser::AngelScriptParser& parser);
     [[nodiscard]] bool ShouldSkipScopeAnalysis(const CollectScopesRequest& request);
@@ -361,7 +376,7 @@ class Server
     bool PredefinedStubContributes(const std::string& uriStr) const;
     void ReportPredefinedSelection(const std::vector<std::string>& discovered, const std::string& activePath,
                                    const std::string& autoSelected, bool mergeAll);
-    void PublishInactiveRegions(const std::string& uriStr, const std::string& text);
+    void PublishInactiveRegions(const std::string& uriStr, const std::vector<utils::ExcludedLineRange>& excluded);
     [[nodiscard]] bool IsPublishDiagnosticsStale(const PublishDiagnosticsRequest& request) const;
     void CacheDiagnosticsSnapshot(const PublishDiagnosticsRequest& request,
                                   const std::vector<lsp::Diagnostic>& protocolDiagnostics);
@@ -370,12 +385,16 @@ class Server
     void PublishDiagnostics(const std::string& uriStr, const std::vector<analysis::Diagnostic>& diagnostics,
                             int version = -1);
     void PublishDiagnostics(const std::string& uriStr, const std::string& text,
-                            const std::vector<analysis::Diagnostic>& diagnostics, int version = -1);
+                            const std::vector<analysis::Diagnostic>& diagnostics, int version = -1,
+                            std::shared_ptr<const utils::PreprocessorScan> preprocessing = {});
     std::vector<lsp::Diagnostic> ToProtocolDiagnostics(const std::string& text,
-                                                       const std::vector<analysis::Diagnostic>& diagnostics) const;
+                                                       const std::vector<analysis::Diagnostic>& diagnostics,
+                                                       const std::vector<utils::ExcludedLineRange>& excluded) const;
     [[nodiscard]] std::optional<lsp::requests::TextDocument_Diagnostic::Result>
     TryGetCachedDiagnosticReport(const std::string& uriStr, size_t currentHash, int currentVersion,
-                                 const std::optional<std::string>& previousResultId);
+                                 uint64_t closedRevision, const std::optional<std::string>& previousResultId);
+    [[nodiscard]] std::optional<uint64_t> ClosedDiagnosticRevision(const std::string& uriStr,
+                                                                   const std::string* source) const;
     std::string GenerateVirtualMixinDocument(std::string_view uri);
     void DidSavePredefinedFile(const std::string& uriStr, const std::string& text);
     void ReanalyzeDependentsOnSave(const std::string& uriStr);
@@ -405,18 +424,25 @@ class Server
     static std::string CanonicalPathFromUri(const std::string& uriStr);
     std::shared_ptr<const document::Document> ResolveVirtualDocument(const std::string& key, const std::string& uriStr);
     std::optional<OpenDocument> LookupPreindexedFallback(const std::string& key);
+    [[nodiscard]] std::optional<std::string> OccurrenceModuleFor(const std::string& uri) const;
     features::DefinitionRequest MakeDefinitionRequest(const OpenDocument& doc, const lsp::Position& position);
     std::optional<RenameContext> SetupRenameContext(const std::string& uriStr, const lsp::Position& rawPos);
     void InvalidateCreatedClosureFiles(const std::vector<std::string>& createdPaths);
     void ReanalyseOpenDocuments();
     std::vector<std::string> ComputeModuleClosure(const std::string& openPath) const;
     ankerl::unordered_dense::set<std::string> ComputeModuleClosureUris(const std::string& uriStr) const;
-    size_t IndexModuleClosure(const std::string& openUriStr);
+    size_t IndexModuleClosure(const std::string& openUriStr, SyntaxRevisionCache* syntaxCache = nullptr);
     void ReleaseModuleClosure(const std::string& openUriStr);
-    void IndexClosureFile(const std::string& path, parser::AngelScriptParser& parser);
+    void IndexClosureFile(const std::string& path, parser::AngelScriptParser& parser,
+                          SyntaxRevisionCache* syntaxCache = nullptr);
+    void ReindexTrackedClosureFile(const std::string& path, angel_lsp::parser::AngelScriptParser& parser);
+    void WithdrawClosedSnapshot(const std::string& uriStr);
     void PurgeClosureFile(const std::string& uriStr);
     void AppendIncludeDiagnostics(const std::string& uriStr, const std::string& text,
+                                  const std::vector<utils::ExcludedLineRange>& excluded,
                                   std::vector<analysis::Diagnostic>& diagnostics) const;
+    [[nodiscard]] std::optional<ScheduleRequest> MakeScheduleRequest(ScheduleAnalysisRequest req) const;
+    [[nodiscard]] bool IsClosedRevisionCurrentLocked(const std::string& uri, uint64_t revision) const;
     void ScheduleAnalysis(ScheduleAnalysisRequest req);
     void ScheduleAnalysis(const std::string& uriStr, const std::string& text, bool force = false);
     void ScheduleAnalysisImmediate(ScheduleAnalysisRequest req);
@@ -426,18 +452,24 @@ class Server
     bool TryZeroCopyPredefinedAnalysis(const AnalyzeDocumentRequest& req, const std::string& analysisText,
                                        const utils::HighResTimer& totalTimer);
     void AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer);
-    ParseAndCollectResult ParseAndCollectSymbols(AnalyzeDocumentRequest& req, analysis::SymbolTable& staging);
+    ParseAndCollectResult ParseAndCollectSymbols(AnalyzeDocumentRequest& req, analysis::SymbolTable& staging,
+                                                 SyntaxRevisionCache* syntaxCache = nullptr);
+    /// Resolves an exact revision on the message loop, copying the document tree when necessary.
+    [[nodiscard]] SyntaxRevision ResolveProtocolSyntax(std::string_view uri, std::string_view source,
+                                                       const document::Document* open);
     std::optional<ParseAndCollectResult> PrepareWorkerDocument(AnalyzeDocumentRequest& req,
                                                                analysis::SymbolTable& staging);
-    std::vector<analysis::Diagnostic> AnalyzeWorkerSemantics(analysis::SemanticAnalysisRequest baseReq,
-                                                             double& outCheckMs);
+    std::vector<analysis::Diagnostic> RunDocumentSemantics(analysis::SemanticAnalysisRequest baseReq,
+                                                           double& outCheckMs, bool fromScheduler);
     void AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer);
-    const analysis::SymbolTable* PrepareAnalysisSnapshot(const std::string& uriStr, bool unchangedClosedFile,
-                                                         const analysis::SymbolTable& staging,
+    const analysis::SymbolTable* PrepareAnalysisSnapshot(const std::string& uriStr,
+                                                         const analysis::SymbolTable* staging,
                                                          std::unique_ptr<analysis::SymbolTable>& outSnapshot) const;
     bool IsAnalysisRequestStale(const AnalyzeDocumentRequest& req) const;
     void CommitSyntaxOnlyResults(const AnalyzeDocumentRequest& req, std::vector<analysis::Diagnostic> diags);
-    bool IsUnchangedClosedDocument(const AnalyzeDocumentRequest& request, const analysis::SymbolTable& staging) const;
+    [[nodiscard]] ClosedAnalysisInputs FindClosedAnalysisInputs(const AnalyzeDocumentRequest& req) const;
+    std::pair<std::shared_ptr<analysis::Scope>, std::vector<analysis::CallSite>>
+    CollectScopesAndCalls(const AnalyzeDocumentRequest& req, const ParseAndCollectResult& parsed);
     void AnalyzeDocument(AnalyzeDocumentRequest req);
 };
 

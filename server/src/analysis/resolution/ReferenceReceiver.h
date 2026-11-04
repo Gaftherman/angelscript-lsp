@@ -13,4 +13,13 @@ namespace angel_lsp::analysis
  */
 std::string ResolveIndexedReferenceReceiver(const LocalReference& reference, const Scope& scope,
                                             const SymbolTable& symbols);
+
+/// Returns a qualifier captured from the occurrence's own document.
+std::string_view GetIndexedReferenceQualifier(const LocalReference& reference, const Scope& scope) noexcept;
+
+/// Matches an explicit qualifier against a container in the lexical namespace chain.
+bool MatchesReferenceQualifier(std::string_view qualifier, std::string_view container, const Scope& scope) noexcept;
+
+/** @brief Matches an enum qualifier by its type or by the namespace exposing its values. */
+bool MatchesEnumReferenceQualifier(std::string_view qualifier, std::string_view enumType, const Scope& scope) noexcept;
 } // namespace angel_lsp::analysis

@@ -41,11 +41,13 @@ template <typename TRequest> static ResolvedIncludeEnv PrepareIncludeEnv(const T
  *        that point nowhere.
  */
 static std::vector<std::string> ResolveDirectives(const std::string& normalizedPath, std::string_view sourceCode,
-                                                  const IncludeContext& ctx)
+                                                  const IncludeContext& ctx,
+                                                  const std::vector<ExcludedLineRange>* excluded = nullptr)
 {
     std::vector<std::string> resolved;
 
-    for (const auto& directive : IncludeResolver::ExtractIncludes(sourceCode))
+    const auto scanned = excluded ? std::vector<ExcludedLineRange>{} : ctx.preprocessor.ExcludedLines(sourceCode);
+    for (const auto& directive : IncludeResolver::ExtractIncludes(sourceCode, excluded ? *excluded : scanned))
     {
         std::string target = IncludeResolver::ResolveIncludePath(IncludeResolveRequest{
             .includePath = directive.rawPath,
@@ -180,7 +182,7 @@ void WorkspaceIncludeGraph::Build(const BuildRequest& request)
     // from, and confining the graph here is what stops a hostile `#include "/etc/passwd"` from
     // pulling an arbitrary file into the index in the first place.
     const auto env = PrepareIncludeEnv(request);
-    const auto includeCtx = env.MakeContext(request.searchDirectories, request.implicitExtension);
+    const auto includeCtx = env.MakeContext(request.searchDirectories, request.implicitExtension, request.preprocessor);
     const auto& read = env.fileReader;
 
     // Collect first, then swap under the lock, so a long filesystem walk never blocks the
@@ -227,7 +229,7 @@ void WorkspaceIncludeGraph::Build(const std::vector<std::string>& workspaceRoots
 void WorkspaceIncludeGraph::BuildFromFiles(const BuildFromFilesRequest& request)
 {
     const auto env = PrepareIncludeEnv(request);
-    const auto includeCtx = env.MakeContext(request.searchDirectories, request.implicitExtension);
+    const auto includeCtx = env.MakeContext(request.searchDirectories, request.implicitExtension, request.preprocessor);
     const auto& read = env.fileReader;
 
     std::vector<FileDirectives> results(request.scriptFiles.size());
@@ -269,8 +271,9 @@ void WorkspaceIncludeGraph::BuildFromFiles(const std::vector<std::string>& scrip
 void WorkspaceIncludeGraph::UpdateFile(const UpdateFileRequest& request)
 {
     const std::string normalized = IncludeResolver::NormalizePath(request.filePath);
-    const IncludeContext includeCtx{request.searchDirectories, request.allowedRoots, request.implicitExtension};
-    std::vector<std::string> targets = ResolveDirectives(normalized, request.sourceCode, includeCtx);
+    const IncludeContext includeCtx{request.searchDirectories, request.allowedRoots, request.implicitExtension,
+                                    request.preprocessor};
+    std::vector<std::string> targets = ResolveDirectives(normalized, request.sourceCode, includeCtx, request.excluded);
 
     std::unique_lock<std::shared_mutex> lock(m_mutex);
     SetIncludesLocked(normalized, std::move(targets));

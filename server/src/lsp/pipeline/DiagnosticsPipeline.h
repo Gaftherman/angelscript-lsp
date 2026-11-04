@@ -50,6 +50,9 @@ struct DiagnosticsSnapshot
      * @brief Configuration revision at the time analysis was performed.
      */
     uint64_t configRevision = 0;
+
+    /// Disk revision of a published closed document.
+    uint64_t closedRevision = 0;
 };
 
 /**

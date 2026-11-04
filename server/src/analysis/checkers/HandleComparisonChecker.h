@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/checkers/BinaryOperatorHelpers.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/ScopeTree.h"
 
@@ -9,11 +10,11 @@ namespace angel_lsp::analysis
 {
 /**
  * @brief Validates handle equality and relational operations in binary expressions.
- * @param[in] node Binary expression syntax node.
+ * @param[in] operands Complete operator, left and right handles for the expression.
  * @param[in] scope Lexical scope enclosing the expression.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void CheckHandleComparison(TSNode node, const Scope* scope, DiagnosticContext& ctx);
+void CheckHandleComparison(const BinaryExpressionOperands& operands, const Scope* scope, DiagnosticContext& ctx);
 
 /**
  * @brief Category of comparison expression evaluated during semantic analysis.

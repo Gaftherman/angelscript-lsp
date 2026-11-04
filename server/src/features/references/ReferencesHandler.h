@@ -26,6 +26,8 @@ struct ReferencesRequest
     const analysis::SymbolTable& symbolTable;
     const analysis::ScopeIndex& scopeIndex;
     angel_lsp::utils::LspLogger* logger = nullptr;
+    std::optional<analysis::CallBindingRevision> callBindingRevision = std::nullopt;
+    std::optional<std::string> occurrenceModule = std::nullopt;
 };
 
 using ReferencesResult = std::vector<lsp::Location>;
