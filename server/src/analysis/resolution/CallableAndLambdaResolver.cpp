@@ -862,42 +862,53 @@ static std::optional<Symbol> FindAssignmentFuncdefTarget(TSNode parent, const Sy
 static std::optional<Symbol> FindCallArgumentFuncdef(const SymbolTable& table, std::string_view calleeName,
                                                      uint32_t position)
 {
-    FuncdefAgreement agreement;
-    auto lookUp = [&](std::string_view name) -> bool
-    { return MatchCandidateFuncdef(table, name, position, agreement); };
+    auto checkCandidate = [&](std::string_view name) -> std::pair<bool, std::optional<Symbol>>
+    {
+        FuncdefAgreement agreement;
+        if (MatchCandidateFuncdef(table, name, position, agreement))
+        {
+            return {true, agreement.agreed};
+        }
+        if (agreement.conflict)
+        {
+            return {true, std::nullopt};
+        }
+        return {false, std::nullopt};
+    };
 
-    if (lookUp(calleeName))
+    auto [done, sym] = checkCandidate(calleeName);
+    if (done)
     {
-        return agreement.agreed;
-    }
-    if (agreement.conflict)
-    {
-        return std::nullopt;
+        return sym;
     }
 
     const size_t dot = calleeName.rfind('.');
-    if (dot != std::string_view::npos && lookUp(calleeName.substr(dot + 1)))
+    if (dot != std::string_view::npos)
     {
-        return agreement.agreed;
-    }
-    if (agreement.conflict)
-    {
-        return std::nullopt;
+        auto [dotDone, dotSym] = checkCandidate(calleeName.substr(dot + 1));
+        if (dotDone)
+        {
+            return dotSym;
+        }
     }
 
-    if (!utils::ContainsScopeSeparator(calleeName) && lookUp(utils::JoinScopedName(calleeName, calleeName)))
+    if (!utils::ContainsScopeSeparator(calleeName))
     {
-        return agreement.agreed;
-    }
-    if (agreement.conflict)
-    {
-        return std::nullopt;
+        auto [scopeDone, scopeSym] = checkCandidate(utils::JoinScopedName(calleeName, calleeName));
+        if (scopeDone)
+        {
+            return scopeSym;
+        }
     }
 
     const std::string_view leaf = utils::LastScopeSegment(calleeName);
-    if (leaf != calleeName && lookUp(leaf))
+    if (leaf != calleeName)
     {
-        return agreement.agreed;
+        auto [leafDone, leafSym] = checkCandidate(leaf);
+        if (leafDone)
+        {
+            return leafSym;
+        }
     }
 
     return std::nullopt;

@@ -251,11 +251,11 @@ class SymbolCollector
     };
 
     struct VariableHeaderInfo
-
     {
         TSNode varDeclNode{};
         std::string typeStr;
         TypeExtractionResult typeInfo;
+        SourceRange typeRange{};
         SymbolModifiers modifiers;
         bool hasSemicolon = false;
     };
@@ -375,6 +375,7 @@ class SymbolCollector
     void HandleParseErrorNode(TSNode node, ParseErrorReportContext& errCtx) const;
     void EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext& sCtx) const;
     bool TryFormatArgumentListSyntaxError(TSNode node, const SymbolCollectContext& sCtx, Diagnostic& diag) const;
+    bool TryFormatMissingSemicolonError(TSNode node, const SymbolCollectContext& sCtx, Diagnostic& diag) const;
     std::string FormatSyntaxErrorMessage(std::string_view rawErrText, std::string& outCode,
                                          const angel_lsp::i18n::I18n* i18n) const;
 

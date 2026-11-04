@@ -363,9 +363,9 @@ void SymbolCollector::PushClassContainer(TSNode node, const SymbolCollectContext
     TSNode nameNode = GetChildByFieldName(node, "name");
     std::string className = parser::GetNodeText(nameNode, sCtx.request.sourceCode);
     const size_t angle = className.find('<');
-    if (angle != std::string::npos)
+    if (angle != std::string_view::npos)
     {
-        className = className.substr(0, angle);
+        className.resize(angle);
     }
     if (className.empty())
     {
@@ -800,6 +800,7 @@ void SymbolCollector::ProcessVirtualPropertyVariable(TSNode varDeclNode, SymbolC
     varSig.typeName = typeStr;
     varSig.baseTypeName = typeInfo.baseTypeName;
     varSig.templateName = typeInfo.templateName;
+    varSig.typeRange = ToSourceRange(typeNode);
     varSig.typeKind = typeInfo.kind;
     varSig.isArray = typeInfo.isArray;
     varSig.hasPrimitiveHandle = typeInfo.hasPrimitiveHandle;
@@ -828,6 +829,7 @@ void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const Varia
     varSig.typeName = header.typeStr;
     varSig.baseTypeName = header.typeInfo.baseTypeName;
     varSig.templateName = header.typeInfo.templateName;
+    varSig.typeRange = header.typeRange;
     for (const auto& tArg : header.typeInfo.templateArguments)
     {
         varSig.templateArgumentTypes.push_back(tArg.baseTypeName);
@@ -863,12 +865,12 @@ void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const Varia
     if (!ts_node_is_null(argsNode) && !header.typeStr.empty())
     {
         CallReferenceSignature callSig;
-        callSig.calleeName = header.typeStr;
+        callSig.calleeName = header.typeInfo.baseTypeName.empty() ? header.typeStr : header.typeInfo.baseTypeName;
         SymbolLocationContext callLoc{sCtx, ctx.containerPath, ctx.containerKind};
         TSNode varTypeNode = GetChildByFieldName(varDeclNode, "var_type");
         TSNode refNode = ts_node_is_null(varTypeNode) ? declaratorNode : varTypeNode;
         Symbol callSym = CreateSymbol(SymbolType::CallReference, declaratorNode, refNode, callLoc);
-        callSym.name = header.typeStr;
+        callSym.name = callSig.calleeName;
         callSym.signature = callSig;
         sCtx.collectedSymbols.push_back(std::move(callSym));
     }
@@ -892,7 +894,8 @@ void SymbolCollector::ProcessRegularVariable(TSNode varDeclNode, SymbolCollectCo
     std::string_view rawVarText = TrimView(GetNodeView(varDeclNode, sCtx.request.sourceCode));
     bool hasSemicolon = (!rawVarText.empty() && rawVarText.back() == ';');
 
-    VariableHeaderInfo header{varDeclNode, std::move(typeStr), std::move(typeInfo), modifiers, hasSemicolon};
+    VariableHeaderInfo header{varDeclNode, std::move(typeStr), std::move(typeInfo), ToSourceRange(typeNode),
+                              modifiers,   hasSemicolon};
 
     TSTreeCursor cursor = ts_tree_cursor_new(varDeclNode);
     if (ts_tree_cursor_goto_first_child(&cursor))
@@ -979,6 +982,7 @@ void SymbolCollector::ProcessEmptyParenVariable(TSNode funcNode, SymbolCollectCo
     varSig.typeName = parser::GetNodeText(typeNode, sCtx.request.sourceCode);
     varSig.baseTypeName = retInfo.baseTypeName;
     varSig.templateName = retInfo.templateName;
+    varSig.typeRange = ToSourceRange(typeNode);
     for (const auto& tArg : retInfo.templateArguments)
     {
         varSig.templateArgumentTypes.push_back(tArg.baseTypeName);
@@ -1562,6 +1566,7 @@ void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, c
     varSig.typeName = parser::GetNodeText(typeNode, sCtx.request.sourceCode);
     varSig.baseTypeName = typeInfo.baseTypeName;
     varSig.templateName = typeInfo.templateName;
+    varSig.typeRange = ToSourceRange(typeNode);
     varSig.typeKind = typeInfo.kind;
     varSig.isArray = typeInfo.isArray;
     varSig.hasPrimitiveHandle = typeInfo.hasPrimitiveHandle;
@@ -2490,6 +2495,78 @@ bool SymbolCollector::TryFormatArgumentListSyntaxError(TSNode node, const Symbol
     return true;
 }
 
+/**
+ * @brief Retrieves the effective previous sibling for an error node, inspecting its parent if necessary.
+ * @param[in] node AST error node.
+ * @return Previous sibling node, or null node if none exists.
+ */
+static TSNode FindEffectivePreviousSibling(TSNode node)
+{
+    TSNode prev = ts_node_prev_sibling(node);
+    if (ts_node_is_null(prev))
+    {
+        TSNode parent = parser::GetParent(node);
+        if (!ts_node_is_null(parent))
+        {
+            prev = ts_node_prev_sibling(parent);
+        }
+    }
+    return prev;
+}
+
+/**
+ * @brief Checks if a preceding node represents a statement-ending expression symbol.
+ * @param[in] prev Preceding node to test.
+ * @param[in] gs Grammar symbol table.
+ * @return True if the node is an expression candidate preceding a missing semicolon.
+ */
+static bool IsPrecedingExpression(TSNode prev, const parser::GrammarSymbols& gs)
+{
+    if (ts_node_is_null(prev))
+    {
+        return false;
+    }
+    const TSSymbol prevSym = ts_node_symbol(prev);
+    return (prevSym == gs.symMemberExpression || prevSym == gs.symScopedIdentifier || prevSym == gs.symCallExpression ||
+            prevSym == gs.symIdentifier);
+}
+
+/**
+ * @brief Extracts the first non-whitespace lexical token from error text up to a semicolon or delimiter.
+ * @param[in] text Raw text snippet containing error.
+ * @return Substring view of the first token, or empty view if none.
+ */
+static std::string_view ExtractMissingSemicolonToken(std::string_view text)
+{
+    std::string_view trimmed = TrimView(text);
+    if (trimmed.empty())
+    {
+        return {};
+    }
+    const size_t tokenEnd = trimmed.find_first_of(" \t\r\n;");
+    return (tokenEnd != std::string_view::npos) ? trimmed.substr(0, tokenEnd) : trimmed;
+}
+
+bool SymbolCollector::TryFormatMissingSemicolonError(TSNode node, const SymbolCollectContext& sCtx,
+                                                     Diagnostic& diag) const
+{
+    TSNode prev = FindEffectivePreviousSibling(node);
+    if (!IsPrecedingExpression(prev, m_gs))
+    {
+        return false;
+    }
+
+    std::string_view token = ExtractMissingSemicolonToken(parser::GetNodeTextView(node, sCtx.request.sourceCode));
+    if (token.empty())
+    {
+        return false;
+    }
+
+    diag.message =
+        i18n::FormatMessage(sCtx.request.i18n, "note-expected-semicolon-before", "Expected ';' before '{}'", token);
+    return true;
+}
+
 void SymbolCollector::EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext& sCtx) const
 {
     TSPoint startPt = ts_node_start_point(node);
@@ -2518,6 +2595,10 @@ void SymbolCollector::EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext
         logMsg = diag.message;
     }
     else if (TryFormatArgumentListSyntaxError(node, sCtx, diag))
+    {
+        logMsg = diag.message;
+    }
+    else if (TryFormatMissingSemicolonError(node, sCtx, diag))
     {
         logMsg = diag.message;
     }
@@ -2688,12 +2769,19 @@ SymbolModifiers SymbolCollector::ExtractModifiers(TSNode node, std::string_view 
     if (ts_node_is_null(node))
         return modifiers;
 
+    TSNode nameNode = GetChildByFieldId(node, m_gs.fieldName);
+
     TSTreeCursor cursor = ts_tree_cursor_new(node);
     if (ts_tree_cursor_goto_first_child(&cursor))
     {
         do
         {
-            ProcessModifierChild(ts_tree_cursor_current_node(&cursor), sourceCode, modifiers);
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            if (!ts_node_is_null(nameNode) && ts_node_eq(child, nameNode))
+            {
+                continue;
+            }
+            ProcessModifierChild(child, sourceCode, modifiers);
         } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
     ts_tree_cursor_delete(&cursor);

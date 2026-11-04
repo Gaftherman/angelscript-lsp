@@ -16,7 +16,7 @@ using namespace angel_lsp::analysis;
 static_assert(sizeof(TypeQualifiers) == 1, "TypeQualifiers must be exactly 1 byte");
 static_assert(sizeof(SymbolModifiers) <= 4, "SymbolModifiers layout must not exceed 4 bytes");
 static_assert(sizeof(ParameterInformation) <= 200, "ParameterInformation layout must not exceed 200 bytes");
-static_assert(sizeof(VariableSignature) <= 176, "VariableSignature layout must not exceed 176 bytes");
+static_assert(sizeof(VariableSignature) <= 192, "VariableSignature layout must not exceed 192 bytes");
 static_assert(sizeof(FunctionSignature) <= 240, "FunctionSignature layout must not exceed 240 bytes");
 static_assert(sizeof(FuncdefSignature) <= 152, "FuncdefSignature layout must not exceed 152 bytes");
 static_assert(sizeof(ClassSignature) <= 80, "ClassSignature layout must not exceed 80 bytes");
@@ -34,7 +34,7 @@ TEST_SUITE("MemoryLayoutAudit")
         CHECK(sizeof(TypeQualifiers) == 1);
         CHECK(sizeof(SymbolModifiers) <= 4);
         CHECK(sizeof(ParameterInformation) <= 200);
-        CHECK(sizeof(VariableSignature) <= 176);
+        CHECK(sizeof(VariableSignature) <= 192);
         CHECK(sizeof(FunctionSignature) <= 240);
         CHECK(sizeof(FuncdefSignature) <= 152);
         CHECK(sizeof(ClassSignature) <= 80);

@@ -42,6 +42,8 @@ static void PopulateEnglishMessages1(MessageMap& m_messages)
     m_messages["as-syntax-error"] = "Syntax error: \"{}\"";
     m_messages["as-syntax-error-missing"] = "Syntax error: missing '{}'";
     m_messages["as-syntax-error-generic"] = "Syntax error";
+    m_messages["note-expected-comma-or-paren"] = "Expected ',' or ')' before '{}'";
+    m_messages["note-expected-semicolon-before"] = "Expected ';' before '{}'";
     m_messages["as-err-declaration-missing-body"] =
         "'{}' must have a body '{{}}'. Only 'external shared' declares one without.";
     m_messages["as-err-external-not-shared"] = "'external' requires 'shared' on '{}'.";
@@ -481,6 +483,8 @@ static void PopulateSpanishMessages1(MessageMap& m_messages)
     m_messages["as-syntax-error"] = "Error de sintaxis: \"{}\"";
     m_messages["as-syntax-error-missing"] = "Error de sintaxis: falta '{}'";
     m_messages["as-syntax-error-generic"] = "Error de sintaxis";
+    m_messages["note-expected-comma-or-paren"] = "Se esperaba ',' o ')' antes de '{}'";
+    m_messages["note-expected-semicolon-before"] = "Se esperaba ';' antes de '{}'";
     m_messages["as-err-declaration-missing-body"] =
         "'{}' debe tener un cuerpo '{{}}'. Solo 'external shared' se declara sin él.";
     m_messages["as-err-external-not-shared"] = "'external' requiere 'shared' en '{}'.";

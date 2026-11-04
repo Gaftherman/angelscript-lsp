@@ -332,6 +332,8 @@ struct VariableSignature
     std::string defaultValue;
     std::vector<std::string> templateArgumentTypes;
 
+    SourceRange typeRange{};
+
     uint32_t arrayDepth = 0;
     SymbolModifiers modifiers;
     TypeKind typeKind = TypeKind::Unknown;
@@ -356,7 +358,7 @@ struct VariableSignature
     bool isEnumConstant : 1 = false;
     bool hasCallInitializer : 1 = false;
 };
-static_assert(sizeof(VariableSignature) <= 176);
+static_assert(sizeof(VariableSignature) <= 192);
 
 struct EnumMemberInformation
 {

@@ -140,7 +140,7 @@ std::string MultiFileLogger::FormatLogLine(const LogEntry& entry)
 void MultiFileLogger::Initialize(const std::filesystem::path& baseDirectory)
 {
     const std::string dateStr = GetCurrentDateString(std::chrono::system_clock::now());
-    std::filesystem::path targetDir = baseDirectory;
+    std::filesystem::path targetDir;
 
     const std::string filenameStr = baseDirectory.filename().string();
     if (filenameStr.rfind("logs-", 0) == 0)

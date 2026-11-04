@@ -2659,3 +2659,31 @@ TEST_CASE("Hover - Mixin class hover summarizes declared members")
     CHECK(text.find("`m_health`") != std::string::npos);
     CHECK(text.find("`ResetHealth`") != std::string::npos);
 }
+
+TEST_CASE("Hover - Parameter name vs parameter type hover resolution")
+{
+    const std::string className = test::GenerateRandomSymbolName("CItemInventory");
+    const std::string funcName = test::GenerateRandomSymbolName("RegisterItem");
+    const std::string paramName = test::GenerateRandomSymbolName("item");
+    const std::string code = "class " + className +
+                             " {}\n"
+                             "void " +
+                             funcName + "(" + className + "@ " + paramName + ") {}\n";
+
+    TestEnvironment env(code);
+
+    // Hover on parameter name
+    auto pParam = FindPos(code, paramName);
+    auto hoverParam = env.HoverAt(pParam.line, pParam.character);
+    REQUIRE(hoverParam.has_value());
+    const std::string textParam = std::get<lsp::MarkupContent>(hoverParam->contents).value;
+    CHECK(textParam.find("(parameter) " + className + "@ " + paramName) != std::string::npos);
+
+    // Hover on parameter type
+    auto pType = FindPos(code, className, code.find(funcName));
+    auto hoverType = env.HoverAt(pType.line, pType.character);
+    REQUIRE(hoverType.has_value());
+    const std::string textType = std::get<lsp::MarkupContent>(hoverType->contents).value;
+    CHECK(textType.find("class " + className) != std::string::npos);
+    CHECK(textType.find("(parameter)") == std::string::npos);
+}

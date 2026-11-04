@@ -22,6 +22,7 @@
 #include "utils/Constants.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Timer.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
 #include <sstream>
@@ -446,27 +447,6 @@ std::string CollapseWhitespace(std::string_view text)
     return result.substr(start, end - start + 1);
 }
 
-std::string ExtractDeclarationTextAt(TSNode root, const std::string& sourceCode, TSPoint point, TSSymbol wantedSymbol)
-{
-    if (ts_node_is_null(root))
-    {
-        return "";
-    }
-
-    TSNode current = ts_node_descendant_for_point_range(root, point, point);
-    TSNode declNode = parser::FindAncestorWithSymbol(current, wantedSymbol);
-    if (!ts_node_is_null(declNode))
-    {
-        const uint32_t start = ts_node_start_byte(declNode);
-        const uint32_t end = ts_node_end_byte(declNode);
-        if (start < end && end <= sourceCode.size())
-        {
-            return CollapseWhitespace(sourceCode.substr(start, end - start));
-        }
-    }
-    return "";
-}
-
 std::string FormatVariableSignature(const analysis::Symbol& sym, const char* role)
 {
     if (sym.type != analysis::SymbolType::Variable && sym.type != analysis::SymbolType::Property)
@@ -605,12 +585,24 @@ std::optional<analysis::Symbol> ResolveOrMatchCandidate(std::vector<analysis::Sy
         auto it = std::find_if(symbols.begin(), symbols.end(),
                                [&](const analysis::Symbol& s)
                                {
-                                   if (s.fileUri != ctx.request.uri)
+                                   if (!utils::CaseInsensitiveEquals(s.fileUri, ctx.request.uri))
                                    {
                                        return false;
                                    }
-                                   return s.startLine == ctx.queryLine || s.selectionRange.startLine == ctx.queryLine;
+                                   return s.selectionRange.startLine == ctx.queryLine || s.startLine == ctx.queryLine;
                                });
+        if (it == symbols.end())
+        {
+            it = std::find_if(symbols.begin(), symbols.end(),
+                              [&](const analysis::Symbol& s)
+                              {
+                                  if (!utils::CaseInsensitiveEquals(s.fileUri, ctx.request.uri))
+                                  {
+                                      return false;
+                                  }
+                                  return ctx.queryLine >= s.fullRange.startLine && ctx.queryLine <= s.fullRange.endLine;
+                              });
+        }
         if (it != symbols.end())
         {
             best = *it;
@@ -671,11 +663,48 @@ std::string FormatSynthesizedPropertyHeader(const std::vector<analysis::Symbol>&
     return oss.str();
 }
 
+/**
+ * @brief Promotes the best matching candidate overload to the front of the symbol vector.
+ * @param[in,out] symbols Overload candidates to reorder.
+ * @param[in,out] best Best candidate symbol resolved for the call site.
+ */
+static void PromoteMatchedCandidate(std::vector<analysis::Symbol>& symbols, std::optional<analysis::Symbol>& best)
+{
+    if (!best || symbols.empty())
+    {
+        return;
+    }
+    auto it = std::find_if(symbols.begin(), symbols.end(), [&](const analysis::Symbol& s)
+                           { return s.name == best->name && analysis::HasSameParameterList(s, *best); });
+    if (it != symbols.end())
+    {
+        std::rotate(symbols.begin(), it, it + 1);
+        best = symbols.front();
+    }
+}
+
+/**
+ * @brief Appends file location footer to hover markdown when configured and available.
+ * @param[in] symbols Candidate symbols.
+ * @param[in] ctx Hover query context.
+ * @param[in,out] oss Markdown stream to append to.
+ */
+static void AppendFileLocationFooter(const std::vector<analysis::Symbol>& symbols, const HoverQueryContext& ctx,
+                                     std::ostringstream& oss)
+{
+    if (ctx.request.config && ctx.request.config->features.hoverShowFileLocation && !symbols.empty() &&
+        !symbols.front().fileUri.empty())
+    {
+        oss << "\n\n---\n*(" << symbols.front().fileUri << ")*";
+    }
+}
+
 lsp::Hover FormatSymbolsHover(std::vector<analysis::Symbol>& symbols, std::string_view accessorPropertyType,
                               const HoverQueryContext& ctx)
 {
     auto best = ResolveOrMatchCandidate(symbols, ctx);
     RemoveDuplicateSymbols(symbols);
+    PromoteMatchedCandidate(symbols, best);
     if (!symbols.empty() && ctx.profiler.IsActive())
     {
         ctx.profiler.symbolName = symbols.front().name;
@@ -714,11 +743,7 @@ lsp::Hover FormatSymbolsHover(std::vector<analysis::Symbol>& symbols, std::strin
         AppendMixinMembersSection(symbols.front(), ctx, oss);
     }
 
-    if (ctx.request.config && ctx.request.config->features.hoverShowFileLocation && !symbols.empty() &&
-        !symbols.front().fileUri.empty())
-    {
-        oss << "\n\n---\n*(" << symbols.front().fileUri << ")*";
-    }
+    AppendFileLocationFooter(symbols, ctx, oss);
 
     ctx.profiler.fmtMs += fmtTimer.ElapsedMs();
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), oss.str()}, ctx.range};
@@ -734,27 +759,17 @@ void FormatParameterHover(const analysis::LocalDefinition& def, std::string_view
                           std::string& md)
 {
     md += "(parameter) ";
-    TSNode rootNode = ts_tree_root_node(ctx.request.tree);
-    const std::string declText =
-        ExtractDeclarationTextAt(rootNode, ctx.request.sourceCode, {def.startLine, def.startCharacter},
-                                 parser::GetGrammarSymbols().symParameter);
-    if (!declText.empty())
+    const std::string_view effectiveType = !typeName.empty() ? typeName : std::string_view(def.typeName);
+    if (!effectiveType.empty())
     {
-        md += declText;
+        md += effectiveType;
+        md += " ";
     }
-    else
+    md += def.name;
+    if (!def.defaultValue.empty())
     {
-        if (!typeName.empty())
-        {
-            md += typeName;
-            md += " ";
-        }
-        md += def.name;
-        if (!def.defaultValue.empty())
-        {
-            md += " = ";
-            md += def.defaultValue;
-        }
+        md += " = ";
+        md += def.defaultValue;
     }
 
     TryAppendFuncdefSignature(typeName, ctx.request.symbolTable, md);
@@ -1324,32 +1339,31 @@ static std::optional<lsp::Hover> TryHoverLocalDefinition(const HoverQueryContext
 }
 
 /**
- * @brief Fallback hover resolution for parameter AST nodes without scope tree entries.
+ * @brief Fallback hover resolution for parameter declarations without scope tree entries (e.g. predefined stubs).
  * @param[in] ctx Hover query context.
- * @return Parameter hover if node is part of a parameter declaration, std::nullopt otherwise.
+ * @return Parameter hover if node is the parameter's identifier, std::nullopt otherwise.
  */
 static std::optional<lsp::Hover> TryHoverParameterAst(const HoverQueryContext& ctx)
 {
-    if (ts_node_is_null(ctx.node) || !ctx.request.tree)
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_is_null(ctx.parent) || ts_node_symbol(ctx.parent) != gs.symParameter)
     {
         return std::nullopt;
     }
 
-    TSNode paramNode = parser::FindAncestorWithSymbol(ctx.node, parser::GetGrammarSymbols().symParameter);
-    if (ts_node_is_null(paramNode))
+    TSNode nameNode = parser::GetChildByField(ctx.parent, gs.fieldName);
+    if (ts_node_is_null(nameNode) || !ts_node_eq(nameNode, ctx.node))
     {
         return std::nullopt;
     }
 
-    TSNode rootNode = ts_tree_root_node(ctx.request.tree);
-    std::string declText = ExtractDeclarationTextAt(rootNode, ctx.request.sourceCode, ts_node_start_point(ctx.node),
-                                                    parser::GetGrammarSymbols().symParameter);
-    if (declText.empty())
+    std::string_view rawDecl = utils::TrimView(parser::GetNodeTextView(ctx.parent, ctx.request.sourceCode));
+    if (rawDecl.empty())
     {
         return std::nullopt;
     }
 
-    std::string md = "```angelscript\n(parameter) " + declText + "\n```";
+    std::string md = "```angelscript\n(parameter) " + CollapseWhitespace(rawDecl) + "\n```";
     return lsp::Hover{lsp::MarkupContent{lsp::MarkupKindEnum(lsp::MarkupKind::Markdown), std::move(md)}, ctx.range};
 }
 

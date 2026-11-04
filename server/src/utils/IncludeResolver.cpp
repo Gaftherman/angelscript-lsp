@@ -746,9 +746,8 @@ std::vector<std::string> IncludeResolver::ResolveAllIncludes(std::string_view ro
                 continue;
             }
 
-            if (visited.find(resolved) == visited.end())
+            if (visited.insert(resolved).second)
             {
-                visited.insert(resolved);
                 resolvedFiles.push_back(resolved);
                 queue.push_back(resolved);
             }

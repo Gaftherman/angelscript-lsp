@@ -62,14 +62,62 @@ struct DiagnosticContext
               std::initializer_list<std::string_view> args) const;
 
     // --- Diagnostic Emission for SourceRange ---
+    /**
+     * @brief Emits a diagnostic anchored to a source range on behalf of a parent symbol.
+     * @param[in] parentSym Symbol defining file context and scope.
+     * @param[in] range Source range where diagnostic applies.
+     * @param[in] code Diagnostic code identifier.
+     * @param[in] severity Diagnostic severity level.
+     */
     void EmitAtRange(const Symbol& parentSym, const SourceRange& range, std::string_view code,
                      DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
 
+    /**
+     * @brief Emits a diagnostic with a formatted argument anchored to a source range on behalf of a parent symbol.
+     * @param[in] parentSym Symbol defining file context and scope.
+     * @param[in] range Source range where diagnostic applies.
+     * @param[in] code Diagnostic code identifier.
+     * @param[in] arg1 Formatting argument.
+     * @param[in] severity Diagnostic severity level.
+     */
+    void EmitAtRange(const Symbol& parentSym, const SourceRange& range, std::string_view code, std::string_view arg1,
+                     DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+
+    /**
+     * @brief Emits a diagnostic anchored to a source range using default request context.
+     * @param[in] range Source range where diagnostic applies.
+     * @param[in] code Diagnostic code identifier.
+     * @param[in] severity Diagnostic severity level.
+     */
     void EmitAtRange(SourceRange range, std::string_view code,
                      DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+
+    /**
+     * @brief Emits a diagnostic with a formatted argument anchored to a source range using default request context.
+     * @param[in] range Source range where diagnostic applies.
+     * @param[in] code Diagnostic code identifier.
+     * @param[in] arg1 Formatting argument.
+     * @param[in] severity Diagnostic severity level.
+     */
     void EmitAtRange(SourceRange range, std::string_view code, std::string_view arg1,
                      DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+
+    /**
+     * @brief Emits a diagnostic with two formatted arguments anchored to a source range.
+     * @param[in] range Source range where diagnostic applies.
+     * @param[in] code Diagnostic code identifier.
+     * @param[in] arg1 First formatting argument.
+     * @param[in] arg2 Second formatting argument.
+     */
     void EmitAtRange(SourceRange range, std::string_view code, std::string_view arg1, std::string_view arg2) const;
+
+    /**
+     * @brief Emits a diagnostic with multiple formatted arguments anchored to a source range.
+     * @param[in] range Source range where diagnostic applies.
+     * @param[in] code Diagnostic code identifier.
+     * @param[in] args Initializer list of message arguments.
+     * @param[in] severity Diagnostic severity level.
+     */
     void EmitAtRange(SourceRange range, std::string_view code, std::initializer_list<std::string_view> args,
                      DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
 

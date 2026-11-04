@@ -463,7 +463,7 @@ bool Server::HandleWatchedFileDeleted(const std::string& path, const std::string
         wasPublished = m_publishedForModules.erase(targetUri) > 0;
     }
     m_diagnosticsPipeline->InvalidateDiagnostics(targetUri);
-    if (wasPublished || GetDocumentStore().IsOpen(targetUri))
+    if (wasPublished)
     {
         PublishDiagnostics(targetUri, {});
     }

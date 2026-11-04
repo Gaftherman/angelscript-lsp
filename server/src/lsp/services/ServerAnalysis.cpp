@@ -729,6 +729,10 @@ void Server::AnalyzeDocument(AnalyzeDocumentRequest req)
     }
     else
     {
+        if (!IsPredefinedReady())
+        {
+            WaitForPredefinedReady(std::chrono::milliseconds(2000));
+        }
         AnalyzeNormalDocument(std::move(req), totalTimer);
     }
 }

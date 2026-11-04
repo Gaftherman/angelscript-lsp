@@ -49,11 +49,11 @@ static std::string TryResolveSiblingRulesForStub(const std::string& stubFilePath
     constexpr std::string_view k_predef = ".predefined";
     if (filename.ends_with(k_asPredef))
     {
-        filename = filename.substr(0, filename.size() - k_asPredef.size());
+        filename.resize(filename.size() - k_asPredef.size());
     }
     else if (filename.ends_with(k_predef))
     {
-        filename = filename.substr(0, filename.size() - k_predef.size());
+        filename.resize(filename.size() - k_predef.size());
     }
     std::filesystem::path candidate = predefPath.parent_path() / (filename + ".angelscript.rules.json");
     if (std::filesystem::is_regular_file(candidate, ec))

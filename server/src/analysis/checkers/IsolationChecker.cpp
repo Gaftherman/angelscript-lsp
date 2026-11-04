@@ -163,10 +163,9 @@ static bool ContainsSymbolDescendant(TSNode root, TSSymbol targetSym) noexcept
     }
     TSTreeCursor cursor = ts_tree_cursor_new(root);
     bool found = false;
-    uint32_t depth = 0;
     if (ts_tree_cursor_goto_first_child(&cursor))
     {
-        depth = 1;
+        uint32_t depth = 1;
         while (depth > 0)
         {
             if (ts_node_symbol(ts_tree_cursor_current_node(&cursor)) == targetSym)
@@ -318,6 +317,10 @@ class IsolationVisitor
     DiagnosticContext& ctx;
     std::string currentClassName;
     bool isCurrentClassShared = false;
+
+    IsolationVisitor(const AstCheckContext& req, DiagnosticContext& dctx) : request(req), ctx(dctx)
+    {
+    }
 
     bool IsClassShared(TSNode node, const std::string& className) const
     {
@@ -621,7 +624,7 @@ void CheckSharedIsolation(const AstCheckContext& request, DiagnosticContext& ctx
 
     CheckSharedEntityEligibility(request, ctx);
 
-    IsolationVisitor visitor{request, ctx, "", false};
+    IsolationVisitor visitor(request, ctx);
     visitor.Visit(request.rootNode);
 }
 } // namespace angel_lsp::analysis

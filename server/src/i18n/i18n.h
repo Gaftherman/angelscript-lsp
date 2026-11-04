@@ -103,6 +103,6 @@ inline std::string FormatMessage(const I18n* i18n, std::string_view key, std::st
 struct LocaleOverlayEntry
 {
     std::string_view languageSubtag;
-    void (*populate)(MessageMap&);
+    void (*populate)(MessageMap&) = nullptr;
 };
 } // namespace angel_lsp::i18n

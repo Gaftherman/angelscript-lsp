@@ -215,12 +215,13 @@ class LocalScopeCollector
     [[nodiscard]] bool IsDeclarationContextSymbol(TSSymbol sym) const noexcept;
 
     /**
-     * @brief Resolves call expression and argument details for a reference using a flat cursor.
+     * @brief Resolves call expression and argument details for a reference in O(1).
      * @param refNode AST node of the reference.
      * @param parent AST parent node.
+     * @param grandparent AST grandparent node.
      * @param[out] ref Reference struct to update.
      */
-    static void DetermineCallReferenceInfo(TSNode refNode, TSNode parent, LocalReference& ref);
+    static void DetermineCallReferenceInfo(TSNode refNode, TSNode parent, TSNode grandparent, LocalReference& ref);
 
     /**
      * @brief Reads type information and ranges for a parameter AST node.

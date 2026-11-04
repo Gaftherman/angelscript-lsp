@@ -18,16 +18,6 @@ namespace angel_lsp::features
 std::string CollapseWhitespace(std::string_view text);
 
 /**
- * @brief Finds the declaration node enclosing a point and reads its text back.
- * @param[in] root Tree-sitter root node.
- * @param[in] sourceCode Source text buffer.
- * @param[in] point Row and column coordinates of the declaration name.
- * @param[in] wantedSymbol AST symbol to look up.
- * @return Whitespace-collapsed declaration text, or empty string if not found.
- */
-std::string ExtractDeclarationTextAt(TSNode root, const std::string& sourceCode, TSPoint point, TSSymbol wantedSymbol);
-
-/**
  * @brief Renders the single hover line describing a symbol of any kind.
  * @param[in] sym Target symbol descriptor.
  * @param[in] symbolTable Optional workspace symbol table.

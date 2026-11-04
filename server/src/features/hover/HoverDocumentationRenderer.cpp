@@ -248,18 +248,6 @@ void CollectOverloadDocs(const HoverRequest& request, const std::vector<analysis
         {
             docs.push_back(std::move(d));
         }
-        else
-        {
-            for (const auto& sym : symbols)
-            {
-                std::string fallbackDoc = DocCommentForSymbol(request, sym);
-                if (!fallbackDoc.empty())
-                {
-                    docs.push_back(std::move(fallbackDoc));
-                    break;
-                }
-            }
-        }
         AppendTypedefDoc(request, *best, docs);
         return;
     }

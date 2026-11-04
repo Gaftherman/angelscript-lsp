@@ -15,7 +15,7 @@ class AngelScriptParser
     utils::LspLogger* m_logger;
 
   public:
-    AngelScriptParser(utils::LspLogger* logger = nullptr);
+    explicit AngelScriptParser(utils::LspLogger* logger = nullptr);
     ~AngelScriptParser();
     /**
      * @brief Parses AngelScript source text into a Tree-Sitter AST tree.

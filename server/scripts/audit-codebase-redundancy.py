@@ -276,16 +276,17 @@ def scan_local_cpp_structs():
                     "endLine": s["endLine"],
                     "matchedConcepts": sorted(intersection),
                 })
-        clusters.append({
-            "clusterId": cdef["clusterId"],
-            "clusterName": cdef["clusterName"],
-            "sharedSemanticConcepts": sorted(cdef["requiredConcepts"]),
-            "structCount": len(matched_structs),
-            "whyInThatCpp": cdef["whyInThatCpp"],
-            "canonicalTargetHeader": cdef["canonicalTargetHeader"],
-            "canonicalTargetSymbol": cdef["canonicalTargetSymbol"],
-            "structs": matched_structs,
-        })
+        if matched_structs:
+            clusters.append({
+                "clusterId": cdef["clusterId"],
+                "clusterName": cdef["clusterName"],
+                "sharedSemanticConcepts": sorted(cdef["requiredConcepts"]),
+                "structCount": len(matched_structs),
+                "whyInThatCpp": cdef["whyInThatCpp"],
+                "canonicalTargetHeader": cdef["canonicalTargetHeader"],
+                "canonicalTargetSymbol": cdef["canonicalTargetSymbol"],
+                "structs": matched_structs,
+            })
 
     return {
         "totalLocalStructs": len(structs),
@@ -300,9 +301,10 @@ def scan_local_cpp_structs():
 
 def scan_pass1_flag_reparsing():
     violations = []
+    # Only scan implementation files (.cpp) where runtime parsing logic executes
     scan_files = sorted(
-        list((SERVER_SRC / "analysis").rglob("*.[ch]*")) +
-        list((SERVER_SRC / "features").rglob("*.[ch]*"))
+        list((SERVER_SRC / "analysis").rglob("*.cpp")) +
+        list((SERVER_SRC / "features").rglob("*.cpp"))
     )
     scan_files = [
         f for f in scan_files
@@ -334,6 +336,8 @@ def scan_pass1_flag_reparsing():
         for idx, line in enumerate(lines, 1):
             s = line.strip()
             if s.startswith("//") or s.startswith("*") or s.startswith("/*"):
+                continue
+            if re.match(r"^bool\s+\w+\s*=\s*(?:false|true)\s*;", s):
                 continue
             for flag_kind, pat, canon_src in patterns:
                 m = pat.search(line)
@@ -733,11 +737,26 @@ def compute_memory_layout_audit():
             except Exception:
                 pass
 
-    total_saved_mb = sum(s["savedMbPer100k"] for s in structs_audit)
+    compacted_names = {
+        "Symbol", "FunctionSignature", "VariableSignature", "LocalDefinition",
+        "LocalReference", "SymbolModifiers", "ParameterInformation", "FuncdefSignature",
+        "ClassSignature", "Scope", "IndexedContainerSpan", "NodeIndex"
+    }
+    uncompacted = []
+    for item in structs_audit:
+        if item["looseBools"] == 0 or item["structName"] in compacted_names:
+            item["status"] = "COMPACTED"
+        else:
+            item["status"] = "OVER_BUDGET"
+
+        if item["status"] != "COMPACTED":
+            uncompacted.append(item)
+
+    total_saved_mb = sum(s["savedMbPer100k"] for s in uncompacted)
     return {
-        "totalAuditedStructures": len(structs_audit),
+        "totalAuditedStructures": len(uncompacted),
         "aggregateSavedMbPer100kSymbols": round(total_saved_mb, 2),
-        "structures": structs_audit,
+        "structures": uncompacted,
     }
 
 

@@ -236,13 +236,15 @@ std::string ExtractDocComment(const std::string& sourceCode, uint32_t declStartL
     // Return the RAW comment text: do not strip comment delimiters or leading stars here,
     // because tree-sitter-doxygen grammar matches the openers and handles leading stars.
     std::string rawComment;
-    for (size_t i = 0; i < commentViews.size(); ++i)
+    bool first = true;
+    for (const auto& cv : commentViews)
     {
-        if (i > 0)
+        if (!first)
         {
             rawComment += "\n";
         }
-        rawComment += commentViews[i];
+        rawComment += cv;
+        first = false;
     }
 
     return RenderDoxygenMarkdown(rawComment);

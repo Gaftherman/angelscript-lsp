@@ -65,6 +65,13 @@ static void AddRangeSuppressionFix(const CodeActionRequest& request, const lsp::
                                          diag, request.uri, {std::move(startEdit), std::move(endEdit)}));
 }
 
+/**
+ * @brief Creates a code action offering a file-level diagnostic suppression header comment.
+ * @param[in] request Incoming code action request context.
+ * @param[in] diag Target diagnostic to suppress.
+ * @param[in] aliasOrCode Diagnostic code or human-readable alias.
+ * @param[in,out] actions Code action accumulator vector.
+ */
 static void AddFileSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag,
                                   std::string_view aliasOrCode, std::vector<lsp::CodeAction>& actions)
 {

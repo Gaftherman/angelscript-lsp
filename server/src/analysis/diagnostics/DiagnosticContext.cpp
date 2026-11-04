@@ -344,12 +344,41 @@ void DiagnosticContext::Emit(const ParameterInformation& param, const Symbol& pa
 
 // --- Diagnostic Emission for SourceRange ---
 
+/**
+ * @brief Emits a diagnostic anchored to a source range on behalf of a parent symbol.
+ * @param[in] parentSym Symbol defining file context and scope.
+ * @param[in] range Source range where diagnostic applies.
+ * @param[in] code Diagnostic code identifier.
+ * @param[in] severity Diagnostic severity level.
+ */
 void DiagnosticContext::EmitAtRange(const Symbol& parentSym, const SourceRange& range, std::string_view code,
                                     DiagnosticSeverity severity) const
 {
     Append(CreateDiagnostic(range, parentSym.fileUri, code, severity));
 }
 
+/**
+ * @brief Emits a diagnostic with a formatted argument anchored to a source range on behalf of a parent symbol.
+ * @param[in] parentSym Symbol defining file context and scope.
+ * @param[in] range Source range where diagnostic applies.
+ * @param[in] code Diagnostic code identifier.
+ * @param[in] arg1 Formatting argument.
+ * @param[in] severity Diagnostic severity level.
+ */
+void DiagnosticContext::EmitAtRange(const Symbol& parentSym, const SourceRange& range, std::string_view code,
+                                    std::string_view arg1, DiagnosticSeverity severity) const
+{
+    Diagnostic diag = CreateDiagnostic(range, parentSym.fileUri, code, severity);
+    ApplyMessageFormatting(diag, request.i18n, code, {arg1});
+    Append(std::move(diag));
+}
+
+/**
+ * @brief Emits a diagnostic anchored to a source range using default request context.
+ * @param[in] range Source range where diagnostic applies.
+ * @param[in] code Diagnostic code identifier.
+ * @param[in] severity Diagnostic severity level.
+ */
 void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code, DiagnosticSeverity severity) const
 {
     Append(CreateDiagnostic(range, request.fileUri, code, severity));

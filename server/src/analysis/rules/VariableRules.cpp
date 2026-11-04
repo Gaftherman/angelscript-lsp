@@ -129,7 +129,7 @@ static void CheckPrimitiveOrVoidType(const Symbol& sym, const VariableSignature&
 static void CheckNonInstantiableType(const Symbol& sym, const VariableSignature& sig, std::string_view baseType,
                                      const DiagnosticContext& ctx)
 {
-    if (sig.modifiers.isHandle || !sig.templateName.empty())
+    if (sig.modifiers.isHandle || !sig.templateName.empty() || sig.isArray)
     {
         return;
     }
@@ -153,8 +153,8 @@ static void CheckNonInstantiableType(const Symbol& sym, const VariableSignature&
     }
 }
 
-static void CheckUnresolvedVariableType(const Symbol& sym, std::string_view baseType, std::string_view enclosingNs,
-                                        const DiagnosticContext& ctx)
+static void CheckUnresolvedVariableType(const Symbol& sym, const VariableSignature& sig, std::string_view baseType,
+                                        std::string_view enclosingNs, const DiagnosticContext& ctx)
 {
     if (baseType.empty() || baseType == "auto" || IsReservedKeyword(std::string(baseType)))
     {
@@ -177,7 +177,11 @@ static void CheckUnresolvedVariableType(const Symbol& sym, std::string_view base
     if (ctx.request.ReportsUnknownTypes() || existsInOtherScope)
     {
         ctx.LogRule("CheckDeclaredType", "as-err-unresolved-type", sym);
-        ctx.Emit(sym, "as-err-unresolved-type", baseType);
+        const SourceRange targetRange = (sig.typeRange.endLine > sig.typeRange.startLine ||
+                                         sig.typeRange.endCharacter > sig.typeRange.startCharacter)
+                                            ? sig.typeRange
+                                            : sym.selectionRange;
+        ctx.EmitAtRange(sym, targetRange, "as-err-unresolved-type", baseType);
     }
 }
 
@@ -194,7 +198,7 @@ static void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, c
     const Symbol* declaration = FindTypeDeclaration(baseType, ctx.request.symbolTable, keepAlive, enclosingNs);
     if (!declaration)
     {
-        CheckUnresolvedVariableType(sym, baseType, enclosingNs, ctx);
+        CheckUnresolvedVariableType(sym, sig, baseType, enclosingNs, ctx);
         return;
     }
 
@@ -236,6 +240,11 @@ static void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, c
  */
 static void CheckPlacement(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx)
 {
+    if (sig.isEnumConstant || sym.containerKind == ContainerKind::Enum)
+    {
+        return;
+    }
+
     const bool isClassMember = IsClassOrInterfaceMember(sym, ctx.request.symbolTable);
 
     // private/protected mean nothing outside a class body.

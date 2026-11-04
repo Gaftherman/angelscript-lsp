@@ -1717,6 +1717,7 @@ static std::string NormalizeParamDirection(std::string_view rawSc)
 static void ProcessParamTagChildren(TSNode tagNode, const std::string& sourceCode, ParamItem& item)
 {
     uint32_t childCount = ts_node_child_count(tagNode);
+    TSNode lastIdNode{};
     for (uint32_t i = 0; i < childCount; ++i)
     {
         TSNode child = ts_node_child(tagNode, i);
@@ -1731,11 +1732,32 @@ static void ProcessParamTagChildren(TSNode tagNode, const std::string& sourceCod
             if (!name.empty())
             {
                 item.names.push_back(std::move(name));
+                lastIdNode = child;
             }
         }
         else if (std::strcmp(type, "description") == 0)
         {
             item.description = RenderDescription(child, sourceCode);
+        }
+    }
+
+    if (!ts_node_is_null(lastIdNode))
+    {
+        const uint32_t start = ts_node_end_byte(lastIdNode);
+        size_t end = sourceCode.rfind("*/");
+        if (end == std::string::npos || end < start)
+        {
+            end = ts_node_end_byte(tagNode);
+        }
+        if (end > start && end <= sourceCode.size())
+        {
+            std::string rawSlice =
+                CleanDescriptionLines(RewriteAtInlineCommands(sourceCode.substr(start, end - start)));
+            rawSlice = Trim(rawSlice);
+            if (!rawSlice.empty())
+            {
+                item.description = std::move(rawSlice);
+            }
         }
     }
 }
@@ -1777,20 +1799,24 @@ static ParamItem ProcessParamTag(TSNode tagNode, const std::string& sourceCode)
  */
 static std::pair<std::string, std::string> ExtractTwoPartTag(TSNode tagNode, const std::string& sourceCode)
 {
-    TSNode descChild = FindChildByType(tagNode, "description");
-    std::string desc;
-    if (!ts_node_is_null(descChild))
+    TSNode nameChild = FindChildByType(tagNode, "tag_name");
+    uint32_t start = !ts_node_is_null(nameChild) ? ts_node_end_byte(nameChild) : ts_node_start_byte(tagNode);
+    size_t end = sourceCode.rfind("*/");
+    if (end == std::string::npos || end < start)
     {
-        desc = RenderDescription(descChild, sourceCode);
+        end = ts_node_end_byte(tagNode);
+    }
+    std::string desc;
+    if (end > start && end <= sourceCode.size())
+    {
+        desc = CleanDescriptionLines(RewriteAtInlineCommands(sourceCode.substr(start, end - start)));
     }
     else
     {
-        TSNode nameChild = FindChildByType(tagNode, "tag_name");
-        uint32_t start = !ts_node_is_null(nameChild) ? ts_node_end_byte(nameChild) : ts_node_start_byte(tagNode);
-        uint32_t end = ts_node_end_byte(tagNode);
-        if (end > start && end <= sourceCode.size())
+        TSNode descChild = FindChildByType(tagNode, "description");
+        if (!ts_node_is_null(descChild))
         {
-            desc = CleanDescriptionLines(RewriteAtInlineCommands(sourceCode.substr(start, end - start)));
+            desc = RenderDescription(descChild, sourceCode);
         }
     }
 
@@ -2139,7 +2165,7 @@ static std::pair<std::string, std::string> SplitInlineTagWord(std::string_view d
     if (punct > 0 && punct < X.size())
     {
         remainder = X.substr(punct) + remainder;
-        X = X.substr(0, punct);
+        X.resize(punct);
     }
     return {std::move(X), std::move(remainder)};
 }

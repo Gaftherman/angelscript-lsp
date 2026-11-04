@@ -35,7 +35,7 @@ Server::ResolveTargetEngineProfile(const angel_lsp::utils::StopFlag& stopToken)
 
     auto kind = angel_lsp::analysis::ParseEngineProfileKind(profileName);
 
-    if (!profileName.empty() && !angel_lsp::analysis::IsKnownEngineProfileName(profileName))
+    if (!angel_lsp::analysis::IsKnownEngineProfileName(profileName))
     {
         lsp::notifications::Window_ShowMessage::Params params;
         params.type = lsp::MessageType::Warning;
@@ -625,14 +625,11 @@ void Server::SetPredefinedReady(bool ready)
 {
     if (ready)
     {
-        if (!IsPredefinedReady() || !GetWorkspaceStore().GetPredefinedBaseTable())
-        {
-            m_symbolTable.EnsureRuleIndex();
-            auto base = std::make_unique<analysis::SymbolTable>();
-            base->ClonePredefinedBaseFrom(m_symbolTable, m_config.info.predefinedFileExtension);
-            base->EnsureRuleIndex();
-            GetWorkspaceStore().SetPredefinedBaseTable(std::move(base));
-        }
+        m_symbolTable.EnsureRuleIndex();
+        auto base = std::make_unique<analysis::SymbolTable>();
+        base->ClonePredefinedBaseFrom(m_symbolTable, m_config.info.predefinedFileExtension);
+        base->EnsureRuleIndex();
+        GetWorkspaceStore().SetPredefinedBaseTable(std::move(base));
     }
     else
     {

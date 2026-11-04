@@ -27,9 +27,15 @@ static MixinRanges CollectMixinRanges(const SymbolTable& symbolTable, const std:
     return mixinRanges;
 }
 
+static bool IsScopedIdentifierPrefix(const LocalReference& ref) noexcept
+{
+    return ref.isScopedIdentifier && ref.startByte == ref.receiverStartByte && ref.endByte == ref.receiverEndByte &&
+           ref.endByte < ref.qualifierEndByte;
+}
+
 static bool ShouldIgnoreReference(const LocalReference& ref, const DiagnosticContext& ctx)
 {
-    if (ref.isMemberAccess || ref.isTypeSpecifier || ref.isNamedArgument)
+    if (ref.isMemberAccess || ref.isTypeSpecifier || ref.isNamedArgument || IsScopedIdentifierPrefix(ref))
     {
         return true;
     }

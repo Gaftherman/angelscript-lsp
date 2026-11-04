@@ -23,7 +23,8 @@ using namespace angel_lsp::parser;
 namespace
 {
 std::vector<Diagnostic> AnalyzeVariableSnippet(const std::string& code, const std::string& fileUri = "file:///vars.as",
-                                               const angel_lsp::config::EngineProperties* engine = nullptr)
+                                               const angel_lsp::config::EngineProperties* engine = nullptr,
+                                               const angel_lsp::config::DiagnosticsConfig* diagnostics = nullptr)
 {
     AngelScriptParser parser;
     SymbolCollector collector(nullptr);
@@ -31,15 +32,18 @@ std::vector<Diagnostic> AnalyzeVariableSnippet(const std::string& code, const st
     SymbolTable table;
     static angel_lsp::i18n::I18n i18n;
 
-    collector.CollectSymbols(fileUri, code, parser, table);
+    auto diags = collector.CollectSymbols(fileUri, code, parser, table);
 
     SemanticAnalysisRequest request{table, fileUri, ".as.predefined", &i18n};
     request.engineProperties = engine;
+    request.diagnostics = diagnostics;
     request.scopeRoot = scopes.CollectScopes(code, parser);
     request.sourceCode = code;
 
     SemanticAnalyzer analyzer(nullptr);
-    return analyzer.Analyze(request);
+    auto semDiags = analyzer.Analyze(request);
+    diags.insert(diags.end(), std::make_move_iterator(semDiags.begin()), std::make_move_iterator(semDiags.end()));
+    return diags;
 }
 
 bool HasCode(const std::vector<Diagnostic>& diagnostics, const std::string& code)
@@ -586,4 +590,106 @@ TEST_CASE("VariableRules - Invariant: Child scope parameter shadowing parent par
 
     const auto diags = AnalyzeVariableSnippet(code);
     CHECK(HasCode(diags, "as-err-duplicate-symbol"));
+}
+
+TEST_CASE("VariableRules - Oracle parity: double const rejected in 5 scopes")
+{
+    std::mt19937_64 rng(0x5EED1234);
+
+    // 1. Global scope
+    const std::string gVar1 = angel_lsp::test::GenerateIdentifier(rng, "g1");
+    const std::string gVar2 = angel_lsp::test::GenerateIdentifier(rng, "g2");
+    CHECK(HasCode(AnalyzeVariableSnippet("const int const " + gVar1 + ";\n"), "as-syntax-error"));
+    CHECK(HasCode(AnalyzeVariableSnippet("const int " + gVar2 + " const;\n"), "as-syntax-error"));
+
+    // 2. Namespace scope
+    const std::string nsName = angel_lsp::test::GenerateIdentifier(rng, "NS");
+    const std::string nVar1 = angel_lsp::test::GenerateIdentifier(rng, "n1");
+    const std::string nVar2 = angel_lsp::test::GenerateIdentifier(rng, "n2");
+    CHECK(HasCode(AnalyzeVariableSnippet("namespace " + nsName + " { const int const " + nVar1 + "; }\n"),
+                  "as-syntax-error"));
+    CHECK(HasCode(AnalyzeVariableSnippet("namespace " + nsName + " { const int " + nVar2 + " const; }\n"),
+                  "as-syntax-error"));
+
+    // 3. Class scope
+    const std::string cName = angel_lsp::test::GenerateIdentifier(rng, "C");
+    const std::string cVar1 = angel_lsp::test::GenerateIdentifier(rng, "c1");
+    const std::string cVar2 = angel_lsp::test::GenerateIdentifier(rng, "c2");
+    CHECK(HasCode(AnalyzeVariableSnippet("class " + cName + " { const int const " + cVar1 + "; };\n"),
+                  "as-syntax-error"));
+    CHECK(HasCode(AnalyzeVariableSnippet("class " + cName + " { const int " + cVar2 + " const; };\n"),
+                  "as-syntax-error"));
+
+    // 4. Mixin class scope
+    const std::string mName = angel_lsp::test::GenerateIdentifier(rng, "M");
+    const std::string mVar1 = angel_lsp::test::GenerateIdentifier(rng, "m1");
+    const std::string mVar2 = angel_lsp::test::GenerateIdentifier(rng, "m2");
+    CHECK(HasCode(AnalyzeVariableSnippet("mixin class " + mName + " { const int const " + mVar1 + "; };\n"),
+                  "as-syntax-error"));
+    CHECK(HasCode(AnalyzeVariableSnippet("mixin class " + mName + " { const int " + mVar2 + " const; };\n"),
+                  "as-syntax-error"));
+
+    // 5. Function local scope
+    const std::string fName = angel_lsp::test::GenerateIdentifier(rng, "F");
+    const std::string fVar1 = angel_lsp::test::GenerateIdentifier(rng, "f1");
+    const std::string fVar2 = angel_lsp::test::GenerateIdentifier(rng, "f2");
+    CHECK(HasCode(AnalyzeVariableSnippet("void " + fName + "() { const int const " + fVar1 + "; }\n"),
+                  "as-syntax-error"));
+    CHECK(HasCode(AnalyzeVariableSnippet("void " + fName + "() { const int " + fVar2 + " const; }\n"),
+                  "as-syntax-error"));
+}
+
+TEST_CASE("VariableRules - Exact diagnostic range for unresolved type in variable declaration")
+{
+    std::mt19937_64 rng(0x8BADF00D);
+    const std::string badType = "noexisted";
+    const std::string varName = angel_lsp::test::GenerateIdentifier(rng, "value");
+    const std::string code = badType + " " + varName + ";\n";
+
+    angel_lsp::config::DiagnosticsConfig diagConfig;
+    diagConfig.reportUnknownTypes = true;
+    const auto diags = AnalyzeVariableSnippet(code, "file:///vars.as", nullptr, &diagConfig);
+    auto it = std::find_if(diags.begin(), diags.end(),
+                           [](const Diagnostic& d) { return d.code == "as-err-unresolved-type"; });
+    REQUIRE(it != diags.end());
+    CHECK(it->range.start.line == 0);
+    CHECK(it->range.start.character == 0);
+    CHECK(it->range.end.character == static_cast<uint32_t>(badType.size()));
+}
+
+TEST_CASE("VariableRules - Function named delete is accepted without false modifiers")
+{
+    const std::string code = "void delete(const string&in filename) {}\n";
+    const auto diags = AnalyzeVariableSnippet(code);
+    CHECK(!HasCode(diags, "as-err-delete-with-body"));
+    CHECK(!HasCode(diags, "as-err-delete-not-auto-generated"));
+}
+
+TEST_CASE("VariableRules - Enum members inside class do not trigger as-err-class-member-const")
+{
+    std::mt19937_64 rng(0xFEEDFACE);
+    const std::string cls = angel_lsp::test::GenerateIdentifier(rng, "ClassWithEnum");
+    const std::string enm = angel_lsp::test::GenerateIdentifier(rng, "SubEnum");
+    const std::string val = angel_lsp::test::GenerateIdentifier(rng, "Val");
+    const std::string code = "class " + cls + " { enum " + enm + " { " + val + " = 1 } };\n";
+
+    const auto diags = AnalyzeVariableSnippet(code);
+    CHECK(!HasCode(diags, "as-err-class-member-const"));
+}
+
+TEST_CASE("VariableRules - Missing semicolon before literal produces compiler-style diagnostic")
+{
+    const std::string code = "void TestEngine()\n{\n    g_Engine.time 1.0f;\n}\n";
+    const auto diags = AnalyzeVariableSnippet(code);
+    bool foundExpectedSemicolon = false;
+    for (const auto& d : diags)
+    {
+        if (d.message.find("Expected ';'") != std::string::npos ||
+            d.message.find("Se esperaba ';'") != std::string::npos)
+        {
+            foundExpectedSemicolon = true;
+            break;
+        }
+    }
+    CHECK(foundExpectedSemicolon);
 }

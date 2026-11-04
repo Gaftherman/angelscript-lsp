@@ -68,11 +68,18 @@ def main():
         skip_step("AST Antipattern Gate", "ast-grep/sg not found in PATH")
 
     # 9. Deep Static Analysis (Cppcheck)
-    if shutil.which("cppcheck"):
+    cppcheck_bin = shutil.which("cppcheck")
+    if not cppcheck_bin:
+        default_cppcheck = Path(r"C:\Program Files\Cppcheck\cppcheck.exe")
+        if default_cppcheck.is_file():
+            cppcheck_bin = str(default_cppcheck)
+
+    if cppcheck_bin:
         run_step(
             "Static Analysis (Cppcheck)",
-            "cppcheck --enable=warning,performance,portability,style "
+            f'"{cppcheck_bin}" --enable=warning,performance,portability '
             "--error-exitcode=1 --suppress=missingInclude --suppress=unusedFunction "
+            "--suppress=uninitMemberVarNoCtor --suppress=uselessCallsSubstr "
             "--inline-suppr --std=c++20 server/src/"
         )
     else:

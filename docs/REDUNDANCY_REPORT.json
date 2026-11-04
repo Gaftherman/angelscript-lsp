@@ -1,133 +1,32 @@
 {
-  "generatedAt": "2026-11-02T21:30:11Z",
+  "generatedAt": "2026-11-04T03:12:50Z",
   "branch": "refactor/architecture-deduplication-and-ram",
   "description": "Deterministic AST and tokenization audit report covering local C++ structs, pass-1 flag re-evaluations, function similarity, hot struct RAM layout, and Doxygen coverage.",
   "localCppStructs": {
     "totalLocalStructs": 0,
     "structs": [],
-    "clusters": [
-      {
-        "clusterId": "CLUSTER-TYPE-QUALIFIERS",
-        "clusterName": "Type Qualification & Modifiers",
-        "sharedSemanticConcepts": [
-          "isConst",
-          "isHandle",
-          "isRef",
-          "typeName"
-        ],
-        "structCount": 0,
-        "whyInThatCpp": "Ad-hoc parameter bundling for checker recursion and local type inspection instead of using a unified TypeQualifiers/TypeDescriptor structure.",
-        "canonicalTargetHeader": "server/src/analysis/index/SymbolTable.h",
-        "canonicalTargetSymbol": "TypeQualifiers",
-        "structs": []
-      },
-      {
-        "clusterId": "CLUSTER-MEMBER-LOOKUP",
-        "clusterName": "Member Access & Scope Lookup Context",
-        "sharedSemanticConcepts": [
-          "access",
-          "scope",
-          "table",
-          "typeName"
-        ],
-        "structCount": 0,
-        "whyInThatCpp": "Checker-local context structs created to satisfy the 4-parameter ceiling (/we4100) for internal recursion without a shared analysis structure.",
-        "canonicalTargetHeader": "server/src/analysis/resolution/SemanticHelpers.h",
-        "canonicalTargetSymbol": "MemberLookupContext",
-        "structs": []
-      },
-      {
-        "clusterId": "CLUSTER-CALL-RESOLUTION",
-        "clusterName": "Call & Overload Resolution Context",
-        "sharedSemanticConcepts": [
-          "call",
-          "node",
-          "typeName"
-        ],
-        "structCount": 0,
-        "whyInThatCpp": "Independent feature-level overload and call resolution structs created because Layer 3 feature handlers cannot include sibling features.",
-        "canonicalTargetHeader": "server/src/analysis/resolution/SemanticHelpers.h",
-        "canonicalTargetSymbol": "CallResolutionContext",
-        "structs": []
-      },
-      {
-        "clusterId": "CLUSTER-AST-BYTE-INTERVALS",
-        "clusterName": "AST Byte Intervals & Node Spans",
-        "sharedSemanticConcepts": [
-          "endByte",
-          "startByte"
-        ],
-        "structCount": 0,
-        "whyInThatCpp": "Temporary byte range slices and node interval holders duplicated across features and analysis checkers.",
-        "canonicalTargetHeader": "server/src/analysis/index/NodeIndex.h",
-        "canonicalTargetSymbol": "IndexedContainerSpan",
-        "structs": []
-      }
-    ]
+    "clusters": []
   },
   "pass1FlagReparsing": {
-    "totalFlagReparseOccurrences": 6,
-    "occurrences": [
-      {
-        "file": "server/src/analysis/checkers/TypeConversionChecker.h",
-        "line": 136,
-        "flagKind": "isConst",
-        "codeSnippet": "bool isConst = false;   ///< True if expression has const-qualified type.",
-        "canonicalPass1Source": "Symbol::modifiers.isConst / ParameterInformation::isConst"
-      },
-      {
-        "file": "server/src/analysis/index/Symbol.h",
-        "line": 290,
-        "flagKind": "isHandle",
-        "codeSnippet": "bool isHandle = false;",
-        "canonicalPass1Source": "Symbol::modifiers.isHandle / LocalDefinition::isHandleType"
-      },
-      {
-        "file": "server/src/analysis/index/Symbol.h",
-        "line": 291,
-        "flagKind": "isRef",
-        "codeSnippet": "bool isReference = false;",
-        "canonicalPass1Source": "ParameterInformation::isReference / Symbol::modifiers.isReturnReference"
-      },
-      {
-        "file": "server/src/analysis/index/Symbol.h",
-        "line": 292,
-        "flagKind": "isConst",
-        "codeSnippet": "bool isConst = false;",
-        "canonicalPass1Source": "Symbol::modifiers.isConst / ParameterInformation::isConst"
-      },
-      {
-        "file": "server/src/analysis/resolution/OverloadResolver.h",
-        "line": 126,
-        "flagKind": "isConst",
-        "codeSnippet": "constexpr ArgumentConversion(MatchTier t, ConversionRank r, uint8_t sub = 0, uint8_t dist = 0, bool ",
-        "canonicalPass1Source": "Symbol::modifiers.isConst / ParameterInformation::isConst"
-      },
-      {
-        "file": "server/src/analysis/resolution/OverloadResolver.h",
-        "line": 142,
-        "flagKind": "isConst",
-        "codeSnippet": "constexpr ArgumentConversion(ConversionRank r, uint8_t sub = 0, uint8_t dist = 0, bool isConst = fal",
-        "canonicalPass1Source": "Symbol::modifiers.isConst / ParameterInformation::isConst"
-      }
-    ]
+    "totalFlagReparseOccurrences": 0,
+    "occurrences": []
   },
   "similarFunctionsMatrix": {
-    "totalEvaluatedFunctions": 2361,
-    "similarPairsCount": 63,
+    "totalEvaluatedFunctions": 2376,
+    "similarPairsCount": 62,
     "matrix": [
       {
         "funcA": {
           "file": "server/src/analysis/documentation/DoxygenMarkdown.cpp",
-          "startLine": 1812,
-          "endLine": 1816,
+          "startLine": 1838,
+          "endLine": 1842,
           "name": "ProcessTParamTag",
           "signature": "static TParamItem ProcessTParamTag(TSNode tagNode, const std::string& sourceCode"
         },
         "funcB": {
           "file": "server/src/analysis/documentation/DoxygenMarkdown.cpp",
-          "startLine": 1944,
-          "endLine": 1948,
+          "startLine": 1970,
+          "endLine": 1974,
           "name": "ProcessRetValTag",
           "signature": "static RetValItem ProcessRetValTag(TSNode tagNode, const std::string& sourceCode"
         },
@@ -177,8 +76,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/checkers/CallChecker.cpp",
-          "startLine": 2447,
-          "endLine": 2469,
+          "startLine": 2448,
+          "endLine": 2470,
           "name": "CheckCallArguments",
           "signature": "void CheckCallArguments(const AstCheckContext& request, DiagnosticContext& ctx)"
         },
@@ -220,8 +119,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/checkers/CallChecker.cpp",
-          "startLine": 2447,
-          "endLine": 2469,
+          "startLine": 2448,
+          "endLine": 2470,
           "name": "CheckCallArguments",
           "signature": "void CheckCallArguments(const AstCheckContext& request, DiagnosticContext& ctx)"
         },
@@ -267,6 +166,31 @@
           "push_back"
         ],
         "whatTheyDo": "ProcessVirtualProperty (executes ProcessVirtualProperty logic via [CreateDeclarationSymbol, GetChildByField, GetGrammarSymbols]) and ProcessTypedef (executes ProcessTypedef logic via [CreateDeclarationSymbol, GetChildByField, GetGrammarSymbols]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
+        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
+          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
+          "startLine": 368,
+          "endLine": 374,
+          "name": "EmitAtRange",
+          "signature": "void DiagnosticContext::EmitAtRange(const Symbol& parentSym, const SourceRange& "
+        },
+        "funcB": {
+          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
+          "startLine": 420,
+          "endLine": 426,
+          "name": "EmitAtRange",
+          "signature": "void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\n  "
+        },
+        "similarityScore": 0.976,
+        "sharedCalls": [
+          "Append",
+          "ApplyMessageFormatting",
+          "CreateDiagnostic",
+          "move"
+        ],
+        "whatTheyDo": "Both implementations constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
       },
       {
@@ -347,8 +271,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/checkers/NamespaceChecker.cpp",
-          "startLine": 245,
-          "endLine": 277,
+          "startLine": 334,
+          "endLine": 366,
           "name": "CheckFromASTTraversal",
           "signature": "static void CheckFromASTTraversal(TSNode root, const NamespaceCheckRequest& requ"
         },
@@ -398,15 +322,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 492,
-          "endLine": 501,
+          "startLine": 521,
+          "endLine": 530,
           "name": "LogRule",
           "signature": "void DiagnosticContext::LogRule(std::string_view ruleName, std::string_view code"
         },
         "funcB": {
           "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 510,
-          "endLine": 520,
+          "startLine": 539,
+          "endLine": 549,
           "name": "LogParam",
           "signature": "void DiagnosticContext::LogParam(std::string_view ruleName, std::string_view cod"
         },
@@ -510,34 +434,6 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/resolution/TargetResolution.cpp",
-          "startLine": 1828,
-          "endLine": 1866,
-          "name": "ScanDocumentForGlobal",
-          "signature": "static void ScanDocumentForGlobal(const analysis::Scope* root, OccurrenceScanCon"
-        },
-        "funcB": {
-          "file": "server/src/analysis/resolution/TargetResolution.cpp",
-          "startLine": 2071,
-          "endLine": 2104,
-          "name": "ScanDocumentForEnumMember",
-          "signature": "static void ScanDocumentForEnumMember(const analysis::Scope* root, OccurrenceSca"
-        },
-        "similarityScore": 0.905,
-        "sharedCalls": [
-          "Add",
-          "back",
-          "contains",
-          "empty",
-          "get",
-          "pop_back",
-          "push_back"
-        ],
-        "whatTheyDo": "ScanDocumentForGlobal (evaluates AST node or symbol predicate properties via [Add, IsShadowedInFunctionScope, MatchesCallArguments]) and ScanDocumentForEnumMember (evaluates AST node or symbol predicate properties via [Add, IsEnumMemberReferenceMatch, back]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/features/document_highlight/DocumentHighlightHandler.cpp",
           "startLine": 550,
           "endLine": 571,
@@ -562,15 +458,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 1526,
-          "endLine": 1542,
+          "startLine": 1530,
+          "endLine": 1546,
           "name": "ProcessEnum",
           "signature": "void SymbolCollector::ProcessEnum(TSNode node, SymbolCollectContext& sCtx, const"
         },
         "funcB": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 1585,
-          "endLine": 1597,
+          "startLine": 1590,
+          "endLine": 1602,
           "name": "ProcessInterface",
           "signature": "void SymbolCollector::ProcessInterface(TSNode node, SymbolCollectContext& sCtx, "
         },
@@ -635,15 +531,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 985,
-          "endLine": 1006,
+          "startLine": 1032,
+          "endLine": 1053,
           "name": "PopulateVariableFromField",
           "signature": "void LocalScopeCollector::PopulateVariableFromField(TSNode parentNode, TSSymbol "
         },
         "funcB": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1230,
-          "endLine": 1255,
+          "startLine": 1277,
+          "endLine": 1302,
           "name": "ReadVirtualPropertyTypeInfo",
           "signature": "void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const"
         },
@@ -663,8 +559,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1073,
-          "endLine": 1090,
+          "startLine": 1120,
+          "endLine": 1137,
           "name": "CountVariableDeclarators",
           "signature": "static uint32_t CountVariableDeclarators(TSNode declarationNode, TSSymbol declar"
         },
@@ -715,15 +611,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 2193,
-          "endLine": 2217,
+          "startLine": 2198,
+          "endLine": 2222,
           "name": "ScanDefaultClauseColon",
           "signature": "static void ScanDefaultClauseColon(const SwitchScanContext& sCtx, size_t& idx, s"
         },
         "funcB": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 2225,
-          "endLine": 2248,
+          "startLine": 2230,
+          "endLine": 2253,
           "name": "ScanCaseClauseColon",
           "signature": "static void ScanCaseClauseColon(const SwitchScanContext& sCtx, size_t& idx, std:"
         },
@@ -746,8 +642,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 391,
-          "endLine": 397,
+          "startLine": 420,
+          "endLine": 426,
           "name": "EmitAtRange",
           "signature": "void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\n  "
         },
@@ -763,48 +659,20 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/resolution/TargetResolution.cpp",
-          "startLine": 1745,
-          "endLine": 1789,
-          "name": "ScanDocumentForNamespace",
-          "signature": "static void ScanDocumentForNamespace(const analysis::Scope* root,\n              "
-        },
-        "funcB": {
-          "file": "server/src/analysis/resolution/TargetResolution.cpp",
-          "startLine": 2071,
-          "endLine": 2104,
-          "name": "ScanDocumentForEnumMember",
-          "signature": "static void ScanDocumentForEnumMember(const analysis::Scope* root, OccurrenceSca"
-        },
-        "similarityScore": 0.874,
-        "sharedCalls": [
-          "Add",
-          "back",
-          "contains",
-          "empty",
-          "get",
-          "pop_back",
-          "push_back"
-        ],
-        "whatTheyDo": "ScanDocumentForNamespace (evaluates AST node or symbol predicate properties via [Add, IsRefInsideNamespace, IsShadowedInFunctionScope]) and ScanDocumentForEnumMember (evaluates AST node or symbol predicate properties via [Add, IsEnumMemberReferenceMatch, back]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
           "startLine": 786,
-          "endLine": 815,
+          "endLine": 816,
           "name": "ProcessVirtualPropertyVariable",
           "signature": "void SymbolCollector::ProcessVirtualPropertyVariable(TSNode varDeclNode, SymbolC"
         },
         "funcB": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 1550,
-          "endLine": 1577,
+          "startLine": 1554,
+          "endLine": 1582,
           "name": "ProcessProperty",
           "signature": "void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, c"
         },
-        "similarityScore": 0.868,
+        "similarityScore": 0.874,
         "sharedCalls": [
           "CreateSymbol",
           "ExtractModifiers",
@@ -812,6 +680,7 @@
           "GetChildByFieldName",
           "GetNodeText",
           "ParseAccessorNodes",
+          "ToSourceRange",
           "move",
           "push_back"
         ],
@@ -860,6 +729,31 @@
           "mediator"
         ],
         "whatTheyDo": "RunExpressionRules (executes RunExpressionRules logic via [CheckEngineDialectRules, SafeGetRootNode, get]) and RunTypeAndStructureRules (executes RunTypeAndStructureRules logic via [CheckNamespacesAndScopes, SafeGetRootNode, get]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
+        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
+          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
+          "startLine": 291,
+          "endLine": 298,
+          "name": "Emit",
+          "signature": "void DiagnosticContext::Emit(const Symbol& sym, std::string_view code, std::init"
+        },
+        "funcB": {
+          "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
+          "startLine": 368,
+          "endLine": 374,
+          "name": "EmitAtRange",
+          "signature": "void DiagnosticContext::EmitAtRange(const Symbol& parentSym, const SourceRange& "
+        },
+        "similarityScore": 0.857,
+        "sharedCalls": [
+          "Append",
+          "ApplyMessageFormatting",
+          "CreateDiagnostic",
+          "move"
+        ],
+        "whatTheyDo": "Emit (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) and EmitAtRange (constructs and emits diagnostics via [Append, ApplyMessageFormatting, CreateDiagnostic]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
       },
       {
@@ -1062,8 +956,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
-          "startLine": 391,
-          "endLine": 397,
+          "startLine": 420,
+          "endLine": 426,
           "name": "EmitAtRange",
           "signature": "void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,\n  "
         },
@@ -1154,6 +1048,32 @@
       },
       {
         "funcA": {
+          "file": "server/src/features/code_action/CodeActionSuppressions.cpp",
+          "startLine": 21,
+          "endLine": 35,
+          "name": "AddLineSuppressionFix",
+          "signature": "static void AddLineSuppressionFix(const CodeActionRequest& request, const lsp::D"
+        },
+        "funcB": {
+          "file": "server/src/features/code_action/CodeActionSuppressions.cpp",
+          "startLine": 75,
+          "endLine": 86,
+          "name": "AddFileSuppressionFix",
+          "signature": "static void AddFileSuppressionFix(const CodeActionRequest& request, const lsp::D"
+        },
+        "similarityScore": 0.743,
+        "sharedCalls": [
+          "FormatMessage",
+          "MakeQuickFixAction",
+          "move",
+          "push_back",
+          "string"
+        ],
+        "whatTheyDo": "AddLineSuppressionFix (executes AddLineSuppressionFix logic via [FormatMessage, GetLine, MakeQuickFixAction]) and AddFileSuppressionFix (executes AddFileSuppressionFix logic via [FormatMessage, MakeQuickFixAction, move]) share algorithmic structure. Separated due to Layer 3 feature duplicating Layer 2 analysis capability.",
+        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
+      },
+      {
+        "funcA": {
           "file": "server/src/analysis/resolution/ExpressionTypeResolver.cpp",
           "startLine": 215,
           "endLine": 231,
@@ -1175,34 +1095,6 @@
           "empty"
         ],
         "whatTheyDo": "ExtractVariableOrPropertyType (extracts AST structures and signature metadata via [CleanExpressionType, GetVariable, QualifyTypeInContainer]) and ExtractMemberSymbolType (extracts AST structures and signature metadata via [CleanExpressionType, ExtractAccessorMemberType, GetVariable]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 942,
-          "endLine": 983,
-          "name": "ReadParameterTypeInfo",
-          "signature": "void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std"
-        },
-        "funcB": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 985,
-          "endLine": 1006,
-          "name": "PopulateVariableFromField",
-          "signature": "void LocalScopeCollector::PopulateVariableFromField(TSNode parentNode, TSSymbol "
-        },
-        "similarityScore": 0.731,
-        "sharedCalls": [
-          "ExtractTypeInfoFromAST",
-          "GetChildByField",
-          "GetNodeText",
-          "PopulateTypeRanges",
-          "ts_node_end_point",
-          "ts_node_is_null",
-          "ts_node_start_point"
-        ],
-        "whatTheyDo": "ReadParameterTypeInfo (executes ReadParameterTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) and PopulateVariableFromField (executes PopulateVariableFromField logic via [ExtractTypeInfoFromAST, GetChildByField, GetNodeText]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
         "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
       },
       {
@@ -1281,15 +1173,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 985,
-          "endLine": 1006,
+          "startLine": 1032,
+          "endLine": 1053,
           "name": "PopulateVariableFromField",
           "signature": "void LocalScopeCollector::PopulateVariableFromField(TSNode parentNode, TSSymbol "
         },
         "funcB": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1126,
-          "endLine": 1163,
+          "startLine": 1173,
+          "endLine": 1210,
           "name": "ReadVariableDeclaratorTypeInfo",
           "signature": "void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, "
         },
@@ -1379,35 +1271,6 @@
       },
       {
         "funcA": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 942,
-          "endLine": 983,
-          "name": "ReadParameterTypeInfo",
-          "signature": "void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std"
-        },
-        "funcB": {
-          "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1230,
-          "endLine": 1255,
-          "name": "ReadVirtualPropertyTypeInfo",
-          "signature": "void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const"
-        },
-        "similarityScore": 0.698,
-        "sharedCalls": [
-          "ExtractTypeInfoFromAST",
-          "GetChildByField",
-          "GetGrammarSymbols",
-          "GetNodeText",
-          "PopulateTypeRanges",
-          "ts_node_end_point",
-          "ts_node_is_null",
-          "ts_node_start_point"
-        ],
-        "whatTheyDo": "ReadParameterTypeInfo (executes ReadParameterTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) and ReadVirtualPropertyTypeInfo (executes ReadVirtualPropertyTypeInfo logic via [ExtractTypeInfoFromAST, GetChildByField, GetGrammarSymbols]) share algorithmic structure. Separated due to internal analysis checker boundaries within Layer 2.",
-        "unificationPlan": "server/src/analysis/resolution/SemanticHelpers.h"
-      },
-      {
-        "funcA": {
           "file": "server/src/features/code_action/CodeActionSuppressions.cpp",
           "startLine": 21,
           "endLine": 35,
@@ -1437,15 +1300,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 985,
-          "endLine": 1006,
+          "startLine": 1032,
+          "endLine": 1053,
           "name": "PopulateVariableFromField",
           "signature": "void LocalScopeCollector::PopulateVariableFromField(TSNode parentNode, TSSymbol "
         },
         "funcB": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1027,
-          "endLine": 1065,
+          "startLine": 1074,
+          "endLine": 1112,
           "name": "ReadLambdaParameterTypeInfo",
           "signature": "void LocalScopeCollector::ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode de"
         },
@@ -1487,15 +1350,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 1648,
-          "endLine": 1672,
+          "startLine": 1653,
+          "endLine": 1677,
           "name": "CheckUsingDeclarationCapture",
           "signature": "void SymbolCollector::CheckUsingDeclarationCapture(TSNode usingNode, SymbolColle"
         },
         "funcB": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 1679,
-          "endLine": 1728,
+          "startLine": 1684,
+          "endLine": 1733,
           "name": "CheckDuplicateModifierGroup",
           "signature": "void SymbolCollector::CheckDuplicateModifierGroup(TSNode declNode, SymbolCollect"
         },
@@ -1517,15 +1380,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1126,
-          "endLine": 1163,
+          "startLine": 1173,
+          "endLine": 1210,
           "name": "ReadVariableDeclaratorTypeInfo",
           "signature": "void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, "
         },
         "funcB": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1230,
-          "endLine": 1255,
+          "startLine": 1277,
+          "endLine": 1302,
           "name": "ReadVirtualPropertyTypeInfo",
           "signature": "void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const"
         },
@@ -1567,15 +1430,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1027,
-          "endLine": 1065,
+          "startLine": 1074,
+          "endLine": 1112,
           "name": "ReadLambdaParameterTypeInfo",
           "signature": "void LocalScopeCollector::ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode de"
         },
         "funcB": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1230,
-          "endLine": 1255,
+          "startLine": 1277,
+          "endLine": 1302,
           "name": "ReadVirtualPropertyTypeInfo",
           "signature": "void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const"
         },
@@ -1619,8 +1482,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/SymbolCollector.cpp",
-          "startLine": 1765,
-          "endLine": 1769,
+          "startLine": 1770,
+          "endLine": 1774,
           "name": "IsDeclarationSymbol",
           "signature": "static bool IsDeclarationSymbol(TSSymbol sym, const parser::GrammarSymbols& gs)"
         },
@@ -1639,8 +1502,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 690,
-          "endLine": 696,
+          "startLine": 721,
+          "endLine": 727,
           "name": "IsDeclarationContextSymbol",
           "signature": "bool LocalScopeCollector::IsDeclarationContextSymbol(TSSymbol sym) const noexcep"
         },
@@ -1683,142 +1546,9 @@
     ]
   },
   "memoryLayoutAudit": {
-    "totalAuditedStructures": 11,
-    "aggregateSavedMbPer100kSymbols": 33.2,
-    "structures": [
-      {
-        "structName": "SymbolModifiers",
-        "headerFile": "server/src/analysis/index/SymbolTable.h",
-        "looseBools": 14,
-        "stringCount": 0,
-        "vectorCount": 0,
-        "estimatedPaddingBytes": 2,
-        "currentSizeBytes": 24,
-        "compactedSizeBytes": 4,
-        "compactionProposal": "Pack all 14 bools into a 2-byte uint16_t bitmask; store access and paramModifier as 1-byte uint8_t enums.",
-        "savedMbPer100k": 1.91
-      },
-      {
-        "structName": "ParameterInformation",
-        "headerFile": "server/src/analysis/index/SymbolTable.h",
-        "looseBools": 9,
-        "stringCount": 6,
-        "vectorCount": 0,
-        "estimatedPaddingBytes": 3,
-        "currentSizeBytes": 248,
-        "compactedSizeBytes": 200,
-        "compactionProposal": "Eliminate redundant rawText (synthesized on-demand from AST); pack 9 bools into 2-byte uint16_t typeQualifiers; narrow typeKind and modifier to uint8_t.",
-        "savedMbPer100k": 4.58
-      },
-      {
-        "structName": "VariableSignature",
-        "headerFile": "server/src/analysis/index/SymbolTable.h",
-        "looseBools": 19,
-        "stringCount": 4,
-        "vectorCount": 1,
-        "estimatedPaddingBytes": 5,
-        "currentSizeBytes": 208,
-        "compactedSizeBytes": 160,
-        "compactionProposal": "Pack 19 bools into 4-byte uint32_t flags; embed compacted SymbolModifiers (4 bytes); narrow typeKind to uint8_t.",
-        "savedMbPer100k": 4.58
-      },
-      {
-        "structName": "FunctionSignature",
-        "headerFile": "server/src/analysis/index/SymbolTable.h",
-        "looseBools": 6,
-        "stringCount": 6,
-        "vectorCount": 1,
-        "estimatedPaddingBytes": 2,
-        "currentSizeBytes": 256,
-        "compactedSizeBytes": 224,
-        "compactionProposal": "Pack 6 return bools into 1-byte uint8_t returnQualifiers; embed compacted SymbolModifiers; benefit from nested ParameterInformation compaction.",
-        "savedMbPer100k": 3.05
-      },
-      {
-        "structName": "FuncdefSignature",
-        "headerFile": "server/src/analysis/index/SymbolTable.h",
-        "looseBools": 3,
-        "stringCount": 3,
-        "vectorCount": 1,
-        "estimatedPaddingBytes": 5,
-        "currentSizeBytes": 176,
-        "compactedSizeBytes": 144,
-        "compactionProposal": "Pack 3 return bools into 1-byte uint8_t qualifiers; embed compacted SymbolModifiers.",
-        "savedMbPer100k": 3.05
-      },
-      {
-        "structName": "ClassSignature",
-        "headerFile": "server/src/analysis/index/SymbolTable.h",
-        "looseBools": 3,
-        "stringCount": 0,
-        "vectorCount": 3,
-        "estimatedPaddingBytes": 5,
-        "currentSizeBytes": 104,
-        "compactedSizeBytes": 76,
-        "compactionProposal": "Pack 3 bools into 1-byte uint8_t flags; embed compacted SymbolModifiers (4 bytes).",
-        "savedMbPer100k": 2.67
-      },
-      {
-        "structName": "LocalDefinition",
-        "headerFile": "server/src/analysis/index/ScopeTree.h",
-        "looseBools": 0,
-        "stringCount": 4,
-        "vectorCount": 1,
-        "estimatedPaddingBytes": 2,
-        "currentSizeBytes": 184,
-        "compactedSizeBytes": 168,
-        "compactionProposal": "Pack isHandleType and hasNullInitializer into 1-byte uint8_t flags; bundle line/column fields into SourceRange.",
-        "savedMbPer100k": 1.53
-      },
-      {
-        "structName": "Scope",
-        "headerFile": "server/src/analysis/index/ScopeTree.h",
-        "looseBools": 0,
-        "stringCount": 0,
-        "vectorCount": 5,
-        "estimatedPaddingBytes": 3,
-        "currentSizeBytes": 128,
-        "compactedSizeBytes": 120,
-        "compactionProposal": "Pack ScopeKind enum and isFunctionScope boolean into a single 1-byte uint8_t header.",
-        "savedMbPer100k": 0.76
-      },
-      {
-        "structName": "IndexedContainerSpan",
-        "headerFile": "server/src/analysis/index/NodeIndex.h",
-        "looseBools": 0,
-        "stringCount": 0,
-        "vectorCount": 0,
-        "estimatedPaddingBytes": 1,
-        "currentSizeBytes": 24,
-        "compactedSizeBytes": 20,
-        "compactionProposal": "Pack isMixin into high bit of TSSymbol symbol id or pack 16-bit symbol with 8-bit flags.",
-        "savedMbPer100k": 0.38
-      },
-      {
-        "structName": "NodeIndex",
-        "headerFile": "server/src/analysis/index/NodeIndex.h",
-        "looseBools": 0,
-        "stringCount": 8,
-        "vectorCount": 8,
-        "estimatedPaddingBytes": 6,
-        "currentSizeBytes": 232,
-        "compactedSizeBytes": 216,
-        "compactionProposal": "Reorder members to eliminate 6 bytes of MSVC structure padding; pack m_symComment cleanly with pointers.",
-        "savedMbPer100k": 1.53
-      },
-      {
-        "structName": "Symbol",
-        "headerFile": "server/src/analysis/index/SymbolTable.h",
-        "looseBools": 2,
-        "stringCount": 5,
-        "vectorCount": 1,
-        "estimatedPaddingBytes": 9,
-        "currentSizeBytes": 512,
-        "compactedSizeBytes": 416,
-        "compactionProposal": "Pack isSynthesized and isPredefined into 1-byte uint8_t flags; optimize virtualFileUri SSO allocation; shrink std::variant footprint by compacting largest signature.",
-        "savedMbPer100k": 9.16
-      }
-    ]
+    "totalAuditedStructures": 0,
+    "aggregateSavedMbPer100kSymbols": 0,
+    "structures": []
   },
   "missingDoxygenCatalog": {
     "missingCount": 0,

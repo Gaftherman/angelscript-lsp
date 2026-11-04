@@ -12,6 +12,7 @@
 #include "spdlog/fmt/fmt.h"
 #include "utils/Constants.h"
 #include "utils/LspLogger.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
 #include <cstring>
@@ -526,75 +527,80 @@ static TSNode FindArgumentList(TSNode callNode)
     return argsChild;
 }
 
-static bool IsCallableChildNode(TSNode walkParent, TSSymbol wpSym, TSNode prev, const parser::GrammarSymbols& syms)
+static void PopulateCallArgs(TSNode callNode, LocalReference& ref)
 {
-    if (wpSym == syms.symMemberAccess)
+    ref.isCall = true;
+    TSNode argsChild = FindArgumentList(callNode);
+    if (!ts_node_is_null(argsChild))
     {
-        TSNode memberField = parser::GetChildByField(walkParent, syms.fieldMember);
-        return !ts_node_is_null(memberField) &&
-               (ts_node_eq(memberField, prev) || ts_node_start_byte(memberField) == ts_node_start_byte(prev));
+        ref.argumentCount = static_cast<uint32_t>(CountCallArguments(argsChild));
     }
-    if (wpSym == syms.symScopedIdentifier)
+}
+
+static bool IsCallCalleeNode(TSNode parent, TSSymbol parentSym, TSNode refNode,
+                             const parser::GrammarSymbols& syms) noexcept
+{
+    if (parentSym == syms.symMemberExpression || parentSym == syms.symMemberAccess)
     {
-        TSNode nameField = parser::GetChildByField(walkParent, syms.fieldName);
+        TSNode memberField = parser::GetChildByField(parent, syms.fieldMember);
+        return ts_node_eq(memberField, refNode) ||
+               (!ts_node_is_null(memberField) && ts_node_start_byte(memberField) == ts_node_start_byte(refNode));
+    }
+    if (parentSym == syms.symScopedIdentifier)
+    {
+        TSNode nameField = parser::GetChildByField(parent, syms.fieldName);
         if (ts_node_is_null(nameField))
         {
-            const uint32_t count = ts_node_named_child_count(walkParent);
+            const uint32_t count = ts_node_named_child_count(parent);
             if (count > 0)
             {
-                nameField = ts_node_named_child(walkParent, count - 1);
+                nameField = ts_node_named_child(parent, count - 1);
             }
         }
-        return !ts_node_is_null(nameField) &&
-               (ts_node_eq(nameField, prev) || ts_node_start_byte(nameField) == ts_node_start_byte(prev));
+        return ts_node_eq(nameField, refNode) ||
+               (!ts_node_is_null(nameField) && ts_node_start_byte(nameField) == ts_node_start_byte(refNode));
     }
     return false;
 }
 
-void LocalScopeCollector::DetermineCallReferenceInfo(TSNode refNode, TSNode parent, LocalReference& ref)
+void LocalScopeCollector::DetermineCallReferenceInfo(TSNode refNode, TSNode parent, TSNode grandparent,
+                                                     LocalReference& ref)
 {
+    if (ts_node_is_null(parent))
+    {
+        return;
+    }
+
     const auto& syms = parser::GetGrammarSymbols();
-    TSNode prev = refNode;
-    parser::ForEachAncestor(
-        parent,
-        [&](TSNode walkParent) -> bool
+    const TSSymbol parentSym = ts_node_symbol(parent);
+
+    if (parentSym == syms.symCallExpression)
+    {
+        TSNode funcChild = parser::GetChildByField(parent, syms.fieldFunction);
+        if (ts_node_eq(funcChild, refNode) ||
+            (!ts_node_is_null(funcChild) && ts_node_start_byte(funcChild) == ts_node_start_byte(refNode)))
         {
-            const TSSymbol wpSym = ts_node_symbol(walkParent);
-            if (wpSym == syms.symCallExpression)
-            {
-                TSNode funcChild = parser::GetChildByField(walkParent, parser::GetGrammarSymbols().fieldFunction);
-                if (ts_node_is_null(funcChild))
-                {
-                    TSTreeCursor walkCursor = ts_tree_cursor_new(walkParent);
-                    if (ts_tree_cursor_goto_first_child(&walkCursor))
-                    {
-                        funcChild = ts_tree_cursor_current_node(&walkCursor);
-                    }
-                    ts_tree_cursor_delete(&walkCursor);
-                }
-                if (!ts_node_is_null(funcChild) &&
-                    (ts_node_eq(funcChild, prev) || ts_node_start_byte(funcChild) == ts_node_start_byte(prev)))
-                {
-                    ref.isCall = true;
-                    TSNode argsChild = FindArgumentList(walkParent);
-                    if (!ts_node_is_null(argsChild))
-                    {
-                        ref.argumentCount = static_cast<uint32_t>(CountCallArguments(argsChild));
-                    }
-                }
-                return false;
-            }
-            if (wpSym == syms.symMemberAccess || wpSym == syms.symScopedIdentifier)
-            {
-                if (IsCallableChildNode(walkParent, wpSym, prev, syms))
-                {
-                    prev = walkParent;
-                    return true;
-                }
-                return false;
-            }
-            return false;
-        });
+            PopulateCallArgs(parent, ref);
+        }
+        return;
+    }
+
+    if (ts_node_is_null(grandparent) || ts_node_symbol(grandparent) != syms.symCallExpression)
+    {
+        return;
+    }
+
+    TSNode callFunc = parser::GetChildByField(grandparent, syms.fieldFunction);
+    if (!ts_node_eq(callFunc, parent) &&
+        (ts_node_is_null(callFunc) || ts_node_start_byte(callFunc) != ts_node_start_byte(parent)))
+    {
+        return;
+    }
+
+    if (IsCallCalleeNode(parent, parentSym, refNode, syms))
+    {
+        PopulateCallArgs(grandparent, ref);
+    }
 }
 
 static bool IsTypeSpecifierSymbol(TSSymbol sym, const parser::GrammarSymbols& syms) noexcept
@@ -631,10 +637,6 @@ static bool IsMemberAccessNode(TSNode node, TSNode parent, TSSymbol memberExprSy
     }
     if (ts_node_symbol(parent) == scopedIdSym)
     {
-        if (ts_node_child_count(parent) >= 3)
-        {
-            return true;
-        }
         TSNode firstChild = ts_node_named_child(parent, 0);
         return !ts_node_is_null(firstChild) && !ts_node_eq(firstChild, node) &&
                ts_node_start_byte(firstChild) != ts_node_start_byte(node);
@@ -802,7 +804,12 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
         ref.isTypeSpecifier = IsTypeSpecifierContext(parent);
         ref.isMemberAccess =
             IsMemberAccessNode(capture.node, parent, m_gs.symMemberExpression, m_gs.symScopedIdentifier);
-        DetermineCallReferenceInfo(capture.node, parent, ref);
+        TSNode grandparent = capture.grandparent;
+        if (ts_node_is_null(grandparent))
+        {
+            grandparent = parser::GetParent(parent);
+        }
+        DetermineCallReferenceInfo(capture.node, parent, grandparent, ref);
         PopulateReceiverQualifierRanges(parent, ref);
         EnrichReferenceContext(capture.node, parent, sourceCode, m_gs, ref);
     }
@@ -978,6 +985,7 @@ void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std
     def.fullEndLine = pEnd.row;
     def.fullEndCharacter = pEnd.column;
 
+    TSNode nameNode = parser::GetChildByField(declaratorNode, parser::GetGrammarSymbols().fieldName);
     TSNode paramTypeNode = parser::GetChildByField(declaratorNode, parser::GetGrammarSymbols().fieldParamType);
     if (!ts_node_is_null(paramTypeNode))
     {
@@ -986,7 +994,17 @@ void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std
         def.isConst = typeInfo.isConst;
         def.isReference = typeInfo.isReference;
         def.typeKind = typeInfo.kind;
-        def.typeName = parser::GetNodeText(paramTypeNode, sourceCode);
+        if (!ts_node_is_null(nameNode) && ts_node_start_byte(nameNode) > ts_node_start_byte(paramTypeNode))
+        {
+            const uint32_t tStart = ts_node_start_byte(paramTypeNode);
+            const uint32_t tEnd = ts_node_start_byte(nameNode);
+            std::string_view slice = utils::TrimView(std::string_view(sourceCode).substr(tStart, tEnd - tStart));
+            def.typeName = std::string(slice);
+        }
+        else
+        {
+            def.typeName = parser::GetNodeText(paramTypeNode, sourceCode);
+        }
         PopulateTypeRanges(paramTypeNode, sourceCode, def);
     }
 

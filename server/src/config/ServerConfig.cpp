@@ -7,6 +7,10 @@
 #include <string>
 #include <string_view>
 
+#ifndef ANGELLSP_VERSION
+#define ANGELLSP_VERSION "unknown"
+#endif
+
 namespace angel_lsp::config
 {
 static std::string ToLower(std::string_view str)

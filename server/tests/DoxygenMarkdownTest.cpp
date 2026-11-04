@@ -433,3 +433,17 @@ TEST_CASE("DoxygenMarkdown - Prose wrapped across lines without punctuation join
 
     CHECK(RenderDoxygenMarkdown(input) == expected);
 }
+
+TEST_CASE("DoxygenMarkdown - Preserves curly braces and placeholders in param and tparam")
+{
+    const std::string input = "/**\n"
+                              " * @brief Configures options.\n"
+                              " * @param options Format string containing {name} and {value}.\n"
+                              " * @tparam T Type parameter conforming to {TInterface}.\n"
+                              " */";
+
+    const std::string rendered = RenderDoxygenMarkdown(input);
+    CHECK(rendered.find("{name}") != std::string::npos);
+    CHECK(rendered.find("{value}") != std::string::npos);
+    CHECK(rendered.find("{TInterface}") != std::string::npos);
+}

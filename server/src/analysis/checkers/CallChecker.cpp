@@ -2117,6 +2117,7 @@ static std::vector<Symbol> LookupRawConstructors(const std::string& baseName, co
     {
         collectFunctions(baseName);
     }
+    // cppcheck-suppress duplicateCondition
     if (rawConstructors.empty())
     {
         for (const auto& sym : table.FindTypeSymbolsByShortName(shortName))

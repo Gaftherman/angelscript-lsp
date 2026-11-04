@@ -574,7 +574,8 @@ void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDo
     }
 
     const std::string path = CanonicalPathFromUri(uriStr);
-    const bool isModuleFile = RestoreClosedModuleFile(uriStr, path);
+    const bool isOwnedModule = (!m_config.modules.empty() && ClaimFor(path).owner != nullptr);
+    const bool isModuleFile = isOwnedModule && RestoreClosedModuleFile(uriStr, path);
 
     // Closing a file does not remove it from the modules of the documents still open.
     const std::vector<std::string> stillOpen = GetDocumentStore().GetOpenUris();
@@ -596,6 +597,10 @@ void Server::HandleNotificationsTextDocument_DidClose(lsp::notifications::TextDo
 
     if (!isModuleFile)
     {
+        {
+            std::lock_guard<std::mutex> lock(m_publishedForModulesMutex);
+            m_publishedForModules.erase(uriStr);
+        }
         m_diagnosticsPipeline->InvalidateDiagnostics(uriStr);
         PublishDiagnostics(uriStr, {});
     }
