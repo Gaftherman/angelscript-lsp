@@ -164,18 +164,11 @@ void Server::ReanalyzeDependentsOnSave(const std::string& uriStr)
 SyntaxRevision Server::ResolveProtocolSyntax(std::string_view uri, std::string_view source,
                                              const document::Document* open)
 {
-    const SyntaxRevisionKey key{uri, source, open ? open->generation : 0};
-    if (auto cached = m_protocolSyntax.Find(key))
-    {
-        return {std::move(cached), 0};
-    }
-
     const bool hasExactTree = open && open->tree && open->ParsedSource() == source;
-    auto tree = document::MakeTreePtr(hasExactTree ? ts_tree_copy(open->tree.get()) : m_parser->Parse(source));
-    auto syntax = std::make_shared<const ParsedDocumentSyntax>(std::move(tree));
-    const size_t extractedNodes = syntax->index.NodeCount();
-    m_protocolSyntax.Remember(key, syntax);
-    return {std::move(syntax), extractedNodes};
+    return ResolveSyntaxRevision({.key = {uri, source, open ? open->generation : 0},
+                                  .parser = *m_parser,
+                                  .exactTreeToCopy = hasExactTree ? open->tree.get() : nullptr},
+                                 &m_protocolSyntax);
 }
 
 void Server::HandleNotificationsTextDocument_DidSave(lsp::notifications::TextDocument_DidSave::Params&& params)
@@ -431,7 +424,7 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
     }
     else
     {
-        IndexModuleClosure(uriStr);
+        IndexModuleClosure(uriStr, m_sessionCoordinator->GetClientPullsDiagnostics() ? &m_protocolSyntax : nullptr);
 
         const analysis::CallBindingRevision bindingRevision{open->generation, version,
                                                             m_sessionCoordinator->GetConfigRevision()};

@@ -1,9 +1,20 @@
 #include "lsp/state/SyntaxRevisionCache.h"
 
+#include "utils/Timer.h"
+
 #include <algorithm>
 
 namespace angel_lsp
 {
+std::list<SyntaxRevisionCache::Entry>::iterator SyntaxRevisionCache::RetentionFront(const SyntaxRevisionKey& key)
+{
+    if (key.generation != 0)
+    {
+        return m_entries.begin();
+    }
+    return std::ranges::find_if(m_entries, [](const Entry& entry) { return entry.generation == 0; });
+}
+
 std::shared_ptr<const ParsedDocumentSyntax> SyntaxRevisionCache::Find(const SyntaxRevisionKey& key)
 {
     if (key.generation == 0 && key.closedRevision == 0)
@@ -21,8 +32,8 @@ std::shared_ptr<const ParsedDocumentSyntax> SyntaxRevisionCache::Find(const Synt
     {
         return {};
     }
-    m_entries.splice(m_entries.begin(), m_entries, found);
-    return m_entries.front().syntax;
+    m_entries.splice(RetentionFront(key), m_entries, found);
+    return found->syntax;
 }
 
 void SyntaxRevisionCache::Remember(const SyntaxRevisionKey& key,
@@ -34,7 +45,8 @@ void SyntaxRevisionCache::Remember(const SyntaxRevisionKey& key,
         return;
     }
     Forget(key.uri);
-    m_entries.push_front({std::string(key.uri), std::string(key.source), key.generation, key.closedRevision, syntax});
+    m_entries.insert(RetentionFront(key),
+                     {std::string(key.uri), std::string(key.source), key.generation, key.closedRevision, syntax});
 
     size_t nodes = 0;
     size_t bytes = 0;
@@ -55,5 +67,36 @@ void SyntaxRevisionCache::Remember(const SyntaxRevisionKey& key,
 void SyntaxRevisionCache::Forget(std::string_view uri)
 {
     m_entries.remove_if([&](const Entry& entry) { return entry.uri == uri; });
+}
+
+SyntaxRevision ResolveSyntaxRevision(SyntaxRevisionInput input, SyntaxRevisionCache* cache)
+{
+    if (cache)
+    {
+        if (auto existing = cache->Find(input.key))
+        {
+            return {std::move(existing)};
+        }
+    }
+
+    utils::HighResTimer parseTimer;
+    if (!input.tree)
+    {
+        input.tree = document::MakeTreePtr(input.exactTreeToCopy ? ts_tree_copy(input.exactTreeToCopy)
+                                                                 : input.parser.Parse(input.key.source));
+    }
+    const double parseMs = parseTimer.ElapsedMs();
+    if (!input.tree)
+    {
+        return {.parseMs = parseMs};
+    }
+
+    auto syntax = std::make_shared<const ParsedDocumentSyntax>(std::move(input.tree));
+    const size_t extractedNodes = syntax->index.NodeCount();
+    if (cache)
+    {
+        cache->Remember(input.key, syntax);
+    }
+    return {std::move(syntax), extractedNodes, parseMs};
 }
 } // namespace angel_lsp

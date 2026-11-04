@@ -2,6 +2,7 @@
 
 #include "analysis/index/NodeIndex.h"
 #include "document/Document.h"
+#include "parser/AngelScriptParser.h"
 
 #include <cstdint>
 #include <list>
@@ -37,10 +38,11 @@ struct SyntaxRevision
 {
     std::shared_ptr<const ParsedDocumentSyntax> syntax;
     size_t extractedNodes = 0;
+    double parseMs = 0.0;
 };
 
 /**
- * @brief Retains a bounded set of exact syntax revisions in least-recently-used order.
+ * @brief Retains exact syntax revisions under shared budgets, with open revisions retained first.
  * @note Each instance and its syntax handles belong to a single execution thread.
  */
 class SyntaxRevisionCache
@@ -65,9 +67,28 @@ class SyntaxRevisionCache
         std::shared_ptr<const ParsedDocumentSyntax> syntax;
     };
 
+    /// Inserts or promotes within the open or closed partition.
+    std::list<Entry>::iterator RetentionFront(const SyntaxRevisionKey& key);
+
     static constexpr size_t MaxEntries = 8;
     static constexpr size_t MaxNodes = 32768;
     static constexpr size_t MaxSourceBytes = 2 * 1024 * 1024;
     std::list<Entry> m_entries;
 };
+/// Inputs owned by the caller or borrowed for the duration of syntax resolution.
+struct SyntaxRevisionInput
+{
+    SyntaxRevisionKey key;
+    parser::AngelScriptParser& parser;
+    document::TreePtr tree = document::MakeTreePtr();
+    const TSTree* exactTreeToCopy = nullptr;
+};
+
+/**
+ * @brief Resolves syntax on the caller's thread, preferring an existing extraction.
+ * @param[in] input Revision key, parser and optional tree for the exact same parser input.
+ * @param[in,out] cache Optional cache owned by the calling thread.
+ * @return The exact syntax revision and the work performed to produce it.
+ */
+[[nodiscard]] SyntaxRevision ResolveSyntaxRevision(SyntaxRevisionInput input, SyntaxRevisionCache* cache = nullptr);
 } // namespace angel_lsp

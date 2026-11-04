@@ -543,39 +543,27 @@ ParseAndCollectResult Server::ParseAndCollectSymbols(AnalyzeDocumentRequest& req
                                                      angel_lsp::analysis::SymbolTable& staging,
                                                      SyntaxRevisionCache* syntaxCache)
 {
-    const SyntaxRevisionKey key{req.uriStr, req.text, req.generation, req.closedRevision};
-    auto syntax = syntaxCache ? syntaxCache->Find(key) : nullptr;
-    double parseMs = 0.0;
-    auto tree = document::MakeTreePtr();
+    const auto open = !req.fromScheduler && req.generation != 0 ? GetDocumentStore().GetDocument(req.uriStr) : nullptr;
+    const bool hasExactTree =
+        open && open->tree && open->generation == req.generation && open->ParsedSource() == req.text;
+    utils::HighResTimer colTimer;
+    auto [syntax, extractedNodes, parseMs] =
+        ResolveSyntaxRevision({.key = {req.uriStr, req.text, req.generation, req.closedRevision},
+                               .parser = req.parser,
+                               .tree = std::move(req.treeCopy),
+                               .exactTreeToCopy = hasExactTree ? open->tree.get() : nullptr},
+                              syntaxCache);
     if (!syntax)
     {
-        utils::HighResTimer parseTimer;
-        tree = req.treeCopy ? std::move(req.treeCopy) : document::MakeTreePtr(req.parser.Parse(req.text));
-        parseMs = parseTimer.ElapsedMs();
-        if (!tree)
-        {
-            return {.parseMs = parseMs};
-        }
-    }
-
-    utils::HighResTimer colTimer;
-    size_t extractedNodes = 0;
-    if (tree)
-    {
-        syntax = std::make_shared<const ParsedDocumentSyntax>(std::move(tree));
-        extractedNodes = syntax->index.NodeCount();
-        if (syntaxCache)
-        {
-            syntaxCache->Remember(key, syntax);
-        }
+        return {.parseMs = parseMs};
     }
     auto closed = FindClosedAnalysisInputs(req);
     if (closed.indexedSyntax)
     {
         LogInfo(fmt::format("[Analysis] Reused closed indexed symbols for file: {}", req.uriStr));
         auto diagnostics = closed.indexedSyntax->diagnostics;
-        return {std::move(syntax),    std::move(diagnostics), parseMs,
-                colTimer.ElapsedMs(), extractedNodes,         std::move(closed)};
+        return {std::move(syntax), std::move(diagnostics), parseMs, (colTimer.ElapsedMs() - parseMs),
+                extractedNodes,    std::move(closed)};
     }
 
     auto diagnostics =
@@ -584,7 +572,7 @@ ParseAndCollectResult Server::ParseAndCollectSymbols(AnalyzeDocumentRequest& req
     {
         m_symbolTable.RetainLastKnownGoodTypes(req.uriStr, staging);
     }
-    return {std::move(syntax), std::move(diagnostics), parseMs, colTimer.ElapsedMs(), extractedNodes};
+    return {std::move(syntax), std::move(diagnostics), parseMs, (colTimer.ElapsedMs() - parseMs), extractedNodes};
 }
 
 void Server::LogAnalysisProfile(std::string_view prefix, const std::string& uriStr,
@@ -700,8 +688,8 @@ std::vector<analysis::Diagnostic> Server::RunDocumentSemantics(angel_lsp::analys
     return diagnostics;
 }
 
-std::optional<ParseAndCollectResult> Server::PrepareWorkerDocument(AnalyzeDocumentRequest& req,
-                                                                   angel_lsp::analysis::SymbolTable& staging)
+std::optional<ParseAndCollectResult> Server::PrepareAnalysisDocument(AnalyzeDocumentRequest& req,
+                                                                     angel_lsp::analysis::SymbolTable& staging)
 {
     LogInfo(fmt::format("[Analysis] Starting background analysis for file: {}", req.uriStr));
 
@@ -710,7 +698,7 @@ std::optional<ParseAndCollectResult> Server::PrepareWorkerDocument(AnalyzeDocume
         WaitForPredefinedReady(std::chrono::milliseconds(5000));
     }
 
-    auto parsed = ParseAndCollectSymbols(req, staging, req.fromScheduler ? &m_workerSyntax : nullptr);
+    auto parsed = ParseAndCollectSymbols(req, staging, req.fromScheduler ? &m_workerSyntax : &m_protocolSyntax);
     if (!parsed.syntax)
     {
         return std::nullopt;
@@ -773,7 +761,7 @@ Server::CollectScopesAndCalls(const AnalyzeDocumentRequest& req, const ParseAndC
 void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer)
 {
     angel_lsp::analysis::SymbolTable staging;
-    auto parsedOpt = PrepareWorkerDocument(req, staging);
+    auto parsedOpt = PrepareAnalysisDocument(req, staging);
     if (!parsedOpt)
     {
         return;
@@ -785,7 +773,7 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     utils::HighResTimer closureTimer;
     if (replacement)
     {
-        IndexModuleClosure(req.uriStr, req.fromScheduler ? &m_workerSyntax : nullptr);
+        IndexModuleClosure(req.uriStr, req.fromScheduler ? &m_workerSyntax : &m_protocolSyntax);
     }
     const double closureMs = closureTimer.ElapsedMs();
 

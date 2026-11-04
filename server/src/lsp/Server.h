@@ -457,8 +457,8 @@ class Server
     /// Resolves an exact revision on the message loop, copying the document tree when necessary.
     [[nodiscard]] SyntaxRevision ResolveProtocolSyntax(std::string_view uri, std::string_view source,
                                                        const document::Document* open);
-    std::optional<ParseAndCollectResult> PrepareWorkerDocument(AnalyzeDocumentRequest& req,
-                                                               analysis::SymbolTable& staging);
+    std::optional<ParseAndCollectResult> PrepareAnalysisDocument(AnalyzeDocumentRequest& req,
+                                                                 analysis::SymbolTable& staging);
     std::vector<analysis::Diagnostic> RunDocumentSemantics(analysis::SemanticAnalysisRequest baseReq,
                                                            double& outCheckMs, bool fromScheduler);
     void AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer);

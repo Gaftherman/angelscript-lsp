@@ -6237,6 +6237,26 @@ TEST_CASE("SyntaxRevisionCache - Closed entries require exact parser input and d
     CHECK_FALSE(cache.Find({uri, "void Other() {}", 0, 9}));
 }
 
+TEST_CASE("SyntaxRevisionCache - Closed entries do not evict the open working set")
+{
+    parser::AngelScriptParser parser;
+    const std::string source = "void Probe() {}";
+    const auto syntax = ResolveSyntaxRevision({.key = {{}, source}, .parser = parser}).syntax;
+    REQUIRE(syntax);
+
+    SyntaxRevisionCache cache;
+    for (uint64_t i = 1; i <= 8; ++i)
+    {
+        cache.Remember({"file:///open" + std::to_string(i) + ".as", source, i}, syntax);
+    }
+    cache.Remember({"file:///closed.as", source, 0, 10}, syntax);
+    CHECK_FALSE(cache.Find({"file:///closed.as", source, 0, 10}));
+    for (uint64_t i = 1; i <= 8; ++i)
+    {
+        CHECK(cache.Find({"file:///open" + std::to_string(i) + ".as", source, i}) == syntax);
+    }
+}
+
 TEST_CASE("Server - Semantic configuration reanalysis reuses the exact worker extraction")
 {
     WorkspaceFixture fixture;
@@ -6336,6 +6356,71 @@ TEST_CASE("Telemetry - didOpen produces [File Open] and [Open/Change Profile] st
     CHECK(output.find("[File Open] Opening document:") != std::string::npos);
     CHECK(output.find("[File Open] Finished opening document:") != std::string::npos);
     CHECK(output.find("[Open/Change Profile]") != std::string::npos);
+}
+
+TEST_CASE("Server - Pull diagnostics after report invalidation reuse the open syntax revision")
+{
+    WorkspaceFixture fixture;
+    const std::string uri = fixture.Uri("pull_reused_syntax.as");
+    const std::string source = "void Probe() { UndefinedThingy(); }";
+    fixture.Write("pull_reused_syntax.as", source);
+
+    config::ServerConfig config;
+    config.features.enablePullDiagnostics = true;
+    test::ScriptedStream stream;
+    Server server(config, stream);
+    stream.Push(InitializeForPull(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true)));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+    stream.Push(DidOpenMessage(uri, source));
+    stream.PushAction(
+        [&]()
+        {
+            WaitForCount(stream, "[Open/Change Profile]", 1);
+            server.GetDiagnosticsPipeline().ClearAllDiagnostics();
+        });
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                uri + R"("}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+    server.Run();
+
+    const auto response = stream.ResponseFor(2);
+    CHECK(response.find("as-err-undefined-identifier") != std::string::npos);
+    CHECK_FALSE(stream.OutputContains("textDocument/publishDiagnostics"));
+    const std::string output = stream.Output();
+    const auto profile = output.rfind("[Open/Change Profile]");
+    REQUIRE(profile != std::string::npos);
+    CHECK(output.substr(profile, output.find("Content-Length:", profile) - profile).find("AST extraction nodes: 0)") !=
+          std::string::npos);
+}
+
+TEST_CASE("Server - Pull diagnostics reuse the syntax of a protocol-indexed closed include")
+{
+    WorkspaceFixture fixture;
+    const auto mainUri = fixture.Uri("main.as");
+    const auto includedUri = fixture.Uri("linked.as");
+    const std::string source = "#include \"linked.as\"\nvoid Main() { Included(); }";
+    fixture.Write("main.as", source);
+    fixture.Write("linked.as", "void Included() { UndefinedThingy(); }");
+
+    config::ServerConfig config;
+    config.features.enablePullDiagnostics = true;
+    test::ScriptedStream stream;
+    stream.Push(InitializeForPull(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true)));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+    stream.Push(DidOpenMessage(mainUri, source));
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                includedUri + R"("}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    const auto output = RunScript(config, stream);
+    CHECK(stream.ResponseFor(2).find("as-err-undefined-identifier") != std::string::npos);
+    CHECK(output.find("Reused closed indexed symbols for file:") != std::string::npos);
+    const auto profile = output.rfind("[Open/Change Profile]");
+    REQUIRE(profile != std::string::npos);
+    CHECK(output.substr(profile, output.find("Content-Length:", profile) - profile).find("AST extraction nodes: 0)") !=
+          std::string::npos);
 }
 
 TEST_CASE("Server - Save and semantic tokens reuse exact protocol syntax revisions")

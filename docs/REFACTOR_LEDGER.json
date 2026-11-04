@@ -457,6 +457,24 @@
         "NullSafetyChecker - Comment before an if body does not cause a duplicate null warning",
         "bts_rc JSON-RPC closed diagnostics comparison"
       ]
+    },
+    {
+      "id": "REF-V118-COMMON-SYNTAX-PRODUCER",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/lsp/services/ServerAnalysis.cpp",
+      "deletedLineRange": "546-571",
+      "originalSymbolOrCode": "ParseAndCollectSymbols ResolveProtocolSyntax PrepareWorkerDocument",
+      "whatItDidAndWhyInThatFile": "Created the same kind of syntax revision in separate protocol and analysis code paths. Synchronous Pull rebuilt a revision even when the message loop had already indexed it.",
+      "whyChangedOrDeleted": "Use the same revision producer for protocol, worker and closed indexing. An inline Pull can reuse its thread's exact open or closed extraction. Prioritize open entries within the existing cache limits.",
+      "replacedByCanonicalFile": "server/src/lsp/state/SyntaxRevisionCache.cpp",
+      "replacedByCanonicalSymbol": "ResolveSyntaxRevision",
+      "ramOrCpuImpact": "A hit skips the parser and AST cursor. The caches remain thread-confined. Closed entries can be evicted when open entries consume the retention budget. In 30 alternating Win32 Release runs with a closed include defining 120 functions, Pull revisited 3601 AST nodes before and zero after. All 240 diagnostics matched. Pull p50/p95 was 6.67/7.06 ms before and 4.84/5.35 ms after. Open p50/p95 was 5.19/5.39 and 5.03/5.37 ms. Peak working set p50/p95 was 9.72/9.79 and 10.02/10.04 MiB. In 20 alternating Win32 Release runs per version on bts_rc against c87d4f17, all 318 diagnostics matched across 129 closed files. Workspace p50/p95 was 1967.71/1988.22 and 1967.74/1984.29 ms, open 19.28/20.40 and 19.16/20.19 ms, edit 532.56/540.66 and 527.66/540.70 ms, references 1.29/1.53 and 1.29/1.57 ms, CodeLens after references 4.56/5.19 and 4.68/5.18 ms, and peak working set 122.87/123.40 and 123.16/123.64 MiB.",
+      "verifiedByTests": [
+        "Server - Pull diagnostics after report invalidation reuse the open syntax revision",
+        "Server - Pull diagnostics reuse the syntax of a protocol-indexed closed include",
+        "SyntaxRevisionCache - Closed entries do not evict the open working set"
+      ]
     }
   ]
 }

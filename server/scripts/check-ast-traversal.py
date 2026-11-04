@@ -178,6 +178,24 @@ def check_indexed_checkers_use_facts():
     return violations
 
 
+def check_single_syntax_producer():
+    """Detects direct construction of a document syntax revision in LSP code."""
+    state = SERVER_SRC / "lsp" / "state"
+    producer_files = {state / "SyntaxRevisionCache.cpp", state / "SyntaxRevisionCache.h"}
+    construction = re.compile(
+        r"\b(?:make_shared|allocate_shared|make_unique)\s*<\s*(?:const\s+)?ParsedDocumentSyntax\b|"
+        r"\bnew\s+ParsedDocumentSyntax\b|\bParsedDocumentSyntax\s*(?:\{|\()|"
+        r"\bParsedDocumentSyntax\s+\w+\s*\{"
+    )
+    for path in (SERVER_SRC / "lsp").rglob("*.[ch]*"):
+        if not path.is_file() or path in producer_files:
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            code = line.strip()
+            if not code.startswith(("//", "/*", "*")) and construction.search(code):
+                yield path, number, code
+
+
 def check_no_engine_hardcoding():
     violations = []
     for file_path in SERVER_SRC.rglob("*.[ch]*"):
@@ -1101,6 +1119,10 @@ def main():
         has_errors = True
         print(f"[ERROR] {path.relative_to(REPO_ROOT)}:{line_number}: use indexed facts for navigation: {line}")
 
+    for path, line_number, line in check_single_syntax_producer():
+        has_errors = True
+        print(f"[ERROR] {path.relative_to(REPO_ROOT)}:{line_number}: use ResolveSyntaxRevision: {line}")
+
     engine_violations = check_no_engine_hardcoding()
     if engine_violations:
         has_errors = True
@@ -1394,7 +1416,7 @@ def main():
     if has_errors:
         sys.exit(1)
 
-    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 ForEachDescendantNode, 0 engine hardcodings, 0 type hardcodings, 0 banned identifiers, 0 unrandomized test BaseClass, 0 manual qualifier reparsing, 0 anonymous namespaces, 0 using directives, 0 doxygen slop templates, 0 ODR struct violations, 0 stacked doxygen blocks, 0 decorative banners, 0 workflow narration comments, 0 over-explained doxygen essays, 0 include ordering violations, 0 forward declarations, 0 ghost aliases, 0 direct navigation calls in indexed checkers).")
+    print("[PASSED] AST Traversal, Parent Isolation, Agnosticism, Type & Scope Invariants verified (0 root-climb loops, 0 raw ts_node_parent calls, 0 ts_node_type in layers 2/3, 0 NodeType in layers 2/3/4, 0 modifier string literals in analysis, 0 parser::fields:: in layers 2/3, 0 manual scope finds, 0 op NodeText, 0 kw fallbacks, 0 scope concatenations in rules, 0 parser::nodes:: in layers 2/3/4, 0 ts_tree_cursor_current_field_name in layers 2/3/4, 0 k_maxAstDepth, 0 duplicate ToSourceRange, 0 ForEachDescendantNode, 0 engine hardcodings, 0 type hardcodings, 0 banned identifiers, 0 unrandomized test BaseClass, 0 manual qualifier reparsing, 0 anonymous namespaces, 0 using directives, 0 doxygen slop templates, 0 ODR struct violations, 0 stacked doxygen blocks, 0 decorative banners, 0 workflow narration comments, 0 over-explained doxygen essays, 0 include ordering violations, 0 forward declarations, 0 ghost aliases, 0 direct navigation calls in indexed checkers, 0 direct LSP syntax producers outside ResolveSyntaxRevision).")
 
 if __name__ == "__main__":
     main()
