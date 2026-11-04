@@ -2,11 +2,13 @@
 #include "analysis/index/SymbolCollector.h"
 #include "config/EngineRuleConfig.h"
 #include "features/code_lens/CodeLensHandler.h"
+#include "features/references/ReferencesHandler.h"
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
 #include "spdlog/fmt/fmt.h"
 
+#include <algorithm>
 #include <doctest/doctest.h>
 #include <string>
 #include <vector>
@@ -829,10 +831,40 @@ TEST_CASE("CodeLens - Chained member access reference counting")
     CHECK(foundBodyLens);
 }
 
+TEST_CASE("CodeLens and References resolve a closed-file chain through an inherited accessor")
+{
+    const auto receiver = angel_lsp::test::GenerateRandomSymbolName("Receiver");
+    const auto holder = angel_lsp::test::GenerateRandomSymbolName("Holder");
+    const auto derived = angel_lsp::test::GenerateRandomSymbolName("Derived");
+    const auto member = angel_lsp::test::GenerateRandomSymbolName("Use");
+    const auto property = angel_lsp::test::GenerateRandomSymbolName("Item");
+    CodeLensFixture fixture("class " + receiver + " {\n  void " + member + "() {}\n}\n" + "class " + holder + " { " +
+                            receiver + "@ get_" + property + "() property { return null; } }\nclass " + derived +
+                            " : " + holder + " {}\n" + derived + "@ MakeDerived(int flags = 0) { return null; }\n");
+    const std::string useUri = "file:///closed_chain.as";
+    fixture.AddDocument(useUri, "void Run() {\n  MakeDerived()\n    ." + property + "\n    ." + member + "();\n}\n");
+
+    const auto references = GetReferences(ReferencesRequest{
+        fixture.uri, fixture.sourceCode, fixture.tree, {1, 7}, false, fixture.symbolTable, fixture.scopeIndex});
+    REQUIRE(references.has_value());
+    REQUIRE(references->size() == 1);
+    CHECK(references->front().uri.toString() == useUri);
+    CHECK(references->front().range.start.line == 3);
+    CHECK(references->front().range.start.character == 5);
+
+    const auto lenses = fixture.GetLenses();
+    REQUIRE(lenses.has_value());
+    const auto found =
+        std::find_if(lenses->begin(), lenses->end(), [](const auto& lens) { return lens.range.start.line == 1; });
+    REQUIRE(found != lenses->end());
+    REQUIRE(found->command.has_value());
+    CHECK(found->command->title == "1 reference");
+}
+
 TEST_CASE("CodeLens - Operator overloads without call sites are suppressed")
 {
     const std::string mathClass = angel_lsp::test::GenerateRandomSymbolName("VectorMath");
-    const std::string normalMethod = angel_lsp::test::GenerateRandomSymbolName("NormalMethod");
+    const std::string normalMethod = angel_lsp::test::GenerateRandomSymbolName("open");
 
     std::string code = "class " + mathClass +
                        "\n"
@@ -844,15 +876,7 @@ TEST_CASE("CodeLens - Operator overloads without call sites are suppressed")
                        normalMethod +
                        "() {}\n"
                        "}\n"
-                       "void UseIt()\n"
-                       "{\n"
-                       "    " +
-                       mathClass +
-                       " v;\n"
-                       "    v." +
-                       normalMethod +
-                       "();\n"
-                       "}\n";
+                       "void UseIt() {}\n";
 
     CodeLensFixture fixture(std::move(code));
     auto lenses = fixture.GetLenses();
@@ -867,10 +891,10 @@ TEST_CASE("CodeLens - Operator overloads without call sites are suppressed")
         {
             foundOpAssignLens = true;
         }
-        // Line 3 is `void NormalMethod...`
+        // The ordinary op-prefixed method remains visible with zero references.
         if (lens.range.start.line == 3 && lens.command.has_value())
         {
-            CHECK(lens.command->title == "1 reference");
+            CHECK(lens.command->title == "0 references");
             foundNormalLens = true;
         }
     }

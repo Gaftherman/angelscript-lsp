@@ -2,8 +2,17 @@
 
 #include "analysis/diagnostics/DiagnosticContext.h"
 
+#include <string_view>
+
 namespace angel_lsp::analysis::rules
 {
+/**
+ * @brief Checks whether AngelScript reserves the method name for an operator overload.
+ * @param[in] name Unqualified name of the method.
+ * @return True if the language uses that name for operator dispatch.
+ */
+bool IsOperatorName(std::string_view name);
+
 /**
  * @brief Validates a method that overloads an operator.
  *        AngelScript gives the operator methods fixed shapes: opCmp returns int, opEquals returns

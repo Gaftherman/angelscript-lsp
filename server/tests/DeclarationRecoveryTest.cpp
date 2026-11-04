@@ -209,4 +209,74 @@ TEST_SUITE("DeclarationRecovery")
         fixture.AssertNoDiagnostics(weaponUri);
     }
 
+    TEST_CASE("DeclarationRecovery - Member calls are never recovered as function declarations")
+    {
+        const std::string clsName = angel_lsp::test::GenerateRandomSymbolName("ASEquip");
+        const std::string memberName = angel_lsp::test::GenerateRandomSymbolName("Precache");
+        const std::string listMethod = angel_lsp::test::GenerateRandomSymbolName("insertLast");
+
+        const std::string brokenScript = fmt::format("class {}\n"
+                                                     "{{\n"
+                                                     "    void Setup()\n"
+                                                     "    {{\n"
+                                                     "        entityCreated.{}();\n"
+                                                     "        m_Sets.{}(equipSet);\n"
+                                                     "        ptr->{}();\n"
+                                                     "    }}\n"
+                                                     "}}\n",
+                                                     clsName, memberName, listMethod, memberName);
+
+        ankerl::unordered_dense::set<std::string> knownSymbols;
+        // Case 1: Class is already known (e.g. from Pass 1) -> its entire body must be skipped
+        knownSymbols.insert(clsName);
+        auto recoveredKnown = FindSwallowedDeclarations(brokenScript, knownSymbols);
+        CHECK(recoveredKnown.empty());
+
+        // Case 2: Class is not in known symbols -> member calls inside it still must NOT be recovered as functions
+        knownSymbols.clear();
+        auto recoveredUnknown = FindSwallowedDeclarations(brokenScript, knownSymbols);
+        for (const auto& rec : recoveredUnknown)
+        {
+            CHECK(rec.name != memberName);
+            CHECK(rec.name != listMethod);
+        }
+    }
+
+    TEST_CASE("DeclarationRecovery - Functions with same-name return types are recovered and expressions with "
+              "operators rejected")
+    {
+        const std::string typeName = angel_lsp::test::GenerateRandomSymbolName("Item");
+        const std::string funcName = typeName;
+        const std::string opFunc = angel_lsp::test::GenerateRandomSymbolName("Calc");
+        const std::string script = fmt::format("{} {}()\n"
+                                               "{{\n"
+                                               "    return {}();\n"
+                                               "}}\n"
+                                               "void Run()\n"
+                                               "{{\n"
+                                               "    flag && {}();\n"
+                                               "    !{}();\n"
+                                               "}}\n",
+                                               typeName, funcName, typeName, opFunc, opFunc);
+
+        ankerl::unordered_dense::set<std::string> knownSymbols;
+        auto recovered = FindSwallowedDeclarations(script, knownSymbols);
+
+        bool foundFunc = false;
+        bool foundOpFunc = false;
+        for (const auto& rec : recovered)
+        {
+            if (rec.name == funcName)
+            {
+                foundFunc = true;
+            }
+            if (rec.name == opFunc)
+            {
+                foundOpFunc = true;
+            }
+        }
+        CHECK(foundFunc);
+        CHECK_FALSE(foundOpFunc);
+    }
+
 } // TEST_SUITE("DeclarationRecovery")

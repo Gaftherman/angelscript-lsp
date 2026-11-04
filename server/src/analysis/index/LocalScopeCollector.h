@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "parser/AngelScriptParser.h"
 #include "parser/GrammarSymbols.h"
@@ -44,7 +45,46 @@ class LocalScopeCollector
      * @param rootNode Root node of a pre-parsed tree-sitter tree; the caller retains ownership.
      * @see CollectScopes for sourceCode.
      */
-    std::unique_ptr<Scope> CollectScopesFromTree(TSNode rootNode, const std::string& sourceCode) const;
+    std::unique_ptr<Scope> CollectScopesFromTree(TSNode rootNode, const std::string& sourceCode,
+                                                 const NodeIndex* nodeIndex = nullptr) const;
+
+    struct ByteSpan
+    {
+        uint32_t startByte = 0;
+        uint32_t endByte = 0;
+    };
+
+    struct DocumentContext
+    {
+        bool treeHasError = false;
+        bool hasMetadata = false;
+        std::vector<ByteSpan> metadataOrErrorSpans;
+        std::shared_ptr<IndexedReferenceReceivers> receivers = std::make_shared<IndexedReferenceReceivers>();
+        ankerl::unordered_dense::map<uint64_t, uint32_t> receiverIds;
+
+        [[nodiscard]] bool Contains(uint32_t start, uint32_t end) const noexcept
+        {
+            if (metadataOrErrorSpans.empty())
+            {
+                return false;
+            }
+            auto it = std::lower_bound(metadataOrErrorSpans.begin(), metadataOrErrorSpans.end(), start,
+                                       [](const ByteSpan& span, uint32_t val) { return span.endByte < val; });
+            return it != metadataOrErrorSpans.end() && it->startByte <= start && end <= it->endByte;
+        }
+    };
+
+    /**
+     * @brief Tracks an open lexical scope, its enclosing parent, and boundary byte offsets during scope hierarchy
+     *        construction.
+     */
+    struct OpenScope
+    {
+        Scope* scope = nullptr;
+        uint32_t endByte = 0;
+        uint32_t ownNameStartByte = constants::InvalidByteOffset;
+        uint32_t ownNameEndByte = 0;
+    };
 
   private:
     utils::LspLogger* m_logger;
@@ -94,9 +134,18 @@ class LocalScopeCollector
      * @brief Nests a byte-order-sorted capture list into a Scope tree.
      * @param captures Raw captures extracted by LOCALS_QUERY.
      * @param sourceCode Source text of the document.
+     * @param docCtx Pre-collected document context for error and metadata spans.
      * @return Unique pointer to the constructed root Scope, or nullptr on failure.
      */
-    std::unique_ptr<Scope> BuildScopeTree(std::vector<RawCapture>& captures, const std::string& sourceCode) const;
+    std::unique_ptr<Scope> BuildScopeTree(std::vector<RawCapture>& captures, const std::string& sourceCode,
+                                          DocumentContext& docCtx) const;
+
+    /**
+     * @brief Executes the locals query and collects raw capture records.
+     * @param rootNode Root AST node of the document.
+     * @param[out] captures Destination vector for raw captures.
+     */
+    void CollectRawCaptures(TSNode rootNode, std::vector<RawCapture>& captures) const;
 
     /**
      * @brief Returns the source text spanned by node, or an empty string for a null/degenerate node.
@@ -125,22 +174,11 @@ class LocalScopeCollector
     static void DeduplicateCaptures(std::vector<RawCapture>& captures);
 
     /**
-     * @brief Tracks an open lexical scope, its enclosing parent, and boundary byte offsets during scope hierarchy
-     *        construction.
-     */
-    struct OpenScope
-    {
-        Scope* scope = nullptr;
-        uint32_t endByte = 0;
-        uint32_t ownNameStartByte = constants::InvalidByteOffset;
-        uint32_t ownNameEndByte = 0;
-    };
-
-    /**
      * @brief Processes a scope-opening capture node.
      * @param capture Raw capture representing the scope.
      * @param[in,out] stack Open scope tracking stack.
      * @param[in,out] root Root scope pointer.
+     * @param sourceCode Source text of the document.
      */
     void ProcessScopeCapture(const RawCapture& capture, std::vector<OpenScope>& stack, std::unique_ptr<Scope>& root,
                              const std::string& sourceCode) const;
@@ -159,8 +197,10 @@ class LocalScopeCollector
      * @param capture Raw capture representing the reference.
      * @param[in,out] current Innermost open scope receiving the reference.
      * @param sourceCode Source text of the document.
+     * @param docCtx Pre-collected document context for error and metadata spans.
      */
-    void ProcessReferenceCapture(const RawCapture& capture, Scope* current, const std::string& sourceCode) const;
+    void ProcessReferenceCapture(const RawCapture& capture, Scope* current, const std::string& sourceCode,
+                                 DocumentContext& docCtx) const;
 
     /**
      * @brief Processes a string literal call reference capture node.
@@ -184,7 +224,8 @@ class LocalScopeCollector
      * @param rootScope Root lexical scope.
      * @param sourceCode Source text of the document.
      */
-    void RegisterVirtualPropertySetParameters(TSNode rootNode, Scope* rootScope, const std::string& sourceCode) const;
+    void RegisterVirtualPropertySetParameters(const NodeIndex& nodeIndex, Scope* rootScope,
+                                              const std::string& sourceCode) const;
 
     /**
      * @brief Ancestor nodes and enclosing symbol cached during capture processing.

@@ -282,9 +282,36 @@ void InspectDelegateProperty(std::string_view className, const std::string& prop
     }
 }
 
-void ExpandMixinHostHierarchies(std::string_view containerClass, const SymbolTable& symbolTable,
-                                std::vector<std::string>& hierarchy)
+static bool TryApplyCachedMixinHierarchy(std::string_view containerClass, std::vector<std::string>& hierarchy,
+                                         ExpressionTypeCache* cache)
 {
+    if (!cache)
+    {
+        return false;
+    }
+    auto cachedIt = cache->expandedMixinHierarchies.find(std::string(containerClass));
+    if (cachedIt == cache->expandedMixinHierarchies.end())
+    {
+        return false;
+    }
+    for (const auto& hCls : cachedIt->second)
+    {
+        if (std::find(hierarchy.begin(), hierarchy.end(), hCls) == hierarchy.end())
+        {
+            hierarchy.push_back(hCls);
+        }
+    }
+    return true;
+}
+
+void ExpandMixinHostHierarchies(std::string_view containerClass, const SymbolTable& symbolTable,
+                                std::vector<std::string>& hierarchy, ExpressionTypeCache* cache)
+{
+    if (TryApplyCachedMixinHierarchy(containerClass, hierarchy, cache))
+    {
+        return;
+    }
+
     const auto ruleIndex = symbolTable.GetRuleIndex();
     if (!ruleIndex)
     {
@@ -297,19 +324,36 @@ void ExpandMixinHostHierarchies(std::string_view containerClass, const SymbolTab
     }
     if (mixinIt == ruleIndex->hostClassesByMixin.end())
     {
+        if (cache)
+        {
+            cache->expandedMixinHierarchies.emplace(std::string(containerClass), std::vector<std::string>{});
+        }
         return;
     }
+
+    std::vector<std::string> collected;
     for (const auto& host : mixinIt->second)
     {
         std::string hostKey = host.qualifiedName.empty() ? host.name : host.qualifiedName;
-        auto hostHier = GetInheritedTypeHierarchy(hostKey, symbolTable);
+        auto hostHier = GetInheritedTypeHierarchy(hostKey, symbolTable, cache);
         for (auto& hCls : hostHier)
         {
-            if (std::find(hierarchy.begin(), hierarchy.end(), hCls) == hierarchy.end())
+            if (std::find(collected.begin(), collected.end(), hCls) == collected.end())
             {
-                hierarchy.push_back(std::move(hCls));
+                collected.push_back(hCls);
             }
         }
+    }
+    for (const auto& hCls : collected)
+    {
+        if (std::find(hierarchy.begin(), hierarchy.end(), hCls) == hierarchy.end())
+        {
+            hierarchy.push_back(hCls);
+        }
+    }
+    if (cache)
+    {
+        cache->expandedMixinHierarchies.emplace(std::string(containerClass), std::move(collected));
     }
 }
 
@@ -801,7 +845,8 @@ std::vector<std::string> GetCompatibleMemberClasses(const std::string& className
     return result;
 }
 
-std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourceCode, const SymbolTable& symbolTable)
+std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourceCode, const SymbolTable& symbolTable,
+                                             ExpressionTypeCache* cache)
 {
     const auto ruleIndex = symbolTable.GetRuleIndex();
     if (!ruleIndex)
@@ -814,6 +859,14 @@ std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourc
         if (c.kind == ContainerKind::Class)
         {
             std::string cName = c.qualifiedName.empty() ? c.name : c.qualifiedName;
+            if (cache)
+            {
+                auto itCached = cache->inferredMixinHostByContainer.find(cName);
+                if (itCached != cache->inferredMixinHostByContainer.end())
+                {
+                    return itCached->second;
+                }
+            }
             auto it = ruleIndex->hostClassesByMixin.find(cName);
             if (it == ruleIndex->hostClassesByMixin.end() && utils::ContainsScopeSeparator(cName))
             {
@@ -821,8 +874,17 @@ std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourc
             }
             if (it != ruleIndex->hostClassesByMixin.end() && !it->second.empty())
             {
-                return it->second.front().qualifiedName.empty() ? it->second.front().name
-                                                                : it->second.front().qualifiedName;
+                std::string host = it->second.front().qualifiedName.empty() ? it->second.front().name
+                                                                            : it->second.front().qualifiedName;
+                if (cache)
+                {
+                    cache->inferredMixinHostByContainer.emplace(std::move(cName), host);
+                }
+                return host;
+            }
+            if (cache)
+            {
+                cache->inferredMixinHostByContainer.emplace(std::move(cName), "");
             }
         }
     }

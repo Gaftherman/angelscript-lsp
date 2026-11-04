@@ -1,4 +1,5 @@
 #include "analysis/index/CallGraph.h"
+#include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "features/call_hierarchy/CallHierarchyHandler.h"
@@ -396,4 +397,48 @@ TEST_CASE("CallHierarchy - Mixin methods across host classes")
     {
         ts_tree_delete(hostTree);
     }
+}
+
+TEST_CASE("CallGraph - CollectCallsFromScopeTree preserves exact source order across nested scopes")
+{
+    AngelScriptParser parser;
+    LocalScopeCollector scopeCollector(nullptr);
+
+    const std::string code = "void FirstCall() {}\n"
+                             "void NestedCall() {}\n"
+                             "void LastCall() {}\n"
+                             "void Main()\n"
+                             "{\n"
+                             "    FirstCall();\n"
+                             "    if (true)\n"
+                             "    {\n"
+                             "        NestedCall();\n"
+                             "    }\n"
+                             "    LastCall();\n"
+                             "}\n";
+
+    TSTree* tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    const auto astCalls = CollectCalls(ts_tree_root_node(tree), code);
+    auto scopeRoot = scopeCollector.CollectScopesFromTree(ts_tree_root_node(tree), code);
+    REQUIRE(scopeRoot != nullptr);
+
+    const auto scopeCalls = CollectCallsFromScopeTree(*scopeRoot);
+    ts_tree_delete(tree);
+
+    REQUIRE(astCalls.size() == 3);
+    REQUIRE(scopeCalls.size() == 3);
+
+    for (size_t i = 0; i < 3; ++i)
+    {
+        CHECK(scopeCalls[i].caller == astCalls[i].caller);
+        CHECK(scopeCalls[i].callee == astCalls[i].callee);
+        CHECK(scopeCalls[i].range.startLine == astCalls[i].range.startLine);
+        CHECK(scopeCalls[i].range.startCharacter == astCalls[i].range.startCharacter);
+    }
+
+    CHECK(scopeCalls[0].callee == "FirstCall");
+    CHECK(scopeCalls[1].callee == "NestedCall");
+    CHECK(scopeCalls[2].callee == "LastCall");
 }

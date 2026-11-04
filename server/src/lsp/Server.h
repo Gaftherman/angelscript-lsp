@@ -437,8 +437,7 @@ class Server
                                                          std::unique_ptr<analysis::SymbolTable>& outSnapshot) const;
     bool IsAnalysisRequestStale(const AnalyzeDocumentRequest& req) const;
     void CommitSyntaxOnlyResults(const AnalyzeDocumentRequest& req, std::vector<analysis::Diagnostic> diags);
-    bool IsUnchangedClosedDocument(const std::string& uriStr, uint64_t generation,
-                                   const analysis::SymbolTable& staging) const;
+    bool IsUnchangedClosedDocument(const AnalyzeDocumentRequest& request, const analysis::SymbolTable& staging) const;
     void AnalyzeDocument(AnalyzeDocumentRequest req);
 };
 

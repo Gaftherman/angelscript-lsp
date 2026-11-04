@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 
 #include <ankerl/unordered_dense.h>
@@ -44,13 +45,19 @@ struct DocumentCalls
 };
 
 /**
- * @brief Collects the calls in one parsed document.
- *        Kept out of SymbolCollector deliberately. The symbol table records declarations, and a call
+ * @brief Collects the calls in one parsed document from an AST tree.
  * @param root Root node of the document's tree.
  * @param sourceCode Text the tree was parsed from.
  * @return Every call in the document, in source order.
  */
 std::vector<CallSite> CollectCalls(TSNode root, std::string_view sourceCode);
+
+/**
+ * @brief Collects the calls directly from a document's Scope tree without full AST traversal.
+ * @param rootScope Root scope of the document.
+ * @return Every call in the document, in source order.
+ */
+std::vector<CallSite> CollectCallsFromScopeTree(const Scope& rootScope);
 
 /**
  * @brief Workspace-wide call index, maintained per document alongside the scope trees.

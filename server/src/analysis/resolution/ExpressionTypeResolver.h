@@ -58,6 +58,19 @@ struct ReceiverTypeContext
     ExpressionTypeCache* cache = nullptr;
     const config::EngineRuleConfig* engineRules = nullptr;
     std::span<const std::string> delegateProps = {};
+    const NodeIndex* nodeIndex = nullptr;
+};
+
+/**
+ * @brief Query parameters for member search across class and mixin hierarchies.
+ */
+struct MemberHierarchyQuery
+{
+    std::string_view hostClass;
+    std::string_view memberName;
+    std::string_view arrayTypeName;
+    ExpressionTypeCache* cache = nullptr;
+    const NodeIndex* nodeIndex = nullptr;
 };
 
 struct TernaryBranchTypes

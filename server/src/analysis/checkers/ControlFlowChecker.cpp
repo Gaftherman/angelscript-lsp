@@ -13,6 +13,7 @@
 #include "utils/Utils.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <optional>
 #include <string>
@@ -693,9 +694,16 @@ class ControlFlowVisitor
     {
     }
 
-    void Run(TSNode root)
+    void Run(const NodeIndex& index)
     {
-        Visit(root, ControlFlowState{});
+        const auto& grammar = parser::GetGrammarSymbols();
+        const std::array nodes{grammar.symFuncDeclaration,  grammar.symLambdaExpression, grammar.symStatementBlock,
+                               grammar.symCaseClause,       grammar.symIfStatement,      grammar.symSwitchStatement,
+                               grammar.symWhileStatement,   grammar.symDoWhileStatement, grammar.symForStatement,
+                               grammar.symForeachStatement, grammar.symReturnStatement,  grammar.symBreakStatement,
+                               grammar.symContinueStatement};
+        std::vector<Frame> frames;
+        index.ForEachNodeOrdered(nodes, [&](TSNode node) { Visit(node, frames); });
     }
 
   private:
@@ -834,53 +842,46 @@ class ControlFlowVisitor
         }
     }
 
-    void Visit(TSNode rootNode, ControlFlowState initialState)
+    using Frame = std::pair<uint32_t, ControlFlowState>;
+
+    void Visit(TSNode node, std::vector<Frame>& frames)
     {
-        if (ts_node_is_null(rootNode))
+        const uint32_t start = ts_node_start_byte(node);
+        while (!frames.empty() && frames.back().first <= start)
+        {
+            frames.pop_back();
+        }
+
+        const ControlFlowState empty;
+        const auto& enclosing = frames.empty() ? empty : frames.back().second;
+        const auto& grammar = parser::GetGrammarSymbols();
+        const TSSymbol symbol = ts_node_symbol(node);
+        if (CheckLoopControl(node, symbol, enclosing))
         {
             return;
         }
 
-        std::vector<FlowItem> worklist;
-        worklist.push_back({rootNode, std::move(initialState)});
-
-        const auto& gs = parser::GetGrammarSymbols();
-
-        while (!worklist.empty())
+        if (symbol == grammar.symStatementBlock || symbol == grammar.symCaseClause)
         {
-            FlowItem item = std::move(worklist.back());
-            worklist.pop_back();
-
-            TSNode node = item.node;
-            ControlFlowState state = std::move(item.state);
-            const TSSymbol sym = ts_node_symbol(node);
-
-            if (CheckLoopControl(node, sym, state))
+            CheckUnreachable(node, m_ctx);
+        }
+        else if (symbol == grammar.symReturnStatement)
+        {
+            CheckReturnStatement(node, enclosing);
+        }
+        else if (symbol == grammar.symFuncDeclaration || symbol == grammar.symLambdaExpression)
+        {
+            ControlFlowState state;
+            CheckFunctionDeclaration(node, state);
+            frames.emplace_back(ts_node_end_byte(node), std::move(state));
+        }
+        else
+        {
+            auto state = enclosing;
+            UpdateBranchState(node, symbol, state);
+            if (symbol != grammar.symIfStatement)
             {
-                continue;
-            }
-
-            if (sym == gs.symStatementBlock || sym == gs.symCaseClause)
-            {
-                CheckUnreachable(node, m_ctx);
-            }
-            else if (sym == gs.symReturnStatement)
-            {
-                CheckReturnStatement(node, state);
-            }
-            else if (sym == gs.symFuncDeclaration || sym == gs.symLambdaExpression)
-            {
-                CheckFunctionDeclaration(node, state);
-            }
-            else
-            {
-                UpdateBranchState(node, sym, state);
-            }
-
-            const uint32_t count = ts_node_named_child_count(node);
-            for (uint32_t i = count; i > 0; --i)
-            {
-                worklist.push_back({ts_node_named_child(node, i - 1), state});
+                frames.emplace_back(ts_node_end_byte(node), std::move(state));
             }
         }
     }
@@ -894,6 +895,13 @@ void CheckControlFlow(const ControlFlowCheckRequest& request, DiagnosticContext&
     }
 
     ControlFlowVisitor visitor(request.sourceCode, ctx);
-    visitor.Run(request.root);
+    if (ctx.request.nodeIndex)
+    {
+        visitor.Run(*ctx.request.nodeIndex);
+    }
+    else
+    {
+        visitor.Run(NodeIndex(request.root));
+    }
 }
 } // namespace angel_lsp::analysis

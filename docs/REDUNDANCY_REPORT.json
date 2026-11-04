@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-04T03:12:50Z",
+  "generatedAt": "2026-11-04T07:02:57Z",
   "branch": "refactor/architecture-deduplication-and-ram",
   "description": "Deterministic AST and tokenization audit report covering local C++ structs, pass-1 flag re-evaluations, function similarity, hot struct RAM layout, and Doxygen coverage.",
   "localCppStructs": {
@@ -12,7 +12,7 @@
     "occurrences": []
   },
   "similarFunctionsMatrix": {
-    "totalEvaluatedFunctions": 2376,
+    "totalEvaluatedFunctions": 2391,
     "similarPairsCount": 62,
     "matrix": [
       {
@@ -41,8 +41,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/checkers/CallChecker.cpp",
-          "startLine": 37,
-          "endLine": 47,
+          "startLine": 38,
+          "endLine": 48,
           "name": "TrimString",
           "signature": "static void TrimString(std::string& s)"
         },
@@ -76,8 +76,8 @@
         },
         "funcB": {
           "file": "server/src/analysis/checkers/CallChecker.cpp",
-          "startLine": 2448,
-          "endLine": 2470,
+          "startLine": 2487,
+          "endLine": 2509,
           "name": "CheckCallArguments",
           "signature": "void CheckCallArguments(const AstCheckContext& request, DiagnosticContext& ctx)"
         },
@@ -119,8 +119,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/checkers/CallChecker.cpp",
-          "startLine": 2448,
-          "endLine": 2470,
+          "startLine": 2487,
+          "endLine": 2509,
           "name": "CheckCallArguments",
           "signature": "void CheckCallArguments(const AstCheckContext& request, DiagnosticContext& ctx)"
         },
@@ -531,15 +531,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1032,
-          "endLine": 1053,
+          "startLine": 1202,
+          "endLine": 1223,
           "name": "PopulateVariableFromField",
           "signature": "void LocalScopeCollector::PopulateVariableFromField(TSNode parentNode, TSSymbol "
         },
         "funcB": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1277,
-          "endLine": 1302,
+          "startLine": 1447,
+          "endLine": 1472,
           "name": "ReadVirtualPropertyTypeInfo",
           "signature": "void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const"
         },
@@ -559,8 +559,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1120,
-          "endLine": 1137,
+          "startLine": 1290,
+          "endLine": 1307,
           "name": "CountVariableDeclarators",
           "signature": "static uint32_t CountVariableDeclarators(TSNode declarationNode, TSSymbol declar"
         },
@@ -805,15 +805,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/SymbolTable.cpp",
-          "startLine": 1759,
-          "endLine": 1768,
+          "startLine": 1781,
+          "endLine": 1790,
           "name": "HashParameter",
           "signature": "static inline void HashParameter(uint64_t& h, const ParameterInformation& p)"
         },
         "funcB": {
           "file": "server/src/analysis/index/SymbolTable.cpp",
-          "startLine": 1795,
-          "endLine": 1803,
+          "startLine": 1817,
+          "endLine": 1825,
           "name": "HashVariableSignature",
           "signature": "static void HashVariableSignature(uint64_t& h, const VariableSignature& v)"
         },
@@ -1100,15 +1100,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/SymbolTable.cpp",
-          "startLine": 1775,
-          "endLine": 1788,
+          "startLine": 1797,
+          "endLine": 1810,
           "name": "HashFunctionSignature",
           "signature": "static void HashFunctionSignature(uint64_t& h, const FunctionSignature& fn)"
         },
         "funcB": {
           "file": "server/src/analysis/index/SymbolTable.cpp",
-          "startLine": 1862,
-          "endLine": 1872,
+          "startLine": 1884,
+          "endLine": 1894,
           "name": "HashFuncdefSignature",
           "signature": "static void HashFuncdefSignature(uint64_t& h, const FuncdefSignature& fd)"
         },
@@ -1173,15 +1173,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1032,
-          "endLine": 1053,
+          "startLine": 1202,
+          "endLine": 1223,
           "name": "PopulateVariableFromField",
           "signature": "void LocalScopeCollector::PopulateVariableFromField(TSNode parentNode, TSSymbol "
         },
         "funcB": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1173,
-          "endLine": 1210,
+          "startLine": 1343,
+          "endLine": 1380,
           "name": "ReadVariableDeclaratorTypeInfo",
           "signature": "void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, "
         },
@@ -1300,15 +1300,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1032,
-          "endLine": 1053,
+          "startLine": 1202,
+          "endLine": 1223,
           "name": "PopulateVariableFromField",
           "signature": "void LocalScopeCollector::PopulateVariableFromField(TSNode parentNode, TSSymbol "
         },
         "funcB": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1074,
-          "endLine": 1112,
+          "startLine": 1244,
+          "endLine": 1282,
           "name": "ReadLambdaParameterTypeInfo",
           "signature": "void LocalScopeCollector::ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode de"
         },
@@ -1380,15 +1380,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1173,
-          "endLine": 1210,
+          "startLine": 1343,
+          "endLine": 1380,
           "name": "ReadVariableDeclaratorTypeInfo",
           "signature": "void LocalScopeCollector::ReadVariableDeclaratorTypeInfo(TSNode declaratorNode, "
         },
         "funcB": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1277,
-          "endLine": 1302,
+          "startLine": 1447,
+          "endLine": 1472,
           "name": "ReadVirtualPropertyTypeInfo",
           "signature": "void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const"
         },
@@ -1430,15 +1430,15 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1074,
-          "endLine": 1112,
+          "startLine": 1244,
+          "endLine": 1282,
           "name": "ReadLambdaParameterTypeInfo",
           "signature": "void LocalScopeCollector::ReadLambdaParameterTypeInfo(TSNode nameNode, TSNode de"
         },
         "funcB": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 1277,
-          "endLine": 1302,
+          "startLine": 1447,
+          "endLine": 1472,
           "name": "ReadVirtualPropertyTypeInfo",
           "signature": "void LocalScopeCollector::ReadVirtualPropertyTypeInfo(TSNode propertyNode, const"
         },
@@ -1502,8 +1502,8 @@
       {
         "funcA": {
           "file": "server/src/analysis/index/LocalScopeCollector.cpp",
-          "startLine": 721,
-          "endLine": 727,
+          "startLine": 865,
+          "endLine": 871,
           "name": "IsDeclarationContextSymbol",
           "signature": "bool LocalScopeCollector::IsDeclarationContextSymbol(TSSymbol sym) const noexcep"
         },

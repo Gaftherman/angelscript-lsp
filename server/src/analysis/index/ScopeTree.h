@@ -176,6 +176,37 @@ enum class ScopeKind : uint8_t
 };
 
 /**
+ * @brief A named expression and optional base captured for semantic receiver lookup.
+ */
+struct IndexedReceiverExpression
+{
+    std::string name;
+    uint32_t base = UINT32_MAX;
+    uint32_t argumentCount = UINT32_MAX;
+    uint32_t startByte = 0;
+};
+
+/**
+ * @brief Document-owned receiver facts shared by its lexical scopes.
+ */
+struct IndexedReferenceReceivers
+{
+    std::vector<IndexedReceiverExpression> expressions;
+    ankerl::unordered_dense::map<uint32_t, uint32_t> byReference;
+};
+
+/**
+ * @brief Context for enclosing class, namespace, caller and receiver facts shared by nested scopes.
+ */
+struct ScopeEnclosingContext
+{
+    std::string enclosingClass;
+    std::string enclosingNamespace;
+    std::string caller;
+    std::shared_ptr<const IndexedReferenceReceivers> receivers;
+};
+
+/**
  * @brief One lexical scope (function body, statement block, loop header, class body, ...) in the
  *        tree built from a document's LOCALS_QUERY matches. Scopes nest by source range: every
  */
@@ -197,7 +228,25 @@ struct Scope
      */
     ScopeKind kind = ScopeKind::Block;
     bool isFunctionScope : 1 = false;
+    bool isConstMethod : 1 = false;
     uint32_t containerSpanIndex = UINT32_MAX;
+
+    std::shared_ptr<const ScopeEnclosingContext> enclosingContext;
+
+    [[nodiscard]] std::string_view GetEnclosingClass() const noexcept
+    {
+        return enclosingContext ? std::string_view(enclosingContext->enclosingClass) : std::string_view{};
+    }
+
+    [[nodiscard]] std::string_view GetEnclosingNamespace() const noexcept
+    {
+        return enclosingContext ? std::string_view(enclosingContext->enclosingNamespace) : std::string_view{};
+    }
+
+    [[nodiscard]] std::string_view GetCaller() const noexcept
+    {
+        return enclosingContext ? std::string_view(enclosingContext->caller) : std::string_view{};
+    }
 
     /**
      * @brief Destroys the subtree iteratively rather than by recursive unique_ptr teardown.

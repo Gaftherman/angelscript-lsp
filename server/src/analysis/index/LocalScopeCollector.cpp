@@ -1,5 +1,6 @@
 #include "analysis/index/LocalScopeCollector.h"
 
+#include "analysis/index/ReferenceReceiverIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeExtraction.h"
 #include "analysis/types/TypeSanitization.h"
@@ -15,7 +16,9 @@
 #include "utils/Utils.h"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
+#include <optional>
 
 extern "C" const TSLanguage* tree_sitter_angelscript();
 
@@ -128,17 +131,8 @@ LocalScopeCollector::ResolveCaptureAncestors(CaptureKind kind, LocalDefinitionKi
     return result;
 }
 
-std::unique_ptr<Scope> LocalScopeCollector::CollectScopesFromTree(TSNode rootNode, const std::string& sourceCode) const
+void LocalScopeCollector::CollectRawCaptures(TSNode rootNode, std::vector<RawCapture>& captures) const
 {
-    if (!m_localsQuery)
-        return nullptr;
-
-    std::vector<RawCapture> captures;
-    if (sourceCode.size() > 10000)
-    {
-        captures.reserve(sourceCode.size() / 32);
-    }
-
     TSQueryCursor* cursor = angel_lsp::parser::QueryRegistry::GetThreadLocalCursor();
     ts_query_cursor_exec(cursor, m_localsQuery, rootNode);
 
@@ -164,12 +158,66 @@ std::unique_ptr<Scope> LocalScopeCollector::CollectScopesFromTree(TSNode rootNod
                                           ts_node_end_byte(node), kind, defKind, ancestors.enclosingCallableSym});
         }
     }
+}
 
-    auto root = BuildScopeTree(captures, sourceCode);
+static LocalScopeCollector::DocumentContext BuildDocumentContext(const NodeIndex& index,
+                                                                 const parser::GrammarSymbols& grammar)
+{
+    LocalScopeCollector::DocumentContext context;
+    context.treeHasError = ts_node_has_error(index.Root());
+    context.hasMetadata = !index.Nodes(grammar.symMetadata).empty();
+
+    const std::array symbols{grammar.symMetadata, grammar.symError};
+    index.ForEachNodeOrdered(symbols,
+                             [&](TSNode node)
+                             {
+                                 if (ts_node_is_missing(node))
+                                 {
+                                     return;
+                                 }
+
+                                 const uint32_t start = ts_node_start_byte(node);
+                                 const uint32_t end = ts_node_end_byte(node);
+                                 auto& spans = context.metadataOrErrorSpans;
+                                 if (!spans.empty() && start <= spans.back().endByte)
+                                 {
+                                     spans.back().endByte = std::max(end, spans.back().endByte);
+                                 }
+                                 else
+                                 {
+                                     spans.push_back({start, end});
+                                 }
+                             });
+    return context;
+}
+
+std::unique_ptr<Scope> LocalScopeCollector::CollectScopesFromTree(TSNode rootNode, const std::string& sourceCode,
+                                                                  const NodeIndex* nodeIndex) const
+{
+    if (!m_localsQuery || ts_node_is_null(rootNode))
+    {
+        return nullptr;
+    }
+
+    std::optional<NodeIndex> localIndex;
+    if (!nodeIndex)
+    {
+        nodeIndex = &localIndex.emplace(rootNode);
+    }
+
+    std::vector<RawCapture> captures;
+    if (sourceCode.size() > 10000)
+    {
+        captures.reserve(sourceCode.size() / 32);
+    }
+    CollectRawCaptures(rootNode, captures);
+
+    DocumentContext docCtx = BuildDocumentContext(*nodeIndex, m_gs);
+    auto root = BuildScopeTree(captures, sourceCode, docCtx);
     if (root)
     {
-        RegisterVirtualPropertySetParameters(rootNode, root.get(), sourceCode);
-        if (ts_node_has_error(rootNode))
+        RegisterVirtualPropertySetParameters(*nodeIndex, root.get(), sourceCode);
+        if (docCtx.treeHasError)
         {
             RecoverDeclarationsFromErrorNodes(rootNode, root.get(), sourceCode);
         }
@@ -335,6 +383,103 @@ static std::optional<std::pair<ScopeKind, bool>> DetermineScopeKind(TSNode node,
     return std::make_pair(ScopeKind::Block, false);
 }
 
+static void UpdateClassScopeContext(Scope* scopePtr, TSNode node, const parser::GrammarSymbols& gs,
+                                    std::string_view sourceCode)
+{
+    TSNode parent = parser::GetParent(node);
+    if (!ts_node_is_null(parent))
+    {
+        TSNode nameNode = parser::GetChildByField(parent, gs.fieldName);
+        if (!ts_node_is_null(nameNode))
+        {
+            std::string clsName = parser::GetNodeText(nameNode, sourceCode);
+            auto newCtx = std::make_shared<ScopeEnclosingContext>(
+                scopePtr->enclosingContext ? *scopePtr->enclosingContext : ScopeEnclosingContext{});
+            newCtx->enclosingClass = utils::JoinScopedName(newCtx->enclosingNamespace, clsName);
+            scopePtr->enclosingContext = std::move(newCtx);
+        }
+    }
+}
+
+static void UpdateNamespaceScopeContext(Scope* scopePtr, TSNode node, const parser::GrammarSymbols& gs,
+                                        std::string_view sourceCode)
+{
+    TSNode parent = parser::GetParent(node);
+    if (!ts_node_is_null(parent))
+    {
+        TSNode nameNode = parser::GetChildByField(parent, gs.fieldName);
+        if (!ts_node_is_null(nameNode))
+        {
+            std::string nsName = parser::GetNodeText(nameNode, sourceCode);
+            auto newCtx = std::make_shared<ScopeEnclosingContext>(
+                scopePtr->enclosingContext ? *scopePtr->enclosingContext : ScopeEnclosingContext{});
+            newCtx->enclosingNamespace = utils::JoinScopedName(newCtx->enclosingNamespace, nsName);
+            scopePtr->enclosingContext = std::move(newCtx);
+        }
+    }
+}
+
+static bool CheckMethodIsConst(TSNode funcNode, const parser::GrammarSymbols& gs) noexcept
+{
+    TSTreeCursor cursor = ts_tree_cursor_new(funcNode);
+    bool isConst = false;
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        do
+        {
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            const TSSymbol childSym = ts_node_symbol(child);
+            if (childSym == gs.tokConst ||
+                (childSym == gs.symFuncAttributes && !ts_node_is_null(parser::FindChildWithSymbol(child, gs.tokConst))))
+            {
+                isConst = true;
+                break;
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    }
+    ts_tree_cursor_delete(&cursor);
+    return isConst;
+}
+
+static void UpdateFuncScopeContext(LocalScopeCollector::OpenScope& openScope, TSNode node,
+                                   const parser::GrammarSymbols& gs, std::string_view sourceCode)
+{
+    TSNode ownNameNode = parser::GetChildByField(node, gs.fieldName);
+    if (!ts_node_is_null(ownNameNode))
+    {
+        openScope.ownNameStartByte = ts_node_start_byte(ownNameNode);
+        openScope.ownNameEndByte = ts_node_end_byte(ownNameNode);
+
+        std::string fnName = parser::GetNodeText(ownNameNode, sourceCode);
+        std::string_view parentPrefix = !openScope.scope->GetEnclosingClass().empty()
+                                            ? openScope.scope->GetEnclosingClass()
+                                            : openScope.scope->GetEnclosingNamespace();
+        auto newCtx = std::make_shared<ScopeEnclosingContext>(
+            openScope.scope->enclosingContext ? *openScope.scope->enclosingContext : ScopeEnclosingContext{});
+        newCtx->caller = utils::JoinScopedName(parentPrefix, fnName);
+        openScope.scope->enclosingContext = std::move(newCtx);
+    }
+    openScope.scope->isConstMethod = CheckMethodIsConst(node, gs);
+}
+
+static void UpdateScopeContextAndOpen(LocalScopeCollector::OpenScope& openScope, TSNode node,
+                                      const parser::GrammarSymbols& gs, std::string_view sourceCode)
+{
+    const TSSymbol sym = ts_node_symbol(node);
+    if (sym == gs.symClassBody || sym == gs.symInterfaceBody)
+    {
+        UpdateClassScopeContext(openScope.scope, node, gs, sourceCode);
+    }
+    else if (sym == gs.symNamespaceBody)
+    {
+        UpdateNamespaceScopeContext(openScope.scope, node, gs, sourceCode);
+    }
+    else if (sym == gs.symFuncDeclaration)
+    {
+        UpdateFuncScopeContext(openScope, node, gs, sourceCode);
+    }
+}
+
 void LocalScopeCollector::ProcessScopeCapture(const RawCapture& capture, std::vector<OpenScope>& stack,
                                               std::unique_ptr<Scope>& root, const std::string& sourceCode) const
 {
@@ -358,26 +503,21 @@ void LocalScopeCollector::ProcessScopeCapture(const RawCapture& capture, std::ve
     Scope* scopePtr = nullptr;
     if (stack.empty())
     {
+        newScope->enclosingContext = std::make_shared<ScopeEnclosingContext>();
         root = std::move(newScope);
         scopePtr = root.get();
     }
     else
     {
         newScope->parent = stack.back().scope;
+        newScope->enclosingContext = stack.back().scope->enclosingContext;
+        newScope->isConstMethod = stack.back().scope->isConstMethod;
         stack.back().scope->children.push_back(std::move(newScope));
         scopePtr = stack.back().scope->children.back().get();
     }
 
     OpenScope openScope{scopePtr, capture.endByte};
-    if (ts_node_symbol(capture.node) == m_gs.symFuncDeclaration)
-    {
-        TSNode ownNameNode = parser::GetChildByField(capture.node, m_gs.fieldName);
-        if (!ts_node_is_null(ownNameNode))
-        {
-            openScope.ownNameStartByte = ts_node_start_byte(ownNameNode);
-            openScope.ownNameEndByte = ts_node_end_byte(ownNameNode);
-        }
-    }
+    UpdateScopeContextAndOpen(openScope, capture.node, m_gs, sourceCode);
     stack.push_back(openScope);
 }
 
@@ -609,9 +749,8 @@ static bool IsTypeSpecifierSymbol(TSSymbol sym, const parser::GrammarSymbols& sy
            sym == syms.symType;
 }
 
-static bool IsTypeSpecifierContext(TSNode parent)
+static bool IsTypeSpecifierContext(TSNode parent, const parser::GrammarSymbols& syms) noexcept
 {
-    const auto& syms = parser::GetGrammarSymbols();
     bool result = false;
     parser::ForEachAncestor(parent,
                             [&](TSNode cur) -> bool
@@ -678,28 +817,14 @@ static bool IsNamedArgumentNode(TSNode node, TSNode parent)
     return !ts_node_is_null(next) && ts_node_symbol(next) == syms.tokColon;
 }
 
-static bool ShouldSkipReferenceCapture(TSNode parent, ScopeKind scopeKind, bool hasMetadataInDoc)
+static bool ShouldSkipReferenceCapture(ScopeKind scopeKind, uint32_t startByte, uint32_t endByte,
+                                       const LocalScopeCollector::DocumentContext& docCtx)
 {
     const bool isDeclarationScope =
         scopeKind == ScopeKind::Global || scopeKind == ScopeKind::Namespace || scopeKind == ScopeKind::Class;
-    if (isDeclarationScope && hasMetadataInDoc)
+    if (isDeclarationScope && docCtx.hasMetadata)
     {
-        const auto& syms = parser::GetGrammarSymbols();
-        bool inMetadata = false;
-        parser::ForEachAncestor(parent,
-                                [&](TSNode curr) -> bool
-                                {
-                                    if (ts_node_is_error(curr) || ts_node_symbol(curr) == syms.symMetadata)
-                                    {
-                                        inMetadata = true;
-                                        return false;
-                                    }
-                                    return true;
-                                });
-        if (inMetadata)
-        {
-            return true;
-        }
+        return docCtx.Contains(startByte, endByte);
     }
     return false;
 }
@@ -727,7 +852,8 @@ bool LocalScopeCollector::IsDeclarationContextSymbol(TSSymbol sym) const noexcep
 }
 
 static void EnrichReferenceContext(TSNode captureNode, TSNode parent, std::string_view sourceCode,
-                                   const parser::GrammarSymbols& gs, LocalReference& ref)
+                                   const parser::GrammarSymbols& gs, LocalReference& ref,
+                                   const LocalScopeCollector::DocumentContext& docCtx)
 {
     if (ref.name == "super")
     {
@@ -738,26 +864,18 @@ static void EnrichReferenceContext(TSNode captureNode, TSNode parent, std::strin
         ref.isLambdaFunctionKeyword = 1;
     }
 
-    bool inMetaOrErr =
-        ts_node_has_error(captureNode) || ts_node_is_error(parent) || ts_node_symbol(parent) == gs.symMetadata;
-    if (!inMetaOrErr)
+    if (!docCtx.treeHasError && !docCtx.hasMetadata)
     {
-        parser::ForEachAncestor(parent,
-                                [&](TSNode curr) -> bool
-                                {
-                                    if (ts_node_is_error(curr) || ts_node_symbol(curr) == gs.symMetadata)
-                                    {
-                                        inMetaOrErr = true;
-                                        return false;
-                                    }
-                                    return true;
-                                });
+        ref.inMetadataOrError = 0;
     }
-    ref.inMetadataOrError = inMetaOrErr ? 1 : 0;
+    else
+    {
+        ref.inMetadataOrError = docCtx.Contains(ref.startByte, ref.endByte) ? 1 : 0;
+    }
 }
 
 void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Scope* current,
-                                                  const std::string& sourceCode) const
+                                                  const std::string& sourceCode, DocumentContext& docCtx) const
 {
     if (ts_node_has_error(capture.node))
     {
@@ -769,8 +887,7 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
     {
         parent = parser::GetParent(capture.node);
     }
-    const bool hasMetadataInDoc = (sourceCode.find('[') != std::string::npos);
-    if (ShouldSkipReferenceCapture(parent, current->kind, hasMetadataInDoc) ||
+    if (ShouldSkipReferenceCapture(current->kind, capture.startByte, capture.endByte, docCtx) ||
         !IsAllowedKeywordReference(capture.node, parent, m_gs))
     {
         return;
@@ -800,18 +917,27 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
 
     if (!ts_node_is_null(parent))
     {
-        ref.isNamedArgument = IsNamedArgumentNode(capture.node, parent);
-        ref.isTypeSpecifier = IsTypeSpecifierContext(parent);
-        ref.isMemberAccess =
-            IsMemberAccessNode(capture.node, parent, m_gs.symMemberExpression, m_gs.symScopedIdentifier);
         TSNode grandparent = capture.grandparent;
         if (ts_node_is_null(grandparent))
         {
             grandparent = parser::GetParent(parent);
         }
+        ref.isNamedArgument = IsNamedArgumentNode(capture.node, parent);
+        ref.isTypeSpecifier = IsTypeSpecifierContext(parent, m_gs);
+        ref.isMemberAccess =
+            IsMemberAccessNode(capture.node, parent, m_gs.symMemberExpression, m_gs.symScopedIdentifier);
         DetermineCallReferenceInfo(capture.node, parent, grandparent, ref);
         PopulateReceiverQualifierRanges(parent, ref);
-        EnrichReferenceContext(capture.node, parent, sourceCode, m_gs, ref);
+        if (ref.isMemberAccess && ts_node_symbol(parent) == m_gs.symMemberExpression)
+        {
+            const TSNode receiver = parser::GetChildByField(parent, m_gs.fieldObject);
+            const uint32_t id = IndexReceiverExpression(receiver, sourceCode, docCtx);
+            if (id != UINT32_MAX)
+            {
+                docCtx.receivers->byReference.try_emplace(ref.startByte, id);
+            }
+        }
+        EnrichReferenceContext(capture.node, parent, sourceCode, m_gs, ref, docCtx);
     }
 
     current->references.push_back(std::move(ref));
@@ -869,7 +995,7 @@ void LocalScopeCollector::ProcessStringCallRefCapture(const RawCapture& capture,
 }
 
 std::unique_ptr<Scope> LocalScopeCollector::BuildScopeTree(std::vector<RawCapture>& captures,
-                                                           const std::string& sourceCode) const
+                                                           const std::string& sourceCode, DocumentContext& docCtx) const
 {
     DeduplicateCaptures(captures);
 
@@ -887,7 +1013,14 @@ std::unique_ptr<Scope> LocalScopeCollector::BuildScopeTree(std::vector<RawCaptur
 
         if (capture.kind == CaptureKind::Scope)
         {
+            const bool hadRoot = root != nullptr;
             ProcessScopeCapture(capture, stack, root, sourceCode);
+            if (!hadRoot && root)
+            {
+                auto context = std::make_shared<ScopeEnclosingContext>(*root->enclosingContext);
+                context->receivers = docCtx.receivers;
+                root->enclosingContext = std::move(context);
+            }
             continue;
         }
 
@@ -902,7 +1035,7 @@ std::unique_ptr<Scope> LocalScopeCollector::BuildScopeTree(std::vector<RawCaptur
         }
         else if (capture.kind == CaptureKind::Reference)
         {
-            ProcessReferenceCapture(capture, stack.back().scope, sourceCode);
+            ProcessReferenceCapture(capture, stack.back().scope, sourceCode, docCtx);
         }
         else if (capture.kind == CaptureKind::StringCallRef)
         {
@@ -975,6 +1108,60 @@ void LocalScopeCollector::PopulateTypeRanges(TSNode tNode, const std::string& so
  * @param[in] sourceCode Source text of the document.
  * @param[out] def LocalDefinition receiving extracted type info and default value.
  */
+static std::string NormalizeParameterTypeName(std::string_view slice, bool& isReference)
+{
+    if (const size_t refLen = TrailingReferenceModifierLength(slice); refLen > 0)
+    {
+        isReference = true;
+        std::string_view refMod = slice.substr(slice.size() - refLen);
+        std::string_view base = slice.substr(0, slice.size() - refLen);
+        TrimTypeWhitespace(base);
+        if (base.empty())
+        {
+            return std::string(refMod);
+        }
+        if (refMod.ends_with("inout"))
+        {
+            return std::string(base) + " &inout";
+        }
+        if (refMod.ends_with("out"))
+        {
+            return std::string(base) + " &out";
+        }
+        if (refMod.ends_with("in"))
+        {
+            return std::string(base) + " &in";
+        }
+        return std::string(base) + " &";
+    }
+    return std::string(slice);
+}
+
+static std::string ExtractParamDefaultValue(TSNode declaratorNode, const std::string& sourceCode)
+{
+    TSTreeCursor cursor = ts_tree_cursor_new(declaratorNode);
+    std::string result;
+    if (ts_tree_cursor_goto_first_child(&cursor))
+    {
+        bool foundEq = false;
+        do
+        {
+            TSNode child = ts_tree_cursor_current_node(&cursor);
+            if (foundEq)
+            {
+                result = parser::GetNodeText(child, sourceCode);
+                break;
+            }
+            if (parser::GetNodeText(child, sourceCode) == "=")
+            {
+                foundEq = true;
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+    }
+    ts_tree_cursor_delete(&cursor);
+    return result;
+}
+
 void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std::string& sourceCode,
                                                 LocalDefinition& def) const
 {
@@ -994,39 +1181,18 @@ void LocalScopeCollector::ReadParameterTypeInfo(TSNode declaratorNode, const std
         def.isConst = typeInfo.isConst;
         def.isReference = typeInfo.isReference;
         def.typeKind = typeInfo.kind;
-        if (!ts_node_is_null(nameNode) && ts_node_start_byte(nameNode) > ts_node_start_byte(paramTypeNode))
-        {
-            const uint32_t tStart = ts_node_start_byte(paramTypeNode);
-            const uint32_t tEnd = ts_node_start_byte(nameNode);
-            std::string_view slice = utils::TrimView(std::string_view(sourceCode).substr(tStart, tEnd - tStart));
-            def.typeName = std::string(slice);
-        }
-        else
-        {
-            def.typeName = parser::GetNodeText(paramTypeNode, sourceCode);
-        }
+        const uint32_t tStart = ts_node_start_byte(paramTypeNode);
+        const uint32_t tEnd = (!ts_node_is_null(nameNode) && ts_node_start_byte(nameNode) > tStart)
+                                  ? ts_node_start_byte(nameNode)
+                                  : ts_node_end_byte(paramTypeNode);
+        std::string_view slice = utils::TrimView(std::string_view(sourceCode).substr(tStart, tEnd - tStart));
+        bool isRef = def.isReference;
+        def.typeName = NormalizeParameterTypeName(slice, isRef);
+        def.isReference = isRef;
         PopulateTypeRanges(paramTypeNode, sourceCode, def);
     }
 
-    TSTreeCursor cursor = ts_tree_cursor_new(declaratorNode);
-    if (ts_tree_cursor_goto_first_child(&cursor))
-    {
-        bool foundEq = false;
-        do
-        {
-            TSNode child = ts_tree_cursor_current_node(&cursor);
-            if (foundEq)
-            {
-                def.defaultValue = parser::GetNodeText(child, sourceCode);
-                break;
-            }
-            if (parser::GetNodeText(child, sourceCode) == "=")
-            {
-                foundEq = true;
-            }
-        } while (ts_tree_cursor_goto_next_sibling(&cursor));
-    }
-    ts_tree_cursor_delete(&cursor);
+    def.defaultValue = ExtractParamDefaultValue(declaratorNode, sourceCode);
 }
 
 void LocalScopeCollector::PopulateVariableFromField(TSNode parentNode, TSSymbol fieldSymbol,
@@ -1644,42 +1810,12 @@ void LocalScopeCollector::RecoverDeclarationsFromErrorNodes(TSNode rootNode, Sco
     ts_tree_cursor_delete(&cursor);
 }
 
-void LocalScopeCollector::RegisterVirtualPropertySetParameters(TSNode rootNode, Scope* rootScope,
+void LocalScopeCollector::RegisterVirtualPropertySetParameters(const NodeIndex& nodeIndex, Scope* rootScope,
                                                                const std::string& sourceCode) const
 {
-    if (!rootScope || ts_node_is_null(rootNode))
+    for (TSNode property : nodeIndex.Nodes(m_gs.symVirtualProperty))
     {
-        return;
+        ProcessVirtualPropertyNode(property, rootScope, m_gs, sourceCode);
     }
-    static constexpr size_t kMaxDepth = 64;
-    TSTreeCursor cursor = ts_tree_cursor_new(rootNode);
-    size_t depth = 0;
-    bool visiting = true;
-
-    while (visiting)
-    {
-        TSNode node = ts_tree_cursor_current_node(&cursor);
-        if (ts_node_is_named(node) && ts_node_symbol(node) == m_gs.symVirtualProperty)
-        {
-            ProcessVirtualPropertyNode(node, rootScope, m_gs, sourceCode);
-        }
-
-        if (depth < kMaxDepth && ts_tree_cursor_goto_first_child(&cursor))
-        {
-            ++depth;
-            continue;
-        }
-
-        while (!ts_tree_cursor_goto_next_sibling(&cursor))
-        {
-            if (!ts_tree_cursor_goto_parent(&cursor))
-            {
-                visiting = false;
-                break;
-            }
-            --depth;
-        }
-    }
-    ts_tree_cursor_delete(&cursor);
 }
 } // namespace angel_lsp::analysis

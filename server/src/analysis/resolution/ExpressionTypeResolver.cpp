@@ -149,7 +149,7 @@ static std::string ResolveThisIdentifier(TSNode exprNode, const ExpressionTypeCo
     {
         return CleanExpressionType(hostClass);
     }
-    auto containers = GetEnclosingContainers(exprNode, ctx.sourceCode);
+    auto containers = GetEnclosingContainers(exprNode, ctx.sourceCode, ctx.nodeIndex);
     for (const auto& c : containers)
     {
         if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
@@ -169,7 +169,7 @@ static std::string ResolveThisExpr(TSNode exprNode, const ExpressionTypeContext&
     std::string hostClass = isVirtual ? SymbolTable::ExtractVirtualHostClass(ctx.uri) : "";
     if (hostClass.empty())
     {
-        hostClass = InferHostClassFromEnclosingMixin(exprNode, ctx.sourceCode, ctx.symbolTable);
+        hostClass = InferHostClassFromEnclosingMixin(exprNode, ctx.sourceCode, ctx.symbolTable, ctx.cache);
     }
     return ResolveThisIdentifier(exprNode, ctx, hostClass);
 }
@@ -289,7 +289,7 @@ static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const Expression
 static std::vector<Symbol> ResolveEnclosingContainerMemberSymbols(const std::string& name, TSNode exprNode,
                                                                   const ExpressionTypeContext& ctx)
 {
-    auto containers = GetEnclosingContainers(exprNode, ctx.sourceCode);
+    auto containers = GetEnclosingContainers(exprNode, ctx.sourceCode, ctx.nodeIndex);
     for (const auto& c : containers)
     {
         if (c.kind != ContainerKind::Class && c.kind != ContainerKind::Interface)
@@ -297,8 +297,8 @@ static std::vector<Symbol> ResolveEnclosingContainerMemberSymbols(const std::str
             continue;
         }
         const std::string& typeName = c.qualifiedName.empty() ? c.name : c.qualifiedName;
-        auto hierarchy = GetInheritedTypeHierarchy(typeName, ctx.symbolTable);
-        ExpandMixinHostHierarchies(typeName, ctx.symbolTable, hierarchy);
+        auto hierarchy = GetInheritedTypeHierarchy(typeName, ctx.symbolTable, ctx.cache);
+        ExpandMixinHostHierarchies(typeName, ctx.symbolTable, hierarchy, ctx.cache);
         for (const auto& cls : hierarchy)
         {
             auto found = FilterSymbolsByContainerKind(ctx.symbolTable.FindMemberSymbols(cls, name), c.kind);
@@ -355,13 +355,13 @@ static std::string ResolveIdentifierHostFallback(const std::string& name, TSNode
     }
     else
     {
-        hostClass = InferHostClassFromEnclosingMixin(exprNode, ctx.sourceCode, ctx.symbolTable);
+        hostClass = InferHostClassFromEnclosingMixin(exprNode, ctx.sourceCode, ctx.symbolTable, ctx.cache);
     }
     if (hostClass.empty())
     {
         return "";
     }
-    auto hierarchy = GetInheritedTypeHierarchy(hostClass, ctx.symbolTable);
+    auto hierarchy = GetInheritedTypeHierarchy(hostClass, ctx.symbolTable, ctx.cache);
     for (const auto& cls : hierarchy)
     {
         auto found = ctx.symbolTable.FindMemberSymbols(cls, name);
@@ -1522,13 +1522,13 @@ static std::vector<Symbol> CollectEnclosingCallCandidates(TSNode exprNode, const
                                                           const ExpressionTypeContext& ctx)
 {
     std::vector<Symbol> candidates;
-    auto containers = GetEnclosingContainers(exprNode, ctx.sourceCode);
+    auto containers = GetEnclosingContainers(exprNode, ctx.sourceCode, ctx.nodeIndex);
     for (const auto& c : containers)
     {
         if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
         {
             std::string containerName = c.qualifiedName.empty() ? c.name : c.qualifiedName;
-            auto hierarchy = GetInheritedTypeHierarchy(containerName, ctx.symbolTable);
+            auto hierarchy = GetInheritedTypeHierarchy(containerName, ctx.symbolTable, ctx.cache);
             for (const auto& cls : hierarchy)
             {
                 auto found = ctx.symbolTable.FindMemberSymbols(cls, funcName);
@@ -2395,28 +2395,27 @@ static std::string ExtractMemberSymbolOwner(const Symbol& sym, std::string_view 
 /**
  * @brief Resolves a member name within a class's inherited type hierarchy.
  */
-static std::string ResolveMemberInHierarchy(const std::string& hostClass, const std::string& memberName,
-                                            const SymbolTable& symbolTable, std::string_view arrayTypeName)
+static std::string ResolveMemberInHierarchy(const MemberHierarchyQuery& query, const SymbolTable& symbolTable)
 {
-    auto hier = GetInheritedTypeHierarchy(hostClass, symbolTable);
-    ExpandMixinHostHierarchies(hostClass, symbolTable, hier);
+    auto hier = GetInheritedTypeHierarchy(std::string(query.hostClass), symbolTable, query.cache);
+    ExpandMixinHostHierarchies(query.hostClass, symbolTable, hier, query.cache);
     for (const auto& cls : hier)
     {
-        auto memberSyms = symbolTable.FindMemberSymbols(cls, memberName);
+        auto memberSyms = symbolTable.FindMemberSymbols(cls, query.memberName);
         for (const auto& sym : memberSyms)
         {
-            if (auto owner = ExtractMemberSymbolOwner(sym, arrayTypeName); !owner.empty())
+            if (auto owner = ExtractMemberSymbolOwner(sym, query.arrayTypeName); !owner.empty())
             {
                 return owner;
             }
         }
-        auto accessors = FindPropertyAccessors(cls, memberName, symbolTable, false);
+        auto accessors = FindPropertyAccessors(cls, std::string(query.memberName), symbolTable, false);
         if (!accessors.empty())
         {
             std::string pType = PropertyTypeFromAccessors(accessors);
             if (!pType.empty())
             {
-                return MemberOwnerType(pType, arrayTypeName);
+                return MemberOwnerType(pType, query.arrayTypeName);
             }
         }
     }
@@ -2426,13 +2425,14 @@ static std::string ResolveMemberInHierarchy(const std::string& hostClass, const 
 /**
  * @brief Resolves special 'this' receiver expressions.
  */
-static std::string ResolveThisReceiver(TSNode objNode, std::string_view sourceCode, std::string_view effectiveHostClass)
+static std::string ResolveThisReceiver(TSNode objNode, std::string_view sourceCode, std::string_view effectiveHostClass,
+                                       const NodeIndex* nodeIndex = nullptr)
 {
     if (!effectiveHostClass.empty())
     {
         return std::string(effectiveHostClass);
     }
-    auto containers = GetEnclosingContainers(objNode, sourceCode);
+    auto containers = GetEnclosingContainers(objNode, sourceCode, nodeIndex);
     for (const auto& c : containers)
     {
         if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
@@ -2447,16 +2447,18 @@ static std::string ResolveThisReceiver(TSNode objNode, std::string_view sourceCo
  * @brief Resolves receiver member in enclosing class or interface containers.
  */
 static std::string ResolveReceiverInEnclosingContainers(TSNode objNode, std::string_view sourceCode,
-                                                        const std::string& objText, const SymbolTable& symbolTable,
-                                                        std::string_view arrayTypeName)
+                                                        const MemberHierarchyQuery& query,
+                                                        const SymbolTable& symbolTable)
 {
-    auto containers = GetEnclosingContainers(objNode, sourceCode);
+    auto containers = GetEnclosingContainers(objNode, sourceCode, query.nodeIndex);
     for (const auto& c : containers)
     {
         if (c.kind == ContainerKind::Class || c.kind == ContainerKind::Interface)
         {
             std::string enclosing = c.qualifiedName.empty() ? c.name : c.qualifiedName;
-            return ResolveMemberInHierarchy(enclosing, objText, symbolTable, arrayTypeName);
+            MemberHierarchyQuery subQuery{enclosing, query.memberName, query.arrayTypeName, query.cache,
+                                          query.nodeIndex};
+            return ResolveMemberInHierarchy(subQuery, symbolTable);
         }
     }
     return "";
@@ -2541,27 +2543,22 @@ static std::string ResolveReceiverScope(const Scope* scope, const std::string& o
 }
 
 static std::string ResolveMemberOrContainerReceiver(TSNode objNode, std::string_view sourceCode,
-                                                    const std::string& objText, const std::string& hostClass,
-                                                    const SymbolTable& symbolTable, std::string_view arrayTypeName)
+                                                    const MemberHierarchyQuery& query, const SymbolTable& symbolTable)
 {
-    if (!hostClass.empty())
+    if (!query.hostClass.empty())
     {
-        if (auto res = ResolveMemberInHierarchy(hostClass, objText, symbolTable, arrayTypeName); !res.empty())
+        if (auto res = ResolveMemberInHierarchy(query, symbolTable); !res.empty())
         {
             return res;
         }
-    }
-    return ResolveReceiverInEnclosingContainers(objNode, sourceCode, objText, symbolTable, arrayTypeName);
-}
-
-std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, const SymbolTable& symbolTable,
-                                const ReceiverTypeContext& ctx)
-{
-    if (ts_node_is_null(objNode))
-    {
         return "";
     }
+    return ResolveReceiverInEnclosingContainers(objNode, sourceCode, query, symbolTable);
+}
 
+static std::string ResolveReceiverTypeUncached(TSNode objNode, std::string_view sourceCode,
+                                               const SymbolTable& symbolTable, const ReceiverTypeContext& ctx)
+{
     std::string objText = parser::GetNodeText(objNode, sourceCode);
     if (objText.empty())
     {
@@ -2571,20 +2568,21 @@ std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, con
     std::string effectiveHostClass = GetEffectiveHostClass(ctx.virtualHostClass, ctx.fileUri);
     if (effectiveHostClass.empty())
     {
-        effectiveHostClass = InferHostClassFromEnclosingMixin(objNode, sourceCode, symbolTable);
+        effectiveHostClass = InferHostClassFromEnclosingMixin(objNode, sourceCode, symbolTable, ctx.cache);
     }
     const std::string_view arrayTypeName =
         ctx.arrayTypeName.empty() ? symbolTable.GetDefaultArrayType() : ctx.arrayTypeName;
 
     if (objText == "this")
     {
-        return ResolveThisReceiver(objNode, sourceCode, effectiveHostClass);
+        return ResolveThisReceiver(objNode, sourceCode, effectiveHostClass, ctx.nodeIndex);
     }
 
     ExpressionTypeContext exprCtx(ctx.scope, symbolTable, sourceCode, ctx.fileUri, parser::GetRootNode(objNode));
     exprCtx.cache = ctx.cache;
-    if (auto scopeRes = ResolveReceiverScope(ctx.scope, objText, ts_node_start_byte(objNode), &exprCtx, arrayTypeName);
-        !scopeRes.empty())
+    exprCtx.nodeIndex = ctx.nodeIndex;
+    const uint32_t startByte = ts_node_start_byte(objNode);
+    if (auto scopeRes = ResolveReceiverScope(ctx.scope, objText, startByte, &exprCtx, arrayTypeName); !scopeRes.empty())
     {
         return scopeRes;
     }
@@ -2594,9 +2592,8 @@ std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, con
         return inferred;
     }
 
-    if (auto res = ResolveMemberOrContainerReceiver(objNode, sourceCode, objText, effectiveHostClass, symbolTable,
-                                                    arrayTypeName);
-        !res.empty())
+    MemberHierarchyQuery query{effectiveHostClass, objText, arrayTypeName, ctx.cache, ctx.nodeIndex};
+    if (auto res = ResolveMemberOrContainerReceiver(objNode, sourceCode, query, symbolTable); !res.empty())
     {
         return res;
     }
@@ -2610,6 +2607,7 @@ std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, con
 
     ExpressionTypeContext exprResCtx(ctx.scope, symbolTable, sourceCode, ctx.fileUri);
     exprResCtx.cache = ctx.cache;
+    exprResCtx.nodeIndex = ctx.nodeIndex;
     std::string exprType = ResolveExpressionType(objNode, exprResCtx);
     if (!exprType.empty() && exprType != "void" && exprType != "unknown")
     {
@@ -2617,6 +2615,34 @@ std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, con
     }
 
     return ResolveReceiverInGlobalOrShort(objText, symbolTable, arrayTypeName);
+}
+
+std::string ResolveReceiverType(TSNode objNode, std::string_view sourceCode, const SymbolTable& symbolTable,
+                                const ReceiverTypeContext& ctx)
+{
+    if (ts_node_is_null(objNode))
+    {
+        return "";
+    }
+
+    const uint32_t startByte = ts_node_start_byte(objNode);
+    const uint32_t endByte = ts_node_end_byte(objNode);
+    const uint64_t cacheKey = (static_cast<uint64_t>(startByte) << 32) | static_cast<uint64_t>(endByte);
+    if (ctx.cache)
+    {
+        auto it = ctx.cache->receiverTypes.find(cacheKey);
+        if (it != ctx.cache->receiverTypes.end())
+        {
+            return it->second;
+        }
+    }
+
+    std::string result = ResolveReceiverTypeUncached(objNode, sourceCode, symbolTable, ctx);
+    if (ctx.cache)
+    {
+        ctx.cache->receiverTypes.emplace(cacheKey, result);
+    }
+    return result;
 }
 
 } // namespace angel_lsp::analysis

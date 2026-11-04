@@ -423,6 +423,15 @@ class SymbolTable
     uint64_t ComputeDocumentInterfaceHash(const std::string& fileUri) const;
 
     /**
+     * @brief Checks if all non-predefined indexed files in the symbol table belong to allowedFileUris.
+     * @param allowedFileUris Set of permitted file URIs.
+     * @param predefinedExtension Extension for predefined files to ignore.
+     * @return True if no non-predefined indexed file lies outside allowedFileUris.
+     */
+    bool ContainsOnlyFiles(const ankerl::unordered_dense::set<std::string>& allowedFileUris,
+                           std::string_view predefinedExtension) const;
+
+    /**
      * @brief Counter bumped on every mutation, so a derived index can tell it is still current.
      */
     uint64_t Version() const;

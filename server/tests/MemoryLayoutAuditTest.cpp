@@ -23,7 +23,7 @@ static_assert(sizeof(ClassSignature) <= 80, "ClassSignature layout must not exce
 static_assert(sizeof(LocalDefinition) <= 192, "LocalDefinition layout must not exceed 192 bytes");
 static_assert(sizeof(LocalReference) <= 80, "LocalReference layout must not exceed 80 bytes");
 static_assert(sizeof(Scope) <= 128, "Scope layout must not exceed 128 bytes");
-static_assert(sizeof(IndexedContainerSpan) <= 20, "IndexedContainerSpan layout must not exceed 20 bytes");
+static_assert(sizeof(IndexedContainerSpan) <= 24, "IndexedContainerSpan layout must not exceed 24 bytes");
 static_assert(sizeof(NodeIndex) <= 248, "NodeIndex layout must not exceed 248 bytes");
 static_assert(sizeof(Symbol) <= 504, "Symbol layout must not exceed 504 bytes");
 
@@ -41,7 +41,7 @@ TEST_SUITE("MemoryLayoutAudit")
         CHECK(sizeof(LocalDefinition) <= 192);
         CHECK(sizeof(LocalReference) <= 80);
         CHECK(sizeof(Scope) <= 128);
-        CHECK(sizeof(IndexedContainerSpan) <= 20);
+        CHECK(sizeof(IndexedContainerSpan) <= 24);
         CHECK(sizeof(NodeIndex) <= 248);
         CHECK(sizeof(Symbol) <= 504);
     }

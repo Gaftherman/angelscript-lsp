@@ -1,5 +1,6 @@
 #include "analysis/resolution/TargetResolution.h"
 
+#include "analysis/resolution/ReferenceReceiver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
@@ -1352,6 +1353,10 @@ static std::string ResolveReceiverFromScope(const analysis::LocalReference& ref,
 static std::string ResolveReceiverType(const analysis::LocalReference& ref, const analysis::Scope* scope,
                                        const OccurrenceScanContext& ctx)
 {
+    if (auto indexed = ResolveIndexedReferenceReceiver(ref, *scope, ctx.request.symbolTable); !indexed.empty())
+    {
+        return indexed;
+    }
     std::string astType = ResolveReceiverFromAst(ref, scope, ctx);
     if (!astType.empty())
     {

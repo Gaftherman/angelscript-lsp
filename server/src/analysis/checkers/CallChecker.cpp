@@ -3,6 +3,7 @@
 #include "analysis/checkers/InitializerListChecker.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/index/ScopeTree.h"
 #include "analysis/index/SemanticNodes.h"
 #include "analysis/resolution/AmbiguityDetector.h"
 #include "analysis/resolution/OverloadResolver.h"
@@ -252,10 +253,11 @@ static std::vector<Symbol> FindMethodCandidates(const std::string& typeName, con
  * @param[in] sourceCode Document source text.
  * @return Ordered list of reachable namespace scopes.
  */
-static std::vector<std::string> CollectReachableScopes(TSNode callNode, std::string_view sourceCode)
+static std::vector<std::string> CollectReachableScopes(TSNode callNode, std::string_view sourceCode,
+                                                       const NodeIndex* nodeIndex = nullptr)
 {
     std::vector<std::string> reachableScopes;
-    for (const auto& container : GetEnclosingContainers(callNode, sourceCode))
+    for (const auto& container : GetEnclosingContainers(callNode, sourceCode, nodeIndex))
     {
         if (container.kind == ContainerKind::Class || container.kind == ContainerKind::Interface)
         {
@@ -341,7 +343,8 @@ static std::vector<Symbol> FindFreeCandidates(const std::string& name, const Fre
         return candidates;
     }
 
-    const std::vector<std::string> reachableScopes = CollectReachableScopes(ctx.callNode, ctx.sourceCode);
+    const std::vector<std::string> reachableScopes =
+        CollectReachableScopes(ctx.callNode, ctx.sourceCode, ctx.nodeIndex);
     for (const auto& scopeName : reachableScopes)
     {
         CollectScopeCandidates(scopeName, name, ctx, candidates);
@@ -975,9 +978,21 @@ static std::vector<Symbol> CollectScopedFunctionCandidates(std::string_view writ
  * @param[in] sourceCode Document source text.
  * @return Enclosing class name or empty string.
  */
-static std::string FindEnclosingClassOrInterface(TSNode node, std::string_view sourceCode)
+static std::string FindEnclosingClassOrInterface(TSNode node, std::string_view sourceCode,
+                                                 const Scope* scopeRoot = nullptr, const NodeIndex* nodeIndex = nullptr)
 {
-    for (const auto& container : GetEnclosingContainers(node, sourceCode))
+    if (scopeRoot)
+    {
+        TSPoint pt = ts_node_start_point(node);
+        if (const Scope* sc = FindInnermostScope(scopeRoot, pt.row, pt.column))
+        {
+            if (auto enc = sc->GetEnclosingClass(); !enc.empty())
+            {
+                return std::string(enc);
+            }
+        }
+    }
+    for (const auto& container : GetEnclosingContainers(node, sourceCode, nodeIndex))
     {
         if (container.kind == ContainerKind::Class || container.kind == ContainerKind::Interface)
         {
@@ -1003,16 +1018,19 @@ static std::string_view GetScopeQualifierPrefix(std::string_view name) noexcept
  * @param[in] targetClass Target class name.
  * @param[in] sourceCode Document source text.
  * @param[in] table Symbol table.
+ * @param[in] scopeRoot Optional scope root for O(1) context.
+ * @param[in] nodeIndex Optional node index for O(1) container spans.
  * @return True if call is within target class or derived class.
  */
 static bool IsInsideTargetClassOrSubclass(TSNode callNode, std::string_view targetClass, std::string_view sourceCode,
-                                          const SymbolTable& table)
+                                          const SymbolTable& table, const Scope* scopeRoot = nullptr,
+                                          const NodeIndex* nodeIndex = nullptr)
 {
     if (targetClass.empty())
     {
         return false;
     }
-    const std::string enclosing = FindEnclosingClassOrInterface(callNode, sourceCode);
+    const std::string enclosing = FindEnclosingClassOrInterface(callNode, sourceCode, scopeRoot, nodeIndex);
     if (enclosing.empty())
     {
         return false;
@@ -1063,8 +1081,9 @@ static bool ResolveScopedCallee(std::string_view written, const std::string& sho
     res.candidates = CollectScopedFunctionCandidates(written, valCtx.ctx.request.symbolTable);
 
     const std::string_view qualifier = GetScopeQualifierPrefix(written);
-    const bool insideTarget = IsInsideTargetClassOrSubclass(valCtx.callNode, qualifier, valCtx.request.sourceCode,
-                                                            valCtx.ctx.request.symbolTable);
+    const bool insideTarget = IsInsideTargetClassOrSubclass(
+        valCtx.callNode, qualifier, valCtx.request.sourceCode, valCtx.ctx.request.symbolTable,
+        valCtx.ctx.request.scopeRoot.get(), valCtx.ctx.request.nodeIndex);
     FilterScopedCandidatesByCallerContext(res.candidates, insideTarget);
 
     res.candidatesAreFreeFunctions = true;
@@ -1078,7 +1097,27 @@ static bool ResolveScopedCallee(std::string_view written, const std::string& sho
 static bool ResolveEnclosingClassCallee(std::string_view written, const CallValidationContext& valCtx,
                                         CalleeResolution& res)
 {
-    const std::string enclosingClass = FindEnclosingClassOrInterface(valCtx.callNode, valCtx.request.sourceCode);
+    std::string enclosingClass;
+    bool isConst = false;
+    if (valCtx.ctx.request.scopeRoot)
+    {
+        TSPoint pt = ts_node_start_point(valCtx.callNode);
+        if (const Scope* sc = FindInnermostScope(valCtx.ctx.request.scopeRoot.get(), pt.row, pt.column))
+        {
+            if (auto enc = sc->GetEnclosingClass(); !enc.empty())
+            {
+                enclosingClass = std::string(enc);
+                isConst = sc->isConstMethod;
+            }
+        }
+    }
+    if (enclosingClass.empty())
+    {
+        enclosingClass =
+            FindEnclosingClassOrInterface(valCtx.callNode, valCtx.request.sourceCode,
+                                          valCtx.ctx.request.scopeRoot.get(), valCtx.ctx.request.nodeIndex);
+        isConst = IsEnclosingMethodConst(valCtx.callNode);
+    }
     if (enclosingClass.empty())
     {
         return false;
@@ -1089,7 +1128,7 @@ static bool ResolveEnclosingClassCallee(std::string_view written, const CallVali
     {
         res.candidatesAreFreeFunctions = false;
         res.isUnqualifiedClassCall = true;
-        res.isReceiverConst = IsEnclosingMethodConst(valCtx.callNode);
+        res.isReceiverConst = isConst;
         FilterMethodCandidatesConstness(res.candidates, res.isReceiverConst);
         ApplyTemplateSubstitutions(res.candidates, enclosingClass, {}, valCtx.ctx.request.symbolTable);
         return true;

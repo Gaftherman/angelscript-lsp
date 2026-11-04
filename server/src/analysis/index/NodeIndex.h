@@ -56,11 +56,11 @@ struct IndexedContainerSpan
     uint32_t endByte = 0;
     uint32_t nameStartByte = 0;
     uint32_t nameEndByte = 0;
-    uint16_t parentSpanIndex = 0xFFFF;
+    uint32_t parentSpanIndex = UINT32_MAX;
     TSSymbol symbol : 15 = 0;
     uint16_t isMixin : 1 = 0;
 };
-static_assert(sizeof(IndexedContainerSpan) <= 20);
+static_assert(sizeof(IndexedContainerSpan) <= 24);
 
 /**
  * @brief Single-pass index of AST nodes grouped by Tree-Sitter symbol for O(1) retrieval.
@@ -376,8 +376,8 @@ class NodeIndex
 
   private:
     void PopulatePredefinedSymbols(const TSLanguage* lang);
-    void IndexNode(TSNode node, TraversalBudget* budget = nullptr, uint16_t parentSpanIdx = 0xFFFF);
-    void RecordContainerSpan(TSNode node, TSSymbol sym, uint16_t parentSpanIdx = 0xFFFF);
+    void IndexNode(TSNode node, TraversalBudget* budget = nullptr, uint32_t parentSpanIdx = UINT32_MAX);
+    void RecordContainerSpan(TSNode node, TSSymbol sym, uint32_t parentSpanIdx = UINT32_MAX);
     void TraverseTree(TSNode root, TraversalBudget* budget = nullptr);
     void PostProcessErrorRanges();
     void PostProcessCommentRanges();

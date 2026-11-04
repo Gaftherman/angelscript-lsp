@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as fs from 'fs';
 import {
     ExtensionContext, window, workspace, env, commands, OutputChannel, ExtensionMode,
-    StatusBarAlignment, StatusBarItem, ThemeColor, ConfigurationTarget, QuickPickItem, Uri, l10n,
+    StatusBarAlignment, StatusBarItem, ThemeColor, ConfigurationTarget, QuickPickItem, QuickPickItemKind, Uri, l10n,
     TextEditorDecorationType, Range, TextEditor, WorkspaceEdit, TextDocumentContentProvider,
     CancellationToken, Position, Selection, ViewColumn, TextEditorRevealType, Location,
     languages, LanguageStatusItem, LanguageStatusSeverity,
@@ -389,7 +389,7 @@ function createLanguageStatusItem(context: ExtensionContext): void {
     languageStatusItem.name = l10n.t('AngelScript IntelliSense');
     languageStatusItem.command = {
         command: RESCAN_WORKSPACE_COMMAND,
-        title: l10n.t('Rescan Workspace')
+        title: l10n.t('Rescan')
     };
     context.subscriptions.push(languageStatusItem);
 
@@ -397,7 +397,7 @@ function createLanguageStatusItem(context: ExtensionContext): void {
     stubsStatusItem.name = l10n.t('AngelScript Predefined Stubs');
     stubsStatusItem.command = {
         command: SELECT_STUBS_COMMAND,
-        title: l10n.t('Select Stubs')
+        title: l10n.t('Select')
     };
     context.subscriptions.push(stubsStatusItem);
 
@@ -405,7 +405,7 @@ function createLanguageStatusItem(context: ExtensionContext): void {
     moduleStatusItem.name = l10n.t('AngelScript Active Module');
     moduleStatusItem.command = {
         command: SWITCH_ACTIVE_MODULE_COMMAND,
-        title: l10n.t('Switch Active Module')
+        title: l10n.t('Switch')
     };
     context.subscriptions.push(moduleStatusItem);
 
@@ -417,20 +417,22 @@ function updateLanguageStatus(isIndexing = false): void {
     const stubsCount = activeStubs.length > 0 ? activeStubs.length : (activeStubLabel.length > 0 ? 1 : 0);
 
     if (languageStatusItem) {
+        const trigger = workspace.getConfiguration('angelscript').get<string>('diagnostics.trigger', 'automatic');
+        const triggerDetail = trigger === 'onSave' ? l10n.t('On save') : l10n.t('Automatic');
         if (isIndexing || lastStatus?.state === 'starting') {
             languageStatusItem.severity = LanguageStatusSeverity.Information;
-            languageStatusItem.text = `$(sync~spin) ${l10n.t('Indexing Workspace...')}`;
-            languageStatusItem.detail = `${l10n.t('IntelliSense: Indexing')} | ${l10n.t('Analysis: Automatic')}`;
+            languageStatusItem.text = `$(sync~spin) ${l10n.t('Indexing...')}`;
+            languageStatusItem.detail = triggerDetail;
             languageStatusItem.busy = true;
         } else if (lastStatus?.state === 'running' || clientIsRunning()) {
             languageStatusItem.severity = LanguageStatusSeverity.Information;
-            languageStatusItem.text = `$(check) ${l10n.t('IntelliSense: Ready')}`;
-            languageStatusItem.detail = `${l10n.t('IntelliSense: Ready')} | ${l10n.t('Analysis: Automatic')}`;
+            languageStatusItem.text = '$(check) IntelliSense';
+            languageStatusItem.detail = triggerDetail;
             languageStatusItem.busy = false;
         } else {
             languageStatusItem.severity = LanguageStatusSeverity.Warning;
-            languageStatusItem.text = `$(alert) ${l10n.t('IntelliSense: Inactive')}`;
-            languageStatusItem.detail = l10n.t('Language server is not running');
+            languageStatusItem.text = `$(alert) ${l10n.t('Inactive')}`;
+            languageStatusItem.detail = l10n.t('Server stopped');
             languageStatusItem.busy = false;
         }
     }
@@ -440,13 +442,18 @@ function updateLanguageStatus(isIndexing = false): void {
         stubsStatusItem.busy = isIndexing;
         if (stubsCount > 1) {
             stubsStatusItem.text = `$(file-code) ${activeStubLabel || l10n.t('{0} Stubs', stubsCount)}`;
-            stubsStatusItem.detail = l10n.t('{0} active stubs | Click to manage', stubsCount);
+            stubsStatusItem.detail = l10n.t('{0} active stubs', stubsCount);
+        } else if (activeStubPath.length > 0) {
+            stubsStatusItem.text = `$(file-code) ${path.basename(activeStubPath)}`;
+            const dir = path.dirname(activeStubPath);
+            const relDir = workspace.asRelativePath(dir, false);
+            stubsStatusItem.detail = (relDir.length > 0 && relDir !== dir) ? relDir : (path.basename(dir) || l10n.t('Active stub'));
         } else if (activeStubLabel.length > 0) {
             stubsStatusItem.text = `$(file-code) ${activeStubLabel}`;
-            stubsStatusItem.detail = activeStubPath.length > 0 ? activeStubPath : l10n.t('Click to select predefined stubs');
+            stubsStatusItem.detail = l10n.t('Active stub');
         } else {
-            stubsStatusItem.text = `$(file-code) ${l10n.t('No active stubs')}`;
-            stubsStatusItem.detail = l10n.t('Click to configure predefined stubs');
+            stubsStatusItem.text = `$(file-code) ${l10n.t('No stubs')}`;
+            stubsStatusItem.detail = l10n.t('Click to configure stubs');
         }
     }
 
@@ -458,17 +465,20 @@ function updateLanguageStatus(isIndexing = false): void {
         const localOverride = extensionContext?.workspaceState.get<ModuleConfig[]>('angelscript.local.modules');
 
         if (configured.length === 0 && allWorkspaceModules.length === 0) {
-            moduleStatusItem.text = `$(package) ${l10n.t('No modules configured')}`;
-            moduleStatusItem.detail = l10n.t('Configure angelscript.modules to isolate project modules');
+            moduleStatusItem.text = `$(package) ${l10n.t('No modules')}`;
+            moduleStatusItem.detail = l10n.t('Configure angelscript.modules');
         } else if (localOverride !== undefined && localOverride.length === 1) {
             moduleStatusItem.text = `$(package) ${localOverride[0].name}`;
-            moduleStatusItem.detail = l10n.t('Active Module: {0} (Isolated) | Click to switch', localOverride[0].name);
+            moduleStatusItem.detail = l10n.t('Active module');
+        } else if (configured.length === 1) {
+            moduleStatusItem.text = `$(package) ${configured[0].name}`;
+            moduleStatusItem.detail = l10n.t('Active module');
         } else if (allWorkspaceModules.length > 0) {
             moduleStatusItem.text = `$(package) ${l10n.t('All Modules ({0})', configured.length)}`;
-            moduleStatusItem.detail = l10n.t('{0} active modules | Click to isolate or switch', configured.length);
+            moduleStatusItem.detail = l10n.t('{0} active', configured.length);
         } else {
             moduleStatusItem.text = `$(package) ${l10n.t('Modules: {0}', configured.length)}`;
-            moduleStatusItem.detail = l10n.t('Click to switch active module');
+            moduleStatusItem.detail = l10n.t('{0} active', configured.length);
         }
     }
 }
@@ -2094,60 +2104,80 @@ export async function activate(context: ExtensionContext) {
  */
 async function showStatusMenu(context: ExtensionContext): Promise<void> {
     interface ActionItem extends QuickPickItem {
-        run: () => void | Promise<void>;
+        run?: () => void | Promise<void>;
     }
 
     const actions: ActionItem[] = [
         {
+            label: l10n.t('Workspace'),
+            kind: QuickPickItemKind.Separator
+        },
+        {
+            label: '$(sync) ' + l10n.t('Rescan Workspace'),
+            description: l10n.t('Re-index modules and include paths'),
+            run: () => rescanWorkspace()
+        },
+        {
+            label: '$(package) ' + l10n.t('Switch Active Module'),
+            description: l10n.t('Isolate or switch the entry module'),
+            run: () => switchActiveModule()
+        },
+        {
+            label: '$(checklist) ' + l10n.t('Select Predefined Stubs'),
+            description: l10n.t('Enable or disable .as.predefined files'),
+            run: () => selectMultiStubs()
+        },
+        {
+            label: l10n.t('Configuration'),
+            kind: QuickPickItemKind.Separator
+        },
+        {
+            label: '$(gear) ' + l10n.t('Configure Engine Environment'),
+            description: l10n.t('Adjust engine profile and rules'),
+            run: () => configureHostEnvironment()
+        },
+        {
+            label: l10n.t('Diagnostics & Logs'),
+            kind: QuickPickItemKind.Separator
+        },
+        {
             label: '$(output) ' + l10n.t('Show Server Log'),
-            description: l10n.t('Everything the server has reported this session.'),
+            description: l10n.t('Open AngelScript output panel'),
             run: () => lspOutputChannel.show(true)
         },
         {
-            label: '$(folder) ' + l10n.t('Open Logs Folder'),
-            description: l10n.t('Opens the directory containing server disk logs.'),
+            label: '$(folder-opened) ' + l10n.t('Open Logs Folder'),
+            description: l10n.t('Show log files on disk'),
             run: () => openLogsFolder()
         },
         {
             label: '$(debug-restart) ' + l10n.t('Restart Server'),
-            description: l10n.t('Stops the language server and starts a fresh one.'),
+            description: l10n.t('Restart the AngelLSP process'),
             run: () => restartClient(context, 'Restart requested from the status bar.')
-        },
-        {
-            label: '$(library) ' + l10n.t('Select Predefined Stub'),
-            description: l10n.t('Chooses which host API description the workspace uses.'),
-            run: () => selectPredefinedStub()
-        },
-        {
-            label: '$(check-all) ' + l10n.t('Select Predefined Stubs (Multi-Select)'),
-            description: l10n.t('Toggles active predefined stubs dynamically using checkboxes.'),
-            run: () => selectMultiStubs()
-        },
-        {
-            label: '$(refresh) ' + l10n.t('Rescan Workspace'),
-            description: l10n.t('Forces an immediate rescan of all search paths and workspace files.'),
-            run: () => rescanWorkspace()
-        },
-        {
-            label: '$(gear) ' + l10n.t('Configure Host Environment'),
-            description: l10n.t('Configure engine rules, callbacks, and predefined stubs.'),
-            run: () => configureHostEnvironment()
         }
     ];
 
     if (hasLocalStateOverrides()) {
-        actions.push({
-            label: '$(trash) ' + l10n.t('Clear Local Session Overrides'),
-            description: l10n.t('Clears locally remembered module and stub overrides, reverting to workspace settings.'),
-            run: () => clearLocalState()
-        });
+        actions.push(
+            {
+                label: l10n.t('Session Overrides'),
+                kind: QuickPickItemKind.Separator
+            },
+            {
+                label: '$(trash) ' + l10n.t('Clear Local Session Overrides'),
+                description: l10n.t('Revert module and stub overrides to workspace settings'),
+                run: () => clearLocalState()
+            }
+        );
     }
 
     const chosen = await window.showQuickPick(actions, {
         placeHolder: l10n.t('AngelScript language server')
     });
 
-    await chosen?.run();
+    if (chosen && typeof chosen.run === 'function') {
+        await chosen.run();
+    }
 }
 
 /**

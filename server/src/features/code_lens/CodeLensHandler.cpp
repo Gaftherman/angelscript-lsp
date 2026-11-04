@@ -1,6 +1,8 @@
 #include "features/code_lens/CodeLensHandler.h"
 
+#include "analysis/resolution/ReferenceReceiver.h"
 #include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/rules/OperatorRules.h"
 #include "analysis/rules/UnusedSymbolChecker.h"
 #include "config/EngineRuleConfig.h"
 #include "config/ServerConfig.h"
@@ -500,7 +502,11 @@ static std::string ResolveReceiverFromScope(const std::string& fileUri, const an
 static bool IsCompatibleMemberAccess(const std::string& fileUri, const analysis::LocalReference& ref,
                                      const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
 {
-    std::string rType = ResolveReceiverFromAst(fileUri, ref, scope, criteria);
+    auto rType = analysis::ResolveIndexedReferenceReceiver(ref, *scope, criteria.symbolTable);
+    if (rType.empty())
+    {
+        rType = ResolveReceiverFromAst(fileUri, ref, scope, criteria);
+    }
     if (rType.empty())
     {
         rType = ResolveReceiverFromScope(fileUri, ref, scope, criteria);
@@ -1636,7 +1642,7 @@ static void AppendReferenceLens(const RangeKey& key, const analysis::Symbol& sym
     {
         return;
     }
-    if (refCount == 0 && sym.name.starts_with("op") && sym.name.size() > 2)
+    if (refCount == 0 && sym.type == analysis::SymbolType::Function && analysis::rules::IsOperatorName(sym.name))
     {
         return;
     }

@@ -1657,6 +1657,42 @@ TEST_CASE("Server - A pulled diagnostic carries what the pushed one carried")
     CHECK(pulled.find("as-err-undefined-identifier") != std::string::npos);
 }
 
+TEST_CASE("Server - Pull diagnostics on closed file blanks excluded preprocessor regions")
+{
+    WorkspaceFixture fixture;
+
+    const std::string closedSource = "void ValidFunc()\n"
+                                     "{\n"
+                                     "}\n"
+                                     "#if FALSE\n"
+                                     "This is arbitrary English prose and broken syntax that should be blanked out!\n"
+                                     "Unclosed brace { and invalid tokens !!! \n"
+                                     "#endif\n";
+    fixture.Write("scripts/maps/equipment.as", closedSource);
+    fixture.Write("scripts/maps/main.as", "#include \"equipment.as\"\nvoid Main() {}\n");
+
+    test::ScriptedStream stream;
+    stream.Push(InitializeWithProgress(fixture.RootUri(), /*workDoneProgress=*/true));
+    stream.Push(R"({"jsonrpc":"2.0","method":"initialized","params":{}})");
+    stream.PushAction([&stream]() { WaitForCount(stream, "\"kind\":\"end\"", 1); });
+
+    // Directly pull diagnostics for closed equipment.as (never opened by editor)
+    stream.Push(R"({"jsonrpc":"2.0","id":2,"method":"textDocument/diagnostic","params":{"textDocument":{"uri":")" +
+                fixture.Uri("scripts/maps/equipment.as") + R"("}}})");
+    stream.Push(R"({"jsonrpc":"2.0","id":3,"method":"shutdown"})");
+
+    config::ServerConfig serverConfig;
+    serverConfig.engineProfile = "standard";
+    serverConfig.modules = {{"MapScript", "", (fixture.dir / "scripts/maps").generic_string()}};
+    RunScript(serverConfig, stream);
+
+    const std::string pulled = stream.ResponseFor(2);
+    INFO(pulled);
+
+    CHECK(pulled.find("\"kind\":\"full\"") != std::string::npos);
+    CHECK(pulled.find("\"items\":[]") != std::string::npos);
+}
+
 TEST_CASE("Server - Pull diagnostics client receives workspace/diagnostic/refresh on publish")
 {
     WorkspaceFixture fixture;

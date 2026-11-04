@@ -62,6 +62,27 @@ TEST_CASE("NodeIndex - Indexes nodes in document order")
     CHECK(index.ErrorRanges().empty());
 }
 
+TEST_CASE("NodeIndex - Preserves enclosing containers beyond 65535 declarations")
+{
+    const auto outer = angel_lsp::test::GenerateRandomSymbolName("Outer");
+    const auto inner = angel_lsp::test::GenerateRandomSymbolName("Inner");
+    std::string code;
+    for (uint32_t i = 0; i < 65535; ++i)
+    {
+        code += "namespace " + outer + " {}\n";
+    }
+    code += "namespace " + outer + " { class " + inner + " { int value; } }";
+    const auto doc = angel_lsp::test::CreateTestDocument("file:///many_containers.as", code);
+    REQUIRE(doc->GetTree() != nullptr);
+
+    const NodeIndex index(ts_tree_root_node(doc->GetTree()));
+    const auto offset = static_cast<uint32_t>(code.find("value"));
+    const auto containers = index.CollectEnclosingContainers(offset, code);
+    REQUIRE(containers.size() == 2);
+    CHECK(containers.front().qualifiedName == outer + "::" + inner);
+    CHECK(containers.back().qualifiedName == outer);
+}
+
 TEST_CASE("NodeIndex - Error range indexing and containment invariant")
 {
     const std::string validFn = angel_lsp::test::GenerateRandomSymbolName();

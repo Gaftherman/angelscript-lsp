@@ -913,9 +913,16 @@ void Server::IndexClosureFile(const std::string& path, angel_lsp::parser::AngelS
     m_callGraph.ClearDocument(uriStr);
     if (tree)
     {
-        m_scopeIndex.SetScopeTree(
-            uriStr, m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree.get()), analysisText));
-        m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree.get()), analysisText));
+        auto scopes = m_localScopeCollector->CollectScopesFromTree(ts_tree_root_node(tree.get()), analysisText);
+        if (scopes)
+        {
+            m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCallsFromScopeTree(*scopes));
+            m_scopeIndex.SetScopeTree(uriStr, std::move(scopes));
+        }
+        else
+        {
+            m_callGraph.SetDocumentCalls(uriStr, analysis::CollectCalls(ts_tree_root_node(tree.get()), analysisText));
+        }
     }
 
     {

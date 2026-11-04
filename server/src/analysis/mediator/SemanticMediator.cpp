@@ -132,6 +132,7 @@ std::string SemanticMediator::ResolveReceiverType(TSNode memberOrMethodNode, con
     ctx.scope = activeScope;
     ctx.fileUri = m_fileUri;
     ctx.cache = m_cache;
+    ctx.nodeIndex = m_nodeIndex;
     ctx.engineRules = m_engineRules;
     return analysis::ResolveReceiverType(memberOrMethodNode, m_sourceCode, m_symbolTable, ctx);
 }

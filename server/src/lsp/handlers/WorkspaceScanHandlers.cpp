@@ -344,12 +344,6 @@ void Server::ReadWorkspaceFiles(const angel_lsp::utils::StopFlag& stopToken)
             return;
         }
         LoadWorkspaceEngineRules(roots);
-        m_symbolTable.EnsureRuleIndex();
-        if (m_config.modules.empty() && m_config.moduleEntryPoint.empty())
-        {
-            SetPredefinedReady(true);
-        }
-
         BuildIncludeGraphAndModules(walkResult.allScriptFiles, roots, stopToken, backgroundParser);
         if (stopToken.stop_requested())
         {

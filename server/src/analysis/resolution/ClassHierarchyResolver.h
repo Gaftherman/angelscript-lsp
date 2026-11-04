@@ -65,13 +65,14 @@ std::vector<Symbol> FindOverriddenBaseMethodSymbols(std::string_view containerCl
                                                     const SymbolTable& symbolTable,
                                                     const LinkedBaseOptions& options = {});
 void ExpandMixinHostHierarchies(std::string_view containerClass, const SymbolTable& symbolTable,
-                                std::vector<std::string>& hierarchy);
+                                std::vector<std::string>& hierarchy, ExpressionTypeCache* cache = nullptr);
 bool HierarchyIsFullyVisible(const std::string& typeName, const SymbolTable& symbolTable);
 std::vector<std::string> GetAllRelatedClasses(const std::string& className, const SymbolTable& symbolTable);
 std::vector<std::string> GetDerivedClasses(const std::string& className, const SymbolTable& symbolTable);
 std::vector<std::string> GetCompatibleMemberClasses(const std::string& className, const std::string& memberName,
                                                     AccessModifier access, const SymbolTable& symbolTable);
-std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourceCode, const SymbolTable& symbolTable);
+std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourceCode, const SymbolTable& symbolTable,
+                                             ExpressionTypeCache* cache = nullptr);
 TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::string_view mixinShortName,
                               std::string_view sourceCode);
 } // namespace angel_lsp::analysis

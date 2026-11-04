@@ -48,27 +48,36 @@ constexpr void TrimTypeWhitespace(std::string_view& typeName) noexcept
  */
 [[nodiscard]] constexpr size_t TrailingReferenceModifierLength(std::string_view s) noexcept
 {
-    if (s.ends_with("& inout"))
+    size_t tagLen = 0;
+    if (s.ends_with("inout"))
     {
-        return 7;
+        tagLen = 5;
     }
-    if (s.ends_with("&inout"))
+    else if (s.ends_with("out"))
     {
-        return 6;
+        tagLen = 3;
     }
-    if (s.ends_with("& out") || s.ends_with("& in"))
+    else if (s.ends_with("in"))
     {
-        return 5;
+        tagLen = 2;
     }
-    if (s.ends_with("&out"))
+
+    if (tagLen > 0)
     {
-        return 4;
+        if (s.size() > tagLen)
+        {
+            size_t idx = s.size() - tagLen;
+            while (idx > 0 && (s[idx - 1] == ' ' || s[idx - 1] == '\t'))
+            {
+                --idx;
+            }
+            if (idx > 0 && s[idx - 1] == '&')
+            {
+                return s.size() - (idx - 1);
+            }
+        }
     }
-    if (s.ends_with("&in"))
-    {
-        return 3;
-    }
-    if (!s.empty() && s.back() == '&')
+    else if (!s.empty() && s.back() == '&')
     {
         return 1;
     }
@@ -214,8 +223,7 @@ constexpr void TrimTypeWhitespace(std::string_view& typeName) noexcept
     {
         return false;
     }
-    return type.back() == '&' || type.ends_with("&in") || type.ends_with("&out") || type.ends_with("&inout") ||
-           type.ends_with("& in") || type.ends_with("& out") || type.ends_with("& inout");
+    return TrailingReferenceModifierLength(type) > 0;
 }
 
 /**
@@ -247,11 +255,15 @@ constexpr void TrimTypeWhitespace(std::string_view& typeName) noexcept
     q.isConst = IsConstTypeView(type);
     q.isHandle = IsHandleTypeView(type);
     q.isConstHandle = q.isConst && q.isHandle;
-    q.isReference = IsReferenceTypeView(type);
-    q.isOutRef = (type.ends_with("&out") || type.ends_with("& out"));
-    q.isInOutRef = (type.ends_with("&inout") || type.ends_with("& inout"));
-    q.isStandaloneRef =
-        q.isReference && !q.isOutRef && !q.isInOutRef && !type.ends_with("&in") && !type.ends_with("& in");
+    const size_t refLen = TrailingReferenceModifierLength(type);
+    q.isReference = (refLen > 0);
+    if (q.isReference)
+    {
+        std::string_view refMod = type.substr(type.size() - refLen);
+        q.isInOutRef = refMod.ends_with("inout");
+        q.isOutRef = refMod.ends_with("out");
+        q.isStandaloneRef = !q.isInOutRef && !q.isOutRef && !refMod.ends_with("in");
+    }
     return q;
 }
 

@@ -185,13 +185,26 @@ std::vector<angel_lsp::analysis::Diagnostic> Server::CollectScopesAndAnalyze(con
     }
 
     std::shared_ptr<angel_lsp::analysis::Scope> scopeRoot;
+    std::optional<analysis::NodeIndex> localNodeIndex;
+    const analysis::NodeIndex* nodeIndex = request.nodeIndex;
 
     utils::HighResTimer scopeTimer;
     if (request.tree)
     {
         const TSNode root = ts_tree_root_node(request.tree);
-        scopeRoot = m_localScopeCollector->CollectScopesFromTree(root, request.text);
-        m_callGraph.SetDocumentCalls(request.uriStr, analysis::CollectCalls(root, request.text));
+        if (!nodeIndex)
+        {
+            nodeIndex = &localNodeIndex.emplace(root);
+        }
+        scopeRoot = m_localScopeCollector->CollectScopesFromTree(root, request.text, nodeIndex);
+        if (scopeRoot)
+        {
+            m_callGraph.SetDocumentCalls(request.uriStr, analysis::CollectCallsFromScopeTree(*scopeRoot));
+        }
+        else
+        {
+            m_callGraph.SetDocumentCalls(request.uriStr, analysis::CollectCalls(root, request.text));
+        }
     }
     else
     {
@@ -201,14 +214,6 @@ std::vector<angel_lsp::analysis::Diagnostic> Server::CollectScopesAndAnalyze(con
     if (request.outScopeMs)
     {
         *request.outScopeMs = scopeTimer.ElapsedMs();
-    }
-
-    std::unique_ptr<analysis::NodeIndex> localNodeIndex;
-    const analysis::NodeIndex* nodeIndex = request.nodeIndex;
-    if (!nodeIndex && request.tree)
-    {
-        localNodeIndex = std::make_unique<analysis::NodeIndex>(ts_tree_root_node(request.tree));
-        nodeIndex = localNodeIndex.get();
     }
 
     auto analysisReq = BuildAnalysisRequest(request.uriStr, request.text, request.tree);
@@ -528,21 +533,23 @@ void Server::LogAnalysisProfile(std::string_view prefix, const std::string& uriS
                         utils::FormatDuration(profile.scopeMs), utils::FormatDuration(profile.checkMs)));
 }
 
-bool Server::IsUnchangedClosedDocument(const std::string& uriStr, uint64_t generation,
+bool Server::IsUnchangedClosedDocument(const AnalyzeDocumentRequest& request,
                                        const angel_lsp::analysis::SymbolTable& staging) const
 {
-    if (generation != 0 || GetDocumentStore().IsOpen(uriStr))
+    if (request.generation != 0 || GetDocumentStore().IsOpen(request.uriStr))
     {
         return false;
     }
     {
         std::lock_guard<std::mutex> lock(m_closureMutex);
-        if (!m_closureDocuments.contains(uriStr))
+        const auto cached = m_closureDocuments.find(request.uriStr);
+        if (cached == m_closureDocuments.end() || cached->second != request.text)
         {
             return false;
         }
     }
-    return m_symbolTable.ComputeDocumentInterfaceHash(uriStr) == staging.ComputeDocumentInterfaceHash(uriStr);
+    return m_symbolTable.ComputeDocumentInterfaceHash(request.uriStr) ==
+           staging.ComputeDocumentInterfaceHash(request.uriStr);
 }
 
 void Server::CommitSyntaxOnlyResults(const AnalyzeDocumentRequest& req, std::vector<analysis::Diagnostic> diags)
@@ -576,6 +583,14 @@ const analysis::SymbolTable* Server::PrepareAnalysisSnapshot(const std::string& 
         return &m_symbolTable;
     }
     const auto moduleUris = ComputeModuleClosureUris(uriStr);
+    if (m_symbolTable.ComputeDocumentInterfaceHash(uriStr) == staging.ComputeDocumentInterfaceHash(uriStr))
+    {
+        if (moduleUris.empty() || m_config.modules.empty() ||
+            m_symbolTable.ContainsOnlyFiles(moduleUris, m_config.info.predefinedFileExtension))
+        {
+            return &m_symbolTable;
+        }
+    }
     const auto predefinedBase = GetWorkspaceStore().GetPredefinedBaseTable();
     outSnapshot = m_symbolTable.CreateAnalysisSnapshot({
         .uriStr = uriStr,
@@ -642,6 +657,22 @@ std::optional<ParseAndCollectResult> Server::PrepareWorkerDocument(AnalyzeDocume
     return parsed;
 }
 
+static std::pair<std::shared_ptr<angel_lsp::analysis::Scope>, std::vector<angel_lsp::analysis::CallSite>>
+CollectScopesAndCalls(angel_lsp::analysis::LocalScopeCollector* collector, const analysis::NodeIndex& nodeIndex,
+                      const std::string& text, bool unchangedClosedFile)
+{
+    const TSNode root = nodeIndex.Root();
+    std::shared_ptr<angel_lsp::analysis::Scope> scopeRoot =
+        collector ? collector->CollectScopesFromTree(root, text, &nodeIndex) : nullptr;
+    std::vector<angel_lsp::analysis::CallSite> calls;
+    if (!unchangedClosedFile)
+    {
+        calls = scopeRoot ? angel_lsp::analysis::CollectCallsFromScopeTree(*scopeRoot)
+                          : angel_lsp::analysis::CollectCalls(root, text);
+    }
+    return {std::move(scopeRoot), std::move(calls)};
+}
+
 void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer)
 {
     angel_lsp::analysis::SymbolTable staging;
@@ -654,7 +685,7 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
 
     const TSNode root = ts_tree_root_node(parsed.tree.get());
     analysis::NodeIndex nodeIndex(root);
-    const bool unchangedClosedFile = IsUnchangedClosedDocument(req.uriStr, req.generation, staging);
+    const bool unchangedClosedFile = IsUnchangedClosedDocument(req, staging);
     utils::HighResTimer closureTimer;
     if (!unchangedClosedFile)
     {
@@ -669,11 +700,8 @@ void Server::AnalyzeNormalDocument(AnalyzeDocumentRequest req, const utils::High
     const double snapshotMs = snapshotTimer.ElapsedMs();
 
     utils::HighResTimer scopeTimer;
-    std::shared_ptr<angel_lsp::analysis::Scope> scopeRoot =
-        m_localScopeCollector->CollectScopesFromTree(root, req.text);
-    std::vector<analysis::CallSite> calls;
-    if (!unchangedClosedFile)
-        calls = analysis::CollectCalls(root, req.text);
+    auto [scopeRoot, calls] =
+        CollectScopesAndCalls(m_localScopeCollector.get(), nodeIndex, req.text, unchangedClosedFile);
     const double scopeMs = scopeTimer.ElapsedMs();
 
     if (!m_config.modules.empty() && ClaimFor(CanonicalPathFromUri(req.uriStr)).owner == nullptr)

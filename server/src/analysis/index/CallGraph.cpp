@@ -5,6 +5,7 @@
 #include "parser/GrammarNames.h"
 #include "utils/ScopedNameUtils.h"
 
+#include <algorithm>
 #include <string>
 #include <utility>
 
@@ -187,6 +188,49 @@ std::vector<CallSite> CollectCalls(TSNode root, std::string_view sourceCode)
     }
 
     CollectCallsInto(root, sourceCode, calls);
+    return calls;
+}
+
+std::vector<CallSite> CollectCallsFromScopeTree(const Scope& rootScope)
+{
+    std::vector<CallSite> calls;
+    std::vector<const Scope*> worklist;
+    worklist.push_back(&rootScope);
+
+    while (!worklist.empty())
+    {
+        const Scope* scope = worklist.back();
+        worklist.pop_back();
+
+        for (const auto& ref : scope->references)
+        {
+            if (ref.isCall)
+            {
+                calls.push_back(
+                    CallSite{std::string(scope->GetCaller()), ref.name,
+                             SourceRange{ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter}});
+            }
+        }
+
+        for (auto it = scope->children.rbegin(); it != scope->children.rend(); ++it)
+        {
+            if (it->get())
+            {
+                worklist.push_back(it->get());
+            }
+        }
+    }
+
+    std::sort(calls.begin(), calls.end(),
+              [](const CallSite& a, const CallSite& b) noexcept
+              {
+                  if (a.range.startLine != b.range.startLine)
+                  {
+                      return a.range.startLine < b.range.startLine;
+                  }
+                  return a.range.startCharacter < b.range.startCharacter;
+              });
+
     return calls;
 }
 

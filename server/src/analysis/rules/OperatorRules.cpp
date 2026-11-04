@@ -31,7 +31,7 @@ constexpr std::array<std::string_view, 6> k_unaryOperators = {"opNeg",    "opCom
  */
 constexpr std::array<std::string_view, 4> k_conversionOperators = {"opConv", "opImplConv", "opCast", "opImplCast"};
 
-static bool Contains(const auto& names, const std::string& name)
+static bool Contains(const auto& names, std::string_view name)
 {
     return std::find(names.begin(), names.end(), name) != names.end();
 }
@@ -39,7 +39,7 @@ static bool Contains(const auto& names, const std::string& name)
 /**
  * @brief True when the name is one AngelScript gives a fixed meaning to.
  */
-static bool IsOperatorName(const std::string& name)
+bool IsOperatorName(std::string_view name)
 {
     return Contains(k_binaryOperators, name) || Contains(k_unaryOperators, name) ||
            Contains(k_conversionOperators, name) || name == "opCmp" || name == "opEquals" || name == "opIndex" ||

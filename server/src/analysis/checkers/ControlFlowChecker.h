@@ -54,15 +54,6 @@ struct ControlFlowState
 };
 
 /**
- * @brief Queue item representing an active control flow node and its accumulated exit states.
- */
-struct FlowItem
-{
-    TSNode node;
-    ControlFlowState state;
-};
-
-/**
  * @brief Analysis engine for determining definite return paths through AST control flow statements.
  */
 struct DefiniteReturnAnalyzer

@@ -861,8 +861,9 @@ Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagno
     }
 
     const auto current = FindDocumentText(uriStr);
-    const size_t currentHash = current ? std::hash<std::string>{}(*current) : 0;
     const int currentVersion = GetDocumentVersion(uriStr);
+    const std::string textToAnalyze = current ? AnalysisTextFor(uriStr, *current) : std::string{};
+    const size_t currentHash = current ? std::hash<std::string>{}(textToAnalyze) : 0;
 
     if (current && m_parser)
     {
@@ -873,7 +874,7 @@ Server::HandleRequestsTextDocument_Diagnostic(lsp::requests::TextDocument_Diagno
 
         AnalyzeDocument({
             .uriStr = uriStr,
-            .text = *current,
+            .text = textToAnalyze,
             .parser = *m_parser,
             .version = currentVersion,
             .generation = GetDocumentStore().GetGeneration(uriStr),

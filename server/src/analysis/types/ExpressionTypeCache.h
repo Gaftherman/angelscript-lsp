@@ -100,6 +100,9 @@ struct ExpressionTypeCache
     {
         types.reserve(512);
         hierarchies.reserve(64);
+        expandedMixinHierarchies.reserve(32);
+        receiverTypes.reserve(256);
+        inferredMixinHostByContainer.reserve(16);
     }
 
     /**
@@ -111,5 +114,20 @@ struct ExpressionTypeCache
      * @brief Map of type names to their resolved base class/interface inheritance hierarchy.
      */
     ankerl::unordered_dense::map<std::string, std::vector<std::string>> hierarchies;
+
+    /**
+     * @brief Map of mixin type names to their expanded host class hierarchies.
+     */
+    ankerl::unordered_dense::map<std::string, std::vector<std::string>> expandedMixinHierarchies;
+
+    /**
+     * @brief Map of receiver AST node byte spans ((startByte << 32) | endByte) to resolved receiver types.
+     */
+    ankerl::unordered_dense::map<uint64_t, std::string> receiverTypes;
+
+    /**
+     * @brief Map of container names to inferred mixin host class.
+     */
+    ankerl::unordered_dense::map<std::string, std::string> inferredMixinHostByContainer;
 };
 } // namespace angel_lsp::analysis

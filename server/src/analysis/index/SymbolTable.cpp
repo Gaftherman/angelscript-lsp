@@ -1654,6 +1654,28 @@ std::vector<std::string> SymbolTable::GetIndexedFileUris() const
     return uris;
 }
 
+bool SymbolTable::ContainsOnlyFiles(const ankerl::unordered_dense::set<std::string>& allowedFileUris,
+                                    std::string_view predefinedExtension) const
+{
+    std::shared_lock<std::shared_mutex> lock(m_mutex);
+    for (const auto& [fileUri, keys] : m_keysByFile)
+    {
+        if (fileUri.empty() || keys.empty())
+        {
+            continue;
+        }
+        if (!predefinedExtension.empty() && utils::IsPredefinedFile(fileUri, predefinedExtension))
+        {
+            continue;
+        }
+        if (!allowedFileUris.contains(fileUri))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 uint64_t SymbolTable::Version() const
 {
     std::shared_lock<std::shared_mutex> lock(m_mutex);

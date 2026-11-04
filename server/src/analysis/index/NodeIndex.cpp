@@ -58,7 +58,7 @@ void NodeIndex::PopulatePredefinedSymbols(const TSLanguage* lang)
     }
 }
 
-void NodeIndex::IndexNode(TSNode node, TraversalBudget* budget, uint16_t parentSpanIdx)
+void NodeIndex::IndexNode(TSNode node, TraversalBudget* budget, uint32_t parentSpanIdx)
 {
     if (budget)
     {
@@ -102,7 +102,7 @@ void NodeIndex::IndexNode(TSNode node, TraversalBudget* budget, uint16_t parentS
     }
 }
 
-void NodeIndex::RecordContainerSpan(TSNode node, TSSymbol sym, uint16_t parentSpanIdx)
+void NodeIndex::RecordContainerSpan(TSNode node, TSSymbol sym, uint32_t parentSpanIdx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (sym == gs.symClassDeclaration || sym == gs.symMixinDeclaration || sym == gs.symInterfaceDeclaration ||
@@ -149,7 +149,7 @@ static bool AdvanceTreeCursor(TSTreeCursor* cursor) noexcept
     return false;
 }
 
-static void MaintainActiveContainers(std::vector<uint16_t>& activeContainers,
+static void MaintainActiveContainers(std::vector<uint32_t>& activeContainers,
                                      std::span<const IndexedContainerSpan> spans, uint32_t startByte)
 {
     while (!activeContainers.empty() && startByte >= spans[activeContainers.back()].endByte)
@@ -166,25 +166,19 @@ static void MaintainActiveContainers(std::vector<uint16_t>& activeContainers,
 void NodeIndex::TraverseTree(TSNode root, TraversalBudget* budget)
 {
     TSTreeCursor cursor = ts_tree_cursor_new(root);
-    std::vector<uint16_t> activeContainers;
-    const auto& gs = parser::GetGrammarSymbols();
+    std::vector<uint32_t> activeContainers;
 
     while (true)
     {
         TSNode node = ts_tree_cursor_current_node(&cursor);
         MaintainActiveContainers(activeContainers, m_containerSpans, ts_node_start_byte(node));
 
-        const uint16_t parentSpanIdx = activeContainers.empty() ? 0xFFFF : activeContainers.back();
+        const uint32_t parentSpanIdx = activeContainers.empty() ? UINT32_MAX : activeContainers.back();
+        const size_t containerCount = m_containerSpans.size();
         IndexNode(node, budget, parentSpanIdx);
-
-        const TSSymbol sym = ts_node_symbol(node);
-        if (sym == gs.symClassDeclaration || sym == gs.symMixinDeclaration || sym == gs.symInterfaceDeclaration ||
-            sym == gs.symNamespaceDeclaration || sym == gs.symLambdaExpression)
+        if (m_containerSpans.size() > containerCount)
         {
-            if (!m_containerSpans.empty() && (m_containerSpans.size() - 1) < 0xFFFF)
-            {
-                activeContainers.push_back(static_cast<uint16_t>(m_containerSpans.size() - 1));
-            }
+            activeContainers.push_back(static_cast<uint32_t>(containerCount));
         }
 
         if (!AdvanceTreeCursor(&cursor))
@@ -582,7 +576,7 @@ void ComputeContainerQualifiedNames(std::vector<ContainerInfo>& containers)
     }
 }
 
-static uint16_t FindInnermostContainerSpanIndex(std::span<const IndexedContainerSpan> spans,
+static uint32_t FindInnermostContainerSpanIndex(std::span<const IndexedContainerSpan> spans,
                                                 uint32_t byteOffset) noexcept
 {
     auto it = std::upper_bound(spans.begin(), spans.end(), byteOffset,
@@ -593,10 +587,10 @@ static uint16_t FindInnermostContainerSpanIndex(std::span<const IndexedContainer
         --it;
         if (byteOffset < it->endByte)
         {
-            return static_cast<uint16_t>(std::distance(spans.begin(), it));
+            return static_cast<uint32_t>(std::distance(spans.begin(), it));
         }
     }
-    return 0xFFFF;
+    return UINT32_MAX;
 }
 
 static void AppendContainerFromSpan(const IndexedContainerSpan& span, ContainerKind kind, std::string_view sourceCode,
@@ -632,17 +626,17 @@ std::vector<ContainerInfo> NodeIndex::CollectEnclosingContainers(uint32_t byteOf
         return rawContainers;
     }
 
-    const uint16_t innermostIdx = FindInnermostContainerSpanIndex(m_containerSpans, byteOffset);
-    if (innermostIdx == 0xFFFF)
+    const uint32_t innermostIdx = FindInnermostContainerSpanIndex(m_containerSpans, byteOffset);
+    if (innermostIdx == UINT32_MAX)
     {
         return rawContainers;
     }
 
     const auto& gs = parser::GetGrammarSymbols();
-    uint16_t curr = innermostIdx;
+    uint32_t curr = innermostIdx;
     bool crossedLambda = false;
 
-    while (curr != 0xFFFF)
+    while (curr != UINT32_MAX)
     {
         const auto& span = m_containerSpans[curr];
         if (span.symbol == gs.symLambdaExpression)

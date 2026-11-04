@@ -197,22 +197,35 @@ static bool IsControlKeyword(std::string_view name) noexcept
     return name == "if" || name == "for" || name == "while" || name == "switch" || name == "catch" || name == "return";
 }
 
-static bool TryParseFunctionHeader(std::string_view line, size_t pos, std::string_view& outName) noexcept
+static bool HasParenBeforeDelimiters(std::string_view line, size_t pos, size_t lparen) noexcept
 {
-    const size_t lparen = line.find('(', pos);
-    if (lparen == std::string_view::npos || lparen <= pos)
-    {
-        return false;
-    }
-
     const size_t eq = line.find('=', pos);
     if (eq != std::string_view::npos && eq < lparen)
     {
         return false;
     }
-
     const size_t quote = line.find_first_of("\"'", pos);
-    if (quote != std::string_view::npos && quote < lparen)
+    return quote == std::string_view::npos || quote >= lparen;
+}
+
+static bool IsValidFunctionPrefix(std::string_view beforeFunc) noexcept
+{
+    if (beforeFunc.empty() || beforeFunc == "return")
+    {
+        return false;
+    }
+    if (beforeFunc.find('.') != std::string_view::npos || beforeFunc.find("->") != std::string_view::npos ||
+        beforeFunc.find("&&") != std::string_view::npos)
+    {
+        return false;
+    }
+    return beforeFunc.find_first_of("+-*/%!~|^;") == std::string_view::npos;
+}
+
+static bool TryParseFunctionHeader(std::string_view line, size_t pos, std::string_view& outName) noexcept
+{
+    const size_t lparen = line.find('(', pos);
+    if (lparen == std::string_view::npos || lparen <= pos || !HasParenBeforeDelimiters(line, pos, lparen))
     {
         return false;
     }
@@ -223,15 +236,14 @@ static bool TryParseFunctionHeader(std::string_view line, size_t pos, std::strin
         return false;
     }
 
-    const size_t funcStart = line.find(funcName, pos);
-    std::string_view beforeFunc =
-        (funcStart != std::string_view::npos) ? line.substr(pos, funcStart - pos) : std::string_view{};
+    const size_t funcStart = static_cast<size_t>(funcName.data() - line.data());
+    std::string_view beforeFunc = (funcStart >= pos) ? line.substr(pos, funcStart - pos) : std::string_view{};
     while (!beforeFunc.empty() && (beforeFunc.back() == ' ' || beforeFunc.back() == '\t'))
     {
         beforeFunc.remove_suffix(1);
     }
 
-    if (beforeFunc.empty() || beforeFunc == "return")
+    if (!IsValidFunctionPrefix(beforeFunc))
     {
         return false;
     }
@@ -314,7 +326,13 @@ size_t FindBalancedDeclarationEnd(std::string_view sourceCode, size_t declStartB
             continue;
 
         if (sourceCode[pos] == ';')
+        {
+            if (keyword == "function")
+            {
+                return std::string_view::npos;
+            }
             return pos + 1;
+        }
 
         if (sourceCode[pos] == '{')
             return FindBraceBlockEnd(sourceCode, pos);
@@ -359,24 +377,27 @@ FindSwallowedDeclarations(std::string_view sourceCode, const ankerl::unordered_d
         std::string_view kw;
         std::string_view name;
 
-        if (ParseCandidateHeader(line, kw, name) && !knownSymbols.contains(std::string(name)))
+        if (ParseCandidateHeader(line, kw, name))
         {
             const size_t declStart = pos;
             const size_t declEnd = FindBalancedDeclarationEnd(sourceCode, declStart, kw);
             if (declEnd != std::string_view::npos && declEnd > declStart)
             {
-                size_t startLine = 0;
-                size_t startCol = 0;
-                ComputeLineAndColumn(sourceCode, declStart, startLine, startCol);
+                if (!knownSymbols.contains(std::string(name)))
+                {
+                    size_t startLine = 0;
+                    size_t startCol = 0;
+                    ComputeLineAndColumn(sourceCode, declStart, startLine, startCol);
 
-                results.push_back({
-                    .snippet = std::string(sourceCode.substr(declStart, declEnd - declStart)),
-                    .name = std::string(name),
-                    .kind = std::string(kw),
-                    .startByte = declStart,
-                    .startLine = startLine,
-                    .startCol = startCol,
-                });
+                    results.push_back({
+                        .snippet = std::string(sourceCode.substr(declStart, declEnd - declStart)),
+                        .name = std::string(name),
+                        .kind = std::string(kw),
+                        .startByte = declStart,
+                        .startLine = startLine,
+                        .startCol = startCol,
+                    });
+                }
 
                 pos = declEnd;
                 continue;
