@@ -473,7 +473,7 @@ TEST_CASE("SyntaxOperands navigation chains child facts without hash map lookups
     const auto vars = index.Nodes(gs.symVariableDeclarator);
     REQUIRE(vars.size() == 1);
     const SyntaxOperands varSyntax(vars.front(), &index);
-    const SyntaxOperands valSyntax = varSyntax.FieldOperands(gs.fieldValue);
+    const SyntaxOperands valSyntax = varSyntax.DeclaratorValueOperands(source);
     REQUIRE(valSyntax.Fact() != nullptr);
     CHECK(valSyntax.Symbol() == gs.symParenthesizedExpression);
 
@@ -481,4 +481,20 @@ TEST_CASE("SyntaxOperands navigation chains child facts without hash map lookups
     CHECK(unwrapped.Fact() != nullptr);
     CHECK(unwrapped.Symbol() == gs.symNumberLiteral);
     CHECK(ts_node_symbol(unwrapped.Node()) == gs.symNumberLiteral);
+
+    // Null index safety invariant
+    const SyntaxOperands detached(valSyntax.Fact(), nullptr);
+    CHECK(detached.FieldOperands(gs.fieldValue).IsNull());
+    CHECK(detached.FirstNamedOperands().IsNull());
+    CHECK(detached.NamedAtOperands(0).IsNull());
+    CHECK(detached.OnlyNamedOperands().IsNull());
+    CHECK(detached.DeclaratorValueOperands(source).IsNull());
+
+    // Out-of-bounds SyntaxHandle safety invariant
+    IndexedSyntaxNode outOfBoundsBucket{SIZE_MAX, NoSyntaxNode, NoSyntaxNode, gs.symIdentifier, 0, 0, true, false,
+                                        false,    false,        true};
+    CHECK(ts_node_is_null(index.SyntaxHandle(outOfBoundsBucket)));
+    IndexedSyntaxNode outOfBoundsUnbucketed{SIZE_MAX, NoSyntaxNode, NoSyntaxNode, gs.symIdentifier, 0, 0, true, false,
+                                            false,    false,        false};
+    CHECK(ts_node_is_null(index.SyntaxHandle(outOfBoundsUnbucketed)));
 }

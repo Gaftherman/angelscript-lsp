@@ -34,7 +34,11 @@ class SyntaxOperands
         {
             return m_node;
         }
-        return m_fact && m_index ? m_index->SyntaxHandle(*m_fact) : TSNode{};
+        if (m_fact && m_index)
+        {
+            m_node = m_index->SyntaxHandle(*m_fact);
+        }
+        return m_node;
     }
 
     [[nodiscard]] const IndexedSyntaxNode* Fact() const noexcept
@@ -63,7 +67,7 @@ class SyntaxOperands
 
     [[nodiscard]] SyntaxOperands FieldOperands(TSFieldId field) const noexcept
     {
-        if (!m_fact)
+        if (!m_fact || !m_index)
         {
             return SyntaxOperands(parser::GetChildByField(m_node, field), m_index);
         }
@@ -88,7 +92,7 @@ class SyntaxOperands
 
     [[nodiscard]] SyntaxOperands FirstNamedOperands(TSSymbol symbol = 0) const noexcept
     {
-        if (!m_fact)
+        if (!m_fact || !m_index)
         {
             if (symbol == 0)
             {
@@ -124,7 +128,7 @@ class SyntaxOperands
 
     [[nodiscard]] SyntaxOperands NamedAtOperands(uint32_t ordinal) const noexcept
     {
-        if (!m_fact)
+        if (!m_fact || !m_index)
         {
             return SyntaxOperands(ts_node_is_null(m_node) ? TSNode{} : ts_node_named_child(m_node, ordinal), m_index);
         }
@@ -160,7 +164,7 @@ class SyntaxOperands
 
     [[nodiscard]] SyntaxOperands OnlyNamedOperands() const noexcept
     {
-        if (!m_fact)
+        if (!m_fact || !m_index)
         {
             TSNode result{};
             parser::ForEachNamedChildNodeUntil(m_node,
@@ -224,30 +228,35 @@ class SyntaxOperands
         return !op.IsNull() && op.Symbol() == symbol;
     }
 
-    [[nodiscard]] TSNode DeclaratorValue(std::string_view sourceCode) const noexcept
+    [[nodiscard]] SyntaxOperands DeclaratorValueOperands(std::string_view sourceCode) const noexcept
     {
-        if (!m_fact)
+        if (!m_fact || !m_index)
         {
-            return parser::FindDeclaratorValueNode(m_node, sourceCode);
+            return SyntaxOperands(parser::FindDeclaratorValueNode(m_node, sourceCode), m_index);
         }
         const SyntaxOperands value = FieldOperands(parser::GetGrammarSymbols().fieldValue);
         if (!value.IsNull())
         {
-            return value.Node();
+            return value;
         }
         for (const auto* child = m_index->SyntaxNode(m_fact->first); child; child = m_index->SyntaxNode(child->next))
         {
             if (child->afterAssign)
             {
-                return m_index->SyntaxHandle(*child);
+                return SyntaxOperands(child, m_index);
             }
         }
-        return {};
+        return SyntaxOperands(TSNode{}, m_index);
+    }
+
+    [[nodiscard]] TSNode DeclaratorValue(std::string_view sourceCode) const noexcept
+    {
+        return DeclaratorValueOperands(sourceCode).Node();
     }
 
     template <typename Predicate> void ForEachChild(Predicate&& predicate) const
     {
-        if (!m_fact)
+        if (!m_fact || !m_index)
         {
             parser::ForEachChildNodeUntil(m_node, predicate);
             return;
@@ -275,7 +284,7 @@ class SyntaxOperands
 
     template <typename Predicate> void ForEachNamed(Predicate&& predicate) const
     {
-        if (!m_fact)
+        if (!m_fact || !m_index)
         {
             parser::ForEachNamedChildNodeUntil(m_node, predicate);
             return;
@@ -291,7 +300,7 @@ class SyntaxOperands
 
     template <typename Predicate> void ForEachNamedOperands(Predicate&& predicate) const
     {
-        if (!m_fact)
+        if (!m_fact || !m_index)
         {
             parser::ForEachNamedChildNodeUntil(m_node,
                                                [&](TSNode child) { return predicate(SyntaxOperands(child, m_index)); });
@@ -307,7 +316,7 @@ class SyntaxOperands
     }
 
   private:
-    TSNode m_node{};
+    mutable TSNode m_node{};
     const NodeIndex* m_index = nullptr;
     const IndexedSyntaxNode* m_fact = nullptr;
 };
@@ -318,7 +327,7 @@ class SyntaxOperands
     while (!syntax.IsNull() && syntax.Symbol() == gs.symParenthesizedExpression)
     {
         const SyntaxOperands inner = syntax.FirstNamedOperands();
-        if (inner.IsNull())
+        if (inner.IsNull() || (syntax.Fact() && inner.Fact() == syntax.Fact()))
         {
             break;
         }

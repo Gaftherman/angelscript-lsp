@@ -238,8 +238,19 @@ const IndexedSyntaxNode* NodeIndex::FindOperandSyntax(TSNode node) const noexcep
 
 TSNode NodeIndex::SyntaxHandle(const IndexedSyntaxNode& node) const noexcept
 {
-    return node.inSymbolBucket ? m_nodesBySymbol[node.symbol][node.syntaxSlot]
-                               : m_flowFacts->unbucketedSyntax[node.syntaxSlot];
+    if (node.inSymbolBucket)
+    {
+        if (node.symbol < m_nodesBySymbol.size() && node.syntaxSlot < m_nodesBySymbol[node.symbol].size())
+        {
+            return m_nodesBySymbol[node.symbol][node.syntaxSlot];
+        }
+        return {};
+    }
+    if (m_flowFacts && node.syntaxSlot < m_flowFacts->unbucketedSyntax.size())
+    {
+        return m_flowFacts->unbucketedSyntax[node.syntaxSlot];
+    }
+    return {};
 }
 
 TSNode NodeIndex::EnclosingDeclaration(TSNode node) const noexcept

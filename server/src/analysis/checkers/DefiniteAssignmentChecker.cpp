@@ -170,8 +170,13 @@ class DefiniteAssignmentVisitor
         std::string_view name = SimpleIdentifierName(operand);
         if (!name.empty() && m_trackedLocals.contains(name) && !state.assignedVars.contains(name))
         {
-            TSPoint start = ts_node_start_point(Syntax(operand));
-            TSPoint end = ts_node_end_point(Syntax(operand));
+            const TSNode node = Syntax(operand);
+            if (ts_node_is_null(node))
+            {
+                return;
+            }
+            TSPoint start = ts_node_start_point(node);
+            TSPoint end = ts_node_end_point(node);
             const uint64_t locationKey = (static_cast<uint64_t>(start.row) << 32) | static_cast<uint64_t>(start.column);
             if (m_reportedReads.insert(locationKey).second)
             {

@@ -134,14 +134,13 @@ void CheckVarDeclaration(TSNode stmt, FlowState& state, NullCheckContext& ctx)
     }
     const bool isHandle = ExtractTypeInfoFromAST(typeNode, ctx.sourceCode, &ctx.index).isHandle;
 
-    declaration.ForEachNamed(
-        [&](TSNode child)
+    declaration.ForEachNamedOperands(
+        [&](const SyntaxOperands& declarator)
         {
-            if (ts_node_symbol(child) != gs.symVariableDeclarator)
+            if (declarator.Symbol() != gs.symVariableDeclarator)
             {
                 return true;
             }
-            const SyntaxOperands declarator(child, &ctx.index);
             const std::string name = parser::NodeText(declarator.Field(gs.fieldName), ctx.sourceCode);
             TSNode val = declarator.Field(gs.fieldValue);
             if (ts_node_is_null(val))

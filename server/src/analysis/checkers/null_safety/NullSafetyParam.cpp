@@ -106,10 +106,9 @@ static std::string ReadParameterName(const SyntaxOperands& parameter, const Null
 static void CollectRegularParameters(TSNode params, const NullCheckContext& ctx, FlowState& state)
 {
     SyntaxOperands(params, &ctx.index)
-        .ForEachNamed(
-            [&](TSNode parameter)
+        .ForEachNamedOperands(
+            [&](const SyntaxOperands& operands)
             {
-                const SyntaxOperands operands(parameter, &ctx.index);
                 const auto type = ExtractTypeInfoFromAST(ReadParameterType(operands), ctx.sourceCode, &ctx.index);
                 if (type.isHandle)
                 {

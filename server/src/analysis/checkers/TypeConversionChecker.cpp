@@ -1038,20 +1038,13 @@ static ExpressionType ResolveCastValueType(TSNode node, const DiagnosticContext&
  */
 static ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    while (!ts_node_is_null(node) && ts_node_symbol(node) == gs.symParenthesizedExpression)
-    {
-        node = SyntaxOperands(node, ctx.request.nodeIndex).FirstNamed();
-        if (ts_node_is_null(node))
-        {
-            return ExpressionType{};
-        }
-    }
+    node = UnwrapIndexedParentheses(node, ctx.request.nodeIndex);
     if (ts_node_is_null(node))
     {
         return ExpressionType{};
     }
 
+    const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol sym = ts_node_symbol(node);
     if (sym == gs.symUnaryExpression)
     {
@@ -1086,15 +1079,7 @@ static ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, 
 
 ExpressionType TypeConversionEvaluator::ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    while (!ts_node_is_null(node) && ts_node_symbol(node) == gs.symParenthesizedExpression)
-    {
-        node = SyntaxOperands(node, ctx.request.nodeIndex).FirstNamed();
-        if (ts_node_is_null(node))
-        {
-            return ExpressionType{};
-        }
-    }
+    node = UnwrapIndexedParentheses(node, ctx.request.nodeIndex);
     if (ts_node_is_null(node))
     {
         return ExpressionType{};
@@ -1104,6 +1089,8 @@ ExpressionType TypeConversionEvaluator::ResolveValueType(TSNode node, const Scop
     {
         return ExpressionType{std::string(ExpressionTypeCache::k_poisonType), false, false};
     }
+
+    const auto& gs = parser::GetGrammarSymbols();
 
     const TSSymbol sym = ts_node_symbol(node);
     if (sym == gs.symNumberLiteral || sym == gs.symStringLiteral || sym == gs.symBooleanLiteral)
@@ -2116,18 +2103,18 @@ static void CheckConstructorDelegationStatement(TSNode stmt, const std::string& 
         return;
     }
 
-    const TSNode expr = SyntaxOperands(stmt, ctx.request.nodeIndex).FirstNamed();
-    if (ts_node_is_null(expr))
+    const SyntaxOperands exprOperands = SyntaxOperands(stmt, ctx.request.nodeIndex).FirstNamedOperands();
+    if (exprOperands.IsNull())
     {
         return;
     }
-    const TSSymbol exprSym = ts_node_symbol(expr);
+    const TSSymbol exprSym = exprOperands.Symbol();
     if (exprSym == gs.symCallExpression || exprSym == gs.symConstructCallExpression)
     {
-        TSNode callee = SyntaxOperands(expr, ctx.request.nodeIndex).Callee();
+        TSNode callee = exprOperands.Callee();
         if (!ts_node_is_null(callee) && parser::NodeText(callee, ctx.request.sourceCode) == className)
         {
-            ctx.EmitAtNode(expr, "as-err-constructor-delegation-disallowed");
+            ctx.EmitAtNode(exprOperands.Node(), "as-err-constructor-delegation-disallowed");
         }
     }
 }
@@ -2155,19 +2142,18 @@ static void CheckConstructorDelegation(TSNode funcNode, const NodeIndex& index, 
         return;
     }
 
-    TSNode bodyNode = function.Field(gs.fieldBody);
-    if (ts_node_is_null(bodyNode))
+    const SyntaxOperands body = function.FieldOperands(gs.fieldBody);
+    if (body.IsNull())
     {
         return;
     }
 
-    SyntaxOperands(bodyNode, &index)
-        .ForEachNamed(
-            [&](TSNode statement)
-            {
-                CheckConstructorDelegationStatement(statement, className, ctx);
-                return true;
-            });
+    body.ForEachNamed(
+        [&](TSNode statement)
+        {
+            CheckConstructorDelegationStatement(statement, className, ctx);
+            return true;
+        });
 }
 
 /**
@@ -2351,24 +2337,25 @@ static void CollectBooleanOperands(TSNode rootExpr, const NodeIndex* index, std:
 
         const TSSymbol sym = ts_node_symbol(expr);
 
+        const SyntaxOperands exprOperands(expr, index);
         if (sym == gs.symBinaryExpression)
         {
-            const TSNode op = SyntaxOperands(expr, index).Field(gs.fieldOperator);
+            const TSNode op = exprOperands.Field(gs.fieldOperator);
             const TSSymbol opSym = ts_node_is_null(op) ? 0 : ts_node_symbol(op);
             if (IsLogicalBinaryOperator(opSym, gs))
             {
-                worklist.push_back(SyntaxOperands(expr, index).Field(gs.fieldRight));
-                worklist.push_back(SyntaxOperands(expr, index).Field(gs.fieldLeft));
+                worklist.push_back(exprOperands.Field(gs.fieldRight));
+                worklist.push_back(exprOperands.Field(gs.fieldLeft));
                 continue;
             }
         }
         else if (sym == gs.symUnaryExpression)
         {
-            const TSNode op = SyntaxOperands(expr, index).Field(gs.fieldOperator);
+            const TSNode op = exprOperands.Field(gs.fieldOperator);
             const TSSymbol opSym = ts_node_is_null(op) ? 0 : ts_node_symbol(op);
             if (IsLogicalUnaryOperator(opSym, gs))
             {
-                worklist.push_back(SyntaxOperands(expr, index).Field(gs.fieldOperand));
+                worklist.push_back(exprOperands.Field(gs.fieldOperand));
                 continue;
             }
         }
@@ -2398,14 +2385,15 @@ static const Scope* ResolveNodeScope(TSNode node, const TypeConversionCheckReque
 static TSNode ExtractConditionNode(TSNode node, TSSymbol sym, const NodeIndex* index)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    TSNode condition = SyntaxOperands(node, index).Field(gs.fieldCondition);
+    const SyntaxOperands syntax(node, index);
+    TSNode condition = syntax.Field(gs.fieldCondition);
     if (!ts_node_is_null(condition) && ts_node_symbol(condition) == gs.symExpressionStatement)
     {
         condition = SyntaxOperands(condition, index).FirstNamed();
     }
     if (ts_node_is_null(condition))
     {
-        condition = SyntaxOperands(node, index).NamedAt(sym == gs.symDoWhileStatement ? 1 : 0);
+        condition = syntax.NamedAt(sym == gs.symDoWhileStatement ? 1 : 0);
     }
     return condition;
 }
@@ -2592,10 +2580,9 @@ static bool AreTernaryBranchesIncompatible(const std::string& clean1, const std:
 
 static void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    TSNode consequence =
-        SyntaxOperands(node, ctx.request.nodeIndex).Field(parser::GetGrammarSymbols().fieldConsequence);
-    TSNode alternative =
-        SyntaxOperands(node, ctx.request.nodeIndex).Field(parser::GetGrammarSymbols().fieldAlternative);
+    const SyntaxOperands syntax(node, ctx.request.nodeIndex);
+    TSNode consequence = syntax.Field(parser::GetGrammarSymbols().fieldConsequence);
+    TSNode alternative = syntax.Field(parser::GetGrammarSymbols().fieldAlternative);
     if (ts_node_is_null(consequence) || ts_node_is_null(alternative))
     {
         return;
@@ -2705,16 +2692,15 @@ static void InferForeachVariables(TSNode node, const std::string& containerType,
 {
     uint32_t variableIndex = 0;
     SyntaxOperands(node, ctx.request.nodeIndex)
-        .ForEachNamed(
-            [&](TSNode child)
+        .ForEachNamedOperands(
+            [&](const SyntaxOperands& child)
             {
-                if (ts_node_symbol(child) != parser::GetGrammarSymbols().symForeachVariable)
+                if (child.Symbol() != parser::GetGrammarSymbols().symForeachVariable)
                 {
                     return true;
                 }
 
-                TSNode nameNode =
-                    SyntaxOperands(child, ctx.request.nodeIndex).Field(parser::GetGrammarSymbols().fieldName);
+                TSNode nameNode = child.Field(parser::GetGrammarSymbols().fieldName);
                 const std::string valueType = ForeachValueType(containerType, variableIndex, ctx);
                 ++variableIndex;
 
@@ -2815,19 +2801,20 @@ static bool IsCyclicAutoDependency(TSNode valueNode, TSNode nameNode, const Scop
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic collection context.
  */
-static void ProcessAutoDeclarator(TSNode child, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+static void ProcessAutoDeclarator(const SyntaxOperands& declarator, const TypeConversionCheckRequest& request,
+                                  DiagnosticContext& ctx)
 {
-    TSNode nameNode = SyntaxOperands(child, ctx.request.nodeIndex).Field(parser::GetGrammarSymbols().fieldName);
+    TSNode nameNode = declarator.Field(parser::GetGrammarSymbols().fieldName);
     const std::string varName = parser::NodeText(nameNode, request.sourceCode);
-    TSNode valueNode = SyntaxOperands(child, ctx.request.nodeIndex).DeclaratorValue(request.sourceCode);
+    TSNode valueNode = declarator.DeclaratorValue(request.sourceCode);
 
     if (ts_node_is_null(valueNode))
     {
-        ctx.EmitAtNode(child, "as-err-auto-requires-initializer");
+        ctx.EmitAtNode(declarator.Node(), "as-err-auto-requires-initializer");
         return;
     }
 
-    const Scope* scope = ResolveNodeScope(child, request);
+    const Scope* scope = ResolveNodeScope(declarator.Node(), request);
     if (IsCyclicAutoDependency(valueNode, nameNode, scope, request))
     {
         ctx.EmitAtNode(valueNode, "as-err-cyclic-auto-dependency", varName);
@@ -2876,10 +2863,10 @@ static void ProcessAutoVariableDeclarators(TSNode node, const TypeConversionChec
 {
     const auto& gs = parser::GetGrammarSymbols();
     SyntaxOperands(node, ctx.request.nodeIndex)
-        .ForEachNamed(
-            [&](TSNode child)
+        .ForEachNamedOperands(
+            [&](const SyntaxOperands& child)
             {
-                if (ts_node_symbol(child) == gs.symVariableDeclarator)
+                if (child.Symbol() == gs.symVariableDeclarator)
                 {
                     ProcessAutoDeclarator(child, request, ctx);
                 }
@@ -3022,11 +3009,7 @@ static void CheckAssignmentPropertyAccess(TSNode node, const Scope* scope, Diagn
     const TSSymbol leftSym = ts_node_symbol(left);
     if (leftSym == gs.symIndexExpression)
     {
-        TSNode arrayNode = SyntaxOperands(left, ctx.request.nodeIndex).Field(gs.fieldObject);
-        if (ts_node_is_null(arrayNode))
-        {
-            arrayNode = SyntaxOperands(left, ctx.request.nodeIndex).FirstNamed();
-        }
+        TSNode arrayNode = SyntaxOperands(left, ctx.request.nodeIndex).FieldOrNamed(gs.fieldObject);
         PropertyAccessInfo pInfo = InspectPropertyAccess(arrayNode, scope, ctx);
         if (pInfo.isProperty && pInfo.isIndexed)
         {
@@ -3469,11 +3452,7 @@ static void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequ
         TSNode unwrapped = UnwrapIndexedParentheses(operand, ctx.request.nodeIndex);
         if (ts_node_symbol(unwrapped) == gs.symIndexExpression)
         {
-            TSNode arrayNode = SyntaxOperands(unwrapped, ctx.request.nodeIndex).Field(gs.fieldObject);
-            if (ts_node_is_null(arrayNode))
-            {
-                arrayNode = SyntaxOperands(unwrapped, ctx.request.nodeIndex).FirstNamed();
-            }
+            TSNode arrayNode = SyntaxOperands(unwrapped, ctx.request.nodeIndex).FieldOrNamed(gs.fieldObject);
             PropertyAccessInfo pInfo = InspectPropertyAccess(arrayNode, scope, ctx);
             if (pInfo.isProperty && pInfo.isIndexed)
             {
@@ -3539,11 +3518,8 @@ static void ProcessIndexExpressionNode(TSNode node, const TypeConversionCheckReq
     if (!fact || !IsWriteOrMutationOperand(*fact))
     {
         const Scope* scope = ResolveNodeScope(node, request);
-        TSNode arrayNode = SyntaxOperands(node, ctx.request.nodeIndex).Field(parser::GetGrammarSymbols().fieldObject);
-        if (ts_node_is_null(arrayNode))
-        {
-            arrayNode = SyntaxOperands(node, ctx.request.nodeIndex).FirstNamed();
-        }
+        TSNode arrayNode =
+            SyntaxOperands(node, ctx.request.nodeIndex).FieldOrNamed(parser::GetGrammarSymbols().fieldObject);
         PropertyAccessInfo pInfo = InspectPropertyAccess(arrayNode, scope, ctx);
         if (pInfo.isProperty && pInfo.isIndexed && !pInfo.hasGet && pInfo.hasSet)
         {
@@ -3747,14 +3723,10 @@ static void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, co
  */
 static void ProcessReturnStatementNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    TSNode expr = SyntaxOperands(node, ctx.request.nodeIndex).Field(parser::GetGrammarSymbols().fieldValue);
+    TSNode expr = SyntaxOperands(node, ctx.request.nodeIndex).FieldOrNamed(parser::GetGrammarSymbols().fieldValue);
     if (ts_node_is_null(expr))
     {
-        expr = SyntaxOperands(node, ctx.request.nodeIndex).FirstNamed();
-        if (ts_node_is_null(expr))
-        {
-            return;
-        }
+        return;
     }
     const Scope* scope = ResolveNodeScope(node, request);
     const auto& gs = parser::GetGrammarSymbols();
