@@ -3,6 +3,7 @@
 #include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
 
+#include <ankerl/unordered_dense.h>
 #include <string_view>
 #include <tree_sitter/api.h>
 
@@ -37,7 +38,7 @@ struct DefiniteAssignmentChecker
  */
 struct DefiniteAssignmentState
 {
-    ankerl::unordered_dense::set<std::string> assignedVars;
+    ankerl::unordered_dense::set<std::string_view> assignedVars;
     bool hasReturned = false;
     bool isTerminated = false;
 };

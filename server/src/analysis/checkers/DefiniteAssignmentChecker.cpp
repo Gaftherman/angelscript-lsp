@@ -20,10 +20,11 @@ namespace angel_lsp::analysis
 /**
  * @brief Combines initialized names from viable branches according to AngelScript's union semantics.
  */
-static ankerl::unordered_dense::set<std::string> MergeBranchStates(const ankerl::unordered_dense::set<std::string>& a,
-                                                                   const ankerl::unordered_dense::set<std::string>& b)
+static ankerl::unordered_dense::set<std::string_view>
+MergeBranchStates(const ankerl::unordered_dense::set<std::string_view>& a,
+                  const ankerl::unordered_dense::set<std::string_view>& b)
 {
-    ankerl::unordered_dense::set<std::string> result = a;
+    ankerl::unordered_dense::set<std::string_view> result = a;
     for (const auto& item : b)
     {
         result.insert(item);
@@ -74,8 +75,8 @@ class DefiniteAssignmentVisitor
     const NodeIndex& m_index;
     std::deque<AssignmentWorkFrame> m_work;
     std::vector<AssignmentReadTask> m_reads;
-    ankerl::unordered_dense::set<std::string> m_trackedLocals;
-    ankerl::unordered_dense::set<std::string> m_reportedReads;
+    ankerl::unordered_dense::set<std::string_view> m_trackedLocals;
+    ankerl::unordered_dense::set<uint64_t> m_reportedReads;
 
     const Operand* First(const Operand* node) const
     {
@@ -144,7 +145,7 @@ class DefiniteAssignmentVisitor
         }
     }
 
-    std::string SimpleIdentifierName(const Operand* operand) const
+    std::string_view SimpleIdentifierName(const Operand* operand) const
     {
         if (!operand)
         {
@@ -159,18 +160,19 @@ class DefiniteAssignmentVisitor
                 return {};
             }
         }
-        return operand && operand->symbol == gs.symIdentifier ? parser::NodeText(Syntax(operand), m_request.sourceCode)
-                                                              : std::string{};
+        return operand && operand->symbol == gs.symIdentifier
+                   ? parser::GetNodeTextView(Syntax(operand), m_request.sourceCode)
+                   : std::string_view{};
     }
 
     void CheckIdentifierRead(const Operand* operand, const DefiniteAssignmentState& state)
     {
-        std::string name = SimpleIdentifierName(operand);
+        std::string_view name = SimpleIdentifierName(operand);
         if (!name.empty() && m_trackedLocals.contains(name) && !state.assignedVars.contains(name))
         {
             TSPoint start = ts_node_start_point(Syntax(operand));
             TSPoint end = ts_node_end_point(Syntax(operand));
-            std::string locationKey = name + ":" + std::to_string(start.row) + ":" + std::to_string(start.column);
+            const uint64_t locationKey = (static_cast<uint64_t>(start.row) << 32) | static_cast<uint64_t>(start.column);
             if (m_reportedReads.insert(locationKey).second)
             {
                 m_ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-warn-uninitialized-variable-read",
@@ -181,12 +183,12 @@ class DefiniteAssignmentVisitor
 
     bool MarkTrackedAssignment(const Operand* operand, DefiniteAssignmentState& state)
     {
-        std::string name = SimpleIdentifierName(operand);
+        std::string_view name = SimpleIdentifierName(operand);
         if (name.empty() || !m_trackedLocals.contains(name))
         {
             return false;
         }
-        state.assignedVars.insert(std::move(name));
+        state.assignedVars.insert(name);
         return true;
     }
 
@@ -227,7 +229,7 @@ class DefiniteAssignmentVisitor
                 std::string objType = ResolveExpressionType(
                     objNode, ExpressionTypeContext(callScope ? callScope : m_request.scopeRoot, m_ctx));
                 std::string cleanObj = CleanBaseType(objType);
-                std::string memName = parser::NodeText(memNode, m_request.sourceCode);
+                std::string_view memName = parser::GetNodeTextView(memNode, m_request.sourceCode);
                 auto hierarchy = GetInheritedTypeHierarchy(cleanObj, m_ctx.request.symbolTable);
                 for (const auto& typeName : hierarchy)
                 {
@@ -247,7 +249,7 @@ class DefiniteAssignmentVisitor
         }
         else
         {
-            std::string funcName = parser::NodeText(Syntax(callee), m_request.sourceCode);
+            std::string funcName(parser::GetNodeTextView(Syntax(callee), m_request.sourceCode));
             auto inScope =
                 FindSymbolsInScope(funcName, Syntax(call), m_request.sourceCode, m_ctx.request.symbolTable, &m_index);
             for (const auto& sym : inScope)
@@ -281,7 +283,7 @@ class DefiniteAssignmentVisitor
         return std::any_of(arguments.begin(), arguments.end(),
                            [&](const Operand* argument)
                            {
-                               const std::string name = SimpleIdentifierName(argument);
+                               const std::string_view name = SimpleIdentifierName(argument);
                                return !name.empty() && m_trackedLocals.contains(name) &&
                                       !state.assignedVars.contains(name);
                            });
@@ -438,7 +440,7 @@ class DefiniteAssignmentVisitor
             return;
         }
 
-        std::string varName = parser::NodeText(Syntax(name), m_request.sourceCode);
+        std::string_view varName = parser::GetNodeTextView(Syntax(name), m_request.sourceCode);
         const Operand* init = FindField(node, gs.fieldValue);
         if (!init)
         {
@@ -548,8 +550,8 @@ class DefiniteAssignmentVisitor
     void MergeLoopBody(AssignmentWorkFrame& frame, TSNode condition, bool isFor)
     {
         frame.state.assignedVars = MergeBranchStates(frame.state.assignedVars, frame.branch.assignedVars);
-        const std::string raw = parser::NodeText(condition, m_request.sourceCode);
-        const std::string_view value = isFor ? parser::Trim(raw) : std::string_view(raw);
+        const std::string_view raw = parser::GetNodeTextView(condition, m_request.sourceCode);
+        const std::string_view value = isFor ? parser::Trim(raw) : raw;
         if ((value == "true" || (isFor && (value.empty() || value == ";"))) && !frame.branch.hasReturned &&
             !frame.branch.isTerminated)
         {

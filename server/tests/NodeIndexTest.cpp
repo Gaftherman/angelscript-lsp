@@ -440,3 +440,45 @@ TEST_CASE("Indexed namespace lookup reaches enclosing declarations beyond 32 sco
     REQUIRE(found.size() == 1);
     CHECK(found.front().qualifiedName == outer + "::" + name);
 }
+
+TEST_CASE("SyntaxOperands navigation chains child facts without hash map lookups")
+{
+    const std::string source = R"(
+        void Foo()
+        {
+            int val = (((42)));
+            Bar(val);
+        }
+    )";
+    const auto doc = angel_lsp::test::CreateTestDocument("file:///syntax_operands_chain.as", source);
+    REQUIRE(doc->GetTree());
+    const NodeIndex index(ts_tree_root_node(doc->GetTree()));
+    const auto& gs = GetGrammarSymbols();
+
+    const auto calls = index.Nodes(gs.symCallExpression);
+    REQUIRE(calls.size() == 1);
+    const SyntaxOperands callSyntax(calls.front(), &index);
+    REQUIRE(callSyntax.Fact() != nullptr);
+
+    const SyntaxOperands callee = callSyntax.CalleeOperands();
+    CHECK(callee.Fact() != nullptr);
+    CHECK((callee.Symbol() == gs.symIdentifier || callee.Symbol() == gs.symScopedIdentifier));
+    CHECK_FALSE(callee.IsNull());
+    CHECK(ts_node_eq(callee.Node(), callSyntax.Callee()));
+
+    const SyntaxOperands args = callSyntax.FieldOperands(gs.fieldArguments);
+    CHECK(args.Fact() != nullptr);
+    CHECK(args.Symbol() == gs.symArgumentList);
+
+    const auto vars = index.Nodes(gs.symVariableDeclarator);
+    REQUIRE(vars.size() == 1);
+    const SyntaxOperands varSyntax(vars.front(), &index);
+    const SyntaxOperands valSyntax = varSyntax.FieldOperands(gs.fieldValue);
+    REQUIRE(valSyntax.Fact() != nullptr);
+    CHECK(valSyntax.Symbol() == gs.symParenthesizedExpression);
+
+    const SyntaxOperands unwrapped = UnwrapIndexedParentheses(valSyntax);
+    CHECK(unwrapped.Fact() != nullptr);
+    CHECK(unwrapped.Symbol() == gs.symNumberLiteral);
+    CHECK(ts_node_symbol(unwrapped.Node()) == gs.symNumberLiteral);
+}

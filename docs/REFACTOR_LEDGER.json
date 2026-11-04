@@ -475,6 +475,39 @@
         "Server - Pull diagnostics reuse the syntax of a protocol-indexed closed include",
         "SyntaxRevisionCache - Closed entries do not evict the open working set"
       ]
+    },
+    {
+      "id": "REF-V118-DEFINITE-ASSIGNMENT-ZERO-ALLOC",
+      "phase": "S5",
+      "action": "COMPACT_RAM_LAYOUT",
+      "sourceFile": "server/src/analysis/checkers/DefiniteAssignmentChecker.cpp",
+      "deletedLineRange": "162-174",
+      "originalSymbolOrCode": "NodeText std::string locationKey = name + \":\" + std::to_string(start.row)",
+      "whatItDidAndWhyInThatFile": "Created transient std::string heap allocations when checking identifier names and formatting composite string keys for duplicate diagnostics tracking.",
+      "whyChangedOrDeleted": "Use GetNodeTextView returning std::string_view directly into source text and pack row/column into uint64_t location keys without heap allocations.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/DefiniteAssignmentChecker.cpp",
+      "replacedByCanonicalSymbol": "SimpleIdentifierName",
+      "ramOrCpuImpact": "Eliminates all dynamic string allocations in DefiniteAssignmentVisitor hot path during function body dataflow analysis.",
+      "verifiedByTests": [
+        "DefiniteAssignment - Direct Uninitialized Read",
+        "NodeIndex - Indexes nodes in document order"
+      ]
+    },
+    {
+      "id": "REF-V118-SYNTAX-OPERANDS-CHAINING",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/index/SyntaxOperands.h",
+      "deletedLineRange": "19-37",
+      "originalSymbolOrCode": "SyntaxOperands TSNode Field FirstNamed Callee",
+      "whatItDidAndWhyInThatFile": "Returned raw borrowed TSNode handles for children, forcing chained callers to re-invoke FindOperandSyntax and perform hash map lookups on operandSyntax.",
+      "whyChangedOrDeleted": "Provide FieldOperands, FirstNamedOperands, and CalleeOperands chaining IndexedSyntaxNode child pointers directly in O(1) without TSNode round-trips.",
+      "replacedByCanonicalFile": "server/src/analysis/index/SyntaxOperands.h",
+      "replacedByCanonicalSymbol": "FieldOperands",
+      "ramOrCpuImpact": "Eliminates redundant operandSyntax hash table lookups during child AST operand traversal.",
+      "verifiedByTests": [
+        "SyntaxOperands navigation chains child facts without hash map lookups"
+      ]
     }
   ]
 }
