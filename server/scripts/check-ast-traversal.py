@@ -40,6 +40,8 @@ INDEXED_CHECKERS = (
     SERVER_SRC / "analysis" / "checkers" / "null_safety" / "NullSafetyCondition.cpp",
     SERVER_SRC / "analysis" / "checkers" / "null_safety" / "NullSafetyDecl.cpp",
     SERVER_SRC / "analysis" / "checkers" / "null_safety" / "NullSafetyExpr.cpp",
+    SERVER_SRC / "analysis" / "checkers" / "null_safety" / "NullSafetyParam.cpp",
+    SERVER_SRC / "analysis" / "types" / "TypeExtraction.cpp",
 )
 
 DIRECT_AST_NAVIGATION = re.compile(

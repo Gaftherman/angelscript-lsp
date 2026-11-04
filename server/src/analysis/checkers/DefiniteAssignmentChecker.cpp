@@ -471,7 +471,7 @@ class DefiniteAssignmentVisitor
         bool isPrimitive = false;
         if (type)
         {
-            const TypeExtractionResult info = ExtractTypeInfoFromAST(Syntax(type), m_request.sourceCode);
+            const TypeExtractionResult info = ExtractTypeInfoFromAST(Syntax(type), m_request.sourceCode, &m_index);
             isPrimitive =
                 IsPrimitiveTypeName(info.baseTypeName) && !info.isArray && !info.isHandle && info.templateName.empty();
         }

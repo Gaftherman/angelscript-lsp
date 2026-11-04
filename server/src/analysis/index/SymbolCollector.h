@@ -206,14 +206,16 @@ class SymbolCollector
      */
     struct SymbolCollectContext
     {
-        SymbolCollectContext(const SymbolCollectRequest& req, SymbolTable& table, std::vector<Diagnostic>& diags)
-            : request(req), symbolTable(table), diagnostics(diags)
+        SymbolCollectContext(const SymbolCollectRequest& req, SymbolTable& table, std::vector<Diagnostic>& diags,
+                             const NodeIndex& syntax)
+            : request(req), symbolTable(table), diagnostics(diags), index(syntax)
         {
         }
 
         const SymbolCollectRequest& request;
         SymbolTable& symbolTable;
         std::vector<Diagnostic>& diagnostics;
+        const NodeIndex& index;
         std::vector<Symbol> collectedSymbols;
         bool isPredefined = false;
         bool sourceHasBrackets = false;
@@ -363,13 +365,13 @@ class SymbolCollector
     void ApplyModifierToken(TSSymbol tokenSymbol, SymbolModifiers& modifiers) const;
     bool ApplyParamModifierToken(TSSymbol tokenSymbol, SymbolModifiers& modifiers) const;
 
-    ParameterInformation ExtractParameterInfo(TSNode paramNode, std::string_view sourceCode) const;
+    ParameterInformation ExtractParameterInfo(TSNode paramNode, const SymbolCollectContext& ctx) const;
     void ExtractParamTypeRefAndConst(TSNode pTypeNode, std::string_view sourceCode, ParameterInformation& paramInfo,
                                      uint32_t& refCount) const;
     void ExtractParamModifierTokens(TSNode paramNode, std::string_view sourceCode, ParameterInformation& paramInfo,
                                     uint32_t& refCount) const;
 
-    std::vector<ParameterInformation> ExtractParameters(TSNode paramsNode, std::string_view sourceCode) const;
+    std::vector<ParameterInformation> ExtractParameters(TSNode paramsNode, const SymbolCollectContext& ctx) const;
 
     Symbol CreateSymbol(SymbolType type, TSNode node, TSNode nameNode, const SymbolLocationContext& loc) const;
 

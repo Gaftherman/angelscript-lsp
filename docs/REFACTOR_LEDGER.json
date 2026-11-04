@@ -423,6 +423,40 @@
         "NullSafetyChecker - Nested short-circuit operands keep the common guard across alternatives",
         "NullSafetyChecker - Deep null guards preserve branch exits and the unguarded range"
       ]
+    },
+    {
+      "id": "REF-V118-INDEXED-TYPE-OPERANDS",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/types/TypeExtraction.cpp",
+      "deletedLineRange": "60-246",
+      "originalSymbolOrCode": "TryExtractPrimitiveOrIdentifier ProcessDatatypeChild ProcessTemplateTypeListChild ProcessAnonymousModifier CollectParametersFromAST",
+      "whatItDidAndWhyInThatFile": "Walked type subtrees again and recursively built owned type results. Null diagnostics also walked parameter lists, even with a full revision index.",
+      "whyChangedOrDeleted": "Capture named type operands, modifier tokens and lambda parameter separators in the first pass. Fold type facts with an iterative worklist and retain the ordered immediate argument names used by symbol signatures.",
+      "replacedByCanonicalFile": "server/src/analysis/types/TypeExtraction.cpp",
+      "replacedByCanonicalSymbol": "TypeReadWorklist",
+      "ramOrCpuImpact": "The type result has flat argument storage. Indexed callers avoid reading type and parameter child links from the tree. The declaration-only and interactive paths retain a direct-operand fallback. On bts_rc with Win32 Release, 20 alternating runs per version against a8291c64 yielded workspace p50/p95 of 1969.25/1992.95 ms before and 1971.67/1995.14 ms after. Open was 19.03/19.82 and 19.06/20.87 ms, edit 532.01/541.29 and 531.52/537.44 ms, references 1.28/1.48 and 1.29/1.51 ms, CodeLens after references 4.68/5.38 and 4.75/5.21 ms, and peak working set 122.88/123.68 and 123.07/123.43 MiB. Each run verified the complete reports for 129 closed files and the open and edited target, with only the two expected W109 removals.",
+      "verifiedByTests": [
+        "NodeIndex - Indexed type metadata preserves deep templates and direct argument order",
+        "NullSafetyChecker - Lambda Expression Parameter Dereference Unguarded vs Guarded"
+      ]
+    },
+    {
+      "id": "REF-V118-OPTIONAL-IF-ALTERNATIVE",
+      "phase": "S5",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/index/SemanticNodes.cpp",
+      "deletedLineRange": "57-62",
+      "originalSymbolOrCode": "IfStatementView::Alternative FieldOrNamed",
+      "whatItDidAndWhyInThatFile": "Guessed a missing else arm by named child position. A comment between the condition and body could make the then arm occupy that position.",
+      "whyChangedOrDeleted": "Read the grammar field for the optional arm. Preserve branch identity in the null-safety worklist and repeated-conversion ladder.",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/null_safety/NullSafetyChecker.cpp",
+      "replacedByCanonicalSymbol": "NullStatementWorklist",
+      "ramOrCpuImpact": "A comment before a then body no longer schedules the same block twice. In bts_rc panthereye.as this removes a false W109 for the guarded player at line 687 and the repeated W109 for playerDoll at line 694.",
+      "verifiedByTests": [
+        "NullSafetyChecker - Comment before an if body does not cause a duplicate null warning",
+        "bts_rc JSON-RPC closed diagnostics comparison"
+      ]
     }
   ]
 }

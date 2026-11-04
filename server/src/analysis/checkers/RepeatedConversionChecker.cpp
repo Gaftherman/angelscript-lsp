@@ -100,7 +100,7 @@ std::vector<TSNode> CollectIfLadderConditions(TSNode rootIf, const NodeIndex* in
         {
             conditions.push_back(condition);
         }
-        current = syntax.FieldOrNamed(gs.fieldAlternative, 2);
+        current = syntax.Field(gs.fieldAlternative);
     }
     return conditions;
 }

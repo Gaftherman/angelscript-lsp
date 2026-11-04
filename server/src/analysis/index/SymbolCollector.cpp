@@ -3,6 +3,7 @@
 #include "analysis/documentation/DocComment.h"
 #include "analysis/documentation/SignatureFormatter.h"
 #include "analysis/index/DeclarationRecovery.h"
+#include "analysis/index/SyntaxOperands.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "document/Document.h"
 #include "parser/ASTUtils.h"
@@ -271,7 +272,7 @@ std::vector<Diagnostic> SymbolCollector::CollectSymbolsWithIndex(const SymbolCol
         symbolTable.Reserve(request.sourceCode.size() / 100);
     }
 
-    SymbolCollectContext sCtx{request, symbolTable, diagnostics};
+    SymbolCollectContext sCtx{request, symbolTable, diagnostics, index};
     sCtx.isPredefined = angel_lsp::utils::IsPredefinedFile(request.fileUri, ".as.predefined");
     CollectFromIndex(index, sCtx);
     symbolTable.ResolveIncludedMixins();
@@ -569,12 +570,12 @@ void SymbolCollector::RecoverSwallowedDeclarations(SymbolCollectContext& sCtx)
         SymbolTable snippetTable;
         std::vector<Diagnostic> snippetDiags;
         SymbolCollectRequest snippetReq(sCtx.request.fileUri, cand.snippet);
-        SymbolCollectContext snippetCtx{snippetReq, snippetTable, snippetDiags};
+        const NodeIndex snippetIndex(ts_tree_root_node(snippetTree.get()), nullptr, nullptr,
+                                     NodeIndexContents::Declarations);
+        SymbolCollectContext snippetCtx{snippetReq, snippetTable, snippetDiags, snippetIndex};
         snippetCtx.isPredefined = sCtx.isPredefined;
         snippetCtx.isRecoveringSwallowed = true;
 
-        const NodeIndex snippetIndex(ts_tree_root_node(snippetTree.get()), nullptr, nullptr,
-                                     NodeIndexContents::Declarations);
         CollectFromIndex(snippetIndex, snippetCtx);
 
         for (auto& sym : snippetCtx.collectedSymbols)
@@ -733,7 +734,7 @@ void SymbolCollector::ProcessVirtualPropertyVariable(TSNode varDeclNode, SymbolC
     TSNode typeNode = GetChildByFieldName(varDeclNode, "prop_type");
     TSNode nameNode = GetChildByFieldName(varDeclNode, "name");
     std::string typeStr = parser::GetNodeText(typeNode, sCtx.request.sourceCode);
-    TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
+    TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode, &sCtx.index);
     SymbolModifiers modifiers = ExtractModifiers(varDeclNode, sCtx.request.sourceCode);
     modifiers.isHandle = typeInfo.isHandle || modifiers.isHandle;
 
@@ -774,10 +775,7 @@ void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const Varia
     varSig.baseTypeName = header.typeInfo.baseTypeName;
     varSig.templateName = header.typeInfo.templateName;
     varSig.typeRange = header.typeRange;
-    for (const auto& tArg : header.typeInfo.templateArguments)
-    {
-        varSig.templateArgumentTypes.push_back(tArg.baseTypeName);
-    }
+    varSig.templateArgumentTypes = header.typeInfo.templateArgumentTypes;
     varSig.typeKind = header.typeInfo.kind;
     varSig.isArray = header.typeInfo.isArray;
     varSig.hasPrimitiveHandle = header.typeInfo.hasPrimitiveHandle;
@@ -825,7 +823,7 @@ void SymbolCollector::ProcessRegularVariable(TSNode varDeclNode, SymbolCollectCo
 {
     TSNode typeNode = GetChildByFieldName(varDeclNode, "var_type");
     std::string typeStr = parser::GetNodeText(typeNode, sCtx.request.sourceCode);
-    TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
+    TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode, &sCtx.index);
     if (IsReservedKeyword(typeInfo.baseTypeName) && !IsPrimitiveTypeName(typeInfo.baseTypeName) &&
         typeInfo.baseTypeName != "auto")
     {
@@ -916,7 +914,7 @@ void SymbolCollector::ProcessEmptyParenVariable(TSNode funcNode, SymbolCollectCo
 {
     TSNode nameNode = GetChildByFieldId(funcNode, m_gs.fieldName);
     TSNode typeNode = GetChildByFieldId(funcNode, m_gs.fieldReturnType);
-    TypeExtractionResult retInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
+    TypeExtractionResult retInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode, &sCtx.index);
     SymbolModifiers modifiers = ExtractModifiers(funcNode, sCtx.request.sourceCode);
 
     SymbolLocationContext loc{sCtx, ctx.containerPath, ctx.containerKind};
@@ -927,10 +925,7 @@ void SymbolCollector::ProcessEmptyParenVariable(TSNode funcNode, SymbolCollectCo
     varSig.baseTypeName = retInfo.baseTypeName;
     varSig.templateName = retInfo.templateName;
     varSig.typeRange = ToSourceRange(typeNode);
-    for (const auto& tArg : retInfo.templateArguments)
-    {
-        varSig.templateArgumentTypes.push_back(tArg.baseTypeName);
-    }
+    varSig.templateArgumentTypes = retInfo.templateArgumentTypes;
     varSig.typeKind = retInfo.kind;
     varSig.isArray = retInfo.isArray;
     varSig.hasPrimitiveHandle = retInfo.hasPrimitiveHandle;
@@ -996,7 +991,7 @@ bool SymbolCollector::TryProcessEmptyParenVariable(TSNode funcNode, const Symbol
         return false;
     }
     TSNode typeNode = GetChildByFieldId(funcNode, m_gs.fieldReturnType);
-    TypeExtractionResult retInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
+    TypeExtractionResult retInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode, &sCtx.index);
     if (IsDisqualifyingReturnType(retInfo, parser::GetNodeText(typeNode, sCtx.request.sourceCode)))
     {
         return false;
@@ -1012,7 +1007,7 @@ void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCt
     TSNode paramsNode = GetChildByFieldId(funcNode, m_gs.fieldParameters);
     TSNode bodyNode = sCtx.isPredefined ? TSNode{} : FindFunctionBody(funcNode);
 
-    TypeExtractionResult retInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
+    TypeExtractionResult retInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode, &sCtx.index);
     SymbolModifiers modifiers = ExtractModifiers(funcNode, sCtx.request.sourceCode);
 
     if (IsExternalFunction(funcNode, sCtx.request.sourceCode))
@@ -1041,7 +1036,7 @@ void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCt
     funcSig.returnHasPrimitiveHandle = retInfo.hasPrimitiveHandle;
     funcSig.returnArrayDepth = retInfo.arrayDepth;
     funcSig.modifiers = modifiers;
-    funcSig.parameters = ExtractParameters(paramsNode, sCtx.request.sourceCode);
+    funcSig.parameters = ExtractParameters(paramsNode, sCtx);
 
     funcSig.hasBody = !ts_node_is_null(bodyNode);
     funcSig.isInterfaceMethod = (ts_node_symbol(funcNode) == m_gs.symInterfaceMethod);
@@ -1235,7 +1230,7 @@ void SymbolCollector::ProcessTypedef(TSNode node, SymbolCollectContext& sCtx, co
 
     if (!ts_node_is_null(baseTypeNode))
     {
-        TypeExtractionResult info = ExtractTypeInfoFromAST(baseTypeNode, sCtx.request.sourceCode);
+        TypeExtractionResult info = ExtractTypeInfoFromAST(baseTypeNode, sCtx.request.sourceCode, &sCtx.index);
         typedefSig.baseType = info.baseTypeName;
         typedefSig.typeKind = info.kind;
 
@@ -1260,7 +1255,7 @@ void SymbolCollector::ProcessFuncdef(TSNode node, SymbolCollectContext& sCtx, co
     TSNode typeNode = GetChildByFieldName(node, "return_type");
     TSNode paramsNode = GetChildByFieldName(node, "parameters");
 
-    TypeExtractionResult retInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
+    TypeExtractionResult retInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode, &sCtx.index);
     SymbolModifiers modifiers = ExtractModifiers(node, sCtx.request.sourceCode);
     modifiers.isHandle = retInfo.isHandle || modifiers.isHandle;
     modifiers.isReturnReference = retInfo.isReference || modifiers.isReturnReference;
@@ -1278,7 +1273,7 @@ void SymbolCollector::ProcessFuncdef(TSNode node, SymbolCollectContext& sCtx, co
     funcdefSig.returnArrayDepth = retInfo.arrayDepth;
     funcdefSig.returnHasPrimitiveHandle = retInfo.hasPrimitiveHandle;
     funcdefSig.modifiers = modifiers;
-    funcdefSig.parameters = ExtractParameters(paramsNode, sCtx.request.sourceCode);
+    funcdefSig.parameters = ExtractParameters(paramsNode, sCtx);
     if (!ts_node_is_null(typeNode))
     {
         TSPoint retStart = ts_node_start_point(typeNode);
@@ -1500,7 +1495,7 @@ void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, c
     TSNode nameNode = GetChildByFieldName(node, "name");
     TSNode typeNode = GetChildByFieldName(node, "prop_type");
 
-    TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode);
+    TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode, &sCtx.index);
     SymbolModifiers modifiers = ExtractModifiers(node, sCtx.request.sourceCode);
 
     SymbolLocationContext loc{sCtx, ctx.containerPath, ctx.containerKind};
@@ -2835,16 +2830,17 @@ static void AssignParamLocations(ParameterInformation& paramInfo, TSNode paramNo
 /**
  * @brief Extracts parameter information including type, modifiers, and default value from AST.
  * @param[in] paramNode AST parameter node being evaluated.
- * @param[in] sourceCode Document source text buffer.
+ * @param[in] ctx Document source and captured operands.
  * @return Populated ParameterInformation struct describing the parameter.
  */
-ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, std::string_view sourceCode) const
+ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, const SymbolCollectContext& ctx) const
 {
+    const auto sourceCode = ctx.request.sourceCode;
     TSNode pNameNode = GetChildByFieldId(paramNode, m_gs.fieldName);
     TSNode pTypeNode = GetChildByFieldId(paramNode, m_gs.fieldParamType);
     TSNode pDefaultNode = GetChildByFieldId(paramNode, m_gs.fieldDefaultValue);
 
-    TypeExtractionResult pInfo = ExtractTypeInfoFromAST(pTypeNode, sourceCode);
+    TypeExtractionResult pInfo = ExtractTypeInfoFromAST(pTypeNode, sourceCode, &ctx.index);
 
     ParameterInformation paramInfo;
     paramInfo.name = parser::GetNodeText(pNameNode, sourceCode);
@@ -2879,28 +2875,19 @@ ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, std
 }
 
 std::vector<ParameterInformation> SymbolCollector::ExtractParameters(TSNode paramsNode,
-                                                                     std::string_view sourceCode) const
+                                                                     const SymbolCollectContext& ctx) const
 {
     std::vector<ParameterInformation> parameters;
-    if (ts_node_is_null(paramsNode))
-        return parameters;
-
-    uint32_t count = ts_node_named_child_count(paramsNode);
-    parameters.reserve(count);
-
-    TSTreeCursor cursor = ts_tree_cursor_new(paramsNode);
-    if (ts_tree_cursor_goto_first_child(&cursor))
-    {
-        do
-        {
-            TSNode child = ts_tree_cursor_current_node(&cursor);
-            if (ts_node_is_named(child) && ts_node_symbol(child) == m_gs.symParameter)
+    SyntaxOperands(paramsNode, &ctx.index)
+        .ForEachNamed(
+            [&](TSNode parameter)
             {
-                parameters.push_back(ExtractParameterInfo(child, sourceCode));
-            }
-        } while (ts_tree_cursor_goto_next_sibling(&cursor));
-    }
-    ts_tree_cursor_delete(&cursor);
+                if (ts_node_symbol(parameter) == m_gs.symParameter)
+                {
+                    parameters.push_back(ExtractParameterInfo(parameter, ctx));
+                }
+                return true;
+            });
     if (parameters.size() == 1 && parameters[0].typeName == "void" && parameters[0].name.empty())
     {
         parameters.clear();

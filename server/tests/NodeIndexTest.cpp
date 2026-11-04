@@ -3,6 +3,7 @@
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SyntaxOperands.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
+#include "analysis/types/TypeExtraction.h"
 #include "helpers/TestUtils.h"
 #include "parser/GrammarNames.h"
 
@@ -85,6 +86,46 @@ TEST_CASE("NodeIndex - Preserves enclosing containers beyond 65535 declarations"
     REQUIRE(containers.size() == 2);
     CHECK(containers.front().qualifiedName == outer + "::" + inner);
     CHECK(containers.back().qualifiedName == outer);
+}
+
+TEST_CASE("NodeIndex - Indexed type metadata preserves deep templates and direct argument order")
+{
+    constexpr uint32_t depth = 80;
+    std::string code = "const ";
+    for (uint32_t i = 0; i < depth; ++i)
+    {
+        code += "array<";
+    }
+    code += "int@";
+    code.append(depth, '>');
+    code += "@ nested;\nmap<Space::Item@, bool> pair;";
+
+    const auto doc = angel_lsp::test::CreateTestDocument("file:///indexed_nested_type.as", code);
+    REQUIRE(doc->GetTree() != nullptr);
+    const NodeIndex index(ts_tree_root_node(doc->GetTree()));
+    REQUIRE(index.ErrorRanges().empty());
+
+    const auto& gs = GetGrammarSymbols();
+    const auto declarations = index.Nodes(gs.symVariableDeclaration);
+    REQUIRE(declarations.size() == 2);
+    const auto nested = SyntaxOperands(declarations[0], &index).Field(gs.fieldVarType);
+    REQUIRE(index.FindOperandSyntax(nested));
+    const auto nestedInfo = ExtractTypeInfoFromAST(nested, code, &index);
+    CHECK(nestedInfo.kind == TypeKind::Array);
+    CHECK(nestedInfo.arrayDepth == depth);
+    CHECK(nestedInfo.isConst);
+    CHECK(nestedInfo.isHandle);
+    CHECK(nestedInfo.hasPrimitiveHandle);
+    CHECK(nestedInfo.baseTypeName == "int");
+    CHECK(nestedInfo.templateName == "array");
+    REQUIRE(nestedInfo.templateArgumentTypes.size() == 1);
+    CHECK(nestedInfo.templateArgumentTypes.front() == "int");
+
+    const auto pair = SyntaxOperands(declarations[1], &index).Field(gs.fieldVarType);
+    const auto pairInfo = ExtractTypeInfoFromAST(pair, code, &index);
+    REQUIRE(pairInfo.templateArgumentTypes.size() == 2);
+    CHECK(pairInfo.templateArgumentTypes[0] == "Space::Item");
+    CHECK(pairInfo.templateArgumentTypes[1] == "bool");
 }
 
 TEST_CASE("NodeIndex - Error range indexing and containment invariant")

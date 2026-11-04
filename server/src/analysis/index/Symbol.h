@@ -292,7 +292,7 @@ struct TypeExtractionResult
     bool isConst = false;
     bool hasPrimitiveHandle = false;
     uint32_t arrayDepth = 0;
-    std::vector<TypeExtractionResult> templateArguments;
+    std::vector<std::string> templateArgumentTypes;
 };
 
 /**

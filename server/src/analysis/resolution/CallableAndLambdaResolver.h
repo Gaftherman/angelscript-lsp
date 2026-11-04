@@ -93,7 +93,8 @@ std::vector<std::string> ExtractCallArgumentTypes(TSNode callNode, const Express
 std::vector<Symbol> CollectConstructorCandidates(const std::string& baseName, TSNode contextNode,
                                                  std::string_view sourceCode, const SymbolTable& symbolTable);
 uint32_t CalculateActiveCallParameter(TSNode argListNode, size_t cursorByte, std::string_view sourceCode);
-std::vector<LambdaParamASTInfo> ExtractLambdaParameters(TSNode lambdaParamList, std::string_view sourceCode);
+std::vector<LambdaParamASTInfo> ExtractLambdaParameters(TSNode lambdaParamList, std::string_view sourceCode,
+                                                        const NodeIndex* index = nullptr);
 std::vector<LambdaParameter> ReadLambdaParameters(TSNode listNode, std::string_view sourceCode);
 bool LambdaContradictsFuncdef(const std::vector<LambdaParameter>& lambdaParameters, const FuncdefSignature& funcdefSig,
                               const SymbolTable& table);

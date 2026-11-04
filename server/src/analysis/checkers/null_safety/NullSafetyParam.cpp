@@ -8,6 +8,7 @@
 #include "parser/GrammarNames.h"
 
 #include <string>
+#include <utility>
 
 namespace angel_lsp::analysis
 {
@@ -19,7 +20,8 @@ static void CollectParametersFromScope(TSNode bodyNode, const Scope* scopeRoot, 
     }
     const TSPoint pt = ts_node_start_point(bodyNode);
     const Scope* scope = FindInnermostScope(scopeRoot, pt.row, pt.column);
-    while (scope && !scope->isFunctionScope && scope->parent)
+    ScopeTraversalGuard guard;
+    while (scope && !scope->isFunctionScope && scope->parent && guard.CheckAndInsert(scope))
     {
         scope = scope->parent;
     }
@@ -35,86 +37,95 @@ static void CollectParametersFromScope(TSNode bodyNode, const Scope* scopeRoot, 
     }
 }
 
-static TSNode FindParameterListNode(TSNode funcNode)
+static TSNode FindParameterListNode(TSNode funcNode, const NodeIndex& index)
 {
-    TSNode params = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldParameters);
-    if (!ts_node_is_null(params))
+    const auto& gs = parser::GetGrammarSymbols();
+    const SyntaxOperands callable(funcNode, &index);
+    TSNode params = callable.Field(gs.fieldParameters);
+    if (ts_node_is_null(params))
     {
-        return params;
+        callable.ForEachNamed(
+            [&](TSNode child)
+            {
+                const auto symbol = ts_node_symbol(child);
+                if (symbol == gs.symParameterList || symbol == gs.symLambdaParameterList)
+                {
+                    params = child;
+                    return false;
+                }
+                return true;
+            });
     }
-    const uint32_t c = ts_node_named_child_count(funcNode);
-    for (uint32_t i = 0; i < c; ++i)
+    return params;
+}
+
+static TSNode ReadParameterType(const SyntaxOperands& parameter)
+{
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSNode type = parameter.Field(gs.fieldParamType);
+    if (!ts_node_is_null(type))
     {
-        TSNode child = ts_node_named_child(funcNode, i);
-        const auto& gs = parser::GetGrammarSymbols();
-        const TSSymbol sym = ts_node_symbol(child);
-        if (sym == gs.symParameterList || sym == gs.symLambdaParameterList)
-        {
-            return child;
-        }
+        return type;
     }
-    return TSNode{};
+    const TSNode fallbackField = parameter.Field(gs.fieldType);
+    if (!ts_node_is_null(fallbackField))
+    {
+        return fallbackField;
+    }
+    const TSNode recovered = parameter.FirstNamed();
+    if (ts_node_is_null(recovered))
+    {
+        return {};
+    }
+    const auto symbol = ts_node_symbol(recovered);
+    return symbol == gs.symType || symbol == gs.symPrimitiveType || symbol == gs.symScopedIdentifier ||
+                   symbol == gs.symIdentifier
+               ? recovered
+               : TSNode{};
+}
+
+static std::string ReadParameterName(const SyntaxOperands& parameter, const NullCheckContext& ctx)
+{
+    std::string name = parser::NodeText(parameter.Field(parser::GetGrammarSymbols().fieldName), ctx.sourceCode);
+    if (name.empty())
+    {
+        parameter.ForEachNamed(
+            [&](TSNode child)
+            {
+                auto identifier = GetIdentifierName(child, ctx);
+                if (!identifier.empty())
+                {
+                    name = std::move(identifier);
+                }
+                return true;
+            });
+    }
+    return name;
 }
 
 static void CollectRegularParameters(TSNode params, const NullCheckContext& ctx, FlowState& state)
 {
-    const uint32_t count = ts_node_named_child_count(params);
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode param = ts_node_named_child(params, i);
-        TSNode typeNode = parser::GetChildByField(param, parser::GetGrammarSymbols().fieldParamType);
-        if (ts_node_is_null(typeNode))
-        {
-            typeNode = parser::GetChildByField(param, parser::GetGrammarSymbols().fieldType);
-        }
-        if (ts_node_is_null(typeNode) && ts_node_named_child_count(param) > 0)
-        {
-            TSNode first = ts_node_named_child(param, 0);
-            const auto& gs = parser::GetGrammarSymbols();
-            const TSSymbol sym = ts_node_symbol(first);
-            if (sym == gs.symType || sym == gs.symPrimitiveType || sym == gs.symScopedIdentifier ||
-                sym == gs.symIdentifier)
+    SyntaxOperands(params, &ctx.index)
+        .ForEachNamed(
+            [&](TSNode parameter)
             {
-                typeNode = first;
-            }
-        }
-
-        if (ts_node_is_null(typeNode))
-        {
-            continue;
-        }
-
-        const auto typeInfo = ExtractTypeInfoFromAST(typeNode, ctx.sourceCode);
-        if (!typeInfo.isHandle)
-        {
-            continue;
-        }
-
-        std::string name =
-            parser::NodeText(parser::GetChildByField(param, parser::GetGrammarSymbols().fieldName), ctx.sourceCode);
-        if (name.empty())
-        {
-            for (uint32_t j = ts_node_named_child_count(param); j > 0; --j)
-            {
-                TSNode ch = ts_node_named_child(param, j - 1);
-                std::string ident = GetIdentifierName(ch, ctx);
-                if (!ident.empty())
+                const SyntaxOperands operands(parameter, &ctx.index);
+                const auto type = ExtractTypeInfoFromAST(ReadParameterType(operands), ctx.sourceCode, &ctx.index);
+                if (type.isHandle)
                 {
-                    name = ident;
-                    break;
+                    auto name = ReadParameterName(operands, ctx);
+                    if (!name.empty())
+                    {
+                        state.vars[std::move(name)] = Nullability::Nullable;
+                    }
                 }
-            }
-        }
-        if (!name.empty())
-        {
-            state.vars[name] = Nullability::Nullable;
-        }
-    }
+                return true;
+            });
 }
 
-static void CollectParametersFromAST(TSNode funcNode, const NullCheckContext& ctx, FlowState& state)
+static void CollectIndexedParameters(TSNode funcNode, const NullCheckContext& ctx, FlowState& state)
 {
-    TSNode params = FindParameterListNode(funcNode);
+    TSNode params = FindParameterListNode(funcNode, ctx.index);
     if (ts_node_is_null(params))
     {
         return;
@@ -123,7 +134,7 @@ static void CollectParametersFromAST(TSNode funcNode, const NullCheckContext& ct
     const auto& gs = parser::GetGrammarSymbols();
     if (ts_node_symbol(params) == gs.symLambdaParameterList)
     {
-        const auto lambdaParams = ExtractLambdaParameters(params, ctx.sourceCode);
+        const auto lambdaParams = ExtractLambdaParameters(params, ctx.sourceCode, &ctx.index);
         for (const auto& lp : lambdaParams)
         {
             if (lp.isHandle && !lp.name.empty())
@@ -152,7 +163,7 @@ TSNode FindFunctionBody(TSNode funcNode, const NodeIndex& index)
 void CollectParameters(TSNode funcNode, TSNode body, const NullCheckContext& ctx, FlowState& state)
 {
     CollectParametersFromScope(body, ctx.scopeRoot, state);
-    CollectParametersFromAST(funcNode, ctx, state);
+    CollectIndexedParameters(funcNode, ctx, state);
 }
 
 } // namespace angel_lsp::analysis

@@ -340,7 +340,7 @@ template <typename Callback> void ForEachNamedChildNode(TSNode parent, Callback&
 
 /**
  * @brief Iterates over direct child nodes until predicate returns false.
- * @tparam Predicate Callable with signature bool(TSNode) returning false to stop traversal.
+ * @tparam Predicate Callable with signature bool(TSNode) or bool(TSNode, TSFieldId), returning false to stop traversal.
  * @param[in] parent Parent AST node.
  * @param[in] predicate Visitor invoked for each direct child node.
  * @return True if iteration completed without early interruption; false if stopped early.
@@ -358,7 +358,18 @@ template <typename Predicate> bool ForEachChildNodeUntil(TSNode parent, Predicat
         do
         {
             TSNode node = ts_tree_cursor_current_node(&cursor);
-            if (!predicate(node))
+            const bool keepGoing = [&]
+            {
+                if constexpr (requires { predicate(node, TSFieldId{}); })
+                {
+                    return predicate(node, ts_tree_cursor_current_field_id(&cursor));
+                }
+                else
+                {
+                    return predicate(node);
+                }
+            }();
+            if (!keepGoing)
             {
                 completed = false;
                 break;

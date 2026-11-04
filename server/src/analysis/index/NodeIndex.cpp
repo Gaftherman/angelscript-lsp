@@ -457,7 +457,9 @@ bool NodeIndex::FlowFactCollector::CapturesOperands(TSSymbol symbol) const noexc
         for (const auto site :
              {gs.symForeachVariable, gs.symStatementBlock, gs.symVariableDeclarator, gs.symLambdaExpression,
               gs.symClassDeclaration, gs.symScopedIdentifier, gs.symArgumentList, gs.symParenthesizedExpression,
-              gs.symFunctionalCastExpression, gs.symTypedInitializerList})
+              gs.symFunctionalCastExpression, gs.symTypedInitializerList, gs.symType, gs.symDatatype,
+              gs.symPrimitiveType, gs.symTemplateTypeList, gs.symParameterList, gs.symParameter,
+              gs.symLambdaParameterList})
         {
             symbols.set(site);
         }
@@ -510,6 +512,12 @@ SyntaxNodeId NodeIndex::FlowFactCollector::AddSyntaxFact(Frame& frame, TSNode no
     return id;
 }
 
+/// Keeps modifier and separator tokens used by type and lambda parameter readers.
+static bool CapturesAnonymousOperands(TSSymbol symbol, const parser::GrammarSymbols& gs) noexcept
+{
+    return symbol == gs.symType || symbol == gs.symPrimitiveType || symbol == gs.symLambdaParameterList;
+}
+
 void NodeIndex::FlowFactCollector::CaptureSyntaxNode(Frame& frame, TSNode node, size_t syntaxSlot)
 {
     frame.captureOperands = frame.isNamed && CapturesOperands(frame.symbol);
@@ -517,7 +525,8 @@ void NodeIndex::FlowFactCollector::CaptureSyntaxNode(Frame& frame, TSNode node, 
     const bool hasParent = parent && parent->syntaxId != NoSyntaxNode && (frame.inCallable || parent->captureOperands);
     const bool afterAssign = hasParent && ObserveAssignmentChild(*parent, frame.symbol);
     const bool callable = IsFlowCallable(frame.symbol, m_grammar);
-    const bool linkedOperand = hasParent && (frame.isNamed || frame.field != 0 || afterAssign);
+    const bool linkedOperand = hasParent && (frame.isNamed || frame.field != 0 || afterAssign ||
+                                             CapturesAnonymousOperands(parent->symbol, m_grammar));
     if (!callable && !frame.captureOperands && !linkedOperand)
     {
         return;

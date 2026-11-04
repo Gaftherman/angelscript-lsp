@@ -3,26 +3,19 @@
 #include "analysis/index/SyntaxOperands.h"
 #include "parser/ASTUtils.h"
 
-#include <ankerl/unordered_dense.h>
+#include <algorithm>
+#include <span>
 #include <string_view>
 #include <tree_sitter/api.h>
+#include <utility>
 
 extern "C" const TSLanguage* tree_sitter_angelscript();
 
 namespace angel_lsp::analysis
 {
-#define SYM_NAME(str) str, static_cast<uint32_t>(sizeof(str) - 1)
-
 TypeExtractionSymbols::TypeExtractionSymbols()
 {
     const TSLanguage* lang = tree_sitter_angelscript();
-
-    symPrimitiveType = ts_language_symbol_for_name(lang, SYM_NAME("primitive_type"), true);
-    symDatatype = ts_language_symbol_for_name(lang, SYM_NAME("datatype"), true);
-    symTemplateTypeList = ts_language_symbol_for_name(lang, SYM_NAME("template_type_list"), true);
-    symIdentifier = ts_language_symbol_for_name(lang, SYM_NAME("identifier"), true);
-    symType = ts_language_symbol_for_name(lang, SYM_NAME("type"), true);
-    symScope = ts_language_symbol_for_name(lang, SYM_NAME("scope"), true);
 
     auto addPrimitive = [&](const char* name, uint32_t len, TypeKind kind)
     {
@@ -57,192 +50,236 @@ static const TypeExtractionSymbols& GetTypeExtractionSymbols()
     return symbols;
 }
 
-static bool TryExtractPrimitiveOrIdentifier(TSNode typeNode, std::string_view sourceCode, TypeExtractionResult& result)
+static bool ReadTypeLeaf(TSNode node, std::string_view sourceCode, const NodeIndex* index, TypeExtractionResult& result)
 {
-    const auto& symbols = GetTypeExtractionSymbols();
-    const TSSymbol nodeSymbol = ts_node_symbol(typeNode);
-
-    if (nodeSymbol == symbols.symPrimitiveType)
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSSymbol symbol = ts_node_symbol(node);
+    if (symbol == gs.symPrimitiveType)
     {
-        result.baseTypeName = parser::GetNodeText(typeNode, sourceCode);
-        TSNode parentDatatype = parser::GetParent(typeNode);
-        if (!ts_node_is_null(parentDatatype))
-        {
-            TSNode innerToken = ts_node_child(typeNode, 0);
-            if (!ts_node_is_null(innerToken))
-            {
-                result.kind = symbols.LookupPrimitiveKind(ts_node_symbol(innerToken));
-            }
-        }
-        if (result.kind == TypeKind::Unknown)
-        {
-            result.kind = symbols.LookupPrimitiveKind(nodeSymbol);
-        }
+        result.baseTypeName = parser::GetNodeText(node, sourceCode);
+        SyntaxOperands(node, index)
+            .ForEachChild(
+                [&](TSNode token)
+                {
+                    result.kind = GetTypeExtractionSymbols().LookupPrimitiveKind(ts_node_symbol(token));
+                    return false;
+                });
         return true;
     }
-
-    if (nodeSymbol == symbols.symIdentifier)
+    if (symbol == gs.symIdentifier)
     {
-        result.baseTypeName = parser::GetNodeText(typeNode, sourceCode);
-        result.kind = TypeKind::Unknown;
+        result.baseTypeName = parser::GetNodeText(node, sourceCode);
         return true;
     }
-
     return false;
 }
 
-static void ProcessDatatypeChild(TSNode child, std::string_view sourceCode, TypeExtractionResult& result,
-                                 std::string& datatypeText)
+static void ReadTypeModifier(TSNode child, TSNode previous, const NodeIndex* index, TypeExtractionResult& result)
 {
-    TSNode inner = ts_node_named_child(child, 0);
-    if (!ts_node_is_null(inner))
+    const auto& gs = parser::GetGrammarSymbols();
+    if (ts_node_is_missing(child))
     {
-        TypeExtractionResult innerInfo = ExtractTypeInfoFromAST(inner, sourceCode);
-        result.baseTypeName = innerInfo.baseTypeName;
-        result.kind = innerInfo.kind;
-        datatypeText = innerInfo.baseTypeName;
+        return;
     }
-    else
-    {
-        datatypeText = parser::GetNodeText(child, sourceCode);
-        result.baseTypeName = datatypeText;
-    }
-}
-
-static void ProcessTemplateTypeListChild(TSNode child, std::string_view sourceCode, const std::string& datatypeText,
-                                         TypeExtractionResult& result)
-{
-    const auto& symbols = GetTypeExtractionSymbols();
-    result.isArray = true;
-    result.arrayDepth++;
-    result.templateName = datatypeText;
-
-    const uint32_t tCount = ts_node_named_child_count(child);
-    for (uint32_t t = 0; t < tCount; ++t)
-    {
-        TSNode innerType = ts_node_named_child(child, t);
-        if (ts_node_symbol(innerType) == symbols.symType)
-        {
-            TypeExtractionResult inner = ExtractTypeInfoFromAST(innerType, sourceCode);
-            result.templateArguments.push_back(inner);
-            if (result.templateArguments.size() == 1)
-            {
-                result.baseTypeName = inner.baseTypeName;
-                result.hasPrimitiveHandle = inner.hasPrimitiveHandle;
-                result.arrayDepth += inner.arrayDepth;
-                if (inner.kind != TypeKind::Unknown)
-                {
-                    result.kind = inner.kind;
-                }
-            }
-        }
-    }
-}
-
-static void ProcessAnonymousModifier(TSNode child, TSNode prevChild, std::string_view sourceCode,
-                                     TypeExtractionResult& result)
-{
-    const auto& symbols = GetTypeExtractionSymbols();
-    const std::string_view tok = parser::GetNodeTextView(child, sourceCode);
-    if (tok == "[")
+    const TSSymbol token = ts_node_symbol(child);
+    if (token == gs.tokOpenBracket)
     {
         result.isArray = true;
         result.arrayDepth++;
     }
-    else if (tok == "@")
+    else if (token == gs.tokAt)
     {
-        const std::string_view prevTok =
-            !ts_node_is_null(prevChild) ? parser::GetNodeTextView(prevChild, sourceCode) : "";
-        if (result.isHandle && prevTok != "const")
+        if (result.isHandle &&
+            (ts_node_is_null(previous) || ts_node_is_missing(previous) || ts_node_symbol(previous) != gs.tokConst))
         {
             result.hasPrimitiveHandle = true;
         }
         result.isHandle = true;
-        if (!result.isArray && !ts_node_is_null(prevChild) && ts_node_symbol(prevChild) == symbols.symDatatype)
+        if (!result.isArray && !ts_node_is_null(previous) && ts_node_symbol(previous) == gs.symDatatype)
         {
-            TSNode innerChild = ts_node_named_child(prevChild, 0);
-            if (!ts_node_is_null(innerChild) && ts_node_symbol(innerChild) == symbols.symPrimitiveType)
+            const TSNode inner = SyntaxOperands(previous, index).FirstNamed();
+            if (!ts_node_is_null(inner) && ts_node_symbol(inner) == gs.symPrimitiveType)
             {
                 result.hasPrimitiveHandle = true;
             }
         }
     }
-    else if (tok == "&")
+    else if (token == gs.tokAmp)
     {
         result.isReference = true;
     }
-    else if (tok == "const")
+    else if (token == gs.tokConst)
     {
         result.isConst = true;
     }
 }
 
-TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, std::string_view sourceCode)
+/** @brief Folds ordered type operands without recursive calls or recursively owned results. */
+class TypeReadWorklist
 {
-    TypeExtractionResult result;
-    if (ts_node_is_null(typeNode))
+  public:
+    TypeReadWorklist(std::string_view sourceCode, const NodeIndex* index) : m_sourceCode(sourceCode), m_index(index)
     {
-        return result;
     }
 
-    if (TryExtractPrimitiveOrIdentifier(typeNode, sourceCode, result))
+    TypeExtractionResult Read(TSNode node)
     {
-        return result;
-    }
-
-    const auto& symbols = GetTypeExtractionSymbols();
-    std::string datatypeText;
-    std::string scopePrefix;
-
-    TSTreeCursor cursor = ts_tree_cursor_new(typeNode);
-    if (ts_tree_cursor_goto_first_child(&cursor))
-    {
-        TSNode prevChild = ts_tree_cursor_current_node(&cursor);
-        do
+        Evaluate(node);
+        while (!m_pending.empty())
         {
-            TSNode child = ts_tree_cursor_current_node(&cursor);
-            const TSSymbol childSym = ts_node_symbol(child);
-
-            if (childSym == symbols.symScope)
+            const TypeReadStep step = m_pending.back();
+            m_pending.pop_back();
+            switch (step.action)
             {
-                scopePrefix = parser::GetNodeText(child, sourceCode);
+            case TypeReadAction::Evaluate:
+                Evaluate(step.node);
+                break;
+            case TypeReadAction::Child:
+                ReadChild(step.node, step.previous);
+                break;
+            case TypeReadAction::Datatype:
+                FinishDatatype(m_frames.back(), m_completed.baseTypeName, m_completed.kind);
+                break;
+            case TypeReadAction::TemplateArgument:
+                FinishArgument(m_frames.back().result);
+                break;
+            case TypeReadAction::Finish:
+                FinishType();
+                break;
             }
-            else if (childSym == symbols.symDatatype)
-            {
-                ProcessDatatypeChild(child, sourceCode, result, datatypeText);
-                if (!scopePrefix.empty())
+        }
+        return std::move(m_completed);
+    }
+
+  private:
+    void Evaluate(TSNode node)
+    {
+        m_completed = {};
+        if (ts_node_is_null(node) || ReadTypeLeaf(node, m_sourceCode, m_index, m_completed))
+        {
+            return;
+        }
+
+        m_frames.emplace_back();
+        m_pending.push_back({TypeReadAction::Finish});
+        const auto firstChild = m_pending.size();
+        TSNode previous{};
+        SyntaxOperands(node, m_index)
+            .ForEachChild(
+                [&](TSNode child)
                 {
-                    datatypeText = scopePrefix + datatypeText;
-                    result.baseTypeName = scopePrefix + result.baseTypeName;
-                }
-            }
-            else if (childSym == symbols.symTemplateTypeList)
-            {
-                ProcessTemplateTypeListChild(child, sourceCode, datatypeText, result);
-            }
-            else if (!ts_node_is_named(child))
-            {
-                ProcessAnonymousModifier(child, prevChild, sourceCode, result);
-            }
-            prevChild = child;
-        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+                    m_pending.push_back({TypeReadAction::Child, child, previous});
+                    previous = child;
+                    return true;
+                });
+        std::ranges::reverse(std::span(m_pending).subspan(firstChild));
     }
-    ts_tree_cursor_delete(&cursor);
 
-    if (result.isArray)
+    void ReadChild(TSNode child, TSNode previous)
     {
-        result.kind = TypeKind::Array;
-        if (result.templateName.empty())
+        const auto& gs = parser::GetGrammarSymbols();
+        const auto symbol = ts_node_symbol(child);
+        auto& frame = m_frames.back();
+        if (symbol == gs.symScope)
         {
-            result.templateName = "array";
+            frame.scopePrefix = parser::GetNodeText(child, m_sourceCode);
+        }
+        else if (symbol == gs.symDatatype)
+        {
+            const TSNode inner = SyntaxOperands(child, m_index).FirstNamed();
+            if (ts_node_is_null(inner))
+            {
+                FinishDatatype(frame, parser::GetNodeText(child, m_sourceCode), frame.result.kind);
+            }
+            else
+            {
+                m_pending.push_back({TypeReadAction::Datatype});
+                m_pending.push_back({TypeReadAction::Evaluate, inner});
+            }
+        }
+        else if (symbol == gs.symTemplateTypeList)
+        {
+            ReadTemplate(child, frame);
+        }
+        else if (!ts_node_is_named(child))
+        {
+            ReadTypeModifier(child, previous, m_index, frame.result);
         }
     }
-    else if (result.isHandle && result.kind == TypeKind::Unknown)
+
+    static void FinishDatatype(TypeReadFrame& frame, const std::string& name, TypeKind kind)
     {
-        result.kind = TypeKind::Handle;
+        frame.datatypeText = frame.scopePrefix + name;
+        frame.result.baseTypeName = frame.datatypeText;
+        frame.result.kind = kind;
     }
 
-    return result;
+    void ReadTemplate(TSNode list, TypeReadFrame& frame)
+    {
+        frame.result.isArray = true;
+        frame.result.arrayDepth++;
+        frame.result.templateName = frame.datatypeText;
+
+        const auto firstArgument = m_pending.size();
+        const auto typeSymbol = parser::GetGrammarSymbols().symType;
+        SyntaxOperands(list, m_index)
+            .ForEachNamed(
+                [&](TSNode argument)
+                {
+                    if (ts_node_symbol(argument) == typeSymbol)
+                    {
+                        m_pending.push_back({TypeReadAction::Evaluate, argument});
+                        m_pending.push_back({TypeReadAction::TemplateArgument});
+                    }
+                    return true;
+                });
+        std::ranges::reverse(std::span(m_pending).subspan(firstArgument));
+    }
+
+    void FinishArgument(TypeExtractionResult& result)
+    {
+        if (result.templateArgumentTypes.empty())
+        {
+            result.baseTypeName = m_completed.baseTypeName;
+            result.hasPrimitiveHandle = m_completed.hasPrimitiveHandle;
+            result.arrayDepth += m_completed.arrayDepth;
+            if (m_completed.kind != TypeKind::Unknown)
+            {
+                result.kind = m_completed.kind;
+            }
+        }
+        result.templateArgumentTypes.push_back(std::move(m_completed.baseTypeName));
+    }
+
+    void FinishType()
+    {
+        auto& result = m_frames.back().result;
+        if (result.isArray)
+        {
+            result.kind = TypeKind::Array;
+            if (result.templateName.empty())
+            {
+                result.templateName = "array";
+            }
+        }
+        else if (result.isHandle && result.kind == TypeKind::Unknown)
+        {
+            result.kind = TypeKind::Handle;
+        }
+        m_completed = std::move(result);
+        m_frames.pop_back();
+    }
+
+    std::string_view m_sourceCode;
+    const NodeIndex* m_index;
+    std::vector<TypeReadStep> m_pending;
+    std::vector<TypeReadFrame> m_frames;
+    TypeExtractionResult m_completed;
+};
+
+TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, std::string_view sourceCode, const NodeIndex* index)
+{
+    return TypeReadWorklist(sourceCode, index).Read(typeNode);
 }
 
 bool IsNullInitializer(TSNode valueNode, const NodeIndex* index)

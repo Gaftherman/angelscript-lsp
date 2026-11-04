@@ -54,12 +54,7 @@ TSNode IfStatementView::Alternative() const noexcept
     {
         return TSNode{};
     }
-    TSNode alt = parser::GetChildByField(m_raw, parser::GetGrammarSymbols().fieldAlternative);
-    if (ts_node_is_null(alt) && ts_node_named_child_count(m_raw) > 2)
-    {
-        alt = ts_node_named_child(m_raw, 2);
-    }
-    return alt;
+    return parser::GetChildByField(m_raw, parser::GetGrammarSymbols().fieldAlternative);
 }
 
 bool IfStatementView::HasAlternative() const noexcept

@@ -163,6 +163,28 @@ TEST_CASE("Deep null guards preserve branch exits and the unguarded range")
     CHECK(diagnostics.front().range.start.character == 0);
 }
 
+TEST_CASE("Comment before an if body does not cause a duplicate null warning")
+{
+    const std::string code = R"(class HandleTarget { int field; }
+HandleTarget@ Fetch() { return null; }
+void Probe(HandleTarget@ guarded) {
+    if (guarded !is null) // Comment between the condition and the body.
+    {
+        guarded.field = 0;
+        HandleTarget@ target = Fetch();
+        target.field = 0;
+    }
+}
+)";
+    auto diagnostics = AnalyzeScript(code);
+    std::erase_if(diagnostics, [](const Diagnostic& diagnostic)
+                  { return diagnostic.code != diagnostics::codes::PossibleNullDereference; });
+    REQUIRE(diagnostics.size() == 1);
+    CHECK(diagnostics.front().range.start.line == 7);
+    CHECK(diagnostics.front().range.start.character == 8);
+    CHECK(diagnostics.front().range.end.character == 14);
+}
+
 TEST_CASE("Nested short-circuit operands keep the common guard across alternatives")
 {
     const std::string code = R"(class GuardedObject { bool Ready() { return true; } void Touch() {} }

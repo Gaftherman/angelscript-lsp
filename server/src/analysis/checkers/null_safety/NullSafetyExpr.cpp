@@ -49,7 +49,7 @@ static void CheckMemberDereference(TSNode obj, FlowState& state, NullCheckContex
     if (objSym == gs.symCastExpression)
     {
         TSNode typeNode = SyntaxOperands(obj, &ctx.index).Field(gs.fieldType);
-        const auto typeInfo = ExtractTypeInfoFromAST(typeNode, ctx.sourceCode);
+        const auto typeInfo = ExtractTypeInfoFromAST(typeNode, ctx.sourceCode, &ctx.index);
         if (typeInfo.isHandle)
         {
             std::string typeText = parser::NodeText(typeNode, ctx.sourceCode);

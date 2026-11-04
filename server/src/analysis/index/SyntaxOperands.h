@@ -36,6 +36,35 @@ class SyntaxOperands
         return {};
     }
 
+    /// Visits direct children in source order, with their field IDs if the predicate requests them.
+    template <typename Predicate> void ForEachChild(Predicate&& predicate) const
+    {
+        if (!m_fact)
+        {
+            parser::ForEachChildNodeUntil(m_node, predicate);
+            return;
+        }
+        for (const auto* child = m_index->SyntaxNode(m_fact->first); child; child = m_index->SyntaxNode(child->next))
+        {
+            const TSNode node = m_index->SyntaxHandle(*child);
+            const bool keepGoing = [&]
+            {
+                if constexpr (requires { predicate(node, child->field); })
+                {
+                    return predicate(node, child->field);
+                }
+                else
+                {
+                    return predicate(node);
+                }
+            }();
+            if (!keepGoing)
+            {
+                return;
+            }
+        }
+    }
+
     template <typename Predicate> void ForEachNamed(Predicate&& predicate) const
     {
         if (!m_fact)

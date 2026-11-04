@@ -449,9 +449,10 @@ bool IsLambdaExpression(TSNode node) noexcept
 /**
  * @brief Resolves lambda_parameter_list node from either parameter list or lambda expression.
  * @param[in] node AST node.
+ * @param[in] index Captured operands for this revision, if available.
  * @return lambda_parameter_list node or null node.
  */
-static TSNode ResolveLambdaParameterListNode(TSNode node)
+static TSNode ResolveLambdaParameterListNode(TSNode node, const NodeIndex* index)
 {
     if (ts_node_is_null(node))
     {
@@ -465,25 +466,9 @@ static TSNode ResolveLambdaParameterListNode(TSNode node)
     }
     if (sym == gs.symLambdaExpression)
     {
-        TSNode params = parser::GetChildByField(node, gs.fieldParameters);
-        if (!ts_node_is_null(params))
-        {
-            return params;
-        }
-        TSTreeCursor cursor = ts_tree_cursor_new(node);
-        if (ts_tree_cursor_goto_first_child(&cursor))
-        {
-            do
-            {
-                TSNode ch = ts_tree_cursor_current_node(&cursor);
-                if (ts_node_symbol(ch) == gs.symLambdaParameterList)
-                {
-                    ts_tree_cursor_delete(&cursor);
-                    return ch;
-                }
-            } while (ts_tree_cursor_goto_next_sibling(&cursor));
-            ts_tree_cursor_delete(&cursor);
-        }
+        const SyntaxOperands operands(node, index);
+        const TSNode params = operands.Field(gs.fieldParameters);
+        return ts_node_is_null(params) ? operands.FirstNamed(gs.symLambdaParameterList) : params;
     }
     return TSNode{};
 }
@@ -529,66 +514,54 @@ void ApplyLambdaParamChild(TSNode child, TSFieldId fieldId, std::string_view sou
  * @brief Structurally parses lambda parameter declarations from AST into LambdaParamASTInfo structs.
  * @param[in] lambdaParamList AST node representing a lambda parameter list.
  * @param[in] sourceCode Document source text buffer.
+ * @param[in] index Captured operands for this revision, if available.
  * @return Ordered vector of extracted lambda parameter AST definitions.
  */
-std::vector<LambdaParamASTInfo> ExtractLambdaParameters(TSNode lambdaParamList, std::string_view sourceCode)
+std::vector<LambdaParamASTInfo> ExtractLambdaParameters(TSNode lambdaParamList, std::string_view sourceCode,
+                                                        const NodeIndex* index)
 {
-    TSNode targetList = ResolveLambdaParameterListNode(lambdaParamList);
+    TSNode targetList = ResolveLambdaParameterListNode(lambdaParamList, index);
     if (ts_node_is_null(targetList))
     {
         return {};
     }
 
     std::vector<LambdaParamASTInfo> result;
-    TSTreeCursor cursor = ts_tree_cursor_new(targetList);
-    if (!ts_tree_cursor_goto_first_child(&cursor))
-    {
-        ts_tree_cursor_delete(&cursor);
-        return result;
-    }
-
     LambdaParamASTInfo current;
-    current.index = 0;
     bool inParam = false;
-
-    do
-    {
-        TSNode child = ts_tree_cursor_current_node(&cursor);
-        const auto& gs = parser::GetGrammarSymbols();
-        const TSSymbol sym = ts_node_symbol(child);
-
-        if (sym == gs.tokOpenParen || sym == gs.symComment)
-        {
-            continue;
-        }
-        if (sym == gs.tokCloseParen)
-        {
-            break;
-        }
-        if (sym == gs.tokComma)
-        {
-            if (inParam)
+    const auto& gs = parser::GetGrammarSymbols();
+    SyntaxOperands(targetList, index)
+        .ForEachChild(
+            [&](TSNode child, TSFieldId field)
             {
-                result.push_back(std::move(current));
-                current = LambdaParamASTInfo{};
-                current.index = static_cast<uint32_t>(result.size());
-                inParam = false;
-            }
-            continue;
-        }
-
-        if (ts_node_is_null(current.startNode))
-        {
-            current.startNode = child;
-        }
-        inParam = true;
-
-        const TSFieldId fieldId = ts_tree_cursor_current_field_id(&cursor);
-        ApplyLambdaParamChild(child, fieldId, sourceCode, current);
-
-    } while (ts_tree_cursor_goto_next_sibling(&cursor));
-
-    ts_tree_cursor_delete(&cursor);
+                const TSSymbol sym = ts_node_symbol(child);
+                if (sym == gs.tokCloseParen)
+                {
+                    return false;
+                }
+                if (sym == gs.tokOpenParen || sym == gs.symComment)
+                {
+                    return true;
+                }
+                if (sym == gs.tokComma)
+                {
+                    if (inParam)
+                    {
+                        result.push_back(std::move(current));
+                        current = LambdaParamASTInfo{};
+                        current.index = static_cast<uint32_t>(result.size());
+                        inParam = false;
+                    }
+                    return true;
+                }
+                if (ts_node_is_null(current.startNode))
+                {
+                    current.startNode = child;
+                }
+                inParam = true;
+                ApplyLambdaParamChild(child, field, sourceCode, current);
+                return true;
+            });
 
     if (inParam)
     {

@@ -9,7 +9,15 @@
 
 namespace angel_lsp::analysis
 {
-TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, std::string_view sourceCode);
+/**
+ * @brief Reads type information from direct operands with an iterative worklist.
+ * @param[in] typeNode Type expression or primitive type node.
+ * @param[in] sourceCode Source text for the same syntax revision.
+ * @param[in] index Captured operands when available.
+ * @return Type metadata with the base names of its immediate template arguments.
+ */
+TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, std::string_view sourceCode,
+                                            const NodeIndex* index = nullptr);
 
 /**
  * @brief True if valueNode's own top-level value is a null literal, e.g. "null" or "(null)".
@@ -18,17 +26,10 @@ TypeExtractionResult ExtractTypeInfoFromAST(TSNode typeNode, std::string_view so
 bool IsNullInitializer(TSNode valueNode, const NodeIndex* index = nullptr);
 
 /**
- * @brief Pre-resolved grammar symbols and sentinel IDs used during fast AST type extraction.
+ * @brief Maps pre-resolved primitive token symbols to semantic type kinds.
  */
 struct TypeExtractionSymbols
 {
-    TSSymbol symPrimitiveType = 0;
-    TSSymbol symDatatype = 0;
-    TSSymbol symTemplateTypeList = 0;
-    TSSymbol symIdentifier = 0;
-    TSSymbol symType = 0;
-    TSSymbol symScope = 0;
-
     ankerl::unordered_dense::map<TSSymbol, TypeKind> primitiveKindMap;
 
     TypeExtractionSymbols();
@@ -43,4 +44,31 @@ struct TypeExtractionSymbols
         return TypeKind::Unknown;
     }
 };
+
+/// Worklist operations for reading type operands.
+enum class TypeReadAction : uint8_t
+{
+    Evaluate,
+    Child,
+    Datatype,
+    TemplateArgument,
+    Finish
+};
+
+/// Pending work on one type or its direct child.
+struct TypeReadStep
+{
+    TypeReadAction action;
+    TSNode node{};
+    TSNode previous{};
+};
+
+/// Metadata accumulated for an active type.
+struct TypeReadFrame
+{
+    TypeExtractionResult result;
+    std::string datatypeText;
+    std::string scopePrefix;
+};
+
 } // namespace angel_lsp::analysis

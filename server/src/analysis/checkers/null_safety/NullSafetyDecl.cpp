@@ -52,7 +52,7 @@ static bool IsConstructorCall(std::string_view fnName, TSNode typeNode, std::str
 
     if (!ts_node_is_null(typeNode))
     {
-        const auto typeInfo = ExtractTypeInfoFromAST(typeNode, ctx.sourceCode);
+        const auto typeInfo = ExtractTypeInfoFromAST(typeNode, ctx.sourceCode, &ctx.index);
         if (shortName == typeInfo.baseTypeName)
         {
             return true;
@@ -132,7 +132,7 @@ void CheckVarDeclaration(TSNode stmt, FlowState& state, NullCheckContext& ctx)
     {
         typeNode = declaration.Field(gs.fieldType);
     }
-    const bool isHandle = ExtractTypeInfoFromAST(typeNode, ctx.sourceCode).isHandle;
+    const bool isHandle = ExtractTypeInfoFromAST(typeNode, ctx.sourceCode, &ctx.index).isHandle;
 
     declaration.ForEachNamed(
         [&](TSNode child)

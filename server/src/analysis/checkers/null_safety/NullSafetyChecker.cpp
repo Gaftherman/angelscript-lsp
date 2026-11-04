@@ -100,7 +100,7 @@ class NullStatementWorklist
         branch.elseState = state;
         ApplyAssertions(branch.elseState, assertions.negative);
         ApplyAssertions(state, assertions.positive);
-        m_pending.push_back({NullStatementAction::Else, syntax.FieldOrNamed(gs.fieldAlternative, 2)});
+        m_pending.push_back({NullStatementAction::Else, syntax.Field(gs.fieldAlternative)});
         m_pending.push_back({NullStatementAction::Statement, syntax.FieldOrNamed(gs.fieldConsequence, 1)});
     }
 
