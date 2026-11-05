@@ -124,6 +124,61 @@ enum class IndexedDeclarationKind : uint8_t
 };
 
 /**
+ * @brief Precalculated range and parent index for hierarchical selection range lookup.
+ */
+struct IndexedSelectionRange
+{
+    SourceRange range{};
+    uint32_t startByte = 0;
+    uint32_t endByte = 0;
+    uint32_t parentSpanIndex = UINT32_MAX;
+};
+static_assert(sizeof(IndexedSelectionRange) <= 32);
+
+/**
+ * @brief Classification of foldable document intervals.
+ */
+enum class IndexedFoldableKind : uint8_t
+{
+    None,
+    Comment,
+    Imports,
+    Region
+};
+
+/**
+ * @brief Precalculated source coordinate interval eligible for folding.
+ */
+struct IndexedFoldableSpan
+{
+    SourceRange range{};
+    IndexedFoldableKind kind = IndexedFoldableKind::None;
+};
+
+/**
+ * @brief Pre-extracted #include directive facts captured during pass 1.
+ */
+struct IndexedIncludeDirective
+{
+    std::string rawPath;
+    uint32_t line = 0;
+    uint32_t spanStart = 0;
+    uint32_t spanEnd = 0;
+    bool isAngled = false;
+};
+
+/**
+ * @brief Configuration options bundle for building a NodeIndex.
+ */
+struct NodeIndexOptions
+{
+    const TSLanguage* lang = nullptr;
+    TraversalBudget* budget = nullptr;
+    NodeIndexContents contents = NodeIndexContents::Full;
+    std::string_view source{};
+};
+
+/**
  * @brief Single-pass index of AST nodes grouped by Tree-Sitter symbol for O(1) retrieval.
  *        Traverses an AST once in preorder, bucketing nodes by their Tree-Sitter TSSymbol id
  */
@@ -133,12 +188,27 @@ class NodeIndex
     NodeIndex() = default;
 
     /**
-     * @brief Constructs a NodeIndex and builds it from the given root node.
+     * @brief Constructs a NodeIndex and builds it from the given root node and optional source.
+     * @param root The root AST node of the document.
+     * @param source Optional source code buffer for include directives and folding hints.
+     */
+    explicit NodeIndex(TSNode root, std::string_view source = {});
+
+    /**
+     * @brief Constructs a NodeIndex with configuration options.
+     * @param root The root AST node of the document.
+     * @param options Build options bundle.
+     */
+    explicit NodeIndex(TSNode root, const NodeIndexOptions& options);
+
+    /**
+     * @brief Constructs a NodeIndex and builds it with language, budget, and content mode.
      * @param root The root AST node of the document.
      * @param lang The language definition (defaults to tree_sitter_angelscript() if null).
      * @param budget Optional traversal budget to track and enforce node visits.
+     * @param contents Node index contents mode.
      */
-    explicit NodeIndex(TSNode root, const TSLanguage* lang = nullptr, TraversalBudget* budget = nullptr,
+    explicit NodeIndex(TSNode root, const TSLanguage* lang, TraversalBudget* budget,
                        NodeIndexContents contents = NodeIndexContents::Full);
 
     ~NodeIndex() = default;
@@ -148,12 +218,27 @@ class NodeIndex
     NodeIndex& operator=(NodeIndex&&) noexcept = default;
 
     /**
+     * @brief Builds or rebuilds the index from an AST root node and optional source.
+     * @param root The root node of the syntax tree.
+     * @param source Optional source text buffer.
+     */
+    void Build(TSNode root, std::string_view source = {});
+
+    /**
+     * @brief Builds the index with full configuration options.
+     * @param root The root node of the syntax tree.
+     * @param options Build options bundle.
+     */
+    void Build(TSNode root, const NodeIndexOptions& options);
+
+    /**
      * @brief Builds or rebuilds the index from an AST root node.
      * @param root The root node of the syntax tree.
      * @param lang The language definition (defaults to tree_sitter_angelscript() if null).
      * @param budget Optional traversal budget to track and enforce node visits.
+     * @param contents Content mode for indexing.
      */
-    void Build(TSNode root, const TSLanguage* lang = nullptr, TraversalBudget* budget = nullptr,
+    void Build(TSNode root, const TSLanguage* lang, TraversalBudget* budget,
                NodeIndexContents contents = NodeIndexContents::Full);
 
     /// Visits declaration and validation candidates in cursor order using the stored symbol slots.
@@ -502,6 +587,51 @@ class NodeIndex
     /// Tests a byte position against disjoint outermost if, while and for statement spans.
     [[nodiscard]] bool IsInsideConditionalStatement(uint32_t byteOffset) const noexcept;
 
+    /**
+     * @brief Finds enclosing syntactic selection ranges for a cursor position ordered from innermost to outermost.
+     * @param[in] line 0-indexed line number.
+     * @param[in] character 0-indexed character column.
+     * @return Ordered enclosing syntax ranges, or empty if index has no records.
+     */
+    [[nodiscard]] std::vector<SourceRange> FindEnclosingSelectionRanges(uint32_t line, uint32_t character) const;
+
+    /**
+     * @brief Finds enclosing syntactic selection ranges for a document byte offset ordered from innermost to outermost.
+     * @param[in] byteOffset Document byte offset.
+     * @return Ordered enclosing syntax ranges, or empty if index has no records.
+     */
+    [[nodiscard]] std::vector<SourceRange> FindEnclosingSelectionRanges(uint32_t byteOffset) const;
+
+    /**
+     * @brief Returns pre-computed foldable syntax and comment spans.
+     * @return Span of foldable ranges.
+     */
+    [[nodiscard]] std::span<const IndexedFoldableSpan> FoldableSpans() const noexcept;
+
+    /**
+     * @brief Returns pre-computed foldable syntax and comment spans (alias).
+     * @return Span of foldable ranges.
+     */
+    [[nodiscard]] std::span<const IndexedFoldableSpan> GetFoldableSpans() const noexcept
+    {
+        return FoldableSpans();
+    }
+
+    /**
+     * @brief Returns pre-extracted include directives.
+     * @return Span of include directive facts.
+     */
+    [[nodiscard]] std::span<const IndexedIncludeDirective> IncludeDirectives() const noexcept;
+
+    /**
+     * @brief Returns pre-extracted include directives (alias).
+     * @return Span of include directive facts.
+     */
+    [[nodiscard]] std::span<const IndexedIncludeDirective> GetIncludeDirectives() const noexcept
+    {
+        return IncludeDirectives();
+    }
+
   private:
     struct IndexedSwitch
     {
@@ -548,6 +678,9 @@ class NodeIndex
         std::vector<SyntaxNodeId> classByFunctionSlot;
         std::vector<SyntaxNodeId> callableByReturnSlot;
         std::vector<ErrorRange> conditionalStatements;
+        std::vector<IndexedSelectionRange> selectionSpans;
+        std::vector<IndexedFoldableSpan> foldableSpans;
+        std::vector<IndexedIncludeDirective> includeDirectives;
     };
 
     FlowFacts& MutableFlowFacts();
@@ -628,7 +761,10 @@ class NodeIndex
     size_t IndexNode(TSNode node, TraversalBudget* budget, uint32_t parentSpanIdx, bool full);
     size_t IndexBucketNode(TSNode node, TSSymbol symbol, IndexedDeclarationKind kind);
     void RecordContainerSpan(TSNode node, TSSymbol sym, uint32_t parentSpanIdx = UINT32_MAX);
-    void TraverseTree(TSNode root, TraversalBudget* budget, bool full);
+    void RecordSelectionSpan(TSNode node, std::vector<uint32_t>& activeSelectionSpans);
+    void RecordFoldableAndDirectiveSpan(TSNode node, std::string_view source);
+    void ExtractIncludeDirective(TSNode node, std::string_view source);
+    void TraverseTree(TSNode root, TraversalBudget* budget, bool full, std::string_view source = {});
     void PostProcessErrorRanges();
     void PostProcessCommentRanges();
     [[nodiscard]] bool IsInsideBaseClassList(uint32_t startByte, uint32_t endByte) const noexcept;

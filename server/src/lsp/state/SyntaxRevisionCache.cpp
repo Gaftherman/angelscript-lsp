@@ -91,7 +91,7 @@ SyntaxRevision ResolveSyntaxRevision(SyntaxRevisionInput input, SyntaxRevisionCa
         return {.parseMs = parseMs};
     }
 
-    auto syntax = std::make_shared<const ParsedDocumentSyntax>(std::move(input.tree));
+    auto syntax = std::make_shared<const ParsedDocumentSyntax>(std::move(input.tree), input.key.source);
     const size_t extractedNodes = syntax->index.NodeCount();
     if (cache)
     {

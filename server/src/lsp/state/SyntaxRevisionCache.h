@@ -15,8 +15,9 @@ namespace angel_lsp
 /** @brief Owns the tree backing an extracted index on the producing thread. */
 struct ParsedDocumentSyntax
 {
-    explicit ParsedDocumentSyntax(document::TreePtr parsed)
-        : tree(std::move(parsed)), index(tree ? ts_tree_root_node(tree.get()) : TSNode{})
+    explicit ParsedDocumentSyntax(document::TreePtr parsed, std::string_view source = {})
+        : tree(std::move(parsed)),
+          index(tree ? ts_tree_root_node(tree.get()) : TSNode{}, analysis::NodeIndexOptions{.source = source})
     {
     }
 

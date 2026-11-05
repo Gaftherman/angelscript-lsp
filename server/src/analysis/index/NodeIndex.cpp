@@ -14,6 +14,16 @@ extern "C" const TSLanguage* tree_sitter_angelscript();
 
 namespace angel_lsp::analysis
 {
+NodeIndex::NodeIndex(TSNode root, std::string_view source)
+{
+    Build(root, source);
+}
+
+NodeIndex::NodeIndex(TSNode root, const NodeIndexOptions& options)
+{
+    Build(root, options);
+}
+
 NodeIndex::NodeIndex(TSNode root, const TSLanguage* lang, TraversalBudget* budget, NodeIndexContents contents)
 {
     Build(root, lang, budget, contents);
@@ -787,12 +797,195 @@ bool NodeIndex::FlowFactCollector::Advance(TSTreeCursor& cursor, bool full)
     return false;
 }
 
-static void MaintainActiveContainers(std::vector<uint32_t>& activeContainers,
-                                     std::span<const IndexedContainerSpan> spans, uint32_t startByte)
+template <typename SpanType>
+static void MaintainActiveSpans(std::vector<uint32_t>& active, std::span<const SpanType> spans, uint32_t startByte)
 {
-    while (!activeContainers.empty() && startByte >= spans[activeContainers.back()].endByte)
+    while (!active.empty() && startByte >= spans[active.back()].endByte)
     {
-        activeContainers.pop_back();
+        active.pop_back();
+    }
+}
+
+static bool IsFoldableGrammarSymbol(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
+{
+    static const std::array<TSSymbol, 24> symbols = {
+        gs.symClassDeclaration,
+        gs.symInterfaceDeclaration,
+        gs.symNamespaceDeclaration,
+        gs.symMixinDeclaration,
+        gs.symEnumDeclaration,
+        gs.symFuncDeclaration,
+        gs.symFuncdefDeclaration,
+        gs.symInterfaceMethod,
+        gs.symStatementBlock,
+        gs.symSwitchStatement,
+        gs.symCaseClause,
+        gs.symIfStatement,
+        gs.symWhileStatement,
+        gs.symDoWhileStatement,
+        gs.symForStatement,
+        gs.symForeachStatement,
+        gs.symTryStatement,
+        gs.symInitializerList,
+        gs.symTypedInitializerList,
+        gs.symParameterList,
+        gs.symArgumentList,
+        gs.symVirtualProperty,
+        gs.symAccessor,
+        gs.symLambdaExpression,
+    };
+    return std::find(symbols.begin(), symbols.end(), sym) != symbols.end();
+}
+
+void NodeIndex::RecordSelectionSpan(TSNode node, std::vector<uint32_t>& activeSelectionSpans)
+{
+    const uint32_t startByte = ts_node_start_byte(node);
+    const uint32_t endByte = ts_node_end_byte(node);
+    auto& facts = MutableFlowFacts();
+    if (startByte >= endByte && !facts.selectionSpans.empty())
+    {
+        return;
+    }
+
+    MaintainActiveSpans(activeSelectionSpans, std::span<const IndexedSelectionRange>(facts.selectionSpans), startByte);
+    const uint32_t parentIdx = activeSelectionSpans.empty() ? UINT32_MAX : activeSelectionSpans.back();
+    const uint32_t currentIdx = static_cast<uint32_t>(facts.selectionSpans.size());
+
+    const TSPoint sp = ts_node_start_point(node);
+    const TSPoint ep = ts_node_end_point(node);
+    facts.selectionSpans.push_back(IndexedSelectionRange{
+        .range = {sp.row, sp.column, ep.row, ep.column},
+        .startByte = startByte,
+        .endByte = endByte,
+        .parentSpanIndex = parentIdx,
+    });
+    activeSelectionSpans.push_back(currentIdx);
+}
+
+static bool IsIncludeDirectivePrefix(std::string_view text, size_t& outAfterInc) noexcept
+{
+    const size_t hash = text.find('#');
+    if (hash == std::string_view::npos)
+    {
+        return false;
+    }
+    size_t i = hash + 1;
+    while (i < text.size() && (text[i] == ' ' || text[i] == '\t'))
+    {
+        ++i;
+    }
+    if (!text.substr(i).starts_with("include"))
+    {
+        return false;
+    }
+    const size_t after = i + 7;
+    const bool validBoundary =
+        after >= text.size() || text[after] == ' ' || text[after] == '\t' || text[after] == '<' || text[after] == '"';
+    if (!validBoundary)
+    {
+        return false;
+    }
+    outAfterInc = after;
+    return true;
+}
+
+static std::optional<std::pair<size_t, size_t>> FindIncludeDelimiters(std::string_view text, size_t afterInc) noexcept
+{
+    const size_t openAngle = text.find('<', afterInc);
+    const size_t openQuote = text.find('"', afterInc);
+
+    size_t openPos = std::string_view::npos;
+    char closeChar = '"';
+    if (openAngle != std::string_view::npos && (openQuote == std::string_view::npos || openAngle < openQuote))
+    {
+        openPos = openAngle;
+        closeChar = '>';
+    }
+    else if (openQuote != std::string_view::npos)
+    {
+        openPos = openQuote;
+        closeChar = '"';
+    }
+
+    if (openPos == std::string_view::npos)
+    {
+        return std::nullopt;
+    }
+    const size_t closePos = text.find(closeChar, openPos + 1);
+    if (closePos == std::string_view::npos)
+    {
+        return std::nullopt;
+    }
+    return std::make_pair(openPos, closePos);
+}
+
+void NodeIndex::ExtractIncludeDirective(TSNode node, std::string_view source)
+{
+    const uint32_t sb = ts_node_start_byte(node);
+    const uint32_t eb = ts_node_end_byte(node);
+    if (sb >= eb || eb > source.size())
+    {
+        return;
+    }
+
+    const std::string_view text = source.substr(sb, eb - sb);
+    size_t afterInc = 0;
+    if (!IsIncludeDirectivePrefix(text, afterInc))
+    {
+        return;
+    }
+
+    const auto delims = FindIncludeDelimiters(text, afterInc);
+    if (!delims)
+    {
+        return;
+    }
+
+    const size_t openPos = delims->first;
+    const size_t closePos = delims->second;
+    const std::string_view rawPath = text.substr(openPos + 1, closePos - openPos - 1);
+    const TSPoint sp = ts_node_start_point(node);
+    MutableFlowFacts().includeDirectives.push_back(IndexedIncludeDirective{
+        .rawPath = std::string(rawPath),
+        .line = sp.row,
+        .spanStart = static_cast<uint32_t>(sp.column + openPos + 1),
+        .spanEnd = static_cast<uint32_t>(sp.column + closePos),
+        .isAngled = (text[openPos] == '<'),
+    });
+}
+
+void NodeIndex::RecordFoldableAndDirectiveSpan(TSNode node, std::string_view source)
+{
+    const TSSymbol sym = ts_node_symbol(node);
+    const auto& gs = parser::GetGrammarSymbols();
+    const TSPoint sp = ts_node_start_point(node);
+    const TSPoint ep = ts_node_end_point(node);
+
+    if (sp.row < ep.row)
+    {
+        if (IsFoldableGrammarSymbol(sym, gs))
+        {
+            MutableFlowFacts().foldableSpans.push_back(IndexedFoldableSpan{
+                .range = {sp.row, sp.column, ep.row, ep.column},
+                .kind = IndexedFoldableKind::None,
+            });
+        }
+        else if (sym == gs.symComment && !source.empty())
+        {
+            const uint32_t sb = ts_node_start_byte(node);
+            if (sb + 2 <= source.size() && source[sb] == '/' && source[sb + 1] == '*')
+            {
+                MutableFlowFacts().foldableSpans.push_back(IndexedFoldableSpan{
+                    .range = {sp.row, sp.column, ep.row, ep.column},
+                    .kind = IndexedFoldableKind::Comment,
+                });
+            }
+        }
+    }
+
+    if (sym == gs.symPreprocDirective && !source.empty())
+    {
+        ExtractIncludeDirective(node, source);
     }
 }
 
@@ -800,17 +993,21 @@ static void MaintainActiveContainers(std::vector<uint32_t>& activeContainers,
  * @brief Traverses the AST tree iteratively using a flat cursor and indexes nodes of interest.
  * @param[in] root Root AST node to traverse.
  * @param[in] budget Traversal budget guard to prevent runaway recursion or unbounded visits.
+ * @param[in] full Full indexing mode flag.
+ * @param[in] source Document source text buffer.
  */
-void NodeIndex::TraverseTree(TSNode root, TraversalBudget* budget, bool full)
+void NodeIndex::TraverseTree(TSNode root, TraversalBudget* budget, bool full, std::string_view source)
 {
     TSTreeCursor cursor = ts_tree_cursor_new(root);
     std::vector<uint32_t> activeContainers;
+    std::vector<uint32_t> activeSelectionSpans;
     FlowFactCollector flow(*this);
 
     while (true)
     {
         TSNode node = ts_tree_cursor_current_node(&cursor);
-        MaintainActiveContainers(activeContainers, m_containerSpans, ts_node_start_byte(node));
+        MaintainActiveSpans(activeContainers, std::span<const IndexedContainerSpan>(m_containerSpans),
+                            ts_node_start_byte(node));
 
         const uint32_t parentSpanIdx = activeContainers.empty() ? UINT32_MAX : activeContainers.back();
         const size_t containerCount = m_containerSpans.size();
@@ -818,6 +1015,8 @@ void NodeIndex::TraverseTree(TSNode root, TraversalBudget* budget, bool full)
         if (full)
         {
             flow.Enter(node, cursor, syntaxSlot);
+            RecordSelectionSpan(node, activeSelectionSpans);
+            RecordFoldableAndDirectiveSpan(node, source);
         }
         if (m_containerSpans.size() > containerCount)
         {
@@ -858,7 +1057,17 @@ std::span<const TSNode> NodeIndex::SwitchLabels(uint32_t switchStartByte) const 
     return entry->labels;
 }
 
+void NodeIndex::Build(TSNode root, std::string_view source)
+{
+    Build(root, NodeIndexOptions{.source = source});
+}
+
 void NodeIndex::Build(TSNode root, const TSLanguage* lang, TraversalBudget* budget, NodeIndexContents contents)
+{
+    Build(root, NodeIndexOptions{.lang = lang, .budget = budget, .contents = contents});
+}
+
+void NodeIndex::Build(TSNode root, const NodeIndexOptions& options)
 {
     Clear();
     m_root = root;
@@ -868,10 +1077,10 @@ void NodeIndex::Build(TSNode root, const TSLanguage* lang, TraversalBudget* budg
     }
 
     m_hasSyntaxErrors = ts_node_has_error(root) || ts_node_is_error(root);
-    m_language = lang ? lang : tree_sitter_angelscript();
+    m_language = options.lang ? options.lang : tree_sitter_angelscript();
     PopulatePredefinedSymbols(m_language);
     m_symComment = SymbolForName("comment");
-    TraverseTree(root, budget, contents == NodeIndexContents::Full);
+    TraverseTree(root, options.budget, options.contents == NodeIndexContents::Full, options.source);
     PostProcessErrorRanges();
     PostProcessCommentRanges();
 }
@@ -1378,5 +1587,94 @@ std::vector<std::string> NodeIndex::CollectUsingNamespaces(std::string_view sour
         }
     }
     return result;
+}
+
+static bool IsPositionAfterOrAtSpanEnd(const SourceRange& range, uint32_t line, uint32_t character) noexcept
+{
+    if (line != range.endLine)
+    {
+        return line > range.endLine;
+    }
+    return character >= range.endCharacter;
+}
+
+std::vector<SourceRange> NodeIndex::FindEnclosingSelectionRanges(uint32_t line, uint32_t character) const
+{
+    std::vector<SourceRange> result;
+    if (!m_flowFacts || m_flowFacts->selectionSpans.empty())
+    {
+        return result;
+    }
+
+    const auto& spans = m_flowFacts->selectionSpans;
+    const auto proj = [](const IndexedSelectionRange& span) noexcept
+    { return std::make_pair(span.range.startLine, span.range.startCharacter); };
+
+    const auto upper = std::ranges::upper_bound(spans, std::make_pair(line, character), {}, proj);
+    if (upper == spans.begin())
+    {
+        result.push_back(spans.front().range);
+        return result;
+    }
+
+    const IndexedSelectionRange* span = &*(upper - 1);
+    while (IsPositionAfterOrAtSpanEnd(span->range, line, character))
+    {
+        if (span->parentSpanIndex >= spans.size())
+        {
+            result.push_back(spans.front().range);
+            return result;
+        }
+        span = &spans[span->parentSpanIndex];
+    }
+
+    while (span)
+    {
+        if (result.empty() || !(result.back() == span->range))
+        {
+            result.push_back(span->range);
+        }
+        span = (span->parentSpanIndex < spans.size()) ? &spans[span->parentSpanIndex] : nullptr;
+    }
+    return result;
+}
+
+std::vector<SourceRange> NodeIndex::FindEnclosingSelectionRanges(uint32_t byteOffset) const
+{
+    std::vector<SourceRange> result;
+    if (!m_flowFacts || m_flowFacts->selectionSpans.empty())
+    {
+        return result;
+    }
+
+    const auto& spans = m_flowFacts->selectionSpans;
+    const auto* span = FindInnermostSpan(std::span<const IndexedSelectionRange>(spans), byteOffset);
+    if (!span)
+    {
+        result.push_back(spans.front().range);
+        return result;
+    }
+
+    while (span)
+    {
+        if (result.empty() || !(result.back() == span->range))
+        {
+            result.push_back(span->range);
+        }
+        span = (span->parentSpanIndex < spans.size()) ? &spans[span->parentSpanIndex] : nullptr;
+    }
+    return result;
+}
+
+std::span<const IndexedFoldableSpan> NodeIndex::FoldableSpans() const noexcept
+{
+    return m_flowFacts ? std::span<const IndexedFoldableSpan>(m_flowFacts->foldableSpans)
+                       : std::span<const IndexedFoldableSpan>{};
+}
+
+std::span<const IndexedIncludeDirective> NodeIndex::IncludeDirectives() const noexcept
+{
+    return m_flowFacts ? std::span<const IndexedIncludeDirective>(m_flowFacts->includeDirectives)
+                       : std::span<const IndexedIncludeDirective>{};
 }
 } // namespace angel_lsp::analysis

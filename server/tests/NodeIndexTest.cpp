@@ -498,3 +498,92 @@ TEST_CASE("SyntaxOperands navigation chains child facts without hash map lookups
                                             false,    false,        false};
     CHECK(ts_node_is_null(index.SyntaxHandle(outOfBoundsUnbucketed)));
 }
+
+TEST_CASE("NodeIndex - Hierarchical selection ranges query by line/col and byte offset")
+{
+    const std::string code = "class Entity {\n"
+                             "    void Think() {\n"
+                             "        int ticks = 0;\n"
+                             "    }\n"
+                             "}\n";
+
+    auto doc = angel_lsp::test::CreateTestDocument("file:///selection_test.as", code);
+    REQUIRE(doc->GetTree() != nullptr);
+
+    NodeIndex index(ts_tree_root_node(doc->GetTree()), NodeIndexOptions{.source = code});
+    const auto rangesLineCol = index.FindEnclosingSelectionRanges(2, 12);
+    REQUIRE(rangesLineCol.size() >= 3);
+    for (size_t i = 1; i < rangesLineCol.size(); ++i)
+    {
+        const auto& inner = rangesLineCol[i - 1];
+        const auto& outer = rangesLineCol[i];
+        const bool startsBefore = outer.startLine < inner.startLine ||
+                                  (outer.startLine == inner.startLine && outer.startCharacter <= inner.startCharacter);
+        const bool endsAfter = outer.endLine > inner.endLine ||
+                               (outer.endLine == inner.endLine && outer.endCharacter >= inner.endCharacter);
+        CHECK(startsBefore);
+        CHECK(endsAfter);
+    }
+
+    const uint32_t byteOffset = static_cast<uint32_t>(code.find("ticks"));
+    const auto rangesByte = index.FindEnclosingSelectionRanges(byteOffset);
+    REQUIRE_FALSE(rangesByte.empty());
+    CHECK(rangesByte.front().startLine == 2);
+}
+
+TEST_CASE("NodeIndex - First-pass foldable spans capture blocks and multi-line comments")
+{
+    const std::string code = "/* multi-line\n"
+                             "   comment */\n"
+                             "class Entity\n"
+                             "{\n"
+                             "    void Foo()\n"
+                             "    {\n"
+                             "    }\n"
+                             "}\n";
+
+    auto doc = angel_lsp::test::CreateTestDocument("file:///foldable_test.as", code);
+    REQUIRE(doc->GetTree() != nullptr);
+
+    NodeIndex index(ts_tree_root_node(doc->GetTree()), NodeIndexOptions{.source = code});
+    const auto spans = index.FoldableSpans();
+    REQUIRE(spans.size() >= 2);
+
+    bool foundComment = false;
+    bool foundClass = false;
+    for (const auto& span : spans)
+    {
+        if (span.kind == IndexedFoldableKind::Comment && span.range.startLine == 0 && span.range.endLine == 1)
+        {
+            foundComment = true;
+        }
+        if (span.range.startLine == 2 && span.range.endLine == 7)
+        {
+            foundClass = true;
+        }
+    }
+    CHECK(foundComment);
+    CHECK(foundClass);
+}
+
+TEST_CASE("NodeIndex - First-pass include directives extraction and options handling")
+{
+    const std::string code = "#include \"util.as\"\n"
+                             "#include <vector>\n"
+                             "void Main() {}\n";
+
+    auto doc = angel_lsp::test::CreateTestDocument("file:///include_test.as", code);
+    REQUIRE(doc->GetTree() != nullptr);
+
+    NodeIndex index(ts_tree_root_node(doc->GetTree()), NodeIndexOptions{.source = code});
+    const auto includes = index.IncludeDirectives();
+    REQUIRE(includes.size() == 2);
+
+    CHECK(includes[0].rawPath == "util.as");
+    CHECK(includes[0].line == 0);
+    CHECK_FALSE(includes[0].isAngled);
+
+    CHECK(includes[1].rawPath == "vector");
+    CHECK(includes[1].line == 1);
+    CHECK(includes[1].isAngled);
+}

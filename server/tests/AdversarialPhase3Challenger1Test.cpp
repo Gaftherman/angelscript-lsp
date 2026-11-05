@@ -113,7 +113,8 @@ struct Phase3AdversarialEnv
 
     std::optional<FoldingRangeResult> Folding()
     {
-        FoldingRangeRequest req{uri, sourceCode, tree};
+        analysis::NodeIndex nodeIdx{ts_tree_root_node(tree), analysis::NodeIndexOptions{.source = sourceCode}};
+        FoldingRangeRequest req{uri, sourceCode, &nodeIdx};
         return GetFoldingRanges(req);
     }
 };

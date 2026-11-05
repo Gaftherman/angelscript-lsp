@@ -539,7 +539,8 @@ TEST_CASE("SvenCoop - Benchmark and Profile sven.as.predefined pipeline")
     double docSymMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
     MESSAGE("GetDocumentSymbols: " << docSymMs << " ms, count: " << (docSymbols ? docSymbols->size() : 0));
 
-    features::FoldingRangeRequest foldReq{uri, sanitized, tree};
+    analysis::NodeIndex foldIndex(ts_tree_root_node(tree), analysis::NodeIndexOptions{.source = sanitized});
+    features::FoldingRangeRequest foldReq{uri, sanitized, &foldIndex};
     t0 = std::chrono::high_resolution_clock::now();
     auto foldingRanges = features::GetFoldingRanges(foldReq);
     t1 = std::chrono::high_resolution_clock::now();
@@ -814,7 +815,7 @@ TEST_CASE("SvenCoopRegression - End-to-end LSP feature latency is under 10ms wit
     analysis::NodeIndex nodeIndex(ts_tree_root_node(tree));
 
     const auto t0 = std::chrono::high_resolution_clock::now();
-    features::FoldingRangeRequest foldReq{"file:///perf.as", code, tree};
+    features::FoldingRangeRequest foldReq{"file:///perf.as", code, &nodeIndex};
     const auto foldingRanges = features::GetFoldingRanges(foldReq);
     const auto t1 = std::chrono::high_resolution_clock::now();
     const double foldMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
