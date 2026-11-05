@@ -58,7 +58,7 @@ struct MultiFileRenameEnv
 
     std::optional<lsp::PrepareRenameResult> PrepareAt(const std::string& uri, uint32_t line, uint32_t character)
     {
-        PrepareRenameRequest req{uri,         sources[uri], trees[uri],    lsp::Position{line, character},
+        PrepareRenameRequest req{uri,         sources[uri], lsp::Position{line, character},
                                  symbolTable, scopeIndex,   predefinedUris};
         return PrepareRename(req);
     }
@@ -66,8 +66,8 @@ struct MultiFileRenameEnv
     std::optional<lsp::WorkspaceEdit> RenameAt(const std::string& uri, uint32_t line, uint32_t character,
                                                const std::string& newName)
     {
-        RenameRequest req{uri,     sources[uri], trees[uri], lsp::Position{line, character},
-                          newName, symbolTable,  scopeIndex, predefinedUris};
+        RenameRequest req{uri,        sources[uri],  lsp::Position{line, character}, newName, symbolTable,
+                          scopeIndex, predefinedUris};
         return Rename(req);
     }
 };

@@ -9,7 +9,7 @@
 #include <lsp/types.h>
 #include <optional>
 #include <string>
-#include <tree_sitter/api.h>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
@@ -20,9 +20,8 @@ namespace angel_lsp::features
  */
 struct PrepareRenameRequest
 {
-    std::string uri;
-    std::string sourceCode;
-    TSTree* tree = nullptr;
+    std::string_view uri;
+    std::string_view sourceCode;
     lsp::Position position;
     const analysis::SymbolTable& symbolTable;
     const analysis::ScopeIndex& scopeIndex;
@@ -35,11 +34,10 @@ struct PrepareRenameRequest
  */
 struct RenameRequest
 {
-    std::string uri;
-    std::string sourceCode;
-    TSTree* tree = nullptr;
+    std::string_view uri;
+    std::string_view sourceCode;
     lsp::Position position;
-    std::string newName;
+    std::string_view newName;
     const analysis::SymbolTable& symbolTable;
     const analysis::ScopeIndex& scopeIndex;
     const std::unordered_set<std::string>& predefinedUris;
@@ -60,13 +58,4 @@ std::optional<lsp::PrepareRenameResult> PrepareRename(const PrepareRenameRequest
  * @return Optional WorkspaceEdit; nullopt if validation failed or no edits produced.
  */
 std::optional<lsp::WorkspaceEdit> Rename(const RenameRequest& request);
-
-/**
- * @brief Encapsulates the resolved target symbol descriptor and AST node eligible for symbol renaming.
- */
-struct RenameTargetResult
-{
-    analysis::TargetDescriptor target;
-    TSNode node{};
-};
 } // namespace angel_lsp::features

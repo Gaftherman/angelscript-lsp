@@ -79,7 +79,6 @@ struct ParityEnv
     {
         ReferencesRequest request{uri,
                                   sources[uri],
-                                  trees[uri],
                                   position,
                                   /*includeDeclaration=*/true,
                                   symbolTable,
@@ -99,8 +98,7 @@ struct ParityEnv
 
     std::set<Occurrence> RenameAt(const std::string& uri, lsp::Position position)
     {
-        RenameRequest request{uri,        sources[uri], trees[uri], position,
-                              "renamed_", symbolTable,  scopeIndex, predefinedUris};
+        RenameRequest request{uri, sources[uri], position, "renamed_", symbolTable, scopeIndex, predefinedUris};
 
         std::set<Occurrence> found;
         const auto edit = Rename(request);

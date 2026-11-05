@@ -2,6 +2,7 @@
 
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/resolution/TargetResolution.h"
+#include "features/common/FeatureSharedUtils.h"
 
 #include <algorithm>
 #include <cctype>
@@ -131,15 +132,8 @@ static lsp::WorkspaceEdit BuildWorkspaceEdit(const std::vector<analysis::Occurre
 
     for (auto& [docUri, edits] : editsByUri)
     {
-        std::sort(edits.begin(), edits.end(),
-                  [](const lsp::TextEdit& a, const lsp::TextEdit& b)
-                  {
-                      if (a.range.start.line != b.range.start.line)
-                      {
-                          return a.range.start.line < b.range.start.line;
-                      }
-                      return a.range.start.character < b.range.start.character;
-                  });
+        std::sort(edits.begin(), edits.end(), [](const lsp::TextEdit& a, const lsp::TextEdit& b)
+                  { return common::CompareByPosition(a.range, b.range); });
 
         changes[docUri] = std::move(edits);
     }
@@ -150,31 +144,23 @@ static lsp::WorkspaceEdit BuildWorkspaceEdit(const std::vector<analysis::Occurre
 
 /**
  * @brief Resolves a valid target for renaming under the cursor position.
- * @tparam RequestT Request type containing document URI, position, syntax tree, and symbol table.
+ * @tparam RequestT Request type containing document URI, position, source text, and symbol table.
  * @param[in] request Rename or PrepareRename request payload.
- * @return Found valid rename target result if present; std::nullopt otherwise.
+ * @return Found valid rename target descriptor if present; std::nullopt otherwise.
  */
-template <typename RequestT> static std::optional<RenameTargetResult> ResolveValidRenameTarget(const RequestT& request)
+template <typename RequestT>
+static std::optional<analysis::TargetDescriptor> ResolveValidRenameTarget(const RequestT& request)
 {
-    if (!request.tree || request.sourceCode.empty() || request.predefinedUris.contains(request.uri))
+    if (request.sourceCode.empty() || request.predefinedUris.contains(std::string(request.uri)))
     {
         return std::nullopt;
     }
 
-    TSNode node{};
-    analysis::ResolveTargetRequest resolveReq{
-        .uri = request.uri,
-        .sourceCode = request.sourceCode,
-        .tree = request.tree,
-        .position = analysis::TargetPosition{request.position.line, request.position.character},
-        .symbolTable = request.symbolTable,
-        .scopeIndex = request.scopeIndex,
-        .outNode = node,
-        .logger = request.logger,
-    };
-    auto target = analysis::ResolveTargetSymbol(resolveReq);
+    const auto target = analysis::ResolveTargetAt(
+        request.uri, request.sourceCode, analysis::TargetPosition{request.position.line, request.position.character},
+        request.symbolTable, request.scopeIndex, request.logger);
 
-    if (!target.has_value() || ts_node_is_null(node))
+    if (!target.has_value())
     {
         return std::nullopt;
     }
@@ -184,23 +170,26 @@ template <typename RequestT> static std::optional<RenameTargetResult> ResolveVal
         return std::nullopt;
     }
 
-    return RenameTargetResult{std::move(*target), node};
+    return target;
 }
 
 std::optional<lsp::PrepareRenameResult> PrepareRename(const PrepareRenameRequest& request)
 {
-    auto targetRes = ResolveValidRenameTarget(request);
-    if (!targetRes.has_value())
+    auto target = ResolveValidRenameTarget(request);
+    if (!target.has_value())
     {
         return std::nullopt;
     }
 
-    const TSPoint startPt = ts_node_start_point(targetRes->node);
-    const TSPoint endPt = ts_node_end_point(targetRes->node);
+    auto range = common::FindIdentifierRangeAtPosition(request.sourceCode, request.position);
+    if (!range.has_value())
+    {
+        return std::nullopt;
+    }
 
     lsp::PrepareRenamePlaceholder placeholder;
-    placeholder.range = lsp::Range{lsp::Position{startPt.row, startPt.column}, lsp::Position{endPt.row, endPt.column}};
-    placeholder.placeholder = targetRes->target.name;
+    placeholder.range = *range;
+    placeholder.placeholder = target->name;
 
     return lsp::PrepareRenameResult(placeholder);
 }
@@ -212,22 +201,15 @@ std::optional<lsp::WorkspaceEdit> Rename(const RenameRequest& request)
         return std::nullopt;
     }
 
-    auto targetRes = ResolveValidRenameTarget(request);
-    if (!targetRes.has_value())
+    auto target = ResolveValidRenameTarget(request);
+    if (!target.has_value())
     {
         return std::nullopt;
     }
 
-    analysis::CollectOccurrencesRequest occReq{
-        .target = targetRes->target,
-        .currentUri = request.uri,
-        .sourceCode = request.sourceCode,
-        .tree = request.tree,
-        .symbolTable = request.symbolTable,
-        .scopeIndex = request.scopeIndex,
-        .includeDeclaration = true,
-        .logger = request.logger,
-    };
+    auto occReq = analysis::MakeOccurrencesRequest(*target, request.uri, request.sourceCode, request.symbolTable,
+                                                   request.scopeIndex);
+    occReq.logger = request.logger;
     const auto occurrences = analysis::CollectOccurrences(occReq);
 
     if (occurrences.empty())
@@ -235,6 +217,6 @@ std::optional<lsp::WorkspaceEdit> Rename(const RenameRequest& request)
         return std::nullopt;
     }
 
-    return BuildWorkspaceEdit(occurrences, request.newName);
+    return BuildWorkspaceEdit(occurrences, std::string(request.newName));
 }
 } // namespace angel_lsp::features
