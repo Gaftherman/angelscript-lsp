@@ -53,7 +53,7 @@ struct Fixture
 
     std::optional<std::vector<lsp::CallHierarchyItem>> Prepare(uint32_t line, uint32_t character)
     {
-        const CallHierarchyPrepareRequest request{uri, sourceCode, tree, table, lsp::Position{line, character}};
+        const CallHierarchyPrepareRequest request{uri, sourceCode, table, lsp::Position{line, character}};
         return PrepareCallHierarchy(request);
     }
 
@@ -371,7 +371,7 @@ TEST_CASE("CallHierarchy - Mixin methods across host classes")
     table.ResolveIncludedMixins();
 
     // Prepare on Deploy inside mixin (line 2, col 10)
-    const CallHierarchyPrepareRequest prepReq{mixinUri, mixinCode, mixinTree, table, lsp::Position{2, 10}};
+    const CallHierarchyPrepareRequest prepReq{mixinUri, mixinCode, table, lsp::Position{2, 10}};
     const auto items = PrepareCallHierarchy(prepReq);
     REQUIRE(items.has_value());
     REQUIRE(!items->empty());

@@ -6,8 +6,7 @@
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <optional>
-#include <string>
-#include <tree_sitter/api.h>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::features
@@ -17,11 +16,10 @@ namespace angel_lsp::features
  */
 struct CallHierarchyPrepareRequest
 {
-    std::string uri;
-    std::string sourceCode;
-    TSTree* tree = nullptr;
+    std::string_view uri{};
+    std::string_view sourceCode{};
     const analysis::SymbolTable& symbolTable;
-    lsp::Position position;
+    lsp::Position position{};
 };
 
 /**
@@ -40,17 +38,20 @@ struct CallHierarchyItemRequest
  *        The identifier under the cursor when it names a function - whether written at its declaration
  * @return The item, or nullopt when the cursor is looking at no function at all.
  */
-std::optional<std::vector<lsp::CallHierarchyItem>> PrepareCallHierarchy(const CallHierarchyPrepareRequest& request);
+[[nodiscard]] std::optional<std::vector<lsp::CallHierarchyItem>>
+PrepareCallHierarchy(const CallHierarchyPrepareRequest& request);
 
 /**
  * @brief The functions that call this one, each with the ranges of the calls inside it.
  * @note Matched by name. A call site says `Think()`; which declaration that reaches depends on
  *        the receiver's type, and an overload set or two same-named methods on unrelated classes
  */
-std::optional<std::vector<lsp::CallHierarchyIncomingCall>> GetIncomingCalls(const CallHierarchyItemRequest& request);
+[[nodiscard]] std::optional<std::vector<lsp::CallHierarchyIncomingCall>>
+GetIncomingCalls(const CallHierarchyItemRequest& request);
 
 /**
  * @brief The functions this one calls, each with the ranges of the calls to it.
  */
-std::optional<std::vector<lsp::CallHierarchyOutgoingCall>> GetOutgoingCalls(const CallHierarchyItemRequest& request);
+[[nodiscard]] std::optional<std::vector<lsp::CallHierarchyOutgoingCall>>
+GetOutgoingCalls(const CallHierarchyItemRequest& request);
 } // namespace angel_lsp::features
