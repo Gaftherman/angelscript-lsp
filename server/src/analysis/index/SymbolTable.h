@@ -9,6 +9,7 @@
 #include <ankerl/unordered_dense.h>
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -621,6 +622,45 @@ class SymbolTable
         std::string_view predefinedExtension;
     };
 
+    /**
+     * @brief Parses an angelscript-virtual URI into host class and mixin name components without heap allocation.
+     * @param[in] uri Virtual document URI string.
+     * @param[out] hostClass Extracted host class component string view.
+     * @param[out] mixinPart Extracted mixin component string view.
+     * @return True if the URI was successfully parsed as a virtual mixin URI; false otherwise.
+     */
+    [[nodiscard]] static bool ParseVirtualMixinUri(std::string_view uri, std::string_view& hostClass,
+                                                   std::string_view& mixinPart) noexcept;
+
+    /**
+     * @brief Invokes a callback with a composite 'scope::member' string_view without heap allocation.
+     * @tparam Callback Invocable receiving a std::string_view key.
+     * @param[in] scope Enclosing container scope or namespace name.
+     * @param[in] member Member symbol or identifier name.
+     * @param[in] cb Callback to execute with the composite key string_view.
+     * @return Value returned by callback invocation.
+     * @warning The string_view passed to cb is backed by a stack buffer and must not outlive the callback execution.
+     */
+    template <typename Callback>
+    static decltype(auto) WithCompositeMemberKey(std::string_view scope, std::string_view member, Callback&& cb)
+    {
+        constexpr size_t kStackBufSize = 256;
+        const size_t totalLen = scope.size() + 2 + member.size();
+        if (totalLen < kStackBufSize)
+        {
+            char buf[kStackBufSize];
+            std::memcpy(buf, scope.data(), scope.size());
+            buf[scope.size()] = ':';
+            buf[scope.size() + 1] = ':';
+            std::memcpy(buf + scope.size() + 2, member.data(), member.size());
+            return cb(std::string_view(buf, totalLen));
+        }
+        std::string key;
+        key.reserve(totalLen);
+        key.append(scope).append("::").append(member);
+        return cb(std::string_view(key));
+    }
+
     static bool IsFileAllowedForSnapshot(std::string_view fileUri, const SnapshotFilterContext& ctx) noexcept;
     void CopyFilteredSymbolsLocked(SymbolTable& target, const SnapshotFilterContext& ctx) const;
     void CopyActiveModuleSymbolsLocked(SymbolTable& snapshot, const SnapshotFilterContext& ctx) const;
@@ -630,9 +670,9 @@ class SymbolTable
 };
 
 /**
- * @brief Converts SymbolType enum to lower/string representation.
+ * @brief Converts SymbolType enum to zero-copy string_view representation.
  */
-inline std::string SymbolTypeToString(SymbolType type)
+[[nodiscard]] constexpr std::string_view SymbolTypeToStringView(SymbolType type) noexcept
 {
     switch (type)
     {
@@ -659,5 +699,13 @@ inline std::string SymbolTypeToString(SymbolType type)
     default:
         return "unknown";
     }
+}
+
+/**
+ * @brief Converts SymbolType enum to lower/string representation.
+ */
+[[nodiscard]] inline std::string SymbolTypeToString(SymbolType type)
+{
+    return std::string(SymbolTypeToStringView(type));
 }
 } // namespace angel_lsp::analysis

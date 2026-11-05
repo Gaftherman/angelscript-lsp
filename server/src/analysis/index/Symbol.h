@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
@@ -480,84 +481,116 @@ struct Symbol
     bool isSynthesized : 1 = false; ///< True when synthesized into a host class (e.g. from an included mixin).
     bool isPredefined : 1 = false;  ///< True when parsed from a predefined stub or builtin profile.
 
-    FunctionSignature& GetFunction()
+    FunctionSignature& GetFunction() noexcept
     {
         return std::get<FunctionSignature>(signature);
     }
 
-    const FunctionSignature& GetFunction() const
+    const FunctionSignature& GetFunction() const noexcept
     {
         return std::get<FunctionSignature>(signature);
     }
 
-    VariableSignature& GetVariable()
+    VariableSignature& GetVariable() noexcept
     {
         return std::get<VariableSignature>(signature);
     }
 
-    const VariableSignature& GetVariable() const
+    const VariableSignature& GetVariable() const noexcept
     {
         return std::get<VariableSignature>(signature);
     }
 
-    EnumSignature& GetEnum()
+    EnumSignature& GetEnum() noexcept
     {
         return std::get<EnumSignature>(signature);
     }
 
-    const EnumSignature& GetEnum() const
+    const EnumSignature& GetEnum() const noexcept
     {
         return std::get<EnumSignature>(signature);
     }
 
-    ClassSignature& GetClass()
+    ClassSignature& GetClass() noexcept
     {
         return std::get<ClassSignature>(signature);
     }
 
-    const ClassSignature& GetClass() const
+    const ClassSignature& GetClass() const noexcept
     {
         return std::get<ClassSignature>(signature);
     }
 
-    InterfaceSignature& GetInterface()
+    InterfaceSignature& GetInterface() noexcept
     {
         return std::get<InterfaceSignature>(signature);
     }
 
-    const InterfaceSignature& GetInterface() const
+    const InterfaceSignature& GetInterface() const noexcept
     {
         return std::get<InterfaceSignature>(signature);
     }
 
-    TypedefSignature& GetTypedef()
+    TypedefSignature& GetTypedef() noexcept
     {
         return std::get<TypedefSignature>(signature);
     }
 
-    const TypedefSignature& GetTypedef() const
+    const TypedefSignature& GetTypedef() const noexcept
     {
         return std::get<TypedefSignature>(signature);
     }
 
-    FuncdefSignature& GetFuncdef()
+    FuncdefSignature& GetFuncdef() noexcept
     {
         return std::get<FuncdefSignature>(signature);
     }
 
-    const FuncdefSignature& GetFuncdef() const
+    const FuncdefSignature& GetFuncdef() const noexcept
     {
         return std::get<FuncdefSignature>(signature);
     }
 
-    CallReferenceSignature& GetCallReference()
+    CallReferenceSignature& GetCallReference() noexcept
     {
         return std::get<CallReferenceSignature>(signature);
     }
 
-    const CallReferenceSignature& GetCallReference() const
+    const CallReferenceSignature& GetCallReference() const noexcept
     {
         return std::get<CallReferenceSignature>(signature);
+    }
+
+    /**
+     * @brief Returns a zero-copy string_view of the symbol name.
+     */
+    [[nodiscard]] std::string_view GetName() const noexcept
+    {
+        return name;
+    }
+
+    /**
+     * @brief Returns a zero-copy string_view of the container scope name.
+     */
+    [[nodiscard]] std::string_view GetContainerName() const noexcept
+    {
+        return containerName;
+    }
+
+    /**
+     * @brief Returns a zero-copy string_view of the fully qualified name.
+     */
+    [[nodiscard]] std::string_view GetQualifiedName() const noexcept
+    {
+        return qualifiedName;
+    }
+
+    /**
+     * @brief Returns a zero-copy string_view of the file URI.
+     */
+    [[nodiscard]] std::string_view GetFileUri() const noexcept
+    {
+        return fileUri;
     }
 
     /**
@@ -580,11 +613,11 @@ struct Symbol
 static_assert(sizeof(Symbol) <= 504);
 
 /**
- * @brief Extracts all base classes or inherited interfaces declared on a symbol.
+ * @brief Extracts all base classes or inherited interfaces declared on a symbol without heap allocation.
  * @param[in] sym Symbol representing a class or interface.
- * @return Vector of declared base/interface name strings.
+ * @return Span of declared base/interface name strings.
  */
-[[nodiscard]] inline std::vector<std::string> GetDeclaredBases(const Symbol& sym)
+[[nodiscard]] inline std::span<const std::string> GetDeclaredBases(const Symbol& sym) noexcept
 {
     if (sym.type == SymbolType::Class && std::holds_alternative<ClassSignature>(sym.signature))
     {

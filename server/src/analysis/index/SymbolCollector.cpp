@@ -593,9 +593,36 @@ void SymbolCollector::ProcessLambda([[maybe_unused]] TSNode node, [[maybe_unused
 
 // Declaration Collectors
 
+static void ApplyOverrideAndFinal(TSSymbol cSym, const parser::GrammarSymbols& gs, bool isGet, bool isSet,
+                                  VariableSignature& varSig)
+{
+    if (cSym == gs.tokOverride)
+    {
+        if (isGet)
+        {
+            varSig.isGetOverride = true;
+        }
+        else if (isSet)
+        {
+            varSig.isSetOverride = true;
+        }
+    }
+    else if (cSym == gs.tokFinal)
+    {
+        if (isGet)
+        {
+            varSig.isGetFinal = true;
+        }
+        else if (isSet)
+        {
+            varSig.isSetFinal = true;
+        }
+    }
+}
+
 /**
- * @brief Symbol collector apply accessor tokens.
- * @param[in] accNode AST node under evaluation.
+ * @brief Applies accessor tokens to a variable signature.
+ * @param[in] accNode AST node of the accessor declaration.
  * @param[in] isGet True if getter accessor was declared.
  * @param[in] isSet True if setter accessor was declared.
  * @param[in,out] varSig VariableSignature being updated with accessor traits.
@@ -608,28 +635,18 @@ void SymbolCollector::ApplyAccessorTokens(TSNode accNode, bool isGet, bool isSet
         do
         {
             TSNode child = ts_tree_cursor_current_node(&cursor);
-            TSSymbol cSym = ts_node_symbol(child);
+            const TSSymbol cSym = ts_node_symbol(child);
             if (cSym == m_gs.tokConst && isGet)
             {
                 varSig.isGetConst = true;
             }
-            else if (cSym == m_gs.tokOverride)
-            {
-                if (isGet)
-                    varSig.isGetOverride = true;
-                else if (isSet)
-                    varSig.isSetOverride = true;
-            }
-            else if (cSym == m_gs.tokFinal)
-            {
-                if (isGet)
-                    varSig.isGetFinal = true;
-                else if (isSet)
-                    varSig.isSetFinal = true;
-            }
             else if (cSym == m_gs.symFuncAttributes)
             {
                 ApplyFuncAttributeTokens(child, isGet, isSet, varSig);
+            }
+            else
+            {
+                ApplyOverrideAndFinal(cSym, m_gs, isGet, isSet, varSig);
             }
         } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
@@ -637,8 +654,8 @@ void SymbolCollector::ApplyAccessorTokens(TSNode accNode, bool isGet, bool isSet
 }
 
 /**
- * @brief Symbol collector apply func attribute tokens.
- * @param[in] attrNode AST node under evaluation.
+ * @brief Evaluates function attributes applied to an accessor node.
+ * @param[in] attrNode AST node of the attribute list.
  * @param[in] isGet True if getter accessor was declared.
  * @param[in] isSet True if setter accessor was declared.
  * @param[in,out] varSig VariableSignature being updated with accessor traits.
@@ -651,21 +668,7 @@ void SymbolCollector::ApplyFuncAttributeTokens(TSNode attrNode, bool isGet, bool
         do
         {
             TSNode child = ts_tree_cursor_current_node(&cursor);
-            TSSymbol cSym = ts_node_symbol(child);
-            if (cSym == m_gs.tokFinal)
-            {
-                if (isGet)
-                    varSig.isGetFinal = true;
-                else if (isSet)
-                    varSig.isSetFinal = true;
-            }
-            else if (cSym == m_gs.tokOverride)
-            {
-                if (isGet)
-                    varSig.isGetOverride = true;
-                else if (isSet)
-                    varSig.isSetOverride = true;
-            }
+            ApplyOverrideAndFinal(ts_node_symbol(child), m_gs, isGet, isSet, varSig);
         } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
     ts_tree_cursor_delete(&cursor);
@@ -1460,17 +1463,23 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
     }
 }
 
-/**
- * @brief Symbol collector process enum.
- * @param[in] node AST node under evaluation.
- * @param[in,out] sCtx Analysis or feature execution context.
- * @param[in] ctx Diagnostic collection and analysis context.
- */
-void SymbolCollector::ProcessEnum(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx)
+Symbol SymbolCollector::CreateNamedContainerSymbol(SymbolType type, TSNode node, SymbolCollectContext& sCtx,
+                                                   const CollectionContext& ctx) const
 {
     TSNode nameNode = GetChildByFieldName(node, "name");
     SymbolLocationContext loc{sCtx, ctx.containerPath, ctx.containerKind};
-    Symbol sym = CreateSymbol(SymbolType::Enum, node, nameNode, loc);
+    return CreateSymbol(type, node, nameNode, loc);
+}
+
+/**
+ * @brief Collects enum symbol declarations and publishes individual enumerator members.
+ * @param[in] node AST node representing the enum declaration.
+ * @param[in,out] sCtx Symbol collection state accumulating discovered declarations.
+ * @param[in] ctx Lexical container context specifying enclosing paths and scopes.
+ */
+void SymbolCollector::ProcessEnum(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx)
+{
+    Symbol sym = CreateNamedContainerSymbol(SymbolType::Enum, node, sCtx, ctx);
 
     EnumSignature enumSig;
     enumSig.modifiers = ExtractModifiers(node, sCtx.request.sourceCode);
@@ -1485,21 +1494,16 @@ void SymbolCollector::ProcessEnum(TSNode node, SymbolCollectContext& sCtx, const
 }
 
 /**
- * @brief Symbol collector process property.
- * @param[in] node AST node under evaluation.
- * @param[in,out] sCtx Analysis or feature execution context.
- * @param[in] ctx Diagnostic collection and analysis context.
+ * @brief Collects virtual property declarations and extracts type, modifier, and accessor information.
+ * @param[in] node AST node representing the property declaration.
+ * @param[in,out] sCtx Symbol collection state accumulating discovered declarations.
+ * @param[in] ctx Lexical container context specifying enclosing paths and scopes.
  */
 void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
-    TSNode nameNode = GetChildByFieldName(node, "name");
     TSNode typeNode = GetChildByFieldName(node, "prop_type");
-
     TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode, &sCtx.index);
-    SymbolModifiers modifiers = ExtractModifiers(node, sCtx.request.sourceCode);
-
-    SymbolLocationContext loc{sCtx, ctx.containerPath, ctx.containerKind};
-    Symbol sym = CreateSymbol(SymbolType::Property, node, nameNode, loc);
+    Symbol sym = CreateNamedContainerSymbol(SymbolType::Property, node, sCtx, ctx);
 
     VariableSignature varSig;
     varSig.typeName = parser::GetNodeText(typeNode, sCtx.request.sourceCode);
@@ -1510,7 +1514,7 @@ void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, c
     varSig.isArray = typeInfo.isArray;
     varSig.hasPrimitiveHandle = typeInfo.hasPrimitiveHandle;
     varSig.arrayDepth = typeInfo.arrayDepth;
-    varSig.modifiers = modifiers;
+    varSig.modifiers = ExtractModifiers(node, sCtx.request.sourceCode);
     varSig.defaultValue = parser::GetNodeText(node, sCtx.request.sourceCode);
     varSig.isVirtualProperty = true;
 
@@ -1521,16 +1525,14 @@ void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, c
 }
 
 /**
- * @brief Symbol collector process interface.
- * @param[in] node AST node under evaluation.
- * @param[in,out] sCtx Analysis or feature execution context.
- * @param[in] ctx Diagnostic collection and analysis context.
+ * @brief Collects interface type definitions and extracts inheritance declarations.
+ * @param[in] node AST node representing the interface declaration.
+ * @param[in,out] sCtx Symbol collection state accumulating discovered declarations.
+ * @param[in] ctx Lexical container context specifying enclosing paths and scopes.
  */
 void SymbolCollector::ProcessInterface(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
-    TSNode nameNode = GetChildByFieldName(node, "name");
-    SymbolLocationContext loc{sCtx, ctx.containerPath, ctx.containerKind};
-    Symbol sym = CreateSymbol(SymbolType::Interface, node, nameNode, loc);
+    Symbol sym = CreateNamedContainerSymbol(SymbolType::Interface, node, sCtx, ctx);
 
     InterfaceSignature ifaceSig;
     ifaceSig.modifiers = ExtractModifiers(node, sCtx.request.sourceCode);
@@ -2115,10 +2117,33 @@ static bool ScanCaseExpression(std::string_view text, size_t& idx, size_t limit,
 }
 
 /**
- * @brief Scan default clause colon.
- * @param[in] sCtx Analysis or feature execution context.
- * @param[in,out] idx Zero-based element index.
- * @param[in,out] outColons Vector collecting byte offsets of double-colon scope separators.
+ * @brief Records a missing case or default colon diagnostic and returns the next clause boundary byte offset.
+ * @param[in] sCtx Context bundle containing switch AST node and source text.
+ * @param[in] startByte Clause keyword beginning byte offset.
+ * @param[in] ptOffset Position offset for computing line and column coordinates.
+ * @param[in] isDefault True if this clause is a 'default:' statement; false for 'case'.
+ * @param[in,out] outColons Container accumulating discovered missing colon entries.
+ * @return Next clause boundary byte offset.
+ */
+static size_t AppendMissingCaseColon(const SwitchScanContext& sCtx, size_t startByte, size_t ptOffset, bool isDefault,
+                                     std::vector<MissingCaseColon>& outColons)
+{
+    MissingCaseColon colon;
+    colon.clauseStartByte = static_cast<uint32_t>(startByte);
+    const TSPoint pt = ComputeLocalPoint(sCtx.sourceCode, sCtx.switchNode, ptOffset);
+    colon.line = pt.row;
+    colon.character = pt.column;
+    colon.isDefault = isDefault;
+    colon.clauseEndByte = static_cast<uint32_t>(FindNextClauseBoundary(sCtx.sourceCode, ptOffset, sCtx.closeBraceByte));
+    outColons.push_back(colon);
+    return colon.clauseEndByte;
+}
+
+/**
+ * @brief Scans a default clause within a switch statement to verify presence of a terminating colon.
+ * @param[in] sCtx Context bundle containing switch AST node and source text.
+ * @param[in,out] idx Current scanner byte offset advanced past the default clause.
+ * @param[in,out] outColons Container accumulating discovered missing colon entries.
  */
 static void ScanDefaultClauseColon(const SwitchScanContext& sCtx, size_t& idx, std::vector<MissingCaseColon>& outColons)
 {
@@ -2135,22 +2160,14 @@ static void ScanDefaultClauseColon(const SwitchScanContext& sCtx, size_t& idx, s
         return;
     }
 
-    MissingCaseColon colon;
-    colon.clauseStartByte = static_cast<uint32_t>(defStart);
-    const TSPoint pt = ComputeLocalPoint(sCtx.sourceCode, sCtx.switchNode, defStart + 7);
-    colon.line = pt.row;
-    colon.character = pt.column;
-    colon.isDefault = true;
-    colon.clauseEndByte = static_cast<uint32_t>(FindNextClauseBoundary(sCtx.sourceCode, idx, sCtx.closeBraceByte));
-    outColons.push_back(colon);
-    idx = colon.clauseEndByte;
+    idx = AppendMissingCaseColon(sCtx, defStart, defStart + 7, true, outColons);
 }
 
 /**
- * @brief Scan case clause colon.
- * @param[in] sCtx Analysis or feature execution context.
- * @param[in,out] idx Zero-based element index.
- * @param[in,out] outColons Vector collecting byte offsets of double-colon scope separators.
+ * @brief Scans a case clause within a switch statement to verify presence of a terminating colon.
+ * @param[in] sCtx Context bundle containing switch AST node and source text.
+ * @param[in,out] idx Current scanner byte offset advanced past the case clause.
+ * @param[in,out] outColons Container accumulating discovered missing colon entries.
  */
 static void ScanCaseClauseColon(const SwitchScanContext& sCtx, size_t& idx, std::vector<MissingCaseColon>& outColons)
 {
@@ -2165,15 +2182,7 @@ static void ScanCaseClauseColon(const SwitchScanContext& sCtx, size_t& idx, std:
     const bool hasColon = ScanCaseExpression(sCtx.sourceCode, idx, sCtx.closeBraceByte, exprEnd);
     if (!hasColon)
     {
-        MissingCaseColon colon;
-        colon.clauseStartByte = static_cast<uint32_t>(caseStart);
-        const TSPoint pt = ComputeLocalPoint(sCtx.sourceCode, sCtx.switchNode, exprEnd);
-        colon.line = pt.row;
-        colon.character = pt.column;
-        colon.isDefault = false;
-        colon.clauseEndByte = static_cast<uint32_t>(FindNextClauseBoundary(sCtx.sourceCode, idx, sCtx.closeBraceByte));
-        outColons.push_back(colon);
-        idx = colon.clauseEndByte;
+        idx = AppendMissingCaseColon(sCtx, caseStart, exprEnd, false, outColons);
     }
 }
 

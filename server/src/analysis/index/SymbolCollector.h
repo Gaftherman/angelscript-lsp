@@ -234,14 +234,6 @@ class SymbolCollector
         bool sourceHasBrackets = false;
         bool isPredefined = false;
 
-        SymbolLocationContext(std::string_view src, std::string uri, std::string path,
-                              ContainerKind kind = ContainerKind::None, bool hasBrackets = false,
-                              bool predefined = false)
-            : sourceCode(src), fileUri(std::move(uri)), containerPath(std::move(path)), containerKind(kind),
-              sourceHasBrackets(hasBrackets), isPredefined(predefined)
-        {
-        }
-
         SymbolLocationContext(const SymbolCollectContext& sCtx, std::string path,
                               ContainerKind kind = ContainerKind::None)
             : sourceCode(sCtx.request.sourceCode), fileUri(sCtx.request.fileUri), containerPath(std::move(path)),
@@ -374,6 +366,8 @@ class SymbolCollector
     std::vector<ParameterInformation> ExtractParameters(TSNode paramsNode, const SymbolCollectContext& ctx) const;
 
     Symbol CreateSymbol(SymbolType type, TSNode node, TSNode nameNode, const SymbolLocationContext& loc) const;
+    Symbol CreateNamedContainerSymbol(SymbolType type, TSNode node, SymbolCollectContext& sCtx,
+                                      const CollectionContext& ctx) const;
 
     std::vector<std::string> ExtractBases(TSNode classNode, std::string_view sourceCode) const;
 };

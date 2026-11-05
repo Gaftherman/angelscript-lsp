@@ -8,6 +8,7 @@
 #include "utils/LspLogger.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <tree_sitter/api.h>
 #include <vector>
@@ -226,6 +227,17 @@ class LocalScopeCollector
      */
     void RegisterVirtualPropertySetParameters(const NodeIndex& nodeIndex, Scope* rootScope,
                                               const std::string& sourceCode) const;
+
+    /**
+     * @brief Enriches reference metadata with lambda, constructor, and error context.
+     * @param[in] captureNode AST node of the captured reference.
+     * @param[in] parent Parent AST node.
+     * @param[in] sourceCode Source text of the document.
+     * @param[in,out] ref Reference to update.
+     * @param[in] docCtx Document error and metadata context.
+     */
+    void EnrichReferenceContext(TSNode captureNode, TSNode parent, std::string_view sourceCode, LocalReference& ref,
+                                const DocumentContext& docCtx) const;
 
     /**
      * @brief Ancestor nodes and enclosing symbol cached during capture processing.

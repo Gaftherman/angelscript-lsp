@@ -851,15 +851,14 @@ bool LocalScopeCollector::IsDeclarationContextSymbol(TSSymbol sym) const noexcep
            sym == m_gs.symMixinDeclaration || sym == m_gs.symFuncdefDeclaration;
 }
 
-static void EnrichReferenceContext(TSNode captureNode, TSNode parent, std::string_view sourceCode,
-                                   const parser::GrammarSymbols& gs, LocalReference& ref,
-                                   const LocalScopeCollector::DocumentContext& docCtx)
+void LocalScopeCollector::EnrichReferenceContext(TSNode captureNode, TSNode parent, std::string_view sourceCode,
+                                                 LocalReference& ref, const DocumentContext& docCtx) const
 {
     if (ref.name == "super")
     {
         ref.isSuperBaseCall = IsBaseConstructorCall(captureNode, sourceCode);
     }
-    else if (ref.name == "function" && ts_node_symbol(parent) == gs.symLambdaExpression)
+    else if (ref.name == "function" && ts_node_symbol(parent) == m_gs.symLambdaExpression)
     {
         ref.isLambdaFunctionKeyword = 1;
     }
@@ -928,7 +927,7 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
             IsMemberAccessNode(capture.node, parent, m_gs.symMemberExpression, m_gs.symScopedIdentifier);
         DetermineCallReferenceInfo(capture.node, parent, grandparent, ref);
         IndexReferenceReceiver(parent, sourceCode, ref, docCtx);
-        EnrichReferenceContext(capture.node, parent, sourceCode, m_gs, ref, docCtx);
+        EnrichReferenceContext(capture.node, parent, sourceCode, ref, docCtx);
     }
 
     current->references.push_back(std::move(ref));
@@ -1464,50 +1463,65 @@ static void InsertRecoveredDefinition(Scope* targetScope, LocalDefinition&& def)
     targetScope->definitions.push_back(std::move(def));
 }
 
-static bool ExtractAssignmentLeftVar(TSNode leftNode, const parser::GrammarSymbols& gs, std::string_view sourceCode,
-                                     std::string& outName, bool& outIsHandle, TSNode& outIdentNode)
+/**
+ * @brief Extracts the target identifier node, name, and handle flag from an assignment left-hand expression.
+ * @param[in] leftNode Left-hand AST expression node of an assignment.
+ * @param[in] gs Precompiled grammar symbol mappings.
+ * @param[in] sourceCode Source text of the document.
+ * @param[out] outName Extracted variable name string.
+ * @param[out] outIsHandle True if declared as a handle type.
+ * @return Identifier AST node if extraction succeeded; null node otherwise.
+ */
+static TSNode ExtractAssignmentLeftVar(TSNode leftNode, const parser::GrammarSymbols& gs, std::string_view sourceCode,
+                                       std::string& outName, bool& outIsHandle)
 {
-    TSSymbol sym = ts_node_symbol(leftNode);
+    const TSSymbol sym = ts_node_symbol(leftNode);
     if (sym == gs.symIdentifier)
     {
         outName = parser::GetNodeText(leftNode, sourceCode);
-        outIdentNode = leftNode;
-        return !outName.empty();
+        outIsHandle = false;
+        return !outName.empty() ? leftNode : TSNode{};
     }
     if (sym == gs.symScopedIdentifier)
     {
         TSNode id = parser::GetChildByField(leftNode, parser::GetGrammarSymbols().fieldName);
         if (ts_node_is_null(id))
         {
-            uint32_t count = ts_node_child_count(leftNode);
+            const uint32_t count = ts_node_child_count(leftNode);
             id = (count > 0) ? ts_node_child(leftNode, count - 1) : TSNode{};
         }
         outName = parser::GetNodeText(id, sourceCode);
-        outIdentNode = id;
-        return !outName.empty();
+        outIsHandle = false;
+        return !outName.empty() ? id : TSNode{};
     }
     if (sym == gs.symUnaryExpression)
     {
         std::string_view text = parser::GetNodeTextView(leftNode, sourceCode);
         if (text.starts_with('@'))
         {
-            outIsHandle = true;
             TSNode operand = parser::GetChildByField(leftNode, parser::GetGrammarSymbols().fieldOperand);
             if (ts_node_is_null(operand))
+            {
                 operand = ts_node_child(leftNode, 1);
-            return ExtractAssignmentLeftVar(operand, gs, sourceCode, outName, outIsHandle, outIdentNode);
+            }
+            TSNode res = ExtractAssignmentLeftVar(operand, gs, sourceCode, outName, outIsHandle);
+            if (!ts_node_is_null(res))
+            {
+                outIsHandle = true;
+                return res;
+            }
         }
     }
-    return false;
+    return TSNode{};
 }
 
 /**
- * @brief Register recovered variable.
- * @param[in] rootScope Lexical scope for symbol lookup.
- * @param[in] identNode AST node under evaluation.
- * @param[in] varName Identifier name or string value.
- * @param[in] typeName Type name to inspect or resolve.
- * @param[in] isHandle True if the declared type is a handle (@).
+ * @brief Registers a recovered variable declaration into the innermost lexical scope.
+ * @param[in,out] rootScope Lexical scope tree root.
+ * @param[in] identNode AST node of the identifier.
+ * @param[in] varName Name of the recovered variable.
+ * @param[in] typeName Declared type name to attach to the recovered local definition.
+ * @param[in] isHandle True if the variable is declared as a handle.
  */
 static void RegisterRecoveredVariable(Scope* rootScope, TSNode identNode, std::string varName, std::string typeName,
                                       bool isHandle)
@@ -1516,8 +1530,8 @@ static void RegisterRecoveredVariable(Scope* rootScope, TSNode identNode, std::s
     {
         typeName += "@";
     }
-    TSPoint pt = ts_node_start_point(identNode);
-    TSPoint endPt = ts_node_end_point(identNode);
+    const TSPoint pt = ts_node_start_point(identNode);
+    const TSPoint endPt = ts_node_end_point(identNode);
     LocalDefinition def{
         std::move(varName), LocalDefinitionKind::Variable, {pt.row, pt.column, endPt.row, endPt.column}};
     def.fullStartLine = pt.row;
@@ -1532,12 +1546,12 @@ static void RegisterRecoveredVariable(Scope* rootScope, TSNode identNode, std::s
 }
 
 /**
- * @brief Try recover split if declaration.
- * @param[in] node AST node under evaluation.
- * @param[in] rootScope Lexical scope for symbol lookup.
- * @param[in] sourceCode Document source text.
- * @param[in] gs Precompiled grammar symbols.
- * @return True if the condition is satisfied; false otherwise.
+ * @brief Recovers split variable declarations across if-statement consequence expressions.
+ * @param[in] node If-statement AST node under evaluation.
+ * @param[in,out] rootScope Lexical scope tree root for registering recovered definitions.
+ * @param[in] sourceCode Source text of the document.
+ * @param[in] gs Precompiled grammar symbol mappings.
+ * @return True if a split variable declaration was successfully recovered; false otherwise.
  */
 static bool TryRecoverSplitIfDeclaration(TSNode node, Scope* rootScope, const std::string& sourceCode,
                                          const parser::GrammarSymbols& gs)
@@ -1574,8 +1588,8 @@ static bool TryRecoverSplitIfDeclaration(TSNode node, Scope* rootScope, const st
     TSNode left = parser::GetChildByField(assignExpr, parser::GetGrammarSymbols().fieldLeft);
     std::string varName;
     bool isHandleVar = false;
-    TSNode identNode = TSNode{};
-    if (ExtractAssignmentLeftVar(left, gs, sourceCode, varName, isHandleVar, identNode))
+    TSNode identNode = ExtractAssignmentLeftVar(left, gs, sourceCode, varName, isHandleVar);
+    if (!ts_node_is_null(identNode))
     {
         RegisterRecoveredVariable(rootScope, identNode, std::move(varName), std::string(typeView), isHandleVar);
         return true;
@@ -1584,11 +1598,11 @@ static bool TryRecoverSplitIfDeclaration(TSNode node, Scope* rootScope, const st
 }
 
 /**
- * @brief Try recover error if declaration.
- * @param[in] node AST node under evaluation.
- * @param[in] rootScope Lexical scope for symbol lookup.
- * @param[in] sourceCode Document source text.
- * @param[in] gs Precompiled grammar symbols.
+ * @brief Scans AST error nodes inside if-statement headers to extract and register recovered variable types.
+ * @param[in] node If-statement AST node containing parse errors.
+ * @param[in,out] rootScope Lexical scope tree root for registering recovered definitions.
+ * @param[in] sourceCode Source text of the document.
+ * @param[in] gs Precompiled grammar symbol mappings.
  */
 static void TryRecoverErrorIfDeclaration(TSNode node, Scope* rootScope, const std::string& sourceCode,
                                          const parser::GrammarSymbols& gs)
@@ -1633,8 +1647,8 @@ static void TryRecoverErrorIfDeclaration(TSNode node, Scope* rootScope, const st
     TSNode left = parser::GetChildByField(assignExpr, parser::GetGrammarSymbols().fieldLeft);
     std::string varName;
     bool isHandleVar = false;
-    TSNode identNode = TSNode{};
-    if (ExtractAssignmentLeftVar(left, gs, sourceCode, varName, isHandleVar, identNode))
+    TSNode identNode = ExtractAssignmentLeftVar(left, gs, sourceCode, varName, isHandleVar);
+    if (!ts_node_is_null(identNode))
     {
         RegisterRecoveredVariable(rootScope, identNode, std::move(varName), std::move(errTypeName), isHandleVar);
     }

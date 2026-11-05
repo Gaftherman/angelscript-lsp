@@ -1,16 +1,13 @@
 #include "SymbolTable.h"
 
 #include "analysis/documentation/SignatureFormatter.h"
-#include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
 #include "spdlog/fmt/fmt.h"
-#include "utils/LspLogger.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
-#include <cstring>
 #include <functional>
 #include <iterator>
 
@@ -1189,22 +1186,27 @@ std::string SymbolTable::BuildVirtualMixinUri(std::string_view hostClass, std::s
 }
 
 /**
- * @brief Extracts the host class identifier from an angelscript-virtual URI.
+ * @brief Parses an angelscript-virtual URI into host class and mixin name components without heap allocation.
  * @param[in] uri Virtual document URI string.
- * @return Extracted host class name, or empty string if not a virtual URI.
+ * @param[out] hostClass Extracted host class component string view.
+ * @param[out] mixinPart Extracted mixin component string view.
+ * @return True if the URI was successfully parsed as a virtual mixin URI; false otherwise.
  */
-std::string SymbolTable::ExtractVirtualHostClass(std::string_view uri)
+bool SymbolTable::ParseVirtualMixinUri(std::string_view uri, std::string_view& hostClass,
+                                       std::string_view& mixinPart) noexcept
 {
+    hostClass = {};
+    mixinPart = {};
     const auto colonPos = uri.find(':');
     if (colonPos == std::string_view::npos)
     {
-        return "";
+        return false;
     }
 
-    std::string_view scheme = uri.substr(0, colonPos);
+    const std::string_view scheme = uri.substr(0, colonPos);
     if (scheme != "angelscript-virtual")
     {
-        return "";
+        return false;
     }
 
     std::string_view rest = uri.substr(colonPos + 1);
@@ -1213,13 +1215,39 @@ std::string SymbolTable::ExtractVirtualHostClass(std::string_view uri)
         rest.remove_prefix(1);
     }
 
-    auto slashPos = rest.find('/');
-    if (slashPos == std::string_view::npos)
+    const auto slashPos = rest.find('/');
+    if (slashPos != std::string_view::npos)
     {
-        return "";
+        hostClass = rest.substr(0, slashPos);
+        mixinPart = rest.substr(slashPos + 1);
+    }
+    else
+    {
+        mixinPart = rest;
     }
 
-    return utils::UrlDecode(rest.substr(0, slashPos));
+    if (mixinPart.ends_with(".as"))
+    {
+        mixinPart.remove_suffix(3);
+    }
+
+    return true;
+}
+
+/**
+ * @brief Extracts the host class identifier from an angelscript-virtual URI.
+ * @param[in] uri Virtual document URI string.
+ * @return Extracted host class name, or empty string if not a virtual URI.
+ */
+std::string SymbolTable::ExtractVirtualHostClass(std::string_view uri)
+{
+    std::string_view hostClass{};
+    std::string_view mixinPart{};
+    if (ParseVirtualMixinUri(uri, hostClass, mixinPart))
+    {
+        return utils::UrlDecode(hostClass);
+    }
+    return {};
 }
 
 /**
@@ -1229,32 +1257,13 @@ std::string SymbolTable::ExtractVirtualHostClass(std::string_view uri)
  */
 std::string SymbolTable::ExtractVirtualMixinName(std::string_view uri)
 {
-    const auto colonPos = uri.find(':');
-    if (colonPos == std::string_view::npos)
+    std::string_view hostClass{};
+    std::string_view mixinPart{};
+    if (ParseVirtualMixinUri(uri, hostClass, mixinPart))
     {
-        return "";
+        return utils::UrlDecode(mixinPart);
     }
-
-    std::string_view scheme = uri.substr(0, colonPos);
-    if (scheme != "angelscript-virtual")
-    {
-        return "";
-    }
-
-    std::string_view rest = uri.substr(colonPos + 1);
-    while (!rest.empty() && rest.front() == '/')
-    {
-        rest.remove_prefix(1);
-    }
-
-    auto slashPos = rest.find('/');
-    std::string_view mixinPart = (slashPos != std::string_view::npos) ? rest.substr(slashPos + 1) : rest;
-    if (mixinPart.ends_with(".as"))
-    {
-        mixinPart.remove_suffix(3);
-    }
-
-    return utils::UrlDecode(mixinPart);
+    return {};
 }
 
 bool SymbolTable::HasDocumentSymbols(const std::string& fileUri) const
@@ -1287,21 +1296,7 @@ bool SymbolTable::HasScopedSymbol(std::string_view scope, std::string_view name)
     {
         return HasSymbol(name);
     }
-    constexpr size_t kStackBufSize = 512;
-    const size_t totalLen = scope.size() + 2 + name.size();
-    if (totalLen < kStackBufSize)
-    {
-        char buf[kStackBufSize];
-        std::memcpy(buf, scope.data(), scope.size());
-        buf[scope.size()] = ':';
-        buf[scope.size() + 1] = ':';
-        std::memcpy(buf + scope.size() + 2, name.data(), name.size());
-        return HasSymbol(std::string_view(buf, totalLen));
-    }
-    std::string key;
-    key.reserve(totalLen);
-    key.append(scope).append("::").append(name);
-    return HasSymbol(std::string_view(key));
+    return WithCompositeMemberKey(scope, name, [this](std::string_view key) { return HasSymbol(key); });
 }
 
 bool SymbolTable::IsReachableInContainerScope(std::string_view cleanName, std::string_view containerScope) const
@@ -1343,21 +1338,7 @@ std::shared_ptr<const std::vector<Symbol>> SymbolTable::FindMemberSymbolPtr(std:
     {
         return nullptr;
     }
-    constexpr size_t kStackBufSize = 256;
-    const size_t totalLen = scope.size() + 2 + member.size();
-    if (totalLen < kStackBufSize)
-    {
-        char buf[kStackBufSize];
-        std::memcpy(buf, scope.data(), scope.size());
-        buf[scope.size()] = ':';
-        buf[scope.size() + 1] = ':';
-        std::memcpy(buf + scope.size() + 2, member.data(), member.size());
-        return FindSymbolsPtr(std::string_view(buf, totalLen));
-    }
-    std::string key;
-    key.reserve(totalLen);
-    key.append(scope).append("::").append(member);
-    return FindSymbolsPtr(std::string_view(key));
+    return WithCompositeMemberKey(scope, member, [this](std::string_view key) { return FindSymbolsPtr(key); });
 }
 
 std::vector<Symbol> SymbolTable::FindMemberSymbols(std::string_view scope, std::string_view member) const
