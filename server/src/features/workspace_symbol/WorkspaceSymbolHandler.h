@@ -16,7 +16,7 @@ namespace angel_lsp::features
  */
 struct WorkspaceSymbolRequest
 {
-    std::string_view query;
+    std::string_view query{};
     const analysis::SymbolTable& symbolTable;
     size_t maxResults = constants::limits::DefaultWorkspaceSymbolResults;
 };
@@ -28,10 +28,10 @@ using WorkspaceSymbolResult = std::vector<lsp::SymbolInformation>;
 
 /**
  * @brief Searches indexed symbols in the SymbolTable matching the query string.
- * @param request Immutable context for workspace symbol search.
+ * @param[in] request Immutable context for workspace symbol search.
  * @return Optional vector of SymbolInformation objects matching the query.
  */
-std::optional<WorkspaceSymbolResult> GetWorkspaceSymbols(const WorkspaceSymbolRequest& request);
+[[nodiscard]] std::optional<WorkspaceSymbolResult> GetWorkspaceSymbols(const WorkspaceSymbolRequest& request);
 
 /**
  * @brief Symbol descriptor scored by fuzzy matcher for workspace symbol search.

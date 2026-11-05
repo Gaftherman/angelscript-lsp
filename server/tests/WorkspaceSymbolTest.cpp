@@ -232,3 +232,20 @@ TEST_CASE("WorkspaceSymbolHandler - Multi-File Workspace Symbols")
     CHECK(foundA);
     CHECK(foundB);
 }
+
+TEST_CASE("WorkspaceSymbolHandler - Same Coordinate Distinct Symbols Not Masked")
+{
+    WorkspaceSymbolTestEnv env;
+    std::string code = "int foo = 1; int bar = 2;\n";
+    env.AddFile("file:///same_coord.as", code);
+
+    auto resFoo = env.Search("foo");
+    REQUIRE(resFoo.has_value());
+    CHECK(resFoo->size() == 1);
+    CHECK((*resFoo)[0].name == "foo");
+
+    auto resBar = env.Search("bar");
+    REQUIRE(resBar.has_value());
+    CHECK(resBar->size() == 1);
+    CHECK((*resBar)[0].name == "bar");
+}

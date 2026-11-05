@@ -91,7 +91,7 @@ std::optional<WorkspaceSymbolResult> GetWorkspaceSymbols(const WorkspaceSymbolRe
 {
     std::string queryLower = ToLower(request.query);
     std::vector<ScoredSymbol> matches;
-    std::unordered_set<std::string> seenKeys;
+    ankerl::unordered_dense::set<std::pair<std::string_view, uint64_t>> seenKeys;
 
     request.symbolTable.ForEachSymbol(
         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
@@ -103,18 +103,19 @@ std::optional<WorkspaceSymbolResult> GetWorkspaceSymbols(const WorkspaceSymbolRe
                     continue;
                 }
 
-                // Deduplicate identical declarations (e.g. enum dual indexing)
-                std::string dedupKey = sym.fileUri + ":" + std::to_string(sym.startLine) + ":" +
-                                       std::to_string(sym.startCharacter) + ":" + sym.name;
-                if (seenKeys.contains(dedupKey))
-                {
-                    continue;
-                }
-
                 auto match = MatchSymbol(queryLower, request.query, sym);
                 if (match.matched)
                 {
-                    seenKeys.insert(std::move(dedupKey));
+                    // Deduplicate identical declarations (e.g. enum dual indexing)
+                    const uint64_t nameHash = ankerl::unordered_dense::hash<std::string_view>{}(sym.name);
+                    const uint64_t coordKey =
+                        (static_cast<uint64_t>(sym.startLine) << 32) | static_cast<uint64_t>(sym.startCharacter);
+                    const uint64_t key =
+                        coordKey ^ (nameHash + 0x9e3779b97f4a7c15ULL + (coordKey << 6) + (coordKey >> 2));
+                    if (!seenKeys.insert({sym.fileUri, key}).second)
+                    {
+                        continue;
+                    }
 
                     lsp::SymbolInformation info;
                     info.name = sym.name;
