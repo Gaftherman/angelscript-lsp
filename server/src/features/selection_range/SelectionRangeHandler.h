@@ -1,33 +1,39 @@
 #pragma once
 
+#include "analysis/index/NodeIndex.h"
+
 #include <lsp/messages.h>
 #include <lsp/types.h>
-#include <string>
-#include <tree_sitter/api.h>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::features
 {
 /**
- * @brief Context and input positions for a selection range request.
+ * @brief Context and input positions for resolving selection ranges.
  */
 struct SelectionRangeRequest
 {
-    std::string sourceCode;
-    TSTree* tree = nullptr;
+    /**
+     * @brief Raw text of the document being queried.
+     */
+    std::string_view sourceCode;
 
     /**
-     * @brief Cursor positions, already decoded into UTF-8 line/character pairs.
+     * @brief Cursor positions decoded into UTF-8 line and character coordinates.
      */
     const std::vector<lsp::Position>& positions;
+
+    /**
+     * @brief Pre-computed syntax node index from the first semantic pass.
+     */
+    const analysis::NodeIndex* nodeIndex = nullptr;
 };
 
 /**
- * @brief Builds the expand-selection chain for each requested position.
- *        The editor's "expand selection" walks outward one syntactic step at a time, and the tree
- * @param request Source text, tree, and the positions to answer for.
- * @return One SelectionRange per requested position, in the same order. Empty when there is no
- *        tree to read.
+ * @brief Generates hierarchical syntactic selection ranges enclosing each specified cursor position.
+ * @param[in] request Input context containing document text, positions, and node index.
+ * @return Selection range hierarchy for each requested position in corresponding order, or empty if index is missing.
  */
 std::vector<lsp::SelectionRange> GetSelectionRanges(const SelectionRangeRequest& request);
 } // namespace angel_lsp::features

@@ -23,10 +23,16 @@ struct Fixture
     AngelScriptParser parser;
     std::string sourceCode;
     TSTree* tree = nullptr;
+    std::unique_ptr<analysis::NodeIndex> index;
 
     explicit Fixture(std::string code) : sourceCode(std::move(code))
     {
         tree = parser.Parse(sourceCode);
+        if (tree)
+        {
+            index = std::make_unique<analysis::NodeIndex>(ts_tree_root_node(tree),
+                                                          analysis::NodeIndexOptions{.source = sourceCode});
+        }
     }
 
     ~Fixture()
@@ -39,7 +45,7 @@ struct Fixture
 
     std::vector<lsp::SelectionRange> At(std::vector<lsp::Position> positions)
     {
-        const SelectionRangeRequest request{sourceCode, tree, positions};
+        const SelectionRangeRequest request{sourceCode, positions, index.get()};
         return GetSelectionRanges(request);
     }
 };
@@ -163,11 +169,11 @@ TEST_CASE("SelectionRange - A position past the end still gets an answer")
     CHECK_FALSE(Chain(results[0]).empty());
 }
 
-TEST_CASE("SelectionRange - A document with no tree yields nothing")
+TEST_CASE("SelectionRange - A document with no index yields nothing")
 {
     const std::string source = "void Think() { }\n";
     const std::vector<lsp::Position> positions{lsp::Position{0, 5}};
-    const SelectionRangeRequest request{source, nullptr, positions};
+    const SelectionRangeRequest request{source, positions, nullptr};
 
     CHECK(GetSelectionRanges(request).empty());
 }

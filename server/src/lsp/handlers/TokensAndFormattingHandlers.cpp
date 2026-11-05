@@ -287,7 +287,7 @@ void Server::RegisterTokensAndFormattingHandlers()
 
     m_messageHandler->add<lsp::requests::TextDocument_SelectionRange>(
         [this](lsp::requests::TextDocument_SelectionRange::Params&& req)
-        { return HandleRequestsTextDocument_SelectionRange(*this, std::move(req)); });
+        { return HandleRequestsTextDocument_SelectionRange(std::move(req)); });
 
     m_messageHandler->add<lsp::requests::TextDocument_SemanticTokens_Full>(
         [this](lsp::requests::TextDocument_SemanticTokens_Full::Params&& req)

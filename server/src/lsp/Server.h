@@ -195,6 +195,8 @@ class Server
     HandleRequestsWorkspace_Symbol(lsp::requests::Workspace_Symbol::Params&& req);
     lsp::requests::TextDocument_LinkedEditingRange::Result
     HandleRequestsTextDocument_LinkedEditingRange(lsp::requests::TextDocument_LinkedEditingRange::Params&& req);
+    lsp::requests::TextDocument_SelectionRange::Result
+    HandleRequestsTextDocument_SelectionRange(lsp::requests::TextDocument_SelectionRange::Params&& req);
     lsp::requests::TextDocument_SemanticTokens_Full::Result
     HandleRequestsTextDocument_SemanticTokens_Full(lsp::requests::TextDocument_SemanticTokens_Full::Params&& req);
     lsp::requests::TextDocument_SemanticTokens_Full_Delta::Result HandleRequestsTextDocument_SemanticTokens_Full_Delta(
