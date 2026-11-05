@@ -18,7 +18,7 @@ PrepareCallHierarchy(Server& server, lsp::requests::TextDocument_PrepareCallHier
         return lsp::Null{};
     }
 
-    features::CallHierarchyPrepareRequest pr{doc->uri, *doc->text, doc->tree, server.GetSymbolTable(),
+    features::CallHierarchyPrepareRequest pr{doc->uri, *doc->text, server.GetSymbolTable(),
                                              codec::Decode(*doc->text, server.GetPositionEncoding(), req.position)};
     auto items = features::PrepareCallHierarchy(pr);
     if (!items.has_value() || items->empty())
@@ -91,7 +91,7 @@ PrepareTypeHierarchy(Server& server, lsp::requests::TextDocument_PrepareTypeHier
         return lsp::Null{};
     }
 
-    features::TypeHierarchyPrepareRequest pr{doc->uri, *doc->text, doc->tree, server.GetSymbolTable(),
+    features::TypeHierarchyPrepareRequest pr{doc->uri, *doc->text, server.GetSymbolTable(),
                                              codec::Decode(*doc->text, server.GetPositionEncoding(), req.position)};
     auto items = features::PrepareTypeHierarchy(pr);
     if (!items.has_value() || items->empty())

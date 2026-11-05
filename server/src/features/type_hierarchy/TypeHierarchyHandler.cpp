@@ -3,7 +3,6 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
 #include "features/common/FeatureSharedUtils.h"
-#include "parser/ASTUtils.h"
 #include "utils/Constants.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
@@ -39,10 +38,6 @@ static lsp::TypeHierarchyItem ToItem(const analysis::Symbol& sym)
         item.detail = sym.containerName;
     }
 
-    // fullRange covers the declaration and its body; selectionRange is the name alone. The
-    // protocol requires the second be contained by the first, and a collector that recorded
-    // neither would give both as an empty range at the origin - so the symbol's own
-    // start/end is the fallback, which is always at least the name.
     const bool hasFullRange = sym.fullRange.endLine != 0 || sym.fullRange.endCharacter != 0;
     item.range = hasFullRange ? common::ToLspRange(sym.fullRange)
                               : lsp::Range{lsp::Position{sym.startLine, sym.startCharacter},
@@ -74,159 +69,6 @@ static std::vector<analysis::Symbol> FindTypeDeclarations(std::string_view name,
         }
     }
     return found;
-}
-
-/**
- * @brief The identifier the cursor sits on, or empty when it is not on one.
- * @param[in] request Type hierarchy prepare request details.
- * @param[out] outNode AST node matching the identifier under the cursor.
- * @return Extracted identifier text or empty string if not on an identifier.
- */
-static std::string IdentifierAt(const TypeHierarchyPrepareRequest& request, TSNode& outNode)
-{
-    return common::FindIdentifierAtPosition(request.tree, request.position, request.sourceCode, outNode);
-}
-
-static std::vector<analysis::Symbol> FindTypeInEnclosingNamespaces(TSNode node, std::string_view text,
-                                                                   std::string_view sourceCode,
-                                                                   const analysis::SymbolTable& symbolTable)
-{
-    for (const auto& container : analysis::GetEnclosingContainers(node, sourceCode))
-    {
-        if (container.kind == analysis::ContainerKind::Namespace)
-        {
-            auto decls = FindTypeDeclarations(utils::JoinScopedName(container.qualifiedName, text), symbolTable);
-            if (!decls.empty())
-            {
-                return decls;
-            }
-        }
-    }
-    return {};
-}
-
-/**
- * @brief Attempts to find type declarations from a qualified type under the cursor.
- * @param[in] node AST node at cursor.
- * @param[in] sourceCode Document source text.
- * @param[in] symbolTable analysis::Symbol table to look up types.
- * @return List of matching type symbols if found.
- */
-static std::vector<analysis::Symbol> FindQualifiedTypeUnderCursor(TSNode node, std::string_view sourceCode,
-                                                                  const analysis::SymbolTable& symbolTable)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    std::vector<analysis::Symbol> result;
-    parser::ForEachAncestor(node,
-                            [&](TSNode p) -> bool
-                            {
-                                const TSSymbol pType = ts_node_symbol(p);
-                                if (pType == gs.symType || pType == gs.symScopedIdentifier)
-                                {
-                                    const std::string text =
-                                        analysis::CleanBaseType(parser::GetNodeText(p, sourceCode));
-                                    if (!text.empty() && utils::ContainsScopeSeparator(text))
-                                    {
-                                        auto declarations = FindTypeDeclarations(text, symbolTable);
-                                        if (declarations.empty())
-                                        {
-                                            declarations =
-                                                FindTypeInEnclosingNamespaces(p, text, sourceCode, symbolTable);
-                                        }
-                                        if (!declarations.empty())
-                                        {
-                                            result = std::move(declarations);
-                                            return false;
-                                        }
-                                    }
-                                }
-                                if (pType == gs.symClassDeclaration || pType == gs.symInterfaceDeclaration ||
-                                    pType == gs.symFuncDeclaration || pType == gs.symStatementBlock)
-                                {
-                                    return false;
-                                }
-                                return true;
-                            });
-    return result;
-}
-
-/**
- * @brief Resolves type declarations for an identifier name, checking namespaces and short names.
- * @param[in] name Identifier name.
- * @param[in] node AST node.
- * @param[in] sourceCode Document source text.
- * @param[in] symbolTable analysis::Symbol table.
- * @return List of matching type symbols.
- */
-static std::vector<analysis::Symbol> FindTypeFromIdentifier(std::string_view name, TSNode node,
-                                                            std::string_view sourceCode,
-                                                            const analysis::SymbolTable& symbolTable)
-{
-    const std::string nameStr(name);
-    auto declarations = FindTypeDeclarations(nameStr, symbolTable);
-    if (declarations.empty() && !ts_node_is_null(node))
-    {
-        for (const auto& container : analysis::GetEnclosingContainers(node, sourceCode))
-        {
-            if (container.kind == analysis::ContainerKind::Namespace)
-            {
-                declarations =
-                    FindTypeDeclarations(utils::JoinScopedName(container.qualifiedName, nameStr), symbolTable);
-                if (!declarations.empty())
-                {
-                    break;
-                }
-            }
-        }
-    }
-    if (declarations.empty())
-    {
-        for (const auto& sym : symbolTable.FindTypeSymbolsByShortName(nameStr))
-        {
-            if (IsTypeSymbol(sym))
-            {
-                declarations.push_back(sym);
-            }
-        }
-    }
-    return declarations;
-}
-
-/**
- * @brief Resolves the enclosing class or interface type containing the cursor node.
- * @param[in] node AST node.
- * @param[in] sourceCode Document source text.
- * @param[in] symbolTable analysis::Symbol table.
- * @return List of matching type symbols.
- */
-static std::vector<analysis::Symbol> FindEnclosingType(TSNode node, std::string_view sourceCode,
-                                                       const analysis::SymbolTable& symbolTable)
-{
-    std::vector<analysis::Symbol> declarations;
-    for (const auto& container : analysis::GetEnclosingContainers(node, sourceCode))
-    {
-        if (container.kind != analysis::ContainerKind::Class && container.kind != analysis::ContainerKind::Interface)
-        {
-            continue;
-        }
-        declarations = FindTypeDeclarations(container.qualifiedName, symbolTable);
-        if (declarations.empty())
-        {
-            declarations = FindTypeDeclarations(container.name, symbolTable);
-        }
-        if (declarations.empty())
-        {
-            for (const auto& sym : symbolTable.FindTypeSymbolsByShortName(container.name))
-            {
-                if (IsTypeSymbol(sym))
-                {
-                    declarations.push_back(sym);
-                }
-            }
-        }
-        break;
-    }
-    return declarations;
 }
 
 /**
@@ -267,7 +109,7 @@ static bool MatchesItemLocation(const analysis::Symbol& sym, const lsp::TypeHier
 /**
  * @brief Resolves type declarations for an LSP TypeHierarchyItem, filtering by URI/range if needed.
  * @param[in] item Target type hierarchy item.
- * @param[in] symbolTable analysis::Symbol table.
+ * @param[in] symbolTable Symbol table.
  * @return Filtered declaration symbols.
  */
 static std::vector<analysis::Symbol> ResolveItemDeclarations(const lsp::TypeHierarchyItem& item,
@@ -309,7 +151,7 @@ static std::vector<analysis::Symbol> ResolveItemDeclarations(const lsp::TypeHier
  * @brief Resolves candidate base type symbols in search order.
  * @param[in] cleanBase Normalized base type name.
  * @param[in] declPrefix Namespace prefix of the declaring type.
- * @param[in] symbolTable analysis::Symbol table.
+ * @param[in] symbolTable Symbol table.
  * @return Resolved base type symbols.
  */
 static std::vector<analysis::Symbol> ResolveBaseSymbols(const std::string& cleanBase, std::string_view declPrefix,
@@ -345,7 +187,7 @@ static std::vector<analysis::Symbol> ResolveBaseSymbols(const std::string& clean
 /**
  * @brief Collects supertype items for a single declaration, tracking seen types to avoid duplicates.
  * @param[in] declaration Declaring type symbol.
- * @param[in] symbolTable analysis::Symbol table.
+ * @param[in] symbolTable Symbol table.
  * @param[in,out] seen Set of already emitted type keys.
  * @param[in,out] items Output list of supertype items.
  */
@@ -456,28 +298,108 @@ static void CollectSubtypesByScan(const SubtypeQueryContext& ctx, std::vector<ls
         });
 }
 
+static std::string FindEnclosingNamespace(std::string_view uri, uint32_t line, const analysis::SymbolTable& table)
+{
+    std::string enclosingNs;
+    uint32_t bestSpan = UINT32_MAX;
+    const std::string fileUri(uri);
+    table.ForEachSymbolInFile(fileUri,
+                              [&]([[maybe_unused]] const std::string& key, const std::vector<analysis::Symbol>& symbols)
+                              {
+                                  for (const auto& sym : symbols)
+                                  {
+                                      if (sym.type != analysis::SymbolType::Namespace ||
+                                          (sym.fileUri != uri && utils::PathToUri(sym.fileUri) != uri))
+                                      {
+                                          continue;
+                                      }
+                                      const auto range =
+                                          sym.fullRange.endLine != 0 ? sym.fullRange : sym.selectionRange;
+                                      if (line >= range.startLine && line <= range.endLine)
+                                      {
+                                          const uint32_t span = range.endLine - range.startLine;
+                                          if (span <= bestSpan)
+                                          {
+                                              bestSpan = span;
+                                              enclosingNs = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                                          }
+                                      }
+                                  }
+                              });
+    return enclosingNs;
+}
+
+static void FilterDeclarationsByLocation(std::string_view uri, const lsp::Position& pos,
+                                         std::vector<analysis::Symbol>& declarations)
+{
+    if (declarations.size() <= 1)
+    {
+        return;
+    }
+    for (const auto& sym : declarations)
+    {
+        if ((sym.fileUri == uri || utils::PathToUri(sym.fileUri) == uri) &&
+            (sym.startLine == pos.line || (sym.startLine <= pos.line && sym.endLine >= pos.line)))
+        {
+            declarations = {sym};
+            return;
+        }
+    }
+}
+
 std::optional<std::vector<lsp::TypeHierarchyItem>> PrepareTypeHierarchy(const TypeHierarchyPrepareRequest& request)
 {
-    if (!request.tree || request.sourceCode.empty())
+    if (request.sourceCode.empty())
     {
         return std::nullopt;
     }
 
-    TSNode node{};
-    const std::string name = IdentifierAt(request, node);
+    const std::string name = common::FindScopedIdentifierAtPosition(request.sourceCode, request.position);
 
     std::vector<analysis::Symbol> declarations;
-    if (!ts_node_is_null(node))
+    if (!name.empty())
     {
-        declarations = FindQualifiedTypeUnderCursor(node, request.sourceCode, request.symbolTable);
+        declarations = FindTypeDeclarations(name, request.symbolTable);
+        if (declarations.empty())
+        {
+            const std::string enclosingNs =
+                FindEnclosingNamespace(request.uri, request.position.line, request.symbolTable);
+            if (!enclosingNs.empty())
+            {
+                declarations = FindTypeDeclarations(utils::JoinScopedName(enclosingNs, name), request.symbolTable);
+            }
+        }
+        if (declarations.empty())
+        {
+            for (const auto& sym : request.symbolTable.FindTypeSymbolsByShortName(analysis::LastScopeSegment(name)))
+            {
+                if (IsTypeSymbol(sym))
+                {
+                    declarations.push_back(sym);
+                }
+            }
+        }
+        FilterDeclarationsByLocation(request.uri, request.position, declarations);
     }
-    if (declarations.empty() && !name.empty())
+
+    if (declarations.empty())
     {
-        declarations = FindTypeFromIdentifier(name, node, request.sourceCode, request.symbolTable);
-    }
-    if (declarations.empty() && !ts_node_is_null(node))
-    {
-        declarations = FindEnclosingType(node, request.sourceCode, request.symbolTable);
+        const std::string enclosing = request.symbolTable.FindEnclosingClassName(request.uri, request.position.line);
+        if (!enclosing.empty())
+        {
+            declarations = FindTypeDeclarations(enclosing, request.symbolTable);
+            if (declarations.empty())
+            {
+                for (const auto& sym :
+                     request.symbolTable.FindTypeSymbolsByShortName(analysis::LastScopeSegment(enclosing)))
+                {
+                    if (IsTypeSymbol(sym))
+                    {
+                        declarations.push_back(sym);
+                    }
+                }
+            }
+        }
     }
 
     if (declarations.empty())

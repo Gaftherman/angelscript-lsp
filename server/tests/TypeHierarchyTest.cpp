@@ -49,7 +49,7 @@ struct Fixture
 
     std::optional<std::vector<lsp::TypeHierarchyItem>> Prepare(uint32_t line, uint32_t character)
     {
-        const TypeHierarchyPrepareRequest request{uri, sourceCode, tree, table, lsp::Position{line, character}};
+        const TypeHierarchyPrepareRequest request{uri, sourceCode, table, lsp::Position{line, character}};
         return PrepareTypeHierarchy(request);
     }
 
