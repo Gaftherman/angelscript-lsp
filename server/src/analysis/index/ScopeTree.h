@@ -371,6 +371,31 @@ const LocalDefinition* ResolveInScope(const Scope* scope, std::string_view name,
 const Scope* FindScopeDeclaringDefinition(const Scope* root, const LocalDefinition& def);
 
 /**
+ * @brief Checks if a scope's range contains the given source line and character.
+ */
+[[nodiscard]] inline bool ScopeContains(const Scope& scope, uint32_t line, uint32_t character) noexcept
+{
+    if (line < scope.startLine || line > scope.endLine)
+    {
+        return false;
+    }
+    if (line == scope.startLine && character < scope.startCharacter)
+    {
+        return false;
+    }
+    if (line == scope.endLine && character > scope.endCharacter)
+    {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * @brief Finds the direct child scope of parent containing the point, using binary search when child count > 8.
+ */
+[[nodiscard]] const Scope* FindContainingChild(const Scope& parent, uint32_t line, uint32_t character) noexcept;
+
+/**
  * @brief Finds the innermost Scope containing the given source line and character.
  * @note Returns `root` when no child contains the point, even if `root` does not contain it
  *        either. FindInnermostScope below is the stricter variant; the two are not

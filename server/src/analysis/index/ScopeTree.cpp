@@ -1,5 +1,7 @@
 #include "analysis/index/ScopeTree.h"
 
+#include <algorithm>
+
 namespace angel_lsp::analysis
 {
 /**
@@ -142,6 +144,18 @@ bool IsShadowedByFunctionLocal(const Scope* scope, std::string_view name)
            IsDeclaredInFunctionScope(owner);
 }
 
+static bool DefinitionsContain(const Scope& scope, const LocalDefinition& def) noexcept
+{
+    for (const auto& d : scope.definitions)
+    {
+        if (d.startLine == def.startLine && d.startCharacter == def.startCharacter && d.name == def.name)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 const Scope* FindScopeDeclaringDefinition(const Scope* root, const LocalDefinition& def)
 {
     if (!root)
@@ -149,26 +163,32 @@ const Scope* FindScopeDeclaringDefinition(const Scope* root, const LocalDefiniti
         return nullptr;
     }
 
-    std::vector<const Scope*> queue;
-    queue.push_back(root);
-    ankerl::unordered_dense::set<const Scope*> visited;
-    visited.insert(root);
-
-    size_t head = 0;
-    while (head < queue.size())
+    if (const Scope* inner = FindInnermostScope(root, def.startLine, def.startCharacter))
     {
-        const Scope* current = queue[head++];
-        for (const auto& d : current->definitions)
+        ScopeTraversalGuard guard;
+        for (const Scope* current = inner; guard.CheckAndInsert(current); current = current->parent)
         {
-            if (d.name == def.name && d.startLine == def.startLine && d.startCharacter == def.startCharacter)
+            if (DefinitionsContain(*current, def))
             {
                 return current;
             }
         }
+    }
+
+    std::vector<const Scope*> queue;
+    queue.push_back(root);
+    size_t head = 0;
+    while (head < queue.size())
+    {
+        const Scope* current = queue[head++];
+        if (DefinitionsContain(*current, def))
+        {
+            return current;
+        }
 
         for (const auto& child : current->children)
         {
-            if (child && visited.insert(child.get()).second)
+            if (child)
             {
                 queue.push_back(child.get());
             }
@@ -190,6 +210,48 @@ const Scope* FindEnclosingClosure(const Scope* scope)
     return nullptr;
 }
 
+static inline bool PositionEndsBefore(const Scope& scope, uint32_t line, uint32_t character) noexcept
+{
+    if (scope.endLine != line)
+    {
+        return scope.endLine < line;
+    }
+    return scope.endCharacter < character;
+}
+
+const Scope* FindContainingChild(const Scope& parent, uint32_t line, uint32_t character) noexcept
+{
+    const auto& children = parent.children;
+    const size_t count = children.size();
+    if (count == 0)
+    {
+        return nullptr;
+    }
+
+    if (count > 8)
+    {
+        const auto it =
+            std::lower_bound(children.begin(), children.end(), std::pair{line, character},
+                             [](const std::unique_ptr<Scope>& child, const std::pair<uint32_t, uint32_t>& p) noexcept
+                             { return child && PositionEndsBefore(*child, p.first, p.second); });
+
+        if (it != children.end() && *it && ScopeContains(**it, line, character))
+        {
+            return it->get();
+        }
+        return nullptr;
+    }
+
+    for (const auto& child : children)
+    {
+        if (child && ScopeContains(*child, line, character))
+        {
+            return child.get();
+        }
+    }
+    return nullptr;
+}
+
 const Scope* FindEnclosingScope(const Scope* root, uint32_t line, uint32_t character)
 {
     if (!root)
@@ -197,33 +259,8 @@ const Scope* FindEnclosingScope(const Scope* root, uint32_t line, uint32_t chara
         return nullptr;
     }
     const Scope* current = root;
-    while (true)
+    while (const Scope* next = FindContainingChild(*current, line, character))
     {
-        const Scope* next = nullptr;
-        for (const auto& child : current->children)
-        {
-            if (!child)
-            {
-                continue;
-            }
-            if (line >= child->startLine && line <= child->endLine)
-            {
-                if (line == child->startLine && character < child->startCharacter)
-                {
-                    continue;
-                }
-                if (line == child->endLine && character > child->endCharacter)
-                {
-                    continue;
-                }
-                next = child.get();
-                break;
-            }
-        }
-        if (!next)
-        {
-            break;
-        }
         current = next;
     }
     return current;
@@ -231,52 +268,11 @@ const Scope* FindEnclosingScope(const Scope* root, uint32_t line, uint32_t chara
 
 const Scope* FindInnermostScope(const Scope* root, uint32_t line, uint32_t character)
 {
-    if (!root)
+    if (!root || !ScopeContains(*root, line, character))
     {
         return nullptr;
     }
-
-    const auto contains = [line, character](const Scope& scope)
-    {
-        if (line < scope.startLine || line > scope.endLine)
-        {
-            return false;
-        }
-        if (line == scope.startLine && character < scope.startCharacter)
-        {
-            return false;
-        }
-        if (line == scope.endLine && character > scope.endCharacter)
-        {
-            return false;
-        }
-        return true;
-    };
-
-    if (!contains(*root))
-    {
-        return nullptr;
-    }
-
-    const Scope* current = root;
-    while (true)
-    {
-        bool descended = false;
-        for (const auto& child : current->children)
-        {
-            if (child && contains(*child))
-            {
-                current = child.get();
-                descended = true;
-                break;
-            }
-        }
-        if (!descended)
-        {
-            break;
-        }
-    }
-    return current;
+    return FindEnclosingScope(root, line, character);
 }
 
 bool ScopeIndex::MatchesModule(const Scope& scope, const std::optional<std::string>& module)
@@ -390,11 +386,13 @@ void ScopeIndex::SetScopeTree(const std::string& fileUri, std::shared_ptr<const 
 void ScopeIndex::ClearDocument(const std::string& fileUri)
 {
     std::unique_lock lock(m_mutex);
-    if (const auto entry = m_roots.find(fileUri); entry != m_roots.end())
+    const auto entry = m_roots.find(fileUri);
+    if (entry == m_roots.end())
     {
-        RemoveCallUses(entry->first, entry->second);
-        m_roots.erase(entry);
+        return;
     }
+    RemoveCallUses(entry->first, entry->second);
+    m_roots.erase(entry);
 }
 
 void ScopeIndex::InvalidateDocumentOccurrences(const std::string& fileUri)

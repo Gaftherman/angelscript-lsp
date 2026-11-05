@@ -67,6 +67,14 @@ class CallBindings
     {
         return m_module;
     }
+    [[nodiscard]] size_t Size() const noexcept
+    {
+        return m_targets.size();
+    }
+    [[nodiscard]] bool Empty() const noexcept
+    {
+        return m_targets.empty();
+    }
 
     template <typename Fn> void ForEachDeclaration(Fn&& callback) const
     {

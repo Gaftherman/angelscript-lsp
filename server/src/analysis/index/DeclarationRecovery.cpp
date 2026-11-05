@@ -5,6 +5,7 @@
 #include "utils/Utils.h"
 
 #include <cctype>
+#include <optional>
 
 namespace angel_lsp::analysis
 {
@@ -342,6 +343,23 @@ size_t FindBalancedDeclarationEnd(std::string_view sourceCode, size_t declStartB
     return std::string_view::npos;
 }
 
+static RecoveredDeclarationSnippet CreateSwallowedSnippet(std::string_view sourceCode, size_t declStart, size_t declEnd,
+                                                          std::string_view kw, std::string_view name)
+{
+    size_t startLine = 0;
+    size_t startCol = 0;
+    ComputeLineAndColumn(sourceCode, declStart, startLine, startCol);
+
+    return RecoveredDeclarationSnippet{
+        .snippet = std::string(sourceCode.substr(declStart, declEnd - declStart)),
+        .name = std::string(name),
+        .kind = std::string(kw),
+        .startByte = declStart,
+        .startLine = startLine,
+        .startCol = startCol,
+    };
+}
+
 std::vector<RecoveredDeclarationSnippet>
 FindSwallowedDeclarations(std::string_view sourceCode, const ankerl::unordered_dense::set<std::string>& knownSymbols)
 {
@@ -371,7 +389,9 @@ FindSwallowedDeclarations(std::string_view sourceCode, const ankerl::unordered_d
 
         size_t lineEnd = sourceCode.find('\n', pos);
         if (lineEnd == std::string_view::npos)
+        {
             lineEnd = n;
+        }
 
         const std::string_view line = sourceCode.substr(pos, lineEnd - pos);
         std::string_view kw;
@@ -379,26 +399,13 @@ FindSwallowedDeclarations(std::string_view sourceCode, const ankerl::unordered_d
 
         if (ParseCandidateHeader(line, kw, name))
         {
-            const size_t declStart = pos;
-            const size_t declEnd = FindBalancedDeclarationEnd(sourceCode, declStart, kw);
-            if (declEnd != std::string_view::npos && declEnd > declStart)
+            const size_t declEnd = FindBalancedDeclarationEnd(sourceCode, pos, kw);
+            if (declEnd != std::string_view::npos && declEnd > pos)
             {
                 if (!knownSymbols.contains(std::string(name)))
                 {
-                    size_t startLine = 0;
-                    size_t startCol = 0;
-                    ComputeLineAndColumn(sourceCode, declStart, startLine, startCol);
-
-                    results.push_back({
-                        .snippet = std::string(sourceCode.substr(declStart, declEnd - declStart)),
-                        .name = std::string(name),
-                        .kind = std::string(kw),
-                        .startByte = declStart,
-                        .startLine = startLine,
-                        .startCol = startCol,
-                    });
+                    results.push_back(CreateSwallowedSnippet(sourceCode, pos, declEnd, kw, name));
                 }
-
                 pos = declEnd;
                 continue;
             }

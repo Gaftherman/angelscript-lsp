@@ -11,45 +11,29 @@
 
 namespace angel_lsp::analysis
 {
-/**
- * @brief Computes the next container qualified name index for an AST container node.
- * @param[in] node AST node representing the enclosing container.
- * @param[in] sourceCode Source text buffer of the document.
- * @param[in] current Current container index in the naming context.
- * @return Updated container index in the naming context.
- */
-uint32_t NamingContext::NextContainer(TSNode node, std::string_view sourceCode, uint32_t current)
+static uint32_t AppendScopedName(std::string_view name, std::string_view parent, std::vector<std::string>& list,
+                                 uint32_t fallback)
 {
-    const std::string name =
-        parser::NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName), sourceCode);
     if (name.empty())
     {
-        return current;
+        return fallback;
     }
-    const std::string& parent = containers[current];
-    containers.push_back(utils::JoinScopedName(parent, name));
-    return static_cast<uint32_t>(containers.size() - 1);
+    list.push_back(utils::JoinScopedName(parent, name));
+    return static_cast<uint32_t>(list.size() - 1);
 }
 
-/**
- * @brief Computes the next caller qualified name index for an AST function node.
- * @param[in] node AST node representing the function declaration.
- * @param[in] sourceCode Source text buffer of the document.
- * @param[in] containerIdx Index of the enclosing container.
- * @param[in] current Current caller index in the naming context.
- * @return Updated caller index in the naming context.
- */
+uint32_t NamingContext::NextContainer(TSNode node, std::string_view sourceCode, uint32_t current)
+{
+    const std::string_view name =
+        parser::GetNodeTextView(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName), sourceCode);
+    return AppendScopedName(name, containers[current], containers, current);
+}
+
 uint32_t NamingContext::NextCaller(TSNode node, std::string_view sourceCode, uint32_t containerIdx, uint32_t current)
 {
-    const std::string name =
-        parser::NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName), sourceCode);
-    if (name.empty())
-    {
-        return current;
-    }
-    const std::string& parent = containers[containerIdx];
-    callers.push_back(utils::JoinScopedName(parent, name));
-    return static_cast<uint32_t>(callers.size() - 1);
+    const std::string_view name =
+        parser::GetNodeTextView(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName), sourceCode);
+    return AppendScopedName(name, containers[containerIdx], callers, current);
 }
 
 /**
@@ -76,15 +60,14 @@ static TSNode CalleeNameNode(TSNode callNode)
     if (calleeSym == gs.symScopedIdentifier)
     {
         TSNode last{};
-        const uint32_t count = ts_node_named_child_count(callee);
-        for (uint32_t i = 0; i < count; ++i)
-        {
-            TSNode child = ts_node_named_child(callee, i);
-            if (ts_node_symbol(child) == gs.symIdentifier)
-            {
-                last = child;
-            }
-        }
+        parser::ForEachNamedChildNode(callee,
+                                      [&](TSNode child)
+                                      {
+                                          if (ts_node_symbol(child) == gs.symIdentifier)
+                                          {
+                                              last = child;
+                                          }
+                                      });
         return last;
     }
 
@@ -234,86 +217,85 @@ std::vector<CallSite> CollectCallsFromScopeTree(const Scope& rootScope)
     return calls;
 }
 
-/**
- * @brief Filters call sites across documents matching a specific string field against a target value.
- * @param[in] byDocument Map of file URIs to document call sites.
- * @param[in] mutex Shared mutex guarding concurrent access to the map.
- * @param[in] field Pointer-to-member selecting the CallSite string field to compare.
- * @param[in] target Target identifier string to match.
- * @return Vector of DocumentCalls matching the specified filter criteria.
- */
-static std::vector<DocumentCalls>
-FilterCallsByField(const ankerl::unordered_dense::map<std::string, std::vector<CallSite>>& byDocument,
-                   std::shared_mutex& mutex, std::string CallSite::* field, const std::string& target)
+void CallGraphIndex::ClearDocumentLocked(const std::string& fileUri)
 {
-    std::vector<DocumentCalls> found;
-    if (target.empty())
+    const auto docIt = m_byDocument.find(fileUri);
+    if (docIt == m_byDocument.end())
     {
-        return found;
+        return;
     }
-
-    std::shared_lock lock(mutex);
-    for (const auto& [fileUri, calls] : byDocument)
+    for (const auto& call : docIt->second)
     {
-        DocumentCalls matches{fileUri, {}};
-        for (const auto& call : calls)
+        if (const auto it = m_byCallee.find(call.callee); it != m_byCallee.end())
         {
-            if (call.*field == target)
+            it->second.erase(fileUri);
+            if (it->second.empty())
             {
-                matches.calls.push_back(call);
+                m_byCallee.erase(it);
             }
         }
-        if (!matches.calls.empty())
+        if (const auto it = m_byCaller.find(call.caller); it != m_byCaller.end())
         {
-            found.push_back(std::move(matches));
+            it->second.erase(fileUri);
+            if (it->second.empty())
+            {
+                m_byCaller.erase(it);
+            }
         }
     }
-    return found;
+    m_byDocument.erase(docIt);
 }
 
-/**
- * @brief Replaces all calls recorded for the specified document URI.
- * @param[in] fileUri URI of the document being updated.
- * @param[in] calls Vector of call sites identified in the document.
- */
 void CallGraphIndex::SetDocumentCalls(const std::string& fileUri, std::vector<CallSite> calls)
 {
     std::unique_lock lock(m_mutex);
+    ClearDocumentLocked(fileUri);
     if (calls.empty())
     {
-        m_byDocument.erase(fileUri);
         return;
+    }
+    for (const auto& call : calls)
+    {
+        m_byCallee[call.callee][fileUri].push_back(call);
+        m_byCaller[call.caller][fileUri].push_back(call);
     }
     m_byDocument[fileUri] = std::move(calls);
 }
 
-/**
- * @brief Discards all calls recorded for the specified document URI.
- * @param[in] fileUri URI of the document to clear.
- */
 void CallGraphIndex::ClearDocument(const std::string& fileUri)
 {
     std::unique_lock lock(m_mutex);
-    m_byDocument.erase(fileUri);
+    ClearDocumentLocked(fileUri);
 }
 
-/**
- * @brief Finds every call to a given bare name across every indexed document.
- * @param[in] calleeName Bare name of the callee function to look for.
- * @return Vector of DocumentCalls matching the callee name.
- */
-std::vector<DocumentCalls> CallGraphIndex::FindCallsTo(const std::string& calleeName) const
+std::vector<DocumentCalls> CallGraphIndex::FindCallsInIndex(const InvertedIndex& index, std::string_view name) const
 {
-    return FilterCallsByField(m_byDocument, m_mutex, &CallSite::callee, calleeName);
+    std::vector<DocumentCalls> found;
+    if (name.empty())
+    {
+        return found;
+    }
+    std::shared_lock lock(m_mutex);
+    const auto it = index.find(name);
+    if (it == index.end())
+    {
+        return found;
+    }
+    found.reserve(it->second.size());
+    for (const auto& [fileUri, calls] : it->second)
+    {
+        found.push_back(DocumentCalls{fileUri, calls});
+    }
+    return found;
 }
 
-/**
- * @brief Finds every call written inside a function identified by its qualified name.
- * @param[in] callerQualifiedName Fully qualified name of the calling function.
- * @return Vector of DocumentCalls originating from the caller.
- */
-std::vector<DocumentCalls> CallGraphIndex::FindCallsFrom(const std::string& callerQualifiedName) const
+std::vector<DocumentCalls> CallGraphIndex::FindCallsTo(std::string_view calleeName) const
 {
-    return FilterCallsByField(m_byDocument, m_mutex, &CallSite::caller, callerQualifiedName);
+    return FindCallsInIndex(m_byCallee, calleeName);
+}
+
+std::vector<DocumentCalls> CallGraphIndex::FindCallsFrom(std::string_view callerQualifiedName) const
+{
+    return FindCallsInIndex(m_byCaller, callerQualifiedName);
 }
 } // namespace angel_lsp::analysis

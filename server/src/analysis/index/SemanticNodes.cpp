@@ -117,59 +117,41 @@ TSNode CallExpressionView::ArgumentList() const noexcept
     {
         return args;
     }
-    const uint32_t count = ts_node_named_child_count(m_raw);
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode child = ts_node_named_child(m_raw, i);
-        if (!ts_node_is_null(child) && ts_node_symbol(child) == gs.symArgumentList)
-        {
-            return child;
-        }
-    }
-    return TSNode{};
+    TSNode found{};
+    parser::ForEachNamedChildNodeUntil(m_raw,
+                                       [&](TSNode child)
+                                       {
+                                           if (ts_node_symbol(child) == gs.symArgumentList)
+                                           {
+                                               found = child;
+                                               return false;
+                                           }
+                                           return true;
+                                       });
+    return found;
 }
 
 uint32_t CallExpressionView::ArgumentCount() const noexcept
 {
-    TSNode argList = ArgumentList();
-    if (ts_node_is_null(argList))
-    {
-        return 0;
-    }
-    return static_cast<uint32_t>(CountCallArguments(argList));
+    uint32_t count = 0;
+    ForEachArgument([&count]([[maybe_unused]] TSNode node, [[maybe_unused]] uint32_t index,
+                             [[maybe_unused]] std::string_view name) { ++count; });
+    return count;
 }
 
 std::vector<TSNode> CallExpressionView::ArgumentNodes() const
 {
-    TSNode argList = ArgumentList();
-    if (ts_node_is_null(argList))
-    {
-        return {};
-    }
-    const auto callArgs = ExtractCallArguments(argList, "");
     std::vector<TSNode> nodes;
-    nodes.reserve(callArgs.size());
-    for (const auto& a : callArgs)
-    {
-        nodes.push_back(a.exprNode);
-    }
+    ForEachArgument([&](TSNode node, [[maybe_unused]] uint32_t index, [[maybe_unused]] std::string_view name)
+                    { nodes.push_back(node); });
     return nodes;
 }
 
 std::vector<std::string> CallExpressionView::ArgumentNames() const
 {
-    TSNode argList = ArgumentList();
-    if (ts_node_is_null(argList))
-    {
-        return {};
-    }
-    const auto callArgs = ExtractCallArguments(argList, m_source);
     std::vector<std::string> names;
-    names.reserve(callArgs.size());
-    for (const auto& a : callArgs)
-    {
-        names.push_back(a.name);
-    }
+    ForEachArgument([&]([[maybe_unused]] TSNode node, [[maybe_unused]] uint32_t index, std::string_view name)
+                    { names.emplace_back(name); });
     return names;
 }
 

@@ -12,15 +12,15 @@ CallDeclaration::CallDeclaration(const Symbol& symbol)
 
 bool CallDeclaration::Matches(const Symbol& symbol) const noexcept
 {
-    return uri == symbol.fileUri && qualifiedName == symbol.qualifiedName && range == symbol.selectionRange &&
+    return range == symbol.selectionRange && qualifiedName == symbol.qualifiedName && uri == symbol.fileUri &&
            signature == symbol.GetDisplaySignature();
 }
 
 size_t CallDeclarationHash::operator()(const CallDeclaration& declaration) const noexcept
 {
     size_t hash = SourceRangeHash{}(declaration.range);
-    const auto add = [&](const std::string& value)
-    { hash ^= std::hash<std::string>{}(value) + 0x9e3779b9 + (hash << 6) + (hash >> 2); };
+    const auto add = [&](std::string_view value) noexcept
+    { hash ^= std::hash<std::string_view>{}(value) + 0x9e3779b9 + (hash << 6) + (hash >> 2); };
     add(declaration.uri);
     add(declaration.qualifiedName);
     add(declaration.signature);
@@ -29,14 +29,15 @@ size_t CallDeclarationHash::operator()(const CallDeclaration& declaration) const
 
 void CallBindings::Add(uint32_t nameByte, const SourceRange& use, const Symbol& declaration)
 {
-    if (m_targets.contains(nameByte))
+    auto [targetIt, inserted] = m_targets.try_emplace(nameByte, nullptr);
+    if (!inserted)
     {
         return;
     }
 
     auto group = m_uses.try_emplace(CallDeclaration(declaration)).first;
     group->second.push_back(use);
-    m_targets.try_emplace(nameByte, &group->first);
+    targetIt->second = &group->first;
 }
 
 const CallDeclaration* CallBindings::Find(uint32_t nameByte) const

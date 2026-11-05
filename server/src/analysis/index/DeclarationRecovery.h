@@ -1,6 +1,5 @@
 #pragma once
 
-#include "analysis/diagnostics/Diagnostics.h"
 #include "analysis/index/Symbol.h"
 
 #include <ankerl/unordered_dense.h>

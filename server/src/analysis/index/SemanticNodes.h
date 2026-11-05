@@ -1,8 +1,8 @@
 #pragma once
 
-#include "analysis/resolution/SemanticHelpers.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
+#include "parser/GrammarSymbols.h"
 
 #include <cstdint>
 #include <optional>
@@ -51,6 +51,30 @@ class AstNodeView
     [[nodiscard]] std::string_view Type() const noexcept
     {
         return parser::GetNodeType(m_raw);
+    }
+
+    /**
+     * @brief Returns the Tree-Sitter grammar symbol id of the node.
+     */
+    [[nodiscard]] TSSymbol Symbol() const noexcept
+    {
+        return IsValid() ? ts_node_symbol(m_raw) : 0;
+    }
+
+    /**
+     * @brief Returns the count of named child nodes.
+     */
+    [[nodiscard]] uint32_t NamedChildCount() const noexcept
+    {
+        return IsValid() ? ts_node_named_child_count(m_raw) : 0;
+    }
+
+    /**
+     * @brief Returns the named child node at the given index.
+     */
+    [[nodiscard]] TSNode NamedChild(uint32_t index) const noexcept
+    {
+        return IsValid() ? ts_node_named_child(m_raw, index) : TSNode{};
     }
 
     /**
@@ -188,6 +212,76 @@ class CallExpressionView : public AstNodeView
      * @brief Extracts argument names for each argument (empty if positional).
      */
     [[nodiscard]] std::vector<std::string> ArgumentNames() const;
+
+    /**
+     * @brief Traverses each argument expression node and optional parameter name.
+     * @param[in] callback Invoked with (TSNode exprNode, uint32_t argIndex, std::string_view name).
+     */
+    template <typename Fn> void ForEachArgument(Fn&& callback) const
+    {
+        const TSNode argList = ArgumentList();
+        if (ts_node_is_null(argList))
+        {
+            return;
+        }
+        TSTreeCursor cursor = ts_tree_cursor_new(argList);
+        if (!ts_tree_cursor_goto_first_child(&cursor))
+        {
+            ts_tree_cursor_delete(&cursor);
+            return;
+        }
+
+        const auto& gs = parser::GetGrammarSymbols();
+        uint32_t argIndex = 0;
+        TSNode exprNode{};
+        std::string_view argName{};
+
+        auto flushCurrent = [&]()
+        {
+            if (!ts_node_is_null(exprNode))
+            {
+                callback(exprNode, argIndex++, argName);
+                exprNode = TSNode{};
+                argName = {};
+            }
+        };
+
+        do
+        {
+            const TSNode child = ts_tree_cursor_current_node(&cursor);
+            const TSSymbol sym = ts_node_symbol(child);
+            if (sym == gs.tokOpenParen || sym == gs.symComment || sym == gs.tokColon)
+            {
+                continue;
+            }
+            if (sym == gs.tokCloseParen)
+            {
+                break;
+            }
+            if (sym == gs.tokComma)
+            {
+                flushCurrent();
+                continue;
+            }
+
+            const TSFieldId fieldId = ts_tree_cursor_current_field_id(&cursor);
+            if (fieldId == gs.fieldArgName)
+            {
+                argName = parser::GetNodeTextView(child, m_source);
+            }
+            else
+            {
+                if (!ts_node_is_null(exprNode))
+                {
+                    flushCurrent();
+                }
+                exprNode = child;
+            }
+        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+
+        ts_tree_cursor_delete(&cursor);
+        flushCurrent();
+    }
 };
 
 } // namespace angel_lsp::analysis::ast

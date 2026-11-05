@@ -65,6 +65,11 @@ class SyntaxOperands
         return !m_fact && ts_node_is_null(m_node);
     }
 
+    [[nodiscard]] bool IsValid() const noexcept
+    {
+        return !IsNull();
+    }
+
     [[nodiscard]] SyntaxOperands FieldOperands(TSFieldId field) const noexcept
     {
         if (!m_fact || !m_index)
@@ -284,18 +289,7 @@ class SyntaxOperands
 
     template <typename Predicate> void ForEachNamed(Predicate&& predicate) const
     {
-        if (!m_fact || !m_index)
-        {
-            parser::ForEachNamedChildNodeUntil(m_node, predicate);
-            return;
-        }
-        for (const auto* child = m_index->SyntaxNode(m_fact->first); child; child = m_index->SyntaxNode(child->next))
-        {
-            if (child->named && !predicate(m_index->SyntaxHandle(*child)))
-            {
-                return;
-            }
-        }
+        ForEachNamedOperands([&](const SyntaxOperands& op) { return predicate(op.Node()); });
     }
 
     template <typename Predicate> void ForEachNamedOperands(Predicate&& predicate) const

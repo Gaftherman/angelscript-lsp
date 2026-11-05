@@ -2,6 +2,7 @@
 
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
+#include "utils/TransparentHash.h"
 
 #include <ankerl/unordered_dense.h>
 #include <memory>
@@ -33,6 +34,8 @@ struct CallSite
      * @brief Range of the callee's name alone, which is what the protocol asks for.
      */
     SourceRange range;
+
+    bool operator==(const CallSite&) const noexcept = default;
 };
 
 /**
@@ -85,21 +88,29 @@ class CallGraphIndex
      * @brief Finds every call to a given bare name across every indexed document.
      * @param[in] calleeName Bare name of the callee function to look for.
      * @return Vector of DocumentCalls matching the callee name.
-     * @note Returned by value: the index is written from the analysis thread while requests
-     *        read it, and a snapshot is cheaper to reason about than a lock held across a
      */
-    std::vector<DocumentCalls> FindCallsTo(const std::string& calleeName) const;
+    [[nodiscard]] std::vector<DocumentCalls> FindCallsTo(std::string_view calleeName) const;
 
     /**
      * @brief Finds every call written inside a function identified by its qualified name.
      * @param[in] callerQualifiedName Fully qualified name of the calling function.
      * @return Vector of DocumentCalls originating from the caller.
      */
-    std::vector<DocumentCalls> FindCallsFrom(const std::string& callerQualifiedName) const;
+    [[nodiscard]] std::vector<DocumentCalls> FindCallsFrom(std::string_view callerQualifiedName) const;
 
   private:
+    void ClearDocumentLocked(const std::string& fileUri);
+
+    using StringDocumentCalls = ankerl::unordered_dense::map<std::string, std::vector<CallSite>>;
+    using InvertedIndex =
+        ankerl::unordered_dense::map<std::string, StringDocumentCalls, TransparentStringHash, std::equal_to<>>;
+
+    [[nodiscard]] std::vector<DocumentCalls> FindCallsInIndex(const InvertedIndex& index, std::string_view name) const;
+
     mutable std::shared_mutex m_mutex;
     ankerl::unordered_dense::map<std::string, std::vector<CallSite>> m_byDocument;
+    InvertedIndex m_byCallee;
+    InvertedIndex m_byCaller;
 };
 
 /**
