@@ -9,13 +9,13 @@ namespace angel_lsp::features
 {
 
 /**
- * @brief Checks if a range-bearing item (scope, definition, or reference) encompasses an LSP position.
+ * @brief Checks if a range-bearing item encompasses an LSP position.
  * @tparam T Type exposing startLine, endLine, startCharacter, and endCharacter coordinates.
  * @param[in] item AST node or document range item.
  * @param[in] position Target document position to check for containment.
  * @return True if the target position falls within the item's line and character bounds.
  */
-template <typename T> static bool Covers(const T& item, const lsp::Position& position)
+template <typename T> static bool Covers(const T& item, const lsp::Position& position) noexcept
 {
     if (position.line < item.startLine || position.line > item.endLine)
     {
@@ -33,40 +33,17 @@ template <typename T> static bool Covers(const T& item, const lsp::Position& pos
 }
 
 /**
- * @brief Innermost scope containing a position, or nullptr when the tree does not cover it.
- */
-static const analysis::Scope* InnermostScope(const analysis::Scope* root, const lsp::Position& position)
-{
-    if (!root || !Covers(*root, position))
-    {
-        return nullptr;
-    }
-
-    const analysis::Scope* current = root;
-    for (bool descended = true; descended;)
-    {
-        descended = false;
-        for (const auto& child : current->children)
-        {
-            if (child && Covers(*child, position))
-            {
-                current = child.get();
-                descended = true;
-                break;
-            }
-        }
-    }
-    return current;
-}
-
-/**
- * @brief The local or parameter the cursor sits on, whether at its declaration or a use.
- *        A member access is skipped: the `y` in `x.y` is spelled like a local and is not one, and
+ * @brief Finds the local definition corresponding to the cursor position, whether directly declared or referenced.
+ * @param[in] scope Innermost lexical scope containing the cursor position.
+ * @param[in] position Cursor position.
+ * @param[out] owningScope Scope containing the resolved definition.
+ * @return Pointer to the resolved LocalDefinition, or nullptr if none found.
  */
 static const analysis::LocalDefinition* DefinitionAt(const analysis::Scope* scope, const lsp::Position& position,
                                                      const analysis::Scope** owningScope)
 {
-    for (const analysis::Scope* current = scope; current != nullptr; current = current->parent)
+    analysis::ScopeTraversalGuard defGuard;
+    for (const analysis::Scope* current = scope; defGuard.CheckAndInsert(current); current = current->parent)
     {
         for (const auto& definition : current->definitions)
         {
@@ -78,8 +55,8 @@ static const analysis::LocalDefinition* DefinitionAt(const analysis::Scope* scop
         }
     }
 
-    // Not on the declaration, so look for a use and resolve it back.
-    for (const analysis::Scope* current = scope; current != nullptr; current = current->parent)
+    analysis::ScopeTraversalGuard refGuard;
+    for (const analysis::Scope* current = scope; refGuard.CheckAndInsert(current); current = current->parent)
     {
         for (const auto& reference : current->references)
         {
@@ -88,77 +65,91 @@ static const analysis::LocalDefinition* DefinitionAt(const analysis::Scope* scop
                 continue;
             }
 
-            for (const analysis::Scope* owner = scope; owner != nullptr; owner = owner->parent)
-            {
-                for (const auto& definition : owner->definitions)
-                {
-                    if (definition.name == reference.name)
-                    {
-                        *owningScope = owner;
-                        return &definition;
-                    }
-                }
-            }
-            return nullptr;
+            return analysis::ResolveInScope(current, reference.name, owningScope);
         }
     }
     return nullptr;
 }
 
 /**
- * @brief True when a scope is a function body, or sits inside one.
- *        The scope tree captures a module-scope global and a function-body local under the very
+ * @brief Collects all occurrences of an identifier in a scope and its non-shadowed child scopes iteratively.
+ * @param[in] rootScope Declaring lexical scope.
+ * @param[in] name Identifier name to collect occurrences for.
+ * @param[out] out Destination vector receiving LSP ranges.
  */
-static bool IsInsideFunction(const analysis::Scope* scope)
+static void CollectOccurrences(const analysis::Scope& rootScope, std::string_view name, std::vector<lsp::Range>& out)
 {
-    for (const analysis::Scope* current = scope; current != nullptr; current = current->parent)
+    std::vector<const analysis::Scope*> worklist{&rootScope};
+    while (!worklist.empty())
     {
-        if (current->isFunctionScope)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Collects every occurrence of a name inside one scope and its children.
- */
-static void CollectIn(const analysis::Scope& scope, const std::string& name, std::vector<lsp::Range>& out)
-{
-    for (const auto& definition : scope.definitions)
-    {
-        if (definition.name == name)
-        {
-            out.push_back(common::ToLspRange(definition));
-        }
-    }
-    for (const auto& reference : scope.references)
-    {
-        if (!reference.isMemberAccess && reference.name == name)
-        {
-            out.push_back(common::ToLspRange(reference));
-        }
-    }
-
-    for (const auto& child : scope.children)
-    {
-        if (!child)
+        const analysis::Scope* current = worklist.back();
+        worklist.pop_back();
+        if (!current)
         {
             continue;
         }
 
-        // A child scope that redeclares the name owns its own, and its occurrences belong
-        // to that one rather than to this. Descending into it anyway is how a rename gets
-        // a shadowed variable wrong.
-        const bool shadowed =
-            std::any_of(child->definitions.begin(), child->definitions.end(),
-                        [&name](const analysis::LocalDefinition& definition) { return definition.name == name; });
-        if (!shadowed)
+        for (const auto& definition : current->definitions)
         {
-            CollectIn(*child, name, out);
+            if (definition.name == name)
+            {
+                out.push_back(common::ToLspRange(definition));
+            }
+        }
+        for (const auto& reference : current->references)
+        {
+            if (!reference.isMemberAccess && reference.name == name)
+            {
+                out.push_back(common::ToLspRange(reference));
+            }
+        }
+
+        for (auto it = current->children.rbegin(); it != current->children.rend(); ++it)
+        {
+            const auto& child = *it;
+            if (!child)
+            {
+                continue;
+            }
+
+            const bool shadowed =
+                std::any_of(child->definitions.begin(), child->definitions.end(),
+                            [name](const analysis::LocalDefinition& definition) { return definition.name == name; });
+            if (!shadowed)
+            {
+                worklist.push_back(child.get());
+            }
         }
     }
+}
+
+/**
+ * @brief Sorts and deduplicates LSP ranges in document order.
+ * @param[in,out] ranges Vector of ranges to sort and deduplicate.
+ */
+static void DeduplicateRanges(std::vector<lsp::Range>& ranges)
+{
+    std::sort(ranges.begin(), ranges.end(),
+              [](const lsp::Range& a, const lsp::Range& b) noexcept
+              {
+                  if (a.start.line != b.start.line)
+                  {
+                      return a.start.line < b.start.line;
+                  }
+                  if (a.start.character != b.start.character)
+                  {
+                      return a.start.character < b.start.character;
+                  }
+                  if (a.end.line != b.end.line)
+                  {
+                      return a.end.line < b.end.line;
+                  }
+                  return a.end.character < b.end.character;
+              });
+
+    const auto last = std::unique(ranges.begin(), ranges.end(), [](const lsp::Range& a, const lsp::Range& b) noexcept
+                                  { return common::SameRange(a, b); });
+    ranges.erase(last, ranges.end());
 }
 
 std::optional<lsp::LinkedEditingRanges> GetLinkedEditingRanges(const LinkedEditingRangeRequest& request)
@@ -168,7 +159,8 @@ std::optional<lsp::LinkedEditingRanges> GetLinkedEditingRanges(const LinkedEditi
         return std::nullopt;
     }
 
-    const analysis::Scope* innermost = InnermostScope(request.scopeRoot, request.position);
+    const analysis::Scope* innermost =
+        analysis::FindInnermostScope(request.scopeRoot, request.position.line, request.position.character);
     if (!innermost)
     {
         return std::nullopt;
@@ -181,39 +173,23 @@ std::optional<lsp::LinkedEditingRanges> GetLinkedEditingRanges(const LinkedEditi
         return std::nullopt;
     }
 
-    // Only a local or a parameter, which a lexical scope keeps inside this document. See the
-    // header for why anything at file scope has to go through rename instead.
     if (definition->kind != analysis::LocalDefinitionKind::Variable &&
         definition->kind != analysis::LocalDefinitionKind::Parameter)
     {
         return std::nullopt;
     }
 
-    if (!IsInsideFunction(owningScope))
+    if (!analysis::IsDeclaredInFunctionScope(owningScope))
     {
         return std::nullopt;
     }
 
     std::vector<lsp::Range> ranges;
-    CollectIn(*owningScope, definition->name, ranges);
-
-    // A declaration's own identifier is captured twice - once as the definition, once by the
-    // bare-identifier reference pattern - and the protocol says the ranges may not overlap, so
-    // two copies of one range would be a malformed answer as well as a misleading count.
-    for (size_t i = ranges.size(); i-- > 0;)
-    {
-        const bool duplicate = std::any_of(ranges.begin(), ranges.begin() + i, [&ranges, i](const lsp::Range& earlier)
-                                           { return common::SameRange(earlier, ranges[i]); });
-        if (duplicate)
-        {
-            ranges.erase(ranges.begin() + static_cast<std::ptrdiff_t>(i));
-        }
-    }
+    CollectOccurrences(*owningScope, definition->name, ranges);
+    DeduplicateRanges(ranges);
 
     if (ranges.size() < 2)
     {
-        // One occurrence is a declaration nobody uses yet. There is nothing to link it to, and
-        // an editor given a single range gains nothing it did not already have.
         return std::nullopt;
     }
 

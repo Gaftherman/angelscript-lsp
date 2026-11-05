@@ -5,7 +5,7 @@
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <optional>
-#include <string>
+#include <string_view>
 
 namespace angel_lsp::features
 {
@@ -14,20 +14,27 @@ namespace angel_lsp::features
  */
 struct LinkedEditingRangeRequest
 {
-    std::string sourceCode;
+    /**
+     * @brief Document source text view to validate non-empty content.
+     */
+    std::string_view sourceCode;
 
     /**
      * @brief Root of the document's lexical scope tree, or nullptr when none was collected.
      */
     const analysis::Scope* scopeRoot = nullptr;
 
+    /**
+     * @brief Cursor position within the document.
+     */
     lsp::Position position;
 };
 
 /**
- * @brief Ranges the editor may retype together, live, without asking the server again.
- *        Deliberately narrow, and the narrowness is the point. The client edits every range it is
- * @return The occurrences, or nullopt when the cursor is not on a name this can answer for.
+ * @brief Resolves linked editing ranges for an identifier under the cursor.
+ *        Restricted to function-local variables and parameters to guarantee scope containment.
+ * @param[in] request Input parameters containing scope tree, source view, and cursor position.
+ * @return Linked editing ranges, or std::nullopt when the cursor is not on an eligible local symbol.
  */
 std::optional<lsp::LinkedEditingRanges> GetLinkedEditingRanges(const LinkedEditingRangeRequest& request);
 } // namespace angel_lsp::features
