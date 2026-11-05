@@ -959,17 +959,22 @@ void Server::IndexClosureFile(const std::string& path, angel_lsp::parser::AngelS
 
 void Server::AppendIncludeDiagnostics(const std::string& uriStr, const std::string& text,
                                       const std::vector<utils::ExcludedLineRange>& excluded,
-                                      std::vector<angel_lsp::analysis::Diagnostic>& diagnostics) const
+                                      std::vector<angel_lsp::analysis::Diagnostic>& diagnostics)
 {
     if (!m_config.features.enableDocumentLink)
         return;
 
     const auto searchDirectories = SearchDirectories();
+    const auto doc = LookupOpenDocument(uriStr);
+    const auto syntax =
+        doc && doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
+                         : nullptr;
 
     features::DocumentLinkRequest request{uriStr, text, *searchDirectories, m_i18n.get()};
     request.allowedRoots = IncludeAllowedRoots();
     request.excludedLineRanges = excluded;
-    request.implicitExtension = std::string(ImplicitIncludeExtension());
+    request.implicitExtension = ImplicitIncludeExtension();
+    request.nodeIndex = syntax ? &syntax->index : nullptr;
 
     auto includeDiagnostics = features::GetUnresolvedIncludeDiagnostics(request);
     diagnostics.insert(diagnostics.end(), includeDiagnostics.begin(), includeDiagnostics.end());

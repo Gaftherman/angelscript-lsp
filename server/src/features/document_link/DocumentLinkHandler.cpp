@@ -1,145 +1,241 @@
 #include "features/document_link/DocumentLinkHandler.h"
 
+#include "analysis/diagnostics/DiagnosticCodes.h"
 #include "utils/IncludeResolver.h"
 #include "utils/PositionEncoding.h"
-
-#include <spdlog/fmt/fmt.h>
 
 namespace angel_lsp::features
 {
 /**
  * @brief Byte span of the path inside an `#include` directive, excluding its delimiters.
- *        IncludeDirective records which line a directive is on but not where on it, and the
- * @return Start and end byte columns, or std::nullopt when the line holds no delimited path.
+ * @param[in] line Source text line containing the include directive.
+ * @param[in] isAngled True if delimiters are <>, false if "".
+ * @return Start and end byte columns, or std::nullopt when no delimited path is present.
  */
 static std::optional<std::pair<uint32_t, uint32_t>> FindPathSpan(std::string_view line, bool isAngled)
 {
+    const size_t hash = line.find('#');
+    if (hash == std::string_view::npos)
+    {
+        return std::nullopt;
+    }
+
+    const size_t incPos = line.find("include", hash + 1);
+    if (incPos == std::string_view::npos)
+    {
+        return std::nullopt;
+    }
+
     const char open = isAngled ? '<' : '"';
     const char close = isAngled ? '>' : '"';
 
-    const size_t openPos = line.find(open);
+    const size_t openPos = line.find(open, incPos + 7);
     if (openPos == std::string_view::npos)
+    {
         return std::nullopt;
+    }
 
     const size_t closePos = line.find(close, openPos + 1);
     if (closePos == std::string_view::npos)
+    {
         return std::nullopt;
+    }
 
     return std::make_pair(static_cast<uint32_t>(openPos + 1), static_cast<uint32_t>(closePos));
 }
 
 /**
  * @brief Filesystem path of the document being inspected, or empty for a non-file URI.
+ * @param[in] uriStr Source URI string view.
+ * @return Normalized file system path, or empty string.
  */
-static std::string DocumentPath(const std::string& uriStr)
+static std::string DocumentPath(std::string_view uriStr)
 {
     const lsp::Uri uri = lsp::Uri::parse(uriStr);
     if (!uri.isValid() || !uri.isFileUri())
+    {
         return "";
+    }
 
     return utils::IncludeResolver::NormalizePath(uri.fsPath());
 }
 
 /**
- * @brief Get document links.
- * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
- * @return Found item if present; std::nullopt otherwise.
+ * @brief Builds an include resolution request bundle for a directive path.
+ * @param[in] request Parent document link request.
+ * @param[in] currentPath Normalized file system path of the host document.
+ * @param[in] includePath Target include path from directive.
+ * @return Assembled IncludeResolveRequest.
+ */
+static utils::IncludeResolveRequest MakeResolveRequest(const DocumentLinkRequest& request, std::string_view currentPath,
+                                                       std::string_view includePath) noexcept
+{
+    return utils::IncludeResolveRequest{
+        .includePath = includePath,
+        .currentFilePath = currentPath,
+        .searchDirectories = request.searchDirectories,
+        .allowedRoots = request.allowedRoots,
+        .implicitExtension = request.implicitExtension,
+    };
+}
+
+/**
+ * @brief Turns every resolvable `#include` directive into a clickable link.
+ * @param[in] request Document link request bundle containing URI, source text, and search paths.
+ * @return One link per resolvable directive, or std::nullopt when the document has none.
  */
 std::optional<DocumentLinkResult> GetDocumentLinks(const DocumentLinkRequest& request)
 {
-    // Deliberately not filtered by the excluded ranges, unlike the diagnostics below. A link is
-    // navigation, not a claim: the file named inside a dead `#if` exists and a reader following
-    // the directive wants to open it. What would be wrong is telling them it is missing.
+    const std::string currentPath = DocumentPath(request.uri);
+    DocumentLinkResult links;
+
+    if (request.nodeIndex)
+    {
+        const auto directives = request.nodeIndex->IncludeDirectives();
+        links.reserve(directives.size());
+        for (const auto& directive : directives)
+        {
+            const std::string target =
+                utils::IncludeResolver::ResolveIncludePath(MakeResolveRequest(request, currentPath, directive.rawPath));
+            if (target.empty())
+            {
+                continue;
+            }
+            links.push_back(lsp::DocumentLink{
+                .range =
+                    {
+                        .start = {.line = directive.line, .character = directive.spanStart},
+                        .end = {.line = directive.line, .character = directive.spanEnd},
+                    },
+                .target = lsp::Uri::fileUriFromPath(target),
+            });
+        }
+        return links.empty() ? std::nullopt : std::optional<DocumentLinkResult>{std::move(links)};
+    }
+
     const auto directives = utils::IncludeResolver::ExtractIncludes(request.sourceCode);
     if (directives.empty())
+    {
         return std::nullopt;
+    }
 
-    const std::string currentPath = DocumentPath(request.uri);
-
-    DocumentLinkResult links;
     links.reserve(directives.size());
 
     for (const auto& directive : directives)
     {
-        const std::string target = utils::IncludeResolver::ResolveIncludePath(utils::IncludeResolveRequest{
-            .includePath = directive.rawPath,
-            .currentFilePath = currentPath,
-            .searchDirectories = request.searchDirectories,
-            .allowedRoots = request.allowedRoots,
-            .implicitExtension = request.implicitExtension,
-        });
+        const std::string target =
+            utils::IncludeResolver::ResolveIncludePath(MakeResolveRequest(request, currentPath, directive.rawPath));
         if (target.empty())
+        {
             continue;
+        }
 
         const std::string_view line = utils::GetLine(request.sourceCode, static_cast<uint32_t>(directive.line));
         const auto span = FindPathSpan(line, directive.isAngled);
         if (!span.has_value())
+        {
             continue;
+        }
 
-        lsp::DocumentLink link;
-        link.range.start.line = static_cast<uint32_t>(directive.line);
-        link.range.start.character = span->first;
-        link.range.end.line = static_cast<uint32_t>(directive.line);
-        link.range.end.character = span->second;
-        link.target = lsp::Uri::fileUriFromPath(target);
-
-        links.push_back(std::move(link));
+        links.push_back(lsp::DocumentLink{
+            .range =
+                {
+                    .start = {.line = static_cast<uint32_t>(directive.line), .character = span->first},
+                    .end = {.line = static_cast<uint32_t>(directive.line), .character = span->second},
+                },
+            .target = lsp::Uri::fileUriFromPath(target),
+        });
     }
 
     if (links.empty())
+    {
         return std::nullopt;
+    }
 
     return links;
 }
 
 /**
- * @brief Identifies unresolved include directives and produces corresponding diagnostics.
- * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
+ * @brief Collects unresolved include diagnostics by parsing raw source text fallback.
+ * @param[in] request Document link request bundle.
+ * @param[in] currentPath Canonical file path of active document.
+ * @param[in,out] out Diagnostics destination vector.
+ */
+static void CollectFallbackUnresolvedDiagnostics(const DocumentLinkRequest& request, const std::string& currentPath,
+                                                 std::vector<analysis::Diagnostic>& out)
+{
+    const auto directives = utils::IncludeResolver::ExtractIncludes(request.sourceCode, request.excludedLineRanges);
+    for (const auto& directive : directives)
+    {
+        if (!utils::IncludeResolver::ResolveIncludePath(MakeResolveRequest(request, currentPath, directive.rawPath))
+                 .empty())
+        {
+            continue;
+        }
+
+        const std::string_view line = utils::GetLine(request.sourceCode, static_cast<uint32_t>(directive.line));
+        const auto span = FindPathSpan(line, directive.isAngled);
+        if (!span.has_value())
+        {
+            continue;
+        }
+
+        out.push_back(analysis::Diagnostic{
+            .range =
+                {
+                    .start = {.line = static_cast<uint32_t>(directive.line), .character = span->first},
+                    .end = {.line = static_cast<uint32_t>(directive.line), .character = span->second},
+                },
+            .severity = analysis::DiagnosticSeverity::Warning,
+            .code = std::string(diagnostics::codes::IncludeNotFound),
+            .message = i18n::FormatMessage(request.i18n, diagnostics::codes::IncludeNotFound,
+                                           "Included file '{}' was not found.", directive.rawPath),
+            .fileUri = std::string(request.uri),
+        });
+    }
+}
+
+/**
+ * @brief Reports `#include` directives that resolve to no file on disk.
+ * @param[in] request Document link request bundle containing URI, source text, and search paths.
  * @return Vector of diagnostics for include directives that could not be resolved to files.
  */
 std::vector<analysis::Diagnostic> GetUnresolvedIncludeDiagnostics(const DocumentLinkRequest& request)
 {
     std::vector<analysis::Diagnostic> diagnostics;
-
-    const auto directives = utils::IncludeResolver::ExtractIncludes(request.sourceCode, request.excludedLineRanges);
-    if (directives.empty())
-        return diagnostics;
-
     const std::string currentPath = DocumentPath(request.uri);
 
-    for (const auto& directive : directives)
+    if (request.nodeIndex)
     {
-        if (!utils::IncludeResolver::ResolveIncludePath(utils::IncludeResolveRequest{
-                                                            .includePath = directive.rawPath,
-                                                            .currentFilePath = currentPath,
-                                                            .searchDirectories = request.searchDirectories,
-                                                            .allowedRoots = request.allowedRoots,
-                                                            .implicitExtension = request.implicitExtension,
-                                                        })
-                 .empty())
-            continue;
+        for (const auto& directive : request.nodeIndex->IncludeDirectives())
+        {
+            if (utils::IsLineExcluded(request.excludedLineRanges, directive.line))
+            {
+                continue;
+            }
+            if (!utils::IncludeResolver::ResolveIncludePath(MakeResolveRequest(request, currentPath, directive.rawPath))
+                     .empty())
+            {
+                continue;
+            }
 
-        const std::string_view line = utils::GetLine(request.sourceCode, static_cast<uint32_t>(directive.line));
-        const auto span = FindPathSpan(line, directive.isAngled);
-        if (!span.has_value())
-            continue;
-
-        analysis::Diagnostic diagnostic;
-        diagnostic.range.start.line = static_cast<uint32_t>(directive.line);
-        diagnostic.range.start.character = span->first;
-        diagnostic.range.end.line = static_cast<uint32_t>(directive.line);
-        diagnostic.range.end.character = span->second;
-        diagnostic.severity = analysis::DiagnosticSeverity::Warning;
-        diagnostic.code = "as-warn-include-not-found";
-        diagnostic.fileUri = request.uri;
-
-        const std::string format =
-            request.i18n ? request.i18n->GetMessage(diagnostic.code) : std::string("Included file '{}' was not found.");
-        diagnostic.message = fmt::format(fmt::runtime(format), directive.rawPath);
-
-        diagnostics.push_back(std::move(diagnostic));
+            diagnostics.push_back(analysis::Diagnostic{
+                .range =
+                    {
+                        .start = {.line = directive.line, .character = directive.spanStart},
+                        .end = {.line = directive.line, .character = directive.spanEnd},
+                    },
+                .severity = analysis::DiagnosticSeverity::Warning,
+                .code = std::string(diagnostics::codes::IncludeNotFound),
+                .message = i18n::FormatMessage(request.i18n, diagnostics::codes::IncludeNotFound,
+                                               "Included file '{}' was not found.", directive.rawPath),
+                .fileUri = std::string(request.uri),
+            });
+        }
+        return diagnostics;
     }
 
+    CollectFallbackUnresolvedDiagnostics(request, currentPath, diagnostics);
     return diagnostics;
 }
 } // namespace angel_lsp::features

@@ -640,9 +640,14 @@ Server::HandleRequestsTextDocument_DocumentLink(lsp::requests::TextDocument_Docu
 
     const auto searchDirectories = SearchDirectories();
 
+    const auto syntax =
+        doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
+                  : nullptr;
+
     features::DocumentLinkRequest dlr{doc->uri, *doc->text, *searchDirectories, m_i18n.get()};
     dlr.allowedRoots = IncludeAllowedRoots();
-    dlr.implicitExtension = std::string(ImplicitIncludeExtension());
+    dlr.implicitExtension = ImplicitIncludeExtension();
+    dlr.nodeIndex = syntax ? &syntax->index : nullptr;
     auto links = features::GetDocumentLinks(dlr);
     if (links.has_value())
     {

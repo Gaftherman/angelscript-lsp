@@ -1,4 +1,5 @@
 #include "features/document_link/DocumentLinkHandler.h"
+#include "parser/AngelScriptParser.h"
 #include "utils/IncludeResolver.h"
 
 #include <chrono>
@@ -251,4 +252,83 @@ TEST_CASE("DocumentLink - A missing include inside a dead #if is not reported")
     REQUIRE(diagnostics.size() == 1);
     CHECK(diagnostics[0].range.start.line == 3);
     CHECK(diagnostics[0].code == "as-warn-include-not-found");
+}
+
+TEST_CASE("GetDocumentLinks - with NodeIndex resolves include directives directly from index")
+{
+    LinkFixture fixture;
+    fixture.Write("base.as", "void Base() {}\n");
+
+    const std::string uri = fixture.Uri("main.as");
+    const std::string source = "#include \"base.as\"\nvoid Main() {}\n";
+
+    parser::AngelScriptParser parser;
+    auto* tree = parser.Parse(source);
+    REQUIRE(tree != nullptr);
+    analysis::NodeIndex index(ts_tree_root_node(tree), analysis::NodeIndexOptions{.source = source});
+
+    features::DocumentLinkRequest request{uri, source, fixture.searchDirectories, nullptr};
+    request.nodeIndex = &index;
+    const auto links = features::GetDocumentLinks(request);
+
+    REQUIRE(links.has_value());
+    REQUIRE(links->size() == 1);
+
+    const lsp::DocumentLink& link = links->front();
+    CHECK(link.range.start.line == 0);
+    CHECK(source.substr(link.range.start.character, link.range.end.character - link.range.start.character) ==
+          "base.as");
+    REQUIRE(link.target.has_value());
+    CHECK(std::string(link.target->toString()).ends_with("base.as"));
+
+    ts_tree_delete(tree);
+}
+
+TEST_CASE("GetDocumentLinks - with NodeIndex and no includes returns nullopt without fallback scan")
+{
+    LinkFixture fixture;
+    const std::string uri = fixture.Uri("main.as");
+    const std::string source = "void Main() { int x = 42; }\n";
+
+    parser::AngelScriptParser parser;
+    auto* tree = parser.Parse(source);
+    REQUIRE(tree != nullptr);
+    analysis::NodeIndex index(ts_tree_root_node(tree), analysis::NodeIndexOptions{.source = source});
+
+    features::DocumentLinkRequest request{uri, source, fixture.searchDirectories, nullptr};
+    request.nodeIndex = &index;
+    const auto links = features::GetDocumentLinks(request);
+    CHECK_FALSE(links.has_value());
+
+    const auto diags = features::GetUnresolvedIncludeDiagnostics(request);
+    CHECK(diags.empty());
+
+    ts_tree_delete(tree);
+}
+
+TEST_CASE("GetUnresolvedIncludeDiagnostics - with NodeIndex reports missing include and obeys exclusion")
+{
+    const std::string source = "#if 0\n"
+                               "#include \"missing_dead.as\"\n"
+                               "#endif\n"
+                               "#include \"missing_live.as\"\n"
+                               "void main() {}\n";
+
+    parser::AngelScriptParser parser;
+    auto* tree = parser.Parse(source);
+    REQUIRE(tree != nullptr);
+    analysis::NodeIndex index(ts_tree_root_node(tree), analysis::NodeIndexOptions{.source = source});
+
+    const std::vector<std::string> searchDirectories;
+    features::DocumentLinkRequest request{"file:///workspace/main.as", source, searchDirectories, nullptr};
+    request.nodeIndex = &index;
+    request.allowedRoots = {"/workspace"};
+    request.excludedLineRanges = angel_lsp::utils::FindExcludedLineRanges(source);
+
+    const auto diags = features::GetUnresolvedIncludeDiagnostics(request);
+    REQUIRE(diags.size() == 1);
+    CHECK(diags[0].range.start.line == 3);
+    CHECK(diags[0].code == "as-warn-include-not-found");
+
+    ts_tree_delete(tree);
 }
