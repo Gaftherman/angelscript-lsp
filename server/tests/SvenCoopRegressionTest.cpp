@@ -532,7 +532,7 @@ TEST_CASE("SvenCoop - Benchmark and Profile sven.as.predefined pipeline")
     MESSAGE("CollectCalls: " << callsMs << " ms, calls found: " << calls.size());
 
     const std::string uri = "file:///sven.as.predefined";
-    features::DocumentSymbolRequest docSymReq{uri, sanitized, tree, table};
+    features::DocumentSymbolRequest docSymReq{uri, sanitized, table};
     t0 = std::chrono::high_resolution_clock::now();
     auto docSymbols = features::GetDocumentSymbols(docSymReq);
     t1 = std::chrono::high_resolution_clock::now();

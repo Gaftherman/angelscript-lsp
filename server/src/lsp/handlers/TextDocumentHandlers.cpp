@@ -226,12 +226,8 @@ Server::HandleRequestsTextDocument_Implementation(lsp::requests::TextDocument_Im
         return lsp::Null{};
     }
 
-    features::ImplementationRequest ir{doc->uri,
-                                       *doc->text,
-                                       doc->tree,
-                                       m_symbolTable,
-                                       codec::Decode(*doc->text, GetPositionEncoding(), req.position),
-                                       m_logger.get()};
+    features::ImplementationRequest ir{doc->uri, *doc->text, m_symbolTable,
+                                       codec::Decode(*doc->text, GetPositionEncoding(), req.position), m_logger.get()};
     auto impls = features::GetImplementations(ir);
     if (impls.has_value() && !impls->empty())
     {
@@ -518,7 +514,7 @@ Server::HandleRequestsTextDocument_DocumentSymbol(lsp::requests::TextDocument_Do
     }
 
     utils::HighResTimer timer;
-    features::DocumentSymbolRequest dr{doc->uri, *doc->text, doc->tree, m_symbolTable};
+    features::DocumentSymbolRequest dr{doc->uri, *doc->text, m_symbolTable};
     auto symbols = features::GetDocumentSymbols(dr);
     const double elapsedMs = timer.ElapsedMs();
     if (symbols.has_value())

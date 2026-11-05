@@ -166,7 +166,8 @@ TEST_CASE("Adversarial DocumentSymbols - Deeply Nested Multi-Tier Namespaces")
     AngelScriptParser parser;
     SymbolTable table;
     std::string uri = "file:///deep_namespace.as";
-    DocumentSymbolRequest req{uri, code, nullptr, table};
+    SymbolCollector{nullptr}.CollectSymbols(uri, code, parser, table);
+    DocumentSymbolRequest req{uri, code, table};
     auto result = GetDocumentSymbols(req);
 
     REQUIRE(result.has_value());
@@ -233,7 +234,8 @@ TEST_CASE("Adversarial DocumentSymbols - Sibling Namespaces and Multi-Class Cont
     AngelScriptParser parser;
     SymbolTable table;
     std::string uri = "file:///siblings.as";
-    DocumentSymbolRequest req{uri, code, nullptr, table};
+    SymbolCollector{nullptr}.CollectSymbols(uri, code, parser, table);
+    DocumentSymbolRequest req{uri, code, table};
     auto result = GetDocumentSymbols(req);
 
     REQUIRE(result.has_value());
@@ -276,7 +278,8 @@ TEST_CASE("Adversarial DocumentSymbols - Mixin Class Support")
     AngelScriptParser parser;
     SymbolTable table;
     std::string uri = "file:///mixin.as";
-    DocumentSymbolRequest req{uri, code, nullptr, table};
+    SymbolCollector{nullptr}.CollectSymbols(uri, code, parser, table);
+    DocumentSymbolRequest req{uri, code, table};
     auto result = GetDocumentSymbols(req);
 
     REQUIRE(result.has_value());
@@ -310,7 +313,8 @@ TEST_CASE("Adversarial DocumentSymbols - Enums with Explicit Values (Hex, Negati
     AngelScriptParser parser;
     SymbolTable table;
     std::string uri = "file:///enums.as";
-    DocumentSymbolRequest req{uri, code, nullptr, table};
+    SymbolCollector{nullptr}.CollectSymbols(uri, code, parser, table);
+    DocumentSymbolRequest req{uri, code, table};
     auto result = GetDocumentSymbols(req);
 
     REQUIRE(result.has_value());
@@ -352,7 +356,8 @@ TEST_CASE("Adversarial DocumentSymbols - Complex Global Variables and Multi-Decl
     AngelScriptParser parser;
     SymbolTable table;
     std::string uri = "file:///globals.as";
-    DocumentSymbolRequest req{uri, code, nullptr, table};
+    SymbolCollector{nullptr}.CollectSymbols(uri, code, parser, table);
+    DocumentSymbolRequest req{uri, code, table};
     auto result = GetDocumentSymbols(req);
 
     REQUIRE(result.has_value());
@@ -388,7 +393,7 @@ TEST_CASE("Adversarial DocumentSymbols - Empty and Whitespace Only Files")
 
     // 1. Completely empty
     {
-        DocumentSymbolRequest req{uri, "", nullptr, table};
+        DocumentSymbolRequest req{uri, "", table};
         auto result = GetDocumentSymbols(req);
         REQUIRE(result.has_value());
         CHECK(result->empty());
@@ -397,7 +402,7 @@ TEST_CASE("Adversarial DocumentSymbols - Empty and Whitespace Only Files")
     // 2. Whitespaces, tabs, carriage returns
     {
         std::string ws = "   \t\t\r\n\r\n   \t\n";
-        DocumentSymbolRequest req{uri, ws, nullptr, table};
+        DocumentSymbolRequest req{uri, ws, table};
         auto result = GetDocumentSymbols(req);
         REQUIRE(result.has_value());
         CHECK(result->empty());
@@ -424,7 +429,8 @@ TEST_CASE("Adversarial DocumentSymbols - Malformed and Incomplete Code Recovery"
     AngelScriptParser parser;
     SymbolTable table;
     std::string uri = "file:///malformed.as";
-    DocumentSymbolRequest req{uri, malformedCode, nullptr, table};
+    SymbolCollector{nullptr}.CollectSymbols(uri, malformedCode, parser, table);
+    DocumentSymbolRequest req{uri, malformedCode, table};
 
     std::optional<std::vector<lsp::DocumentSymbol>> result;
     CHECK_NOTHROW(result = GetDocumentSymbols(req));

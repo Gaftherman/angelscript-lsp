@@ -37,13 +37,13 @@ struct DocumentSymbolTestEnv
 
     std::optional<DocumentSymbolResult> GetSymbols()
     {
-        DocumentSymbolRequest req{uri, sourceCode, tree, symbolTable};
+        DocumentSymbolRequest req{uri, sourceCode, symbolTable};
         return GetDocumentSymbols(req);
     }
 
     std::optional<DocumentSymbolResult> GetSymbolsNullTree()
     {
-        DocumentSymbolRequest req{uri, sourceCode, nullptr, symbolTable};
+        DocumentSymbolRequest req{uri, sourceCode, symbolTable};
         return GetDocumentSymbols(req);
     }
 };

@@ -1,555 +1,256 @@
 #include "features/document_symbol/DocumentSymbolHandler.h"
 
-#include "document/Document.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "features/common/FeatureSharedUtils.h"
-#include "parser/ASTUtils.h"
-#include "parser/AngelScriptParser.h"
-#include "parser/GrammarNames.h"
-#include "parser/GrammarSymbols.h"
+#include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
-#include <cstring>
+#include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace angel_lsp::features
 {
 
-/**
- * @brief Helper to query a child node by its grammar field name.
- * @param node Parent TSNode.
- * @param fieldName Field name in grammar.
- * @return Child TSNode.
- */
-static inline TSNode GetChildByField(TSNode node, TSFieldId fieldId) noexcept
+static inline lsp::Range SymbolRange(const analysis::Symbol& sym) noexcept
 {
-    return parser::GetChildByField(node, fieldId);
+    if (sym.fullRange.endLine != 0 || sym.fullRange.endCharacter != 0)
+    {
+        return common::ToLspRange(sym.fullRange);
+    }
+    return lsp::Range{lsp::Position{sym.startLine, sym.startCharacter}, lsp::Position{sym.endLine, sym.endCharacter}};
 }
 
-/**
- * @brief Constructs a DocumentSymbol with range and selectionRange initialized from AST nodes.
- * @param[in] name Symbol identifier name.
- * @param[in] kind LSP SymbolKind category.
- * @param[in] node AST enclosing node for the entire symbol range.
- * @param[in] nameNode AST name identifier node for the selection range.
- * @return Initialized DocumentSymbol.
- */
-static inline lsp::DocumentSymbol MakeDocumentSymbol(std::string name, lsp::SymbolKind kind, TSNode node,
-                                                     TSNode nameNode)
+static inline lsp::Range SymbolSelectionRange(const analysis::Symbol& sym) noexcept
 {
-    lsp::DocumentSymbol sym;
-    sym.name = std::move(name);
-    sym.kind = kind;
-    sym.range = common::ToLspRange(node);
-    sym.selectionRange = ts_node_is_null(nameNode) ? sym.range : common::ToLspRange(nameNode);
-    return sym;
+    if (sym.selectionRange.endLine != 0 || sym.selectionRange.endCharacter != 0)
+    {
+        return common::ToLspRange(sym.selectionRange);
+    }
+    return lsp::Range{lsp::Position{sym.startLine, sym.startCharacter}, lsp::Position{sym.endLine, sym.endCharacter}};
 }
 
-/**
- * @brief Constructs a DocumentSymbol for a declaration having an identifier field.
- * @param[in] node AST enclosing node for the declaration.
- * @param[in] kind LSP SymbolKind category.
- * @param[in] ctx Traversal context.
- * @param[in] fieldName Optional grammar field name for the identifier (default "name").
- * @param[out] outNameNode Optional output pointer to receive the name TSNode.
- * @return Initialized DocumentSymbol if name is non-empty; nullopt otherwise.
- */
-static inline std::optional<lsp::DocumentSymbol>
-CreateDeclarationSymbol(TSNode node, lsp::SymbolKind kind, const TraversalContext& ctx, TSFieldId fieldId = 0)
+static inline bool ContainsRange(const lsp::Range& parent, const lsp::Range& child) noexcept
 {
-    if (fieldId == 0)
+    if (child.start.line < parent.start.line ||
+        (child.start.line == parent.start.line && child.start.character < parent.start.character))
     {
-        fieldId = parser::GetGrammarSymbols().fieldName;
+        return false;
     }
-    TSNode nameNode = GetChildByField(node, fieldId);
-    std::string name = parser::GetNodeText(nameNode, ctx.sourceCode);
-    if (name.empty())
+    if (child.end.line > parent.end.line ||
+        (child.end.line == parent.end.line && child.end.character > parent.end.character))
     {
-        return std::nullopt;
+        return false;
     }
-    return MakeDocumentSymbol(std::move(name), kind, node, nameNode);
+    return true;
 }
 
-/**
- * @brief Processes a namespace_declaration AST node.
- * @param[in] node AST node.
- * @param[in] ctx Traversal context.
- * @param[in,out] outSymbols Symbol list to append to.
- */
-static void ProcessNamespace(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
+static std::string BuildFunctionDetail(const analysis::FunctionSignature& sig, bool isCtorOrDtor)
 {
-    auto symOpt = CreateDeclarationSymbol(node, lsp::SymbolKind::Namespace, ctx);
-    if (!symOpt)
+    std::string paramsStr = "(";
+    for (size_t i = 0; i < sig.parameters.size(); ++i)
     {
-        return;
-    }
-
-    auto sym = std::move(*symOpt);
-    sym.detail = "namespace";
-
-    TSNode bodyNode = GetChildByField(node, parser::GetGrammarSymbols().fieldBody);
-    if (!ts_node_is_null(bodyNode))
-    {
-        TraversalContext bodyCtx{ctx.sourceCode, false, ""};
-        auto children = DocumentSymbolProcessor::ProcessChildren(bodyNode, bodyCtx);
-        if (!children.empty())
+        if (i > 0)
         {
-            sym.children = std::move(children);
+            paramsStr += ", ";
+        }
+        paramsStr += sig.parameters[i].typeName;
+        if (!sig.parameters[i].name.empty())
+        {
+            paramsStr += " ";
+            paramsStr += sig.parameters[i].name;
         }
     }
+    paramsStr += ")";
 
-    outSymbols.push_back(std::move(sym));
-}
-
-/**
- * @brief Processes class, mixin, or interface declaration AST nodes.
- * @param[in] node AST node.
- * @param[in] sym Grammar symbol identifier.
- * @param[in] ctx Traversal context.
- * @param[in,out] outSymbols Symbol list to append to.
- */
-static void ProcessClassLike(TSNode node, TSSymbol sym, const TraversalContext& ctx,
-                             std::vector<lsp::DocumentSymbol>& outSymbols)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const bool isInterface = (sym == gs.symInterfaceDeclaration);
-    const auto kind = isInterface ? lsp::SymbolKind::Interface : lsp::SymbolKind::Class;
-    auto symOpt = CreateDeclarationSymbol(node, kind, ctx);
-    if (!symOpt)
-    {
-        return;
-    }
-
-    auto docSym = std::move(*symOpt);
-    const std::string name = docSym.name;
-    docSym.detail = isInterface ? "interface" : ((sym == gs.symMixinDeclaration) ? "mixin" : "class");
-
-    TSNode bodyNode = GetChildByField(node, gs.fieldBody);
-    if (!ts_node_is_null(bodyNode))
-    {
-        TraversalContext bodyCtx{ctx.sourceCode, true, name};
-        auto children = DocumentSymbolProcessor::ProcessChildren(bodyNode, bodyCtx);
-        if (!children.empty())
-        {
-            docSym.children = std::move(children);
-        }
-    }
-
-    outSymbols.push_back(std::move(docSym));
-}
-
-/**
- * @brief Collects enum member symbols from an enum_declaration node.
- * @param[in] enumNode Enum AST node.
- * @param[in] sourceCode Source text.
- * @return Vector of enum member document symbols.
- */
-static std::vector<lsp::DocumentSymbol> CollectEnumMembers(TSNode enumNode, std::string_view sourceCode)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    std::vector<lsp::DocumentSymbol> members;
-    parser::ForEachNamedChildNode(enumNode,
-                                  [&](TSNode child)
-                                  {
-                                      if (ts_node_symbol(child) == gs.symEnumMember)
-                                      {
-                                          TSNode mNameNode = GetChildByField(child, gs.fieldName);
-                                          std::string mName = parser::GetNodeText(mNameNode, sourceCode);
-                                          if (!mName.empty())
-                                          {
-                                              auto mSym = MakeDocumentSymbol(
-                                                  std::move(mName), lsp::SymbolKind::EnumMember, child, mNameNode);
-
-                                              TSNode valNode = GetChildByField(child, gs.fieldValue);
-                                              if (!ts_node_is_null(valNode))
-                                              {
-                                                  mSym.detail = "= " + parser::GetNodeText(valNode, sourceCode);
-                                              }
-                                              members.push_back(std::move(mSym));
-                                          }
-                                      }
-                                  });
-    return members;
-}
-
-/**
- * @brief Processes an enum_declaration AST node.
- * @param[in] node AST node.
- * @param[in] ctx Traversal context.
- * @param[in,out] outSymbols Symbol list to append to.
- */
-static void ProcessEnum(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
-{
-    auto symOpt = CreateDeclarationSymbol(node, lsp::SymbolKind::Enum, ctx);
-    if (!symOpt)
-    {
-        return;
-    }
-
-    auto sym = std::move(*symOpt);
-    sym.detail = "enum";
-
-    auto members = CollectEnumMembers(node, ctx.sourceCode);
-    if (!members.empty())
-    {
-        sym.children = std::move(members);
-    }
-
-    outSymbols.push_back(std::move(sym));
-}
-
-/**
- * @brief Checks if a function declaration is a destructor node.
- * @param[in] node AST node.
- * @return True if node contains a tilde token child.
- */
-static bool IsDestructorNode(TSNode node)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const uint32_t cCount = ts_node_child_count(node);
-    for (uint32_t i = 0; i < cCount; ++i)
-    {
-        TSNode child = ts_node_child(node, i);
-        if (ts_node_symbol(child) == gs.tokTilde)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Builds the detail string for a function or method symbol.
- * @param[in] retStr Return type string.
- * @param[in] paramsStr Parameters string.
- * @param[in] isCtorOrDtor True if constructor or destructor.
- * @return Formatted detail string.
- */
-static std::string BuildFunctionDetail(std::string_view retStr, std::string_view paramsStr, bool isCtorOrDtor)
-{
-    if (!retStr.empty() && !paramsStr.empty())
-    {
-        return std::string(retStr) + " " + std::string(paramsStr);
-    }
-    if (!retStr.empty())
-    {
-        return std::string(retStr);
-    }
     if (isCtorOrDtor)
     {
-        return std::string(paramsStr);
+        return paramsStr;
     }
-    return "";
-}
-
-/**
- * @brief Extracts standard function components (name, return type, parameters) from an AST node.
- * @param[in] node AST node.
- * @param[in] sourceCode Document text.
- * @return Extracted components if a non-empty name is present.
- */
-static std::optional<FunctionComponents> ExtractFunctionComponents(TSNode node, std::string_view sourceCode)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode nameNode = GetChildByField(node, gs.fieldName);
-    std::string name = parser::GetNodeText(nameNode, sourceCode);
-    if (name.empty())
+    if (!sig.returnType.empty())
     {
-        return std::nullopt;
+        return sig.returnType + " " + paramsStr;
     }
-    TSNode retNode = GetChildByField(node, gs.fieldReturnType);
-    TSNode paramsNode = GetChildByField(node, gs.fieldParameters);
-    return FunctionComponents{nameNode, std::move(name), retNode, paramsNode};
+    return paramsStr;
 }
 
-/**
- * @brief Processes a func_declaration AST node.
- * @param[in] node AST node.
- * @param[in] ctx Traversal context.
- * @param[in,out] outSymbols Symbol list to append to.
- */
-static void ProcessFunction(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
+static std::string FormatSymbolDetail(const analysis::Symbol& sym, bool isDestructor, bool isConstructor)
 {
-    auto comps = ExtractFunctionComponents(node, ctx.sourceCode);
-    if (!comps)
+    switch (sym.type)
+    {
+    case analysis::SymbolType::Namespace:
+        return "namespace";
+    case analysis::SymbolType::Class:
+        if (std::holds_alternative<analysis::ClassSignature>(sym.signature) && sym.GetClass().modifiers.isMixin)
+        {
+            return "mixin";
+        }
+        return "class";
+    case analysis::SymbolType::Interface:
+        return "interface";
+    case analysis::SymbolType::Enum:
+        return "enum";
+    case analysis::SymbolType::Function:
+        if (std::holds_alternative<analysis::FunctionSignature>(sym.signature))
+        {
+            return BuildFunctionDetail(sym.GetFunction(), isDestructor || isConstructor);
+        }
+        return "";
+    case analysis::SymbolType::Variable:
+        if (std::holds_alternative<analysis::VariableSignature>(sym.signature))
+        {
+            return sym.GetVariable().typeName;
+        }
+        return "";
+    case analysis::SymbolType::Property:
+        if (std::holds_alternative<analysis::VariableSignature>(sym.signature))
+        {
+            return sym.GetVariable().typeName;
+        }
+        return "";
+    case analysis::SymbolType::Typedef:
+        if (std::holds_alternative<analysis::TypedefSignature>(sym.signature))
+        {
+            return "typedef " + sym.GetTypedef().baseType;
+        }
+        return "typedef";
+    case analysis::SymbolType::Funcdef:
+        if (std::holds_alternative<analysis::FuncdefSignature>(sym.signature))
+        {
+            const auto& fs = sym.GetFuncdef();
+            std::string p = "(";
+            for (size_t i = 0; i < fs.parameters.size(); ++i)
+            {
+                if (i > 0)
+                {
+                    p += ", ";
+                }
+                p += fs.parameters[i].typeName;
+                if (!fs.parameters[i].name.empty())
+                {
+                    p += " ";
+                    p += fs.parameters[i].name;
+                }
+            }
+            p += ")";
+            return "funcdef " + fs.returnType + " " + p;
+        }
+        return "funcdef";
+    default:
+        return "";
+    }
+}
+
+static lsp::DocumentSymbol MakeDocumentSymbol(const analysis::Symbol& sym, std::string_view sourceCode,
+                                              bool isInsideClass)
+{
+    const bool isDtor =
+        (sym.type == analysis::SymbolType::Function && analysis::IsDestructorDeclaration(sym, sourceCode));
+    const bool isCtor = (sym.type == analysis::SymbolType::Function &&
+                         (isDtor || (isInsideClass && sym.name == utils::LastScopeSegment(sym.containerName))));
+
+    lsp::DocumentSymbol docSym;
+    docSym.name = isDtor ? ("~" + sym.name) : sym.name;
+
+    if (isDtor || isCtor)
+    {
+        docSym.kind = lsp::SymbolKind::Constructor;
+    }
+    else if (sym.type == analysis::SymbolType::Function)
+    {
+        docSym.kind = isInsideClass ? lsp::SymbolKind::Method : lsp::SymbolKind::Function;
+    }
+    else if (sym.type == analysis::SymbolType::Variable)
+    {
+        docSym.kind = isInsideClass ? lsp::SymbolKind::Field : lsp::SymbolKind::Variable;
+    }
+    else
+    {
+        docSym.kind = common::ToLspSymbolKind(sym.type, isInsideClass);
+    }
+
+    docSym.range = SymbolRange(sym);
+    docSym.selectionRange = SymbolSelectionRange(sym);
+
+    if (docSym.selectionRange.start.line < docSym.range.start.line ||
+        (docSym.selectionRange.start.line == docSym.range.start.line &&
+         docSym.selectionRange.start.character < docSym.range.start.character))
+    {
+        docSym.range.start = docSym.selectionRange.start;
+    }
+    if (docSym.selectionRange.end.line > docSym.range.end.line ||
+        (docSym.selectionRange.end.line == docSym.range.end.line &&
+         docSym.selectionRange.end.character > docSym.range.end.character))
+    {
+        docSym.range.end = docSym.selectionRange.end;
+    }
+
+    std::string detail = FormatSymbolDetail(sym, isDtor, isCtor);
+    if (!detail.empty())
+    {
+        docSym.detail = std::move(detail);
+    }
+
+    return docSym;
+}
+
+static void PopulateEnumMembers(const analysis::Symbol& enumSym, const analysis::SymbolTable& table,
+                                lsp::DocumentSymbol& docSym)
+{
+    if (!std::holds_alternative<analysis::EnumSignature>(enumSym.signature))
+    {
+        return;
+    }
+    const auto& enumSig = enumSym.GetEnum();
+    if (enumSig.members.empty())
     {
         return;
     }
 
-    const bool isDestructor = IsDestructorNode(node);
-    const bool isConstructor = ctx.isInsideClass && comps->name == ctx.enclosingClassName;
+    std::vector<lsp::DocumentSymbol> members;
+    members.reserve(enumSig.members.size());
 
-    const auto kind = (isDestructor || isConstructor)
-                          ? lsp::SymbolKind::Constructor
-                          : (ctx.isInsideClass ? lsp::SymbolKind::Method : lsp::SymbolKind::Function);
-    std::string symName = isDestructor ? ("~" + comps->name) : std::move(comps->name);
-    auto sym = MakeDocumentSymbol(std::move(symName), kind, node, comps->nameNode);
-
-    const std::string retStr = parser::GetNodeText(comps->retNode, ctx.sourceCode);
-    const std::string paramsStr = parser::GetNodeText(comps->paramsNode, ctx.sourceCode);
-
-    sym.detail = BuildFunctionDetail(retStr, paramsStr, isDestructor || isConstructor);
-    outSymbols.push_back(std::move(sym));
-}
-
-/**
- * @brief Processes an interface_method AST node.
- * @param[in] node AST node.
- * @param[in] ctx Traversal context.
- * @param[in,out] outSymbols Symbol list to append to.
- */
-static void ProcessInterfaceMethod(TSNode node, const TraversalContext& ctx,
-                                   std::vector<lsp::DocumentSymbol>& outSymbols)
-{
-    auto comps = ExtractFunctionComponents(node, ctx.sourceCode);
-    if (!comps)
+    const std::string enumContainer = enumSym.qualifiedName.empty() ? enumSym.name : enumSym.qualifiedName;
+    for (const auto& m : enumSig.members)
     {
-        return;
+        lsp::DocumentSymbol mSym;
+        mSym.name = m.name;
+        mSym.kind = lsp::SymbolKind::EnumMember;
+        if (!m.value.empty())
+        {
+            mSym.detail = "= " + m.value;
+        }
+
+        auto memberSymbols = table.FindMemberSymbolPtr(enumContainer, m.name);
+        if (memberSymbols && !memberSymbols->empty())
+        {
+            mSym.range = SymbolRange((*memberSymbols)[0]);
+            mSym.selectionRange = SymbolSelectionRange((*memberSymbols)[0]);
+        }
+        else
+        {
+            mSym.range = docSym.range;
+            mSym.selectionRange = docSym.range;
+        }
+
+        if (mSym.selectionRange.start.line < mSym.range.start.line ||
+            (mSym.selectionRange.start.line == mSym.range.start.line &&
+             mSym.selectionRange.start.character < mSym.range.start.character))
+        {
+            mSym.range.start = mSym.selectionRange.start;
+        }
+        if (mSym.selectionRange.end.line > mSym.range.end.line ||
+            (mSym.selectionRange.end.line == mSym.range.end.line &&
+             mSym.selectionRange.end.character > mSym.range.end.character))
+        {
+            mSym.range.end = mSym.selectionRange.end;
+        }
+
+        members.push_back(std::move(mSym));
     }
 
-    auto sym = MakeDocumentSymbol(std::move(comps->name), lsp::SymbolKind::Method, node, comps->nameNode);
-
-    const std::string retStr = parser::GetNodeText(comps->retNode, ctx.sourceCode);
-    const std::string paramsStr = parser::GetNodeText(comps->paramsNode, ctx.sourceCode);
-    sym.detail = BuildFunctionDetail(retStr, paramsStr, false);
-
-    outSymbols.push_back(std::move(sym));
-}
-
-/**
- * @brief Processes an import_declaration AST node.
- * @param[in] node AST node.
- * @param[in] ctx Traversal context.
- * @param[in,out] outSymbols Symbol list to append to.
- */
-static void ProcessImport(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
-{
-    auto symOpt = CreateDeclarationSymbol(node, lsp::SymbolKind::Function, ctx);
-    if (!symOpt)
-    {
-        return;
-    }
-
-    auto sym = std::move(*symOpt);
-    sym.detail = "import";
-
-    outSymbols.push_back(std::move(sym));
-}
-
-/**
- * @brief Processes a variable_declaration AST node.
- * @param[in] node AST node.
- * @param[in] ctx Traversal context.
- * @param[in,out] outSymbols Symbol list to append to.
- */
-static void ProcessVariable(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode typeNode = GetChildByField(node, gs.fieldVarType);
-    const std::string typeStr = parser::GetNodeText(typeNode, ctx.sourceCode);
-
-    uint32_t declaratorCount = 0;
-    parser::ForEachNamedChildNode(node,
-                                  [&](TSNode child)
-                                  {
-                                      if (ts_node_symbol(child) == gs.symVariableDeclarator)
-                                      {
-                                          declaratorCount++;
-                                      }
-                                  });
-
-    const auto kind = ctx.isInsideClass ? lsp::SymbolKind::Field : lsp::SymbolKind::Variable;
-    parser::ForEachNamedChildNode(node,
-                                  [&](TSNode declChild)
-                                  {
-                                      if (ts_node_symbol(declChild) == gs.symVariableDeclarator)
-                                      {
-                                          auto symOpt = CreateDeclarationSymbol(declChild, kind, ctx, gs.fieldName);
-                                          if (symOpt)
-                                          {
-                                              auto sym = std::move(*symOpt);
-                                              if (declaratorCount == 1)
-                                              {
-                                                  sym.range = common::ToLspRange(node);
-                                              }
-                                              if (!typeStr.empty())
-                                              {
-                                                  sym.detail = typeStr;
-                                              }
-                                              outSymbols.push_back(std::move(sym));
-                                          }
-                                      }
-                                  });
-}
-
-/**
- * @brief Processes a virtual_property AST node.
- * @param[in] node AST node.
- * @param[in] ctx Traversal context.
- * @param[in,out] outSymbols Symbol list to append to.
- */
-static void ProcessVirtualProperty(TSNode node, const TraversalContext& ctx,
-                                   std::vector<lsp::DocumentSymbol>& outSymbols)
-{
-    auto symOpt = CreateDeclarationSymbol(node, lsp::SymbolKind::Property, ctx);
-    if (!symOpt)
-    {
-        return;
-    }
-
-    auto sym = std::move(*symOpt);
-    TSNode typeNode = GetChildByField(node, parser::GetGrammarSymbols().fieldPropType);
-    sym.detail = parser::GetNodeText(typeNode, ctx.sourceCode);
-
-    outSymbols.push_back(std::move(sym));
-}
-
-/**
- * @brief Processes a typedef_declaration AST node.
- * @param[in] node AST node.
- * @param[in] ctx Traversal context.
- * @param[in,out] outSymbols Symbol list to append to.
- */
-static void ProcessTypedef(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
-{
-    auto symOpt = CreateDeclarationSymbol(node, lsp::SymbolKind::Class, ctx);
-    if (!symOpt)
-    {
-        return;
-    }
-
-    auto sym = std::move(*symOpt);
-    TSNode baseTypeNode = GetChildByField(node, parser::GetGrammarSymbols().fieldBaseType);
-    sym.detail = "typedef " + parser::GetNodeText(baseTypeNode, ctx.sourceCode);
-
-    outSymbols.push_back(std::move(sym));
-}
-
-/**
- * @brief Processes a funcdef_declaration AST node.
- * @param[in] node AST node.
- * @param[in] ctx Traversal context.
- * @param[in,out] outSymbols Symbol list to append to.
- */
-static void ProcessFuncdef(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
-{
-    auto comps = ExtractFunctionComponents(node, ctx.sourceCode);
-    if (!comps)
-    {
-        return;
-    }
-
-    auto sym = MakeDocumentSymbol(std::move(comps->name), lsp::SymbolKind::Function, node, comps->nameNode);
-    sym.detail = "funcdef " + parser::GetNodeText(comps->retNode, ctx.sourceCode) + " " +
-                 parser::GetNodeText(comps->paramsNode, ctx.sourceCode);
-
-    outSymbols.push_back(std::move(sym));
-}
-
-/**
- * @brief Dispatches symbol processing for a single Tree-Sitter AST node based on its type.
- * @param[in] node Current AST node.
- * @param[in] ctx Traversal context.
- * @param[in,out] outSymbols Output accumulator for created symbols.
- */
-static bool ProcessStructuralNode(TSNode node, const TraversalContext& ctx,
-                                  std::vector<lsp::DocumentSymbol>& outSymbols)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(node);
-    if (sym == gs.symNamespaceDeclaration)
-    {
-        ProcessNamespace(node, ctx, outSymbols);
-        return true;
-    }
-    if (sym == gs.symClassDeclaration || sym == gs.symMixinDeclaration || sym == gs.symInterfaceDeclaration)
-    {
-        ProcessClassLike(node, sym, ctx, outSymbols);
-        return true;
-    }
-    if (sym == gs.symEnumDeclaration)
-    {
-        ProcessEnum(node, ctx, outSymbols);
-        return true;
-    }
-    return false;
-}
-
-static bool ProcessCallableNode(TSNode node, const TraversalContext& ctx, std::vector<lsp::DocumentSymbol>& outSymbols)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(node);
-    if (sym == gs.symFuncDeclaration)
-    {
-        ProcessFunction(node, ctx, outSymbols);
-        return true;
-    }
-    if (sym == gs.symInterfaceMethod)
-    {
-        ProcessInterfaceMethod(node, ctx, outSymbols);
-        return true;
-    }
-    if (sym == gs.symFuncdefDeclaration)
-    {
-        ProcessFuncdef(node, ctx, outSymbols);
-        return true;
-    }
-    return false;
-}
-
-void DocumentSymbolProcessor::ProcessNode(TSNode node, const TraversalContext& ctx,
-                                          std::vector<lsp::DocumentSymbol>& outSymbols)
-{
-    if (ts_node_is_null(node))
-    {
-        return;
-    }
-
-    if (ProcessStructuralNode(node, ctx, outSymbols) || ProcessCallableNode(node, ctx, outSymbols))
-    {
-        return;
-    }
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(node);
-    if (sym == gs.symVariableDeclaration)
-    {
-        ProcessVariable(node, ctx, outSymbols);
-    }
-    else if (sym == gs.symVirtualProperty)
-    {
-        ProcessVirtualProperty(node, ctx, outSymbols);
-    }
-    else if (sym == gs.symTypedefDeclaration)
-    {
-        ProcessTypedef(node, ctx, outSymbols);
-    }
-    else if (sym == gs.symImportDeclaration)
-    {
-        ProcessImport(node, ctx, outSymbols);
-    }
-}
-
-/**
- * @brief Iterates child nodes of a container node (e.g. translation unit, namespace_body, class_body)
- *        and produces a vector of DocumentSymbol objects.
- * @param[in] containerNode Container AST node.
- * @param[in] ctx Traversal context.
- * @return Vector of extracted child DocumentSymbol instances.
- */
-std::vector<lsp::DocumentSymbol> DocumentSymbolProcessor::ProcessChildren(TSNode containerNode,
-                                                                          const TraversalContext& ctx)
-{
-    std::vector<lsp::DocumentSymbol> symbols;
-    uint32_t count = ts_node_named_child_count(containerNode);
-    symbols.reserve(count);
-
-    for (uint32_t i = 0; i < count; ++i)
-    {
-        TSNode child = ts_node_named_child(containerNode, i);
-        ProcessNode(child, ctx, symbols);
-    }
-
-    return symbols;
+    docSym.children = std::move(members);
 }
 
 std::optional<DocumentSymbolResult> GetDocumentSymbols(const DocumentSymbolRequest& request)
@@ -559,57 +260,101 @@ std::optional<DocumentSymbolResult> GetDocumentSymbols(const DocumentSymbolReque
         return DocumentSymbolResult{};
     }
 
-    TraversalContext ctx{request.sourceCode, false, ""};
-    DocumentSymbolResult symbols;
+    std::vector<const analysis::Symbol*> rawSymbols;
+    ankerl::unordered_dense::set<std::pair<std::string_view, uint64_t>> seen;
 
-    if (request.tree != nullptr)
-    {
-        TSNode root = ts_tree_root_node(request.tree);
-        symbols = DocumentSymbolProcessor::ProcessChildren(root, ctx);
-    }
-    else
-    {
-        parser::AngelScriptParser parser;
-        document::TreePtr tempTree = document::MakeTreePtr(parser.Parse(request.sourceCode));
-        if (tempTree)
+    request.symbolTable.ForEachSymbolInFile(
+        std::string(request.uri),
+        [&]([[maybe_unused]] const std::string& key, const std::vector<analysis::Symbol>& bucket)
         {
-            TSNode root = ts_tree_root_node(tempTree.get());
-            symbols = DocumentSymbolProcessor::ProcessChildren(root, ctx);
-        }
-    }
-
-    if (request.tree != nullptr && ts_node_has_error(ts_tree_root_node(request.tree)))
-    {
-        ankerl::unordered_dense::set<std::string> existingNames;
-        existingNames.reserve(symbols.size());
-        for (const auto& s : symbols)
-        {
-            existingNames.insert(s.name);
-        }
-
-        request.symbolTable.ForEachSymbolInFile(
-            request.uri,
-            [&]([[maybe_unused]] const std::string& key, const std::vector<analysis::Symbol>& bucket)
+            for (const auto& sym : bucket)
             {
-                for (const auto& sym : bucket)
+                if (sym.isSynthesized || sym.type == analysis::SymbolType::CallReference || sym.fileUri != request.uri)
                 {
-                    if (!sym.isSynthesized && !existingNames.contains(sym.name))
-                    {
-                        lsp::DocumentSymbol ds;
-                        ds.name = sym.name;
-                        ds.kind = common::ToLspSymbolKind(sym.type, !sym.containerName.empty());
-                        ds.range.start.line = sym.startLine;
-                        ds.range.start.character = sym.startCharacter;
-                        ds.range.end.line = sym.endLine;
-                        ds.range.end.character = sym.endCharacter;
-                        ds.selectionRange = ds.range;
-                        symbols.push_back(std::move(ds));
-                        existingNames.insert(sym.name);
-                    }
+                    continue;
                 }
-            });
+                if (sym.type == analysis::SymbolType::Variable &&
+                    std::holds_alternative<analysis::VariableSignature>(sym.signature) &&
+                    sym.GetVariable().isEnumConstant)
+                {
+                    continue;
+                }
+                const uint64_t coordKey =
+                    (static_cast<uint64_t>(sym.startLine) << 32) | static_cast<uint64_t>(sym.startCharacter);
+                if (seen.insert({sym.name, coordKey}).second)
+                {
+                    rawSymbols.push_back(&sym);
+                }
+            }
+        });
+
+    std::sort(rawSymbols.begin(), rawSymbols.end(),
+              [](const analysis::Symbol* a, const analysis::Symbol* b)
+              {
+                  const auto aRange = SymbolRange(*a);
+                  const auto bRange = SymbolRange(*b);
+                  if (aRange.start.line != bRange.start.line)
+                  {
+                      return aRange.start.line < bRange.start.line;
+                  }
+                  if (aRange.start.character != bRange.start.character)
+                  {
+                      return aRange.start.character < bRange.start.character;
+                  }
+                  if (aRange.end.line != bRange.end.line)
+                  {
+                      return aRange.end.line > bRange.end.line;
+                  }
+                  return aRange.end.character > bRange.end.character;
+              });
+
+    std::vector<std::pair<lsp::Range, lsp::DocumentSymbol*>> stack;
+    DocumentSymbolResult roots;
+
+    for (const auto* sym : rawSymbols)
+    {
+        lsp::Range symRange = SymbolRange(*sym);
+        while (!stack.empty() && !ContainsRange(stack.back().first, symRange))
+        {
+            stack.pop_back();
+        }
+
+        const bool isInsideClass = !stack.empty() && (stack.back().second->kind == lsp::SymbolKind::Class ||
+                                                      stack.back().second->kind == lsp::SymbolKind::Interface);
+
+        lsp::DocumentSymbol docSym = MakeDocumentSymbol(*sym, request.sourceCode, isInsideClass);
+        if (sym->type == analysis::SymbolType::Enum)
+        {
+            PopulateEnumMembers(*sym, request.symbolTable, docSym);
+        }
+
+        const bool isContainer =
+            (sym->type == analysis::SymbolType::Namespace || sym->type == analysis::SymbolType::Class ||
+             sym->type == analysis::SymbolType::Interface);
+
+        lsp::DocumentSymbol* target = nullptr;
+        if (stack.empty())
+        {
+            roots.push_back(std::move(docSym));
+            target = &roots.back();
+        }
+        else
+        {
+            if (!stack.back().second->children.has_value())
+            {
+                stack.back().second->children = std::vector<lsp::DocumentSymbol>{};
+            }
+            stack.back().second->children->push_back(std::move(docSym));
+            target = &stack.back().second->children->back();
+        }
+
+        if (isContainer)
+        {
+            stack.push_back({target->range, target});
+        }
     }
 
-    return symbols;
+    return roots;
 }
+
 } // namespace angel_lsp::features
