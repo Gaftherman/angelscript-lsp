@@ -98,6 +98,164 @@ inline std::string FindIdentifierAtPosition(TSTree* tree, lsp::Position position
     return std::string(sourceCode.substr(start, end - start));
 }
 
+inline constexpr bool IsIdentifierChar(char c) noexcept
+{
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
+}
+
+inline std::string_view ExtractLineAt(std::string_view sourceCode, uint32_t targetLine) noexcept
+{
+    uint32_t currentLine = 0;
+    size_t lineStart = 0;
+    while (currentLine < targetLine && lineStart < sourceCode.size())
+    {
+        size_t nextNewline = sourceCode.find('\n', lineStart);
+        if (nextNewline == std::string_view::npos)
+        {
+            return "";
+        }
+        lineStart = nextNewline + 1;
+        currentLine++;
+    }
+    if (currentLine != targetLine || lineStart >= sourceCode.size())
+    {
+        return "";
+    }
+    size_t lineEnd = sourceCode.find('\n', lineStart);
+    if (lineEnd == std::string_view::npos)
+    {
+        lineEnd = sourceCode.size();
+    }
+    if (lineEnd > lineStart && sourceCode[lineEnd - 1] == '\r')
+    {
+        lineEnd--;
+    }
+    return sourceCode.substr(lineStart, lineEnd - lineStart);
+}
+
+inline size_t ExpandScopedIdentifierStart(std::string_view line, size_t col) noexcept
+{
+    size_t start = col;
+    while (start > 0 && IsIdentifierChar(line[start - 1]))
+    {
+        start--;
+    }
+    while (start >= 2 && line[start - 1] == ':' && line[start - 2] == ':')
+    {
+        size_t segStart = start - 2;
+        while (segStart > 0 && IsIdentifierChar(line[segStart - 1]))
+        {
+            segStart--;
+        }
+        if (segStart == start - 2)
+        {
+            break;
+        }
+        start = segStart;
+    }
+    return start;
+}
+
+inline size_t ExpandScopedIdentifierEnd(std::string_view line, size_t col) noexcept
+{
+    size_t end = col;
+    while (end < line.size() && IsIdentifierChar(line[end]))
+    {
+        end++;
+    }
+    while (end + 2 <= line.size() && line[end] == ':' && line[end + 1] == ':')
+    {
+        size_t segEnd = end + 2;
+        while (segEnd < line.size() && IsIdentifierChar(line[segEnd]))
+        {
+            segEnd++;
+        }
+        if (segEnd == end + 2)
+        {
+            break;
+        }
+        end = segEnd;
+    }
+    return end;
+}
+
+/**
+ * @brief Finds the identifier text located at an LSP cursor position without requiring an AST.
+ * @param[in] sourceCode Document source text buffer.
+ * @param[in] position Cursor line and column.
+ * @return Extracted identifier text or empty string if not on an identifier.
+ */
+inline std::string FindIdentifierAtPosition(std::string_view sourceCode, lsp::Position position)
+{
+    if (sourceCode.empty())
+    {
+        return "";
+    }
+    std::string_view line = ExtractLineAt(sourceCode, position.line);
+    if (line.empty())
+    {
+        return "";
+    }
+    size_t col = position.character;
+    if (col >= line.size() || !IsIdentifierChar(line[col]))
+    {
+        if (col > 0 && IsIdentifierChar(line[col - 1]))
+        {
+            col--;
+        }
+        else
+        {
+            return "";
+        }
+    }
+    size_t start = col;
+    while (start > 0 && IsIdentifierChar(line[start - 1]))
+    {
+        start--;
+    }
+    size_t end = col;
+    while (end < line.size() && IsIdentifierChar(line[end]))
+    {
+        end++;
+    }
+    return std::string(line.substr(start, end - start));
+}
+
+/**
+ * @brief Finds the scoped identifier text located at an LSP cursor position without requiring an AST.
+ * @param[in] sourceCode Document source text buffer.
+ * @param[in] position Cursor line and column.
+ * @return Extracted qualified identifier text or empty string.
+ */
+inline std::string FindScopedIdentifierAtPosition(std::string_view sourceCode, lsp::Position position)
+{
+    std::string ident = FindIdentifierAtPosition(sourceCode, position);
+    if (ident.empty())
+    {
+        return "";
+    }
+    std::string_view line = ExtractLineAt(sourceCode, position.line);
+    if (line.empty())
+    {
+        return ident;
+    }
+    size_t col = position.character;
+    if (col >= line.size() || !IsIdentifierChar(line[col]))
+    {
+        if (col > 0 && IsIdentifierChar(line[col - 1]))
+        {
+            col--;
+        }
+        else
+        {
+            return ident;
+        }
+    }
+    const size_t start = ExpandScopedIdentifierStart(line, col);
+    const size_t end = ExpandScopedIdentifierEnd(line, col);
+    return std::string(line.substr(start, end - start));
+}
+
 /**
  * @brief Maps internal AngelScript SymbolType to corresponding LSP SymbolKind.
  * @param[in] type Internal SymbolType enum value.
