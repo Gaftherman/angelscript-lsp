@@ -205,7 +205,7 @@ struct Scope
     std::vector<std::unique_ptr<Scope>> children;
     std::vector<LocalDefinition> definitions;
     std::vector<LocalReference> references;
-    std::vector<StringLiteralCallRef> stringLiteralCallRefs;
+    std::unique_ptr<std::vector<StringLiteralCallRef>> stringLiteralCallRefs;
 
     uint32_t startLine = 0;
     uint32_t startCharacter = 0;
@@ -279,7 +279,9 @@ struct Scope
     {
         return sizeof(Scope) + definitions.capacity() * sizeof(LocalDefinition) +
                references.capacity() * sizeof(LocalReference) +
-               stringLiteralCallRefs.capacity() * sizeof(StringLiteralCallRef);
+               (stringLiteralCallRefs ? sizeof(std::vector<StringLiteralCallRef>) +
+                                            stringLiteralCallRefs->capacity() * sizeof(StringLiteralCallRef)
+                                      : 0);
     }
 };
 static_assert(sizeof(Scope) <= 128);

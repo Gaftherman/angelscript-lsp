@@ -953,7 +953,11 @@ void LocalScopeCollector::ProcessStringCallRefCapture(const RawCapture& capture,
         return;
     }
     TSPoint pt = ts_node_start_point(capture.node);
-    current->stringLiteralCallRefs.push_back(
+    if (!current->stringLiteralCallRefs)
+    {
+        current->stringLiteralCallRefs = std::make_unique<std::vector<StringLiteralCallRef>>();
+    }
+    current->stringLiteralCallRefs->push_back(
         StringLiteralCallRef{std::string(text), static_cast<uint32_t>(pt.row), static_cast<uint32_t>(pt.column)});
 }
 

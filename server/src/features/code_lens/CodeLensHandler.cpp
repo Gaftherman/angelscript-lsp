@@ -639,18 +639,19 @@ static bool IsValidAccess(const std::string& fileUri, const analysis::LocalRefer
 static void CountStringLiteralReferences(const std::string& fileUri, const analysis::Scope& scope,
                                          const BatchReferenceContext& ctx)
 {
-    for (const auto& strRef : scope.stringLiteralCallRefs)
-    {
-        auto it = ctx.targetsByName.find(strRef.name);
-        if (it != ctx.targetsByName.end())
+    if (scope.stringLiteralCallRefs)
+        for (const auto& strRef : *scope.stringLiteralCallRefs)
         {
-            const uint64_t pos = (static_cast<uint64_t>(strRef.line) << 32) | strRef.column;
-            for (size_t targetIdx : it->second)
+            auto it = ctx.targetsByName.find(strRef.name);
+            if (it != ctx.targetsByName.end())
             {
-                ctx.targets[targetIdx].seenRefs.insert({fileUri, pos});
+                const uint64_t pos = (static_cast<uint64_t>(strRef.line) << 32) | strRef.column;
+                for (size_t targetIdx : it->second)
+                {
+                    ctx.targets[targetIdx].seenRefs.insert({fileUri, pos});
+                }
             }
         }
-    }
 }
 
 /**

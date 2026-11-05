@@ -295,10 +295,11 @@ static void CollectScopeStringLiteralRefs(const Scope* root, ankerl::unordered_d
     {
         const Scope* s = stack.back();
         stack.pop_back();
-        for (const auto& strRef : s->stringLiteralCallRefs)
-        {
-            result.insert(strRef.name);
-        }
+        if (s->stringLiteralCallRefs)
+            for (const auto& strRef : *s->stringLiteralCallRefs)
+            {
+                result.insert(strRef.name);
+            }
         for (const auto& child : s->children)
         {
             if (child)

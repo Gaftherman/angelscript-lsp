@@ -332,7 +332,10 @@ static void CopyLexicalScope(const Scope& source, Scope& target)
 {
     target.definitions = source.definitions;
     target.references = source.references;
-    target.stringLiteralCallRefs = source.stringLiteralCallRefs;
+    target.stringLiteralCallRefs =
+        source.stringLiteralCallRefs
+            ? std::make_unique<std::vector<StringLiteralCallRef>>(*source.stringLiteralCallRefs)
+            : nullptr;
     target.startLine = source.startLine;
     target.startCharacter = source.startCharacter;
     target.endLine = source.endLine;
