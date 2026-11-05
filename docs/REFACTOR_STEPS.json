@@ -4,46 +4,56 @@
     "server/src/features/linked_editing",
     "server/src/features/folding_range",
     "server/src/features/document_link",
-    "server/src/analysis/index"
+    "server/src/analysis/index",
+    "server/src/features/workspace_symbol",
+    "server/src/features/document_symbol",
+    "server/src/features/type_hierarchy",
+    "server/src/features/call_hierarchy",
+    "server/src/features/implementation"
   ],
-  "active_folder": "server/src/features/workspace_symbol",
+  "active_folder": "server/src/features/definition",
   "cross_module_impacts": [],
   "pending_folders": [
-    {
-      "folder_path": "server/src/features/workspace_symbol",
-      "complexity_rank": 5,
-      "selection_rationale": "Leaf feature (2 files, 46 lines) performing workspace-wide symbol matching against SymbolTable.",
-      "files_to_refactor": []
-    },
-    {
-      "folder_path": "server/src/features/document_symbol",
-      "complexity_rank": 6,
-      "selection_rationale": "Leaf feature (2 files, 71 lines) extracting hierarchical document outline from SymbolTable and NodeIndex.",
-      "files_to_refactor": []
-    },
-    {
-      "folder_path": "server/src/features/type_hierarchy",
-      "complexity_rank": 7,
-      "selection_rationale": "Leaf feature (2 files, 58 lines) navigating supertypes and subtypes via ClassHierarchyResolver.",
-      "files_to_refactor": []
-    },
-    {
-      "folder_path": "server/src/features/call_hierarchy",
-      "complexity_rank": 8,
-      "selection_rationale": "Leaf feature (2 files, 49 lines) querying incoming and outgoing call edges from CallGraph.",
-      "files_to_refactor": []
-    },
-    {
-      "folder_path": "server/src/features/implementation",
-      "complexity_rank": 9,
-      "selection_rationale": "Leaf feature (2 files, 64 lines) navigating interface method implementations via InterfaceImplementation.",
-      "files_to_refactor": []
-    },
     {
       "folder_path": "server/src/features/definition",
       "complexity_rank": 10,
       "selection_rationale": "Leaf feature (2 files, 53 lines) jump-to-definition using TargetResolution.",
-      "files_to_refactor": []
+      "files_to_refactor": [
+        {
+          "file": "DefinitionHandler.h",
+          "detected_antipatterns": [
+            "Raw TSTree* pointer and <tree_sitter/api.h> dependency in DefinitionRequest",
+            "Heap-allocated std::string members for uri, sourceCode, and predefinedExtension",
+            "Ad-hoc DefinitionContext helper struct in header"
+          ],
+          "reusable_structs_or_classes": [
+            "SymbolTable",
+            "ScopeIndex",
+            "VirtualMixinContext"
+          ],
+          "first_pass_data_needed": [
+            "AST-free target resolution using SymbolTable and ScopeIndex"
+          ]
+        },
+        {
+          "file": "DefinitionHandler.cpp",
+          "detected_antipatterns": [
+            "Monolithic implementation (>60KB) performing AST traversals in second pass",
+            "Redundant identifier parsing and string allocations on cursor position",
+            "Direct AST node climbs instead of using indexed scopes and symbols"
+          ],
+          "reusable_structs_or_classes": [
+            "FeatureSharedUtils::FindIdentifierAtPosition",
+            "analysis::TargetResolution",
+            "analysis::GetInheritedTypeHierarchy"
+          ],
+          "liquidation_actions": [
+            "Purge TSTree* and TSNode second-pass traversals",
+            "Convert string parameters to zero-allocation std::string_view",
+            "Comply with lizard CCN <= 25, line length <= 120, max lines <= 300"
+          ]
+        }
+      ]
     },
     {
       "folder_path": "server/src/features/references",
