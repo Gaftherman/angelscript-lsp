@@ -82,8 +82,7 @@ struct MultiFileTestEnv
     std::optional<ReferencesResult> RefsAt(const std::string& uri, uint32_t line, uint32_t character,
                                            bool includeDecl = true)
     {
-        ReferencesRequest req{uri,         sources[uri], trees[uri], lsp::Position{line, character},
-                              includeDecl, symbolTable,  scopeIndex};
+        ReferencesRequest req{uri, sources[uri], lsp::Position{line, character}, includeDecl, symbolTable, scopeIndex};
         return GetReferences(req);
     }
 };
@@ -1113,4 +1112,46 @@ TEST_CASE("References - Bound calls are published and withdrawn by document and 
     index.ClearDocument(firstUri);
     index.ClearDocument(secondUri);
     CHECK(rows(std::nullopt).empty());
+}
+
+TEST_CASE("ReferencesHandler - Scoped Class Member References Across Hierarchy")
+{
+    MultiFileTestEnv env;
+    const std::string baseCode = "class BaseClass {\n"
+                                 "    void DoTask() {}\n"
+                                 "}\n";
+    const std::string derivedCode = "class DerivedClass : BaseClass {\n"
+                                    "    void Work() {\n"
+                                    "        BaseClass::DoTask();\n"
+                                    "    }\n"
+                                    "}\n";
+
+    env.AddFile("file:///base.as", baseCode);
+    env.AddFile("file:///derived.as", derivedCode);
+
+    // Cursor on DoTask in BaseClass::DoTask() at line 2, character 19 in derived.as
+    auto refs = env.RefsAt("file:///derived.as", 2, 19, true);
+    REQUIRE(refs.has_value());
+    CHECK(refs->size() == 2);
+}
+
+TEST_CASE("ReferencesHandler - Enum Member Inside Namespace Resolved via Preceding Qualifier")
+{
+    MultiFileTestEnv env;
+    const std::string code = "namespace GameNS {\n"
+                             "    enum GameState {\n"
+                             "        STATE_ACTIVE = 1,\n"
+                             "        STATE_PAUSED = 2\n"
+                             "    };\n"
+                             "    void Update() {\n"
+                             "        int s = GameState::STATE_ACTIVE;\n"
+                             "    }\n"
+                             "}\n";
+
+    env.AddFile("file:///gamestate.as", code);
+
+    // Cursor on STATE_ACTIVE in GameState::STATE_ACTIVE at line 6, character 27
+    auto refs = env.RefsAt("file:///gamestate.as", 6, 27, true);
+    REQUIRE(refs.has_value());
+    CHECK(refs->size() == 2);
 }

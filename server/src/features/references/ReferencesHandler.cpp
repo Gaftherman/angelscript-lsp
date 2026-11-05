@@ -1,8 +1,10 @@
 #include "features/references/ReferencesHandler.h"
 
 #include "analysis/resolution/TargetResolution.h"
+#include "features/common/FeatureSharedUtils.h"
 
 #include <algorithm>
+#include <string>
 #include <vector>
 
 namespace angel_lsp::features
@@ -37,11 +39,7 @@ ConvertAndSortOccurrences(const std::vector<analysis::OccurrenceLocation>& occur
                   {
                       return a.uri.toString() < b.uri.toString();
                   }
-                  if (a.range.start.line != b.range.start.line)
-                  {
-                      return a.range.start.line < b.range.start.line;
-                  }
-                  return a.range.start.character < b.range.start.character;
+                  return common::CompareByPosition(a.range, b.range);
               });
 
     return results;
@@ -49,47 +47,34 @@ ConvertAndSortOccurrences(const std::vector<analysis::OccurrenceLocation>& occur
 
 /**
  * @brief Get references.
- * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
+ * @param[in] request Contextual request bundle containing source text and parameters.
  * @return Found item if present; std::nullopt otherwise.
  */
 std::optional<ReferencesResult> GetReferences(const ReferencesRequest& request)
 {
-    if (!request.tree || request.sourceCode.empty())
+    if (request.sourceCode.empty())
     {
         return std::nullopt;
     }
 
-    TSNode node{};
-    analysis::ResolveTargetRequest resolveReq{
-        .uri = request.uri,
-        .sourceCode = request.sourceCode,
-        .tree = request.tree,
-        .position = analysis::TargetPosition{request.position.line, request.position.character},
-        .symbolTable = request.symbolTable,
-        .scopeIndex = request.scopeIndex,
-        .outNode = node,
-        .logger = request.logger,
-        .useCallBindings = true,
-        .callBindingRevision = request.callBindingRevision,
-    };
+    auto resolveReq = analysis::MakeTargetRequest(
+        request.uri, request.sourceCode, analysis::TargetPosition{request.position.line, request.position.character},
+        request.symbolTable, request.scopeIndex);
+    resolveReq.logger = request.logger;
+    resolveReq.useCallBindings = true;
+    resolveReq.callBindingRevision = request.callBindingRevision;
     const auto target = analysis::ResolveTargetSymbol(resolveReq);
 
-    if (!target.has_value() || ts_node_is_null(node))
+    if (!target.has_value())
     {
         return std::nullopt;
     }
 
-    analysis::CollectOccurrencesRequest occReq{
-        .target = *target,
-        .currentUri = request.uri,
-        .sourceCode = request.sourceCode,
-        .tree = request.tree,
-        .symbolTable = request.symbolTable,
-        .scopeIndex = request.scopeIndex,
-        .includeDeclaration = request.includeDeclaration,
-        .logger = request.logger,
-        .occurrenceModule = request.occurrenceModule,
-    };
+    auto occReq = analysis::MakeOccurrencesRequest(*target, request.uri, request.sourceCode, request.symbolTable,
+                                                   request.scopeIndex);
+    occReq.includeDeclaration = request.includeDeclaration;
+    occReq.logger = request.logger;
+    occReq.occurrenceModule = request.occurrenceModule;
     const auto occurrences = analysis::CollectOccurrences(occReq);
 
     if (occurrences.empty())

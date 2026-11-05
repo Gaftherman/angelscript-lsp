@@ -8,7 +8,7 @@
 #include <lsp/types.h>
 #include <optional>
 #include <string>
-#include <tree_sitter/api.h>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::features
@@ -18,9 +18,8 @@ namespace angel_lsp::features
  */
 struct ReferencesRequest
 {
-    std::string uri;
-    std::string sourceCode;
-    TSTree* tree = nullptr;
+    std::string_view uri;
+    std::string_view sourceCode;
     lsp::Position position;
     bool includeDeclaration = true;
     const analysis::SymbolTable& symbolTable;
