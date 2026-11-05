@@ -1,0 +1,496 @@
+{
+  "completed_folders": [
+    "server/src/features/selection_range",
+    "server/src/features/linked_editing",
+    "server/src/features/folding_range",
+    "server/src/features/document_link"
+  ],
+  "active_folder": "server/src/analysis/index",
+  "cross_module_impacts": [],
+  "pending_folders": [
+    {
+      "folder_path": "server/src/analysis/index",
+      "complexity_rank": 33,
+      "selection_rationale": "First-pass indexing engine (22 files) NodeIndex, ScopeTree, SymbolTable, SymbolCollector, CallGraph.",
+      "files_to_refactor": [
+        {
+          "file": "SymbolCollector.h",
+          "detected_antipatterns": [
+            "Large monolithic collector interface without dedicated sub-collectors for directive and comment tokens"
+          ],
+          "reusable_structs_or_classes": [
+            "NodeIndex",
+            "SymbolTable"
+          ],
+          "first_pass_data_needed": [
+            "Grammar symbol dispatch for preproc directives and comment tokens"
+          ]
+        },
+        {
+          "file": "SymbolCollector.cpp",
+          "detected_antipatterns": [
+            "File length exceeds 2000 lines violating the modularity mandate",
+            "Duplicated code blocks across symbol collection passes flagged by jscpd (lines 598-603, 641-646, 1464-1469, 1488-1493, 1524-1529, 2118-2123, 2150-2155)"
+          ],
+          "reusable_structs_or_classes": [
+            "parser::GetRootNode",
+            "GrammarSymbols"
+          ],
+          "liquidation_actions": [
+            "Deduplicate symbol collection logic to comply with jscpd <= 3%",
+            "Decompose collection subroutines to adhere to lizard CCN <= 15 and line limit <= 70"
+          ]
+        },
+        {
+          "file": "LocalScopeCollector.h",
+          "detected_antipatterns": [
+            "Monolithic local scope visitor interface"
+          ],
+          "reusable_structs_or_classes": [
+            "ScopeTree",
+            "NodeIndex"
+          ],
+          "first_pass_data_needed": [
+            "Local scope boundaries and variable declaration spans"
+          ]
+        },
+        {
+          "file": "LocalScopeCollector.cpp",
+          "detected_antipatterns": [
+            "Duplicated blocks flagged by jscpd (lines 1535-1540 and 1587-1592)",
+            "Heavy nested branch traversal"
+          ],
+          "reusable_structs_or_classes": [
+            "ScopeTree",
+            "LocalScope"
+          ],
+          "liquidation_actions": [
+            "Consolidate duplicated capture processing",
+            "Ensure all methods pass lizard CCN <= 15 and length <= 70"
+          ]
+        },
+        {
+          "file": "ScopeTree.h",
+          "detected_antipatterns": [
+            "Positional lookup involves sequential enclosing scope walk"
+          ],
+          "reusable_structs_or_classes": [
+            "ScopeTree::FindInnermostScope"
+          ],
+          "first_pass_data_needed": [
+            "Pre-sorted byte offset scope intervals"
+          ]
+        },
+        {
+          "file": "ScopeTree.cpp",
+          "detected_antipatterns": [
+            "Unindexed linear search over child scopes for deep scopes"
+          ],
+          "reusable_structs_or_classes": [
+            "ScopeTree"
+          ],
+          "liquidation_actions": [
+            "Optimize scope tree interval lookups"
+          ]
+        },
+        {
+          "file": "SymbolTable.h",
+          "detected_antipatterns": [
+            "Clone blocks in member lookup helper methods flagged by jscpd"
+          ],
+          "reusable_structs_or_classes": [
+            "FindMemberSymbolPtr",
+            "HasScopedSymbol"
+          ],
+          "liquidation_actions": [
+            "Unify duplicated member lookup loops"
+          ]
+        },
+        {
+          "file": "SymbolTable.cpp",
+          "detected_antipatterns": [
+            "Duplicated member lookup loops in lines 1196-1216 and 1230-1250"
+          ],
+          "reusable_structs_or_classes": [
+            "SymbolTable"
+          ],
+          "liquidation_actions": [
+            "Consolidate member lookup iteration"
+          ]
+        },
+        {
+          "file": "CallBindings.h",
+          "detected_antipatterns": [
+            "Separate ad-hoc call binding maps"
+          ],
+          "reusable_structs_or_classes": [
+            "SymbolId"
+          ],
+          "first_pass_data_needed": [
+            "Call target linkage from symbol table"
+          ]
+        },
+        {
+          "file": "CallBindings.cpp",
+          "detected_antipatterns": [
+            "Repeated symbol searches per call site"
+          ],
+          "reusable_structs_or_classes": [
+            "CallBindings"
+          ],
+          "liquidation_actions": [
+            "Streamline binding registration"
+          ]
+        },
+        {
+          "file": "CallGraph.h",
+          "detected_antipatterns": [
+            "Graph edge insertion without batch deduplication"
+          ],
+          "reusable_structs_or_classes": [
+            "SymbolId"
+          ],
+          "first_pass_data_needed": [
+            "Function declaration and invocation pairs"
+          ]
+        },
+        {
+          "file": "CallGraph.cpp",
+          "detected_antipatterns": [
+            "Linear edge vector search during traversal"
+          ],
+          "reusable_structs_or_classes": [
+            "CallGraph"
+          ],
+          "liquidation_actions": [
+            "Ensure efficient graph operations"
+          ]
+        },
+        {
+          "file": "DeclarationRecovery.h",
+          "detected_antipatterns": [
+            "String-based identifier heuristics"
+          ],
+          "reusable_structs_or_classes": [
+            "SymbolTable"
+          ],
+          "first_pass_data_needed": [
+            "Partially parsed declaration nodes"
+          ]
+        },
+        {
+          "file": "DeclarationRecovery.cpp",
+          "detected_antipatterns": [
+            "Manual token slicing"
+          ],
+          "reusable_structs_or_classes": [
+            "DeclarationRecovery"
+          ],
+          "liquidation_actions": [
+            "Migrate recovery to AST tokens"
+          ]
+        },
+        {
+          "file": "ReferenceReceiverIndex.h",
+          "detected_antipatterns": [
+            "Secondary receiver lookup structures"
+          ],
+          "reusable_structs_or_classes": [
+            "NodeIndex"
+          ],
+          "first_pass_data_needed": [
+            "Receiver expression node mapping"
+          ]
+        },
+        {
+          "file": "ReferenceReceiverIndex.cpp",
+          "detected_antipatterns": [
+            "Separate traversal for receiver indexing"
+          ],
+          "reusable_structs_or_classes": [
+            "ReferenceReceiverIndex"
+          ],
+          "liquidation_actions": [
+            "Integrate receiver extraction into pass 1"
+          ]
+        },
+        {
+          "file": "SemanticNodes.h",
+          "detected_antipatterns": [
+            "Redundant AST node wrapper copies"
+          ],
+          "reusable_structs_or_classes": [
+            "SyntaxNodeId"
+          ],
+          "first_pass_data_needed": [
+            "Zero-allocation syntax node references"
+          ]
+        },
+        {
+          "file": "SemanticNodes.cpp",
+          "detected_antipatterns": [
+            "Transient node wrappers allocated on heap"
+          ],
+          "reusable_structs_or_classes": [
+            "SemanticNodes"
+          ],
+          "liquidation_actions": [
+            "Compact node representation"
+          ]
+        },
+        {
+          "file": "Symbol.h",
+          "detected_antipatterns": [
+            "Heavy symbol payload fields"
+          ],
+          "reusable_structs_or_classes": [
+            "Symbol"
+          ],
+          "first_pass_data_needed": [
+            "Compact symbol records"
+          ]
+        },
+        {
+          "file": "SyntaxOperands.h",
+          "detected_antipatterns": [
+            "Raw node operand passing"
+          ],
+          "reusable_structs_or_classes": [
+            "SyntaxOperands"
+          ],
+          "first_pass_data_needed": [
+            "Indexed operand facts"
+          ]
+        }
+      ]
+    },
+    {
+      "folder_path": "server/src/features/workspace_symbol",
+      "complexity_rank": 5,
+      "selection_rationale": "Leaf feature (2 files, 46 lines) performing workspace-wide symbol matching against SymbolTable.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/features/document_symbol",
+      "complexity_rank": 6,
+      "selection_rationale": "Leaf feature (2 files, 71 lines) extracting hierarchical document outline from SymbolTable and NodeIndex.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/features/type_hierarchy",
+      "complexity_rank": 7,
+      "selection_rationale": "Leaf feature (2 files, 58 lines) navigating supertypes and subtypes via ClassHierarchyResolver.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/features/call_hierarchy",
+      "complexity_rank": 8,
+      "selection_rationale": "Leaf feature (2 files, 49 lines) querying incoming and outgoing call edges from CallGraph.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/features/implementation",
+      "complexity_rank": 9,
+      "selection_rationale": "Leaf feature (2 files, 64 lines) navigating interface method implementations via InterfaceImplementation.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/features/definition",
+      "complexity_rank": 10,
+      "selection_rationale": "Leaf feature (2 files, 53 lines) jump-to-definition using TargetResolution.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/features/references",
+      "complexity_rank": 11,
+      "selection_rationale": "Leaf feature (2 files, 37 lines) finding symbol and overload references.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/features/rename",
+      "complexity_rank": 12,
+      "selection_rationale": "Leaf feature (2 files, 65 lines) coordinating lexical and workspace renames.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/features/document_highlight",
+      "complexity_rank": 13,
+      "selection_rationale": "Leaf feature (2 files, 77 lines) highlighting read/write occurrences of identifier under cursor.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/features/signature_help",
+      "complexity_rank": 14,
+      "selection_rationale": "Leaf feature (2 files, 29 lines) active call signature and parameter index help.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/features/common",
+      "complexity_rank": 15,
+      "selection_rationale": "Shared feature utilities (2 files, 121 lines). Geometry, range conversions, and LSP mappings.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/features/inlay_hint",
+      "complexity_rank": 16,
+      "selection_rationale": "Feature (2 files, 114 lines) parameter name hints and inferred type hints.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/features/code_lens",
+      "complexity_rank": 17,
+      "selection_rationale": "Feature (2 files, 149 lines) reference and implementation count lenses.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/features/breakpoints",
+      "complexity_rank": 18,
+      "selection_rationale": "Feature (4 files, 173 lines) executable line validation for breakpoint placement.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/features/semantic_tokens",
+      "complexity_rank": 19,
+      "selection_rationale": "Feature (2 files, 186 lines) semantic token classification and delta encoding.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/features/hover",
+      "complexity_rank": 20,
+      "selection_rationale": "Feature (5 files, 509 lines) hover tooltips, markdown formatting, and type introspection.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/features/formatting",
+      "complexity_rank": 21,
+      "selection_rationale": "Feature (11 files, 751 lines) document formatting, indent rules, and whitespace normalization.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/features/completion",
+      "complexity_rank": 22,
+      "selection_rationale": "Feature (2 files, 169 lines) contextual completion suggestions.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/features/code_action",
+      "complexity_rank": 23,
+      "selection_rationale": "Feature (5 files, 368 lines) quick-fixes and refactorings.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/document",
+      "complexity_rank": 24,
+      "selection_rationale": "Base infrastructure (2 files, 168 lines) thread-safe document handles and line indexing.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/i18n",
+      "complexity_rank": 25,
+      "selection_rationale": "Base infrastructure (2 files, 78 lines) localization catalogs and formatting.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/config",
+      "complexity_rank": 26,
+      "selection_rationale": "Base infrastructure (4 files, 824 lines) server and engine rule configuration.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/utils",
+      "complexity_rank": 27,
+      "selection_rationale": "Base infrastructure (16 files, 1723 lines) ScopedNameUtils, WorkspaceIncludeGraph, timers, loggers.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/analysis/diagnostics",
+      "complexity_rank": 28,
+      "selection_rationale": "Semantic support (5 files, 548 lines) diagnostic codes, context, and inline suppressions.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/analysis/documentation",
+      "complexity_rank": 29,
+      "selection_rationale": "Semantic support (4 files, 261 lines) doc comments and Doxygen markdown.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/analysis/types",
+      "complexity_rank": 30,
+      "selection_rationale": "Semantic support (7 files, 782 lines) type representations, sanitization, and engine profiles.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/analysis/mediator",
+      "complexity_rank": 31,
+      "selection_rationale": "Analysis coordinator facade (2 files, 152 lines) SemanticMediator coordinating pass components.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/parser",
+      "complexity_rank": 32,
+      "selection_rationale": "First-pass grammar and AST bindings (9 files + queries, 2279 lines).",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/analysis/rules",
+      "complexity_rank": 34,
+      "selection_rationale": "Language rules (10 files, 591 lines) ClassRules, FunctionRules, OperatorRules, TypeRules, VariableRules.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/analysis/checkers/null_safety",
+      "complexity_rank": 35,
+      "selection_rationale": "Semantic checkers (7 files, 266 lines) null safety analysis.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/analysis/checkers",
+      "complexity_rank": 36,
+      "selection_rationale": "Semantic checkers (19 files, 1635 lines) access, operator, call, type conversion checkers.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/analysis/resolution",
+      "complexity_rank": 37,
+      "selection_rationale": "Semantic resolution engines (15 files, 1714 lines) overload, target, class hierarchy resolution.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/analysis",
+      "complexity_rank": 38,
+      "selection_rationale": "Semantic analysis coordinator root (3 files, 518 lines) SemanticAnalyzer.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/lsp/state",
+      "complexity_rank": 39,
+      "selection_rationale": "LSP in-memory state stores (7 files, 910 lines) DocumentStore, WorkspaceStateStore, ModuleIndex.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/lsp/services",
+      "complexity_rank": 40,
+      "selection_rationale": "LSP domain services (2 files, 300 lines) ServerAnalysis, ServerDiagnostics, ServerModules.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/lsp/pipeline",
+      "complexity_rank": 41,
+      "selection_rationale": "LSP background pipeline (4 files, 663 lines) AnalysisScheduler, DiagnosticsPipeline.",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/lsp/handlers",
+      "complexity_rank": 42,
+      "selection_rationale": "LSP protocol request and notification handlers (8 files, ~180KB).",
+      "files_to_refactor": []
+    },
+    {
+      "folder_path": "server/src/lsp",
+      "complexity_rank": 43,
+      "selection_rationale": "Server entry and lifecycle coordinator (2 files, 623 lines) Server core.",
+      "files_to_refactor": []
+    }
+  ]
+}
