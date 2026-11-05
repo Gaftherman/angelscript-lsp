@@ -90,7 +90,7 @@ struct ResolveTargetRequest
     TargetPosition position;
     const SymbolTable& symbolTable;
     const ScopeIndex& scopeIndex;
-    TSNode& outNode;
+    TSNode outNode{};
     angel_lsp::utils::LspLogger* logger = nullptr;
     bool useCallBindings = false;
     std::optional<CallBindingRevision> callBindingRevision = std::nullopt;
@@ -113,11 +113,77 @@ struct CollectOccurrencesRequest
 };
 
 /**
+ * @brief Constructs a ResolveTargetRequest with zero-AST defaults.
+ * @param[in] uri Document URI.
+ * @param[in] sourceCode Document source text.
+ * @param[in] position Cursor position.
+ * @param[in] symbolTable Workspace symbol table.
+ * @param[in] scopeIndex Lexical scope index.
+ * @return Initialized ResolveTargetRequest.
+ */
+inline ResolveTargetRequest MakeTargetRequest(std::string_view uri, std::string_view sourceCode,
+                                              TargetPosition position, const SymbolTable& symbolTable,
+                                              const ScopeIndex& scopeIndex)
+{
+    return ResolveTargetRequest{
+        .uri = std::string(uri),
+        .sourceCode = std::string(sourceCode),
+        .tree = nullptr,
+        .position = position,
+        .symbolTable = symbolTable,
+        .scopeIndex = scopeIndex,
+    };
+}
+
+/**
+ * @brief Constructs a CollectOccurrencesRequest with zero-AST defaults.
+ * @param[in] target Target symbol descriptor.
+ * @param[in] uri Current document URI.
+ * @param[in] sourceCode Current document source text.
+ * @param[in] symbolTable Workspace symbol table.
+ * @param[in] scopeIndex Lexical scope index.
+ * @return Initialized CollectOccurrencesRequest.
+ */
+inline CollectOccurrencesRequest MakeOccurrencesRequest(const TargetDescriptor& target, std::string_view uri,
+                                                        std::string_view sourceCode, const SymbolTable& symbolTable,
+                                                        const ScopeIndex& scopeIndex)
+{
+    return CollectOccurrencesRequest{
+        .target = target,
+        .currentUri = std::string(uri),
+        .sourceCode = std::string(sourceCode),
+        .tree = nullptr,
+        .symbolTable = symbolTable,
+        .scopeIndex = scopeIndex,
+    };
+}
+
+/**
  * @brief Works out what the cursor is on.
  * @param[in,out] request Immutable request context.
  * @return The target, or nullopt when the position is not on a renameable symbol.
  */
 std::optional<TargetDescriptor> ResolveTargetSymbol(ResolveTargetRequest& request);
+
+/**
+ * @brief Resolves target symbol under cursor without requiring AST syntax tree.
+ * @param[in] uri Document URI.
+ * @param[in] sourceCode Document source text.
+ * @param[in] position Cursor position.
+ * @param[in] symbolTable Workspace symbol table.
+ * @param[in] scopeIndex Lexical scope index.
+ * @param[in] logger Optional LSP logger.
+ * @return Resolved TargetDescriptor or std::nullopt.
+ */
+inline std::optional<TargetDescriptor> ResolveTargetAt(std::string_view uri, std::string_view sourceCode,
+                                                       TargetPosition position, const SymbolTable& symbolTable,
+                                                       const ScopeIndex& scopeIndex,
+                                                       angel_lsp::utils::LspLogger* logger = nullptr)
+{
+    auto req = MakeTargetRequest(uri, sourceCode, position, symbolTable, scopeIndex);
+    req.logger = logger;
+    return ResolveTargetSymbol(req);
+}
 
 /** @brief Looks up the selected declaration only for the revision that supplied the queried byte offset. */
 std::shared_ptr<const Symbol> ResolveIndexedCall(const SymbolTable& symbols, const Scope* root, uint32_t nameByte,
