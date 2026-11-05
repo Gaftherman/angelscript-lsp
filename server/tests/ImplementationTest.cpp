@@ -46,7 +46,7 @@ struct Fixture
 
     std::optional<std::vector<lsp::Location>> At(uint32_t line, uint32_t character)
     {
-        const ImplementationRequest request{uri, sourceCode, tree, table, lsp::Position{line, character}};
+        const ImplementationRequest request{uri, sourceCode, table, lsp::Position{line, character}};
         return GetImplementations(request);
     }
 };
@@ -282,4 +282,23 @@ TEST_CASE("Implementation - Mixin method declaration queries host classes and ov
     CHECK(HasLine(locs, 4));
     // Gun overrides: Gun::AddToPlayer is returned (line 9)
     CHECK(HasLine(locs, 9));
+}
+
+TEST_CASE("Implementation - An interface inside a namespace answers with its implementations")
+{
+    Fixture fixture("namespace Engine\n"
+                    "{\n"
+                    "    interface IEntity\n"
+                    "    {\n"
+                    "        void Update();\n"
+                    "    }\n"
+                    "    class Bot : IEntity\n"
+                    "    {\n"
+                    "        void Update() { }\n"
+                    "    }\n"
+                    "}\n");
+
+    const auto locations = fixture.At(2, 16);
+    REQUIRE(locations.has_value());
+    CHECK(HasLine(locations, 6));
 }

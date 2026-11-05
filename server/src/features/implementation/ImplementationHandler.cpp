@@ -3,8 +3,6 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
 #include "features/common/FeatureSharedUtils.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 #include "utils/LspLogger.h"
 
 #include <algorithm>
@@ -16,17 +14,6 @@
 
 namespace angel_lsp::features
 {
-
-/**
- * @brief The identifier the cursor sits on, or empty when it is not on one.
- * @param[in] request Implementation request details.
- * @param[out] outNode AST node matching the identifier under the cursor.
- * @return Extracted identifier text or empty string if not on an identifier.
- */
-static std::string IdentifierAt(const ImplementationRequest& request, TSNode& outNode)
-{
-    return common::FindIdentifierAtPosition(request.tree, request.position, request.sourceCode, outNode);
-}
 
 /**
  * @brief Expands derived types from a list of records and records matches in the accumulator.
@@ -240,30 +227,21 @@ void LocationCollector::Add(const analysis::Symbol& sym)
 }
 
 /**
- * @brief The type whose body the cursor sits in, or empty when it sits in none.
- */
-static std::string EnclosingType(TSNode node, std::string_view sourceCode)
-{
-    for (const auto& container : analysis::GetEnclosingContainers(node, sourceCode))
-    {
-        if (container.kind == analysis::ContainerKind::Class || container.kind == analysis::ContainerKind::Interface)
-        {
-            return container.qualifiedName.empty() ? container.name : container.qualifiedName;
-        }
-    }
-    return "";
-}
-
-/**
  * @brief True when a name is declared as a class or an interface anywhere in the table.
  */
 static bool IsTypeName(const std::string& name, const analysis::SymbolTable& table)
 {
     const auto symbols = table.FindSymbolsPtr(name);
-    return symbols &&
-           std::any_of(
-               symbols->begin(), symbols->end(), [](const analysis::Symbol& sym)
-               { return sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface; });
+    if (symbols &&
+        std::any_of(symbols->begin(), symbols->end(), [](const analysis::Symbol& sym)
+                    { return sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface; }))
+    {
+        return true;
+    }
+    const auto shortSymbols = table.FindTypeSymbolsByShortName(analysis::LastScopeSegment(name));
+    return std::any_of(
+        shortSymbols.begin(), shortSymbols.end(), [](const analysis::Symbol& sym)
+        { return sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface; });
 }
 
 /**
@@ -293,45 +271,22 @@ static std::optional<std::vector<lsp::Location>> ResolveTypeImplementations(cons
                 }
             }
         }
+        if (locations.empty())
+        {
+            for (const auto& sym : table.FindTypeSymbolsByShortName(analysis::LastScopeSegment(name)))
+            {
+                if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface)
+                {
+                    locations.push_back(ToLocation(sym));
+                }
+            }
+        }
     }
     return locations.empty() ? std::nullopt : std::optional{locations};
 }
 
 /**
- * @brief Resolves owner type for a member expression or enclosing method.
- * @param[in] node AST node.
- * @param[in] sourceCode Document source text.
- * @param[in] uri Document URI.
- * @param[in] table analysis::Symbol table.
- * @return Resolved owner type name.
- */
-static std::string ResolveOwnerType(TSNode node, std::string_view sourceCode, const std::string& uri,
-                                    const analysis::SymbolTable& table)
-{
-    std::string owner = EnclosingType(node, sourceCode);
-    if (!owner.empty())
-    {
-        return owner;
-    }
-    TSNode p = parser::GetParent(node);
-    if (!ts_node_is_null(p) && ts_node_symbol(p) == parser::GetGrammarSymbols().symMemberExpression)
-    {
-        TSNode objNode = parser::GetChildByField(p, parser::GetGrammarSymbols().fieldObject);
-        if (!ts_node_is_null(objNode))
-        {
-            const std::string objType = analysis::ResolveExpressionType(objNode, {nullptr, table, sourceCode, uri});
-            owner = analysis::CleanBaseType(objType);
-        }
-    }
-    return owner;
-}
-
-/**
  * @brief Finds a member directly declared in a class or its bare alias.
- * @param[in] clsName Qualified class name.
- * @param[in] name Member name.
- * @param[in] table analysis::Symbol table.
- * @return Member symbols pointer if found.
  */
 static std::shared_ptr<const std::vector<analysis::Symbol>>
 FindMemberInClass(const std::string& clsName, const std::string& name, const analysis::SymbolTable& table)
@@ -355,10 +310,6 @@ FindMemberInClass(const std::string& clsName, const std::string& name, const ana
 
 /**
  * @brief Searches for a member symbol inside mixins and bases of a class symbol.
- * @param[in] os Class symbol to inspect.
- * @param[in] name Member name.
- * @param[in] table analysis::Symbol table.
- * @return Member symbols pointer if found.
  */
 static std::shared_ptr<const std::vector<analysis::Symbol>>
 FindMemberInMixinsAndBases(const analysis::Symbol& os, const std::string& name, const analysis::SymbolTable& table)
@@ -390,10 +341,6 @@ FindMemberInMixinsAndBases(const analysis::Symbol& os, const std::string& name, 
 
 /**
  * @brief Finds a member inside the mixins or bases of an owner class.
- * @param[in] clsName Qualified class name.
- * @param[in] name Member name.
- * @param[in] table analysis::Symbol table.
- * @return Member symbols pointer if found.
  */
 static std::shared_ptr<const std::vector<analysis::Symbol>>
 FindMemberInOwnerMixinsAndBases(const std::string& clsName, const std::string& name, const analysis::SymbolTable& table)
@@ -421,10 +368,6 @@ FindMemberInOwnerMixinsAndBases(const std::string& clsName, const std::string& n
 
 /**
  * @brief Searches for a member declaration within the hierarchy of an owner type.
- * @param[in] owner Owner type name.
- * @param[in] name Member name.
- * @param[in] table analysis::Symbol table.
- * @return Member symbols pointer if found.
  */
 static std::shared_ptr<const std::vector<analysis::Symbol>>
 FindMemberInHierarchy(const std::string& owner, const std::string& name, const analysis::SymbolTable& table)
@@ -461,10 +404,6 @@ FindMemberInHierarchy(const std::string& owner, const std::string& name, const a
 
 /**
  * @brief Checks whether a class is a mixin or registered in hostClassesByMixin.
- * @param[in] owner Full owner name.
- * @param[in] bareOwner Bare owner name.
- * @param[in] table analysis::Symbol table.
- * @return True if owner represents a mixin class.
  */
 static bool CheckMixinOwner(const std::string& owner, const std::string& bareOwner, const analysis::SymbolTable& table)
 {
@@ -479,8 +418,6 @@ static bool CheckMixinOwner(const std::string& owner, const std::string& bareOwn
 
 /**
  * @brief Inspects a subtype for explicit overrides or mixin inclusion.
- * @param[in] subtype Subtype symbol.
- * @param[in,out] ctx Resolution context.
  */
 static void CollectSubtypeOverrides(const analysis::Symbol& subtype, MemberImplementationContext& ctx)
 {
@@ -505,10 +442,6 @@ static void CollectSubtypeOverrides(const analysis::Symbol& subtype, MemberImple
 
 /**
  * @brief Resolves implementations/overrides of a member method or field.
- * @param[in] owner Enclosing or receiver owner type name.
- * @param[in] name Member name.
- * @param[in] table analysis::Symbol table.
- * @return Locations of overrides or definitions.
  */
 static std::optional<std::vector<lsp::Location>>
 ResolveMemberImplementations(const std::string& owner, const std::string& name, const analysis::SymbolTable& table)
@@ -547,9 +480,6 @@ ResolveMemberImplementations(const std::string& owner, const std::string& name, 
 
 /**
  * @brief Resolves implementations for a free function declaration.
- * @param[in] name Function name.
- * @param[in] table analysis::Symbol table.
- * @return List of matching function locations.
  */
 static std::optional<std::vector<lsp::Location>> ResolveFunctionImplementations(const std::string& name,
                                                                                 const analysis::SymbolTable& table)
@@ -572,13 +502,16 @@ static std::optional<std::vector<lsp::Location>> ResolveFunctionImplementations(
 
 std::optional<std::vector<lsp::Location>> GetImplementations(const ImplementationRequest& request)
 {
-    if (!request.tree || request.sourceCode.empty())
+    if (request.sourceCode.empty())
     {
         return std::nullopt;
     }
 
-    TSNode node{};
-    const std::string name = IdentifierAt(request, node);
+    std::string name = common::FindScopedIdentifierAtPosition(request.sourceCode, request.position);
+    if (name.empty())
+    {
+        name = common::FindIdentifierAtPosition(request.sourceCode, request.position);
+    }
     if (name.empty())
     {
         return std::nullopt;
@@ -599,7 +532,7 @@ std::optional<std::vector<lsp::Location>> GetImplementations(const Implementatio
     }
 
     // Member method or field
-    const std::string owner = ResolveOwnerType(node, request.sourceCode, request.uri, table);
+    const std::string owner = table.FindEnclosingClassName(request.uri, request.position.line);
     if (!owner.empty())
     {
         auto result = ResolveMemberImplementations(owner, name, table);

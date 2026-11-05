@@ -7,7 +7,7 @@
 #include <lsp/types.h>
 #include <optional>
 #include <string>
-#include <tree_sitter/api.h>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::features
@@ -17,22 +17,21 @@ namespace angel_lsp::features
  */
 struct ImplementationRequest
 {
-    std::string uri;
-    std::string sourceCode;
-    TSTree* tree = nullptr;
+    std::string_view uri{};
+    std::string_view sourceCode{};
     const analysis::SymbolTable& symbolTable;
-    lsp::Position position;
+    lsp::Position position{};
     angel_lsp::utils::LspLogger* logger = nullptr;
 };
 
 /**
  * @brief Resolves what implements or overrides the symbol under the cursor.
  *        Definition answers "where is this declared"; this answers the opposite question, "who
- * @param request Document, tree, symbol table and cursor position.
+ * @param[in] request Document, tree, symbol table and cursor position.
  * @return Locations of the implementations, or nullopt when the cursor is not on a name this
  *        question applies to.
  */
-std::optional<std::vector<lsp::Location>> GetImplementations(const ImplementationRequest& request);
+[[nodiscard]] std::optional<std::vector<lsp::Location>> GetImplementations(const ImplementationRequest& request);
 
 /**
  * @brief Accumulates derived classes and interface implementations during type hierarchy search.
