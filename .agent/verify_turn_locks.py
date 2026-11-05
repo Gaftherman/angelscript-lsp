@@ -41,9 +41,9 @@ def check_zero_trust(root: Path) -> None:
     print("[PASS] Zero-Trust Gate: 0 archivos protegidos alterados.")
 
 
-def check_lock_a_required_diffs(root: Path, required_files: list[str]) -> None:
+def check_lock_a_required_diffs(root: Path, required_files: list[str], base_ref: str = "HEAD") -> None:
     for rel_path in required_files:
-        res = run_cmd(["git", "diff", "-U0", "HEAD", "--", rel_path], root)
+        res = run_cmd(["git", "diff", "-U0", base_ref, "--", rel_path], root)
         changed_code_lines = [
             line for line in res.stdout.splitlines()
             if (line.startswith("+") or line.startswith("-"))
@@ -62,7 +62,7 @@ def check_lock_a_required_diffs(root: Path, required_files: list[str]) -> None:
     print(f"[PASS] Candado A (Anti-Omisión): {len(required_files)} archivos con diff real de código verificado.")
 
 
-def check_lock_b_no_adhoc_structs(root: Path, target_files: list[str]) -> None:
+def check_lock_b_no_adhoc_structs(root: Path, target_files: list[str], base_ref: str = "HEAD") -> None:
     ledger_path = root / "docs" / "REFACTOR_LEDGER.json"
     ledger_text = ledger_path.read_text(encoding="utf-8") if ledger_path.exists() else ""
 
@@ -80,7 +80,7 @@ def check_lock_b_no_adhoc_structs(root: Path, target_files: list[str]) -> None:
                     f"[FAIL - CANDADO B (Anti-Structs Basura)] Struct prohibido '{name}' aún presente en {rel_path}."
                 )
 
-        diff_res = run_cmd(["git", "diff", "-U0", "HEAD", "--", rel_path], root)
+        diff_res = run_cmd(["git", "diff", "-U0", base_ref, "--", rel_path], root)
         for line in diff_res.stdout.splitlines():
             if line.startswith("+") and not line.startswith("+++"):
                 for match in struct_regex.finditer(line[1:]):
@@ -140,13 +140,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Validador de Candados Arquitectónicos")
     parser.add_argument("--trace", default=".agent/mcp_trace.json", help="Ruta al JSON de traza MCP")
     parser.add_argument("--min-queries", type=int, default=4, help="Mínimo de consultas MCP requeridas")
+    parser.add_argument("--base-ref", default="HEAD", help="Base git ref for diff checks")
     parser.add_argument("--require-diff", nargs="+", required=True, help="Archivos que DEBEN tener diff real")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent.parent
     check_zero_trust(root)
-    check_lock_a_required_diffs(root, args.require_diff)
-    check_lock_b_no_adhoc_structs(root, args.require_diff)
+    check_lock_a_required_diffs(root, args.require_diff, args.base_ref)
+    check_lock_b_no_adhoc_structs(root, args.require_diff, args.base_ref)
     check_lock_c_mcp_evidence(root, args.trace, args.min_queries)
     check_lizard_relaxed(root, args.require_diff)
     print("\n=== TODOS LOS CANDADOS ARQUITECTÓNICOS APROBADOS (PASS) ===")
