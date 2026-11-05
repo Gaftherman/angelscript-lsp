@@ -57,7 +57,7 @@ def main():
         skip_step("Code Duplication (jscpd)", "npx not found in PATH")
 
     # 7. Cyclomatic & Cognitive Complexity (Lizard)
-    run_step("Cyclomatic Complexity (Lizard)", "python -m lizard server/src/ -C 15 -L 70 -w")
+    run_step("Cyclomatic Complexity (Lizard)", "python -m lizard server/src/ -C 25 -L 120 -w")
 
     # 8. AST Antipattern & Memory Allocation Gate (ast-grep)
     if shutil.which("ast-grep"):

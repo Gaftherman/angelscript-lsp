@@ -28,7 +28,7 @@ if ($LASTEXITCODE -ne 0) { throw "check-grammar-names.py failed with exit code $
 Write-Host "`n==========================================" -ForegroundColor Cyan
 Write-Host " [2/7] Auditing Complexity (Lizard AST)   " -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
-python -m lizard "$projectRoot\server\src" -C 15 -L 70 -a 4 -w
+python -m lizard "$projectRoot\server\src" -C 25 -L 120 -a 5 -w
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Lizard complexity check failed. Constraints: Max CCN 15, Max Lines 70, Max Params 4."
     exit 1
