@@ -89,7 +89,7 @@ struct TestEnvironment
     std::optional<std::vector<lsp::Location>> DefAt(uint32_t line, uint32_t character)
     {
         symbolTable.SetBaseClassDelegateProperties(engineRules.unusedRules.baseClassDelegateProperties);
-        DefinitionRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, character}};
+        DefinitionRequest req{uri, sourceCode, symbolTable, scopeIndex, lsp::Position{line, character}};
         req.resolveInclude = resolveInclude;
         req.engineRules = &engineRules;
         return GetDefinition(req);
@@ -97,7 +97,7 @@ struct TestEnvironment
 
     std::optional<std::vector<lsp::Location>> TypeDefAt(uint32_t line, uint32_t character)
     {
-        DefinitionRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, character}};
+        DefinitionRequest req{uri, sourceCode, symbolTable, scopeIndex, lsp::Position{line, character}};
         return GetTypeDefinition(req);
     }
 };
@@ -520,7 +520,7 @@ TEST_CASE("DefinitionHandler - Go to Definition on subsequent lines after inline
     }
 
     // Line 3: "    T& opIndex(uint index);" -> column 7 is on "opIndex"
-    DefinitionRequest req{stubUri, rewritten, tree, symbolTable, scopeIndex, lsp::Position{3, 7}};
+    DefinitionRequest req{stubUri, rewritten, symbolTable, scopeIndex, lsp::Position{3, 7}};
 
     auto defs = GetDefinition(req);
     REQUIRE(defs.has_value());
@@ -643,7 +643,7 @@ TEST_CASE("DefinitionHandler - Overload-aware definition jumps to mixin origin f
     }
 
     // Line 2: "        return Deploy(\"v\", \"p\", 1, \"m16\", 0, 1.0f);" -> col 17 is on "Deploy"
-    DefinitionRequest reqMixinCall{weaponUri, weaponCode, weaponTree, symbolTable, scopeIndex, lsp::Position{2, 17}};
+    DefinitionRequest reqMixinCall{weaponUri, weaponCode, symbolTable, scopeIndex, lsp::Position{2, 17}};
     auto defsMixin = GetDefinition(reqMixinCall);
     REQUIRE(defsMixin.has_value());
     REQUIRE(!defsMixin->empty());
@@ -652,7 +652,7 @@ TEST_CASE("DefinitionHandler - Overload-aware definition jumps to mixin origin f
     CHECK((*defsMixin)[0].range.start.line == 1);
 
     // Line 7: "    w.Deploy();" -> col 7 is on "Deploy"
-    DefinitionRequest reqZeroArgCall{weaponUri, weaponCode, weaponTree, symbolTable, scopeIndex, lsp::Position{7, 7}};
+    DefinitionRequest reqZeroArgCall{weaponUri, weaponCode, symbolTable, scopeIndex, lsp::Position{7, 7}};
     auto defsZeroArg = GetDefinition(reqZeroArgCall);
     REQUIRE(defsZeroArg.has_value());
     REQUIRE(!defsZeroArg->empty());
@@ -1122,4 +1122,50 @@ TEST_CASE("DefinitionHandler - Deep function local shadows a global declaration"
     REQUIRE(result);
     REQUIRE(result->size() == 1);
     CHECK(result->front().range.start.line == 3);
+}
+
+TEST_CASE("DefinitionHandler - 'this' keyword navigates to enclosing class declaration")
+{
+    const std::string className = angel_lsp::test::GenerateRandomSymbolName("PlayerEntity");
+    const std::string code = "class " + className +
+                             " {\n"
+                             "    void Update() {\n"
+                             "        this.Update();\n"
+                             "    }\n"
+                             "}\n";
+
+    TestEnvironment env(code);
+    const size_t thisPos = code.find("this");
+    auto pos = FindPos(code, "this", thisPos);
+
+    auto def = env.DefAt(pos.line, pos.character);
+    REQUIRE(def.has_value());
+    REQUIRE(def->size() == 1);
+    CHECK((*def)[0].range.start.line == 0);
+}
+
+TEST_CASE("DefinitionHandler - Words inside multiline and verbatim strings are ignored")
+{
+    const std::string idName = angel_lsp::test::GenerateRandomSymbolName("TargetSymbol");
+    const std::string code = "int " + idName +
+                             " = 42;\n"
+                             "string ml = \"\"\"\n"
+                             "This contains " +
+                             idName +
+                             " inside\n"
+                             "\"\"\";\n"
+                             "string vb = @\"Another " +
+                             idName + " here\";\n";
+
+    TestEnvironment env(code);
+
+    const size_t mlPos = code.find(idName, code.find("\"\"\""));
+    auto posMl = FindPos(code, idName, mlPos);
+    auto defMl = env.DefAt(posMl.line, posMl.character);
+    CHECK(!defMl.has_value());
+
+    const size_t vbPos = code.find(idName, code.find("@\""));
+    auto posVb = FindPos(code, idName, vbPos);
+    auto defVb = env.DefAt(posVb.line, posVb.character);
+    CHECK(!defVb.has_value());
 }

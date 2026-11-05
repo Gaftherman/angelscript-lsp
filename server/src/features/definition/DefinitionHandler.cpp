@@ -1,381 +1,35 @@
 #include "features/definition/DefinitionHandler.h"
 
-#include "analysis/resolution/ConversionRankingEngine.h"
-#include "analysis/resolution/OverloadResolver.h"
+#include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/resolution/TargetResolution.h"
 #include "analysis/types/VirtualMixinContext.h"
 #include "config/EngineRuleConfig.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
-#include "parser/GrammarSymbols.h"
+#include "features/common/FeatureSharedUtils.h"
 #include "utils/IncludeResolver.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
-#include <cmath>
+#include <optional>
+#include <string>
 #include <string_view>
-#include <unordered_set>
 #include <vector>
 
 namespace angel_lsp::features
 {
 
 /**
- * @brief Checks if a tree-sitter node type matches a definition target.
- * @param[in] nodeType Tree-sitter node type string.
- * @return True if node is an identifier, primitive type, or scoped identifier.
- */
-static inline bool IsTargetNodeSymbol(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
-{
-    return sym == gs.symIdentifier || sym == gs.symPrimitiveType || sym == gs.symScopedIdentifier;
-}
-
-/**
- * @brief Attempts to resolve an identifier node preceding the cursor by one character.
- * @param[in] rootNode Root AST node.
- * @param[in] pos Cursor position.
- * @return AST node if preceding character lies on an identifier, or null node.
- */
-static TSNode ResolvePrecedingNodeIfIdentifier(TSNode rootNode, lsp::Position pos)
-{
-    if (pos.character == 0)
-    {
-        return TSNode{};
-    }
-    TSPoint prevPoint = {pos.line, pos.character - 1};
-    TSNode prevNode = ts_node_descendant_for_point_range(rootNode, prevPoint, prevPoint);
-    const auto& gs = parser::GetGrammarSymbols();
-    if (!ts_node_is_null(prevNode) && IsTargetNodeSymbol(ts_node_symbol(prevNode), gs))
-    {
-        return prevNode;
-    }
-    return TSNode{};
-}
-
-/**
- * @brief Safely extracts source code substring corresponding to an AST node.
- * @param[in] node AST node.
- * @param[in] sourceCode Document source string.
- * @return Extracted substring, or empty string on range error.
- */
-static std::string ExtractValidNodeText(TSNode node, const std::string& sourceCode)
-{
-    uint32_t startByte = ts_node_start_byte(node);
-    uint32_t endByte = ts_node_end_byte(node);
-    if (startByte < sourceCode.size() && endByte <= sourceCode.size() && startByte < endByte)
-    {
-        return sourceCode.substr(startByte, endByte - startByte);
-    }
-    return "";
-}
-
-/**
- * @brief Resolves identifier text and AST node at cursor position.
- * @param[in] request Definition request context.
- * @param[out] outNode Resolved AST node.
- * @return Identifier string at cursor, or empty string if not on an identifier.
- */
-static std::string GetNodeTextAt(const DefinitionRequest& request, TSNode& outNode)
-{
-    if (!request.tree || request.sourceCode.empty())
-    {
-        return "";
-    }
-
-    TSNode rootNode = ts_tree_root_node(request.tree);
-    TSPoint point = {request.position.line, request.position.character};
-    TSNode node = ts_node_descendant_for_point_range(rootNode, point, point);
-
-    if (ts_node_is_null(node))
-    {
-        return "";
-    }
-
-    if (!IsTargetNodeSymbol(ts_node_symbol(node), parser::GetGrammarSymbols()))
-    {
-        TSNode prevNode = ResolvePrecedingNodeIfIdentifier(rootNode, request.position);
-        if (!ts_node_is_null(prevNode))
-        {
-            node = prevNode;
-        }
-    }
-
-    if (!IsTargetNodeSymbol(ts_node_symbol(node), parser::GetGrammarSymbols()))
-    {
-        return "";
-    }
-
-    outNode = node;
-    return ExtractValidNodeText(node, request.sourceCode);
-}
-
-/**
- * @brief Locates the enclosing call expression node if target node represents the callee.
- * @param[in] node Target identifier node.
- * @return Enclosing call_expression node, or null node.
- */
-static TSNode FindEnclosingCallNode(TSNode node)
-{
-    TSNode parent = parser::GetParent(node);
-    if (ts_node_is_null(parent))
-    {
-        return TSNode{};
-    }
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol pType = ts_node_symbol(parent);
-    if (pType == gs.symCallExpression)
-    {
-        TSNode fn = parser::GetChildByField(parent, gs.fieldFunction);
-        if (!ts_node_is_null(fn) && (ts_node_eq(fn, node) || ts_node_start_byte(fn) == ts_node_start_byte(node)))
-        {
-            return parent;
-        }
-    }
-    else if (pType == gs.symMemberExpression || pType == gs.symScopedIdentifier)
-    {
-        TSNode grandParent = parser::GetParent(parent);
-        if (!ts_node_is_null(grandParent) && ts_node_symbol(grandParent) == gs.symCallExpression)
-        {
-            TSNode fn = parser::GetChildByField(grandParent, gs.fieldFunction);
-            if (!ts_node_is_null(fn) &&
-                (ts_node_eq(fn, parent) || ts_node_start_byte(fn) == ts_node_start_byte(parent)))
-            {
-                return grandParent;
-            }
-        }
-    }
-    return TSNode{};
-}
-
-/**
- * @brief Checks if any candidate function matches the specified call argument count.
- * @param[in] candidates Candidate symbols to inspect.
- * @param[in] argCount Call site argument count.
- * @return True if at least one candidate matches arity bounds.
- */
-static bool HasArityMatch(const std::vector<analysis::Symbol>& candidates, uint32_t argCount)
-{
-    for (const auto& sym : candidates)
-    {
-        if (std::holds_alternative<analysis::FunctionSignature>(sym.signature))
-        {
-            if (analysis::MatchesCallArity(sym.GetFunction(), argCount))
-            {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Checks if a candidate function has the same qualified name and parameter list.
- * @param[in] existing Already collected function symbol.
- * @param[in] candidate Candidate function symbol to compare against.
- * @return True if qualified name and parameter list match.
- */
-static bool IsDuplicateFunctionCandidate(const analysis::Symbol& existing, const analysis::Symbol& candidate)
-{
-    return existing.qualifiedName == candidate.qualifiedName && analysis::HasSameParameterList(existing, candidate);
-}
-
-/**
- * @brief Appends found symbols to candidates list if not already present.
- * @param[in] foundSymbols Newly located symbols.
- * @param[in,out] funcCandidates Destination candidate list.
- */
-static void AppendUniqueFunctionCandidates(const std::vector<analysis::Symbol>& foundSymbols,
-                                           std::vector<analysis::Symbol>& funcCandidates)
-{
-    for (const auto& sym : foundSymbols)
-    {
-        if (sym.type == analysis::SymbolType::Function &&
-            std::holds_alternative<analysis::FunctionSignature>(sym.signature))
-        {
-            auto isDuplicate = [&sym](const analysis::Symbol& existing)
-            { return IsDuplicateFunctionCandidate(existing, sym); };
-            if (std::none_of(funcCandidates.begin(), funcCandidates.end(), isDuplicate))
-            {
-                funcCandidates.push_back(sym);
-            }
-        }
-    }
-}
-
-/**
- * @brief Collects inherited and mixin overloads from enclosing classes when arity match fails.
- * @param[in] node AST node at cursor.
- * @param[in] request Definition request context.
- * @param[in,out] funcCandidates Function candidate list to populate.
- */
-static void CollectClassHierarchyOverloads(TSNode node, const DefinitionRequest& request,
-                                           std::vector<analysis::Symbol>& funcCandidates)
-{
-    std::string targetMethodName = ts_node_is_null(node) ? "" : parser::GetNodeText(node, request.sourceCode);
-    auto containers = analysis::GetEnclosingContainers(node, request.sourceCode);
-    for (const auto& c : containers)
-    {
-        if (c.kind != analysis::ContainerKind::Class)
-        {
-            continue;
-        }
-        std::string classKey = c.qualifiedName.empty() ? c.name : c.qualifiedName;
-        auto hierarchy = analysis::GetInheritedTypeHierarchy(classKey, request.symbolTable);
-        for (const auto& cls : hierarchy)
-        {
-            if (auto found = request.symbolTable.FindMemberSymbolPtr(cls, targetMethodName))
-            {
-                AppendUniqueFunctionCandidates(*found, funcCandidates);
-            }
-        }
-        if (auto hostSyms = request.symbolTable.FindSymbolsPtr(classKey))
-        {
-            for (const auto& hs : *hostSyms)
-            {
-                if (hs.type == analysis::SymbolType::Class &&
-                    std::holds_alternative<analysis::ClassSignature>(hs.signature))
-                {
-                    for (const auto& mixinName : hs.GetClass().includedMixins)
-                    {
-                        if (auto mixinMethods = request.symbolTable.FindMemberSymbolPtr(mixinName, targetMethodName))
-                        {
-                            AppendUniqueFunctionCandidates(*mixinMethods, funcCandidates);
-                        }
-                    }
-                }
-            }
-        }
-        break;
-    }
-}
-
-/**
- * @brief Selects the best fallback function candidate based on arity and argument scores.
- * @param[in] funcCandidates List of function candidates.
- * @param[in] argTypes Call site argument types.
- * @param[in] symbolTable Symbol table for type evaluation.
- * @return Pointer to best matching symbol, or nullptr if none score positively.
- */
-static const analysis::Symbol* FindBestFallbackCandidate(const std::vector<analysis::Symbol>& funcCandidates,
-                                                         const std::vector<std::string>& argTypes,
-                                                         const analysis::SymbolTable& symbolTable)
-{
-    return analysis::FindBestFallbackOverload(funcCandidates, argTypes, symbolTable);
-}
-
-/**
- * @brief Selects the best overload candidate symbol using ranking, fallback, or matching arity.
- * @param[in] funcCandidates List of candidate function symbols.
- * @param[in] argTypes Evaluated argument types.
- * @param[in] table Symbol table containing type hierarchies.
- * @param[in] argCount Number of call arguments.
- * @return Pointer to best matching symbol, or nullptr if no unique candidate found.
- */
-static const analysis::Symbol* SelectBestOverloadSymbol(const std::vector<analysis::Symbol>& funcCandidates,
-                                                        const std::vector<std::string>& argTypes,
-                                                        const analysis::SymbolTable& table, uint32_t argCount)
-{
-    auto match = analysis::ResolveBestOverload(funcCandidates, argTypes, table);
-    if (match.bestCandidate != nullptr)
-    {
-        return match.bestCandidate;
-    }
-    if (match.priorityCandidate != nullptr)
-    {
-        return match.priorityCandidate;
-    }
-    if (const analysis::Symbol* fallback = FindBestFallbackCandidate(funcCandidates, argTypes, table))
-    {
-        return fallback;
-    }
-    for (const auto& sym : funcCandidates)
-    {
-        if (std::holds_alternative<analysis::FunctionSignature>(sym.signature) &&
-            sym.GetFunction().parameters.size() == argCount)
-        {
-            return &sym;
-        }
-    }
-    return nullptr;
-}
-
-/**
- * @brief Filters candidate symbols for a call site down to the best matching overload.
- * @param[in] node AST node at cursor.
- * @param[in] candidates Initial candidate symbols.
- * @param[in] request Definition request context.
- * @param[in] scope Lexical scope at cursor.
- * @return Filtered vector containing the resolved overload, or original candidates.
- */
-static std::vector<analysis::Symbol> FilterOverloadsForCall(TSNode node,
-                                                            const std::vector<analysis::Symbol>& candidates,
-                                                            const DefinitionRequest& request,
-                                                            const analysis::Scope* scope)
-{
-    if (candidates.empty())
-    {
-        return candidates;
-    }
-    bool hasFunction = std::any_of(candidates.begin(), candidates.end(),
-                                   [](const auto& s) { return s.type == analysis::SymbolType::Function; });
-    if (!hasFunction)
-    {
-        return candidates;
-    }
-
-    TSNode callNode = FindEnclosingCallNode(node);
-    if (ts_node_is_null(callNode))
-    {
-        return candidates;
-    }
-
-    std::vector<std::string> argTypes =
-        analysis::ExtractCallArgumentTypes(callNode, {scope, request.symbolTable, request.sourceCode, request.uri});
-    const uint32_t argCount = static_cast<uint32_t>(argTypes.size());
-
-    std::vector<analysis::Symbol> funcCandidates;
-    for (const auto& sym : candidates)
-    {
-        if (sym.type == analysis::SymbolType::Function)
-        {
-            funcCandidates.push_back(sym);
-        }
-    }
-
-    bool hasArityMatch = HasArityMatch(funcCandidates, argCount);
-    if (!hasArityMatch)
-    {
-        CollectClassHierarchyOverloads(node, request, funcCandidates);
-    }
-
-    if (funcCandidates.size() <= 1 && hasArityMatch)
-    {
-        return candidates;
-    }
-
-    if (const analysis::Symbol* best =
-            SelectBestOverloadSymbol(funcCandidates, argTypes, request.symbolTable, argCount))
-    {
-        return {*best};
-    }
-
-    return candidates;
-}
-
-/**
- * @brief Converts a Symbol into an LSP Location, routing to virtual mixin documents if enabled.
- * @param[in] sym Resolved symbol.
- * @param[in] request Definition context containing the symbol table.
+ * @brief Formats an LSP Location from a symbol definition.
+ * @param[in] sym Target symbol.
+ * @param[in] request Definition context.
  * @return Formatted LSP Location with appropriate URI and mapped line range.
  */
 static lsp::Location MakeLocation(const analysis::Symbol& sym, const DefinitionRequest& request)
 {
     if (request.uri.starts_with("angelscript-virtual:") || request.uri.starts_with("angelscript-virtual://"))
     {
-        std::string mixinPart = analysis::SymbolTable::ExtractVirtualMixinName(request.uri);
-
+        std::string mixinPart = analysis::SymbolTable::ExtractVirtualMixinName(std::string(request.uri));
         const analysis::Symbol* mSym = nullptr;
         auto cand = request.symbolTable.FindSymbols(mixinPart);
         for (const auto& c : cand)
@@ -405,195 +59,25 @@ static lsp::Location MakeLocation(const analysis::Symbol& sym, const DefinitionR
             uint32_t mappedStartLine = analysis::SymbolTable::PhysicalToVirtualLine(sym.startLine, mSym->startLine);
             uint32_t lineDiff = sym.endLine >= sym.startLine ? (sym.endLine - sym.startLine) : 0;
             uint32_t mappedEndLine = mappedStartLine + lineDiff;
-            return lsp::Location{lsp::DocumentUri::parse(request.uri),
+            return lsp::Location{lsp::DocumentUri::parse(std::string(request.uri)),
                                  lsp::Range{lsp::Position{mappedStartLine, sym.startCharacter},
                                             lsp::Position{mappedEndLine, sym.endCharacter}}};
         }
     }
 
-    const std::string& targetUri = sym.fileUri.empty() ? request.uri : sym.fileUri;
-    return lsp::Location{
-        lsp::DocumentUri::parse(targetUri),
-        lsp::Range{lsp::Position{sym.startLine, sym.startCharacter}, lsp::Position{sym.endLine, sym.endCharacter}}};
+    const std::string targetUri = sym.fileUri.empty() ? std::string(request.uri) : sym.fileUri;
+    const bool hasFullRange = sym.fullRange.endLine != 0 || sym.fullRange.endCharacter != 0;
+    return lsp::Location{lsp::DocumentUri::parse(targetUri),
+                         hasFullRange ? common::ToLspRange(sym.fullRange)
+                                      : lsp::Range{lsp::Position{sym.startLine, sym.startCharacter},
+                                                   lsp::Position{sym.endLine, sym.endCharacter}}};
 }
 
 /**
- * @brief Extracts the full text view of a specific line from source code.
- * @param[in] sourceCode Entire document string.
- * @param[in] targetLine 0-indexed line number.
- * @return View of line characters, or empty view if out of bounds.
- */
-static std::string_view ExtractLineAt(const std::string& sourceCode, uint32_t targetLine)
-{
-    size_t start = 0;
-    for (uint32_t current = 0; current < targetLine; ++current)
-    {
-        const size_t nextBreak = sourceCode.find('\n', start);
-        if (nextBreak == std::string::npos)
-        {
-            return "";
-        }
-        start = nextBreak + 1;
-    }
-    const size_t end = sourceCode.find('\n', start);
-    const size_t lineEnd = (end == std::string::npos) ? sourceCode.size() : end;
-    return std::string_view(sourceCode.data() + start, lineEnd - start);
-}
-
-/**
- * @brief Parses include target path from a line if cursor is on an `#include` directive.
- * @param[in] line Source line text.
- * @param[in] character 0-indexed cursor character column.
- * @return Extracted raw path, or empty string if not on include directive.
- */
-static std::string ParseIncludePathFromLine(std::string_view line, size_t character)
-{
-    const auto info = angel_lsp::utils::IncludeResolver::ParseSingleLineInclude(line, character);
-    return info ? info->rawPath : std::string{};
-}
-
-/**
- * @brief Attempts to resolve definition when cursor is within an `#include` directive.
+ * @brief Converts symbol candidates to deduplicated LSP locations.
+ * @param[in] symbols Candidate symbols.
  * @param[in] request Definition request context.
- * @return Location vector pointing to the resolved include file, or nullopt.
- */
-static std::optional<std::vector<lsp::Location>> TryResolveIncludeDirective(const DefinitionRequest& request)
-{
-    if (!request.resolveInclude)
-    {
-        return std::nullopt;
-    }
-
-    std::string_view line = ExtractLineAt(request.sourceCode, request.position.line);
-    if (line.empty())
-    {
-        return std::nullopt;
-    }
-
-    std::string rawPath = ParseIncludePathFromLine(line, static_cast<size_t>(request.position.character));
-    if (rawPath.empty())
-    {
-        return std::nullopt;
-    }
-
-    std::string resolved = request.resolveInclude(rawPath);
-    if (resolved.empty())
-    {
-        return std::nullopt;
-    }
-
-    lsp::DocumentUri targetUri =
-        resolved.rfind("file://", 0) == 0 ? lsp::DocumentUri::parse(resolved) : lsp::Uri::fileUriFromPath(resolved);
-    return std::vector<lsp::Location>{lsp::Location{targetUri, lsp::Range{lsp::Position{0, 0}, lsp::Position{0, 0}}}};
-}
-
-/**
- * @brief Constructs a DefinitionContext from a DefinitionRequest.
- * @param[in] request Definition request.
- * @return Initialized DefinitionContext.
- */
-static DefinitionContext MakeDefinitionContext(const DefinitionRequest& request)
-{
-    analysis::VirtualMixinContext vCtx = analysis::ResolveVirtualMixinContext(request.uri, request.symbolTable);
-    auto rootScope = request.scopeIndex.GetRoot(analysis::ResolvePhysicalUri(vCtx, request.uri));
-    uint32_t queryLine = analysis::ResolvePhysicalLine(vCtx, request.position.line);
-    return DefinitionContext{request, std::move(vCtx), std::move(rootScope), queryLine};
-}
-
-/**
- * @brief Checks if cursor node is the member child of an enclosing member_expression.
- * @param[in] node Cursor node.
- * @return True if node is the member field of a member_expression.
- */
-static bool IsMemberChildOfExpression(TSNode node)
-{
-    TSNode parent = parser::GetParent(node);
-    const auto& gs = parser::GetGrammarSymbols();
-    if (!ts_node_is_null(parent) && ts_node_symbol(parent) == gs.symMemberExpression)
-    {
-        TSNode memNode = parser::GetChildByField(parent, gs.fieldMember);
-        if (!ts_node_is_null(memNode) &&
-            (ts_node_eq(memNode, node) || ts_node_start_byte(memNode) == ts_node_start_byte(node)))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Resolves member symbols in the receiver's type hierarchy.
- * @param[in] receiverTypeName Clean receiver class name.
- * @param[in] nodeText Member name identifier.
- * @param[in] symbolTable Global symbol table.
- * @return Vector of matched member symbols.
- */
-static std::vector<analysis::Symbol> FindMemberSymbolsInHierarchy(const std::string& receiverTypeName,
-                                                                  const std::string& nodeText,
-                                                                  const analysis::SymbolTable& symbolTable)
-{
-    auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverTypeName, symbolTable);
-    std::vector<analysis::Symbol> enumFallback;
-    for (const auto& typeName : hierarchy)
-    {
-        std::string qualifiedMember = utils::JoinScopedName(typeName, nodeText);
-        auto found = symbolTable.FindSymbols(qualifiedMember);
-        std::erase_if(found, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::CallReference; });
-        if (!found.empty())
-        {
-            std::stable_partition(found.begin(), found.end(),
-                                  [](const analysis::Symbol& s)
-                                  {
-                                      if (s.type == analysis::SymbolType::Variable &&
-                                          std::holds_alternative<analysis::VariableSignature>(s.signature))
-                                      {
-                                          return !s.GetVariable().isEnumConstant;
-                                      }
-                                      return true;
-                                  });
-            const bool hasInstance =
-                std::any_of(found.begin(), found.end(),
-                            [](const analysis::Symbol& s)
-                            {
-                                return !(s.type == analysis::SymbolType::Variable &&
-                                         std::holds_alternative<analysis::VariableSignature>(s.signature) &&
-                                         s.GetVariable().isEnumConstant);
-                            });
-            if (hasInstance)
-            {
-                return found;
-            }
-            if (enumFallback.empty())
-            {
-                enumFallback = std::move(found);
-            }
-        }
-    }
-    for (const auto& typeName : hierarchy)
-    {
-        auto accessors = analysis::FindPropertyAccessors(typeName, nodeText, symbolTable, false);
-        if (!accessors.empty())
-        {
-            return accessors;
-        }
-    }
-    if (!enumFallback.empty())
-    {
-        return enumFallback;
-    }
-    auto directMatches = symbolTable.FindMemberSymbols(receiverTypeName, nodeText);
-    if (!directMatches.empty())
-    {
-        return directMatches;
-    }
-    return {};
-}
-
-/**
- * @brief Converts matching symbols into LSP Location structures.
- * @param[in] symbols Vector of symbols to convert.
- * @param[in] request Definition request context.
- * @return Formatted LSP Location vector.
+ * @return Formatted and deduplicated LSP Location vector.
  */
 static std::vector<lsp::Location> ConvertSymbolsToLocations(const std::vector<analysis::Symbol>& symbols,
                                                             const DefinitionRequest& request)
@@ -622,11 +106,7 @@ static std::vector<lsp::Location> ConvertSymbolsToLocations(const std::vector<an
             bool duplicate = false;
             for (const auto& existing : locations)
             {
-                if (existing.uri.toString() == loc.uri.toString() &&
-                    existing.range.start.line == loc.range.start.line &&
-                    existing.range.start.character == loc.range.start.character &&
-                    existing.range.end.line == loc.range.end.line &&
-                    existing.range.end.character == loc.range.end.character)
+                if (existing.uri.toString() == loc.uri.toString() && common::SameRange(existing.range, loc.range))
                 {
                     duplicate = true;
                     break;
@@ -642,668 +122,40 @@ static std::vector<lsp::Location> ConvertSymbolsToLocations(const std::vector<an
 }
 
 /**
- * @brief Normalizes receiver type name to a fully qualified symbol table name if available.
- * @param[in] receiverTypeName Initial receiver type name.
- * @param[in] symbolTable Symbol table for type lookup.
- * @return Resolved type name or original input string.
- */
-static std::string NormalizeReceiverTypeName(std::string receiverTypeName, const analysis::SymbolTable& symbolTable)
-{
-    return symbolTable.QualifyShortTypeName(receiverTypeName);
-}
-
-/**
- * @brief Attempts to resolve member expression definition on receiver object.
- * @param[in] node Cursor node.
- * @param[in] nodeText Member name.
- * @param[in] ctx Definition context.
- * @return Resolved member locations, or nullopt.
- */
-static std::optional<std::vector<lsp::Location>> TryResolveMemberDefinition(TSNode node, const std::string& nodeText,
-                                                                            const DefinitionContext& ctx)
-{
-    TSNode parent = parser::GetParent(node);
-    const auto& gs = parser::GetGrammarSymbols();
-    if (ts_node_is_null(parent) || ts_node_symbol(parent) != gs.symMemberExpression)
-    {
-        return std::nullopt;
-    }
-
-    TSNode objectNode = parser::GetChildByField(parent, gs.fieldObject);
-    if (ts_node_is_null(objectNode))
-    {
-        return std::nullopt;
-    }
-
-    const analysis::Scope* scope =
-        ctx.rootScope ? FindInnermostScope(ctx.rootScope.get(), ctx.queryLine, ctx.request.position.character)
-                      : nullptr;
-    std::string receiverTypeName = analysis::ResolveReceiverType(
-        objectNode, ctx.request.sourceCode, ctx.request.symbolTable,
-        {scope, ctx.vCtx.hostClass, ctx.request.uri, ctx.request.symbolTable.GetDefaultArrayType(), nullptr,
-         ctx.request.engineRules});
-
-    if (receiverTypeName.empty())
-    {
-        return std::nullopt;
-    }
-
-    receiverTypeName = NormalizeReceiverTypeName(std::move(receiverTypeName), ctx.request.symbolTable);
-    auto memberSymbols = FindMemberSymbolsInHierarchy(receiverTypeName, nodeText, ctx.request.symbolTable);
-    memberSymbols = FilterOverloadsForCall(node, memberSymbols, ctx.request, scope);
-
-    auto memLocations = ConvertSymbolsToLocations(memberSymbols, ctx.request);
-    if (!memLocations.empty())
-    {
-        return memLocations;
-    }
-    return std::nullopt;
-}
-
-/**
- * @brief Constructs an LSP Location for a local definition, taking virtual line offsets into account.
- * @param[in] def Local definition information.
- * @param[in] ctx Definition context.
- * @return Formatted LSP Location.
- */
-static lsp::Location MakeLocalDefinitionLocation(const analysis::LocalDefinition& def, const DefinitionContext& ctx)
-{
-    uint32_t sLine = (def.fullEndLine > 0 || def.fullEndCharacter > 0) ? def.fullStartLine : def.startLine;
-    uint32_t sChar = (def.fullEndLine > 0 || def.fullEndCharacter > 0) ? def.fullStartCharacter : def.startCharacter;
-    uint32_t eLine = (def.fullEndLine > 0 || def.fullEndCharacter > 0) ? def.fullEndLine : def.endLine;
-    uint32_t eChar = (def.fullEndLine > 0 || def.fullEndCharacter > 0) ? def.fullEndCharacter : def.endCharacter;
-
-    if (ctx.vCtx.isVirtual && ctx.vCtx.mixinSymbol.has_value())
-    {
-        sLine = analysis::SymbolTable::PhysicalToVirtualLine(sLine, ctx.vCtx.mixinSymbol->startLine);
-        eLine = analysis::SymbolTable::PhysicalToVirtualLine(eLine, ctx.vCtx.mixinSymbol->startLine);
-    }
-
-    return lsp::Location{lsp::DocumentUri::parse(ctx.request.uri),
-                         lsp::Range{lsp::Position{sLine, sChar}, lsp::Position{eLine, eChar}}};
-}
-
-/**
- * @brief Attempts to resolve definition of a local variable or parameter declared in a function.
- * @param[in] nodeText Symbol name.
- * @param[in] ctx Definition context.
- * @return Resolved local definition location, or nullopt.
- */
-static std::optional<std::vector<lsp::Location>> TryResolveLocalDefinition(TSNode node, const std::string& nodeText,
-                                                                           const DefinitionContext& ctx)
-{
-    if (!ctx.rootScope)
-    {
-        return std::nullopt;
-    }
-    const analysis::Scope* scope =
-        FindInnermostScope(ctx.rootScope.get(), ctx.queryLine, ctx.request.position.character);
-    if (!scope)
-    {
-        return std::nullopt;
-    }
-    uint32_t cursorByte = !ts_node_is_null(node) ? ts_node_start_byte(node) : UINT32_MAX;
-    const analysis::Scope* owner = nullptr;
-    const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, nodeText, cursorByte, &owner);
-    if (def &&
-        (def->kind == analysis::LocalDefinitionKind::Parameter ||
-         def->kind == analysis::LocalDefinitionKind::Variable) &&
-        analysis::IsDeclaredInFunctionScope(owner))
-    {
-        return std::vector<lsp::Location>{MakeLocalDefinitionLocation(*def, ctx)};
-    }
-    return std::nullopt;
-}
-
-/**
- * @brief Attempts to resolve definition in contextual member or local scopes.
- * @param[in] node Cursor node.
- * @param[in] nodeText Symbol text.
- * @param[in] ctx Definition context.
- * @return Resolved location vector, or nullopt.
- */
-static std::optional<std::vector<lsp::Location>>
-TryResolveContextualDefinition(TSNode node, const std::string& nodeText, const DefinitionContext& ctx)
-{
-    bool isMemberChild = IsMemberChildOfExpression(node);
-    if (isMemberChild)
-    {
-        if (auto memberLocs = TryResolveMemberDefinition(node, nodeText, ctx))
-        {
-            return memberLocs;
-        }
-    }
-    if (auto localLoc = TryResolveLocalDefinition(node, nodeText, ctx))
-    {
-        return localLoc;
-    }
-    if (!isMemberChild)
-    {
-        if (auto memberLocs = TryResolveMemberDefinition(node, nodeText, ctx))
-        {
-            return memberLocs;
-        }
-    }
-    return std::nullopt;
-}
-
-/**
- * @brief Finds symbols in scope or global property accessors for an identifier node.
- * @param[in] node Cursor node.
- * @param[in] nodeText Symbol text.
+ * @brief Attempts to resolve definition when cursor is within an `#include` directive.
  * @param[in] request Definition request context.
- * @return Vector of matched symbols.
+ * @return Location vector pointing to the resolved include file, or nullopt.
  */
-static std::vector<analysis::Symbol> FindSymbolsForNode(TSNode node, const std::string& nodeText,
-                                                        const DefinitionRequest& request)
+static std::optional<std::vector<lsp::Location>> TryResolveIncludeDirective(const DefinitionRequest& request)
 {
-    std::vector<analysis::Symbol> symbols;
-    bool isExplicitlyScoped = false;
-    TSNode parent = parser::GetParent(node);
-    if (!ts_node_is_null(parent))
-    {
-        const auto& gs = parser::GetGrammarSymbols();
-        const TSSymbol pSym = ts_node_symbol(parent);
-        if (pSym == gs.symScopedIdentifier || pSym == gs.symScope)
-        {
-            const uint32_t pStart = ts_node_start_byte(parent);
-            const uint32_t pEnd = ts_node_end_byte(node);
-            if (pStart < request.sourceCode.size() && pEnd <= request.sourceCode.size() && pStart < pEnd)
-            {
-                const std::string scopedText = request.sourceCode.substr(pStart, pEnd - pStart);
-                symbols = analysis::FindSymbolsInScope(scopedText, node, request.sourceCode, request.symbolTable);
-                isExplicitlyScoped = utils::ContainsScopeSeparator(scopedText);
-            }
-        }
-        else if (pSym == gs.symDatatype)
-        {
-            const std::string prefix = analysis::ExtractDatatypeScopePrefix(parent, request.sourceCode);
-            if (!prefix.empty())
-            {
-                symbols =
-                    analysis::FindSymbolsInScope(prefix + nodeText, node, request.sourceCode, request.symbolTable);
-                isExplicitlyScoped = true;
-            }
-        }
-    }
-
-    if (symbols.empty() && !isExplicitlyScoped)
-    {
-        symbols = analysis::FindSymbolsInScope(nodeText, node, request.sourceCode, request.symbolTable);
-    }
-    if (symbols.empty() && !isExplicitlyScoped)
-    {
-        symbols = analysis::FindGlobalPropertyAccessors(nodeText, request.symbolTable, false);
-    }
-    return symbols;
-}
-
-/**
- * @brief Finds symbols or accessors from the host class and its type hierarchy.
- * @param[in] hostClass Qualified host class name.
- * @param[in] nodeText Target symbol identifier.
- * @param[in] symbolTable Global symbol table.
- * @return Matched host class symbols.
- */
-static std::vector<analysis::Symbol> FindHostClassSymbols(const std::string& hostClass, const std::string& nodeText,
-                                                          const analysis::SymbolTable& symbolTable)
-{
-    auto hier = analysis::GetInheritedTypeHierarchy(hostClass, symbolTable);
-    for (const auto& cls : hier)
-    {
-        auto found = symbolTable.FindMemberSymbols(cls, nodeText);
-        if (!found.empty())
-        {
-            return found;
-        }
-    }
-    for (const auto& cls : hier)
-    {
-        auto accessors = analysis::FindPropertyAccessors(cls, nodeText, symbolTable, false);
-        if (!accessors.empty())
-        {
-            return accessors;
-        }
-    }
-    return {};
-}
-
-/**
- * @brief Appends host class hierarchy symbols when resolving within a virtual mixin document.
- * @param[in,out] symbols Symbol candidate list.
- * @param[in] nodeText Symbol identifier text.
- * @param[in] ctx Definition context.
- */
-static void AppendHostClassHierarchySymbols(std::vector<analysis::Symbol>& symbols, TSNode node,
-                                            const std::string& nodeText, const DefinitionContext& ctx)
-{
-    std::string hostClass;
-    if (ctx.vCtx.isVirtual && !ctx.vCtx.hostClass.empty())
-    {
-        hostClass = ctx.vCtx.hostClass;
-    }
-    else
-    {
-        hostClass = analysis::InferHostClassFromEnclosingMixin(node, ctx.request.sourceCode, ctx.request.symbolTable);
-    }
-    if (hostClass.empty())
-    {
-        return;
-    }
-    auto hostSymbols = FindHostClassSymbols(hostClass, nodeText, ctx.request.symbolTable);
-    if (hostSymbols.empty())
-    {
-        return;
-    }
-    std::vector<analysis::Symbol> containerSymbols;
-    for (const auto& s : symbols)
-    {
-        if (!s.containerName.empty() || s.fileUri == ctx.request.uri)
-        {
-            containerSymbols.push_back(s);
-        }
-    }
-    symbols = std::move(containerSymbols);
-
-    for (auto& hs : hostSymbols)
-    {
-        auto isMatch = [&hs](const analysis::Symbol& s)
-        { return s.name == hs.name && analysis::HasSameParameterList(s, hs); };
-        if (std::none_of(symbols.begin(), symbols.end(), isMatch))
-        {
-            symbols.push_back(std::move(hs));
-        }
-    }
-}
-
-/**
- * @brief Resolves candidate symbols and filters overloads for the cursor call site.
- * @param[in] node AST node at cursor.
- * @param[in] nodeText Symbol name.
- * @param[in] ctx Definition context.
- * @return Filtered vector of candidate symbols.
- */
-static std::vector<analysis::Symbol> ResolveCandidateSymbols(TSNode node, const std::string& nodeText,
-                                                             const DefinitionContext& ctx)
-{
-    const auto gsq = parser::GetGlobalScopeQualifier(node, ctx.request.sourceCode);
-    std::vector<analysis::Symbol> symbols = FindSymbolsForNode(node, nodeText, ctx.request);
-    if (!gsq.isGlobal)
-    {
-        AppendHostClassHierarchySymbols(symbols, node, nodeText, ctx);
-    }
-    const analysis::Scope* scope =
-        ctx.rootScope ? FindInnermostScope(ctx.rootScope.get(), ctx.queryLine, ctx.request.position.character)
-                      : nullptr;
-    symbols = FilterOverloadsForCall(node, symbols, ctx.request, scope);
-    std::erase_if(symbols, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::CallReference; });
-    if (gsq.isGlobal && gsq.isDirectRoot)
-    {
-        std::erase_if(symbols, [](const analysis::Symbol& s) { return !s.containerName.empty(); });
-    }
-    return symbols;
-}
-
-/**
- * @brief Fallback lookup for definitions in local scope outside of functions (e.g. fields).
- * @param[in] nodeText Symbol name.
- * @param[in] ctx Definition context.
- * @return Resolved definition locations, or nullopt.
- */
-static std::optional<std::vector<lsp::Location>>
-TryResolveLocalDefinitionFallback(TSNode node, const std::string& nodeText, const DefinitionContext& ctx)
-{
-    if (!ctx.rootScope)
-    {
-        return std::nullopt;
-    }
-    const analysis::Scope* scope =
-        FindInnermostScope(ctx.rootScope.get(), ctx.queryLine, ctx.request.position.character);
-    if (!scope)
-    {
-        return std::nullopt;
-    }
-    uint32_t cursorByte = !ts_node_is_null(node) ? ts_node_start_byte(node) : UINT32_MAX;
-    const analysis::Scope* owner = nullptr;
-    if (const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, nodeText, cursorByte, &owner))
-    {
-        if (def->kind == analysis::LocalDefinitionKind::Parameter && !analysis::IsDeclaredInFunctionScope(owner))
-        {
-            return std::nullopt;
-        }
-        return std::vector<lsp::Location>{MakeLocalDefinitionLocation(*def, ctx)};
-    }
-    return std::nullopt;
-}
-
-/**
- * @brief Resolves definition for 'this', 'self', or 'BaseClass' keywords to the target class.
- * @param[in] node AST node at cursor.
- * @param[in] nodeText Keyword identifier text.
- * @param[in] ctx Definition context.
- * @return Locations pointing to the class or interface, or nullopt.
- */
-static std::optional<std::vector<lsp::Location>> TryResolveThisKeyword(TSNode node, const DefinitionContext& ctx)
-{
-    std::string hostClass;
-    if (ctx.vCtx.isVirtual && !ctx.vCtx.hostClass.empty())
-    {
-        hostClass = ctx.vCtx.hostClass;
-    }
-    else
-    {
-        hostClass = analysis::InferHostClassFromEnclosingMixin(node, ctx.request.sourceCode, ctx.request.symbolTable);
-    }
-    if (hostClass.empty())
-    {
-        auto containers = analysis::GetEnclosingContainers(node, ctx.request.sourceCode);
-        for (const auto& c : containers)
-        {
-            if (c.kind == analysis::ContainerKind::Class || c.kind == analysis::ContainerKind::Interface)
-            {
-                hostClass = c.qualifiedName.empty() ? c.name : c.qualifiedName;
-                break;
-            }
-        }
-    }
-    if (hostClass.empty())
-    {
-        return std::nullopt;
-    }
-    std::vector<lsp::Location> locations;
-    auto cands = ctx.request.symbolTable.FindSymbols(hostClass);
-    for (const auto& c : cands)
-    {
-        if (c.type == analysis::SymbolType::Class || c.type == analysis::SymbolType::Interface)
-        {
-            locations.push_back(MakeLocation(c, ctx.request));
-        }
-    }
-    if (!locations.empty())
-    {
-        return locations;
-    }
-    return std::nullopt;
-}
-
-static std::optional<std::vector<lsp::Location>>
-TryResolveDelegatePropertyDefinition(TSNode node, const std::string& nodeText, const DefinitionContext& ctx)
-{
-    if (!analysis::IsBaseClassDelegateProperty(nodeText, ctx.request.symbolTable, ctx.request.engineRules))
-    {
-        return std::nullopt;
-    }
-    std::string baseClass = analysis::ResolveDelegateTargetBaseClass(
-        {node, ctx.request.sourceCode, ctx.request.symbolTable, ctx.vCtx.isVirtual ? ctx.vCtx.hostClass : "",
-         ctx.request.engineRules});
-    if (baseClass.empty())
-    {
-        return std::nullopt;
-    }
-    std::vector<lsp::Location> locations;
-    for (const auto& c : ctx.request.symbolTable.FindSymbols(baseClass))
-    {
-        if (c.type == analysis::SymbolType::Class || c.type == analysis::SymbolType::Interface)
-        {
-            locations.push_back(MakeLocation(c, ctx.request));
-        }
-    }
-    if (!locations.empty())
-    {
-        return locations;
-    }
-    return std::nullopt;
-}
-
-/**
- * @brief Resolves the enclosing class or interface name for overridden method resolution.
- * @param[in] ctx Definition context.
- * @return Qualified or bare class/interface name, or empty string.
- */
-static std::string ResolveTargetContainerClass(const DefinitionContext& ctx)
-{
-    if (ctx.vCtx.isVirtual && !ctx.vCtx.hostClass.empty())
-    {
-        return ctx.vCtx.hostClass;
-    }
-    const std::string physUri = analysis::ResolvePhysicalUri(ctx.vCtx, ctx.request.uri);
-    return ctx.request.symbolTable.FindEnclosingClassName(physUri, ctx.queryLine);
-}
-
-/**
- * @brief Filters candidate symbols matching parameter count of the declaration.
- * @param[in] symbols Base method candidates.
- * @param[in] declNode Enclosing declaration node.
- * @return Filtered symbols if any match, or original candidates.
- */
-static std::vector<analysis::Symbol> FilterOverriddenSymbolsByArity(const std::vector<analysis::Symbol>& symbols,
-                                                                    TSNode declNode)
-{
-    TSNode paramsNode = parser::GetChildByField(declNode, parser::GetGrammarSymbols().fieldParameters);
-    uint32_t declaredParamCount = !ts_node_is_null(paramsNode) ? ts_node_named_child_count(paramsNode) : 0;
-
-    std::vector<analysis::Symbol> prioritized;
-    for (const auto& s : symbols)
-    {
-        if (s.type == analysis::SymbolType::Function &&
-            std::holds_alternative<analysis::FunctionSignature>(s.signature) &&
-            s.GetFunction().parameters.size() == declaredParamCount)
-        {
-            prioritized.push_back(s);
-        }
-    }
-    return prioritized.empty() ? symbols : prioritized;
-}
-
-/**
- * @brief Attempts to resolve definition of an overridden method in base classes or interfaces.
- * @param[in] node AST node at cursor.
- * @param[in] declNode Enclosing declaration node.
- * @param[in] ctx Definition context.
- * @return Resolved base method location(s), or nullopt.
- */
-static std::optional<std::vector<lsp::Location>> TryResolveOverriddenMethodDefinition(TSNode node, TSNode declNode,
-                                                                                      const DefinitionContext& ctx)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol declSym = ts_node_symbol(declNode);
-    if (declSym != gs.symFuncDeclaration && declSym != gs.symInterfaceMethod)
+    if (!request.resolveInclude)
     {
         return std::nullopt;
     }
 
-    std::string methodName = parser::GetNodeText(node, ctx.request.sourceCode);
-    if (methodName.empty())
+    std::string_view line = common::ExtractLineAt(request.sourceCode, request.position.line);
+    if (line.empty())
     {
         return std::nullopt;
     }
 
-    std::string targetClass = ResolveTargetContainerClass(ctx);
-    if (targetClass.empty())
+    const auto info = angel_lsp::utils::IncludeResolver::ParseSingleLineInclude(
+        line, static_cast<size_t>(request.position.character));
+    if (!info || info->rawPath.empty())
     {
         return std::nullopt;
     }
 
-    analysis::LinkedBaseOptions linkedOpts;
-    if (ctx.request.engineRules)
-    {
-        linkedOpts.proxyMap = &ctx.request.engineRules->unusedRules.baseClassProxyMap;
-        linkedOpts.delegateProps = ctx.request.engineRules->unusedRules.baseClassDelegateProperties;
-    }
-
-    auto overriddenSyms =
-        analysis::FindOverriddenBaseMethodSymbols(targetClass, methodName, ctx.request.symbolTable, linkedOpts);
-    if (overriddenSyms.empty())
+    std::string resolved = request.resolveInclude(info->rawPath);
+    if (resolved.empty())
     {
         return std::nullopt;
     }
 
-    auto finalCandidates = FilterOverriddenSymbolsByArity(overriddenSyms, declNode);
-    auto locations = ConvertSymbolsToLocations(finalCandidates, ctx.request);
-    return locations.empty() ? std::nullopt : std::make_optional(std::move(locations));
-}
-
-/**
- * @brief Fallback when cursor is on a declaration: returns its own range so editor highlights it.
- * @param[in] node AST node at cursor.
- * @param[in] ctx Definition context.
- * @return Location for declaration, or nullopt.
- */
-static std::optional<std::vector<lsp::Location>> TryResolveDeclarationFallback(TSNode node,
-                                                                               const DefinitionContext& ctx)
-{
-    if (ts_node_is_null(node))
-    {
-        return std::nullopt;
-    }
-    TSNode p = parser::GetParent(node);
-    if (ts_node_is_null(p))
-    {
-        return std::nullopt;
-    }
-    const auto& gs = parser::GetGrammarSymbols();
-    TSSymbol pSym = ts_node_symbol(p);
-    if (pSym == gs.symScopedIdentifier)
-    {
-        TSNode gp = parser::GetParent(p);
-        if (!ts_node_is_null(gp))
-        {
-            p = gp;
-            pSym = ts_node_symbol(p);
-        }
-    }
-    if (!parser::IsDeclarationSymbol(pSym))
-    {
-        return std::nullopt;
-    }
-    TSNode nameNode = parser::GetChildByField(p, parser::GetGrammarSymbols().fieldName);
-    if (!ts_node_is_null(nameNode) && !ts_node_eq(nameNode, node) &&
-        ts_node_start_byte(nameNode) != ts_node_start_byte(node))
-    {
-        return std::nullopt;
-    }
-
-    if (auto overriddenLocs = TryResolveOverriddenMethodDefinition(node, p, ctx))
-    {
-        return overriddenLocs;
-    }
-    TSPoint s = ts_node_start_point(node);
-    TSPoint e = ts_node_end_point(node);
-    uint32_t sLine = s.row;
-    uint32_t sChar = s.column;
-    uint32_t eLine = e.row;
-    uint32_t eChar = e.column;
-    if (ctx.vCtx.isVirtual && ctx.vCtx.mixinSymbol.has_value())
-    {
-        sLine = analysis::SymbolTable::PhysicalToVirtualLine(sLine, ctx.vCtx.mixinSymbol->startLine);
-        eLine = analysis::SymbolTable::PhysicalToVirtualLine(eLine, ctx.vCtx.mixinSymbol->startLine);
-    }
+    lsp::DocumentUri targetUri =
+        resolved.rfind("file://", 0) == 0 ? lsp::DocumentUri::parse(resolved) : lsp::Uri::fileUriFromPath(resolved);
     return std::vector<lsp::Location>{
-        lsp::Location{lsp::DocumentUri::parse(ctx.request.uri),
-                      lsp::Range{lsp::Position{sLine, sChar}, lsp::Position{eLine, eChar}}}};
-}
-
-/**
- * @brief Resolves type name from local scope definition.
- * @param[in] nodeText Symbol name under cursor.
- * @param[in] request Definition request context.
- * @return Clean base type name, or empty string if not found.
- */
-static std::string ResolveLocalScopeTypeName(TSNode node, const std::string& nodeText, const DefinitionRequest& request)
-{
-    auto rootScope = request.scopeIndex.GetRoot(request.uri);
-    if (!rootScope)
-    {
-        return "";
-    }
-    const analysis::Scope* scope =
-        FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
-    if (!scope)
-    {
-        return "";
-    }
-    uint32_t cursorByte = !ts_node_is_null(node) ? ts_node_start_byte(node) : UINT32_MAX;
-    const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, nodeText, cursorByte);
-    if (def && !def->typeName.empty())
-    {
-        return analysis::CleanBaseType(def->typeName);
-    }
-    return "";
-}
-
-/**
- * @brief Resolves type name from global symbol table entries matching symbol name.
- * @param[in] node AST node at cursor.
- * @param[in] nodeText Symbol name under cursor.
- * @param[in] request Definition request context.
- * @return Clean base type name, or empty string if not found.
- */
-static std::string ResolveGlobalSymbolTypeName(TSNode node, const std::string& nodeText,
-                                               const DefinitionRequest& request)
-{
-    auto symbols = request.symbolTable.FindSymbols(nodeText);
-    if (symbols.empty() && !ts_node_is_null(node))
-    {
-        symbols = analysis::FindSymbolsInScope(nodeText, node, request.sourceCode, request.symbolTable);
-    }
-    for (const auto& sym : symbols)
-    {
-        if (sym.type == analysis::SymbolType::Variable)
-        {
-            const auto& var = sym.GetVariable();
-            if (!var.typeName.empty())
-            {
-                return analysis::CleanBaseType(var.typeName);
-            }
-        }
-        else if (sym.type == analysis::SymbolType::Function)
-        {
-            const auto& fn = sym.GetFunction();
-            if (!fn.returnType.empty())
-            {
-                return analysis::CleanBaseType(fn.returnType);
-            }
-        }
-        else if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface ||
-                 sym.type == analysis::SymbolType::Enum || sym.type == analysis::SymbolType::Typedef ||
-                 sym.type == analysis::SymbolType::Funcdef)
-        {
-            return sym.name;
-        }
-    }
-    return "";
-}
-
-/**
- * @brief Resolves type name from global property accessors matching symbol name.
- * @param[in] node AST node at cursor.
- * @param[in] nodeText Symbol name under cursor.
- * @param[in] request Definition request context.
- * @return Clean base type name, or empty string if not found.
- */
-static std::string ResolveAccessorTypeName(TSNode node, const std::string& nodeText, const DefinitionRequest& request)
-{
-    auto accessors = analysis::FindGlobalPropertyAccessors(nodeText, request.symbolTable);
-    if (accessors.empty() && !ts_node_is_null(node))
-    {
-        for (const auto prefix : {"get_", "set_"})
-        {
-            for (const auto& sym :
-                 analysis::FindSymbolsInScope(prefix + nodeText, node, request.sourceCode, request.symbolTable))
-            {
-                if (sym.type == analysis::SymbolType::Function)
-                {
-                    accessors.push_back(sym);
-                }
-            }
-        }
-    }
-    const std::string propType = analysis::PropertyTypeFromAccessors(accessors);
-    if (!propType.empty())
-    {
-        return analysis::CleanBaseType(propType);
-    }
-    return "";
+        lsp::Location{std::move(targetUri), lsp::Range{lsp::Position{0, 0}, lsp::Position{0, 0}}}};
 }
 
 /**
@@ -1311,7 +163,7 @@ static std::string ResolveAccessorTypeName(TSNode node, const std::string& nodeT
  * @param[in] type Symbol type enum.
  * @return True if Class, Interface, Enum, Typedef, or Funcdef.
  */
-static inline bool IsTypeDefType(analysis::SymbolType type)
+static inline bool IsTypeDefType(analysis::SymbolType type) noexcept
 {
     return type == analysis::SymbolType::Class || type == analysis::SymbolType::Interface ||
            type == analysis::SymbolType::Enum || type == analysis::SymbolType::Typedef ||
@@ -1319,164 +171,367 @@ static inline bool IsTypeDefType(analysis::SymbolType type)
 }
 
 /**
- * @brief Collects symbols defining the specified type name.
- * @param[in] node AST node at cursor.
- * @param[in] typeNameToFind Clean target type name.
- * @param[in] request Definition request context.
- * @return Vector of matching type definition symbols.
+ * @brief Finds innermost enclosing namespace for a source position.
+ * @param[in] uri Document URI.
+ * @param[in] line Document line number.
+ * @param[in] table Symbol table.
+ * @return Qualified enclosing namespace name, or empty string.
  */
-static std::vector<analysis::Symbol> CollectTypeDefinitionSymbols(TSNode node, const std::string& typeNameToFind,
-                                                                  const DefinitionRequest& request)
+static std::string FindEnclosingNamespace(std::string_view uri, uint32_t line, const analysis::SymbolTable& table)
 {
-    std::vector<analysis::Symbol> typeSymbols = request.symbolTable.FindSymbols(typeNameToFind);
-    if (typeSymbols.empty() && !ts_node_is_null(node))
-    {
-        for (const auto& sym :
-             analysis::FindSymbolsInScope(typeNameToFind, node, request.sourceCode, request.symbolTable))
-        {
-            if (IsTypeDefType(sym.type))
-            {
-                typeSymbols.push_back(sym);
-            }
-        }
-    }
-    if (typeSymbols.empty())
-    {
-        typeSymbols = request.symbolTable.FindTypeSymbolsByShortName(typeNameToFind);
-    }
-    return typeSymbols;
-}
-
-static void FilterByEnclosingEnumContainer(std::vector<analysis::Symbol>& symbols, TSNode node,
-                                           std::string_view sourceCode)
-{
-    if (symbols.size() <= 1)
-    {
-        return;
-    }
-    auto containers = analysis::GetEnclosingContainers(node, sourceCode);
-    for (const auto& cont : containers)
-    {
-        if (cont.kind == analysis::ContainerKind::Enum)
-        {
-            std::vector<analysis::Symbol> enumMatches;
-            for (const auto& s : symbols)
-            {
-                if (s.containerName == cont.qualifiedName || s.containerName == cont.name)
-                {
-                    enumMatches.push_back(s);
-                }
-            }
-            if (!enumMatches.empty())
-            {
-                symbols = std::move(enumMatches);
-                return;
-            }
-        }
-    }
-}
-
-static void FilterByEnclosingNamespaceContainer(std::vector<analysis::Symbol>& symbols, TSNode node,
-                                                std::string_view sourceCode)
-{
-    if (symbols.size() <= 1)
-    {
-        return;
-    }
-    auto containers = analysis::GetEnclosingContainers(node, sourceCode);
-    for (const auto& cont : containers)
-    {
-        if (cont.kind == analysis::ContainerKind::Namespace)
-        {
-            std::vector<analysis::Symbol> nsMatches;
-            for (const auto& s : symbols)
-            {
-                if (analysis::IsSameOrNestedNamespace(s.containerName, cont.qualifiedName) ||
-                    analysis::IsSameOrNestedNamespace(utils::ParentScopeView(s.containerName), cont.qualifiedName))
-                {
-                    nsMatches.push_back(s);
-                }
-            }
-            if (!nsMatches.empty())
-            {
-                symbols = std::move(nsMatches);
-                return;
-            }
-        }
-    }
-}
-
-static void DeduplicateEnumMemberSymbols(std::vector<analysis::Symbol>& symbols)
-{
-    if (symbols.size() <= 1)
-    {
-        return;
-    }
-    bool allEnum = std::all_of(symbols.begin(), symbols.end(), [](const analysis::Symbol& s)
-                               { return s.containerKind == analysis::ContainerKind::Enum; });
-    if (!allEnum)
-    {
-        return;
-    }
-    std::vector<analysis::Symbol> scopedOnly;
-    for (const auto& s : symbols)
-    {
-        if (utils::ContainsScopeSeparator(s.containerName))
-        {
-            scopedOnly.push_back(s);
-        }
-    }
-    if (scopedOnly.size() == 1)
-    {
-        symbols = std::move(scopedOnly);
-    }
+    std::string enclosingNs;
+    uint32_t bestSpan = UINT32_MAX;
+    const std::string fileUri(uri);
+    table.ForEachSymbolInFile(fileUri,
+                              [&]([[maybe_unused]] const std::string& key, const std::vector<analysis::Symbol>& symbols)
+                              {
+                                  for (const auto& sym : symbols)
+                                  {
+                                      if (sym.type != analysis::SymbolType::Namespace ||
+                                          (sym.fileUri != uri && utils::PathToUri(sym.fileUri) != uri))
+                                      {
+                                          continue;
+                                      }
+                                      const auto range =
+                                          sym.fullRange.endLine != 0 ? sym.fullRange : sym.selectionRange;
+                                      if (line >= range.startLine && line <= range.endLine)
+                                      {
+                                          const uint32_t span = range.endLine - range.startLine;
+                                          if (span <= bestSpan)
+                                          {
+                                              bestSpan = span;
+                                              enclosingNs = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                                          }
+                                      }
+                                  }
+                              });
+    return enclosingNs;
 }
 
 /**
- * @brief Filters CallReference symbols and prioritizes matching symbols from the local file.
- * @param[in,out] symbols Candidate symbol vector to refine.
- * @param[in] node AST identifier node under cursor.
- * @param[in] nodeText Text of the AST node.
+ * @brief Resolves type name for a given identifier using local scopes, variables, or accessors.
+ * @param[in] nodeText Symbol name under cursor.
  * @param[in] request Definition request context.
+ * @return Clean target type name or empty string.
  */
-static void FilterAndPrioritizeLocalSymbols(std::vector<analysis::Symbol>& symbols, TSNode node,
-                                            const std::string& nodeText, const DefinitionRequest& request)
+static std::string ResolveTargetTypeName(std::string_view nodeText, const DefinitionRequest& request)
 {
-    std::erase_if(symbols, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::CallReference; });
-    if (symbols.empty())
-    {
-        symbols = CollectTypeDefinitionSymbols(node, nodeText, request);
-        std::erase_if(symbols, [](const analysis::Symbol& s) { return s.type == analysis::SymbolType::CallReference; });
-    }
+    const std::string enclosingNs = FindEnclosingNamespace(request.uri, request.position.line, request.symbolTable);
 
-    if (symbols.size() > 1)
+    auto rootScope = request.scopeIndex.GetRoot(std::string(request.uri));
+    if (rootScope)
     {
-        std::vector<analysis::Symbol> localSymbols;
-        for (const auto& s : symbols)
+        const analysis::Scope* scope =
+            FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
+        if (scope)
         {
-            if (s.fileUri == request.uri)
+            const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, std::string(nodeText), UINT32_MAX);
+            if (def && !def->typeName.empty())
             {
-                localSymbols.push_back(s);
+                return analysis::CleanBaseType(def->typeName);
             }
         }
-        if (!localSymbols.empty())
+    }
+
+    if (!enclosingNs.empty())
+    {
+        const std::string scoped = utils::JoinScopedName(enclosingNs, nodeText);
+        for (const auto& sym : request.symbolTable.FindSymbols(scoped))
         {
-            symbols = std::move(localSymbols);
+            if (sym.type == analysis::SymbolType::Variable && !sym.GetVariable().typeName.empty())
+            {
+                return analysis::CleanBaseType(sym.GetVariable().typeName);
+            }
+            if (sym.type == analysis::SymbolType::Function && !sym.GetFunction().returnType.empty())
+            {
+                return analysis::CleanBaseType(sym.GetFunction().returnType);
+            }
+        }
+        for (const auto prefix : {"get_", "set_"})
+        {
+            const std::string acc = utils::JoinScopedName(enclosingNs, std::string(prefix) + std::string(nodeText));
+            const auto accSyms = request.symbolTable.FindSymbols(acc);
+            const std::string pType = analysis::PropertyTypeFromAccessors(accSyms);
+            if (!pType.empty())
+            {
+                return analysis::CleanBaseType(pType);
+            }
         }
     }
 
-    FilterByEnclosingEnumContainer(symbols, node, request.sourceCode);
-    FilterByEnclosingNamespaceContainer(symbols, node, request.sourceCode);
-    DeduplicateEnumMemberSymbols(symbols);
+    auto symbols = request.symbolTable.FindSymbols(std::string(nodeText));
+    for (const auto& sym : symbols)
+    {
+        if (sym.type == analysis::SymbolType::Variable && !sym.GetVariable().typeName.empty())
+        {
+            return analysis::CleanBaseType(sym.GetVariable().typeName);
+        }
+        if (sym.type == analysis::SymbolType::Function && !sym.GetFunction().returnType.empty())
+        {
+            return analysis::CleanBaseType(sym.GetFunction().returnType);
+        }
+        if (IsTypeDefType(sym.type))
+        {
+            return sym.name;
+        }
+    }
+
+    auto accessors = analysis::FindGlobalPropertyAccessors(std::string(nodeText), request.symbolTable);
+    std::string propType = analysis::PropertyTypeFromAccessors(accessors);
+    if (!propType.empty())
+    {
+        return analysis::CleanBaseType(propType);
+    }
+
+    return analysis::CleanBaseType(std::string(nodeText));
 }
 
 /**
- * @brief Checks compatibility between a symbol table container type and a syntactic member container kind.
- * @param[in] containerType SymbolType of the enclosing container (e.g. Class, Interface, Enum, Namespace).
- * @param[in] memberContainerKind Syntactic ContainerKind of the member definition.
- * @return True if container kinds are compatible, false otherwise.
+ * @brief Attempts to resolve cursor to overridden base method symbols.
+ * @param[in] nodeText Method name under cursor.
+ * @param[in] innerScope Innermost lexical scope at cursor position.
+ * @param[in] request Definition request.
+ * @return Base method locations or std::nullopt.
  */
-static bool ContainerKindMatches(analysis::SymbolType containerType, analysis::ContainerKind memberContainerKind)
+static std::optional<std::vector<lsp::Location>> TryResolveOverriddenMethod(std::string_view nodeText,
+                                                                            const analysis::Scope* innerScope,
+                                                                            const DefinitionRequest& request)
+{
+    std::string enclosingClass;
+    if (innerScope && !innerScope->GetEnclosingClass().empty())
+    {
+        enclosingClass = std::string(innerScope->GetEnclosingClass());
+    }
+    else
+    {
+        enclosingClass = request.symbolTable.FindEnclosingClassName(std::string(request.uri), request.position.line);
+    }
+    if (enclosingClass.empty())
+    {
+        return std::nullopt;
+    }
+
+    auto localMethods = request.symbolTable.FindMemberSymbols(enclosingClass, std::string(nodeText));
+    bool isDecl = false;
+    for (const auto& m : localMethods)
+    {
+        if (m.startLine == request.position.line)
+        {
+            isDecl = true;
+            break;
+        }
+    }
+    if (!isDecl)
+    {
+        return std::nullopt;
+    }
+
+    analysis::LinkedBaseOptions linkedOpts;
+    if (request.engineRules)
+    {
+        linkedOpts.proxyMap = &request.engineRules->unusedRules.baseClassProxyMap;
+        linkedOpts.delegateProps = request.engineRules->unusedRules.baseClassDelegateProperties;
+    }
+    auto overriddenSyms = analysis::FindOverriddenBaseMethodSymbols(enclosingClass, std::string(nodeText),
+                                                                    request.symbolTable, linkedOpts);
+    if (overriddenSyms.empty())
+    {
+        return std::nullopt;
+    }
+
+    auto locs = ConvertSymbolsToLocations(overriddenSyms, request);
+    return locs.empty() ? std::nullopt : std::make_optional(std::move(locs));
+}
+
+/**
+ * @brief Attempts to resolve cursor on a local variable or parameter declaration.
+ * @param[in] nodeText Identifier text.
+ * @param[in] innerScope Innermost lexical scope.
+ * @param[in] request Definition request.
+ * @return Declaration location or std::nullopt.
+ */
+static std::optional<std::vector<lsp::Location>> TryResolveLocalDeclaration(std::string_view nodeText,
+                                                                            const analysis::Scope* innerScope,
+                                                                            const DefinitionRequest& request)
+{
+    if (!innerScope)
+    {
+        return std::nullopt;
+    }
+
+    for (const auto& def : innerScope->definitions)
+    {
+        if (def.name == nodeText && def.startLine == request.position.line &&
+            def.startCharacter <= request.position.character && request.position.character <= def.endCharacter)
+        {
+            auto range = common::FindIdentifierRangeAtPosition(request.sourceCode, request.position);
+            if (range)
+            {
+                return std::vector<lsp::Location>{
+                    lsp::Location{lsp::DocumentUri::parse(std::string(request.uri)), *range}};
+            }
+        }
+    }
+    return std::nullopt;
+}
+
+/**
+ * @brief Skips consecutive whitespace characters.
+ * @param[in] s Source string view.
+ * @param[in] pos Starting offset.
+ * @return Offset after whitespace.
+ */
+static size_t SkipWhitespace(std::string_view s, size_t pos) noexcept
+{
+    while (pos < s.size() && (s[pos] == ' ' || s[pos] == '\t' || s[pos] == '\r' || s[pos] == '\n'))
+    {
+        pos++;
+    }
+    return pos;
+}
+
+/**
+ * @brief Counts comma-separated argument tokens inside a call expression.
+ * @param[in] sourceCode Document source text.
+ * @param[in] i Starting offset inside argument list.
+ * @return Number of arguments.
+ */
+static size_t CountArgumentTokens(std::string_view sourceCode, size_t i) noexcept
+{
+    size_t count = 1;
+    int parenDepth = 0;
+    bool inQuote = false;
+    while (i < sourceCode.size())
+    {
+        char c = sourceCode[i];
+        if (c == '"' && (i == 0 || sourceCode[i - 1] != '\\'))
+        {
+            inQuote = !inQuote;
+        }
+        else if (!inQuote)
+        {
+            if (c == '(')
+            {
+                parenDepth++;
+            }
+            else if (c == ')')
+            {
+                if (parenDepth == 0)
+                {
+                    break;
+                }
+                parenDepth--;
+            }
+            else if (c == ',' && parenDepth == 0)
+            {
+                count++;
+            }
+        }
+        i++;
+    }
+    return count;
+}
+
+/**
+ * @brief Counts the number of arguments in a function call at cursor.
+ * @param[in] sourceCode Document source text.
+ * @param[in] pos Cursor position.
+ * @return Number of arguments, or 0 if no arguments or not a call.
+ */
+static size_t CountCallArguments(std::string_view sourceCode, lsp::Position pos) noexcept
+{
+    size_t lineStart = common::ExtractLineStartByte(sourceCode, pos.line);
+    if (lineStart >= sourceCode.size())
+    {
+        return 0;
+    }
+    size_t i = lineStart + pos.character;
+    while (i < sourceCode.size() && common::IsIdentifierChar(sourceCode[i]))
+    {
+        i++;
+    }
+    i = SkipWhitespace(sourceCode, i);
+    if (i >= sourceCode.size() || sourceCode[i] != '(')
+    {
+        return 0;
+    }
+    i = SkipWhitespace(sourceCode, i + 1);
+    if (i < sourceCode.size() && sourceCode[i] == ')')
+    {
+        return 0;
+    }
+    return CountArgumentTokens(sourceCode, i);
+}
+
+/**
+ * @brief Resolves class member targets including related class hierarchies.
+ * @param[in] target Target symbol descriptor.
+ * @param[in] request Definition request context.
+ * @return Resolved member locations.
+ */
+static std::vector<lsp::Location> ResolveClassMemberLocations(const analysis::TargetDescriptor& target,
+                                                              const DefinitionRequest& request)
+{
+    if (target.callDeclaration.has_value())
+    {
+        return {lsp::Location{lsp::DocumentUri::parse(target.callDeclaration->uri),
+                              common::ToLspRange(target.callDeclaration->range)}};
+    }
+    auto memberSyms = request.symbolTable.FindMemberSymbols(target.declaringClass, target.name);
+    size_t argCount = CountCallArguments(request.sourceCode, request.position);
+    if (argCount > 0)
+    {
+        std::vector<analysis::Symbol> arityMatched;
+        for (const auto& s : memberSyms)
+        {
+            if (s.type == analysis::SymbolType::Function && s.GetFunction().parameters.size() == argCount)
+            {
+                arityMatched.push_back(s);
+            }
+        }
+        if (!arityMatched.empty())
+        {
+            return ConvertSymbolsToLocations(arityMatched, request);
+        }
+        for (const auto& cls : target.relatedClasses)
+        {
+            auto relSyms = request.symbolTable.FindMemberSymbols(cls, target.name);
+            for (const auto& s : relSyms)
+            {
+                if (s.type == analysis::SymbolType::Function && s.GetFunction().parameters.size() == argCount)
+                {
+                    arityMatched.push_back(s);
+                }
+            }
+            if (!arityMatched.empty())
+            {
+                return ConvertSymbolsToLocations(arityMatched, request);
+            }
+        }
+    }
+    if (memberSyms.empty())
+    {
+        for (const auto& cls : target.relatedClasses)
+        {
+            auto relSyms = request.symbolTable.FindMemberSymbols(cls, target.name);
+            if (!relSyms.empty())
+            {
+                memberSyms = std::move(relSyms);
+                break;
+            }
+        }
+    }
+    return ConvertSymbolsToLocations(memberSyms, request);
+}
+
+/**
+ * @brief Checks if a container symbol type matches a member symbol container kind.
+ * @param[in] containerType SymbolType of container (Class, Interface, Namespace).
+ * @param[in] memberContainerKind ContainerKind of candidate member symbol.
+ * @return True if kinds match.
+ */
+static bool ContainerKindMatches(analysis::SymbolType containerType,
+                                 analysis::ContainerKind memberContainerKind) noexcept
 {
     switch (containerType)
     {
@@ -1492,99 +547,60 @@ static bool ContainerKindMatches(analysis::SymbolType containerType, analysis::C
 }
 
 /**
- * @brief Checks if a container symbol declares a given member.
+ * @brief Disambiguates candidate container symbols by matching against following scoped member.
+ * @param[in,out] symbols Candidate container symbols.
+ * @param[in] sourceCode Document source text buffer.
+ * @param[in] pos Cursor position.
+ * @param[in] table Symbol table.
  */
-static bool ContainerDeclaresMember(const analysis::SymbolTable& table, const analysis::Symbol& containerSym,
-                                    std::string_view memberName)
-{
-    const std::string& containerName =
-        containerSym.qualifiedName.empty() ? containerSym.name : containerSym.qualifiedName;
-
-    if (auto found = table.FindMemberSymbolPtr(containerName, memberName))
-    {
-        for (const auto& m : *found)
-        {
-            if (ContainerKindMatches(containerSym.type, m.containerKind))
-            {
-                return true;
-            }
-        }
-    }
-    if (containerSym.name != containerName)
-    {
-        if (auto found = table.FindMemberSymbolPtr(containerSym.name, memberName))
-        {
-            for (const auto& m : *found)
-            {
-                if (ContainerKindMatches(containerSym.type, m.containerKind))
-                {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Locates the member node following a qualifier in a scoped identifier.
- */
-static TSNode FindScopedIdentifierMember(TSNode node)
-{
-    if (ts_node_is_null(node))
-    {
-        return TSNode{};
-    }
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode scopedNode = parser::FindAncestorWithSymbol(parser::GetParent(node), gs.symScopedIdentifier);
-    if (ts_node_is_null(scopedNode))
-    {
-        return TSNode{};
-    }
-
-    uint32_t count = ts_node_named_child_count(scopedNode);
-    if (count < 2)
-    {
-        return TSNode{};
-    }
-    TSNode lastChild = ts_node_named_child(scopedNode, count - 1);
-    if (ts_node_start_byte(node) < ts_node_start_byte(lastChild))
-    {
-        return lastChild;
-    }
-    return TSNode{};
-}
-
-/**
- * @brief Disambiguates qualifier candidates in a scoped identifier if only one candidate declares the member.
- */
-static void DisambiguateScopedQualifierContainer(std::vector<analysis::Symbol>& symbols, TSNode node,
-                                                 const DefinitionRequest& request)
+static void DisambiguateCandidateContainers(std::vector<analysis::Symbol>& symbols, std::string_view sourceCode,
+                                            lsp::Position pos, const analysis::SymbolTable& table)
 {
     if (symbols.size() <= 1)
     {
         return;
     }
-    TSNode memberNode = FindScopedIdentifierMember(node);
-    if (ts_node_is_null(memberNode))
+    size_t lineStart = common::ExtractLineStartByte(sourceCode, pos.line);
+    if (lineStart >= sourceCode.size())
     {
         return;
     }
-    std::string_view memberName = parser::GetNodeTextView(memberNode, request.sourceCode);
-    if (memberName.empty())
+    size_t col = pos.character;
+    while (lineStart + col < sourceCode.size() && common::IsIdentifierChar(sourceCode[lineStart + col]))
+    {
+        col++;
+    }
+    if (lineStart + col + 2 > sourceCode.size() || sourceCode[lineStart + col] != ':' ||
+        sourceCode[lineStart + col + 1] != ':')
     {
         return;
     }
-
+    size_t mStart = col + 2;
+    size_t mEnd = mStart;
+    while (lineStart + mEnd < sourceCode.size() && common::IsIdentifierChar(sourceCode[lineStart + mEnd]))
+    {
+        mEnd++;
+    }
+    if (mEnd <= mStart)
+    {
+        return;
+    }
+    std::string memberName(sourceCode.substr(lineStart + mStart, mEnd - mStart));
     std::vector<analysis::Symbol> matched;
     for (const auto& sym : symbols)
     {
         if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface ||
             sym.type == analysis::SymbolType::Namespace)
         {
-            if (ContainerDeclaresMember(request.symbolTable, sym, memberName))
+            const std::string& containerName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+            auto memberSyms = table.FindMemberSymbols(containerName, memberName);
+            for (const auto& m : memberSyms)
             {
-                matched.push_back(sym);
+                if (ContainerKindMatches(sym.type, m.containerKind))
+                {
+                    matched.push_back(sym);
+                    break;
+                }
             }
         }
     }
@@ -1594,56 +610,210 @@ static void DisambiguateScopedQualifierContainer(std::vector<analysis::Symbol>& 
     }
 }
 
-static std::optional<std::vector<lsp::Location>>
-TryResolveContextualOrDeclFallback(TSNode node, const std::string& nodeText, const DefinitionContext& ctx)
+/**
+ * @brief Resolves a target symbol descriptor to LSP locations across symbols and accessors.
+ * @param[in] target Target symbol descriptor.
+ * @param[in] request Definition request context.
+ * @return Vector of resolved locations.
+ */
+static std::vector<lsp::Location> ResolveTargetLocations(const analysis::TargetDescriptor& target,
+                                                         const DefinitionRequest& request)
 {
-    if (auto contextualLocs = TryResolveContextualDefinition(node, nodeText, ctx))
+    if (target.kind == analysis::TargetKind::Local)
     {
-        return contextualLocs;
+        const auto& def = target.localDef;
+        const bool hasFull = (def.fullEndLine > 0 || def.fullEndCharacter > 0);
+        uint32_t sLine = hasFull ? def.fullStartLine : def.startLine;
+        uint32_t sChar = hasFull ? def.fullStartCharacter : def.startCharacter;
+        uint32_t eLine = hasFull ? def.fullEndLine : def.endLine;
+        uint32_t eChar = hasFull ? def.fullEndCharacter : def.endCharacter;
+        return {lsp::Location{lsp::DocumentUri::parse(target.localUri),
+                              lsp::Range{lsp::Position{sLine, sChar}, lsp::Position{eLine, eChar}}}};
     }
-    return TryResolveDeclarationFallback(node, ctx);
+    if (target.kind == analysis::TargetKind::ClassMember)
+    {
+        return ResolveClassMemberLocations(target, request);
+    }
+    if (target.kind == analysis::TargetKind::NamespaceSymbol || target.kind == analysis::TargetKind::EnumMember)
+    {
+        auto syms = request.symbolTable.FindSymbols(target.qualifiedName);
+        if (syms.empty())
+        {
+            syms = request.symbolTable.FindSymbols(target.name);
+        }
+        return ConvertSymbolsToLocations(syms, request);
+    }
+    if (target.callDeclaration.has_value())
+    {
+        return {lsp::Location{lsp::DocumentUri::parse(target.callDeclaration->uri),
+                              common::ToLspRange(target.callDeclaration->range)}};
+    }
+    auto syms = request.symbolTable.FindSymbols(target.name);
+    if (syms.empty())
+    {
+        syms = analysis::FindGlobalPropertyAccessors(target.name, request.symbolTable);
+    }
+    DisambiguateCandidateContainers(syms, request.sourceCode, request.position, request.symbolTable);
+    return ConvertSymbolsToLocations(syms, request);
 }
 
-static std::optional<std::vector<lsp::Location>>
-ResolveSymbolsOrSpecialLocations(TSNode node, const std::string& nodeText, const DefinitionContext& ctx)
+/**
+ * @brief Attempts to resolve scoped identifier references (e.g. Foo::Bar).
+ * @param[in] request Definition request context.
+ * @return Resolved scoped locations or std::nullopt.
+ */
+static std::optional<std::vector<lsp::Location>> TryResolveScopedIdentifier(const DefinitionRequest& request)
 {
-    const auto gsq = parser::GetGlobalScopeQualifier(node, ctx.request.sourceCode);
-    std::vector<analysis::Symbol> symbols = ResolveCandidateSymbols(node, nodeText, ctx);
-    if (symbols.empty() && !gsq.isGlobal)
+    std::string_view scopedName = common::FindScopedIdentifierAtPosition(request.sourceCode, request.position);
+    if (scopedName.empty() || !utils::ContainsScopeSeparator(scopedName))
     {
-        if (auto localFallback = TryResolveLocalDefinitionFallback(node, nodeText, ctx))
+        return std::nullopt;
+    }
+
+    auto [qualifier, memberName] = utils::SplitScopedName(scopedName);
+    if (qualifier.empty() || memberName.empty())
+    {
+        return std::nullopt;
+    }
+
+    auto memberSyms = request.symbolTable.FindMemberSymbols(std::string(qualifier), std::string(memberName));
+    if (memberSyms.empty())
+    {
+        memberSyms = request.symbolTable.FindSymbols(std::string(scopedName));
+    }
+    if (memberSyms.empty())
+    {
+        const std::string enclosingNs = FindEnclosingNamespace(request.uri, request.position.line, request.symbolTable);
+        if (!enclosingNs.empty())
         {
-            return localFallback;
+            utils::ForEachEnclosingScope(
+                enclosingNs,
+                [&](std::string_view scope)
+                {
+                    if (!memberSyms.empty())
+                    {
+                        return;
+                    }
+                    std::string fullQual = utils::JoinScopedName(scope, qualifier);
+                    memberSyms = request.symbolTable.FindMemberSymbols(fullQual, std::string(memberName));
+                    if (memberSyms.empty())
+                    {
+                        memberSyms = request.symbolTable.FindSymbols(utils::JoinScopedName(scope, scopedName));
+                    }
+                });
         }
     }
+    auto locs = ConvertSymbolsToLocations(memberSyms, request);
+    return locs.empty() ? std::nullopt : std::make_optional(std::move(locs));
+}
 
-    if (nodeText == "this")
+/**
+ * @brief Attempts to resolve 'this' keyword to its enclosing class declaration.
+ * @param[in] nodeText Symbol name under cursor.
+ * @param[in] request Definition request context.
+ * @return Enclosing class location or std::nullopt.
+ */
+static std::optional<std::vector<lsp::Location>> TryResolveThisKeyword(std::string_view nodeText,
+                                                                       const DefinitionRequest& request)
+{
+    if (nodeText != "this")
     {
-        if (auto specialLocs = TryResolveThisKeyword(node, ctx))
+        return std::nullopt;
+    }
+
+    std::string enclosingClass = request.symbolTable.FindEnclosingClassName(request.uri, request.position.line);
+    if (enclosingClass.empty())
+    {
+        return std::nullopt;
+    }
+
+    auto syms = request.symbolTable.FindSymbols(enclosingClass);
+    auto locs = ConvertSymbolsToLocations(syms, request);
+    return locs.empty() ? std::nullopt : std::make_optional(std::move(locs));
+}
+
+/**
+ * @brief Resolves base class delegate property (e.g. BaseClass) to base class definition.
+ * @param[in] nodeText Symbol name under cursor.
+ * @param[in] request Definition request context.
+ * @return Resolved base class location or std::nullopt.
+ */
+static std::optional<std::vector<lsp::Location>> TryResolveDelegateProperty(std::string_view nodeText,
+                                                                            const DefinitionRequest& request)
+{
+    if (!analysis::IsBaseClassDelegateProperty(std::string(nodeText), request.symbolTable, request.engineRules))
+    {
+        return std::nullopt;
+    }
+    std::string enclosingClass = request.symbolTable.FindEnclosingClassName(request.uri, request.position.line);
+    if (enclosingClass.empty())
+    {
+        return std::nullopt;
+    }
+    std::string baseClass = analysis::ResolveBaseClass(enclosingClass, request.symbolTable);
+    if (!baseClass.empty())
+    {
+        auto baseSyms = request.symbolTable.FindSymbols(baseClass);
+        auto locs = ConvertSymbolsToLocations(baseSyms, request);
+        if (!locs.empty())
         {
-            return specialLocs;
+            return locs;
         }
     }
+    return std::nullopt;
+}
 
-    if (!gsq.isGlobal)
+/**
+ * @brief Resolves virtual mixin document identifiers to host class symbols.
+ * @param[in] nodeText Symbol name under cursor.
+ * @param[in] request Definition request context.
+ * @return Resolved host symbol locations or std::nullopt.
+ */
+static std::optional<std::vector<lsp::Location>> TryResolveVirtualMixin(std::string_view nodeText,
+                                                                        const DefinitionRequest& request)
+{
+    auto vCtx = analysis::ResolveVirtualMixinContext(std::string(request.uri), request.symbolTable);
+    if (!vCtx.isVirtual)
     {
-        FilterAndPrioritizeLocalSymbols(symbols, node, nodeText, ctx.request);
+        return std::nullopt;
     }
-
-    DisambiguateScopedQualifierContainer(symbols, node, ctx.request);
-
-    auto locations = ConvertSymbolsToLocations(symbols, ctx.request);
-    if (!locations.empty())
+    auto memberSyms = request.symbolTable.FindMemberSymbols(vCtx.hostClass, std::string(nodeText));
+    if (memberSyms.empty())
     {
-        return locations;
+        auto hierarchy = analysis::GetInheritedTypeHierarchy(vCtx.hostClass, request.symbolTable);
+        for (const auto& base : hierarchy)
+        {
+            memberSyms = request.symbolTable.FindMemberSymbols(base, std::string(nodeText));
+            if (!memberSyms.empty())
+            {
+                break;
+            }
+        }
     }
-
-    return TryResolveDelegatePropertyDefinition(node, nodeText, ctx);
+    if (!memberSyms.empty())
+    {
+        auto locs = ConvertSymbolsToLocations(memberSyms, request);
+        if (!locs.empty())
+        {
+            return locs;
+        }
+    }
+    if (nodeText == "this" ||
+        analysis::IsBaseClassDelegateProperty(std::string(nodeText), request.symbolTable, request.engineRules))
+    {
+        auto hostSyms = request.symbolTable.FindSymbols(vCtx.hostClass);
+        auto locs = ConvertSymbolsToLocations(hostSyms, request);
+        if (!locs.empty())
+        {
+            return locs;
+        }
+    }
+    return std::nullopt;
 }
 
 std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest& request)
 {
-    if (!request.tree || request.sourceCode.empty())
+    if (request.sourceCode.empty())
     {
         return std::nullopt;
     }
@@ -1653,76 +823,155 @@ std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest&
         return includeLoc;
     }
 
-    TSNode node{};
-    std::string nodeText = GetNodeTextAt(request, node);
-    if (nodeText.empty() || ts_node_is_null(node))
+    std::string_view nodeText = common::FindIdentifierAtPosition(request.sourceCode, request.position);
+    if (nodeText.empty() || !analysis::IsValidIdentifier(nodeText))
     {
         return std::nullopt;
     }
 
-    const DefinitionContext ctx = MakeDefinitionContext(request);
-    const auto* physicalScope = ctx.vCtx.isVirtual ? nullptr : ctx.rootScope.get();
-    if (const auto bound = analysis::ResolveIndexedCall(request.symbolTable, physicalScope, ts_node_start_byte(node),
-                                                        request.callBindingRevision);
-        bound && bound->name == nodeText)
+    if (auto vmLocs = TryResolveVirtualMixin(nodeText, request))
     {
-        return std::vector<lsp::Location>{MakeLocation(*bound, request)};
+        return vmLocs;
     }
 
-    if (auto early = TryResolveContextualOrDeclFallback(node, nodeText, ctx))
+    if (auto thisLocs = TryResolveThisKeyword(nodeText, request))
     {
-        return early;
+        return thisLocs;
     }
 
-    return ResolveSymbolsOrSpecialLocations(node, nodeText, ctx);
+    auto rootScope = request.scopeIndex.GetRoot(std::string(request.uri));
+    const analysis::Scope* innerScope =
+        rootScope ? FindInnermostScope(rootScope.get(), request.position.line, request.position.character) : nullptr;
+
+    if (auto overLocs = TryResolveOverriddenMethod(nodeText, innerScope, request))
+    {
+        return overLocs;
+    }
+
+    if (auto declLocs = TryResolveLocalDeclaration(nodeText, innerScope, request))
+    {
+        return declLocs;
+    }
+
+    auto resolveReq = analysis::MakeTargetRequest(
+        request.uri, request.sourceCode, analysis::TargetPosition{request.position.line, request.position.character},
+        request.symbolTable, request.scopeIndex);
+    resolveReq.useCallBindings = true;
+    resolveReq.callBindingRevision = request.callBindingRevision;
+    if (auto target = analysis::ResolveTargetSymbol(resolveReq))
+    {
+        auto locs = ResolveTargetLocations(*target, request);
+        if (!locs.empty())
+        {
+            return locs;
+        }
+    }
+
+    if (auto delLocs = TryResolveDelegateProperty(nodeText, request))
+    {
+        return delLocs;
+    }
+
+    if (auto scopedLocs = TryResolveScopedIdentifier(request))
+    {
+        return scopedLocs;
+    }
+
+    const std::string enclosingNs = FindEnclosingNamespace(request.uri, request.position.line, request.symbolTable);
+    if (!enclosingNs.empty())
+    {
+        std::vector<analysis::Symbol> nsSyms;
+        utils::ForEachEnclosingScope(enclosingNs,
+                                     [&](std::string_view scope)
+                                     {
+                                         if (!nsSyms.empty())
+                                         {
+                                             return;
+                                         }
+                                         std::string scoped = utils::JoinScopedName(scope, nodeText);
+                                         nsSyms = request.symbolTable.FindSymbols(scoped);
+                                     });
+        if (!nsSyms.empty())
+        {
+            DisambiguateCandidateContainers(nsSyms, request.sourceCode, request.position, request.symbolTable);
+            auto locs = ConvertSymbolsToLocations(nsSyms, request);
+            if (!locs.empty())
+            {
+                return locs;
+            }
+        }
+    }
+
+    auto fallbackSyms = request.symbolTable.FindSymbols(std::string(nodeText));
+    DisambiguateCandidateContainers(fallbackSyms, request.sourceCode, request.position, request.symbolTable);
+    auto locs = ConvertSymbolsToLocations(fallbackSyms, request);
+    return locs.empty() ? std::nullopt : std::make_optional(std::move(locs));
 }
 
 std::optional<std::vector<lsp::Location>> GetTypeDefinition(const DefinitionRequest& request)
 {
-    if (!request.tree || request.sourceCode.empty())
+    if (request.sourceCode.empty())
     {
         return std::nullopt;
     }
 
-    TSNode node{};
-    std::string nodeText = GetNodeTextAt(request, node);
-    if (nodeText.empty() || ts_node_is_null(node))
+    std::string_view nodeText = common::FindIdentifierAtPosition(request.sourceCode, request.position);
+    if (nodeText.empty() || !analysis::IsValidIdentifier(nodeText))
     {
         return std::nullopt;
     }
 
-    std::string typeNameToFind = ResolveLocalScopeTypeName(node, nodeText, request);
-    if (typeNameToFind.empty())
-    {
-        typeNameToFind = ResolveGlobalSymbolTypeName(node, nodeText, request);
-    }
-    if (typeNameToFind.empty())
-    {
-        typeNameToFind = ResolveAccessorTypeName(node, nodeText, request);
-    }
-    if (typeNameToFind.empty())
-    {
-        typeNameToFind = analysis::CleanBaseType(nodeText);
-    }
-
+    std::string typeNameToFind = ResolveTargetTypeName(nodeText, request);
     if (typeNameToFind.empty() || analysis::IsPrimitiveTypeName(typeNameToFind))
     {
         return std::nullopt;
     }
 
-    auto typeSymbols = CollectTypeDefinitionSymbols(node, typeNameToFind, request);
-    std::vector<lsp::Location> locations;
+    const std::string enclosingNs = FindEnclosingNamespace(request.uri, request.position.line, request.symbolTable);
+    std::vector<analysis::Symbol> typeSymbols;
+    if (!enclosingNs.empty())
+    {
+        std::string scopedType = utils::JoinScopedName(enclosingNs, typeNameToFind);
+        typeSymbols = request.symbolTable.FindSymbols(scopedType);
+    }
+    if (typeSymbols.empty())
+    {
+        typeSymbols = request.symbolTable.FindSymbols(typeNameToFind);
+    }
+    if (typeSymbols.empty())
+    {
+        typeSymbols = request.symbolTable.FindTypeSymbolsByShortName(typeNameToFind);
+    }
+
+    if (typeSymbols.size() > 1 && !enclosingNs.empty())
+    {
+        std::vector<analysis::Symbol> filtered;
+        for (const auto& sym : typeSymbols)
+        {
+            if (analysis::IsSameOrNestedNamespace(sym.containerName, enclosingNs))
+            {
+                filtered.push_back(sym);
+            }
+        }
+        if (!filtered.empty())
+        {
+            typeSymbols = std::move(filtered);
+        }
+    }
+
+    std::vector<analysis::Symbol> targetSymbols;
     for (const auto& sym : typeSymbols)
     {
         if (IsTypeDefType(sym.type))
         {
-            locations.push_back(MakeLocation(sym, request));
+            targetSymbols.push_back(sym);
         }
     }
 
-    if (!locations.empty())
+    auto locs = ConvertSymbolsToLocations(targetSymbols, request);
+    if (!locs.empty())
     {
-        return locations;
+        return locs;
     }
 
     return std::nullopt;
