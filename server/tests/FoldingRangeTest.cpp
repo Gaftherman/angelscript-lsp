@@ -17,10 +17,16 @@ struct FoldingTestEnv
     std::string uri = "file:///test.as";
     std::string source;
     TSTree* tree = nullptr;
+    std::unique_ptr<analysis::NodeIndex> index;
 
     FoldingTestEnv(const std::string& code) : source(code)
     {
         tree = parser.Parse(source);
+        if (tree)
+        {
+            index = std::make_unique<analysis::NodeIndex>(ts_tree_root_node(tree),
+                                                          analysis::NodeIndexOptions{.source = source});
+        }
     }
 
     ~FoldingTestEnv()
@@ -33,7 +39,7 @@ struct FoldingTestEnv
 
     std::optional<FoldingRangeResult> GetRanges()
     {
-        FoldingRangeRequest req{uri, source, tree};
+        FoldingRangeRequest req{uri, source, index.get()};
         return GetFoldingRanges(req);
     }
 };

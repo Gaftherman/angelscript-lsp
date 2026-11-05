@@ -203,6 +203,8 @@ class Server
         lsp::requests::TextDocument_SemanticTokens_Full_Delta::Params&& req);
     lsp::requests::TextDocument_SemanticTokens_Range::Result
     HandleRequestsTextDocument_SemanticTokens_Range(lsp::requests::TextDocument_SemanticTokens_Range::Params&& req);
+    lsp::requests::TextDocument_FoldingRange::Result
+    HandleRequestsTextDocument_FoldingRange(lsp::requests::TextDocument_FoldingRange::Params&& req);
     lsp::requests::TextDocument_InlayHint::Result
     HandleRequestsTextDocument_InlayHint(lsp::requests::TextDocument_InlayHint::Params&& req);
     lsp::requests::TextDocument_Hover::Result
@@ -442,7 +444,7 @@ class Server
     void PurgeClosureFile(const std::string& uriStr);
     void AppendIncludeDiagnostics(const std::string& uriStr, const std::string& text,
                                   const std::vector<utils::ExcludedLineRange>& excluded,
-                                  std::vector<analysis::Diagnostic>& diagnostics) const;
+                                  std::vector<analysis::Diagnostic>& diagnostics);
     [[nodiscard]] std::optional<ScheduleRequest> MakeScheduleRequest(ScheduleAnalysisRequest req) const;
     [[nodiscard]] bool IsClosedRevisionCurrentLocked(const std::string& uri, uint64_t revision) const;
     void ScheduleAnalysis(ScheduleAnalysisRequest req);
