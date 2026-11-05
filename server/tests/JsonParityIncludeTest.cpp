@@ -90,7 +90,7 @@ struct SourcePos
  * @param[in] startAt Byte search start offset.
  * @return Source position structure.
  */
-SourcePos FindPos(const std::string& source, const std::string& needle, size_t startAt = 0)
+SourcePos FindPos(std::string_view source, std::string_view needle, size_t startAt = 0)
 {
     const size_t pos = source.find(needle, startAt);
     if (pos == std::string::npos)
@@ -425,7 +425,6 @@ TEST_CASE("Go-To-Definition prioritizes workspace symbol over predefined stub")
     features::DefinitionRequest req{
         .uri = "file:///workspace/main.as",
         .sourceCode = script,
-        .tree = tree,
         .symbolTable = table,
         .scopeIndex = scopeIndex,
         .position = lsp::Position{0u, static_cast<lsp::uint>(pos + 2)},
@@ -466,7 +465,7 @@ TEST_CASE("Multi-file workspace parity: json.as and v1.as with scoped definition
     CHECK_FALSE(HasDiagCode(v1Diags, "as-err-no-matching-constructor"));
 
     ScopeIndex v1ScopeIndex;
-    features::DefinitionRequest baseReq{v1Uri, v1Code, v1Tree, sharedTable, v1ScopeIndex, {}, {}, ".as.predefined"};
+    features::DefinitionRequest baseReq{v1Uri, v1Code, sharedTable, v1ScopeIndex, {}, {}, ".as.predefined"};
 
     const size_t typePos = v1Code.find(f.enumType + "::Object");
     REQUIRE(typePos != std::string::npos);

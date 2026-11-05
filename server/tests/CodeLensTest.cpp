@@ -871,8 +871,8 @@ TEST_CASE("CodeLens and References resolve a closed-file chain through an inheri
     const std::string useUri = "file:///closed_chain.as";
     fixture.AddDocument(useUri, "void Run() {\n  MakeDerived()\n    ." + property + "\n    ." + member + "();\n}\n");
 
-    const auto references = GetReferences(ReferencesRequest{
-        fixture.uri, fixture.sourceCode, fixture.tree, {1, 7}, false, fixture.symbolTable, fixture.scopeIndex});
+    const auto references = GetReferences(
+        ReferencesRequest{fixture.uri, fixture.sourceCode, {1, 7}, false, fixture.symbolTable, fixture.scopeIndex});
     REQUIRE(references.has_value());
     REQUIRE(references->size() == 1);
     CHECK(references->front().uri.toString() == useUri);
@@ -1532,7 +1532,7 @@ TEST_CASE("CodeLens and references use the explicit qualifier of each closed-fil
     const std::array declarations{lsp::Position{1, 8}, lsp::Position{2, 16}};
     for (const auto& declaration : declarations)
     {
-        const ReferencesRequest request{fixture.uri, fixture.sourceCode,  fixture.tree,      declaration,
+        const ReferencesRequest request{fixture.uri, fixture.sourceCode,  declaration,
                                         false,       fixture.symbolTable, fixture.scopeIndex};
         const auto references = GetReferences(request);
         REQUIRE(references.has_value());
@@ -1567,7 +1567,7 @@ TEST_CASE("CodeLens and references distinguish typed overloads in an analyzed cl
     REQUIRE(lenses.has_value());
     for (uint32_t line = 0; line < 2; ++line)
     {
-        const ReferencesRequest request{fixture.uri, fixture.sourceCode,  fixture.tree,      {line, 4},
+        const ReferencesRequest request{fixture.uri, fixture.sourceCode,  {line, 4},
                                         false,       fixture.symbolTable, fixture.scopeIndex};
         const auto refs = GetReferences(request);
         REQUIRE(refs.has_value());
@@ -1597,7 +1597,7 @@ TEST_CASE("CodeLens and references distinguish typed overloads in an analyzed cl
     CHECK_FALSE(
         static_cast<bool>(ResolveIndexedCall(fixture.symbolTable, root.get(), callByte, CallBindingRevision{7, 1, 3})));
 
-    DefinitionRequest definition{uri, source, tree.get(), fixture.symbolTable, fixture.scopeIndex, {2, 4}};
+    DefinitionRequest definition{uri, source, fixture.symbolTable, fixture.scopeIndex, {2, 4}};
     definition.callBindingRevision = revision;
     const auto destinations = GetDefinition(definition);
     REQUIRE(destinations.has_value());
@@ -1605,8 +1605,8 @@ TEST_CASE("CodeLens and references distinguish typed overloads in an analyzed cl
     CHECK(destinations->front().uri.toString() == fixture.uri);
     CHECK(destinations->front().range.start.line == 1);
 
-    const ReferencesRequest fromCall{
-        uri, source, tree.get(), {2, 4}, false, fixture.symbolTable, fixture.scopeIndex, nullptr, revision};
+    const ReferencesRequest fromCall{uri,     source,  {2, 4}, false, fixture.symbolTable, fixture.scopeIndex,
+                                     nullptr, revision};
     const auto references = GetReferences(fromCall);
     REQUIRE(references.has_value());
     REQUIRE(references->size() == 1);

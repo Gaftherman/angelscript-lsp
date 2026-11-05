@@ -246,7 +246,7 @@ std::optional<std::vector<lsp::CallHierarchyItem>> PrepareCallHierarchy(const Ca
         return std::nullopt;
     }
 
-    const std::string name = common::FindIdentifierAtPosition(request.sourceCode, request.position);
+    const std::string name{common::FindIdentifierAtPosition(request.sourceCode, request.position)};
 
     std::vector<analysis::Symbol> declarations;
     if (!name.empty())

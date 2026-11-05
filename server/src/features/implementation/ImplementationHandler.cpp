@@ -507,10 +507,10 @@ std::optional<std::vector<lsp::Location>> GetImplementations(const Implementatio
         return std::nullopt;
     }
 
-    std::string name = common::FindScopedIdentifierAtPosition(request.sourceCode, request.position);
+    std::string name{common::FindScopedIdentifierAtPosition(request.sourceCode, request.position)};
     if (name.empty())
     {
-        name = common::FindIdentifierAtPosition(request.sourceCode, request.position);
+        name = std::string(common::FindIdentifierAtPosition(request.sourceCode, request.position));
     }
     if (name.empty())
     {

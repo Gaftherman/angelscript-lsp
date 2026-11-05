@@ -354,7 +354,7 @@ std::optional<std::vector<lsp::TypeHierarchyItem>> PrepareTypeHierarchy(const Ty
         return std::nullopt;
     }
 
-    const std::string name = common::FindScopedIdentifierAtPosition(request.sourceCode, request.position);
+    const std::string name{common::FindScopedIdentifierAtPosition(request.sourceCode, request.position)};
 
     std::vector<analysis::Symbol> declarations;
     if (!name.empty())
@@ -367,6 +367,15 @@ std::optional<std::vector<lsp::TypeHierarchyItem>> PrepareTypeHierarchy(const Ty
             if (!enclosingNs.empty())
             {
                 declarations = FindTypeDeclarations(utils::JoinScopedName(enclosingNs, name), request.symbolTable);
+            }
+        }
+        if (declarations.empty())
+        {
+            std::string_view fullName =
+                common::FindFullScopedIdentifierAtPosition(request.sourceCode, request.position);
+            if (!fullName.empty() && fullName != name)
+            {
+                declarations = FindTypeDeclarations(fullName, request.symbolTable);
             }
         }
         if (declarations.empty())

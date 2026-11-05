@@ -59,13 +59,13 @@ struct AdversarialTestEnv
 
     std::optional<std::vector<lsp::Location>> Def(uint32_t line, uint32_t col)
     {
-        DefinitionRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, col}};
+        DefinitionRequest req{uri, sourceCode, symbolTable, scopeIndex, lsp::Position{line, col}};
         return GetDefinition(req);
     }
 
     std::optional<std::vector<lsp::Location>> TypeDef(uint32_t line, uint32_t col)
     {
-        DefinitionRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, col}};
+        DefinitionRequest req{uri, sourceCode, symbolTable, scopeIndex, lsp::Position{line, col}};
         return GetTypeDefinition(req);
     }
 

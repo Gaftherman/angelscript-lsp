@@ -93,7 +93,7 @@ struct TestEnvironment
 
     std::optional<std::vector<lsp::Location>> DefAt(uint32_t line, uint32_t character)
     {
-        DefinitionRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, character}};
+        DefinitionRequest req{uri, sourceCode, symbolTable, scopeIndex, lsp::Position{line, character}};
         return GetDefinition(req);
     }
 };

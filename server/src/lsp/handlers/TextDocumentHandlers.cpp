@@ -106,9 +106,8 @@ static std::optional<analysis::CallBindingRevision> OpenCallBindingRevision(cons
 
 features::DefinitionRequest Server::MakeDefinitionRequest(const OpenDocument& doc, const lsp::Position& position)
 {
-    features::DefinitionRequest dr{doc.uri,      *doc.text,
-                                   doc.tree,     m_symbolTable,
-                                   m_scopeIndex, codec::Decode(*doc.text, GetPositionEncoding(), position)};
+    features::DefinitionRequest dr{doc.uri, *doc.text, m_symbolTable, m_scopeIndex,
+                                   codec::Decode(*doc.text, GetPositionEncoding(), position)};
     dr.engineRules = &m_config.engineRules;
     dr.callBindingRevision = OpenCallBindingRevision(doc, m_sessionCoordinator->GetConfigRevision());
     dr.predefinedExtension = m_config.info.predefinedFileExtension;
@@ -260,7 +259,6 @@ Server::HandleRequestsTextDocument_References(lsp::requests::TextDocument_Refere
 
     features::ReferencesRequest rr{doc->uri,
                                    *doc->text,
-                                   doc->tree,
                                    codec::Decode(*doc->text, GetPositionEncoding(), req.position),
                                    req.context.includeDeclaration,
                                    m_symbolTable,
@@ -410,8 +408,8 @@ Server::HandleRequestsTextDocument_PrepareRename(lsp::requests::TextDocument_Pre
         return lsp::Null{};
     }
 
-    features::PrepareRenameRequest pr{ctx->doc.uri,  *ctx->doc.text, ctx->doc.tree,       ctx->decodedPosition,
-                                      m_symbolTable, m_scopeIndex,   ctx->predefinedUris, m_logger.get()};
+    features::PrepareRenameRequest pr{ctx->doc.uri, *ctx->doc.text,      ctx->decodedPosition, m_symbolTable,
+                                      m_scopeIndex, ctx->predefinedUris, m_logger.get()};
     auto prep = features::PrepareRename(pr);
     if (prep.has_value())
     {
@@ -430,8 +428,8 @@ Server::HandleRequestsTextDocument_Rename(lsp::requests::TextDocument_Rename::Pa
         return lsp::Null{};
     }
 
-    features::RenameRequest rr{ctx->doc.uri,  *ctx->doc.text, ctx->doc.tree,       ctx->decodedPosition, req.newName,
-                               m_symbolTable, m_scopeIndex,   ctx->predefinedUris, m_logger.get()};
+    features::RenameRequest rr{ctx->doc.uri,  *ctx->doc.text, ctx->decodedPosition, req.newName,
+                               m_symbolTable, m_scopeIndex,   ctx->predefinedUris,  m_logger.get()};
     auto edit = features::Rename(rr);
     if (edit.has_value())
     {

@@ -582,8 +582,7 @@ void LspSemanticHarnessFixture::AssertDefinitionTarget(const std::string& uri, u
     auto itTree = m_trees.find(uri);
     REQUIRE(itTree != m_trees.end());
 
-    features::DefinitionRequest req{uri,           m_documents[uri],        itTree->second.get(), *m_symbolTable,
-                                    *m_scopeIndex, lsp::Position{line, col}};
+    features::DefinitionRequest req{uri, m_documents[uri], *m_symbolTable, *m_scopeIndex, lsp::Position{line, col}};
     req.resolveInclude = [this](const std::string& inc)
     {
         auto p = m_sandboxDir / inc;
