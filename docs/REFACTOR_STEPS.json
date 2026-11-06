@@ -13,197 +13,90 @@
     "server/src/features/definition",
     "server/src/features/references",
     "server/src/features/rename",
-    "server/src/features/common"
+    "server/src/features/common",
+    "server/src/features/document_highlight",
+    "server/src/features/signature_help",
+    "server/src/features/inlay_hint",
+    "server/src/features/code_lens",
+    "server/src/features/breakpoints"
   ],
-  "active_folder": "server/src/features/document_highlight",
+  "active_folder": "server/src/features/semantic_tokens",
   "cross_module_impacts": [],
   "pending_folders": [
     {
-      "folder_path": "server/src/features/document_highlight",
-      "complexity_rank": 13,
-      "selection_rationale": "Leaf feature (2 files, 77 lines) highlighting read/write occurrences of identifier under cursor.",
+      "folder_path": "server/src/features/semantic_tokens",
+      "complexity_rank": 19,
+      "selection_rationale": "Feature (2 files, 186 lines) semantic token classification and delta encoding.",
       "files_to_refactor": [
         {
-          "file": "DocumentHighlightHandler.h",
+          "file": "SemanticTokensHandler.h",
           "detected_antipatterns": [
-            "Raw TSTree* pointer and <tree_sitter/api.h> dependency in DocumentHighlightRequest",
+            "Raw TSTree* pointer and <tree_sitter/api.h> dependency in SemanticTokensRequest",
             "Heap-allocated std::string members for uri and sourceCode"
           ],
           "reusable_structs_or_classes": [
-            "analysis::TargetResolution",
-            "analysis::CollectOccurrences",
-            "features::common::FeatureSharedUtils"
-          ],
-          "first_pass_data_needed": [
-            "AST-free target resolution using SymbolTable and ScopeIndex"
-          ]
-        },
-        {
-          "file": "DocumentHighlightHandler.cpp",
-          "detected_antipatterns": [
-            "Second-pass AST traversals for target resolution and occurrence filtering",
-            "Ad-hoc range and position mapping"
-          ],
-          "reusable_structs_or_classes": [
-            "features::common::FindIdentifierAtPosition",
-            "analysis::OccurrenceLocation"
-          ],
-          "liquidation_actions": [
-            "Purge TSTree* and TSNode second-pass traversals",
-            "Convert string parameters to zero-allocation std::string_view",
-            "Comply with lizard CCN <= 25, line length <= 120"
-          ]
-        }
-      ]
-    },
-    {
-      "folder_path": "server/src/features/signature_help",
-      "complexity_rank": 14,
-      "selection_rationale": "Leaf feature (2 files, 29 lines) active call signature and parameter index help.",
-      "files_to_refactor": [
-        {
-          "file": "SignatureHelpHandler.h",
-          "detected_antipatterns": [
-            "Raw TSTree* pointer and <tree_sitter/api.h> dependency in SignatureHelpRequest"
-          ],
-          "reusable_structs_or_classes": [
+            "analysis::NodeIndex",
             "analysis::SymbolTable",
-            "analysis::CallBindings",
             "analysis::ScopeIndex"
           ],
           "first_pass_data_needed": [
-            "Pre-indexed call bindings and parameter spans from syntax revision"
+            "Pre-indexed semantic token classification from syntax revision"
           ]
         },
         {
-          "file": "SignatureHelpHandler.cpp",
+          "file": "SemanticTokensHandler.cpp",
           "detected_antipatterns": [
-            "AST node climbs to locate call expressions and argument indices"
+            "AST tree cursor traversal in second pass for token emission",
+            "Manual token delta encoding without zero-copy buffers"
           ],
           "reusable_structs_or_classes": [
             "parser::GetRootNode",
-            "analysis::OverloadResolver"
+            "analysis::SemanticNodes"
           ],
           "liquidation_actions": [
-            "Decouple AST node traversal from argument index resolution",
-            "Enforce lizard CCN <= 25 and line length <= 120"
-          ]
-        }
-      ]
-    },
-    {
-      "folder_path": "server/src/features/inlay_hint",
-      "complexity_rank": 16,
-      "selection_rationale": "Feature (2 files, 114 lines) parameter name hints and inferred type hints.",
-      "files_to_refactor": [
-        {
-          "file": "InlayHintHandler.h",
-          "detected_antipatterns": [
-            "Raw tree dependency in InlayHintRequest",
-            "Heap string members for uri and sourceCode"
-          ],
-          "reusable_structs_or_classes": [
-            "analysis::NodeIndex",
-            "analysis::SymbolTable"
-          ],
-          "first_pass_data_needed": [
-            "Indexed call argument spans and local variable types"
-          ]
-        },
-        {
-          "file": "InlayHintHandler.cpp",
-          "detected_antipatterns": [
-            "Second-pass AST tree traversal for parameter hints",
-            "Manual type extraction on AST nodes"
-          ],
-          "reusable_structs_or_classes": [
-            "features::common::ToLspRange",
-            "analysis::ExpressionTypeCache"
-          ],
-          "liquidation_actions": [
-            "Purge AST recursion",
+            "Purge AST cursor walk in second pass",
+            "Consume pre-indexed tokens in O(1) / O(log N)",
             "Comply with lizard CCN <= 25 and line length <= 120"
           ]
         }
       ]
     },
     {
-      "folder_path": "server/src/features/code_lens",
-      "complexity_rank": 17,
-      "selection_rationale": "Feature (2 files, 149 lines) reference and implementation count lenses.",
-      "files_to_refactor": [
-        {
-          "file": "CodeLensHandler.h",
-          "detected_antipatterns": [
-            "Raw tree in CodeLensRequest"
-          ],
-          "reusable_structs_or_classes": [
-            "analysis::SymbolTable",
-            "analysis::CallGraphIndex"
-          ],
-          "first_pass_data_needed": [
-            "Indexed function and class declarations in file"
-          ]
-        },
-        {
-          "file": "CodeLensHandler.cpp",
-          "detected_antipatterns": [
-            "Ad-hoc AST queries for declaration references"
-          ],
-          "reusable_structs_or_classes": [
-            "analysis::CollectOccurrences",
-            "features::common::ToLspRange"
-          ],
-          "liquidation_actions": [
-            "Use SymbolTable and CallGraphIndex without AST traversals"
-          ]
-        }
-      ]
-    },
-    {
-      "folder_path": "server/src/features/breakpoints",
-      "complexity_rank": 18,
-      "selection_rationale": "Feature (4 files, 173 lines) executable line validation for breakpoint placement.",
-      "files_to_refactor": [
-        {
-          "file": "BreakpointHandler.h",
-          "detected_antipatterns": [
-            "Raw TSTree* in BreakpointRequest"
-          ],
-          "reusable_structs_or_classes": [
-            "analysis::NodeIndex",
-            "analysis::ScopeTree"
-          ],
-          "first_pass_data_needed": [
-            "Indexed executable line intervals and statement boundaries"
-          ]
-        },
-        {
-          "file": "BreakpointHandler.cpp",
-          "detected_antipatterns": [
-            "AST tree cursor scanning for statement lines"
-          ],
-          "reusable_structs_or_classes": [
-            "analysis::NodeIndex::HasExecutableStatementOnLine",
-            "analysis::ScopeTree"
-          ],
-          "liquidation_actions": [
-            "Eliminate AST node tree walking in breakpoint validation"
-          ]
-        }
-      ]
-    },
-    {
-      "folder_path": "server/src/features/semantic_tokens",
-      "complexity_rank": 19,
-      "selection_rationale": "Feature (2 files, 186 lines) semantic token classification and delta encoding.",
-      "files_to_refactor": []
-    },
-    {
       "folder_path": "server/src/features/hover",
       "complexity_rank": 20,
       "selection_rationale": "Feature (5 files, 509 lines) hover tooltips, markdown formatting, and type introspection.",
-      "files_to_refactor": []
+      "files_to_refactor": [
+        {
+          "file": "HoverHandler.h",
+          "detected_antipatterns": [
+            "Raw TSTree* pointer and <tree_sitter/api.h> in HoverRequest",
+            "Heap string members for uri and sourceCode"
+          ],
+          "reusable_structs_or_classes": [
+            "analysis::TargetResolution",
+            "analysis::SymbolTable",
+            "analysis::ScopeIndex"
+          ],
+          "first_pass_data_needed": [
+            "AST-free target resolution and doc comment associations"
+          ]
+        },
+        {
+          "file": "HoverHandler.cpp",
+          "detected_antipatterns": [
+            "Second-pass AST climbing to find hover targets",
+            "Ad-hoc type markdown formatting"
+          ],
+          "reusable_structs_or_classes": [
+            "features::common::FindIdentifierAtPosition",
+            "analysis::SignatureFormatter"
+          ],
+          "liquidation_actions": [
+            "Decouple from TSNode and TSTree*",
+            "Zero-copy std::string_view across hover pipelines"
+          ]
+        }
+      ]
     },
     {
       "folder_path": "server/src/features/formatting",
@@ -215,13 +108,74 @@
       "folder_path": "server/src/features/completion",
       "complexity_rank": 22,
       "selection_rationale": "Feature (2 files, 169 lines) contextual completion suggestions.",
-      "files_to_refactor": []
+      "files_to_refactor": [
+        {
+          "file": "CompletionHandler.h",
+          "detected_antipatterns": [
+            "Raw TSTree* pointer and <tree_sitter/api.h> in CompletionRequest",
+            "Heap string copies"
+          ],
+          "reusable_structs_or_classes": [
+            "analysis::SymbolTable",
+            "analysis::ScopeTree",
+            "analysis::NodeIndex"
+          ],
+          "first_pass_data_needed": [
+            "Lexical scope boundaries and reachable symbols"
+          ]
+        },
+        {
+          "file": "CompletionHandler.cpp",
+          "detected_antipatterns": [
+            "Second-pass AST inspection for trigger character context",
+            "Ad-hoc string filtering"
+          ],
+          "reusable_structs_or_classes": [
+            "features::common::FindScopedIdentifierAtPosition",
+            "utils::ScopedNameUtils"
+          ],
+          "liquidation_actions": [
+            "Rely on ScopeTree and SymbolTable",
+            "Ensure lizard CCN <= 25 and lines <= 120"
+          ]
+        }
+      ]
     },
     {
       "folder_path": "server/src/features/code_action",
       "complexity_rank": 23,
       "selection_rationale": "Feature (5 files, 368 lines) quick-fixes and refactorings.",
-      "files_to_refactor": []
+      "files_to_refactor": [
+        {
+          "file": "CodeActionHandler.h",
+          "detected_antipatterns": [
+            "Raw TSTree* pointer and <tree_sitter/api.h> in CodeActionRequest",
+            "Heap string members"
+          ],
+          "reusable_structs_or_classes": [
+            "analysis::SymbolTable",
+            "analysis::Diagnostics"
+          ],
+          "first_pass_data_needed": [
+            "Diagnostic context and pre-indexed symbols"
+          ]
+        },
+        {
+          "file": "CodeActionHandler.cpp",
+          "detected_antipatterns": [
+            "AST tree climbing for quick-fix context",
+            "Ad-hoc text edit synthesis"
+          ],
+          "reusable_structs_or_classes": [
+            "features::common::ToLspRange",
+            "analysis::TargetResolution"
+          ],
+          "liquidation_actions": [
+            "Eliminate AST node climbing",
+            "Zero-copy std::string_view"
+          ]
+        }
+      ]
     },
     {
       "folder_path": "server/src/document",
