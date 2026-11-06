@@ -1,14 +1,18 @@
 #include "features/signature_help/SignatureHelpHandler.h"
 
+#include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
+#include "analysis/types/TypeSanitization.h"
+#include "utils/PositionEncoding.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
-#include <sstream>
-#include <unordered_set>
+#include <cctype>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <tuple>
 #include <vector>
 
 namespace angel_lsp::features
@@ -113,179 +117,6 @@ static std::string FormatSignatureLabel(const analysis::Symbol& sym)
 }
 
 /**
- * @brief Traverses ancestors of a node to identify enclosing call_expression and argument_list.
- * @param[in] node Starting AST descendant.
- * @return Identified CallNodes.
- */
-static analysis::CallNodes FindCallNodes(TSNode node)
-{
-    analysis::CallNodes result;
-    const auto& gs = parser::GetGrammarSymbols();
-    parser::ForEachAncestor(node,
-                            [&](TSNode cur) -> bool
-                            {
-                                const TSSymbol type = ts_node_symbol(cur);
-                                if (type == gs.symArgumentList)
-                                {
-                                    result.argListNode = cur;
-                                    TSNode parent = parser::GetParent(cur);
-                                    if (!ts_node_is_null(parent))
-                                    {
-                                        const TSSymbol pType = ts_node_symbol(parent);
-                                        if (pType == gs.symCallExpression || pType == gs.symConstructCallExpression ||
-                                            pType == gs.symVariableDeclarator)
-                                        {
-                                            result.callNode = parent;
-                                            return false;
-                                        }
-                                    }
-                                }
-                                else if (type == gs.symCallExpression || type == gs.symConstructCallExpression ||
-                                         type == gs.symVariableDeclarator)
-                                {
-                                    result.callNode = cur;
-                                    return false;
-                                }
-                                return true;
-                            });
-
-    if (!ts_node_is_null(result.callNode) && ts_node_is_null(result.argListNode))
-    {
-        result.argListNode = analysis::ResolveArgumentListNode(result.callNode);
-    }
-    return result;
-}
-
-/**
- * @brief Determines active parameter index for the call at the given request position.
- * @param[in] request Signature help request.
- * @param[in] argListNode Argument list AST node.
- * @return Zero-based parameter index.
- */
-static uint32_t DetermineActiveParameter(const SignatureHelpRequest& request, TSNode argListNode)
-{
-    const size_t cursorByte = utils::PositionToOffset(request.sourceCode, request.position.line,
-                                                      request.position.character, utils::PositionEncoding::Utf16);
-    return analysis::CalculateActiveCallParameter(argListNode, cursorByte, request.sourceCode);
-}
-
-/**
- * @brief Extracts the function/callee AST node from a call or declarator node.
- * @param[in] callNode Call expression or variable declarator AST node.
- * @return Function AST node or null node if not found.
- */
-static TSNode ExtractFunctionNode(TSNode callNode)
-{
-    TSNode funcNode = parser::GetChildByField(callNode, parser::GetGrammarSymbols().fieldFunction);
-    if (!ts_node_is_null(funcNode))
-    {
-        return funcNode;
-    }
-    if (ts_node_symbol(callNode) == parser::GetGrammarSymbols().symVariableDeclarator)
-    {
-        TSNode declNode = parser::GetParent(callNode);
-        if (!ts_node_is_null(declNode))
-        {
-            TSNode typeNode = parser::GetChildByField(declNode, parser::GetGrammarSymbols().fieldVarType);
-            if (!ts_node_is_null(typeNode))
-            {
-                return typeNode;
-            }
-            TSNode foundType = parser::FindFirstChildOfSymbol(declNode, parser::GetGrammarSymbols().symType);
-            if (!ts_node_is_null(foundType))
-            {
-                return foundType;
-            }
-        }
-    }
-    if (ts_node_child_count(callNode) > 0)
-    {
-        return ts_node_child(callNode, 0);
-    }
-    return TSNode{};
-}
-
-/**
- * @brief Appends candidate symbols or underlying funcdefs for member calls.
- * @param[in] symbols Symbols found under qualified name.
- * @param[in] table Symbol table.
- * @param[in,out] outCandidates Destination vector for candidate symbols.
- */
-static void AppendMemberSymbolCandidates(const std::vector<analysis::Symbol>& symbols,
-                                         const analysis::SymbolTable& table,
-                                         std::vector<analysis::Symbol>& outCandidates)
-{
-    for (const auto& sym : symbols)
-    {
-        if (sym.type == analysis::SymbolType::Function || sym.type == analysis::SymbolType::Funcdef)
-        {
-            outCandidates.push_back(sym);
-        }
-        else if (sym.type == analysis::SymbolType::Variable || sym.type == analysis::SymbolType::Property)
-        {
-            std::string clean = analysis::CleanBaseType(sym.GetVariable().typeName);
-            if (auto fd = analysis::FindFuncdefSymbol(clean, table))
-            {
-                outCandidates.push_back(std::move(*fd));
-            }
-        }
-    }
-}
-
-/**
- * @brief Resolves candidate method symbols for a member expression callee.
- * @param[in] request Signature help request.
- * @param[in] funcNode Member expression AST node.
- * @return Matching symbol candidates from the receiver hierarchy.
- */
-static std::vector<analysis::Symbol> ResolveMemberCandidates(const SignatureHelpRequest& request, TSNode funcNode)
-{
-    TSNode objNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldObject);
-    TSNode memNode = parser::GetChildByField(funcNode, parser::GetGrammarSymbols().fieldMember);
-    if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
-    {
-        return {};
-    }
-
-    const uint32_t memStart = ts_node_start_byte(memNode);
-    const uint32_t memEnd = ts_node_end_byte(memNode);
-    if (memStart >= request.sourceCode.size() || memEnd > request.sourceCode.size() || memStart >= memEnd)
-    {
-        return {};
-    }
-    const std::string_view memText = std::string_view(request.sourceCode).substr(memStart, memEnd - memStart);
-
-    auto rootScope = request.scopeIndex.GetRoot(request.uri);
-    const analysis::Scope* scope =
-        rootScope ? FindInnermostScope(rootScope.get(), request.position.line, request.position.character) : nullptr;
-    std::string receiverTypeName =
-        analysis::ResolveReceiverType(objNode, request.sourceCode, request.symbolTable, {scope, "", request.uri});
-
-    if (receiverTypeName.empty())
-    {
-        return {};
-    }
-
-    auto hierarchy = analysis::GetInheritedTypeHierarchy(receiverTypeName, request.symbolTable);
-    for (const auto& typeName : hierarchy)
-    {
-        std::string qualifiedName = utils::JoinScopedName(typeName, memText);
-        auto found = request.symbolTable.FindSymbolsPtr(qualifiedName);
-        if (found && !found->empty())
-        {
-            std::vector<analysis::Symbol> candidates;
-            candidates.reserve(found->size());
-            AppendMemberSymbolCandidates(*found, request.symbolTable, candidates);
-            if (!candidates.empty())
-            {
-                return candidates;
-            }
-        }
-    }
-    return {};
-}
-
-/**
  * @brief Builds LSP parameter information objects for a symbol's parameter list.
  * @param[in] parameters List of symbol parameters.
  * @return Vector of LSP ParameterInformation.
@@ -325,58 +156,30 @@ BuildParameterList(const std::vector<analysis::ParameterInformation>& parameters
 }
 
 /**
- * @brief Appends candidate signature to LSP signature list if valid.
- * @tparam T Candidate type (Symbol or const Symbol*).
- * @param[in,out] signatures Destination signature list.
- * @param[in] candidate Candidate symbol reference or pointer.
- */
-template <typename T>
-static void AppendCandidateSignature(std::vector<lsp::SignatureInformation>& signatures, const T& candidate)
-{
-    const analysis::Symbol* symPtr = nullptr;
-    if constexpr (std::is_pointer_v<T>)
-    {
-        symPtr = candidate;
-    }
-    else
-    {
-        symPtr = &candidate;
-    }
-
-    if (!symPtr || (symPtr->type != analysis::SymbolType::Function && symPtr->type != analysis::SymbolType::Funcdef))
-    {
-        return;
-    }
-
-    lsp::SignatureInformation sigInfo;
-    sigInfo.label = FormatSignatureLabel(*symPtr);
-    const std::vector<analysis::ParameterInformation>* parameters = (symPtr->type == analysis::SymbolType::Function)
-                                                                        ? &symPtr->GetFunction().parameters
-                                                                        : &symPtr->GetFuncdef().parameters;
-
-    if (parameters && !parameters->empty())
-    {
-        sigInfo.parameters = BuildParameterList(*parameters);
-    }
-
-    signatures.push_back(std::move(sigInfo));
-}
-
-/**
  * @brief Constructs LSP signature information objects for candidate symbols.
- * @tparam Range Range of Symbol or Symbol pointers.
  * @param[in] candidateSymbols Candidate function or funcdef symbols.
  * @return List of LSP signature entries.
  */
-template <typename Range>
-static std::vector<lsp::SignatureInformation> BuildSignatureList(const Range& candidateSymbols)
+static std::vector<lsp::SignatureInformation> BuildSignatureList(const std::vector<analysis::Symbol>& candidateSymbols)
 {
     std::vector<lsp::SignatureInformation> signatures;
-    signatures.reserve(std::size(candidateSymbols));
+    signatures.reserve(candidateSymbols.size());
 
-    for (const auto& item : candidateSymbols)
+    for (const auto& sym : candidateSymbols)
     {
-        AppendCandidateSignature(signatures, item);
+        if (sym.type != analysis::SymbolType::Function && sym.type != analysis::SymbolType::Funcdef)
+        {
+            continue;
+        }
+        lsp::SignatureInformation sigInfo;
+        sigInfo.label = FormatSignatureLabel(sym);
+        const auto* parameters =
+            (sym.type == analysis::SymbolType::Function) ? &sym.GetFunction().parameters : &sym.GetFuncdef().parameters;
+        if (parameters && !parameters->empty())
+        {
+            sigInfo.parameters = BuildParameterList(*parameters);
+        }
+        signatures.push_back(std::move(sigInfo));
     }
     return signatures;
 }
@@ -401,147 +204,567 @@ static uint32_t SelectActiveSignature(const std::vector<lsp::SignatureInformatio
 }
 
 /**
- * @brief Attempts to resolve a callable funcdef member in enclosing containers.
- * @param[in] calleeName Name of the callee.
- * @param[in] funcNode AST node for the callee.
- * @param[in] request Signature help request.
- * @return Optional resolved symbol.
+ * @brief Finds a local definition in the given scope or enclosing scopes.
+ * @param[in] scope Starting lexical scope.
+ * @param[in] name Identifier name.
+ * @return Pointer to local definition if found; nullptr otherwise.
  */
-static std::optional<analysis::Symbol> TryResolveEnclosingMemberCallableFuncdef(std::string_view calleeName,
-                                                                                TSNode funcNode,
-                                                                                const SignatureHelpRequest& request)
+static const analysis::LocalDefinition* FindLocalDefinition(const analysis::Scope* scope, std::string_view name)
 {
-    for (const auto& container : analysis::GetEnclosingContainers(funcNode, request.sourceCode))
+    while (scope)
     {
-        if (container.kind != analysis::ContainerKind::Class && container.kind != analysis::ContainerKind::Interface)
+        for (const auto& def : scope->definitions)
         {
-            continue;
+            if (def.name == name)
+            {
+                return &def;
+            }
         }
-        const std::string className = container.qualifiedName.empty() ? container.name : container.qualifiedName;
-        for (const auto& cls : analysis::GetInheritedTypeHierarchy(className, request.symbolTable))
+        scope = scope->parent;
+    }
+    return nullptr;
+}
+
+/**
+ * @brief Advances cursor past comments or string literals.
+ * @param[in] source Source code.
+ * @param[in] i Current byte offset.
+ * @return New byte offset after skipped comment or string.
+ */
+static size_t SkipComment(std::string_view source, size_t i)
+{
+    if (i + 1 >= source.size() || source[i] != '/')
+    {
+        return i;
+    }
+    if (source[i + 1] == '/')
+    {
+        i += 2;
+        while (i < source.size() && source[i] != '\n')
         {
-            const auto mSyms = request.symbolTable.FindMemberSymbolPtr(cls, calleeName);
-            if (!mSyms)
+            ++i;
+        }
+        return i;
+    }
+    if (source[i + 1] == '*')
+    {
+        i += 2;
+        while (i + 1 < source.size() && !(source[i] == '*' && source[i + 1] == '/'))
+        {
+            ++i;
+        }
+        return i + (i + 1 < source.size() ? 2 : 0);
+    }
+    return i;
+}
+
+static size_t SkipStringLiteral(std::string_view source, size_t i)
+{
+    char c = source[i];
+    if (c == '"' && i + 2 < source.size() && source[i + 1] == '"' && source[i + 2] == '"')
+    {
+        i += 3;
+        while (i + 2 < source.size() && !(source[i] == '"' && source[i + 1] == '"' && source[i + 2] == '"'))
+        {
+            ++i;
+        }
+        return i + (i + 2 < source.size() ? 3 : 0);
+    }
+    if (c == '"' || c == '\'')
+    {
+        char quote = c;
+        ++i;
+        while (i < source.size() && source[i] != quote && source[i] != '\n')
+        {
+            i += (source[i] == '\\' && i + 1 < source.size()) ? 2 : 1;
+        }
+        return i + (i < source.size() && source[i] == quote ? 1 : 0);
+    }
+    return i;
+}
+
+static size_t SkipCommentOrString(std::string_view source, size_t i)
+{
+    size_t nextI = SkipComment(source, i);
+    return (nextI > i) ? nextI : SkipStringLiteral(source, i);
+}
+
+using CallFrame = std::tuple<size_t, uint32_t, int, int>;
+
+static void StepCallDelimiter(char c, std::vector<CallFrame>& stack, size_t offset)
+{
+    if (c == '(')
+    {
+        stack.push_back({offset, 0, 0, 0});
+        return;
+    }
+    if (stack.empty())
+    {
+        return;
+    }
+    auto& top = stack.back();
+    switch (c)
+    {
+    case ')':
+        stack.pop_back();
+        break;
+    case '[':
+        ++std::get<2>(top);
+        break;
+    case ']':
+        if (std::get<2>(top) > 0)
+            --std::get<2>(top);
+        break;
+    case '{':
+        ++std::get<3>(top);
+        break;
+    case '}':
+        if (std::get<3>(top) > 0)
+            --std::get<3>(top);
+        break;
+    case ',':
+        if (std::get<2>(top) == 0 && std::get<3>(top) == 0)
+        {
+            ++std::get<1>(top);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+static bool IsValidPostTemplateChar(char c)
+{
+    return c == '(' || c == ')' || c == ',' || c == '@' || c == '[' || c == '.' || c == '>' || c == ':';
+}
+
+static bool IsValidTemplateChar(char c)
+{
+    return std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == ':' || c == ',' || c == '@' || c == '&' ||
+           std::isspace(static_cast<unsigned char>(c));
+}
+
+static bool HasPrecedingIdentifier(std::string_view source, size_t i)
+{
+    if (i == 0)
+    {
+        return false;
+    }
+    size_t k = i;
+    while (k > 0 && (source[k - 1] == ' ' || source[k - 1] == '\t'))
+    {
+        --k;
+    }
+    return k > 0 && (std::isalnum(static_cast<unsigned char>(source[k - 1])) || source[k - 1] == '_');
+}
+
+static bool CheckFirstTypeChar(std::string_view source, size_t i)
+{
+    size_t k = i + 1;
+    while (k < source.size() && (source[k] == ' ' || source[k] == '\t'))
+    {
+        ++k;
+    }
+    return k < source.size() &&
+           (std::isalpha(static_cast<unsigned char>(source[k])) || source[k] == '_' || source[k] == '?');
+}
+
+static bool CheckPostTemplateValid(std::string_view source, size_t pos)
+{
+    while (pos < source.size() && (source[pos] == ' ' || source[pos] == '\t'))
+    {
+        ++pos;
+    }
+    return pos >= source.size() || IsValidPostTemplateChar(source[pos]);
+}
+
+static size_t TrySkipTemplate(std::string_view source, size_t i)
+{
+    if (i >= source.size() || source[i] != '<' || !HasPrecedingIdentifier(source, i) || !CheckFirstTypeChar(source, i))
+    {
+        return i;
+    }
+
+    int depth = 0;
+    size_t j = i;
+    while (j < source.size())
+    {
+        char c = source[j];
+        if (c == '<')
+        {
+            ++depth;
+            ++j;
+        }
+        else if (c == '>')
+        {
+            --depth;
+            ++j;
+            if (depth == 0)
             {
-                continue;
+                return CheckPostTemplateValid(source, j) ? j : i;
             }
-            for (const auto& sym : *mSyms)
-            {
-                if ((sym.type == analysis::SymbolType::Variable || sym.type == analysis::SymbolType::Property) &&
-                    std::holds_alternative<analysis::VariableSignature>(sym.signature))
-                {
-                    std::string clean = analysis::CleanBaseType(sym.GetVariable().typeName);
-                    if (auto funcdefSym = analysis::FindFuncdefSymbol(clean, request.symbolTable))
-                    {
-                        return analysis::FuncdefToFunctionSymbol(*funcdefSym, std::string(calleeName));
-                    }
-                }
-            }
+        }
+        else if (IsValidTemplateChar(c))
+        {
+            ++j;
+        }
+        else
+        {
+            return i;
         }
     }
-    return std::nullopt;
+    return i;
+}
+
+/**
+ * @brief Scans source text forwards to determine active call parenthesis and parameter offset.
+ * @param[in] source Document text buffer.
+ * @param[in] cursorByte Target cursor byte offset.
+ * @return CallFrame if cursor is inside call parenthesis; nullopt otherwise.
+ */
+static std::optional<CallFrame> ScanEnclosingCall(std::string_view source, size_t cursorByte)
+{
+    std::vector<CallFrame> stack;
+    size_t i = 0;
+
+    while (i < cursorByte && i < source.size())
+    {
+        size_t nextI = SkipCommentOrString(source, i);
+        if (nextI > i)
+        {
+            i = nextI;
+            continue;
+        }
+        if (source[i] == '<')
+        {
+            size_t tmplI = TrySkipTemplate(source, i);
+            if (tmplI > i)
+            {
+                if (tmplI <= cursorByte)
+                {
+                    i = tmplI;
+                    continue;
+                }
+                break;
+            }
+        }
+        StepCallDelimiter(source[i], stack, i);
+        ++i;
+    }
+    if (stack.empty())
+    {
+        return std::nullopt;
+    }
+    return stack.back();
+}
+
+static size_t SkipWhitespaceBackwards(std::string_view s, size_t pos)
+{
+    while (pos > 0 && std::isspace(static_cast<unsigned char>(s[pos - 1])))
+    {
+        --pos;
+    }
+    return pos;
+}
+
+static size_t SkipTemplateArgsBackwards(std::string_view s, size_t pos)
+{
+    if (pos == 0 || s[pos - 1] != '>')
+    {
+        return pos;
+    }
+    int depth = 1;
+    --pos;
+    while (pos > 0 && depth > 0)
+    {
+        if (s[pos - 1] == '>')
+        {
+            depth++;
+        }
+        else if (s[pos - 1] == '<')
+        {
+            depth--;
+        }
+        --pos;
+    }
+    return SkipWhitespaceBackwards(s, pos);
+}
+
+static std::string_view ExtractIdentifierBackwards(std::string_view s, size_t& pos)
+{
+    pos = SkipWhitespaceBackwards(s, pos);
+    size_t end = pos;
+    while (pos > 0 && (std::isalnum(static_cast<unsigned char>(s[pos - 1])) || s[pos - 1] == '_'))
+    {
+        --pos;
+    }
+    return (end > pos) ? s.substr(pos, end - pos) : std::string_view{};
+}
+
+static std::string CleanReceiverTypeName(std::string_view rawType)
+{
+    analysis::TrimTypeWhitespace(rawType);
+    rawType = analysis::StripLeadingConst(rawType);
+    analysis::TrimTypeWhitespace(rawType);
+    rawType = analysis::StripTrailingDecorationsView(rawType, false);
+    analysis::TrimTypeWhitespace(rawType);
+
+    if (rawType.ends_with("[]") || rawType.starts_with("array<"))
+    {
+        return "array";
+    }
+    if (auto pos = rawType.find('<'); pos != std::string::npos)
+    {
+        return std::string(rawType.substr(0, pos));
+    }
+    return std::string(rawType);
+}
+
+static std::string ResolveReceiverType(std::string_view receiverName, const analysis::Scope* scope,
+                                       const analysis::SymbolTable& symbolTable)
+{
+    if (receiverName == "this")
+    {
+        return scope ? std::string(scope->GetEnclosingClass()) : std::string{};
+    }
+    if (const auto* def = FindLocalDefinition(scope, receiverName))
+    {
+        return def->typeName;
+    }
+    if (scope && !scope->GetEnclosingClass().empty())
+    {
+        auto mems = symbolTable.FindMemberSymbols(scope->GetEnclosingClass(), receiverName);
+        if (!mems.empty() && mems[0].type == analysis::SymbolType::Variable)
+        {
+            return mems[0].GetVariable().typeName;
+        }
+    }
+    auto globals = symbolTable.FindSymbols(receiverName);
+    for (const auto& sym : globals)
+    {
+        if (sym.type == analysis::SymbolType::Variable)
+        {
+            return sym.GetVariable().typeName;
+        }
+    }
+    return "";
+}
+
+/**
+ * @brief Resolves candidate method symbols for a member expression callee.
+ * @param[in] receiver Receiver expression name.
+ * @param[in] callee Callee method identifier.
+ * @param[in] scope Current lexical scope.
+ * @param[in] symbolTable Symbol table.
+ * @return Matching symbol candidates from the receiver hierarchy.
+ */
+static std::vector<analysis::Symbol> ResolveMemberCandidates(std::string_view receiver, std::string_view callee,
+                                                             const analysis::Scope* scope,
+                                                             const analysis::SymbolTable& symbolTable)
+{
+    std::string rawType = ResolveReceiverType(receiver, scope, symbolTable);
+    if (rawType.empty())
+    {
+        return {};
+    }
+    std::string cleanType = CleanReceiverTypeName(rawType);
+    auto hierarchy = analysis::GetInheritedTypeHierarchy(cleanType, symbolTable);
+    std::vector<analysis::Symbol> candidates;
+
+    for (const auto& typeName : hierarchy)
+    {
+        auto mems = symbolTable.FindMemberSymbols(typeName, callee);
+        for (const auto& sym : mems)
+        {
+            if (sym.type == analysis::SymbolType::Function || sym.type == analysis::SymbolType::Funcdef)
+            {
+                candidates.push_back(sym);
+            }
+        }
+        if (!candidates.empty())
+        {
+            return candidates;
+        }
+    }
+    return {};
 }
 
 /**
  * @brief Resolves signature information for direct (non-member) callee expressions.
- * @param[in] request Signature help request context.
- * @param[in] funcNode AST node for the callee expression.
- * @return Resolved list of signatures.
+ * @param[in] callee Callee identifier.
+ * @param[in] prevToken Token preceding callee if declaring variable.
+ * @param[in] scope Current lexical scope.
+ * @param[in] symbolTable Symbol table.
+ * @return Resolved list of candidate symbols.
  */
-static std::vector<lsp::SignatureInformation> ResolveDirectSignatures(const SignatureHelpRequest& request,
-                                                                      TSNode funcNode)
+static std::vector<analysis::Symbol> ResolveDirectCandidates(std::string_view callee, std::string_view prevToken,
+                                                             const analysis::Scope* scope,
+                                                             const analysis::SymbolTable& symbolTable)
 {
-    uint32_t fStart = ts_node_start_byte(funcNode);
-    uint32_t fEnd = ts_node_end_byte(funcNode);
-    if (fStart >= request.sourceCode.size() || fEnd > request.sourceCode.size() || fStart >= fEnd)
+    if (const auto* def = FindLocalDefinition(scope, callee))
     {
-        return {};
-    }
-    std::string_view calleeName = std::string_view(request.sourceCode).substr(fStart, fEnd - fStart);
-
-    auto rootScope = request.scopeIndex.GetRoot(request.uri);
-    const analysis::Scope* scope =
-        rootScope ? FindInnermostScope(rootScope.get(), request.position.line, request.position.character) : nullptr;
-    if (auto callableSym = analysis::TryResolveCallableFuncdef(std::string(calleeName), scope, request.symbolTable))
-    {
-        return BuildSignatureList(std::vector<analysis::Symbol>{*callableSym});
-    }
-
-    auto found = request.symbolTable.FindSymbolsPtr(calleeName);
-    std::vector<lsp::SignatureInformation> signatures;
-    if (found && !found->empty())
-    {
-        signatures = BuildSignatureList(*found);
-    }
-    if (signatures.empty())
-    {
-        if (auto memberCallable = TryResolveEnclosingMemberCallableFuncdef(calleeName, funcNode, request))
+        std::string clean = analysis::CleanBaseType(def->typeName);
+        if (auto fd = analysis::FindFuncdefSymbol(clean, symbolTable))
         {
-            return BuildSignatureList(std::vector<analysis::Symbol>{*memberCallable});
+            return {analysis::FuncdefToFunctionSymbol(*fd, std::string(callee))};
         }
     }
-    if (signatures.empty())
+
+    const auto* varDef = FindLocalDefinition(scope, callee);
+    std::string_view initType = (varDef && !varDef->typeName.empty()) ? std::string_view(varDef->typeName) : prevToken;
+    if (!initType.empty())
     {
-        auto ctorCandidates = analysis::CollectConstructorCandidates(std::string(calleeName), funcNode,
-                                                                     request.sourceCode, request.symbolTable);
-        if (!ctorCandidates.empty())
+        std::string cleanInit = analysis::CleanBaseType(initType);
+        auto ctors = symbolTable.FindMemberSymbols(cleanInit, cleanInit);
+        if (!ctors.empty())
         {
-            signatures = BuildSignatureList(ctorCandidates);
+            return ctors;
         }
     }
-    return signatures;
+
+    if (auto found = symbolTable.FindSymbolsPtr(callee); found && !found->empty())
+    {
+        std::vector<analysis::Symbol> funcs;
+        for (const auto& s : *found)
+        {
+            if (s.type == analysis::SymbolType::Function || s.type == analysis::SymbolType::Funcdef)
+            {
+                funcs.push_back(s);
+            }
+        }
+        if (!funcs.empty())
+        {
+            return funcs;
+        }
+    }
+
+    auto ctors = symbolTable.FindMemberSymbols(callee, callee);
+    if (!ctors.empty())
+    {
+        return ctors;
+    }
+    auto typeSyms = symbolTable.FindTypeSymbolsByShortName(callee);
+    if (!typeSyms.empty())
+    {
+        auto typeCtors = symbolTable.FindMemberSymbols(typeSyms[0].name, typeSyms[0].name);
+        if (!typeCtors.empty())
+        {
+            return typeCtors;
+        }
+    }
+
+    if (scope && !scope->GetEnclosingClass().empty())
+    {
+        auto mems = symbolTable.FindMemberSymbols(scope->GetEnclosingClass(), callee);
+        std::vector<analysis::Symbol> funcs;
+        for (const auto& s : mems)
+        {
+            if (s.type == analysis::SymbolType::Function || s.type == analysis::SymbolType::Funcdef)
+            {
+                funcs.push_back(s);
+            }
+        }
+        if (!funcs.empty())
+        {
+            return funcs;
+        }
+    }
+
+    if (auto callableSym = analysis::TryResolveCallableFuncdef(std::string(callee), scope, symbolTable))
+    {
+        return {*callableSym};
+    }
+    return {};
 }
 
 std::optional<lsp::SignatureHelp> GetSignatureHelp(const SignatureHelpRequest& request)
 {
-    if (!request.tree || request.sourceCode.empty())
+    if (request.sourceCode.empty())
     {
         return std::nullopt;
     }
 
-    TSNode rootNode = ts_tree_root_node(request.tree);
-    TSPoint point = {request.position.line, request.position.character};
-    TSNode node = ts_node_descendant_for_point_range(rootNode, point, point);
-    if (ts_node_is_null(node))
+    const size_t cursorByte = utils::PositionToOffset(request.sourceCode, request.position.line,
+                                                      request.position.character, utils::PositionEncoding::Utf16);
+    auto frame = ScanEnclosingCall(request.sourceCode, cursorByte);
+    if (!frame)
     {
         return std::nullopt;
     }
 
-    analysis::CallNodes callNodes = FindCallNodes(node);
-    if (ts_node_is_null(callNodes.callNode))
+    size_t parenPos = std::get<0>(*frame);
+    uint32_t activeParam = std::get<1>(*frame);
+
+    size_t pos = SkipWhitespaceBackwards(request.sourceCode, parenPos);
+    pos = SkipTemplateArgsBackwards(request.sourceCode, pos);
+    std::string_view callee = ExtractIdentifierBackwards(request.sourceCode, pos);
+    if (callee.empty())
     {
         return std::nullopt;
     }
 
-    TSNode funcNode = ExtractFunctionNode(callNodes.callNode);
-    if (ts_node_is_null(funcNode))
-    {
-        return std::nullopt;
-    }
+    pos = SkipWhitespaceBackwards(request.sourceCode, pos);
+    std::string_view receiver;
+    std::string_view prevToken;
+    bool isMember = false;
+    bool isQualified = false;
 
-    std::vector<lsp::SignatureInformation> signatures;
-    if (ts_node_symbol(funcNode) == parser::GetGrammarSymbols().symMemberExpression)
+    if (pos > 0 && request.sourceCode[pos - 1] == '.')
     {
-        signatures = BuildSignatureList(ResolveMemberCandidates(request, funcNode));
+        isMember = true;
+        --pos;
+        receiver = ExtractIdentifierBackwards(request.sourceCode, pos);
+    }
+    else if (pos >= 2 && request.sourceCode[pos - 1] == ':' && request.sourceCode[pos - 2] == ':')
+    {
+        isQualified = true;
+        pos -= 2;
+        receiver = ExtractIdentifierBackwards(request.sourceCode, pos);
     }
     else
     {
-        signatures = ResolveDirectSignatures(request, funcNode);
+        prevToken = ExtractIdentifierBackwards(request.sourceCode, pos);
     }
 
+    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+    const analysis::Scope* scope =
+        rootScope ? FindInnermostScope(rootScope.get(), request.position.line, request.position.character) : nullptr;
+
+    std::vector<analysis::Symbol> candidates;
+    if (isMember)
+    {
+        candidates = ResolveMemberCandidates(receiver, callee, scope, request.symbolTable);
+    }
+    else if (isQualified)
+    {
+        std::string full = utils::JoinScopedName(receiver, callee);
+        if (auto found = request.symbolTable.FindSymbolsPtr(full))
+        {
+            candidates = *found;
+        }
+    }
+    else
+    {
+        candidates = ResolveDirectCandidates(callee, prevToken, scope, request.symbolTable);
+    }
+
+    if (candidates.empty())
+    {
+        return std::nullopt;
+    }
+
+    auto signatures = BuildSignatureList(candidates);
     if (signatures.empty())
     {
         return std::nullopt;
     }
 
-    uint32_t activeParameter = DetermineActiveParameter(request, callNodes.argListNode);
-    uint32_t activeSignature = SelectActiveSignature(signatures, activeParameter);
+    uint32_t activeSig = SelectActiveSignature(signatures, activeParam);
 
     lsp::SignatureHelp result;
     result.signatures = std::move(signatures);
-    result.activeSignature = activeSignature;
-    result.activeParameter = activeParameter;
-
+    result.activeSignature = activeSig;
+    result.activeParameter = activeParam;
     return result;
 }
 

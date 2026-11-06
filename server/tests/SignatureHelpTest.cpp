@@ -72,7 +72,7 @@ struct TestEnvironment
 
     std::optional<lsp::SignatureHelp> SigHelpAt(uint32_t line, uint32_t character)
     {
-        SignatureHelpRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, character}};
+        SignatureHelpRequest req{uri, sourceCode, symbolTable, scopeIndex, lsp::Position{line, character}};
         return GetSignatureHelp(req);
     }
 };
@@ -313,4 +313,45 @@ TEST_CASE("SignatureHelpHandler - Invariant: Local funcdef variable provides sig
     CHECK(help0->signatures[0].label.find("void " + varName + "(int player, float option)") != std::string::npos);
     REQUIRE(help0->signatures[0].parameters.has_value());
     CHECK(help0->signatures[0].parameters->size() == 2);
+}
+
+TEST_CASE("SignatureHelpHandler - Comparison and shift operators in arguments do not suppress comma")
+{
+    std::string code = "void Evaluate(bool flag, bool flag2, float ratio) {}\n"
+                       "void main() {\n"
+                       "    int x = 3;\n"
+                       "    int y = 4;\n"
+                       "    Evaluate(x < 5, y > 2, 0.5f);\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    const size_t callPos = code.find("Evaluate(x < 5");
+    auto posArg1 = FindPos(code, "y > 2", callPos);
+    auto help1 = env.SigHelpAt(posArg1.line, posArg1.character);
+    REQUIRE(help1.has_value());
+    REQUIRE(help1->activeParameter.has_value());
+    CHECK(help1->activeParameter.value().value() == 1u);
+
+    auto posArg2 = FindPos(code, "0.5f", callPos);
+    auto help2 = env.SigHelpAt(posArg2.line, posArg2.character);
+    REQUIRE(help2.has_value());
+    REQUIRE(help2->activeParameter.has_value());
+    CHECK(help2->activeParameter.value().value() == 2u);
+}
+
+TEST_CASE("SignatureHelpHandler - Heredoc string with parens and commas does not corrupt call frame")
+{
+    std::string code = "void LogMessage(string msg, int level) {}\n"
+                       "void main() {\n"
+                       "    LogMessage(\"\"\"multi (line,\n"
+                       "paren)\"\"\", 5);\n"
+                       "}\n";
+
+    TestEnvironment env(code);
+    const size_t callPos = code.find("LogMessage(\"\"\"");
+    auto posArg1 = FindPos(code, "5", callPos);
+    auto help1 = env.SigHelpAt(posArg1.line, posArg1.character);
+    REQUIRE(help1.has_value());
+    REQUIRE(help1->activeParameter.has_value());
+    CHECK(help1->activeParameter.value().value() == 1u);
 }

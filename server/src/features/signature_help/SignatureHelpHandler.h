@@ -6,8 +6,7 @@
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <optional>
-#include <string>
-#include <tree_sitter/api.h>
+#include <string_view>
 
 namespace angel_lsp::features
 {
@@ -16,9 +15,8 @@ namespace angel_lsp::features
  */
 struct SignatureHelpRequest
 {
-    std::string uri;
-    std::string sourceCode;
-    TSTree* tree = nullptr;
+    std::string_view uri;
+    std::string_view sourceCode;
     const analysis::SymbolTable& symbolTable;
     const analysis::ScopeIndex& scopeIndex;
     lsp::Position position;
