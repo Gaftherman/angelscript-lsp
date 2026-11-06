@@ -29,7 +29,7 @@ static lsp::Location MakeLocation(const analysis::Symbol& sym, const DefinitionR
 {
     if (request.uri.starts_with("angelscript-virtual:") || request.uri.starts_with("angelscript-virtual://"))
     {
-        std::string mixinPart = analysis::SymbolTable::ExtractVirtualMixinName(std::string(request.uri));
+        std::string mixinPart = analysis::SymbolTable::ExtractVirtualMixinName(request.uri);
         const analysis::Symbol* mSym = nullptr;
         auto cand = request.symbolTable.FindSymbols(mixinPart);
         for (const auto& c : cand)
@@ -42,8 +42,7 @@ static lsp::Location MakeLocation(const analysis::Symbol& sym, const DefinitionR
         }
         if (!mSym)
         {
-            std::string shortName = std::string(analysis::LastScopeSegment(mixinPart));
-            auto sCand = request.symbolTable.FindTypeSymbolsByShortName(shortName);
+            auto sCand = request.symbolTable.FindTypeSymbolsByShortName(analysis::LastScopeSegment(mixinPart));
             for (const auto& c : sCand)
             {
                 if (c.type == analysis::SymbolType::Class)
@@ -59,13 +58,13 @@ static lsp::Location MakeLocation(const analysis::Symbol& sym, const DefinitionR
             uint32_t mappedStartLine = analysis::SymbolTable::PhysicalToVirtualLine(sym.startLine, mSym->startLine);
             uint32_t lineDiff = sym.endLine >= sym.startLine ? (sym.endLine - sym.startLine) : 0;
             uint32_t mappedEndLine = mappedStartLine + lineDiff;
-            return lsp::Location{lsp::DocumentUri::parse(std::string(request.uri)),
+            return lsp::Location{lsp::DocumentUri::parse(request.uri),
                                  lsp::Range{lsp::Position{mappedStartLine, sym.startCharacter},
                                             lsp::Position{mappedEndLine, sym.endCharacter}}};
         }
     }
 
-    const std::string targetUri = sym.fileUri.empty() ? std::string(request.uri) : sym.fileUri;
+    std::string_view targetUri = sym.fileUri.empty() ? request.uri : std::string_view(sym.fileUri);
     const bool hasFullRange = sym.fullRange.endLine != 0 || sym.fullRange.endCharacter != 0;
     return lsp::Location{lsp::DocumentUri::parse(targetUri),
                          hasFullRange ? common::ToLspRange(sym.fullRange)
@@ -218,14 +217,14 @@ static std::string ResolveTargetTypeName(std::string_view nodeText, const Defini
 {
     const std::string enclosingNs = FindEnclosingNamespace(request.uri, request.position.line, request.symbolTable);
 
-    auto rootScope = request.scopeIndex.GetRoot(std::string(request.uri));
+    auto rootScope = request.scopeIndex.GetRoot(request.uri);
     if (rootScope)
     {
         const analysis::Scope* scope =
             FindInnermostScope(rootScope.get(), request.position.line, request.position.character);
         if (scope)
         {
-            const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, std::string(nodeText), UINT32_MAX);
+            const analysis::LocalDefinition* def = analysis::ResolveInScopeAt(scope, nodeText, UINT32_MAX);
             if (def && !def->typeName.empty())
             {
                 return analysis::CleanBaseType(def->typeName);
@@ -259,7 +258,7 @@ static std::string ResolveTargetTypeName(std::string_view nodeText, const Defini
         }
     }
 
-    auto symbols = request.symbolTable.FindSymbols(std::string(nodeText));
+    auto symbols = request.symbolTable.FindSymbols(nodeText);
     for (const auto& sym : symbols)
     {
         if (sym.type == analysis::SymbolType::Variable && !sym.GetVariable().typeName.empty())
@@ -276,14 +275,14 @@ static std::string ResolveTargetTypeName(std::string_view nodeText, const Defini
         }
     }
 
-    auto accessors = analysis::FindGlobalPropertyAccessors(std::string(nodeText), request.symbolTable);
+    auto accessors = analysis::FindGlobalPropertyAccessors(nodeText, request.symbolTable);
     std::string propType = analysis::PropertyTypeFromAccessors(accessors);
     if (!propType.empty())
     {
         return analysis::CleanBaseType(propType);
     }
 
-    return analysis::CleanBaseType(std::string(nodeText));
+    return analysis::CleanBaseType(nodeText);
 }
 
 /**
@@ -304,14 +303,14 @@ static std::optional<std::vector<lsp::Location>> TryResolveOverriddenMethod(std:
     }
     else
     {
-        enclosingClass = request.symbolTable.FindEnclosingClassName(std::string(request.uri), request.position.line);
+        enclosingClass = request.symbolTable.FindEnclosingClassName(request.uri, request.position.line);
     }
     if (enclosingClass.empty())
     {
         return std::nullopt;
     }
 
-    auto localMethods = request.symbolTable.FindMemberSymbols(enclosingClass, std::string(nodeText));
+    auto localMethods = request.symbolTable.FindMemberSymbols(enclosingClass, nodeText);
     bool isDecl = false;
     for (const auto& m : localMethods)
     {
@@ -332,8 +331,8 @@ static std::optional<std::vector<lsp::Location>> TryResolveOverriddenMethod(std:
         linkedOpts.proxyMap = &request.engineRules->unusedRules.baseClassProxyMap;
         linkedOpts.delegateProps = request.engineRules->unusedRules.baseClassDelegateProperties;
     }
-    auto overriddenSyms = analysis::FindOverriddenBaseMethodSymbols(enclosingClass, std::string(nodeText),
-                                                                    request.symbolTable, linkedOpts);
+    auto overriddenSyms =
+        analysis::FindOverriddenBaseMethodSymbols(enclosingClass, nodeText, request.symbolTable, linkedOpts);
     if (overriddenSyms.empty())
     {
         return std::nullopt;
@@ -367,8 +366,7 @@ static std::optional<std::vector<lsp::Location>> TryResolveLocalDeclaration(std:
             auto range = common::FindIdentifierRangeAtPosition(request.sourceCode, request.position);
             if (range)
             {
-                return std::vector<lsp::Location>{
-                    lsp::Location{lsp::DocumentUri::parse(std::string(request.uri)), *range}};
+                return std::vector<lsp::Location>{lsp::Location{lsp::DocumentUri::parse(request.uri), *range}};
             }
         }
     }
@@ -676,31 +674,31 @@ static std::optional<std::vector<lsp::Location>> TryResolveScopedIdentifier(cons
         return std::nullopt;
     }
 
-    auto memberSyms = request.symbolTable.FindMemberSymbols(std::string(qualifier), std::string(memberName));
+    auto memberSyms = request.symbolTable.FindMemberSymbols(qualifier, memberName);
     if (memberSyms.empty())
     {
-        memberSyms = request.symbolTable.FindSymbols(std::string(scopedName));
+        memberSyms = request.symbolTable.FindSymbols(scopedName);
     }
     if (memberSyms.empty())
     {
         const std::string enclosingNs = FindEnclosingNamespace(request.uri, request.position.line, request.symbolTable);
         if (!enclosingNs.empty())
         {
-            utils::ForEachEnclosingScope(
-                enclosingNs,
-                [&](std::string_view scope)
-                {
-                    if (!memberSyms.empty())
-                    {
-                        return;
-                    }
-                    std::string fullQual = utils::JoinScopedName(scope, qualifier);
-                    memberSyms = request.symbolTable.FindMemberSymbols(fullQual, std::string(memberName));
-                    if (memberSyms.empty())
-                    {
-                        memberSyms = request.symbolTable.FindSymbols(utils::JoinScopedName(scope, scopedName));
-                    }
-                });
+            utils::ForEachEnclosingScope(enclosingNs,
+                                         [&](std::string_view scope)
+                                         {
+                                             if (!memberSyms.empty())
+                                             {
+                                                 return;
+                                             }
+                                             std::string fullQual = utils::JoinScopedName(scope, qualifier);
+                                             memberSyms = request.symbolTable.FindMemberSymbols(fullQual, memberName);
+                                             if (memberSyms.empty())
+                                             {
+                                                 memberSyms = request.symbolTable.FindSymbols(
+                                                     utils::JoinScopedName(scope, scopedName));
+                                             }
+                                         });
         }
     }
     auto locs = ConvertSymbolsToLocations(memberSyms, request);
@@ -741,7 +739,7 @@ static std::optional<std::vector<lsp::Location>> TryResolveThisKeyword(std::stri
 static std::optional<std::vector<lsp::Location>> TryResolveDelegateProperty(std::string_view nodeText,
                                                                             const DefinitionRequest& request)
 {
-    if (!analysis::IsBaseClassDelegateProperty(std::string(nodeText), request.symbolTable, request.engineRules))
+    if (!analysis::IsBaseClassDelegateProperty(nodeText, request.symbolTable, request.engineRules))
     {
         return std::nullopt;
     }
@@ -772,18 +770,18 @@ static std::optional<std::vector<lsp::Location>> TryResolveDelegateProperty(std:
 static std::optional<std::vector<lsp::Location>> TryResolveVirtualMixin(std::string_view nodeText,
                                                                         const DefinitionRequest& request)
 {
-    auto vCtx = analysis::ResolveVirtualMixinContext(std::string(request.uri), request.symbolTable);
+    auto vCtx = analysis::ResolveVirtualMixinContext(request.uri, request.symbolTable);
     if (!vCtx.isVirtual)
     {
         return std::nullopt;
     }
-    auto memberSyms = request.symbolTable.FindMemberSymbols(vCtx.hostClass, std::string(nodeText));
+    auto memberSyms = request.symbolTable.FindMemberSymbols(vCtx.hostClass, nodeText);
     if (memberSyms.empty())
     {
         auto hierarchy = analysis::GetInheritedTypeHierarchy(vCtx.hostClass, request.symbolTable);
         for (const auto& base : hierarchy)
         {
-            memberSyms = request.symbolTable.FindMemberSymbols(base, std::string(nodeText));
+            memberSyms = request.symbolTable.FindMemberSymbols(base, nodeText);
             if (!memberSyms.empty())
             {
                 break;
@@ -798,8 +796,7 @@ static std::optional<std::vector<lsp::Location>> TryResolveVirtualMixin(std::str
             return locs;
         }
     }
-    if (nodeText == "this" ||
-        analysis::IsBaseClassDelegateProperty(std::string(nodeText), request.symbolTable, request.engineRules))
+    if (nodeText == "this" || analysis::IsBaseClassDelegateProperty(nodeText, request.symbolTable, request.engineRules))
     {
         auto hostSyms = request.symbolTable.FindSymbols(vCtx.hostClass);
         auto locs = ConvertSymbolsToLocations(hostSyms, request);
@@ -839,7 +836,7 @@ std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest&
         return thisLocs;
     }
 
-    auto rootScope = request.scopeIndex.GetRoot(std::string(request.uri));
+    auto rootScope = request.scopeIndex.GetRoot(request.uri);
     const analysis::Scope* innerScope =
         rootScope ? FindInnermostScope(rootScope.get(), request.position.line, request.position.character) : nullptr;
 
@@ -902,7 +899,7 @@ std::optional<std::vector<lsp::Location>> GetDefinition(const DefinitionRequest&
         }
     }
 
-    auto fallbackSyms = request.symbolTable.FindSymbols(std::string(nodeText));
+    auto fallbackSyms = request.symbolTable.FindSymbols(nodeText);
     DisambiguateCandidateContainers(fallbackSyms, request.sourceCode, request.position, request.symbolTable);
     auto locs = ConvertSymbolsToLocations(fallbackSyms, request);
     return locs.empty() ? std::nullopt : std::make_optional(std::move(locs));

@@ -78,8 +78,7 @@ struct VirtualMixinContext
     }
     if (!ctx.mixinSymbol.has_value())
     {
-        std::string shortName = std::string(utils::LastScopeSegment(ctx.mixinName));
-        auto shortCandidates = symbolTable.FindTypeSymbolsByShortName(shortName);
+        auto shortCandidates = symbolTable.FindTypeSymbolsByShortName(utils::LastScopeSegment(ctx.mixinName));
         for (const auto& cand : shortCandidates)
         {
             if (cand.type == SymbolType::Class)

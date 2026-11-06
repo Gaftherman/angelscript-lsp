@@ -407,12 +407,23 @@ void ScopeIndex::InvalidateDocumentOccurrences(const std::string& fileUri)
 
 std::shared_ptr<const Scope> ScopeIndex::GetRoot(const std::string& fileUri) const
 {
+    return GetRoot(std::string_view(fileUri));
+}
+
+std::shared_ptr<const Scope> ScopeIndex::GetRoot(std::string_view fileUri) const
+{
     std::shared_lock lock(m_mutex);
     const auto entry = m_roots.find(fileUri);
     return entry == m_roots.end() ? nullptr : entry->second.root;
 }
 
 std::shared_ptr<const Scope> ScopeIndex::GetOccurrenceRoot(const std::string& fileUri,
+                                                           const std::optional<std::string>& module) const
+{
+    return GetOccurrenceRoot(std::string_view(fileUri), module);
+}
+
+std::shared_ptr<const Scope> ScopeIndex::GetOccurrenceRoot(std::string_view fileUri,
                                                            const std::optional<std::string>& module) const
 {
     std::shared_lock lock(m_mutex);

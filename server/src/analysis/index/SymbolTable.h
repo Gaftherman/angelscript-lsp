@@ -389,7 +389,7 @@ class SymbolTable
      * @param fileUri Document whose buckets to visit.
      * @param visitor Callback invoked for each (qualifiedName, symbol_list) pair.
      */
-    void ForEachSymbolInFile(const std::string& fileUri,
+    void ForEachSymbolInFile(std::string_view fileUri,
                              const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const;
 
     /**
@@ -574,7 +574,9 @@ class SymbolTable
     /**
      * @brief Bucket keys touched by each document, so a per-file walk need not scan the rest.
      */
-    ankerl::unordered_dense::map<std::string, ankerl::unordered_dense::set<std::string>> m_keysByFile;
+    ankerl::unordered_dense::map<std::string, ankerl::unordered_dense::set<std::string>, TransparentStringHash,
+                                 std::equal_to<>>
+        m_keysByFile;
 
     uint64_t m_version = 0;
 

@@ -1596,8 +1596,7 @@ std::vector<Symbol> SymbolTable::GetAllSymbols() const
 }
 
 void SymbolTable::ForEachSymbolInFile(
-    const std::string& fileUri,
-    const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const
+    std::string_view fileUri, const std::function<void(const std::string&, const std::vector<Symbol>&)>& visitor) const
 {
     std::vector<std::pair<const std::string*, std::shared_ptr<const std::vector<Symbol>>>> snapshot;
     {

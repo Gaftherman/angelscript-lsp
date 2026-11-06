@@ -440,12 +440,15 @@ class ScopeIndex
      *        The returned handle keeps the tree alive even if a concurrent SetScopeTree/
      */
     std::shared_ptr<const Scope> GetRoot(const std::string& fileUri) const;
+    std::shared_ptr<const Scope> GetRoot(std::string_view fileUri) const;
 
     /// Retires the published occurrences while keeping the last lexical scope available for editing features.
     void InvalidateDocumentOccurrences(const std::string& fileUri);
 
     [[nodiscard]] std::shared_ptr<const Scope>
     GetOccurrenceRoot(const std::string& fileUri, const std::optional<std::string>& module = std::nullopt) const;
+    [[nodiscard]] std::shared_ptr<const Scope>
+    GetOccurrenceRoot(std::string_view fileUri, const std::optional<std::string>& module = std::nullopt) const;
 
     template <typename Fn> void ForEachOccurrenceScope(const std::optional<std::string>& module, Fn&& callback) const
     {
@@ -508,7 +511,7 @@ class ScopeIndex
 
     mutable std::shared_mutex m_mutex;
     // Node storage keeps URI addresses stable until their postings are retired.
-    std::unordered_map<std::string, ScopeEntry> m_roots;
+    std::unordered_map<std::string, ScopeEntry, TransparentStringHash, std::equal_to<>> m_roots;
     ankerl::unordered_dense::map<std::string, ModuleCallUses> m_callUses;
 };
 

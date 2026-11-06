@@ -74,7 +74,7 @@ std::vector<Symbol> FindPropertyAccessors(const std::string& typeName, const std
     return accessors;
 }
 
-std::vector<Symbol> FindGlobalPropertyAccessors(const std::string& propertyName, const SymbolTable& symbolTable,
+std::vector<Symbol> FindGlobalPropertyAccessors(std::string_view propertyName, const SymbolTable& symbolTable,
                                                 bool keywordRequired)
 {
     std::vector<Symbol> accessors;
