@@ -86,13 +86,19 @@ static bool IsIgnoredNode(TSNode node, const parser::GrammarSymbols& gs)
 std::optional<EvaluatableExpressionItem>
 EvaluatableExpressionHandler::Extract(const EvaluatableExpressionRequest& request)
 {
-    if (ts_node_is_null(request.rootNode) || request.sourceCode.empty())
+    if (!request.nodeIndex || request.sourceCode.empty())
+    {
+        return std::nullopt;
+    }
+
+    TSNode rootNode = request.nodeIndex->Root();
+    if (ts_node_is_null(rootNode))
     {
         return std::nullopt;
     }
 
     TSPoint point{request.line, request.column};
-    TSNode leaf = ts_node_descendant_for_point_range(request.rootNode, point, point);
+    TSNode leaf = ts_node_descendant_for_point_range(rootNode, point, point);
     if (ts_node_is_null(leaf))
     {
         return std::nullopt;

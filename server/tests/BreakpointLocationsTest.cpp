@@ -41,7 +41,8 @@ struct BreakpointTestFixture
         {
             return {};
         }
-        const BreakpointLocationsRequest req{ts_tree_root_node(tree), startLine, endLine, excluded};
+        analysis::NodeIndex localIndex(ts_tree_root_node(tree), analysis::NodeIndexOptions{.source = sourceCode});
+        const BreakpointLocationsRequest req{&localIndex, startLine, endLine, excluded};
         return BreakpointLocationsHandler::Collect(req);
     }
 };

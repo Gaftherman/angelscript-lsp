@@ -1,6 +1,6 @@
 #pragma once
 
-#include "parser/AngelScriptParser.h"
+#include "analysis/index/NodeIndex.h"
 
 #include <cstdint>
 #include <optional>
@@ -27,7 +27,7 @@ struct EvaluatableExpressionItem
  */
 struct EvaluatableExpressionRequest
 {
-    TSNode rootNode{};
+    const analysis::NodeIndex* nodeIndex = nullptr;
     std::string_view sourceCode;
     uint32_t line = 0;
     uint32_t column = 0;
@@ -41,7 +41,7 @@ class EvaluatableExpressionHandler
   public:
     /**
      * @brief Extracts the evaluatable expression under the cursor using Tree-Sitter AST.
-     * @param[in] request Immutable request containing AST root, source text, and position.
+     * @param[in] request Immutable request containing AST index, source text, and position.
      * @return Evaluatable expression item, or std::nullopt if position is not evaluatable.
      */
     static std::optional<EvaluatableExpressionItem> Extract(const EvaluatableExpressionRequest& request);

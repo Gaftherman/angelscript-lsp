@@ -1,10 +1,9 @@
 #pragma once
 
-#include "parser/AngelScriptParser.h"
+#include "analysis/index/NodeIndex.h"
 #include "utils/PreprocessorRegions.h"
 
 #include <cstdint>
-#include <string_view>
 #include <vector>
 
 namespace angel_lsp::features
@@ -26,21 +25,21 @@ struct BreakpointLocationItem
  */
 struct BreakpointLocationsRequest
 {
-    TSNode rootNode{};
+    const analysis::NodeIndex* nodeIndex = nullptr;
     uint32_t startLine = 0;
     uint32_t endLine = 0;
     const std::vector<angel_lsp::utils::ExcludedLineRange>* excludedRanges = nullptr;
 };
 
 /**
- * @brief Computes valid executable breakpoint locations from the Tree-Sitter AST.
+ * @brief Computes valid executable breakpoint locations from the indexed AST.
  */
 class BreakpointLocationsHandler
 {
   public:
     /**
      * @brief Collects all valid breakpoint locations intersecting [startLine, endLine].
-     * @param[in] request Immutable request containing the AST root, source, and line range.
+     * @param[in] request Immutable request containing the indexed AST, source, and line range.
      * @return Sorted, deduplicated vector of valid breakpoint locations.
      */
     static std::vector<BreakpointLocationItem> Collect(const BreakpointLocationsRequest& request);
