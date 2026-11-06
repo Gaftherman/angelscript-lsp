@@ -970,10 +970,14 @@ void Server::AppendIncludeDiagnostics(const std::string& uriStr, const std::stri
         doc && doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
                          : nullptr;
 
-    features::DocumentLinkRequest request{uriStr, text, *searchDirectories, m_i18n.get()};
-    request.allowedRoots = IncludeAllowedRoots();
+    const auto allowedRoots = IncludeAllowedRoots();
+    features::DocumentLinkRequest request{uriStr,
+                                          text,
+                                          {.searchDirectories = *searchDirectories,
+                                           .allowedRoots = allowedRoots,
+                                           .implicitExtension = ImplicitIncludeExtension()},
+                                          m_i18n.get()};
     request.excludedLineRanges = excluded;
-    request.implicitExtension = ImplicitIncludeExtension();
     request.nodeIndex = syntax ? &syntax->index : nullptr;
 
     auto includeDiagnostics = features::GetUnresolvedIncludeDiagnostics(request);

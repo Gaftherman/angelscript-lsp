@@ -1,10 +1,10 @@
 #include "features/workspace_symbol/WorkspaceSymbolHandler.h"
 
 #include "features/common/FeatureSharedUtils.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
 #include <cctype>
-#include <string>
 #include <string_view>
 #include <unordered_set>
 #include <vector>
@@ -12,74 +12,50 @@
 namespace angel_lsp::features
 {
 /**
- * @brief Converts a string_view to a lowercase std::string.
- * @param str Input string view.
- * @return Lowercase copy of input.
+ * @brief Computes the ranking score of a symbol against the workspace query, ignoring ASCII case.
+ * @param[in] query Query text as typed by the user; exact-case hits rank above case-folded ones.
+ * @param[in] sym Candidate symbol.
+ * @return MatchResult indicating if matched and the ranking score (exact > prefix > substring > qualified > fuzzy).
  */
-static inline std::string ToLower(std::string_view str)
+static MatchResult MatchSymbol(std::string_view query, const analysis::Symbol& sym)
 {
-    std::string result;
-    result.reserve(str.size());
-    for (char c : str)
-    {
-        result.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
-    }
-    return result;
-}
-
-/**
- * @brief Computes match ranking score between query and symbol.
- * @param queryLower Lowercase query string.
- * @param queryOriginal Original query string with case.
- * @param sym Candidate symbol.
- * @return MatchResult indicating if matched and the ranking score.
- */
-static MatchResult MatchSymbol(std::string_view queryLower, std::string_view queryOriginal, const analysis::Symbol& sym)
-{
-    if (queryLower.empty())
+    if (query.empty())
     {
         return {true, 1};
     }
 
-    std::string nameLower = ToLower(sym.name);
+    const std::string_view name = sym.name;
 
-    // Exact match on name
-    if (nameLower == queryLower)
+    if (utils::CaseInsensitiveEquals(name, query))
     {
-        int score = (sym.name == queryOriginal) ? 110 : 100;
-        return {true, score};
+        return {true, (name == query) ? 110 : 100};
     }
 
-    // Prefix match on name
-    if (nameLower.starts_with(queryLower))
+    if (utils::CaseInsensitiveStartsWith(name, query))
     {
-        int score = (sym.name.starts_with(queryOriginal)) ? 85 : 80;
-        return {true, score};
+        return {true, name.starts_with(query) ? 85 : 80};
     }
 
-    // Substring match on name
-    if (nameLower.find(queryLower) != std::string::npos)
+    if (utils::CaseInsensitiveContains(name, query))
     {
         return {true, 50};
     }
 
-    // Match on qualified name
-    std::string qualLower = ToLower(sym.qualifiedName);
-    if (qualLower.find(queryLower) != std::string::npos)
+    if (utils::CaseInsensitiveContains(sym.qualifiedName, query))
     {
         return {true, 40};
     }
 
     // Fuzzy subsequence match on name
     size_t qIdx = 0;
-    for (size_t i = 0; i < nameLower.size() && qIdx < queryLower.size(); ++i)
+    for (size_t i = 0; i < name.size() && qIdx < query.size(); ++i)
     {
-        if (nameLower[i] == queryLower[qIdx])
+        if (std::tolower(static_cast<unsigned char>(name[i])) == std::tolower(static_cast<unsigned char>(query[qIdx])))
         {
             qIdx++;
         }
     }
-    if (qIdx == queryLower.size())
+    if (qIdx == query.size())
     {
         return {true, 20};
     }
@@ -89,12 +65,11 @@ static MatchResult MatchSymbol(std::string_view queryLower, std::string_view que
 
 std::optional<WorkspaceSymbolResult> GetWorkspaceSymbols(const WorkspaceSymbolRequest& request)
 {
-    std::string queryLower = ToLower(request.query);
     std::vector<ScoredSymbol> matches;
     ankerl::unordered_dense::set<std::pair<std::string_view, uint64_t>> seenKeys;
 
     request.symbolTable.ForEachSymbol(
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
+        [&]([[maybe_unused]] std::string_view qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& sym : symbols)
             {
@@ -103,7 +78,7 @@ std::optional<WorkspaceSymbolResult> GetWorkspaceSymbols(const WorkspaceSymbolRe
                     continue;
                 }
 
-                auto match = MatchSymbol(queryLower, request.query, sym);
+                auto match = MatchSymbol(request.query, sym);
                 if (match.matched)
                 {
                     // Deduplicate identical declarations (e.g. enum dual indexing)

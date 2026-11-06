@@ -64,7 +64,7 @@ Layer isolation is strict and enforced by `server/scripts/check-layer-includes.p
 1. **Structure extraction:** Reuse the first-pass cursor or its index for document-wide work. Keep precompiled S-expression queries for targeted extraction and collectors awaiting migration. Avoid nested index-based `ts_node_child` loops.
 2. **Flat Cursor Traversal:** When full sub-tree iteration is necessary, use flat `TSTreeCursor` loops (`ts_tree_cursor_goto_first_child` / `ts_tree_cursor_goto_next_sibling`) without recursion on the C++ execution stack.
 3. **AST-First Feature Queries:** Feature handlers must query Tree-Sitter AST nodes or Layer 2 analysis APIs. Ad-hoc text lexers (`ConsumeIdentifier`, manual string slicing) are strictly forbidden in Layer 3.
-4. **Complexity Ceiling:** Functions must not exceed 15 Cyclomatic Complexity points or 70 net lines of code (enforced by `lizard`).
+4. **Cohesive C++ Design (Lizard Eliminated):** Lizard is permanently removed. Arbitrary function line limits, parameter ceilings, or cyclomatic limits enforced by lizard are eliminated. Functions must remain cohesive and readable without artificial fragmentation into micro-functions or synthetic parameter bags. Complex logic must be designed using clean domain abstractions, expressive structs, clean inheritance/interfaces where applicable, clean overloads, and mandatory Javadoc-style Doxygen documentation.
 5. **Anti-Monolith & 300-Line Limit:** Production source files (`.cpp`) must target $\le 300$ net lines of code. Monolithic files exceeding this ceiling must be decomposed into cohesive, single-responsibility sub-units.
 6. **No Root-Cause Bypass:** Never patch edge cases using string comparison hardcoding (`if (name == "...")`). Fixes must reside in grammar queries, symbol resolution passes, or type rules.
 7. **AST Traversal & Parent-Climb Invariants:** Upward AST traversal must never use unbounded `while (!ts_node_is_null(ts_node_parent(node)))` loops to climb to the root; always use `parser::GetRootNode(node)` in $O(1)$ via `ts_tree_root_node(node.tree)`. Hot-path collectors and query passes (`LocalScopeCollector`, `SymbolCollector`, token classification) must never perform iterative `ts_node_parent` climb loops or string comparisons (`ts_node_type`); use $O(1)$ stack/byte-range containment, pre-cached `TSSymbol` comparisons, or bounded hops (`depth < 16`). Zero `ts_node_parent` calls are permitted in hot-path collectors.
@@ -77,6 +77,20 @@ Layer isolation is strict and enforced by `server/scripts/check-layer-includes.p
    - **Cross-Feature Protocol Helpers:** Use `features/common/FeatureSharedUtils.h` (`ToLspRange`, `SameRange`, `FindIdentifierAtPosition`, `ToLspSymbolKind`) to prevent duplicate mapping or geometry routines across feature handlers.
    - **Type Qualifiers & Canonical Sanitization:** Use `analysis::TypeQualifiers` and `analysis/TypeSanitization.h` (`StripLeadingConst`, `StripTrailingDecorationsView`, `TrimTypeWhitespace`) for zero-allocation AST-based type modifier operations.
 9. **Pass-1 context capture (Rule 4.9):** One document-wide extraction visits $O(N)$ nodes per syntax revision. Direct access by a captured node ID can be $O(1)$. State the actual cost of positional queries and operations returning multiple results. Second-pass consumers migrated to indexed facts must use those facts and worklists for flow and expression analysis. The AST traversal gate checks direct navigation calls in migrated checkers. Runtime measurement must also cover calls through their dependencies. Normal LSP analysis obtains its AST-backed revision through `ResolveSyntaxRevision`. Reuse an exact parser input on the owning thread. Retained syntax stays within the cache budget, and closed entries yield space to open revisions.
+10. **Strict First Pass vs. Second Pass Boundary (Rule 4.10):**
+    - **First Pass (`server/src/parser/` and `server/src/analysis/index/`):** The ONLY location where `tree-sitter` (`TSNode`, `TSTree`, `TSTreeCursor`, `TSPoint`, `ts_*`) and `ASTUtils.h` are allowed. `NodeIndex` is strictly prohibited from exposing raw `TSNode` pointers (`->Root()`, callbacks accepting `TSNode`, or raw AST traversals) to Second Pass consumers. All indexed facts, symbols, spans, and tokens must be pre-extracted into immutable, AST-free structures.
+    - **Second Pass (`features/`, `analysis/resolution/`, `analysis/checkers/`, `analysis/rules/`, `lsp/`) and `utils/`:**
+      - Strictly 0 `ts_*` calls, 0 `TSNode` / `TSTree` usages, 0 `#include "parser/ASTUtils.h"`.
+      - Strictly 0 legacy unbounded recursion; use $O(1)$ / $O(\log N)$ indexed lookups or flat iterations over pre-indexed First Pass vectors.
+      - Strictly 100% `std::string_view` for string inspection, parameters, and paths (prohibited `std::string` and `const std::string&` where zero-copy views into `Document.h` or `SymbolTable` apply). Enforced via `server/scripts/verify_pass2_invariants.py --strict-string-view`.
+11. **Shared Utility Functions: Overload & Deprecate Strategy (Rule 4.11):**
+    - **Absolute Inlining Prohibition:** Never copy-paste or inline the body of a shared utility function into its call sites (causes immediate violations of `jscpd <= 3%`).
+    - When a utility function in `utils/`, `features/common/FeatureSharedUtils.h`, `analysis/resolution/SemanticHelpers.h`, or `analysis/index/NodeIndex.h` uses `ts_*` or `std::string`:
+      1. Inspect and trace all callers using `clangd` (`find_references`).
+      2. Precalculate any required AST facts in First Pass (`NodeIndex`, `SymbolCollector`, `LocalScopeCollector`).
+      3. Create a clean **overload** accepting First Pass data and `std::string_view`.
+      4. Migrate each call site sequentially to the clean overload.
+      5. Delete the legacy overload only when its reference count drops strictly to zero.
 
 ---
 
@@ -133,7 +147,7 @@ Format: `<type>(<scope>): <short imperative description>`
 5. **PROHIBITION 5: No Ad-Hoc Text Lexers in Layer 3:** Never write custom string slicing lexers (`ConsumeIdentifier`, index-based paren counting) to inspect expressions; always use Tree-Sitter AST nodes or Layer 2 type resolution.
 6. **PROHIBITION 6: No Index-Based `ts_node_child` Traversal Loops:** Structure extraction must use precompiled S-expression queries or flat cursor traversal.
 7. **PROHIBITION 7: No Stack-Recursive AST Traversals:** Use iterative cursor traversal or explicit worklists. A budget that prevents completion must surface a partial result. Arbitrary depth limits must not silently discard valid input.
-8. **PROHIBITION 8: No Functions Exceeding 15 CCN or 70 Lines:** Every function must pass `lizard -C 15 -L 70 -a 4` without warnings.
+8. **PROHIBITION 8: No Artificial Function Fragmentation or Synthetic Parameter Bags:** Never fragment cohesive domain functions into unreadable micro-routines or introduce artificial wrapper structs ("parameter bags") to circumvent line/parameter limits. Use idiomatic C++ design in First Pass (rich domain structs, clear overloads, interfaces/inheritance where applicable) with complete Doxygen documentation.
 9. **PROHIBITION 9: No Dead or Unnamed Parameters (`/we4100`):** In owned signatures, every formal parameter must be named and referenced, or cleanly removed. In contract-mandated signatures (virtual overrides, external callbacks), unused parameters must be named and explicitly silenced with `[[maybe_unused]] Type name`. Nameless (`Type`) or commented-out (`Type /*name*/`) parameters are strictly banned.
 10. **PROHIBITION 10: No fixture-specific production behavior.** Verify general behavior with generated inputs and keep fixed regressions where source spelling or layout is part of the contract.
 11. **PROHIBITION 11: No Hardcoded User-Facing Text or Ad-Hoc Bilingual Conditionals:** Every string displayed to the end user (hover markdown tooltips, diagnostics, code action titles, document link titles, notifications) must be externalized in `server/src/i18n/locales/en.json` and `server/src/i18n/locales/es.json` and resolved via `angel_lsp::i18n::FormatMessage(i18n, key, fallback, ...)` (or `bundle.l10n.json` via `l10n.t()` in the client). Hardcoding raw user-facing natural language strings directly in C++ feature handlers or writing ad-hoc language branching (`if (locale == "es")`) is strictly prohibited.
@@ -150,17 +164,17 @@ When writing or refactoring C++ code in `server/src/`, all contributions MUST ad
 1. **Zero-Duplication Policy (jscpd <= 3%):**
    - Do not duplicate logic across checkers, rules, or feature handlers.
    - Abstract shared logic into Layer 1 utilities or Layer 2 analysis helpers.
-2. **Cognitive & Cyclomatic Complexity Ceilings:**
-   - Lizard CCN must not exceed 15 per function; max net lines of code <= 70.
-   - Clang-Tidy `readability-function-cognitive-complexity` must not exceed 15.
-   - Avoid nesting deeper than 3 levels; use early returns and decomposed subroutines.
+2. **Cohesive Design & Readability Standards:**
+   - Lizard limits are permanently eliminated.
+   - Code readability is maintained via early returns, structured switch-dispatch, and decomposed subroutines only where domain-appropriate.
+   - Avoid unnecessary nesting deeper than 3 levels; prioritize clean semantics over mechanical line counting.
 3. **Cppcheck Hygiene:**
    - Zero uninitialized variables, null pointer dereferences, resource leaks, or scope-escape defects.
 4. **Mandatory Execution Gate:**
    - Always run `python server/scripts/check-quality.py` before committing.
    - If any gate fails, inspect the report, fix root causes, and re-verify.
 5. **Compulsory Build Verification Pre-Commit Invariant (Golden Workflow):**
-   - Never commit or push changes after running `format-code.py`, Lizard refactoring, or Python refactoring scripts without running a full compilation (`cmake --build build --config Release`) and verifying 0 compilation errors and 0 warnings under `/W4 /WX /we4100`.
+   - Never commit or push changes after running `format-code.py` or Python refactoring scripts without running a full compilation (`cmake --build build --config Release`) and verifying 0 compilation errors and 0 warnings under `/W4 /WX /we4100`.
 6. **Mandatory Refactor Ledger & Redundancy Audit Gate:**
    - All struct unifications, function consolidations, flag reparsing eliminations, and layout compactions must be logged in `docs/REFACTOR_LEDGER.json` and validated via `python server/scripts/check-refactor-ledger.py --check-diff develop` and `python server/scripts/audit-codebase-redundancy.py`.
 
@@ -194,8 +208,19 @@ Every contribution, version release, and documentation artifact must strictly ad
 3. **Zero Sensitive Data or Hardcoded Local Paths:**
    - Never commit or publish personal email addresses, local developer usernames, or machine-specific drive paths (`C:\Users\...`, `E:\Github\...`) in changelogs, test fixtures, or code.
    - Always use generic paths or dynamic randomized fixtures (`angel_lsp::test::GenerateRandomSymbolName()`).
-4. **Canonical Repository Organization:**
-   - Project documentation resides in `docs/` (`docs/README.es.md`, `docs/rules.md`, `docs/STEPS.md`, `docs/STEPS.json`).
-   - Developer and quality verification scripts reside in `server/scripts/` (`run-harness.ps1`, `check-quality.py`, etc.).
+4. **Canonical Repository Organization & Documentation Hygiene:**
+   - Active project documentation and progress tracking are governed SOLELY by `AGENTS.md` and `docs/REFACTOR_STEPS.json`.
+   - Obsolete and historical plans are archived in `docs/_legacy_archive/` (`STEPS.json`, `STEPS.md`, `REDUNDANCY_REPORT.json`) and must be strictly ignored by all agents.
+   - Active ledger for structural refactoring resides in `docs/REFACTOR_LEDGER.json`.
+   - Quality verification scripts reside in `server/scripts/` (`run-harness.ps1`, `check-quality.py`, `verify_pass2_invariants.py`, etc.).
    - AST analysis rules and configuration reside in `server/rules/` (`server/rules/sgconfig.yml`, `server/rules/ast-grep/`).
    - Root directory must remain clean and free of temporary logs, scratch scripts, or ad-hoc config files.
+
+---
+
+## 12. Orchestration Protocol (Planner + Single Persistent Warm Session of `agy` `gemini-3.8-high`)
+
+1. **Role Division:** The Planner directs a single persistent, warm session of `agy` (`gemini-3.8-high`) to perform codebase research, apply code modifications, and audit git diffs.
+2. **Token Efficiency:** The Planner delegates AST and symbol lookups to the warm session using MCP tools (`clangd`, `tree-sitter`, `codebase-memory`), requesting concise summaries (~30 lines) containing: `ts_*` calls, `std::string` usages, recursions, and exact call sites.
+3. **Surgical Micro-Plans:** Every modification is preceded by an exact contract defining First Pass data structures and `std::string_view` overloads.
+4. **Hot Gates & Diff Auditing:** After code edits, the warm session builds in Release, executes tests/harnesses, runs `verify_pass2_invariants.py --strict-string-view` and `check-quality.py`, and inspects `git diff` to ensure zero `#include "parser/ASTUtils.h"`, zero `->Root()`, zero unnecessary `std::string` allocations, and zero code duplication.

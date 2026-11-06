@@ -1,9 +1,6 @@
 #include "features/folding_range/FoldingRangeHandler.h"
 
-#include "parser/GrammarSymbols.h"
-
 #include <algorithm>
-#include <array>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -26,105 +23,29 @@ static std::string_view TrimLeading(std::string_view s) noexcept
 }
 
 /**
- * @brief Returns the set of Tree-Sitter grammar symbols eligible for syntax-based folding.
- * @param[in] gs Pre-cached grammar symbols definition.
- * @return Reference to the immutable array of foldable grammar symbol IDs.
- */
-// clang-format off
-static const std::array<TSSymbol, 24>& GetSyntaxFoldingSymbols(const parser::GrammarSymbols& gs) noexcept
-{
-    static const std::array<TSSymbol, 24> kSymbols = {
-        gs.symAccessor,             gs.symArgumentList,        gs.symCaseClause,           gs.symClassDeclaration,
-        gs.symDoWhileStatement,     gs.symEnumDeclaration,     gs.symForStatement,         gs.symForeachStatement,
-        gs.symFuncDeclaration,      gs.symFuncdefDeclaration,  gs.symIfStatement,          gs.symInitializerList,
-        gs.symInterfaceDeclaration, gs.symInterfaceMethod,     gs.symLambdaExpression,     gs.symMixinDeclaration,
-        gs.symNamespaceDeclaration, gs.symParameterList,       gs.symStatementBlock,       gs.symSwitchStatement,
-        gs.symTryStatement,         gs.symTypedInitializerList,gs.symVirtualProperty,      gs.symWhileStatement};
-    return kSymbols;
-}
-// clang-format on
-
-/**
- * @brief Attempts to extract a syntax folding range from an AST node spanning multiple lines.
- * @param[in] node AST node to evaluate.
- * @param[out] outFr Resulting folding range populated with start/end lines and columns.
- * @return True if a multi-line syntax folding range was extracted.
- */
-static bool TryExtractSyntaxFoldingRange(TSNode node, lsp::FoldingRange& outFr) noexcept
-{
-    const TSPoint startPt = ts_node_start_point(node);
-    const TSPoint endPt = ts_node_end_point(node);
-    if (startPt.row >= endPt.row)
-    {
-        return false;
-    }
-
-    outFr = lsp::FoldingRange{
-        .startLine = startPt.row,
-        .endLine = endPt.row,
-        .startCharacter = startPt.column,
-        .endCharacter = endPt.column,
-        .kind = std::nullopt,
-    };
-    return true;
-}
-
-/**
- * @brief Extracts folding ranges directly from the pre-computed NodeIndex without full-tree AST traversal.
- * @param[in] nodeIndex Pre-computed syntax node index from pass 1.
- * @param[in] sourceCode Document source text buffer.
+ * @brief Maps the pass-1 foldable spans recorded by NodeIndex into LSP folding ranges.
+ * @param[in] nodeIndex Pre-computed syntax node index holding multi-line blocks and block comments.
  * @param[in,out] outRanges Destination accumulator for discovered folding ranges.
  */
-static void CollectNodeIndexFoldingRanges(const analysis::NodeIndex& nodeIndex, std::string_view sourceCode,
+static void CollectNodeIndexFoldingRanges(const analysis::NodeIndex& nodeIndex,
                                           std::vector<lsp::FoldingRange>& outRanges)
 {
     const auto spans = nodeIndex.FoldableSpans();
-    if (!spans.empty())
+    outRanges.reserve(outRanges.size() + spans.size());
+    for (const auto& span : spans)
     {
-        outRanges.reserve(outRanges.size() + spans.size());
-        for (const auto& span : spans)
+        std::optional<lsp::FoldingRangeKind> kind;
+        if (span.kind == analysis::IndexedFoldableKind::Comment)
         {
-            std::optional<lsp::FoldingRangeKind> kind;
-            if (span.kind == analysis::IndexedFoldableKind::Comment)
-            {
-                kind = lsp::FoldingRangeKind::Comment;
-            }
-            outRanges.push_back(lsp::FoldingRange{
-                .startLine = span.range.startLine,
-                .endLine = span.range.endLine,
-                .startCharacter = span.range.startCharacter,
-                .endCharacter = span.range.endCharacter,
-                .kind = kind,
-            });
+            kind = lsp::FoldingRangeKind::Comment;
         }
-        return;
-    }
-
-    const auto& gs = parser::GetGrammarSymbols();
-    const auto& symbols = GetSyntaxFoldingSymbols(gs);
-    nodeIndex.ForEachNodeOrdered(symbols,
-                                 [&outRanges](TSNode node)
-                                 {
-                                     lsp::FoldingRange fr;
-                                     if (TryExtractSyntaxFoldingRange(node, fr))
-                                     {
-                                         outRanges.push_back(fr);
-                                     }
-                                 });
-
-    for (const auto& cr : nodeIndex.CommentRanges())
-    {
-        if (cr.startByte + 2 <= sourceCode.size() && sourceCode[cr.startByte] == '/' &&
-            sourceCode[cr.startByte + 1] == '*' && cr.startLine < cr.endLine)
-        {
-            outRanges.push_back(lsp::FoldingRange{
-                .startLine = cr.startLine,
-                .endLine = cr.endLine,
-                .startCharacter = cr.startColumn,
-                .endCharacter = cr.endColumn,
-                .kind = lsp::FoldingRangeKind::Comment,
-            });
-        }
+        outRanges.push_back(lsp::FoldingRange{
+            .startLine = span.range.startLine,
+            .endLine = span.range.endLine,
+            .startCharacter = span.range.startCharacter,
+            .endCharacter = span.range.endCharacter,
+            .kind = kind,
+        });
     }
 }
 
@@ -298,7 +219,7 @@ std::optional<FoldingRangeResult> GetFoldingRanges(const FoldingRangeRequest& re
     }
 
     std::vector<lsp::FoldingRange> rawRanges;
-    CollectNodeIndexFoldingRanges(*request.nodeIndex, request.sourceCode, rawRanges);
+    CollectNodeIndexFoldingRanges(*request.nodeIndex, rawRanges);
     CollectTextBasedFoldingRanges(request.sourceCode, rawRanges);
 
     return DeduplicateAndSortFoldingRanges(rawRanges);

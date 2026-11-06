@@ -207,20 +207,21 @@ TEST_CASE("SignatureHelpHandler - Invariant: Active parameter index tracks comma
 
     TestEnvironment env(code);
     const size_t callLineStart = code.find(fnName + "(10");
+    const size_t argsStart = callLineStart + fnName.size() + 1;
 
-    auto posArg0 = FindPos(code, "10", callLineStart);
+    auto posArg0 = FindPos(code, "10", argsStart);
     auto help0 = env.SigHelpAt(posArg0.line, posArg0.character);
     REQUIRE(help0.has_value());
     REQUIRE(help0->activeParameter.has_value());
     CHECK(help0->activeParameter.value().value() == 0u);
 
-    auto posArg1 = FindPos(code, "20.0f", callLineStart);
+    auto posArg1 = FindPos(code, "20.0f", argsStart);
     auto help1 = env.SigHelpAt(posArg1.line, posArg1.character);
     REQUIRE(help1.has_value());
     REQUIRE(help1->activeParameter.has_value());
     CHECK(help1->activeParameter.value().value() == 1u);
 
-    auto posArg2 = FindPos(code, "\"text\"", callLineStart);
+    auto posArg2 = FindPos(code, "\"text\"", argsStart);
     auto help2 = env.SigHelpAt(posArg2.line, posArg2.character);
     REQUIRE(help2.has_value());
     REQUIRE(help2->activeParameter.has_value());
@@ -253,7 +254,8 @@ TEST_CASE("SignatureHelpHandler - Constructor signature help for direct call and
     // Test 1: Anonymous constructor call ClassName(42, 3.14f)
     {
         const size_t callPos = code.find(className + "(42");
-        auto posArg0 = FindPos(code, "42", callPos);
+        const size_t argsStart = callPos + className.size() + 1;
+        auto posArg0 = FindPos(code, "42", argsStart);
         auto help0 = env.SigHelpAt(posArg0.line, posArg0.character);
         REQUIRE(help0.has_value());
         CHECK_FALSE(help0->signatures.empty());
@@ -306,7 +308,8 @@ TEST_CASE("SignatureHelpHandler - Invariant: Local funcdef variable provides sig
 
     TestEnvironment env(code);
     const size_t callPos = code.find(varName + "(10");
-    auto posArg0 = FindPos(code, "10", callPos);
+    const size_t argsStart = callPos + varName.size() + 1;
+    auto posArg0 = FindPos(code, "10", argsStart);
     auto help0 = env.SigHelpAt(posArg0.line, posArg0.character);
     REQUIRE(help0.has_value());
     REQUIRE_FALSE(help0->signatures.empty());

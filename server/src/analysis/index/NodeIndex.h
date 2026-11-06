@@ -318,6 +318,8 @@ class NodeIndex
 
     /**
      * @brief Iterates multiple grammar symbols in document order (sorted by start byte).
+     * @deprecated Second-pass code must consume AST-free facts; remaining callers are pass-1 collectors and folders not
+     * yet migrated (Rule 4.11).
      * @tparam Callback Visitor callable with signature void(TSNode).
      * @param[in] symbols List of Tree-Sitter grammar symbol IDs to merge.
      * @param[in] callback Visitor invoked for each node in sorted order.
@@ -388,6 +390,8 @@ class NodeIndex
 
     /**
      * @brief Returns the root node the index was built from.
+     * @deprecated Second-pass code must consume AST-free facts; remaining callers are pass-1 collectors and folders not
+     * yet migrated (Rule 4.11).
      */
     [[nodiscard]] TSNode Root() const noexcept;
 
@@ -475,22 +479,6 @@ class NodeIndex
     [[nodiscard]] std::span<const CommentRange> CommentRanges() const noexcept;
 
     /**
-     * @brief Finds the innermost node matching a specific grammar symbol enclosing byteOffset in O(log K).
-     * @param[in] byteOffset Document byte offset to test.
-     * @param[in] targetSym Target grammar symbol to search for.
-     * @return Innermost enclosing TSNode or null node if not enclosed.
-     */
-    [[nodiscard]] TSNode FindEnclosingNode(uint32_t byteOffset, TSSymbol targetSym) const noexcept;
-
-    /**
-     * @brief Finds the innermost node matching any of the specified grammar symbols enclosing byteOffset in O(log K).
-     * @param[in] byteOffset Document byte offset to test.
-     * @param[in] targetSyms Span of target grammar symbols.
-     * @return Innermost enclosing TSNode or null node if not enclosed.
-     */
-    [[nodiscard]] TSNode FindEnclosingNodeAny(uint32_t byteOffset, std::span<const TSSymbol> targetSyms) const noexcept;
-
-    /**
      * @brief Finds the innermost class, interface, or mixin declaration enclosing the given byte offset.
      * @param[in] byteOffset Document byte offset to test.
      * @return Innermost enclosing class/interface/mixin TSNode or null node if outside any class.
@@ -504,13 +492,6 @@ class NodeIndex
      * @return Pointer to innermost IndexedContainerSpan, or nullptr if none or inside lambda.
      */
     [[nodiscard]] const IndexedContainerSpan* FindInnermostClassSpan(uint32_t byteOffset) const noexcept;
-
-    /**
-     * @brief Finds the innermost callable declaration (function or lambda expression) enclosing byteOffset.
-     * @param[in] byteOffset Document byte offset to test.
-     * @return Innermost enclosing function or lambda TSNode or null node if none found.
-     */
-    [[nodiscard]] TSNode FindEnclosingCallable(uint32_t byteOffset) const noexcept;
 
     /**
      * @brief Tests whether byteOffset is enclosed by an intermediate lambda expression closure barrier.
@@ -770,6 +751,21 @@ class NodeIndex
     [[nodiscard]] bool IsInsideBaseClassList(uint32_t startByte, uint32_t endByte) const noexcept;
     [[nodiscard]] std::vector<ContainerInfo> CollectContainersFrom(const IndexedContainerSpan* span,
                                                                    std::string_view sourceCode) const;
+
+    /**
+     * @brief Finds the innermost node matching any of the specified grammar symbols enclosing byteOffset in O(log K).
+     * @param[in] byteOffset Document byte offset to test.
+     * @param[in] targetSyms Span of target grammar symbols.
+     * @return Innermost enclosing TSNode or null node if not enclosed.
+     */
+    [[nodiscard]] TSNode FindEnclosingNodeAny(uint32_t byteOffset, std::span<const TSSymbol> targetSyms) const noexcept;
+
+    /**
+     * @brief Finds the innermost callable declaration (function or lambda expression) enclosing byteOffset.
+     * @param[in] byteOffset Document byte offset to test.
+     * @return Innermost enclosing function or lambda TSNode or null node if none found.
+     */
+    [[nodiscard]] TSNode FindEnclosingCallable(uint32_t byteOffset) const noexcept;
 
     TSNode m_root{};
     const TSLanguage* m_language = nullptr;

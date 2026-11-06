@@ -1271,31 +1271,6 @@ void NodeIndex::Clear() noexcept
     m_symComment = 0;
 }
 
-TSNode NodeIndex::FindEnclosingNode(uint32_t byteOffset, TSSymbol targetSym) const noexcept
-{
-    TSNode bestNode{};
-    uint32_t bestSpan = UINT32_MAX;
-    for (TSNode node : Nodes(targetSym))
-    {
-        const uint32_t start = ts_node_start_byte(node);
-        if (start > byteOffset)
-        {
-            break;
-        }
-        const uint32_t end = ts_node_end_byte(node);
-        if (byteOffset < end)
-        {
-            const uint32_t span = end - start;
-            if (span < bestSpan)
-            {
-                bestSpan = span;
-                bestNode = node;
-            }
-        }
-    }
-    return bestNode;
-}
-
 TSNode NodeIndex::FindEnclosingNodeAny(uint32_t byteOffset, std::span<const TSSymbol> targetSyms) const noexcept
 {
     TSNode bestNode{};

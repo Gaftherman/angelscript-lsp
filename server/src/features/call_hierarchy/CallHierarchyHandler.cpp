@@ -7,6 +7,7 @@
 #include "utils/Utils.h"
 
 #include <algorithm>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -23,7 +24,7 @@ namespace angel_lsp::features
 static lsp::CallHierarchyItem ToItem(const analysis::Symbol& sym)
 {
     lsp::CallHierarchyItem item;
-    item.name = std::string(analysis::LastScopeSegment(sym.name));
+    item.name.assign(analysis::LastScopeSegment(sym.name));
     item.kind = sym.containerName.empty() ? lsp::SymbolKind::Function : lsp::SymbolKind::Method;
     item.uri = lsp::DocumentUri::parse(sym.fileUri);
 
@@ -37,16 +38,18 @@ static lsp::CallHierarchyItem ToItem(const analysis::Symbol& sym)
                                        : lsp::Range{lsp::Position{sym.startLine, sym.startCharacter},
                                                     lsp::Position{sym.endLine, sym.endCharacter}};
 
-    const std::string qualified = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-    item.detail = qualified;
-    item.data = lsp::LSPAny(std::string(qualified));
+    const std::string_view qualified = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+    item.detail = lsp::String(qualified);
+    item.data = lsp::LSPAny(lsp::String(qualified));
     return item;
 }
 
 /**
  * @brief The qualified name a follow-up request is about, from the item it was handed.
+ * @param[in] item Item echoed back by the client; the returned view borrows from it.
+ * @return Qualified name stored in the item's data payload, or the item's display name when absent.
  */
-static std::string QualifiedNameOf(const lsp::CallHierarchyItem& item)
+static std::string_view QualifiedNameOf(const lsp::CallHierarchyItem& item)
 {
     if (item.data.has_value() && item.data->isString())
     {
@@ -64,7 +67,7 @@ static bool IsFunctionSymbol(const analysis::Symbol& sym)
 /**
  * @brief Function declarations whose qualified name is exactly this.
  */
-static std::vector<analysis::Symbol> FindByQualifiedName(const std::string& qualifiedName,
+static std::vector<analysis::Symbol> FindByQualifiedName(std::string_view qualifiedName,
                                                          const analysis::SymbolTable& table)
 {
     std::vector<analysis::Symbol> found;
@@ -86,7 +89,7 @@ static std::vector<analysis::Symbol> FindByQualifiedName(const std::string& qual
 /**
  * @brief Function declarations whose bare name is this, wherever they were declared.
  */
-static std::vector<analysis::Symbol> FindByBareName(const std::string& bareName, const analysis::SymbolTable& table)
+static std::vector<analysis::Symbol> FindByBareName(std::string_view bareName, const analysis::SymbolTable& table)
 {
     std::vector<analysis::Symbol> found;
     if (bareName.empty())
@@ -95,7 +98,7 @@ static std::vector<analysis::Symbol> FindByBareName(const std::string& bareName,
     }
 
     table.ForEachSymbol(
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
+        [&]([[maybe_unused]] std::string_view qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& sym : symbols)
             {
@@ -109,15 +112,20 @@ static std::vector<analysis::Symbol> FindByBareName(const std::string& bareName,
 }
 
 /**
- * @brief Finds the function whose body encloses the given document line.
+ * @brief Finds the innermost function whose body encloses the given document line.
+ * @param[in] table Workspace symbol table.
+ * @param[in] uri Document URI to search.
+ * @param[in] line 0-based document line.
+ * @return Owned copy of the tightest enclosing function declaration, or nullopt when the line is outside any function.
  */
-static std::string FindEnclosingFunction(const analysis::SymbolTable& table, std::string_view uri, uint32_t line)
+static std::optional<analysis::Symbol> FindEnclosingFunction(const analysis::SymbolTable& table, std::string_view uri,
+                                                             uint32_t line)
 {
-    std::string bestFunction;
+    std::optional<analysis::Symbol> bestFunction;
     uint32_t bestSpan = UINT32_MAX;
     table.ForEachSymbolInFile(
-        std::string(uri),
-        [&]([[maybe_unused]] const std::string& key, const std::vector<analysis::Symbol>& symbols)
+        uri,
+        [&]([[maybe_unused]] std::string_view key, const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& sym : symbols)
             {
@@ -136,7 +144,7 @@ static std::string FindEnclosingFunction(const analysis::SymbolTable& table, std
                         if (span <= bestSpan)
                         {
                             bestSpan = span;
-                            bestFunction = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                            bestFunction = sym;
                         }
                     }
                 }
@@ -148,7 +156,7 @@ static std::string FindEnclosingFunction(const analysis::SymbolTable& table, std
 /**
  * @brief Locate outgoing calls from a caller, falling back to synthesized host class origin mixin.
  */
-static std::vector<analysis::DocumentCalls> FindCallsFromCaller(const std::string& caller,
+static std::vector<analysis::DocumentCalls> FindCallsFromCaller(std::string_view caller,
                                                                 const analysis::CallGraphIndex& callGraph,
                                                                 const analysis::SymbolTable& symbolTable)
 {
@@ -168,7 +176,7 @@ static std::vector<analysis::DocumentCalls> FindCallsFromCaller(const std::strin
     {
         if (sym.isSynthesized && !sym.containerName.empty())
         {
-            const std::string originCaller = utils::JoinScopedName(sym.containerName, sym.name);
+            const auto originCaller = utils::JoinScopedName(sym.containerName, sym.name);
             calls = callGraph.FindCallsFrom(originCaller);
             if (!calls.empty())
             {
@@ -181,11 +189,13 @@ static std::vector<analysis::DocumentCalls> FindCallsFromCaller(const std::strin
 
 /**
  * @brief Group call ranges by callee name.
+ * @param[in] calls Outgoing call records; the returned callee names are views into them.
+ * @return Callee name and call-site ranges, in first-seen order.
  */
-static std::vector<std::pair<std::string, std::vector<lsp::Range>>>
+static std::vector<std::pair<std::string_view, std::vector<lsp::Range>>>
 GroupCallsByCallee(const std::vector<analysis::DocumentCalls>& calls)
 {
-    std::vector<std::pair<std::string, std::vector<lsp::Range>>> byCallee;
+    std::vector<std::pair<std::string_view, std::vector<lsp::Range>>> byCallee;
     for (const auto& document : calls)
     {
         for (const auto& call : document.calls)
@@ -218,7 +228,7 @@ static bool OutgoingCallExists(const std::vector<lsp::CallHierarchyOutgoingCall>
     return false;
 }
 
-static void AppendOutgoingCallsForCallee(const std::string& callee, const std::vector<lsp::Range>& ranges,
+static void AppendOutgoingCallsForCallee(std::string_view callee, const std::vector<lsp::Range>& ranges,
                                          const analysis::SymbolTable& symbolTable,
                                          std::vector<lsp::CallHierarchyOutgoingCall>& outgoing)
 {
@@ -246,7 +256,7 @@ std::optional<std::vector<lsp::CallHierarchyItem>> PrepareCallHierarchy(const Ca
         return std::nullopt;
     }
 
-    const std::string name{common::FindIdentifierAtPosition(request.sourceCode, request.position)};
+    const std::string_view name = common::FindIdentifierAtPosition(request.sourceCode, request.position);
 
     std::vector<analysis::Symbol> declarations;
     if (!name.empty())
@@ -256,10 +266,10 @@ std::optional<std::vector<lsp::CallHierarchyItem>> PrepareCallHierarchy(const Ca
 
     if (declarations.empty())
     {
-        const std::string enclosing = FindEnclosingFunction(request.symbolTable, request.uri, request.position.line);
-        if (!enclosing.empty())
+        if (const auto enclosing = FindEnclosingFunction(request.symbolTable, request.uri, request.position.line))
         {
-            declarations = FindByQualifiedName(enclosing, request.symbolTable);
+            declarations = FindByQualifiedName(
+                enclosing->qualifiedName.empty() ? enclosing->name : enclosing->qualifiedName, request.symbolTable);
         }
     }
 
@@ -294,15 +304,17 @@ std::optional<std::vector<lsp::CallHierarchyItem>> PrepareCallHierarchy(const Ca
 
 std::optional<std::vector<lsp::CallHierarchyIncomingCall>> GetIncomingCalls(const CallHierarchyItemRequest& request)
 {
-    const std::string target{analysis::LastScopeSegment(request.item.name)};
+    const std::string_view target = analysis::LastScopeSegment(request.item.name);
     if (target.empty())
     {
         return std::nullopt;
     }
 
-    std::vector<std::pair<std::string, std::vector<lsp::Range>>> byCaller;
+    // Caller names are views into callsTo, which outlives byCaller.
+    const auto callsTo = request.callGraph.FindCallsTo(target);
+    std::vector<std::pair<std::string_view, std::vector<lsp::Range>>> byCaller;
 
-    for (const auto& document : request.callGraph.FindCallsTo(target))
+    for (const auto& document : callsTo)
     {
         for (const auto& call : document.calls)
         {
@@ -355,7 +367,7 @@ std::optional<std::vector<lsp::CallHierarchyIncomingCall>> GetIncomingCalls(cons
 
 std::optional<std::vector<lsp::CallHierarchyOutgoingCall>> GetOutgoingCalls(const CallHierarchyItemRequest& request)
 {
-    const std::string caller = QualifiedNameOf(request.item);
+    const std::string_view caller = QualifiedNameOf(request.item);
     if (caller.empty())
     {
         return std::nullopt;

@@ -8,6 +8,7 @@
 #include "utils/Utils.h"
 
 #include <algorithm>
+#include <optional>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -28,11 +29,10 @@ static bool IsTypeSymbol(const analysis::Symbol& sym)
 static lsp::TypeHierarchyItem ToItem(const analysis::Symbol& sym)
 {
     lsp::TypeHierarchyItem item;
-    item.name = std::string(analysis::LastScopeSegment(sym.name));
+    item.name.assign(analysis::LastScopeSegment(sym.name));
     item.kind = sym.type == analysis::SymbolType::Interface ? lsp::SymbolKind::Interface : lsp::SymbolKind::Class;
     item.uri = lsp::DocumentUri::parse(sym.fileUri);
-    std::string qName = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
-    item.data = lsp::json::Value(std::move(qName));
+    item.data = lsp::json::Value(lsp::String(sym.qualifiedName.empty() ? sym.name : sym.qualifiedName));
     if (!sym.containerName.empty())
     {
         item.detail = sym.containerName;
@@ -97,7 +97,7 @@ static lsp::Range GetSymbolEffectiveRange(const analysis::Symbol& sym)
  * @return True if the symbol matches.
  */
 static bool MatchesItemLocation(const analysis::Symbol& sym, const lsp::TypeHierarchyItem& item,
-                                const std::string& itemUri)
+                                std::string_view itemUri)
 {
     if (sym.fileUri != itemUri && angel_lsp::utils::PathToUri(sym.fileUri) != itemUri)
     {
@@ -136,7 +136,7 @@ static std::vector<analysis::Symbol> ResolveItemDeclarations(const lsp::TypeHier
     }
     if (declarations.size() > 1 && item.uri.isValid())
     {
-        const std::string itemUri = item.uri.toString();
+        const auto itemUri = item.uri.toString();
         auto it = std::find_if(declarations.begin(), declarations.end(),
                                [&](const analysis::Symbol& sym) { return MatchesItemLocation(sym, item, itemUri); });
         if (it != declarations.end())
@@ -154,7 +154,7 @@ static std::vector<analysis::Symbol> ResolveItemDeclarations(const lsp::TypeHier
  * @param[in] symbolTable Symbol table.
  * @return Resolved base type symbols.
  */
-static std::vector<analysis::Symbol> ResolveBaseSymbols(const std::string& cleanBase, std::string_view declPrefix,
+static std::vector<analysis::Symbol> ResolveBaseSymbols(std::string_view cleanBase, std::string_view declPrefix,
                                                         const analysis::SymbolTable& symbolTable)
 {
     std::vector<analysis::Symbol> baseSymbols;
@@ -185,21 +185,21 @@ static std::vector<analysis::Symbol> ResolveBaseSymbols(const std::string& clean
 }
 
 /**
- * @brief Collects supertype items for a single declaration, tracking seen types to avoid duplicates.
+ * @brief Collects supertype items for a single declaration, skipping types already emitted.
  * @param[in] declaration Declaring type symbol.
  * @param[in] symbolTable Symbol table.
- * @param[in,out] seen Set of already emitted type keys.
- * @param[in,out] items Output list of supertype items.
+ * @param[in,out] items Output list of supertype items; each item's data payload holds its qualified key, which is
+ *        what deduplication compares against.
  */
 static void CollectSupertypesForDeclaration(const analysis::Symbol& declaration,
-                                            const analysis::SymbolTable& symbolTable, std::vector<std::string>& seen,
+                                            const analysis::SymbolTable& symbolTable,
                                             std::vector<lsp::TypeHierarchyItem>& items)
 {
-    const std::string& declPrefix = declaration.containerName;
+    const std::string_view declPrefix = declaration.containerName;
 
     for (const auto& base : analysis::GetDeclaredBases(declaration))
     {
-        const std::string cleanBase = analysis::CleanBaseType(base);
+        const std::string_view cleanBase = analysis::CleanBaseTypeView(base);
         if (cleanBase.empty())
         {
             continue;
@@ -208,10 +208,12 @@ static void CollectSupertypesForDeclaration(const analysis::Symbol& declaration,
         const auto baseSymbols = ResolveBaseSymbols(cleanBase, declPrefix, symbolTable);
         for (const auto& baseSymbol : baseSymbols)
         {
-            const std::string key = baseSymbol.qualifiedName.empty() ? baseSymbol.name : baseSymbol.qualifiedName;
-            if (std::find(seen.begin(), seen.end(), key) == seen.end())
+            const std::string_view key = baseSymbol.qualifiedName.empty() ? baseSymbol.name : baseSymbol.qualifiedName;
+            const bool alreadyEmitted = std::any_of(
+                items.begin(), items.end(), [key](const lsp::TypeHierarchyItem& emitted)
+                { return emitted.data.has_value() && emitted.data->isString() && emitted.data->string() == key; });
+            if (!alreadyEmitted)
             {
-                seen.push_back(key);
                 items.push_back(ToItem(baseSymbol));
             }
         }
@@ -227,8 +229,9 @@ static void CollectSupertypesForDeclaration(const analysis::Symbol& declaration,
 static void CollectSubtypesFromRuleIndex(const analysis::rules::RuleIndex& ruleIndex, const SubtypeQueryContext& ctx,
                                          std::vector<lsp::TypeHierarchyItem>& items)
 {
-    ankerl::unordered_dense::set<std::string> seen;
-    auto collectFrom = [&](const std::string& baseKey)
+    // Views into ruleIndex entries, which the caller keeps alive for the whole query.
+    ankerl::unordered_dense::set<std::string_view> seen;
+    auto collectFrom = [&](std::string_view baseKey)
     {
         auto it = ruleIndex.derivedByBase.find(baseKey);
         if (it == ruleIndex.derivedByBase.end())
@@ -237,7 +240,7 @@ static void CollectSubtypesFromRuleIndex(const analysis::rules::RuleIndex& ruleI
         }
         for (const auto& derived : it->second)
         {
-            const std::string key = derived.qualifiedName.empty() ? derived.name : derived.qualifiedName;
+            const std::string_view key = derived.qualifiedName.empty() ? derived.name : derived.qualifiedName;
             if (!seen.insert(key).second)
             {
                 continue;
@@ -275,7 +278,7 @@ static void CollectSubtypesFromRuleIndex(const analysis::rules::RuleIndex& ruleI
 static void CollectSubtypesByScan(const SubtypeQueryContext& ctx, std::vector<lsp::TypeHierarchyItem>& items)
 {
     ctx.symbolTable.ForEachSymbol(
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
+        [&]([[maybe_unused]] std::string_view qualifiedName, const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& sym : symbols)
             {
@@ -286,7 +289,7 @@ static void CollectSubtypesByScan(const SubtypeQueryContext& ctx, std::vector<ls
 
                 for (const auto& base : analysis::GetDeclaredBases(sym))
                 {
-                    const std::string cleanBase = analysis::CleanBaseType(base);
+                    const std::string_view cleanBase = analysis::CleanBaseTypeView(base);
                     if ((!ctx.qualifiedTarget.empty() && cleanBase == ctx.qualifiedTarget) ||
                         analysis::LastScopeSegment(cleanBase) == ctx.target)
                     {
@@ -298,13 +301,20 @@ static void CollectSubtypesByScan(const SubtypeQueryContext& ctx, std::vector<ls
         });
 }
 
-static std::string FindEnclosingNamespace(std::string_view uri, uint32_t line, const analysis::SymbolTable& table)
+/**
+ * @brief Finds the innermost namespace declared in a document that spans the given line.
+ * @param[in] uri Document URI.
+ * @param[in] line 0-based document line.
+ * @param[in] table Workspace symbol table.
+ * @return Owned copy of the tightest enclosing namespace symbol, or nullopt at global scope.
+ */
+static std::optional<analysis::Symbol> FindEnclosingNamespace(std::string_view uri, uint32_t line,
+                                                              const analysis::SymbolTable& table)
 {
-    std::string enclosingNs;
+    std::optional<analysis::Symbol> enclosingNs;
     uint32_t bestSpan = UINT32_MAX;
-    const std::string fileUri(uri);
-    table.ForEachSymbolInFile(fileUri,
-                              [&]([[maybe_unused]] const std::string& key, const std::vector<analysis::Symbol>& symbols)
+    table.ForEachSymbolInFile(uri,
+                              [&]([[maybe_unused]] std::string_view key, const std::vector<analysis::Symbol>& symbols)
                               {
                                   for (const auto& sym : symbols)
                                   {
@@ -321,7 +331,7 @@ static std::string FindEnclosingNamespace(std::string_view uri, uint32_t line, c
                                           if (span <= bestSpan)
                                           {
                                               bestSpan = span;
-                                              enclosingNs = sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+                                              enclosingNs = sym;
                                           }
                                       }
                                   }
@@ -354,7 +364,7 @@ std::optional<std::vector<lsp::TypeHierarchyItem>> PrepareTypeHierarchy(const Ty
         return std::nullopt;
     }
 
-    const std::string name{common::FindScopedIdentifierAtPosition(request.sourceCode, request.position)};
+    const std::string_view name = common::FindScopedIdentifierAtPosition(request.sourceCode, request.position);
 
     std::vector<analysis::Symbol> declarations;
     if (!name.empty())
@@ -362,11 +372,12 @@ std::optional<std::vector<lsp::TypeHierarchyItem>> PrepareTypeHierarchy(const Ty
         declarations = FindTypeDeclarations(name, request.symbolTable);
         if (declarations.empty())
         {
-            const std::string enclosingNs =
-                FindEnclosingNamespace(request.uri, request.position.line, request.symbolTable);
-            if (!enclosingNs.empty())
+            if (const auto enclosingNs =
+                    FindEnclosingNamespace(request.uri, request.position.line, request.symbolTable))
             {
-                declarations = FindTypeDeclarations(utils::JoinScopedName(enclosingNs, name), request.symbolTable);
+                const std::string_view nsName =
+                    enclosingNs->qualifiedName.empty() ? enclosingNs->name : enclosingNs->qualifiedName;
+                declarations = FindTypeDeclarations(utils::JoinScopedName(nsName, name), request.symbolTable);
             }
         }
         if (declarations.empty())
@@ -393,7 +404,7 @@ std::optional<std::vector<lsp::TypeHierarchyItem>> PrepareTypeHierarchy(const Ty
 
     if (declarations.empty())
     {
-        const std::string enclosing = request.symbolTable.FindEnclosingClassName(request.uri, request.position.line);
+        const auto enclosing = request.symbolTable.FindEnclosingClassName(request.uri, request.position.line);
         if (!enclosing.empty())
         {
             declarations = FindTypeDeclarations(enclosing, request.symbolTable);
@@ -434,10 +445,9 @@ std::optional<std::vector<lsp::TypeHierarchyItem>> GetSupertypes(const TypeHiera
     }
 
     std::vector<lsp::TypeHierarchyItem> items;
-    std::vector<std::string> seen;
     for (const auto& declaration : declarations)
     {
-        CollectSupertypesForDeclaration(declaration, request.symbolTable, seen, items);
+        CollectSupertypesForDeclaration(declaration, request.symbolTable, items);
     }
 
     return items.empty() ? std::nullopt : std::optional{items};
@@ -445,19 +455,19 @@ std::optional<std::vector<lsp::TypeHierarchyItem>> GetSupertypes(const TypeHiera
 
 std::optional<std::vector<lsp::TypeHierarchyItem>> GetSubtypes(const TypeHierarchyItemRequest& request)
 {
-    const std::string target{analysis::LastScopeSegment(request.item.name)};
+    const std::string_view target = analysis::LastScopeSegment(request.item.name);
     if (target.empty())
     {
         return std::nullopt;
     }
 
-    std::string qualifiedTarget;
-    if (request.item.data.has_value() && request.item.data->isString() && !request.item.data->string().empty())
+    std::string_view qualifiedTarget;
+    if (request.item.data.has_value() && request.item.data->isString())
     {
         qualifiedTarget = request.item.data->string();
     }
 
-    SubtypeQueryContext ctx{target, std::move(qualifiedTarget), request.item.name, request.symbolTable};
+    const SubtypeQueryContext ctx{target, qualifiedTarget, request.item.name, request.symbolTable};
     std::vector<lsp::TypeHierarchyItem> items;
 
     const auto ruleIndex = request.symbolTable.GetRuleIndex();

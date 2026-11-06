@@ -508,6 +508,120 @@
       "verifiedByTests": [
         "SyntaxOperands navigation chains child facts without hash map lookups"
       ]
+    },
+    {
+      "id": "REF-M1-FOLDING-SYNTAX-FALLBACK",
+      "phase": "M1",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/features/folding_range/FoldingRangeHandler.cpp",
+      "deletedLineRange": "34-70,100-128",
+      "originalSymbolOrCode": "GetSyntaxFoldingSymbols, TryExtractSyntaxFoldingRange, ForEachNodeOrdered fallback, CommentRanges loop",
+      "whatItDidAndWhyInThatFile": "Re-walked the tree with a private 24-symbol foldable array and raw TSNode points when NodeIndex::FoldableSpans() was empty.",
+      "whyChangedOrDeleted": "Pass 1 already records every multi-line foldable node and block comment in FoldableSpans(); an empty list means the fallback finds nothing, and the array duplicated IsFoldableGrammarSymbol. Removing it brings the second-pass handler to zero ts_*/TSNode usage.",
+      "replacedByCanonicalFile": "server/src/analysis/index/NodeIndex.h",
+      "replacedByCanonicalSymbol": "FoldableSpans",
+      "ramOrCpuImpact": "Drops a redundant tree walk and the duplicated symbol table; folding reads only pre-indexed spans.",
+      "verifiedByTests": [
+        "FoldingRangeTest",
+        "SvenCoopRegressionTest"
+      ]
+    },
+    {
+      "id": "REF-M1-DOCUMENT-LINK-EXTENSION",
+      "phase": "M1",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/document_link/DocumentLinkHandler.h",
+      "deletedLineRange": "17-202",
+      "originalSymbolOrCode": "DocumentLinkExtension; DocumentLinkRequest::searchDirectories/allowedRoots/implicitExtension",
+      "whatItDidAndWhyInThatFile": "Owning-or-borrowing string holder for the implicit include extension, plus separate owned/borrowed include path lists on the request.",
+      "whyChangedOrDeleted": "Server::ImplicitIncludeExtension() already returns a string_view, so the owning variant was dead; the three include settings become one borrowed scope that maps 1:1 onto IncludeResolveRequest.",
+      "replacedByCanonicalFile": "server/src/utils/IncludeResolver.h",
+      "replacedByCanonicalSymbol": "IncludeSearchScope",
+      "ramOrCpuImpact": "Removes a per-request copy of allowedRoots and the extension storage; the request only borrows caller-owned lists.",
+      "verifiedByTests": [
+        "DocumentLinkTest"
+      ]
+    },
+    {
+      "id": "REF-M1-WORKSPACE-SYMBOL-TOLOWER",
+      "phase": "M1",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/workspace_symbol/WorkspaceSymbolHandler.cpp",
+      "deletedLineRange": "14-28",
+      "originalSymbolOrCode": "ToLower",
+      "whatItDidAndWhyInThatFile": "Built lowercase copies of the query, every symbol name and qualified name to rank workspace symbol matches.",
+      "whyChangedOrDeleted": "Case-insensitive comparisons now run directly on string views next to the existing CaseInsensitiveEquals/StartsWith helpers.",
+      "replacedByCanonicalFile": "server/src/utils/Utils.h",
+      "replacedByCanonicalSymbol": "CaseInsensitiveContains",
+      "ramOrCpuImpact": "Eliminates two heap allocations per scanned symbol during workspace/symbol queries.",
+      "verifiedByTests": [
+        "WorkspaceSymbolTest"
+      ]
+    },
+    {
+      "id": "REF-M1-DOCUMENT-SYMBOL-DETAIL",
+      "phase": "M1",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/document_symbol/DocumentSymbolHandler.cpp",
+      "deletedLineRange": "49-143",
+      "originalSymbolOrCode": "BuildFunctionDetail, FormatSymbolDetail",
+      "whatItDidAndWhyInThatFile": "Returned temporary detail strings and formatted function and funcdef parameter lists with two copies of the same loop.",
+      "whyChangedOrDeleted": "One parameter-list formatter shared by functions and funcdefs, writing straight into the protocol detail string.",
+      "replacedByCanonicalFile": "server/src/features/document_symbol/DocumentSymbolHandler.cpp",
+      "replacedByCanonicalSymbol": "AppendSymbolDetail",
+      "ramOrCpuImpact": "Removes intermediate concatenation temporaries per outline entry.",
+      "verifiedByTests": [
+        "DocumentSymbolTest"
+      ]
+    },
+    {
+      "id": "REF-M2-BREAKPOINT-FACTS",
+      "phase": "M2",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/breakpoints/BreakpointStatementClassifier.cpp",
+      "deletedLineRange": "1-320",
+      "originalSymbolOrCode": "BreakpointStatementClassifier, HandleFunctionLike, HandleLoopsAndBranches, HandleLeafStatement",
+      "whatItDidAndWhyInThatFile": "Traversed AST nodes to classify and emit executable breakpoint line and column ranges.",
+      "whyChangedOrDeleted": "Second-pass feature handler must not access Tree-Sitter AST nodes directly (Rule 4.10); moved to on-demand pass-1 analysis facts.",
+      "replacedByCanonicalFile": "server/src/analysis/index/BreakpointFacts.cpp",
+      "replacedByCanonicalSymbol": "CollectBreakpointSpans",
+      "ramOrCpuImpact": "Zero permanent RAM growth (computed on demand); isolates Tree-Sitter to pass-1.",
+      "verifiedByTests": [
+        "BreakpointLocationsTest",
+        "DebuggerDapProtocolTest"
+      ]
+    },
+    {
+      "id": "REF-M2-EVALUATABLE-SPAN",
+      "phase": "M2",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/breakpoints/EvaluatableExpressionHandler.cpp",
+      "deletedLineRange": "1-149",
+      "originalSymbolOrCode": "EvaluatableExpressionHandler::Extract, HandleMemberExpression, HandleIndexExpression, IsIgnoredNode",
+      "whatItDidAndWhyInThatFile": "Inspected AST root and point-range descendants to determine hover-evaluatable expressions.",
+      "whyChangedOrDeleted": "Decoupled AST traversal from feature layer into pass-1 on-demand evaluatable span resolution (Rule 4.10).",
+      "replacedByCanonicalFile": "server/src/analysis/index/BreakpointFacts.cpp",
+      "replacedByCanonicalSymbol": "FindEvaluatableSpan",
+      "ramOrCpuImpact": "Zero RAM growth; feature handler consumes only AST-free source ranges and byte offsets.",
+      "verifiedByTests": [
+        "EvaluatableExpressionTest"
+      ]
+    },
+    {
+      "id": "REF-M2-NODEINDEX-FIND-ENCLOSING-NODE",
+      "phase": "M2",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/analysis/index/NodeIndex.cpp",
+      "deletedLineRange": "1274-1297",
+      "originalSymbolOrCode": "NodeIndex::FindEnclosingNode(uint32_t, TSSymbol)",
+      "whatItDidAndWhyInThatFile": "Returned the innermost indexed TSNode of one grammar symbol enclosing a byte offset.",
+      "whyChangedOrDeleted": "Zero callers in src or tests; it was a public TSNode-returning API that second-pass code could misuse (Rule 4.10). FindEnclosingNodeAny and FindEnclosingCallable, used only inside NodeIndex, became private.",
+      "replacedByCanonicalFile": "server/src/analysis/index/NodeIndex.h",
+      "replacedByCanonicalSymbol": "FindEnclosingNodeAny",
+      "ramOrCpuImpact": "None at runtime; narrows the public NodeIndex surface that exposes TSNode.",
+      "verifiedByTests": [
+        "NodeIndexTest"
+      ]
     }
   ]
 }

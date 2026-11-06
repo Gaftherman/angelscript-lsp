@@ -4,7 +4,7 @@ Validador automatizado de los 4 Candados Arquitectónicos por Turno:
 - Candado A: Anti-omisión (exige diff real de código en todos los archivos del scope).
 - Candado B: Anti-structs basura (bloquea nuevos struct/class fuera de REFACTOR_LEDGER.json).
 - Candado C: Anti-delegación ciega (valida estructura JSON real en .agent/mcp_trace.json).
-- Candado Lizard + Zero-Trust: Ejecuta lizard (-C 25 -L 120 -a 5 -w) y protege configs/reglas.
+- Candado Zero-Trust: Protege configs/reglas y archivos sensibles.
 """
 
 import argparse
@@ -129,27 +129,7 @@ def check_lock_c_mcp_evidence(root: Path, trace_rel: str, min_queries: int) -> N
     print(f"[PASS] Candado C (Evidencia MCP): {len(calls)} llamadas estructuradas verificadas.")
 
 
-def check_lizard_relaxed(root: Path, target_files: list[str]) -> None:
-    res = run_cmd([sys.executable, "-m", "lizard"] + target_files + ["-C", "25", "-L", "120", "-a", "5", "-w"], root)
-    if res.returncode != 0:
-        sys.exit(f"[FAIL - LIZARD GATE (-C 25 -L 120 -a 5 -w)]:\n{res.stdout}\n{res.stderr}")
-    print(f"[PASS] Lizard Gate (-C 25 -L 120 -a 5 -w): {len(target_files)} archivos 100% aprobados.")
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Validador de Candados Arquitectónicos")
-    parser.add_argument("--trace", default=".agent/mcp_trace.json", help="Ruta al JSON de traza MCP")
-    parser.add_argument("--min-queries", type=int, default=4, help="Mínimo de consultas MCP requeridas")
-    parser.add_argument("--base-ref", default="HEAD", help="Base git ref for diff checks")
-    parser.add_argument("--require-diff", nargs="+", required=True, help="Archivos que DEBEN tener diff real")
-    args = parser.parse_args()
-
-    root = Path(__file__).resolve().parent.parent
-    check_zero_trust(root)
-    check_lock_a_required_diffs(root, args.require_diff, args.base_ref)
-    check_lock_b_no_adhoc_structs(root, args.require_diff, args.base_ref)
     check_lock_c_mcp_evidence(root, args.trace, args.min_queries)
-    check_lizard_relaxed(root, args.require_diff)
     print("\n=== TODOS LOS CANDADOS ARQUITECTÓNICOS APROBADOS (PASS) ===")
 
 

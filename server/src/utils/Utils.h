@@ -211,6 +211,28 @@ inline bool CaseInsensitiveStartsWith(std::string_view str, std::string_view pre
 }
 
 /**
+ * @brief Checks whether a string contains a substring, ignoring ASCII case, without allocating folded copies.
+ * @param[in] haystack Text to search within.
+ * @param[in] needle Substring to look for.
+ * @return True if needle occurs anywhere in haystack ignoring ASCII case; always true for an empty needle.
+ */
+inline bool CaseInsensitiveContains(std::string_view haystack, std::string_view needle) noexcept
+{
+    if (needle.size() > haystack.size())
+    {
+        return false;
+    }
+    for (size_t start = 0; start + needle.size() <= haystack.size(); ++start)
+    {
+        if (CaseInsensitiveStartsWith(haystack.substr(start), needle))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * @brief Checks if a string starts with a keyword followed by whitespace or delimiter.
  * @param[in] text The text view to check.
  * @param[in] keyword The keyword to match.

@@ -55,7 +55,7 @@ bool IsBaseConstructorCall(TSNode node, std::string_view sourceCode);
 
 NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const SymbolTable& table);
 bool IsMixinClass(std::string_view baseTypeName, const SymbolTable& table);
-std::vector<std::string> GetInheritedTypeHierarchy(const std::string& className, const SymbolTable& symbolTable,
+std::vector<std::string> GetInheritedTypeHierarchy(std::string_view className, const SymbolTable& symbolTable,
                                                    ExpressionTypeCache* cache = nullptr);
 std::string ResolveBaseClass(std::string_view className, const SymbolTable& symbolTable);
 bool IsDerivedFrom(std::string_view derivedClass, std::string_view baseClass, const SymbolTable& symbolTable);

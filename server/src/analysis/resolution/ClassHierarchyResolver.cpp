@@ -135,7 +135,7 @@ void EnqueueInterfaceBases(const Symbol& sym, ankerl::unordered_dense::set<std::
     }
 }
 
-std::vector<std::string> GetInheritedTypeHierarchy(const std::string& className, const SymbolTable& symbolTable,
+std::vector<std::string> GetInheritedTypeHierarchy(std::string_view className, const SymbolTable& symbolTable,
                                                    ExpressionTypeCache* cache)
 {
     std::vector<std::string> hierarchy;

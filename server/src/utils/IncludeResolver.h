@@ -63,6 +63,18 @@ struct IncludeTraversalRequest
 };
 
 /**
+ * @brief Workspace include configuration a document is resolved against: where to search, where resolution may
+ *        land, and which suffix to retry with.
+ * @warning Non-owning: the caller keeps the directory lists and extension alive while the scope is in use.
+ */
+struct IncludeSearchScope
+{
+    std::span<const std::string> searchDirectories{}; ///< Ordered list of search paths configured for the workspace.
+    std::span<const std::string> allowedRoots{};      ///< Confinement roots; empty means unconfined.
+    std::string_view implicitExtension{};             ///< Suffix fallback to try (e.g., ".as"), or empty for none.
+};
+
+/**
  * @brief Parameters for resolving an AngelScript #include directive.
  */
 struct IncludeResolveRequest

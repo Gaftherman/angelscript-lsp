@@ -35,11 +35,13 @@ struct ImplementationRequest
 
 /**
  * @brief Accumulates derived classes and interface implementations during type hierarchy search.
+ * @warning seen and next borrow type names from the RuleIndex snapshot being walked; that snapshot must outlive
+ *          the accumulator.
  */
 struct SubtypeAccumulator
 {
-    ankerl::unordered_dense::set<std::string>& seen;
-    std::vector<std::string>& next;
+    ankerl::unordered_dense::set<std::string_view>& seen;
+    std::vector<std::string_view>& next;
     std::vector<analysis::Symbol>& subtypes;
 };
 
@@ -49,7 +51,7 @@ struct SubtypeAccumulator
 struct LocationCollector
 {
     std::vector<lsp::Location> locations;
-    ankerl::unordered_dense::set<std::pair<std::string, uint64_t>> seenLocs;
+    ankerl::unordered_dense::set<std::pair<uint64_t, uint64_t>> seenLocs; ///< (file URI hash, line/column key).
 
     /**
      * @brief Adds a symbol location if not already collected.
@@ -63,7 +65,7 @@ struct LocationCollector
  */
 struct MemberImplementationContext
 {
-    std::string name;
+    std::string_view name; ///< Member name under the cursor; borrows from the request source.
     bool isMixinOwner;
     const analysis::SymbolTable& table;
     LocationCollector& collector;

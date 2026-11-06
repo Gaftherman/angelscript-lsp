@@ -58,9 +58,9 @@ PrepareTypeHierarchy(const TypeHierarchyPrepareRequest& request);
  */
 struct SubtypeQueryContext
 {
-    std::string target;
-    std::string qualifiedTarget;
-    std::string itemName;
+    std::string_view target;          ///< Bare name of the queried type; borrows from the request item.
+    std::string_view qualifiedTarget; ///< Qualified name from the item's data payload, or empty.
+    std::string_view itemName;        ///< Display name of the request item.
     const analysis::SymbolTable& symbolTable;
 };
 } // namespace angel_lsp::features

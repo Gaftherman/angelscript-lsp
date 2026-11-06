@@ -6,6 +6,8 @@
 #include "utils/LspLogger.h"
 
 #include <algorithm>
+#include <deque>
+#include <iterator>
 #include <memory>
 #include <spdlog/fmt/fmt.h>
 #include <string_view>
@@ -26,7 +28,7 @@ static void ExpandDerivedFromList(const TList& derivedList, const analysis::Symb
 {
     for (const auto& derived : derivedList)
     {
-        const std::string bare{analysis::LastScopeSegment(derived.name)};
+        const std::string_view bare = analysis::LastScopeSegment(derived.name);
         if (!acc.seen.insert(bare).second)
         {
             continue;
@@ -58,27 +60,28 @@ static void ExpandDerivedFromList(const TList& derivedList, const analysis::Symb
 
 /**
  * @brief Collects subtypes using precomputed rule index derived maps.
- * @param[in] rootType Root type name.
+ * @param[in] rootType Root type name; must outlive the call.
  * @param[in] table analysis::Symbol table.
- * @param[in] ruleIndex Precomputed rule index.
+ * @param[in] ruleIndex Precomputed rule index; the frontier and seen sets borrow its type names, so the caller must
+ *        keep the snapshot alive for the whole call.
  * @return List of subtype symbols.
  */
-static std::vector<analysis::Symbol> CollectSubtypesFromRuleIndex(const std::string& rootType,
+static std::vector<analysis::Symbol> CollectSubtypesFromRuleIndex(std::string_view rootType,
                                                                   const analysis::SymbolTable& table,
                                                                   const analysis::rules::RuleIndex& ruleIndex)
 {
-    const std::string bareRoot{analysis::LastScopeSegment(rootType)};
-    std::vector<std::string> frontier{bareRoot};
+    const std::string_view bareRoot = analysis::LastScopeSegment(rootType);
+    std::vector<std::string_view> frontier{bareRoot};
     if (bareRoot != rootType && !rootType.empty())
     {
         frontier.push_back(rootType);
     }
-    ankerl::unordered_dense::set<std::string> seen{bareRoot, rootType};
+    ankerl::unordered_dense::set<std::string_view> seen{bareRoot, rootType};
     std::vector<analysis::Symbol> subtypes;
 
     while (!frontier.empty())
     {
-        std::vector<std::string> next;
+        std::vector<std::string_view> next;
         SubtypeAccumulator acc{seen, next, subtypes};
 
         for (const auto& baseName : frontier)
@@ -107,11 +110,11 @@ static std::vector<analysis::Symbol> CollectSubtypesFromRuleIndex(const std::str
  * @param[in] frontier Current frontier of base names.
  * @return True if sym matches the frontier.
  */
-static bool MatchesDeclaredBasesOrMixins(const analysis::Symbol& sym, const std::vector<std::string>& frontier)
+static bool MatchesDeclaredBasesOrMixins(const analysis::Symbol& sym, const std::vector<std::string_view>& frontier)
 {
     for (const auto& base : analysis::GetDeclaredBases(sym))
     {
-        const std::string baseName{analysis::LastScopeSegment(analysis::CleanBaseType(base))};
+        const std::string_view baseName = analysis::LastScopeSegment(analysis::CleanBaseTypeView(base));
         if (std::find(frontier.begin(), frontier.end(), baseName) != frontier.end())
         {
             return true;
@@ -121,7 +124,7 @@ static bool MatchesDeclaredBasesOrMixins(const analysis::Symbol& sym, const std:
     {
         for (const auto& m : sym.GetClass().includedMixins)
         {
-            const std::string mName{analysis::LastScopeSegment(m)};
+            const std::string_view mName = analysis::LastScopeSegment(m);
             if (std::find(frontier.begin(), frontier.end(), mName) != frontier.end())
             {
                 return true;
@@ -133,23 +136,25 @@ static bool MatchesDeclaredBasesOrMixins(const analysis::Symbol& sym, const std:
 
 /**
  * @brief Linear table scan fallback to collect subtypes.
- * @param[in] rootType Root type name.
+ * @param[in] rootType Root type name; must outlive the call.
  * @param[in] table analysis::Symbol table.
  * @return List of subtype symbols.
+ * @note Matches are copied into a deque so the frontier and seen views keep pointing at stable names while the
+ *       accumulator grows; table buckets are never borrowed past the visitor call.
  */
-static std::vector<analysis::Symbol> CollectSubtypesByScan(const std::string& rootType,
+static std::vector<analysis::Symbol> CollectSubtypesByScan(std::string_view rootType,
                                                            const analysis::SymbolTable& table)
 {
-    std::vector<std::string> frontier{std::string(analysis::LastScopeSegment(rootType))};
-    std::vector<std::string> seen{frontier.front()};
-    std::vector<analysis::Symbol> subtypes;
+    std::vector<std::string_view> frontier{analysis::LastScopeSegment(rootType)};
+    std::vector<std::string_view> seen{frontier.front()};
+    std::deque<analysis::Symbol> subtypes;
 
     while (!frontier.empty())
     {
-        std::vector<std::string> next;
+        std::vector<std::string_view> next;
 
         table.ForEachSymbol(
-            [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
+            [&]([[maybe_unused]] std::string_view qualifiedName, const std::vector<analysis::Symbol>& symbols)
             {
                 for (const auto& sym : symbols)
                 {
@@ -158,24 +163,23 @@ static std::vector<analysis::Symbol> CollectSubtypesByScan(const std::string& ro
                         continue;
                     }
 
-                    const std::string bare{analysis::LastScopeSegment(sym.name)};
-                    if (std::find(seen.begin(), seen.end(), bare) != seen.end())
+                    if (std::find(seen.begin(), seen.end(), analysis::LastScopeSegment(sym.name)) != seen.end())
                     {
                         continue;
                     }
 
                     if (MatchesDeclaredBasesOrMixins(sym, frontier))
                     {
+                        const std::string_view bare = analysis::LastScopeSegment(subtypes.emplace_back(sym).name);
                         seen.push_back(bare);
                         next.push_back(bare);
-                        subtypes.push_back(sym);
                     }
                 }
             });
 
         frontier = std::move(next);
     }
-    return subtypes;
+    return {std::make_move_iterator(subtypes.begin()), std::make_move_iterator(subtypes.end())};
 }
 
 /**
@@ -184,7 +188,7 @@ static std::vector<analysis::Symbol> CollectSubtypesByScan(const std::string& ro
  * @param[in] table analysis::Symbol table.
  * @return List of subtype symbols.
  */
-static std::vector<analysis::Symbol> CollectSubtypes(const std::string& rootType, const analysis::SymbolTable& table)
+static std::vector<analysis::Symbol> CollectSubtypes(std::string_view rootType, const analysis::SymbolTable& table)
 {
     const auto ruleIndex = table.GetRuleIndex();
     if (ruleIndex)
@@ -220,7 +224,7 @@ void LocationCollector::Add(const analysis::Symbol& sym)
                             ? sym.selectionRange.startCharacter
                             : sym.startCharacter;
     const uint64_t key = (static_cast<uint64_t>(sL) << 32) | sC;
-    if (seenLocs.insert({sym.fileUri, key}).second)
+    if (seenLocs.insert({ankerl::unordered_dense::hash<std::string_view>{}(sym.fileUri), key}).second)
     {
         locations.push_back(ToLocation(sym));
     }
@@ -229,7 +233,7 @@ void LocationCollector::Add(const analysis::Symbol& sym)
 /**
  * @brief True when a name is declared as a class or an interface anywhere in the table.
  */
-static bool IsTypeName(const std::string& name, const analysis::SymbolTable& table)
+static bool IsTypeName(std::string_view name, const analysis::SymbolTable& table)
 {
     const auto symbols = table.FindSymbolsPtr(name);
     if (symbols &&
@@ -250,7 +254,7 @@ static bool IsTypeName(const std::string& name, const analysis::SymbolTable& tab
  * @param[in] table analysis::Symbol table.
  * @return Locations of derived types or fallback definition.
  */
-static std::optional<std::vector<lsp::Location>> ResolveTypeImplementations(const std::string& name,
+static std::optional<std::vector<lsp::Location>> ResolveTypeImplementations(std::string_view name,
                                                                             const analysis::SymbolTable& table)
 {
     std::vector<lsp::Location> locations;
@@ -289,14 +293,14 @@ static std::optional<std::vector<lsp::Location>> ResolveTypeImplementations(cons
  * @brief Finds a member directly declared in a class or its bare alias.
  */
 static std::shared_ptr<const std::vector<analysis::Symbol>>
-FindMemberInClass(const std::string& clsName, const std::string& name, const analysis::SymbolTable& table)
+FindMemberInClass(std::string_view clsName, std::string_view name, const analysis::SymbolTable& table)
 {
     auto memberSyms = table.FindMemberSymbolPtr(clsName, name);
     if (memberSyms && !memberSyms->empty())
     {
         return memberSyms;
     }
-    const std::string bareCls{analysis::LastScopeSegment(clsName)};
+    const std::string_view bareCls = analysis::LastScopeSegment(clsName);
     if (bareCls != clsName)
     {
         memberSyms = table.FindMemberSymbolPtr(bareCls, name);
@@ -312,7 +316,7 @@ FindMemberInClass(const std::string& clsName, const std::string& name, const ana
  * @brief Searches for a member symbol inside mixins and bases of a class symbol.
  */
 static std::shared_ptr<const std::vector<analysis::Symbol>>
-FindMemberInMixinsAndBases(const analysis::Symbol& os, const std::string& name, const analysis::SymbolTable& table)
+FindMemberInMixinsAndBases(const analysis::Symbol& os, std::string_view name, const analysis::SymbolTable& table)
 {
     if (os.type != analysis::SymbolType::Class || !std::holds_alternative<analysis::ClassSignature>(os.signature))
     {
@@ -330,7 +334,7 @@ FindMemberInMixinsAndBases(const analysis::Symbol& os, const std::string& name, 
 
     for (const auto& b : cls.bases)
     {
-        const std::string cleanB = analysis::CleanBaseType(b);
+        const std::string_view cleanB = analysis::CleanBaseTypeView(b);
         if (auto mSyms = FindMemberInClass(cleanB, name, table); mSyms && !mSyms->empty())
         {
             return mSyms;
@@ -343,9 +347,9 @@ FindMemberInMixinsAndBases(const analysis::Symbol& os, const std::string& name, 
  * @brief Finds a member inside the mixins or bases of an owner class.
  */
 static std::shared_ptr<const std::vector<analysis::Symbol>>
-FindMemberInOwnerMixinsAndBases(const std::string& clsName, const std::string& name, const analysis::SymbolTable& table)
+FindMemberInOwnerMixinsAndBases(std::string_view clsName, std::string_view name, const analysis::SymbolTable& table)
 {
-    const std::string bareCls{analysis::LastScopeSegment(clsName)};
+    const std::string_view bareCls = analysis::LastScopeSegment(clsName);
     auto ownerSyms = table.FindSymbolsPtr(clsName);
     if (!ownerSyms || ownerSyms->empty())
     {
@@ -370,7 +374,7 @@ FindMemberInOwnerMixinsAndBases(const std::string& clsName, const std::string& n
  * @brief Searches for a member declaration within the hierarchy of an owner type.
  */
 static std::shared_ptr<const std::vector<analysis::Symbol>>
-FindMemberInHierarchy(const std::string& owner, const std::string& name, const analysis::SymbolTable& table)
+FindMemberInHierarchy(std::string_view owner, std::string_view name, const analysis::SymbolTable& table)
 {
     if (auto syms = FindMemberInClass(owner, name, table))
     {
@@ -380,11 +384,11 @@ FindMemberInHierarchy(const std::string& owner, const std::string& name, const a
     auto hierarchy = analysis::GetInheritedTypeHierarchy(owner, table);
     if (hierarchy.empty())
     {
-        hierarchy.push_back(owner);
-        const std::string bareOwner{analysis::LastScopeSegment(owner)};
+        hierarchy.emplace_back(owner);
+        const std::string_view bareOwner = analysis::LastScopeSegment(owner);
         if (bareOwner != owner)
         {
-            hierarchy.push_back(bareOwner);
+            hierarchy.emplace_back(bareOwner);
         }
     }
 
@@ -405,7 +409,7 @@ FindMemberInHierarchy(const std::string& owner, const std::string& name, const a
 /**
  * @brief Checks whether a class is a mixin or registered in hostClassesByMixin.
  */
-static bool CheckMixinOwner(const std::string& owner, const std::string& bareOwner, const analysis::SymbolTable& table)
+static bool CheckMixinOwner(std::string_view owner, std::string_view bareOwner, const analysis::SymbolTable& table)
 {
     if (analysis::IsMixinClass(owner, table) || (bareOwner != owner && analysis::IsMixinClass(bareOwner, table)))
     {
@@ -444,7 +448,7 @@ static void CollectSubtypeOverrides(const analysis::Symbol& subtype, MemberImple
  * @brief Resolves implementations/overrides of a member method or field.
  */
 static std::optional<std::vector<lsp::Location>>
-ResolveMemberImplementations(const std::string& owner, const std::string& name, const analysis::SymbolTable& table)
+ResolveMemberImplementations(std::string_view owner, std::string_view name, const analysis::SymbolTable& table)
 {
     auto memberSyms = FindMemberInHierarchy(owner, name, table);
     if (!memberSyms || memberSyms->empty())
@@ -452,7 +456,7 @@ ResolveMemberImplementations(const std::string& owner, const std::string& name, 
         return std::nullopt;
     }
 
-    const std::string bareOwner{analysis::LastScopeSegment(owner)};
+    const std::string_view bareOwner = analysis::LastScopeSegment(owner);
     const bool isMixinOwner = CheckMixinOwner(owner, bareOwner, table);
 
     LocationCollector collector;
@@ -481,7 +485,7 @@ ResolveMemberImplementations(const std::string& owner, const std::string& name, 
 /**
  * @brief Resolves implementations for a free function declaration.
  */
-static std::optional<std::vector<lsp::Location>> ResolveFunctionImplementations(const std::string& name,
+static std::optional<std::vector<lsp::Location>> ResolveFunctionImplementations(std::string_view name,
                                                                                 const analysis::SymbolTable& table)
 {
     const auto globalSyms = table.FindSymbolsPtr(name);
@@ -507,10 +511,10 @@ std::optional<std::vector<lsp::Location>> GetImplementations(const Implementatio
         return std::nullopt;
     }
 
-    std::string name{common::FindScopedIdentifierAtPosition(request.sourceCode, request.position)};
+    std::string_view name = common::FindScopedIdentifierAtPosition(request.sourceCode, request.position);
     if (name.empty())
     {
-        name = std::string(common::FindIdentifierAtPosition(request.sourceCode, request.position));
+        name = common::FindIdentifierAtPosition(request.sourceCode, request.position);
     }
     if (name.empty())
     {
@@ -532,7 +536,7 @@ std::optional<std::vector<lsp::Location>> GetImplementations(const Implementatio
     }
 
     // Member method or field
-    const std::string owner = table.FindEnclosingClassName(request.uri, request.position.line);
+    const auto owner = table.FindEnclosingClassName(request.uri, request.position.line);
     if (!owner.empty())
     {
         auto result = ResolveMemberImplementations(owner, name, table);

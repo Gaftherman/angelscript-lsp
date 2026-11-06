@@ -61,7 +61,7 @@ TEST_CASE("GetDocumentLinks - a resolvable include becomes a link over the quote
     const std::string uri = fixture.Uri("main.as");
     const std::string source = "#include \"base.as\"\nvoid Main() {}\n";
 
-    features::DocumentLinkRequest request{uri, source, fixture.searchDirectories, nullptr};
+    features::DocumentLinkRequest request{uri, source, {.searchDirectories = fixture.searchDirectories}, nullptr};
     const auto links = features::GetDocumentLinks(request);
 
     REQUIRE(links.has_value());
@@ -86,7 +86,7 @@ TEST_CASE("GetDocumentLinks - an indented directive still gets the right columns
     const std::string uri = fixture.Uri("main.as");
     const std::string source = "    #include \"base.as\"\n";
 
-    features::DocumentLinkRequest request{uri, source, fixture.searchDirectories, nullptr};
+    features::DocumentLinkRequest request{uri, source, {.searchDirectories = fixture.searchDirectories}, nullptr};
     const auto links = features::GetDocumentLinks(request);
 
     REQUIRE(links.has_value());
@@ -103,7 +103,7 @@ TEST_CASE("GetDocumentLinks - a directive on a later line reports that line")
     const std::string uri = fixture.Uri("main.as");
     const std::string source = "// header\n\n#include \"base.as\"\n";
 
-    features::DocumentLinkRequest request{uri, source, fixture.searchDirectories, nullptr};
+    features::DocumentLinkRequest request{uri, source, {.searchDirectories = fixture.searchDirectories}, nullptr};
     const auto links = features::GetDocumentLinks(request);
 
     REQUIRE(links.has_value());
@@ -120,7 +120,7 @@ TEST_CASE("GetDocumentLinks - several includes produce one link each")
     const std::string uri = fixture.Uri("main.as");
     const std::string source = "#include \"a.as\"\n#include \"b.as\"\n";
 
-    features::DocumentLinkRequest request{uri, source, fixture.searchDirectories, nullptr};
+    features::DocumentLinkRequest request{uri, source, {.searchDirectories = fixture.searchDirectories}, nullptr};
     const auto links = features::GetDocumentLinks(request);
 
     REQUIRE(links.has_value());
@@ -134,7 +134,7 @@ TEST_CASE("GetDocumentLinks - an unresolvable include produces no link")
     const std::string uri = fixture.Uri("main.as");
     const std::string source = "#include \"missing.as\"\n";
 
-    features::DocumentLinkRequest request{uri, source, fixture.searchDirectories, nullptr};
+    features::DocumentLinkRequest request{uri, source, {.searchDirectories = fixture.searchDirectories}, nullptr};
     CHECK_FALSE(features::GetDocumentLinks(request).has_value());
 }
 
@@ -144,7 +144,7 @@ TEST_CASE("GetDocumentLinks - a document with no directives yields nothing")
 
     const std::string uri = fixture.Uri("main.as");
     const std::string source = "void Main() {}\n";
-    features::DocumentLinkRequest request{uri, source, fixture.searchDirectories, nullptr};
+    features::DocumentLinkRequest request{uri, source, {.searchDirectories = fixture.searchDirectories}, nullptr};
 
     CHECK_FALSE(features::GetDocumentLinks(request).has_value());
 }
@@ -156,7 +156,7 @@ TEST_CASE("GetDocumentLinks - a directive inside a comment is not a link")
 
     const std::string uri = fixture.Uri("main.as");
     const std::string source = "// #include \"base.as\"\n";
-    features::DocumentLinkRequest request{uri, source, fixture.searchDirectories, nullptr};
+    features::DocumentLinkRequest request{uri, source, {.searchDirectories = fixture.searchDirectories}, nullptr};
 
     CHECK_FALSE(features::GetDocumentLinks(request).has_value());
 }
@@ -172,7 +172,7 @@ TEST_CASE("GetUnresolvedIncludeDiagnostics - warns about an include that resolve
     const std::string uri = fixture.Uri("main.as");
     const std::string source = "#include \"missing.as\"\n";
 
-    features::DocumentLinkRequest request{uri, source, fixture.searchDirectories, nullptr};
+    features::DocumentLinkRequest request{uri, source, {.searchDirectories = fixture.searchDirectories}, nullptr};
     const auto diagnostics = features::GetUnresolvedIncludeDiagnostics(request);
 
     REQUIRE(diagnostics.size() == 1);
@@ -190,7 +190,7 @@ TEST_CASE("GetUnresolvedIncludeDiagnostics - says nothing about includes that do
 
     const std::string uri = fixture.Uri("main.as");
     const std::string source = "#include \"base.as\"\n";
-    features::DocumentLinkRequest request{uri, source, fixture.searchDirectories, nullptr};
+    features::DocumentLinkRequest request{uri, source, {.searchDirectories = fixture.searchDirectories}, nullptr};
 
     CHECK(features::GetUnresolvedIncludeDiagnostics(request).empty());
 }
@@ -203,7 +203,7 @@ TEST_CASE("GetUnresolvedIncludeDiagnostics - reports each broken directive separ
     const std::string uri = fixture.Uri("main.as");
     const std::string source = "#include \"gone.as\"\n#include \"ok.as\"\n#include \"also_gone.as\"\n";
 
-    features::DocumentLinkRequest request{uri, source, fixture.searchDirectories, nullptr};
+    features::DocumentLinkRequest request{uri, source, {.searchDirectories = fixture.searchDirectories}, nullptr};
     const auto diagnostics = features::GetUnresolvedIncludeDiagnostics(request);
 
     REQUIRE(diagnostics.size() == 2);
@@ -220,11 +220,11 @@ TEST_CASE("GetUnresolvedIncludeDiagnostics - a search directory rescues an other
     const std::string uri = fixture.Uri("main.as");
     const std::string source = "#include \"util.as\"\n";
 
-    features::DocumentLinkRequest without{uri, source, fixture.searchDirectories, nullptr};
+    features::DocumentLinkRequest without{uri, source, {.searchDirectories = fixture.searchDirectories}, nullptr};
     CHECK(features::GetUnresolvedIncludeDiagnostics(without).size() == 1);
 
     const std::vector<std::string> withShared = {utils::IncludeResolver::NormalizePath(fixture.dir / "shared")};
-    features::DocumentLinkRequest with{uri, source, withShared, nullptr};
+    features::DocumentLinkRequest with{uri, source, {.searchDirectories = withShared}, nullptr};
     CHECK(features::GetUnresolvedIncludeDiagnostics(with).empty());
 }
 
@@ -241,9 +241,12 @@ TEST_CASE("DocumentLink - A missing include inside a dead #if is not reported")
                                "void main() { }\n";
 
     const std::vector<std::string> searchDirectories;
+    const std::vector<std::string> allowedRoots{"/workspace"};
 
-    features::DocumentLinkRequest request{"file:///workspace/main.as", source, searchDirectories, nullptr};
-    request.allowedRoots = {"/workspace"};
+    features::DocumentLinkRequest request{"file:///workspace/main.as",
+                                          source,
+                                          {.searchDirectories = searchDirectories, .allowedRoots = allowedRoots},
+                                          nullptr};
     request.excludedLineRanges = angel_lsp::utils::FindExcludedLineRanges(source);
 
     const auto diagnostics = features::GetUnresolvedIncludeDiagnostics(request);
@@ -267,7 +270,7 @@ TEST_CASE("GetDocumentLinks - with NodeIndex resolves include directives directl
     REQUIRE(tree != nullptr);
     analysis::NodeIndex index(ts_tree_root_node(tree), analysis::NodeIndexOptions{.source = source});
 
-    features::DocumentLinkRequest request{uri, source, fixture.searchDirectories, nullptr};
+    features::DocumentLinkRequest request{uri, source, {.searchDirectories = fixture.searchDirectories}, nullptr};
     request.nodeIndex = &index;
     const auto links = features::GetDocumentLinks(request);
 
@@ -295,7 +298,7 @@ TEST_CASE("GetDocumentLinks - with NodeIndex and no includes returns nullopt wit
     REQUIRE(tree != nullptr);
     analysis::NodeIndex index(ts_tree_root_node(tree), analysis::NodeIndexOptions{.source = source});
 
-    features::DocumentLinkRequest request{uri, source, fixture.searchDirectories, nullptr};
+    features::DocumentLinkRequest request{uri, source, {.searchDirectories = fixture.searchDirectories}, nullptr};
     request.nodeIndex = &index;
     const auto links = features::GetDocumentLinks(request);
     CHECK_FALSE(links.has_value());
@@ -320,9 +323,12 @@ TEST_CASE("GetUnresolvedIncludeDiagnostics - with NodeIndex reports missing incl
     analysis::NodeIndex index(ts_tree_root_node(tree), analysis::NodeIndexOptions{.source = source});
 
     const std::vector<std::string> searchDirectories;
-    features::DocumentLinkRequest request{"file:///workspace/main.as", source, searchDirectories, nullptr};
+    const std::vector<std::string> allowedRoots{"/workspace"};
+    features::DocumentLinkRequest request{"file:///workspace/main.as",
+                                          source,
+                                          {.searchDirectories = searchDirectories, .allowedRoots = allowedRoots},
+                                          nullptr};
     request.nodeIndex = &index;
-    request.allowedRoots = {"/workspace"};
     request.excludedLineRanges = angel_lsp::utils::FindExcludedLineRanges(source);
 
     const auto diags = features::GetUnresolvedIncludeDiagnostics(request);
