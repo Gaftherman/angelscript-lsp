@@ -50,7 +50,7 @@ struct TestEnvironment
 
     std::optional<DocumentHighlightResult> HighlightsAt(uint32_t line, uint32_t character)
     {
-        DocumentHighlightRequest req{uri, source, tree, lsp::Position{line, character}, symbolTable, scopeIndex};
+        DocumentHighlightRequest req{uri, source, lsp::Position{line, character}, symbolTable, scopeIndex};
         return GetDocumentHighlights(req);
     }
 };

@@ -2,354 +2,304 @@
 
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/resolution/TargetResolution.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
-#include "utils/Constants.h"
+#include "features/common/FeatureSharedUtils.h"
+#include "utils/PositionEncoding.h"
 #include "utils/ScopedNameUtils.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
-#include <set>
+#include <cctype>
+#include <optional>
 #include <string_view>
-#include <tuple>
-#include <unordered_set>
 #include <vector>
 
 namespace angel_lsp::features
 {
 
 /**
- * @brief Resolves the enclosing class name for a given source position.
- * @param[in] symbolTable Symbol table to look up class definitions.
+ * @brief Checks if an occurrence represents a declaration location.
+ * @param[in] target Target symbol descriptor.
+ * @param[in] range Occurrence source coordinate range.
+ * @param[in] symbolTable Workspace symbol table.
  * @param[in] uri Document file URI.
- * @param[in] line 0-based line number.
- * @param[in] excludeName Optional class name to exclude.
- * @return Enclosing class name or empty string if not in a class.
+ * @return DocumentHighlightKind if matching declaration; std::nullopt otherwise.
  */
-static std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, const std::string& uri,
-                                         uint32_t line, const std::string& excludeName = "")
+static std::optional<lsp::DocumentHighlightKind> CheckDeclaration(const analysis::TargetDescriptor& target,
+                                                                  const lsp::Range& range,
+                                                                  const analysis::SymbolTable& symbolTable,
+                                                                  std::string_view uri)
 {
-    return symbolTable.FindEnclosingClassName(uri, line, excludeName);
-}
-
-/**
- * @brief Checks if an AST node is contained within another AST node range.
- * @param[in] inner Enclosed candidate node.
- * @param[in] outer Enclosing boundary node.
- * @return True if inner node is within outer node bounds.
- */
-static bool IsNodeContained(TSNode inner, TSNode outer) noexcept
-{
-    if (ts_node_is_null(inner) || ts_node_is_null(outer))
+    if (target.kind == analysis::TargetKind::Local)
     {
-        return false;
-    }
-    return ts_node_start_byte(inner) >= ts_node_start_byte(outer) && ts_node_end_byte(inner) <= ts_node_end_byte(outer);
-}
-
-/**
- * @brief Checks if node type is a variable or parameter declarator.
- * @param[in] pType Parent node type.
- * @return True if declarator node.
- */
-static bool IsVariableOrParamDeclarator(TSSymbol pType, const parser::GrammarSymbols& gs) noexcept
-{
-    return pType == gs.symVariableDeclarator || pType == gs.symParameter || pType == gs.symForeachVariable;
-}
-
-/**
- * @brief Checks if node type is a callable or type-level declaration.
- * @param[in] pType Parent node symbol.
- * @return True if callable or type declaration node.
- */
-static bool IsCallableOrTypeDeclaration(TSSymbol pType, const parser::GrammarSymbols& gs) noexcept
-{
-    return pType == gs.symFuncDeclaration || pType == gs.symInterfaceMethod || pType == gs.symFuncdefDeclaration ||
-           pType == gs.symClassDeclaration || pType == gs.symMixinDeclaration || pType == gs.symInterfaceDeclaration ||
-           pType == gs.symNamespaceDeclaration || pType == gs.symEnumDeclaration || pType == gs.symTypedefDeclaration ||
-           pType == gs.symEnumMember;
-}
-
-/**
- * @brief Checks whether leaf node is the name of a declaration.
- * @param[in] leaf AST leaf node.
- * @return DocumentHighlightKind if leaf is a declaration identifier.
- */
-static std::optional<lsp::DocumentHighlightKind> ClassifyDeclarationNode(TSNode leaf)
-{
-    TSNode parent = parser::GetParent(leaf);
-    if (ts_node_is_null(parent))
-    {
-        return std::nullopt;
-    }
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol pType = ts_node_symbol(parent);
-    if (IsVariableOrParamDeclarator(pType, gs))
-    {
-        TSNode nameNode = parser::GetChildByField(parent, gs.fieldName);
-        if (!ts_node_is_null(nameNode) && IsNodeContained(leaf, nameNode))
+        if (range.start.line == target.localDef.startLine && range.start.character == target.localDef.startCharacter)
         {
-            return lsp::DocumentHighlightKind::Write;
+            return (target.localDef.kind == analysis::LocalDefinitionKind::Variable ||
+                    target.localDef.kind == analysis::LocalDefinitionKind::Parameter)
+                       ? lsp::DocumentHighlightKind::Write
+                       : lsp::DocumentHighlightKind::Text;
         }
     }
-    if (IsCallableOrTypeDeclaration(pType, gs))
+    std::vector<analysis::Symbol> syms;
+    if (target.kind == analysis::TargetKind::ClassMember && !target.declaringClass.empty())
     {
-        TSNode nameNode = parser::GetChildByField(parent, gs.fieldName);
-        if (!ts_node_is_null(nameNode) && IsNodeContained(leaf, nameNode))
+        syms = symbolTable.FindMemberSymbols(target.declaringClass, target.name);
+    }
+    else if (!target.qualifiedName.empty())
+    {
+        syms = symbolTable.FindSymbols(target.qualifiedName);
+        if (syms.empty())
         {
-            return lsp::DocumentHighlightKind::Text;
+            syms = symbolTable.FindSymbols(target.name);
         }
     }
-    return std::nullopt;
-}
-
-/**
- * @brief Checks whether leaf node is part of a type annotation.
- * @param[in] leaf AST leaf node.
- * @return True if node is in a type annotation.
- */
-static bool IsTypeAnnotationNode(TSNode leaf)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    bool result = false;
-    parser::ForEachAncestor(
-        leaf,
-        [&](TSNode cur) -> bool
-        {
-            const TSSymbol cType = ts_node_symbol(cur);
-            if (cType == gs.symType || cType == gs.symDatatype || cType == gs.symBaseClassList ||
-                cType == gs.symTemplateTypeList)
-            {
-                TSNode curParent = parser::GetParent(cur);
-                if (!ts_node_is_null(curParent) && ts_node_symbol(curParent) == gs.symVariableDeclarator)
-                {
-                    result = false;
-                    return false;
-                }
-                result = true;
-                return false;
-            }
-            return cType != gs.symStatementBlock && cType != gs.symFuncDeclaration && cType != gs.symClassBody;
-        });
-    return result;
-}
-
-/**
- * @brief Checks if node is mutated by unary prefix or postfix ++ / --.
- * @param[in] cur Ancestor node.
- * @param[in] leaf Target node.
- * @param[in] sourceCode Source text.
- * @return Write highlight kind if mutated, nullopt otherwise.
- */
-static std::optional<lsp::DocumentHighlightKind> CheckUnaryMutation(TSNode cur, TSNode leaf,
-                                                                    std::string_view sourceCode)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol cType = ts_node_symbol(cur);
-    if (cType == gs.symPostfixExpression)
+    else
     {
-        TSNode operand = parser::GetChildByField(cur, gs.fieldOperand);
-        if (!ts_node_is_null(operand) && IsNodeContained(leaf, operand))
-        {
-            return lsp::DocumentHighlightKind::Write;
-        }
+        syms = symbolTable.FindSymbols(target.name);
     }
-    if (cType == gs.symUnaryExpression)
-    {
-        TSNode opNode = parser::GetChildByField(cur, gs.fieldOperator);
-        if (!ts_node_is_null(opNode))
-        {
-            uint32_t opStart = ts_node_start_byte(opNode);
-            uint32_t opEnd = ts_node_end_byte(opNode);
-            if (opStart < sourceCode.size() && opEnd <= sourceCode.size())
-            {
-                std::string_view opText = sourceCode.substr(opStart, opEnd - opStart);
-                if (opText == "++" || opText == "--")
-                {
-                    TSNode operand = parser::GetChildByField(cur, gs.fieldOperand);
-                    if (!ts_node_is_null(operand) && IsNodeContained(leaf, operand))
-                    {
-                        return lsp::DocumentHighlightKind::Write;
-                    }
-                }
-            }
-        }
-    }
-    return std::nullopt;
-}
 
-/**
- * @brief Checks if node is in an assignment expression.
- * @param[in] cur Ancestor node.
- * @param[in] leaf Target node.
- * @return Highlight kind if inside assignment expression, nullopt otherwise.
- */
-static std::optional<lsp::DocumentHighlightKind> CheckAssignmentMutation(TSNode cur, TSNode leaf)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    if (ts_node_symbol(cur) != gs.symAssignmentExpression)
+    for (const auto& sym : syms)
     {
-        return std::nullopt;
-    }
-    TSNode leftNode = parser::GetChildByField(cur, gs.fieldLeft);
-    if (!ts_node_is_null(leftNode) && IsNodeContained(leaf, leftNode))
-    {
-        const TSSymbol leftType = ts_node_symbol(leftNode);
-        if (leftType == gs.symMemberExpression)
+        if (sym.fileUri == uri &&
+            (sym.selectionRange.startLine == range.start.line || sym.startLine == range.start.line))
         {
-            TSNode objNode = parser::GetChildByField(leftNode, gs.fieldObject);
-            TSNode memNode = parser::GetChildByField(leftNode, gs.fieldMember);
-            if (!ts_node_is_null(objNode) && IsNodeContained(leaf, objNode))
-            {
-                return lsp::DocumentHighlightKind::Read;
-            }
-            if (!ts_node_is_null(memNode) && IsNodeContained(leaf, memNode))
+            if (sym.type == analysis::SymbolType::Variable)
             {
                 return lsp::DocumentHighlightKind::Write;
             }
-        }
-        if (leftType == gs.symIndexExpression)
-        {
-            return lsp::DocumentHighlightKind::Read;
-        }
-        return lsp::DocumentHighlightKind::Write;
-    }
-    TSNode rightNode = parser::GetChildByField(cur, gs.fieldRight);
-    if (!ts_node_is_null(rightNode) && IsNodeContained(leaf, rightNode))
-    {
-        return lsp::DocumentHighlightKind::Read;
-    }
-    return std::nullopt;
-}
-
-/**
- * @brief Finds the 0-based argument index of leaf within an argument_list.
- * @param[in] argList argument_list AST node.
- * @param[in] leaf Target identifier leaf node.
- * @return Argument index or nullopt if not an argument.
- */
-static std::optional<uint32_t> FindArgumentIndex(TSNode argList, TSNode leaf) noexcept
-{
-    auto callArgs = analysis::ExtractCallArguments(argList, "");
-    for (const auto& a : callArgs)
-    {
-        if ((!ts_node_is_null(a.exprNode) && IsNodeContained(leaf, a.exprNode)) ||
-            (!ts_node_is_null(a.nameNode) && IsNodeContained(leaf, a.nameNode)))
-        {
-            return a.index;
+            if (sym.type == analysis::SymbolType::Function || sym.type == analysis::SymbolType::Funcdef ||
+                sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface ||
+                sym.type == analysis::SymbolType::Typedef || sym.type == analysis::SymbolType::Enum)
+            {
+                return lsp::DocumentHighlightKind::Text;
+            }
         }
     }
     return std::nullopt;
 }
 
 /**
- * @brief Resolves receiver type of an object expression text.
- * @param[in] oText Object text.
- * @param[in] request Highlight request.
- * @param[in] line 0-based source line.
- * @return Receiver type name.
+ * @brief Determines if an identifier occurrence is mutated by an operator.
+ * @param[in] sourceCode Source text buffer.
+ * @param[in] startByte Starting byte offset of occurrence.
+ * @param[in] endByte Ending byte offset of occurrence.
+ * @return True if occurrence is subject to mutation.
  */
-static std::string ResolveCallReceiverType(const std::string& oText, const DocumentHighlightRequest& request,
-                                           uint32_t line)
+static bool IsAssignmentOrMutation(std::string_view sourceCode, size_t startByte, size_t endByte)
 {
-    if (oText == "this")
+    size_t pre = startByte;
+    while (pre > 0 && (sourceCode[pre - 1] == ' ' || sourceCode[pre - 1] == '\t'))
     {
-        return GetEnclosingClassName(request.symbolTable, request.uri, line);
+        --pre;
     }
-    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+    if (pre >= 2 && (sourceCode.substr(pre - 2, 2) == "++" || sourceCode.substr(pre - 2, 2) == "--"))
+    {
+        return true;
+    }
+    size_t post = endByte;
+    while (post < sourceCode.size() && (sourceCode[post] == ' ' || sourceCode[post] == '\t'))
+    {
+        ++post;
+    }
+    if (post + 1 < sourceCode.size() && (sourceCode.substr(post, 2) == "++" || sourceCode.substr(post, 2) == "--"))
+    {
+        return true;
+    }
+    if (post < sourceCode.size() && sourceCode[post] == '.')
+    {
+        return false;
+    }
+    if (post < sourceCode.size() && sourceCode[post] == '=')
+    {
+        return !(post + 1 < sourceCode.size() && (sourceCode[post + 1] == '=' || sourceCode[post + 1] == '>'));
+    }
+    for (std::string_view op : {">>>=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>="})
+    {
+        if (post + op.size() <= sourceCode.size() && sourceCode.substr(post, op.size()) == op)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+static std::pair<size_t, size_t> FindEnclosingCallParen(std::string_view sourceCode, size_t startByte)
+{
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
+    size_t commaCount = 0;
+    for (size_t i = startByte; i > 0; --i)
+    {
+        char ch = sourceCode[i - 1];
+        if (ch == ';')
+        {
+            break;
+        }
+        if (ch == ')')
+        {
+            ++parenDepth;
+        }
+        else if (ch == '(')
+        {
+            if (parenDepth > 0)
+            {
+                --parenDepth;
+            }
+            else
+            {
+                return {i - 1, commaCount};
+            }
+        }
+        else if (ch == ']')
+        {
+            ++bracketDepth;
+        }
+        else if (ch == '[')
+        {
+            if (bracketDepth > 0)
+            {
+                --bracketDepth;
+            }
+        }
+        else if (ch == '}')
+        {
+            ++braceDepth;
+        }
+        else if (ch == '{')
+        {
+            if (braceDepth > 0)
+            {
+                --braceDepth;
+            }
+        }
+        else if (ch == ',' && parenDepth == 0 && bracketDepth == 0 && braceDepth == 0)
+        {
+            ++commaCount;
+        }
+    }
+    return {std::string_view::npos, commaCount};
+}
+
+static bool IsMutableParam(const analysis::ParameterInformation& param)
+{
+    return param.modifier == analysis::ParameterModifier::Out || param.modifier == analysis::ParameterModifier::InOut ||
+           (param.isReference && !param.isConst && param.modifier != analysis::ParameterModifier::In);
+}
+
+static std::string ResolveReceiverType(std::string_view objName, const DocumentHighlightRequest& req, uint32_t line)
+{
+    if (objName.empty())
+    {
+        return {};
+    }
+    auto rootScope = req.scopeIndex.GetRoot(req.uri);
     if (rootScope)
     {
         const analysis::Scope* s = FindInnermostScope(rootScope.get(), line, 0);
         if (s)
         {
-            const analysis::LocalDefinition* oDef = analysis::ResolveInScope(s, oText);
+            const analysis::LocalDefinition* oDef = analysis::ResolveInScope(s, objName);
             if (oDef && !oDef->typeName.empty())
             {
-                return analysis::CleanBaseType(oDef->typeName);
+                return std::string(analysis::CleanBaseType(oDef->typeName));
             }
         }
     }
-    auto gSyms = request.symbolTable.FindSymbols(oText);
+    auto gSyms = req.symbolTable.FindSymbols(objName);
     for (const auto& gs : gSyms)
     {
         if (gs.type == analysis::SymbolType::Variable && !gs.GetVariable().typeName.empty())
         {
-            return analysis::CleanBaseType(gs.GetVariable().typeName);
+            return std::string(analysis::CleanBaseType(gs.GetVariable().typeName));
         }
     }
-    return "";
+    return {};
+}
+
+static std::vector<analysis::Symbol> FindCalleeSymbols(std::string_view sourceCode, size_t fnStart,
+                                                       std::string_view callee, const DocumentHighlightRequest& req,
+                                                       uint32_t line)
+{
+    std::vector<analysis::Symbol> syms;
+    if (fnStart > 0 && sourceCode[fnStart - 1] == '.')
+    {
+        size_t objEnd = fnStart - 1;
+        while (objEnd > 0 && (sourceCode[objEnd - 1] == ' ' || sourceCode[objEnd - 1] == '\t'))
+        {
+            --objEnd;
+        }
+        size_t objStart = objEnd;
+        while (objStart > 0 && (std::isalnum(static_cast<unsigned char>(sourceCode[objStart - 1])) ||
+                                sourceCode[objStart - 1] == '_' || sourceCode[objStart - 1] == ':'))
+        {
+            --objStart;
+        }
+        if (objStart < objEnd)
+        {
+            std::string_view objName = sourceCode.substr(objStart, objEnd - objStart);
+            std::string recvType = ResolveReceiverType(objName, req, line);
+            if (!recvType.empty())
+            {
+                syms = req.symbolTable.FindMemberSymbols(recvType, callee);
+            }
+        }
+    }
+    if (syms.empty())
+    {
+        syms = req.symbolTable.FindSymbols(callee);
+    }
+    if (syms.empty())
+    {
+        syms = req.symbolTable.FindSymbols(utils::LastScopeSegment(callee));
+    }
+    return syms;
 }
 
 /**
- * @brief Resolves callee function name and optional receiver type for a call node.
- * @param[in] funcNode Function AST node in call_expression.
- * @param[in] request Highlight request.
- * @param[in] line 0-based line number.
- * @param[out] info Callee and receiver descriptor.
+ * @brief Tests whether an identifier is passed as an &out or &inout argument.
+ * @param[in] sourceCode Source text buffer.
+ * @param[in] startByte Starting byte offset of argument identifier.
+ * @param[in] req Document highlight request.
+ * @param[in] line 0-based source line.
+ * @return True if matching parameter is mutable by the call.
  */
-static void ResolveCalleeInfo(TSNode funcNode, const DocumentHighlightRequest& request, uint32_t line, CalleeInfo& info)
+static bool IsPassedAsOutOrInOutArg(std::string_view sourceCode, size_t startByte, const DocumentHighlightRequest& req,
+                                    uint32_t line)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    if (ts_node_symbol(funcNode) == gs.symMemberExpression)
+    if (startByte == 0 || startByte > sourceCode.size())
     {
-        TSNode memNode = parser::GetChildByField(funcNode, gs.fieldMember);
-        TSNode objNode = parser::GetChildByField(funcNode, gs.fieldObject);
-        if (!ts_node_is_null(memNode))
-        {
-            info.calleeName = parser::GetNodeText(memNode, request.sourceCode);
-        }
-        if (!ts_node_is_null(objNode))
-        {
-            std::string oText = parser::GetNodeText(objNode, request.sourceCode);
-            info.receiverType = ResolveCallReceiverType(oText, request, line);
-        }
+        return false;
     }
-    else
+    auto [openParen, commaCount] = FindEnclosingCallParen(sourceCode, startByte);
+    if (openParen == std::string_view::npos || openParen == 0)
     {
-        info.calleeName = parser::GetNodeText(funcNode, request.sourceCode);
+        return false;
     }
-}
-
-/**
- * @brief Checks if argument at argIndex corresponds to an out or inout parameter.
- * @param[in] info Callee descriptor.
- * @param[in] argIndex 0-based argument index.
- * @param[in] symbolTable Global symbol table.
- * @return True if parameter has out or non-const reference semantics.
- */
-static bool IsOutOrInOutParameter(const CalleeInfo& info, uint32_t argIndex, const analysis::SymbolTable& symbolTable)
-{
-    std::vector<analysis::Symbol> matches;
-    if (!info.receiverType.empty())
+    size_t fnEnd = openParen;
+    while (fnEnd > 0 && (sourceCode[fnEnd - 1] == ' ' || sourceCode[fnEnd - 1] == '\t'))
     {
-        auto related = analysis::GetAllRelatedClasses(info.receiverType, symbolTable);
-        for (const auto& cls : related)
-        {
-            auto found = symbolTable.FindMemberSymbols(cls, info.calleeName);
-            matches.insert(matches.end(), found.begin(), found.end());
-        }
+        --fnEnd;
     }
-    else if (!info.calleeName.empty())
+    size_t fnStart = fnEnd;
+    while (fnStart > 0 && (std::isalnum(static_cast<unsigned char>(sourceCode[fnStart - 1])) ||
+                           sourceCode[fnStart - 1] == '_' || sourceCode[fnStart - 1] == ':'))
     {
-        matches = symbolTable.FindSymbols(info.calleeName);
+        --fnStart;
     }
-
-    for (const auto& sym : matches)
+    if (fnStart == fnEnd)
+    {
+        return false;
+    }
+    std::string_view callee = sourceCode.substr(fnStart, fnEnd - fnStart);
+    auto syms = FindCalleeSymbols(sourceCode, fnStart, callee, req, line);
+    for (const auto& sym : syms)
     {
         if (sym.type == analysis::SymbolType::Function)
         {
             const auto& sig = sym.GetFunction();
-            if (argIndex < sig.parameters.size())
+            if (commaCount < sig.parameters.size() && IsMutableParam(sig.parameters[commaCount]))
             {
-                const auto& param = sig.parameters[argIndex];
-                if (param.modifier == analysis::ParameterModifier::Out ||
-                    param.modifier == analysis::ParameterModifier::InOut)
-                {
-                    return true;
-                }
-                if (param.isReference && !param.isConst && param.modifier != analysis::ParameterModifier::In)
-                {
-                    return true;
-                }
+                return true;
             }
         }
     }
@@ -357,947 +307,104 @@ static bool IsOutOrInOutParameter(const CalleeInfo& info, uint32_t argIndex, con
 }
 
 /**
- * @brief Checks if node is passed as an out/inout argument in a call expression.
- * @param[in] cur Current ancestor node.
- * @param[in] leaf Target node.
- * @param[in] request Highlight request.
- * @param[in] line 0-based source line.
- * @return Write highlight kind if out/inout argument, nullopt otherwise.
+ * @brief Classifies an occurrence coordinate into Write, Read, or Text highlight kind.
+ * @param[in] request Document highlight request.
+ * @param[in] target Target symbol descriptor.
+ * @param[in] range Coordinate range of occurrence.
+ * @return DocumentHighlightKind corresponding to the syntactic role.
  */
-static std::optional<lsp::DocumentHighlightKind>
-CheckCallArgumentMutation(TSNode cur, TSNode leaf, const DocumentHighlightRequest& request, uint32_t line)
+static lsp::DocumentHighlightKind ClassifyOccurrence(const DocumentHighlightRequest& request,
+                                                     const analysis::TargetDescriptor& target, const lsp::Range& range)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    if (ts_node_symbol(cur) != gs.symArgumentList)
+    if (auto declKind = CheckDeclaration(target, range, request.symbolTable, request.uri))
     {
-        return std::nullopt;
+        return *declKind;
     }
-    TSNode callNode = parser::GetParent(cur);
-    if (ts_node_is_null(callNode) || ts_node_symbol(callNode) != gs.symCallExpression)
+    auto syms = request.symbolTable.FindSymbols(target.name);
+    bool isTypeOrNamespace = !syms.empty() && std::all_of(syms.begin(), syms.end(),
+                                                          [](const analysis::Symbol& s)
+                                                          {
+                                                              return s.type == analysis::SymbolType::Class ||
+                                                                     s.type == analysis::SymbolType::Interface ||
+                                                                     s.type == analysis::SymbolType::Typedef ||
+                                                                     s.type == analysis::SymbolType::Namespace ||
+                                                                     s.type == analysis::SymbolType::Enum;
+                                                          });
+    if (isTypeOrNamespace)
     {
-        return std::nullopt;
+        return lsp::DocumentHighlightKind::Text;
     }
-    auto argIndex = FindArgumentIndex(cur, leaf);
-    if (!argIndex.has_value())
+    if (target.isFunction)
     {
-        return std::nullopt;
+        return lsp::DocumentHighlightKind::Read;
     }
-    TSNode funcNode = parser::GetChildByField(callNode, gs.fieldFunction);
-    if (ts_node_is_null(funcNode))
-    {
-        return std::nullopt;
-    }
-    CalleeInfo info;
-    ResolveCalleeInfo(funcNode, request, line, info);
-    if (IsOutOrInOutParameter(info, *argIndex, request.symbolTable))
+
+    size_t sByte = utils::PositionToOffset(request.sourceCode, range.start.line, range.start.character,
+                                           utils::PositionEncoding::Utf16);
+    size_t eByte = utils::PositionToOffset(request.sourceCode, range.end.line, range.end.character,
+                                           utils::PositionEncoding::Utf16);
+    if (IsAssignmentOrMutation(request.sourceCode, sByte, eByte))
     {
         return lsp::DocumentHighlightKind::Write;
     }
-    return std::nullopt;
-}
-
-/**
- * @brief Walks ancestor expressions to check for mutating operations or function arguments.
- * @param[in] leaf Identifier leaf node.
- * @param[in] request Highlight request.
- * @param[in] line Source line.
- * @return Classified highlight kind.
- */
-static lsp::DocumentHighlightKind ClassifyAncestorExpressions(TSNode leaf, const DocumentHighlightRequest& request,
-                                                              uint32_t line)
-{
-    lsp::DocumentHighlightKind result = lsp::DocumentHighlightKind::Read;
-    bool found = false;
-    parser::ForEachAncestor(leaf,
-                            [&](TSNode cur) -> bool
-                            {
-                                if (auto res = CheckUnaryMutation(cur, leaf, request.sourceCode))
-                                {
-                                    result = *res;
-                                    found = true;
-                                    return false;
-                                }
-                                if (auto res = CheckAssignmentMutation(cur, leaf))
-                                {
-                                    result = *res;
-                                    found = true;
-                                    return false;
-                                }
-                                if (auto res = CheckCallArgumentMutation(cur, leaf, request, line))
-                                {
-                                    result = *res;
-                                    found = true;
-                                    return false;
-                                }
-                                return ts_node_symbol(cur) != parser::GetGrammarSymbols().symStatementBlock;
-                            });
-    if (found)
+    if (IsPassedAsOutOrInOutArg(request.sourceCode, sByte, request, range.start.line))
     {
-        return result;
+        return lsp::DocumentHighlightKind::Write;
     }
     return lsp::DocumentHighlightKind::Read;
 }
 
-/**
- * @brief Classifies the AST context of an occurrence into Write, Read, or Text highlight kinds.
- * @param[in] request Highlight request.
- * @param[in] range Occurrence source range.
- * @return Document highlight kind.
- */
-static lsp::DocumentHighlightKind ClassifyOccurrence(const DocumentHighlightRequest& request, const lsp::Range& range)
+std::optional<DocumentHighlightResult> GetDocumentHighlights(const DocumentHighlightRequest& request)
 {
-    if (!request.tree || request.sourceCode.empty())
+    if (request.sourceCode.empty())
     {
-        return lsp::DocumentHighlightKind::Read;
+        return std::nullopt;
     }
 
-    TSNode rootNode = ts_tree_root_node(request.tree);
-    TSPoint pt = {range.start.line, range.start.character};
-    TSNode leaf = ts_node_descendant_for_point_range(rootNode, pt, pt);
-    if (ts_node_is_null(leaf))
+    auto resolveReq = analysis::MakeTargetRequest(
+        request.uri, request.sourceCode, analysis::TargetPosition{request.position.line, request.position.character},
+        request.symbolTable, request.scopeIndex);
+    auto targetOpt = analysis::ResolveTargetSymbol(resolveReq);
+    if (!targetOpt.has_value())
     {
-        return lsp::DocumentHighlightKind::Read;
+        return std::nullopt;
     }
 
-    if (ts_node_symbol(leaf) == parser::GetGrammarSymbols().symScopedIdentifier)
+    auto occReq = analysis::MakeOccurrencesRequest(*targetOpt, request.uri, request.sourceCode, request.symbolTable,
+                                                   request.scopeIndex);
+    occReq.includeDeclaration = true;
+    const auto occurrences = analysis::CollectOccurrences(occReq);
+
+    std::vector<lsp::Range> ranges;
+    for (const auto& occ : occurrences)
     {
-        TSNode inner = ts_node_descendant_for_point_range(leaf, pt, pt);
-        if (!ts_node_is_null(inner))
+        if (occ.fileUri == request.uri)
         {
-            leaf = inner;
+            ranges.push_back(lsp::Range{
+                lsp::Position{occ.range.startLine, occ.range.startCharacter},
+                lsp::Position{occ.range.endLine, occ.range.endCharacter},
+            });
         }
     }
-
-    if (auto declKind = ClassifyDeclarationNode(leaf))
+    if (ranges.empty())
     {
-        return *declKind;
-    }
-    if (IsTypeAnnotationNode(leaf))
-    {
-        return lsp::DocumentHighlightKind::Text;
-    }
-    return ClassifyAncestorExpressions(leaf, request, range.start.line);
-}
-
-/**
- * @brief Collects highlight ranges for a local variable or parameter.
- * @param[in] target Target descriptor.
- * @param[in,out] collector Coordinate accumulator.
- */
-static void CollectLocalHighlightRanges(const analysis::TargetDescriptor& target, HighlightRangeCollector& collector)
-{
-    collector.Add(target.localDef.startLine, target.localDef.startCharacter, target.localDef.endLine,
-                  target.localDef.endCharacter);
-
-    if (!target.definingScope)
-    {
-        return;
+        return std::nullopt;
     }
 
-    std::vector<std::pair<const analysis::Scope*, bool>> stack{{target.definingScope.get(), true}};
-    while (!stack.empty())
-    {
-        auto [scope, isRoot] = stack.back();
-        stack.pop_back();
+    std::sort(ranges.begin(), ranges.end(), common::CompareByPosition<lsp::Range>);
+    ranges.erase(std::unique(ranges.begin(), ranges.end(), common::SameRange), ranges.end());
 
-        if (!isRoot)
-        {
-            bool shadowed = false;
-            for (const auto& def : scope->definitions)
-            {
-                if (def.name == target.name)
-                {
-                    shadowed = true;
-                    break;
-                }
-            }
-            if (shadowed)
-            {
-                continue;
-            }
-        }
-
-        for (const auto& ref : scope->references)
-        {
-            if (ref.name == target.name && !ref.isMemberAccess)
-            {
-                if (target.localDef.kind == analysis::LocalDefinitionKind::Variable &&
-                    ref.startByte < target.localDef.visibleFromByte)
-                {
-                    continue;
-                }
-                collector.Add(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter);
-            }
-        }
-
-        for (const auto& child : scope->children)
-        {
-            if (child)
-            {
-                stack.push_back({child.get(), false});
-            }
-        }
-    }
-}
-
-/**
- * @brief Collects declarations of class members in the current file.
- * @param[in] relatedSet Set of related class names.
- * @param[in] target Target descriptor.
- * @param[in] request Highlight request.
- * @param[in,out] collector Coordinate accumulator.
- */
-static void CollectClassMemberDeclarations(const std::unordered_set<std::string>& relatedSet,
-                                           const analysis::TargetDescriptor& target,
-                                           const DocumentHighlightRequest& request, HighlightRangeCollector& collector)
-{
-    for (const auto& clsName : relatedSet)
-    {
-        std::string qualifiedName = utils::JoinScopedName(clsName, target.name);
-        auto syms = request.symbolTable.FindSymbols(qualifiedName);
-        for (const auto& sym : syms)
-        {
-            if (sym.fileUri == request.uri && sym.type != analysis::SymbolType::CallReference)
-            {
-                bool hasSel = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0);
-                uint32_t sL = hasSel ? sym.selectionRange.startLine : sym.startLine;
-                uint32_t sC = hasSel ? sym.selectionRange.startCharacter : sym.startCharacter;
-                uint32_t eL = hasSel ? sym.selectionRange.endLine : sym.endLine;
-                uint32_t eC = hasSel ? sym.selectionRange.endCharacter : sym.endCharacter;
-                collector.Add(sL, sC, eL, eC);
-            }
-        }
-    }
-}
-
-/**
- * @brief Splits a dot-delimited expression string into member component parts.
- * @param[in] oText Dotted expression text.
- * @return Vector of component strings.
- */
-static std::vector<std::string> SplitDottedParts(const std::string& oText)
-{
-    std::vector<std::string> parts;
-    size_t startPos = 0;
-    while (startPos < oText.size())
-    {
-        size_t dotPos = oText.find('.', startPos);
-        if (dotPos == std::string::npos)
-        {
-            parts.push_back(oText.substr(startPos));
-            break;
-        }
-        parts.push_back(oText.substr(startPos, dotPos - startPos));
-        startPos = dotPos + 1;
-    }
-    return parts;
-}
-
-/**
- * @brief Resolves type of root component in a dotted member chain.
- * @param[in] part Root identifier text.
- * @param[in] scope Current lexical scope.
- * @param[in] activeScope Innermost scope at cursor.
- * @param[in] request Highlight request.
- * @return Cleaned base type name or empty string.
- */
-static std::string ResolveChainRootType(const std::string& part, const analysis::Scope* scope,
-                                        const analysis::Scope* activeScope, const DocumentHighlightRequest& request)
-{
-    const analysis::LocalDefinition* pDef = analysis::ResolveInScope(scope, part);
-    if (!pDef && activeScope)
-    {
-        pDef = analysis::ResolveInScope(activeScope, part);
-    }
-    if (pDef && !pDef->typeName.empty())
-    {
-        return analysis::CleanBaseType(pDef->typeName);
-    }
-    auto pSyms = request.symbolTable.FindSymbols(part);
-    for (const auto& ps : pSyms)
-    {
-        if (ps.type == analysis::SymbolType::Variable && !ps.GetVariable().typeName.empty())
-        {
-            return analysis::CleanBaseType(ps.GetVariable().typeName);
-        }
-    }
-    return "";
-}
-
-/**
- * @brief Resolves type of subsequent member component in a dotted member chain.
- * @param[in] curType Type name of container/receiver.
- * @param[in] part Member identifier text.
- * @param[in] request Highlight request.
- * @return Cleaned base type name or empty string.
- */
-static std::string ResolveChainMemberType(const std::string& curType, const std::string& part,
-                                          const DocumentHighlightRequest& request)
-{
-    std::string qMem = utils::JoinScopedName(curType, part);
-    auto mSyms = request.symbolTable.FindSymbols(qMem);
-    if (mSyms.empty())
-    {
-        mSyms = request.symbolTable.FindSymbols(part);
-    }
-    for (const auto& ms : mSyms)
-    {
-        if ((ms.type == analysis::SymbolType::Variable || ms.type == analysis::SymbolType::Property) &&
-            !ms.GetVariable().typeName.empty())
-        {
-            return analysis::CleanBaseType(ms.GetVariable().typeName);
-        }
-        if (ms.type == analysis::SymbolType::Function && !ms.GetFunction().returnType.empty())
-        {
-            return analysis::CleanBaseType(ms.GetFunction().returnType);
-        }
-    }
-    return "";
-}
-
-/**
- * @brief Resolves type name of dotted member chain expressions.
- * @param[in] oText Dotted chain string.
- * @param[in] scope Current lexical scope.
- * @param[in] activeScope Active scope at position.
- * @param[in] request Highlight request.
- * @return Resolved type name or empty string.
- */
-static std::string ResolveDottedChainType(const std::string& oText, const analysis::Scope* scope,
-                                          const analysis::Scope* activeScope, const DocumentHighlightRequest& request)
-{
-    auto parts = SplitDottedParts(oText);
-    std::string curType;
-    for (size_t p = 0; p < parts.size(); ++p)
-    {
-        if (p == 0)
-        {
-            curType = ResolveChainRootType(parts[p], scope, activeScope, request);
-        }
-        else if (!curType.empty())
-        {
-            curType = ResolveChainMemberType(curType, parts[p], request);
-        }
-    }
-    return curType;
-}
-
-/**
- * @brief Resolves type name for a simple identifier expression in scope.
- * @param[in] oText Identifier text.
- * @param[in] scope Current lexical scope.
- * @param[in] activeScope Active scope at position.
- * @param[in] request Highlight request.
- * @return Cleaned base type name or empty string.
- */
-static std::string ResolveIdentifierReceiverType(const std::string& oText, const analysis::Scope* scope,
-                                                 const analysis::Scope* activeScope,
-                                                 const DocumentHighlightRequest& request)
-{
-    const analysis::LocalDefinition* oDef = analysis::ResolveInScope(scope, oText);
-    if (!oDef && activeScope)
-    {
-        oDef = analysis::ResolveInScope(activeScope, oText);
-    }
-    if (oDef && !oDef->typeName.empty())
-    {
-        return analysis::CleanBaseType(oDef->typeName);
-    }
-    auto gSyms = request.symbolTable.FindSymbols(oText);
-    for (const auto& gs : gSyms)
-    {
-        if (gs.type == analysis::SymbolType::Variable && !gs.GetVariable().typeName.empty())
-        {
-            return analysis::CleanBaseType(gs.GetVariable().typeName);
-        }
-    }
-    return "";
-}
-
-/**
- * @brief Finds enclosing member_expression parent, stopping at boundary containers.
- * @param[in] refNode Leaf node.
- * @return Parent member_expression node or null node.
- */
-static TSNode FindMemberExpressionParent(TSNode refNode) noexcept
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode result{};
-    parser::ForEachAncestor(parser::GetParent(refNode),
-                            [&](TSNode exprParent) -> bool
-                            {
-                                const TSSymbol pType = ts_node_symbol(exprParent);
-                                if (pType == gs.symMemberExpression)
-                                {
-                                    result = exprParent;
-                                    return false;
-                                }
-                                return pType != gs.symClassDeclaration && pType != gs.symFuncDeclaration &&
-                                       pType != gs.symLambdaExpression;
-                            });
-    return result;
-}
-
-/**
- * @brief Resolves identifier leaf AST node corresponding to reference.
- * @param[in] rootNode AST root node.
- * @param[in] ref Reference descriptor.
- * @param[in] sourceCode Source text.
- * @return Matching identifier node or null node.
- */
-static TSNode ResolveRefNodeLeaf(TSNode rootNode, const analysis::LocalReference& ref,
-                                 std::string_view sourceCode) noexcept
-{
-    TSPoint pt = {ref.startLine, ref.startCharacter};
-    TSNode refNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
-    if (ts_node_is_null(refNode))
-    {
-        return TSNode{};
-    }
-    const auto& gs = parser::GetGrammarSymbols();
-    if (ts_node_symbol(refNode) != gs.symIdentifier)
-    {
-        uint32_t cCount = ts_node_child_count(refNode);
-        for (uint32_t c = 0; c < cCount; ++c)
-        {
-            TSNode ch = ts_node_child(refNode, c);
-            if (!ts_node_is_null(ch) && ts_node_symbol(ch) == gs.symIdentifier &&
-                parser::GetNodeText(ch, sourceCode) == ref.name)
-            {
-                return ch;
-            }
-        }
-    }
-    return refNode;
-}
-
-/**
- * @brief Resolves receiver type name for member reference.
- * @param[in] ref Reference descriptor.
- * @param[in] scope Current scope.
- * @param[in] activeScope Innermost scope at position.
- * @param[in] request Highlight request.
- * @return Receiver type name or empty string.
- */
-static std::string ResolveMemberRefReceiverType(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                                                const analysis::Scope* activeScope,
-                                                const DocumentHighlightRequest& request)
-{
-    if (!request.tree)
-    {
-        return "";
-    }
-    TSNode rootNode = ts_tree_root_node(request.tree);
-    TSNode refNode = ResolveRefNodeLeaf(rootNode, ref, request.sourceCode);
-    if (ts_node_is_null(refNode))
-    {
-        return "";
-    }
-    TSNode exprParent = FindMemberExpressionParent(refNode);
-    if (ts_node_is_null(exprParent))
-    {
-        return "";
-    }
-    TSNode objNode = parser::GetChildByField(exprParent, parser::GetGrammarSymbols().fieldObject);
-    if (ts_node_is_null(objNode) && ts_node_named_child_count(exprParent) > 0)
-    {
-        objNode = ts_node_named_child(exprParent, 0);
-    }
-    if (ts_node_is_null(objNode))
-    {
-        return "";
-    }
-    std::string rType =
-        analysis::ResolveExpressionType(objNode, {scope, request.symbolTable, request.sourceCode, request.uri});
-    if (rType.empty() && activeScope && activeScope != scope)
-    {
-        rType = analysis::ResolveExpressionType(objNode,
-                                                {activeScope, request.symbolTable, request.sourceCode, request.uri});
-    }
-    if (!rType.empty())
-    {
-        return analysis::CleanBaseType(rType);
-    }
-    uint32_t oStart = ts_node_start_byte(objNode);
-    uint32_t oEnd = ts_node_end_byte(objNode);
-    if (oStart >= request.sourceCode.size() || oEnd > request.sourceCode.size())
-    {
-        return "";
-    }
-    std::string oText = request.sourceCode.substr(oStart, oEnd - oStart);
-    if (oText == "this")
-    {
-        return GetEnclosingClassName(request.symbolTable, request.uri, ref.startLine, ref.name);
-    }
-    if (oText.find('.') != std::string::npos)
-    {
-        return analysis::CleanBaseType(ResolveDottedChainType(oText, scope, activeScope, request));
-    }
-    return analysis::CleanBaseType(ResolveIdentifierReceiverType(oText, scope, activeScope, request));
-}
-
-/**
- * @brief Checks if a reference is syntactically a member access expression.
- * @param[in] ref Reference descriptor.
- * @param[in] tree AST tree.
- * @return True if reference is a member access.
- */
-static bool IsMemberAccessNode(const analysis::LocalReference& ref, [[maybe_unused]] TSTree* tree) noexcept
-{
-    return ref.isMemberAccess;
-}
-
-/**
- * @brief Evaluates whether a reference matches target class member.
- * @param[in] ref Reference under test.
- * @param[in] scope Current scope.
- * @param[in] ctx Member highlight context.
- * @return True if reference is a match.
- */
-static bool IsClassMemberReferenceMatch(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                                        const MemberHighlightContext& ctx)
-{
-    const analysis::Scope* activeScope = FindInnermostScope(ctx.rootScope, ref.startLine, ref.startCharacter);
-    if (!activeScope)
-    {
-        activeScope = scope;
-    }
-    if (IsMemberAccessNode(ref, ctx.request.tree))
-    {
-        std::string rType = ResolveMemberRefReceiverType(ref, scope, activeScope, ctx.request);
-        return !rType.empty() && ctx.relatedSet.contains(rType);
-    }
-    std::string encClass = GetEnclosingClassName(ctx.request.symbolTable, ctx.request.uri, ref.startLine, ref.name);
-    if (ctx.relatedSet.contains(encClass))
-    {
-        const analysis::LocalDefinition* localShadow = analysis::ResolveInScope(activeScope, ctx.target.name);
-        return !localShadow || localShadow->kind == analysis::LocalDefinitionKind::Field ||
-               localShadow->kind == analysis::LocalDefinitionKind::Method;
-    }
-    return false;
-}
-
-/**
- * @brief Collects all highlight ranges for a class member in the current document.
- * @param[in] target Target descriptor.
- * @param[in] request Highlight request.
- * @param[in] rootScope Root scope.
- * @param[in,out] collector Coordinate accumulator.
- */
-static void CollectClassMemberHighlightRanges(const analysis::TargetDescriptor& target,
-                                              const DocumentHighlightRequest& request, const analysis::Scope* rootScope,
-                                              HighlightRangeCollector& collector)
-{
-    std::unordered_set<std::string> relatedSet(target.relatedClasses.begin(), target.relatedClasses.end());
-    if (!target.declaringClass.empty())
-    {
-        relatedSet.insert(target.declaringClass);
-    }
-    CollectClassMemberDeclarations(relatedSet, target, request, collector);
-    if (!rootScope)
-    {
-        return;
-    }
-    MemberHighlightContext ctx{
-        .target = target,
-        .relatedSet = relatedSet,
-        .request = request,
-        .rootScope = rootScope,
-    };
-    std::vector<const analysis::Scope*> stack{rootScope};
-    while (!stack.empty())
-    {
-        const analysis::Scope* s = stack.back();
-        stack.pop_back();
-
-        for (const auto& ref : s->references)
-        {
-            if (ref.name == target.name && IsClassMemberReferenceMatch(ref, s, ctx))
-            {
-                collector.Add(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter);
-            }
-        }
-
-        for (const auto& child : s->children)
-        {
-            if (child)
-            {
-                stack.push_back(child.get());
-            }
-        }
-    }
-}
-
-/**
- * @brief Checks if reference is enclosed within namespace scope or is a qualified scoped_identifier.
- * @param[in] ref Reference descriptor.
- * @param[in] nsRanges Declaring namespace line ranges.
- * @param[in] target Target descriptor.
- * @param[in] request Highlight request.
- * @return True if reference is inside namespace.
- */
-static bool IsRefInsideNamespaceScope(const analysis::LocalReference& ref,
-                                      const std::vector<std::pair<uint32_t, uint32_t>>& nsRanges,
-                                      const analysis::TargetDescriptor& target, const DocumentHighlightRequest& request)
-{
-    for (const auto& nr : nsRanges)
-    {
-        if (ref.startLine >= nr.first && ref.startLine <= nr.second)
-        {
-            return true;
-        }
-    }
-    if (ref.isScopedIdentifier && ref.qualifierStartByte < ref.qualifierEndByte &&
-        ref.qualifierEndByte <= request.sourceCode.size())
-    {
-        std::string_view scoped = std::string_view(request.sourceCode)
-                                      .substr(ref.qualifierStartByte, ref.qualifierEndByte - ref.qualifierStartByte);
-        if (scoped == target.qualifiedName)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Collects symbol declarations matching a name in the current file.
- * @param[in] name Symbol name or qualified name to look up.
- * @param[in] request Highlight request.
- * @param[in,out] collector Coordinate accumulator.
- */
-static void CollectDeclarationsByName(std::string_view name, const DocumentHighlightRequest& request,
-                                      HighlightRangeCollector& collector)
-{
-    auto syms = request.symbolTable.FindSymbols(name);
-    for (const auto& sym : syms)
-    {
-        if (sym.fileUri == request.uri && sym.type != analysis::SymbolType::CallReference)
-        {
-            const bool hasSel = (sym.selectionRange.endLine > 0 || sym.selectionRange.endCharacter > 0);
-            const uint32_t sL = hasSel ? sym.selectionRange.startLine : sym.startLine;
-            const uint32_t sC = hasSel ? sym.selectionRange.startCharacter : sym.startCharacter;
-            const uint32_t eL = hasSel ? sym.selectionRange.endLine : sym.endLine;
-            const uint32_t eC = hasSel ? sym.selectionRange.endCharacter : sym.endCharacter;
-            collector.Add(sL, sC, eL, eC);
-        }
-    }
-}
-
-/**
- * @brief Traverses all lexical scopes and invokes callback for each reference.
- * @tparam Callback Functor accepting (const analysis::Scope*, const analysis::LocalReference&).
- * @param[in] rootScope Root lexical scope.
- * @param[in] callback Callback invoked for each reference.
- */
-template <typename Callback>
-static inline void ForEachScopeReference(const analysis::Scope* rootScope, Callback&& callback)
-{
-    if (!rootScope)
-    {
-        return;
-    }
-    std::vector<const analysis::Scope*> stack{rootScope};
-    while (!stack.empty())
-    {
-        const analysis::Scope* s = stack.back();
-        stack.pop_back();
-
-        for (const auto& ref : s->references)
-        {
-            callback(s, ref);
-        }
-
-        for (const auto& child : s->children)
-        {
-            if (child)
-            {
-                stack.push_back(child.get());
-            }
-        }
-    }
-}
-
-/**
- * @brief Collects namespace symbol declarations in current file.
- * @param[in] target Target descriptor.
- * @param[in] request Highlight request.
- * @param[in,out] collector Coordinate accumulator.
- */
-static void CollectNamespaceDeclarations(const analysis::TargetDescriptor& target,
-                                         const DocumentHighlightRequest& request, HighlightRangeCollector& collector)
-{
-    CollectDeclarationsByName(target.qualifiedName, request, collector);
-}
-
-/**
- * @brief Collects line ranges of declaring namespace across current file.
- * @param[in] target Target descriptor.
- * @param[in] request Highlight request.
- * @return Vector of line range pairs.
- */
-static std::vector<std::pair<uint32_t, uint32_t>> GetNamespaceSpans(const analysis::TargetDescriptor& target,
-                                                                    const DocumentHighlightRequest& request)
-{
-    return analysis::CollectNamespaceAndContainerLineRanges(request.symbolTable, request.uri,
-                                                            target.declaringNamespace);
-}
-
-/**
- * @brief Collects all highlight ranges for a namespace symbol in the current document.
- * @param[in] target Target descriptor.
- * @param[in] request Highlight request.
- * @param[in] rootScope Root scope.
- * @param[in,out] collector Coordinate accumulator.
- */
-static void CollectNamespaceHighlightRanges(const analysis::TargetDescriptor& target,
-                                            const DocumentHighlightRequest& request, const analysis::Scope* rootScope,
-                                            HighlightRangeCollector& collector)
-{
-    CollectNamespaceDeclarations(target, request, collector);
-    auto nsRanges = GetNamespaceSpans(target, request);
-    ForEachScopeReference(rootScope,
-                          [&](const analysis::Scope* s, const analysis::LocalReference& ref)
-                          {
-                              if (ref.name == target.name && !ref.isMemberAccess &&
-                                  IsRefInsideNamespaceScope(ref, nsRanges, target, request) &&
-                                  !analysis::IsShadowedByFunctionLocal(s, target.name))
-                              {
-                                  collector.Add(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter);
-                              }
-                          });
-}
-
-/**
- * @brief Collects global symbol declarations in current file.
- * @param[in] target Target descriptor.
- * @param[in] request Highlight request.
- * @param[in,out] collector Coordinate accumulator.
- */
-static void CollectGlobalDeclarations(const analysis::TargetDescriptor& target, const DocumentHighlightRequest& request,
-                                      HighlightRangeCollector& collector)
-{
-    CollectDeclarationsByName(target.name, request, collector);
-}
-
-/**
- * @brief Collects all highlight ranges for a global symbol in the current document.
- * @param[in] target Target descriptor.
- * @param[in] request Highlight request.
- * @param[in] rootScope Root scope.
- * @param[in,out] collector Coordinate accumulator.
- */
-static void CollectGlobalHighlightRanges(const analysis::TargetDescriptor& target,
-                                         const DocumentHighlightRequest& request, const analysis::Scope* rootScope,
-                                         HighlightRangeCollector& collector)
-{
-    CollectGlobalDeclarations(target, request, collector);
-    ForEachScopeReference(rootScope,
-                          [&](const analysis::Scope* s, const analysis::LocalReference& ref)
-                          {
-                              if (ref.name == target.name && !ref.isMemberAccess &&
-                                  !analysis::IsShadowedByFunctionLocal(s, target.name))
-                              {
-                                  collector.Add(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter);
-                              }
-                          });
-}
-
-/**
- * @brief Collects enum member symbol declarations matching the qualified name.
- * @param[in] target Target descriptor.
- * @param[in] request Document highlight request.
- * @param[in,out] collector Coordinate accumulator.
- */
-static void CollectEnumMemberDeclarations(const analysis::TargetDescriptor& target,
-                                          const DocumentHighlightRequest& request, HighlightRangeCollector& collector)
-{
-    CollectDeclarationsByName(target.qualifiedName, request, collector);
-}
-
-/**
- * @brief Checks if a scoped reference matches an enum member target for highlighting.
- * @param[in] ref Local reference.
- * @param[in] target Target descriptor.
- * @param[in] request Document highlight request.
- * @return True if reference matches the qualified enum member.
- */
-static bool IsEnumMemberHighlightMatch(const analysis::LocalReference& ref, const analysis::TargetDescriptor& target,
-                                       const DocumentHighlightRequest& request)
-{
-    if (!ref.isScopedIdentifier || ref.qualifierStartByte >= ref.qualifierEndByte ||
-        ref.qualifierEndByte > request.sourceCode.size())
-    {
-        return false;
-    }
-    std::string_view scoped = std::string_view(request.sourceCode)
-                                  .substr(ref.qualifierStartByte, ref.qualifierEndByte - ref.qualifierStartByte);
-    if (scoped == target.qualifiedName || analysis::MatchesScopedPair(scoped, target.declaringEnum, target.name))
-    {
-        return true;
-    }
-    const auto [qualifier, name] = utils::SplitScopedName(scoped);
-    if (!qualifier.empty())
-    {
-        return name == target.name && analysis::EnumQualifierMatches(qualifier, target.declaringEnum);
-    }
-    return false;
-}
-
-/**
- * @brief Scans document scopes for enum member references.
- * @param[in] target Target descriptor.
- * @param[in] request Document highlight request.
- * @param[in] rootScope Root scope.
- * @param[in,out] collector Coordinate accumulator.
- */
-static void CollectEnumMemberScopeReferences(const analysis::TargetDescriptor& target,
-                                             const DocumentHighlightRequest& request, const analysis::Scope* rootScope,
-                                             HighlightRangeCollector& collector)
-{
-    if (!rootScope)
-    {
-        return;
-    }
-    std::vector<const analysis::Scope*> stack{rootScope};
-    while (!stack.empty())
-    {
-        const analysis::Scope* s = stack.back();
-        stack.pop_back();
-
-        for (const auto& ref : s->references)
-        {
-            if (ref.name != target.name)
-            {
-                continue;
-            }
-            if (!ref.isMemberAccess && !analysis::IsShadowedByFunctionLocal(s, target.name))
-            {
-                collector.Add(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter);
-            }
-            else if (IsEnumMemberHighlightMatch(ref, target, request))
-            {
-                collector.Add(ref.startLine, ref.startCharacter, ref.endLine, ref.endCharacter);
-            }
-        }
-        for (const auto& child : s->children)
-        {
-            if (child)
-            {
-                stack.push_back(child.get());
-            }
-        }
-    }
-}
-
-/**
- * @brief Collects all highlight ranges for an enum member in the current document.
- * @param[in] target Target descriptor.
- * @param[in] request Highlight request.
- * @param[in] rootScope Root scope.
- * @param[in,out] collector Coordinate accumulator.
- */
-static void CollectEnumMemberHighlightRanges(const analysis::TargetDescriptor& target,
-                                             const DocumentHighlightRequest& request, const analysis::Scope* rootScope,
-                                             HighlightRangeCollector& collector)
-{
-    CollectEnumMemberDeclarations(target, request, collector);
-    CollectEnumMemberScopeReferences(target, request, rootScope, collector);
-}
-
-/**
- * @brief Dispatches range collection based on target kind.
- * @param[in] target Target descriptor.
- * @param[in] request Document highlight request.
- * @param[in] rootScope Root scope.
- * @param[in,out] collector Coordinate accumulator.
- */
-static void DispatchTargetHighlights(const analysis::TargetDescriptor& target, const DocumentHighlightRequest& request,
-                                     const analysis::Scope* rootScope, HighlightRangeCollector& collector)
-{
-    if (target.kind == analysis::TargetKind::Local)
-    {
-        CollectLocalHighlightRanges(target, collector);
-    }
-    else if (target.kind == analysis::TargetKind::ClassMember)
-    {
-        CollectClassMemberHighlightRanges(target, request, rootScope, collector);
-    }
-    else if (target.kind == analysis::TargetKind::NamespaceSymbol)
-    {
-        CollectNamespaceHighlightRanges(target, request, rootScope, collector);
-    }
-    else if (target.kind == analysis::TargetKind::EnumMember)
-    {
-        CollectEnumMemberHighlightRanges(target, request, rootScope, collector);
-    }
-    else
-    {
-        CollectGlobalHighlightRanges(target, request, rootScope, collector);
-    }
-}
-
-/**
- * @brief Converts collected ranges to classified, sorted DocumentHighlights.
- * @param[in] collector Coordinate accumulator.
- * @param[in] request Document highlight request.
- * @return Sorted highlight results.
- */
-static DocumentHighlightResult BuildSortedHighlights(const HighlightRangeCollector& collector,
-                                                     const DocumentHighlightRequest& request)
-{
     DocumentHighlightResult results;
-    results.reserve(collector.ranges.size());
-    for (const auto& r : collector.ranges)
+    results.reserve(ranges.size());
+    for (const auto& r : ranges)
     {
         results.push_back(lsp::DocumentHighlight{
             .range = r,
-            .kind = ClassifyOccurrence(request, r),
+            .kind = ClassifyOccurrence(request, *targetOpt, r),
         });
     }
-    std::sort(results.begin(), results.end(),
-              [](const lsp::DocumentHighlight& a, const lsp::DocumentHighlight& b)
-              {
-                  if (a.range.start.line != b.range.start.line)
-                  {
-                      return a.range.start.line < b.range.start.line;
-                  }
-                  return a.range.start.character < b.range.start.character;
-              });
+
     return results;
-}
-
-std::optional<DocumentHighlightResult> GetDocumentHighlights(const DocumentHighlightRequest& request)
-{
-    if (!request.tree || request.sourceCode.empty())
-    {
-        return std::nullopt;
-    }
-
-    TSNode node{};
-    analysis::ResolveTargetRequest resolveReq{
-        .uri = request.uri,
-        .sourceCode = request.sourceCode,
-        .tree = request.tree,
-        .position = analysis::TargetPosition{request.position.line, request.position.character},
-        .symbolTable = request.symbolTable,
-        .scopeIndex = request.scopeIndex,
-        .outNode = node,
-        .logger = nullptr,
-    };
-    auto targetOpt = analysis::ResolveTargetSymbol(resolveReq);
-    if (!targetOpt)
-    {
-        return std::nullopt;
-    }
-    auto rootScope = request.scopeIndex.GetRoot(request.uri);
-    HighlightRangeCollector collector;
-    DispatchTargetHighlights(*targetOpt, request, rootScope.get(), collector);
-    if (collector.ranges.empty())
-    {
-        return std::nullopt;
-    }
-    return BuildSortedHighlights(collector, request);
 }
 
 } // namespace angel_lsp::features
