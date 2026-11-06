@@ -13,6 +13,7 @@
 #include "parser/GrammarSymbols.h"
 #include "utils/Constants.h"
 #include "utils/LspLogger.h"
+#include "utils/PositionEncoding.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
@@ -357,76 +358,6 @@ static std::string TryResolveReceiverFastPath(const analysis::LocalReference& re
 }
 
 /**
- * @brief Resolves receiver type name from AST member access object node.
- * @param[in] objNode Tree-Sitter AST object node.
- * @param[in] criteria Active search criteria.
- * @param[in] scope Lexical scope.
- * @param[in] encClass Enclosing class name if applicable.
- * @return Resolved receiver type name, or empty string.
- */
-static std::string TryResolveFromObjNode(TSNode objNode, const ReferenceCollectionCriteria& criteria,
-                                         const analysis::Scope* scope, const std::string& encClass)
-{
-    std::string resolved = analysis::ResolveReceiverType(objNode, criteria.request.sourceCode, criteria.symbolTable,
-                                                         {scope, encClass, criteria.request.uri});
-    if (!resolved.empty())
-    {
-        return analysis::CleanBaseType(resolved);
-    }
-    uint32_t oStart = ts_node_start_byte(objNode);
-    uint32_t oEnd = ts_node_end_byte(objNode);
-    if (oStart >= criteria.request.sourceCode.size() || oEnd > criteria.request.sourceCode.size() || oStart >= oEnd)
-    {
-        return "";
-    }
-    std::string_view oText = std::string_view(criteria.request.sourceCode).substr(oStart, oEnd - oStart);
-    std::string enc = (oText == "this") ? encClass : "";
-    return ResolveObjectTextType(oText, scope, criteria.symbolTable, enc);
-}
-
-/**
- * @brief Resolves receiver type name from AST for member expression references in the current document.
- * @param[in] fileUri Document URI.
- * @param[in] ref Reference under test.
- * @param[in] scope Lexical scope.
- * @param[in] criteria Active search criteria.
- * @return Cleaned receiver type name, or empty string if not resolvable.
- */
-static std::string ResolveReceiverFromAst(const std::string& fileUri, const analysis::LocalReference& ref,
-                                          const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
-{
-    if (fileUri != criteria.request.uri || !criteria.request.tree || criteria.request.sourceCode.empty())
-    {
-        return "";
-    }
-    std::string encClass = GetEnclosingClassName(criteria.symbolTable, fileUri, ref.startLine, criteria.classCache);
-    std::string fastType = TryResolveReceiverFastPath(ref, criteria, scope, encClass);
-    if (!fastType.empty())
-    {
-        return fastType;
-    }
-    TSNode rootNode = ts_tree_root_node(criteria.request.tree);
-    TSPoint pt = {ref.startLine, ref.startCharacter};
-    TSNode refNode = ts_node_descendant_for_point_range(rootNode, pt, pt);
-    if (ts_node_is_null(refNode))
-    {
-        return "";
-    }
-    TSNode exprParent = parser::GetParent(refNode);
-    const auto& syms = parser::GetGrammarSymbols();
-    if (ts_node_is_null(exprParent) || ts_node_symbol(exprParent) != syms.symMemberAccess)
-    {
-        return "";
-    }
-    TSNode objNode = parser::GetChildByField(exprParent, parser::GetGrammarSymbols().fieldObject);
-    if (ts_node_is_null(objNode))
-    {
-        return "";
-    }
-    return TryResolveFromObjNode(objNode, criteria, scope, encClass);
-}
-
-/**
  * @brief Resolves receiver type name from scope symbols when AST lookup is unavailable.
  * @param[in] fileUri Document URI.
  * @param[in] ref Reference under test.
@@ -487,9 +418,10 @@ static bool IsCompatibleMemberAccess(const std::string& fileUri, const analysis:
                                      const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
 {
     auto rType = analysis::ResolveIndexedReferenceReceiver(ref, *scope, criteria.symbolTable);
-    if (rType.empty())
+    if (rType.empty() && fileUri == criteria.request.uri)
     {
-        rType = ResolveReceiverFromAst(fileUri, ref, scope, criteria);
+        std::string encClass = GetEnclosingClassName(criteria.symbolTable, fileUri, ref.startLine, criteria.classCache);
+        rType = TryResolveReceiverFastPath(ref, criteria, scope, encClass);
     }
     if (rType.empty())
     {
@@ -1266,23 +1198,43 @@ static lsp::Range FindMixinRangeInAst(const analysis::Symbol& sym, const std::st
     const lsp::Range fallbackRange{lsp::Position{sym.startLine, sym.startCharacter},
                                    lsp::Position{sym.startLine, sym.endCharacter}};
 
-    if (!request.tree || request.sourceCode.empty())
+    if (request.sourceCode.empty() || mixinName.empty())
     {
         return fallbackRange;
     }
 
-    TSNode hostRoot = ts_tree_root_node(request.tree);
-    TSPoint hostPt = {sym.startLine, sym.startCharacter};
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode hostNode = parser::FindAncestorWithSymbol(ts_node_descendant_for_point_range(hostRoot, hostPt, hostPt),
-                                                     gs.symClassDeclaration);
-
-    TSNode incNode = analysis::FindMixinInclusionNode(hostNode, mixinName, mixinName, request.sourceCode);
-    if (!ts_node_is_null(incNode))
+    std::string_view shortName = utils::LastScopeSegment(mixinName);
+    const uint32_t maxLine = std::max(sym.startLine, sym.endLine);
+    for (uint32_t curLine = sym.startLine; curLine <= maxLine; ++curLine)
     {
-        TSPoint sp = ts_node_start_point(incNode);
-        TSPoint ep = ts_node_end_point(incNode);
-        return lsp::Range{lsp::Position{sp.row, sp.column}, lsp::Position{ep.row, ep.column}};
+        size_t lineOffset = utils::PositionToOffset(request.sourceCode, curLine, 0, utils::PositionEncoding::Utf16);
+        if (lineOffset >= request.sourceCode.size())
+        {
+            break;
+        }
+
+        size_t nextNewline = request.sourceCode.find('\n', lineOffset);
+        std::string_view line = (nextNewline != std::string_view::npos)
+                                    ? request.sourceCode.substr(lineOffset, nextNewline - lineOffset)
+                                    : request.sourceCode.substr(lineOffset);
+
+        auto pos = line.find(shortName);
+        if (pos != std::string_view::npos)
+        {
+            bool startOk =
+                (pos == 0 || (!std::isalnum(static_cast<unsigned char>(line[pos - 1])) && line[pos - 1] != '_'));
+            bool endOk = (pos + shortName.size() >= line.size() ||
+                          (!std::isalnum(static_cast<unsigned char>(line[pos + shortName.size()])) &&
+                           line[pos + shortName.size()] != '_'));
+            if (startOk && endOk)
+            {
+                uint32_t startCol =
+                    utils::ByteToLspCharColumn(line, static_cast<uint32_t>(pos), utils::PositionEncoding::Utf16);
+                uint32_t endCol = utils::ByteToLspCharColumn(line, static_cast<uint32_t>(pos + shortName.size()),
+                                                             utils::PositionEncoding::Utf16);
+                return lsp::Range{lsp::Position{curLine, startCol}, lsp::Position{curLine, endCol}};
+            }
+        }
     }
     return fallbackRange;
 }
@@ -1514,33 +1466,21 @@ static void CollectReferenceTargets(const SymbolGroups& symGroups, const Compati
 }
 
 /**
- * @brief Formats a localized singular or plural count message string.
- * @param[in] count Quantity to format.
+ * @brief Formats a localized reference count string.
+ * @param[in] refCount Number of references.
  * @param[in] i18n Optional pointer to I18n translation context.
- * @param[in] singularKey Translation key for singular count (count == 1).
- * @param[in] singularFallback Fallback English pattern for singular.
- * @param[in] pluralKey Translation key for plural count.
- * @param[in] pluralFallback Fallback English pattern for plural.
- * @return Localized formatted count string.
+ * @return Formatted reference count message.
  */
-static std::string FormatCountMessage(size_t count, const i18n::I18n* i18n, std::string_view singularKey,
-                                      std::string_view singularFallback, std::string_view pluralKey,
-                                      std::string_view pluralFallback)
-{
-    return (count == 1) ? i18n::FormatMessage(i18n, singularKey, singularFallback)
-                        : i18n::FormatMessage(i18n, pluralKey, pluralFallback, count);
-}
-
 static std::string FormatReferenceCount(size_t refCount, const i18n::I18n* i18n)
 {
-    return FormatCountMessage(refCount, i18n, "codelens.reference", "1 reference", "codelens.references",
-                              "{} references");
+    return (refCount == 1) ? i18n::FormatMessage(i18n, "codelens.reference", "1 reference")
+                           : i18n::FormatMessage(i18n, "codelens.references", "{} references", refCount);
 }
 
 static std::string FormatImplementationCount(size_t implCount, const i18n::I18n* i18n)
 {
-    return FormatCountMessage(implCount, i18n, "codelens.implementation", "1 implementation",
-                              "codelens.implementations", "{} implementations");
+    return (implCount == 1) ? i18n::FormatMessage(i18n, "codelens.implementation", "1 implementation")
+                            : i18n::FormatMessage(i18n, "codelens.implementations", "{} implementations", implCount);
 }
 
 /**
@@ -1701,7 +1641,7 @@ std::optional<std::vector<lsp::CodeLens>> GetCodeLenses(const CodeLensRequest& r
         return virtualLenses;
     }
 
-    if (request.sourceCode.empty() || !request.tree)
+    if (request.sourceCode.empty())
     {
         return std::nullopt;
     }

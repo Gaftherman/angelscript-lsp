@@ -14,7 +14,7 @@
 #include <optional>
 #include <span>
 #include <string>
-#include <tree_sitter/api.h>
+#include <string_view>
 #include <tuple>
 #include <vector>
 
@@ -34,13 +34,12 @@ using KeyTargetMap = ankerl::unordered_dense::map<RangeKey, size_t, RangeKeyHash
  */
 struct CodeLensRequest
 {
-    std::string uri;
-    std::string sourceCode;
-    TSTree* tree = nullptr;
+    std::string_view uri;
+    std::string_view sourceCode;
     const analysis::SymbolTable& symbolTable;
     const analysis::ScopeIndex& scopeIndex;
     angel_lsp::utils::LspLogger* logger = nullptr;
-    std::string predefinedExtension = ".as.predefined";
+    std::string_view predefinedExtension = ".as.predefined";
     const config::UnusedSymbolRules* unusedRules = nullptr;
     const i18n::I18n* i18n = nullptr;
     const config::ServerConfig* config = nullptr;

@@ -91,8 +91,8 @@ struct CodeLensFixture
                                                         const i18n::I18n* i18n = nullptr,
                                                         const config::ServerConfig* config = nullptr)
     {
-        CodeLensRequest req{uri,     sourceCode,       tree,        symbolTable, scopeIndex,
-                            nullptr, ".as.predefined", unusedRules, i18n,        config};
+        CodeLensRequest req{uri,         sourceCode, symbolTable, scopeIndex, nullptr, ".as.predefined",
+                            unusedRules, i18n,       config};
         return GetCodeLenses(req);
     }
 };
@@ -216,7 +216,7 @@ TEST_CASE("CodeLens - Deduplicates mixin methods and aggregates references acros
     symbolTable.ResolveIncludedMixins();
 
     // Query CodeLens on the mixin file
-    CodeLensRequest req{mixinUri, mixinCode, mixinTree, symbolTable, scopeIndex};
+    CodeLensRequest req{mixinUri, mixinCode, symbolTable, scopeIndex};
     const auto lenses = GetCodeLenses(req);
     REQUIRE(lenses.has_value());
 
@@ -263,7 +263,7 @@ TEST_CASE("CodeLens - Provides virtual document header lens to jump to physical 
     const std::string virtualUri = "angelscript-virtual://Rifle/WeaponMixin.as";
     const std::string virtualCode = "// synthesized virtual document\n";
 
-    CodeLensRequest req{virtualUri, virtualCode, nullptr, symbolTable, scopeIndex};
+    CodeLensRequest req{virtualUri, virtualCode, symbolTable, scopeIndex};
     const auto lenses = GetCodeLenses(req);
     REQUIRE(lenses.has_value());
     REQUIRE(!lenses->empty());
@@ -297,8 +297,7 @@ TEST_CASE("CodeLens - Provides View Mixin Expansion lens on class mixin inclusio
     symbolCollector.CollectSymbols(hostUri, hostCode, parser, symbolTable);
     config::ServerConfig cfg;
     cfg.features.codeLensShowMixinExpansion = true;
-    CodeLensRequest req{hostUri, hostCode,         hostTree, symbolTable, scopeIndex,
-                        nullptr, ".as.predefined", nullptr,  nullptr,     &cfg};
+    CodeLensRequest req{hostUri, hostCode, symbolTable, scopeIndex, nullptr, ".as.predefined", nullptr, nullptr, &cfg};
     const auto lenses = GetCodeLenses(req);
     REQUIRE(lenses.has_value());
 
@@ -309,6 +308,51 @@ TEST_CASE("CodeLens - Provides View Mixin Expansion lens on class mixin inclusio
         {
             foundMixinLens = true;
             CHECK(lens.command->title == "View Mixin Expansion: WeaponMixin");
+        }
+    }
+    CHECK(foundMixinLens);
+
+    if (hostTree)
+    {
+        ts_tree_delete(hostTree);
+    }
+}
+
+TEST_CASE("CodeLens - Mixin expansion lens resolves exact line on multiline class header")
+{
+    AngelScriptParser parser;
+    SymbolCollector symbolCollector{nullptr};
+    SymbolTable symbolTable;
+    analysis::ScopeIndex scopeIndex;
+
+    const std::string mixinUri = "file:///multiline_mixin.as";
+    const std::string mixinCode = "mixin class WeaponMixin {\n"
+                                  "    void Deploy() {}\n"
+                                  "}\n";
+
+    const std::string hostUri = "file:///multiline_rifle.as";
+    const std::string hostCode = "class Rifle :\n"
+                                 "    WeaponMixin {\n"
+                                 "    void Fire() {}\n"
+                                 "}\n";
+
+    TSTree* hostTree = parser.Parse(hostCode);
+    symbolCollector.CollectSymbols(mixinUri, mixinCode, parser, symbolTable);
+    symbolCollector.CollectSymbols(hostUri, hostCode, parser, symbolTable);
+    config::ServerConfig cfg;
+    cfg.features.codeLensShowMixinExpansion = true;
+    CodeLensRequest req{hostUri, hostCode, symbolTable, scopeIndex, nullptr, ".as.predefined", nullptr, nullptr, &cfg};
+    const auto lenses = GetCodeLenses(req);
+    REQUIRE(lenses.has_value());
+
+    bool foundMixinLens = false;
+    for (const auto& lens : *lenses)
+    {
+        if (lens.command.has_value() && lens.command->command == "angelscript.viewMixinExpansion")
+        {
+            foundMixinLens = true;
+            CHECK(lens.command->title == "View Mixin Expansion: WeaponMixin");
+            CHECK(lens.range.start.line == 1u);
         }
     }
     CHECK(foundMixinLens);
@@ -376,7 +420,7 @@ TEST_CASE("CodeLens - Scope isolation prevents reference leakage between sibling
     }
 
     // Request lenses for weapon_a.as
-    CodeLensRequest reqA{uriA, codeA, treeA, symbolTable, scopeIndex};
+    CodeLensRequest reqA{uriA, codeA, symbolTable, scopeIndex};
     auto lensesA = GetCodeLenses(reqA);
     REQUIRE(lensesA.has_value());
 
@@ -393,7 +437,7 @@ TEST_CASE("CodeLens - Scope isolation prevents reference leakage between sibling
     CHECK(foundBodygroupA);
 
     // Request lenses for weapon_b.as
-    CodeLensRequest reqB{uriB, codeB, treeB, symbolTable, scopeIndex};
+    CodeLensRequest reqB{uriB, codeB, symbolTable, scopeIndex};
     auto lensesB = GetCodeLenses(reqB);
     REQUIRE(lensesB.has_value());
 
@@ -600,7 +644,7 @@ TEST_CASE("CodeLens - Cross-File Namespace Variable References")
         scopeIndex.SetScopeTree(uri2, std::move(scope2));
     }
 
-    CodeLensRequest req{uri1, code1, tree1, symbolTable, scopeIndex};
+    CodeLensRequest req{uri1, code1, symbolTable, scopeIndex};
     auto lenses = GetCodeLenses(req);
     REQUIRE(lenses.has_value());
 
@@ -1313,7 +1357,7 @@ TEST_CASE("CodeLens - Separate reference counts for identical enum member names 
         scopeIndex.SetScopeTree(uri, std::move(scope));
     }
 
-    CodeLensRequest req{uri, code, tree, symbolTable, scopeIndex};
+    CodeLensRequest req{uri, code, symbolTable, scopeIndex};
     auto lenses = GetCodeLenses(req);
     REQUIRE(lenses.has_value());
 
@@ -1381,7 +1425,6 @@ TEST_CASE("CodeLens - Granular configuration and showZeroReferences")
         CodeLensRequest req{
             .uri = uri,
             .sourceCode = code,
-            .tree = tree,
             .symbolTable = symbolTable,
             .scopeIndex = scopeIndex,
             .config = &cfg,
@@ -1397,7 +1440,6 @@ TEST_CASE("CodeLens - Granular configuration and showZeroReferences")
         CodeLensRequest req{
             .uri = uri,
             .sourceCode = code,
-            .tree = tree,
             .symbolTable = symbolTable,
             .scopeIndex = scopeIndex,
             .config = &cfg,
@@ -1413,7 +1455,6 @@ TEST_CASE("CodeLens - Granular configuration and showZeroReferences")
         CodeLensRequest req{
             .uri = uri,
             .sourceCode = code,
-            .tree = tree,
             .symbolTable = symbolTable,
             .scopeIndex = scopeIndex,
             .config = &cfg,
