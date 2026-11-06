@@ -263,9 +263,13 @@ Server::HandleRequestsTextDocument_InlayHint(lsp::requests::TextDocument_InlayHi
     }
 
     utils::HighResTimer timer;
+    const auto syntax =
+        doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
+                  : nullptr;
+    const auto* nodeIndex = syntax ? &syntax->index : nullptr;
     features::InlayHintRequest ihr{doc->uri,
                                    *doc->text,
-                                   doc->tree,
+                                   nodeIndex,
                                    codec::Decode(*doc->text, GetPositionEncoding(), req.range),
                                    m_symbolTable,
                                    m_scopeIndex,

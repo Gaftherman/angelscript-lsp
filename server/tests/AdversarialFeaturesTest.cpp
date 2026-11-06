@@ -77,7 +77,7 @@ struct AdversarialTestEnv
 
     std::optional<lsp::SignatureHelp> SigHelp(uint32_t line, uint32_t col)
     {
-        SignatureHelpRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, col}};
+        SignatureHelpRequest req{uri, sourceCode, symbolTable, scopeIndex, lsp::Position{line, col}};
         return GetSignatureHelp(req);
     }
 

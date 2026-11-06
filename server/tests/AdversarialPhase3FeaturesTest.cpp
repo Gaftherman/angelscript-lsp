@@ -31,10 +31,12 @@ struct Phase3TestEnvironment
     std::string uri = "file:///stress_test.as";
     std::string sourceCode;
     TSTree* tree = nullptr;
+    analysis::NodeIndex nodeIndex;
 
     Phase3TestEnvironment(const std::string& code) : sourceCode(code)
     {
         tree = parser.Parse(sourceCode);
+        nodeIndex = analysis::NodeIndex(ts_tree_root_node(tree), analysis::NodeIndexOptions{.source = sourceCode});
         symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
         auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
         if (rootScope)
@@ -53,7 +55,7 @@ struct Phase3TestEnvironment
 
     std::optional<std::vector<lsp::InlayHint>> InlayHints(lsp::Range range = lsp::Range{{0, 0}, {0, 0}})
     {
-        InlayHintRequest req{uri, sourceCode, tree, range, symbolTable, scopeIndex};
+        InlayHintRequest req{uri, sourceCode, &nodeIndex, range, symbolTable, scopeIndex};
         return GetInlayHints(req);
     }
 

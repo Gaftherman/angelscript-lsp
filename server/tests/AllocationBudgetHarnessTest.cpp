@@ -178,8 +178,7 @@ TEST_CASE("Allocation Budget - Signature Help Warm Query Allocation Churn Invari
     }
     const uint32_t col = static_cast<uint32_t>(pos - lineStart);
 
-    SignatureHelpRequest req{env.uri,         env.sourceCode, env.tree,
-                             env.symbolTable, env.scopeIndex, lsp::Position{line, col}};
+    SignatureHelpRequest req{env.uri, env.sourceCode, env.symbolTable, env.scopeIndex, lsp::Position{line, col}};
 
     // Warm-up query
     auto warmSig = GetSignatureHelp(req);

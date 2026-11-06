@@ -96,8 +96,12 @@ lsp::json::Value Server::HandleRequestsTextDocument_EvaluatableExpression(lsp::j
     const lsp::Position rawPos = ExtractPosition(obj);
     const lsp::Position decodedPos = codec::Decode(*doc->text, GetPositionEncoding(), rawPos);
 
-    const features::EvaluatableExpressionRequest req{ts_tree_root_node(doc->tree), *doc->text, decodedPos.line,
-                                                     decodedPos.character};
+    const auto syntax =
+        doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
+                  : nullptr;
+    const auto* nodeIndex = syntax ? &syntax->index : nullptr;
+
+    const features::EvaluatableExpressionRequest req{nodeIndex, *doc->text, decodedPos.line, decodedPos.character};
 
     const auto result = features::EvaluatableExpressionHandler::Extract(req);
     if (!result)

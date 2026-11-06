@@ -683,7 +683,7 @@ TEST_CASE("SvenCoopRegression - CodeLens returns references for predefined stub 
     collector.CollectSymbols(uri, stubContent, parser, table);
 
     analysis::ScopeIndex scopeIndex;
-    features::CodeLensRequest clReq{uri, stubContent, tree, table, scopeIndex, nullptr};
+    features::CodeLensRequest clReq{uri, stubContent, table, scopeIndex, nullptr};
 
     const auto lenses = features::GetCodeLenses(clReq);
     REQUIRE(lenses.has_value());

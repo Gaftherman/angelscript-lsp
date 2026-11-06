@@ -171,7 +171,6 @@ void AssertMalformedSnippetTolerance(const std::string& malformedCode, uint32_t 
     features::DocumentHighlightRequest hlReq{
         .uri = uri,
         .sourceCode = malformedCode,
-        .tree = managedTree.get(),
         .position = lsp::Position{queryLine, queryCol},
         .symbolTable = symTable,
         .scopeIndex = scopeIndex,

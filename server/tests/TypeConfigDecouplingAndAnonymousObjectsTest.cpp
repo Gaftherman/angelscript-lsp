@@ -215,9 +215,10 @@ TEST_SUITE("TypeConfig_Decoupling")
             scopeIndex.SetScopeTree(docUri, std::move(rootScope));
         }
 
+        analysis::NodeIndex nodeIndex(ts_tree_root_node(tree), analysis::NodeIndexOptions{.source = script});
         InlayHintRequest req{.uri = docUri,
                              .sourceCode = script,
-                             .tree = tree,
+                             .nodeIndex = &nodeIndex,
                              .range = lsp::Range{{0, 0}, {4, 0}},
                              .symbolTable = symbolTable,
                              .scopeIndex = scopeIndex,

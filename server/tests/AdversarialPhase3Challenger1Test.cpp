@@ -106,7 +106,7 @@ struct Phase3AdversarialEnv
 
     std::optional<DocumentHighlightResult> Highlights(uint32_t line, uint32_t col)
     {
-        DocumentHighlightRequest req{uri, sourceCode, tree, lsp::Position{line, col}, symbolTable, scopeIndex};
+        DocumentHighlightRequest req{uri, sourceCode, lsp::Position{line, col}, symbolTable, scopeIndex};
         return GetDocumentHighlights(req);
     }
 

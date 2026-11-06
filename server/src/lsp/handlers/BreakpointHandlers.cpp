@@ -144,9 +144,13 @@ lsp::json::Value Server::HandleRequestsTextDocument_BreakpointLocations(lsp::jso
         return lsp::json::Value(lsp::json::Array{});
     }
 
+    const auto syntax =
+        doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
+                  : nullptr;
+    const auto* nodeIndex = syntax ? &syntax->index : nullptr;
+
     const auto excluded = ExcludedLineRanges(*doc->text);
-    const features::BreakpointLocationsRequest req{ts_tree_root_node(doc->tree), parsed.startLine, parsed.endLine,
-                                                   &excluded};
+    const features::BreakpointLocationsRequest req{nodeIndex, parsed.startLine, parsed.endLine, &excluded};
 
     const auto items = features::BreakpointLocationsHandler::Collect(req);
     lsp::json::Array result;

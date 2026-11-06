@@ -375,7 +375,8 @@ TEST_CASE("Breakpoint Locations - AngelScript Oracle Bytecode Parity Execution")
     TSTree* tree = parser.Parse(script);
     REQUIRE(tree != nullptr);
 
-    const BreakpointLocationsRequest req{ts_tree_root_node(tree), 0, 100000, nullptr};
+    analysis::NodeIndex nodeIndex(ts_tree_root_node(tree), analysis::NodeIndexOptions{.source = script});
+    const BreakpointLocationsRequest req{&nodeIndex, 0, 100000, nullptr};
     const auto collectedLocs = BreakpointLocationsHandler::Collect(req);
     ts_tree_delete(tree);
 

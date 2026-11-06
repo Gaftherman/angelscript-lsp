@@ -288,9 +288,9 @@ Server::HandleRequestsTextDocument_DocumentHighlight(lsp::requests::TextDocument
         return lsp::Null{};
     }
 
-    features::DocumentHighlightRequest hr{doc->uri,      *doc->text,
-                                          doc->tree,     codec::Decode(*doc->text, GetPositionEncoding(), req.position),
-                                          m_symbolTable, m_scopeIndex};
+    features::DocumentHighlightRequest hr{doc->uri, *doc->text,
+                                          codec::Decode(*doc->text, GetPositionEncoding(), req.position), m_symbolTable,
+                                          m_scopeIndex};
     auto highlights = features::GetDocumentHighlights(hr);
     if (highlights.has_value() && !highlights->empty())
     {
@@ -371,9 +371,8 @@ Server::HandleRequestsTextDocument_SignatureHelp(lsp::requests::TextDocument_Sig
         return lsp::Null{};
     }
 
-    features::SignatureHelpRequest sr{doc->uri,     *doc->text,
-                                      doc->tree,    m_symbolTable,
-                                      m_scopeIndex, codec::Decode(*doc->text, GetPositionEncoding(), req.position)};
+    features::SignatureHelpRequest sr{doc->uri, *doc->text, m_symbolTable, m_scopeIndex,
+                                      codec::Decode(*doc->text, GetPositionEncoding(), req.position)};
     auto sig = features::GetSignatureHelp(sr);
     if (sig.has_value())
     {
@@ -667,7 +666,6 @@ Server::HandleRequestsTextDocument_CodeLens(lsp::requests::TextDocument_CodeLens
     const std::string clientUri = req.textDocument.uri.toString();
     features::CodeLensRequest clr{doc->uri,
                                   *doc->text,
-                                  doc->tree,
                                   m_symbolTable,
                                   m_scopeIndex,
                                   m_logger.get(),
