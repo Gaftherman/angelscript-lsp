@@ -61,10 +61,12 @@ struct TestEnvironment
     std::string uri = "file:///test.as";
     std::string sourceCode;
     TSTree* tree = nullptr;
+    analysis::NodeIndex nodeIndex;
 
     TestEnvironment(const std::string& code) : sourceCode(code)
     {
         tree = parser.Parse(sourceCode);
+        nodeIndex = analysis::NodeIndex(ts_tree_root_node(tree), analysis::NodeIndexOptions{.source = sourceCode});
         symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
         auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
         if (rootScope)
@@ -86,9 +88,11 @@ struct TestEnvironment
         size_t maxParameters = 0, size_t maxLength = 0,
         config::OmittedDefaultArgumentsMode omittedDefaultArguments = config::OmittedDefaultArgumentsMode::NameAndValue)
     {
+        analysis::NodeIndex localIndex(tree ? ts_tree_root_node(tree) : TSNode{},
+                                       analysis::NodeIndexOptions{.source = sourceCode});
         InlayHintRequest req{uri,
                              sourceCode,
-                             tree,
+                             &localIndex,
                              range,
                              symbolTable,
                              scopeIndex,
@@ -103,9 +107,11 @@ struct TestEnvironment
     std::optional<std::vector<lsp::InlayHint>> InlayHintsWithConfig(const config::ServerConfig& config,
                                                                     lsp::Range range = lsp::Range{{0, 0}, {0, 0}})
     {
+        analysis::NodeIndex localIndex(tree ? ts_tree_root_node(tree) : TSNode{},
+                                       analysis::NodeIndexOptions{.source = sourceCode});
         InlayHintRequest req{uri,
                              sourceCode,
-                             tree,
+                             &localIndex,
                              range,
                              symbolTable,
                              scopeIndex,

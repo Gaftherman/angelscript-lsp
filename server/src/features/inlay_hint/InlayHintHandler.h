@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 #include "config/ServerConfig.h"
@@ -10,7 +11,7 @@
 #include <lsp/types.h>
 #include <optional>
 #include <string>
-#include <tree_sitter/api.h>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::features
@@ -20,9 +21,9 @@ namespace angel_lsp::features
  */
 struct InlayHintRequest
 {
-    std::string uri;
-    std::string sourceCode;
-    TSTree* tree = nullptr;
+    std::string_view uri;
+    std::string_view sourceCode;
+    const analysis::NodeIndex* nodeIndex = nullptr;
     lsp::Range range;
     const analysis::SymbolTable& symbolTable;
     const analysis::ScopeIndex& scopeIndex;
@@ -106,7 +107,7 @@ struct OmittedParamHint
 {
     std::string label;
     std::string tooltip;
-    std::string fileUri;
+    std::string_view fileUri;
     const analysis::ParameterInformation* param = nullptr;
 };
 

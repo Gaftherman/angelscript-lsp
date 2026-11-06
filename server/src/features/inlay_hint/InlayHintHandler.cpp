@@ -1222,9 +1222,9 @@ static std::string FormatParameterTooltip(const analysis::ParameterInformation& 
  * @param[in] uriStr URI or file path string.
  * @return Parsed lsp::DocumentUri.
  */
-[[nodiscard]] static inline lsp::DocumentUri ParseOrConvertUri(const std::string& uriStr)
+[[nodiscard]] static inline lsp::DocumentUri ParseOrConvertUri(std::string_view uriStr)
 {
-    if (uriStr.find("://") != std::string::npos || uriStr.starts_with("angelscript-predefined:") ||
+    if (uriStr.find("://") != std::string_view::npos || uriStr.starts_with("angelscript-predefined:") ||
         uriStr.starts_with("angelscript-virtual:"))
     {
         return lsp::DocumentUri::parse(uriStr);
@@ -1241,11 +1241,11 @@ static std::string FormatParameterTooltip(const analysis::ParameterInformation& 
  * @return Resolved Location if parameter has valid range, std::nullopt otherwise.
  */
 static std::optional<lsp::Location>
-ResolveParameterLocation(const std::string& fallbackUri, const std::string& calleeUri,
+ResolveParameterLocation(std::string_view fallbackUri, std::string_view calleeUri,
                          const analysis::ParameterInformation& param,
                          const std::optional<lsp::Range>& fallbackRange = std::nullopt)
 {
-    const std::string& targetUri = calleeUri.empty() ? fallbackUri : calleeUri;
+    std::string_view targetUri = calleeUri.empty() ? fallbackUri : calleeUri;
     if (targetUri.empty())
     {
         return std::nullopt;
@@ -1619,8 +1619,8 @@ static void AddOmittedDefaultArgumentHints(const CalleeResolutionResult& callee,
         std::string labelText = FormatOmittedDefaultLabel(param, request.omittedDefaultArguments, request.maxLength);
         std::string tooltip = "Default parameter:\n```angelscript\n" + param.typeName + " " + param.name + " = " +
                               param.defaultValue + "\n```";
-        std::string targetUri = callee.fileUri.empty() ? request.uri : callee.fileUri;
-        OmittedParamHint hintInfo{std::move(labelText), std::move(tooltip), std::move(targetUri), &param};
+        std::string_view targetUri = callee.fileUri.empty() ? request.uri : std::string_view(callee.fileUri);
+        OmittedParamHint hintInfo{std::move(labelText), std::move(tooltip), targetUri, &param};
 
         if (argPositions.empty())
         {
@@ -1893,8 +1893,9 @@ static std::string DeduceLambdaReturnType(TSNode node, const InlayHintRequest& r
                     auto rootScope = request.scopeIndex.GetRoot(request.uri);
                     const analysis::Scope* scope =
                         rootScope ? analysis::FindInnermostScope(rootScope.get(), retPt.row, retPt.column) : nullptr;
-                    analysis::ExpressionTypeContext exprCtx(scope, request.symbolTable, request.sourceCode, request.uri,
-                                                            request.tree ? ts_tree_root_node(request.tree) : TSNode{});
+                    analysis::ExpressionTypeContext exprCtx(scope, request.symbolTable, request.sourceCode,
+                                                            request.uri);
+                    exprCtx.nodeIndex = request.nodeIndex;
                     return analysis::ResolveExpressionType(retVal, exprCtx);
                 }
                 return "void";
@@ -1944,8 +1945,8 @@ static void ProcessLambdaExpression(TSNode node, const InlayHintRequest& request
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
     const analysis::Scope* scope =
         rootScope ? analysis::FindInnermostScope(rootScope.get(), endPt.row, endPt.column) : nullptr;
-    analysis::ExpressionTypeContext exprCtx(scope, request.symbolTable, request.sourceCode, request.uri,
-                                            request.tree ? ts_tree_root_node(request.tree) : TSNode{});
+    analysis::ExpressionTypeContext exprCtx(scope, request.symbolTable, request.sourceCode, request.uri);
+    exprCtx.nodeIndex = request.nodeIndex;
     std::string deduced = analysis::ResolveExpressionType(node, exprCtx);
     if (deduced.empty())
     {
@@ -2026,76 +2027,53 @@ static void ProcessEnumDeclaration(TSNode node, const InlayHintRequest& request,
  * @param[in] request Inlay hint request context.
  * @param[in,out] hints Inlay hints vector receiving collected items.
  */
-static void CollectInlayHints(TSNode rootNode, const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
+static void CollectInlayHints(const InlayHintRequest& request, std::vector<lsp::InlayHint>& hints)
 {
-    if (ts_node_is_null(rootNode) || !IsNodeOverlappingRange(rootNode, request.range))
+    if (!request.nodeIndex || request.sourceCode.empty())
     {
         return;
     }
 
-    TSTreeCursor cursor = ts_tree_cursor_new(rootNode);
-    bool descending = true;
+    const auto& gs = parser::GetGrammarSymbols();
+    const std::array targetSymbols = {
+        gs.symCallExpression,   gs.symConstructCallExpression, gs.symVariableDeclaration,
+        gs.symLambdaExpression, gs.symEnumDeclaration,
+    };
 
-    while (true)
-    {
-        TSNode currentNode = ts_tree_cursor_current_node(&cursor);
-        bool overlaps = IsNodeOverlappingRange(currentNode, request.range);
-
-        if (descending && overlaps)
-        {
-            const auto& gs = parser::GetGrammarSymbols();
-            const TSSymbol sym = ts_node_symbol(currentNode);
-            if (sym == gs.symCallExpression)
-            {
-                ProcessCallExpression(currentNode, request, hints);
-            }
-            else if (sym == gs.symConstructCallExpression)
-            {
-                ProcessConstructorCallExpression(currentNode, request, hints);
-            }
-            else if (sym == gs.symVariableDeclaration)
-            {
-                ProcessVariableDeclaration(currentNode, request, hints);
-            }
-            else if (sym == gs.symLambdaExpression)
-            {
-                ProcessLambdaExpression(currentNode, request, hints);
-            }
-            else if (sym == gs.symEnumDeclaration)
-            {
-                ProcessEnumDeclaration(currentNode, request, hints);
-            }
-
-            if (ts_tree_cursor_goto_first_child(&cursor))
-            {
-                continue;
-            }
-        }
-
-        if (ts_node_eq(currentNode, rootNode))
-        {
-            break;
-        }
-
-        if (ts_tree_cursor_goto_next_sibling(&cursor))
-        {
-            descending = true;
-            continue;
-        }
-
-        if (!ts_tree_cursor_goto_parent(&cursor))
-        {
-            break;
-        }
-        descending = false;
-    }
-
-    ts_tree_cursor_delete(&cursor);
+    request.nodeIndex->ForEachNodeOrdered(targetSymbols,
+                                          [&](TSNode currentNode)
+                                          {
+                                              if (!IsNodeOverlappingRange(currentNode, request.range))
+                                              {
+                                                  return;
+                                              }
+                                              const TSSymbol sym = ts_node_symbol(currentNode);
+                                              if (sym == gs.symCallExpression)
+                                              {
+                                                  ProcessCallExpression(currentNode, request, hints);
+                                              }
+                                              else if (sym == gs.symConstructCallExpression)
+                                              {
+                                                  ProcessConstructorCallExpression(currentNode, request, hints);
+                                              }
+                                              else if (sym == gs.symVariableDeclaration)
+                                              {
+                                                  ProcessVariableDeclaration(currentNode, request, hints);
+                                              }
+                                              else if (sym == gs.symLambdaExpression)
+                                              {
+                                                  ProcessLambdaExpression(currentNode, request, hints);
+                                              }
+                                              else if (sym == gs.symEnumDeclaration)
+                                              {
+                                                  ProcessEnumDeclaration(currentNode, request, hints);
+                                              }
+                                          });
 }
 
 std::optional<InlayHintResult> GetInlayHints(const InlayHintRequest& request)
 {
-    if (!request.tree || request.sourceCode.empty())
+    if (!request.nodeIndex || request.sourceCode.empty())
     {
         return std::nullopt;
     }
@@ -2105,14 +2083,8 @@ std::optional<InlayHintResult> GetInlayHints(const InlayHintRequest& request)
         request.logger->LogDebug(fmt::format("[InlayHint] Computing inlay hints for URI: {}", request.uri));
     }
 
-    TSNode rootNode = ts_tree_root_node(request.tree);
-    if (ts_node_is_null(rootNode))
-    {
-        return std::nullopt;
-    }
-
     std::vector<lsp::InlayHint> hints;
-    CollectInlayHints(rootNode, request, hints);
+    CollectInlayHints(request, hints);
 
     std::stable_sort(hints.begin(), hints.end(),
                      [](const lsp::InlayHint& a, const lsp::InlayHint& b)
