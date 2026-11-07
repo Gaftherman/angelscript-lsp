@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace angel_lsp::features::formatting
+namespace angel_lsp::analysis::formatting
 {
 /**
  * @brief Rewrites a predefined stub so each namespace is declared once, as a block.
@@ -66,4 +66,4 @@ struct FormattingPlan
     std::map<std::string, Group> groups;
     std::string tail;
 };
-} // namespace angel_lsp::features::formatting
+} // namespace angel_lsp::analysis::formatting

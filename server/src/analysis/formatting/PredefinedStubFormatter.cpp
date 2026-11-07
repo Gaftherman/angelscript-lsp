@@ -1,16 +1,16 @@
-#include "features/formatting/PredefinedStubFormatter.h"
+#include "analysis/formatting/PredefinedStubFormatter.h"
 
-#include "document/Document.h"
-#include "parser/GrammarSymbols.h"
+#include "analysis/index/FormattingFacts.h"
 
 #include <algorithm>
 #include <cctype>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
-namespace angel_lsp::features::formatting
+namespace angel_lsp::analysis::formatting
 {
 
 static std::string_view Slice(const std::string& source, uint32_t from, uint32_t to)
@@ -138,22 +138,26 @@ static std::string_view TrimBlankEdges(std::string_view text)
     return text;
 }
 
-static void ProcessNamespaceChild(TSNode child, std::string_view lead, const std::string& source, FormattingPlan& plan)
+/**
+ * @brief Adds one namespace declaration to the plan, merging it into the group with the same name.
+ * @param[in] decl Pass-1 layout of the namespace; one without name or body is kept verbatim.
+ * @param[in] lead Text between the previous declaration and this one.
+ * @param[in] source Stub text the byte offsets point into.
+ * @param[in,out] plan Plan receiving the slot or the new occurrence.
+ */
+static void ProcessNamespaceChild(const IndexedStubDeclaration& decl, std::string_view lead, const std::string& source,
+                                  FormattingPlan& plan)
 {
-    const TSNode nameNode = ts_node_child_by_field_name(child, "name", 4);
-    const TSNode bodyNode = ts_node_child_by_field_name(child, "body", 4);
-    const uint32_t start = ts_node_start_byte(child);
-    const uint32_t end = ts_node_end_byte(child);
-
-    if (ts_node_is_null(nameNode) || ts_node_is_null(bodyNode))
+    if (!decl.hasNameAndBody)
     {
-        plan.slots.push_back(Slot{false, std::string(lead) + std::string(Slice(source, start, end)), {}});
+        plan.slots.push_back(
+            Slot{false, std::string(lead) + std::string(Slice(source, decl.startByte, decl.endByte)), {}});
         return;
     }
 
-    const std::string name(Slice(source, ts_node_start_byte(nameNode), ts_node_end_byte(nameNode)));
-    const uint32_t bodyStart = ts_node_start_byte(bodyNode) + 1;
-    const uint32_t bodyEnd = ts_node_end_byte(bodyNode) - 1;
+    const std::string name(Slice(source, decl.nameStartByte, decl.nameEndByte));
+    const uint32_t bodyStart = decl.bodyStartByte + 1;
+    const uint32_t bodyEnd = decl.bodyEndByte - 1;
 
     auto [entry, inserted] = plan.groups.try_emplace(name, Group{name, {}, plan.slots.size()});
     if (inserted)
@@ -164,34 +168,31 @@ static void ProcessNamespaceChild(TSNode child, std::string_view lead, const std
     entry->second.occurrences.push_back(Occurrence{std::string(lead), std::string(Slice(source, bodyStart, bodyEnd))});
 }
 
-static FormattingPlan BuildFormattingPlan(TSNode root, const std::string& source)
+/**
+ * @brief Builds the merge plan: every top-level declaration in order, with same-named namespaces grouped.
+ * @param[in] declarations Pass-1 top-level declarations, comments excluded.
+ * @param[in] source Stub text the byte offsets point into.
+ * @return Plan of literal slots and namespace groups plus the trailing text.
+ */
+static FormattingPlan BuildFormattingPlan(const std::vector<IndexedStubDeclaration>& declarations,
+                                          const std::string& source)
 {
     FormattingPlan plan;
     uint32_t cursor = 0;
-    const uint32_t childCount = ts_node_named_child_count(root);
 
-    const auto& gs = parser::GetGrammarSymbols();
-    for (uint32_t i = 0; i < childCount; ++i)
+    for (const IndexedStubDeclaration& decl : declarations)
     {
-        const TSNode child = ts_node_named_child(root, i);
-        const TSSymbol childSym = ts_node_symbol(child);
-        if (childSym == gs.symComment)
+        const std::string_view lead = Slice(source, cursor, decl.startByte);
+        cursor = decl.endByte;
+
+        if (!decl.isNamespace)
         {
+            plan.slots.push_back(
+                Slot{false, std::string(lead) + std::string(Slice(source, decl.startByte, decl.endByte)), {}});
             continue;
         }
 
-        const uint32_t start = ts_node_start_byte(child);
-        const uint32_t end = ts_node_end_byte(child);
-        const std::string_view lead = Slice(source, cursor, start);
-        cursor = end;
-
-        if (childSym != gs.symNamespaceDeclaration)
-        {
-            plan.slots.push_back(Slot{false, std::string(lead) + std::string(Slice(source, start, end)), {}});
-            continue;
-        }
-
-        ProcessNamespaceChild(child, lead, source, plan);
+        ProcessNamespaceChild(decl, lead, source, plan);
     }
 
     plan.tail = std::string(Slice(source, cursor, static_cast<uint32_t>(source.size())));
@@ -252,22 +253,15 @@ static std::string EmitFormattedStub(const FormattingPlan& plan, const std::stri
 std::string FormatPredefinedStub(const std::string& source, angel_lsp::parser::AngelScriptParser& parser,
                                  const std::string& indent)
 {
-    document::TreePtr tree = document::MakeTreePtr(parser.Parse(source));
-    if (tree == nullptr)
+    const std::optional<std::vector<IndexedStubDeclaration>> declarations = ExtractStubDeclarations(source, parser);
+    if (!declarations)
     {
         return source;
     }
 
-    const TSNode root = ts_tree_root_node(tree.get());
-    if (ts_node_has_error(root))
-    {
-        return source;
-    }
-
-    FormattingPlan plan = BuildFormattingPlan(root, source);
-    tree.reset();
+    FormattingPlan plan = BuildFormattingPlan(*declarations, source);
 
     std::string out = EmitFormattedStub(plan, indent, source.size());
     return out == source ? source : out;
 }
-} // namespace angel_lsp::features::formatting
+} // namespace angel_lsp::analysis::formatting

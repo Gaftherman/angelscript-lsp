@@ -1,14 +1,14 @@
 #pragma once
 
-#include "features/formatting/FormattingLineBuilder.h"
-#include "features/formatting/FormattingTokens.h"
-#include "features/formatting/FormattingTypes.h"
+#include "analysis/formatting/FormattingLineBuilder.h"
+#include "analysis/formatting/FormattingTokens.h"
+#include "analysis/formatting/FormattingTypes.h"
 
 #include <string>
 #include <string_view>
 #include <vector>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::formatting
 {
 /**
  * @brief Renders structured lines into formatted text lines according to configuration.
@@ -35,7 +35,7 @@ void CollapseAndTrimLines(std::vector<std::string>& lines, const FormatCodeOptio
  * @return Final formatted source text.
  */
 std::string AssembleFormattedText(std::string_view bom, const std::vector<std::string>& lines,
-                                  const lsp::FormattingOptions& options);
+                                  const FormatLayoutOptions& options);
 
 /**
  * @brief Extracts UTF-8 Byte Order Mark (BOM) if present.
@@ -60,4 +60,4 @@ std::vector<std::string> SplitLines(std::string_view text, bool keepTrailingEmpt
  * @return Joined string.
  */
 std::string JoinLines(const std::vector<std::string>& lines, uint32_t startLine, uint32_t endLine);
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::formatting

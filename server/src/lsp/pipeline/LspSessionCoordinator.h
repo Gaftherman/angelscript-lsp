@@ -1,6 +1,6 @@
 #pragma once
 
-#include "features/formatting/FormattingTypes.h"
+#include "analysis/formatting/FormattingTypes.h"
 #include "utils/PositionEncoding.h"
 
 #include <atomic>
@@ -122,12 +122,12 @@ class LspSessionCoordinator
     /**
      * @brief Configures pointer/handle alignment style.
      */
-    void SetFormatPointerAlignment(features::PointerAlignment align) noexcept;
+    void SetFormatPointerAlignment(analysis::formatting::PointerAlignment align) noexcept;
 
     /**
      * @brief Gets pointer/handle alignment style.
      */
-    [[nodiscard]] features::PointerAlignment GetFormatPointerAlignment() const noexcept;
+    [[nodiscard]] analysis::formatting::PointerAlignment GetFormatPointerAlignment() const noexcept;
 
     /**
      * @brief Records whether client supports work done progress.
@@ -268,7 +268,8 @@ class LspSessionCoordinator
     std::atomic<bool> m_formatBraceStyleKR{false};
     std::atomic<bool> m_formatSpacesInsideParentheses{false};
     std::atomic<bool> m_formatKeepEmptyBlocksOnSingleLine{true};
-    std::atomic<features::PointerAlignment> m_formatPointerAlignment{features::PointerAlignment::Left};
+    std::atomic<analysis::formatting::PointerAlignment> m_formatPointerAlignment{
+        analysis::formatting::PointerAlignment::Left};
     std::atomic<uint64_t> m_configRevision{0};
 
     utils::PositionEncoding m_positionEncoding{utils::PositionEncoding::Utf16};

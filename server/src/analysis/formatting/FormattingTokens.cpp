@@ -1,10 +1,10 @@
-#include "features/formatting/FormattingTokens.h"
+#include "analysis/formatting/FormattingTokens.h"
 
-#include "features/formatting/FormattingLexer.h"
+#include "analysis/formatting/FormattingLexer.h"
 
 #include <unordered_set>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::formatting
 {
 static std::vector<Token> SplitShiftOperators(const std::vector<Token>& tokens)
 {
@@ -86,11 +86,11 @@ static void MarkClangFormatPragmas(std::vector<Token>& tokens)
     {
         if (tok.type == TokenType::LineComment || tok.type == TokenType::BlockComment)
         {
-            if (tok.text.find("clang-format off") != std::string::npos)
+            if (tok.text.find("clang-format off") != std::string_view::npos)
             {
                 off = true;
             }
-            else if (tok.text.find("clang-format on") != std::string::npos)
+            else if (tok.text.find("clang-format on") != std::string_view::npos)
             {
                 tok.isClangFormatOff = false;
                 off = false;
@@ -252,4 +252,4 @@ bool IsAccessSpecifierOrLabelColon(const std::vector<Token>& tokens, size_t idx)
     }
     return false;
 }
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::formatting

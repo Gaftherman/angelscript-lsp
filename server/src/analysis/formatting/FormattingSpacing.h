@@ -1,11 +1,11 @@
 #pragma once
 
-#include "features/formatting/FormattingTokens.h"
-#include "features/formatting/FormattingTypes.h"
+#include "analysis/formatting/FormattingTokens.h"
+#include "analysis/formatting/FormattingTypes.h"
 
 #include <vector>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::formatting
 {
 /**
  * @brief Evaluates whether a whitespace separator is required between two adjacent tokens.
@@ -17,4 +17,4 @@ namespace angel_lsp::features
  */
 bool NeedsSpaceBetween(const std::vector<Token>& tokens, size_t prevIdx, size_t currIdx,
                        const FormatCodeOptions& options);
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::formatting

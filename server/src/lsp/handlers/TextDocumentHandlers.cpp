@@ -589,8 +589,7 @@ Server::HandleRequestsTextDocument_Formatting(lsp::requests::TextDocument_Format
 
     features::FormattingRequest fr{doc->uri,
                                    *doc->text,
-                                   doc->tree,
-                                   req.options,
+                                   features::ToLayoutOptions(req.options),
                                    CurrentBraceStyle(),
                                    CurrentSpacesInsideParentheses(),
                                    CurrentKeepEmptyBlocksOnSingleLine(),
@@ -619,9 +618,8 @@ Server::HandleRequestsTextDocument_RangeFormatting(lsp::requests::TextDocument_R
 
     features::RangeFormattingRequest rfr{doc->uri,
                                          *doc->text,
-                                         doc->tree,
                                          codec::Decode(*doc->text, GetPositionEncoding(), req.range),
-                                         req.options,
+                                         features::ToLayoutOptions(req.options),
                                          CurrentBraceStyle(),
                                          CurrentSpacesInsideParentheses(),
                                          CurrentKeepEmptyBlocksOnSingleLine(),
@@ -648,12 +646,15 @@ Server::HandleRequestsTextDocument_OnTypeFormatting(lsp::requests::TextDocument_
         return lsp::Null{};
     }
 
+    const auto syntax =
+        doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
+                  : nullptr;
     features::OnTypeFormattingRequest otfr{doc->uri,
                                            *doc->text,
-                                           doc->tree,
+                                           syntax ? &syntax->index : nullptr,
                                            codec::Decode(*doc->text, GetPositionEncoding(), req.position),
                                            req.ch,
-                                           req.options,
+                                           features::ToLayoutOptions(req.options),
                                            CurrentBraceStyle(),
                                            CurrentSpacesInsideParentheses(),
                                            CurrentKeepEmptyBlocksOnSingleLine(),
@@ -1045,9 +1046,8 @@ Server::HandleRequestsTextDocument_RangesFormatting(lsp::requests::TextDocument_
     {
         features::RangeFormattingRequest rfr{doc->uri,
                                              *doc->text,
-                                             doc->tree,
                                              codec::Decode(*doc->text, GetPositionEncoding(), range),
-                                             params.options,
+                                             features::ToLayoutOptions(params.options),
                                              CurrentBraceStyle(),
                                              CurrentSpacesInsideParentheses(),
                                              CurrentKeepEmptyBlocksOnSingleLine(),
@@ -1091,8 +1091,7 @@ Server::HandleRequestsTextDocument_WillSaveWaitUntil(lsp::requests::TextDocument
 
     features::FormattingRequest fr{doc->uri,
                                    *doc->text,
-                                   doc->tree,
-                                   options,
+                                   features::ToLayoutOptions(options),
                                    CurrentBraceStyle(),
                                    CurrentSpacesInsideParentheses(),
                                    CurrentKeepEmptyBlocksOnSingleLine(),

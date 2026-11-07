@@ -1,4 +1,4 @@
-#include "features/formatting/PredefinedStubFormatter.h"
+#include "analysis/formatting/PredefinedStubFormatter.h"
 #include "features/workspace_symbol/WorkspaceSymbolHandler.h"
 #include "lsp/Server.h"
 #include "lsp/state/PositionCodec.h"
@@ -340,14 +340,14 @@ static void UpdateFormatConfiguration(Server& server, const lsp::LSPObject& sect
     }
     if (auto alignVal = FindSectionString(section, formatObj, "pointerAlignment", "format"); alignVal.has_value())
     {
-        features::PointerAlignment align = features::PointerAlignment::Left;
+        analysis::formatting::PointerAlignment align = analysis::formatting::PointerAlignment::Left;
         if (*alignVal == "right" || *alignVal == "Right")
         {
-            align = features::PointerAlignment::Right;
+            align = analysis::formatting::PointerAlignment::Right;
         }
         else if (*alignVal == "middle" || *alignVal == "Middle")
         {
-            align = features::PointerAlignment::Middle;
+            align = analysis::formatting::PointerAlignment::Middle;
         }
         server.GetSessionCoordinator().SetFormatPointerAlignment(align);
     }
@@ -1046,7 +1046,7 @@ Server::ExecuteFormatPredefinedStub(const std::optional<lsp::Array<lsp::LSPAny>>
     }
 
     angel_lsp::parser::AngelScriptParser formatterParser(m_logger.get());
-    std::string formatted = angel_lsp::features::formatting::FormatPredefinedStub(text, formatterParser);
+    std::string formatted = angel_lsp::analysis::formatting::FormatPredefinedStub(text, formatterParser);
 
     const bool changed = (formatted != text);
     LogInfo(fmt::format("Formatted predefined stub {}: {}", uriStr, changed ? "rewritten" : "already formatted"));

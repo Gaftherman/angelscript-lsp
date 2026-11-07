@@ -1,10 +1,10 @@
-#include "features/formatting/FormattingRenderer.h"
+#include "analysis/formatting/FormattingRenderer.h"
 
-#include "features/formatting/FormattingSpacing.h"
+#include "analysis/formatting/FormattingSpacing.h"
 
 #include <algorithm>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::formatting
 {
 static std::string MakeIndent(int level, const FormatCodeOptions& options)
 {
@@ -123,7 +123,7 @@ void CollapseAndTrimLines(std::vector<std::string>& lines, const FormatCodeOptio
 }
 
 std::string AssembleFormattedText(std::string_view bom, const std::vector<std::string>& lines,
-                                  const lsp::FormattingOptions& options)
+                                  const FormatLayoutOptions& options)
 {
     std::string result(bom);
     for (size_t idx = 0; idx < lines.size(); ++idx)
@@ -185,4 +185,4 @@ std::string JoinLines(const std::vector<std::string>& lines, uint32_t startLine,
     }
     return res;
 }
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::formatting

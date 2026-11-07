@@ -99,12 +99,12 @@ bool LspSessionCoordinator::GetFormatKeepEmptyBlocksOnSingleLine() const noexcep
     return m_formatKeepEmptyBlocksOnSingleLine.load();
 }
 
-void LspSessionCoordinator::SetFormatPointerAlignment(features::PointerAlignment align) noexcept
+void LspSessionCoordinator::SetFormatPointerAlignment(analysis::formatting::PointerAlignment align) noexcept
 {
     m_formatPointerAlignment.store(align);
 }
 
-features::PointerAlignment LspSessionCoordinator::GetFormatPointerAlignment() const noexcept
+analysis::formatting::PointerAlignment LspSessionCoordinator::GetFormatPointerAlignment() const noexcept
 {
     return m_formatPointerAlignment.load();
 }

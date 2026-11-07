@@ -1,3 +1,4 @@
+#include "analysis/formatting/FormattingEngine.h"
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolCollector.h"
@@ -18,6 +19,7 @@ using namespace angel_lsp::features;
 using namespace angel_lsp::analysis;
 using namespace angel_lsp::parser;
 using namespace angel_lsp::config;
+using namespace angel_lsp::analysis::formatting;
 
 namespace
 {
@@ -505,7 +507,7 @@ TEST_SUITE("Adversarial Phase 3 - Formatting")
         std::string code = "void DeepNest(){if(a>0){for(int i=0;i<10;++i){while(running){switch(state){case "
                            "1:doTask();break;default:break;}}}}}";
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -538,7 +540,7 @@ TEST_SUITE("Adversarial Phase 3 - Formatting")
     {
         std::string code = "struct Point{float x;float y;};class Widget:Base{int id;void Render(){draw();}};";
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -576,7 +578,7 @@ TEST_SUITE("Adversarial Phase 3 - Formatting")
                            "    }\n"
                            "}\n";
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -601,7 +603,7 @@ TEST_SUITE("Adversarial Phase 3 - Formatting")
                            "    Run();\n"
                            "}\n";
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -624,7 +626,7 @@ TEST_SUITE("Adversarial Phase 3 - Formatting")
             "    \"\"\";\n"
             "}\n";
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -638,7 +640,7 @@ TEST_SUITE("Adversarial Phase 3 - Formatting")
     {
         std::string code = "array<dictionary<string,array<int>@>>@ complexContainer=null;";
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -657,11 +659,11 @@ TEST_SUITE("Adversarial Phase 3 - Formatting")
                            "// Footer line\n"
                            "void UnchangedFooter() { return; }\n";
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
-        RangeFormattingRequest req{uri, code, nullptr, lsp::Range{{2, 0}, {2, 35}}, options};
+        RangeFormattingRequest req{uri, code, lsp::Range{{2, 0}, {2, 35}}, options};
         auto edits = FormatRange(req);
 
         REQUIRE(edits.has_value());

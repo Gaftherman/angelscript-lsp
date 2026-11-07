@@ -109,10 +109,10 @@ class Server
     lsp::requests::Initialize::Result HandleRequestsInitialized(lsp::requests::Initialize::Params&& params);
     static std::string DocumentKey(const std::string& uriStr);
     void ParserPredefined(const std::string& filePath, parser::AngelScriptParser& parser, bool forceReload = false);
-    [[nodiscard]] features::BraceStyle CurrentBraceStyle() const;
+    [[nodiscard]] analysis::formatting::BraceStyle CurrentBraceStyle() const;
     [[nodiscard]] bool CurrentSpacesInsideParentheses() const noexcept;
     [[nodiscard]] bool CurrentKeepEmptyBlocksOnSingleLine() const noexcept;
-    [[nodiscard]] features::PointerAlignment CurrentPointerAlignment() const noexcept;
+    [[nodiscard]] analysis::formatting::PointerAlignment CurrentPointerAlignment() const noexcept;
     [[nodiscard]] std::string ResolveConfiguredPath(const std::string& configured) const;
     void BindEngineConfiguration(const std::function<void(std::string_view, bool&)>& applyBool,
                                  const std::function<void(std::string_view, int&)>& applyInt);

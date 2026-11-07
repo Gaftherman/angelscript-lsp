@@ -1,13 +1,13 @@
 #pragma once
 
-#include "features/formatting/FormattingTokens.h"
-#include "features/formatting/FormattingTypes.h"
+#include "analysis/formatting/FormattingTokens.h"
+#include "analysis/formatting/FormattingTypes.h"
 
 #include <cstdint>
 #include <optional>
 #include <vector>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::formatting
 {
 /**
  * @brief Representation of a formatted line with its indentation and token sequence.
@@ -123,4 +123,56 @@ struct LineBuilderState
         }
     }
 };
-} // namespace angel_lsp::features
+
+/**
+ * @brief Places a preprocessor line on its own output line, or starts a line for a leading `[` metadata block.
+ * @param[in,out] state Line builder state receiving the line.
+ * @param[in] tokens Token stream.
+ * @param[in,out] i Current token index; advanced past a metadata block it consumes.
+ * @return True when the token was handled here.
+ */
+bool HandlePreprocessorOrMetadata(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i);
+
+/**
+ * @brief Handles `{`: value braces stay inline, block braces open a scope and follow the brace style.
+ * @param[in,out] state Line builder state; the scope stack and brace level change.
+ * @param[in,out] tokens Token stream; the brace is marked padded when it follows `)` or `function`.
+ * @param[in] i Index of the `{` token.
+ */
+void HandleOpenBrace(LineBuilderState& state, std::vector<Token>& tokens, size_t i);
+
+/**
+ * @brief Handles `}`: closes the innermost scope and puts a block brace on its own line at the outer level.
+ * @param[in,out] state Line builder state; the scope stack and brace level change.
+ * @param[in,out] tokens Token stream; a value brace inherits the padding of its opener.
+ * @param[in,out] i Index of the `}` token; advanced past a `;` that directly follows a block brace.
+ */
+void HandleCloseBrace(LineBuilderState& state, std::vector<Token>& tokens, size_t& i);
+
+/**
+ * @brief Handles `else`, `case`/`default` labels and access specifiers, in that order.
+ * @param[in,out] state Line builder state.
+ * @param[in] tokens Token stream.
+ * @param[in,out] i Current token index; advanced past a consumed label colon.
+ * @return True when one of the three handlers consumed the token.
+ */
+bool HandleKeywordsAndLabels(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i);
+
+/**
+ * @brief Keeps a comment that follows on the same source line attached to the current output line.
+ * @param[in,out] state Line builder state receiving the comment token.
+ * @param[in] tokens Token stream.
+ * @param[in,out] i Current token index; advanced to the comment when one is consumed.
+ */
+void ConsumeTrailingComment(LineBuilderState& state, const std::vector<Token>& tokens, size_t& i);
+
+/**
+ * @brief Keeps `{}` (and a following `;`) on one line when the options allow empty or short blocks.
+ * @param[in,out] state Line builder state.
+ * @param[in] tokens Token stream.
+ * @param[in,out] i Index of the `{`; advanced past the consumed `}` and `;`.
+ * @return True when the empty block was emitted inline.
+ */
+bool TryHandleEmptyOrShortBlock(LineBuilderState& state, std::vector<Token>& tokens, size_t& i);
+
+} // namespace angel_lsp::analysis::formatting

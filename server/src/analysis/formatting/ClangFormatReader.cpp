@@ -1,13 +1,13 @@
-#include "features/formatting/ClangFormatReader.h"
+#include "analysis/formatting/ClangFormatReader.h"
 
-#include "features/formatting/ClangFormatPresets.h"
+#include "analysis/formatting/ClangFormatPresets.h"
 #include "utils/Utils.h"
 
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::formatting
 {
 /**
  * @brief Trims leading and trailing whitespace characters from a string view.
@@ -262,4 +262,4 @@ std::optional<ClangFormatStyle> LoadClangFormatForFile(std::string_view document
     }
     return std::nullopt;
 }
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::formatting

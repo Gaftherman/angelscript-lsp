@@ -1,4 +1,5 @@
-#include "features/formatting/ClangFormatReader.h"
+#include "analysis/formatting/ClangFormatReader.h"
+#include "analysis/formatting/FormattingEngine.h"
 #include "features/formatting/FormattingHandler.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
@@ -9,13 +10,14 @@
 
 using namespace angel_lsp;
 using namespace angel_lsp::features;
+using namespace angel_lsp::analysis::formatting;
 
 TEST_SUITE("Formatting")
 {
     TEST_CASE("IndentWithFourSpaces")
     {
         std::string code = "void main(){\nint a=1;\n}";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -27,7 +29,7 @@ TEST_SUITE("Formatting")
     TEST_CASE("IndentWithTwoSpaces")
     {
         std::string code = "void main(){\nint a=1;\n}";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 2;
         options.insertSpaces = true;
 
@@ -39,7 +41,7 @@ TEST_SUITE("Formatting")
     TEST_CASE("IndentWithTabs")
     {
         std::string code = "void main(){\nint a=1;\n}";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = false;
 
@@ -51,7 +53,7 @@ TEST_SUITE("Formatting")
     TEST_CASE("AllmanBraceAlignmentForFunctionsAndControlFlow")
     {
         std::string code = "void test(){if(true){doWork();}}";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -69,7 +71,7 @@ TEST_SUITE("Formatting")
     TEST_CASE("AllmanBraceAlignmentForIfElseLadder")
     {
         std::string code = "if(x>0){a();}else if(x<0){b();}else{c();}";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -93,7 +95,7 @@ TEST_SUITE("Formatting")
     {
         std::string code =
             "class Bar:IFoo,IBar{int m_val;void DoAction(float dt){if(dt>0.0f){m_val+=1;}else{m_val=0;}}}";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -119,7 +121,7 @@ TEST_SUITE("Formatting")
     TEST_CASE("AllmanBraceAlignmentForEnumAndNamespace")
     {
         std::string code = "namespace Game{enum State{Idle,Running=1,Paused};}";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -139,7 +141,7 @@ TEST_SUITE("Formatting")
     TEST_CASE("WhitespaceAndOperatorNormalization")
     {
         std::string code = "int x=5+3*2;if(x>0){foo(1,2,3);}";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -155,7 +157,7 @@ TEST_SUITE("Formatting")
     TEST_CASE("ForLoopSemicolonAndIncrement")
     {
         std::string code = "for(int i=0;i<10;++i){sum+=i;}";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -170,7 +172,7 @@ TEST_SUITE("Formatting")
     TEST_CASE("UnaryAndTernaryOperators")
     {
         std::string code = "int a=-5;int b=+10;bool c=!flag;int res=c?a:b;";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -185,7 +187,7 @@ TEST_SUITE("Formatting")
     TEST_CASE("TemplatesAndHandles")
     {
         std::string code = "array<int>@ arr=null;dictionary<string,int> dict;";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -198,7 +200,7 @@ TEST_SUITE("Formatting")
     TEST_CASE("SwitchCaseFormatting")
     {
         std::string code = "switch(state){case 0:return;case 1:{int x=1;break;}default:break;}";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -227,7 +229,7 @@ TEST_SUITE("Formatting")
                            "    int a = 1;   \n"
                            "}\n";
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
         options.trimTrailingWhitespace = true;
@@ -245,7 +247,7 @@ TEST_SUITE("Formatting")
     TEST_CASE("PreprocessorDirectivesAtColumnZero")
     {
         std::string code = "#include \"header.as\"\n#define MAX 100\nvoid main(){}";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -261,7 +263,7 @@ TEST_SUITE("Formatting")
     TEST_CASE("TrailingWhitespaceAndNewlinesCleanup")
     {
         std::string code = "void test() {   \n    int x = 10;   \n}   \n\n\n";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
         options.trimTrailingWhitespace = true;
@@ -280,18 +282,18 @@ TEST_SUITE("Formatting")
     {
         std::string uri = "file:///test.as";
         std::string code = "void test(){int x=1;}void other(){int y=2;}";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
-        FormattingRequest docReq{uri, code, nullptr, options};
+        FormattingRequest docReq{uri, code, options};
         auto docEdits = FormatDocument(docReq);
         REQUIRE(docEdits.has_value());
         REQUIRE(!docEdits->empty());
         CHECK(docEdits->size() == 1);
         CHECK((*docEdits)[0].newText == "void test()\n{\n    int x = 1;\n}\nvoid other()\n{\n    int y = 2;\n}\n");
 
-        RangeFormattingRequest rangeReq{uri, code, nullptr, lsp::Range{{0, 0}, {0, 10}}, options};
+        RangeFormattingRequest rangeReq{uri, code, lsp::Range{{0, 0}, {0, 10}}, options};
         auto rangeEdits = FormatRange(rangeReq);
         REQUIRE(rangeEdits.has_value());
     }
@@ -300,7 +302,7 @@ TEST_SUITE("Formatting")
     {
         std::string uri = "file:///test.as";
         std::string code = "void test()\n{\n    int x = 1;\n}\n";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -313,7 +315,7 @@ TEST_SUITE("Formatting")
     {
         std::string uri = "file:///test.as";
         std::string code = "void test(){\nint x=1;\n}";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -326,9 +328,9 @@ TEST_SUITE("Formatting")
     {
         std::string uri = "file:///empty.as";
         std::string code = "";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
 
-        FormattingRequest docReq{uri, code, nullptr, options};
+        FormattingRequest docReq{uri, code, options};
         auto docEdits = FormatDocument(docReq);
         REQUIRE(docEdits.has_value());
         CHECK(docEdits->empty());
@@ -351,7 +353,7 @@ TEST_SUITE("Formatting")
     {
     std::string Format4(const std::string& code, BraceStyle style = BraceStyle::Allman)
     {
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
         return FormatSourceCode(code, options, style);
@@ -532,11 +534,11 @@ TEST_SUITE("Formatting")
                            " == 1) return;\n"
                            "}\n";
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
-        RangeFormattingRequest req{"file:///test.as", code, nullptr, lsp::Range{{8, 0}, {8, 13}}, options};
+        RangeFormattingRequest req{"file:///test.as", code, lsp::Range{{8, 0}, {8, 13}}, options};
         auto edits = FormatRange(req);
 
         REQUIRE(edits.has_value());
@@ -565,11 +567,11 @@ TEST_SUITE("Formatting")
                            "    return;\n"
                            "}\n";
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
-        RangeFormattingRequest req{"file:///test.as", code, nullptr, lsp::Range{{5, 0}, {5, 11}}, options};
+        RangeFormattingRequest req{"file:///test.as", code, lsp::Range{{5, 0}, {5, 11}}, options};
         auto edits = FormatRange(req);
 
         REQUIRE(edits.has_value());
@@ -579,7 +581,7 @@ TEST_SUITE("Formatting")
     TEST_CASE("FormatOnTypeRejectsNewlineTrigger")
     {
         std::string code = "void main()\n{\n    return;\n}\n";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -607,7 +609,7 @@ TEST_SUITE("Formatting")
                            "=42;\n"
                            "}\n";
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -630,7 +632,7 @@ TEST_SUITE("Formatting")
 
         std::string code =
             "void " + fnName + "(int " + arg1 + ",float " + arg2 + "){\nif(true){\n" + fnName + "(1,2);\n}\n}\n";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -690,7 +692,7 @@ TEST_SUITE("Formatting")
                            " );\n"
                            "}\n";
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -723,7 +725,7 @@ TEST_SUITE("Formatting")
                            "() {}\n"
                            "};\n";
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -750,12 +752,13 @@ TEST_SUITE("Formatting")
         TSTree* tree = parser.Parse(code);
         REQUIRE(tree != nullptr);
         CHECK(ts_node_has_error(ts_tree_root_node(tree)));
+        test::NodeIndexFixture fx(tree);
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
-        OnTypeFormattingRequest req{"file:///test.as",  code, tree, lsp::Position{1, 43}, ";", options,
+        OnTypeFormattingRequest req{"file:///test.as",  code, &fx.index, lsp::Position{1, 43}, ";", options,
                                     BraceStyle::Allman, false};
         auto edits = FormatOnType(req);
         CHECK_FALSE(edits.has_value());
@@ -768,7 +771,7 @@ TEST_SUITE("Formatting")
         const std::string itemVar = test::GenerateRandomSymbolName("item");
         const std::string listVar = test::GenerateRandomSymbolName("list");
         std::string code = "void main() { foreach(auto " + itemVar + " : " + listVar + ") { int x = 1; } }";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -782,7 +785,7 @@ TEST_SUITE("Formatting")
         const std::string varName = test::GenerateRandomSymbolName("p");
         std::string code = typeName + " @ " + varName + " = null;";
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -809,7 +812,7 @@ TEST_SUITE("Formatting")
         std::string code = "void test() { @ " + varA + " = @ " + varB + "; if ( @ " + varA + " == @ " + varB +
                            " ) return @ " + varA + "; }";
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -826,7 +829,7 @@ TEST_SUITE("Formatting")
         const std::string objVar = test::GenerateRandomSymbolName("obj");
         std::string code = typeName + "@@ h; " + typeName + "@ res = cast< " + typeName + "@ > ( " + objVar + " );";
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -951,7 +954,7 @@ TEST_SUITE("Formatting")
     {
         const std::string fnName = test::GenerateRandomSymbolName("func");
         std::string code = "void " + fnName + "() { if (true) { int a = 1; } else { int b = 2; } }";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -984,7 +987,7 @@ TEST_SUITE("Formatting")
         std::string handleCode = typeName + " @ " + varName + ";";
         std::string refCode = "void f(const " + typeName + " & in " + varName + ");";
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -1014,7 +1017,7 @@ TEST_SUITE("Formatting")
     {
         const std::string fn = test::GenerateRandomSymbolName("calc");
         std::string code = "void " + fn + "(int a, int b) { if(a == b) { array<int> arr = {1, 2}; int x = arr[0]; } }";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -1039,7 +1042,7 @@ TEST_SUITE("Formatting")
     TEST_CASE("SwitchCaseAndAccessModifierOffsetTest")
     {
         std::string code = "class MyClass { public: int x; private: int y; };";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -1062,7 +1065,7 @@ TEST_SUITE("Formatting")
                            "void    messy_func  (   int   x  ,int y)   {return;}\n"
                            "// clang-format on\n"
                            "void clean_func(int a,int b){return;}";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -1074,7 +1077,7 @@ TEST_SUITE("Formatting")
     TEST_CASE("MaxEmptyLinesAndTrailingCommentsTest")
     {
         std::string code = "int a = 1; // comment 1\n\n\n\n\nint b = 2;";
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 

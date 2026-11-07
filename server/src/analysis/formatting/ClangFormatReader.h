@@ -1,11 +1,11 @@
 #pragma once
 
-#include "features/formatting/FormattingTypes.h"
+#include "analysis/formatting/FormattingTypes.h"
 
 #include <optional>
 #include <string_view>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::formatting
 {
 /**
  * @brief Parses the contents of a .clang-format configuration string.
@@ -27,4 +27,4 @@ std::optional<ClangFormatStyle> LoadClangFormatForFile(std::string_view document
  * @param[in] style Parsed clang-format style configuration.
  */
 void ApplyClangFormatStyle(FormatCodeOptions& options, const ClangFormatStyle& style);
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::formatting

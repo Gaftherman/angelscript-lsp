@@ -18,17 +18,12 @@
     "server/src/features/signature_help",
     "server/src/features/code_lens",
     "server/src/features/semantic_tokens",
-    "server/src/features/hover"
+    "server/src/features/hover",
+    "server/src/features/formatting"
   ],
-  "active_folder": "server/src/features/formatting",
+  "active_folder": "server/src/features/completion",
   "cross_module_impacts": [],
   "pending_folders": [
-    {
-      "folder_path": "server/src/features/formatting",
-      "complexity_rank": 21,
-      "selection_rationale": "Feature (11 files, 751 lines) document formatting, indent rules, and whitespace normalization.",
-      "files_to_refactor": []
-    },
     {
       "folder_path": "server/src/features/completion",
       "complexity_rank": 22,

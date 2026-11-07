@@ -1,65 +1,31 @@
 #include "features/formatting/FormattingHandler.h"
 
-#include "features/formatting/ClangFormatReader.h"
-#include "features/formatting/FormattingLineBuilder.h"
-#include "features/formatting/FormattingRenderer.h"
-#include "features/formatting/FormattingTokens.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarSymbols.h"
+#include "analysis/formatting/FormattingEngine.h"
+#include "analysis/index/FormattingFacts.h"
 
-#include <algorithm>
+#include <utility>
 
 namespace angel_lsp::features
 {
-static FormatCodeOptions ResolveEffectiveFormatOptions(std::string_view uri, FormatCodeOptions opts)
+analysis::formatting::FormatLayoutOptions ToLayoutOptions(const lsp::FormattingOptions& options)
 {
-    if (auto clangStyle = LoadClangFormatForFile(uri))
-    {
-        ApplyClangFormatStyle(opts, *clangStyle);
-    }
-    return opts;
+    return analysis::formatting::FormatLayoutOptions{options.tabSize, options.insertSpaces,
+                                                     options.trimTrailingWhitespace, options.insertFinalNewline,
+                                                     options.trimFinalNewlines};
 }
 
-static std::string ExtractMatchedRangeText(const std::vector<std::string>& outputLines, size_t firstIdx, size_t lastIdx)
+/**
+ * @brief Wraps a formatter replacement into the single LSP edit the formatting requests return.
+ * @param[in,out] edit Formatter replacement; its text is moved out.
+ * @return List holding one text edit with the same range and text.
+ */
+static std::vector<lsp::TextEdit> ToTextEdits(analysis::formatting::FormattedEdit& edit)
 {
-    std::vector<std::string> rangeLines;
-    rangeLines.reserve(lastIdx - firstIdx + 1);
-    for (size_t i = firstIdx; i <= lastIdx; ++i)
-    {
-        rangeLines.push_back(outputLines[i]);
-    }
-    return rangeLines.empty() ? "" : JoinLines(rangeLines, 0, static_cast<uint32_t>(rangeLines.size() - 1));
-}
-
-std::string FormatSourceCode(std::string_view sourceCode, const FormatCodeOptions& formatOptions)
-{
-    if (sourceCode.empty())
-    {
-        return "";
-    }
-    if (formatOptions.disableFormat)
-    {
-        return std::string(sourceCode);
-    }
-
-    std::string_view bom = ExtractBom(sourceCode);
-    auto tokens = Tokenize(sourceCode);
-    if (tokens.empty())
-    {
-        return "";
-    }
-
-    auto lines = BuildFormattedLines(tokens, formatOptions);
-    auto rendered = RenderLines(lines, tokens, formatOptions);
-    CollapseAndTrimLines(rendered, formatOptions);
-    return AssembleFormattedText(bom, rendered, formatOptions.options);
-}
-
-std::string FormatSourceCode(std::string_view sourceCode, const lsp::FormattingOptions& options, BraceStyle braceStyle,
-                             bool spacesInsideParentheses)
-{
-    return FormatSourceCode(
-        sourceCode, FormatCodeOptions{options, braceStyle, spacesInsideParentheses, false, PointerAlignment::Left});
+    lsp::TextEdit textEdit;
+    textEdit.range.start = lsp::Position{edit.startLine, edit.startColumn};
+    textEdit.range.end = lsp::Position{edit.endLine, edit.endColumn};
+    textEdit.newText = std::move(edit.newText);
+    return std::vector<lsp::TextEdit>{std::move(textEdit)};
 }
 
 std::optional<std::vector<lsp::TextEdit>> FormatDocument(const FormattingRequest& request)
@@ -69,41 +35,18 @@ std::optional<std::vector<lsp::TextEdit>> FormatDocument(const FormattingRequest
         return std::vector<lsp::TextEdit>{};
     }
 
-    FormatCodeOptions opts = ResolveEffectiveFormatOptions(
-        request.uri, FormatCodeOptions{request.options, request.braceStyle, request.spacesInsideParentheses,
-                                       request.keepEmptyBlocksOnSingleLine, request.pointerAlignment});
+    const analysis::formatting::FormatCodeOptions opts = analysis::formatting::ResolveEffectiveFormatOptions(
+        request.uri,
+        analysis::formatting::FormatCodeOptions{request.options, request.braceStyle, request.spacesInsideParentheses,
+                                                request.keepEmptyBlocksOnSingleLine, request.pointerAlignment});
     if (opts.disableFormat)
     {
         return std::vector<lsp::TextEdit>{};
     }
 
-    std::string formatted = FormatSourceCode(request.sourceCode, opts);
-    if (formatted == request.sourceCode)
-    {
-        return std::vector<lsp::TextEdit>{};
-    }
-
-    uint32_t lineCount = 0;
-    size_t lastLineLen = 0;
-    for (size_t i = 0; i < request.sourceCode.size(); ++i)
-    {
-        if (request.sourceCode[i] == '\n')
-        {
-            lineCount++;
-            lastLineLen = 0;
-        }
-        else if (request.sourceCode[i] != '\r')
-        {
-            lastLineLen++;
-        }
-    }
-
-    lsp::TextEdit edit;
-    edit.range.start = lsp::Position{0, 0};
-    edit.range.end = lsp::Position{lineCount, static_cast<uint32_t>(lastLineLen)};
-    edit.newText = std::move(formatted);
-
-    return std::vector<lsp::TextEdit>{std::move(edit)};
+    std::optional<analysis::formatting::FormattedEdit> edit =
+        analysis::formatting::FormatWholeDocument(request.sourceCode, opts);
+    return edit ? ToTextEdits(*edit) : std::vector<lsp::TextEdit>{};
 }
 
 std::optional<std::vector<lsp::TextEdit>> FormatRange(const RangeFormattingRequest& request)
@@ -113,58 +56,18 @@ std::optional<std::vector<lsp::TextEdit>> FormatRange(const RangeFormattingReque
         return std::vector<lsp::TextEdit>{};
     }
 
-    FormatCodeOptions rangeOpts = ResolveEffectiveFormatOptions(
-        request.uri, FormatCodeOptions{request.options, request.braceStyle, request.spacesInsideParentheses,
-                                       request.keepEmptyBlocksOnSingleLine, request.pointerAlignment});
+    const analysis::formatting::FormatCodeOptions rangeOpts = analysis::formatting::ResolveEffectiveFormatOptions(
+        request.uri,
+        analysis::formatting::FormatCodeOptions{request.options, request.braceStyle, request.spacesInsideParentheses,
+                                                request.keepEmptyBlocksOnSingleLine, request.pointerAlignment});
     if (rangeOpts.disableFormat)
     {
         return std::vector<lsp::TextEdit>{};
     }
 
-    auto origLines = SplitLines(request.sourceCode, true);
-    uint32_t totalLines = static_cast<uint32_t>(origLines.size());
-    uint32_t startLine = std::min(request.range.start.line, totalLines > 0 ? totalLines - 1 : 0u);
-    uint32_t endLine = std::min(request.range.end.line, totalLines > 0 ? totalLines - 1 : 0u);
-
-    if (startLine == 0 && endLine >= totalLines - 1)
-    {
-        return FormatDocument(FormattingRequest{request.uri, request.sourceCode, request.tree, rangeOpts.options,
-                                                rangeOpts.braceStyle, rangeOpts.spacesInsideParentheses,
-                                                rangeOpts.keepEmptyBlocksOnSingleLine, rangeOpts.pointerAlignment});
-    }
-
-    auto tokens = Tokenize(request.sourceCode);
-    if (tokens.empty())
-    {
-        return std::vector<lsp::TextEdit>{};
-    }
-
-    auto lines = BuildFormattedLines(tokens, rangeOpts);
-    auto outputLines = RenderLines(lines, tokens, rangeOpts);
-
-    auto matched = FindMatchedRange(lines, tokens, startLine, endLine);
-    if (!matched)
-    {
-        return std::vector<lsp::TextEdit>{};
-    }
-
-    uint32_t effStartLine = std::min(matched->actualStartLine, totalLines > 0 ? totalLines - 1 : 0u);
-    uint32_t effEndLine = std::min(matched->actualEndLine, totalLines > 0 ? totalLines - 1 : 0u);
-
-    std::string formattedRangeText = ExtractMatchedRangeText(outputLines, matched->firstIdx, matched->lastIdx);
-    std::string origRangeText = JoinLines(origLines, effStartLine, effEndLine);
-
-    if (formattedRangeText == origRangeText)
-    {
-        return std::vector<lsp::TextEdit>{};
-    }
-
-    lsp::TextEdit edit;
-    edit.range.start = lsp::Position{effStartLine, 0};
-    edit.range.end = lsp::Position{effEndLine, static_cast<uint32_t>(origLines[effEndLine].size())};
-    edit.newText = std::move(formattedRangeText);
-
-    return std::vector<lsp::TextEdit>{std::move(edit)};
+    std::optional<analysis::formatting::FormattedEdit> edit = analysis::formatting::FormatLineRange(
+        request.sourceCode, request.range.start.line, request.range.end.line, rangeOpts);
+    return edit ? ToTextEdits(*edit) : std::vector<lsp::TextEdit>{};
 }
 
 std::optional<std::vector<lsp::TextEdit>> FormatOnType(const OnTypeFormattingRequest& request)
@@ -174,25 +77,10 @@ std::optional<std::vector<lsp::TextEdit>> FormatOnType(const OnTypeFormattingReq
         return std::nullopt;
     }
 
-    if (request.tree)
+    if (request.nodeIndex &&
+        analysis::IsOnTypeFormattingSuppressed(*request.nodeIndex, request.position.line, request.position.character))
     {
-        TSNode root = ts_tree_root_node(request.tree);
-        if (ts_node_has_error(root))
-        {
-            return std::nullopt;
-        }
-        TSPoint pt{request.position.line, request.position.character};
-        TSNode nodeAtPoint = ts_node_descendant_for_point_range(root, pt, pt);
-        if (!ts_node_is_null(nodeAtPoint))
-        {
-            const auto& gs = parser::GetGrammarSymbols();
-            const std::array<TSSymbol, 2> skipSyms = {gs.symStringLiteral, gs.symComment};
-            TSNode skipNode = parser::FindAncestorWithAnySymbol(nodeAtPoint, skipSyms);
-            if (!ts_node_is_null(skipNode))
-            {
-                return std::nullopt;
-            }
-        }
+        return std::nullopt;
     }
 
     uint32_t targetLine = request.position.line;
@@ -200,7 +88,6 @@ std::optional<std::vector<lsp::TextEdit>> FormatOnType(const OnTypeFormattingReq
     RangeFormattingRequest rangeReq{
         request.uri,
         request.sourceCode,
-        request.tree,
         lsp::Range{lsp::Position{targetLine, 0}, lsp::Position{targetLine, request.position.character}},
         request.options,
         request.braceStyle,

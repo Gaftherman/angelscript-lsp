@@ -1,4 +1,4 @@
-#include "features/formatting/FormattingHandler.h"
+#include "analysis/formatting/FormattingEngine.h"
 #include "helpers/CorpusDirectory.h"
 
 #include <cctype>
@@ -10,7 +10,7 @@
 #include <vector>
 
 using namespace angel_lsp;
-using namespace angel_lsp::features;
+using namespace angel_lsp::analysis::formatting;
 
 /**
  * @brief The formatter, run over every script whose compiler verdict this project already knows.
@@ -158,7 +158,7 @@ TEST_SUITE("Formatting")
             std::filesystem::create_directories(dumpDir, ec);
         }
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 
@@ -227,7 +227,7 @@ TEST_SUITE("Formatting")
             std::filesystem::create_directories(dumpDir, mkEc);
         }
 
-        lsp::FormattingOptions options;
+        FormatLayoutOptions options;
         options.tabSize = 4;
         options.insertSpaces = true;
 

@@ -5,7 +5,7 @@
 #include <string_view>
 #include <vector>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::formatting
 {
 /**
  * @brief Categorization of lexical tokens in AngelScript source.
@@ -42,11 +42,12 @@ enum class TokenType
 
 /**
  * @brief Representation of an individual token with positional and syntactic metadata.
+ * @warning `text` views the source passed to Tokenize (or a string literal); tokens must not outlive that source.
  */
 struct Token
 {
     TokenType type = TokenType::EndOfFile;
-    std::string text;
+    std::string_view text; ///< Token spelling, a view into the tokenized source.
     uint32_t line = 0;
     uint32_t column = 0;
     uint32_t newlinesBefore = 0;
@@ -109,4 +110,4 @@ bool IsUnary(const std::vector<Token>& tokens, size_t idx);
  * @return True if colon terminates a label or specifier.
  */
 bool IsAccessSpecifierOrLabelColon(const std::vector<Token>& tokens, size_t idx);
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::formatting

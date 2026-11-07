@@ -1,6 +1,7 @@
 #include "Server.h"
 
 #include "analysis/diagnostics/DiagnosticSuppression.h"
+#include "analysis/formatting/PredefinedStubFormatter.h"
 #include "analysis/types/EngineProfiles.h"
 #include "features/call_hierarchy/CallHierarchyHandler.h"
 #include "features/code_action/CodeActionHandler.h"
@@ -12,7 +13,6 @@
 #include "features/document_symbol/DocumentSymbolHandler.h"
 #include "features/folding_range/FoldingRangeHandler.h"
 #include "features/formatting/FormattingHandler.h"
-#include "features/formatting/PredefinedStubFormatter.h"
 #include "features/hover/HoverHandler.h"
 #include "features/implementation/ImplementationHandler.h"
 #include "features/inlay_hint/InlayHintHandler.h"
@@ -255,9 +255,10 @@ void Server::SetWorkspaceScanComplete(bool complete) noexcept
     m_sessionCoordinator->SetWorkspaceScanComplete(complete);
 }
 
-features::BraceStyle Server::CurrentBraceStyle() const
+analysis::formatting::BraceStyle Server::CurrentBraceStyle() const
 {
-    return m_sessionCoordinator->GetFormatBraceStyleKR() ? features::BraceStyle::KAndR : features::BraceStyle::Allman;
+    return m_sessionCoordinator->GetFormatBraceStyleKR() ? analysis::formatting::BraceStyle::KAndR
+                                                         : analysis::formatting::BraceStyle::Allman;
 }
 
 bool Server::CurrentSpacesInsideParentheses() const noexcept
@@ -270,7 +271,7 @@ bool Server::CurrentKeepEmptyBlocksOnSingleLine() const noexcept
     return m_sessionCoordinator->GetFormatKeepEmptyBlocksOnSingleLine();
 }
 
-features::PointerAlignment Server::CurrentPointerAlignment() const noexcept
+analysis::formatting::PointerAlignment Server::CurrentPointerAlignment() const noexcept
 {
     return m_sessionCoordinator->GetFormatPointerAlignment();
 }

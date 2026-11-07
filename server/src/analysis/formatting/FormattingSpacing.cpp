@@ -1,9 +1,9 @@
-#include "features/formatting/FormattingSpacing.h"
+#include "analysis/formatting/FormattingSpacing.h"
 
 #include <optional>
 #include <unordered_set>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::formatting
 {
 static const std::unordered_set<std::string_view> kControlKeywords = {"if",    "for",    "foreach",
                                                                       "while", "switch", "catch"};
@@ -319,4 +319,4 @@ bool NeedsSpaceBetween(const std::vector<Token>& tokens, size_t prevIdx, size_t 
         return *res;
     return CheckWordAndLiteralSpacing(prev, curr);
 }
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::formatting

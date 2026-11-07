@@ -1443,6 +1443,176 @@
       "verifiedByTests": [
         "HoverTest"
       ]
+    },
+    {
+      "id": "REF-M9-FORMAT-ONTYPE-FACTS",
+      "phase": "M9",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/formatting/FormattingHandler.cpp",
+      "deletedLineRange": "177-196",
+      "originalSymbolOrCode": "FormatOnType tree check (ts_node_has_error, descendant_for_point_range, FindAncestorWithAnySymbol)",
+      "whatItDidAndWhyInThatFile": "Skipped on-type formatting when the tree had a syntax error or the cursor sat inside a string literal or comment.",
+      "whyChangedOrDeleted": "Tree inspection is pass-1 work; the feature now asks the NodeIndex-backed fact and holds no TSTree.",
+      "replacedByCanonicalFile": "server/src/analysis/index/FormattingFacts.cpp",
+      "replacedByCanonicalSymbol": "IsOnTypeFormattingSuppressed",
+      "ramOrCpuImpact": "Unchanged: one O(depth) descent plus a bounded ancestor climb per on-type request.",
+      "verifiedByTests": [
+        "FormattingFactsTest",
+        "FormattingTest"
+      ]
+    },
+    {
+      "id": "REF-M9-FORMAT-STUB-DECLS",
+      "phase": "M9",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/formatting/PredefinedStubFormatter.cpp",
+      "deletedLineRange": "141-199",
+      "originalSymbolOrCode": "BuildFormattingPlan named-child index loop, ProcessNamespaceChild field reads",
+      "whatItDidAndWhyInThatFile": "Walked the stub root children by index and read namespace name and body nodes while building the merge plan.",
+      "whyChangedOrDeleted": "Pass-1 extraction returns AST-free byte layouts; a flat cursor replaces the ts_node_named_child index loop (Prohibition 6).",
+      "replacedByCanonicalFile": "server/src/analysis/index/FormattingFacts.cpp",
+      "replacedByCanonicalSymbol": "ExtractStubDeclarations",
+      "ramOrCpuImpact": "One parse plus one flat pass over top-level children, as before; one small vector of byte ranges.",
+      "verifiedByTests": [
+        "FormattingFactsTest",
+        "PredefinedStubFormatterTest"
+      ]
+    },
+    {
+      "id": "REF-M9-FORMAT-ENGINE-L2",
+      "phase": "M9",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/formatting/FormattingLexer.cpp",
+      "deletedLineRange": "1-451",
+      "originalSymbolOrCode": "Tokens, Lexer, LineBuilder, Spacing, Renderer, ClangFormatReader, ClangFormatPresets, FormattingTypes style enums",
+      "whatItDidAndWhyInThatFile": "Lexer-based formatter engine building owned output strings inside the feature folder.",
+      "whyChangedOrDeleted": "Owned-string text engine belongs in Layer 2; moved to the new analysis/formatting sub-layer with bodies unchanged.",
+      "replacedByCanonicalFile": "server/src/analysis/formatting/FormattingEngine.cpp",
+      "replacedByCanonicalSymbol": "FormatSourceCode",
+      "ramOrCpuImpact": "None: same code, new location.",
+      "verifiedByTests": [
+        "FormattingTest",
+        "FormatterCorpusTest",
+        "AdversarialPhase3FeaturesTest"
+      ]
+    },
+    {
+      "id": "REF-M9-FORMAT-LAYOUT-OPTIONS",
+      "phase": "M9",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/formatting/FormattingTypes.h",
+      "deletedLineRange": "161-168",
+      "originalSymbolOrCode": "FormatCodeOptions::options (lsp::FormattingOptions), AssembleFormattedText(const lsp::FormattingOptions&)",
+      "whatItDidAndWhyInThatFile": "Carried the protocol options struct through the engine.",
+      "whyChangedOrDeleted": "analysis must compile without <lsp/...>; FormatLayoutOptions holds the five fields the engine reads and the feature converts once with ToLayoutOptions.",
+      "replacedByCanonicalFile": "server/src/analysis/formatting/FormattingTypes.h",
+      "replacedByCanonicalSymbol": "FormatLayoutOptions",
+      "ramOrCpuImpact": "Same size class; drops the protocol header from every engine translation unit.",
+      "verifiedByTests": [
+        "FormattingTest",
+        "FormatterCorpusTest"
+      ]
+    },
+    {
+      "id": "REF-M9-FORMAT-TOKEN-VIEW",
+      "phase": "M9",
+      "action": "COMPACT_RAM_LAYOUT",
+      "sourceFile": "server/src/features/formatting/FormattingTokens.h",
+      "deletedLineRange": "49",
+      "originalSymbolOrCode": "Token::text (std::string)",
+      "whatItDidAndWhyInThatFile": "Owned a copy of every token spelling.",
+      "whyChangedOrDeleted": "Every spelling is a slice of the tokenized source or a static literal, and token vectors never outlive that source, so a view is enough.",
+      "replacedByCanonicalFile": "server/src/analysis/formatting/FormattingTokens.h",
+      "replacedByCanonicalSymbol": "Token",
+      "ramOrCpuImpact": "Removes one heap allocation per token beyond SSO and shrinks Token by 16 bytes on MSVC x64.",
+      "verifiedByTests": [
+        "FormattingTest",
+        "FormatterCorpusTest"
+      ]
+    },
+    {
+      "id": "REF-M9-FORMAT-RANGE-L2",
+      "phase": "M9",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/formatting/FormattingHandler.cpp",
+      "deletedLineRange": "23-168",
+      "originalSymbolOrCode": "FormatSourceCode, ExtractMatchedRangeText, ResolveEffectiveFormatOptions, whole-document and range edit computation",
+      "whatItDidAndWhyInThatFile": "Formatted text and computed edit ranges with owned strings inside the protocol handler.",
+      "whyChangedOrDeleted": "String work moved to Layer 2 (FormatWholeDocument, FormatLineRange returning FormattedEdit); the handler only maps to lsp::TextEdit. A full-range request no longer re-reads .clang-format a second time.",
+      "replacedByCanonicalFile": "server/src/analysis/formatting/FormattingEngine.cpp",
+      "replacedByCanonicalSymbol": "FormatLineRange",
+      "ramOrCpuImpact": "One fewer .clang-format lookup for full-range requests; otherwise unchanged.",
+      "verifiedByTests": [
+        "FormattingTest",
+        "FormatterCorpusTest"
+      ]
+    },
+    {
+      "id": "REF-M9-FORMAT-REQUEST-VIEWS",
+      "phase": "M9",
+      "action": "COMPACT_RAM_LAYOUT",
+      "sourceFile": "server/src/features/formatting/FormattingTypes.h",
+      "deletedLineRange": "198-244",
+      "originalSymbolOrCode": "FormattingRequest/RangeFormattingRequest/OnTypeFormattingRequest std::string uri, sourceCode, ch, TSTree* tree; DocumentRangeFormattingRequest alias",
+      "whatItDidAndWhyInThatFile": "Copied the document text and URI into every formatting request and passed the raw tree.",
+      "whyChangedOrDeleted": "Views into the open document; only the on-type request needs syntax and it receives the NodeIndex. The unused DocumentRangeFormattingRequest alias is deleted (Prohibition 15).",
+      "replacedByCanonicalFile": "server/src/features/formatting/FormattingTypes.h",
+      "replacedByCanonicalSymbol": "OnTypeFormattingRequest",
+      "ramOrCpuImpact": "Removes one full copy of the document text and URI per formatting request.",
+      "verifiedByTests": [
+        "FormattingTest",
+        "FormatterCorpusTest"
+      ]
+    },
+    {
+      "id": "REF-M9-FORMAT-SPLIT-LEXER",
+      "phase": "M9",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/formatting/FormattingLexer.cpp",
+      "deletedLineRange": "44-215",
+      "originalSymbolOrCode": "TryConsumeLineComment, TryConsumeBlockComment, TryConsumePreprocessor, TryConsumeRawString, TryConsumeQuotedLiteral",
+      "whatItDidAndWhyInThatFile": "Comment, preprocessor and literal scanners in the 416-line lexer.",
+      "whyChangedOrDeleted": "Split by responsibility to meet the 300-line limit; declared in FormattingLexer.h.",
+      "replacedByCanonicalFile": "server/src/analysis/formatting/FormattingLexerLiterals.cpp",
+      "replacedByCanonicalSymbol": "TryConsumeQuotedLiteral",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "FormattingTest",
+        "FormatterCorpusTest"
+      ]
+    },
+    {
+      "id": "REF-M9-FORMAT-SPLIT-LINEBUILDER",
+      "phase": "M9",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/formatting/FormattingLineBuilder.cpp",
+      "deletedLineRange": "89-370",
+      "originalSymbolOrCode": "HandlePreprocessorOrMetadata, HandleOpenBrace, HandleCloseBrace, HandleKeywordsAndLabels, ConsumeTrailingComment, TryHandleEmptyOrShortBlock and their static helpers",
+      "whatItDidAndWhyInThatFile": "Brace, label and block handlers in the 416-line line builder.",
+      "whyChangedOrDeleted": "Split by responsibility to meet the 300-line limit; entry points declared in FormattingLineBuilder.h.",
+      "replacedByCanonicalFile": "server/src/analysis/formatting/FormattingLineBuilderBlocks.cpp",
+      "replacedByCanonicalSymbol": "HandleOpenBrace",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "FormattingTest",
+        "FormatterCorpusTest"
+      ]
+    },
+    {
+      "id": "REF-M9-FORMAT-SPLIT-PRESETS",
+      "phase": "M9",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/formatting/ClangFormatPresets.cpp",
+      "deletedLineRange": "182-368",
+      "originalSymbolOrCode": "ParseClangBool, ParseClangInteger, ParseClangUInt, ParseClangInt and the ParseClang* enum parsers",
+      "whatItDidAndWhyInThatFile": "Value parsers mixed with preset tables in the 320-line presets file.",
+      "whyChangedOrDeleted": "Split by responsibility to meet the 300-line limit; declarations stay in ClangFormatPresets.h.",
+      "replacedByCanonicalFile": "server/src/analysis/formatting/ClangFormatValueParser.cpp",
+      "replacedByCanonicalSymbol": "ParseClangBool",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "FormattingTest"
+      ]
     }
   ]
 }

@@ -1,11 +1,11 @@
 #pragma once
 
-#include "features/formatting/FormattingTypes.h"
+#include "analysis/formatting/FormattingTypes.h"
 
 #include <optional>
 #include <string_view>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::formatting
 {
 /**
  * @brief Applies a named BasedOnStyle preset (LLVM, Google, Chromium, Mozilla, WebKit, Microsoft, GNU).
@@ -90,4 +90,4 @@ std::optional<ShortFunctionStyle> ParseClangShortFunctionStyle(std::string_view 
  * @return Parsed NamespaceIndentationStyle or std::nullopt.
  */
 std::optional<NamespaceIndentationStyle> ParseClangNamespaceIndentation(std::string_view val);
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::formatting

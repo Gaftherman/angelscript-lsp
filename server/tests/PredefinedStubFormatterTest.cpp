@@ -1,11 +1,11 @@
-#include "features/formatting/PredefinedStubFormatter.h"
+#include "analysis/formatting/PredefinedStubFormatter.h"
 
 #include "parser/AngelScriptParser.h"
 
 #include <doctest/doctest.h>
 #include <string>
 
-using angel_lsp::features::formatting::FormatPredefinedStub;
+using angel_lsp::analysis::formatting::FormatPredefinedStub;
 
 namespace
 {

@@ -1,11 +1,11 @@
-#include "features/formatting/FormattingLexer.h"
+#include "analysis/formatting/FormattingLexer.h"
 
 #include "parser/Keywords.h"
 
 #include <cctype>
 #include <unordered_set>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::formatting
 {
 static const std::unordered_set<std::string_view> kKeywords = []
 {
@@ -41,179 +41,6 @@ static bool TryConsumeWhitespace(ScanState& state)
     return false;
 }
 
-/**
- * @brief Attempts to consume a single-line comment sequence ('//') from the lexer stream.
- * @param[in,out] state Active lexer scan state.
- * @return True if a line comment was recognized and consumed; otherwise false.
- */
-static bool TryConsumeLineComment(ScanState& state)
-{
-    char c = state.src[state.i];
-    if (c == '/' && state.i + 1 < state.src.size() && state.src[state.i + 1] == '/')
-    {
-        size_t start = state.i;
-        uint32_t startCol = state.curCol;
-        while (state.i < state.src.size() && state.src[state.i] != '\r' && state.src[state.i] != '\n')
-        {
-            state.i++;
-            state.curCol++;
-        }
-        state.tokens.push_back({TokenType::LineComment, std::string(state.src.substr(start, state.i - start)),
-                                state.curLine, startCol, state.newlines});
-        state.newlines = 0;
-        return true;
-    }
-    return false;
-}
-
-/**
- * @brief Try consume block comment.
- * @param[in,out] state Parser or lexer scan state.
- * @return True if the condition is satisfied; false otherwise.
- */
-static bool TryConsumeBlockComment(ScanState& state)
-{
-    char c = state.src[state.i];
-    if (c == '/' && state.i + 1 < state.src.size() && state.src[state.i + 1] == '*')
-    {
-        size_t start = state.i;
-        uint32_t startCol = state.curCol;
-        state.i += 2;
-        state.curCol += 2;
-        while (state.i < state.src.size() &&
-               !(state.src[state.i] == '*' && state.i + 1 < state.src.size() && state.src[state.i + 1] == '/'))
-        {
-            if (state.src[state.i] == '\n')
-            {
-                state.curLine++;
-                state.curCol = 0;
-            }
-            else
-            {
-                state.curCol++;
-            }
-            state.i++;
-        }
-        if (state.i < state.src.size())
-        {
-            state.i += 2;
-            state.curCol += 2;
-        }
-        state.tokens.push_back({TokenType::BlockComment, std::string(state.src.substr(start, state.i - start)),
-                                state.curLine, startCol, state.newlines});
-        state.newlines = 0;
-        return true;
-    }
-    return false;
-}
-
-static bool TryConsumePreprocessor(ScanState& state)
-{
-    char c = state.src[state.i];
-    if (c == '#' && (state.curCol == 0 || state.tokens.empty() || state.newlines > 0))
-    {
-        size_t start = state.i;
-        uint32_t startCol = state.curCol;
-        while (state.i < state.src.size() && state.src[state.i] != '\r' && state.src[state.i] != '\n')
-        {
-            if (state.src[state.i] == '\\' && state.i + 1 < state.src.size() &&
-                (state.src[state.i + 1] == '\r' || state.src[state.i + 1] == '\n'))
-            {
-                state.i +=
-                    (state.src[state.i + 1] == '\r' && state.i + 2 < state.src.size() && state.src[state.i + 2] == '\n')
-                        ? 3
-                        : 2;
-                state.curLine++;
-                state.curCol = 0;
-                continue;
-            }
-            state.i++;
-            state.curCol++;
-        }
-        state.tokens.push_back({TokenType::Preprocessor, std::string(state.src.substr(start, state.i - start)),
-                                state.curLine, startCol, state.newlines});
-        state.newlines = 0;
-        return true;
-    }
-    return false;
-}
-
-/**
- * @brief Try consume raw string.
- * @param[in,out] state Parser or lexer scan state.
- * @return True if the condition is satisfied; false otherwise.
- */
-static bool TryConsumeRawString(ScanState& state)
-{
-    char c = state.src[state.i];
-    if (c == '"' && state.i + 2 < state.src.size() && state.src[state.i + 1] == '"' && state.src[state.i + 2] == '"')
-    {
-        size_t start = state.i;
-        uint32_t startCol = state.curCol;
-        state.i += 3;
-        state.curCol += 3;
-        while (state.i < state.src.size() && !(state.src[state.i] == '"' && state.i + 2 < state.src.size() &&
-                                               state.src[state.i + 1] == '"' && state.src[state.i + 2] == '"'))
-        {
-            if (state.src[state.i] == '\n')
-            {
-                state.curLine++;
-                state.curCol = 0;
-            }
-            else
-            {
-                state.curCol++;
-            }
-            state.i++;
-        }
-        if (state.i < state.src.size())
-        {
-            state.i += 3;
-            state.curCol += 3;
-        }
-        state.tokens.push_back({TokenType::StringLiteral, std::string(state.src.substr(start, state.i - start)),
-                                state.curLine, startCol, state.newlines});
-        state.newlines = 0;
-        return true;
-    }
-    return false;
-}
-
-static bool TryConsumeQuotedLiteral(ScanState& state, char quoteChar, TokenType tokenType)
-{
-    if (state.src[state.i] != quoteChar)
-        return false;
-    size_t start = state.i;
-    uint32_t startCol = state.curCol;
-    state.i++;
-    state.curCol++;
-    while (state.i < state.src.size() && state.src[state.i] != quoteChar)
-    {
-        if (state.src[state.i] == '\\' && state.i + 1 < state.src.size())
-        {
-            state.i += 2;
-            state.curCol += 2;
-            continue;
-        }
-        if (state.src[state.i] == '\n' || state.src[state.i] == '\r')
-            break;
-        state.i++;
-        state.curCol++;
-    }
-    const bool closed = state.i < state.src.size() && state.src[state.i] == quoteChar;
-    if (closed)
-    {
-        state.i++;
-        state.curCol++;
-    }
-    Token tok{tokenType, std::string(state.src.substr(start, state.i - start)), state.curLine, startCol,
-              state.newlines};
-    tok.isUnterminated = !closed;
-    state.tokens.push_back(std::move(tok));
-    state.newlines = 0;
-    return true;
-}
-
 static bool TryConsumeIdentifierOrNonAscii(ScanState& state)
 {
     char c = state.src[state.i];
@@ -226,8 +53,8 @@ static bool TryConsumeIdentifierOrNonAscii(ScanState& state)
             state.i++;
             state.curCol++;
         }
-        state.tokens.push_back({TokenType::Identifier, std::string(state.src.substr(start, state.i - start)),
-                                state.curLine, startCol, state.newlines});
+        state.tokens.push_back(
+            {TokenType::Identifier, state.src.substr(start, state.i - start), state.curLine, startCol, state.newlines});
         state.newlines = 0;
         return true;
     }
@@ -241,7 +68,7 @@ static bool TryConsumeIdentifierOrNonAscii(ScanState& state)
             state.i++;
             state.curCol++;
         }
-        std::string text(state.src.substr(start, state.i - start));
+        std::string_view text(state.src.substr(start, state.i - start));
         TokenType tt = (kKeywords.contains(text)) ? TokenType::Keyword : TokenType::Identifier;
         state.tokens.push_back({tt, std::move(text), state.curLine, startCol, state.newlines});
         state.newlines = 0;
@@ -323,8 +150,8 @@ static bool TryConsumeNumber(ScanState& state)
         state.i++;
         state.curCol++;
     }
-    state.tokens.push_back({TokenType::Number, std::string(state.src.substr(start, state.i - start)), state.curLine,
-                            startCol, state.newlines});
+    state.tokens.push_back(
+        {TokenType::Number, state.src.substr(start, state.i - start), state.curLine, startCol, state.newlines});
     state.newlines = 0;
     return true;
 }
@@ -364,8 +191,7 @@ static bool TryConsumeMultiCharOperator(ScanState& state)
             (std::isalnum(static_cast<unsigned char>(state.src[state.i + 3])) == 0 && state.src[state.i + 3] != '_');
         if ((op3 == "<<=" || op3 == ">>=" || op3 == ">>>" || isWordOp) && boundary)
         {
-            state.tokens.push_back(
-                {TokenType::Operator, std::string(op3), state.curLine, state.curCol, state.newlines});
+            state.tokens.push_back({TokenType::Operator, op3, state.curLine, state.curCol, state.newlines});
             state.i += 3;
             state.curCol += 3;
             state.newlines = 0;
@@ -377,8 +203,7 @@ static bool TryConsumeMultiCharOperator(ScanState& state)
         TokenType tt = ClassifyTwoCharOperator(state.src.substr(state.i, 2));
         if (tt != TokenType::EndOfFile)
         {
-            state.tokens.push_back(
-                {tt, std::string(state.src.substr(state.i, 2)), state.curLine, state.curCol, state.newlines});
+            state.tokens.push_back({tt, state.src.substr(state.i, 2), state.curLine, state.curCol, state.newlines});
             state.i += 2;
             state.curCol += 2;
             state.newlines = 0;
@@ -425,7 +250,7 @@ static void ConsumeSingleCharToken(ScanState& state)
 {
     char c = state.src[state.i];
     TokenType tt = ClassifySingleChar(c);
-    state.tokens.push_back({tt, std::string(1, c), state.curLine, state.curCol, state.newlines});
+    state.tokens.push_back({tt, state.src.substr(state.i, 1), state.curLine, state.curCol, state.newlines});
     state.i++;
     state.curCol++;
     state.newlines = 0;
@@ -448,4 +273,4 @@ std::vector<Token> ScanRawTokens(std::string_view src)
     }
     return state.tokens;
 }
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::formatting
