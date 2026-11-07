@@ -41,37 +41,47 @@ Server::HandleRequestsTextDocument_Hover(lsp::requests::TextDocument_Hover::Para
         return lsp::Null{};
     }
 
+    const auto syntax =
+        doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
+                  : nullptr;
+    if (!syntax)
+    {
+        return lsp::Null{};
+    }
+
     auto heldDocs = std::make_shared<std::vector<std::shared_ptr<const std::string>>>();
-    features::HoverRequest hr{doc->uri,
-                              *doc->text,
-                              doc->tree,
-                              m_symbolTable,
-                              m_scopeIndex,
-                              codec::Decode(*doc->text, GetPositionEncoding(), req.position),
-                              [this, heldDocs](const std::string& uri) -> const std::string*
-                              {
-                                  auto sp = FindDocumentText(uri);
-                                  if (!sp)
+    features::HoverRequest hr{.uri = doc->uri,
+                              .sourceCode = *doc->text,
+                              .nodeIndex = &syntax->index,
+                              .symbolTable = m_symbolTable,
+                              .scopeIndex = m_scopeIndex,
+                              .position = codec::Decode(*doc->text, GetPositionEncoding(), req.position),
+                              .sources = analysis::HoverDocumentSources{
+                                  [this, heldDocs](std::string_view uri) -> const std::string*
                                   {
-                                      return nullptr;
-                                  }
-                                  heldDocs->push_back(sp);
-                                  return sp.get();
+                                      auto sp = FindDocumentText(std::string(uri));
+                                      if (!sp)
+                                      {
+                                          return nullptr;
+                                      }
+                                      heldDocs->push_back(sp);
+                                      return sp.get();
+                                  },
+                                  [this, uriStr = doc->uri](std::string_view rawPath)
+                                  {
+                                      return angel_lsp::utils::IncludeResolver::ResolveIncludePath(
+                                          angel_lsp::utils::IncludeResolveRequest{
+                                              .includePath = std::string(rawPath),
+                                              .currentFilePath = CanonicalPathFromUri(uriStr),
+                                              .searchDirectories = *SearchDirectories(),
+                                              .allowedRoots = IncludeAllowedRoots(),
+                                              .implicitExtension = ImplicitIncludeExtension(),
+                                          });
+                                  },
                               },
-                              &m_config,
-                              [this, uriStr = doc->uri](const std::string& rawPath)
-                              {
-                                  return angel_lsp::utils::IncludeResolver::ResolveIncludePath(
-                                      angel_lsp::utils::IncludeResolveRequest{
-                                          .includePath = rawPath,
-                                          .currentFilePath = CanonicalPathFromUri(uriStr),
-                                          .searchDirectories = *SearchDirectories(),
-                                          .allowedRoots = IncludeAllowedRoots(),
-                                          .implicitExtension = ImplicitIncludeExtension(),
-                                      });
-                              },
-                              m_logger.get(),
-                              m_i18n.get()};
+                              .config = &m_config,
+                              .logger = m_logger.get(),
+                              .i18n = m_i18n.get()};
     auto hover = features::GetHover(hr);
     double roundtripMs = roundtripTimer.ElapsedMs();
     LogInfo(fmt::format("[Hover Roundtrip] Total: {:.2f} ms for {} at {}:{}", roundtripMs, doc->uri, req.position.line,

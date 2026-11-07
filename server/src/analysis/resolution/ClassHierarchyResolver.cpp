@@ -1,6 +1,7 @@
 #include "analysis/resolution/ClassHierarchyResolver.h"
 
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/resolution/InlayResolutionInternal.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
@@ -845,15 +846,14 @@ std::vector<std::string> GetCompatibleMemberClasses(const std::string& className
     return result;
 }
 
-std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourceCode, const SymbolTable& symbolTable,
-                                             ExpressionTypeCache* cache)
+static std::string FindHostClassInContainers(const std::vector<ContainerInfo>& containers,
+                                             const SymbolTable& symbolTable, ExpressionTypeCache* cache)
 {
     const auto ruleIndex = symbolTable.GetRuleIndex();
     if (!ruleIndex)
     {
         return "";
     }
-    auto containers = GetEnclosingContainers(node, sourceCode);
     for (const auto& c : containers)
     {
         if (c.kind == ContainerKind::Class)
@@ -889,6 +889,19 @@ std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourc
         }
     }
     return "";
+}
+
+std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourceCode, const SymbolTable& symbolTable,
+                                             ExpressionTypeCache* cache)
+{
+    return FindHostClassInContainers(GetEnclosingContainers(node, sourceCode), symbolTable, cache);
+}
+
+std::string InferHostClassFromEnclosingMixin(IndexedByteRange targetRange, const NodeIndex& index,
+                                             std::string_view sourceCode, const SymbolTable& symbolTable)
+{
+    TSNode node = RecoverNodeAt(index, targetRange.startByte, targetRange.endByte);
+    return FindHostClassInContainers(GetEnclosingContainers(node, sourceCode, &index), symbolTable, nullptr);
 }
 
 TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::string_view mixinShortName,

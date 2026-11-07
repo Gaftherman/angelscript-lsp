@@ -60,7 +60,7 @@ struct AdversarialTestEnv
 
     std::optional<lsp::Hover> Hover(uint32_t line, uint32_t col)
     {
-        HoverRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, col}};
+        HoverRequest req{uri, sourceCode, nodeIndex.get(), symbolTable, scopeIndex, lsp::Position{line, col}};
         return GetHover(req);
     }
 

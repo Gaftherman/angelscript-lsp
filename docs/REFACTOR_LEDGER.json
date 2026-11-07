@@ -1182,6 +1182,267 @@
       "verifiedByTests": [
         "SemanticTokensTest"
       ]
+    },
+    {
+      "id": "REF-M8-HOVER-FACTS-P1",
+      "phase": "M8",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/hover/HoverHandler.cpp",
+      "deletedLineRange": "151-267",
+      "originalSymbolOrCode": "ExtractHoverNode, TryExtractHoverTarget, IsHoverableIdentifier, FindCallFromParent, FindEnclosingCallNode, IsDirectInitDeclarator, CheckContextPreference, IsScopeQualifier, FindNextScopedMemberNode, IsMemberChildOfExpression, IsNamedArgumentLabelAtCursor, FindEnclosingLambda, FindEnclosingAutoDeclaration, FindTopmostBinaryPlus, IsQualifiedMemberNode",
+      "whatItDidAndWhyInThatFile": "Direct AST point descendance, target identification, context preference and AST predicates executed inside the feature handler.",
+      "whyChangedOrDeleted": "Pass 1 Tree-Sitter extraction belongs strictly in analysis/index (Rule 4.10). Replaced by AST-free IndexedHoverSite pre-extracted in pass 1.",
+      "replacedByCanonicalFile": "server/src/analysis/index/HoverFacts.h",
+      "replacedByCanonicalSymbol": "FindHoverSite",
+      "ramOrCpuImpact": "Same cost as the feature code it replaces: up to four point descents O(depth), ancestor walks O(depth) for context preference, lambda, auto declaration and binary-plus lookup, sibling scans bounded by 8 hops; IsQualifiedMemberNode datatype branch now tests the type scope child (HasNonEmptyTypeScope) instead of building the prefix string. Not cached per syntax revision; computed once per hover request.",
+      "verifiedByTests": [
+        "HoverFactsTest",
+        "HoverTest"
+      ]
+    },
+    {
+      "id": "REF-M8-HOVER-INCLUDE-P1",
+      "phase": "M8",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/hover/HoverHandler.cpp",
+      "deletedLineRange": "65-147",
+      "originalSymbolOrCode": "FindLineSpan, ParseIncludeDirective, IncludeDirectiveInfo",
+      "whatItDidAndWhyInThatFile": "Scanned document lines and parsed #include directives using owned std::string buffers inside the hover feature.",
+      "whyChangedOrDeleted": "Include line scanning extracted to AST-free pass 1 helper with zero-copy byte offsets in IndexedHoverIncludeDirective; HoverIncludeDirective keeps rendering in the feature until 8.5.",
+      "replacedByCanonicalFile": "server/src/analysis/index/HoverFacts.h",
+      "replacedByCanonicalSymbol": "FindIncludeDirective",
+      "ramOrCpuImpact": "Zero heap allocations: scans string_view line and records raw path byte offsets instead of allocating std::string path buffers.",
+      "verifiedByTests": [
+        "HoverFactsTest",
+        "HoverTest"
+      ]
+    },
+    {
+      "id": "REF-M8-HOVER-RESOLUTION-CALL",
+      "phase": "M8",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/hover/HoverSymbolFormatter.cpp",
+      "deletedLineRange": "686-755, 1050-1118, 1278-1310",
+      "originalSymbolOrCode": "ResolveReceiverTypeName, CollectReceiverMemberSymbols, ResolveNamedArgCalleeCandidates, ResolveConstructorForDeclarator, ResolveConstructorSignature, TryAppendConstructorSignature, ResolveCallOverload",
+      "whatItDidAndWhyInThatFile": "Call-site overload ranking, direct init constructor resolution, and receiver member collection executed in hover feature.",
+      "whyChangedOrDeleted": "Moved to Layer 2 analysis/resolution/HoverResolutionCall.cpp with byte-range signatures and AST recovery inside Layer 2 (Rule 1.1, Rule 4.10).",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/HoverResolution.h",
+      "replacedByCanonicalSymbol": "ResolveCallOverload",
+      "ramOrCpuImpact": "Same resolution algorithm; each entry point adds one O(depth) descent to recover its node from the byte range. Argument-type contexts stay root-less as before; receiver resolution keeps the configured engine rules and array type name.",
+      "verifiedByTests": [
+        "HoverTest"
+      ]
+    },
+    {
+      "id": "REF-M8-HOVER-RESOLUTION-TYPE",
+      "phase": "M8",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/hover/HoverTypeInspector.cpp",
+      "deletedLineRange": "100-350",
+      "originalSymbolOrCode": "InferTypeFromAst, ResolveIdentifierDefaultValue, EvaluateConstantStringExpr, FormatLambdaSignature, FormatLambdaParameters, DeduceLocalDefinitionHoverType, DeduceAutoDeclaratorType",
+      "whatItDidAndWhyInThatFile": "AST type inference, constant string evaluation, lambda signature formatting, and auto declarator type deduction in hover feature.",
+      "whyChangedOrDeleted": "Moved to Layer 2 analysis/resolution/HoverResolutionType.cpp with byte-range signatures (Rule 1.1, Rule 4.10).",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/HoverResolution.h",
+      "replacedByCanonicalSymbol": "DeduceAutoDeclaratorType",
+      "ramOrCpuImpact": "Same AST traversal; each entry point adds one O(depth) descent to recover its node from the byte range. DeduceAutoDeclaratorType forwards the hovered node range, as the feature code did through its context.",
+      "verifiedByTests": [
+        "HoverTest"
+      ]
+    },
+    {
+      "id": "REF-M8-HOVER-RESOLUTION-SCOPE",
+      "phase": "M8",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/hover/HoverSymbolFormatter.cpp",
+      "deletedLineRange": "335-375, 1258-1292",
+      "originalSymbolOrCode": "MemberBelongsToClass, MemberBelongsToNamespace, AppendEnclosingClassMethods",
+      "whatItDidAndWhyInThatFile": "Container membership queries and enclosing class method hierarchy collection in hover feature.",
+      "whyChangedOrDeleted": "Moved to Layer 2 analysis/resolution/HoverResolutionScope.cpp; symbol search and hierarchy traversal operate in Layer 2 (Rule 1.1).",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/HoverResolution.h",
+      "replacedByCanonicalSymbol": "MemberBelongsToClass",
+      "ramOrCpuImpact": "Same lookups as before (GetInheritedTypeHierarchy still allocates its result vector); AppendEnclosingClassMethods adds one O(depth) descent to recover the hovered node.",
+      "verifiedByTests": [
+        "HoverTest"
+      ]
+    },
+    {
+      "id": "REF-M8-HOVER-MIXIN-HOST-OVERLOAD",
+      "phase": "M8",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/resolution/ClassHierarchyResolver.h",
+      "deletedLineRange": "70-85",
+      "originalSymbolOrCode": "InferHostClassFromEnclosingMixin",
+      "whatItDidAndWhyInThatFile": "InferHostClassFromEnclosingMixin only accepted TSNode, requiring callers to hold raw AST nodes.",
+      "whyChangedOrDeleted": "Rule 4.11 overload: added InferHostClassFromEnclosingMixin(uint32_t byteOffset, const NodeIndex& index, ...) to allow pass-2 callers to resolve host class without TSNode.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/ClassHierarchyResolver.h",
+      "replacedByCanonicalSymbol": "InferHostClassFromEnclosingMixin",
+      "ramOrCpuImpact": "Byte-range overload recovers the node with one O(depth) descent and resolves containers through GetEnclosingContainers with the index, i.e. NodeIndex::CollectLookupContainers (O(log N) span lookup plus enclosing links). The TSNode overload stays for ExpressionTypeResolver and PropertyAndDelegateResolver until the resolution phase.",
+      "verifiedByTests": [
+        "VirtualMixinDocumentTest"
+      ]
+    },
+    {
+      "id": "REF-M8-HOVER-MARKDOWN-DOCS",
+      "phase": "M8",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/hover/HoverDocumentationRenderer.cpp",
+      "deletedLineRange": "29-459",
+      "originalSymbolOrCode": "DocCommentForSymbol, OwnDocComment, CompanionDocComment, InheritedDocComment, AppendTypedefDoc, CollectOverloadDocs, TryAppendFuncdefSignature, AppendMixinMembersSection, IsCallableSymbol, CountMoreOverloads, FormatMoreOverloads, BuildPeekOverloadsLink, UrlEncodeCommandArgs, CollectContainerMemberNames",
+      "whatItDidAndWhyInThatFile": "Documentation comment retrieval, formatting, and peek-overloads markdown generation in hover feature.",
+      "whyChangedOrDeleted": "Moved to Layer 2 analysis/documentation/HoverMarkdownDocs.cpp and HoverMarkdownOverloads.cpp; pure documentation and markdown formatting belongs in Layer 2 (Rule 1.1).",
+      "replacedByCanonicalFile": "server/src/analysis/documentation/HoverMarkdown.h",
+      "replacedByCanonicalSymbol": "DocCommentForSymbol",
+      "ramOrCpuImpact": "Same work as the feature code it replaces; inputs arrive as string views. ExtractDocComment now takes std::string_view, so the active document is not copied; results remain owned std::string markdown.",
+      "verifiedByTests": [
+        "HoverTest",
+        "HoverOverloadFormattingTest"
+      ]
+    },
+    {
+      "id": "REF-M8-HOVER-MARKDOWN-SIGNATURES",
+      "phase": "M8",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/hover/HoverSymbolFormatter.cpp",
+      "deletedLineRange": "34-140, 223-244, 380-467, 522-558, 586-594, 652-670, 745-773",
+      "originalSymbolOrCode": "FormatDeclarationText, FormatVariableSignature, FormatFunctionSignature, FormatClassSignature, FormatNamespaceDeclaration, RemoveDuplicateSymbols, FormatSynthesizedPropertyHeader, AppendFileLocationFooter, FormatParameterHover, FormatNamedArgHover, FormatGlobalVariableHover, FormatPrimitiveDoc, FormatFileSize, FormatResolvedAssetMarkdown, CollapseWhitespace, FormatVariableOrProperty, FormatSymbolBody, IsContainerProperty, IsVariableProperty",
+      "whatItDidAndWhyInThatFile": "Declaration signature rendering, property headers, whitespace collapsing, and literal/primitive hover markdown formatting in hover feature.",
+      "whyChangedOrDeleted": "Moved to Layer 2 analysis/documentation/HoverMarkdownSignatures.cpp, HoverMarkdownVariables.cpp, and HoverMarkdownOverloads.cpp (Rule 1.1).",
+      "replacedByCanonicalFile": "server/src/analysis/documentation/HoverMarkdown.h",
+      "replacedByCanonicalSymbol": "FormatDeclarationText",
+      "ramOrCpuImpact": "Same allocations as the feature code it replaces: each formatter builds its owned std::string markdown; only parameter types changed to string views.",
+      "verifiedByTests": [
+        "HoverTest"
+      ]
+    },
+    {
+      "id": "REF-M8-HOVER-DOCUMENT-SOURCES",
+      "phase": "M8",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/hover/HoverHandler.h",
+      "deletedLineRange": "37-50",
+      "originalSymbolOrCode": "readDocument, resolveInclude",
+      "whatItDidAndWhyInThatFile": "Loose std::function callbacks in HoverRequest taking owned std::string parameters.",
+      "whyChangedOrDeleted": "Unified into Layer 2 analysis::HoverDocumentSources taking std::string_view for zero-copy cross-file text and include path resolution (Rule 1.1, Rule 4.10).",
+      "replacedByCanonicalFile": "server/src/analysis/documentation/HoverMarkdown.h",
+      "replacedByCanonicalSymbol": "HoverDocumentSources",
+      "ramOrCpuImpact": "Callbacks take std::string_view; the Layer 4 adapters still build one std::string per lookup for FindDocumentText and IncludeResolveRequest, so per-call cost is unchanged.",
+      "verifiedByTests": [
+        "HoverTest"
+      ]
+    },
+    {
+      "id": "REF-M8-HOVER-REQUEST-VIEWS",
+      "phase": "M8",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/hover/HoverHandler.h",
+      "deletedLineRange": "27-40",
+      "originalSymbolOrCode": "HoverRequest, HoverTarget, IncludeDirectiveInfo, ContainerContextPreference",
+      "whatItDidAndWhyInThatFile": "HoverRequest contained raw TSTree* and owned std::string uri and sourceCode; HoverTarget and IncludeDirectiveInfo were defined in feature headers.",
+      "whyChangedOrDeleted": "Converted HoverRequest to std::string_view uri and sourceCode, const NodeIndex* nodeIndex (zero-AST), and moved target/site facts to Layer 2 analysis::IndexedHoverSite and HoverFacts (Rule 1.1, Rule 4.10).",
+      "replacedByCanonicalFile": "server/src/features/hover/HoverHandler.h",
+      "replacedByCanonicalSymbol": "HoverRequest",
+      "ramOrCpuImpact": "Removes one full copy of the document text and URI per hover request; the hover feature no longer touches the tree.",
+      "verifiedByTests": [
+        "HoverTest"
+      ]
+    },
+    {
+      "id": "REF-M8-HOVER-FEATURE-SPLIT",
+      "phase": "M8",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/hover/HoverSymbolFormatter.cpp",
+      "deletedLineRange": "1-773",
+      "originalSymbolOrCode": "ResolveOrMatchCandidate, PromoteMatchedCandidate, FormatSymbolsHover, FormatMemberHover, FormatVariableHover, FormatNamedArgHover, IsDirectInitDeclarator, DisambiguateContainerSymbols, DisambiguateTypeContextSymbols, AppendConstructorSymbolsIfCall, FilterDirectRootGlobalSymbols, CheckContextPreference, TryHoverExpressionOrLocal, TryHoverSymbolCandidates, TryHoverPrimitiveType, TryHoverWildcardType, TryHoverThis, TryHoverLambda, TryHoverAutoType, TryHoverLiteralOrType, ResolveStringLiteralPath, TryHoverStringLiteral, TryHoverConcatenatedString, AppendLocalDoc, FindLineSpan, ParseIncludeDirective, IsHoverableIdentifier, TryExtractHoverTarget, ExtractHoverNode, BuildHoverQueryContext, MatchesTargetNode, FindCallFromParent, FindMatchingGlobalSymbol, FindDefinitionScope, IsScopeQualifier, IsTypeSymbol, PromoteConstructorsToTypes, FindNextScopedMemberNode, FilterAndAddConstructorCandidates, CollectClassConstructors, FormatSynthesizedPropertyHeader, IsMemberChildOfExpression, TryHoverMemberAccess, TryHoverLocalDefinition, TryHoverParameterAst, IsNamedArgumentLabelAtCursor, TryHoverNamedArgument, IsQualifiedMemberNode, CollectHierarchyHostSymbols, MergeHostSymbols, AppendVirtualHostSymbols, TryHoverScopeFallback, FilterEnumMemberSymbols, ResolveScopedMemberFallback, CollectScopedSymbols, PopulateGlobalPropertyAccessors, TryHoverDelegatePropertyFallback, UnquoteStringLiteral, FindTopmostBinaryPlus, IsPathLikeString, IsStringOrBinaryLiteral, FindEnclosingLambda, FindEnclosingAutoDeclaration",
+      "whatItDidAndWhyInThatFile": "Monolithic hover implementation mixing AST traversal, formatting, candidate resolution, and documentation.",
+      "whyChangedOrDeleted": "Decomposed into cohesive units under 300 lines each: HoverHandler.cpp, HoverLiteralHover.cpp, HoverMemberHover.cpp, HoverLocalHover.cpp, HoverSymbolCandidates.cpp, HoverSymbolDisambiguation.cpp with internal header HoverInternal.h.",
+      "replacedByCanonicalFile": "server/src/features/hover/HoverInternal.h",
+      "replacedByCanonicalSymbol": "HoverProfiler",
+      "ramOrCpuImpact": "No AST work left in the feature. Layer 2 hover helpers still re-find their node by byte range (one descent per lookup) until the resolution phase removes tree access there.",
+      "verifiedByTests": [
+        "HoverTest"
+      ]
+    },
+    {
+      "id": "REF-M8-HOVER-EXPRCTX-INDEX",
+      "phase": "M8",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/resolution/ExpressionTypeResolver.h",
+      "deletedLineRange": "25-45",
+      "originalSymbolOrCode": "ExpressionTypeContext",
+      "whatItDidAndWhyInThatFile": "ExpressionTypeContext constructor only accepted raw TSNode rootNode.",
+      "whyChangedOrDeleted": "Added ExpressionTypeContext constructor taking const NodeIndex* nodeIndex, enabling Layer 2 resolution to run with NodeIndex.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/ExpressionTypeResolver.h",
+      "replacedByCanonicalSymbol": "ExpressionTypeContext",
+      "ramOrCpuImpact": "Allows resolution passes to initialize context with nodeIndex without requiring caller to manage TSNode.",
+      "verifiedByTests": [
+        "HoverTest"
+      ]
+    },
+    {
+      "id": "REF-M8-HOVER-SITE-FACTS",
+      "phase": "M8",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/index/HoverFacts.h",
+      "deletedLineRange": "120-155",
+      "originalSymbolOrCode": "isDirectRootGlobal, enclosingEnumNameRange, datatypeScopeRange, namedArgCallRange, isParameterName",
+      "whatItDidAndWhyInThatFile": "HoverFacts needed site facts for direct root global filtering and enum qualification without raw AST climbing.",
+      "whyChangedOrDeleted": "Extended IndexedHoverSite with the facts the feature read from the tree: direct root global filter, enum name, the datatype scope prefix node (ExtractDatatypeScopePrefix), the named-argument callee (label grandparent) and the parameter-name check from TryHoverParameterAst.",
+      "replacedByCanonicalFile": "server/src/analysis/index/HoverFacts.h",
+      "replacedByCanonicalSymbol": "IndexedHoverSite",
+      "ramOrCpuImpact": "Pass 1 adds at most two parent hops per hover; pass 2 reads plain fields.",
+      "verifiedByTests": [
+        "HoverTest"
+      ]
+    },
+    {
+      "id": "REF-M8-HOVER-DATATYPE-SCOPE-NODE",
+      "phase": "M8",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/index/HoverFactsContext.cpp",
+      "deletedLineRange": "195-205",
+      "originalSymbolOrCode": "HasNonEmptyTypeScope",
+      "whatItDidAndWhyInThatFile": "Told IsQualifiedMemberNode whether a datatype has a non-empty scope prefix.",
+      "whyChangedOrDeleted": "Returns the scope node instead of a bool, so the qualified-member predicate and the datatypeScopeRange fact share one lookup instead of a second cursor loop.",
+      "replacedByCanonicalFile": "server/src/analysis/index/HoverFactsContext.cpp",
+      "replacedByCanonicalSymbol": "FindDatatypeScopeNode",
+      "ramOrCpuImpact": "One parent hop plus one child scan, as before; the duplicate cursor loop is gone.",
+      "verifiedByTests": [
+        "HoverFactsTest",
+        "HoverTest"
+      ]
+    },
+    {
+      "id": "REF-M8-HOVER-CANDIDATE-SYMBOLS",
+      "phase": "M8",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/resolution/HoverResolution.h",
+      "deletedLineRange": "185-189",
+      "originalSymbolOrCode": "MemberAccessResolutionResult, AppendVirtualHostSymbols(..., std::string& accessorPropertyType)",
+      "whatItDidAndWhyInThatFile": "Member access returned symbols plus the accessor property type; the virtual host and global accessor paths kept that type in a feature std::string.",
+      "whyChangedOrDeleted": "One result type for all three paths, so the feature threads the accessor type without naming std::string; AppendVirtualHostSymbols fills it in place.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/HoverResolution.h",
+      "replacedByCanonicalSymbol": "HoverCandidateSymbols",
+      "ramOrCpuImpact": "Same allocations as before: one symbol vector and one type string per symbol hover.",
+      "verifiedByTests": [
+        "HoverTest",
+        "VirtualMixinDocumentTest"
+      ]
+    },
+    {
+      "id": "REF-M8-HOVER-STRING-PATH",
+      "phase": "M8",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/hover/HoverLiteralHover.cpp",
+      "deletedLineRange": "142-158",
+      "originalSymbolOrCode": "IsPathLikeString, path resolution in TryHoverStringLiteral and TryHoverConcatenatedString",
+      "whatItDidAndWhyInThatFile": "Checked whether string text looks like a path, resolved it and built the asset hover.",
+      "whyChangedOrDeleted": "Moved to Layer 2 so the resolved path and folded constant stay owned strings there; the feature only receives the finished markdown.",
+      "replacedByCanonicalFile": "server/src/analysis/documentation/HoverMarkdownLiterals.cpp",
+      "replacedByCanonicalSymbol": "FormatStringPathHover",
+      "ramOrCpuImpact": "Unchanged: one resolve and one markdown string per path-like literal hover.",
+      "verifiedByTests": [
+        "HoverTest"
+      ]
     }
   ]
 }

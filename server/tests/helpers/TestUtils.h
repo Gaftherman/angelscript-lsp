@@ -184,6 +184,18 @@ struct SemanticTokenFactsFixture
     }
 };
 
+/**
+ * @brief Test fixture owning a NodeIndex built from a Tree-Sitter syntax tree.
+ */
+struct NodeIndexFixture
+{
+    analysis::NodeIndex index;
+
+    explicit NodeIndexFixture(TSTree* tree) : index(tree ? ts_tree_root_node(tree) : TSNode{})
+    {
+    }
+};
+
 struct ResolvedCallInfo
 {
     std::string targetFunctionSymbol;

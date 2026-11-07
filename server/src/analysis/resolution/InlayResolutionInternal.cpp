@@ -13,13 +13,8 @@
 namespace angel_lsp::analysis
 {
 
-TSNode RecoverNodeAt(const ExpressionTypeContext& ctx, uint32_t startByte, uint32_t endByte) noexcept
+static TSNode RecoverNodeFromRoot(TSNode root, uint32_t startByte, uint32_t endByte) noexcept
 {
-    if (!ctx.nodeIndex)
-    {
-        return TSNode{};
-    }
-    TSNode root = ctx.nodeIndex->Root();
     if (ts_node_is_null(root))
     {
         return TSNode{};
@@ -52,6 +47,24 @@ TSNode RecoverNodeAt(const ExpressionTypeContext& ctx, uint32_t startByte, uint3
                                 return true;
                             });
     return !ts_node_is_null(match) ? match : node;
+}
+
+TSNode RecoverNodeAt(const NodeIndex& index, uint32_t startByte, uint32_t endByte) noexcept
+{
+    return RecoverNodeFromRoot(index.Root(), startByte, endByte);
+}
+
+TSNode RecoverNodeAt(const ExpressionTypeContext& ctx, uint32_t startByte, uint32_t endByte) noexcept
+{
+    if (ctx.nodeIndex)
+    {
+        return RecoverNodeFromRoot(ctx.nodeIndex->Root(), startByte, endByte);
+    }
+    if (!ts_node_is_null(ctx.rootNode))
+    {
+        return RecoverNodeFromRoot(ctx.rootNode, startByte, endByte);
+    }
+    return TSNode{};
 }
 
 const std::vector<ParameterInformation>* GetParametersIfCallable(const Symbol& sym) noexcept

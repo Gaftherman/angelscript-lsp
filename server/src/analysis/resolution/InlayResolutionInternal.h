@@ -26,6 +26,15 @@ namespace angel_lsp::analysis
 TSNode RecoverNodeAt(const ExpressionTypeContext& ctx, uint32_t startByte, uint32_t endByte) noexcept;
 
 /**
+ * @brief Recovers a Tree-Sitter AST node matching an exact byte interval [startByte, endByte) from a NodeIndex root.
+ * @param[in] index Document NodeIndex retaining AST root.
+ * @param[in] startByte Inclusive start byte offset.
+ * @param[in] endByte Exclusive end byte offset.
+ * @return Recovered AST node, or null node if recovery fails.
+ */
+TSNode RecoverNodeAt(const NodeIndex& index, uint32_t startByte, uint32_t endByte) noexcept;
+
+/**
  * @brief Retrieves parameter information vector pointer from a Function or Funcdef symbol if available.
  * @param[in] sym Symbol to inspect.
  * @return Pointer to vector of parameter information, or nullptr if not callable.

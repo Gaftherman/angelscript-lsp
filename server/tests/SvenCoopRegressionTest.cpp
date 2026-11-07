@@ -558,16 +558,8 @@ TEST_CASE("SvenCoop - Benchmark and Profile sven.as.predefined pipeline")
 
     analysis::ScopeIndex scopeIndex;
     features::HoverRequest hoverReq{
-        uri,
-        sanitized,
-        tree,
-        table,
-        scopeIndex,
-        lsp::Position{200, 7}, // "class dictionary" line 201, character 7 (0-indexed line 200)
-        [](const std::string&) -> const std::string* { return nullptr; },
-        nullptr,
-        [](const std::string&) -> std::string { return ""; },
-        nullptr};
+        uri,   sanitized,  &foldIndex,
+        table, scopeIndex, lsp::Position{200, 7}}; // "class dictionary" line 201, character 7 (0-indexed line 200)
     t0 = std::chrono::high_resolution_clock::now();
     auto hover = features::GetHover(hoverReq);
     t1 = std::chrono::high_resolution_clock::now();
@@ -723,16 +715,8 @@ TEST_CASE("SvenCoopRegression - Predefined file tree in DocumentStore resolves H
     collector.CollectSymbols(uri, stubContent, parser, table);
 
     analysis::ScopeIndex scopeIndex;
-    features::HoverRequest hoverReq{uri,
-                                    stubContent,
-                                    tree,
-                                    table,
-                                    scopeIndex,
-                                    lsp::Position{0, 7},
-                                    [](const std::string&) -> const std::string* { return nullptr; },
-                                    nullptr,
-                                    [](const std::string&) -> std::string { return ""; },
-                                    nullptr};
+    analysis::NodeIndex nodeIndex{tree ? ts_tree_root_node(tree) : TSNode{}};
+    features::HoverRequest hoverReq{uri, stubContent, &nodeIndex, table, scopeIndex, lsp::Position{0, 7}};
 
     const auto hover = features::GetHover(hoverReq);
     CHECK(hover.has_value());

@@ -18,6 +18,20 @@
 namespace angel_lsp::analysis
 {
 /**
+ * @brief Half-open byte range within the document buffer.
+ */
+struct IndexedByteRange
+{
+    uint32_t startByte = 0; ///< Starting byte offset within the document.
+    uint32_t endByte = 0;   ///< Non-inclusive ending byte offset within the document.
+
+    [[nodiscard]] constexpr bool Empty() const noexcept
+    {
+        return startByte >= endByte;
+    }
+};
+
+/**
  * @brief Information about an enclosing container in the AST hierarchy.
  */
 struct ContainerInfo

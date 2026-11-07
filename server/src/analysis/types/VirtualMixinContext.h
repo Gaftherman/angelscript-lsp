@@ -104,6 +104,18 @@ struct VirtualMixinContext
 }
 
 /**
+ * @brief Resolves the declaring document URI for mixin scopes, falling back to document URI view.
+ * @param[in] ctx Virtual mixin context.
+ * @param[in] fallbackUri Original document URI view.
+ * @return Declaring file URI or fallbackUri.
+ */
+[[nodiscard]] inline std::string_view ResolvePhysicalUri(const VirtualMixinContext& ctx,
+                                                         std::string_view fallbackUri) noexcept
+{
+    return (ctx.isVirtual && ctx.mixinSymbol.has_value()) ? std::string_view(ctx.mixinSymbol->fileUri) : fallbackUri;
+}
+
+/**
  * @brief Maps virtual line number to declaring physical line if in a mixin context.
  * @param[in] ctx Virtual mixin context.
  * @param[in] line Document line number.

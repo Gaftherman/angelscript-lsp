@@ -38,6 +38,21 @@ struct ExpressionTypeContext
     {
     }
 
+    /**
+     * @brief Constructs an expression context resolving the AST root directly from an optional node index.
+     * @param[in] sc Innermost lexical scope at query position.
+     * @param[in] st Symbol table for type and method resolution.
+     * @param[in] src Document source text buffer.
+     * @param[in] u Document file URI.
+     * @param[in] ni Optional document node index supplying the tree root.
+     */
+    ExpressionTypeContext(const Scope* sc, const SymbolTable& st, std::string_view src, std::string_view u,
+                          const NodeIndex* ni)
+        : scope(sc), symbolTable(st), sourceCode(src), uri(u), stringTypeName(st.GetStringType()),
+          arrayTypeName(st.GetDefaultArrayType()), nodeIndex(ni), rootNode(ni ? ni->Root() : TSNode{})
+    {
+    }
+
     ExpressionTypeContext(const Scope* sc, const DiagnosticContext& diagCtx)
         : scope(sc), symbolTable(diagCtx.request.symbolTable), sourceCode(diagCtx.request.sourceCode),
           uri(diagCtx.request.fileUri), stringTypeName(diagCtx.request.GetEffectiveStringTypeName()),

@@ -45,8 +45,9 @@ struct HoverTestEnvironment
         }
 
         TSTree* tree = parser.Parse(code);
-        HoverRequest req{uri, code,    tree, table,   scopeIndex, lsp::Position{line, character},
-                         {},  nullptr, {},   nullptr, i18n};
+        analysis::NodeIndex nodeIndex{tree ? ts_tree_root_node(tree) : TSNode{}};
+        HoverRequest req{uri, code, &nodeIndex, table, scopeIndex, lsp::Position{line, character}};
+        req.i18n = i18n;
         auto res = GetHover(req);
         if (tree)
         {

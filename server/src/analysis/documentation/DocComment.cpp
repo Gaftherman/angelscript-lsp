@@ -203,10 +203,10 @@ static std::vector<std::string_view> CollectPrecedingDocComments(const std::vect
     return {};
 }
 
-std::string ExtractDocComment(const std::string& sourceCode, uint32_t declStartLine)
+std::string ExtractDocComment(std::string_view sourceCode, uint32_t declStartLine)
 {
     if (sourceCode.empty() ||
-        (sourceCode.find("//") == std::string::npos && sourceCode.find("/*") == std::string::npos))
+        (sourceCode.find("//") == std::string_view::npos && sourceCode.find("/*") == std::string_view::npos))
     {
         return "";
     }

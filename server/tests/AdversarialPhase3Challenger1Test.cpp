@@ -75,7 +75,8 @@ struct Phase3AdversarialEnv
 
     std::optional<lsp::Hover> Hover(uint32_t line, uint32_t col)
     {
-        HoverRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, col}};
+        analysis::NodeIndex nodeIndex{tree ? ts_tree_root_node(tree) : TSNode{}};
+        HoverRequest req{uri, sourceCode, &nodeIndex, symbolTable, scopeIndex, lsp::Position{line, col}};
         return GetHover(req);
     }
 

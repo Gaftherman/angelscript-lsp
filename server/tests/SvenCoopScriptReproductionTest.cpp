@@ -99,7 +99,8 @@ struct SvenTestContext
             scopeIndex.SetScopeTree(fileUri, std::move(rootScope));
         }
         TSTree* tree = parser.Parse(scriptCode);
-        angel_lsp::features::HoverRequest req{fileUri, scriptCode, tree,
+        angel_lsp::analysis::NodeIndex nodeIndex{tree ? ts_tree_root_node(tree) : TSNode{}};
+        angel_lsp::features::HoverRequest req{fileUri, scriptCode, &nodeIndex,
                                               table,   scopeIndex, lsp::Position{line, character}};
         auto res = angel_lsp::features::GetHover(req);
         if (tree)

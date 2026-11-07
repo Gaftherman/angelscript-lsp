@@ -140,7 +140,8 @@ TEST_CASE("Allocation Budget - Hover Warm Query Allocation Churn Invariant")
     }
     const uint32_t col = static_cast<uint32_t>(pos - lineStart);
 
-    HoverRequest req{env.uri, env.sourceCode, env.tree, env.symbolTable, env.scopeIndex, lsp::Position{line, col}};
+    HoverRequest req{env.uri,         env.sourceCode, env.nodeIndex.get(),
+                     env.symbolTable, env.scopeIndex, lsp::Position{line, col}};
 
     // Warm-up query
     auto warmHover = GetHover(req);

@@ -53,7 +53,9 @@ struct StressTestEnvironment
 
     std::optional<lsp::Hover> HoverAt(uint32_t line, uint32_t character)
     {
-        features::HoverRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, character}};
+        analysis::NodeIndex nodeIndex{tree ? ts_tree_root_node(tree) : TSNode{}};
+        features::HoverRequest req{uri,         sourceCode, &nodeIndex,
+                                   symbolTable, scopeIndex, lsp::Position{line, character}};
         return features::GetHover(req);
     }
 };

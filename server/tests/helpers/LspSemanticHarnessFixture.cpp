@@ -476,16 +476,17 @@ void LspSemanticHarnessFixture::AssertDiagnosticsCount(const std::string& uri, s
 std::optional<lsp::Hover> LspSemanticHarnessFixture::RequestHover(const std::string& uri, uint32_t line, uint32_t col)
 {
     auto itTree = m_trees.find(uri);
-    if (itTree == m_trees.end())
+    if (itTree == m_trees.end() || !itTree->second)
     {
         return std::nullopt;
     }
 
-    features::HoverRequest req{uri,           m_documents[uri],        itTree->second.get(), *m_symbolTable,
+    analysis::NodeIndex nodeIndex{ts_tree_root_node(itTree->second.get())};
+    features::HoverRequest req{uri,           m_documents[uri],        &nodeIndex, *m_symbolTable,
                                *m_scopeIndex, lsp::Position{line, col}};
-    req.readDocument = [this](const std::string& docUri) -> const std::string*
+    req.sources.readDocument = [this](std::string_view docUri) -> const std::string*
     {
-        auto it = m_documents.find(docUri);
+        auto it = m_documents.find(std::string(docUri));
         return it != m_documents.end() ? &it->second : nullptr;
     };
     req.config = &m_config;

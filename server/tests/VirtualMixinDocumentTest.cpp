@@ -2,8 +2,11 @@
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
+#include "analysis/resolution/ClassHierarchyResolver.h"
+#include "analysis/rules/EngineRuleChecker.h"
 #include "features/definition/DefinitionHandler.h"
 #include "features/hover/HoverHandler.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
 #include <doctest/doctest.h>
@@ -224,11 +227,12 @@ TEST_CASE("VirtualMixinDocument - Host-Scope Fallback for Hover and Definition")
     {
         scopeIndex.SetScopeTree(virtualUri, std::move(rootScope));
     }
+    analysis::NodeIndex nodeIndex{tree ? ts_tree_root_node(tree) : TSNode{}};
 
     SUBCASE("Hover on 'self' in virtual document resolves host property signature")
     {
         // Cursor on "self" at line 2, character 9
-        features::HoverRequest req{virtualUri, mixinCode, tree, table, scopeIndex, lsp::Position{2, 9}};
+        features::HoverRequest req{virtualUri, mixinCode, &nodeIndex, table, scopeIndex, lsp::Position{2, 9}};
         auto hover = features::GetHover(req);
         REQUIRE(hover.has_value());
         const auto& markup = std::get<lsp::MarkupContent>(hover->contents);
@@ -239,7 +243,7 @@ TEST_CASE("VirtualMixinDocument - Host-Scope Fallback for Hover and Definition")
     SUBCASE("Hover on host member 'FireWeapon' in virtual document resolves host method signature")
     {
         // Cursor on "FireWeapon" at line 2, character 15
-        features::HoverRequest req{virtualUri, mixinCode, tree, table, scopeIndex, lsp::Position{2, 15}};
+        features::HoverRequest req{virtualUri, mixinCode, &nodeIndex, table, scopeIndex, lsp::Position{2, 15}};
         auto hover = features::GetHover(req);
         REQUIRE(hover.has_value());
         const auto& markup = std::get<lsp::MarkupContent>(hover->contents);
@@ -249,7 +253,7 @@ TEST_CASE("VirtualMixinDocument - Host-Scope Fallback for Hover and Definition")
     SUBCASE("Hover on host inherited property 'm_flNextAttack' resolves float type")
     {
         // Cursor on "m_flNextAttack" at line 3, character 10
-        features::HoverRequest req{virtualUri, mixinCode, tree, table, scopeIndex, lsp::Position{3, 10}};
+        features::HoverRequest req{virtualUri, mixinCode, &nodeIndex, table, scopeIndex, lsp::Position{3, 10}};
         auto hover = features::GetHover(req);
         REQUIRE(hover.has_value());
         const auto& markup = std::get<lsp::MarkupContent>(hover->contents);
@@ -278,6 +282,58 @@ TEST_CASE("VirtualMixinDocument - Host-Scope Fallback for Hover and Definition")
         CHECK((*defs)[0].uri.toString() == hostUri);
         CHECK((*defs)[0].range.start.line == 2);
     }
+
+    ts_tree_delete(tree);
+}
+
+TEST_CASE("VirtualMixin - InferHostClassFromEnclosingMixin overloads parity")
+{
+    AngelScriptParser parser;
+    SymbolCollector collector{nullptr};
+    const std::string mixinName = test::GenerateRandomSymbolName("WeaponMixin");
+    const std::string hostName = test::GenerateRandomSymbolName("RifleWeapon");
+    const std::string mixinUri = "file:///mixin.as";
+    const std::string hostUri = "file:///host.as";
+    const std::string code = "mixin class " + mixinName +
+                             " {\n"
+                             "    void Shoot() {}\n"
+                             "}\n";
+    const std::string hostCode = "class " + hostName + " : " + mixinName +
+                                 " {\n"
+                                 "}\n";
+
+    SymbolTable table;
+    collector.CollectSymbols(mixinUri, code, parser, table);
+    collector.CollectSymbols(hostUri, hostCode, parser, table);
+    table.ResolveIncludedMixins();
+
+    TSTree* tree = parser.Parse(code);
+    REQUIRE(tree != nullptr);
+
+    NodeIndex nodeIndex(ts_tree_root_node(tree), NodeIndexOptions{.source = code});
+
+    const size_t mixinMethodPos = code.find("Shoot");
+    REQUIRE(mixinMethodPos != std::string::npos);
+    TSPoint pt{1, 9};
+    TSNode methodNode = ts_node_descendant_for_point_range(ts_tree_root_node(tree), pt, pt);
+    REQUIRE(!ts_node_is_null(methodNode));
+
+    std::string hostFromTsNode = InferHostClassFromEnclosingMixin(methodNode, code, table);
+    std::string hostFromRange = InferHostClassFromEnclosingMixin(
+        IndexedByteRange{ts_node_start_byte(methodNode), ts_node_end_byte(methodNode)}, nodeIndex, code, table);
+
+    CHECK(!hostFromTsNode.empty());
+    CHECK(hostFromTsNode == hostName);
+    CHECK(hostFromRange == hostFromTsNode);
+
+    const size_t mixinNamePos = code.find(mixinName);
+    REQUIRE(mixinNamePos != std::string::npos);
+    TSPoint namePt{0, static_cast<uint32_t>(mixinNamePos)};
+    TSNode nameNode = ts_node_descendant_for_point_range(ts_tree_root_node(tree), namePt, namePt);
+    REQUIRE(!ts_node_is_null(nameNode));
+    CHECK(InferHostClassFromEnclosingMixin(IndexedByteRange{ts_node_start_byte(nameNode), ts_node_end_byte(nameNode)},
+                                           nodeIndex, code,
+                                           table) == InferHostClassFromEnclosingMixin(nameNode, code, table));
 
     ts_tree_delete(tree);
 }

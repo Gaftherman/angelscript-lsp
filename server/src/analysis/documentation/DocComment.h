@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 namespace angel_lsp::analysis
 {
@@ -12,7 +13,7 @@ namespace angel_lsp::analysis
  * @param declStartLine Zero-based line the declaration begins on.
  * @return Formatted markdown, or an empty string when the declaration carries no comment.
  */
-std::string ExtractDocComment(const std::string& sourceCode, uint32_t declStartLine);
+std::string ExtractDocComment(std::string_view sourceCode, uint32_t declStartLine);
 
 /**
  * @brief Checks whether the doc comment preceding a declaration contains a specific tag.

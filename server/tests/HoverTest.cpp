@@ -54,10 +54,12 @@ struct TestEnvironment
     std::string uri = "file:///test.as";
     std::string sourceCode;
     TSTree* tree = nullptr;
+    analysis::NodeIndex nodeIndex;
 
     TestEnvironment(const std::string& code) : sourceCode(code)
     {
         tree = parser.Parse(sourceCode);
+        nodeIndex = analysis::NodeIndex(tree ? ts_tree_root_node(tree) : TSNode{});
         symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
         auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
         if (rootScope)
@@ -77,7 +79,7 @@ struct TestEnvironment
     std::optional<lsp::Hover> HoverAt(uint32_t line, uint32_t character, const config::ServerConfig* config = nullptr,
                                       const angel_lsp::i18n::I18n* i18n = nullptr)
     {
-        HoverRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, character}};
+        HoverRequest req{uri, sourceCode, &nodeIndex, symbolTable, scopeIndex, lsp::Position{line, character}};
         req.config = config;
         req.i18n = i18n;
         return GetHover(req);
@@ -103,6 +105,7 @@ struct TwoFileEnvironment
     std::string usingUri = "file:///main.as";
     std::string usingCode;
     TSTree* tree = nullptr;
+    analysis::NodeIndex nodeIndex;
 
     TwoFileEnvironment(const std::string& library, const std::string& main) : declaringCode(library), usingCode(main)
     {
@@ -110,6 +113,7 @@ struct TwoFileEnvironment
         symbolCollector.CollectSymbols(usingUri, usingCode, parser, symbolTable);
 
         tree = parser.Parse(usingCode);
+        nodeIndex = analysis::NodeIndex(tree ? ts_tree_root_node(tree) : TSNode{});
         auto rootScope = scopeCollector.CollectScopes(usingCode, parser);
         if (rootScope)
         {
@@ -132,20 +136,15 @@ struct TwoFileEnvironment
         {
             symbolTable.SetBaseClassDelegateProperties(config->engineRules.unusedRules.baseClassDelegateProperties);
         }
-        HoverRequest req{usingUri,
-                         usingCode,
-                         tree,
-                         symbolTable,
-                         scopeIndex,
-                         lsp::Position{line, character},
-                         [this](const std::string& uri) -> const std::string*
-                         {
-                             if (uri == declaringUri)
-                                 return &declaringCode;
-                             if (uri == usingUri)
-                                 return &usingCode;
-                             return nullptr;
-                         }};
+        HoverRequest req{usingUri, usingCode, &nodeIndex, symbolTable, scopeIndex, lsp::Position{line, character}};
+        req.sources.readDocument = [this](std::string_view uri) -> const std::string*
+        {
+            if (uri == declaringUri)
+                return &declaringCode;
+            if (uri == usingUri)
+                return &usingCode;
+            return nullptr;
+        };
         req.config = config;
         return GetHover(req);
     }
@@ -153,7 +152,7 @@ struct TwoFileEnvironment
     /** @brief The same hover with no reader at all, which must show no documentation. */
     std::optional<lsp::Hover> HoverAtWithoutReader(uint32_t line, uint32_t character)
     {
-        HoverRequest req{usingUri, usingCode, tree, symbolTable, scopeIndex, lsp::Position{line, character}};
+        HoverRequest req{usingUri, usingCode, &nodeIndex, symbolTable, scopeIndex, lsp::Position{line, character}};
         return GetHover(req);
     }
 };
@@ -668,8 +667,10 @@ std::optional<lsp::Hover> HoverInclude(const std::string& source, uint32_t line,
     ScopeIndex scopes;
     const std::string uri = "file:///main.as";
 
-    HoverRequest request{uri, source, tree, table, scopes, lsp::Position{line, character}};
-    request.resolveInclude = std::move(resolver);
+    analysis::NodeIndex nodeIndex{tree ? ts_tree_root_node(tree) : TSNode{}};
+    HoverRequest request{uri, source, &nodeIndex, table, scopes, lsp::Position{line, character}};
+    request.sources.resolveInclude = [res = std::move(resolver)](std::string_view path)
+    { return res ? res(std::string(path)) : ""; };
 
     auto hover = GetHover(request);
     ts_tree_delete(tree);
@@ -845,7 +846,8 @@ TEST_CASE("Hover - Predefined stub with inline list pattern allows hover on subs
     }
 
     // Line 3: "    T& opIndex(uint index);" -> column 7 is on "opIndex"
-    HoverRequest req{stubUri, rewritten, tree, symbolTable, scopeIndex, lsp::Position{3, 7}};
+    analysis::NodeIndex nodeIndex{tree ? ts_tree_root_node(tree) : TSNode{}};
+    HoverRequest req{stubUri, rewritten, &nodeIndex, symbolTable, scopeIndex, lsp::Position{3, 7}};
 
     auto hover = GetHover(req);
     REQUIRE(hover.has_value());
@@ -1078,7 +1080,8 @@ TEST_CASE("HoverHandler - Predefined Stub Parameter AST Fallback")
     symbolCollector.CollectSymbols(uri, code, parser, symbolTable);
 
     // Hover at "other" on line 2, character 23
-    HoverRequest req{uri, code, tree, symbolTable, emptyScopeIndex, lsp::Position{2, 23}};
+    analysis::NodeIndex nodeIndex{tree ? ts_tree_root_node(tree) : TSNode{}};
+    HoverRequest req{uri, code, &nodeIndex, symbolTable, emptyScopeIndex, lsp::Position{2, 23}};
     auto hover = GetHover(req);
     REQUIRE(hover.has_value());
     auto content = std::get<lsp::MarkupContent>(hover->contents);
@@ -2076,17 +2079,17 @@ TEST_CASE("Hover - Unresolved include directive respects English and Spanish i18
     i18n::I18n i18nEn("en");
     i18n::I18n i18nEs("es");
 
-    HoverRequest reqEn{env.uri, env.sourceCode, env.tree, env.symbolTable, env.scopeIndex, lsp::Position{0, 2}};
+    HoverRequest reqEn{env.uri, env.sourceCode, &env.nodeIndex, env.symbolTable, env.scopeIndex, lsp::Position{0, 2}};
     reqEn.i18n = &i18nEn;
-    reqEn.resolveInclude = [](const std::string&) -> std::string { return ""; };
+    reqEn.sources.resolveInclude = [](std::string_view) -> std::string { return ""; };
     auto hoverEn = GetHover(reqEn);
     REQUIRE(hoverEn.has_value());
     const std::string valEn = std::get<lsp::MarkupContent>(hoverEn->contents).value;
     CHECK(valEn.find("Does not resolve to a file") != std::string::npos);
 
-    HoverRequest reqEs{env.uri, env.sourceCode, env.tree, env.symbolTable, env.scopeIndex, lsp::Position{0, 2}};
+    HoverRequest reqEs{env.uri, env.sourceCode, &env.nodeIndex, env.symbolTable, env.scopeIndex, lsp::Position{0, 2}};
     reqEs.i18n = &i18nEs;
-    reqEs.resolveInclude = [](const std::string&) -> std::string { return ""; };
+    reqEs.sources.resolveInclude = [](std::string_view) -> std::string { return ""; };
     auto hoverEs = GetHover(reqEs);
     REQUIRE(hoverEs.has_value());
     const std::string valEs = std::get<lsp::MarkupContent>(hoverEs->contents).value;

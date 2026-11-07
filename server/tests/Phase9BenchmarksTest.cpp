@@ -236,8 +236,9 @@ TEST_CASE("Benchmark - Scenario A: Massive Predefined File (sven.as.predefined)"
     CHECK(symbolTable.HasSymbol("CBasePlayer"));
 
     analysis::ScopeIndex scopeIndex;
+    analysis::NodeIndex nodeIndex{tree ? ts_tree_root_node(tree) : TSNode{}};
     features::HoverRequest hoverReq{
-        "predefined:///sven.as.predefined", content, tree, symbolTable, scopeIndex, lsp::Position{200, 7}
+        "predefined:///sven.as.predefined", content, &nodeIndex, symbolTable, scopeIndex, lsp::Position{200, 7}
         // "class dictionary" line 201, character 7 (0-indexed line 200)
     };
     HighResTimer hoverTimer;
@@ -328,7 +329,8 @@ TEST_CASE("Benchmark - Scenario B: Massive Ordinary Script (10k-14k lines)" * do
     uint32_t fnCol = static_cast<uint32_t>(fnPos - (lastNl == std::string::npos ? 0 : lastNl + 1));
     analysis::ScopeIndex bScopeIndex;
     bScopeIndex.SetScopeTree(docUri, sharedScope);
-    features::HoverRequest bHoverReq{docUri, massiveCode, tree, symbolTable, bScopeIndex, lsp::Position{fnRow, fnCol}};
+    features::HoverRequest bHoverReq{docUri,      massiveCode, &nodeIndex,
+                                     symbolTable, bScopeIndex, lsp::Position{fnRow, fnCol}};
     HighResTimer bHoverTimer;
     auto bHoverRes = features::GetHover(bHoverReq);
     const double bHoverMs = bHoverTimer.ElapsedMs();
@@ -386,8 +388,10 @@ TEST_CASE("Benchmark - Scenario C: Large Multi-File Project with Massive #includ
     symbolCollector.CollectSymbolsWithTree(analysis::SymbolCollectRequest("file:///test.as", testScript), cTree,
                                            cTable);
     analysis::ScopeIndex cScopeIndex;
+    analysis::NodeIndex cNodeIndex{cTree ? ts_tree_root_node(cTree) : TSNode{}};
     features::HoverRequest cHoverReq{
-        "file:///test.as", testScript, cTree, cTable, cScopeIndex, lsp::Position{1, 22} // 'CoreShared' inside TestHover
+        "file:///test.as", testScript,          &cNodeIndex, cTable,
+        cScopeIndex,       lsp::Position{1, 22} // 'CoreShared' inside TestHover
     };
     HighResTimer cHoverTimer;
     auto cHoverRes = features::GetHover(cHoverReq);

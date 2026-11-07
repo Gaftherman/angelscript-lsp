@@ -87,7 +87,8 @@ struct TestEnvironment
 
     std::optional<lsp::Hover> HoverAt(uint32_t line, uint32_t character)
     {
-        HoverRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, character}};
+        analysis::NodeIndex nodeIndex{tree ? ts_tree_root_node(tree) : TSNode{}};
+        HoverRequest req{uri, sourceCode, &nodeIndex, symbolTable, scopeIndex, lsp::Position{line, character}};
         return GetHover(req);
     }
 

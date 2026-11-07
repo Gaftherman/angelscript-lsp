@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "config/EngineRuleConfig.h"
@@ -112,6 +113,18 @@ std::vector<std::string> GetCompatibleMemberClasses(const std::string& className
                                                     AccessModifier access, const SymbolTable& symbolTable);
 std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourceCode, const SymbolTable& symbolTable,
                                              ExpressionTypeCache* cache = nullptr);
+
+/**
+ * @brief Infers the host class of the mixin enclosing a byte range, answering the container lookup from the index.
+ * @param[in] targetRange Byte range of the node whose enclosing containers are inspected.
+ * @param[in] index Document index; its container spans give the same containers as the node-based overload.
+ * @param[in] sourceCode Document source text buffer.
+ * @param[in] symbolTable Symbol table providing the rule index of mixin hosts.
+ * @return Qualified name of the first recorded host class; empty when no enclosing mixin has a host.
+ * @note Recovers the node with one O(depth) descent, then uses NodeIndex::CollectLookupContainers. No cache is used.
+ */
+std::string InferHostClassFromEnclosingMixin(IndexedByteRange targetRange, const NodeIndex& index,
+                                             std::string_view sourceCode, const SymbolTable& symbolTable);
 TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::string_view mixinShortName,
                               std::string_view sourceCode);
 } // namespace angel_lsp::analysis

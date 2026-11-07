@@ -17,48 +17,12 @@
     "server/src/features/document_highlight",
     "server/src/features/signature_help",
     "server/src/features/code_lens",
-    "server/src/features/semantic_tokens"
+    "server/src/features/semantic_tokens",
+    "server/src/features/hover"
   ],
-  "active_folder": "server/src/features/hover",
+  "active_folder": "server/src/features/formatting",
   "cross_module_impacts": [],
   "pending_folders": [
-    {
-      "folder_path": "server/src/features/hover",
-      "complexity_rank": 20,
-      "selection_rationale": "Feature (5 files, 509 lines) hover tooltips, markdown formatting, and type introspection.",
-      "files_to_refactor": [
-        {
-          "file": "HoverHandler.h",
-          "detected_antipatterns": [
-            "Raw TSTree* pointer and <tree_sitter/api.h> in HoverRequest",
-            "Heap string members for uri and sourceCode"
-          ],
-          "reusable_structs_or_classes": [
-            "analysis::TargetResolution",
-            "analysis::SymbolTable",
-            "analysis::ScopeIndex"
-          ],
-          "first_pass_data_needed": [
-            "AST-free target resolution and doc comment associations"
-          ]
-        },
-        {
-          "file": "HoverHandler.cpp",
-          "detected_antipatterns": [
-            "Second-pass AST climbing to find hover targets",
-            "Ad-hoc type markdown formatting"
-          ],
-          "reusable_structs_or_classes": [
-            "features::common::FindIdentifierAtPosition",
-            "analysis::SignatureFormatter"
-          ],
-          "liquidation_actions": [
-            "Decouple from TSNode and TSTree*",
-            "Zero-copy std::string_view across hover pipelines"
-          ]
-        }
-      ]
-    },
     {
       "folder_path": "server/src/features/formatting",
       "complexity_rank": 21,
