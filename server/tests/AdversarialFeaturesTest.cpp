@@ -1,4 +1,5 @@
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
@@ -10,6 +11,7 @@
 #include "parser/AngelScriptParser.h"
 
 #include <doctest/doctest.h>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -31,10 +33,15 @@ struct AdversarialTestEnv
     std::string uri = "file:///adversarial_test.as";
     std::string sourceCode;
     TSTree* tree = nullptr;
+    std::unique_ptr<NodeIndex> nodeIndex;
 
     AdversarialTestEnv(const std::string& code) : sourceCode(code)
     {
         tree = parser.Parse(sourceCode);
+        if (tree)
+        {
+            nodeIndex = std::make_unique<NodeIndex>(ts_tree_root_node(tree), NodeIndexOptions{.source = sourceCode});
+        }
         symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
         auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
         if (rootScope)
@@ -77,7 +84,7 @@ struct AdversarialTestEnv
 
     std::optional<lsp::SignatureHelp> SigHelp(uint32_t line, uint32_t col)
     {
-        SignatureHelpRequest req{uri, sourceCode, symbolTable, scopeIndex, lsp::Position{line, col}};
+        SignatureHelpRequest req{uri, sourceCode, symbolTable, scopeIndex, lsp::Position{line, col}, nodeIndex.get()};
         return GetSignatureHelp(req);
     }
 
@@ -460,13 +467,11 @@ TEST_CASE("Adversarial SignatureHelp - Unclosed Parenthesis / Typing in Progress
 
     AdversarialTestEnv env(incompleteCode);
     auto sig = env.SigHelp(2, 16);
-    if (sig.has_value())
-    {
-        REQUIRE(!sig->signatures.empty());
-        CHECK(sig->signatures[0].label.find("Compute") != std::string::npos);
-        REQUIRE(sig->activeParameter.has_value());
-        CHECK(sig->activeParameter.value().value() == 1u);
-    }
+    REQUIRE(sig.has_value());
+    REQUIRE(!sig->signatures.empty());
+    CHECK(sig->signatures[0].label.find("Compute") != std::string::npos);
+    REQUIRE(sig->activeParameter.has_value());
+    CHECK(sig->activeParameter.value().value() == 1u);
 }
 
 // =============================================================================

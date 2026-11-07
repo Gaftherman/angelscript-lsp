@@ -390,8 +390,16 @@ Server::HandleRequestsTextDocument_SignatureHelp(lsp::requests::TextDocument_Sig
         return lsp::Null{};
     }
 
-    features::SignatureHelpRequest sr{doc->uri, *doc->text, m_symbolTable, m_scopeIndex,
-                                      codec::Decode(*doc->text, GetPositionEncoding(), req.position)};
+    const auto syntax =
+        doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
+                  : nullptr;
+
+    features::SignatureHelpRequest sr{doc->uri,
+                                      *doc->text,
+                                      m_symbolTable,
+                                      m_scopeIndex,
+                                      codec::Decode(*doc->text, GetPositionEncoding(), req.position),
+                                      syntax ? &syntax->index : nullptr};
     auto sig = features::GetSignatureHelp(sr);
     if (sig.has_value())
     {

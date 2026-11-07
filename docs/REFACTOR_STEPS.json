@@ -13,76 +13,13 @@
     "server/src/features/inlay_hint",
     "server/src/features/definition",
     "server/src/features/references",
-    "server/src/features/rename"
+    "server/src/features/rename",
+    "server/src/features/document_highlight",
+    "server/src/features/signature_help"
   ],
-  "active_folder": "server/src/features/document_highlight",
+  "active_folder": "server/src/features/code_lens",
   "cross_module_impacts": [],
   "pending_folders": [
-    {
-      "folder_path": "server/src/features/references",
-      "complexity_rank": 12,
-      "selection_rationale": "Feature (2 files) find references and occurrences across workspace (Batch 7A).",
-      "files_to_refactor": [
-        {
-          "file": "ReferencesHandler.h"
-        },
-        {
-          "file": "ReferencesHandler.cpp"
-        }
-      ]
-    },
-    {
-      "folder_path": "server/src/features/rename",
-      "complexity_rank": 13,
-      "selection_rationale": "Feature (2 files) symbol rename and workspace edit synthesis (Batch 7A).",
-      "files_to_refactor": [
-        {
-          "file": "RenameHandler.h"
-        },
-        {
-          "file": "RenameHandler.cpp"
-        }
-      ]
-    },
-    {
-      "folder_path": "server/src/features/document_highlight",
-      "complexity_rank": 14,
-      "selection_rationale": "Feature (2 files) document symbol highlights and read/write access kinds (Batch 7B).",
-      "files_to_refactor": [
-        {
-          "file": "DocumentHighlightHandler.h"
-        },
-        {
-          "file": "DocumentHighlightHandler.cpp"
-        }
-      ]
-    },
-    {
-      "folder_path": "server/src/features/signature_help",
-      "complexity_rank": 15,
-      "selection_rationale": "Feature (2 files) active parameter and callable signature help (Batch 7B).",
-      "files_to_refactor": [
-        {
-          "file": "SignatureHelpHandler.h"
-        },
-        {
-          "file": "SignatureHelpHandler.cpp"
-        }
-      ]
-    },
-    {
-      "folder_path": "server/src/features/inlay_hint",
-      "complexity_rank": 16,
-      "selection_rationale": "Feature (2 files) parameter and type inlay hints (Batch 7B).",
-      "files_to_refactor": [
-        {
-          "file": "InlayHintHandler.h"
-        },
-        {
-          "file": "InlayHintHandler.cpp"
-        }
-      ]
-    },
     {
       "folder_path": "server/src/features/code_lens",
       "complexity_rank": 17,
@@ -93,31 +30,6 @@
         },
         {
           "file": "CodeLensHandler.cpp"
-        }
-      ]
-    },
-    {
-      "folder_path": "server/src/features/breakpoints",
-      "complexity_rank": 18,
-      "selection_rationale": "Feature (6 files) breakpoint locations and evaluatable expressions (Batch 7B).",
-      "files_to_refactor": [
-        {
-          "file": "BreakpointLocationsHandler.h"
-        },
-        {
-          "file": "BreakpointLocationsHandler.cpp"
-        },
-        {
-          "file": "BreakpointStatementClassifier.h"
-        },
-        {
-          "file": "BreakpointStatementClassifier.cpp"
-        },
-        {
-          "file": "EvaluatableExpressionHandler.h"
-        },
-        {
-          "file": "EvaluatableExpressionHandler.cpp"
         }
       ]
     },

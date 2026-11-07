@@ -136,6 +136,7 @@ struct LocalReference
     uint8_t isSuperBaseCall : 1 = 0;
     uint8_t isLambdaFunctionKeyword : 1 = 0;
     uint8_t inMetadataOrError : 1 = 0;
+    uint8_t isWriteTarget : 1 = 0;
 };
 static_assert(sizeof(LocalReference) <= 80);
 
@@ -174,6 +175,20 @@ struct IndexedReceiverExpression
 };
 
 /**
+ * @brief Extracted call site argument coordinates and callee reference bounds for parameter mutability analysis.
+ */
+struct IndexedCallArgumentRef
+{
+    uint32_t argStartByte = 0;
+    uint32_t argEndByte = 0;
+    uint32_t calleeStartByte = 0;
+    uint32_t calleeEndByte = 0;
+    uint32_t receiverStartByte = 0;
+    uint32_t receiverEndByte = 0;
+    uint32_t argumentIndex = 0;
+};
+
+/**
  * @brief Document-owned receiver facts shared by its lexical scopes.
  */
 struct IndexedReferenceReceivers
@@ -181,6 +196,7 @@ struct IndexedReferenceReceivers
     std::vector<IndexedReceiverExpression> expressions;
     ankerl::unordered_dense::map<uint32_t, uint32_t> byReference;
     ankerl::unordered_dense::map<uint32_t, std::string> qualifiers;
+    std::vector<IndexedCallArgumentRef> callArguments;
 };
 
 /**

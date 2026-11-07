@@ -107,7 +107,7 @@ std::optional<Symbol> FuncdefTargetOfLambda(TSNode lambdaNode, const SymbolTable
 std::string InferLambdaParamType(TSNode nodeInLambda, std::string_view paramName, const SymbolTable& symbolTable,
                                  std::string_view sourceCode);
 Symbol FuncdefToFunctionSymbol(const Symbol& funcdefSym, std::string_view callName);
-std::optional<Symbol> TryResolveCallableFuncdef(const std::string& name, const Scope* scope, const SymbolTable& table,
+std::optional<Symbol> TryResolveCallableFuncdef(std::string_view name, const Scope* scope, const SymbolTable& table,
                                                 uint32_t refByte = UINT32_MAX);
 
 bool IsListConstructorSignature(const FunctionSignature& fn);

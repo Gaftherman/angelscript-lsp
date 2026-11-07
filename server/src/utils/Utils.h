@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <spdlog/fmt/fmt.h>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::utils
@@ -262,4 +263,18 @@ struct PatternSpan
     size_t closeBrace{0};
     size_t nextIndex{0};
 };
+/**
+ * @brief Slices a string_view safely within source bounds.
+ * @param[in] sourceCode Document source text buffer.
+ * @param[in] startByte Inclusive start byte offset.
+ * @param[in] endByte Exclusive end byte offset.
+ * @return Substring view if offsets are valid; empty view otherwise.
+ */
+[[nodiscard]] inline std::string_view SliceSource(std::string_view sourceCode, uint32_t startByte,
+                                                  uint32_t endByte) noexcept
+{
+    return (startByte < endByte && endByte <= sourceCode.size()) ? sourceCode.substr(startByte, endByte - startByte)
+                                                                 : std::string_view{};
+}
+
 } // namespace angel_lsp::utils

@@ -1,6 +1,7 @@
 #include "analysis/documentation/SignatureFormatter.h"
 
 #include "parser/Keywords.h"
+#include "utils/PositionEncoding.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <sstream>
@@ -253,20 +254,30 @@ bool HasCachedDisplaySignature(const Symbol& sym, bool qualified) noexcept
 
 bool IsConstructorOrDestructorSymbol(const Symbol& sym, bool isFuncdef, const std::string& returnType)
 {
-    return !isFuncdef && returnType.empty() && !sym.containerName.empty() &&
-           (sym.name == sym.containerName || sym.name == ("~" + sym.containerName));
+    if (isFuncdef || !returnType.empty() || sym.containerName.empty())
+    {
+        return false;
+    }
+    const std::string_view className = utils::LastScopeSegment(sym.containerName);
+    return sym.name == className || (sym.name.starts_with('~') && std::string_view(sym.name).substr(1) == className);
 }
 
-std::string FormatFunctionDeclaration(const Symbol& sym, bool qualified)
+/**
+ * @brief Renders a function or funcdef declaration and optionally records where each parameter sits in it.
+ *
+ * Shared by FormatFunctionDeclaration and FormatSignatureWithParameterOffsets so both spell signatures the same
+ * way. The cached displaySignature is never used here, because parameter positions inside it are unknown.
+ *
+ * @param[in] sym Function or funcdef symbol; any other symbol type yields an empty result.
+ * @param[in] qualified True to prefix the name with its container (`Class::name`).
+ * @param[in] collectOffsets True to fill parameterOffsets with UTF-16 [start, end) spans of each FormatParameter.
+ * @return Rendered label and, when requested, one offset pair per parameter.
+ */
+static FormattedSignature BuildFunctionSignature(const Symbol& sym, bool qualified, bool collectOffsets)
 {
     if (sym.type != SymbolType::Function && sym.type != SymbolType::Funcdef)
     {
-        return "";
-    }
-
-    if (HasCachedDisplaySignature(sym, qualified))
-    {
-        return sym.GetFunction().displaySignature;
+        return {};
     }
 
     const bool isFuncdef = sym.type == SymbolType::Funcdef;
@@ -283,14 +294,57 @@ std::string FormatFunctionDeclaration(const Symbol& sym, bool qualified)
     }
     AppendFunctionName(oss, sym, qualified);
     oss << "(";
-    AppendParameters(oss, parameters);
+
+    std::vector<std::pair<uint32_t, uint32_t>> byteSpans;
+    byteSpans.reserve(collectOffsets ? parameters.size() : 0);
+    for (size_t i = 0; i < parameters.size(); ++i)
+    {
+        if (i > 0)
+        {
+            oss << ", ";
+        }
+        const auto start = static_cast<uint32_t>(oss.tellp());
+        oss << FormatParameter(parameters[i]);
+        if (collectOffsets)
+        {
+            byteSpans.emplace_back(start, static_cast<uint32_t>(oss.tellp()));
+        }
+    }
     oss << ")" << FormatFunctionSuffix(modifiers);
     if (!isFuncdef)
     {
         AppendImportOrigin(oss, sym);
     }
 
-    return oss.str();
+    FormattedSignature result{oss.str(), {}};
+    result.parameterOffsets.reserve(byteSpans.size());
+    for (const auto& [startByte, endByte] : byteSpans)
+    {
+        result.parameterOffsets.emplace_back(
+            utils::ByteToLspCharColumn(result.label, startByte, utils::PositionEncoding::Utf16),
+            utils::ByteToLspCharColumn(result.label, endByte, utils::PositionEncoding::Utf16));
+    }
+    return result;
+}
+
+FormattedSignature FormatSignatureWithParameterOffsets(const Symbol& sym)
+{
+    return BuildFunctionSignature(sym, true, true);
+}
+
+std::string FormatFunctionDeclaration(const Symbol& sym, bool qualified)
+{
+    if (sym.type != SymbolType::Function && sym.type != SymbolType::Funcdef)
+    {
+        return "";
+    }
+
+    if (HasCachedDisplaySignature(sym, qualified))
+    {
+        return sym.GetFunction().displaySignature;
+    }
+
+    return BuildFunctionSignature(sym, qualified, false).label;
 }
 
 std::string FormatVariableDeclaration(const VariableSignature& var, const std::string& name)

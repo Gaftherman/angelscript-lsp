@@ -872,6 +872,111 @@
         "DefinitionTest",
         "SignatureHelpTest"
       ]
+    },
+    {
+      "id": "REF-M4-HIGHLIGHT-WRITE-FACTS",
+      "phase": "M4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/analysis/index/ScopeTree.h",
+      "deletedLineRange": "135-140",
+      "originalSymbolOrCode": "LocalReference",
+      "whatItDidAndWhyInThatFile": "Carried AST-derived facts for local identifier references without write/mutation classification.",
+      "whyChangedOrDeleted": "Added isWriteTarget bitfield populated top-down in LocalScopeCollector, and added IndexedCallArgumentRef facts to IndexedReferenceReceivers to replace Layer 3 text-scanning mutability heuristics.",
+      "replacedByCanonicalFile": "server/src/analysis/index/ScopeTree.h",
+      "replacedByCanonicalSymbol": "LocalReference",
+      "ramOrCpuImpact": "Zero additional bytes for LocalReference (fits in existing padding bitfields); enables O(1) write access classification without text rescanning.",
+      "verifiedByTests": [
+        "OccurrenceAccessFactsTest",
+        "DocumentHighlightTest"
+      ]
+    },
+    {
+      "id": "REF-M4-HIGHLIGHT-ACCESS-L2",
+      "phase": "M4",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/features/document_highlight/DocumentHighlightHandler.cpp",
+      "deletedLineRange": "27-356",
+      "originalSymbolOrCode": "IsAssignmentOrMutation, FindEnclosingCallParen, IsMutableParam, ResolveReceiverType, FindCalleeSymbols, IsPassedAsOutOrInOutArg, CheckDeclaration, ClassifyOccurrence",
+      "whatItDidAndWhyInThatFile": "Ad-hoc text lexers and semantic symbol lookups determining occurrence read/write/text highlight kind in Layer 3.",
+      "whyChangedOrDeleted": "Eliminated text lexing in Layer 3 (Prohibition 5) and moved semantic classification to Layer 2 OccurrenceAccessClassifier using Pass-1 facts.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/OccurrenceAccess.h",
+      "replacedByCanonicalSymbol": "OccurrenceAccessClassifier",
+      "ramOrCpuImpact": "Eliminated string allocations and repeated text scanning in DocumentHighlightHandler; zero std::string in feature.",
+      "verifiedByTests": [
+        "OccurrenceAccessFactsTest",
+        "DocumentHighlightTest"
+      ]
+    },
+    {
+      "id": "REF-S4-REANALYSE-ON-EXIT",
+      "phase": "S4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/lsp/handlers/WorkspaceScanHandlers.cpp",
+      "deletedLineRange": "360-366",
+      "originalSymbolOrCode": "ReanalyseOnExit",
+      "whatItDidAndWhyInThatFile": "Local RAII struct inside ReadWorkspaceFiles to trigger re-analysis and set predefined readiness on exit.",
+      "whyChangedOrDeleted": "Promoted to ServerAnalysisTypes.h during Phase S4 state consolidation to eliminate local struct definitions in .cpp.",
+      "replacedByCanonicalFile": "server/src/lsp/services/ServerAnalysisTypes.h",
+      "replacedByCanonicalSymbol": "ReanalyseOnExit",
+      "ramOrCpuImpact": "No memory impact; canonical RAII helper in header.",
+      "verifiedByTests": [
+        "ServerWorkspaceTest",
+        "SvenCoopRegressionTest"
+      ]
+    },
+    {
+      "id": "REF-S4-MODULE-CLAIM-CANDIDATE",
+      "phase": "S4",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/lsp/ServerModules.cpp",
+      "deletedLineRange": "290-295",
+      "originalSymbolOrCode": "Candidate",
+      "whatItDidAndWhyInThatFile": "Local candidate rank tracking struct inside Server::ClaimFor.",
+      "whyChangedOrDeleted": "Promoted to ModuleIndex.h as ModuleCandidate during Phase S4 state consolidation to eliminate ODR risk and local structs in .cpp.",
+      "replacedByCanonicalFile": "server/src/lsp/state/ModuleIndex.h",
+      "replacedByCanonicalSymbol": "ModuleCandidate",
+      "ramOrCpuImpact": "No memory impact; canonical struct in header.",
+      "verifiedByTests": [
+        "ServerModulesTest",
+        "SvenCoopRegressionTest"
+      ]
+    },
+    {
+      "id": "REF-M5-SIGHELP-CALL-CONTEXT-FACTS",
+      "phase": "M5",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/signature_help/SignatureHelpHandler.cpp",
+      "deletedLineRange": "234-459",
+      "originalSymbolOrCode": "CallFrame, StepCallDelimiter, ScanEnclosingCall, SkipComment, SkipStringLiteral, SkipCommentOrString, TrySkipTemplate",
+      "whatItDidAndWhyInThatFile": "Ad-hoc text scanners and paren delimiter counters attempting to reconstruct call expressions from raw text in Layer 3.",
+      "whyChangedOrDeleted": "Replaced with pass-1 Tree-Sitter AST facts (CallContextFacts: argument_list and ERROR recovery fallback) and unified target extraction.",
+      "replacedByCanonicalFile": "server/src/analysis/index/CallContextFacts.h",
+      "replacedByCanonicalSymbol": "IndexedCallContext",
+      "ramOrCpuImpact": "Removes the per-request O(N) text scan from byte 0; the lookup is O(A + E) over indexed argument_list/ERROR nodes before the cursor plus the tokens of one container, on the exact live syntax revision.",
+      "verifiedByTests": [
+        "CallContextFactsTest",
+        "SignatureHelpTest",
+        "AdversarialFeaturesTest"
+      ]
+    },
+    {
+      "id": "REF-M5-SIGHELP-CANDIDATES-L2",
+      "phase": "M5",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/features/signature_help/SignatureHelpHandler.cpp",
+      "deletedLineRange": "21-185, 461-750",
+      "originalSymbolOrCode": "AppendParameters, FormatSignatureLabel, BuildParameterList, BuildSignatureList, SkipWhitespaceBackwards, SkipTemplateArgsBackwards, ExtractIdentifierBackwards, CleanReceiverTypeName, ResolveReceiverType, ResolveMemberCandidates, ResolveDirectCandidates, TryResolveCallableFuncdef(const std::string&)",
+      "whatItDidAndWhyInThatFile": "Ad-hoc backward text tokenizers, duplicate signature formatting, and Layer 3 candidate resolution.",
+      "whyChangedOrDeleted": "Moved candidate resolution to Layer 2 CallCandidates, unified signature formatting and parameter offsets into SignatureFormatter, and eliminated text lexers.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/CallCandidates.h",
+      "replacedByCanonicalSymbol": "ResolveCallCandidates",
+      "ramOrCpuImpact": "Zero std::string in the feature; receiver and callee are string_view slices, receiver types stay owned by live symbol handles, and qualified lookups use FindMemberSymbolPtr instead of JoinScopedName.",
+      "verifiedByTests": [
+        "CallContextFactsTest",
+        "SignatureHelpTest",
+        "AdversarialFeaturesTest",
+        "AllocationBudgetHarnessTest"
+      ]
     }
   ]
 }

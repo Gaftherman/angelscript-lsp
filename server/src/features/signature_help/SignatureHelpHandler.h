@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 
@@ -20,6 +21,7 @@ struct SignatureHelpRequest
     const analysis::SymbolTable& symbolTable;
     const analysis::ScopeIndex& scopeIndex;
     lsp::Position position;
+    const analysis::NodeIndex* nodeIndex = nullptr; ///< Document node index for AST fact queries.
 };
 
 /**

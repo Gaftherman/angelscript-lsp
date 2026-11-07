@@ -4,6 +4,8 @@
 
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
 
 namespace angel_lsp::analysis
 {
@@ -63,6 +65,23 @@ std::string FormatFunctionSuffix(const SymbolModifiers& modifiers);
  * @return Return type text, or "void" when nothing was captured.
  */
 std::string FormatReturnType(const std::string& returnType, const SymbolModifiers& modifiers);
+
+/**
+ * @brief Formatted signature label and parameter offset spans.
+ */
+struct FormattedSignature
+{
+    std::string label; ///< Full formatted declaration label.
+    std::vector<std::pair<uint32_t, uint32_t>>
+        parameterOffsets; ///< [start, end) UTF-16 code unit offset of each parameter.
+};
+
+/**
+ * @brief Renders a full function or funcdef declaration with UTF-16 parameter offset spans.
+ * @param[in] sym Symbol of type Function or Funcdef.
+ * @return Formatted signature text and parameter offset spans.
+ */
+FormattedSignature FormatSignatureWithParameterOffsets(const Symbol& sym);
 
 /**
  * @brief Renders a full function or funcdef declaration, modifiers included.

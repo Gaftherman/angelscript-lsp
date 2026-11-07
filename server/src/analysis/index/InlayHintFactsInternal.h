@@ -2,6 +2,7 @@
 
 #include "analysis/index/InlayHintFacts.h"
 #include "parser/GrammarSymbols.h"
+#include "utils/Utils.h"
 
 #include <cstdint>
 #include <string_view>
@@ -21,19 +22,6 @@ inline bool IsNodeOverlapping(TSNode node, uint32_t startLine, uint32_t endLine)
 {
     return (startLine == 0 && endLine == 0) ||
            (ts_node_end_point(node).row >= startLine && ts_node_start_point(node).row <= endLine);
-}
-
-/**
- * @brief Slices a string_view safely within source bounds.
- * @param[in] sourceCode Document source text buffer.
- * @param[in] startByte Inclusive start byte offset.
- * @param[in] endByte Exclusive end byte offset.
- * @return Substring view if offsets are valid; empty view otherwise.
- */
-inline std::string_view SliceSource(std::string_view sourceCode, uint32_t startByte, uint32_t endByte) noexcept
-{
-    return (startByte < endByte && endByte <= sourceCode.size()) ? sourceCode.substr(startByte, endByte - startByte)
-                                                                 : std::string_view{};
 }
 
 /**
@@ -84,5 +72,37 @@ void ProcessLambdaNode(TSNode node, std::string_view sourceCode, const parser::G
  * @param[in,out] sites Destination container for extracted enum facts.
  */
 void ProcessEnumNode(TSNode node, std::string_view sourceCode, const parser::GrammarSymbols& gs, InlayHintSites& sites);
+
+/**
+ * @brief Extracted coordinate spans and classification for a call target.
+ */
+struct CallTargetSpans
+{
+    TSNode funcNode{};               ///< Function or callee expression AST node.
+    uint32_t calleeStartByte = 0;    ///< Inclusive start byte offset of the callee identifier.
+    uint32_t calleeEndByte = 0;      ///< Exclusive end byte offset of the callee identifier.
+    uint32_t receiverStartByte = 0;  ///< Inclusive start byte of the member-call object expression (0 if none).
+    uint32_t receiverEndByte = 0;    ///< Exclusive end byte of the member-call object expression (0 if none).
+    uint32_t qualifierStartByte = 0; ///< Inclusive start byte of the `A::B` qualifier of a scoped callee (0 if none).
+    uint32_t qualifierEndByte = 0;   ///< Exclusive end byte of the qualifier; equals start for a global `::f`.
+    bool isMember = false;           ///< True if callee is a member expression (e.g. obj.method()).
+    bool isQualified = false;        ///< True if callee is written with a `::` qualifier, including global `::f`.
+};
+
+/**
+ * @brief Extracts callee and receiver byte coordinates and classification from a function expression node.
+ * @param[in] funcNode AST function node (member_expression, scoped_identifier, or identifier).
+ * @param[in] gs Precompiled grammar symbols.
+ * @return Extracted coordinate spans and classification.
+ */
+CallTargetSpans ExtractTargetSpansFromFunctionNode(TSNode funcNode, const parser::GrammarSymbols& gs) noexcept;
+
+/**
+ * @brief Extracts callee and receiver byte coordinates and classification from a call_expression.
+ * @param[in] callNode AST call_expression node.
+ * @param[in] gs Precompiled grammar symbols.
+ * @return Extracted coordinate spans and classification; default-initialized if no callable child.
+ */
+CallTargetSpans ExtractCallTargetSpans(TSNode callNode, const parser::GrammarSymbols& gs) noexcept;
 
 } // namespace angel_lsp::analysis

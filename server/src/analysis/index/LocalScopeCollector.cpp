@@ -873,6 +873,75 @@ void LocalScopeCollector::EnrichReferenceContext(TSNode captureNode, TSNode pare
     }
 }
 
+/**
+ * @brief Tests whether a field child of @p parent covers exactly the same bytes as @p expression.
+ * @param[in] parent Node owning the field.
+ * @param[in] field Grammar field identifier to inspect.
+ * @param[in] expression Candidate expression node.
+ * @return True when the field exists and spans the same byte range as @p expression.
+ */
+static bool IsFieldExpression(TSNode parent, TSFieldId field, TSNode expression) noexcept
+{
+    const TSNode fieldNode = parser::GetChildByField(parent, field);
+    return !ts_node_is_null(fieldNode) && ts_node_start_byte(fieldNode) == ts_node_start_byte(expression) &&
+           ts_node_end_byte(fieldNode) == ts_node_end_byte(expression);
+}
+
+/**
+ * @brief Tests whether @p expression is mutated by its direct @p parent.
+ * @param[in] expression Expression node under test.
+ * @param[in] parent Direct parent of @p expression.
+ * @param[in] gs Cached grammar symbols.
+ * @return True for the left side of a plain or compound assignment and the operand of prefix/postfix `++`/`--`;
+ *         false for every other operator (`-x`, `!x`, comparisons).
+ */
+static bool IsMutatedByParent(TSNode expression, TSNode parent, const parser::GrammarSymbols& gs) noexcept
+{
+    const TSSymbol symbol = ts_node_symbol(parent);
+    if (symbol == gs.symAssignmentExpression)
+    {
+        return IsFieldExpression(parent, gs.fieldLeft, expression);
+    }
+    if (symbol != gs.symUnaryExpression && symbol != gs.symPostfixExpression)
+    {
+        return false;
+    }
+    const TSNode op = parser::GetChildByField(parent, gs.fieldOperator);
+    const bool isStep =
+        !ts_node_is_null(op) && (ts_node_symbol(op) == gs.tokPlusPlus || ts_node_symbol(op) == gs.tokDashDash);
+    return isStep && IsFieldExpression(parent, gs.fieldOperand, expression);
+}
+
+/**
+ * @brief Decides whether a reference identifier is the storage written by an assignment or increment.
+ * @param[in] refNode Identifier node of the reference.
+ * @param[in] parent Pre-captured parent of @p refNode.
+ * @param[in] grandparent Pre-captured grandparent of @p refNode.
+ * @param[in] gs Cached grammar symbols.
+ * @return True when the identifier itself, or the member/scoped expression it terminates, is mutated; in `e.hp = 1`
+ *         only `hp` qualifies.
+ */
+static bool IsWriteTargetNode(TSNode refNode, TSNode parent, TSNode grandparent,
+                              const parser::GrammarSymbols& gs) noexcept
+{
+    if (ts_node_is_null(parent))
+    {
+        return false;
+    }
+    if (IsMutatedByParent(refNode, parent, gs))
+    {
+        return true;
+    }
+    if (ts_node_is_null(grandparent))
+    {
+        return false;
+    }
+    const TSSymbol symbol = ts_node_symbol(parent);
+    const bool isTail = (symbol == gs.symMemberExpression && IsFieldExpression(parent, gs.fieldMember, refNode)) ||
+                        (symbol == gs.symScopedIdentifier && ts_node_eq(ScopedIdentifierTail(parent), refNode));
+    return isTail && IsMutatedByParent(parent, grandparent, gs);
+}
+
 void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Scope* current,
                                                   const std::string& sourceCode, DocumentContext& docCtx) const
 {
@@ -925,7 +994,13 @@ void LocalScopeCollector::ProcessReferenceCapture(const RawCapture& capture, Sco
         ref.isTypeSpecifier = IsTypeSpecifierContext(parent, m_gs);
         ref.isMemberAccess =
             IsMemberAccessNode(capture.node, parent, m_gs.symMemberExpression, m_gs.symScopedIdentifier);
+        ref.isWriteTarget = IsWriteTargetNode(capture.node, parent, grandparent, m_gs) ? 1 : 0;
         DetermineCallReferenceInfo(capture.node, parent, grandparent, ref);
+        if (ref.isCall)
+        {
+            const TSNode callNode = (ts_node_symbol(parent) == m_gs.symCallExpression) ? parent : grandparent;
+            IndexCallArguments(callNode, docCtx);
+        }
         IndexReferenceReceiver(parent, sourceCode, ref, docCtx);
         EnrichReferenceContext(capture.node, parent, sourceCode, ref, docCtx);
     }
@@ -1007,6 +1082,27 @@ std::unique_ptr<Scope> LocalScopeCollector::BuildScopeTree(std::vector<RawCaptur
         {
             ProcessStringCallRefCapture(capture, stack.back().scope, sourceCode);
         }
+    }
+
+    if (docCtx.receivers && !docCtx.receivers->callArguments.empty())
+    {
+        std::sort(docCtx.receivers->callArguments.begin(), docCtx.receivers->callArguments.end(),
+                  [](const IndexedCallArgumentRef& a, const IndexedCallArgumentRef& b)
+                  {
+                      if (a.argStartByte != b.argStartByte)
+                      {
+                          return a.argStartByte < b.argStartByte;
+                      }
+                      return a.argEndByte < b.argEndByte;
+                  });
+        docCtx.receivers->callArguments.erase(
+            std::unique(docCtx.receivers->callArguments.begin(), docCtx.receivers->callArguments.end(),
+                        [](const IndexedCallArgumentRef& a, const IndexedCallArgumentRef& b)
+                        {
+                            return a.argStartByte == b.argStartByte && a.argEndByte == b.argEndByte &&
+                                   a.calleeStartByte == b.calleeStartByte && a.argumentIndex == b.argumentIndex;
+                        }),
+            docCtx.receivers->callArguments.end());
     }
 
     return root;

@@ -17,12 +17,8 @@ namespace angel_lsp::analysis
 static void ProcessCallNode(TSNode node, std::string_view sourceCode, const parser::GrammarSymbols& gs,
                             InlayHintSites& sites)
 {
-    TSNode funcNode = parser::GetChildByField(node, gs.fieldFunction);
-    if (ts_node_is_null(funcNode) && ts_node_child_count(node) > 0)
-    {
-        funcNode = ts_node_child(node, 0);
-    }
-    if (ts_node_is_null(funcNode))
+    const auto target = ExtractCallTargetSpans(node, gs);
+    if (ts_node_is_null(target.funcNode))
     {
         return;
     }
@@ -31,20 +27,12 @@ static void ProcessCallNode(TSNode node, std::string_view sourceCode, const pars
     site.callRange = ToSourceRange(node);
     site.startByte = ts_node_start_byte(node);
     site.endByte = ts_node_end_byte(node);
-    site.calleeStartByte = ts_node_start_byte(funcNode);
-    site.calleeEndByte = ts_node_end_byte(funcNode);
-    site.calleeText = SliceSource(sourceCode, site.calleeStartByte, site.calleeEndByte);
-
-    if (ts_node_symbol(funcNode) == gs.symMemberExpression)
-    {
-        site.isMemberCall = true;
-        TSNode objNode = parser::GetChildByField(funcNode, gs.fieldObject);
-        if (!ts_node_is_null(objNode))
-        {
-            site.receiverStartByte = ts_node_start_byte(objNode);
-            site.receiverEndByte = ts_node_end_byte(objNode);
-        }
-    }
+    site.calleeStartByte = ts_node_start_byte(target.funcNode);
+    site.calleeEndByte = ts_node_end_byte(target.funcNode);
+    site.calleeText = utils::SliceSource(sourceCode, site.calleeStartByte, site.calleeEndByte);
+    site.isMemberCall = target.isMember;
+    site.receiverStartByte = target.receiverStartByte;
+    site.receiverEndByte = target.receiverEndByte;
 
     TSNode argList = ResolveArgumentListNode(node);
     site.hasArgumentList = !ts_node_is_null(argList);
@@ -82,7 +70,7 @@ static void ProcessConstructCallNode(TSNode node, std::string_view sourceCode, c
                                       }
                                       return true;
                                   });
-    site.constructTypeName = SliceSource(sourceCode, tStart, tEnd);
+    site.constructTypeName = utils::SliceSource(sourceCode, tStart, tEnd);
 
     TSNode argList = ResolveArgumentListNode(node);
     site.hasArgumentList = !ts_node_is_null(argList);

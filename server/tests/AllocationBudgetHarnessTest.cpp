@@ -1,4 +1,5 @@
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
@@ -10,6 +11,7 @@
 #include "utils/AllocationCounter.h"
 
 #include <doctest/doctest.h>
+#include <memory>
 #include <random>
 #include <string>
 #include <vector>
@@ -31,11 +33,16 @@ struct TestEnvironment
     std::string uri;
     std::string sourceCode;
     TSTree* tree = nullptr;
+    std::unique_ptr<NodeIndex> nodeIndex;
 
     explicit TestEnvironment(const std::string& code)
         : uri("file:///" + angel_lsp::test::GenerateRandomSymbolName("alloc_doc") + ".as"), sourceCode(code)
     {
         tree = parser.Parse(sourceCode);
+        if (tree)
+        {
+            nodeIndex = std::make_unique<NodeIndex>(ts_tree_root_node(tree), NodeIndexOptions{.source = sourceCode});
+        }
         symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
         auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
         if (rootScope)
@@ -178,7 +185,8 @@ TEST_CASE("Allocation Budget - Signature Help Warm Query Allocation Churn Invari
     }
     const uint32_t col = static_cast<uint32_t>(pos - lineStart);
 
-    SignatureHelpRequest req{env.uri, env.sourceCode, env.symbolTable, env.scopeIndex, lsp::Position{line, col}};
+    SignatureHelpRequest req{env.uri,        env.sourceCode,           env.symbolTable,
+                             env.scopeIndex, lsp::Position{line, col}, env.nodeIndex.get()};
 
     // Warm-up query
     auto warmSig = GetSignatureHelp(req);

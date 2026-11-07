@@ -43,7 +43,8 @@ void ProcessVariableDeclarationNode(TSNode node, std::string_view sourceCode, co
         return;
     }
 
-    std::string_view typeText = SliceSource(sourceCode, ts_node_start_byte(varTypeNode), ts_node_end_byte(varTypeNode));
+    std::string_view typeText =
+        utils::SliceSource(sourceCode, ts_node_start_byte(varTypeNode), ts_node_end_byte(varTypeNode));
     const bool isAuto = (CleanBaseTypeView(typeText) == "auto");
     const bool isHandle = IsHandleTypeView(typeText);
 
@@ -150,7 +151,7 @@ void ProcessLambdaNode(TSNode node, std::string_view sourceCode, const parser::G
             const uint32_t sB = ts_node_start_byte(p.nameNode);
             const uint32_t eB = ts_node_end_byte(p.nameNode);
             sites.lambdaParams.push_back(
-                IndexedLambdaParam{SliceSource(sourceCode, sB, eB), sB, eB, pt.row, pt.column});
+                IndexedLambdaParam{utils::SliceSource(sourceCode, sB, eB), sB, eB, pt.row, pt.column});
         }
     }
     site.paramCount = static_cast<uint32_t>(sites.lambdaParams.size()) - site.firstParam;
@@ -221,7 +222,8 @@ void ProcessEnumNode(TSNode node, std::string_view sourceCode, const parser::Gra
 
         if (!ts_node_is_null(valNode))
         {
-            std::string_view valText = SliceSource(sourceCode, ts_node_start_byte(valNode), ts_node_end_byte(valNode));
+            std::string_view valText =
+                utils::SliceSource(sourceCode, ts_node_start_byte(valNode), ts_node_end_byte(valNode));
             std::optional<int64_t> parsedVal;
             if (!valText.empty())
             {
@@ -246,7 +248,8 @@ void ProcessEnumNode(TSNode node, std::string_view sourceCode, const parser::Gra
                 IndexedEnumValue val;
                 val.startByte = ts_node_start_byte(child);
                 val.endByte = ts_node_end_byte(child);
-                val.memberName = SliceSource(sourceCode, ts_node_start_byte(nameNode), ts_node_end_byte(nameNode));
+                val.memberName =
+                    utils::SliceSource(sourceCode, ts_node_start_byte(nameNode), ts_node_end_byte(nameNode));
                 const TSPoint endPt = ts_node_end_point(nameNode);
                 val.hintLine = endPt.row;
                 val.hintCharacter = endPt.column;
@@ -261,7 +264,7 @@ void ProcessEnumNode(TSNode node, std::string_view sourceCode, const parser::Gra
             IndexedEnumValue val;
             val.startByte = ts_node_start_byte(child);
             val.endByte = ts_node_end_byte(child);
-            val.memberName = SliceSource(sourceCode, ts_node_start_byte(nameNode), ts_node_end_byte(nameNode));
+            val.memberName = utils::SliceSource(sourceCode, ts_node_start_byte(nameNode), ts_node_end_byte(nameNode));
             const TSPoint endPt = ts_node_end_point(nameNode);
             val.hintLine = endPt.row;
             val.hintCharacter = endPt.column;

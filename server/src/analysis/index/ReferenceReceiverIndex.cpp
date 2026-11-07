@@ -1,5 +1,7 @@
 #include "analysis/index/ReferenceReceiverIndex.h"
 
+#include "analysis/index/InlayHintFactsInternal.h"
+#include "analysis/resolution/CallableAndLambdaResolver.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
 #include "utils/ScopedNameUtils.h"
@@ -145,6 +147,74 @@ void IndexReferenceReceiver(TSNode parent, std::string_view source, LocalReferen
         {
             context.receivers->byReference.try_emplace(reference.startByte, id);
         }
+    }
+}
+
+TSNode ScopedIdentifierTail(TSNode scoped) noexcept
+{
+    const TSNode nameNode = parser::GetChildByField(scoped, parser::GetGrammarSymbols().fieldName);
+    if (!ts_node_is_null(nameNode))
+    {
+        return nameNode;
+    }
+    const uint32_t count = ts_node_named_child_count(scoped);
+    return count > 0 ? ts_node_named_child(scoped, count - 1) : TSNode{};
+}
+
+void IndexCallArguments(TSNode callNode, LocalScopeCollector::DocumentContext& context)
+{
+    if (ts_node_is_null(callNode) || !context.receivers)
+    {
+        return;
+    }
+
+    const auto& grammar = parser::GetGrammarSymbols();
+    const auto target = ExtractCallTargetSpans(callNode, grammar);
+    if (ts_node_is_null(target.funcNode))
+    {
+        return;
+    }
+
+    TSNode argsChild = parser::GetChildByField(callNode, grammar.fieldArguments);
+    if (ts_node_is_null(argsChild))
+    {
+        TSTreeCursor searchCursor = ts_tree_cursor_new(callNode);
+        if (ts_tree_cursor_goto_first_child(&searchCursor))
+        {
+            do
+            {
+                TSNode c = ts_tree_cursor_current_node(&searchCursor);
+                if (ts_node_symbol(c) == grammar.symArgumentList)
+                {
+                    argsChild = c;
+                    break;
+                }
+            } while (ts_tree_cursor_goto_next_sibling(&searchCursor));
+        }
+        ts_tree_cursor_delete(&searchCursor);
+    }
+    if (ts_node_is_null(argsChild))
+    {
+        return;
+    }
+
+    const auto callArgs = ExtractCallArguments(argsChild, "");
+    for (const auto& a : callArgs)
+    {
+        if (ts_node_is_null(a.exprNode))
+        {
+            continue;
+        }
+        IndexedCallArgumentRef argRef{
+            .argStartByte = ts_node_start_byte(a.exprNode),
+            .argEndByte = ts_node_end_byte(a.exprNode),
+            .calleeStartByte = target.calleeStartByte,
+            .calleeEndByte = target.calleeEndByte,
+            .receiverStartByte = target.receiverStartByte,
+            .receiverEndByte = target.receiverEndByte,
+            .argumentIndex = a.index,
+        };
+        context.receivers->callArguments.push_back(argRef);
     }
 }
 } // namespace angel_lsp::analysis

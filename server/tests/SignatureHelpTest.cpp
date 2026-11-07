@@ -1,4 +1,5 @@
 #include "analysis/index/LocalScopeCollector.h"
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
@@ -7,6 +8,7 @@
 #include "parser/AngelScriptParser.h"
 
 #include <doctest/doctest.h>
+#include <memory>
 #include <random>
 
 using namespace angel_lsp;
@@ -50,10 +52,15 @@ struct TestEnvironment
     std::string uri = "file:///test.as";
     std::string sourceCode;
     TSTree* tree = nullptr;
+    std::unique_ptr<NodeIndex> nodeIndex;
 
     TestEnvironment(const std::string& code) : sourceCode(code)
     {
         tree = parser.Parse(sourceCode);
+        if (tree)
+        {
+            nodeIndex = std::make_unique<NodeIndex>(ts_tree_root_node(tree), NodeIndexOptions{.source = sourceCode});
+        }
         symbolCollector.CollectSymbols(uri, sourceCode, parser, symbolTable);
         auto rootScope = scopeCollector.CollectScopes(sourceCode, parser);
         if (rootScope)
@@ -72,7 +79,8 @@ struct TestEnvironment
 
     std::optional<lsp::SignatureHelp> SigHelpAt(uint32_t line, uint32_t character)
     {
-        SignatureHelpRequest req{uri, sourceCode, symbolTable, scopeIndex, lsp::Position{line, character}};
+        SignatureHelpRequest req{
+            uri, sourceCode, symbolTable, scopeIndex, lsp::Position{line, character}, nodeIndex.get()};
         return GetSignatureHelp(req);
     }
 };
