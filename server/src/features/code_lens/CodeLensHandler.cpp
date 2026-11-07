@@ -1,836 +1,47 @@
 #include "features/code_lens/CodeLensHandler.h"
 
-#include "analysis/resolution/ReferenceReceiver.h"
-#include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/resolution/ClassHierarchyResolver.h"
+#include "analysis/resolution/InterfaceImplementation.h"
+#include "analysis/resolution/MixinInclusion.h"
+#include "analysis/resolution/ReferenceCounting.h"
+#include "analysis/rules/EngineRuleChecker.h"
 #include "analysis/rules/OperatorRules.h"
 #include "analysis/rules/UnusedSymbolChecker.h"
-#include "config/EngineRuleConfig.h"
-#include "config/ServerConfig.h"
-#include "i18n/i18n.h"
-#include "parser/ASTUtils.h"
-#include "parser/AngelScriptParser.h"
-#include "parser/GrammarNames.h"
-#include "parser/GrammarSymbols.h"
-#include "utils/Constants.h"
-#include "utils/LspLogger.h"
+#include "features/code_lens/CodeLensHandlerInternal.h"
 #include "utils/PositionEncoding.h"
-#include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
-#include <ankerl/unordered_dense.h>
-#include <filesystem>
-#include <span>
+#include <optional>
 #include <spdlog/fmt/fmt.h>
-#include <string>
-#include <utility>
 #include <vector>
 
 namespace angel_lsp::features
 {
-
-/**
- * @brief Finds the name of the class enclosing the given document line, with optional caching.
- * @param[in] symbolTable Symbol table to search.
- * @param[in] uri File URI.
- * @param[in] line Document line index.
- * @param[in,out] cache Optional per-file class span cache.
- * @return Enclosing class name, or empty string if not within a class.
- */
-static std::string GetEnclosingClassName(const analysis::SymbolTable& symbolTable, const std::string& uri,
-                                         uint32_t line, EnclosingClassCache* cache = nullptr)
-{
-    if (cache)
-    {
-        auto it = cache->find(uri);
-        if (it == cache->end())
-        {
-            std::vector<parser::AstNodeSpan> spans;
-            symbolTable.ForEachSymbolInFile(
-                uri,
-                [&]([[maybe_unused]] const std::string& name, const std::vector<analysis::Symbol>& syms)
-                {
-                    for (const auto& s : syms)
-                    {
-                        if ((s.type == analysis::SymbolType::Class || s.type == analysis::SymbolType::Interface) &&
-                            s.fileUri == uri)
-                        {
-                            parser::AstNodeSpan span;
-                            span.startLine = s.startLine;
-                            span.endLine = s.endLine;
-                            span.name = s.qualifiedName.empty() ? s.name : s.qualifiedName;
-                            spans.push_back(std::move(span));
-                        }
-                    }
-                });
-            it = cache->emplace(uri, std::move(spans)).first;
-        }
-        uint32_t bestSpan = UINT32_MAX;
-        std::string bestClass;
-        for (const auto& cs : it->second)
-        {
-            if (line >= cs.startLine && line <= cs.endLine)
-            {
-                uint32_t span = cs.endLine - cs.startLine;
-                if (span <= bestSpan)
-                {
-                    bestSpan = span;
-                    bestClass = cs.name;
-                }
-            }
-        }
-        return bestClass;
-    }
-    return symbolTable.FindEnclosingClassName(uri, line);
-}
-
-/**
- * @brief Checks if a container symbol is a class or interface rather than a namespace.
- * @param[in] container Name of the container.
- * @param[in] symbolTable Global symbol table.
- * @return True if container is a class or interface.
- */
-static bool IsContainerClass(std::string_view container, const analysis::SymbolTable& symbolTable)
-{
-    auto syms = symbolTable.FindSymbolsPtr(container);
-    if (!syms)
-    {
-        return false;
-    }
-    for (const auto& s : *syms)
-    {
-        if (s.type == analysis::SymbolType::Class || s.type == analysis::SymbolType::Interface)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Checks if a symbol belongs to a class or interface container.
- * @param[in] sym Target symbol.
- * @param[in] symbolTable Global symbol table.
- * @return True if container is a class or interface.
- */
-static bool IsSymbolInClassContainer(const analysis::Symbol& sym, const analysis::SymbolTable& symbolTable)
-{
-    if (sym.containerKind == analysis::ContainerKind::Class || sym.containerKind == analysis::ContainerKind::Interface)
-    {
-        return true;
-    }
-    if (sym.containerKind == analysis::ContainerKind::Namespace || sym.containerKind == analysis::ContainerKind::Enum ||
-        sym.containerName.empty())
-    {
-        return false;
-    }
-    return IsContainerClass(sym.containerName, symbolTable);
-}
-
-/**
- * @brief Checks whether a reference at given line in fileUri is inside a named namespace.
- * @param[in] fileUri Document URI.
- * @param[in] line Reference line.
- * @param[in] nsName Namespace name.
- * @param[in] symbolTable Global symbol table.
- * @return True if inside namespace block.
- */
-static bool IsInsideNamespace(const std::string& fileUri, uint32_t line, const std::string& nsName,
-                              const analysis::SymbolTable& symbolTable, EnclosingClassCache* classCache = nullptr)
-{
-    if (auto syms = symbolTable.FindSymbolsPtr(nsName))
-    {
-        for (const auto& s : *syms)
-        {
-            if (s.type == analysis::SymbolType::Namespace && s.fileUri == fileUri)
-            {
-                if (line >= s.startLine && line <= s.endLine)
-                {
-                    return true;
-                }
-            }
-        }
-    }
-    const std::string encClass = GetEnclosingClassName(symbolTable, fileUri, line, classCache);
-    if (!encClass.empty())
-    {
-        if (analysis::IsSameOrNestedNamespace(encClass, nsName))
-        {
-            return true;
-        }
-        if (auto clsSyms = symbolTable.FindSymbolsPtr(encClass))
-        {
-            for (const auto& cs : *clsSyms)
-            {
-                if (analysis::IsSameOrNestedNamespace(cs.containerName, nsName))
-                {
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Determines if a reference matches a known declaration or definition site.
- * @param[in] fileUri URI of document owning scope.
- * @param[in] ref Reference to check.
- * @param[in] scope Lexical scope of the reference.
- * @param[in] criteria Active search criteria.
- * @return True if reference represents a declaration or definition site.
- */
-static bool IsDeclarationOrDefinition(const std::string& fileUri, const analysis::LocalReference& ref,
-                                      const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
-{
-    if (criteria.allDeclRanges.contains({fileUri, ref.startLine, ref.startCharacter}))
-    {
-        return true;
-    }
-    for (const auto& sym : criteria.group)
-    {
-        if (fileUri == sym.fileUri && ref.startLine == sym.selectionRange.startLine &&
-            ref.startCharacter == sym.selectionRange.startCharacter)
-        {
-            return true;
-        }
-    }
-    for (const auto* s = scope; s != nullptr; s = s->parent)
-    {
-        for (const auto& def : s->definitions)
-        {
-            if (def.name == criteria.targetName && def.startLine == ref.startLine &&
-                def.startCharacter == ref.startCharacter)
-            {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Checks whether an enclosing class resides within the target symbol's inheritance hierarchy.
- * @param[in] encClass Enclosing class name.
- * @param[in] group Symbol group sharing declaration range.
- * @param[in] symbolTable Symbol table.
- * @return True if enclosing class is compatible with symbol group hierarchy.
- */
-static bool IsInTargetHierarchy(const std::string& encClass, const std::vector<analysis::Symbol>& group,
-                                const analysis::SymbolTable& symbolTable)
-{
-    std::string cleanEnc = analysis::CleanBaseType(encClass);
-    for (const auto& s : group)
-    {
-        if (s.containerName.empty())
-        {
-            continue;
-        }
-        std::string cleanDecl = analysis::CleanBaseType(s.containerName);
-        if (analysis::MatchesDeclOrScope(cleanEnc, cleanDecl))
-        {
-            return true;
-        }
-        auto hierarchy = analysis::GetInheritedTypeHierarchy(cleanEnc, symbolTable);
-        for (const auto& ancestor : hierarchy)
-        {
-            if (analysis::MatchesDeclOrScope(analysis::CleanBaseType(ancestor), cleanDecl))
-            {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Checks if a local definition shadows the target symbol within the given scope.
- * @param[in] scope Lexical scope.
- * @param[in] name Reference identifier name.
- * @param[in] fileUri Document URI.
- * @param[in] criteria Active search criteria.
- * @return True if a local variable or parameter shadows the target symbol.
- */
-static bool IsLocalShadowingTarget(const analysis::Scope* scope, std::string_view name, const std::string& fileUri,
-                                   const ReferenceCollectionCriteria& criteria)
-{
-    const analysis::LocalDefinition* localShadow = analysis::ResolveInScope(scope, name);
-    if (!localShadow)
-    {
-        return false;
-    }
-    if (localShadow->kind != analysis::LocalDefinitionKind::Parameter &&
-        localShadow->kind != analysis::LocalDefinitionKind::Variable)
-    {
-        return false;
-    }
-    if (criteria.allDeclRanges.contains({fileUri, localShadow->startLine, localShadow->startCharacter}))
-    {
-        return false;
-    }
-    for (const auto& sym : criteria.group)
-    {
-        if (fileUri == sym.fileUri && localShadow->startLine == sym.selectionRange.startLine &&
-            localShadow->startCharacter == sym.selectionRange.startCharacter)
-        {
-            return false;
-        }
-    }
-    return true;
-}
-
-/**
- * @brief Verifies whether a non-member reference is a valid access to an inherited or enclosed symbol.
- * @param[in] fileUri URI of document owning scope.
- * @param[in] ref Reference to check.
- * @param[in] scope Lexical scope of reference.
- * @param[in] criteria Active search criteria.
- * @return True if non-member access is compatible.
- */
-static bool IsCompatibleNonMemberAccess(const std::string& fileUri, const analysis::LocalReference& ref,
-                                        const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
-{
-    std::string encClass = GetEnclosingClassName(criteria.symbolTable, fileUri, ref.startLine, criteria.classCache);
-    if (encClass.empty() || (!criteria.compatibleClasses.contains(encClass) &&
-                             !criteria.compatibleClasses.contains(std::string(analysis::LastScopeSegment(encClass)))))
-    {
-        return false;
-    }
-    if (!IsInTargetHierarchy(encClass, criteria.group, criteria.symbolTable))
-    {
-        return false;
-    }
-    return !IsLocalShadowingTarget(scope, criteria.targetName, fileUri, criteria);
-}
-
-/**
- * @brief Resolves the type of an object text identifier within local or global scope.
- * @param[in] oText Identifier text.
- * @param[in] scope Lexical scope.
- * @param[in] symbolTable Global symbol table.
- * @param[in] enclosingClass Enclosing class name if identifier is "this".
- * @return Cleaned type name, or empty string if unresolvable.
- */
-static std::string ResolveObjectTextType(std::string_view oText, const analysis::Scope* scope,
-                                         const analysis::SymbolTable& symbolTable, const std::string& enclosingClass)
-{
-    if (oText == "this")
-    {
-        return enclosingClass;
-    }
-    const analysis::LocalDefinition* oDef = analysis::ResolveInScope(scope, oText);
-    if (oDef && !oDef->typeName.empty())
-    {
-        return analysis::CleanBaseType(oDef->typeName);
-    }
-    auto gSyms = symbolTable.FindSymbols(oText);
-    for (const auto& gs : gSyms)
-    {
-        if (gs.type == analysis::SymbolType::Variable && !gs.GetVariable().typeName.empty())
-        {
-            return analysis::CleanBaseType(gs.GetVariable().typeName);
-        }
-    }
-    return "";
-}
-
-/**
- * @brief Attempts fast-path receiver type resolution using pre-indexed slice bounds.
- * @param[in] ref Reference containing receiver byte slice.
- * @param[in] criteria Active search criteria.
- * @param[in] scope Lexical scope.
- * @param[in] encClass Enclosing class name if applicable.
- * @return Resolved receiver type name, or empty string.
- */
-static std::string TryResolveReceiverFastPath(const analysis::LocalReference& ref,
-                                              const ReferenceCollectionCriteria& criteria, const analysis::Scope* scope,
-                                              const std::string& encClass)
-{
-    if (ref.receiverStartByte < ref.receiverEndByte && ref.receiverEndByte <= criteria.request.sourceCode.size() &&
-        !ref.isScopedIdentifier)
-    {
-        std::string_view oText = std::string_view(criteria.request.sourceCode)
-                                     .substr(ref.receiverStartByte, ref.receiverEndByte - ref.receiverStartByte);
-        std::string enc = (oText == "this") ? encClass : "";
-        return ResolveObjectTextType(oText, scope, criteria.symbolTable, enc);
-    }
-    return "";
-}
-
-/**
- * @brief Resolves receiver type name from scope symbols when AST lookup is unavailable.
- * @param[in] fileUri Document URI.
- * @param[in] ref Reference under test.
- * @param[in] scope Lexical scope.
- * @param[in] criteria Active search criteria.
- * @return Cleaned receiver type name, or empty string if not resolvable.
- */
-static std::string ResolveReceiverFromScope(const std::string& fileUri, const analysis::LocalReference& ref,
-                                            const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
-{
-    std::string currentReceiverType;
-    for (const auto& candRef : scope->references)
-    {
-        if (candRef.startLine == ref.startLine && candRef.endCharacter <= ref.startCharacter)
-        {
-            if (currentReceiverType.empty())
-            {
-                std::string enc = (candRef.name == "this") ? GetEnclosingClassName(criteria.symbolTable, fileUri,
-                                                                                   ref.startLine, criteria.classCache)
-                                                           : "";
-                currentReceiverType = ResolveObjectTextType(candRef.name, scope, criteria.symbolTable, enc);
-            }
-            else
-            {
-                std::string memberType =
-                    analysis::ResolveReceiverMemberType(currentReceiverType, candRef.name, criteria.symbolTable);
-                if (!memberType.empty())
-                {
-                    currentReceiverType = std::move(memberType);
-                }
-                else
-                {
-                    std::string enc =
-                        (candRef.name == "this")
-                            ? GetEnclosingClassName(criteria.symbolTable, fileUri, ref.startLine, criteria.classCache)
-                            : "";
-                    std::string t = ResolveObjectTextType(candRef.name, scope, criteria.symbolTable, enc);
-                    if (!t.empty())
-                    {
-                        currentReceiverType = t;
-                    }
-                }
-            }
-        }
-    }
-    return currentReceiverType;
-}
-
-/**
- * @brief Checks whether a member expression reference targets a compatible receiver class.
- * @param[in] fileUri Document URI.
- * @param[in] ref Reference under test.
- * @param[in] scope Lexical scope.
- * @param[in] criteria Active search criteria.
- * @return True if receiver class is compatible.
- */
-static bool IsCompatibleMemberAccess(const std::string& fileUri, const analysis::LocalReference& ref,
-                                     const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
-{
-    auto rType = analysis::ResolveIndexedReferenceReceiver(ref, *scope, criteria.symbolTable);
-    if (rType.empty() && fileUri == criteria.request.uri)
-    {
-        std::string encClass = GetEnclosingClassName(criteria.symbolTable, fileUri, ref.startLine, criteria.classCache);
-        rType = TryResolveReceiverFastPath(ref, criteria, scope, encClass);
-    }
-    if (rType.empty())
-    {
-        rType = ResolveReceiverFromScope(fileUri, ref, scope, criteria);
-    }
-    return !rType.empty() && criteria.compatibleClasses.contains(rType);
-}
-
-/**
- * @brief Uses the qualifier captured in the occurrence document to test namespace access.
- */
-static bool MatchesTargetNamespaceQualifier(const analysis::LocalReference& ref, const analysis::Scope* scope,
-                                            const ReferenceCollectionCriteria& criteria)
-{
-    const auto qualifier = analysis::GetIndexedReferenceQualifier(ref, *scope);
-    return analysis::MatchesReferenceQualifier(qualifier, criteria.targetNamespace, *scope);
-}
-
-/**
- * @brief Validates accessibility for enum constant references.
- * @param[in] fileUri Document URI.
- * @param[in] ref Reference under test.
- * @param[in] scope Lexical scope.
- * @param[in] criteria Active search criteria.
- * @return True if reference is a valid access to the enum constant.
- */
-static bool IsValidEnumAccess(const std::string& fileUri, const analysis::LocalReference& ref,
-                              const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
-{
-    if (ref.isCall)
-    {
-        return false;
-    }
-    if (ref.isMemberAccess)
-    {
-        const auto qualifier = analysis::GetIndexedReferenceQualifier(ref, *scope);
-        return analysis::MatchesEnumReferenceQualifier(qualifier, criteria.targetEnumContainer, *scope);
-    }
-
-    if (!criteria.targetNamespace.empty())
-    {
-        if (!IsInsideNamespace(fileUri, ref.startLine, criteria.targetNamespace, criteria.symbolTable,
-                               criteria.classCache))
-        {
-            return false;
-        }
-    }
-    else if (fileUri != criteria.request.uri)
-    {
-        return false;
-    }
-
-    const analysis::LocalDefinition* localShadow = analysis::ResolveInScope(scope, ref.name);
-    return !(localShadow && (localShadow->kind == analysis::LocalDefinitionKind::Parameter ||
-                             localShadow->kind == analysis::LocalDefinitionKind::Variable));
-}
-
-/**
- * @brief Checks whether a reference has valid accessibility and scope visibility.
- * @param[in] fileUri Document URI.
- * @param[in] ref Reference under test.
- * @param[in] scope Lexical scope.
- * @param[in] criteria Active search criteria.
- * @return True if access is valid.
- */
-static bool IsEnclosingClassIncompatible(const std::string& fileUri, uint32_t line,
-                                         const ReferenceCollectionCriteria& criteria)
-{
-    if (criteria.targetAccess == analysis::AccessModifier::Private ||
-        criteria.targetAccess == analysis::AccessModifier::Protected)
-    {
-        std::string encClass = GetEnclosingClassName(criteria.symbolTable, fileUri, line, criteria.classCache);
-        if (encClass.empty() ||
-            (!criteria.compatibleClasses.contains(encClass) &&
-             !criteria.compatibleClasses.contains(std::string(analysis::LastScopeSegment(encClass)))))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool IsValidConstructorAccess(const std::string& fileUri, const analysis::LocalReference& ref,
-                                     const analysis::Scope* scope, const ReferenceCollectionCriteria& criteria)
-{
-    if (IsEnclosingClassIncompatible(fileUri, ref.startLine, criteria))
-    {
-        return false;
-    }
-    if (ref.isMemberAccess)
-    {
-        return MatchesTargetNamespaceQualifier(ref, scope, criteria);
-    }
-    if (!criteria.targetNamespace.empty() &&
-        !IsInsideNamespace(fileUri, ref.startLine, criteria.targetNamespace, criteria.symbolTable, criteria.classCache))
-    {
-        return false;
-    }
-    if (IsLocalShadowingTarget(scope, ref.name, fileUri, criteria))
-    {
-        return false;
-    }
-    return (ref.isCall && analysis::MatchesCallArguments(ref, criteria)) ||
-           (ref.isTypeSpecifier && criteria.minArgs == 0);
-}
-
-static bool IsValidAccess(const std::string& fileUri, const analysis::LocalReference& ref, const analysis::Scope* scope,
-                          const ReferenceCollectionCriteria& criteria)
-{
-    if (criteria.isEnumConstant)
-    {
-        return IsValidEnumAccess(fileUri, ref, scope, criteria);
-    }
-    const bool isConstructor = criteria.isFunction && !criteria.group.empty() &&
-                               criteria.group.front().name == criteria.group.front().containerName;
-    if (isConstructor)
-    {
-        return IsValidConstructorAccess(fileUri, ref, scope, criteria);
-    }
-    if (!criteria.compatibleClasses.empty())
-    {
-        if (IsEnclosingClassIncompatible(fileUri, ref.startLine, criteria))
-        {
-            return false;
-        }
-        return ref.isMemberAccess ? IsCompatibleMemberAccess(fileUri, ref, scope, criteria)
-                                  : IsCompatibleNonMemberAccess(fileUri, ref, scope, criteria);
-    }
-
-    if (ref.isMemberAccess)
-    {
-        return MatchesTargetNamespaceQualifier(ref, scope, criteria);
-    }
-
-    if (!criteria.targetNamespace.empty())
-    {
-        if (!IsInsideNamespace(fileUri, ref.startLine, criteria.targetNamespace, criteria.symbolTable,
-                               criteria.classCache))
-        {
-            return false;
-        }
-    }
-
-    return !IsLocalShadowingTarget(scope, ref.name, fileUri, criteria);
-}
-
-static void CountStringLiteralReferences(const std::string& fileUri, const analysis::Scope& scope,
-                                         const BatchReferenceContext& ctx)
-{
-    if (scope.stringLiteralCallRefs)
-        for (const auto& strRef : *scope.stringLiteralCallRefs)
-        {
-            auto it = ctx.targetsByName.find(strRef.name);
-            if (it != ctx.targetsByName.end())
-            {
-                const uint64_t pos = (static_cast<uint64_t>(strRef.line) << 32) | strRef.column;
-                for (size_t targetIdx : it->second)
-                {
-                    ctx.targets[targetIdx].seenRefs.insert({fileUri, pos});
-                }
-            }
-        }
-}
-
-/**
- * @brief Evaluates scope references against indexed symbol targets.
- * @param[in] fileUri URI of document owning scope.
- * @param[in] scope Lexical scope to evaluate.
- * @param[in] ctx Batched reference context.
- * @param[in] bindings Calls already bound by semantic analysis for the document.
- */
-static void ProcessScopeReferencesBatch(const std::string& fileUri, const analysis::Scope* scope,
-                                        const BatchReferenceContext& ctx, const analysis::CallBindings* bindings)
-{
-    for (const auto& ref : scope->references)
-    {
-        auto it = ctx.targetsByName.find(ref.name);
-        if (it == ctx.targetsByName.end())
-        {
-            continue;
-        }
-
-        const auto* bound = ref.isCall && bindings ? bindings->Find(ref.startByte) : nullptr;
-        const uint64_t pos = (static_cast<uint64_t>(ref.startLine) << 32) | ref.startCharacter;
-        for (size_t targetIdx : it->second)
-        {
-            auto& target = ctx.targets[targetIdx];
-            if (target.seenRefs.contains({fileUri, pos}))
-            {
-                continue;
-            }
-            if (bound && target.isFunction &&
-                (target.compatibleClasses.empty() || target.group.front().qualifiedName == bound->qualifiedName))
-            {
-                continue;
-            }
-            ReferenceCollectionCriteria criteria{
-                .targetName = target.targetName,
-                .group = target.group,
-                .compatibleClasses = target.compatibleClasses,
-                .allDeclRanges = target.allDeclRanges,
-                .targetNamespace = target.targetNamespace,
-                .targetEnumContainer = target.targetEnumContainer,
-                .isEnumConstant = target.isEnumConstant,
-                .targetAccess = target.targetAccess,
-                .isFunction = target.isFunction,
-                .minArgs = target.minArgs,
-                .maxArgs = target.maxArgs,
-                .symbolTable = ctx.request.symbolTable,
-                .request = ctx.request,
-                .classCache = &ctx.classCache,
-            };
-            if (!IsDeclarationOrDefinition(fileUri, ref, scope, criteria) &&
-                analysis::MatchesCallArguments(ref, criteria) && IsValidAccess(fileUri, ref, scope, criteria))
-            {
-                target.seenRefs.insert({fileUri, pos});
-            }
-        }
-    }
-    CountStringLiteralReferences(fileUri, *scope, ctx);
-}
-
-/**
- * @brief Traverses a scope tree flatly to collect references for batched targets.
- * @param[in] fileUri URI of document owning scope tree.
- * @param[in] root Root scope of document.
- * @param[in] ctx Batched reference context.
- */
-static void CollectReferencesInScopeTreeBatch(const std::string& fileUri, const analysis::Scope* root,
-                                              const BatchReferenceContext& ctx)
-{
-    if (!root)
-    {
-        return;
-    }
-    std::vector<const analysis::Scope*> stack{root};
-    while (!stack.empty())
-    {
-        const analysis::Scope* scope = stack.back();
-        stack.pop_back();
-        ProcessScopeReferencesBatch(fileUri, scope, ctx, root->GetCallBindings());
-        for (const auto& child : scope->children)
-        {
-            if (child)
-            {
-                stack.push_back(child.get());
-            }
-        }
-    }
-}
-
-static void CountBoundCalls(SymbolLensTarget& target, const CodeLensRequest& request)
-{
-    if (!target.isFunction)
-    {
-        return;
-    }
-    for (const auto& symbol : target.group)
-    {
-        if (symbol.type != analysis::SymbolType::Function || symbol.isSynthesized)
-        {
-            continue;
-        }
-        request.scopeIndex.ForEachBoundUse(
-            analysis::CallDeclaration(symbol), request.occurrenceModule,
-            [&](const std::string& uri, std::span<const analysis::SourceRange> ranges)
-            {
-                for (const auto& range : ranges)
-                {
-                    const uint64_t position = (static_cast<uint64_t>(range.startLine) << 32) | range.startCharacter;
-                    target.seenRefs.insert({uri, position});
-                }
-            });
-    }
-}
-
-/**
- * @brief Counts references across all documents in a single pass over the scope index.
- * @param[in,out] targets Vector of reference targets to update.
- * @param[in] targetsByName Mapping from symbol name to target indices.
- * @param[in] request Active CodeLens request.
- */
-static void BatchCountReferencesAcrossScopes(std::span<SymbolLensTarget> targets, const TargetIndexMap& targetsByName,
-                                             const CodeLensRequest& request)
-{
-    for (auto& target : targets)
-    {
-        CountBoundCalls(target, request);
-    }
-    BatchReferenceContext ctx{targets, targetsByName, request};
-    request.scopeIndex.ForEachOccurrenceScope(
-        request.occurrenceModule,
-        [&](const std::string& fileUri, const std::shared_ptr<const analysis::Scope>& root)
-        {
-            if (root && !angel_lsp::utils::IsPredefinedFile(fileUri, request.predefinedExtension))
-            {
-                CollectReferencesInScopeTreeBatch(fileUri, root.get(), ctx);
-            }
-        });
-}
-
-/**
- * @brief Constructs a command code lens with the given title and range.
- * @param[in] key Range covering the symbol.
- * @param[in] title Human-readable command title.
- * @return Configured CodeLens.
- */
-static lsp::CodeLens MakeCommandLens(const RangeKey& key, std::string title)
-{
-    lsp::CodeLens lens;
-    lens.range =
-        lsp::Range{lsp::Position{key.startLine, key.startCharacter}, lsp::Position{key.endLine, key.endCharacter}};
-    lsp::Command cmd;
-    cmd.title = std::move(title);
-    cmd.command = "";
-    lens.command = std::move(cmd);
-    return lens;
-}
-
-/**
- * @brief Locates a mixin symbol definition in the symbol table.
- * @param[in] mixinName Qualified or bare mixin name.
- * @param[in] symbolTable Global symbol table.
- * @return Optional matching mixin Symbol.
- */
-static std::optional<analysis::Symbol> FindMixinSymbol(const std::string& mixinName,
-                                                       const analysis::SymbolTable& symbolTable)
-{
-    if (auto symsPtr = symbolTable.FindSymbolsPtr(mixinName))
-    {
-        for (const auto& c : *symsPtr)
-        {
-            if (c.type == analysis::SymbolType::Class && c.GetClass().modifiers.isMixin)
-            {
-                return c;
-            }
-        }
-    }
-    const std::string_view shortName = analysis::LastScopeSegment(mixinName);
-    for (const auto& c : symbolTable.FindTypeSymbolsByShortName(shortName))
-    {
-        if (c.type == analysis::SymbolType::Class && c.GetClass().modifiers.isMixin)
-        {
-            return c;
-        }
-    }
-    return std::nullopt;
-}
-
-/**
- * @brief Handles virtual URI scheme requests by generating a jump-to-physical-source lens.
- * @param[in] request Active CodeLens request.
- * @return Optional vector of code lenses for the virtual URI.
- */
 static std::optional<std::vector<lsp::CodeLens>> HandleVirtualUri(const CodeLensRequest& request)
 {
-    if (!request.uri.starts_with("angelscript-virtual:") && !request.uri.starts_with("angelscript-virtual://"))
+    std::string_view hostClass;
+    std::string_view mixinPart;
+    if (!analysis::SymbolTable::ParseVirtualMixinUri(request.uri, hostClass, mixinPart))
     {
         return std::nullopt;
     }
 
-    std::string_view s = request.uri;
-    static constexpr std::string_view kVirtualSchemeFull = "angelscript-virtual://";
-    static constexpr std::string_view kVirtualSchemeShort = "angelscript-virtual:";
-
-    if (s.starts_with(kVirtualSchemeFull))
-    {
-        s.remove_prefix(kVirtualSchemeFull.size());
-    }
-    else if (s.starts_with(kVirtualSchemeShort))
-    {
-        s.remove_prefix(kVirtualSchemeShort.size());
-        while (!s.empty() && s.front() == '/')
-        {
-            s.remove_prefix(1);
-        }
-    }
-
-    auto slashPos = s.find('/');
-    std::string_view mixinPart = (slashPos != std::string_view::npos) ? s.substr(slashPos + 1) : s;
-    if (mixinPart.ends_with(".as"))
-    {
-        mixinPart.remove_suffix(3);
-    }
-    std::string mixinName = utils::UrlDecode(mixinPart);
-
-    auto mixinSym = FindMixinSymbol(mixinName, request.symbolTable);
+    auto mixinSym = analysis::FindMixinSymbol(utils::UrlDecode(mixinPart), request.symbolTable);
     if (!mixinSym || mixinSym->fileUri.empty())
     {
         return std::nullopt;
     }
 
-    std::string physicalPath = utils::UriToPath(mixinSym->fileUri);
-    std::string filename = std::filesystem::path(physicalPath).filename().string();
-    if (filename.empty())
-    {
-        filename = mixinSym->fileUri;
-    }
-
     lsp::CodeLens lens;
     lens.range = lsp::Range{lsp::Position{0, 0}, lsp::Position{0, 0}};
     lsp::Command cmd;
-    cmd.title = i18n::FormatMessage(request.i18n, "codelens.jump-to-physical-source", "Jump to physical source in {}",
-                                    filename);
+    cmd.title = analysis::FormatJumpToPhysicalSourceTitle(mixinSym->fileUri, request.i18n);
     cmd.command = "angelscript.openPhysicalSource";
 
     lsp::json::Array args;
     lsp::json::Object argObj;
-    argObj["fileUri"] = lsp::json::Value(std::string(mixinSym->fileUri));
+    argObj["fileUri"] = MakeJsonString(mixinSym->fileUri);
     argObj["line"] = static_cast<lsp::json::Integer>(mixinSym->startLine);
     argObj["character"] = static_cast<lsp::json::Integer>(mixinSym->startCharacter);
     args.push_back(lsp::json::Value(std::move(argObj)));
@@ -840,468 +51,50 @@ static std::optional<std::vector<lsp::CodeLens>> HandleVirtualUri(const CodeLens
     return std::vector<lsp::CodeLens>{std::move(lens)};
 }
 
-/**
- * @brief Evaluates whether a symbol's type is enabled for CodeLens under active configuration.
- */
-static bool IsSymbolTypeEnabledForCodeLens(const analysis::Symbol& sym, const config::ServerConfig* config)
-{
-    if (!config)
-    {
-        return true;
-    }
-    if (sym.type == analysis::SymbolType::Function)
-    {
-        return config->features.codeLensShowOnFunctions;
-    }
-    if (sym.type == analysis::SymbolType::Class || sym.type == analysis::SymbolType::Interface ||
-        sym.type == analysis::SymbolType::Funcdef)
-    {
-        return config->features.codeLensShowOnClassesAndInterfaces;
-    }
-    if (sym.type == analysis::SymbolType::Enum)
-    {
-        return config->features.codeLensShowOnEnums;
-    }
-    if (sym.type == analysis::SymbolType::Variable)
-    {
-        if (std::holds_alternative<analysis::VariableSignature>(sym.signature) && sym.GetVariable().isEnumConstant)
-        {
-            return config->features.codeLensShowOnEnums;
-        }
-        return config->features.codeLensShowOnPropertiesAndVariables;
-    }
-    if (sym.type == analysis::SymbolType::Property)
-    {
-        return config->features.codeLensShowOnPropertiesAndVariables;
-    }
-    return true;
-}
-
-static SymbolGroups CollectSymbolGroups(const CodeLensRequest& request)
-{
-    SymbolGroups result;
-    request.symbolTable.ForEachSymbolInFile(
-        request.uri,
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
-        {
-            for (const auto& sym : symbols)
-            {
-                if (sym.fileUri != request.uri || sym.isSynthesized ||
-                    !IsSymbolTypeEnabledForCodeLens(sym, request.config))
-                {
-                    continue;
-                }
-
-                const RangeKey key{sym.startLine, sym.startCharacter, sym.endLine, sym.endCharacter};
-                auto [it, inserted] = result.groups.try_emplace(key, std::vector<analysis::Symbol>{});
-                if (inserted)
-                {
-                    result.rangeOrder.push_back(key);
-                }
-                it->second.push_back(sym);
-            }
-        });
-
-    std::sort(result.rangeOrder.begin(), result.rangeOrder.end(),
-              [](const RangeKey& a, const RangeKey& b)
-              {
-                  if (a.startLine != b.startLine)
-                  {
-                      return a.startLine < b.startLine;
-                  }
-                  return a.startCharacter < b.startCharacter;
-              });
-
-    return result;
-}
-
-/**
- * @brief Selects the primary symbol from a group, preferring non-synthesized declarations.
- * @param[in] symGroup Group of symbols sharing a declaration range.
- * @return Primary symbol reference.
- */
-static const analysis::Symbol& SelectPrimarySymbol(const std::vector<analysis::Symbol>& symGroup)
-{
-    for (const auto& s : symGroup)
-    {
-        if (s.type == analysis::SymbolType::Variable &&
-            std::holds_alternative<analysis::VariableSignature>(s.signature) && s.GetVariable().isEnumConstant &&
-            s.containerKind == analysis::ContainerKind::Enum)
-        {
-            return s;
-        }
-    }
-    for (const auto& s : symGroup)
-    {
-        if (s.type == analysis::SymbolType::Variable &&
-            std::holds_alternative<analysis::VariableSignature>(s.signature) && s.GetVariable().isEnumConstant &&
-            !s.containerName.empty())
-        {
-            return s;
-        }
-    }
-    for (const auto& s : symGroup)
-    {
-        if (!s.isSynthesized)
-        {
-            return s;
-        }
-    }
-    return symGroup.front();
-}
-
-/**
- * @brief Checks if a method belongs to an interface.
- * @param[in] sym Method symbol.
- * @param[in] symbolTable Global symbol table.
- * @return True if method belongs to an interface.
- */
-static bool IsInterfaceMethod(const analysis::Symbol& sym, const analysis::SymbolTable& symbolTable)
-{
-    if (sym.containerName.empty())
-    {
-        return false;
-    }
-    auto owners = symbolTable.FindSymbolsPtr(sym.containerName);
-    if (!owners)
-    {
-        return false;
-    }
-    for (const auto& owner : *owners)
-    {
-        if (owner.type == analysis::SymbolType::Interface)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Counts class implementations of an interface method.
- * @param[in] sym Interface method symbol.
- * @param[in] symbolTable Global symbol table.
- * @return Implementation count.
- */
-static size_t CountInterfaceMethodImplementations(const analysis::Symbol& sym, const analysis::SymbolTable& symbolTable)
-{
-    size_t implCount = 0;
-    symbolTable.ForEachSymbol(
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& candidates)
-        {
-            for (const auto& cand : candidates)
-            {
-                if (cand.type != analysis::SymbolType::Function || cand.name != sym.name ||
-                    (cand.fileUri == sym.fileUri && cand.containerName == sym.containerName) ||
-                    cand.containerName.empty())
-                {
-                    continue;
-                }
-                auto candOwners = symbolTable.FindSymbolsPtr(cand.containerName);
-                if (!candOwners)
-                {
-                    continue;
-                }
-                for (const auto& cOwner : *candOwners)
-                {
-                    if (cOwner.type == analysis::SymbolType::Class)
-                    {
-                        for (const auto& b : cOwner.GetClass().bases)
-                        {
-                            if (analysis::CleanBaseTypeView(b) == sym.containerName &&
-                                cand.GetFunction().parameters.size() == sym.GetFunction().parameters.size())
-                            {
-                                implCount++;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    return implCount;
-}
-
-/**
- * @brief Counts classes that implement an interface.
- * @param[in] sym Interface symbol.
- * @param[in] symbolTable Global symbol table.
- * @return Implementation count.
- */
-static size_t CountInterfaceImplementations(const analysis::Symbol& sym, const analysis::SymbolTable& symbolTable)
-{
-    size_t implCount = 0;
-    symbolTable.ForEachSymbol(
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& candidates)
-        {
-            for (const auto& cand : candidates)
-            {
-                if (cand.type == analysis::SymbolType::Class)
-                {
-                    for (const auto& b : cand.GetClass().bases)
-                    {
-                        if (analysis::CleanBaseTypeView(b) == sym.name)
-                        {
-                            implCount++;
-                            break;
-                        }
-                    }
-                }
-            }
-        });
-    return implCount;
-}
-
-/**
- * @brief Precomputes mapping from included mixin names to including classes and their derived classes.
- * @param[in] symbolTable Global symbol table.
- * @return Map of mixin name to all compatible host and derived class names.
- */
-static MixinInclusionMap BuildMixinInclusionMap(const analysis::SymbolTable& symbolTable)
-{
-    MixinInclusionMap map;
-    symbolTable.ForEachSymbol(
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
-        {
-            for (const auto& cand : symbols)
-            {
-                if (cand.type == analysis::SymbolType::Class &&
-                    std::holds_alternative<analysis::ClassSignature>(cand.signature))
-                {
-                    const auto& cls = cand.GetClass();
-                    for (const auto& m : cls.includedMixins)
-                    {
-                        auto& list = map[m];
-                        list.push_back(cand.name);
-                        if (!cand.qualifiedName.empty() && cand.qualifiedName != cand.name)
-                        {
-                            list.push_back(cand.qualifiedName);
-                        }
-                        auto candDerived = analysis::GetDerivedClasses(cand.name, symbolTable);
-                        for (const auto& rel : candDerived)
-                        {
-                            list.push_back(rel);
-                        }
-                    }
-                }
-            }
-        });
-    return map;
-}
-
-/**
- * @brief Collects all classes compatible with member symbol access across mixins and hierarchies.
- * @param[in] symGroup Symbol group sharing declaration range.
- * @param[in] sym Primary symbol.
- * @param[in] targetAccess Access modifier of the member.
- * @param[in] ctx Context bundling mixin map and symbol table.
- * @return Set of compatible class names.
- */
-static ankerl::unordered_dense::set<std::string> CollectCompatibleClasses(const std::vector<analysis::Symbol>& symGroup,
-                                                                          const analysis::Symbol& sym,
-                                                                          analysis::AccessModifier targetAccess,
-                                                                          const CompatibleClassContext& ctx)
-{
-    ankerl::unordered_dense::set<std::string> compatibleClasses;
-    for (const auto& s : symGroup)
-    {
-        if (IsSymbolInClassContainer(s, ctx.symbolTable))
-        {
-            compatibleClasses.insert(s.containerName);
-            compatibleClasses.insert(std::string(analysis::LastScopeSegment(s.containerName)));
-            auto comp = analysis::GetCompatibleMemberClasses(s.containerName, sym.name, targetAccess, ctx.symbolTable);
-            for (const auto& c : comp)
-            {
-                compatibleClasses.insert(c);
-            }
-        }
-    }
-
-    if (!compatibleClasses.empty())
-    {
-        std::vector<std::string> initial(compatibleClasses.begin(), compatibleClasses.end());
-        for (const auto& c : initial)
-        {
-            auto it = ctx.mixinMap.find(c);
-            if (it != ctx.mixinMap.end())
-            {
-                for (const auto& candClass : it->second)
-                {
-                    compatibleClasses.insert(candClass);
-                }
-            }
-        }
-    }
-    return compatibleClasses;
-}
-
-/**
- * @brief Adds declaration line and character coordinates of symbols to a range set.
- * @param[in] syms List of symbols.
- * @param[in,out] declRanges Output set of declaration coordinates.
- */
-static void AddSymbolDeclRanges(const std::vector<analysis::Symbol>& syms, DeclRangeSet& declRanges)
-{
-    for (const auto& s : syms)
-    {
-        if (s.type != analysis::SymbolType::CallReference)
-        {
-            uint32_t sL = (s.selectionRange.endLine > 0 || s.selectionRange.endCharacter > 0)
-                              ? s.selectionRange.startLine
-                              : s.startLine;
-            uint32_t sC = (s.selectionRange.endLine > 0 || s.selectionRange.endCharacter > 0)
-                              ? s.selectionRange.startCharacter
-                              : s.startCharacter;
-            declRanges.insert({s.fileUri, sL, sC});
-        }
-    }
-}
-
-/**
- * @brief Collects all declaration coordinates for a symbol and its compatible class variants.
- * @param[in] symName Member symbol name.
- * @param[in] symGroup Symbol group sharing declaration range.
- * @param[in] compatibleClasses Set of compatible classes.
- * @param[in] symbolTable Global symbol table.
- * @return Populated set of declaration coordinate tuples.
- */
-static DeclRangeSet CollectAllDeclRanges(const std::string& symName, const std::vector<analysis::Symbol>& symGroup,
-                                         const ankerl::unordered_dense::set<std::string>& compatibleClasses,
-                                         const analysis::SymbolTable& symbolTable)
-{
-    DeclRangeSet allDeclRanges;
-    AddSymbolDeclRanges(symbolTable.FindSymbols(symName), allDeclRanges);
-    for (const auto& c : compatibleClasses)
-    {
-        AddSymbolDeclRanges(symbolTable.FindMemberSymbols(c, symName), allDeclRanges);
-    }
-    for (const auto& s : symGroup)
-    {
-        if (!s.containerName.empty())
-        {
-            AddSymbolDeclRanges(symbolTable.FindMemberSymbols(s.containerName, symName), allDeclRanges);
-        }
-    }
-    AddSymbolDeclRanges(symGroup, allDeclRanges);
-    return allDeclRanges;
-}
-
-/**
- * @brief Locates the AST range corresponding to a mixin inclusion within a host class.
- * @param[in] sym Host class symbol.
- * @param[in] mixinName Included mixin name.
- * @param[in] request Active CodeLens request.
- * @return Source range of the mixin declaration or fallback to class header.
- */
-static lsp::Range FindMixinRangeInAst(const analysis::Symbol& sym, const std::string& mixinName,
-                                      const CodeLensRequest& request)
-{
-    const lsp::Range fallbackRange{lsp::Position{sym.startLine, sym.startCharacter},
-                                   lsp::Position{sym.startLine, sym.endCharacter}};
-
-    if (request.sourceCode.empty() || mixinName.empty())
-    {
-        return fallbackRange;
-    }
-
-    std::string_view shortName = utils::LastScopeSegment(mixinName);
-    const uint32_t maxLine = std::max(sym.startLine, sym.endLine);
-    for (uint32_t curLine = sym.startLine; curLine <= maxLine; ++curLine)
-    {
-        size_t lineOffset = utils::PositionToOffset(request.sourceCode, curLine, 0, utils::PositionEncoding::Utf16);
-        if (lineOffset >= request.sourceCode.size())
-        {
-            break;
-        }
-
-        size_t nextNewline = request.sourceCode.find('\n', lineOffset);
-        std::string_view line = (nextNewline != std::string_view::npos)
-                                    ? request.sourceCode.substr(lineOffset, nextNewline - lineOffset)
-                                    : request.sourceCode.substr(lineOffset);
-
-        auto pos = line.find(shortName);
-        if (pos != std::string_view::npos)
-        {
-            bool startOk =
-                (pos == 0 || (!std::isalnum(static_cast<unsigned char>(line[pos - 1])) && line[pos - 1] != '_'));
-            bool endOk = (pos + shortName.size() >= line.size() ||
-                          (!std::isalnum(static_cast<unsigned char>(line[pos + shortName.size()])) &&
-                           line[pos + shortName.size()] != '_'));
-            if (startOk && endOk)
-            {
-                uint32_t startCol =
-                    utils::ByteToLspCharColumn(line, static_cast<uint32_t>(pos), utils::PositionEncoding::Utf16);
-                uint32_t endCol = utils::ByteToLspCharColumn(line, static_cast<uint32_t>(pos + shortName.size()),
-                                                             utils::PositionEncoding::Utf16);
-                return lsp::Range{lsp::Position{curLine, startCol}, lsp::Position{curLine, endCol}};
-            }
-        }
-    }
-    return fallbackRange;
-}
-
-/**
- * @brief Appends CodeLens entries for mixin expansions included by a host class.
- * @param[in] sym Host class symbol.
- * @param[in] request Active CodeLens request.
- * @param[in,out] lenses Output vector of CodeLens items.
- */
 static void AppendMixinExpansionLenses(const analysis::Symbol& sym, const CodeLensRequest& request,
                                        std::vector<lsp::CodeLens>& lenses)
 {
-    if (!std::holds_alternative<analysis::ClassSignature>(sym.signature))
-    {
-        return;
-    }
-    const auto& sig = sym.GetClass();
-    if (sig.modifiers.isMixin)
+    const auto includedMixins = analysis::CollectClassIncludedMixins(sym, request.symbolTable);
+    if (includedMixins.empty())
     {
         return;
     }
 
-    std::vector<std::string> includedMixins = sig.includedMixins;
-    for (const auto& b : sig.bases)
-    {
-        std::string clean = analysis::CleanBaseType(b);
-        if (!clean.empty() && analysis::IsMixinClass(clean, request.symbolTable))
-        {
-            if (std::find(includedMixins.begin(), includedMixins.end(), clean) == includedMixins.end())
-            {
-                includedMixins.push_back(clean);
-            }
-        }
-    }
+    const auto rootScope = request.scopeIndex.GetRoot(request.uri);
+    const uint32_t maxLine = std::max(sym.startLine, sym.endLine);
 
     for (const auto& mixinName : includedMixins)
     {
-        lsp::Range range = FindMixinRangeInAst(sym, mixinName, request);
+        lsp::Range range{lsp::Position{sym.startLine, sym.startCharacter},
+                         lsp::Position{sym.startLine, sym.endCharacter}};
+        if (rootScope)
+        {
+            if (auto matched = analysis::FindTypeReferenceRange(*rootScope, mixinName, sym.startLine, maxLine))
+            {
+                range = lsp::Range{lsp::Position{matched->startLine, matched->startCharacter},
+                                   lsp::Position{matched->endLine, matched->endCharacter}};
+            }
+        }
 
         lsp::CodeLens mixinLens;
         mixinLens.range = range;
         lsp::Command mixinCmd;
-        mixinCmd.title =
-            i18n::FormatMessage(request.i18n, "codelens.view-mixin-expansion", "View Mixin Expansion: {}", mixinName);
+        mixinCmd.title = analysis::FormatViewMixinExpansionTitle(mixinName, request.i18n);
         mixinCmd.command = "angelscript.viewMixinExpansion";
 
         lsp::json::Array args;
         lsp::json::Object argObj;
-        argObj["hostClass"] = lsp::json::Value(std::string(sym.qualifiedName.empty() ? sym.name : sym.qualifiedName));
-        argObj["mixinName"] = lsp::json::Value(std::string(mixinName));
-        argObj["hostUri"] = lsp::json::Value(std::string(request.uri));
+        argObj["hostClass"] = MakeJsonString(sym.qualifiedName.empty() ? sym.name : sym.qualifiedName);
+        argObj["mixinName"] = MakeJsonString(mixinName);
+        argObj["hostUri"] = MakeJsonString(request.uri);
         argObj["line"] = lsp::json::Value(static_cast<lsp::json::Integer>(range.start.line));
         argObj["character"] = lsp::json::Value(static_cast<lsp::json::Integer>(range.start.character));
 
-        if (auto symsPtr = request.symbolTable.FindSymbolsPtr(mixinName))
+        if (auto mixinSym = analysis::FindMixinSymbol(mixinName, request.symbolTable))
         {
-            for (const auto& s : *symsPtr)
-            {
-                if (s.type == analysis::SymbolType::Class && s.GetClass().modifiers.isMixin)
-                {
-                    argObj["targetUri"] = lsp::json::Value(std::string(s.fileUri));
-                    argObj["targetLine"] = lsp::json::Value(static_cast<lsp::json::Integer>(s.startLine));
-                    argObj["targetCharacter"] = lsp::json::Value(static_cast<lsp::json::Integer>(s.startCharacter));
-                    break;
-                }
-            }
+            argObj["targetUri"] = MakeJsonString(mixinSym->fileUri);
+            argObj["targetLine"] = lsp::json::Value(static_cast<lsp::json::Integer>(mixinSym->startLine));
+            argObj["targetCharacter"] = lsp::json::Value(static_cast<lsp::json::Integer>(mixinSym->startCharacter));
         }
 
         args.push_back(lsp::json::Value(std::move(argObj)));
@@ -1311,187 +104,8 @@ static void AppendMixinExpansionLenses(const analysis::Symbol& sym, const CodeLe
     }
 }
 
-/**
- * @brief Creates a reference target for a function or variable symbol.
- * @param[in] key Range covering symbol declaration.
- * @param[in] sym Primary symbol.
- * @param[in] symGroup Symbol group sharing declaration range.
- * @param[in] ctx Context bundling mixin map and symbol table.
- * @return Constructed SymbolLensTarget.
- */
-static SymbolLensTarget CreateFunctionOrVariableTarget(const RangeKey& key, const analysis::Symbol& sym,
-                                                       const std::vector<analysis::Symbol>& symGroup,
-                                                       const CompatibleClassContext& ctx)
-{
-    analysis::AccessModifier targetAccess = analysis::AccessModifier::Public;
-    bool isFunction = false;
-    size_t minArgs = 0;
-    size_t maxArgs = 0;
-    bool isEnumConstant = false;
-    std::string targetEnumContainer;
-    if (std::holds_alternative<analysis::FunctionSignature>(sym.signature))
-    {
-        const auto& fn = sym.GetFunction();
-        targetAccess = fn.modifiers.access;
-        isFunction = true;
-        maxArgs = fn.parameters.size();
-        for (const auto& p : fn.parameters)
-        {
-            if (p.defaultValue.empty())
-            {
-                minArgs++;
-            }
-        }
-    }
-    else if (std::holds_alternative<analysis::VariableSignature>(sym.signature))
-    {
-        const auto& var = sym.GetVariable();
-        targetAccess = var.modifiers.access;
-        isEnumConstant = var.isEnumConstant;
-        if (isEnumConstant)
-        {
-            targetEnumContainer = !var.typeName.empty() ? var.typeName : sym.containerName;
-        }
-    }
-
-    auto compatibleClasses = CollectCompatibleClasses(symGroup, sym, targetAccess, ctx);
-    auto allDeclRanges = CollectAllDeclRanges(sym.name, symGroup, compatibleClasses, ctx.symbolTable);
-
-    std::string targetNamespace;
-    if (isEnumConstant)
-    {
-        targetNamespace = std::string(utils::ParentScopeView(targetEnumContainer));
-    }
-    else if (!sym.containerName.empty() && !IsSymbolInClassContainer(sym, ctx.symbolTable))
-    {
-        targetNamespace = sym.containerName;
-    }
-
-    return SymbolLensTarget{
-        .key = key,
-        .targetName = sym.name,
-        .group = symGroup,
-        .compatibleClasses = std::move(compatibleClasses),
-        .allDeclRanges = std::move(allDeclRanges),
-        .targetNamespace = std::move(targetNamespace),
-        .targetEnumContainer = std::move(targetEnumContainer),
-        .isEnumConstant = isEnumConstant,
-        .targetAccess = targetAccess,
-        .isFunction = isFunction,
-        .minArgs = minArgs,
-        .maxArgs = maxArgs,
-        .seenRefs = {},
-    };
-}
-
-/**
- * @brief Creates a reference target for a class symbol.
- * @param[in] key Range covering class declaration.
- * @param[in] sym Class symbol.
- * @param[in] symGroup Symbol group sharing declaration range.
- * @param[in] ctx Context bundling mixin map and symbol table.
- * @return Constructed SymbolLensTarget.
- */
-static SymbolLensTarget CreateClassTarget(const RangeKey& key, const analysis::Symbol& sym,
-                                          const std::vector<analysis::Symbol>& symGroup,
-                                          const CompatibleClassContext& ctx)
-{
-    DeclRangeSet allDeclRanges;
-    AddSymbolDeclRanges(symGroup, allDeclRanges);
-
-    std::string targetNamespace;
-    if (!sym.containerName.empty() && !IsSymbolInClassContainer(sym, ctx.symbolTable))
-    {
-        targetNamespace = sym.containerName;
-    }
-
-    return SymbolLensTarget{
-        .key = key,
-        .targetName = sym.name,
-        .group = symGroup,
-        .compatibleClasses = {},
-        .allDeclRanges = std::move(allDeclRanges),
-        .targetNamespace = std::move(targetNamespace),
-        .targetEnumContainer = {},
-        .isEnumConstant = false,
-        .targetAccess = analysis::AccessModifier::Public,
-        .isFunction = false,
-        .minArgs = 0,
-        .maxArgs = 0,
-        .seenRefs = {},
-    };
-}
-
-/**
- * @brief Registers reference targets for symbols that require reference counts.
- * @param[in] symGroups Symbol groups in the active document.
- * @param[in] ctx Context bundling mixin map and symbol table.
- * @param[out] targets List of collected reference targets.
- * @param[out] keyToTarget Map from RangeKey to target index.
- */
-static void CollectReferenceTargets(const SymbolGroups& symGroups, const CompatibleClassContext& ctx,
-                                    std::vector<SymbolLensTarget>& targets, KeyTargetMap& keyToTarget)
-{
-    for (const auto& key : symGroups.rangeOrder)
-    {
-        auto it = symGroups.groups.find(key);
-        if (it == symGroups.groups.end() || it->second.empty())
-        {
-            continue;
-        }
-
-        const auto& symGroup = it->second;
-        const auto& sym = SelectPrimarySymbol(symGroup);
-
-        if (sym.type == analysis::SymbolType::Function)
-        {
-            if (IsInterfaceMethod(sym, ctx.symbolTable) || analysis::IsDestructorDeclaration(sym, ctx.sourceCode))
-            {
-                continue;
-            }
-            keyToTarget[key] = targets.size();
-            targets.push_back(CreateFunctionOrVariableTarget(key, sym, symGroup, ctx));
-        }
-        else if (sym.type == analysis::SymbolType::Variable || sym.type == analysis::SymbolType::Property)
-        {
-            keyToTarget[key] = targets.size();
-            targets.push_back(CreateFunctionOrVariableTarget(key, sym, symGroup, ctx));
-        }
-        else if (sym.type == analysis::SymbolType::Class)
-        {
-            keyToTarget[key] = targets.size();
-            targets.push_back(CreateClassTarget(key, sym, symGroup, ctx));
-        }
-    }
-}
-
-/**
- * @brief Formats a localized reference count string.
- * @param[in] refCount Number of references.
- * @param[in] i18n Optional pointer to I18n translation context.
- * @return Formatted reference count message.
- */
-static std::string FormatReferenceCount(size_t refCount, const i18n::I18n* i18n)
-{
-    return (refCount == 1) ? i18n::FormatMessage(i18n, "codelens.reference", "1 reference")
-                           : i18n::FormatMessage(i18n, "codelens.references", "{} references", refCount);
-}
-
-static std::string FormatImplementationCount(size_t implCount, const i18n::I18n* i18n)
-{
-    return (implCount == 1) ? i18n::FormatMessage(i18n, "codelens.implementation", "1 implementation")
-                            : i18n::FormatMessage(i18n, "codelens.implementations", "{} implementations", implCount);
-}
-
-/**
- * @brief Appends a reference count lens for a mapped symbol target.
- * @param[in] key Declaration range key.
- * @param[in] sym Primary symbol.
- * @param[in] ctx Assembled CodeLens context.
- * @param[in,out] lenses Output list of code lenses.
- */
-static void AppendReferenceLens(const RangeKey& key, const analysis::Symbol& sym, const AssembledLensContext& ctx,
-                                std::vector<lsp::CodeLens>& lenses)
+static void AppendReferenceLens(const analysis::SourceRange& key, const analysis::Symbol& sym,
+                                const AssembledLensContext& ctx, std::vector<lsp::CodeLens>& lenses)
 {
     auto it = ctx.keyToTarget.find(key);
     if (it == ctx.keyToTarget.end())
@@ -1512,16 +126,16 @@ static void AppendReferenceLens(const RangeKey& key, const analysis::Symbol& sym
     {
         return;
     }
-    auto lens = MakeCommandLens(key, FormatReferenceCount(refCount, ctx.request.i18n));
+    auto lens = MakeCommandLens(key, analysis::FormatReferenceCount(refCount, ctx.request.i18n));
     if (!ctx.request.config || ctx.request.config->features.enableReferences)
     {
         const auto& selection = sym.selectionRange == analysis::SourceRange{} ? key : sym.selectionRange;
         const auto line = ctx.lines.Line(ctx.request.sourceCode, selection.startLine);
         const auto character =
             utils::ByteToLspCharColumn(line, selection.startCharacter, utils::PositionEncoding::Utf16);
-        const auto uri = ctx.request.clientUri.empty() ? std::string_view(ctx.request.uri) : ctx.request.clientUri;
+        const auto uri = ctx.request.clientUri.empty() ? ctx.request.uri : ctx.request.clientUri;
         lsp::json::Array arguments;
-        arguments.emplace_back(std::string(uri));
+        arguments.emplace_back(MakeJsonString(uri));
         arguments.emplace_back(static_cast<lsp::json::Integer>(selection.startLine));
         arguments.emplace_back(static_cast<lsp::json::Integer>(character));
         lens.command->command = "angelscript.showReferences";
@@ -1530,37 +144,23 @@ static void AppendReferenceLens(const RangeKey& key, const analysis::Symbol& sym
     lenses.push_back(std::move(lens));
 }
 
-/**
- * @brief Appends lenses for a function symbol, checking for interface implementations first.
- * @param[in] key Declaration range key.
- * @param[in] sym Function symbol.
- * @param[in] ctx Assembled CodeLens context.
- * @param[in,out] lenses Output list of code lenses.
- */
-static void AppendFunctionLens(const RangeKey& key, const analysis::Symbol& sym, const AssembledLensContext& ctx,
-                               std::vector<lsp::CodeLens>& lenses)
+static void AppendFunctionLens(const analysis::SourceRange& key, const analysis::Symbol& sym,
+                               const AssembledLensContext& ctx, std::vector<lsp::CodeLens>& lenses)
 {
     if (analysis::IsDestructorDeclaration(sym, ctx.request.sourceCode))
     {
         return;
     }
-    if (IsInterfaceMethod(sym, ctx.request.symbolTable))
+    if (analysis::IsInterfaceMethod(sym, ctx.request.symbolTable))
     {
-        size_t implCount = CountInterfaceMethodImplementations(sym, ctx.request.symbolTable);
-        lenses.push_back(MakeCommandLens(key, FormatImplementationCount(implCount, ctx.request.i18n)));
+        size_t implCount = analysis::CountInterfaceMethodImplementations(sym, ctx.request.symbolTable);
+        lenses.push_back(MakeCommandLens(key, analysis::FormatImplementationCount(implCount, ctx.request.i18n)));
         return;
     }
     AppendReferenceLens(key, sym, ctx, lenses);
 }
 
-/**
- * @brief Appends CodeLens for an individual symbol group.
- * @param[in] key Declaration range key.
- * @param[in] symGroup Symbols sharing the declaration range.
- * @param[in] ctx Assembled CodeLens context.
- * @param[in,out] lenses Output list of code lenses.
- */
-static void AppendLensesForGroup(const RangeKey& key, const std::vector<analysis::Symbol>& symGroup,
+static void AppendLensesForGroup(const analysis::SourceRange& key, const std::vector<analysis::Symbol>& symGroup,
                                  const AssembledLensContext& ctx, std::vector<lsp::CodeLens>& lenses)
 {
     const auto& sym = SelectPrimarySymbol(symGroup);
@@ -1570,8 +170,8 @@ static void AppendLensesForGroup(const RangeKey& key, const std::vector<analysis
     }
     else if (sym.type == analysis::SymbolType::Interface)
     {
-        size_t implCount = CountInterfaceImplementations(sym, ctx.request.symbolTable);
-        lenses.push_back(MakeCommandLens(key, FormatImplementationCount(implCount, ctx.request.i18n)));
+        size_t implCount = analysis::CountInterfaceImplementations(sym, ctx.request.symbolTable);
+        lenses.push_back(MakeCommandLens(key, analysis::FormatImplementationCount(implCount, ctx.request.i18n)));
     }
     else if (sym.type == analysis::SymbolType::Class)
     {
@@ -1587,24 +187,18 @@ static void AppendLensesForGroup(const RangeKey& key, const std::vector<analysis
     }
 }
 
-/**
- * @brief Constructs code lenses for each symbol group in document order.
- * @param[in] symGroups Collected and grouped symbols.
- * @param[in] request Active CodeLens request.
- * @return Populated vector of code lenses.
- */
 static std::vector<lsp::CodeLens> BuildSymbolGroupLenses(const SymbolGroups& symGroups, const CodeLensRequest& request)
 {
-    CompatibleClassContext classCtx{BuildMixinInclusionMap(request.symbolTable), request.symbolTable,
-                                    request.sourceCode};
+    analysis::MixinClassContext mixinCtx{request.symbolTable, analysis::BuildMixinInclusionMap(request.symbolTable)};
 
-    std::vector<SymbolLensTarget> targets;
+    std::vector<analysis::ReferenceCountTarget> targets;
     KeyTargetMap keyToTarget;
-    CollectReferenceTargets(symGroups, classCtx, targets, keyToTarget);
+    TargetCollectionContext targetCtx{mixinCtx, request.sourceCode, keyToTarget};
+    CollectReferenceTargets(symGroups, targetCtx, targets);
 
     if (!targets.empty())
     {
-        TargetIndexMap targetsByName;
+        analysis::TargetIndexMap targetsByName;
         for (size_t i = 0; i < targets.size(); ++i)
         {
             targetsByName[targets[i].targetName].push_back(i);
@@ -1613,7 +207,15 @@ static std::vector<lsp::CodeLens> BuildSymbolGroupLenses(const SymbolGroups& sym
                 targetsByName[targets[i].targetName.substr(4)].push_back(i);
             }
         }
-        BatchCountReferencesAcrossScopes(targets, targetsByName, request);
+        analysis::ReferenceCountRequest refReq{
+            .uri = request.uri,
+            .sourceCode = request.sourceCode,
+            .symbolTable = request.symbolTable,
+            .scopeIndex = request.scopeIndex,
+            .predefinedExtension = request.predefinedExtension,
+            .occurrenceModule = request.occurrenceModule,
+        };
+        analysis::CountReferences(targets, targetsByName, refReq);
     }
 
     std::vector<lsp::CodeLens> lenses;

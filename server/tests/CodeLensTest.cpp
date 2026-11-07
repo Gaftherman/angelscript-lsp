@@ -295,6 +295,12 @@ TEST_CASE("CodeLens - Provides View Mixin Expansion lens on class mixin inclusio
     TSTree* hostTree = parser.Parse(hostCode);
     symbolCollector.CollectSymbols(mixinUri, mixinCode, parser, symbolTable);
     symbolCollector.CollectSymbols(hostUri, hostCode, parser, symbolTable);
+    LocalScopeCollector scopeCollector{nullptr};
+    auto hostScope = scopeCollector.CollectScopes(hostCode, parser);
+    if (hostScope)
+    {
+        scopeIndex.SetScopeTree(hostUri, std::move(hostScope));
+    }
     config::ServerConfig cfg;
     cfg.features.codeLensShowMixinExpansion = true;
     CodeLensRequest req{hostUri, hostCode, symbolTable, scopeIndex, nullptr, ".as.predefined", nullptr, nullptr, &cfg};
@@ -339,6 +345,12 @@ TEST_CASE("CodeLens - Mixin expansion lens resolves exact line on multiline clas
     TSTree* hostTree = parser.Parse(hostCode);
     symbolCollector.CollectSymbols(mixinUri, mixinCode, parser, symbolTable);
     symbolCollector.CollectSymbols(hostUri, hostCode, parser, symbolTable);
+    LocalScopeCollector scopeCollector{nullptr};
+    auto hostScope = scopeCollector.CollectScopes(hostCode, parser);
+    if (hostScope)
+    {
+        scopeIndex.SetScopeTree(hostUri, std::move(hostScope));
+    }
     config::ServerConfig cfg;
     cfg.features.codeLensShowMixinExpansion = true;
     CodeLensRequest req{hostUri, hostCode, symbolTable, scopeIndex, nullptr, ".as.predefined", nullptr, nullptr, &cfg};

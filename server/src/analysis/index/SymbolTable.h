@@ -234,6 +234,16 @@ class SymbolTable
     [[nodiscard]] static std::string ExtractVirtualMixinName(std::string_view uri);
 
     /**
+     * @brief Parses an angelscript-virtual URI into host class and mixin name components without heap allocation.
+     * @param[in] uri Virtual document URI string.
+     * @param[out] hostClass Extracted host class component string view.
+     * @param[out] mixinPart Extracted mixin component string view.
+     * @return True if the URI was successfully parsed as a virtual mixin URI; false otherwise.
+     */
+    [[nodiscard]] static bool ParseVirtualMixinUri(std::string_view uri, std::string_view& hostClass,
+                                                   std::string_view& mixinPart) noexcept;
+
+    /**
      * @brief Returns true if the symbol table holds any symbols collected from fileUri.
      */
     [[nodiscard]] bool HasDocumentSymbols(const std::string& fileUri) const;
@@ -623,16 +633,6 @@ class SymbolTable
         std::string_view targetUri;
         std::string_view predefinedExtension;
     };
-
-    /**
-     * @brief Parses an angelscript-virtual URI into host class and mixin name components without heap allocation.
-     * @param[in] uri Virtual document URI string.
-     * @param[out] hostClass Extracted host class component string view.
-     * @param[out] mixinPart Extracted mixin component string view.
-     * @return True if the URI was successfully parsed as a virtual mixin URI; false otherwise.
-     */
-    [[nodiscard]] static bool ParseVirtualMixinUri(std::string_view uri, std::string_view& hostClass,
-                                                   std::string_view& mixinPart) noexcept;
 
     /**
      * @brief Invokes a callback with a composite 'scope::member' string_view without heap allocation.

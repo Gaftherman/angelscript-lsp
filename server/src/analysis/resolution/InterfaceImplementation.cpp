@@ -185,4 +185,93 @@ std::vector<MissingInterfaceMethod> FindMissingInterfaceMethods(const Symbol& cl
     }
     return missing;
 }
+
+bool IsInterfaceMethod(const Symbol& sym, const SymbolTable& table)
+{
+    if (sym.containerName.empty())
+    {
+        return false;
+    }
+    const auto owners = table.FindSymbolsPtr(sym.containerName);
+    if (!owners)
+    {
+        return false;
+    }
+    for (const auto& owner : *owners)
+    {
+        if (owner.type == SymbolType::Interface)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+size_t CountInterfaceMethodImplementations(const Symbol& sym, const SymbolTable& table)
+{
+    size_t implCount = 0;
+    table.ForEachSymbol(
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& candidates)
+        {
+            for (const auto& cand : candidates)
+            {
+                if (cand.type != SymbolType::Function || cand.name != sym.name ||
+                    (cand.fileUri == sym.fileUri && cand.containerName == sym.containerName) ||
+                    cand.containerName.empty())
+                {
+                    continue;
+                }
+                const auto candOwners = table.FindSymbolsPtr(cand.containerName);
+                if (!candOwners)
+                {
+                    continue;
+                }
+                for (const auto& cOwner : *candOwners)
+                {
+                    if (cOwner.type == SymbolType::Class)
+                    {
+                        for (const auto& b : cOwner.GetClass().bases)
+                        {
+                            if (CleanBaseTypeView(b) == sym.containerName &&
+                                cand.GetFunction().parameters.size() == sym.GetFunction().parameters.size())
+                            {
+                                implCount++;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    return implCount;
+}
+
+size_t CountInterfaceImplementations(const Symbol& sym, const SymbolTable& table)
+{
+    size_t implCount = 0;
+    table.ForEachSymbol(
+        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<Symbol>& candidates)
+        {
+            for (const auto& cand : candidates)
+            {
+                if (cand.type == SymbolType::Class)
+                {
+                    for (const auto& b : cand.GetClass().bases)
+                    {
+                        if (CleanBaseTypeView(b) == sym.name)
+                        {
+                            implCount++;
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+    return implCount;
+}
+
+std::string FormatImplementationCount(size_t implCount, const i18n::I18n* i18n)
+{
+    return (implCount == 1) ? i18n::FormatMessage(i18n, "codelens.implementation", "1 implementation")
+                            : i18n::FormatMessage(i18n, "codelens.implementations", "{} implementations", implCount);
+}
 } // namespace angel_lsp::analysis

@@ -707,6 +707,7 @@ Server::HandleRequestsTextDocument_CodeLens(lsp::requests::TextDocument_CodeLens
     }
 
     const std::string clientUri = req.textDocument.uri.toString();
+    const auto occurrenceModule = OccurrenceModuleFor(doc->uri);
     features::CodeLensRequest clr{doc->uri,
                                   *doc->text,
                                   m_symbolTable,
@@ -717,7 +718,7 @@ Server::HandleRequestsTextDocument_CodeLens(lsp::requests::TextDocument_CodeLens
                                   m_i18n.get(),
                                   &m_config,
                                   clientUri,
-                                  OccurrenceModuleFor(doc->uri)};
+                                  &occurrenceModule};
     auto lenses = features::GetCodeLenses(clr);
     if (lenses.has_value())
     {

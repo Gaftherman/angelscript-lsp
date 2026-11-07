@@ -977,6 +977,75 @@
         "AdversarialFeaturesTest",
         "AllocationBudgetHarnessTest"
       ]
+    },
+    {
+      "id": "REF-M6-CODELENS-REFCOUNT-L2",
+      "phase": "M6",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/code_lens/CodeLensHandler.cpp",
+      "deletedLineRange": "40-724",
+      "originalSymbolOrCode": "GetEnclosingClassName, IsContainerClass, IsSymbolInClassContainer, IsInsideNamespace, IsDeclarationOrDefinition, IsInTargetHierarchy, IsLocalShadowingTarget, IsCompatibleNonMemberAccess, ResolveObjectTextType, TryResolveReceiverFastPath, ResolveReceiverFromScope, IsCompatibleMemberAccess, MatchesTargetNamespaceQualifier, IsValidEnumAccess, IsEnclosingClassIncompatible, IsValidConstructorAccess, IsValidAccess, CountStringLiteralReferences, ProcessScopeReferencesBatch, CollectReferencesInScopeTreeBatch, CountBoundCalls, BatchCountReferencesAcrossScopes",
+      "whatItDidAndWhyInThatFile": "Monolithic reference counting, receiver resolution, and access control logic embedded directly inside Layer 3 CodeLens feature handler.",
+      "whyChangedOrDeleted": "Decouple semantic reference resolution into Layer 2 ReferenceCounting and decomposed access/receiver/scope sub-units, keeping each file <= 300 lines and zero std::string in Layer 3.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/ReferenceCounting.h",
+      "replacedByCanonicalSymbol": "CountReferences",
+      "ramOrCpuImpact": "Same O(R) walk over occurrence-scope references. Enclosing-class lookups return a view into the per-file cache instead of copying a std::string, and compatibleClasses probes by LastScopeSegment view without a temporary. seenRefs/allDeclRanges keys still copy the file URI per probe, as before.",
+      "verifiedByTests": [
+        "ReferenceCountingTest",
+        "CodeLensTest",
+        "SvenCoopRegressionTest"
+      ]
+    },
+    {
+      "id": "REF-M6-CODELENS-MIXIN-RANGE",
+      "phase": "M6",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/code_lens/CodeLensHandler.cpp",
+      "deletedLineRange": "1195-1240",
+      "originalSymbolOrCode": "FindMixinRangeInAst",
+      "whatItDidAndWhyInThatFile": "Ad-hoc text lexer scanning source code lines with string find and character tests in Layer 3.",
+      "whyChangedOrDeleted": "Replaced text scanning with flat ScopeTree traversal over pre-indexed type specifier references.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/MixinInclusion.h",
+      "replacedByCanonicalSymbol": "FindTypeReferenceRange",
+      "ramOrCpuImpact": "Zero string slicing on request.sourceCode; O(R) flat stack walk over pre-parsed document Scope references.",
+      "verifiedByTests": [
+        "ReferenceCountingTest",
+        "CodeLensTest"
+      ]
+    },
+    {
+      "id": "REF-M6-CODELENS-VIRTUAL-URI",
+      "phase": "M6",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/code_lens/CodeLensHandler.cpp",
+      "deletedLineRange": "779-810",
+      "originalSymbolOrCode": "HandleVirtualUri scheme prefix manual parsing",
+      "whatItDidAndWhyInThatFile": "Duplicated virtual URI parsing logic in Layer 3 feature handler.",
+      "whyChangedOrDeleted": "Reused canonical SymbolTable::ParseVirtualMixinUri with UrlDecode and zero std::string in Layer 3.",
+      "replacedByCanonicalFile": "server/src/analysis/index/SymbolTable.h",
+      "replacedByCanonicalSymbol": "ParseVirtualMixinUri",
+      "ramOrCpuImpact": "Zero extra heap allocations; operates on string_view components.",
+      "verifiedByTests": [
+        "CodeLensTest"
+      ]
+    },
+    {
+      "id": "REF-M6-CODELENS-HELPERS-L2",
+      "phase": "M6",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/code_lens/CodeLensHandler.cpp",
+      "deletedLineRange": "959-1192, 1474-1491",
+      "originalSymbolOrCode": "IsInterfaceMethod, CountInterfaceMethodImplementations, CountInterfaceImplementations, BuildMixinInclusionMap, CollectCompatibleClasses, AddSymbolDeclRanges, CollectAllDeclRanges, FindMixinSymbol, FormatReferenceCount, FormatImplementationCount; structs SymbolLensTarget, ReferenceCollectionCriteria, BatchReferenceContext, CompatibleClassContext",
+      "whatItDidAndWhyInThatFile": "Interface implementation counting, mixin inclusion maps, declaration-range sets and lens title formatting kept as static helpers and feature-header structs of the CodeLens handler.",
+      "whyChangedOrDeleted": "Moved unchanged into Layer 2 next to the reference-counting engine that consumes them; SymbolLensTarget renamed ReferenceCountTarget and CompatibleClassContext replaced by MixinClassContext.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/InterfaceImplementation.h, server/src/analysis/resolution/MixinInclusion.h, server/src/analysis/resolution/ReferenceCounting.h",
+      "replacedByCanonicalSymbol": "CountInterfaceImplementations, CollectCompatibleClasses, ReferenceCountTarget",
+      "ramOrCpuImpact": "No cost change: same algorithms relocated; FindMixinSymbol takes std::string_view.",
+      "verifiedByTests": [
+        "CodeLensTest",
+        "ReferenceCountingTest",
+        "SvenCoopRegressionTest"
+      ]
     }
   ]
 }

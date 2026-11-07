@@ -15,24 +15,12 @@
     "server/src/features/references",
     "server/src/features/rename",
     "server/src/features/document_highlight",
-    "server/src/features/signature_help"
+    "server/src/features/signature_help",
+    "server/src/features/code_lens"
   ],
-  "active_folder": "server/src/features/code_lens",
+  "active_folder": "server/src/features/semantic_tokens",
   "cross_module_impacts": [],
   "pending_folders": [
-    {
-      "folder_path": "server/src/features/code_lens",
-      "complexity_rank": 17,
-      "selection_rationale": "Feature (2 files) reference count code lenses (Batch 7B).",
-      "files_to_refactor": [
-        {
-          "file": "CodeLensHandler.h"
-        },
-        {
-          "file": "CodeLensHandler.cpp"
-        }
-      ]
-    },
     {
       "folder_path": "server/src/features/semantic_tokens",
       "complexity_rank": 19,
