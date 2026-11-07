@@ -1613,6 +1613,418 @@
       "verifiedByTests": [
         "FormattingTest"
       ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-RECEIVER-FACTS",
+      "phase": "M10",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/completion/CompletionHandler.cpp",
+      "deletedLineRange": "1627-1737",
+      "originalSymbolOrCode": "FindReceiverFromParentAtDot, IsExpressionBoundarySymbol, FindReceiverPrecedingDot, FindReceiverNodeAtDot",
+      "whatItDidAndWhyInThatFile": "Found the receiver node before a member-access dot by walking the tree from the feature.",
+      "whyChangedOrDeleted": "Tree inspection is pass-1 work; moved unchanged into a NodeIndex-backed fact that returns a byte range.",
+      "replacedByCanonicalFile": "server/src/analysis/index/CompletionFacts.cpp",
+      "replacedByCanonicalSymbol": "FindMemberReceiverRange",
+      "ramOrCpuImpact": "Unchanged: up to two O(depth) descents plus a bounded ancestor climb per member completion.",
+      "verifiedByTests": [
+        "CompletionFactsTest",
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-CONTEXT-FACTS",
+      "phase": "M10",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/completion/CompletionHandler.cpp",
+      "deletedLineRange": "2729-2760",
+      "originalSymbolOrCode": "IsInClassBodyOutsideFunction tree climb",
+      "whatItDidAndWhyInThatFile": "Decided whether class-body snippets and the `this` keyword apply by climbing from the cursor node.",
+      "whyChangedOrDeleted": "Moved unchanged into a pass-1 fact; the engine keeps the ScopeKind::Class shortcut and asks the fact otherwise.",
+      "replacedByCanonicalFile": "server/src/analysis/index/CompletionFacts.cpp",
+      "replacedByCanonicalSymbol": "IsInClassBodyOutsideCallable",
+      "ramOrCpuImpact": "Unchanged: one O(depth) descent plus a bounded ancestor climb per completion.",
+      "verifiedByTests": [
+        "CompletionFactsTest",
+        "CompletionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-CONTAINERS",
+      "phase": "M10",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/completion/CompletionHandler.cpp",
+      "deletedLineRange": "869-954",
+      "originalSymbolOrCode": "BuildScopeNamespacePath, CollectVisibleNamespaces, FindEnclosingClassName tree lookups (descendant_for_point_range + GetEnclosingContainers, CollectUsingNamespaces(TSNode))",
+      "whatItDidAndWhyInThatFile": "Rebuilt enclosing namespaces/classes and file imports by walking the tree at each call.",
+      "whyChangedOrDeleted": "NodeIndex already records container spans and using directives (Rule 4.8); the engine reads CollectEnclosingContainers and the existing CollectUsingNamespaces(NodeIndex) overload.",
+      "replacedByCanonicalFile": "server/src/analysis/index/NodeIndex.cpp",
+      "replacedByCanonicalSymbol": "CollectEnclosingContainers",
+      "ramOrCpuImpact": "Cheaper: O(K) span walk instead of a tree descent plus ancestor climb; no TSNode in the engine.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-RECEIVER-TYPE",
+      "phase": "M10",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/completion/CompletionHandler.cpp",
+      "deletedLineRange": "1885-1919",
+      "originalSymbolOrCode": "ResolveReceiverNodeType expression and receiver type resolution on a TSNode",
+      "whatItDidAndWhyInThatFile": "Resolved the receiver type with ResolveExpressionType then ResolveReceiverType.",
+      "whyChangedOrDeleted": "TSNode-taking resolution stays in analysis/resolution behind an IndexedByteRange entry point, as hover does.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/CompletionReceiverResolution.cpp",
+      "replacedByCanonicalSymbol": "ResolveCompletionReceiverType",
+      "ramOrCpuImpact": "Adds one RecoverNodeAt descent per member completion; otherwise unchanged.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-CALLEE-SCOPE",
+      "phase": "M10",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/completion/CompletionHandler.cpp",
+      "deletedLineRange": "3030-3044",
+      "originalSymbolOrCode": "ResolveUnqualifiedCalleeCandidates FindSymbolsInScope(callee, rootNode, ...)",
+      "whatItDidAndWhyInThatFile": "Looked up an unqualified callee with root-level containers and imports from the tree.",
+      "whyChangedOrDeleted": "Root containers are always empty; the call now uses the containers overload with the root-scope imports recorded in NodeIndex.",
+      "replacedByCanonicalFile": "server/src/analysis/completion/CompletionCallContext.cpp",
+      "replacedByCanonicalSymbol": "ResolveUnqualifiedCalleeCandidates",
+      "ramOrCpuImpact": "Cheaper: no query cursor over the whole tree for using directives.",
+      "verifiedByTests": [
+        "CompletionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-ENGINE-L2",
+      "phase": "M10",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/completion/CompletionHandler.cpp",
+      "deletedLineRange": "1-3396",
+      "originalSymbolOrCode": "GetCompletion, ResolveCompletionItem, CollectUnscopedSymbols, CompletionCandidate, CompletionCollector, OperatorSnippet, LexicalContext, InheritanceContext, MemberTemplateContext, IndexPeelResult, TypeMatchRank, SymbolProximity",
+      "whatItDidAndWhyInThatFile": "Built completion items with owned strings and ad-hoc text scanners inside the feature folder.",
+      "whyChangedOrDeleted": "Owned-string work and text scanners belong in Layer 2 (Prohibition 5); moved to the new analysis/completion sub-layer with bodies unchanged.",
+      "replacedByCanonicalFile": "server/src/analysis/completion/CompletionEngine.cpp",
+      "replacedByCanonicalSymbol": "CollectCompletionEntries",
+      "ramOrCpuImpact": "None: same code, new location.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-ENTRY-STRUCT",
+      "phase": "M10",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/completion/CompletionHandler.cpp",
+      "deletedLineRange": "290-342",
+      "originalSymbolOrCode": "lsp::CompletionItem, lsp::CompletionItemKind and lsp::TextEdit inside the engine",
+      "whatItDidAndWhyInThatFile": "The engine built protocol items directly.",
+      "whyChangedOrDeleted": "analysis must compile without <lsp/...>; CompletionEntry holds the fields the engine writes and the feature maps it once with ToLspCompletionItem.",
+      "replacedByCanonicalFile": "server/src/analysis/completion/CompletionTypes.h",
+      "replacedByCanonicalSymbol": "CompletionEntry",
+      "ramOrCpuImpact": "Same size class; removes the protocol header from the engine.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-REQUEST-VIEWS",
+      "phase": "M10",
+      "action": "COMPACT_RAM_LAYOUT",
+      "sourceFile": "server/src/features/completion/CompletionHandler.h",
+      "deletedLineRange": "21-59",
+      "originalSymbolOrCode": "CompletionRequest std::string uri, sourceCode, documentPath, implicitExtension and TSTree* tree",
+      "whatItDidAndWhyInThatFile": "Copied the document text and URI into every completion request and passed the raw tree.",
+      "whyChangedOrDeleted": "Views into the open document plus the NodeIndex; Layer 4 builds the Layer 2 CompletionQuery directly, so the feature has no duplicate request struct.",
+      "replacedByCanonicalFile": "server/src/analysis/completion/CompletionTypes.h",
+      "replacedByCanonicalSymbol": "CompletionQuery",
+      "ramOrCpuImpact": "Removes one full copy of the document text per completion request.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-ACCESSOR-PREFIX",
+      "phase": "M10",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/completion/CompletionHandler.cpp",
+      "deletedLineRange": "1762-1883",
+      "originalSymbolOrCode": "Three memcpy(getterBuf, \"get_\", 4) blocks and \"get_\"/\"set_\" literals",
+      "whatItDidAndWhyInThatFile": "Composed getter names and matched accessor prefixes by hand in several functions.",
+      "whyChangedOrDeleted": "One helper next to the existing accessor constants replaces the duplicated buffer code.",
+      "replacedByCanonicalFile": "server/src/utils/AccessorNames.h",
+      "replacedByCanonicalSymbol": "ComposeGetterName",
+      "ramOrCpuImpact": "None: stack buffer, no heap allocation, as before.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-SPLIT-ITEMS",
+      "phase": "M10",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/completion/CompletionEngine.cpp",
+      "deletedLineRange": "1-3235",
+      "originalSymbolOrCode": "IsConstructorOrDestructor, FormatMethodDetail, FormatProximitySortText, DetermineSymbolProximity, GetPredefinedExtension, AddItemIfNew, CallSnippet, GetPrimitiveTypeNames, TemplateInsertSnippet, CallSnippetForName, TemplateSnippetForName, GetKeywords",
+      "whatItDidAndWhyInThatFile": "Part of the 2,720-net-line completion engine.",
+      "whyChangedOrDeleted": "Split by responsibility to meet the 300-line limit; cross-file helpers declared in CompletionInternal.h.",
+      "replacedByCanonicalFile": "server/src/analysis/completion/CompletionItems.cpp",
+      "replacedByCanonicalSymbol": "AddItemIfNew",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-SPLIT-TEXTSCANNER",
+      "phase": "M10",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/completion/CompletionEngine.cpp",
+      "deletedLineRange": "1-3235",
+      "originalSymbolOrCode": "GetLinePrefix, SkipLineComment, SkipBlockComment, SkipHeredoc, SkipQuotedString, TryScanCommentOrString, ContextAtOffset, IsAfterCaseLabelColon, IsInsideTemplateArguments, HasTrailingOpenParen",
+      "whatItDidAndWhyInThatFile": "Part of the 2,720-net-line completion engine.",
+      "whyChangedOrDeleted": "Split by responsibility to meet the 300-line limit; cross-file helpers declared in CompletionInternal.h.",
+      "replacedByCanonicalFile": "server/src/analysis/completion/CompletionTextScanner.cpp",
+      "replacedByCanonicalSymbol": "ContextAtOffset",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-SPLIT-BACKWARDSCAN",
+      "phase": "M10",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/completion/CompletionEngine.cpp",
+      "deletedLineRange": "1-3235",
+      "originalSymbolOrCode": "GetBackwardDeclarationText, PeelIndexBracketsWithExpr, SkipInlineWhitespaceBackward, ExtractIdentifierBackward, FindAccessDotCol, ExtractQueryPrefix",
+      "whatItDidAndWhyInThatFile": "Part of the 2,720-net-line completion engine.",
+      "whyChangedOrDeleted": "Split by responsibility to meet the 300-line limit; cross-file helpers declared in CompletionInternal.h.",
+      "replacedByCanonicalFile": "server/src/analysis/completion/CompletionBackwardScan.cpp",
+      "replacedByCanonicalSymbol": "PeelIndexBracketsWithExpr",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-SPLIT-LITERALTYPES",
+      "phase": "M10",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/completion/CompletionEngine.cpp",
+      "deletedLineRange": "1-3235",
+      "originalSymbolOrCode": "IsNumericLiteralDot, IsNumericStart, DeduceNumericLiteralType, DeduceLiteralOrNamedType",
+      "whatItDidAndWhyInThatFile": "Part of the 2,720-net-line completion engine.",
+      "whyChangedOrDeleted": "Split by responsibility to meet the 300-line limit; cross-file helpers declared in CompletionInternal.h.",
+      "replacedByCanonicalFile": "server/src/analysis/completion/CompletionLiteralTypes.cpp",
+      "replacedByCanonicalSymbol": "DeduceLiteralOrNamedType",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-SPLIT-INCLUDES",
+      "phase": "M10",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/completion/CompletionEngine.cpp",
+      "deletedLineRange": "1-3235",
+      "originalSymbolOrCode": "CreateIncludeCompletionItem, CompleteIncludePath, HandleIncludeOrLexicalSuppression",
+      "whatItDidAndWhyInThatFile": "Part of the 2,720-net-line completion engine.",
+      "whyChangedOrDeleted": "Split by responsibility to meet the 300-line limit; cross-file helpers declared in CompletionInternal.h.",
+      "replacedByCanonicalFile": "server/src/analysis/completion/CompletionIncludes.cpp",
+      "replacedByCanonicalSymbol": "CompleteIncludePath",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-SPLIT-SCOPERESOLUTION",
+      "phase": "M10",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/completion/CompletionEngine.cpp",
+      "deletedLineRange": "1-3235",
+      "originalSymbolOrCode": "CollectEnumMembersUnderQualifier, ByteOffsetAt, BuildScopeNamespacePath, AppendUniqueNamespace, CollectVisibleNamespaces, ResolveContainerMemberItemDetails, AddContainerMembers, CollectContainerMembersUnderQualifier, TryCompleteScopeResolution, TryCompleteTemplateArguments",
+      "whatItDidAndWhyInThatFile": "Part of the 2,720-net-line completion engine.",
+      "whyChangedOrDeleted": "Split by responsibility to meet the 300-line limit; cross-file helpers declared in CompletionInternal.h.",
+      "replacedByCanonicalFile": "server/src/analysis/completion/CompletionScopeResolution.cpp",
+      "replacedByCanonicalSymbol": "TryCompleteScopeResolution",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-SPLIT-INHERITANCE",
+      "phase": "M10",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/completion/CompletionEngine.cpp",
+      "deletedLineRange": "1-3235",
+      "originalSymbolOrCode": "CollectDirectBases, GetInheritedTypeHierarchy, DetectInheritanceContext, CompleteInheritanceUnderQualifier, CompleteGlobalInheritanceTypes, CompleteInheritanceNamespaces, TryCompleteInheritance, FindCanonicalBaseContainer, SubstituteTypeParameters",
+      "whatItDidAndWhyInThatFile": "Part of the 2,720-net-line completion engine.",
+      "whyChangedOrDeleted": "Split by responsibility to meet the 300-line limit; cross-file helpers declared in CompletionInternal.h.",
+      "replacedByCanonicalFile": "server/src/analysis/completion/CompletionInheritance.cpp",
+      "replacedByCanonicalSymbol": "TryCompleteInheritance",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-SPLIT-MEMBERS",
+      "phase": "M10",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/completion/CompletionEngine.cpp",
+      "deletedLineRange": "1-3235",
+      "originalSymbolOrCode": "ShouldCompleteParens, FindEnclosingClassName, IsMixinIncluded, IsMemberAccessibleForCompletion, PopulateMemberSymbolCandidate, PopulateMembersForType, IsIndexedPropertyAccessor, PopulateHierarchicalMembers",
+      "whatItDidAndWhyInThatFile": "Part of the 2,720-net-line completion engine.",
+      "whyChangedOrDeleted": "Split by responsibility to meet the 300-line limit; cross-file helpers declared in CompletionInternal.h.",
+      "replacedByCanonicalFile": "server/src/analysis/completion/CompletionMembers.cpp",
+      "replacedByCanonicalSymbol": "PopulateMembersForType",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-SPLIT-RECEIVERTYPE",
+      "phase": "M10",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/completion/CompletionEngine.cpp",
+      "deletedLineRange": "1-3235",
+      "originalSymbolOrCode": "ExtractMemberTypeFromSymbols, FindMemberInTypeHierarchy, ResolveScopeOrGlobalVariableType, ResolveNamedReceiverType, ResolveReceiverRangeType, ResolveFallbackReceiverType, TryCompleteMemberAccess",
+      "whatItDidAndWhyInThatFile": "Part of the 2,720-net-line completion engine.",
+      "whyChangedOrDeleted": "Split by responsibility to meet the 300-line limit; cross-file helpers declared in CompletionInternal.h.",
+      "replacedByCanonicalFile": "server/src/analysis/completion/CompletionReceiverType.cpp",
+      "replacedByCanonicalSymbol": "TryCompleteMemberAccess",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-SPLIT-SCOPESYMBOLS",
+      "phase": "M10",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/completion/CompletionEngine.cpp",
+      "deletedLineRange": "1-3235",
+      "originalSymbolOrCode": "AddEnumConstantCandidate, ProcessScopeConstantDefinition, ProcessScopeDefinition, CollectScopeDefinitions, FormatEnclosingMemberItem, AddAccessorPropertyCandidate, CollectEnclosingMemberCandidate, CollectEnclosingClassMembers",
+      "whatItDidAndWhyInThatFile": "Part of the 2,720-net-line completion engine.",
+      "whyChangedOrDeleted": "Split by responsibility to meet the 300-line limit; cross-file helpers declared in CompletionInternal.h.",
+      "replacedByCanonicalFile": "server/src/analysis/completion/CompletionScopeSymbols.cpp",
+      "replacedByCanonicalSymbol": "CollectScopeDefinitions",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-SPLIT-GLOBALSYMBOLS",
+      "phase": "M10",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/completion/CompletionEngine.cpp",
+      "deletedLineRange": "1-3235",
+      "originalSymbolOrCode": "CollectGlobalFunctionSymbol, CollectGlobalSymbolItem, BucketMatchesPrefix, CollectGlobalSymbols, CollectVisibleNamespaceSymbols",
+      "whatItDidAndWhyInThatFile": "Part of the 2,720-net-line completion engine.",
+      "whyChangedOrDeleted": "Split by responsibility to meet the 300-line limit; cross-file helpers declared in CompletionInternal.h.",
+      "replacedByCanonicalFile": "server/src/analysis/completion/CompletionGlobalSymbols.cpp",
+      "replacedByCanonicalSymbol": "CollectGlobalSymbols",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-SPLIT-SNIPPETS",
+      "phase": "M10",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/completion/CompletionEngine.cpp",
+      "deletedLineRange": "1-3235",
+      "originalSymbolOrCode": "IsInClassBodyOutsideFunction, CollectClassOperatorSnippets, CollectDeclarationSnippets, CollectKeywords",
+      "whatItDidAndWhyInThatFile": "Part of the 2,720-net-line completion engine.",
+      "whyChangedOrDeleted": "Split by responsibility to meet the 300-line limit; cross-file helpers declared in CompletionInternal.h.",
+      "replacedByCanonicalFile": "server/src/analysis/completion/CompletionSnippets.cpp",
+      "replacedByCanonicalSymbol": "CollectDeclarationSnippets",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-SPLIT-CALLCONTEXT",
+      "phase": "M10",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/completion/CompletionEngine.cpp",
+      "deletedLineRange": "1-3235",
+      "originalSymbolOrCode": "FindUnclosedCallParen, CountCallArguments, ExtractCalleeName, ExtractCallContext, ResolveMemberCalleeCandidates, ResolveUnqualifiedCalleeCandidates, FindCalleeParameterType, IsCompoundOrComparisonEquals, IsTypeChar, TrimTrailingWhitespace, FindIdentifierStart, FindTypeStart, ExtractAssignmentTargetType",
+      "whatItDidAndWhyInThatFile": "Part of the 2,720-net-line completion engine.",
+      "whyChangedOrDeleted": "Split by responsibility to meet the 300-line limit; cross-file helpers declared in CompletionInternal.h.",
+      "replacedByCanonicalFile": "server/src/analysis/completion/CompletionCallContext.cpp",
+      "replacedByCanonicalSymbol": "ExtractCallContext",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
+    },
+    {
+      "id": "REF-M10-COMPLETION-SPLIT-RANKING",
+      "phase": "M10",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/completion/CompletionEngine.cpp",
+      "deletedLineRange": "1-3235",
+      "originalSymbolOrCode": "FormatRankedSortText, ComputeTypeRank, ApplySmartTypeRanking, SortCompletionItemsByProximity",
+      "whatItDidAndWhyInThatFile": "Part of the 2,720-net-line completion engine.",
+      "whyChangedOrDeleted": "Split by responsibility to meet the 300-line limit; cross-file helpers declared in CompletionInternal.h.",
+      "replacedByCanonicalFile": "server/src/analysis/completion/CompletionRanking.cpp",
+      "replacedByCanonicalSymbol": "ApplySmartTypeRanking",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "CompletionTest",
+        "AdversarialFeaturesTest",
+        "SvenCoopScriptReproductionTest"
+      ]
     }
   ]
 }

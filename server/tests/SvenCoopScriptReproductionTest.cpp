@@ -128,8 +128,9 @@ struct SvenTestContext
             scopeIndex.SetScopeTree(fileUri, std::move(rootScope));
         }
         TSTree* tree = parser.Parse(scriptCode);
-        angel_lsp::features::CompletionRequest req{fileUri, scriptCode, tree,
-                                                   table,   scopeIndex, lsp::Position{line, character}};
+        angel_lsp::test::NodeIndexFixture completionIndex(tree);
+        angel_lsp::analysis::completion::CompletionQuery req{fileUri, scriptCode, &completionIndex.index,
+                                                             table,   scopeIndex, {line, character}};
         auto res = angel_lsp::features::GetCompletion(req);
         if (tree)
         {

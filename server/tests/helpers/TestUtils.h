@@ -1242,8 +1242,11 @@ class TestDocument
         {
             scopeIndex.SetScopeTree(m_uri, m_scopeRoot);
         }
-        lsp::Position lspPos{static_cast<lsp::uint>(pos.line), static_cast<lsp::uint>(pos.character)};
-        features::CompletionRequest request{m_uri, m_sourceCode, m_tree, m_symbolTable, scopeIndex, lspPos, &m_config};
+        NodeIndexFixture completionIndex(m_tree);
+        analysis::completion::CompletionQuery request{
+            m_uri,         m_sourceCode, &completionIndex.index,
+            m_symbolTable, scopeIndex,   {static_cast<uint32_t>(pos.line), static_cast<uint32_t>(pos.character)},
+            &m_config};
         return features::GetCompletion(request);
     }
 

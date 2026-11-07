@@ -5,6 +5,7 @@
 #include "features/completion/CompletionHandler.h"
 #include "features/definition/DefinitionHandler.h"
 #include "features/hover/HoverHandler.h"
+#include "helpers/TestUtils.h"
 #include "utils/AllocationCounter.h"
 #include "utils/Timer.h"
 #include "utils/Utils.h"
@@ -503,9 +504,9 @@ std::vector<lsp::CompletionItem> LspSemanticHarnessFixture::RequestCompletion(co
         return {};
     }
 
-    features::CompletionRequest req{
-        uri,      m_documents[uri], itTree->second.get(), *m_symbolTable, *m_scopeIndex, lsp::Position{line, col},
-        &m_config};
+    angel_lsp::test::NodeIndexFixture completionIndex(itTree->second.get());
+    angel_lsp::analysis::completion::CompletionQuery req{
+        uri, m_documents[uri], &completionIndex.index, *m_symbolTable, *m_scopeIndex, {line, col}, &m_config};
 
     return features::GetCompletion(req);
 }

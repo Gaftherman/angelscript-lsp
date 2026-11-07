@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+#include <span>
 #include <string_view>
 
 namespace angel_lsp::utils
@@ -51,6 +53,24 @@ inline constexpr std::string_view k_setterPrefix = "set_";
         }
     }
     return {};
+}
+
+/**
+ * @brief Writes `get_<name>` into a caller-owned buffer, so a getter lookup needs no heap allocation.
+ * @param[in] name Property name to prefix.
+ * @param[out] buffer Storage that receives the composed name.
+ * @return View of the composed name inside buffer, or an empty view when the name does not fit with room
+ *         to spare.
+ */
+[[nodiscard]] inline std::string_view ComposeGetterName(std::string_view name, std::span<char> buffer) noexcept
+{
+    if (name.size() + k_getterPrefix.size() >= buffer.size())
+    {
+        return {};
+    }
+    std::copy(k_getterPrefix.begin(), k_getterPrefix.end(), buffer.begin());
+    std::copy(name.begin(), name.end(), buffer.begin() + k_getterPrefix.size());
+    return std::string_view(buffer.data(), k_getterPrefix.size() + name.size());
 }
 
 } // namespace angel_lsp::utils

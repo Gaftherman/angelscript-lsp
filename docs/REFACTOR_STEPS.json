@@ -19,48 +19,12 @@
     "server/src/features/code_lens",
     "server/src/features/semantic_tokens",
     "server/src/features/hover",
-    "server/src/features/formatting"
+    "server/src/features/formatting",
+    "server/src/features/completion"
   ],
-  "active_folder": "server/src/features/completion",
+  "active_folder": "server/src/features/code_action",
   "cross_module_impacts": [],
   "pending_folders": [
-    {
-      "folder_path": "server/src/features/completion",
-      "complexity_rank": 22,
-      "selection_rationale": "Feature (2 files, 169 lines) contextual completion suggestions.",
-      "files_to_refactor": [
-        {
-          "file": "CompletionHandler.h",
-          "detected_antipatterns": [
-            "Raw TSTree* pointer and <tree_sitter/api.h> in CompletionRequest",
-            "Heap string copies"
-          ],
-          "reusable_structs_or_classes": [
-            "analysis::SymbolTable",
-            "analysis::ScopeTree",
-            "analysis::NodeIndex"
-          ],
-          "first_pass_data_needed": [
-            "Lexical scope boundaries and reachable symbols"
-          ]
-        },
-        {
-          "file": "CompletionHandler.cpp",
-          "detected_antipatterns": [
-            "Second-pass AST inspection for trigger character context",
-            "Ad-hoc string filtering"
-          ],
-          "reusable_structs_or_classes": [
-            "features::common::FindScopedIdentifierAtPosition",
-            "utils::ScopedNameUtils"
-          ],
-          "liquidation_actions": [
-            "Rely on ScopeTree and SymbolTable",
-            "Ensure lizard CCN <= 25 and lines <= 120"
-          ]
-        }
-      ]
-    },
     {
       "folder_path": "server/src/features/code_action",
       "complexity_rank": 23,

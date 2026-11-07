@@ -79,8 +79,10 @@ struct TestEnvironment
 
     std::vector<lsp::CompletionItem> CompleteAt(uint32_t line, uint32_t character, bool snippetSupport = false)
     {
-        CompletionRequest req{uri,     sourceCode,    tree, symbolTable, scopeIndex, lsp::Position{line, character},
-                              nullptr, snippetSupport};
+        angel_lsp::test::NodeIndexFixture completionIndex(tree);
+        angel_lsp::analysis::completion::CompletionQuery req{uri,         sourceCode,    &completionIndex.index,
+                                                             symbolTable, scopeIndex,    {line, character},
+                                                             nullptr,     snippetSupport};
         return GetCompletion(req);
     }
 
@@ -90,8 +92,9 @@ struct TestEnvironment
         angel_lsp::config::ServerConfig config;
         config.engine.propertyAccessorMode = accessorMode;
 
-        CompletionRequest req{uri,     sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, character},
-                              &config, false};
+        angel_lsp::test::NodeIndexFixture completionIndex(tree);
+        angel_lsp::analysis::completion::CompletionQuery req{
+            uri, sourceCode, &completionIndex.index, symbolTable, scopeIndex, {line, character}, &config, false};
         return GetCompletion(req);
     }
 
@@ -99,8 +102,10 @@ struct TestEnvironment
                                                           const angel_lsp::config::ServerConfig& config,
                                                           bool snippetSupport = true)
     {
-        CompletionRequest req{uri,     sourceCode,    tree, symbolTable, scopeIndex, lsp::Position{line, character},
-                              &config, snippetSupport};
+        angel_lsp::test::NodeIndexFixture completionIndex(tree);
+        angel_lsp::analysis::completion::CompletionQuery req{uri,         sourceCode,    &completionIndex.index,
+                                                             symbolTable, scopeIndex,    {line, character},
+                                                             &config,     snippetSupport};
         return GetCompletion(req);
     }
 };
@@ -198,7 +203,9 @@ TEST_CASE("CompletionHandler - Symbol items carry the identity a resolve needs")
         index.SetScopeTree(uri, std::move(root));
     }
 
-    CompletionRequest request{uri, code, tree, table, index, lsp::Position{2, 16}, nullptr};
+    angel_lsp::test::NodeIndexFixture completionIndex(tree);
+    angel_lsp::analysis::completion::CompletionQuery request{uri,     code,   &completionIndex.index, table, index,
+                                                             {2, 16}, nullptr};
     const auto items = GetCompletion(request);
 
     const auto spawn =
@@ -804,7 +811,9 @@ std::vector<lsp::CompletionItem> CompleteIncludeAt(const IncludeCompleteTarget& 
     ScopeIndex scopes;
     const std::string uri = "file:///main.as";
 
-    CompletionRequest request{uri, target.code, tree, table, scopes, pos, nullptr, false};
+    angel_lsp::test::NodeIndexFixture completionIndex(tree);
+    angel_lsp::analysis::completion::CompletionQuery request{
+        uri, target.code, &completionIndex.index, table, scopes, {pos.line, pos.character}, nullptr, false};
     request.documentPath = target.documentPath;
     request.implicitExtension = implicitExtension;
     request.listIncludeCandidates = [&target]() { return target.workspaceFiles; };
@@ -1159,9 +1168,10 @@ TEST_CASE("Completion - Module symbols populated via findModuleSymbols callback"
     const std::string modName = angel_lsp::test::GenerateRandomSymbolName("Mod");
     TestEnvironment env("void Main() { " + modName.substr(0, 3));
 
-    angel_lsp::features::CompletionRequest req{
-        env.uri,         env.sourceCode, env.tree,
-        env.symbolTable, env.scopeIndex, lsp::Position{0, static_cast<uint32_t>(env.sourceCode.size())},
+    angel_lsp::test::NodeIndexFixture completionIndex(env.tree);
+    angel_lsp::analysis::completion::CompletionQuery req{
+        env.uri,         env.sourceCode, &completionIndex.index,
+        env.symbolTable, env.scopeIndex, {0, static_cast<uint32_t>(env.sourceCode.size())},
         nullptr,         false};
     req.findModuleSymbols = [&](std::string_view prefix)
     {

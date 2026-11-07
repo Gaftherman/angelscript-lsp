@@ -8,6 +8,7 @@
 #include "features/hover/HoverHandler.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "features/signature_help/SignatureHelpHandler.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
 #include <doctest/doctest.h>
@@ -78,7 +79,9 @@ struct AdversarialTestEnv
 
     std::vector<lsp::CompletionItem> Complete(uint32_t line, uint32_t col)
     {
-        CompletionRequest req{uri, sourceCode, tree, symbolTable, scopeIndex, lsp::Position{line, col}};
+        angel_lsp::test::NodeIndexFixture completionIndex(tree);
+        angel_lsp::analysis::completion::CompletionQuery req{uri,         sourceCode, &completionIndex.index,
+                                                             symbolTable, scopeIndex, {line, col}};
         return GetCompletion(req);
     }
 

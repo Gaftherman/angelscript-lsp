@@ -342,14 +342,23 @@ Server::HandleRequestsTextDocument_Completion(lsp::requests::TextDocument_Comple
         return lsp::Array<lsp::CompletionItem>{};
     }
 
-    features::CompletionRequest cr{
-        doc->uri,     *doc->text,
-        doc->tree,    m_symbolTable,
-        m_scopeIndex, codec::Decode(*doc->text, m_sessionCoordinator->GetPositionEncoding(), req.position),
-        &m_config,    m_sessionCoordinator->GetClientSupportsSnippets()};
+    const auto syntax =
+        doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
+                  : nullptr;
+    const lsp::Position position = codec::Decode(*doc->text, m_sessionCoordinator->GetPositionEncoding(), req.position);
+    const std::string documentPath = CanonicalPathFromUri(doc->uri);
 
-    cr.documentPath = CanonicalPathFromUri(doc->uri);
-    cr.implicitExtension = std::string(ImplicitIncludeExtension());
+    analysis::completion::CompletionQuery cr{doc->uri,
+                                             *doc->text,
+                                             syntax ? &syntax->index : nullptr,
+                                             m_symbolTable,
+                                             m_scopeIndex,
+                                             {position.line, position.character},
+                                             &m_config,
+                                             m_sessionCoordinator->GetClientSupportsSnippets()};
+
+    cr.documentPath = documentPath;
+    cr.implicitExtension = ImplicitIncludeExtension();
     cr.listIncludeCandidates = [this]() { return IncludableFiles(); };
     cr.findModuleSymbols = [this](std::string_view prefix)
     {
