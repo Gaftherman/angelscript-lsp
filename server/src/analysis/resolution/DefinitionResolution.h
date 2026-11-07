@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -96,5 +97,14 @@ struct MappedLocationTarget
  * @return List of matching user-defined type symbols.
  */
 [[nodiscard]] std::vector<Symbol> ResolveTypeDefinitionTarget(const DefinitionQuery& query);
+
+/**
+ * @brief Finds the tightest namespace declared in a document whose range covers a line.
+ * @param[in] uri Document URI; symbols stored under the equivalent file path also match.
+ * @param[in] line 0-based document line.
+ * @param[in] table Symbol table providing the document's namespace declarations.
+ * @return Qualified name of the innermost namespace, or an empty string at global scope.
+ */
+[[nodiscard]] std::string FindEnclosingNamespace(std::string_view uri, uint32_t line, const SymbolTable& table);
 
 } // namespace angel_lsp::analysis

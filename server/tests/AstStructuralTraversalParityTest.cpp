@@ -81,7 +81,8 @@ TEST_CASE("AstStructuralTraversal - Template brackets get templatePunctuation to
     REQUIRE(tree != nullptr);
 
     SymbolTable table;
-    features::SemanticTokensRequest req{"file:///template_punct.as", code, tree.get(), table};
+    test::SemanticTokenFactsFixture semFacts{tree.get(), code};
+    features::SemanticTokensRequest req{"file:///template_punct.as", code, semFacts.facts, table};
     const auto tokens = features::GetSemanticTokens(req);
 
     REQUIRE(tokens.data.size() % 5 == 0);

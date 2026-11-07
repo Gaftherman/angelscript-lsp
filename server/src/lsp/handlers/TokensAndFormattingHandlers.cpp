@@ -195,13 +195,13 @@ Server::HandleRequestsTextDocument_SemanticTokens_Range(lsp::requests::TextDocum
     const auto syntax =
         doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
                   : nullptr;
-    TSTree* tree = syntax ? syntax->tree.get() : nullptr;
-    features::SemanticTokensRequest sr{doc->uri, *doc->text, tree, m_symbolTable};
+    const analysis::SemanticTokenFacts facts =
+        syntax ? analysis::CollectSemanticTokenFacts(syntax->index, *doc->text) : analysis::SemanticTokenFacts{};
+    features::SemanticTokensRequest sr{doc->uri, *doc->text, facts, m_symbolTable};
     sr.scopeRoot = m_scopeIndex.GetRoot(doc->uri);
-    sr.nodeIndex = syntax ? &syntax->index : nullptr;
-    if (tree && m_localScopeCollector)
+    if (syntax && m_localScopeCollector && !sr.scopeRoot)
     {
-        sr.scopeRoot = m_localScopeCollector->CollectScopesFromTree(syntax->index.Root(), *doc->text, sr.nodeIndex);
+        sr.scopeRoot = m_localScopeCollector->CollectScopesFromTree(syntax->index.Root(), *doc->text, &syntax->index);
     }
     sr.excludedLineRanges = ExcludedLineRanges(*doc->text);
     sr.range = codec::Decode(*doc->text, GetPositionEncoding(), req.range);

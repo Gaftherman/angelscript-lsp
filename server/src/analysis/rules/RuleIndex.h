@@ -103,7 +103,8 @@ struct RuleIndex
      * @brief Symbols of enums containing each member name.
      *        Allows fast O(1) lookup of enum symbols when resolving unqualified enum member references.
      */
-    ankerl::unordered_dense::map<std::string, std::vector<Symbol>> enumSymbolsByMemberName;
+    ankerl::unordered_dense::map<std::string, std::vector<Symbol>, TransparentStringHash, std::equal_to<>>
+        enumSymbolsByMemberName;
 
     /**
      * @brief Qualified names of types (classes, interfaces, enums, typedefs, funcdefs) keyed by short name.

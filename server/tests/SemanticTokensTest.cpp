@@ -60,7 +60,8 @@ TEST_CASE("SemanticTokensHandler - Delta Encoding for Simple Script")
     REQUIRE(tree != nullptr);
 
     SymbolTable table;
-    SemanticTokensRequest req{"file:///test.as", code, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, code};
+    SemanticTokensRequest req{"file:///test.as", code, semFacts.facts, table};
     auto tokens = GetSemanticTokens(req);
 
     // The data array contains 5-tuples: [deltaLine, deltaStartChar, length, tokenType, tokenModifiers]
@@ -81,7 +82,8 @@ TEST_CASE("SemanticTokensHandler - Empty Code Returns Empty Tokens")
     const std::string code = "";
     TSTree* tree = parser.Parse(code);
     SymbolTable table;
-    SemanticTokensRequest req{"file:///test.as", code, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, code};
+    SemanticTokensRequest req{"file:///test.as", code, semFacts.facts, table};
     auto tokens = GetSemanticTokens(req);
     CHECK(tokens.data.empty());
     if (tree)
@@ -102,7 +104,8 @@ TEST_CASE("SemanticTokensHandler - A primitive is reported as a type from the de
     REQUIRE(tree != nullptr);
 
     SymbolTable table;
-    SemanticTokensRequest req{"file:///test.as", code, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, code};
+    SemanticTokensRequest req{"file:///test.as", code, semFacts.facts, table};
     auto tokens = GetSemanticTokens(req);
 
     REQUIRE(tokens.data.size() % 5 == 0);
@@ -202,11 +205,12 @@ TEST_CASE("SemanticTokensHandler - A ranged request returns only the tokens it o
 
     SymbolTable table;
 
-    SemanticTokensRequest fullRequest{"file:///range.as", k_rangeSource, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, k_rangeSource};
+    SemanticTokensRequest fullRequest{"file:///range.as", k_rangeSource, semFacts.facts, table};
     const auto fullPositions = DecodeTokenPositions(GetSemanticTokens(fullRequest).data);
     REQUIRE(!fullPositions.empty());
 
-    SemanticTokensRequest rangedRequest{"file:///range.as", k_rangeSource, tree, table};
+    SemanticTokensRequest rangedRequest{"file:///range.as", k_rangeSource, semFacts.facts, table};
     rangedRequest.range = lsp::Range{{1, 0}, {2, 0}};
     const auto rangedPositions = DecodeTokenPositions(GetSemanticTokens(rangedRequest).data);
 
@@ -235,7 +239,8 @@ TEST_CASE("SemanticTokensHandler - The first token of a range is encoded against
     REQUIRE(tree != nullptr);
 
     SymbolTable table;
-    SemanticTokensRequest request{"file:///range.as", k_rangeSource, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, k_rangeSource};
+    SemanticTokensRequest request{"file:///range.as", k_rangeSource, semFacts.facts, table};
     request.range = lsp::Range{{2, 0}, {3, 0}};
 
     const auto tokens = GetSemanticTokens(request);
@@ -257,8 +262,9 @@ TEST_CASE("SemanticTokensHandler - An absent range is identical to a full reques
 
     SymbolTable table;
 
-    SemanticTokensRequest withoutRange{"file:///range.as", k_rangeSource, tree, table};
-    SemanticTokensRequest wholeDocument{"file:///range.as", k_rangeSource, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, k_rangeSource};
+    SemanticTokensRequest withoutRange{"file:///range.as", k_rangeSource, semFacts.facts, table};
+    SemanticTokensRequest wholeDocument{"file:///range.as", k_rangeSource, semFacts.facts, table};
     wholeDocument.range = lsp::Range{{0, 0}, {100, 0}};
 
     CHECK(GetSemanticTokens(withoutRange).data == GetSemanticTokens(wholeDocument).data);
@@ -278,7 +284,8 @@ TEST_CASE("SemanticTokensHandler - A range covering no tokens returns an empty s
     REQUIRE(tree != nullptr);
 
     SymbolTable table;
-    SemanticTokensRequest request{"file:///empty-range.as", code, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, code};
+    SemanticTokensRequest request{"file:///empty-range.as", code, semFacts.facts, table};
     request.range = lsp::Range{{1, 0}, {2, 0}};
 
     CHECK(GetSemanticTokens(request).data.empty());
@@ -400,7 +407,8 @@ TEST_CASE("SemanticTokensHandler - Template brackets get their own token type")
     REQUIRE(tree != nullptr);
 
     SymbolTable table;
-    SemanticTokensRequest req{"file:///template.as", code, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, code};
+    SemanticTokensRequest req{"file:///template.as", code, semFacts.facts, table};
     const auto tokens = GetSemanticTokens(req);
     ts_tree_delete(tree);
 
@@ -490,7 +498,8 @@ TEST_CASE("SemanticTokensHandler - An excluded #if block is left to the decorati
     REQUIRE(tree != nullptr);
 
     SymbolTable table;
-    SemanticTokensRequest req{"file:///dead.as", code, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, code};
+    SemanticTokensRequest req{"file:///dead.as", code, semFacts.facts, table};
     req.excludedLineRanges = angel_lsp::utils::FindExcludedLineRanges(code);
 
     // Precondition: the block really is excluded, or the rest of this proves nothing.
@@ -538,8 +547,9 @@ TEST_CASE("SemanticTokensHandler - With nothing excluded the payload is unchange
 
     SymbolTable table;
 
-    SemanticTokensRequest without{"file:///plain.as", code, tree, table};
-    SemanticTokensRequest with{"file:///plain.as", code, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, code};
+    SemanticTokensRequest without{"file:///plain.as", code, semFacts.facts, table};
+    SemanticTokensRequest with{"file:///plain.as", code, semFacts.facts, table};
     with.excludedLineRanges = angel_lsp::utils::FindExcludedLineRanges(code);
 
     CHECK(with.excludedLineRanges.empty());
@@ -731,7 +741,8 @@ TEST_CASE("SemanticTokensHandler - Every name carries the type its colour comes 
         LocalScopeCollector scopeCollector{nullptr};
         std::shared_ptr<const Scope> scopeRoot = scopeCollector.CollectScopes(scenario.source, parser);
 
-        SemanticTokensRequest request{"file:///tokens.as", scenario.source, tree, table};
+        test::SemanticTokenFactsFixture semFacts{tree, scenario.source};
+        SemanticTokensRequest request{"file:///tokens.as", scenario.source, semFacts.facts, table};
         request.scopeRoot = scopeRoot;
         const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
 
@@ -817,7 +828,8 @@ std::vector<SweptToken> SweepTokens(const std::string& code)
     REQUIRE(tree != nullptr);
 
     SymbolTable table;
-    SemanticTokensRequest request{"file:///sweep.as", code, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, code};
+    SemanticTokensRequest request{"file:///sweep.as", code, semFacts.facts, table};
     const auto tokens = GetSemanticTokens(request);
     ts_tree_delete(tree);
 
@@ -1224,7 +1236,8 @@ TEST_CASE("SemanticTokensHandler - Syntax error recovery preserves token integri
     TSTree* tree1 = parser.Parse(step1Valid);
     REQUIRE(tree1 != nullptr);
     CHECK_FALSE(ts_node_has_error(ts_tree_root_node(tree1)));
-    SemanticTokensRequest req1{"file:///test.as", step1Valid, tree1, table};
+    test::SemanticTokenFactsFixture semFacts1{tree1, step1Valid};
+    SemanticTokensRequest req1{"file:///test.as", step1Valid, semFacts1.facts, table};
     const auto tokens1 = GetSemanticTokens(req1);
     ts_tree_delete(tree1);
 
@@ -1235,7 +1248,8 @@ TEST_CASE("SemanticTokensHandler - Syntax error recovery preserves token integri
     TSTree* tree2 = parser.Parse(step2SyntaxError);
     REQUIRE(tree2 != nullptr);
     CHECK(ts_node_has_error(ts_tree_root_node(tree2)));
-    SemanticTokensRequest req2{"file:///test.as", step2SyntaxError, tree2, table};
+    test::SemanticTokenFactsFixture semFacts2{tree2, step2SyntaxError};
+    SemanticTokensRequest req2{"file:///test.as", step2SyntaxError, semFacts2.facts, table};
     const auto tokens2 = GetSemanticTokens(req2);
     ts_tree_delete(tree2);
 
@@ -1245,7 +1259,8 @@ TEST_CASE("SemanticTokensHandler - Syntax error recovery preserves token integri
     TSTree* tree3 = parser.Parse(step3Recovered);
     REQUIRE(tree3 != nullptr);
     CHECK_FALSE(ts_node_has_error(ts_tree_root_node(tree3)));
-    SemanticTokensRequest req3{"file:///test.as", step3Recovered, tree3, table};
+    test::SemanticTokenFactsFixture semFacts3{tree3, step3Recovered};
+    SemanticTokensRequest req3{"file:///test.as", step3Recovered, semFacts3.facts, table};
     const auto tokens3 = GetSemanticTokens(req3);
     ts_tree_delete(tree3);
 
@@ -1337,7 +1352,8 @@ TEST_CASE("SemanticTokensHandler - Member accesses on objects are tokenized as p
     LocalScopeCollector scopeCollector{nullptr};
     std::shared_ptr<const Scope> scopeRoot = scopeCollector.CollectScopes(code, parser);
 
-    SemanticTokensRequest request{"file:///test.as", code, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, code};
+    SemanticTokensRequest request{"file:///test.as", code, semFacts.facts, table};
     request.scopeRoot = scopeRoot;
     const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
 
@@ -1356,7 +1372,7 @@ TEST_CASE("SemanticTokensHandler - Member accesses on objects are tokenized as p
     ts_tree_delete(tree);
 }
 
-TEST_CASE("SemanticTokensHandler - Golden Test: Bit-for-bit identity across NodeIndex and Fallback")
+TEST_CASE("SemanticTokensHandler - Golden Test: Token emission and delta computation on complex script")
 {
     std::string code = "enum State { Idle, Running, Stopped }\n"
                        "class Entity\n"
@@ -1388,25 +1404,17 @@ TEST_CASE("SemanticTokensHandler - Golden Test: Bit-for-bit identity across Node
     LocalScopeCollector scopeCollector{nullptr};
     std::shared_ptr<const Scope> scopeRoot = scopeCollector.CollectScopes(code, parser);
 
-    // Request 1: Without pre-supplied NodeIndex (internal NodeIndex built automatically)
-    SemanticTokensRequest reqFallback{"file:///golden.as", code, tree, table};
-    reqFallback.scopeRoot = scopeRoot;
-    auto tokensFallback = GetSemanticTokens(reqFallback);
-
-    // Request 2: With explicit pre-supplied NodeIndex
-    analysis::NodeIndex preIndex(ts_tree_root_node(tree));
-    SemanticTokensRequest reqWithIndex{"file:///golden.as", code, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, code};
+    SemanticTokensRequest reqWithIndex{"file:///golden.as", code, semFacts.facts, table};
     reqWithIndex.scopeRoot = scopeRoot;
-    reqWithIndex.nodeIndex = &preIndex;
     auto tokensWithIndex = GetSemanticTokens(reqWithIndex);
 
-    // Assert bit-for-bit identity
-    REQUIRE(tokensFallback.data.size() == tokensWithIndex.data.size());
-    REQUIRE(!tokensFallback.data.empty());
-    CHECK(tokensFallback.data == tokensWithIndex.data);
+    // Assert tokens non-empty and well-formed
+    REQUIRE(tokensWithIndex.data.size() % 5 == 0);
+    REQUIRE(!tokensWithIndex.data.empty());
 
     // Test delta computation stability: unchanged token sequence gives empty delta
-    auto deltaEdits = ComputeSemanticTokensDelta(tokensFallback.data, tokensWithIndex.data);
+    auto deltaEdits = ComputeSemanticTokensDelta(tokensWithIndex.data, tokensWithIndex.data);
     CHECK(deltaEdits.empty());
 
     ts_tree_delete(tree);
@@ -1437,7 +1445,8 @@ TEST_CASE("SemanticTokensHandler - Handle '@' and parameter reference '&out' cla
     LocalScopeCollector scopeCollector{nullptr};
     std::shared_ptr<const Scope> scopeRoot = scopeCollector.CollectScopes(code, parser);
 
-    SemanticTokensRequest request{"file:///test_modifiers.as", code, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, code};
+    SemanticTokensRequest request{"file:///test_modifiers.as", code, semFacts.facts, table};
     request.scopeRoot = scopeRoot;
     const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
 
@@ -1497,7 +1506,8 @@ TEST_CASE("SemanticTokensHandler - Namespace-qualified and unqualified enum memb
     collector.CollectSymbols("file:///test_ns_enum.as", code, parser, table);
 
     // Intentionally omit scopeRoot (simulating keystroke before background ScopeIndex refresh)
-    SemanticTokensRequest request{"file:///test_ns_enum.as", code, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, code};
+    SemanticTokensRequest request{"file:///test_ns_enum.as", code, semFacts.facts, table};
     const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
 
     int ironInEnumMemberCount = 0;
@@ -1555,7 +1565,8 @@ TEST_CASE("SemanticTokensHandler - Invariant: Unqualified member call with colli
     SymbolTable table;
     collector.CollectSymbols("file:///test_unqualified_call.as", code, parser, table);
 
-    SemanticTokensRequest request{"file:///test_unqualified_call.as", code, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, code};
+    SemanticTokensRequest request{"file:///test_unqualified_call.as", code, semFacts.facts, table};
     const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
 
     bool foundCallToken = false;
@@ -1609,7 +1620,8 @@ TEST_CASE("SemanticTokensHandler - Invariant: Direct variable initialization wit
     SymbolTable table;
     collector.CollectSymbols("file:///test_direct_init_enum.as", code, parser, table);
 
-    SemanticTokensRequest request{"file:///test_direct_init_enum.as", code, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, code};
+    SemanticTokensRequest request{"file:///test_direct_init_enum.as", code, semFacts.facts, table};
     const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
 
     int enumNameTokenCount = 0;
@@ -1655,7 +1667,8 @@ TEST_CASE("Semantic Tokens - Multiline heredoc bounds within line length")
     SymbolTable table;
     collector.CollectSymbols("file:///test_heredoc_bounds.as", code, parser, table);
 
-    SemanticTokensRequest request{"file:///test_heredoc_bounds.as", code, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, code};
+    SemanticTokensRequest request{"file:///test_heredoc_bounds.as", code, semFacts.facts, table};
     const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
 
     std::vector<std::string> lines;
@@ -1698,7 +1711,8 @@ TEST_CASE("Semantic Tokens - Scoped identifier in base class list does not produ
     SymbolTable table;
     collector.CollectSymbols("file:///test_scoped_base.as", code, parser, table);
 
-    SemanticTokensRequest request{"file:///test_scoped_base.as", code, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, code};
+    SemanticTokensRequest request{"file:///test_scoped_base.as", code, semFacts.facts, table};
     const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
 
     bool foundMonolithicToken = false;
@@ -1746,7 +1760,8 @@ TEST_CASE("Semantic Tokens - Scoped identifier in namespace declaration breaks d
     SymbolTable table;
     collector.CollectSymbols("file:///test_ns_tokens.as", code, parser, table);
 
-    SemanticTokensRequest request{"file:///test_ns_tokens.as", code, tree, table};
+    test::SemanticTokenFactsFixture semFacts{tree, code};
+    SemanticTokensRequest request{"file:///test_ns_tokens.as", code, semFacts.facts, table};
     const auto tokens = DecodeAbsoluteTokens(GetSemanticTokens(request).data);
 
     bool foundA = false;

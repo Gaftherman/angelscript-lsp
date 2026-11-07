@@ -853,20 +853,21 @@ lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string& uri
     const auto syntax = docHandle && docHandle->tree
                             ? ResolveProtocolSyntax(uriStr, docHandle->ParsedSource(), docHandle.get()).syntax
                             : nullptr;
-    TSTree* tree = syntax ? syntax->tree.get() : nullptr;
+    const analysis::SemanticTokenFacts facts =
+        syntax ? analysis::CollectSemanticTokenFacts(syntax->index, text) : analysis::SemanticTokenFacts{};
     const int currentVersion = docHandle ? docHandle->version : GetDocumentStore().GetVersion(uriStr);
 
-    features::SemanticTokensRequest request{uriStr, text, tree, m_symbolTable};
+    features::SemanticTokensRequest request{uriStr, text, facts, m_symbolTable};
     request.scopeRoot = m_scopeIndex.GetRoot(uriStr);
-    request.nodeIndex = syntax ? &syntax->index : nullptr;
-    if (tree && m_localScopeCollector && !request.scopeRoot)
+    if (syntax && m_localScopeCollector && !request.scopeRoot)
     {
-        request.scopeRoot = m_localScopeCollector->CollectScopesFromTree(syntax->index.Root(), text, request.nodeIndex);
+        request.scopeRoot = m_localScopeCollector->CollectScopesFromTree(syntax->index.Root(), text, &syntax->index);
     }
     request.excludedLineRanges = ExcludedLineRanges(text);
     lsp::SemanticTokens tokens = features::GetSemanticTokens(request);
     codec::EncodeSemanticTokens(text, m_sessionCoordinator->GetPositionEncoding(), tokens.data);
 
+    TSTree* tree = syntax ? syntax->tree.get() : nullptr;
     const bool hasError = tree != nullptr && ts_node_has_error(ts_tree_root_node(tree));
 
     // Cached after encoding, so a delta is computed against exactly the bytes the client holds.

@@ -16,49 +16,12 @@
     "server/src/features/rename",
     "server/src/features/document_highlight",
     "server/src/features/signature_help",
-    "server/src/features/code_lens"
+    "server/src/features/code_lens",
+    "server/src/features/semantic_tokens"
   ],
-  "active_folder": "server/src/features/semantic_tokens",
+  "active_folder": "server/src/features/hover",
   "cross_module_impacts": [],
   "pending_folders": [
-    {
-      "folder_path": "server/src/features/semantic_tokens",
-      "complexity_rank": 19,
-      "selection_rationale": "Feature (2 files, 186 lines) semantic token classification and delta encoding.",
-      "files_to_refactor": [
-        {
-          "file": "SemanticTokensHandler.h",
-          "detected_antipatterns": [
-            "Raw TSTree* pointer and <tree_sitter/api.h> dependency in SemanticTokensRequest",
-            "Heap-allocated std::string members for uri and sourceCode"
-          ],
-          "reusable_structs_or_classes": [
-            "analysis::NodeIndex",
-            "analysis::SymbolTable",
-            "analysis::ScopeIndex"
-          ],
-          "first_pass_data_needed": [
-            "Pre-indexed semantic token classification from syntax revision"
-          ]
-        },
-        {
-          "file": "SemanticTokensHandler.cpp",
-          "detected_antipatterns": [
-            "AST tree cursor traversal in second pass for token emission",
-            "Manual token delta encoding without zero-copy buffers"
-          ],
-          "reusable_structs_or_classes": [
-            "parser::GetRootNode",
-            "analysis::SemanticNodes"
-          ],
-          "liquidation_actions": [
-            "Purge AST cursor walk in second pass",
-            "Consume pre-indexed tokens in O(1) / O(log N)",
-            "Comply with lizard CCN <= 25 and line length <= 120"
-          ]
-        }
-      ]
-    },
     {
       "folder_path": "server/src/features/hover",
       "complexity_rank": 20,

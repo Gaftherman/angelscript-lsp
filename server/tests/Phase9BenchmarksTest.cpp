@@ -301,10 +301,10 @@ TEST_CASE("Benchmark - Scenario B: Massive Ordinary Script (10k-14k lines)" * do
     auto diagnostics = analyzer.Analyze(semReq);
     const double semMs = semTimer.ElapsedMs();
 
+    const auto semFacts = analysis::CollectSemanticTokenFacts(nodeIndex, massiveCode);
     // 5. SemanticTokens
-    features::SemanticTokensRequest tokReq(docUri, massiveCode, tree, symbolTable);
+    features::SemanticTokensRequest tokReq(docUri, massiveCode, semFacts, symbolTable);
     tokReq.scopeRoot = sharedScope;
-    tokReq.nodeIndex = &nodeIndex;
 
     HighResTimer tokTimer;
     auto tokens = features::GetSemanticTokens(tokReq);

@@ -4,6 +4,7 @@
 #include "config/ServerConfig.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "helpers/ScriptedStream.h"
+#include "helpers/TestUtils.h"
 #include "lsp/Server.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/Timer.h"
@@ -280,7 +281,9 @@ TEST_CASE("Perf - Baseline Measurements" * doctest::skip(true))
         angel_lsp::analysis::SymbolTable table;
         collector.CollectSymbols("file:///large_script.as", largeCode, parser, table);
 
-        angel_lsp::features::SemanticTokensRequest reqFull{"file:///large_script.as", largeCode, tree, table};
+        angel_lsp::test::SemanticTokenFactsFixture semFactsFull{tree, largeCode};
+        angel_lsp::features::SemanticTokensRequest reqFull{"file:///large_script.as", largeCode, semFactsFull.facts,
+                                                           table};
 
         angel_lsp::utils::HighResTimer timerFull;
         auto fullResult = angel_lsp::features::GetSemanticTokens(reqFull);
@@ -292,8 +295,9 @@ TEST_CASE("Perf - Baseline Measurements" * doctest::skip(true))
         TSTree* changedTree = parser.Parse(changedCode);
         REQUIRE(changedTree != nullptr);
 
-        angel_lsp::features::SemanticTokensRequest reqChanged{"file:///large_script.as", changedCode, changedTree,
-                                                              table};
+        angel_lsp::test::SemanticTokenFactsFixture semFactsChanged{changedTree, changedCode};
+        angel_lsp::features::SemanticTokensRequest reqChanged{"file:///large_script.as", changedCode,
+                                                              semFactsChanged.facts, table};
         auto changedResult = angel_lsp::features::GetSemanticTokens(reqChanged);
 
         angel_lsp::utils::HighResTimer timerDelta;

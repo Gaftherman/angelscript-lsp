@@ -165,6 +165,25 @@ struct DecodedSemanticToken
     }
 };
 
+/**
+ * @brief Test fixture owning a NodeIndex and SemanticTokenFacts for semantic tokens testing.
+ */
+struct SemanticTokenFactsFixture
+{
+    analysis::NodeIndex index;
+    analysis::SemanticTokenFacts facts;
+
+    /**
+     * @brief Constructs index and facts from a tree pointer and source code buffer.
+     * @param[in] tree Syntax tree pointer.
+     * @param[in] code Source code buffer.
+     */
+    SemanticTokenFactsFixture(TSTree* tree, std::string_view code)
+        : index(ts_tree_root_node(tree)), facts(analysis::CollectSemanticTokenFacts(index, code))
+    {
+    }
+};
+
 struct ResolvedCallInfo
 {
     std::string targetFunctionSymbol;
@@ -1218,7 +1237,8 @@ class TestDocument
 
     std::vector<DecodedSemanticToken> GetSemanticTokens() const
     {
-        features::SemanticTokensRequest request{m_uri, m_sourceCode, m_tree, m_symbolTable};
+        SemanticTokenFactsFixture semFacts{m_tree, m_sourceCode};
+        features::SemanticTokensRequest request{m_uri, m_sourceCode, semFacts.facts, m_symbolTable};
         request.scopeRoot = m_scopeRoot;
         auto lspTokens = features::GetSemanticTokens(request);
         std::vector<DecodedSemanticToken> decoded;

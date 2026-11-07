@@ -1,5 +1,6 @@
 #include "features/type_hierarchy/TypeHierarchyHandler.h"
 
+#include "analysis/resolution/DefinitionResolution.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/RuleIndex.h"
 #include "features/common/FeatureSharedUtils.h"
@@ -301,44 +302,6 @@ static void CollectSubtypesByScan(const SubtypeQueryContext& ctx, std::vector<ls
         });
 }
 
-/**
- * @brief Finds the innermost namespace declared in a document that spans the given line.
- * @param[in] uri Document URI.
- * @param[in] line 0-based document line.
- * @param[in] table Workspace symbol table.
- * @return Owned copy of the tightest enclosing namespace symbol, or nullopt at global scope.
- */
-static std::optional<analysis::Symbol> FindEnclosingNamespace(std::string_view uri, uint32_t line,
-                                                              const analysis::SymbolTable& table)
-{
-    std::optional<analysis::Symbol> enclosingNs;
-    uint32_t bestSpan = UINT32_MAX;
-    table.ForEachSymbolInFile(uri,
-                              [&]([[maybe_unused]] std::string_view key, const std::vector<analysis::Symbol>& symbols)
-                              {
-                                  for (const auto& sym : symbols)
-                                  {
-                                      if (sym.type != analysis::SymbolType::Namespace ||
-                                          (sym.fileUri != uri && utils::PathToUri(sym.fileUri) != uri))
-                                      {
-                                          continue;
-                                      }
-                                      const auto range =
-                                          sym.fullRange.endLine != 0 ? sym.fullRange : sym.selectionRange;
-                                      if (line >= range.startLine && line <= range.endLine)
-                                      {
-                                          const uint32_t span = range.endLine - range.startLine;
-                                          if (span <= bestSpan)
-                                          {
-                                              bestSpan = span;
-                                              enclosingNs = sym;
-                                          }
-                                      }
-                                  }
-                              });
-    return enclosingNs;
-}
-
 static void FilterDeclarationsByLocation(std::string_view uri, const lsp::Position& pos,
                                          std::vector<analysis::Symbol>& declarations)
 {
@@ -372,13 +335,10 @@ std::optional<std::vector<lsp::TypeHierarchyItem>> PrepareTypeHierarchy(const Ty
         declarations = FindTypeDeclarations(name, request.symbolTable);
         if (declarations.empty())
         {
-            if (const auto enclosingNs =
-                    FindEnclosingNamespace(request.uri, request.position.line, request.symbolTable))
-            {
-                const std::string_view nsName =
-                    enclosingNs->qualifiedName.empty() ? enclosingNs->name : enclosingNs->qualifiedName;
-                declarations = FindTypeDeclarations(utils::JoinScopedName(nsName, name), request.symbolTable);
-            }
+            declarations = FindTypeDeclarations(
+                utils::JoinScopedName(
+                    analysis::FindEnclosingNamespace(request.uri, request.position.line, request.symbolTable), name),
+                request.symbolTable);
         }
         if (declarations.empty())
         {

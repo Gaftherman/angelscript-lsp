@@ -1035,16 +1035,152 @@
       "action": "UNIFY_FUNCTIONS",
       "sourceFile": "server/src/features/code_lens/CodeLensHandler.cpp",
       "deletedLineRange": "959-1192, 1474-1491",
-      "originalSymbolOrCode": "IsInterfaceMethod, CountInterfaceMethodImplementations, CountInterfaceImplementations, BuildMixinInclusionMap, CollectCompatibleClasses, AddSymbolDeclRanges, CollectAllDeclRanges, FindMixinSymbol, FormatReferenceCount, FormatImplementationCount; structs SymbolLensTarget, ReferenceCollectionCriteria, BatchReferenceContext, CompatibleClassContext",
+      "originalSymbolOrCode": "IsInterfaceMethod, CountInterfaceMethodImplementations, CountInterfaceImplementations, FormatImplementationCount",
       "whatItDidAndWhyInThatFile": "Interface implementation counting, mixin inclusion maps, declaration-range sets and lens title formatting kept as static helpers and feature-header structs of the CodeLens handler.",
       "whyChangedOrDeleted": "Moved unchanged into Layer 2 next to the reference-counting engine that consumes them; SymbolLensTarget renamed ReferenceCountTarget and CompatibleClassContext replaced by MixinClassContext.",
-      "replacedByCanonicalFile": "server/src/analysis/resolution/InterfaceImplementation.h, server/src/analysis/resolution/MixinInclusion.h, server/src/analysis/resolution/ReferenceCounting.h",
-      "replacedByCanonicalSymbol": "CountInterfaceImplementations, CollectCompatibleClasses, ReferenceCountTarget",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/InterfaceImplementation.h",
+      "replacedByCanonicalSymbol": "CountInterfaceImplementations",
       "ramOrCpuImpact": "No cost change: same algorithms relocated; FindMixinSymbol takes std::string_view.",
       "verifiedByTests": [
         "CodeLensTest",
         "ReferenceCountingTest",
         "SvenCoopRegressionTest"
+      ]
+    },
+    {
+      "id": "REF-M6-CODELENS-HELPERS-L2-MIXIN",
+      "phase": "M6",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/code_lens/CodeLensHandler.cpp",
+      "deletedLineRange": "959-1192, 1474-1491",
+      "originalSymbolOrCode": "BuildMixinInclusionMap, CollectCompatibleClasses, FindMixinSymbol; struct CompatibleClassContext",
+      "whatItDidAndWhyInThatFile": "Interface implementation counting, mixin inclusion maps, declaration-range sets and lens title formatting kept as static helpers and feature-header structs of the CodeLens handler.",
+      "whyChangedOrDeleted": "Moved unchanged into Layer 2 next to the reference-counting engine that consumes them; SymbolLensTarget renamed ReferenceCountTarget and CompatibleClassContext replaced by MixinClassContext.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/MixinInclusion.h",
+      "replacedByCanonicalSymbol": "CollectCompatibleClasses",
+      "ramOrCpuImpact": "No cost change: same algorithms relocated; FindMixinSymbol takes std::string_view.",
+      "verifiedByTests": [
+        "CodeLensTest",
+        "ReferenceCountingTest",
+        "SvenCoopRegressionTest"
+      ]
+    },
+    {
+      "id": "REF-M6-CODELENS-HELPERS-L2-REFCOUNT",
+      "phase": "M6",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/code_lens/CodeLensHandler.cpp",
+      "deletedLineRange": "959-1192, 1474-1491",
+      "originalSymbolOrCode": "AddSymbolDeclRanges, CollectAllDeclRanges, FormatReferenceCount; structs SymbolLensTarget, ReferenceCollectionCriteria, BatchReferenceContext",
+      "whatItDidAndWhyInThatFile": "Interface implementation counting, mixin inclusion maps, declaration-range sets and lens title formatting kept as static helpers and feature-header structs of the CodeLens handler.",
+      "whyChangedOrDeleted": "Moved unchanged into Layer 2 next to the reference-counting engine that consumes them; SymbolLensTarget renamed ReferenceCountTarget and CompatibleClassContext replaced by MixinClassContext.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/ReferenceCounting.h",
+      "replacedByCanonicalSymbol": "ReferenceCountTarget",
+      "ramOrCpuImpact": "No cost change: same algorithms relocated; FindMixinSymbol takes std::string_view.",
+      "verifiedByTests": [
+        "CodeLensTest",
+        "ReferenceCountingTest",
+        "SvenCoopRegressionTest"
+      ]
+    },
+    {
+      "id": "REF-M7-ACCESSOR-NAME",
+      "phase": "M7",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/resolution/PropertyAndDelegateResolver.cpp",
+      "deletedLineRange": "29-33",
+      "originalSymbolOrCode": "get_/set_ prefix loop in PropertyNameFromAccessor; CodeLensHandler.cpp starts_with(\"get_\")/substr(4) slicing; SemanticMediator.h starts_with(\"get_\"/\"set_\") checks",
+      "whatItDidAndWhyInThatFile": "Each site re-spelled the AngelScript property-accessor naming convention to map an accessor method to its virtual property name.",
+      "whyChangedOrDeleted": "One Layer 1 definition of the accessor convention; removes manual string slicing from Layer 3 code_lens. Remaining literal sites migrate as their folders become active.",
+      "replacedByCanonicalFile": "server/src/utils/AccessorNames.h",
+      "replacedByCanonicalSymbol": "AccessorPropertyName",
+      "ramOrCpuImpact": "None: constexpr string_view prefix test; code_lens index keys a view instead of a substr temporary.",
+      "verifiedByTests": [
+        "CodeLensTest",
+        "SvenCoopRegressionTest"
+      ]
+    },
+    {
+      "id": "REF-M7-ENCLOSING-NS-DEDUP",
+      "phase": "M7",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/type_hierarchy/TypeHierarchyHandler.cpp",
+      "deletedLineRange": "305-340",
+      "originalSymbolOrCode": "static std::optional<analysis::Symbol> FindEnclosingNamespace(std::string_view, uint32_t, const SymbolTable&)",
+      "whatItDidAndWhyInThatFile": "Copy of the innermost-namespace-by-line search used to qualify an unresolved type name before preparing a type hierarchy.",
+      "whyChangedOrDeleted": "Duplicate of the Layer 2 definition-resolution helper; that helper is now public in DefinitionResolution.h and the feature calls it.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/DefinitionResolution.h",
+      "replacedByCanonicalSymbol": "FindEnclosingNamespace",
+      "ramOrCpuImpact": "Lower: returns the qualified name instead of copying a whole Symbol; same O(symbols in file) scan.",
+      "verifiedByTests": [
+        "TypeHierarchyTest"
+      ]
+    },
+    {
+      "id": "REF-M7-SEMTOK-FACTS-P1",
+      "phase": "M7",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
+      "deletedLineRange": "26-250",
+      "originalSymbolOrCode": "CollectHighlightsTokens, GetHighlightsQueryData, MakeCaptureRule, MatchSpecialCaptureRule, MatchKeywordOrConstantRule, MatchCallableOrPropertyRule, MatchEntityCaptureRule, ClassifyOperatorOrPunctuation, IsPunctuationOrBracket, IsGenuineOperator, TrimWhitespace, IsReferenceModifier, IsReferenceModifierNode, IsTemplatePunctuation, IsTemplatePunctuationNode, IsScopedIdentifierLeaf; structs CaptureRule, HighlightsQueryData",
+      "whatItDidAndWhyInThatFile": "The feature ran the tree-sitter highlights query itself, mapped capture names to token types and inspected parent/child nodes to classify operators, template brackets and base-list scoped leaves.",
+      "whyChangedOrDeleted": "Tree-sitter work belongs to pass 1 (Rule 4.10). Bodies moved unchanged into analysis/index; the feature consumes AST-free IndexedHighlightCapture records.",
+      "replacedByCanonicalFile": "server/src/analysis/index/SemanticTokenFacts.h",
+      "replacedByCanonicalSymbol": "CollectSemanticTokenFacts",
+      "ramOrCpuImpact": "Same cost: the highlights query still runs once per request over the whole tree; facts are not cached per syntax revision. Adds one capture vector per request.",
+      "verifiedByTests": [
+        "SemanticTokenFactsTest",
+        "SemanticTokensTest"
+      ]
+    },
+    {
+      "id": "REF-M7-SEMTOK-CLASSSPAN",
+      "phase": "M7",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
+      "deletedLineRange": "26-125",
+      "originalSymbolOrCode": "class ClassSpanIndex (Build, FindEnclosingClass) and its parser::AstNodeSpan vector",
+      "whatItDidAndWhyInThatFile": "Class span tree constructed via upward AST traversal in the feature to determine innermost enclosing class.",
+      "whyChangedOrDeleted": "AST traversal belongs strictly in Pass 1. Replaced by IndexedClassSpan in SemanticTokenFacts using flat container spans from NodeIndex.",
+      "replacedByCanonicalFile": "server/src/analysis/index/SemanticTokenFacts.h",
+      "replacedByCanonicalSymbol": "IndexedClassSpan",
+      "ramOrCpuImpact": "Same algorithm (sorted spans, parent stack, O(log N) lookup); qualified names now come from NodeIndex::CollectLookupContainers, which GetEnclosingContainers already delegates to when an index exists.",
+      "verifiedByTests": [
+        "SemanticTokenFactsTest",
+        "SemanticTokensTest"
+      ]
+    },
+    {
+      "id": "REF-M7-SEMTOK-SCOPED",
+      "phase": "M7",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/semantic_tokens/SemanticTokensHandler.cpp",
+      "deletedLineRange": "126-200",
+      "originalSymbolOrCode": "TSNode extraction inside UpgradeScopedIdentifierEnumTokens, UpgradeScopedTypeEnumTokens and ApplyRuleIndexEnumUpgrades",
+      "whatItDidAndWhyInThatFile": "Stored scoped identifier and type ranges in feature-local structures for enum upgrades.",
+      "whyChangedOrDeleted": "Segment byte ranges are extracted in pass 1 (IndexedScopedName, IndexedScopedType); the symbol-table enum upgrades stay in the feature and read those ranges.",
+      "replacedByCanonicalFile": "server/src/analysis/index/SemanticTokenFacts.h",
+      "replacedByCanonicalSymbol": "IndexedScopedName",
+      "ramOrCpuImpact": "Same traversal of scoped_identifier and scope nodes; JoinScopedName temporaries replaced by FindMemberSymbolPtr (stack-built key).",
+      "verifiedByTests": [
+        "SemanticTokenFactsTest",
+        "SemanticTokensTest"
+      ]
+    },
+    {
+      "id": "REF-M7-SEMTOK-STRINGVIEW",
+      "phase": "M7",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/semantic_tokens/SemanticTokensHandler.h",
+      "deletedLineRange": "20-40",
+      "originalSymbolOrCode": "SemanticTokensRequest owned std::string uri/sourceCode and TSTree* tree/nodeIndex members; std::string_view-keyed classHierarchyCache map of std::string vectors; std::string(rightText) and std::string(memberLabel) RuleIndex probes",
+      "whatItDidAndWhyInThatFile": "Request struct accepting std::string URI, std::string sourceCode, and raw TSTree* pointer.",
+      "whyChangedOrDeleted": "Enforces AGENTS.md Rule 4.10 Pass 2 zero-copy invariant: uses std::string_view and pre-extracted SemanticTokenFacts, eliminating raw TSTree*.",
+      "replacedByCanonicalFile": "server/src/features/semantic_tokens/SemanticTokensHandler.h",
+      "replacedByCanonicalSymbol": "SemanticTokensRequest",
+      "ramOrCpuImpact": "Removes two whole-document string copies per request and per-probe key allocations; hierarchy strings are owned by analysis::InheritedHierarchyCache.",
+      "verifiedByTests": [
+        "SemanticTokensTest"
       ]
     }
   ]

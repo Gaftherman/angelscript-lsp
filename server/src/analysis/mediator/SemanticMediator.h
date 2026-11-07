@@ -11,6 +11,7 @@
 #include "analysis/resolution/TemplateTypeResolver.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "config/EngineRuleConfig.h"
+#include "utils/AccessorNames.h"
 
 #include <memory>
 #include <optional>
@@ -34,7 +35,7 @@ struct PropertyAccessorPair
     {
         for (const auto& sym : accessors)
         {
-            if (sym.name.starts_with("get_"))
+            if (utils::IsGetterName(sym.name))
             {
                 return true;
             }
@@ -46,7 +47,7 @@ struct PropertyAccessorPair
     {
         for (const auto& sym : accessors)
         {
-            if (sym.name.starts_with("set_"))
+            if (utils::IsSetterName(sym.name))
             {
                 return true;
             }

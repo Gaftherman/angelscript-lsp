@@ -547,7 +547,8 @@ TEST_CASE("SvenCoop - Benchmark and Profile sven.as.predefined pipeline")
     double foldMs = std::chrono::duration<double, std::milli>(t1 - t0).count();
     MESSAGE("GetFoldingRanges: " << foldMs << " ms, count: " << (foldingRanges ? foldingRanges->size() : 0));
 
-    features::SemanticTokensRequest semReq{uri, sanitized, tree, table};
+    const auto semFacts = analysis::CollectSemanticTokenFacts(foldIndex, sanitized);
+    features::SemanticTokensRequest semReq{uri, sanitized, semFacts, table};
     semReq.scopeRoot = std::move(scopes);
     t0 = std::chrono::high_resolution_clock::now();
     auto semTokens = features::GetSemanticTokens(semReq);

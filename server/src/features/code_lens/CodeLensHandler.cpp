@@ -8,6 +8,7 @@
 #include "analysis/rules/OperatorRules.h"
 #include "analysis/rules/UnusedSymbolChecker.h"
 #include "features/code_lens/CodeLensHandlerInternal.h"
+#include "utils/AccessorNames.h"
 #include "utils/PositionEncoding.h"
 #include "utils/Utils.h"
 
@@ -202,9 +203,10 @@ static std::vector<lsp::CodeLens> BuildSymbolGroupLenses(const SymbolGroups& sym
         for (size_t i = 0; i < targets.size(); ++i)
         {
             targetsByName[targets[i].targetName].push_back(i);
-            if (targets[i].targetName.starts_with("get_") || targets[i].targetName.starts_with("set_"))
+            if (const std::string_view propertyName = utils::AccessorPropertyName(targets[i].targetName);
+                !propertyName.empty())
             {
-                targetsByName[targets[i].targetName.substr(4)].push_back(i);
+                targetsByName[propertyName].push_back(i);
             }
         }
         analysis::ReferenceCountRequest refReq{

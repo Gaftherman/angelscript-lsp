@@ -90,7 +90,9 @@ struct AdversarialTestEnv
 
     lsp::SemanticTokens Tokens()
     {
-        SemanticTokensRequest req{uri, sourceCode, tree, symbolTable};
+        const auto facts =
+            nodeIndex ? analysis::CollectSemanticTokenFacts(*nodeIndex, sourceCode) : analysis::SemanticTokenFacts{};
+        SemanticTokensRequest req{uri, sourceCode, facts, symbolTable};
         return GetSemanticTokens(req);
     }
 

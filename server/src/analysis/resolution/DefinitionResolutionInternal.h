@@ -21,15 +21,6 @@ namespace angel_lsp::analysis
 [[nodiscard]] bool IsTypeDefType(SymbolType type) noexcept;
 
 /**
- * @brief Finds the innermost enclosing namespace name for a document position.
- * @param[in] uri Document URI string view.
- * @param[in] line Document line coordinate.
- * @param[in] table Symbol table.
- * @return Fully qualified namespace name, or empty string.
- */
-[[nodiscard]] std::string FindEnclosingNamespace(std::string_view uri, uint32_t line, const SymbolTable& table);
-
-/**
  * @brief Resolves the clean target type name for an identifier expression at cursor.
  * @param[in] nodeText Symbol name under cursor.
  * @param[in] query Definition query context.

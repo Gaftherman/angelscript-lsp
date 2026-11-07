@@ -1,6 +1,7 @@
 #include "analysis/index/LocalScopeCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
 #include <doctest/doctest.h>
@@ -85,7 +86,8 @@ struct TokenFixture
         LocalScopeCollector scopeCollector(nullptr);
         std::shared_ptr<const Scope> scopeRoot = scopeCollector.CollectScopes(code, parser);
 
-        SemanticTokensRequest request{"file:///test.as", code, tree, table};
+        test::SemanticTokenFactsFixture semFacts{tree, code};
+        SemanticTokensRequest request{"file:///test.as", code, semFacts.facts, table};
         request.scopeRoot = scopeRoot;
         tokens = Decode(GetSemanticTokens(request));
     }

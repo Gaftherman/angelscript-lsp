@@ -162,7 +162,7 @@ static std::optional<long long> EnumeratorValue(std::string_view label, const ru
         return std::nullopt;
     }
 
-    const auto it = ruleIndex.enumSymbolsByMemberName.find(std::string(memberLabel));
+    const auto it = ruleIndex.enumSymbolsByMemberName.find(memberLabel);
     if (it == ruleIndex.enumSymbolsByMemberName.end())
     {
         return std::nullopt;

@@ -70,7 +70,10 @@ lsp::SemanticTokens UnifiedFeatureAuditHarness::RequestSemanticTokens(const std:
         return {};
     }
 
-    features::SemanticTokensRequest req{uri, m_documents[uri], itTree->second.get(), *m_symbolTable};
+    const auto& docText = m_documents[uri];
+    analysis::NodeIndex nodeIndex(ts_tree_root_node(itTree->second.get()));
+    const auto facts = analysis::CollectSemanticTokenFacts(nodeIndex, docText);
+    features::SemanticTokensRequest req{uri, docText, facts, *m_symbolTable};
     req.scopeRoot = m_scopeIndex->GetRoot(uri);
     return features::GetSemanticTokens(req);
 }

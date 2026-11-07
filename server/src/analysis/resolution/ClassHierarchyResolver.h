@@ -4,8 +4,10 @@
 #include "analysis/index/SymbolTable.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "config/EngineRuleConfig.h"
+#include "utils/TransparentHash.h"
 
 #include <ankerl/unordered_dense.h>
+#include <functional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -57,6 +59,43 @@ NonInstantiableKind ClassifyNonInstantiable(std::string_view baseTypeName, const
 bool IsMixinClass(std::string_view baseTypeName, const SymbolTable& table);
 std::vector<std::string> GetInheritedTypeHierarchy(std::string_view className, const SymbolTable& symbolTable,
                                                    ExpressionTypeCache* cache = nullptr);
+
+/**
+ * @brief Per-request memo of inherited type hierarchies that exposes owner names as string views.
+ * @note Not thread-safe; owns the hierarchy strings so pass-2 callers never hold owned names.
+ */
+class InheritedHierarchyCache
+{
+  public:
+    /**
+     * @brief Visits className and every type it inherits from until the visitor accepts one.
+     * @param[in] className Qualified class name whose hierarchy is visited.
+     * @param[in] symbolTable Symbol table used to build the hierarchy on first request.
+     * @param[in] visit Callable taking std::string_view and returning true to stop the walk.
+     * @return True when visit returned true for some owner; false after the whole hierarchy.
+     */
+    template <typename Visitor>
+    bool AnyInheritedType(std::string_view className, const SymbolTable& symbolTable, Visitor&& visit)
+    {
+        auto hit = m_hierarchies.find(className);
+        if (hit == m_hierarchies.end())
+        {
+            hit = m_hierarchies.emplace(className, GetInheritedTypeHierarchy(className, symbolTable)).first;
+        }
+        for (const std::string& owner : hit->second)
+        {
+            if (visit(std::string_view(owner)))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+  private:
+    ankerl::unordered_dense::map<std::string, std::vector<std::string>, TransparentStringHash, std::equal_to<>>
+        m_hierarchies;
+};
 std::string ResolveBaseClass(std::string_view className, const SymbolTable& symbolTable);
 bool IsDerivedFrom(std::string_view derivedClass, std::string_view baseClass, const SymbolTable& symbolTable);
 std::vector<std::string> ResolveLinkedBaseClasses(std::string_view className, const SymbolTable& symbolTable,

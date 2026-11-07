@@ -9,6 +9,7 @@
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
 #include "parser/Primitives.h"
+#include "utils/AccessorNames.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <algorithm>
@@ -26,13 +27,7 @@ std::string PropertyNameFromAccessor(const Symbol& sym, bool keywordRequired)
     if (keywordRequired && !sym.GetFunction().modifiers.isProperty)
         return {};
 
-    for (const std::string_view prefix : {std::string_view("get_"), std::string_view("set_")})
-    {
-        if (sym.name.size() > prefix.size() && sym.name.compare(0, prefix.size(), prefix) == 0)
-            return sym.name.substr(prefix.size());
-    }
-
-    return {};
+    return std::string(utils::AccessorPropertyName(sym.name));
 }
 
 std::vector<Symbol> FindPropertyAccessors(const std::string& typeName, const std::string& propertyName,

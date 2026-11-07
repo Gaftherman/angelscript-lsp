@@ -9,6 +9,7 @@
 #include "features/references/ReferencesHandler.h"
 #include "features/rename/RenameHandler.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
@@ -106,7 +107,8 @@ struct Phase3AdversarialEnv
 
     lsp::SemanticTokens Tokens()
     {
-        SemanticTokensRequest req{uri, sourceCode, tree, symbolTable};
+        angel_lsp::test::SemanticTokenFactsFixture semFacts{tree, sourceCode};
+        SemanticTokensRequest req{uri, sourceCode, semFacts.facts, symbolTable};
         return GetSemanticTokens(req);
     }
 
