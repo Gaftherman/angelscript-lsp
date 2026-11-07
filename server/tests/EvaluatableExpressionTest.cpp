@@ -3,6 +3,7 @@
 #include "parser/AngelScriptParser.h"
 
 #include <doctest/doctest.h>
+#include <ostream>
 #include <string>
 
 using namespace angel_lsp;

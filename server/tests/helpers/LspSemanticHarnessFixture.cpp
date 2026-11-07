@@ -1,6 +1,7 @@
 #include "helpers/LspSemanticHarnessFixture.h"
 
 #include "analysis/index/NodeIndex.h"
+#include "features/common/FeatureSharedUtils.h"
 #include "features/completion/CompletionHandler.h"
 #include "features/definition/DefinitionHandler.h"
 #include "features/hover/HoverHandler.h"
@@ -582,11 +583,15 @@ void LspSemanticHarnessFixture::AssertDefinitionTarget(const std::string& uri, u
     auto itTree = m_trees.find(uri);
     REQUIRE(itTree != m_trees.end());
 
-    features::DefinitionRequest req{uri, m_documents[uri], *m_symbolTable, *m_scopeIndex, lsp::Position{line, col}};
-    req.resolveInclude = [this](const std::string& inc)
-    {
-        auto p = m_sandboxDir / inc;
-        return std::filesystem::exists(p) ? p.generic_string() : "";
+    features::DefinitionRequest req{
+        .query = {uri, m_documents[uri], *m_symbolTable, *m_scopeIndex, line, col},
+        .resolveInclude = [this](std::string_view inc) -> std::optional<lsp::DocumentUri>
+        {
+            auto p = m_sandboxDir / inc;
+            return std::filesystem::exists(p)
+                       ? std::make_optional(features::common::ParseOrConvertUri(p.generic_string()))
+                       : std::nullopt;
+        },
     };
 
     auto defs = features::GetDefinition(req);

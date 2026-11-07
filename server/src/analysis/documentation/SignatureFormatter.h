@@ -3,6 +3,7 @@
 #include "analysis/index/SymbolTable.h"
 
 #include <string>
+#include <string_view>
 
 namespace angel_lsp::analysis
 {
@@ -29,6 +30,17 @@ std::string FormatDeclarationPrefix(const SymbolModifiers& modifiers);
  * @return "&in", "&out", "&inout", a bare "&" for an undirected reference, or an empty string.
  */
 std::string FormatParameterReference(const ParameterInformation& param);
+
+/**
+ * @brief Checks whether a parameter represents variadic arguments.
+ * @param[in] param Callee parameter information.
+ * @return True if parameter is variadic (...).
+ */
+[[nodiscard]] inline bool IsVarargParameter(const ParameterInformation& param) noexcept
+{
+    return param.name == "..." || param.typeName == "..." ||
+           std::string_view(param.typeName).find("...") != std::string_view::npos;
+}
 
 /**
  * @brief Renders a single parameter the way it is spelled in AngelScript source.

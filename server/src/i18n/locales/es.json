@@ -249,6 +249,8 @@
   "hover-string-length": "- **Longitud**: {} caracteres",
   "hover-typedef-underlying": " (tipo subyacente: `{}`)",
   "hover-wildcard-type-desc": "El tipo variable `?` representa cualquier tipo. Se utiliza en declaraciones de parámetros para aceptar argumentos de cualquier tipo por referencia (`?& in`, `?& out`, `?& inout`).",
+  "inlay-default-parameter": "Parámetro por defecto:",
+  "inlay-deduced-type": "Tipo deducido: {}",
   "inlay-go-to-definition": "Ir a Definición",
   "note-call-ambiguous-priority": "La llamada a '{}' es ambigua (Prioridad: '{}').",
   "note-expected-colon-after-case": "Se esperaba ':' después de la expresión del 'case'",

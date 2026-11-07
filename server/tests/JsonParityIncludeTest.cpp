@@ -173,9 +173,10 @@ void AssertDefinitionTarget(const features::DefinitionRequest& req, const std::s
 void AssertDefinitionAtToken(const features::DefinitionRequest& baseReq, const std::string& token, size_t searchPos,
                              const std::string& targetUri)
 {
-    const SourcePos pos = FindPos(baseReq.sourceCode, token, searchPos);
+    const SourcePos pos = FindPos(baseReq.query.sourceCode, token, searchPos);
     features::DefinitionRequest req = baseReq;
-    req.position = lsp::Position{pos.line, pos.character};
+    req.query.line = pos.line;
+    req.query.character = pos.character;
     AssertDefinitionTarget(req, targetUri);
 }
 
@@ -423,13 +424,17 @@ TEST_CASE("Go-To-Definition prioritizes workspace symbol over predefined stub")
     REQUIRE(pos != std::string::npos);
 
     features::DefinitionRequest req{
-        .uri = "file:///workspace/main.as",
-        .sourceCode = script,
-        .symbolTable = table,
-        .scopeIndex = scopeIndex,
-        .position = lsp::Position{0u, static_cast<lsp::uint>(pos + 2)},
+        .query =
+            {
+                .uri = "file:///workspace/main.as",
+                .sourceCode = script,
+                .symbolTable = table,
+                .scopeIndex = scopeIndex,
+                .line = 0u,
+                .character = static_cast<uint32_t>(pos + 2),
+                .predefinedExtension = ".as.predefined",
+            },
         .resolveInclude = {},
-        .predefinedExtension = ".as.predefined",
     };
 
     const auto result = features::GetDefinition(req);
@@ -465,7 +470,16 @@ TEST_CASE("Multi-file workspace parity: json.as and v1.as with scoped definition
     CHECK_FALSE(HasDiagCode(v1Diags, "as-err-no-matching-constructor"));
 
     ScopeIndex v1ScopeIndex;
-    features::DefinitionRequest baseReq{v1Uri, v1Code, sharedTable, v1ScopeIndex, {}, {}, ".as.predefined"};
+    features::DefinitionRequest baseReq{
+        .query =
+            {
+                .uri = v1Uri,
+                .sourceCode = v1Code,
+                .symbolTable = sharedTable,
+                .scopeIndex = v1ScopeIndex,
+                .predefinedExtension = ".as.predefined",
+            },
+    };
 
     const size_t typePos = v1Code.find(f.enumType + "::Object");
     REQUIRE(typePos != std::string::npos);

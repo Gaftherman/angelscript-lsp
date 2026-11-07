@@ -141,7 +141,7 @@ TEST_CASE("VirtualMixinDocument - Definition Routing Physical vs Virtual")
         REQUIRE(tree != nullptr);
 
         // Cursor on "Deploy" at line 3, character 6
-        features::DefinitionRequest req{callerUri, callerCode, table, scopeIndex, lsp::Position{3, 6}};
+        features::DefinitionRequest req{.query = {callerUri, callerCode, table, scopeIndex, 3, 6}};
         auto defs = features::GetDefinition(req);
         REQUIRE(defs.has_value());
         REQUIRE(!defs->empty());
@@ -172,7 +172,7 @@ TEST_CASE("VirtualMixinDocument - Definition Routing Physical vs Virtual")
         REQUIRE(tree != nullptr);
 
         // Cursor on "Deploy" at line 3, character 6
-        features::DefinitionRequest req{callerUri, callerCode, table, scopeIndex, lsp::Position{3, 6}};
+        features::DefinitionRequest req{.query = {callerUri, callerCode, table, scopeIndex, 3, 6}};
         auto defs = features::GetDefinition(req);
         REQUIRE(defs.has_value());
         REQUIRE(!defs->empty());
@@ -260,7 +260,7 @@ TEST_CASE("VirtualMixinDocument - Host-Scope Fallback for Hover and Definition")
     SUBCASE("Go-to-Definition on 'self' in virtual document navigates to host declaration")
     {
         // Cursor on "self" at line 2, character 9
-        features::DefinitionRequest req{virtualUri, mixinCode, table, scopeIndex, lsp::Position{2, 9}};
+        features::DefinitionRequest req{.query = {virtualUri, mixinCode, table, scopeIndex, 2, 9}};
         auto defs = features::GetDefinition(req);
         REQUIRE(defs.has_value());
         REQUIRE(!defs->empty());
@@ -271,7 +271,7 @@ TEST_CASE("VirtualMixinDocument - Host-Scope Fallback for Hover and Definition")
     SUBCASE("Go-to-Definition on host member 'FireWeapon' in virtual document navigates to host declaration")
     {
         // Cursor on "FireWeapon" at line 2, character 15
-        features::DefinitionRequest req{virtualUri, mixinCode, table, scopeIndex, lsp::Position{2, 15}};
+        features::DefinitionRequest req{.query = {virtualUri, mixinCode, table, scopeIndex, 2, 15}};
         auto defs = features::GetDefinition(req);
         REQUIRE(defs.has_value());
         REQUIRE(!defs->empty());

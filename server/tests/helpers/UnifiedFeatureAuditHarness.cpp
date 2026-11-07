@@ -16,8 +16,9 @@ std::optional<std::vector<lsp::Location>> UnifiedFeatureAuditHarness::RequestDef
     }
 
     features::DefinitionRequest req{
-        uri, m_documents[uri], *m_symbolTable,       *m_scopeIndex, lsp::Position{line, col},
-        {},  ".as.predefined", &m_config.engineRules};
+        .query = {uri, m_documents[uri], *m_symbolTable, *m_scopeIndex, line, col, ".as.predefined",
+                  &m_config.engineRules},
+    };
     return features::GetDefinition(req);
 }
 

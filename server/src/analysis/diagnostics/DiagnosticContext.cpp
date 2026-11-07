@@ -442,6 +442,11 @@ void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,
     Append(std::move(diag));
 }
 
+/**
+ * @brief Converts a node's start and end points into the source range a diagnostic is reported on.
+ * @param[in] node Non-null node the diagnostic targets.
+ * @return Zero-based row/column range covering the node.
+ */
 static SourceRange NodeToRange(TSNode node) noexcept
 {
     const TSPoint start = ts_node_start_point(node);

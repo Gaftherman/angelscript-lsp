@@ -70,16 +70,22 @@ struct Phase2AdversarialEnv
 
     std::optional<lsp::PrepareRenameResult> PrepareAt(const std::string& uri, uint32_t line, uint32_t character)
     {
-        PrepareRenameRequest req{uri,         sources[uri], lsp::Position{line, character},
-                                 symbolTable, scopeIndex,   predefinedUris};
+        PrepareRenameRequest req{
+            uri,         sources[uri], lsp::Position{line, character},
+            symbolTable, scopeIndex,   [&](std::string_view u) { return predefinedUris.contains(std::string(u)); }};
         return PrepareRename(req);
     }
 
     std::optional<lsp::WorkspaceEdit> RenameAt(const std::string& uri, uint32_t line, uint32_t character,
                                                const std::string& newName)
     {
-        RenameRequest req{uri,        sources[uri],  lsp::Position{line, character}, newName, symbolTable,
-                          scopeIndex, predefinedUris};
+        RenameRequest req{uri,
+                          sources[uri],
+                          lsp::Position{line, character},
+                          newName,
+                          symbolTable,
+                          scopeIndex,
+                          [&](std::string_view u) { return predefinedUris.contains(std::string(u)); }};
         return Rename(req);
     }
 };

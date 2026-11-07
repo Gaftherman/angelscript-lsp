@@ -80,7 +80,7 @@ struct Phase3AdversarialEnv
 
     std::optional<std::vector<lsp::Location>> Def(uint32_t line, uint32_t col)
     {
-        DefinitionRequest req{uri, sourceCode, symbolTable, scopeIndex, lsp::Position{line, col}};
+        DefinitionRequest req{.query = {uri, sourceCode, symbolTable, scopeIndex, line, col}};
         return GetDefinition(req);
     }
 
@@ -94,7 +94,13 @@ struct Phase3AdversarialEnv
 
     std::optional<lsp::WorkspaceEdit> Rename(uint32_t line, uint32_t col, const std::string& newName)
     {
-        RenameRequest req{uri, sourceCode, lsp::Position{line, col}, newName, symbolTable, scopeIndex, predefinedUris};
+        RenameRequest req{uri,
+                          sourceCode,
+                          lsp::Position{line, col},
+                          newName,
+                          symbolTable,
+                          scopeIndex,
+                          [&](std::string_view u) { return predefinedUris.contains(std::string(u)); }};
         return features::Rename(req);
     }
 

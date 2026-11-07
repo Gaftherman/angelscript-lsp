@@ -185,6 +185,11 @@ void NodeIndex::RecordContainerSpan(TSNode node, TSSymbol sym, uint32_t parentSp
     }
 }
 
+/**
+ * @brief Converts a node's start and end points into the AST-free range stored on flow findings.
+ * @param[in] node Non-null node whose span is recorded.
+ * @return Zero-based row/column range covering the node.
+ */
 static SourceRange FlowRange(TSNode node)
 {
     const auto start = ts_node_start_point(node);

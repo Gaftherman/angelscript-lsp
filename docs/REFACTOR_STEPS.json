@@ -8,24 +8,16 @@
     "server/src/features/document_symbol",
     "server/src/features/type_hierarchy",
     "server/src/features/call_hierarchy",
-    "server/src/features/implementation"
+    "server/src/features/implementation",
+    "server/src/features/breakpoints",
+    "server/src/features/inlay_hint",
+    "server/src/features/definition",
+    "server/src/features/references",
+    "server/src/features/rename"
   ],
-  "active_folder": "",
+  "active_folder": "server/src/features/document_highlight",
   "cross_module_impacts": [],
   "pending_folders": [
-    {
-      "folder_path": "server/src/features/definition",
-      "complexity_rank": 11,
-      "selection_rationale": "Feature (2 files) go-to-definition and declaration resolution (Batch 7A).",
-      "files_to_refactor": [
-        {
-          "file": "DefinitionHandler.h"
-        },
-        {
-          "file": "DefinitionHandler.cpp"
-        }
-      ]
-    },
     {
       "folder_path": "server/src/features/references",
       "complexity_rank": 12,

@@ -98,7 +98,13 @@ struct ParityEnv
 
     std::set<Occurrence> RenameAt(const std::string& uri, lsp::Position position)
     {
-        RenameRequest request{uri, sources[uri], position, "renamed_", symbolTable, scopeIndex, predefinedUris};
+        RenameRequest request{uri,
+                              sources[uri],
+                              position,
+                              "renamed_",
+                              symbolTable,
+                              scopeIndex,
+                              [&](std::string_view u) { return predefinedUris.contains(std::string(u)); }};
 
         std::set<Occurrence> found;
         const auto edit = Rename(request);

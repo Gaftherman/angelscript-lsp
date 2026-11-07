@@ -1,9 +1,8 @@
 #include "features/breakpoints/EvaluatableExpressionHandler.h"
 
-#include "analysis/index/BreakpointFacts.h"
+#include "analysis/index/EvaluatableFacts.h"
 
 #include <optional>
-#include <string>
 #include <string_view>
 
 namespace angel_lsp::features
@@ -30,7 +29,7 @@ EvaluatableExpressionHandler::Extract(const EvaluatableExpressionRequest& reques
     item.endColumn = span->range.endCharacter;
     if (span->startByte < span->endByte && span->endByte <= request.sourceCode.size())
     {
-        item.expression = std::string(request.sourceCode.substr(span->startByte, span->endByte - span->startByte));
+        item.expression = request.sourceCode.substr(span->startByte, span->endByte - span->startByte);
     }
     return item;
 }

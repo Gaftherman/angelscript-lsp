@@ -4,6 +4,7 @@
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "config/EngineRuleConfig.h"
+#include "features/common/FeatureSharedUtils.h"
 #include "features/definition/DefinitionHandler.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
@@ -89,15 +90,30 @@ struct TestEnvironment
     std::optional<std::vector<lsp::Location>> DefAt(uint32_t line, uint32_t character)
     {
         symbolTable.SetBaseClassDelegateProperties(engineRules.unusedRules.baseClassDelegateProperties);
-        DefinitionRequest req{uri, sourceCode, symbolTable, scopeIndex, lsp::Position{line, character}};
-        req.resolveInclude = resolveInclude;
-        req.engineRules = &engineRules;
+        DefinitionRequest req{
+            .query = {uri, sourceCode, symbolTable, scopeIndex, line, character, ".as.predefined", &engineRules},
+            .resolveInclude = [this](std::string_view rawPath) -> std::optional<lsp::DocumentUri>
+            {
+                if (!resolveInclude)
+                {
+                    return std::nullopt;
+                }
+                std::string resolved = resolveInclude(std::string(rawPath));
+                if (resolved.empty())
+                {
+                    return std::nullopt;
+                }
+                return features::common::ParseOrConvertUri(resolved);
+            },
+        };
         return GetDefinition(req);
     }
 
     std::optional<std::vector<lsp::Location>> TypeDefAt(uint32_t line, uint32_t character)
     {
-        DefinitionRequest req{uri, sourceCode, symbolTable, scopeIndex, lsp::Position{line, character}};
+        DefinitionRequest req{
+            .query = {uri, sourceCode, symbolTable, scopeIndex, line, character},
+        };
         return GetTypeDefinition(req);
     }
 };
@@ -520,7 +536,7 @@ TEST_CASE("DefinitionHandler - Go to Definition on subsequent lines after inline
     }
 
     // Line 3: "    T& opIndex(uint index);" -> column 7 is on "opIndex"
-    DefinitionRequest req{stubUri, rewritten, symbolTable, scopeIndex, lsp::Position{3, 7}};
+    DefinitionRequest req{.query = {stubUri, rewritten, symbolTable, scopeIndex, 3, 7}};
 
     auto defs = GetDefinition(req);
     REQUIRE(defs.has_value());
@@ -643,7 +659,7 @@ TEST_CASE("DefinitionHandler - Overload-aware definition jumps to mixin origin f
     }
 
     // Line 2: "        return Deploy(\"v\", \"p\", 1, \"m16\", 0, 1.0f);" -> col 17 is on "Deploy"
-    DefinitionRequest reqMixinCall{weaponUri, weaponCode, symbolTable, scopeIndex, lsp::Position{2, 17}};
+    DefinitionRequest reqMixinCall{.query = {weaponUri, weaponCode, symbolTable, scopeIndex, 2, 17}};
     auto defsMixin = GetDefinition(reqMixinCall);
     REQUIRE(defsMixin.has_value());
     REQUIRE(!defsMixin->empty());
@@ -652,7 +668,7 @@ TEST_CASE("DefinitionHandler - Overload-aware definition jumps to mixin origin f
     CHECK((*defsMixin)[0].range.start.line == 1);
 
     // Line 7: "    w.Deploy();" -> col 7 is on "Deploy"
-    DefinitionRequest reqZeroArgCall{weaponUri, weaponCode, symbolTable, scopeIndex, lsp::Position{7, 7}};
+    DefinitionRequest reqZeroArgCall{.query = {weaponUri, weaponCode, symbolTable, scopeIndex, 7, 7}};
     auto defsZeroArg = GetDefinition(reqZeroArgCall);
     REQUIRE(defsZeroArg.has_value());
     REQUIRE(!defsZeroArg->empty());

@@ -1,6 +1,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "features/code_action/CodeActionHandler.h"
 #include "features/code_lens/CodeLensHandler.h"
+#include "features/common/FeatureSharedUtils.h"
 #include "features/completion/CompletionHandler.h"
 #include "features/definition/DefinitionHandler.h"
 #include "features/document_highlight/DocumentHighlightHandler.h"
@@ -106,20 +107,36 @@ static std::optional<analysis::CallBindingRevision> OpenCallBindingRevision(cons
 
 features::DefinitionRequest Server::MakeDefinitionRequest(const OpenDocument& doc, const lsp::Position& position)
 {
-    features::DefinitionRequest dr{doc.uri, *doc.text, m_symbolTable, m_scopeIndex,
-                                   codec::Decode(*doc.text, GetPositionEncoding(), position)};
-    dr.engineRules = &m_config.engineRules;
-    dr.callBindingRevision = OpenCallBindingRevision(doc, m_sessionCoordinator->GetConfigRevision());
-    dr.predefinedExtension = m_config.info.predefinedFileExtension;
-    dr.resolveInclude = [this, uri = doc.uri](const std::string& rawPath)
-    {
-        return angel_lsp::utils::IncludeResolver::ResolveIncludePath(angel_lsp::utils::IncludeResolveRequest{
-            .includePath = rawPath,
-            .currentFilePath = CanonicalPathFromUri(uri),
-            .searchDirectories = *SearchDirectories(),
-            .allowedRoots = IncludeAllowedRoots(),
-            .implicitExtension = ImplicitIncludeExtension(),
-        });
+    const lsp::Position decoded = codec::Decode(*doc.text, GetPositionEncoding(), position);
+    features::DefinitionRequest dr{
+        .query =
+            {
+                .uri = doc.uri,
+                .sourceCode = *doc.text,
+                .symbolTable = m_symbolTable,
+                .scopeIndex = m_scopeIndex,
+                .line = decoded.line,
+                .character = decoded.character,
+                .predefinedExtension = m_config.info.predefinedFileExtension,
+                .engineRules = &m_config.engineRules,
+                .callBindingRevision = OpenCallBindingRevision(doc, m_sessionCoordinator->GetConfigRevision()),
+            },
+        .resolveInclude = [this, uri = doc.uri](std::string_view rawPath) -> std::optional<lsp::DocumentUri>
+        {
+            const std::string resolved =
+                angel_lsp::utils::IncludeResolver::ResolveIncludePath(angel_lsp::utils::IncludeResolveRequest{
+                    .includePath = rawPath,
+                    .currentFilePath = CanonicalPathFromUri(uri),
+                    .searchDirectories = *SearchDirectories(),
+                    .allowedRoots = IncludeAllowedRoots(),
+                    .implicitExtension = ImplicitIncludeExtension(),
+                });
+            if (resolved.empty())
+            {
+                return std::nullopt;
+            }
+            return features::common::ParseOrConvertUri(resolved);
+        },
     };
     return dr;
 }
@@ -257,6 +274,7 @@ Server::HandleRequestsTextDocument_References(lsp::requests::TextDocument_Refere
         return lsp::Null{};
     }
 
+    const auto occurrenceModule = OccurrenceModuleFor(doc->uri);
     features::ReferencesRequest rr{doc->uri,
                                    *doc->text,
                                    codec::Decode(*doc->text, GetPositionEncoding(), req.position),
@@ -265,7 +283,8 @@ Server::HandleRequestsTextDocument_References(lsp::requests::TextDocument_Refere
                                    m_scopeIndex,
                                    m_logger.get(),
                                    OpenCallBindingRevision(*doc, m_sessionCoordinator->GetConfigRevision()),
-                                   OccurrenceModuleFor(doc->uri)};
+                                   occurrenceModule ? std::optional<std::string_view>(*occurrenceModule)
+                                                    : std::nullopt};
     auto refs = features::GetReferences(rr);
     if (refs.has_value())
     {
@@ -407,8 +426,13 @@ Server::HandleRequestsTextDocument_PrepareRename(lsp::requests::TextDocument_Pre
         return lsp::Null{};
     }
 
-    features::PrepareRenameRequest pr{ctx->doc.uri, *ctx->doc.text,      ctx->decodedPosition, m_symbolTable,
-                                      m_scopeIndex, ctx->predefinedUris, m_logger.get()};
+    features::PrepareRenameRequest pr{ctx->doc.uri,
+                                      *ctx->doc.text,
+                                      ctx->decodedPosition,
+                                      m_symbolTable,
+                                      m_scopeIndex,
+                                      [&uris = ctx->predefinedUris](std::string_view uri) { return uris.contains(std::string(uri)); },
+                                      m_logger.get()};
     auto prep = features::PrepareRename(pr);
     if (prep.has_value())
     {
@@ -427,8 +451,15 @@ Server::HandleRequestsTextDocument_Rename(lsp::requests::TextDocument_Rename::Pa
         return lsp::Null{};
     }
 
-    features::RenameRequest rr{ctx->doc.uri,  *ctx->doc.text, ctx->decodedPosition, req.newName,
-                               m_symbolTable, m_scopeIndex,   ctx->predefinedUris,  m_logger.get()};
+    features::RenameRequest rr{ctx->doc.uri,
+                               *ctx->doc.text,
+                               ctx->decodedPosition,
+                               req.newName,
+                               m_symbolTable,
+                               m_scopeIndex,
+                               [&uris = ctx->predefinedUris](std::string_view uri)
+                               { return uris.contains(std::string(uri)); },
+                               m_logger.get()};
     auto edit = features::Rename(rr);
     if (edit.has_value())
     {

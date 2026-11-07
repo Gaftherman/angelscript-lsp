@@ -4,7 +4,6 @@
 
 #include <cstdint>
 #include <optional>
-#include <string>
 #include <string_view>
 
 namespace angel_lsp::features
@@ -19,7 +18,11 @@ struct EvaluatableExpressionItem
     uint32_t column = 0;
     uint32_t endLine = 0;
     uint32_t endColumn = 0;
-    std::string expression;
+    /**
+     * @brief Evaluatable expression text.
+     * @note Borrows from request.sourceCode; valid only while request.sourceCode remains alive.
+     */
+    std::string_view expression;
 };
 
 /**

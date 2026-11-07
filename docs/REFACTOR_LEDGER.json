@@ -600,9 +600,25 @@
       "originalSymbolOrCode": "EvaluatableExpressionHandler::Extract, HandleMemberExpression, HandleIndexExpression, IsIgnoredNode",
       "whatItDidAndWhyInThatFile": "Inspected AST root and point-range descendants to determine hover-evaluatable expressions.",
       "whyChangedOrDeleted": "Decoupled AST traversal from feature layer into pass-1 on-demand evaluatable span resolution (Rule 4.10).",
-      "replacedByCanonicalFile": "server/src/analysis/index/BreakpointFacts.cpp",
+      "replacedByCanonicalFile": "server/src/analysis/index/EvaluatableFacts.cpp",
       "replacedByCanonicalSymbol": "FindEvaluatableSpan",
       "ramOrCpuImpact": "Zero RAM growth; feature handler consumes only AST-free source ranges and byte offsets.",
+      "verifiedByTests": [
+        "EvaluatableExpressionTest"
+      ]
+    },
+    {
+      "id": "REF-M2-EVALUATABLE-SPLIT",
+      "phase": "M2",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/index/BreakpointFacts.cpp",
+      "deletedLineRange": "357-479",
+      "originalSymbolOrCode": "IndexedEvaluatableSpan, FindEvaluatableSpan, HandleMemberExpression, HandleIndexExpression, IsIgnoredNode",
+      "whatItDidAndWhyInThatFile": "Evaluated hovered expression range and text boundary offsets directly within breakpoint facts.",
+      "whyChangedOrDeleted": "Decomposed evaluatable expression logic from breakpoint facts into dedicated module under 300 LOC (Rule 4.5).",
+      "replacedByCanonicalFile": "server/src/analysis/index/EvaluatableFacts.cpp",
+      "replacedByCanonicalSymbol": "FindEvaluatableSpan",
+      "ramOrCpuImpact": "Zero runtime RAM impact; isolates evaluatable expression pass-1 facts into a focused compilation unit.",
       "verifiedByTests": [
         "EvaluatableExpressionTest"
       ]
@@ -621,6 +637,240 @@
       "ramOrCpuImpact": "None at runtime; narrows the public NodeIndex surface that exposes TSNode.",
       "verifiedByTests": [
         "NodeIndexTest"
+      ]
+    },
+    {
+      "id": "REF-M2-INLAY-SITES",
+      "phase": "M2",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/inlay_hint/InlayHintHandler.cpp",
+      "deletedLineRange": "2030-2072",
+      "originalSymbolOrCode": "CollectInlayHints, ProcessCallExpression, ProcessConstructorCallExpression, ProcessVariableDeclaration, ProcessLambdaExpression, ProcessEnumDeclaration",
+      "whatItDidAndWhyInThatFile": "Directly traversed AST nodes in feature layer to extract inlay hint sites and arguments.",
+      "whyChangedOrDeleted": "Decoupled pure AST syntax extraction into pass-1 units (InlayHintFacts.h, InlayHintFactsInternal.h, InlayHintFacts.cpp, InlayHintDeclarationFacts.cpp) producing AST-free flat records under 300 LOC (Rule 4.5, 4.10).",
+      "replacedByCanonicalFile": "server/src/analysis/index/InlayHintFacts.cpp",
+      "replacedByCanonicalSymbol": "CollectInlayHintSites",
+      "ramOrCpuImpact": "Flat vector storage with zero AST handle retention; pre-indexes syntax facts for second-pass resolution.",
+      "verifiedByTests": [
+        "InlayHintFactsTest",
+        "InlayHintTest"
+      ]
+    },
+    {
+      "id": "REF-M2-INLAY-CALLEE-MOVE",
+      "phase": "M2",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/inlay_hint/InlayHintHandler.cpp",
+      "deletedLineRange": "147-660",
+      "originalSymbolOrCode": "FindCalleeFunctionNode, CollectHierarchyMembers, CollectMemberCalleeCandidates, CollectEnclosingClassCallees, CollectScopedCalleeCandidates, CollectClassConstructorCandidates, CollectFreeCalleeCandidates, SelectCandidateByArgCount, SelectFallbackCandidate, ExtractCalleeFromSymbol, ResolveCalleeParameters, CollectConstructorCandidates, MatchConstructorOverload, ResolveConstructorParameters",
+      "whatItDidAndWhyInThatFile": "Resolved callee callable functions and constructor overloads directly within the inlay hint feature handler using AST nodes.",
+      "whyChangedOrDeleted": "Moved semantic callee and constructor resolution to Layer 2 analysis/resolution (InlayCalleeResolution and InlayConstructorResolution) under Rule 1.1 layer hierarchy, exposing AST-free entry points (Rule 4.10).",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/InlayCalleeResolution.cpp",
+      "replacedByCanonicalSymbol": "ResolveCallSiteCallee",
+      "ramOrCpuImpact": "Zero heap allocation overhead; decouples semantic callee lookup from LSP feature presentation.",
+      "verifiedByTests": [
+        "InlayHintTest"
+      ]
+    },
+    {
+      "id": "REF-M2-INLAY-TYPE-DEDUCTION-MOVE",
+      "phase": "M2",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/inlay_hint/InlayHintHandler.cpp",
+      "deletedLineRange": "661-1188, 1859-1906",
+      "originalSymbolOrCode": "DeduceNumericLiteralType, DeduceLiteralType, DeduceCastOrConstructType, ResolveMemberCallReceiverType, DeduceMemberCallReturnType, DeduceFreeCallReturnType, DeduceCallExpressionType, DeduceMemberExpressionType, DeduceIdentifierType, SelectWiderType, DeduceBinaryExpressionType, DeduceUnaryExpressionType, DeduceParenthesizedType, DeduceCompoundExpressionType, InlayHintExpressionDeducer::DeduceExpressionType, DeduceLambdaReturnType",
+      "whatItDidAndWhyInThatFile": "Deduced expression types and lambda return types directly in inlay hint feature handler using AST traversal.",
+      "whyChangedOrDeleted": "Moved expression type deduction to Layer 2 analysis/resolution (InlayTypeDeduction and InlayTypeDeductionCompound) under Rule 1.1 layer hierarchy, exposing AST-free byte-range entry points (Rule 4.10).",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/InlayTypeDeduction.cpp",
+      "replacedByCanonicalSymbol": "DeduceExpressionTypeAt",
+      "ramOrCpuImpact": "Zero runtime RAM impact; centralizes expression type deduction in Layer 2 analysis.",
+      "verifiedByTests": [
+        "InlayHintTest"
+      ]
+    },
+    {
+      "id": "REF-M2-INLAY-FEATURE-SPLIT",
+      "phase": "M2",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/inlay_hint/InlayHintHandler.cpp",
+      "deletedLineRange": "1-802",
+      "originalSymbolOrCode": "CollectInlayHints, GetInlayHints, ProcessAutoVariableDeclarator, ProcessConstructorInitDeclarator",
+      "whatItDidAndWhyInThatFile": "Monolithic inlay hint computation combining AST-based dispatch, type deduction, and formatting in InlayHintHandler.cpp.",
+      "whyChangedOrDeleted": "Split into cohesive <= 300-line units (InlayHintHandler.cpp, InlayParameterHints.cpp, InlayTypeHints.cpp, InlayHintInternal.h) consuming pass-1 InlayHintSites (Rule 4.10).",
+      "replacedByCanonicalFile": "server/src/features/inlay_hint/InlayHintHandler.cpp",
+      "replacedByCanonicalSymbol": "GetInlayHints",
+      "ramOrCpuImpact": "Zero runtime RAM overhead; modular code structure.",
+      "verifiedByTests": [
+        "InlayHintTest",
+        "AdversarialPhase3FeaturesTest"
+      ]
+    },
+    {
+      "id": "REF-M2-INLAY-STRUCT-CLEANUP",
+      "phase": "M2",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/inlay_hint/InlayHintHandler.cpp",
+      "deletedLineRange": "120-140, 310-330",
+      "originalSymbolOrCode": "CalleeResolutionResult, ArgInfo, OmittedHintContext",
+      "whatItDidAndWhyInThatFile": "Internal data structures in InlayHintHandler.cpp containing TSNode handles.",
+      "whyChangedOrDeleted": "Unified into canonical AST-free IndexedCallArgument in analysis/index and ResolvedCallee in analysis/resolution.",
+      "replacedByCanonicalFile": "server/src/analysis/index/InlayHintFacts.h",
+      "replacedByCanonicalSymbol": "IndexedCallArgument",
+      "ramOrCpuImpact": "Eliminates heap-allocated AST wrappers in favor of contiguous flat facts.",
+      "verifiedByTests": [
+        "InlayHintTest"
+      ]
+    },
+    {
+      "id": "REF-M2-INLAY-AST-HELPERS-DELETE",
+      "phase": "M2",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/features/inlay_hint/InlayHintHandler.cpp",
+      "deletedLineRange": "80-120, 320-360, 1900-2050",
+      "originalSymbolOrCode": "TrimNodeText, IsNodeOverlappingRange, GetParametersIfCallable, CountRequiredParameters, ParseArguments, IsBooleanBinaryOperator, FindDeclaratorArgumentList, FindVariableTypeNode, exprCtx, targetContainer, methodName, IsOperandMatch",
+      "whatItDidAndWhyInThatFile": "Private AST helper functions and local bindings in InlayHintHandler.cpp.",
+      "whyChangedOrDeleted": "Eliminated in favor of pass-1 InlayHintFacts extraction (Rule 4.10) and Layer 2 resolution services.",
+      "replacedByCanonicalFile": "server/src/analysis/index/InlayHintFacts.h",
+      "replacedByCanonicalSymbol": "CollectInlayHintSites",
+      "ramOrCpuImpact": "Zero runtime overhead; dead code removed.",
+      "verifiedByTests": [
+        "InlayHintTest"
+      ]
+    },
+    {
+      "id": "REF-M3-INLAY-HYGIENE",
+      "phase": "M3",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/inlay_hint/InlayHintInternal.h",
+      "deletedLineRange": "53-183, 223-235",
+      "originalSymbolOrCode": "FormatParameterTooltip, FormatOmittedDefaultLabel, FormatGoToDefinitionLink, IsVarargParameter, ParseOrConvertUri, IsPositionInRange, MakeExpressionTypeContext",
+      "whatItDidAndWhyInThatFile": "Inline owned-string formatting and utility routines dumped into feature header.",
+      "whyChangedOrDeleted": "Moved owned string formatting to Layer 2 InlayHintFormatter, unified shared utilities into FeatureSharedUtils and SignatureFormatter, and moved function bodies to .cpp files.",
+      "replacedByCanonicalFile": "server/src/analysis/documentation/InlayHintFormatter.h",
+      "replacedByCanonicalSymbol": "FormatParameterTooltip",
+      "ramOrCpuImpact": "Zero heap allocations in feature layer; zero-copy views and cleaner header compilation boundaries.",
+      "verifiedByTests": [
+        "InlayHintTest"
+      ]
+    },
+    {
+      "id": "REF-M3-BREAKPOINT-SPLIT",
+      "phase": "M3",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/index/BreakpointFacts.cpp",
+      "deletedLineRange": "14-297",
+      "originalSymbolOrCode": "IsConstantLiteralNode, IsBarePrimitiveOrHandleType, IsPureConstantDeclaration, HasVariableInitialization, IsExecutableVariableDecl, ProcessCompoundHeader, ProcessClosingBrace, ProcessDoWhileStatement, ProcessForStatementColumns, HandleFunctionLike, HandleLoopsAndBranches, HandleLeafStatement, ProcessBreakpointStatement",
+      "whatItDidAndWhyInThatFile": "AST statement classification helpers for breakpoint collection inside BreakpointFacts.cpp.",
+      "whyChangedOrDeleted": "Decomposed monolithic BreakpointFacts.cpp (>300 lines) into cohesive BreakpointStatementFacts.cpp sub-unit adhering to the 300-line ceiling.",
+      "replacedByCanonicalFile": "server/src/analysis/index/BreakpointFactsInternal.h",
+      "replacedByCanonicalSymbol": "ProcessBreakpointStatement",
+      "ramOrCpuImpact": "Zero runtime overhead; structural decomposition adhering to the 300-line standard.",
+      "verifiedByTests": [
+        "BreakpointTest"
+      ]
+    },
+    {
+      "id": "REF-M3-DEFINITION-LEXERS-DELETE",
+      "phase": "M3",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/features/definition/DefinitionHandler.cpp",
+      "deletedLineRange": "382-462",
+      "originalSymbolOrCode": "SkipWhitespace, CountArgumentTokens, CountCallArguments",
+      "whatItDidAndWhyInThatFile": "Ad-hoc character scanning lexers counting arguments in call expressions.",
+      "whyChangedOrDeleted": "Violated Prohibition 5. Replaced with pass-1 LocalReference::argumentCount from ScopeTree indexed data.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/DefinitionResolution.h",
+      "replacedByCanonicalSymbol": "FindReferenceAt",
+      "ramOrCpuImpact": "Eliminated string re-parsing overhead; O(1) indexed lookup from ScopeTree.",
+      "verifiedByTests": [
+        "DefinitionTest",
+        "JsonParityIncludeTest"
+      ]
+    },
+    {
+      "id": "REF-M3-DEFINITION-MOVE-RESOLUTION",
+      "phase": "M3",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/definition/DefinitionHandler.cpp",
+      "deletedLineRange": "28-975",
+      "originalSymbolOrCode": "IsTypeDefType, FindEnclosingNamespace, ResolveTargetTypeName, TryResolveOverriddenMethod, TryResolveLocalDeclaration, ResolveClassMemberLocations, ContainerKindMatches, DisambiguateCandidateContainers, ResolveTargetLocations, TryResolveScopedIdentifier, TryResolveThisKeyword, TryResolveDelegateProperty, TryResolveVirtualMixin, DefinitionContext, MakeDefinitionContext, TryResolveMemberDefinition, MakeLocalDefinitionLocation, TryResolveLocalDefinition, TryResolveContextualDefinition, TryResolveLocalDefinitionFallback, TryResolveOverriddenMethodDefinition, CollectTypeDefinitionSymbols",
+      "whatItDidAndWhyInThatFile": "Semantic target and type resolution logic in Layer 3 feature handler.",
+      "whyChangedOrDeleted": "Moved to Layer 2 analysis/resolution to enforce layer isolation, zero-allocation symbol lookups (Rule 4.8), and zero-string feature layer.",
+      "replacedByCanonicalFile": "server/src/analysis/resolution/DefinitionResolution.h",
+      "replacedByCanonicalSymbol": "ResolveDefinitionTarget",
+      "ramOrCpuImpact": "Eliminated heap allocations from feature layer; zero-copy views and cleaner separation.",
+      "verifiedByTests": [
+        "DefinitionTest",
+        "JsonParityIncludeTest",
+        "AdversarialFeaturesTest"
+      ]
+    },
+    {
+      "id": "REF-M3-DEFINITION-DUPLICATE-LEXERS-DELETE",
+      "phase": "M3",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/analysis/resolution/DefinitionResolutionUtils.cpp",
+      "deletedLineRange": "17-117",
+      "originalSymbolOrCode": "ExtractLine, FindIdentifierAt, FindScopedIdentifierAt",
+      "whatItDidAndWhyInThatFile": "Duplicate line and identifier extraction lexers copied into Layer 2.",
+      "whyChangedOrDeleted": "Violated Rule 4.11 and Layer 2 text lexing ban. Restored feature-side extraction via common::FindIdentifierAtPosition/FindScopedIdentifierAtPosition and passed as views in DefinitionQuery.",
+      "replacedByCanonicalFile": "server/src/features/common/FeatureSharedUtils.h",
+      "replacedByCanonicalSymbol": "FindIdentifierAtPosition",
+      "ramOrCpuImpact": "Eliminated duplicate text lexing and string copying in Layer 2.",
+      "verifiedByTests": [
+        "DefinitionTest",
+        "VirtualMixinDocumentTest"
+      ]
+    },
+    {
+      "id": "REF-M3-REFERENCES-MODULE-VIEW",
+      "phase": "M3",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/references/ReferencesHandler.h",
+      "deletedLineRange": "29",
+      "originalSymbolOrCode": "ReferencesRequest::occurrenceModule (std::optional<std::string>)",
+      "whatItDidAndWhyInThatFile": "Owned module name forwarded into CollectOccurrencesRequest.",
+      "whyChangedOrDeleted": "Layer 3 carried an owned std::string; now a view into the lsp-owned module string, copied only at the Layer 2 request boundary.",
+      "replacedByCanonicalFile": "server/src/features/references/ReferencesHandler.h",
+      "replacedByCanonicalSymbol": "ReferencesRequest",
+      "ramOrCpuImpact": "Removes one optional<std::string> copy per references request in the feature layer.",
+      "verifiedByTests": [
+        "ReferencesTest",
+        "RenameReferencesParityTest"
+      ]
+    },
+    {
+      "id": "REF-M3-RENAME-PREDICATE",
+      "phase": "M3",
+      "action": "UNIFY_STRUCT",
+      "sourceFile": "server/src/features/rename/RenameHandler.h",
+      "deletedLineRange": "28,43",
+      "originalSymbolOrCode": "PrepareRenameRequest/RenameRequest::predefinedUris (const unordered_set<std::string>&)",
+      "whatItDidAndWhyInThatFile": "Set of predefined header URIs used to refuse renaming read-only symbols.",
+      "whyChangedOrDeleted": "Lookup required constructing std::string(request.uri) in Layer 3; replaced by a string_view predicate built in the lsp layer.",
+      "replacedByCanonicalFile": "server/src/features/rename/RenameHandler.h",
+      "replacedByCanonicalSymbol": "isPredefinedUri",
+      "ramOrCpuImpact": "Removes per-request std::string allocations for URI and newName in the rename feature.",
+      "verifiedByTests": [
+        "RenameTest",
+        "RenameReferencesParityTest",
+        "AdversarialRefactoringPhase2Test"
+      ]
+    },
+    {
+      "id": "REF-M3-LEXICAL-COMMENTS-REVERT",
+      "phase": "M3",
+      "action": "DELETE_DEAD_FUNCTION",
+      "sourceFile": "server/src/utils/LexicalComments.h",
+      "deletedLineRange": "1-123",
+      "originalSymbolOrCode": "utils::SkipLineComment, SkipBlockComment, SkipQuotedLiteral, IsInsideCommentOrString",
+      "whatItDidAndWhyInThatFile": "Relocated copy of the comment/string skip helpers.",
+      "whyChangedOrDeleted": "Only consumer was FeatureSharedUtils.h through one-line forwarders; indirection removed and the original bodies restored.",
+      "replacedByCanonicalFile": "server/src/features/common/FeatureSharedUtils.h",
+      "replacedByCanonicalSymbol": "IsInsideCommentOrString",
+      "ramOrCpuImpact": "No runtime change; removes one header and four forwarders.",
+      "verifiedByTests": [
+        "DefinitionTest",
+        "SignatureHelpTest"
       ]
     }
   ]

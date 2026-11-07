@@ -6,10 +6,11 @@
 
 #include <algorithm>
 #include <cctype>
+#include <functional>
 #include <map>
 #include <set>
+#include <string_view>
 #include <tuple>
-#include <unordered_set>
 #include <vector>
 
 namespace angel_lsp::features
@@ -19,12 +20,12 @@ namespace angel_lsp::features
  * @brief Checks if all declarations of a class member across related classes reside in predefined headers.
  * @param[in] target Target symbol information.
  * @param[in] symbolTable Symbol table to look up declarations.
- * @param[in] predefinedUris Set of predefined document URIs.
+ * @param[in] isPredefinedUri Predicate reporting whether a document URI belongs to a predefined header.
  * @return True if at least one declaration was found and all declarations are in predefined headers.
  */
 static bool AreClassMembersPredefined(const analysis::TargetDescriptor& target,
                                       const analysis::SymbolTable& symbolTable,
-                                      const std::unordered_set<std::string>& predefinedUris)
+                                      const std::function<bool(std::string_view)>& isPredefinedUri)
 {
     bool allPredefined = true;
     bool foundAny = false;
@@ -34,7 +35,7 @@ static bool AreClassMembersPredefined(const analysis::TargetDescriptor& target,
         for (const auto& sym : syms)
         {
             foundAny = true;
-            if (!predefinedUris.contains(sym.fileUri))
+            if (!isPredefinedUri(sym.fileUri))
             {
                 allPredefined = false;
                 break;
@@ -52,11 +53,11 @@ static bool AreClassMembersPredefined(const analysis::TargetDescriptor& target,
  * @brief Checks if all global declarations of a symbol reside in predefined headers.
  * @param[in] name Symbol name.
  * @param[in] symbolTable Symbol table to look up declarations.
- * @param[in] predefinedUris Set of predefined document URIs.
+ * @param[in] isPredefinedUri Predicate reporting whether a document URI belongs to a predefined header.
  * @return True if non-empty declarations were found and all reside in predefined headers.
  */
-static bool AreGlobalSymbolsPredefined(const std::string& name, const analysis::SymbolTable& symbolTable,
-                                       const std::unordered_set<std::string>& predefinedUris)
+static bool AreGlobalSymbolsPredefined(std::string_view name, const analysis::SymbolTable& symbolTable,
+                                       const std::function<bool(std::string_view)>& isPredefinedUri)
 {
     const auto declSyms = symbolTable.FindSymbols(name);
     if (declSyms.empty())
@@ -65,7 +66,7 @@ static bool AreGlobalSymbolsPredefined(const std::string& name, const analysis::
     }
     for (const auto& sym : declSyms)
     {
-        if (!predefinedUris.contains(sym.fileUri))
+        if (!isPredefinedUri(sym.fileUri))
         {
             return false;
         }
@@ -77,33 +78,33 @@ static bool AreGlobalSymbolsPredefined(const std::string& name, const analysis::
  * @brief Determines if the target symbol's definitions are located exclusively in predefined headers.
  * @param[in] target Target symbol information.
  * @param[in] symbolTable Symbol table to look up declarations.
- * @param[in] predefinedUris Set of predefined document URIs.
+ * @param[in] isPredefinedUri Predicate reporting whether a document URI belongs to a predefined header.
  * @return True if the symbol is predefined and should not be renamed.
  */
 static bool IsTargetPredefined(const analysis::TargetDescriptor& target, const analysis::SymbolTable& symbolTable,
-                               const std::unordered_set<std::string>& predefinedUris)
+                               const std::function<bool(std::string_view)>& isPredefinedUri)
 {
     if (target.kind == analysis::TargetKind::Local)
     {
-        return predefinedUris.contains(target.localUri);
+        return isPredefinedUri(target.localUri);
     }
     if (target.kind == analysis::TargetKind::ClassMember)
     {
-        return AreClassMembersPredefined(target, symbolTable, predefinedUris);
+        return AreClassMembersPredefined(target, symbolTable, isPredefinedUri);
     }
     if (target.kind == analysis::TargetKind::EnumMember)
     {
         auto syms = symbolTable.FindSymbols(target.qualifiedName);
         for (const auto& s : syms)
         {
-            if (predefinedUris.contains(s.fileUri))
+            if (isPredefinedUri(s.fileUri))
             {
                 return true;
             }
         }
         return false;
     }
-    return AreGlobalSymbolsPredefined(target.name, symbolTable, predefinedUris);
+    return AreGlobalSymbolsPredefined(target.name, symbolTable, isPredefinedUri);
 }
 
 /**
@@ -113,7 +114,7 @@ static bool IsTargetPredefined(const analysis::TargetDescriptor& target, const a
  * @return Populated and ordered WorkspaceEdit.
  */
 static lsp::WorkspaceEdit BuildWorkspaceEdit(const std::vector<analysis::OccurrenceLocation>& occurrences,
-                                             const std::string& newName)
+                                             std::string_view newName)
 {
     std::map<lsp::DocumentUri, std::vector<lsp::TextEdit>> editsByUri;
     for (const auto& loc : occurrences)
@@ -123,7 +124,7 @@ static lsp::WorkspaceEdit BuildWorkspaceEdit(const std::vector<analysis::Occurre
             lsp::Position{loc.range.startLine, loc.range.startCharacter},
             lsp::Position{loc.range.endLine, loc.range.endCharacter},
         };
-        edit.newText = newName;
+        edit.newText.assign(newName);
         editsByUri[lsp::DocumentUri::parse(loc.fileUri)].push_back(std::move(edit));
     }
 
@@ -151,7 +152,7 @@ static lsp::WorkspaceEdit BuildWorkspaceEdit(const std::vector<analysis::Occurre
 template <typename RequestT>
 static std::optional<analysis::TargetDescriptor> ResolveValidRenameTarget(const RequestT& request)
 {
-    if (request.sourceCode.empty() || request.predefinedUris.contains(std::string(request.uri)))
+    if (request.sourceCode.empty() || request.isPredefinedUri(request.uri))
     {
         return std::nullopt;
     }
@@ -165,7 +166,7 @@ static std::optional<analysis::TargetDescriptor> ResolveValidRenameTarget(const 
         return std::nullopt;
     }
 
-    if (IsTargetPredefined(*target, request.symbolTable, request.predefinedUris))
+    if (IsTargetPredefined(*target, request.symbolTable, request.isPredefinedUri))
     {
         return std::nullopt;
     }
@@ -217,6 +218,6 @@ std::optional<lsp::WorkspaceEdit> Rename(const RenameRequest& request)
         return std::nullopt;
     }
 
-    return BuildWorkspaceEdit(occurrences, std::string(request.newName));
+    return BuildWorkspaceEdit(occurrences, request.newName);
 }
 } // namespace angel_lsp::features

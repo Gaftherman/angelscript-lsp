@@ -43,6 +43,48 @@ template <typename T>
 }
 
 /**
+ * @brief Checks whether an LSP position is within a given range (0,0,0,0 means whole document).
+ * @param[in] pos Query position.
+ * @param[in] range Query range.
+ * @return True if position is within range.
+ */
+[[nodiscard]] constexpr bool IsPositionInRange(const lsp::Position& pos, const lsp::Range& range) noexcept
+{
+    if (range.start.line == 0 && range.start.character == 0 && range.end.line == 0 && range.end.character == 0)
+    {
+        return true;
+    }
+    if (pos.line < range.start.line || pos.line > range.end.line)
+    {
+        return false;
+    }
+    if (pos.line == range.start.line && pos.character < range.start.character)
+    {
+        return false;
+    }
+    if (pos.line == range.end.line && pos.character > range.end.character)
+    {
+        return false;
+    }
+    return true;
+}
+
+/**
+ * @brief Parses an LSP URI or converts a local file system path into a document URI.
+ * @param[in] uriStr URI or file path string view.
+ * @return Parsed lsp::DocumentUri.
+ */
+[[nodiscard]] inline lsp::DocumentUri ParseOrConvertUri(std::string_view uriStr)
+{
+    if (uriStr.find("://") != std::string_view::npos || uriStr.starts_with("angelscript-predefined:") ||
+        uriStr.starts_with("angelscript-virtual:"))
+    {
+        return lsp::DocumentUri::parse(uriStr);
+    }
+    return lsp::Uri::fileUriFromPath(uriStr);
+}
+
+/**
  * @brief Compares two ranges or coordinate spans by start line and character.
  * @tparam T Range type containing start position.
  * @param[in] a First range object.

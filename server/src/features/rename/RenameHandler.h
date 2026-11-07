@@ -5,12 +5,11 @@
 #include "analysis/resolution/TargetResolution.h"
 #include "utils/LspLogger.h"
 
+#include <functional>
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <optional>
-#include <string>
 #include <string_view>
-#include <unordered_set>
 #include <vector>
 
 namespace angel_lsp::features
@@ -25,7 +24,8 @@ struct PrepareRenameRequest
     lsp::Position position;
     const analysis::SymbolTable& symbolTable;
     const analysis::ScopeIndex& scopeIndex;
-    const std::unordered_set<std::string>& predefinedUris;
+    /// Reports whether a document URI is a predefined (read-only) header; such targets cannot be renamed.
+    std::function<bool(std::string_view)> isPredefinedUri;
     angel_lsp::utils::LspLogger* logger = nullptr;
 };
 
@@ -40,7 +40,8 @@ struct RenameRequest
     std::string_view newName;
     const analysis::SymbolTable& symbolTable;
     const analysis::ScopeIndex& scopeIndex;
-    const std::unordered_set<std::string>& predefinedUris;
+    /// Reports whether a document URI is a predefined (read-only) header; such targets cannot be renamed.
+    std::function<bool(std::string_view)> isPredefinedUri;
     angel_lsp::utils::LspLogger* logger = nullptr;
 };
 

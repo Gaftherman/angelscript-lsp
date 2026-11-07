@@ -1638,8 +1638,8 @@ TEST_CASE("CodeLens and references distinguish typed overloads in an analyzed cl
     CHECK_FALSE(
         static_cast<bool>(ResolveIndexedCall(fixture.symbolTable, root.get(), callByte, CallBindingRevision{7, 1, 3})));
 
-    DefinitionRequest definition{uri, source, fixture.symbolTable, fixture.scopeIndex, {2, 4}};
-    definition.callBindingRevision = revision;
+    DefinitionRequest definition{.query = {uri, source, fixture.symbolTable, fixture.scopeIndex, 2, 4}};
+    definition.query.callBindingRevision = revision;
     const auto destinations = GetDefinition(definition);
     REQUIRE(destinations.has_value());
     REQUIRE(destinations->size() == 1);

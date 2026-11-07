@@ -10,30 +10,31 @@
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <optional>
-#include <string>
 #include <string_view>
 #include <vector>
 
 namespace angel_lsp::features
 {
+
 /**
  * @brief Context and immutable input parameters for an Inlay Hint request.
  */
 struct InlayHintRequest
 {
-    std::string_view uri;
-    std::string_view sourceCode;
-    const analysis::NodeIndex* nodeIndex = nullptr;
-    lsp::Range range;
-    const analysis::SymbolTable& symbolTable;
-    const analysis::ScopeIndex& scopeIndex;
-    bool suppressWhenArgumentMatchesName = false;
-    angel_lsp::utils::LspLogger* logger = nullptr;
-    size_t maxParameters = 0;
-    size_t maxLength = 0;
-    config::OmittedDefaultArgumentsMode omittedDefaultArguments = config::OmittedDefaultArgumentsMode::Off;
-    const config::ServerConfig* config = nullptr;
-    const angel_lsp::i18n::I18n* i18n = nullptr;
+    std::string_view uri{};                         ///< Document URI.
+    std::string_view sourceCode{};                  ///< Document source text.
+    const analysis::NodeIndex* nodeIndex = nullptr; ///< Document node index.
+    lsp::Range range{};                             ///< Requested range.
+    const analysis::SymbolTable& symbolTable;       ///< Global symbol table.
+    const analysis::ScopeIndex& scopeIndex;         ///< Workspace scope index.
+    bool suppressWhenArgumentMatchesName = false;   ///< Suppression flag.
+    angel_lsp::utils::LspLogger* logger = nullptr;  ///< Logger instance.
+    size_t maxParameters = 0;                       ///< Max parameter hint count.
+    size_t maxLength = 0;                           ///< Max label length.
+    config::OmittedDefaultArgumentsMode omittedDefaultArguments =
+        config::OmittedDefaultArgumentsMode::Off; ///< Omitted args mode.
+    const config::ServerConfig* config = nullptr; ///< Active config.
+    const angel_lsp::i18n::I18n* i18n = nullptr;  ///< Localization instance.
 };
 
 /**
@@ -42,86 +43,10 @@ struct InlayHintRequest
 using InlayHintResult = std::vector<lsp::InlayHint>;
 
 /**
- * @brief Computes inlay hints (parameter names for function/method calls,
- *        and type deduction for auto variables) within the requested document range.
- * @param request Immutable context for inlay hint computation.
+ * @brief Computes inlay hints within the requested document range.
+ * @param[in] request Immutable context for inlay hint computation.
  * @return Optional vector of InlayHint items; nullopt if document cannot be parsed or no hints found.
  */
 std::optional<InlayHintResult> GetInlayHints(const InlayHintRequest& request);
 
-/**
- * @brief Resolved callee callable and parameter information for inlay hint generation.
- */
-struct CalleeResolutionResult
-{
-    std::string fileUri;
-    std::string calleeName;
-    std::vector<analysis::ParameterInformation> parameters;
-    std::optional<lsp::Range> selectionRange;
-};
-
-/**
- * @brief Argument expression AST node and evaluated parameter binding for inlay hints.
- */
-struct ArgInfo
-{
-    TSNode exprNode;
-    bool isNamed = false;
-    std::string argName;
-    lsp::Position hintPosition;
-    std::string text;
-};
-
-/**
- * @brief Context for generating parameter name inlay hints at a call site.
- */
-struct ParamHintContext
-{
-    const CalleeResolutionResult& callee;
-    const InlayHintRequest& request;
-};
-
-/**
- * @brief Context for suppressing parameter inlay hints on self-explanatory arguments.
- */
-struct OmittedHintContext
-{
-    const InlayHintRequest& request;
-    std::vector<lsp::InlayHint>& hints;
-};
-
-/**
- * @brief Position and character offsets of an argument within a call parameter list.
- */
-struct CallArgPosition
-{
-    TSNode startNode;
-    TSNode endNode;
-    int boundParamIndex = -1;
-};
-
-/**
- * @brief Tracks reasons for omitting an inlay hint on a specific call argument.
- */
-struct OmittedParamHint
-{
-    std::string label;
-    std::string tooltip;
-    std::string_view fileUri;
-    const analysis::ParameterInformation* param = nullptr;
-};
-
-/**
- * @brief Helper for deducing expression types during inlay hint generation.
- */
-struct InlayHintExpressionDeducer
-{
-    /**
-     * @brief Deduces the type string for an expression AST node.
-     * @param[in] exprNode Target expression AST node.
-     * @param[in] request Inlay hint request context.
-     * @return Deduced type string or empty string.
-     */
-    static std::string DeduceExpressionType(TSNode exprNode, const InlayHintRequest& request);
-};
 } // namespace angel_lsp::features

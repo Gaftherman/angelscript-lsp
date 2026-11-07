@@ -74,7 +74,10 @@ std::optional<ReferencesResult> GetReferences(const ReferencesRequest& request)
                                                    request.scopeIndex);
     occReq.includeDeclaration = request.includeDeclaration;
     occReq.logger = request.logger;
-    occReq.occurrenceModule = request.occurrenceModule;
+    if (request.occurrenceModule)
+    {
+        occReq.occurrenceModule.emplace(*request.occurrenceModule);
+    }
     const auto occurrences = analysis::CollectOccurrences(occReq);
 
     if (occurrences.empty())

@@ -7,7 +7,6 @@
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <optional>
-#include <string>
 #include <string_view>
 #include <vector>
 
@@ -26,7 +25,8 @@ struct ReferencesRequest
     const analysis::ScopeIndex& scopeIndex;
     angel_lsp::utils::LspLogger* logger = nullptr;
     std::optional<analysis::CallBindingRevision> callBindingRevision = std::nullopt;
-    std::optional<std::string> occurrenceModule = std::nullopt;
+    /// Module the occurrence search is restricted to; the viewed text must outlive the request.
+    std::optional<std::string_view> occurrenceModule = std::nullopt;
 };
 
 using ReferencesResult = std::vector<lsp::Location>;
