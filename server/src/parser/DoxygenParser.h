@@ -1,6 +1,5 @@
 #pragma once
 
-#include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
 
@@ -34,19 +33,11 @@ class DoxygenParser
 
     /**
      * @brief Parses the given Doxygen comment string.
-     * @param text The comment string to parse.
+     * @param[in] text The comment string to parse.
      * @return TSTree pointer representing the parse tree, or nullptr on empty input.
      *        Caller takes ownership and must release it with ts_tree_delete.
      */
-    TSTree* Parse(const std::string& text);
-
-    /**
-     * @brief Extracts a string_view of the source slice covered by a syntax node.
-     * @param node The syntax tree node whose byte range is queried.
-     * @param sourceCode The original source buffer that was parsed.
-     * @return View over the node's byte range, or an empty view if invalid or out of range.
-     */
-    static std::string_view GetNodeText(TSNode node, const std::string& sourceCode);
+    TSTree* Parse(std::string_view text);
 
     /**
      * @brief Returns the raw TSParser pointer.

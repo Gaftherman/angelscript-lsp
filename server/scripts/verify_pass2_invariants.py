@@ -10,6 +10,7 @@ Validador Dinámico de Invariantes de Segunda Pasada (Zero-AST & Zero-std::strin
   apuntan todas las vistas `std::string_view` de 2da pasada; `i18n/` devuelve mensajes formateados propios
   (`FormatMessage`) y su búsqueda ya es `std::string_view`; `config/` es dueño de los ajustes CLI/JSON parseados.
   `analysis/diagnostics/Diagnostics.h` es dueño del mensaje formateado y la URI de cada diagnóstico publicado.
+  `analysis/documentation/` es dueño del Markdown que construye para hover, firmas e inlay hints.
   La regla 1 (cero ts_*) sigue aplicando.
 """
 
@@ -30,6 +31,7 @@ STRING_OWNER_FOLDERS = (
     "server/src/i18n/",
     "server/src/config/",
     "server/src/analysis/diagnostics/Diagnostics.h",
+    "server/src/analysis/documentation/",
 )
 
 ALWAYS_BLOCKED_UTILS = [

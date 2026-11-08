@@ -2654,6 +2654,96 @@
         "ServerDomainServicesTest",
         "CodeActionTest"
       ]
+    },
+    {
+      "id": "REF-M17-DOXYGEN-TS-RENDER",
+      "phase": "M17",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/documentation/DoxygenMarkdown.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "RenderDescription, ProcessParamTag, ProcessBriefHeader, ProcessCodeBlock, DispatchSegmentChildNode, ParseDocSegment and the other tag helpers taking TSNode",
+      "whatItDidAndWhyInThatFile": "Rendered Doxygen tags to Markdown by walking a tree-sitter-doxygen tree inside a second-pass module.",
+      "whyChangedOrDeleted": "Rule 4.10: the parse now runs once in parser/ and the renderer reads an AST-free node snapshot with the same child order, named flags and byte ranges.",
+      "replacedByCanonicalFile": "server/src/parser/DoxygenSyntax.h",
+      "replacedByCanonicalSymbol": "ExtractDoxygenSyntax",
+      "ramOrCpuImpact": "One flat vector per comment segment; no TSNode handles cross into analysis/.",
+      "verifiedByTests": [
+        "DoxygenMarkdownTest",
+        "DoxygenSyntaxTest",
+        "DocCommentTest"
+      ]
+    },
+    {
+      "id": "REF-M17-FIND-CHILD-BY-TYPE",
+      "phase": "M17",
+      "action": "CLEAN_SENTINEL",
+      "sourceFile": "server/src/analysis/documentation/DoxygenMarkdown.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "static FindChildByType(TSNode, const char*)",
+      "whatItDidAndWhyInThatFile": "Linear child scan comparing ts_node_type strings to find the first child of a grammar type.",
+      "whyChangedOrDeleted": "Replaced by a kind comparison on the indexed children; node kinds are mapped once during extraction.",
+      "replacedByCanonicalFile": "server/src/parser/DoxygenSyntax.h",
+      "replacedByCanonicalSymbol": "DoxygenNodeView",
+      "ramOrCpuImpact": "No strcmp per child lookup.",
+      "verifiedByTests": [
+        "DoxygenMarkdownTest",
+        "DoxygenSyntaxTest",
+        "DocCommentTest"
+      ]
+    },
+    {
+      "id": "REF-M17-GET-NODE-TEXT",
+      "phase": "M17",
+      "action": "CLEAN_SENTINEL",
+      "sourceFile": "server/src/parser/DoxygenParser.h",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "DoxygenParser::GetNodeText(TSNode, const std::string&)",
+      "whatItDidAndWhyInThatFile": "Sliced the synthetic comment buffer for a syntax node, with bounds checks.",
+      "whyChangedOrDeleted": "Its only caller moved to the node view, which slices the same bytes with the same checks.",
+      "replacedByCanonicalFile": "server/src/parser/DoxygenSyntax.h",
+      "replacedByCanonicalSymbol": "DoxygenNodeView",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "DoxygenMarkdownTest",
+        "DoxygenSyntaxTest",
+        "DocCommentTest"
+      ]
+    },
+    {
+      "id": "REF-M17-DOXYGEN-VIEWS",
+      "phase": "M17",
+      "action": "CLEAN_SENTINEL",
+      "sourceFile": "server/src/analysis/documentation/DoxygenMarkdown.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "const std::string& parameters of RenderDoxygenMarkdown, SplitLines, CleanDescriptionLines, RewriteAtInlineCommands and the other read-only helpers; std::istringstream in SplitLines; FormatReturnType/FormatVariableDeclaration in SignatureFormatter",
+      "whatItDidAndWhyInThatFile": "Took owned strings, forcing callers to materialize temporaries, and split lines through a string stream.",
+      "whyChangedOrDeleted": "The helpers only read their input, so views suffice; SplitLines scans the view directly with the same line and carriage-return handling.",
+      "replacedByCanonicalFile": "server/src/analysis/documentation/DoxygenMarkdown.h",
+      "replacedByCanonicalSymbol": "RenderDoxygenMarkdown",
+      "ramOrCpuImpact": "Fewer temporary strings per rendered comment; no stream allocation per split.",
+      "verifiedByTests": [
+        "DoxygenMarkdownTest",
+        "DoxygenSyntaxTest",
+        "DocCommentTest"
+      ]
+    },
+    {
+      "id": "REF-M17-DOXYGEN-SPLIT",
+      "phase": "M17",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/documentation/DoxygenMarkdown.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "2751-line DoxygenMarkdown.cpp",
+      "whatItDidAndWhyInThatFile": "Held text cleanup, comment-line extraction, tag rendering and Markdown assembly in one translation unit.",
+      "whyChangedOrDeleted": "Split by pure moves into DoxygenText, DoxygenCommentLines, DoxygenTagRender and DoxygenMarkdown; the 19 helpers shared across units are declared once in an internal header under angel_lsp::analysis::doxygen.",
+      "replacedByCanonicalFile": "server/src/analysis/documentation/DoxygenMarkdownInternal.h",
+      "replacedByCanonicalSymbol": "ParseDocSegment",
+      "ramOrCpuImpact": "None: identical function bodies.",
+      "verifiedByTests": [
+        "DoxygenMarkdownTest",
+        "DoxygenSyntaxTest",
+        "DocCommentTest"
+      ]
     }
   ]
 }

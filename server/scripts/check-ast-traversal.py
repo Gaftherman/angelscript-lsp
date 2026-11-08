@@ -270,13 +270,17 @@ def check_no_symbol_lookup_concat():
                         violations.append((file_path, line_num, stripped))
     return violations
 
+# The Doxygen renderer units hold Doxygen delimiters and syntax as data, which the prose checks misread.
+DOXYGEN_RENDERER_FILES = {"DoxygenMarkdown.cpp", "DoxygenText.cpp", "DoxygenCommentLines.cpp", "DoxygenTagRender.cpp"}
+
+
 def check_no_ts_node_type():
     violations = []
     ts_node_type_pattern = re.compile(r"\bts_node_type\s*\(")
     scan_roots = [SERVER_SRC / "analysis", SERVER_SRC / "features"]
     for root in scan_roots:
         for file_path in root.rglob("*.[ch]*"):
-            if not file_path.is_file() or file_path.name == "DoxygenMarkdown.cpp":
+            if not file_path.is_file():
                 continue
             try:
                 content = file_path.read_text(encoding="utf-8", errors="ignore")
@@ -927,7 +931,7 @@ def check_no_stacked_doxygen_blocks():
     violations = []
     stacked_re = re.compile(r"\*/\s*/\*\*")
     for fpath in sorted(SERVER_SRC.rglob("*.[ch]*")):
-        if not fpath.is_file() or fpath.name == "DoxygenMarkdown.cpp":
+        if not fpath.is_file() or fpath.name in DOXYGEN_RENDERER_FILES:
             continue
         try:
             content = fpath.read_text(encoding="utf-8", errors="ignore")
@@ -987,7 +991,7 @@ def check_no_over_explained_doxygen_prose():
     violations = []
     doxygen_re = re.compile(r"/\*\*(.*?)\*/", re.DOTALL)
     for fpath in sorted(SERVER_SRC.rglob("*.[ch]*")):
-        if not fpath.is_file() or fpath.name == "DoxygenMarkdown.cpp":
+        if not fpath.is_file() or fpath.name in DOXYGEN_RENDERER_FILES:
             continue
         try:
             content = fpath.read_text(encoding="utf-8", errors="ignore")

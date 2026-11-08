@@ -13,7 +13,7 @@ namespace angel_lsp::analysis
  * @note TypeExtraction normally folds 'const' and '@' into typeName, but the flags are the
  *        authority. Appending unconditionally would produce "const const string", so each
  */
-static std::string ApplyConstAndHandle(const std::string& typeName, bool isConst, bool isHandle)
+static std::string ApplyConstAndHandle(std::string_view typeName, bool isConst, bool isHandle)
 {
     const bool hasConst =
         typeName.starts_with(parser::keywords::Const) &&
@@ -191,7 +191,7 @@ std::string FormatFunctionSuffix(const SymbolModifiers& modifiers)
     return result;
 }
 
-std::string FormatReturnType(const std::string& returnType, const SymbolModifiers& modifiers)
+std::string FormatReturnType(std::string_view returnType, const SymbolModifiers& modifiers)
 {
     if (returnType.empty())
     {
@@ -200,9 +200,9 @@ std::string FormatReturnType(const std::string& returnType, const SymbolModifier
 
     if (modifiers.isReturnReference && returnType.back() != '&')
     {
-        return returnType + "&";
+        return std::string(returnType) + "&";
     }
-    return returnType;
+    return std::string(returnType);
 }
 
 void AppendParameters(std::ostringstream& oss, const std::vector<ParameterInformation>& parameters)
@@ -252,7 +252,7 @@ bool HasCachedDisplaySignature(const Symbol& sym, bool qualified) noexcept
            !sym.GetFunction().displaySignature.empty();
 }
 
-bool IsConstructorOrDestructorSymbol(const Symbol& sym, bool isFuncdef, const std::string& returnType)
+bool IsConstructorOrDestructorSymbol(const Symbol& sym, bool isFuncdef, std::string_view returnType)
 {
     if (isFuncdef || !returnType.empty() || sym.containerName.empty())
     {
@@ -282,7 +282,7 @@ static FormattedSignature BuildFunctionSignature(const Symbol& sym, bool qualifi
 
     const bool isFuncdef = sym.type == SymbolType::Funcdef;
     const SymbolModifiers& modifiers = isFuncdef ? sym.GetFuncdef().modifiers : sym.GetFunction().modifiers;
-    const std::string& returnType = isFuncdef ? sym.GetFuncdef().returnType : sym.GetFunction().returnType;
+    const std::string_view returnType = isFuncdef ? sym.GetFuncdef().returnType : sym.GetFunction().returnType;
     const auto& parameters = isFuncdef ? sym.GetFuncdef().parameters : sym.GetFunction().parameters;
 
     std::ostringstream oss;
@@ -347,7 +347,7 @@ std::string FormatFunctionDeclaration(const Symbol& sym, bool qualified)
     return BuildFunctionSignature(sym, qualified, false).label;
 }
 
-std::string FormatVariableDeclaration(const VariableSignature& var, const std::string& name)
+std::string FormatVariableDeclaration(const VariableSignature& var, std::string_view name)
 {
     std::ostringstream oss;
     oss << FormatAccessPrefix(var.modifiers);

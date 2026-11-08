@@ -1,7 +1,6 @@
 #include "parser/DoxygenParser.h"
 
 #include <cstdint>
-#include <string>
 #include <string_view>
 #include <utility>
 
@@ -42,7 +41,7 @@ DoxygenParser& DoxygenParser::operator=(DoxygenParser&& other) noexcept
     return *this;
 }
 
-TSTree* DoxygenParser::Parse(const std::string& text)
+TSTree* DoxygenParser::Parse(std::string_view text)
 {
     // A moved-from parser owns nothing, and ts_parser_parse_string does not check - it would be
     // a crash rather than a diagnostic, which is the wrong way round for a doc comment.
@@ -51,24 +50,7 @@ TSTree* DoxygenParser::Parse(const std::string& text)
         return nullptr;
     }
 
-    return ts_parser_parse_string(m_parser, nullptr, text.c_str(), static_cast<uint32_t>(text.size()));
+    return ts_parser_parse_string(m_parser, nullptr, text.data(), static_cast<uint32_t>(text.size()));
 }
 
-std::string_view DoxygenParser::GetNodeText(TSNode node, const std::string& sourceCode)
-{
-    if (ts_node_is_null(node))
-    {
-        return std::string_view();
-    }
-
-    uint32_t startByte = ts_node_start_byte(node);
-    uint32_t endByte = ts_node_end_byte(node);
-
-    if (startByte >= endByte || endByte > sourceCode.size())
-    {
-        return std::string_view();
-    }
-
-    return std::string_view(sourceCode.data() + startByte, endByte - startByte);
-}
 } // namespace angel_lsp::parser

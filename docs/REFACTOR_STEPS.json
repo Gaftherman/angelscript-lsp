@@ -26,9 +26,10 @@
     "server/src/i18n",
     "server/src/config",
     "server/src/utils",
-    "server/src/analysis/diagnostics"
+    "server/src/analysis/diagnostics",
+    "server/src/analysis/documentation"
   ],
-  "active_folder": "server/src/analysis/documentation",
+  "active_folder": "server/src/analysis/types",
   "cross_module_impacts": [
     {
       "source_folder": "server/src/utils",
@@ -42,12 +43,6 @@
     }
   ],
   "pending_folders": [
-    {
-      "folder_path": "server/src/analysis/documentation",
-      "complexity_rank": 29,
-      "selection_rationale": "Semantic support (4 files, 261 lines) doc comments and Doxygen markdown.",
-      "files_to_refactor": []
-    },
     {
       "folder_path": "server/src/analysis/types",
       "complexity_rank": 30,

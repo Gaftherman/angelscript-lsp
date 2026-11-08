@@ -64,7 +64,7 @@ std::string FormatFunctionSuffix(const SymbolModifiers& modifiers);
  * @param modifiers Modifier set of the function, consulted for the reference flag.
  * @return Return type text, or "void" when nothing was captured.
  */
-std::string FormatReturnType(const std::string& returnType, const SymbolModifiers& modifiers);
+std::string FormatReturnType(std::string_view returnType, const SymbolModifiers& modifiers);
 
 /**
  * @brief Formatted signature label and parameter offset spans.
@@ -98,7 +98,7 @@ std::string FormatFunctionDeclaration(const Symbol& sym, bool qualified = true);
  * @return Text such as "private const string m_name", or, for a virtual property, the accessor
  *        block that makes it one: "string Name { get const; set; }".
  */
-std::string FormatVariableDeclaration(const VariableSignature& var, const std::string& name);
+std::string FormatVariableDeclaration(const VariableSignature& var, std::string_view name);
 
 /**
  * @brief Renders a class or interface declaration including bases and modifiers.
