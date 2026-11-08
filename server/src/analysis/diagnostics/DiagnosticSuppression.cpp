@@ -2,7 +2,6 @@
 
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/NodeIndex.h"
-#include "parser/GrammarNames.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -312,15 +311,15 @@ std::string_view GetDiagnosticCategory(std::string_view code) noexcept
     return {};
 }
 
-std::string FormatDiagnosticDisplayCode(std::string_view canonicalCode)
+std::string_view FormatDiagnosticDisplayCode(std::string_view canonicalCode) noexcept
 {
-    std::string_view alias = GetDiagnosticAlias(canonicalCode);
-    return alias.empty() ? std::string(canonicalCode) : std::string(alias);
+    const std::string_view alias = GetDiagnosticAlias(canonicalCode);
+    return alias.empty() ? canonicalCode : alias;
 }
 
 void DiagnosticSuppressionMap::AddSuppression(std::string_view code, uint32_t startLine, uint32_t endLine)
 {
-    m_suppressions.push_back({std::string(NormalizeDiagnosticSelector(code)), startLine, endLine});
+    m_suppressions.push_back({NormalizeDiagnosticSelector(code), startLine, endLine});
 }
 
 bool DiagnosticSuppressionMap::IsSuppressed(std::string_view code, uint32_t line) const
@@ -340,7 +339,7 @@ bool DiagnosticSuppressionMap::IsSuppressed(std::string_view code, uint32_t line
 }
 
 static void ProcessCommentDirective(std::string_view rawText, uint32_t line, DiagnosticSuppressionMap& map,
-                                    std::unordered_map<std::string, std::vector<uint32_t>>& openRanges)
+                                    std::unordered_map<std::string_view, std::vector<uint32_t>>& openRanges)
 {
     std::string_view content = StripCommentDelimiters(rawText);
     auto tokens = TokenizeDirective(content);
@@ -358,7 +357,7 @@ static void ProcessCommentDirective(std::string_view rawText, uint32_t line, Dia
 
     for (size_t k = 1; k < tokens.size(); ++k)
     {
-        const std::string codeKey(NormalizeDiagnosticSelector(tokens[k]));
+        const std::string_view codeKey = NormalizeDiagnosticSelector(tokens[k]);
         if (isDisableLine)
         {
             map.AddSuppression(codeKey, line, line);
@@ -385,7 +384,7 @@ static void ProcessCommentDirective(std::string_view rawText, uint32_t line, Dia
 }
 
 static void ScanFallbackComments(std::string_view sourceCode, DiagnosticSuppressionMap& map,
-                                 std::unordered_map<std::string, std::vector<uint32_t>>& openRanges)
+                                 std::unordered_map<std::string_view, std::vector<uint32_t>>& openRanges)
 {
     uint32_t line = 0;
     size_t pos = 0;
@@ -406,18 +405,18 @@ static void ScanFallbackComments(std::string_view sourceCode, DiagnosticSuppress
 DiagnosticSuppressionMap ParseDiagnosticSuppressions(std::string_view sourceCode, const NodeIndex* nodeIndex)
 {
     DiagnosticSuppressionMap map;
-    std::unordered_map<std::string, std::vector<uint32_t>> openRanges;
+    std::unordered_map<std::string_view, std::vector<uint32_t>> openRanges;
 
     if (nodeIndex)
     {
-        for (TSNode cNode : nodeIndex->Nodes(parser::GetGrammarSymbols().symComment))
+        for (const NodeIndex::CommentRange& comment : nodeIndex->CommentRanges())
         {
-            uint32_t startByte = ts_node_start_byte(cNode);
-            uint32_t endByte = ts_node_end_byte(cNode);
-            if (startByte < sourceCode.size() && endByte <= sourceCode.size() && startByte <= endByte)
+            if (comment.startByte < sourceCode.size() && comment.endByte <= sourceCode.size() &&
+                comment.startByte <= comment.endByte)
             {
-                std::string_view commentText = sourceCode.substr(startByte, endByte - startByte);
-                ProcessCommentDirective(commentText, ts_node_start_point(cNode).row, map, openRanges);
+                const std::string_view commentText =
+                    sourceCode.substr(comment.startByte, comment.endByte - comment.startByte);
+                ProcessCommentDirective(commentText, comment.startLine, map, openRanges);
             }
         }
     }

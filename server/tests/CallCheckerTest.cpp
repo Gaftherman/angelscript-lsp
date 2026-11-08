@@ -856,10 +856,10 @@ TEST_CASE("CallChecker - Both array spellings answer a correct call the same way
 
     std::vector<std::string> bracketCodes;
     for (const auto& d : AnalyzeCallSnippet(bracket))
-        bracketCodes.push_back(d.code);
+        bracketCodes.emplace_back(d.code);
     std::vector<std::string> templatedCodes;
     for (const auto& d : AnalyzeCallSnippet(templated))
-        templatedCodes.push_back(d.code);
+        templatedCodes.emplace_back(d.code);
 
     // Identical, which is the point: the two spellings are one type and must be judged as one.
     // Neither list is empty - the minimal `array<T>` stub here has bodyless methods and an unused

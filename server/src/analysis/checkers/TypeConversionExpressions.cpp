@@ -90,7 +90,7 @@ static bool CheckUnaryInvalidOperand(TSNode node, TSNode operand, const Scope* s
     }
     if (IsFunctionReference(operand, ExpressionTypeContext(scope, ctx)))
     {
-        ctx.EmitAtNode(node, diagnostics::codes::IllegalOperation);
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(node), diagnostics::codes::IllegalOperation);
         return true;
     }
     return false;
@@ -122,7 +122,7 @@ void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& re
             PropertyAccessInfo pInfo = InspectPropertyAccess(arrayNode, scope, ctx);
             if (pInfo.isProperty && pInfo.isIndexed)
             {
-                ctx.EmitAtNode(node, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
+                ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-inc-dec-on-virtual-prop", pInfo.propName);
                 return;
             }
         }
@@ -131,7 +131,7 @@ void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& re
             PropertyAccessInfo pInfo = InspectPropertyAccess(unwrapped, scope, ctx);
             if (pInfo.isProperty)
             {
-                ctx.EmitAtNode(node, "as-err-inc-dec-on-virtual-prop", pInfo.propName);
+                ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-inc-dec-on-virtual-prop", pInfo.propName);
                 return;
             }
         }
@@ -160,7 +160,7 @@ void ProcessMemberExpressionNode(TSNode node, const TypeConversionCheckRequest& 
         PropertyAccessInfo pInfo = InspectPropertyAccess(node, scope, ctx);
         if (pInfo.isProperty && !pInfo.hasGet && pInfo.hasSet)
         {
-            ctx.EmitAtNode(node, "as-err-write-only-property", pInfo.propName);
+            ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-write-only-property", pInfo.propName);
         }
     }
 }
@@ -176,7 +176,7 @@ void ProcessIndexExpressionNode(TSNode node, const TypeConversionCheckRequest& r
         PropertyAccessInfo pInfo = InspectPropertyAccess(arrayNode, scope, ctx);
         if (pInfo.isProperty && pInfo.isIndexed && !pInfo.hasGet && pInfo.hasSet)
         {
-            ctx.EmitAtNode(node, "as-err-write-only-property", pInfo.propName);
+            ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-write-only-property", pInfo.propName);
         }
     }
 }
@@ -242,7 +242,7 @@ static void CheckCast(TSNode castNode, const Scope* scope, DiagnosticContext& ct
         return;
     }
 
-    ctx.EmitAtNode(castNode, "as-err-invalid-cast", {source.baseName, targetName});
+    ctx.EmitAtNodeRange(ToOptionalSourceRange(castNode), "as-err-invalid-cast", {source.baseName, targetName});
 }
 
 void ProcessCastNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)

@@ -34,11 +34,17 @@ static std::string_view ResolveDiagnosticTemplate(const i18n::I18n* i18n, std::s
     return i18n->GetMessageView(code);
 }
 
-static std::string FormatFallbackMessage(std::string_view code, std::span<const std::string_view> args)
+/**
+ * @brief Replaces the diagnostic message with "[code] arg1, arg2" when no catalog template applies.
+ * @param[out] diag Diagnostic whose message is overwritten.
+ * @param[in] code Diagnostic code shown in brackets.
+ * @param[in] args Message arguments; empty ones are skipped.
+ */
+static void WriteFallbackMessage(Diagnostic& diag, std::string_view code, std::span<const std::string_view> args)
 {
-    std::string fallback = "[";
-    fallback.append(code);
-    fallback.push_back(']');
+    diag.message.assign("[");
+    diag.message.append(code);
+    diag.message.push_back(']');
     bool first = true;
     for (const auto a : args)
     {
@@ -46,11 +52,10 @@ static std::string FormatFallbackMessage(std::string_view code, std::span<const 
         {
             continue;
         }
-        fallback += (first ? " " : ", ");
-        fallback.append(a);
+        diag.message.append(first ? " " : ", ");
+        diag.message.append(a);
         first = false;
     }
-    return fallback;
 }
 
 static void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std::string_view code,
@@ -65,7 +70,7 @@ static void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std
     {
         if (IsPoisonType(a))
         {
-            diag.message = std::string(constants::k_poisonTypeSentinel);
+            diag.message = constants::k_poisonTypeSentinel;
             return;
         }
     }
@@ -93,7 +98,7 @@ static void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std
 
     if (diag.message.empty() || diag.message.starts_with("["))
     {
-        diag.message = FormatFallbackMessage(code, args);
+        WriteFallbackMessage(diag, code, args);
     }
 }
 
@@ -101,18 +106,6 @@ static void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std
                                    std::initializer_list<std::string_view> args)
 {
     ApplyMessageFormatting(diag, i18n, code, std::span<const std::string_view>(args.begin(), args.size()));
-}
-
-static void ApplyMessageFormatting(Diagnostic& diag, const i18n::I18n* i18n, std::string_view code,
-                                   const std::vector<std::string>& args)
-{
-    std::vector<std::string_view> views;
-    views.reserve(args.size());
-    for (const auto& a : args)
-    {
-        views.emplace_back(a);
-    }
-    ApplyMessageFormatting(diag, i18n, code, views);
 }
 
 /**
@@ -164,7 +157,8 @@ void DiagnosticContext::Append(Diagnostic&& diag) const
         return;
     }
 
-    if (diag.message.find("<poison>") != std::string::npos || diag.code.find("<poison>") != std::string::npos)
+    if (std::string_view(diag.message).find("<poison>") != std::string_view::npos ||
+        diag.code.find("<poison>") != std::string_view::npos)
     {
         return;
     }
@@ -207,24 +201,23 @@ Diagnostic DiagnosticContext::CreateDiagnostic(SourceRange range, std::string_vi
     diag.range.end.character = range.endCharacter;
     diag.severity = severity;
 
-    std::string codeStr(code);
     if (request.severityOverrides)
     {
-        auto it = request.severityOverrides->find(codeStr);
+        auto it = request.severityOverrides->find(code);
         if (it == request.severityOverrides->end())
         {
-            const auto group = GetDiagnosticGroup(codeStr);
+            const auto group = GetDiagnosticGroup(code);
             if (!group.empty())
             {
-                it = request.severityOverrides->find(std::string(group));
+                it = request.severityOverrides->find(group);
             }
         }
         if (it == request.severityOverrides->end())
         {
-            const auto category = GetDiagnosticCategory(codeStr);
+            const auto category = GetDiagnosticCategory(code);
             if (!category.empty())
             {
-                it = request.severityOverrides->find(std::string(category));
+                it = request.severityOverrides->find(category);
             }
         }
         if (it != request.severityOverrides->end())
@@ -232,13 +225,13 @@ Diagnostic DiagnosticContext::CreateDiagnostic(SourceRange range, std::string_vi
             diag.severity = it->second;
         }
     }
-    diag.code = std::move(codeStr);
-    diag.source = std::string(constants::k_diagnosticSource);
-    diag.fileUri = std::string(fileUri);
+    diag.code = code;
+    diag.source = constants::k_diagnosticSource;
+    diag.fileUri = fileUri;
 
     if (request.i18n)
     {
-        diag.message = std::string(request.i18n->GetMessageView(code));
+        diag.message = request.i18n->GetMessageView(code);
     }
     if (diag.message.empty())
     {
@@ -442,50 +435,39 @@ void DiagnosticContext::EmitAtRange(SourceRange range, std::string_view code,
     Append(std::move(diag));
 }
 
-/**
- * @brief Converts a node's start and end points into the source range a diagnostic is reported on.
- * @param[in] node Non-null node the diagnostic targets.
- * @return Zero-based row/column range covering the node.
- */
-static SourceRange NodeToRange(TSNode node) noexcept
+void DiagnosticContext::EmitAtNodeRange(std::optional<SourceRange> nodeRange, std::string_view code,
+                                        DiagnosticSeverity severity) const
 {
-    const TSPoint start = ts_node_start_point(node);
-    const TSPoint end = ts_node_end_point(node);
-    return {start.row, start.column, end.row, end.column};
-}
-
-void DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, DiagnosticSeverity severity) const
-{
-    if (!ts_node_is_null(node))
+    if (nodeRange)
     {
-        EmitAtRange(NodeToRange(node), code, severity);
+        EmitAtRange(*nodeRange, code, severity);
     }
 }
 
-void DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, std::string_view arg1,
-                                   DiagnosticSeverity severity) const
+void DiagnosticContext::EmitAtNodeRange(std::optional<SourceRange> nodeRange, std::string_view code,
+                                        std::string_view arg1, DiagnosticSeverity severity) const
 {
-    if (!ts_node_is_null(node))
+    if (nodeRange)
     {
-        EmitAtRange(NodeToRange(node), code, arg1, severity);
+        EmitAtRange(*nodeRange, code, arg1, severity);
     }
 }
 
-void DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, std::string_view arg1,
-                                   std::string_view arg2) const
+void DiagnosticContext::EmitAtNodeRange(std::optional<SourceRange> nodeRange, std::string_view code,
+                                        std::string_view arg1, std::string_view arg2) const
 {
-    if (!ts_node_is_null(node))
+    if (nodeRange)
     {
-        EmitAtRange(NodeToRange(node), code, arg1, arg2);
+        EmitAtRange(*nodeRange, code, arg1, arg2);
     }
 }
 
-void DiagnosticContext::EmitAtNode(TSNode node, std::string_view code, std::initializer_list<std::string_view> args,
-                                   DiagnosticSeverity severity) const
+void DiagnosticContext::EmitAtNodeRange(std::optional<SourceRange> nodeRange, std::string_view code,
+                                        std::initializer_list<std::string_view> args, DiagnosticSeverity severity) const
 {
-    if (!ts_node_is_null(node))
+    if (nodeRange)
     {
-        EmitAtRange(NodeToRange(node), code, args, severity);
+        EmitAtRange(*nodeRange, code, args, severity);
     }
 }
 

@@ -1,7 +1,5 @@
 #include "utils/Utils.h"
 
-#include "parser/Primitives.h"
-
 #include <algorithm>
 #include <optional>
 #include <string_view>
@@ -76,11 +74,11 @@ bool TextContentMatchesIgnoringLineEndings(std::string_view a, std::string_view 
     return i == a.size() && j == b.size();
 }
 
-std::string UriToPath(const std::string& uriStr)
+std::string UriToPath(std::string_view uri)
 {
-    if (uriStr.starts_with("file://"))
+    if (uri.starts_with("file://"))
     {
-        std::string_view rest = std::string_view(uriStr).substr(7);
+        std::string_view rest = uri.substr(7);
         if (!rest.empty() && rest.front() != '/' && rest.front() != '?' && rest.front() != '#')
         {
             const size_t slashPos = rest.find_first_of("/?#");
@@ -101,15 +99,15 @@ std::string UriToPath(const std::string& uriStr)
         return decoded;
     }
 #if defined(_WIN32)
-    if (!uriStr.empty() && uriStr[0] == '/')
-        return UrlDecode(uriStr.substr(1));
+    if (!uri.empty() && uri[0] == '/')
+        return UrlDecode(uri.substr(1));
 #endif
-    return UrlDecode(uriStr);
+    return UrlDecode(uri);
 }
 
-std::string PathToUri(const std::string& filePath)
+std::string PathToUri(std::string_view filePath)
 {
-    std::string normalized = filePath;
+    std::string normalized(filePath);
     std::replace(normalized.begin(), normalized.end(), '\\', '/');
     if (normalized.empty())
         return "file:///";
@@ -133,7 +131,7 @@ size_t PositionToOffset(std::string_view text, uint32_t line, uint32_t character
     return std::min(lineStart + LspCharToByteColumn(lineText, character, enc), text.size());
 }
 
-void ApplyIncrementalChange(std::string& buffer, const TextChangeRange& range, const std::string& newText,
+void ApplyIncrementalChange(std::string& buffer, const TextChangeRange& range, std::string_view newText,
                             PositionEncoding enc)
 {
     const size_t startOffset = PositionToOffset(buffer, range.startLine, range.startCharacter, enc);
@@ -145,7 +143,7 @@ void ApplyIncrementalChange(std::string& buffer, const TextChangeRange& range, c
     }
 }
 
-bool IsPredefinedFile(const std::string_view& fileUri, const std::string_view extension)
+bool IsPredefinedFile(std::string_view fileUri, std::string_view extension)
 {
     if (fileUri.starts_with("builtin://"))
     {
@@ -327,11 +325,6 @@ std::string SanitizePredefinedContent(std::string_view source)
     }
 
     return result;
-}
-
-bool IsPrimitiveType(const std::string& typeName)
-{
-    return parser::primitives::IsPrimitive(typeName);
 }
 
 /**

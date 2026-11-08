@@ -282,6 +282,20 @@ struct SourceRangeHash
     return SourceRange{start.row, start.column, end.row, end.column};
 }
 
+/**
+ * @brief Converts a possibly-null Tree-Sitter node into the range a diagnostic targets.
+ * @param[in] node AST node, which may be null when an optional child is absent.
+ * @return The node's SourceRange, or std::nullopt for a null node so the caller emits nothing.
+ */
+[[nodiscard]] inline std::optional<SourceRange> ToOptionalSourceRange(TSNode node) noexcept
+{
+    if (ts_node_is_null(node))
+    {
+        return std::nullopt;
+    }
+    return ToSourceRange(node);
+}
+
 struct TypeExtractionResult
 {
     std::string baseTypeName;

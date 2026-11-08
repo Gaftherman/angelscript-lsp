@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <map>
 #include <memory>
+#include <ostream>
 #include <random>
 #include <string>
 #include <string_view>

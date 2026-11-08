@@ -24,23 +24,24 @@
     "server/src/features/code_action",
     "server/src/document",
     "server/src/i18n",
-    "server/src/config"
+    "server/src/config",
+    "server/src/utils",
+    "server/src/analysis/diagnostics"
   ],
-  "active_folder": "server/src/utils",
-  "cross_module_impacts": [],
+  "active_folder": "server/src/analysis/documentation",
+  "cross_module_impacts": [
+    {
+      "source_folder": "server/src/utils",
+      "target_folder": "server/src/lsp/state",
+      "impact": "PreprocessorRegions IsDefined builds a std::string key per lookup; making the defined-words set transparent (TransparentStringHash, std::equal_to<>) changes its type across WorkspaceStateStore, Server and ServerModules, so it is deferred to the lsp/ milestone."
+    },
+    {
+      "source_folder": "server/src/analysis/diagnostics",
+      "target_folder": "server/src/analysis/checkers",
+      "impact": "Checkers still hold TSNode and call DiagnosticContext::EmitAtNodeRange(ToOptionalSourceRange(node), ...); once they read indexed ranges, delete EmitAtNodeRange and ToOptionalSourceRange (analysis/index/Symbol.h)."
+    }
+  ],
   "pending_folders": [
-    {
-      "folder_path": "server/src/utils",
-      "complexity_rank": 27,
-      "selection_rationale": "Base infrastructure (16 files, 1723 lines) ScopedNameUtils, WorkspaceIncludeGraph, timers, loggers.",
-      "files_to_refactor": []
-    },
-    {
-      "folder_path": "server/src/analysis/diagnostics",
-      "complexity_rank": 28,
-      "selection_rationale": "Semantic support (5 files, 548 lines) diagnostic codes, context, and inline suppressions.",
-      "files_to_refactor": []
-    },
     {
       "folder_path": "server/src/analysis/documentation",
       "complexity_rank": 29,

@@ -921,7 +921,7 @@ static void EmitMixinMemberNotFound(const MixinCheckContext& mctx, std::string_v
     RelatedDiagnosticRequest req;
     req.range = mctx.hostRange;
     req.code = diagnostics::codes::MixinInstantiationMemberNotFound;
-    req.args = {mctx.mixinSym->name, mctx.hostClassName, std::string(memberName), mctx.hostClassName};
+    req.args = {mctx.mixinSym->name, mctx.hostClassName, memberName, mctx.hostClassName};
     req.related = std::move(rel);
     req.severity = DiagnosticSeverity::Error;
     ctx.EmitWithRelated(req);

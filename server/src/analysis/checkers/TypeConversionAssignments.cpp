@@ -46,7 +46,8 @@ static void CheckHandleConstAssignment(AssignmentOperands operands, const Conver
     const bool leftConstTarget = leftVal.isConst;
     if (rightConstTarget && !leftConstTarget && !types.from.empty() && !types.to.empty())
     {
-        ctx.EmitAtNode(operands.right, "as-err-no-implicit-conversion", {"const " + types.from + "@", types.to + "@"});
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(operands.right), "as-err-no-implicit-conversion",
+                            {"const " + types.from + "@", types.to + "@"});
     }
 }
 
@@ -66,7 +67,8 @@ static void CheckAssignmentOperatorConversion(TSNode node, TSNode right, const C
             if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature) &&
                 sym.GetFunction().modifiers.isDelete)
             {
-                ctx.EmitAtNode(node, "as-err-deleted-method-called", {types.to, "opAssign"});
+                ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-deleted-method-called",
+                                    {types.to, "opAssign"});
                 break;
             }
         }
@@ -83,7 +85,7 @@ static void CheckAssignmentOperatorConversion(TSNode node, TSNode right, const C
         const bool operatorHandlesIt = DeclaresOperatorMethod(types.to, overload, ctx.request.symbolTable);
         if (!operatorHandlesIt && !IsConvertible(types.from, types.to, ctx))
         {
-            ctx.EmitAtNode(right, "as-err-no-implicit-conversion", {types.from, types.to});
+            ctx.EmitAtNodeRange(ToOptionalSourceRange(right), "as-err-no-implicit-conversion", {types.from, types.to});
         }
     }
 }
@@ -175,7 +177,7 @@ static bool CheckNullAssignmentToNonHandle(const SyntaxOperands& assignment, Ass
 
     if (!TypeAcceptsNullHandle(rawLeftType, ctx.request.symbolTable))
     {
-        ctx.EmitAtNode(operands.right, "as-err-null-non-handle", rawLeftType);
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(operands.right), "as-err-null-non-handle", rawLeftType);
     }
     return true;
 }
@@ -196,7 +198,7 @@ static bool CheckRightSideNamespaceOnly(TSNode right, DiagnosticContext& ctx)
                 return false;
             }
         }
-        ctx.EmitAtNode(right, "as-err-undefined-identifier", rightIdent);
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(right), "as-err-undefined-identifier", rightIdent);
         return true;
     }
     return false;
@@ -253,8 +255,8 @@ void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& reques
     }
     else if (types.from.empty() && IsFunctionReference(right, ExpressionTypeContext(scope, ctx)))
     {
-        ctx.EmitAtNode(right, "as-err-no-implicit-conversion",
-                       {TrimString(parser::NodeText(right, ctx.request.sourceCode)), types.to});
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(right), "as-err-no-implicit-conversion",
+                            {TrimString(parser::NodeText(right, ctx.request.sourceCode)), types.to});
     }
 
     CheckHandleConstAssignment({left, right}, types, scope, ctx);

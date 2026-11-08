@@ -382,9 +382,9 @@ Server::ToProtocolDiagnostics(const std::string& text, const std::vector<angel_l
         lspDiag.range.end.line = diag.range.end.line;
         lspDiag.range.end.character = diag.range.end.character;
         lspDiag.severity = ToProtocolSeverity(diag.severity);
-        lspDiag.source = diag.source;
-        std::string displayCode = angel_lsp::analysis::FormatDiagnosticDisplayCode(diag.code);
-        lspDiag.code = diag.code;
+        lspDiag.source = std::string(diag.source);
+        const std::string_view displayCode = angel_lsp::analysis::FormatDiagnosticDisplayCode(diag.code);
+        lspDiag.code = std::string(diag.code);
         if (const std::string_view settingsUri = GetDiagnosticSettingsUri(diag.code); !settingsUri.empty())
         {
             lspDiag.codeDescription = lsp::CodeDescription{lsp::Uri::parse(settingsUri)};

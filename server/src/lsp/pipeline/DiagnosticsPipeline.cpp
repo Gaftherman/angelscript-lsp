@@ -148,12 +148,13 @@ uint64_t DiagnosticsPipeline::NextRevision() noexcept
 }
 
 void DiagnosticsPipeline::SetDiagnosticSeverities(
-    ankerl::unordered_dense::map<std::string, analysis::DiagnosticSeverity> severities)
+    ankerl::unordered_dense::map<std::string, analysis::DiagnosticSeverity, TransparentStringHash, std::equal_to<>>
+        severities)
 {
     m_diagnosticSeverities = std::move(severities);
 }
 
-const ankerl::unordered_dense::map<std::string, analysis::DiagnosticSeverity>&
+const ankerl::unordered_dense::map<std::string, analysis::DiagnosticSeverity, TransparentStringHash, std::equal_to<>>&
 DiagnosticsPipeline::GetDiagnosticSeverities() const noexcept
 {
     return m_diagnosticSeverities;

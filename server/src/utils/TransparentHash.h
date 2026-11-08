@@ -19,9 +19,4 @@ struct TransparentStringHash
     }
 };
 
-namespace analysis
-{
-using TransparentStringHash = angel_lsp::TransparentStringHash;
-} // namespace analysis
-
 } // namespace angel_lsp

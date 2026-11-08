@@ -123,8 +123,8 @@ TEST_CASE("Every predefined stub in this checkout parses and analyses clean")
             if (diagnostic.severity != DiagnosticSeverity::Error)
                 continue;
 
-            errors.push_back("line " + std::to_string(diagnostic.range.start.line + 1) + "  " + diagnostic.code + "  " +
-                             diagnostic.message);
+            errors.push_back("line " + std::to_string(diagnostic.range.start.line + 1) + "  " +
+                             std::string(diagnostic.code) + "  " + diagnostic.message);
         }
 
         // Errors only. A stub legitimately draws warnings and hints - unused declarations are the

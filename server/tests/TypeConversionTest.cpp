@@ -663,7 +663,7 @@ TEST_CASE("TypeConversion - Type Conversion Corpus Audit Across All angelscript 
                 }
 
                 ++totalFlagged;
-                ++byCode[diag.code];
+                ++byCode[std::string(diag.code)];
 
                 // Grouped by the *shape* of the message, with the two type names kept but the
                 // surrounding prose dropped, because 273 individual findings are unreadable and
@@ -1836,12 +1836,12 @@ TEST_CASE("NumericWarnings - Numeric Warning Corpus Audit Across All angelscript
                 }
 
                 flaggedHere = true;
-                ++byCode[diag.code];
+                ++byCode[std::string(diag.code)];
 
                 // 1-based line and column, which is how the compiler reports a position, so the
                 // two dumps can be compared without either side having to be re-indexed.
                 dump.push_back(fileUri.substr(8) + ":" + std::to_string(diag.range.start.line + 1) + ":" +
-                               std::to_string(diag.range.start.character + 1) + " " + diag.code);
+                               std::to_string(diag.range.start.character + 1) + " " + std::string(diag.code));
 
                 if (sample.size() < 40)
                 {

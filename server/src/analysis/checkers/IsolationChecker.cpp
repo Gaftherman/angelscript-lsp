@@ -399,7 +399,7 @@ class IsolationVisitor
             if (!IsSymbolShared(s) && !IsFromPredefinedStub(s, ctx))
             {
                 ctx.LogRule("CheckSharedIsolation", "as-err-shared-cannot-access-non-shared", s);
-                ctx.EmitAtNode(node, "as-err-shared-cannot-access-non-shared", typeName);
+                ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-shared-cannot-access-non-shared", typeName);
                 break;
             }
         }
@@ -447,7 +447,8 @@ class IsolationVisitor
                     if (!s.GetFunction().modifiers.isShared && !IsFromPredefinedStub(s, ctx))
                     {
                         ctx.LogRule("CheckSharedIsolation", "as-err-shared-cannot-access-non-shared", s);
-                        ctx.EmitAtNode(funcNode, "as-err-shared-cannot-access-non-shared", calleeName);
+                        ctx.EmitAtNodeRange(ToOptionalSourceRange(funcNode), "as-err-shared-cannot-access-non-shared",
+                                            calleeName);
                         break;
                     }
                 }
@@ -527,7 +528,8 @@ class IsolationVisitor
                     if (!s.GetVariable().modifiers.isShared && !IsFromPredefinedStub(s, ctx))
                     {
                         ctx.LogRule("CheckSharedIsolation", "as-err-shared-cannot-access-non-shared", s);
-                        ctx.EmitAtNode(node, "as-err-shared-cannot-access-non-shared", varName);
+                        ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-shared-cannot-access-non-shared",
+                                            varName);
                         break;
                     }
                 }

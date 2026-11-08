@@ -176,7 +176,7 @@ std::string FormatViewMixinExpansionTitle(std::string_view mixinName, const i18n
 
 std::string FormatJumpToPhysicalSourceTitle(std::string_view fileUri, const i18n::I18n* i18n)
 {
-    std::string physicalPath = utils::UriToPath(std::string(fileUri));
+    std::string physicalPath = utils::UriToPath(fileUri);
     std::string filename = std::filesystem::path(physicalPath).filename().string();
     if (filename.empty())
     {

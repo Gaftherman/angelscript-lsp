@@ -86,7 +86,7 @@ std::string ResolveStringLiteralPath(std::string_view unquoted, std::string_view
     }
 
     std::error_code ec;
-    std::filesystem::path docPath(utils::UriToPath(std::string(uri)));
+    std::filesystem::path docPath(utils::UriToPath(uri));
     std::filesystem::path candidate = docPath.parent_path() / unquotedStr;
     if (std::filesystem::exists(candidate, ec) && !std::filesystem::is_directory(candidate, ec))
     {

@@ -111,7 +111,7 @@ static void ValidateCandidateReturnTypes(TSNode callNode, const std::vector<Symb
 {
     if (candidates.empty())
     {
-        ctx.EmitAtNode(callNode, "as-err-assign-non-ref-call");
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(callNode), "as-err-assign-non-ref-call");
         return;
     }
 
@@ -140,11 +140,11 @@ static void ValidateCandidateReturnTypes(TSNode callNode, const std::vector<Symb
 
     if (allVoid)
     {
-        ctx.EmitAtNode(callNode, "as-err-assign-void");
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(callNode), "as-err-assign-void");
     }
     else if (!anyReference)
     {
-        ctx.EmitAtNode(callNode, "as-err-assign-non-ref-call");
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(callNode), "as-err-assign-non-ref-call");
     }
 }
 
@@ -375,11 +375,11 @@ static void CheckAssignmentTarget(TSNode node, const AstCheckContext& request, c
     {
         if (const auto dt = IsBareDataType(target, ExpressionTypeContext(scope, ctx)))
         {
-            ctx.EmitAtNode(target, diagnostics::codes::ExpressionIsDataType, *dt);
+            ctx.EmitAtNodeRange(ToOptionalSourceRange(target), diagnostics::codes::ExpressionIsDataType, *dt);
         }
         else
         {
-            ctx.EmitAtNode(target, "as-err-not-lvalue");
+            ctx.EmitAtNodeRange(ToOptionalSourceRange(target), "as-err-not-lvalue");
         }
     }
 }

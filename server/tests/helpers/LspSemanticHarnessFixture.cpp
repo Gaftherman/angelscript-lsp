@@ -364,8 +364,8 @@ HarnessAuditResult LspSemanticHarnessFixture::analyzeWithTelemetry(std::string_v
         lspDiag.range.end.line = diag.range.end.line;
         lspDiag.range.end.character = diag.range.end.character;
         lspDiag.severity = ToLspSeverity(diag.severity);
-        lspDiag.source = diag.source;
-        lspDiag.code = diag.code;
+        lspDiag.source = std::string(diag.source);
+        lspDiag.code = std::string(diag.code);
         lspDiag.message = diag.message;
         result.diagnostics.push_back(std::move(lspDiag));
     }
@@ -432,7 +432,7 @@ void LspSemanticHarnessFixture::AssertNoDiagnostics(const std::string& uri)
         std::string list;
         for (const auto& d : diags)
         {
-            list += "\n  [" + d.code + "] (line " + std::to_string(d.range.start.line) + "): " + d.message;
+            list += "\n  [" + std::string(d.code) + "] (line " + std::to_string(d.range.start.line) + "): " + d.message;
         }
         INFO("Unexpected diagnostics for " << uri << ":" << list);
         CHECK(diags.empty());
@@ -462,7 +462,7 @@ void LspSemanticHarnessFixture::AssertDiagnosticAt(const std::string& uri, uint3
     {
         for (const auto& d : diags)
         {
-            list += "\n  [" + d.code + "] (line " + std::to_string(d.range.start.line) + "): " + d.message;
+            list += "\n  [" + std::string(d.code) + "] (line " + std::to_string(d.range.start.line) + "): " + d.message;
         }
     }
     INFO("Expected diagnostic [" << expectedCode << "] at line " << line << " not found. Actual:" << list);

@@ -19,7 +19,7 @@ void EmitExpressionIsDataType(TSNode node, const DiagnosticContext& ctx, std::st
     {
         return;
     }
-    ctx.EmitAtNode(node, diagnostics::codes::ExpressionIsDataType, dataTypeName);
+    ctx.EmitAtNodeRange(ToOptionalSourceRange(node), diagnostics::codes::ExpressionIsDataType, dataTypeName);
 }
 
 static bool IsUnsignedIntegerPrimitive(std::string_view typeName) noexcept
@@ -136,7 +136,8 @@ void CheckSignedUnsignedComparison(const BinaryExpressionOperands& operands, con
         return;
     }
 
-    ctx.EmitAtNode(opNode, "as-warn-signed-unsigned-mismatch", {leftType, rightType}, DiagnosticSeverity::Warning);
+    ctx.EmitAtNodeRange(ToOptionalSourceRange(opNode), "as-warn-signed-unsigned-mismatch", {leftType, rightType},
+                        DiagnosticSeverity::Warning);
 }
 
 void CheckFloatTruncation(TSNode valueNode, const ConversionTypePair& types, const Scope* scope, DiagnosticContext& ctx)
@@ -153,7 +154,8 @@ void CheckFloatTruncation(TSNode valueNode, const ConversionTypePair& types, con
     {
         return;
     }
-    ctx.EmitAtNode(valueNode, "as-warn-float-truncation", {types.from, types.to}, DiagnosticSeverity::Warning);
+    ctx.EmitAtNodeRange(ToOptionalSourceRange(valueNode), "as-warn-float-truncation", {types.from, types.to},
+                        DiagnosticSeverity::Warning);
 }
 
 } // namespace angel_lsp::analysis

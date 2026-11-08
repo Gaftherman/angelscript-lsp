@@ -72,45 +72,45 @@ class WorkspaceIncludeGraph
 
     /**
      * @brief Scans the workspace and builds the graph from scratch, discarding any previous one.
-     * @param request Bundled build parameters.
+     * @param[in] request Bundled build parameters.
      */
     void Build(const BuildRequest& request);
 
     /**
      * @brief Scans the workspace with default options.
-     * @param workspaceRoots Directories to walk recursively.
-     * @param searchDirectories Extra include search paths.
-     * @param scriptExtension Script file extension (e.g. ".as").
+     * @param[in] workspaceRoots Directories to walk recursively.
+     * @param[in] searchDirectories Extra include search paths.
+     * @param[in] scriptExtension Script file extension (e.g. ".as").
      */
     void Build(const std::vector<std::string>& workspaceRoots, const std::vector<std::string>& searchDirectories,
                std::string_view scriptExtension);
 
     /**
      * @brief Builds the graph from a pre-discovered list of script file paths.
-     * @param request Bundled parameters.
+     * @param[in] request Bundled parameters.
      */
     void BuildFromFiles(const BuildFromFilesRequest& request);
 
     /**
      * @brief Builds the graph from a pre-discovered list of script file paths with default options.
-     * @param scriptFiles Normalized paths of every script file to include in the graph.
-     * @param searchDirectories Extra include search paths.
-     * @param workspaceRoots Directories that define the allowed-roots boundary.
+     * @param[in] scriptFiles Normalized paths of every script file to include in the graph.
+     * @param[in] searchDirectories Extra include search paths.
+     * @param[in] workspaceRoots Directories that define the allowed-roots boundary.
      */
     void BuildFromFiles(const std::vector<std::string>& scriptFiles, const std::vector<std::string>& searchDirectories,
                         const std::vector<std::string>& workspaceRoots);
 
     /**
      * @brief Re-reads one file's directives and patches just its edges.
-     * @param request Bundled parameters.
+     * @param[in] request Bundled parameters.
      */
     void UpdateFile(const UpdateFileRequest& request);
 
     /**
      * @brief Re-reads one file's directives with default options.
-     * @param filePath Any file in the module.
-     * @param sourceCode Source code of the file.
-     * @param searchDirectories Extra include search paths.
+     * @param[in] filePath Any file in the module.
+     * @param[in] sourceCode Source code of the file.
+     * @param[in] searchDirectories Extra include search paths.
      */
     void UpdateFile(const std::string& filePath, std::string_view sourceCode,
                     const std::vector<std::string>& searchDirectories);
@@ -118,7 +118,7 @@ class WorkspaceIncludeGraph
     /**
      * @brief All files that make up the module the given file participates in.
      *        Walks reverse edges up to the module's roots (files nothing includes), then forward edges
-     * @param filePath Any file in the module; need not be normalized.
+     * @param[in] filePath Any file in the module; need not be normalized.
      * @return Normalized paths of every file in the module, including filePath itself.
      */
     std::vector<std::string> GetModuleClosure(const std::string& filePath) const;
@@ -148,7 +148,7 @@ class WorkspaceIncludeGraph
     /**
      * @brief Drops one file from the graph, detaching it from both edge directions.
      *        Called when a file is deleted on disk. Distinct from UpdateFile(path, "", ...), which
-     * @param filePath Path of the removed file; need not be normalized.
+     * @param[in] filePath Path of the removed file; need not be normalized.
      * @return True if the graph had an entry for it.
      */
     bool RemoveFile(const std::string& filePath);

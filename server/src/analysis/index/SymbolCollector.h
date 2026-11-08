@@ -342,7 +342,7 @@ class SymbolCollector
     void EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext& sCtx) const;
     bool TryFormatArgumentListSyntaxError(TSNode node, const SymbolCollectContext& sCtx, Diagnostic& diag) const;
     bool TryFormatMissingSemicolonError(TSNode node, const SymbolCollectContext& sCtx, Diagnostic& diag) const;
-    std::string FormatSyntaxErrorMessage(std::string_view rawErrText, std::string& outCode,
+    std::string FormatSyntaxErrorMessage(std::string_view rawErrText, std::string_view& outCode,
                                          const angel_lsp::i18n::I18n* i18n) const;
 
     // AST/Text Extraction Helpers

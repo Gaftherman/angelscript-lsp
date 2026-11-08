@@ -213,13 +213,16 @@ class DiagnosticsPipeline
      * @brief Sets configured diagnostic severity overrides.
      * @param[in] severities Map of diagnostic code to severity override.
      */
-    void SetDiagnosticSeverities(ankerl::unordered_dense::map<std::string, analysis::DiagnosticSeverity> severities);
+    void SetDiagnosticSeverities(
+        ankerl::unordered_dense::map<std::string, analysis::DiagnosticSeverity, TransparentStringHash, std::equal_to<>>
+            severities);
 
     /**
      * @brief Gets configured diagnostic severity overrides.
      * @return Const reference to severity overrides map.
      */
-    [[nodiscard]] const ankerl::unordered_dense::map<std::string, analysis::DiagnosticSeverity>&
+    [[nodiscard]] const ankerl::unordered_dense::map<std::string, analysis::DiagnosticSeverity, TransparentStringHash,
+                                                     std::equal_to<>>&
     GetDiagnosticSeverities() const noexcept;
 
     /**
@@ -241,7 +244,9 @@ class DiagnosticsPipeline
     /**
      * @brief Direct mutable reference to diagnostic severities map for Server delegation.
      */
-    [[nodiscard]] ankerl::unordered_dense::map<std::string, analysis::DiagnosticSeverity>& GetSeveritiesRef() noexcept
+    [[nodiscard]] ankerl::unordered_dense::map<std::string, analysis::DiagnosticSeverity, TransparentStringHash,
+                                               std::equal_to<>>&
+    GetSeveritiesRef() noexcept
     {
         return m_diagnosticSeverities;
     }
@@ -252,7 +257,8 @@ class DiagnosticsPipeline
     mutable std::mutex m_cacheMutex;
     ankerl::unordered_dense::map<std::string, DiagnosticsSnapshot> m_diagnosticsCache;
     std::atomic<uint64_t> m_diagnosticsRevision{0};
-    ankerl::unordered_dense::map<std::string, analysis::DiagnosticSeverity> m_diagnosticSeverities;
+    ankerl::unordered_dense::map<std::string, analysis::DiagnosticSeverity, TransparentStringHash, std::equal_to<>>
+        m_diagnosticSeverities;
 };
 
 } // namespace angel_lsp

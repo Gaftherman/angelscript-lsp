@@ -235,7 +235,7 @@ static bool CheckLocalCaseConstantness(TSNode value, std::string_view idText, Di
 
     if (def && insideFunction && def->kind == LocalDefinitionKind::Variable)
     {
-        ctx.EmitAtNode(value, "as-err-case-not-constant");
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(value), "as-err-case-not-constant");
         return true;
     }
 
@@ -257,7 +257,7 @@ static void CheckCaseConstantness(TSNode value, std::string_view sourceCode, Dia
         {
             if (s.type == SymbolType::Variable && !s.GetVariable().modifiers.isConst)
             {
-                ctx.EmitAtNode(value, "as-err-case-not-constant");
+                ctx.EmitAtNodeRange(ToOptionalSourceRange(value), "as-err-case-not-constant");
                 reported = true;
                 break;
             }
@@ -270,7 +270,7 @@ static void CheckCaseConstantness(TSNode value, std::string_view sourceCode, Dia
     }
     else if (sym == gs.symCallExpression)
     {
-        ctx.EmitAtNode(value, "as-err-case-not-constant");
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(value), "as-err-case-not-constant");
     }
 }
 
@@ -294,14 +294,14 @@ static void CheckSwitchLabels(std::span<const TSNode> labels, std::string_view s
     {
         if (IsUnusableCaseValue(value, sourceCode))
         {
-            ctx.EmitAtNode(value, "as-err-invalid-case-type");
+            ctx.EmitAtNodeRange(ToOptionalSourceRange(value), "as-err-invalid-case-type");
         }
 
         CheckCaseConstantness(value, sourceCode, ctx);
         const auto text = utils::TrimView(parser::GetNodeTextView(value, sourceCode));
         if (!text.empty() && !seenValues.insert(ComputeCaseKey(text, ctx.request.GetRuleIndex())).second)
         {
-            ctx.EmitAtNode(value, "as-err-duplicate-case-value", text);
+            ctx.EmitAtNodeRange(ToOptionalSourceRange(value), "as-err-duplicate-case-value", text);
         }
     }
 }
@@ -366,7 +366,7 @@ class ControlFlowVisitor
         // `float FS(float f) { return; }` passed every check this analyzer had.
         if (!state.requiredReturn.empty() && state.requiredReturn != "void" && ts_node_named_child_count(node) == 0)
         {
-            m_ctx.EmitAtNode(node, "as-err-return-value-required", state.functionName);
+            m_ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-return-value-required", state.functionName);
         }
 
         // The constructor half of the same rule. Reported here rather than in
@@ -375,7 +375,7 @@ class ControlFlowVisitor
         // return void was the one nothing checked.
         if (state.implicitVoid && ts_node_named_child_count(node) > 0)
         {
-            m_ctx.EmitAtNode(node, "as-err-void-return-value");
+            m_ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-void-return-value");
         }
 
         // `int f() { return null; }` - "No conversion from '<null handle>' to 'int' available."
@@ -387,7 +387,7 @@ class ControlFlowVisitor
             IsNonNullablePrimitiveName(state.requiredReturn) && ts_node_named_child_count(node) == 1 &&
             NodeSymbol(ts_node_named_child(node, 0)) == parser::GetGrammarSymbols().symNullLiteral)
         {
-            m_ctx.EmitAtNode(node, "as-err-null-non-handle", state.requiredReturn);
+            m_ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-null-non-handle", state.requiredReturn);
         }
     }
 
@@ -431,7 +431,8 @@ class ControlFlowVisitor
                                         (m_ctx.request.nodeIndex && m_ctx.request.nodeIndex->NodeHasSyntaxError(body));
             if (!hasSyntaxError && !m_index.CallableBodyDefinitelyReturns(ts_node_start_byte(body)))
             {
-                m_ctx.EmitAtNode(ts_node_is_null(name) ? node : name, "as-err-not-all-paths-return", reportedName);
+                m_ctx.EmitAtNodeRange(ToOptionalSourceRange(ts_node_is_null(name) ? node : name),
+                                      "as-err-not-all-paths-return", reportedName);
             }
         }
 
@@ -451,7 +452,7 @@ class ControlFlowVisitor
         {
             if (state.loopDepth == 0 && state.switchDepth == 0)
             {
-                m_ctx.EmitAtNode(node, "as-err-break-outside-loop");
+                m_ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-break-outside-loop");
             }
             return true;
         }
@@ -459,7 +460,7 @@ class ControlFlowVisitor
         {
             if (state.loopDepth == 0)
             {
-                m_ctx.EmitAtNode(node, "as-err-continue-outside-loop");
+                m_ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-continue-outside-loop");
             }
             return true;
         }

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::analysis
@@ -52,8 +53,8 @@ struct Diagnostic
 {
     DiagnosticRange range;
     DiagnosticSeverity severity = DiagnosticSeverity::Error;
-    std::string code;
-    std::string source = "AngelScript";
+    std::string_view code;
+    std::string_view source = "AngelScript";
     std::string message;
     std::string fileUri;
     std::vector<DiagnosticRelatedInformation> relatedInformation;

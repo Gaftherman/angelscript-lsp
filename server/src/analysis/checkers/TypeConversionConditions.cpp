@@ -178,7 +178,8 @@ static void CheckRefTypeBoolConversion(TSNode condNode, const Scope* scope, Diag
         {
             if (CleanBaseType(sym.GetFunction().returnType) == "bool")
             {
-                ctx.EmitAtNode(current, "as-err-ref-type-bool-conv-disallowed", {baseClass, "bool"});
+                ctx.EmitAtNodeRange(ToOptionalSourceRange(current), "as-err-ref-type-bool-conv-disallowed",
+                                    {baseClass, "bool"});
                 break;
             }
         }

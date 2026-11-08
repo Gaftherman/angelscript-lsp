@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -20,7 +21,7 @@ struct RelatedDiagnosticRequest
 {
     SourceRange range{};
     std::string_view code;
-    std::vector<std::string> args{};
+    std::vector<std::string_view> args{};
     DiagnosticRelatedInformation related;
     DiagnosticSeverity severity = DiagnosticSeverity::Error;
 };
@@ -123,44 +124,47 @@ struct DiagnosticContext
     void EmitAtRange(SourceRange range, std::string_view code, std::initializer_list<std::string_view> args,
                      DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
 
-    // --- Diagnostic Emission for TSNode ---
+    // --- Diagnostic Emission for an optional node range ---
 
     /**
-     * @brief Emits a diagnostic targeting the source range of a Tree-Sitter AST node.
-     * @param[in] node AST node defining the diagnostic source range.
+     * @brief Emits a diagnostic over the range of a syntax node that may be absent.
+     * @param[in] nodeRange Range of the target node, or std::nullopt when the node is absent (nothing is emitted).
      * @param[in] code Diagnostic message code.
      * @param[in] severity Diagnostic severity level.
      */
-    void EmitAtNode(TSNode node, std::string_view code, DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+    void EmitAtNodeRange(std::optional<SourceRange> nodeRange, std::string_view code,
+                         DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
 
     /**
-     * @brief Emits a diagnostic with one formatted argument targeting an AST node.
-     * @param[in] node AST node defining the diagnostic source range.
+     * @brief Emits a diagnostic with one formatted argument over the range of a syntax node that may be absent.
+     * @param[in] nodeRange Range of the target node, or std::nullopt when the node is absent (nothing is emitted).
      * @param[in] code Diagnostic message code.
      * @param[in] arg1 First message argument.
      * @param[in] severity Diagnostic severity level.
      */
-    void EmitAtNode(TSNode node, std::string_view code, std::string_view arg1,
-                    DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+    void EmitAtNodeRange(std::optional<SourceRange> nodeRange, std::string_view code, std::string_view arg1,
+                         DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
 
     /**
-     * @brief Emits a diagnostic with two formatted arguments targeting an AST node.
-     * @param[in] node AST node defining the diagnostic source range.
+     * @brief Emits a diagnostic with two formatted arguments over the range of a syntax node that may be absent.
+     * @param[in] nodeRange Range of the target node, or std::nullopt when the node is absent (nothing is emitted).
      * @param[in] code Diagnostic message code.
      * @param[in] arg1 First message argument.
      * @param[in] arg2 Second message argument.
      */
-    void EmitAtNode(TSNode node, std::string_view code, std::string_view arg1, std::string_view arg2) const;
+    void EmitAtNodeRange(std::optional<SourceRange> nodeRange, std::string_view code, std::string_view arg1,
+                         std::string_view arg2) const;
 
     /**
-     * @brief Emits a diagnostic with an initializer list of arguments targeting an AST node.
-     * @param[in] node AST node defining the diagnostic source range.
+     * @brief Emits a diagnostic with several formatted arguments over the range of a syntax node that may be absent.
+     * @param[in] nodeRange Range of the target node, or std::nullopt when the node is absent (nothing is emitted).
      * @param[in] code Diagnostic message code.
      * @param[in] args Initializer list of message arguments.
      * @param[in] severity Diagnostic severity level.
      */
-    void EmitAtNode(TSNode node, std::string_view code, std::initializer_list<std::string_view> args,
-                    DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
+    void EmitAtNodeRange(std::optional<SourceRange> nodeRange, std::string_view code,
+                         std::initializer_list<std::string_view> args,
+                         DiagnosticSeverity severity = DiagnosticSeverity::Error) const;
 
     // --- Diagnostic Emission with Related Information ---
     void EmitWithRelated(const RelatedDiagnosticRequest& request) const;

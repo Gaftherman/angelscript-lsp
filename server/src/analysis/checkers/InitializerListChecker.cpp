@@ -646,7 +646,8 @@ static void ValidateMultiDimensionalContainer(TSNode node, uint32_t dimension, c
                                  {
                                      if (sym != gs.symInitializerList)
                                      {
-                                         valCtx.ctx.EmitAtNode(child, "as-err-initializer-list-expected", "");
+                                         valCtx.ctx.EmitAtNodeRange(ToOptionalSourceRange(child),
+                                                                    "as-err-initializer-list-expected", "");
                                      }
                                      else
                                      {
@@ -702,7 +703,8 @@ static void ValidateDictionaryPair(TSNode child, const DictInfo& dictInfo, const
     {
         if (ts_node_symbol(keyNode) == gs.symInitializerList)
         {
-            valCtx.ctx.EmitAtNode(keyNode, "as-err-initializer-list-not-supported", dictInfo.keyType);
+            valCtx.ctx.EmitAtNodeRange(ToOptionalSourceRange(keyNode), "as-err-initializer-list-not-supported",
+                                       dictInfo.keyType);
         }
         else
         {
@@ -713,7 +715,8 @@ static void ValidateDictionaryPair(TSNode child, const DictInfo& dictInfo, const
     {
         if (ts_node_symbol(valNode) == gs.symInitializerList)
         {
-            valCtx.ctx.EmitAtNode(valNode, "as-err-initializer-list-not-supported", dictInfo.valType);
+            valCtx.ctx.EmitAtNodeRange(ToOptionalSourceRange(valNode), "as-err-initializer-list-not-supported",
+                                       dictInfo.valType);
         }
         else
         {
@@ -731,31 +734,32 @@ static void ValidateDictionaryPair(TSNode child, const DictInfo& dictInfo, const
 static void ValidateDictionaryList(TSNode listNode, const DictInfo& dictInfo, const ListValidationContext& valCtx)
 {
     const auto& gs = parser::GetGrammarSymbols();
-    parser::ForEachChildNode(listNode,
-                             [&](TSNode child)
-                             {
-                                 if (!ts_node_is_named(child) || ts_node_symbol(child) == gs.symComment)
-                                 {
-                                     return;
-                                 }
-                                 if (ts_node_symbol(child) != gs.symInitializerList)
-                                 {
-                                     valCtx.ctx.EmitAtNode(child, "as-err-initializer-list-expected", "");
-                                     return;
-                                 }
+    parser::ForEachChildNode(
+        listNode,
+        [&](TSNode child)
+        {
+            if (!ts_node_is_named(child) || ts_node_symbol(child) == gs.symComment)
+            {
+                return;
+            }
+            if (ts_node_symbol(child) != gs.symInitializerList)
+            {
+                valCtx.ctx.EmitAtNodeRange(ToOptionalSourceRange(child), "as-err-initializer-list-expected", "");
+                return;
+            }
 
-                                 const uint32_t valuesCount = ListValueCount(child);
-                                 if (valuesCount < 2)
-                                 {
-                                     valCtx.ctx.EmitAtNode(child, "as-err-initializer-list-too-few", "");
-                                 }
-                                 else if (valuesCount > 2)
-                                 {
-                                     valCtx.ctx.EmitAtNode(child, "as-err-initializer-list-too-many", "");
-                                 }
+            const uint32_t valuesCount = ListValueCount(child);
+            if (valuesCount < 2)
+            {
+                valCtx.ctx.EmitAtNodeRange(ToOptionalSourceRange(child), "as-err-initializer-list-too-few", "");
+            }
+            else if (valuesCount > 2)
+            {
+                valCtx.ctx.EmitAtNodeRange(ToOptionalSourceRange(child), "as-err-initializer-list-too-many", "");
+            }
 
-                                 ValidateDictionaryPair(child, dictInfo, valCtx);
-                             });
+            ValidateDictionaryPair(child, dictInfo, valCtx);
+        });
 }
 
 /**
@@ -770,7 +774,7 @@ static void ValidateStructAggregateList(TSNode listNode, const std::string& type
 {
     if (!structInfo.hasListSupport)
     {
-        valCtx.ctx.EmitAtNode(listNode, "as-err-initializer-list-not-supported", type);
+        valCtx.ctx.EmitAtNodeRange(ToOptionalSourceRange(listNode), "as-err-initializer-list-not-supported", type);
         return;
     }
 
@@ -778,12 +782,12 @@ static void ValidateStructAggregateList(TSNode listNode, const std::string& type
     const auto expected = static_cast<uint32_t>(structInfo.fields.size());
     if (written < expected)
     {
-        valCtx.ctx.EmitAtNode(listNode, "as-err-initializer-list-too-few", "");
+        valCtx.ctx.EmitAtNodeRange(ToOptionalSourceRange(listNode), "as-err-initializer-list-too-few", "");
         return;
     }
     if (written > expected)
     {
-        valCtx.ctx.EmitAtNode(listNode, "as-err-initializer-list-too-many", "");
+        valCtx.ctx.EmitAtNodeRange(ToOptionalSourceRange(listNode), "as-err-initializer-list-too-many", "");
         return;
     }
 
@@ -955,7 +959,7 @@ void InitializerListValidator::ValidateList(TSNode listNode, const std::string& 
 
     if (IsUnsupportedTargetType(listNode, type, valCtx))
     {
-        valCtx.ctx.EmitAtNode(listNode, "as-err-initializer-list-not-supported", type);
+        valCtx.ctx.EmitAtNodeRange(ToOptionalSourceRange(listNode), "as-err-initializer-list-not-supported", type);
         return;
     }
 

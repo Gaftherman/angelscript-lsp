@@ -1,5 +1,7 @@
 #include "utils/Utils.h"
 
+#include "parser/Primitives.h"
+
 #include <doctest/doctest.h>
 
 using namespace angel_lsp::utils;
@@ -64,38 +66,38 @@ TEST_CASE("IsPredefinedFile - the configured suffix keeps working alongside it")
 
 TEST_CASE("IsPrimitiveType - standard integer types match")
 {
-    CHECK(IsPrimitiveType("int"));
-    CHECK(IsPrimitiveType("int8"));
-    CHECK(IsPrimitiveType("int16"));
-    CHECK(IsPrimitiveType("int32"));
-    CHECK(IsPrimitiveType("int64"));
-    CHECK(IsPrimitiveType("uint"));
-    CHECK(IsPrimitiveType("uint8"));
-    CHECK(IsPrimitiveType("uint16"));
-    CHECK(IsPrimitiveType("uint32"));
-    CHECK(IsPrimitiveType("uint64"));
+    CHECK(angel_lsp::parser::primitives::IsPrimitive("int"));
+    CHECK(angel_lsp::parser::primitives::IsPrimitive("int8"));
+    CHECK(angel_lsp::parser::primitives::IsPrimitive("int16"));
+    CHECK(angel_lsp::parser::primitives::IsPrimitive("int32"));
+    CHECK(angel_lsp::parser::primitives::IsPrimitive("int64"));
+    CHECK(angel_lsp::parser::primitives::IsPrimitive("uint"));
+    CHECK(angel_lsp::parser::primitives::IsPrimitive("uint8"));
+    CHECK(angel_lsp::parser::primitives::IsPrimitive("uint16"));
+    CHECK(angel_lsp::parser::primitives::IsPrimitive("uint32"));
+    CHECK(angel_lsp::parser::primitives::IsPrimitive("uint64"));
 }
 
 TEST_CASE("IsPrimitiveType - floating point, boolean, and void types match")
 {
-    CHECK(IsPrimitiveType("float"));
-    CHECK(IsPrimitiveType("double"));
-    CHECK(IsPrimitiveType("bool"));
-    CHECK(IsPrimitiveType("void"));
+    CHECK(angel_lsp::parser::primitives::IsPrimitive("float"));
+    CHECK(angel_lsp::parser::primitives::IsPrimitive("double"));
+    CHECK(angel_lsp::parser::primitives::IsPrimitive("bool"));
+    CHECK(angel_lsp::parser::primitives::IsPrimitive("void"));
 }
 
 TEST_CASE("IsPrimitiveType - non-primitive types and user types do not match")
 {
-    CHECK_FALSE(IsPrimitiveType("string"));
-    CHECK_FALSE(IsPrimitiveType("array"));
-    CHECK_FALSE(IsPrimitiveType("dictionary"));
-    CHECK_FALSE(IsPrimitiveType("Vector3"));
-    CHECK_FALSE(IsPrimitiveType("int128"));
-    CHECK_FALSE(IsPrimitiveType("uint128"));
-    CHECK_FALSE(IsPrimitiveType("Int"));
-    CHECK_FALSE(IsPrimitiveType("BOOL"));
-    CHECK_FALSE(IsPrimitiveType(""));
-    CHECK_FALSE(IsPrimitiveType("int32_t"));
+    CHECK_FALSE(angel_lsp::parser::primitives::IsPrimitive("string"));
+    CHECK_FALSE(angel_lsp::parser::primitives::IsPrimitive("array"));
+    CHECK_FALSE(angel_lsp::parser::primitives::IsPrimitive("dictionary"));
+    CHECK_FALSE(angel_lsp::parser::primitives::IsPrimitive("Vector3"));
+    CHECK_FALSE(angel_lsp::parser::primitives::IsPrimitive("int128"));
+    CHECK_FALSE(angel_lsp::parser::primitives::IsPrimitive("uint128"));
+    CHECK_FALSE(angel_lsp::parser::primitives::IsPrimitive("Int"));
+    CHECK_FALSE(angel_lsp::parser::primitives::IsPrimitive("BOOL"));
+    CHECK_FALSE(angel_lsp::parser::primitives::IsPrimitive(""));
+    CHECK_FALSE(angel_lsp::parser::primitives::IsPrimitive("int32_t"));
 }
 
 // =====================================================================================

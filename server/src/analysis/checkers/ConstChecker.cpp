@@ -576,7 +576,7 @@ static void CheckAssignment(TSNode node, const AstCheckContext& request, const S
     std::string memberName;
     if (IsMemberOfThis(actualTarget, encInfo, constCtx, memberName))
     {
-        ctx.EmitAtNode(target, "as-err-readonly-reference", memberName);
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(target), "as-err-readonly-reference", memberName);
         return;
     }
 
@@ -584,7 +584,8 @@ static void CheckAssignment(TSNode node, const AstCheckContext& request, const S
     {
         if (ResolveHandleConstness(actualTarget, constCtx) == Constness::Const)
         {
-            ctx.EmitAtNode(target, "as-err-const-assignment", parser::NodeTextString(target, request.sourceCode));
+            ctx.EmitAtNodeRange(ToOptionalSourceRange(target), "as-err-const-assignment",
+                                parser::NodeTextString(target, request.sourceCode));
         }
         return;
     }
@@ -594,7 +595,8 @@ static void CheckAssignment(TSNode node, const AstCheckContext& request, const S
         return;
     }
 
-    ctx.EmitAtNode(target, "as-err-const-assignment", parser::NodeTextString(target, request.sourceCode));
+    ctx.EmitAtNodeRange(ToOptionalSourceRange(target), "as-err-const-assignment",
+                        parser::NodeTextString(target, request.sourceCode));
 }
 
 /**
@@ -640,8 +642,8 @@ static void CheckMethodCall(TSNode node, const AstCheckContext& request, const S
         return;
     }
 
-    ctx.EmitAtNode(memberNode, "as-err-const-method-required", std::string(LastScopeSegment(method.declaringClass)),
-                   methodName);
+    ctx.EmitAtNodeRange(ToOptionalSourceRange(memberNode), "as-err-const-method-required",
+                        std::string(LastScopeSegment(method.declaringClass)), methodName);
 }
 
 /**

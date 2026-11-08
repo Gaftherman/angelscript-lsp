@@ -23,7 +23,7 @@ static void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Sco
     const std::string expected = CleanBaseType(target->GetFuncdef().returnType);
     if (expected == "void")
     {
-        ctx.EmitAtNode(expr, "as-err-void-return-value");
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-void-return-value");
         return;
     }
 
@@ -36,8 +36,8 @@ static void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Sco
         }
         if (IsFunctionReference(expr, ExpressionTypeContext(scope, ctx)))
         {
-            ctx.EmitAtNode(expr, "as-err-no-implicit-conversion",
-                           {TrimString(parser::NodeText(expr, ctx.request.sourceCode)), expected});
+            ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-no-implicit-conversion",
+                                {TrimString(parser::NodeText(expr, ctx.request.sourceCode)), expected});
             return;
         }
 
@@ -45,7 +45,7 @@ static void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Sco
         CheckFloatTruncation(expr, {actual, expected}, scope, ctx);
         if (!actual.empty() && actual != expected && !IsConvertible(actual, expected, ctx))
         {
-            ctx.EmitAtNode(expr, "as-err-no-implicit-conversion", {actual, expected});
+            ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-no-implicit-conversion", {actual, expected});
         }
     }
 }
@@ -96,11 +96,11 @@ static void CheckReturnReference(TSNode expr, TSNode funcNode, const Scope* scop
 
     if (def->kind == LocalDefinitionKind::Parameter)
     {
-        ctx.EmitAtNode(expr, "as-err-cannot-return-param-ref", exprText);
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-cannot-return-param-ref", exprText);
     }
     else if (def->kind == LocalDefinitionKind::Variable)
     {
-        ctx.EmitAtNode(expr, "as-err-cannot-return-local-ref", exprText);
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-cannot-return-local-ref", exprText);
     }
 }
 
@@ -127,7 +127,7 @@ static void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, co
     const std::string expected = CleanBaseType(rawRetText);
     if (expected == "void")
     {
-        ctx.EmitAtNode(expr, "as-err-void-return-value");
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-void-return-value");
         return;
     }
 
@@ -140,8 +140,8 @@ static void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, co
         }
         if (IsFunctionReference(expr, ExpressionTypeContext(scope, ctx)))
         {
-            ctx.EmitAtNode(expr, "as-err-no-implicit-conversion",
-                           {TrimString(parser::NodeText(expr, ctx.request.sourceCode)), expected});
+            ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-no-implicit-conversion",
+                                {TrimString(parser::NodeText(expr, ctx.request.sourceCode)), expected});
             return;
         }
 
@@ -154,7 +154,7 @@ static void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, co
         CheckFloatTruncation(expr, {actual, expected}, scope, ctx);
         if (!actual.empty() && actual != expected && !IsConvertible(actual, expected, ctx))
         {
-            ctx.EmitAtNode(expr, "as-err-no-implicit-conversion", {actual, expected});
+            ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-no-implicit-conversion", {actual, expected});
         }
     }
 }

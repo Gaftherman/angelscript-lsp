@@ -52,7 +52,7 @@ std::optional<std::vector<lsp::CodeAction>> UnifiedFeatureAuditHarness::RequestC
     for (const auto& d : fileDiags)
     {
         lsp::Diagnostic ld;
-        ld.code = d.code;
+        ld.code = std::string(d.code);
         ld.message = d.message;
         ld.range = lsp::Range{{d.range.start.line, d.range.start.character}, {d.range.end.line, d.range.end.character}};
         context.diagnostics.push_back(std::move(ld));
@@ -186,7 +186,7 @@ std::string UnifiedFeatureAuditHarness::VerifyBadPath(const std::string& relativ
     {
         for (const auto& d : diags)
         {
-            list += "\n  [" + d.code + "] (line " + std::to_string(d.range.start.line) + "): " + d.message;
+            list += "\n  [" + std::string(d.code) + "] (line " + std::to_string(d.range.start.line) + "): " + d.message;
         }
     }
     INFO("Expected diagnostic [" << expectedCode << "] not found. Actual diagnostics:" << list);

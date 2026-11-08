@@ -100,7 +100,7 @@ struct PreprocessorScan
 /**
  * @brief One pass yielding both the excluded ranges and the directives that will not compile.
  *        The two cannot be computed independently: whether a `#else` is an error depends on whether
- * @param reportPragma Whether a surviving `#pragma` counts as unsupported. A stock host rejects
+ * @param[in] reportPragma Whether a surviving `#pragma` counts as unsupported. A stock host rejects
  *        every one - with no callback registered the add-on substitutes a failure and fails the
  */
 PreprocessorScan ScanPreprocessor(std::string_view sourceCode,
@@ -117,8 +117,8 @@ bool IsLineExcluded(const std::vector<ExcludedLineRange>& ranges, uint32_t line)
 /**
  * @brief Blanks out characters in excluded line ranges with spaces, preserving newlines (\\r and \\n).
  *        Replaces non-newline characters in lines identified by `ranges` with spaces (' ').
- * @param sourceCode Document text.
- * @param ranges Non-overlapping line intervals to blank (inclusive startLine and endLine).
+ * @param[in] sourceCode Document text.
+ * @param[in] ranges Non-overlapping line intervals to blank (inclusive startLine and endLine).
  * @return Source code with excluded lines blanked by spaces.
  */
 std::string BlankExcludedLines(std::string_view sourceCode, const std::vector<ExcludedLineRange>& ranges);
@@ -126,7 +126,7 @@ std::string BlankExcludedLines(std::string_view sourceCode, const std::vector<Ex
 /**
  * @brief Words a predefined stub declares with `#define <word>`, in source order.
  *        `#define` is *not* an AngelScript directive and this does not make it one: written in a `.as`
- * @param sourceCode Text of a predefined stub.
+ * @param[in] sourceCode Text of a predefined stub.
  * @return The defined words, with duplicates left in - the caller is inserting into a set.
  */
 std::vector<std::string> ScanDefinedWords(std::string_view sourceCode);

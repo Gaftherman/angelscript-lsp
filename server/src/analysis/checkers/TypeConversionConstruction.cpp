@@ -22,7 +22,7 @@ static bool CheckEnumConstruction(TSNode argument, const std::string& sourceBase
     }
     if (!IsNumericPrimitive(sourceBase) && !ResolvesToEnum(sourceBase, table))
     {
-        ctx.EmitAtNode(argument, "as-err-no-explicit-conversion", {sourceBase, targetType});
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(argument), "as-err-no-explicit-conversion", {sourceBase, targetType});
     }
     return true;
 }
@@ -109,7 +109,8 @@ void CheckConstruction(TSNode argumentListNode, const std::string& targetType, c
 
     if (!IsConstructibleFrom(source.baseName, targetType, binding, ctx))
     {
-        ctx.EmitAtNode(argument, "as-err-no-explicit-conversion", {source.baseName, targetType});
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(argument), "as-err-no-explicit-conversion",
+                            {source.baseName, targetType});
     }
 }
 
@@ -175,11 +176,11 @@ void CheckDefaultConstructor(TSNode declaratorNode, const std::string& typeName,
 
     if (isDeleted)
     {
-        ctx.EmitAtNode(targetNode, "as-err-deleted-method-called", {typeName, typeName});
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(targetNode), "as-err-deleted-method-called", {typeName, typeName});
     }
     else if (!hasZeroArg && !ctx.request.AlwaysImplementsDefaultConstruct())
     {
-        ctx.EmitAtNode(targetNode, "as-err-no-default-constructor", {typeName});
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(targetNode), "as-err-no-default-constructor", {typeName});
     }
 }
 
@@ -202,7 +203,7 @@ static void CheckConstructorDelegationStatement(TSNode stmt, const std::string& 
         TSNode callee = exprOperands.Callee();
         if (!ts_node_is_null(callee) && parser::NodeText(callee, ctx.request.sourceCode) == className)
         {
-            ctx.EmitAtNode(exprOperands.Node(), "as-err-constructor-delegation-disallowed");
+            ctx.EmitAtNodeRange(ToOptionalSourceRange(exprOperands.Node()), "as-err-constructor-delegation-disallowed");
         }
     }
 }

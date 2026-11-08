@@ -66,14 +66,14 @@ void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, 
 
     if (IsFunctionReference(consequence, ExpressionTypeContext(scope, ctx)))
     {
-        ctx.EmitAtNode(consequence, "as-err-no-implicit-conversion",
-                       {TrimString(parser::NodeText(consequence, request.sourceCode)), clean2});
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(consequence), "as-err-no-implicit-conversion",
+                            {TrimString(parser::NodeText(consequence, request.sourceCode)), clean2});
         return;
     }
     if (IsFunctionReference(alternative, ExpressionTypeContext(scope, ctx)))
     {
-        ctx.EmitAtNode(alternative, "as-err-no-implicit-conversion",
-                       {TrimString(parser::NodeText(alternative, request.sourceCode)), clean1});
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(alternative), "as-err-no-implicit-conversion",
+                            {TrimString(parser::NodeText(alternative, request.sourceCode)), clean1});
         return;
     }
 
@@ -84,7 +84,7 @@ void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, 
 
     if (AreTernaryBranchesIncompatible(clean1, clean2, ctx))
     {
-        ctx.EmitAtNode(alternative, "as-err-no-implicit-conversion", {clean2, clean1});
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(alternative), "as-err-no-implicit-conversion", {clean2, clean1});
     }
 }
 
@@ -105,7 +105,7 @@ void ProcessExpressionStatementNode(TSNode node, const TypeConversionCheckReques
 
     if (IsFunctionReference(expr, ExpressionTypeContext(scope, ctx)))
     {
-        ctx.EmitAtNode(expr, diagnostics::codes::IllegalOperation);
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), diagnostics::codes::IllegalOperation);
         return;
     }
 
@@ -125,7 +125,7 @@ void ProcessExpressionStatementNode(TSNode node, const TypeConversionCheckReques
             }
             if (onlyNs)
             {
-                ctx.EmitAtNode(expr, "as-err-undefined-identifier", text);
+                ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-undefined-identifier", text);
             }
         }
     }
@@ -229,7 +229,7 @@ void ProcessForeachNode(TSNode node, const TypeConversionCheckRequest& request, 
     const std::string containerBase = CleanExpressionType(containerType);
     if (IsCorePrimitive(containerBase) && containerBase != "auto" && containerBase != "void")
     {
-        ctx.EmitAtNode(collection, "as-err-invalid-foreach-container", containerBase);
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(collection), "as-err-invalid-foreach-container", containerBase);
     }
 
     if (!containerType.empty() && request.mutableScopeRoot)

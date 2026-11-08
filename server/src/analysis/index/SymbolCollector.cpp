@@ -2536,7 +2536,7 @@ void SymbolCollector::EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext
     }
 }
 
-std::string SymbolCollector::FormatSyntaxErrorMessage(std::string_view rawErrText, std::string& outCode,
+std::string SymbolCollector::FormatSyntaxErrorMessage(std::string_view rawErrText, std::string_view& outCode,
                                                       const angel_lsp::i18n::I18n* i18n) const
 {
     std::string firstToken = ExtractFirstToken(rawErrText);

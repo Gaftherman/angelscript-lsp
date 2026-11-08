@@ -153,7 +153,7 @@ TEST_CASE("Predefined Stub Audit" * doctest::skip(true))
         std::map<std::string, size_t> counts;
         for (const auto& diag : diagnostics)
         {
-            ++counts[diag.code];
+            ++counts[std::string(diag.code)];
         }
 
         if (request.tree)
@@ -203,7 +203,7 @@ TEST_CASE("Predefined Stub Audit" * doctest::skip(true))
         SemanticAnalyzer analyzer(nullptr);
         for (const auto& diag : analyzer.Analyze(request))
         {
-            ++asScript[diag.code];
+            ++asScript[std::string(diag.code)];
         }
         if (request.tree)
         {

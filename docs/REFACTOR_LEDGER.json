@@ -2492,6 +2492,168 @@
         "EngineRuleCheckerTest",
         "InitializerListTest"
       ]
+    },
+    {
+      "id": "REF-M15-URI-STRING-VIEW",
+      "phase": "M15",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/utils/Utils.h",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "UriToPath(const std::string&), PathToUri(const std::string&), ApplyIncrementalChange(const std::string& newText)",
+      "whatItDidAndWhyInThatFile": "Converted URIs to paths and applied LSP edits; the const std::string& signatures forced view callers to build temporaries.",
+      "whyChangedOrDeleted": "The bodies only read their input, so std::string_view parameters serve every caller; CodeActionIncludes, HoverMarkdownLiterals and MixinInclusion drop their std::string(view) wrappers.",
+      "replacedByCanonicalFile": "server/src/utils/Utils.h",
+      "replacedByCanonicalSymbol": "UriToPath",
+      "ramOrCpuImpact": "One heap copy fewer per URI conversion at 3 Layer 2 sites, plus the substr copy on Windows.",
+      "verifiedByTests": [
+        "UtilsTest",
+        "PositionEncodingTest",
+        "CodeActionTest"
+      ]
+    },
+    {
+      "id": "REF-M15-IS-PRIMITIVE-TYPE",
+      "phase": "M15",
+      "action": "CLEAN_SENTINEL",
+      "sourceFile": "server/src/utils/Utils.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "utils::IsPrimitiveType(const std::string&)",
+      "whatItDidAndWhyInThatFile": "Forwarded to parser::primitives::IsPrimitive; only UtilsTest called it.",
+      "whyChangedOrDeleted": "A wrapper with no production caller; the test now checks the canonical predicate directly.",
+      "replacedByCanonicalFile": "server/src/parser/Primitives.h",
+      "replacedByCanonicalSymbol": "IsPrimitive",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "UtilsTest",
+        "PositionEncodingTest",
+        "CodeActionTest"
+      ]
+    },
+    {
+      "id": "REF-M15-ANALYSIS-HASH-ALIAS",
+      "phase": "M15",
+      "action": "CLEAN_SENTINEL",
+      "sourceFile": "server/src/utils/TransparentHash.h",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "namespace analysis { using TransparentStringHash = angel_lsp::TransparentStringHash; }",
+      "whatItDidAndWhyInThatFile": "Re-exported the transparent hash inside angel_lsp::analysis.",
+      "whyChangedOrDeleted": "Ghost alias (Prohibition 15): analysis code already finds angel_lsp::TransparentStringHash by enclosing-namespace lookup, and no code named the qualified alias.",
+      "replacedByCanonicalFile": "server/src/utils/TransparentHash.h",
+      "replacedByCanonicalSymbol": "TransparentStringHash",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "UtilsTest",
+        "PositionEncodingTest",
+        "CodeActionTest"
+      ]
+    },
+    {
+      "id": "REF-M16-EMIT-AT-NODE",
+      "phase": "M16",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/diagnostics/DiagnosticContext.h",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "DiagnosticContext::EmitAtNode(TSNode, ...) x4",
+      "whatItDidAndWhyInThatFile": "Accepted raw Tree-Sitter nodes so checkers could report on a syntax node, skipping null nodes.",
+      "whyChangedOrDeleted": "Diagnostics is a second-pass module (Rule 4.10); the 87 checker call sites now convert the node in first-pass code and pass an optional range.",
+      "replacedByCanonicalFile": "server/src/analysis/diagnostics/DiagnosticContext.h",
+      "replacedByCanonicalSymbol": "EmitAtNodeRange",
+      "ramOrCpuImpact": "None: same null skip, one optional<SourceRange> by value.",
+      "verifiedByTests": [
+        "DiagnosticSuppressionTest",
+        "ServerDomainServicesTest",
+        "CodeActionTest"
+      ]
+    },
+    {
+      "id": "REF-M16-NODE-TO-RANGE",
+      "phase": "M16",
+      "action": "CLEAN_SENTINEL",
+      "sourceFile": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "static NodeToRange(TSNode)",
+      "whatItDidAndWhyInThatFile": "Converted node points to a SourceRange for EmitAtNode.",
+      "whyChangedOrDeleted": "Duplicated ToSourceRange in analysis/index/Symbol.h; the optional variant wraps that one.",
+      "replacedByCanonicalFile": "server/src/analysis/index/Symbol.h",
+      "replacedByCanonicalSymbol": "ToOptionalSourceRange",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "DiagnosticSuppressionTest",
+        "ServerDomainServicesTest",
+        "CodeActionTest"
+      ]
+    },
+    {
+      "id": "REF-M16-SUPPRESSION-COMMENT-FACTS",
+      "phase": "M16",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/diagnostics/DiagnosticSuppression.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "ParseDiagnosticSuppressions: Nodes(symComment) + ts_node_start_byte/end_byte/start_point; const std::string codeKey(NormalizeDiagnosticSelector(...)) per directive token",
+      "whatItDidAndWhyInThatFile": "Walked raw comment nodes to find disable/enable directives.",
+      "whyChangedOrDeleted": "NodeIndex already records every comment's byte span and start line in the first pass.",
+      "replacedByCanonicalFile": "server/src/analysis/index/NodeIndex.h",
+      "replacedByCanonicalSymbol": "CommentRanges",
+      "ramOrCpuImpact": "No node handles or point queries per comment; directive keys are views instead of heap strings.",
+      "verifiedByTests": [
+        "DiagnosticSuppressionTest",
+        "ServerDomainServicesTest",
+        "CodeActionTest"
+      ]
+    },
+    {
+      "id": "REF-M16-SEVERITY-LOOKUP",
+      "phase": "M16",
+      "action": "CLEAN_SENTINEL",
+      "sourceFile": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "CreateDiagnostic: std::string codeStr(code), find(std::string(group)), find(std::string(category))",
+      "whatItDidAndWhyInThatFile": "Copied the code, group and category into strings to probe the severity override map.",
+      "whyChangedOrDeleted": "The override map now uses the transparent hash, so views probe it directly.",
+      "replacedByCanonicalFile": "server/src/utils/TransparentHash.h",
+      "replacedByCanonicalSymbol": "TransparentStringHash",
+      "ramOrCpuImpact": "Up to three heap strings fewer per emitted diagnostic.",
+      "verifiedByTests": [
+        "DiagnosticSuppressionTest",
+        "ServerDomainServicesTest",
+        "CodeActionTest"
+      ]
+    },
+    {
+      "id": "REF-M16-RELATED-ARGS",
+      "phase": "M16",
+      "action": "CLEAN_SENTINEL",
+      "sourceFile": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "RelatedDiagnosticRequest::args as std::vector<std::string>, ApplyMessageFormatting(const std::vector<std::string>&); static std::string FormatFallbackMessage(code, args)",
+      "whatItDidAndWhyInThatFile": "Owned copies of message arguments, then rebuilt a vector of views for formatting.",
+      "whyChangedOrDeleted": "Arguments are only read during the synchronous EmitWithRelated call, so views suffice. The fallback text is now written straight into the diagnostic's message by WriteFallbackMessage instead of returning a temporary string.",
+      "replacedByCanonicalFile": "server/src/analysis/diagnostics/DiagnosticContext.cpp",
+      "replacedByCanonicalSymbol": "ApplyMessageFormatting",
+      "ramOrCpuImpact": "Four string copies and one vector fewer per related diagnostic. One temporary string fewer per fallback message.",
+      "verifiedByTests": [
+        "DiagnosticSuppressionTest",
+        "ServerDomainServicesTest",
+        "CodeActionTest"
+      ]
+    },
+    {
+      "id": "REF-M16-DISPLAY-CODE",
+      "phase": "M16",
+      "action": "CLEAN_SENTINEL",
+      "sourceFile": "server/src/analysis/diagnostics/DiagnosticSuppression.h",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "std::string FormatDiagnosticDisplayCode, DiagnosticSuppression::code as std::string, Diagnostic::code/source as std::string",
+      "whatItDidAndWhyInThatFile": "Copied static aliases, selectors, codes and the source label into owned strings.",
+      "whyChangedOrDeleted": "All of them are static constants or views of the parsed source that outlive their use.",
+      "replacedByCanonicalFile": "server/src/analysis/diagnostics/DiagnosticSuppression.h",
+      "replacedByCanonicalSymbol": "FormatDiagnosticDisplayCode",
+      "ramOrCpuImpact": "Two heap strings fewer per diagnostic and one per suppression.",
+      "verifiedByTests": [
+        "DiagnosticSuppressionTest",
+        "ServerDomainServicesTest",
+        "CodeActionTest"
+      ]
     }
   ]
 }

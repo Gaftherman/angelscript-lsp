@@ -81,7 +81,8 @@ TEST_SUITE("ServerDomainServices")
         CHECK(!pipeline.GetCachedSnapshot(docUri).has_value());
 
         // Diagnostic severities
-        ankerl::unordered_dense::map<std::string, analysis::DiagnosticSeverity> overrides;
+        ankerl::unordered_dense::map<std::string, analysis::DiagnosticSeverity, TransparentStringHash, std::equal_to<>>
+            overrides;
         overrides["as-err-test"] = analysis::DiagnosticSeverity::Warning;
         pipeline.SetDiagnosticSeverities(overrides);
         CHECK(pipeline.GetDiagnosticSeverities().size() == 1);

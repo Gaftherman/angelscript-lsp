@@ -35,11 +35,11 @@ void ProcessCallOrConstructNode(TSNode node, const TypeConversionCheckRequest& r
     const NonInstantiableKind calleeNonInst = ClassifyNonInstantiable(calleeName, ctx.request.symbolTable);
     if (calleeNonInst == NonInstantiableKind::Abstract)
     {
-        ctx.EmitAtNode(node, "as-err-abstract-instantiated", {calleeName, calleeName});
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-abstract-instantiated", {calleeName, calleeName});
     }
     else if (calleeNonInst == NonInstantiableKind::Mixin)
     {
-        ctx.EmitAtNode(node, "as-err-mixin-not-a-type", calleeName);
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-mixin-not-a-type", calleeName);
     }
     else if (calleeFuncdef)
     {

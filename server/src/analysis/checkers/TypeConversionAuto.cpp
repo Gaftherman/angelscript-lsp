@@ -62,14 +62,14 @@ void ProcessAutoDeclarator(const SyntaxOperands& declarator, const TypeConversio
 
     if (ts_node_is_null(valueNode))
     {
-        ctx.EmitAtNode(declarator.Node(), "as-err-auto-requires-initializer");
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(declarator.Node()), "as-err-auto-requires-initializer");
         return;
     }
 
     const Scope* scope = ResolveNodeScope(declarator.Node(), request);
     if (IsCyclicAutoDependency(valueNode, nameNode, scope, request))
     {
-        ctx.EmitAtNode(valueNode, "as-err-cyclic-auto-dependency", varName);
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(valueNode), "as-err-cyclic-auto-dependency", varName);
         return;
     }
 
@@ -83,11 +83,11 @@ void ProcessAutoDeclarator(const SyntaxOperands& declarator, const TypeConversio
 
     if (rhsType == "void")
     {
-        ctx.EmitAtNode(valueNode, "as-err-cannot-infer-void");
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(valueNode), "as-err-cannot-infer-void");
     }
     else if (rhsType == "null")
     {
-        ctx.EmitAtNode(valueNode, "as-err-cannot-infer-null");
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(valueNode), "as-err-cannot-infer-null");
     }
     else if (!rhsType.empty() && request.mutableScopeRoot && scope)
     {

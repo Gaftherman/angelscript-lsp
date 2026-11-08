@@ -241,11 +241,12 @@ void CheckAssignmentPropertyAccess(TSNode node, const Scope* scope, DiagnosticCo
         {
             if (opSym != gs.tokAssign)
             {
-                ctx.EmitAtNode(node, "as-err-compound-assign-on-indexed-prop", pInfo.propName);
+                ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-compound-assign-on-indexed-prop",
+                                    pInfo.propName);
             }
             if (!pInfo.hasSet && pInfo.hasGet)
             {
-                ctx.EmitAtNode(left, "as-err-read-only-property", pInfo.propName);
+                ctx.EmitAtNodeRange(ToOptionalSourceRange(left), "as-err-read-only-property", pInfo.propName);
             }
         }
     }
@@ -256,11 +257,12 @@ void CheckAssignmentPropertyAccess(TSNode node, const Scope* scope, DiagnosticCo
         {
             if (!pInfo.hasSet && pInfo.hasGet)
             {
-                ctx.EmitAtNode(left, "as-err-read-only-property", pInfo.propName);
+                ctx.EmitAtNodeRange(ToOptionalSourceRange(left), "as-err-read-only-property", pInfo.propName);
             }
             else if (opSym != gs.tokAssign && !IsHandleTypeView(pInfo.receiverType))
             {
-                ctx.EmitAtNode(node, "as-err-compound-assign-on-value-prop", pInfo.propName);
+                ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-compound-assign-on-value-prop",
+                                    pInfo.propName);
             }
         }
     }

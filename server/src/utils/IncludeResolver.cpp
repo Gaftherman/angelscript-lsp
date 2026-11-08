@@ -63,7 +63,7 @@ static std::string CanonicalDirectory(const std::filesystem::path& directory)
 
 /**
  * @brief Normalizes a filesystem path to use standard forward slashes and strips Windows long-path prefixes.
- * @param p The path to normalize.
+ * @param[in] p The path to normalize.
  * @return Normalized path string with forward slashes.
  */
 static std::string TrimAndSlash(std::string s)

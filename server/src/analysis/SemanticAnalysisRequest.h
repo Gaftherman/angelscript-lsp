@@ -12,8 +12,10 @@
 #include "parser/ASTUtils.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/StopFlag.h"
+#include "utils/TransparentHash.h"
 
 #include <ankerl/unordered_dense.h>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -79,7 +81,8 @@ struct SemanticAnalysisRequest
     ankerl::unordered_dense::set<std::string> moduleFileUris;
     const i18n::I18n* i18n = nullptr;
     const config::TypeConfig* typeConfig = nullptr;
-    const ankerl::unordered_dense::map<std::string, DiagnosticSeverity>* severityOverrides = nullptr;
+    const ankerl::unordered_dense::map<std::string, DiagnosticSeverity, TransparentStringHash, std::equal_to<>>*
+        severityOverrides = nullptr;
 
     /**
      * @brief The host engine's compile-time options, or nullptr for the engine's own defaults.

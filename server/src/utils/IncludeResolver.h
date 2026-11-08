@@ -104,7 +104,7 @@ class IncludeResolver
     /**
      * @brief Scans source code and extracts all #include directives.
      *        Correctly skips directives appearing in single-line comments (//),
-     * @param sourceCode The AngelScript source code to analyze.
+     * @param[in] sourceCode The AngelScript source code to analyze.
      * @return A vector of extracted IncludeDirective structs with rawPath, line, and isAngled populated.
      */
     static std::vector<IncludeDirective> ExtractIncludes(std::string_view sourceCode);
@@ -112,7 +112,7 @@ class IncludeResolver
     /**
      * @brief The same, minus every directive the preprocessor removes before compilation.
      *        An `#include` inside a dead `#if` is not an include. CScriptBuilder blanks the whole
-     * @param excludedLines Ranges from utils::FindExcludedLineRanges. Empty behaves exactly
+     * @param[in] excludedLines Ranges from utils::FindExcludedLineRanges. Empty behaves exactly
      *        like the overload above.
      */
     static std::vector<IncludeDirective> ExtractIncludes(std::string_view sourceCode,
@@ -121,7 +121,7 @@ class IncludeResolver
     /**
      * @brief Canonicalizes a path to the single spelling the rest of the server compares against.
      *        Resolves symlinks and ".." where possible, strips Windows long-path prefixes, and
-     * @param path The path to normalize.
+     * @param[in] path The path to normalize.
      * @return Normalized path string.
      */
     static std::string NormalizePath(const std::filesystem::path& path);
@@ -194,9 +194,9 @@ class IncludeResolver
     /**
      * @brief Recursively discovers all resolved include files starting from rootFilePath.
      *        Guards against cyclic dependencies and diamond include patterns using visited tracking.
-     * @param rootFilePath The entry-point file path to start resolution from.
-     * @param searchDirectories Ordered list of search paths.
-     * @param fileReader Optional callback to load file content given its resolved path.
+     * @param[in] rootFilePath The entry-point file path to start resolution from.
+     * @param[in] searchDirectories Ordered list of search paths.
+     * @param[in] fileReader Optional callback to load file content given its resolved path.
      *        If not provided or null, defaults to reading from disk via std::ifstream.
      * @return Ordered vector of unique resolved file paths discovered in the include tree.
      */

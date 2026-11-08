@@ -886,7 +886,9 @@ lsp::SemanticTokens Server::ComputeAndCacheSemanticTokens(const std::string& uri
 static void BuildDiagnosticSeverityOverrides(DiagnosticsPipeline* pipeline,
                                              const angel_lsp::config::ServerConfig& config, utils::LspLogger* logger)
 {
-    ankerl::unordered_dense::map<std::string, angel_lsp::analysis::DiagnosticSeverity> severities;
+    ankerl::unordered_dense::map<std::string, angel_lsp::analysis::DiagnosticSeverity, angel_lsp::TransparentStringHash,
+                                 std::equal_to<>>
+        severities;
 
     for (const auto& [code, severityName] : config.diagnosticSeverities)
     {

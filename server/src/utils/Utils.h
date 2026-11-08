@@ -11,11 +11,22 @@
 
 namespace angel_lsp::utils
 {
-std::string UriToPath(const std::string& uri);
-std::string PathToUri(const std::string& filePath);
+/**
+ * @brief Converts a `file://` URI (or bare path) into a percent-decoded filesystem path.
+ * @param[in] uri Document URI or path; query and fragment parts are dropped.
+ * @return Decoded path; on Windows the leading `/` before the drive letter is removed.
+ */
+std::string UriToPath(std::string_view uri);
+
+/**
+ * @brief Converts a filesystem path into a `file://` URI with forward slashes.
+ * @param[in] filePath Absolute or relative filesystem path.
+ * @return `file:///` URI for the path; `file:///` alone when the path is empty.
+ */
+std::string PathToUri(std::string_view filePath);
 /**
  * @brief Decodes percent-encoded characters in a URI or URI component (e.g. %3A%3A -> ::, %20 -> space).
- * @param in Input string containing percent-encoded sequences.
+ * @param[in] in Input string containing percent-encoded sequences.
  * @return Decoded string.
  */
 std::string UrlDecode(std::string_view in);
@@ -29,10 +40,10 @@ std::string UrlDecode(std::string_view in);
 bool TextContentMatchesIgnoringLineEndings(std::string_view a, std::string_view b) noexcept;
 /**
  * @brief Converts an LSP position into a byte offset into the document text.
- * @param text Full document text (UTF-8).
- * @param line 0-indexed line number.
- * @param character Character offset within the line, in the negotiated encoding.
- * @param enc The position encoding negotiated with the client.
+ * @param[in] text Full document text (UTF-8).
+ * @param[in] line 0-indexed line number.
+ * @param[in] character Character offset within the line, in the negotiated encoding.
+ * @param[in] enc The position encoding negotiated with the client.
  * @return Byte offset, clamped to the end of the line and then to the end of the text.
  */
 size_t PositionToOffset(std::string_view text, uint32_t line, uint32_t character,
@@ -56,21 +67,21 @@ struct TextChangeRange
  * @param[in] newText Replacement text to insert.
  * @param[in] enc The position encoding negotiated with the client - the range is expressed in it.
  */
-void ApplyIncrementalChange(std::string& buffer, const TextChangeRange& range, const std::string& newText,
+void ApplyIncrementalChange(std::string& buffer, const TextChangeRange& range, std::string_view newText,
                             PositionEncoding enc);
 /**
  * @brief Checks whether a file is a predefined stub describing the host application's API.
  *        Two spellings count. One is the configured suffix, which this project writes as
- * @param fileUri URI or path of the file.
- * @param extension Configured stub suffix, e.g. ".as.predefined". Empty disables suffix matching.
+ * @param[in] fileUri URI or path of the file.
+ * @param[in] extension Configured stub suffix, e.g. ".as.predefined". Empty disables suffix matching.
  * @return True if the file should be treated as a stub.
  */
-bool IsPredefinedFile(const std::string_view& fileUri, const std::string_view extension);
+bool IsPredefinedFile(std::string_view fileUri, std::string_view extension);
 
 /**
  * @brief Sanitizes predefined stub content before parsing by blanking inline list patterns.
  *        Native AngelScript stubs (.predefined files) can contain documentation notation for list factories:
- * @param source The stub's full text.
+ * @param[in] source The stub's full text.
  * @return Sanitized text where inline patterns are replaced by spaces.
  */
 std::string SanitizePredefinedContent(std::string_view source);
@@ -92,13 +103,6 @@ bool IsExcludedPath(std::string_view path, const std::vector<std::string>& patte
  * never
  */
 bool IsExcludedDirectory(std::string_view path, const std::vector<std::string>& patterns);
-
-/**
- * @brief Checks whether the given type name is a standard AngelScript primitive type.
- * @param typeName The name of the type to check.
- * @return True if the type is a standard AngelScript primitive type; otherwise false.
- */
-bool IsPrimitiveType(const std::string& typeName);
 
 /**
  * @brief Checks whether a target path is strictly contained within a root directory.

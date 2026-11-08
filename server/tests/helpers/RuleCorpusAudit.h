@@ -169,14 +169,15 @@ RunCorpusAudit(const std::function<bool(const std::string&)>& interesting, size_
 
             for (const auto& diag : diagnostics)
             {
-                if (!interesting(diag.code))
+                const std::string code(diag.code);
+                if (!interesting(code))
                 {
                     continue;
                 }
-                ++result.countByCode[diag.code];
+                ++result.countByCode[code];
                 if (result.hits.size() < maxHits)
                 {
-                    result.hits.push_back({fileUri.substr(8), diag.range.start.line + 1, diag.code, diag.message});
+                    result.hits.push_back({fileUri.substr(8), diag.range.start.line + 1, code, diag.message});
                 }
             }
 

@@ -73,7 +73,7 @@ static bool CheckLambdaFuncdefAssignment(TSNode targetNode, const FuncdefSignatu
     if (!ts_node_is_null(listNode) && LambdaContradictsFuncdef(ReadLambdaParameters(listNode, ctx.request.sourceCode),
                                                                funcdefSig, ctx.request.symbolTable))
     {
-        ctx.EmitAtNode(targetNode, "as-err-signature-mismatch-func-handle");
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(targetNode), "as-err-signature-mismatch-func-handle");
     }
     return true;
 }
@@ -107,7 +107,7 @@ static void CheckNamedFunctionFuncdefAssignment(TSNode targetNode, const Funcdef
 
     if (!HasMatchingFuncdefCandidate(candidates, funcdefSig))
     {
-        ctx.EmitAtNode(targetNode, "as-err-signature-mismatch-func-handle");
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(targetNode), "as-err-signature-mismatch-func-handle");
     }
 }
 

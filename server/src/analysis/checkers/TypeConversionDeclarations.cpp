@@ -94,14 +94,15 @@ static void CheckUnknownInitializerSource(TSNode valueNode, const DeclaredType& 
     }
     if (isNamespace)
     {
-        ctx.EmitAtNode(valueNode, "as-err-undefined-identifier", identName);
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(valueNode), "as-err-undefined-identifier", identName);
         return;
     }
 
     if (!FindFuncdef(declared.baseName, ctx.request.symbolTable) &&
         IsFunctionReference(valueNode, ExpressionTypeContext(scope, ctx)))
     {
-        ctx.EmitAtNode(valueNode, "as-err-no-implicit-conversion", {identName, declared.baseName});
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(valueNode), "as-err-no-implicit-conversion",
+                            {identName, declared.baseName});
     }
 }
 
@@ -114,14 +115,15 @@ static void CheckHandleInitializer(TSNode valueNode, const ExpressionType& sourc
     }
     if (source.isLiteral)
     {
-        ctx.EmitAtNode(valueNode, "as-err-no-implicit-conversion", {source.baseName, declared.baseName});
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(valueNode), "as-err-no-implicit-conversion",
+                            {source.baseName, declared.baseName});
         return;
     }
 
     if (source.isConst && !declared.qualifiers.isConst)
     {
-        ctx.EmitAtNode(valueNode, "as-err-no-implicit-conversion",
-                       {"const " + source.baseName + "@", declared.baseName + "@"});
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(valueNode), "as-err-no-implicit-conversion",
+                            {"const " + source.baseName + "@", declared.baseName + "@"});
         return;
     }
 
@@ -136,8 +138,8 @@ static void CheckHandleInitializer(TSNode valueNode, const ExpressionType& sourc
         const auto hierarchy = GetInheritedTypeHierarchy(declared.baseName, ctx.request.symbolTable);
         if (std::find(hierarchy.begin(), hierarchy.end(), source.baseName) != hierarchy.end())
         {
-            ctx.EmitAtNode(valueNode, "as-err-no-implicit-conversion",
-                           {source.baseName + "@", declared.baseName + "@"});
+            ctx.EmitAtNodeRange(ToOptionalSourceRange(valueNode), "as-err-no-implicit-conversion",
+                                {source.baseName + "@", declared.baseName + "@"});
         }
     }
 }
@@ -180,7 +182,8 @@ void CheckInitializer(TSNode declaratorNode, const DeclaredType& declared, const
 
     if (!IsConvertible(source.baseName, declared.baseName, ctx))
     {
-        ctx.EmitAtNode(valueNode, "as-err-no-implicit-conversion", {source.baseName, declared.baseName});
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(valueNode), "as-err-no-implicit-conversion",
+                            {source.baseName, declared.baseName});
     }
 }
 
@@ -195,7 +198,8 @@ void CheckDeclaratorConstruction(TSNode child, const DeclaredType& declared, con
     const NonInstantiableKind nonInst = ClassifyNonInstantiable(declared.baseName, ctx.request.symbolTable);
     if (nonInst == NonInstantiableKind::Abstract)
     {
-        ctx.EmitAtNode(child, "as-err-abstract-instantiated", {declared.baseName, declared.baseName});
+        ctx.EmitAtNodeRange(ToOptionalSourceRange(child), "as-err-abstract-instantiated",
+                            {declared.baseName, declared.baseName});
         return;
     }
 

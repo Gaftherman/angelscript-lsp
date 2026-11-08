@@ -234,7 +234,7 @@ void TryAddUnresolvedIncludeSuggestions(const CodeActionQuery& query, std::vecto
     {
         return;
     }
-    const std::string includerPath = angel_lsp::utils::UriToPath(std::string(query.uri));
+    const std::string includerPath = angel_lsp::utils::UriToPath(query.uri);
     if (includerPath.empty())
     {
         return;

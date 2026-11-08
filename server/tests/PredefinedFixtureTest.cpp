@@ -402,7 +402,7 @@ TEST_CASE("PredefinedFixture - The declared list patterns are enforced")
         {
             if (d.code == "as-err-initializer-list-not-supported" || d.code == "as-err-initializer-list-expected")
             {
-                codes.push_back(d.code);
+                codes.emplace_back(d.code);
             }
         }
         return codes;
