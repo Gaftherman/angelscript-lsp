@@ -5,6 +5,7 @@
 #include "parser/ASTUtils.h"
 #include "parser/AngelScriptParser.h"
 #include "parser/GrammarNames.h"
+#include "parser/SyntaxTree.h"
 
 #include <algorithm>
 #include <doctest/doctest.h>
@@ -77,7 +78,7 @@ TEST_CASE("AstStructuralTraversal - Template brackets get templatePunctuation to
                              "    bool cmp = " + varA + " < " + varB + ";\n" + "}\n";
 
     AngelScriptParser parser;
-    document::TreePtr tree = document::MakeTreePtr(parser.Parse(code));
+    parser::TreePtr tree = parser::MakeTreePtr(parser.Parse(code));
     REQUIRE(tree != nullptr);
 
     SymbolTable table;
@@ -118,7 +119,7 @@ TEST_CASE("AstStructuralTraversal - Clean file error bypass and O(1) symbols par
     const std::string code = std::string("void ") + fnName + "()\n{\n    int " + varName + " = 100;\n}\n";
 
     AngelScriptParser parser;
-    document::TreePtr tree = document::MakeTreePtr(parser.Parse(code));
+    parser::TreePtr tree = parser::MakeTreePtr(parser.Parse(code));
     REQUIRE(tree != nullptr);
 
     TSNode root = ts_tree_root_node(tree.get());

@@ -25,6 +25,7 @@
 #include "features/type_hierarchy/TypeHierarchyHandler.h"
 #include "features/workspace_symbol/WorkspaceSymbolHandler.h"
 #include "lsp/state/PositionCodec.h"
+#include "parser/SyntaxTree.h"
 #include "utils/Constants.h"
 #include "utils/MultiFileLogger.h"
 #include "utils/PreprocessorRegions.h"
@@ -982,7 +983,7 @@ std::shared_ptr<const document::Document> Server::ResolveVirtualDocument(const s
     {
         return nullptr;
     }
-    document::TreePtr tree = m_parser ? document::MakeTreePtr(m_parser->Parse(text)) : document::MakeTreePtr(nullptr);
+    parser::TreePtr tree = m_parser ? parser::MakeTreePtr(m_parser->Parse(text)) : parser::MakeTreePtr(nullptr);
     GetDocumentStore().OpenDocument(DocumentStore::OpenDocumentRequest{key, text, 0, std::move(tree), key});
     return GetDocumentStore().GetDocument(key);
 }

@@ -1,6 +1,7 @@
 #include "analysis/types/EngineConfigConverter.h"
 #include "analysis/types/EngineProfiles.h"
 #include "lsp/Server.h"
+#include "parser/SyntaxTree.h"
 #include "utils/IncludeResolver.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/Timer.h"
@@ -453,7 +454,7 @@ static std::optional<std::string> ReadPredefinedFile(const std::string& normPath
     return sanitized;
 }
 
-void Server::CommitPredefinedIndex(const std::string& uri, const std::string& content, document::TreePtr tree)
+void Server::CommitPredefinedIndex(const std::string& uri, const std::string& content, parser::TreePtr tree)
 {
     m_scopeIndex.ClearDocument(uri);
     m_callGraph.ClearDocument(uri);
@@ -484,7 +485,7 @@ PredefinedIndexTiming Server::IndexAndCommitPredefinedStub(const std::string& ur
                                                            angel_lsp::parser::AngelScriptParser& parser)
 {
     utils::HighResTimer parseTimer;
-    document::TreePtr tree = document::MakeTreePtr(parser.Parse(content));
+    parser::TreePtr tree = parser::MakeTreePtr(parser.Parse(content));
     double parseMs = parseTimer.ElapsedMs();
 
     utils::HighResTimer symTimer;

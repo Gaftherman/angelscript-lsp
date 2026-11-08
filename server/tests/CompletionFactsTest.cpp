@@ -3,6 +3,7 @@
 #include "document/Document.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/SyntaxTree.h"
 
 #include <doctest/doctest.h>
 #include <optional>
@@ -33,7 +34,7 @@ TEST_CASE("CompletionFacts - member receiver range covers the expression before 
     SUBCASE("plain identifier and chained member")
     {
         const std::string code = "void " + fn + "()\n{\n    " + obj + "." + field + ".x;\n}\n";
-        document::TreePtr tree = document::MakeTreePtr(parser.Parse(code));
+        parser::TreePtr tree = parser::MakeTreePtr(parser.Parse(code));
         test::NodeIndexFixture fx(tree.get());
 
         const auto firstDot = static_cast<uint32_t>(code.find(obj + ".") + obj.size());
@@ -47,7 +48,7 @@ TEST_CASE("CompletionFacts - member receiver range covers the expression before 
     {
         const std::string code =
             "void " + fn + "()\n{\n    " + obj + "()." + field + ";\n    " + obj + "[0]." + field + ";\n}\n";
-        document::TreePtr tree = document::MakeTreePtr(parser.Parse(code));
+        parser::TreePtr tree = parser::MakeTreePtr(parser.Parse(code));
         test::NodeIndexFixture fx(tree.get());
 
         const auto callDot = static_cast<uint32_t>(code.find("().") + 2);
@@ -60,7 +61,7 @@ TEST_CASE("CompletionFacts - member receiver range covers the expression before 
     SUBCASE("incomplete member access while typing")
     {
         const std::string code = "void " + fn + "()\n{\n    " + obj + ".\n}\n";
-        document::TreePtr tree = document::MakeTreePtr(parser.Parse(code));
+        parser::TreePtr tree = parser::MakeTreePtr(parser.Parse(code));
         test::NodeIndexFixture fx(tree.get());
 
         const auto dot = static_cast<uint32_t>(code.find(obj + ".") + obj.size());
@@ -87,7 +88,7 @@ TEST_CASE("CompletionFacts - class body outside callable stops at the first func
     const std::string code = "class " + cls + "\n{\n    int " + member + ";\n    void " + method +
                              "()\n    {\n        int x = 0;\n    }\n}\ninterface " + iface + "\n{\n    void " + method +
                              "();\n}\nvoid " + method + "()\n{\n    int y = 1;\n}\n";
-    document::TreePtr tree = document::MakeTreePtr(parser.Parse(code));
+    parser::TreePtr tree = parser::MakeTreePtr(parser.Parse(code));
     test::NodeIndexFixture fx(tree.get());
 
     CHECK(analysis::IsInClassBodyOutsideCallable(fx.index, 2, 2));

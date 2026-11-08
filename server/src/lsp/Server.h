@@ -23,6 +23,7 @@
 #include "lsp/state/SyntaxRevisionCache.h"
 #include "lsp/state/WorkspaceStateStore.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/SyntaxTree.h"
 #include "utils/LspLogger.h"
 #include "utils/PositionEncoding.h"
 #include "utils/PreprocessorRegions.h"
@@ -350,7 +351,7 @@ class Server
                                                        parser::AngelScriptParser& parser);
     void ParserPredefinedInternal(const std::string& filePath, parser::AngelScriptParser& parser, bool forceReload,
                                   std::unordered_set<std::string>& visited);
-    void CommitPredefinedIndex(const std::string& uri, const std::string& content, document::TreePtr tree);
+    void CommitPredefinedIndex(const std::string& uri, const std::string& content, parser::TreePtr tree);
     std::vector<std::string> LoadConfiguredPredefinedFiles(parser::AngelScriptParser& parser,
                                                            const utils::StopFlag& stopToken);
     void UnloadUnselectedPredefinedStubs(const std::vector<std::string>& wantedPaths);
@@ -452,7 +453,7 @@ class Server
     void ScheduleAnalysisImmediate(ScheduleAnalysisRequest req);
     [[nodiscard]] bool IsAnalyzeDocumentStale(const AnalyzeDocumentRequest& req) const;
     void StorePredefinedSnapshot(const AnalyzeDocumentRequest& req, const std::string& analysisText,
-                                 const document::TreePtr& tree, bool contributes);
+                                 const parser::TreePtr& tree, bool contributes);
     bool TryZeroCopyPredefinedAnalysis(const AnalyzeDocumentRequest& req, const std::string& analysisText,
                                        const utils::HighResTimer& totalTimer);
     void AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::HighResTimer& totalTimer);

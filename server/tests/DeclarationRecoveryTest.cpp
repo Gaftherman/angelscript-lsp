@@ -6,6 +6,7 @@
 #include "helpers/LspSemanticHarnessFixture.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/SyntaxTree.h"
 #include "spdlog/fmt/fmt.h"
 
 #include <doctest/doctest.h>
@@ -145,7 +146,7 @@ TEST_SUITE("DeclarationRecovery")
                                                      className, methodName);
 
         SymbolTable stagingTable;
-        angel_lsp::document::TreePtr brokenTree = angel_lsp::document::MakeTreePtr(parser.Parse(brokenSource));
+        angel_lsp::parser::TreePtr brokenTree = angel_lsp::parser::MakeTreePtr(parser.Parse(brokenSource));
         REQUIRE(brokenTree != nullptr);
         CHECK(ts_node_has_error(ts_tree_root_node(brokenTree.get())));
 

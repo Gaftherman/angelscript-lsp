@@ -3,7 +3,9 @@
 #include "helpers/TestUtils.h"
 
 #include <doctest/doctest.h>
+#include <ostream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 using angel_lsp::i18n::I18n;
@@ -17,25 +19,25 @@ TEST_CASE("I18n - A region-qualified tag selects the language")
     // The tag arrives from the client's initialize params, where BCP 47 is the rule, and from
     // --locale, which this project's own README documents as `es-ES`. Comparing the whole tag sent
     // every one of these to English.
-    const std::string spanish = I18n("es").GetMessage("as-err-void-variable");
+    const std::string_view spanish = I18n("es").GetMessageView("as-err-void-variable");
 
-    CHECK(I18n("es-ES").GetMessage("as-err-void-variable") == spanish);
-    CHECK(I18n("es-419").GetMessage("as-err-void-variable") == spanish);
-    CHECK(I18n("es_MX").GetMessage("as-err-void-variable") == spanish);
-    CHECK(I18n("ES").GetMessage("as-err-void-variable") == spanish);
+    CHECK(I18n("es-ES").GetMessageView("as-err-void-variable") == spanish);
+    CHECK(I18n("es-419").GetMessageView("as-err-void-variable") == spanish);
+    CHECK(I18n("es_MX").GetMessageView("as-err-void-variable") == spanish);
+    CHECK(I18n("ES").GetMessageView("as-err-void-variable") == spanish);
 }
 
 TEST_CASE("I18n - Spanish and English differ, so the check above means something")
 {
-    CHECK(I18n("es").GetMessage("as-err-void-variable") != I18n("en").GetMessage("as-err-void-variable"));
+    CHECK(I18n("es").GetMessageView("as-err-void-variable") != I18n("en").GetMessageView("as-err-void-variable"));
 }
 
 TEST_CASE("I18n - An unknown language falls back to English")
 {
-    const std::string english = I18n("en").GetMessage("as-err-void-variable");
+    const std::string_view english = I18n("en").GetMessageView("as-err-void-variable");
 
-    CHECK(I18n("fr-FR").GetMessage("as-err-void-variable") == english);
-    CHECK(I18n("").GetMessage("as-err-void-variable") == english);
+    CHECK(I18n("fr-FR").GetMessageView("as-err-void-variable") == english);
+    CHECK(I18n("").GetMessageView("as-err-void-variable") == english);
 }
 
 // =====================================================================================
@@ -77,8 +79,8 @@ TEST_CASE("I18n - Every code the analyzer emits has both languages")
     for (const auto& code : k_codes)
     {
         CAPTURE(code);
-        const std::string en = english.GetMessage(code);
-        const std::string es = spanish.GetMessage(code);
+        const std::string_view en = english.GetMessageView(code);
+        const std::string_view es = spanish.GetMessageView(code);
 
         CHECK_FALSE(en.empty());
         CHECK_FALSE(es.empty());
@@ -112,8 +114,8 @@ TEST_CASE("I18n - Action message codes exist in both English and Spanish")
     for (const auto& code : k_actionCodes)
     {
         CAPTURE(code);
-        const std::string en = english.GetMessage(code);
-        const std::string es = spanish.GetMessage(code);
+        const std::string_view en = english.GetMessageView(code);
+        const std::string_view es = spanish.GetMessageView(code);
 
         CHECK_FALSE(en.empty());
         CHECK_FALSE(es.empty());
@@ -138,8 +140,8 @@ TEST_CASE("I18n - Hover message codes exist in both English and Spanish")
     for (const auto& code : k_hoverCodes)
     {
         CAPTURE(code);
-        const std::string en = english.GetMessage(code);
-        const std::string es = spanish.GetMessage(code);
+        const std::string_view en = english.GetMessageView(code);
+        const std::string_view es = spanish.GetMessageView(code);
 
         CHECK_FALSE(en.empty());
         CHECK_FALSE(es.empty());

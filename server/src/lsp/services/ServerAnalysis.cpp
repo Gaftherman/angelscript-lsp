@@ -1,6 +1,7 @@
 #include "analysis/index/CallGraph.h"
 #include "analysis/index/NodeIndex.h"
 #include "lsp/Server.h"
+#include "parser/SyntaxTree.h"
 #include "utils/Constants.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/Timer.h"
@@ -263,10 +264,10 @@ std::optional<ScheduleRequest> Server::MakeScheduleRequest(ScheduleAnalysisReque
 
     const uint64_t configRevision = m_sessionCoordinator->GetConfigRevision();
     auto prepared = req.preparedSource ? std::move(*req.preparedSource) : PrepareAnalysisSource(req.uriStr, req.text);
-    document::TreePtr tree = document::MakeTreePtr();
+    parser::TreePtr tree = parser::MakeTreePtr();
     if (open && open->tree && open->ParsedSource() == prepared.text)
     {
-        tree = document::MakeTreePtr(ts_tree_copy(open->tree.get()));
+        tree = parser::CopyTree(open->tree.get());
     }
     return ScheduleRequest{std::move(req.uriStr),
                            std::move(prepared.text),
@@ -416,7 +417,7 @@ bool Server::IsAnalyzeDocumentStale(const AnalyzeDocumentRequest& req) const
 }
 
 void Server::StorePredefinedSnapshot(const AnalyzeDocumentRequest& req, const std::string& analysisText,
-                                     const document::TreePtr& tree, bool contributes)
+                                     const parser::TreePtr& tree, bool contributes)
 {
     if (contributes)
     {
@@ -424,10 +425,10 @@ void Server::StorePredefinedSnapshot(const AnalyzeDocumentRequest& req, const st
         m_predefinedManager.SetDocumentText(req.uriStr, analysisText);
         if (tree)
         {
-            GetDocumentStore().SetTree(req.uriStr, document::MakeTreePtr(ts_tree_copy(tree.get())));
+            GetDocumentStore().SetTree(req.uriStr, parser::CopyTree(tree.get()));
             auto updatedDoc = std::make_shared<const document::Document>(
                 document::DocumentSnapshot{req.uriStr, analysisText, req.version, req.generation},
-                document::MakeTreePtr(ts_tree_copy(tree.get())));
+                parser::CopyTree(tree.get()));
             m_predefinedManager.SetPreindexedDocument(req.uriStr, updatedDoc);
             if (m_workspaceStore)
             {
@@ -485,8 +486,7 @@ void Server::AnalyzePredefinedDocument(AnalyzeDocumentRequest req, const utils::
         return;
     }
     utils::HighResTimer parseTimer;
-    document::TreePtr tree =
-        req.treeCopy ? std::move(req.treeCopy) : document::MakeTreePtr(req.parser.Parse(analysisText));
+    parser::TreePtr tree = req.treeCopy ? std::move(req.treeCopy) : parser::MakeTreePtr(req.parser.Parse(analysisText));
     double parseMs = parseTimer.ElapsedMs();
 
     utils::HighResTimer colTimer;

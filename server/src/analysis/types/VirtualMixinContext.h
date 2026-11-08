@@ -4,6 +4,7 @@
 #include "analysis/index/SymbolTable.h"
 #include "document/Document.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/SyntaxTree.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <ankerl/unordered_dense.h>
@@ -22,7 +23,7 @@ struct MixinFileCacheEntry
 {
     std::string source;
     std::unique_ptr<parser::AngelScriptParser> parser;
-    document::TreePtr tree;
+    parser::TreePtr tree;
     std::unique_ptr<NodeIndex> nodeIndex;
 };
 

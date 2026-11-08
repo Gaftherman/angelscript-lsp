@@ -3,6 +3,7 @@
 #include "document/Document.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
+#include "parser/SyntaxTree.h"
 
 #include <array>
 #include <tree_sitter/api.h>
@@ -65,7 +66,7 @@ static IndexedStubDeclaration MakeStubDeclaration(TSNode child, const parser::Gr
 std::optional<std::vector<IndexedStubDeclaration>> ExtractStubDeclarations(std::string_view source,
                                                                            parser::AngelScriptParser& parser)
 {
-    document::TreePtr tree = document::MakeTreePtr(parser.Parse(source));
+    parser::TreePtr tree = parser::MakeTreePtr(parser.Parse(source));
     if (tree == nullptr)
     {
         return std::nullopt;

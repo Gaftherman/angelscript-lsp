@@ -2,6 +2,7 @@
 #include "helpers/ScriptedStream.h"
 #include "helpers/TestUtils.h"
 #include "lsp/Server.h"
+#include "parser/SyntaxTree.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -6227,7 +6228,7 @@ TEST_CASE("SyntaxRevisionCache - Closed entries require exact parser input and d
     const std::string uri = "file:///closed_cache.as";
     const std::string source = "void Main() {}";
     parser::AngelScriptParser parser;
-    const auto syntax = std::make_shared<const ParsedDocumentSyntax>(document::MakeTreePtr(parser.Parse(source)));
+    const auto syntax = std::make_shared<const ParsedDocumentSyntax>(parser::MakeTreePtr(parser.Parse(source)));
     REQUIRE(syntax->tree);
     SyntaxRevisionCache cache;
     cache.Remember({uri, source, 0, 9}, syntax);

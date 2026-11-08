@@ -2,6 +2,7 @@
 
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/SyntaxTree.h"
 
 #include <atomic>
 #include <doctest/doctest.h>
@@ -18,7 +19,7 @@ TEST_CASE("DocumentStore - Open, Update, Lookup, and Close operations")
 
     const std::string uri = "file:///test/main.as";
     const std::string text1 = "void main() {}";
-    document::TreePtr tree1 = document::MakeTreePtr(parser.Parse(text1));
+    parser::TreePtr tree1 = parser::MakeTreePtr(parser.Parse(text1));
 
     CHECK_FALSE(store.IsOpen(uri));
     CHECK(store.GetText(uri) == std::nullopt);
@@ -38,7 +39,7 @@ TEST_CASE("DocumentStore - Open, Update, Lookup, and Close operations")
 
     // Update
     const std::string text2 = "void main() { int x = 1; }";
-    document::TreePtr tree2 = document::MakeTreePtr(parser.Parse(text2));
+    parser::TreePtr tree2 = parser::MakeTreePtr(parser.Parse(text2));
     store.UpdateDocument(uri, text2, 2, std::move(tree2));
     CHECK(store.GetVersion(uri) == 2);
     retrievedText = store.GetText(uri);
@@ -84,7 +85,7 @@ TEST_CASE("DocumentStore - Concurrent read/write stress")
                 startLatch.arrive_and_wait();
                 for (int i = 0; i < kIterations; ++i)
                 {
-                    store.OpenDocument(uri, "int x = " + std::to_string(i) + ";", i, document::MakeTreePtr(nullptr));
+                    store.OpenDocument(uri, "int x = " + std::to_string(i) + ";", i, parser::MakeTreePtr(nullptr));
                     store.SetVersion(uri, i + 1);
                     auto text = store.GetText(uri);
                     if (!text.has_value() || store.GetVersion(uri) < i || store.GetSnapshot().empty())
@@ -110,7 +111,7 @@ TEST_CASE("DocumentStore - Generation invalidation on close and reopen")
     DocumentStore store;
     const std::string uri = "file:///gen_test.as";
 
-    store.OpenDocument(uri, "void main() {}", 1, document::MakeTreePtr(nullptr));
+    store.OpenDocument(uri, "void main() {}", 1, parser::MakeTreePtr(nullptr));
     const uint64_t gen1 = store.GetGeneration(uri);
     CHECK(gen1 > 0);
     CHECK(store.IsCurrent(uri, gen1, 1));
@@ -123,7 +124,7 @@ TEST_CASE("DocumentStore - Generation invalidation on close and reopen")
     CHECK(store.GetGeneration(uri) == 0);
 
     // Reopen document -> new generation
-    store.OpenDocument(uri, "void main() { int y = 2; }", 1, document::MakeTreePtr(nullptr));
+    store.OpenDocument(uri, "void main() { int y = 2; }", 1, parser::MakeTreePtr(nullptr));
     const uint64_t gen2 = store.GetGeneration(uri);
     CHECK(gen2 > gen1);
     CHECK_FALSE(store.IsCurrent(uri, gen1, 1)); // Stale gen1 must be rejected
@@ -137,7 +138,7 @@ TEST_CASE("DocumentStore - GetTextShared keeps text alive across close")
     const std::string uri = "file:///test/" + sym + ".as";
     const std::string text = "int " + sym + " = 42;";
 
-    store.OpenDocument(uri, text, 1, document::MakeTreePtr(nullptr));
+    store.OpenDocument(uri, text, 1, parser::MakeTreePtr(nullptr));
 
     std::shared_ptr<const std::string> sharedText = store.GetTextShared(uri);
     REQUIRE(sharedText.get() != nullptr);

@@ -1,5 +1,7 @@
 #include "lsp/state/DocumentStore.h"
 
+#include "parser/SyntaxTree.h"
+
 #include <mutex>
 
 namespace angel_lsp
@@ -20,7 +22,7 @@ void DocumentStore::OpenDocument(OpenDocumentRequest request)
                                      std::move(request.tree)));
 }
 
-void DocumentStore::OpenDocument(const std::string& uri, std::string text, int version, document::TreePtr tree)
+void DocumentStore::OpenDocument(const std::string& uri, std::string text, int version, parser::TreePtr tree)
 {
     OpenDocument(OpenDocumentRequest{uri, std::move(text), version, std::move(tree), ""});
 }
@@ -36,24 +38,15 @@ void DocumentStore::LinkDocument(const std::string& uri, std::shared_ptr<const d
     const uint64_t gen = m_nextGeneration++;
     if (document)
     {
-        document::TreePtr treeCopy =
-            document->tree ? document::MakeTreePtr(ts_tree_copy(document->tree.get())) : document::MakeTreePtr(nullptr);
-        if (!treeCopy)
-        {
-            if (auto ast = document->getAST())
-            {
-                treeCopy = document::MakeTreePtr(ts_tree_copy(ast.get()));
-            }
-        }
+        parser::TreePtr treeCopy = parser::CopyTree(document->tree.get());
         auto docWithVersion = std::make_shared<document::Document>(
             document::DocumentSnapshot{uri, document->text, version, gen, document->TransformedSource()},
             std::move(treeCopy));
-        docWithVersion->setAST(document->getAST());
         m_documents.insert_or_assign(uri, std::move(docWithVersion));
     }
 }
 
-void DocumentStore::UpdateDocument(const std::string& uri, std::string text, int version, document::TreePtr tree,
+void DocumentStore::UpdateDocument(const std::string& uri, std::string text, int version, parser::TreePtr tree,
                                    std::shared_ptr<const std::string> transformedSource)
 {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
@@ -111,8 +104,7 @@ void DocumentStore::SetVersion(const std::string& uri, int version)
     std::unique_lock<std::shared_mutex> lock(m_mutex);
     if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
     {
-        document::TreePtr treeCopy =
-            document::MakeTreePtr(it->second->tree ? ts_tree_copy(it->second->tree.get()) : nullptr);
+        parser::TreePtr treeCopy = parser::CopyTree(it->second->tree.get());
         it->second = std::make_shared<const document::Document>(
             document::DocumentSnapshot{uri, it->second->text, version, it->second->generation,
                                        it->second->TransformedSource()},
@@ -120,24 +112,20 @@ void DocumentStore::SetVersion(const std::string& uri, int version)
     }
 }
 
-document::TreePtr DocumentStore::GetTree(const std::string& uri) const
+parser::TreePtr DocumentStore::GetTree(const std::string& uri) const
 {
     std::shared_lock<std::shared_mutex> lock(m_mutex);
     if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)
     {
         if (it->second->tree)
         {
-            return document::MakeTreePtr(ts_tree_copy(it->second->tree.get()));
-        }
-        if (auto sharedAst = it->second->getAST())
-        {
-            return document::MakeTreePtr(ts_tree_copy(sharedAst.get()));
+            return parser::CopyTree(it->second->tree.get());
         }
     }
-    return document::MakeTreePtr(nullptr);
+    return parser::MakeTreePtr(nullptr);
 }
 
-void DocumentStore::SetTree(const std::string& uri, document::TreePtr tree)
+void DocumentStore::SetTree(const std::string& uri, parser::TreePtr tree)
 {
     std::unique_lock<std::shared_mutex> lock(m_mutex);
     if (auto it = m_documents.find(uri); it != m_documents.end() && it->second)

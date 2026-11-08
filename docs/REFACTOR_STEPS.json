@@ -21,23 +21,13 @@
     "server/src/features/hover",
     "server/src/features/formatting",
     "server/src/features/completion",
-    "server/src/features/code_action"
+    "server/src/features/code_action",
+    "server/src/document",
+    "server/src/i18n"
   ],
-  "active_folder": "server/src/document",
+  "active_folder": "server/src/config",
   "cross_module_impacts": [],
   "pending_folders": [
-    {
-      "folder_path": "server/src/document",
-      "complexity_rank": 24,
-      "selection_rationale": "Base infrastructure (2 files, 168 lines) thread-safe document handles and line indexing.",
-      "files_to_refactor": []
-    },
-    {
-      "folder_path": "server/src/i18n",
-      "complexity_rank": 25,
-      "selection_rationale": "Base infrastructure (2 files, 78 lines) localization catalogs and formatting.",
-      "files_to_refactor": []
-    },
     {
       "folder_path": "server/src/config",
       "complexity_rank": 26,

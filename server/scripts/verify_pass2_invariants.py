@@ -6,6 +6,9 @@ Validador Dinámico de Invariantes de Segunda Pasada (Zero-AST & Zero-std::strin
   1. Cualquier símbolo o función de Tree-Sitter (`ts_*`, `TSNode`, `TSTree`, `TSTreeCursor`, `TSPoint`).
   2. Inclusiones prohibidas (`ASTUtils.h`, `tree_sitter/api.h`) o escapes (`->Root()`, `ForEachNodeOrdered` con TSNode).
   3. Uso de `std::string` o `const std::string&` donde debe usarse `std::string_view` en 2da pasada.
+- `utils/`, `document/` e `i18n/` quedan exentos solo de la regla 3: `document/` es el dueño del texto fuente al que
+  apuntan todas las vistas `std::string_view` de 2da pasada; `i18n/` devuelve mensajes formateados propios
+  (`FormatMessage`) y su búsqueda ya es `std::string_view`. La regla 1 (cero ts_*) sigue aplicando.
 """
 
 import argparse
@@ -18,6 +21,8 @@ FIRST_PASS_FOLDERS = {
     "server/src/parser",
     "server/src/analysis/index",
 }
+
+STRING_OWNER_FOLDERS = ("server/src/utils/", "server/src/document/", "server/src/i18n/")
 
 ALWAYS_BLOCKED_UTILS = [
     "server/src/utils",
@@ -106,7 +111,7 @@ def main() -> None:
                     f"[VIOLACIÓN AST/TS_*] {rel}:{lineno} -> '{m_ts.group(0)}' detectado en módulo de 2da pasada/util:\n    {clean}"
                 )
 
-            if args.strict_string_view and not rel.startswith("server/src/utils/"):
+            if args.strict_string_view and not rel.startswith(STRING_OWNER_FOLDERS):
                 m_str = BANNED_STD_STRING_REGEX.search(clean)
                 if m_str:
                     violations.append(

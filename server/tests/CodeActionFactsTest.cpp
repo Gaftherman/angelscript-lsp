@@ -9,6 +9,7 @@
 #include "document/Document.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/SyntaxTree.h"
 #include "utils/Utils.h"
 
 #include <cstdint>
@@ -23,7 +24,7 @@ TEST_CASE("CodeActionFacts - node span at point")
     const std::string fn = angel_lsp::test::GenerateRandomSymbolName("fn");
     const std::string v = angel_lsp::test::GenerateRandomSymbolName("v");
     const std::string code = "void " + fn + "() { int " + v + " = 1; }";
-    angel_lsp::document::TreePtr tree = angel_lsp::document::MakeTreePtr(parser.Parse(code));
+    angel_lsp::parser::TreePtr tree = angel_lsp::parser::MakeTreePtr(parser.Parse(code));
     angel_lsp::test::NodeIndexFixture fx(tree.get());
 
     const auto vCol = static_cast<uint32_t>(code.find(v));
@@ -49,7 +50,7 @@ TEST_CASE("CodeActionFacts - unused declarator removal")
     const std::string c = angel_lsp::test::GenerateRandomSymbolName("c");
 
     const std::string singleCode = "void f() {\n  int " + a + " = 1;\n}";
-    angel_lsp::document::TreePtr singleTree = angel_lsp::document::MakeTreePtr(parser.Parse(singleCode));
+    angel_lsp::parser::TreePtr singleTree = angel_lsp::parser::MakeTreePtr(parser.Parse(singleCode));
     angel_lsp::test::NodeIndexFixture singleFx(singleTree.get());
 
     const auto singleLine1Start = singleCode.find('\n') + 1;
@@ -59,7 +60,7 @@ TEST_CASE("CodeActionFacts - unused declarator removal")
     CHECK(singleResult.declaratorCount == 1);
 
     const std::string multiCode = "void f() {\n  int " + a + " = 1, " + b + " = 2, " + c + " = 3;\n}";
-    angel_lsp::document::TreePtr multiTree = angel_lsp::document::MakeTreePtr(parser.Parse(multiCode));
+    angel_lsp::parser::TreePtr multiTree = angel_lsp::parser::MakeTreePtr(parser.Parse(multiCode));
     angel_lsp::test::NodeIndexFixture multiFx(multiTree.get());
 
     const auto multiLine1Start = multiCode.find('\n') + 1;
@@ -106,7 +107,7 @@ TEST_CASE("CodeActionFacts - extract variable site")
     const std::string v = angel_lsp::test::GenerateRandomSymbolName("v");
     const std::string callee = angel_lsp::test::GenerateRandomSymbolName("callee");
     const std::string code1 = "void " + fn + "() {\n  int " + v + " = " + callee + "(1);\n}";
-    angel_lsp::document::TreePtr tree1 = angel_lsp::document::MakeTreePtr(parser.Parse(code1));
+    angel_lsp::parser::TreePtr tree1 = angel_lsp::parser::MakeTreePtr(parser.Parse(code1));
     angel_lsp::test::NodeIndexFixture fx1(tree1.get());
 
     const std::string callExpr = callee + "(1)";
@@ -132,7 +133,7 @@ TEST_CASE("CodeActionFacts - extract variable site")
     const std::string mem = angel_lsp::test::GenerateRandomSymbolName("mem");
     const std::string memberExpr = obj + "." + mem;
     const std::string code2 = "void " + fn2 + "() {\n  int " + v2 + " = " + memberExpr + ";\n}";
-    angel_lsp::document::TreePtr tree2 = angel_lsp::document::MakeTreePtr(parser.Parse(code2));
+    angel_lsp::parser::TreePtr tree2 = angel_lsp::parser::MakeTreePtr(parser.Parse(code2));
     angel_lsp::test::NodeIndexFixture fx2(tree2.get());
 
     const auto line1Start2 = code2.find('\n') + 1;
@@ -159,7 +160,7 @@ TEST_CASE("CodeActionFacts - extract method selection")
     const std::string a = angel_lsp::test::GenerateRandomSymbolName("a");
     const std::string code = "class " + cls + " {\n  int " + m + "() {\n    int " + a + " = 1;\n    " + a +
                              " = 2;\n    return " + a + ";\n  }\n}";
-    angel_lsp::document::TreePtr tree = angel_lsp::document::MakeTreePtr(parser.Parse(code));
+    angel_lsp::parser::TreePtr tree = angel_lsp::parser::MakeTreePtr(parser.Parse(code));
     angel_lsp::test::NodeIndexFixture fx(tree.get());
 
     const std::string retStmt = "    return " + a + ";";
@@ -194,7 +195,7 @@ TEST_CASE("CodeActionFacts - extract method selection")
     const std::string freeFn = angel_lsp::test::GenerateRandomSymbolName("fn");
     const std::string freeA = angel_lsp::test::GenerateRandomSymbolName("a");
     const std::string freeCode = "void " + freeFn + "() {\n  int " + freeA + " = 1;\n  " + freeA + " = 2;\n}";
-    angel_lsp::document::TreePtr freeTree = angel_lsp::document::MakeTreePtr(parser.Parse(freeCode));
+    angel_lsp::parser::TreePtr freeTree = angel_lsp::parser::MakeTreePtr(parser.Parse(freeCode));
     angel_lsp::test::NodeIndexFixture freeFx(freeTree.get());
 
     const std::string freeLine2 = "  " + freeA + " = 2;";
@@ -219,7 +220,7 @@ TEST_CASE("CodeActionFacts - accessor site")
     const std::string a = angel_lsp::test::GenerateRandomSymbolName("a");
     const std::string b = angel_lsp::test::GenerateRandomSymbolName("b");
     const std::string source = "class " + cls + " {\n  int " + a + ", " + b + ";\n}";
-    angel_lsp::document::TreePtr tree = angel_lsp::document::MakeTreePtr(parser.Parse(source));
+    angel_lsp::parser::TreePtr tree = angel_lsp::parser::MakeTreePtr(parser.Parse(source));
     angel_lsp::test::NodeIndexFixture fx(tree.get());
 
     const auto line1Start = source.find('\n') + 1;
@@ -264,7 +265,7 @@ TEST_CASE("CodeActionFacts - property keyword insertion")
     const std::string getter = "get_" + p;
 
     const std::string sourceConst = "class " + cls + " {\n  int " + getter + "() const { return 0; }\n}";
-    angel_lsp::document::TreePtr treeConst = angel_lsp::document::MakeTreePtr(parser.Parse(sourceConst));
+    angel_lsp::parser::TreePtr treeConst = angel_lsp::parser::MakeTreePtr(parser.Parse(sourceConst));
     angel_lsp::test::NodeIndexFixture fxConst(treeConst.get());
 
     const auto line1StartConst = sourceConst.find('\n') + 1;
@@ -282,7 +283,7 @@ TEST_CASE("CodeActionFacts - property keyword insertion")
     const std::string getterNoConst = "get_" + pNoConst;
 
     const std::string sourceNoConst = "class " + clsNoConst + " {\n  int " + getterNoConst + "() { return 0; }\n}";
-    angel_lsp::document::TreePtr treeNoConst = angel_lsp::document::MakeTreePtr(parser.Parse(sourceNoConst));
+    angel_lsp::parser::TreePtr treeNoConst = angel_lsp::parser::MakeTreePtr(parser.Parse(sourceNoConst));
     angel_lsp::test::NodeIndexFixture fxNoConst(treeNoConst.get());
 
     const auto line1StartNoConst = sourceNoConst.find('\n') + 1;
@@ -303,7 +304,7 @@ TEST_CASE("CodeActionFacts - class open brace point")
     const std::string cls = angel_lsp::test::GenerateRandomSymbolName("cls");
     const std::string a = angel_lsp::test::GenerateRandomSymbolName("a");
     const std::string source = "class " + cls + "\n{\n  int " + a + ";\n}";
-    angel_lsp::document::TreePtr tree = angel_lsp::document::MakeTreePtr(parser.Parse(source));
+    angel_lsp::parser::TreePtr tree = angel_lsp::parser::MakeTreePtr(parser.Parse(source));
     angel_lsp::test::NodeIndexFixture fx(tree.get());
 
     const auto line1Start = source.find('\n') + 1;
@@ -323,7 +324,7 @@ TEST_CASE("CodeActionFacts - if ladder conversion sites")
     const std::string x = angel_lsp::test::GenerateRandomSymbolName("x");
     const std::string source =
         "void " + fn + "(int " + x + ") {\n  if (" + x + " == 1) {}\n  else if (" + x + " == 2) {}\n}";
-    angel_lsp::document::TreePtr tree = angel_lsp::document::MakeTreePtr(parser.Parse(source));
+    angel_lsp::parser::TreePtr tree = angel_lsp::parser::MakeTreePtr(parser.Parse(source));
     angel_lsp::test::NodeIndexFixture fx(tree.get());
 
     const auto line1Start = source.find('\n') + 1;
@@ -359,7 +360,7 @@ TEST_CASE("CodeActionFacts - const qualifier sites")
     const std::string source = "class " + cls + " {\n  int " + f + ";\n  int " + get + "() { return " + f +
                                "; }\n  void " + set + "(int v) { " + f + " = v; " + f + "++; this." + f + " = v; " +
                                get + "(); }\n}\nvoid " + fn + "(" + cls + "@ " + h + ") { " + h + "." + get + "(); }";
-    angel_lsp::document::TreePtr tree = angel_lsp::document::MakeTreePtr(parser.Parse(source));
+    angel_lsp::parser::TreePtr tree = angel_lsp::parser::MakeTreePtr(parser.Parse(source));
     angel_lsp::test::NodeIndexFixture fx(tree.get());
 
     const auto line1Start = source.find('\n') + 1;
@@ -432,7 +433,7 @@ TEST_CASE("CodeActionFacts - const qualifier sites")
     const std::string cls2 = angel_lsp::test::GenerateRandomSymbolName("cls");
     const std::string v = angel_lsp::test::GenerateRandomSymbolName("v");
     const std::string handleSource = "void " + fn2 + "() { " + cls2 + "@ " + v + " = null; }";
-    angel_lsp::document::TreePtr handleTree = angel_lsp::document::MakeTreePtr(parser.Parse(handleSource));
+    angel_lsp::parser::TreePtr handleTree = angel_lsp::parser::MakeTreePtr(parser.Parse(handleSource));
     angel_lsp::test::NodeIndexFixture handleFx(handleTree.get());
 
     const auto vCol = static_cast<uint32_t>(handleSource.find(v));

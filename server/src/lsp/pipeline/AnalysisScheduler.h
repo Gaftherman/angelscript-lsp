@@ -1,6 +1,7 @@
 #pragma once
 
 #include "document/Document.h"
+#include "parser/SyntaxTree.h"
 #include "utils/PreprocessorRegions.h"
 
 #include <ankerl/unordered_dense.h>
@@ -35,7 +36,7 @@ struct ScheduleRequest
     std::string uriStr;
     std::string text;
     bool force = false;
-    document::TreePtr tree = document::MakeTreePtr(nullptr);
+    parser::TreePtr tree = parser::MakeTreePtr(nullptr);
     int version = -1;
     uint64_t generation = 0;
     uint64_t configRevision = 0;
@@ -50,7 +51,7 @@ struct AnalyzeRequest
 {
     std::string uriStr;
     std::string text;
-    document::TreePtr tree = document::MakeTreePtr(nullptr);
+    parser::TreePtr tree = parser::MakeTreePtr(nullptr);
     int version = -1;
     uint64_t generation = 0;
     uint64_t configRevision = 0;
@@ -64,7 +65,7 @@ struct AnalyzeRequest
 struct PendingAnalysisEntry
 {
     std::string text;
-    document::TreePtr tree = document::MakeTreePtr(nullptr);
+    parser::TreePtr tree = parser::MakeTreePtr(nullptr);
     int version = -1;
     uint64_t generation = 0;
     uint64_t configRevision = 0;
@@ -72,18 +73,18 @@ struct PendingAnalysisEntry
     std::shared_ptr<const utils::PreprocessorScan> preprocessing = {};
 
     PendingAnalysisEntry() = default;
-    PendingAnalysisEntry(std::string t, document::TreePtr tr, AnalysisMetadata meta,
+    PendingAnalysisEntry(std::string t, parser::TreePtr tr, AnalysisMetadata meta,
                          std::shared_ptr<const utils::PreprocessorScan> scan = {})
         : text(std::move(t)), tree(std::move(tr)), version(meta.version), generation(meta.generation),
           configRevision(meta.configRevision), closedRevision(meta.closedRevision), preprocessing(std::move(scan))
     {
     }
-    PendingAnalysisEntry(std::string t, document::TreePtr tr, int v = -1)
+    PendingAnalysisEntry(std::string t, parser::TreePtr tr, int v = -1)
         : text(std::move(t)), tree(std::move(tr)), version(v), generation(0), configRevision(0)
     {
     }
     PendingAnalysisEntry(std::string t, TSTree* tr, int v = -1)
-        : text(std::move(t)), tree(document::MakeTreePtr(tr)), version(v), generation(0), configRevision(0)
+        : text(std::move(t)), tree(parser::MakeTreePtr(tr)), version(v), generation(0), configRevision(0)
     {
     }
 
@@ -132,7 +133,7 @@ class AnalysisScheduler
      * @param force True to bypass deduplication.
      * @param tree Copied or newly parsed TSTree.
      */
-    void Schedule(const std::string& uriStr, std::string text, bool force, document::TreePtr tree);
+    void Schedule(const std::string& uriStr, std::string text, bool force, parser::TreePtr tree);
 
     /**
      * @brief Enqueues a document for analysis without debounce delay.
@@ -147,7 +148,7 @@ class AnalysisScheduler
      * @param force True to bypass deduplication.
      * @param tree Copied or newly parsed TSTree.
      */
-    void ScheduleImmediate(const std::string& uriStr, std::string text, bool force, document::TreePtr tree);
+    void ScheduleImmediate(const std::string& uriStr, std::string text, bool force, parser::TreePtr tree);
 
     /**
      * @brief Cancels pending analysis and marks document as saved on message loop.

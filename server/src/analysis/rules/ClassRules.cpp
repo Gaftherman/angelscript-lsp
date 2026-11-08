@@ -8,6 +8,7 @@
 #include "document/Document.h"
 #include "parser/ASTUtils.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/SyntaxTree.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
@@ -1457,7 +1458,7 @@ static MixinAstTarget ResolveMixinAstTarget(const Symbol& mixinSym, MixinInstant
             return target;
         }
         auto parser = std::make_unique<parser::AngelScriptParser>();
-        auto allocatedTree = document::MakeTreePtr(parser->Parse(src));
+        auto allocatedTree = parser::MakeTreePtr(parser->Parse(src));
         std::unique_ptr<NodeIndex> idx;
         if (allocatedTree)
         {

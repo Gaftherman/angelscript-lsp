@@ -3,6 +3,7 @@
 #include "document/Document.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/SyntaxTree.h"
 
 #include <doctest/doctest.h>
 #include <ostream>
@@ -18,7 +19,7 @@ TEST_CASE("FormattingFacts - on-type suppression follows strings, comments and s
     const std::string var = test::GenerateRandomSymbolName("v");
     const std::string code = "void " + fn + "()\n{\n    string " + var + " = \"a;b\";\n    // note; here\n}\n";
 
-    document::TreePtr tree = document::MakeTreePtr(parser.Parse(code));
+    parser::TreePtr tree = parser::MakeTreePtr(parser.Parse(code));
     test::NodeIndexFixture fx(tree.get());
 
     const uint32_t declCol = 4;
@@ -28,7 +29,7 @@ TEST_CASE("FormattingFacts - on-type suppression follows strings, comments and s
     CHECK(analysis::IsOnTypeFormattingSuppressed(fx.index, 3, 10));
 
     const std::string broken = "void " + fn + "( {\n    int " + var + " = ;\n";
-    document::TreePtr brokenTree = document::MakeTreePtr(parser.Parse(broken));
+    parser::TreePtr brokenTree = parser::MakeTreePtr(parser.Parse(broken));
     test::NodeIndexFixture brokenFx(brokenTree.get());
     CHECK(analysis::IsOnTypeFormattingSuppressed(brokenFx.index, 1, 4));
 

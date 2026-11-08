@@ -8,6 +8,9 @@
 
 namespace angel_lsp::i18n
 {
+/**
+ * @brief Immutable message table for one locale; safe for concurrent reads.
+ */
 class I18n
 {
   public:
@@ -16,7 +19,7 @@ class I18n
      * @param[in] localeTag Locale tag in any BCP 47 spelling - "es", "es-ES", "es_MX", "ES". Only
      *        the primary language subtag selects the table; the region is ignored.
      */
-    explicit I18n(const std::string& localeTag = "en");
+    explicit I18n(std::string_view localeTag = "en");
     ~I18n() = default;
 
     /**
@@ -26,32 +29,10 @@ class I18n
      */
     [[nodiscard]] std::string_view GetMessageView(std::string_view key) const noexcept;
 
-    /**
-     * @brief Retrieves a message by key from the message dictionary.
-     * @param[in] key Unique message key.
-     * @return The translated message, or empty string if not found.
-     */
-    [[nodiscard]] std::string GetMessage(std::string_view key) const;
-
-    /**
-     * @brief Retrieves a message by key, falling back to a default message if not found.
-     * @param[in] key Unique message key.
-     * @param[in] defaultMessage Fallback message string.
-     * @return The translated message, or defaultMessage if not found or empty.
-     */
-    [[nodiscard]] std::string GetMessageOrDefault(std::string_view key, const std::string& defaultMessage) const;
-
-    /**
-     * @brief Returns the primary language subtag (e.g. "en", "es").
-     * @return Lowercased language subtag string.
-     */
-    [[nodiscard]] const std::string& GetLocale() const noexcept
-    {
-        return m_locale;
-    }
-
   private:
-    std::string m_locale;
+    /**
+     * @brief Sorted (key, text) span into the generated static locale table, searched by binary search.
+     */
     std::span<const std::pair<std::string_view, std::string_view>> m_messages;
 };
 

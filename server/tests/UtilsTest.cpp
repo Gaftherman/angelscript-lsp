@@ -106,7 +106,7 @@ TEST_CASE("IsPrimitiveType - non-primitive types and user types do not match")
 
 TEST_CASE("Document - struct initialization and fields")
 {
-    angel_lsp::document::Document doc{"file:///test.as", "void main() {}", 1, nullptr};
+    angel_lsp::document::Document doc{"file:///test.as", "void main() {}", 1, angel_lsp::parser::MakeTreePtr()};
     CHECK(doc.uri == "file:///test.as");
     CHECK(doc.text == "void main() {}");
     CHECK(doc.version == 1);

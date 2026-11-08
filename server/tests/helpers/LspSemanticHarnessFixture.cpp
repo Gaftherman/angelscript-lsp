@@ -6,6 +6,7 @@
 #include "features/definition/DefinitionHandler.h"
 #include "features/hover/HoverHandler.h"
 #include "helpers/TestUtils.h"
+#include "parser/SyntaxTree.h"
 #include "utils/AllocationCounter.h"
 #include "utils/Timer.h"
 #include "utils/Utils.h"
@@ -394,7 +395,7 @@ void LspSemanticHarnessFixture::ReanalyzeDocument(const std::string& uri)
         return;
     }
 
-    m_trees.insert_or_assign(uri, document::MakeTreePtr(tree));
+    m_trees.insert_or_assign(uri, parser::MakeTreePtr(tree));
 
     analysis::SymbolTable staging;
     auto diagnostics = m_symbolCollector.CollectSymbolsWithTree({uri, text, &m_i18n}, tree, staging);

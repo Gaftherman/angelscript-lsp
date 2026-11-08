@@ -8,6 +8,7 @@
 #include "lsp/state/DocumentStore.h"
 #include "lsp/state/PredefinedStubManager.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/SyntaxTree.h"
 #include "utils/MultiFileLogger.h"
 
 #include <atomic>
@@ -99,7 +100,7 @@ void ExecuteWriterStress(WriterStressContext ctx)
         const std::string& uri = ctx.uris[uriDist(rng)];
         std::string code = GenerateRandomStressCode(rng);
         TSTree* rawTree = parser.Parse(code);
-        ctx.store.UpdateDocument(uri, std::move(code), 1, document::MakeTreePtr(rawTree));
+        ctx.store.UpdateDocument(uri, std::move(code), 1, parser::MakeTreePtr(rawTree));
     }
 }
 
@@ -129,7 +130,7 @@ void ExecuteReaderStress(ReaderStressContext ctx)
         {
             continue;
         }
-        auto managed = document::MakeTreePtr(copied);
+        auto managed = parser::MakeTreePtr(copied);
         TSNode root = ts_tree_root_node(managed.get());
         if (!ts_node_is_null(root))
         {
@@ -162,7 +163,7 @@ void AssertMalformedSnippetTolerance(const std::string& malformedCode, uint32_t 
     parser::AngelScriptParser parser;
     TSTree* rawTree = parser.Parse(malformedCode);
     REQUIRE(rawTree != nullptr);
-    auto managedTree = document::MakeTreePtr(rawTree);
+    auto managedTree = parser::MakeTreePtr(rawTree);
 
     analysis::SymbolTable symTable;
     analysis::ScopeIndex scopeIndex;
@@ -256,7 +257,7 @@ void ExecuteAnalysisWriter(AnalysisWriterContext ctx)
 
         std::string code = "class " + clsName + " { int " + symName + "; };\n";
         TSTree* rawTree = parser.Parse(code);
-        ctx.docStore.OpenDocument(docUri, code, 1, document::MakeTreePtr(rawTree));
+        ctx.docStore.OpenDocument(docUri, code, 1, parser::MakeTreePtr(rawTree));
 
         ctx.symTable.ClearDocumentSymbols(docUri);
         ctx.symTable.AddSymbol(sym);
@@ -311,7 +312,7 @@ TEST_CASE("ConcurrencySafety - Simultaneous Document Mutation and AST Reading In
         std::string uri = "file:///stress_" + test::GenerateRandomSymbolName("doc") + ".as";
         std::string initCode = "int g_val = " + std::to_string(i) + ";\n";
         TSTree* initTree = initParser.Parse(initCode);
-        store.OpenDocument(uri, initCode, 0, document::MakeTreePtr(initTree));
+        store.OpenDocument(uri, initCode, 0, parser::MakeTreePtr(initTree));
         uris.push_back(std::move(uri));
     }
 
@@ -396,11 +397,11 @@ TEST_CASE("ConcurrencySafety - Secondary Thread Exception Containment Invariant"
         },
         std::chrono::milliseconds(0));
 
-    scheduler.ScheduleImmediate(throwUri, "int a = 1;", true, document::MakeTreePtr(nullptr));
+    scheduler.ScheduleImmediate(throwUri, "int a = 1;", true, parser::MakeTreePtr(nullptr));
     thrownFuture.get();
     CHECK(thrownSignaled.load());
 
-    scheduler.ScheduleImmediate(safeUri, "int b = 2;", true, document::MakeTreePtr(nullptr));
+    scheduler.ScheduleImmediate(safeUri, "int b = 2;", true, parser::MakeTreePtr(nullptr));
     safeFuture.get();
     CHECK(safeSignaled.load());
 

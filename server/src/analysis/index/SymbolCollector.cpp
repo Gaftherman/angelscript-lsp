@@ -7,6 +7,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "document/Document.h"
 #include "parser/ASTUtils.h"
+#include "parser/SyntaxTree.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/LspLogger.h"
 #include "utils/ScopedNameUtils.h"
@@ -248,7 +249,7 @@ std::vector<Diagnostic> SymbolCollector::CollectSymbols(const SymbolCollectReque
                                                         angel_lsp::parser::AngelScriptParser& parser,
                                                         SymbolTable& symbolTable)
 {
-    const auto tree = document::MakeTreePtr(parser.Parse(request.sourceCode));
+    const auto tree = parser::MakeTreePtr(parser.Parse(request.sourceCode));
     return CollectSymbolsWithTree(request, tree.get(), symbolTable);
 }
 
@@ -563,7 +564,7 @@ void SymbolCollector::RecoverSwallowedDeclarations(SymbolCollectContext& sCtx)
     angel_lsp::parser::AngelScriptParser parser;
     for (const auto& cand : candidates)
     {
-        document::TreePtr snippetTree = document::MakeTreePtr(parser.Parse(cand.snippet));
+        parser::TreePtr snippetTree = parser::MakeTreePtr(parser.Parse(cand.snippet));
         if (!snippetTree)
             continue;
 

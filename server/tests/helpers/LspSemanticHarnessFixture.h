@@ -11,6 +11,7 @@
 #include "document/Document.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/SyntaxTree.h"
 
 #include <cstddef>
 #include <doctest/doctest.h>
@@ -255,7 +256,7 @@ class LspSemanticHarnessFixture
     i18n::I18n m_i18n;
 
     std::map<std::string, std::string> m_documents;
-    std::map<std::string, document::TreePtr> m_trees;
+    std::map<std::string, parser::TreePtr> m_trees;
     std::map<std::string, std::vector<analysis::Diagnostic>> m_diagnostics;
 
     void ReanalyzeDocument(const std::string& uri);

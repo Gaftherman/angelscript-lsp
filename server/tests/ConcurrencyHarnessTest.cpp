@@ -2,6 +2,7 @@
 #include "helpers/TestUtils.h"
 #include "lsp/state/DocumentStore.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/SyntaxTree.h"
 
 #include <atomic>
 #include <chrono>
@@ -84,7 +85,7 @@ void RunWriterWorker(WriterContext ctx)
         }
         std::string code = GenerateRandomCode(rng);
         TSTree* rawTree = parser.Parse(code);
-        ctx.store.UpdateDocument(ctx.uri, std::move(code), 1, document::MakeTreePtr(rawTree));
+        ctx.store.UpdateDocument(ctx.uri, std::move(code), 1, parser::MakeTreePtr(rawTree));
     }
 }
 
@@ -109,7 +110,7 @@ void RunReaderWorker(ReaderContext ctx)
         {
             continue;
         }
-        auto managedCopy = document::MakeTreePtr(copied);
+        auto managedCopy = parser::MakeTreePtr(copied);
         TSNode root = ts_tree_root_node(managedCopy.get());
         const char* type = ts_node_type(root);
         if (type == nullptr)
@@ -138,7 +139,7 @@ TEST_CASE("Concurrency - SEC-04 Randomized Concurrent Mutation vs AST Analysis I
     std::string initialCode = GenerateRandomCode(initRng);
     parser::AngelScriptParser initParser;
     TSTree* initTree = initParser.Parse(initialCode);
-    store.OpenDocument(uri, initialCode, 0, document::MakeTreePtr(initTree));
+    store.OpenDocument(uri, initialCode, 0, parser::MakeTreePtr(initTree));
 
     constexpr int k_numWriters = 10;
     constexpr int k_numReaders = 5;

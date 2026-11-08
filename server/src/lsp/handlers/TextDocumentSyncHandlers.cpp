@@ -2,6 +2,7 @@
 #include "analysis/types/EngineConfigConverter.h"
 #include "lsp/Server.h"
 #include "lsp/state/PositionCodec.h"
+#include "parser/SyntaxTree.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/Timer.h"
 #include "utils/Utils.h"
@@ -79,7 +80,7 @@ void Server::HandleNotificationsTextDocument_WillSave(
 void Server::DidSavePredefinedFile(const std::string& uriStr, const std::string& text)
 {
     const std::string analysisText = PrepareAnalysisSource(uriStr, text).text;
-    document::TreePtr savedTree = document::MakeTreePtr(m_parser->Parse(analysisText));
+    parser::TreePtr savedTree = parser::MakeTreePtr(m_parser->Parse(analysisText));
 
     {
         std::lock_guard<std::mutex> lock(m_closureMutex);
@@ -310,7 +311,7 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
     if (!contributes)
     {
         GetDocumentStore().OpenDocument(DocumentStore::OpenDocumentRequest{
-            req.uriStr, req.text, req.version, document::MakeTreePtr(nullptr), req.clientUri});
+            req.uriStr, req.text, req.version, parser::MakeTreePtr(nullptr), req.clientUri});
         m_symbolTable.ClearDocumentSymbols(req.uriStr);
         m_predefinedManager.RemoveStub(req.uriStr);
         if (m_workspaceStore)
@@ -355,9 +356,9 @@ void Server::DidOpenPredefinedFile(const DidOpenPredefinedRequest& req)
 
     TSTree* tree = m_parser->Parse(analysisText);
     ReplaceSymbolsFromTree(req.uriStr, analysisText, tree);
-    CommitPredefinedIndex(req.uriStr, analysisText, document::MakeTreePtr(ts_tree_copy(tree)));
+    CommitPredefinedIndex(req.uriStr, analysisText, parser::CopyTree(tree));
     GetDocumentStore().OpenDocument(DocumentStore::OpenDocumentRequest{req.uriStr, req.text, req.version,
-                                                                       document::MakeTreePtr(tree), req.clientUri});
+                                                                       parser::MakeTreePtr(tree), req.clientUri});
 
     ScheduleAnalysisImmediate(ScheduleAnalysisRequest{
         .uriStr = req.uriStr,
@@ -401,7 +402,7 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
 
     const auto prepared = PrepareAnalysisSource(uriStr, text);
     utils::HighResTimer parseTimer;
-    auto parsedTree = document::MakeTreePtr(m_parser->Parse(prepared.text));
+    auto parsedTree = parser::MakeTreePtr(m_parser->Parse(prepared.text));
     const double parseMs = parseTimer.ElapsedMs();
     GetDocumentStore().OpenDocument(DocumentStore::OpenDocumentRequest{
         uriStr, text, version, std::move(parsedTree), clientUri, TransformedSource(text, prepared.text)});
@@ -447,7 +448,7 @@ void Server::HandleNotificationsTextDocument_DidOpen(lsp::notifications::TextDoc
                        AnalysisTimingProfile{totalMs, 0.0, parseMs, colMs, scopeMs, checkMs, revision.extractedNodes});
 }
 
-static void ApplyContentChange(std::string& buffer, document::TreePtr& workingTree,
+static void ApplyContentChange(std::string& buffer, parser::TreePtr& workingTree,
                                const lsp::TextDocumentContentChangeEvent& change, bool isPredefined,
                                utils::PositionEncoding encoding)
 {
@@ -493,7 +494,7 @@ void Server::HandleNotificationsTextDocument_DidChange(lsp::notifications::TextD
 
     const bool isPredefined = angel_lsp::utils::IsPredefinedFile(uriStr, m_config.info.predefinedFileExtension);
     const bool canEditTree = doc->tree && !isPredefined && doc->ParsedSource() == doc->text;
-    auto workingTree = document::MakeTreePtr(canEditTree ? ts_tree_copy(doc->tree.get()) : nullptr);
+    auto workingTree = parser::CopyTree(canEditTree ? doc->tree.get() : nullptr);
 
     for (const auto& change : params.contentChanges)
     {
@@ -510,7 +511,7 @@ void Server::HandleNotificationsTextDocument_DidChange(lsp::notifications::TextD
     {
         m_scopeIndex.InvalidateDocumentOccurrences(uriStr);
     }
-    GetDocumentStore().UpdateDocument(uriStr, buffer, version, document::MakeTreePtr(newTree),
+    GetDocumentStore().UpdateDocument(uriStr, buffer, version, parser::MakeTreePtr(newTree),
                                       TransformedSource(buffer, prepared.text));
     double parseMs = parseTimer.ElapsedMs();
     LogInfo(fmt::format("[DidChange Incremental Parse] File: {} | Parse: {:.2f} ms", uriStr, parseMs));

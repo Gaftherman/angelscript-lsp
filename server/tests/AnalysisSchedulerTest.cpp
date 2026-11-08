@@ -1,5 +1,7 @@
 #include "lsp/pipeline/AnalysisScheduler.h"
 
+#include "parser/SyntaxTree.h"
+
 #include <atomic>
 #include <chrono>
 #include <doctest/doctest.h>
@@ -31,7 +33,7 @@ TEST_CASE("AnalysisScheduler - Debouncing collapses rapid edits")
     const std::string uri = "file:///test.as";
     for (int i = 0; i < 5; ++i)
     {
-        scheduler.Schedule({uri, "int x = " + std::to_string(i) + ";", false, document::MakeTreePtr(nullptr), i});
+        scheduler.Schedule({uri, "int x = " + std::to_string(i) + ";", false, parser::MakeTreePtr(nullptr), i});
     }
 
     // Deterministic barrier blocks until debounce and background analysis complete
@@ -101,7 +103,7 @@ TEST_CASE("AnalysisScheduler - MarkSaved cancels pending work")
     AnalysisScheduler scheduler([&](AnalyzeRequest /*req*/) { ++analyzeCount; }, std::chrono::milliseconds(100));
 
     const std::string uri = "file:///saved.as";
-    scheduler.Schedule({uri, "void f() {}", false, document::MakeTreePtr(nullptr), 1});
+    scheduler.Schedule({uri, "void f() {}", false, parser::MakeTreePtr(nullptr), 1});
     scheduler.MarkSaved(uri, 1);
 
     scheduler.DrainQueue();
@@ -143,8 +145,8 @@ TEST_CASE("AnalysisScheduler - Version-gated cancellation discards stale pending
 
     const std::string uri = "file:///version_test.as";
 
-    scheduler.Schedule({uri, "version 10", false, document::MakeTreePtr(nullptr), 10});
-    scheduler.Schedule({uri, "version 5", false, document::MakeTreePtr(nullptr), 5});
+    scheduler.Schedule({uri, "version 10", false, parser::MakeTreePtr(nullptr), 10});
+    scheduler.Schedule({uri, "version 5", false, parser::MakeTreePtr(nullptr), 5});
 
     scheduler.DrainQueue();
 
@@ -172,8 +174,8 @@ TEST_CASE("AnalysisScheduler - Identical text with higher version updates pendin
         std::chrono::milliseconds(100));
 
     const std::string uri = "file:///same_text.as";
-    scheduler.Schedule({uri, "const int x = 42;", false, document::MakeTreePtr(nullptr), 1});
-    scheduler.Schedule({uri, "const int x = 42;", false, document::MakeTreePtr(nullptr), 2});
+    scheduler.Schedule({uri, "const int x = 42;", false, parser::MakeTreePtr(nullptr), 1});
+    scheduler.Schedule({uri, "const int x = 42;", false, parser::MakeTreePtr(nullptr), 2});
 
     scheduler.DrainQueue();
 
@@ -190,7 +192,7 @@ TEST_CASE("AnalysisScheduler - Cancel removes pending and cancels active analysi
     AnalysisScheduler scheduler([&](AnalyzeRequest /*req*/) { ++analyzeCount; }, std::chrono::milliseconds(100));
 
     const std::string uri = "file:///cancelled.as";
-    scheduler.Schedule({uri, "int a = 1;", false, document::MakeTreePtr(nullptr), 1});
+    scheduler.Schedule({uri, "int a = 1;", false, parser::MakeTreePtr(nullptr), 1});
     scheduler.Cancel(uri);
 
     scheduler.DrainQueue();
@@ -209,7 +211,7 @@ TEST_CASE("AnalysisScheduler - DrainQueue provides deterministic barrier across 
     for (int i = 0; i < 5; ++i)
     {
         scheduler.Schedule(
-            {"file:///task_" + std::to_string(i) + ".as", "content", true, document::MakeTreePtr(nullptr), i});
+            {"file:///task_" + std::to_string(i) + ".as", "content", true, parser::MakeTreePtr(nullptr), i});
     }
 
     scheduler.DrainQueue();

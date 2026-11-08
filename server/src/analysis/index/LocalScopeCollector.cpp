@@ -9,6 +9,7 @@
 #include "parser/GrammarNames.h"
 #include "parser/GrammarSymbols.h"
 #include "parser/QueryRegistry.h"
+#include "parser/SyntaxTree.h"
 #include "parser/queries/BuiltQueries.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/Constants.h"
@@ -94,7 +95,7 @@ LocalScopeCollector::~LocalScopeCollector() = default;
 std::unique_ptr<Scope> LocalScopeCollector::CollectScopes(const std::string& sourceCode,
                                                           angel_lsp::parser::AngelScriptParser& parser) const
 {
-    document::TreePtr tree = document::MakeTreePtr(parser.Parse(sourceCode));
+    parser::TreePtr tree = parser::MakeTreePtr(parser.Parse(sourceCode));
     if (!tree)
         return nullptr;
 

@@ -4,29 +4,29 @@
 
 #include <algorithm>
 #include <cctype>
+#include <span>
+#include <string_view>
+#include <utility>
 
 namespace angel_lsp::i18n
 {
 /**
- * @brief Reduces a locale tag to its lowercased primary language subtag.
- *        The tag arrives from two places and neither is under this server's control: the client's
+ * @brief Selects the message table from the primary language subtag of a BCP 47 tag, ignoring case and region.
+ * @param[in] localeTag Locale tag such as "es", "es-ES", "es_MX" or "ES".
+ * @return The Spanish table when the primary subtag is "es"; otherwise the English table.
  */
-static std::string PrimaryLanguageSubtag(const std::string& locale)
+static std::span<const std::pair<std::string_view, std::string_view>> SelectMessages(std::string_view localeTag)
 {
-    std::string language;
-    for (const char c : locale)
+    const std::string_view primary = localeTag.substr(0, localeTag.find_first_of("-_"));
+    if (primary.size() == 2 && std::tolower(static_cast<unsigned char>(primary[0])) == static_cast<int>('e') &&
+        std::tolower(static_cast<unsigned char>(primary[1])) == static_cast<int>('s'))
     {
-        if (c == '-' || c == '_')
-        {
-            break;
-        }
-        language.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        return k_esMessages;
     }
-    return language;
+    return k_enMessages;
 }
 
-I18n::I18n(const std::string& localeTag)
-    : m_locale(PrimaryLanguageSubtag(localeTag)), m_messages(m_locale == "es" ? k_esMessages : k_enMessages)
+I18n::I18n(std::string_view localeTag) : m_messages(SelectMessages(localeTag))
 {
 }
 
@@ -38,18 +38,4 @@ std::string_view I18n::GetMessageView(std::string_view key) const noexcept
     return entry != m_messages.end() && entry->first == key ? entry->second : std::string_view{};
 }
 
-std::string I18n::GetMessage(std::string_view key) const
-{
-    return std::string(GetMessageView(key));
-}
-
-std::string I18n::GetMessageOrDefault(std::string_view key, const std::string& defaultMessage) const
-{
-    const std::string_view view = GetMessageView(key);
-    if (!view.empty())
-    {
-        return std::string(view);
-    }
-    return defaultMessage;
-}
 } // namespace angel_lsp::i18n

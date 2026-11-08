@@ -1,6 +1,7 @@
 #pragma once
 
 #include "document/Document.h"
+#include "parser/SyntaxTree.h"
 
 #include <ankerl/unordered_dense.h>
 #include <memory>
@@ -41,7 +42,7 @@ class DocumentStore
         std::string uri;
         std::string text;
         int version = 0;
-        document::TreePtr tree = document::MakeTreePtr(nullptr);
+        parser::TreePtr tree = parser::MakeTreePtr(nullptr);
         std::string clientUri;
         std::shared_ptr<const std::string> transformedSource;
     };
@@ -59,7 +60,7 @@ class DocumentStore
      * @param version Document version.
      * @param tree Parsed syntax tree (transfers ownership).
      */
-    void OpenDocument(const std::string& uri, std::string text, int version, document::TreePtr tree);
+    void OpenDocument(const std::string& uri, std::string text, int version, parser::TreePtr tree);
 
     /**
      * @brief Links an existing immutable Document snapshot into the open document store.
@@ -77,7 +78,7 @@ class DocumentStore
      * @param version New document version.
      * @param tree Newly parsed syntax tree.
      */
-    void UpdateDocument(const std::string& uri, std::string text, int version, document::TreePtr tree,
+    void UpdateDocument(const std::string& uri, std::string text, int version, parser::TreePtr tree,
                         std::shared_ptr<const std::string> transformedSource = {});
 
     /**
@@ -119,14 +120,14 @@ class DocumentStore
      * @param uri Canonical URI key.
      * @return Managed TreePtr owning the copied tree, or nullptr.
      */
-    [[nodiscard]] document::TreePtr GetTree(const std::string& uri) const;
+    [[nodiscard]] parser::TreePtr GetTree(const std::string& uri) const;
 
     /**
      * @brief Sets or replaces the syntax tree for a document. Thread-safe.
      * @param uri Canonical URI key.
      * @param tree Managed TreePtr.
      */
-    void SetTree(const std::string& uri, document::TreePtr tree);
+    void SetTree(const std::string& uri, parser::TreePtr tree);
 
     /**
      * @brief Gets the client URI spelling for a canonical URI key. Thread-safe.
@@ -224,7 +225,7 @@ class DocumentStore
      * @param[in] version Document version.
      * @param[in] tree Parsed AST handle.
      */
-    void putDocument(const std::string& uri, std::string text, int version, document::TreePtr tree)
+    void putDocument(const std::string& uri, std::string text, int version, parser::TreePtr tree)
     {
         OpenDocument(uri, std::move(text), version, std::move(tree));
     }

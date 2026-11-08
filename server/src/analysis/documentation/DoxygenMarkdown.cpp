@@ -2,6 +2,7 @@
 
 #include "document/Document.h"
 #include "parser/DoxygenParser.h"
+#include "parser/SyntaxTree.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -2447,7 +2448,7 @@ static void ParseDocSegment(const std::string& syntheticDoc, std::vector<DocBloc
     }
 
     parser::DoxygenParser parser;
-    document::TreePtr tree = document::MakeTreePtr(parser.Parse(syntheticDoc));
+    parser::TreePtr tree = parser::MakeTreePtr(parser.Parse(syntheticDoc));
     if (!tree)
     {
         return;

@@ -2294,6 +2294,132 @@
         "AdversarialPhase3FeaturesTest",
         "TypeConfigDecouplingAndAnonymousObjectsTest"
       ]
+    },
+    {
+      "id": "REF-M12-TREE-HANDLE",
+      "phase": "M12",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/document/Document.h",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "document::TreePtr, document::MakeTreePtr",
+      "whatItDidAndWhyInThatFile": "Declared the owning tree-sitter handle inside the Layer 1 document store.",
+      "whyChangedOrDeleted": "Tree-sitter ownership belongs to the first pass (Rule 4.10); document/ now holds no ts_* code.",
+      "replacedByCanonicalFile": "server/src/parser/SyntaxTree.h",
+      "replacedByCanonicalSymbol": "TreePtr",
+      "ramOrCpuImpact": "None: same unique_ptr with ts_tree_delete.",
+      "verifiedByTests": [
+        "DocumentStoreTest",
+        "ConcurrencySafetyHarnessTest",
+        "ConcurrencyHarnessTest"
+      ]
+    },
+    {
+      "id": "REF-M12-COPY-TREE",
+      "phase": "M12",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/lsp/state/DocumentStore.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "MakeTreePtr(cond ? ts_tree_copy(x) : nullptr) repeated at 10 sites",
+      "whatItDidAndWhyInThatFile": "Every site that handed a tree to another owner repeated a null-checked ts_tree_copy expression.",
+      "whyChangedOrDeleted": "One null-safe helper replaces the repeated ternaries in Document, DocumentStore, ServerAnalysis and TextDocumentSyncHandlers.",
+      "replacedByCanonicalFile": "server/src/parser/SyntaxTree.h",
+      "replacedByCanonicalSymbol": "CopyTree",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "DocumentStoreTest",
+        "ConcurrencySafetyHarnessTest",
+        "ConcurrencyHarnessTest"
+      ]
+    },
+    {
+      "id": "REF-M12-DUAL-AST",
+      "phase": "M12",
+      "action": "CLEAN_SENTINEL",
+      "sourceFile": "server/src/document/Document.h",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "Document::astTree_, Document::treeMutex_, Document::getAST, Document::setAST(TSTree* rawTree), Document::setAST(SharedTree newTree), SharedTree, TSTreeDeleter",
+      "whatItDidAndWhyInThatFile": "Kept a second shared copy of the tree behind a shared_mutex next to the owning tree member.",
+      "whyChangedOrDeleted": "Documents are immutable once shared through DocumentStore; the second copy and its lock were redundant and only DocumentStore read them as a fallback.",
+      "replacedByCanonicalFile": "server/src/document/Document.h",
+      "replacedByCanonicalSymbol": "tree",
+      "ramOrCpuImpact": "One tree handle and one shared_mutex fewer per document; one ts_tree_copy fewer per construction.",
+      "verifiedByTests": [
+        "DocumentStoreTest",
+        "ConcurrencySafetyHarnessTest",
+        "ConcurrencyHarnessTest"
+      ]
+    },
+    {
+      "id": "REF-M12-RAW-CTOR",
+      "phase": "M12",
+      "action": "CLEAN_SENTINEL",
+      "sourceFile": "server/src/document/Document.h",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "Document::Document(std::string, std::string, int, TSTree*)",
+      "whatItDidAndWhyInThatFile": "Adopted a raw TSTree pointer and copied it into the second AST slot.",
+      "whyChangedOrDeleted": "Callers pass an owning parser::TreePtr, so no raw tree pointer crosses the document API.",
+      "replacedByCanonicalFile": "server/src/document/Document.h",
+      "replacedByCanonicalSymbol": "Document",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "DocumentStoreTest",
+        "ConcurrencySafetyHarnessTest",
+        "ConcurrencyHarnessTest"
+      ]
+    },
+    {
+      "id": "REF-M13-GET-MESSAGE",
+      "phase": "M13",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/i18n/i18n.h",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "I18n::GetMessage(std::string_view key)",
+      "whatItDidAndWhyInThatFile": "Copied a catalog entry into a new std::string; only I18nTest called it.",
+      "whyChangedOrDeleted": "Catalog entries are static constexpr tables, so the zero-copy view is always safe to keep.",
+      "replacedByCanonicalFile": "server/src/i18n/i18n.h",
+      "replacedByCanonicalSymbol": "GetMessageView",
+      "ramOrCpuImpact": "One heap copy fewer per lookup.",
+      "verifiedByTests": [
+        "I18nTest",
+        "OverloadResolutionSvenCoopTest",
+        "CodeActionTest"
+      ]
+    },
+    {
+      "id": "REF-M13-GET-MESSAGE-OR-DEFAULT",
+      "phase": "M13",
+      "action": "CLEAN_SENTINEL",
+      "sourceFile": "server/src/i18n/i18n.h",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "I18n::GetMessageOrDefault(std::string_view key, const std::string& defaultMessage)",
+      "whatItDidAndWhyInThatFile": "Returned the catalog entry or a caller-owned fallback string.",
+      "whyChangedOrDeleted": "No caller remained; fallback handling lives in FormatMessage.",
+      "replacedByCanonicalFile": "server/src/i18n/i18n.h",
+      "replacedByCanonicalSymbol": "FormatMessage",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "I18nTest",
+        "OverloadResolutionSvenCoopTest",
+        "CodeActionTest"
+      ]
+    },
+    {
+      "id": "REF-M13-LOCALE-FIELD",
+      "phase": "M13",
+      "action": "CLEAN_SENTINEL",
+      "sourceFile": "server/src/i18n/i18n.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "I18n::GetLocale, I18n::m_locale, PrimaryLanguageSubtag(const std::string& locale)",
+      "whatItDidAndWhyInThatFile": "Stored the lowercased primary subtag to choose the message table.",
+      "whyChangedOrDeleted": "The subtag was read only by the constructor; table selection now inspects the tag view directly.",
+      "replacedByCanonicalFile": "server/src/i18n/i18n.cpp",
+      "replacedByCanonicalSymbol": "SelectMessages",
+      "ramOrCpuImpact": "One std::string fewer per I18n and no allocation at construction.",
+      "verifiedByTests": [
+        "I18nTest",
+        "OverloadResolutionSvenCoopTest",
+        "CodeActionTest"
+      ]
     }
   ]
 }

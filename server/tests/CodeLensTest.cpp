@@ -10,6 +10,7 @@
 #include "helpers/TestUtils.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/SyntaxTree.h"
 #include "spdlog/fmt/fmt.h"
 
 #include <algorithm>
@@ -70,7 +71,7 @@ struct CodeLensFixture
         symbolCollector.CollectSymbols(fileUri, code, parser, symbolTable);
         auto scope = std::shared_ptr<Scope>(scopeCollector.CollectScopes(code, parser));
         REQUIRE(static_cast<bool>(scope));
-        auto syntax = document::MakeTreePtr(parser.Parse(code));
+        auto syntax = parser::MakeTreePtr(parser.Parse(code));
         REQUIRE(static_cast<bool>(syntax));
         const NodeIndex index(ts_tree_root_node(syntax.get()));
         SemanticAnalysisRequest analysis(symbolTable, fileUri);

@@ -2,6 +2,7 @@
 #include "document/Document.h"
 #include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/SyntaxTree.h"
 
 #include <doctest/doctest.h>
 #include <ostream>
@@ -75,7 +76,7 @@ TEST_SUITE("SemanticASTFacade")
                                  "    }\n"
                                  "}\n";
 
-        document::TreePtr tree = document::MakeTreePtr(asParser.Parse(code));
+        parser::TreePtr tree = parser::MakeTreePtr(asParser.Parse(code));
         REQUIRE(tree != nullptr);
         TSNode root = ts_tree_root_node(tree.get());
 
@@ -107,7 +108,7 @@ TEST_SUITE("SemanticASTFacade")
                                  "    return;\n"
                                  "}\n";
 
-        document::TreePtr tree = document::MakeTreePtr(asParser.Parse(code));
+        parser::TreePtr tree = parser::MakeTreePtr(asParser.Parse(code));
         REQUIRE(tree != nullptr);
         TSNode root = ts_tree_root_node(tree.get());
 

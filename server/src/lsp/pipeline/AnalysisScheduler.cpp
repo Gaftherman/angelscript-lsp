@@ -1,5 +1,6 @@
 #include "lsp/pipeline/AnalysisScheduler.h"
 
+#include "parser/SyntaxTree.h"
 #include "utils/MultiFileLogger.h"
 
 #include <exception>
@@ -158,7 +159,7 @@ void AnalysisScheduler::Schedule(ScheduleRequest request)
     m_cv.notify_one();
 }
 
-void AnalysisScheduler::Schedule(const std::string& uriStr, std::string text, bool force, document::TreePtr tree)
+void AnalysisScheduler::Schedule(const std::string& uriStr, std::string text, bool force, parser::TreePtr tree)
 {
     Schedule(ScheduleRequest{uriStr, std::move(text), force, std::move(tree), -1, 0, 0});
 }
@@ -170,8 +171,7 @@ void AnalysisScheduler::ScheduleImmediate(ScheduleRequest request)
     m_cv.notify_one();
 }
 
-void AnalysisScheduler::ScheduleImmediate(const std::string& uriStr, std::string text, bool force,
-                                          document::TreePtr tree)
+void AnalysisScheduler::ScheduleImmediate(const std::string& uriStr, std::string text, bool force, parser::TreePtr tree)
 {
     ScheduleImmediate(ScheduleRequest{uriStr, std::move(text), force, std::move(tree), -1, 0, 0});
 }

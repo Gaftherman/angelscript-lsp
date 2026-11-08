@@ -9,6 +9,7 @@
 #include "lsp/state/PositionCodec.h"
 #include "lsp/state/SyntaxRevisionCache.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/SyntaxTree.h"
 #include "utils/LspLogger.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/StopFlag.h"
@@ -257,7 +258,7 @@ struct AnalyzeDocumentRequest
     std::string uriStr;
     std::string text;
     angel_lsp::parser::AngelScriptParser& parser;
-    angel_lsp::document::TreePtr treeCopy = angel_lsp::document::MakeTreePtr(nullptr);
+    angel_lsp::parser::TreePtr treeCopy = angel_lsp::parser::MakeTreePtr(nullptr);
     int version = -1;
     uint64_t generation = 0;
     uint64_t configRevision = 0;

@@ -3,6 +3,7 @@
 #include "analysis/index/NodeIndex.h"
 #include "document/Document.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/SyntaxTree.h"
 
 #include <cstdint>
 #include <list>
@@ -15,13 +16,13 @@ namespace angel_lsp
 /** @brief Owns the tree backing an extracted index on the producing thread. */
 struct ParsedDocumentSyntax
 {
-    explicit ParsedDocumentSyntax(document::TreePtr parsed, std::string_view source = {})
+    explicit ParsedDocumentSyntax(parser::TreePtr parsed, std::string_view source = {})
         : tree(std::move(parsed)),
           index(tree ? ts_tree_root_node(tree.get()) : TSNode{}, analysis::NodeIndexOptions{.source = source})
     {
     }
 
-    document::TreePtr tree;
+    parser::TreePtr tree;
     analysis::NodeIndex index;
 };
 
@@ -81,7 +82,7 @@ struct SyntaxRevisionInput
 {
     SyntaxRevisionKey key;
     parser::AngelScriptParser& parser;
-    document::TreePtr tree = document::MakeTreePtr();
+    parser::TreePtr tree = parser::MakeTreePtr();
     const TSTree* exactTreeToCopy = nullptr;
 };
 

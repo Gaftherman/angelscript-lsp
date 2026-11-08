@@ -1,5 +1,6 @@
 #include "lsp/state/SyntaxRevisionCache.h"
 
+#include "parser/SyntaxTree.h"
 #include "utils/Timer.h"
 
 #include <algorithm>
@@ -82,8 +83,8 @@ SyntaxRevision ResolveSyntaxRevision(SyntaxRevisionInput input, SyntaxRevisionCa
     utils::HighResTimer parseTimer;
     if (!input.tree)
     {
-        input.tree = document::MakeTreePtr(input.exactTreeToCopy ? ts_tree_copy(input.exactTreeToCopy)
-                                                                 : input.parser.Parse(input.key.source));
+        input.tree = parser::MakeTreePtr(input.exactTreeToCopy ? ts_tree_copy(input.exactTreeToCopy)
+                                                               : input.parser.Parse(input.key.source));
     }
     const double parseMs = parseTimer.ElapsedMs();
     if (!input.tree)
