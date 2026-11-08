@@ -20,47 +20,12 @@
     "server/src/features/semantic_tokens",
     "server/src/features/hover",
     "server/src/features/formatting",
-    "server/src/features/completion"
+    "server/src/features/completion",
+    "server/src/features/code_action"
   ],
-  "active_folder": "server/src/features/code_action",
+  "active_folder": "server/src/document",
   "cross_module_impacts": [],
   "pending_folders": [
-    {
-      "folder_path": "server/src/features/code_action",
-      "complexity_rank": 23,
-      "selection_rationale": "Feature (5 files, 368 lines) quick-fixes and refactorings.",
-      "files_to_refactor": [
-        {
-          "file": "CodeActionHandler.h",
-          "detected_antipatterns": [
-            "Raw TSTree* pointer and <tree_sitter/api.h> in CodeActionRequest",
-            "Heap string members"
-          ],
-          "reusable_structs_or_classes": [
-            "analysis::SymbolTable",
-            "analysis::Diagnostics"
-          ],
-          "first_pass_data_needed": [
-            "Diagnostic context and pre-indexed symbols"
-          ]
-        },
-        {
-          "file": "CodeActionHandler.cpp",
-          "detected_antipatterns": [
-            "AST tree climbing for quick-fix context",
-            "Ad-hoc text edit synthesis"
-          ],
-          "reusable_structs_or_classes": [
-            "features::common::ToLspRange",
-            "analysis::TargetResolution"
-          ],
-          "liquidation_actions": [
-            "Eliminate AST node climbing",
-            "Zero-copy std::string_view"
-          ]
-        }
-      ]
-    },
     {
       "folder_path": "server/src/document",
       "complexity_rank": 24,

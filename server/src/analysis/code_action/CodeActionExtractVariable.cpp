@@ -3,9 +3,9 @@
  * @brief Refactoring provider for Extract Variable code action.
  */
 
+#include "analysis/code_action/CodeActionInternal.h"
 #include "analysis/index/ExtractVariableFacts.h"
 #include "analysis/resolution/CodeActionResolution.h"
-#include "features/code_action/CodeActionInternal.h"
 #include "parser/Keywords.h"
 #include "utils/AccessorNames.h"
 #include "utils/Utils.h"
@@ -16,7 +16,7 @@
 #include <string_view>
 #include <vector>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::code_action
 {
 
 static std::string ToLowerFirst(std::string_view str)
@@ -120,8 +120,7 @@ static bool IsNameInScope(const analysis::Scope* scope, std::string_view name)
 }
 
 static std::string SuggestVariableName(const analysis::IndexedExtractVariableSite& site, std::string_view varType,
-                                       const analysis::code_action::CodeActionQuery& query,
-                                       const analysis::Scope* scope)
+                                       const CodeActionQuery& query, const analysis::Scope* scope)
 {
     std::string candidate = SuggestCandidateName(site, varType, query.sourceCode, &query.symbolTable);
     if (!scope)
@@ -143,9 +142,8 @@ static std::string SuggestVariableName(const analysis::IndexedExtractVariableSit
  * @param site Extract variable candidate site facts.
  * @return Code action entry if construction succeeds, std::nullopt otherwise.
  */
-static std::optional<analysis::code_action::CodeActionEntry>
-BuildExtractVariableEntry(const analysis::code_action::CodeActionQuery& query,
-                          const analysis::IndexedExtractVariableSite& site)
+static std::optional<CodeActionEntry> BuildExtractVariableEntry(const CodeActionQuery& query,
+                                                                const analysis::IndexedExtractVariableSite& site)
 {
     auto rootScope = query.scopeIndex.GetRoot(query.uri);
     const analysis::Scope* scope = FindScopeByLineOrRoot(rootScope.get(), site.expressionRange.startLine);
@@ -172,7 +170,7 @@ BuildExtractVariableEntry(const analysis::code_action::CodeActionQuery& query,
     uint32_t stmtRow = site.statementLine;
     std::string indent = GetLineIndentation(query.sourceCode, stmtRow);
 
-    analysis::code_action::CodeActionTextEdit declEdit;
+    CodeActionTextEdit declEdit;
     if (site.statementSharesBlockLine)
     {
         declEdit.range = analysis::SourceRange{stmtRow, site.statementColumn, stmtRow, site.statementColumn};
@@ -184,14 +182,14 @@ BuildExtractVariableEntry(const analysis::code_action::CodeActionQuery& query,
         declEdit.newText = indent + varType + " " + varName + " = " + std::string(exprText) + ";\n";
     }
 
-    analysis::code_action::CodeActionTextEdit replEdit;
+    CodeActionTextEdit replEdit;
     replEdit.range = site.expressionRange;
     replEdit.newText = varName;
 
-    analysis::code_action::CodeActionEntry entry;
+    CodeActionEntry entry;
     entry.title = i18n::FormatMessage(query.i18n, "action-extract-variable", "Extract Variable");
-    entry.kind = analysis::code_action::CodeActionEntryKind::RefactorExtract;
-    entry.edits = std::vector<analysis::code_action::CodeActionTextEdit>{std::move(declEdit), std::move(replEdit)};
+    entry.kind = CodeActionEntryKind::RefactorExtract;
+    entry.edits = std::vector<CodeActionTextEdit>{std::move(declEdit), std::move(replEdit)};
 
     return entry;
 }
@@ -201,8 +199,7 @@ BuildExtractVariableEntry(const analysis::code_action::CodeActionQuery& query,
  * @param query Incoming code action query context.
  * @param entries Destination vector for generated code action entries.
  */
-void TryAddExtractVariableAction(const analysis::code_action::CodeActionQuery& query,
-                                 std::vector<analysis::code_action::CodeActionEntry>& entries)
+void TryAddExtractVariableAction(const CodeActionQuery& query, std::vector<CodeActionEntry>& entries)
 {
     if (!query.nodeIndex || query.sourceCode.empty())
     {
@@ -219,4 +216,4 @@ void TryAddExtractVariableAction(const analysis::code_action::CodeActionQuery& q
     }
 }
 
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::code_action

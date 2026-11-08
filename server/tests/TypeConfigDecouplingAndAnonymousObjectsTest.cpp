@@ -152,12 +152,11 @@ TEST_SUITE("TypeConfig_Decoupling")
         angel_lsp::test::NodeIndexFixture codeActionIndex(tree);
         CodeActionRequest req{.uri = docUri,
                               .sourceCode = script,
-                              .tree = tree,
                               .range = lsp::Range{{4, 0}, {5, 1}},
                               .context = lsp::CodeActionContext{},
                               .symbolTable = symbolTable,
                               .scopeIndex = scopeIndex,
-                              .allowedRoots = {},
+                              .includeScope = {},
                               .config = &cfg};
         req.nodeIndex = &codeActionIndex.index;
 

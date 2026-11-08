@@ -1,10 +1,10 @@
-#include "features/code_action/CodeActionExtractMethodAnalysis.h"
+#include "analysis/code_action/CodeActionExtractMethodAnalysis.h"
 
 #include <string>
 #include <utility>
 #include <vector>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::code_action
 {
 
 /**
@@ -13,11 +13,11 @@ namespace angel_lsp::features
  * @param[in] plan Extracted method plan.
  * @return Constructed vector of code action text edits.
  */
-static std::vector<analysis::code_action::CodeActionTextEdit>
-BuildExtractMethodTextEdits(const ExtractMethodStatements& stmts, const ExtractedMethodPlan& plan)
+static std::vector<CodeActionTextEdit> BuildExtractMethodTextEdits(const ExtractMethodStatements& stmts,
+                                                                   const ExtractedMethodPlan& plan)
 {
     const std::string methodName = "NewMethod";
-    analysis::code_action::CodeActionTextEdit methodDefEdit;
+    CodeActionTextEdit methodDefEdit;
 
     if (stmts.selection.inClass)
     {
@@ -36,7 +36,7 @@ BuildExtractMethodTextEdits(const ExtractMethodStatements& stmts, const Extracte
         methodDefEdit.newText = std::move(methodCode);
     }
 
-    analysis::code_action::CodeActionTextEdit callEdit;
+    CodeActionTextEdit callEdit;
     callEdit.range = stmts.selection.statementsRange;
     callEdit.newText = plan.callSiteText;
 
@@ -48,8 +48,7 @@ BuildExtractMethodTextEdits(const ExtractMethodStatements& stmts, const Extracte
  * @param[in] query Incoming code action query context.
  * @param[in,out] entries Destination vector for generated code action entries.
  */
-void TryAddExtractMethodAction(const analysis::code_action::CodeActionQuery& query,
-                               std::vector<analysis::code_action::CodeActionEntry>& entries)
+void TryAddExtractMethodAction(const CodeActionQuery& query, std::vector<CodeActionEntry>& entries)
 {
     auto stmts = FindSelectedStatements(query);
     if (!stmts)
@@ -72,11 +71,11 @@ void TryAddExtractMethodAction(const analysis::code_action::CodeActionQuery& que
 
     ExtractedMethodPlan plan = DeduceExtractedMethodSignature(vars, *stmts, query);
 
-    analysis::code_action::CodeActionEntry entry;
+    CodeActionEntry entry;
     entry.title = i18n::FormatMessage(query.i18n, "action-extract-method", "Extract Method");
-    entry.kind = analysis::code_action::CodeActionEntryKind::RefactorExtract;
+    entry.kind = CodeActionEntryKind::RefactorExtract;
     entry.edits = BuildExtractMethodTextEdits(*stmts, plan);
     entries.push_back(std::move(entry));
 }
 
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::code_action

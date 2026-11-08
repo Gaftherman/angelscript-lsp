@@ -1,6 +1,6 @@
+#include "analysis/code_action/CodeActionInternal.h"
 #include "analysis/index/AccessorFacts.h"
 #include "analysis/types/TypeSanitization.h"
-#include "features/code_action/CodeActionInternal.h"
 #include "i18n/i18n.h"
 #include "utils/AccessorNames.h"
 #include "utils/Utils.h"
@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::code_action
 {
 
 /**
@@ -45,14 +45,14 @@ static std::string CleanPropertyName(std::string_view fieldName)
  * @param[in] insertPt Class body insertion point coordinates.
  * @return Constructed CodeActionEntry.
  */
-static analysis::code_action::CodeActionEntry CreateAccessorEntry(std::string title, const std::string& text,
-                                                                  analysis::IndexedSourcePoint insertPt)
+static CodeActionEntry CreateAccessorEntry(std::string title, const std::string& text,
+                                           analysis::IndexedSourcePoint insertPt)
 {
-    analysis::code_action::CodeActionEntry entry;
+    CodeActionEntry entry;
     entry.title = std::move(title);
-    entry.kind = analysis::code_action::CodeActionEntryKind::RefactorRewrite;
-    entry.edits = std::vector<analysis::code_action::CodeActionTextEdit>{
-        analysis::code_action::CodeActionTextEdit{
+    entry.kind = CodeActionEntryKind::RefactorRewrite;
+    entry.edits = std::vector<CodeActionTextEdit>{
+        CodeActionTextEdit{
             analysis::SourceRange{insertPt.line, insertPt.character, insertPt.line, insertPt.character},
             "\n" + text,
         },
@@ -87,9 +87,8 @@ static std::pair<bool, bool> CheckFieldAccessors(const analysis::SymbolTable& ta
  * @param[in] ctx Getter and setter context.
  * @param[in,out] entries Destination code action entries vector.
  */
-static void EmitGetterSetterEntriesForField(const analysis::code_action::CodeActionQuery& query,
-                                            const GetterSetterContext& ctx,
-                                            std::vector<analysis::code_action::CodeActionEntry>& entries)
+static void EmitGetterSetterEntriesForField(const CodeActionQuery& query, const GetterSetterContext& ctx,
+                                            std::vector<CodeActionEntry>& entries)
 {
     const auto& [fName, fType] = ctx.field;
     std::string propName = CleanPropertyName(fName);
@@ -136,8 +135,7 @@ static void EmitGetterSetterEntriesForField(const analysis::code_action::CodeAct
  * @param[in] query Incoming code action query context.
  * @param[in,out] entries Destination vector for generated code action entries.
  */
-void TryAddGetterSetterActions(const analysis::code_action::CodeActionQuery& query,
-                               std::vector<analysis::code_action::CodeActionEntry>& entries)
+void TryAddGetterSetterActions(const CodeActionQuery& query, std::vector<CodeActionEntry>& entries)
 {
     if (!query.nodeIndex || query.sourceCode.empty())
     {
@@ -172,8 +170,7 @@ void TryAddGetterSetterActions(const analysis::code_action::CodeActionQuery& que
  * @param[in] query Incoming code action query context.
  * @param[in,out] entries Destination vector for generated code action entries.
  */
-void TryAddAccessorPropertyKeywordFix(const analysis::code_action::CodeActionQuery& query,
-                                      std::vector<analysis::code_action::CodeActionEntry>& entries)
+void TryAddAccessorPropertyKeywordFix(const CodeActionQuery& query, std::vector<CodeActionEntry>& entries)
 {
     if (!query.nodeIndex || query.sourceCode.empty())
     {
@@ -198,17 +195,17 @@ void TryAddAccessorPropertyKeywordFix(const analysis::code_action::CodeActionQue
         std::string title =
             i18n::FormatMessage(query.i18n, "action-add-property-keyword", "Add the 'property' keyword");
 
-        entries.push_back(MakeQuickFixEntry(QuickFixEntryOptions{
-            std::move(title),
-            i,
-            {analysis::code_action::CodeActionTextEdit{
-                analysis::SourceRange{insertAt->line, insertAt->character, insertAt->line, insertAt->character},
-                " property"}},
-            true}));
+        entries.push_back(MakeQuickFixEntry(
+            QuickFixEntryOptions{std::move(title),
+                                 i,
+                                 {CodeActionTextEdit{analysis::SourceRange{insertAt->line, insertAt->character,
+                                                                           insertAt->line, insertAt->character},
+                                                     " property"}},
+                                 true}));
 
         entries.push_back(MakeDisableDiagnosticEntry(DisableDiagnosticEntryOptions{
             i, "diagnostics.reportAccessorPortability", "as-hint-accessor-portability", query.i18n}));
     }
 }
 
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::code_action

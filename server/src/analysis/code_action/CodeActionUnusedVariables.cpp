@@ -3,8 +3,8 @@
  * @brief Quick-fix provider for removing unused local variable declarations.
  */
 
+#include "analysis/code_action/CodeActionInternal.h"
 #include "analysis/resolution/TargetResolution.h"
-#include "features/code_action/CodeActionInternal.h"
 #include "utils/Utils.h"
 
 #include <cstdint>
@@ -12,7 +12,7 @@
 #include <string_view>
 #include <vector>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::code_action
 {
 
 /**
@@ -104,10 +104,10 @@ static void CollectUnusedVariables(const analysis::Scope* rootScope,
  * @param[in] sourceCode Source text.
  * @return TextEdit deleting the line range.
  */
-static analysis::code_action::CodeActionTextEdit BuildRemoveSingleDeclaratorLine(const analysis::LocalDefinition* def,
-                                                                                 std::string_view sourceCode)
+static CodeActionTextEdit BuildRemoveSingleDeclaratorLine(const analysis::LocalDefinition* def,
+                                                          std::string_view sourceCode)
 {
-    analysis::code_action::CodeActionTextEdit edit;
+    CodeActionTextEdit edit;
     uint32_t lineCount = 1;
     for (char c : sourceCode)
     {
@@ -138,14 +138,13 @@ static analysis::code_action::CodeActionTextEdit BuildRemoveSingleDeclaratorLine
  * @param[in] def Target local definition.
  * @return TextEdit deleting the unused variable.
  */
-static analysis::code_action::CodeActionTextEdit BuildRemoveUnusedVariableEdit(const analysis::NodeIndex& index,
-                                                                               std::string_view sourceCode,
-                                                                               const analysis::LocalDefinition* def)
+static CodeActionTextEdit BuildRemoveUnusedVariableEdit(const analysis::NodeIndex& index, std::string_view sourceCode,
+                                                        const analysis::LocalDefinition* def)
 {
     const auto removal = analysis::FindUnusedDeclaratorRemoval(index, def->startLine, def->startCharacter);
     if (!removal.inDeclaration)
     {
-        analysis::code_action::CodeActionTextEdit edit;
+        CodeActionTextEdit edit;
         edit.range = analysis::SourceRange{def->startLine, 0, def->endLine + 1, 0};
         edit.newText = "";
         return edit;
@@ -154,7 +153,7 @@ static analysis::code_action::CodeActionTextEdit BuildRemoveUnusedVariableEdit(c
     {
         return BuildRemoveSingleDeclaratorLine(def, sourceCode);
     }
-    analysis::code_action::CodeActionTextEdit edit;
+    CodeActionTextEdit edit;
     edit.range = removal.multiRemovalRange;
     edit.newText = "";
     return edit;
@@ -167,8 +166,8 @@ static analysis::code_action::CodeActionTextEdit BuildRemoveUnusedVariableEdit(c
  * @param[in] sourceCode Source text of the document.
  * @return Extracted symbol name, or empty string if not resolved.
  */
-static std::string ExtractSymbolNameFromDiag(const analysis::code_action::CodeActionDiagnosticView& diag,
-                                             const analysis::NodeIndex* index, std::string_view sourceCode)
+static std::string ExtractSymbolNameFromDiag(const CodeActionDiagnosticView& diag, const analysis::NodeIndex* index,
+                                             std::string_view sourceCode)
 {
     if (index && !sourceCode.empty())
     {
@@ -202,21 +201,21 @@ static std::string ExtractSymbolNameFromDiag(const analysis::code_action::CodeAc
  * @param[in] i18n Internationalization provider for localized action titles.
  * @return Configured CodeActionEntry ready for presentation.
  */
-static analysis::code_action::CodeActionEntry
-MakeIgnoreUnusedSymbolEntry(uint32_t diagIndex, std::string_view symbolName, const i18n::I18n* i18n)
+static CodeActionEntry MakeIgnoreUnusedSymbolEntry(uint32_t diagIndex, std::string_view symbolName,
+                                                   const i18n::I18n* i18n)
 {
     std::string title = i18n::FormatMessage(i18n, "action-ignore-unused-symbol",
                                             "Ignore unused symbol '{}' (mark as entry point / callback)", symbolName);
     std::string cmdTitle = i18n::FormatMessage(i18n, "action-ignore-unused-symbol-cmd", "Ignore unused symbol");
 
-    analysis::code_action::CodeActionEntry entry;
+    CodeActionEntry entry;
     entry.title = std::move(title);
-    entry.kind = analysis::code_action::CodeActionEntryKind::QuickFix;
+    entry.kind = CodeActionEntryKind::QuickFix;
     entry.isPreferred = true;
     entry.diagnosticIndices = std::vector<uint32_t>{diagIndex};
 
-    analysis::code_action::CodeActionCommandEntry cmd;
-    cmd.kind = analysis::code_action::CodeActionCommandKind::IgnoreUnusedSymbol;
+    CodeActionCommandEntry cmd;
+    cmd.kind = CodeActionCommandKind::IgnoreUnusedSymbol;
     cmd.title = std::move(cmdTitle);
     cmd.symbolName = std::string(symbolName);
     entry.command = std::move(cmd);
@@ -229,8 +228,7 @@ MakeIgnoreUnusedSymbolEntry(uint32_t diagIndex, std::string_view symbolName, con
  * @param[in] query Incoming code action query context.
  * @param[in,out] entries Destination entries vector.
  */
-static void AppendUnusedSymbolEntries(const analysis::code_action::CodeActionQuery& query,
-                                      std::vector<analysis::code_action::CodeActionEntry>& entries)
+static void AppendUnusedSymbolEntries(const CodeActionQuery& query, std::vector<CodeActionEntry>& entries)
 {
     for (uint32_t i = 0; i < static_cast<uint32_t>(query.diagnostics.size()); ++i)
     {
@@ -289,8 +287,7 @@ static void AppendUnusedSymbolEntries(const analysis::code_action::CodeActionQue
  * @param[in] query Incoming code action query context.
  * @param[in,out] entries Destination vector for generated code action entries.
  */
-void TryAddRemoveUnusedVariableFixes(const analysis::code_action::CodeActionQuery& query,
-                                     std::vector<analysis::code_action::CodeActionEntry>& entries)
+void TryAddRemoveUnusedVariableFixes(const CodeActionQuery& query, std::vector<CodeActionEntry>& entries)
 {
     AppendUnusedSymbolEntries(query, entries);
 
@@ -330,14 +327,13 @@ void TryAddRemoveUnusedVariableFixes(const analysis::code_action::CodeActionQuer
             continue;
         }
 
-        analysis::code_action::CodeActionTextEdit edit =
-            BuildRemoveUnusedVariableEdit(*query.nodeIndex, query.sourceCode, def);
-        analysis::code_action::CodeActionEntry entry;
+        CodeActionTextEdit edit = BuildRemoveUnusedVariableEdit(*query.nodeIndex, query.sourceCode, def);
+        CodeActionEntry entry;
         entry.title = i18n::FormatMessage(query.i18n, "action-remove-unused-variable", "Remove unused variable '{}'",
                                           std::string_view(def->name));
-        entry.kind = analysis::code_action::CodeActionEntryKind::QuickFix;
+        entry.kind = CodeActionEntryKind::QuickFix;
         entry.isPreferred = true;
-        entry.edits = std::vector<analysis::code_action::CodeActionTextEdit>{std::move(edit)};
+        entry.edits = std::vector<CodeActionTextEdit>{std::move(edit)};
 
         std::vector<uint32_t> matchingDiagIndices;
         for (uint32_t i = 0; i < static_cast<uint32_t>(query.diagnostics.size()); ++i)
@@ -357,4 +353,4 @@ void TryAddRemoveUnusedVariableFixes(const analysis::code_action::CodeActionQuer
     }
 }
 
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::code_action

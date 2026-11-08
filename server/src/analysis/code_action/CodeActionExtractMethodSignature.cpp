@@ -3,10 +3,10 @@
  * @brief Signature deduction and call-site plan generation for extracted method.
  */
 
-#include "features/code_action/CodeActionExtractMethodAnalysis.h"
+#include "analysis/code_action/CodeActionExtractMethodAnalysis.h"
 #include "utils/Utils.h"
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::code_action
 {
 
 static void BuildMethodParamsAndArgs(const std::vector<VarInfo>& inputParams, const std::vector<VarInfo>& outputVars,
@@ -50,7 +50,7 @@ static void BuildMethodParamsAndArgs(const std::vector<VarInfo>& inputParams, co
  * @param[in,out] plan Extracted method plan populated with return type and call site.
  */
 static void DeduceReturnAndCallSite(const ExtractedMethodVariables& vars, const ExtractMethodStatements& stmts,
-                                    const analysis::code_action::CodeActionQuery& query, ExtractedMethodPlan& plan)
+                                    const CodeActionQuery& query, ExtractedMethodPlan& plan)
 {
     const std::string methodName = "NewMethod";
     plan.returnType = "void";
@@ -124,8 +124,7 @@ static void DeduceReturnAndCallSite(const ExtractedMethodVariables& vars, const 
  * @return Extracted method signature and call-site plan.
  */
 ExtractedMethodPlan DeduceExtractedMethodSignature(const ExtractedMethodVariables& vars,
-                                                   const ExtractMethodStatements& stmts,
-                                                   const analysis::code_action::CodeActionQuery& query)
+                                                   const ExtractMethodStatements& stmts, const CodeActionQuery& query)
 {
     ExtractedMethodPlan plan;
     plan.extractedBody = stmts.selectedCode;
@@ -134,4 +133,4 @@ ExtractedMethodPlan DeduceExtractedMethodSignature(const ExtractedMethodVariable
     return plan;
 }
 
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::code_action

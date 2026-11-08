@@ -1,4 +1,4 @@
-#include "features/code_action/CodeActionInternal.h"
+#include "analysis/code_action/CodeActionInternal.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::code_action
 {
 
 /**
@@ -111,7 +111,7 @@ static std::vector<TypoCandidate> RankIncludeCandidates(const std::string& inclu
  * @param[out] entries Destination code action entries vector.
  */
 static void EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vector<TypoCandidate>& ranked,
-                                   std::vector<analysis::code_action::CodeActionEntry>& entries)
+                                   std::vector<CodeActionEntry>& entries)
 {
     const std::string_view line =
         angel_lsp::utils::GetLine(ctx.query.sourceCode, static_cast<uint32_t>(ctx.directive.line));
@@ -133,17 +133,17 @@ static void EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vect
 
     for (size_t i = 0; i < offered; ++i)
     {
-        analysis::code_action::CodeActionEntry entry;
+        CodeActionEntry entry;
         entry.title = i18n::FormatMessage(ctx.query.i18n, "action-did-you-mean", "Did you mean '{}'?",
                                           std::string_view(ranked[i].name));
-        entry.kind = analysis::code_action::CodeActionEntryKind::QuickFix;
+        entry.kind = CodeActionEntryKind::QuickFix;
         entry.diagnosticIndices = std::vector<uint32_t>{ctx.diagIndex};
         if (i == 0 && hasClearWinner)
         {
             entry.isPreferred = true;
         }
 
-        entry.edits = std::vector<analysis::code_action::CodeActionTextEdit>{analysis::code_action::CodeActionTextEdit{
+        entry.edits = std::vector<CodeActionTextEdit>{CodeActionTextEdit{
             analysis::SourceRange{static_cast<uint32_t>(ctx.directive.line), static_cast<uint32_t>(openPos + 1),
                                   static_cast<uint32_t>(ctx.directive.line), static_cast<uint32_t>(closePos)},
             ranked[i].name}};
@@ -221,16 +221,15 @@ static std::string FormatSortedIncludesBlock(const std::vector<std::string>& ang
  * @param[in] query Incoming code action query context.
  * @param[in,out] entries Destination vector for generated code action entries.
  */
-void TryAddUnresolvedIncludeSuggestions(const analysis::code_action::CodeActionQuery& query,
-                                        std::vector<analysis::code_action::CodeActionEntry>& entries)
+void TryAddUnresolvedIncludeSuggestions(const CodeActionQuery& query, std::vector<CodeActionEntry>& entries)
 {
     if (query.sourceCode.empty())
     {
         return;
     }
-    const bool anyUnresolvedInclude = std::any_of(query.diagnostics.begin(), query.diagnostics.end(),
-                                                  [](const analysis::code_action::CodeActionDiagnosticView& diag)
-                                                  { return MatchDiagnosticCode(diag, "as-warn-include-not-found"); });
+    const bool anyUnresolvedInclude =
+        std::any_of(query.diagnostics.begin(), query.diagnostics.end(), [](const CodeActionDiagnosticView& diag)
+                    { return MatchDiagnosticCode(diag, "as-warn-include-not-found"); });
     if (!anyUnresolvedInclude)
     {
         return;
@@ -272,8 +271,7 @@ void TryAddUnresolvedIncludeSuggestions(const analysis::code_action::CodeActionQ
  * @param[in] query Incoming code action query context.
  * @param[in,out] entries Destination vector for generated code action entries.
  */
-void TryAddSortAndCleanIncludesAction(const analysis::code_action::CodeActionQuery& query,
-                                      std::vector<analysis::code_action::CodeActionEntry>& entries)
+void TryAddSortAndCleanIncludesAction(const CodeActionQuery& query, std::vector<CodeActionEntry>& entries)
 {
     auto includes = utils::IncludeResolver::ExtractIncludes(query.sourceCode);
     if (includes.empty())
@@ -319,15 +317,15 @@ void TryAddSortAndCleanIncludesAction(const analysis::code_action::CodeActionQue
     std::sort(angledIncludes.begin(), angledIncludes.end());
     std::sort(quotedIncludes.begin(), quotedIncludes.end());
 
-    analysis::code_action::CodeActionEntry entry;
+    CodeActionEntry entry;
     entry.title =
         i18n::FormatMessage(query.i18n, "action-sort-and-clean-includes", "Sort and Clean #include Directives");
-    entry.kind = analysis::code_action::CodeActionEntryKind::SourceOrganizeImports;
-    entry.edits = std::vector<analysis::code_action::CodeActionTextEdit>{analysis::code_action::CodeActionTextEdit{
+    entry.kind = CodeActionEntryKind::SourceOrganizeImports;
+    entry.edits = std::vector<CodeActionTextEdit>{CodeActionTextEdit{
         analysis::SourceRange{static_cast<uint32_t>(firstLine), 0, static_cast<uint32_t>(lastLine + 1), 0},
         FormatSortedIncludesBlock(angledIncludes, quotedIncludes)}};
 
     entries.push_back(std::move(entry));
 }
 
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::code_action

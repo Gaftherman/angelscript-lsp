@@ -3,8 +3,8 @@
  * @brief Quick-fix code action to cache repeated conversions in if-else ladders.
  */
 
+#include "analysis/code_action/CodeActionInternal.h"
 #include "analysis/index/RepeatedConversionFacts.h"
-#include "features/code_action/CodeActionInternal.h"
 #include "parser/Keywords.h"
 
 #include <cctype>
@@ -14,7 +14,7 @@
 #include <string_view>
 #include <vector>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::code_action
 {
 
 /**
@@ -22,8 +22,7 @@ namespace angel_lsp::features
  * @param[in] diag Diagnostic view to inspect.
  * @return Extracted diagnostic information or std::nullopt if unmatched or malformed.
  */
-static std::optional<ExtractedDiagInfo>
-ParseDiagnosticMessage(const analysis::code_action::CodeActionDiagnosticView& diag)
+static std::optional<ExtractedDiagInfo> ParseDiagnosticMessage(const CodeActionDiagnosticView& diag)
 {
     if (!MatchDiagnosticCode(diag, "as-hint-repeated-conversion") || !diag.messageIsPlainText)
     {
@@ -80,27 +79,25 @@ static std::string DeriveVariableName(std::string_view exprText, std::string_vie
  * @param[in,out] entries Destination vector for generated code action entries.
  */
 static void BuildConversionEntry(const analysis::IfLadderConversionSites& sites, const ExtractedDiagInfo& info,
-                                 const analysis::code_action::CodeActionQuery& query,
-                                 std::vector<analysis::code_action::CodeActionEntry>& entries)
+                                 const CodeActionQuery& query, std::vector<CodeActionEntry>& entries)
 {
     const std::string varName = DeriveVariableName(info.exprText, info.toType);
     const uint32_t stmtRow = sites.rootIfLine;
     const std::string indent = GetLineIndentation(query.sourceCode, stmtRow);
 
-    std::vector<analysis::code_action::CodeActionTextEdit> textEdits;
-    textEdits.push_back(analysis::code_action::CodeActionTextEdit{analysis::SourceRange{stmtRow, 0, stmtRow, 0},
-                                                                  indent + info.toType + " " + varName + " = " +
-                                                                      info.exprText + ";\n"});
+    std::vector<CodeActionTextEdit> textEdits;
+    textEdits.push_back(CodeActionTextEdit{analysis::SourceRange{stmtRow, 0, stmtRow, 0},
+                                           indent + info.toType + " " + varName + " = " + info.exprText + ";\n"});
     for (const auto& occ : sites.occurrences)
     {
-        textEdits.push_back(analysis::code_action::CodeActionTextEdit{occ, varName});
+        textEdits.push_back(CodeActionTextEdit{occ, varName});
     }
 
-    analysis::code_action::CodeActionEntry entry;
+    CodeActionEntry entry;
     entry.title =
         i18n::FormatMessage(query.i18n, "action-init-local-variable", "Initialize local '{}' variable for '{}'",
                             std::string_view(info.toType), std::string_view(info.exprText));
-    entry.kind = analysis::code_action::CodeActionEntryKind::QuickFix;
+    entry.kind = CodeActionEntryKind::QuickFix;
     entry.isPreferred = true;
     entry.edits = std::move(textEdits);
 
@@ -112,8 +109,7 @@ static void BuildConversionEntry(const analysis::IfLadderConversionSites& sites,
  * @param[in] query Incoming code action query context.
  * @param[in,out] entries Destination vector for generated code action entries.
  */
-void TryAddRepeatedConversionFix(const analysis::code_action::CodeActionQuery& query,
-                                 std::vector<analysis::code_action::CodeActionEntry>& entries)
+void TryAddRepeatedConversionFix(const CodeActionQuery& query, std::vector<CodeActionEntry>& entries)
 {
     if (!query.nodeIndex || query.sourceCode.empty())
     {
@@ -140,4 +136,4 @@ void TryAddRepeatedConversionFix(const analysis::code_action::CodeActionQuery& q
     }
 }
 
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::code_action

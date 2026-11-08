@@ -3,9 +3,10 @@
  * @brief Miscellaneous quick-fix code action providers (primitive handles, funcdefs, bool conversions).
  */
 
+#include "analysis/code_action/CodeActionInternal.h"
 #include "analysis/documentation/SignatureFormatter.h"
-#include "features/code_action/CodeActionInternal.h"
 #include "i18n/i18n.h"
+#include "parser/Keywords.h"
 
 #include <cstdint>
 #include <string>
@@ -13,7 +14,7 @@
 #include <variant>
 #include <vector>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::code_action
 {
 
 /**
@@ -56,8 +57,9 @@ static const analysis::Symbol* FindUniqueGlobalFunction(const analysis::SymbolTa
 static std::string FormatFuncdefDeclarationText(const analysis::FunctionSignature& signature,
                                                 const std::string& funcdefName)
 {
-    std::string declaration = "funcdef ";
-    declaration += signature.returnType.empty() ? "void" : signature.returnType;
+    std::string declaration{parser::keywords::Funcdef};
+    declaration += ' ';
+    declaration += signature.returnType.empty() ? parser::keywords::Void : std::string_view{signature.returnType};
     declaration += " " + funcdefName + "(";
     for (size_t i = 0; i < signature.parameters.size(); ++i)
     {
@@ -78,15 +80,15 @@ static std::string FormatFuncdefDeclarationText(const analysis::FunctionSignatur
  * @param[in] item Funcdef fix metadata item.
  * @param[in,out] entries Destination entries vector.
  */
-static void EmitFuncdefEntry(const analysis::code_action::CodeActionQuery& query, uint32_t diagIndex,
-                             const FuncdefFixItem& item, std::vector<analysis::code_action::CodeActionEntry>& entries)
+static void EmitFuncdefEntry(const CodeActionQuery& query, uint32_t diagIndex, const FuncdefFixItem& item,
+                             std::vector<CodeActionEntry>& entries)
 {
-    std::vector<analysis::code_action::CodeActionTextEdit> edits;
-    edits.push_back(analysis::code_action::CodeActionTextEdit{
+    std::vector<CodeActionTextEdit> edits;
+    edits.push_back(CodeActionTextEdit{
         analysis::SourceRange{0, 0, 0, 0},
         item.declaration,
     });
-    edits.push_back(analysis::code_action::CodeActionTextEdit{
+    edits.push_back(CodeActionTextEdit{
         item.typeRange,
         item.funcdefName,
     });
@@ -107,8 +109,7 @@ static void EmitFuncdefEntry(const analysis::code_action::CodeActionQuery& query
  * @param[in] query Incoming code action query context.
  * @param[in,out] entries Destination vector for generated code action entries.
  */
-void TryAddHandleOnPrimitiveFix(const analysis::code_action::CodeActionQuery& query,
-                                std::vector<analysis::code_action::CodeActionEntry>& entries)
+void TryAddHandleOnPrimitiveFix(const CodeActionQuery& query, std::vector<CodeActionEntry>& entries)
 {
     if (!query.nodeIndex || query.sourceCode.empty())
     {
@@ -130,10 +131,9 @@ void TryAddHandleOnPrimitiveFix(const analysis::code_action::CodeActionQuery& qu
             continue;
         }
 
-        analysis::code_action::CodeActionTextEdit edit{
-            analysis::SourceRange{diag.range.startLine, static_cast<uint32_t>(at), diag.range.startLine,
-                                  static_cast<uint32_t>(at + 1)},
-            ""};
+        CodeActionTextEdit edit{analysis::SourceRange{diag.range.startLine, static_cast<uint32_t>(at),
+                                                      diag.range.startLine, static_cast<uint32_t>(at + 1)},
+                                ""};
 
         std::string title = i18n::FormatMessage(query.i18n, "action-remove-primitive-handle",
                                                 "Remove '@' - a primitive has no handle type");
@@ -147,8 +147,7 @@ void TryAddHandleOnPrimitiveFix(const analysis::code_action::CodeActionQuery& qu
  * @param[in] query Incoming code action query context.
  * @param[in,out] entries Destination vector for generated code action entries.
  */
-void TryAddGenerateFuncdefFix(const analysis::code_action::CodeActionQuery& query,
-                              std::vector<analysis::code_action::CodeActionEntry>& entries)
+void TryAddGenerateFuncdefFix(const CodeActionQuery& query, std::vector<CodeActionEntry>& entries)
 {
     if (!query.nodeIndex || query.sourceCode.empty())
     {
@@ -197,8 +196,7 @@ void TryAddGenerateFuncdefFix(const analysis::code_action::CodeActionQuery& quer
  * @param[in] query Incoming code action query context.
  * @param[in,out] entries Destination vector for generated code action entries.
  */
-void TryAddBoolConversionFix(const analysis::code_action::CodeActionQuery& query,
-                             std::vector<analysis::code_action::CodeActionEntry>& entries)
+void TryAddBoolConversionFix(const CodeActionQuery& query, std::vector<CodeActionEntry>& entries)
 {
     if (!query.nodeIndex || query.sourceCode.empty())
     {
@@ -237,10 +235,9 @@ void TryAddBoolConversionFix(const analysis::code_action::CodeActionQuery& query
             continue;
         }
 
-        analysis::code_action::CodeActionTextEdit edit{
-            analysis::SourceRange{diag.range.endLine, diag.range.endCharacter, diag.range.endLine,
-                                  diag.range.endCharacter},
-            "." + std::string(oper) + "()"};
+        CodeActionTextEdit edit{analysis::SourceRange{diag.range.endLine, diag.range.endCharacter, diag.range.endLine,
+                                                      diag.range.endCharacter},
+                                "." + std::string(oper) + "()"};
 
         std::string title = i18n::FormatMessage(query.i18n, "action-call-explicitly", "Call {}() explicitly", oper);
 
@@ -251,4 +248,4 @@ void TryAddBoolConversionFix(const analysis::code_action::CodeActionQuery& query
     }
 }
 
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::code_action

@@ -3,7 +3,9 @@
  * @brief Dispatcher for LSP Code Action and Code Action Resolve requests.
  */
 
-#include "features/code_action/CodeActionInternal.h"
+#include "features/code_action/CodeActionHandler.h"
+
+#include "analysis/code_action/CodeActionEngine.h"
 #include "features/common/FeatureSharedUtils.h"
 
 #include <variant>
@@ -184,7 +186,7 @@ static void FlushEntries(std::vector<analysis::code_action::CodeActionEntry>& en
 
 std::optional<std::vector<lsp::CodeAction>> GetCodeActions(const CodeActionRequest& request)
 {
-    if (!request.tree || request.sourceCode.empty())
+    if (!request.nodeIndex || request.nodeIndex->Empty() || request.sourceCode.empty())
     {
         return std::nullopt;
     }
@@ -192,26 +194,11 @@ std::optional<std::vector<lsp::CodeAction>> GetCodeActions(const CodeActionReque
     const auto views = BuildDiagnosticViews(request.context);
     const analysis::code_action::CodeActionQuery query{
         request.uri,    request.sourceCode,  request.nodeIndex,  FromLspRange(request.range),
-        views,          request.symbolTable, request.scopeIndex, request.allowedRoots,
+        views,          request.symbolTable, request.scopeIndex, request.includeScope.allowedRoots,
         request.config, request.i18n};
-    std::vector<analysis::code_action::CodeActionEntry> entries;
+    auto entries = analysis::code_action::CollectCodeActionEntries(query);
 
     std::vector<lsp::CodeAction> actions;
-    TryAddRemoveUnusedVariableFixes(query, entries);
-    TryAddImplementInterfaceFixes(query, entries);
-    TryAddExtractVariableAction(query, entries);
-    TryAddExtractMethodAction(query, entries);
-    TryAddGetterSetterActions(query, entries);
-    TryAddConstQualifierActions(query, entries);
-    TryAddUndefinedIdentifierSuggestions(query, entries);
-    TryAddHandleOnPrimitiveFix(query, entries);
-    TryAddUnresolvedIncludeSuggestions(query, entries);
-    TryAddAccessorPropertyKeywordFix(query, entries);
-    TryAddBoolConversionFix(query, entries);
-    TryAddRepeatedConversionFix(query, entries);
-    TryAddGenerateFuncdefFix(query, entries);
-    TryAddSortAndCleanIncludesAction(query, entries);
-    TryAddDiagnosticSuppressionFixes(query, entries);
     FlushEntries(entries, request, actions);
 
     if (actions.empty())

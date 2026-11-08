@@ -3,12 +3,12 @@
  * @brief Quick-fix provider for generating missing interface method implementations in classes.
  */
 
+#include "analysis/code_action/CodeActionInternal.h"
 #include "analysis/documentation/SignatureFormatter.h"
 #include "analysis/index/CodeActionFacts.h"
 #include "analysis/resolution/InterfaceImplementation.h"
 #include "analysis/types/TypeSanitization.h"
 #include "config/ServerConfig.h"
-#include "features/code_action/CodeActionInternal.h"
 #include "parser/Primitives.h"
 
 #include <cstdint>
@@ -17,7 +17,7 @@
 #include <string_view>
 #include <vector>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::code_action
 {
 
 /**
@@ -100,7 +100,7 @@ static std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis:
  * @return Vector of matching diagnostic indices.
  */
 static std::vector<uint32_t>
-CollectMatchingInterfaceDiagnosticIndices(std::span<const analysis::code_action::CodeActionDiagnosticView> diagnostics,
+CollectMatchingInterfaceDiagnosticIndices(std::span<const CodeActionDiagnosticView> diagnostics,
                                           const analysis::Symbol& clsSym)
 {
     std::vector<uint32_t> matching;
@@ -121,8 +121,7 @@ CollectMatchingInterfaceDiagnosticIndices(std::span<const analysis::code_action:
  * @param[in] query Incoming code action query context.
  * @param[in,out] entries Destination vector for generated code action entries.
  */
-void TryAddImplementInterfaceFixes(const analysis::code_action::CodeActionQuery& query,
-                                   std::vector<analysis::code_action::CodeActionEntry>& entries)
+void TryAddImplementInterfaceFixes(const CodeActionQuery& query, std::vector<CodeActionEntry>& entries)
 {
     if (!query.nodeIndex)
     {
@@ -180,11 +179,11 @@ void TryAddImplementInterfaceFixes(const analysis::code_action::CodeActionQuery&
                         insertCharacter = brace->character;
                     }
 
-                    analysis::code_action::CodeActionEntry codeAction;
+                    CodeActionEntry codeAction;
                     codeAction.title = i18n::FormatMessage(query.i18n, "action-implement-interface",
                                                            "Implement missing interface methods for '{}'",
                                                            std::string_view(cleanIface));
-                    codeAction.kind = analysis::code_action::CodeActionEntryKind::QuickFix;
+                    codeAction.kind = CodeActionEntryKind::QuickFix;
                     codeAction.isPreferred = true;
 
                     auto matchingDiags = CollectMatchingInterfaceDiagnosticIndices(query.diagnostics, clsSym);
@@ -193,10 +192,9 @@ void TryAddImplementInterfaceFixes(const analysis::code_action::CodeActionQuery&
                         codeAction.diagnosticIndices = std::move(matchingDiags);
                     }
 
-                    codeAction.edits = std::vector<analysis::code_action::CodeActionTextEdit>{
-                        analysis::code_action::CodeActionTextEdit{
-                            analysis::SourceRange{insertLine, insertCharacter, insertLine, insertCharacter},
-                            std::move(stubs)}};
+                    codeAction.edits = std::vector<CodeActionTextEdit>{CodeActionTextEdit{
+                        analysis::SourceRange{insertLine, insertCharacter, insertLine, insertCharacter},
+                        std::move(stubs)}};
 
                     entries.push_back(std::move(codeAction));
                 }
@@ -204,4 +202,4 @@ void TryAddImplementInterfaceFixes(const analysis::code_action::CodeActionQuery&
         });
 }
 
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::code_action

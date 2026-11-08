@@ -7,7 +7,7 @@
 #include <string>
 #include <string_view>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::code_action
 {
 
 /**
@@ -34,4 +34,4 @@ struct ClassMutationContext
  */
 bool MethodBodyMutatesClassState(const ClassMutationContext& context);
 
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::code_action

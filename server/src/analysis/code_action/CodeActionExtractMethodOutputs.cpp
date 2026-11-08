@@ -3,10 +3,10 @@
  * @brief Analysis for identifying mutated and output variables in extracted method selection.
  */
 
-#include "features/code_action/CodeActionExtractMethodAnalysis.h"
+#include "analysis/code_action/CodeActionExtractMethodAnalysis.h"
 #include "utils/Utils.h"
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::code_action
 {
 
 static bool IsVariableReferencedAfter(const analysis::Scope* fnScope, const std::string& name, uint32_t line,
@@ -202,4 +202,4 @@ std::vector<VarInfo> CollectMethodOutputs(const ExtractMethodStatements& stmts, 
     return outputVars;
 }
 
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::code_action

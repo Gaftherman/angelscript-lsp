@@ -3,10 +3,10 @@
  * @brief Analysis for statement range selection and input variable identification.
  */
 
-#include "features/code_action/CodeActionExtractMethodAnalysis.h"
+#include "analysis/code_action/CodeActionExtractMethodAnalysis.h"
 #include "utils/Utils.h"
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::code_action
 {
 
 /**
@@ -70,7 +70,7 @@ static bool IsValidMethodInputRef(const analysis::LocalReference& ref, const ana
  * @param[in] query Incoming code action query context.
  * @return Extracted statement metadata if selection is valid, std::nullopt otherwise.
  */
-std::optional<ExtractMethodStatements> FindSelectedStatements(const analysis::code_action::CodeActionQuery& query)
+std::optional<ExtractMethodStatements> FindSelectedStatements(const CodeActionQuery& query)
 {
     if (!query.nodeIndex)
     {
@@ -126,4 +126,4 @@ std::vector<VarInfo> CollectMethodInputs(const ExtractMethodStatements& stmts, c
     return inputParams;
 }
 
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::code_action

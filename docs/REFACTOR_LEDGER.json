@@ -2025,6 +2025,275 @@
         "AdversarialFeaturesTest",
         "SvenCoopScriptReproductionTest"
       ]
+    },
+    {
+      "id": "REF-M11-FACTS-SITE",
+      "phase": "M11",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/code_action/CodeActionCommon.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "FindEnclosingClassNode, FindEnclosingFunctionNode, FindEnclosingBlockStatement, FindInnermostStatementBlock, FindEnclosingClassAndBody",
+      "whatItDidAndWhyInThatFile": "Climbed the raw tree from the cursor to locate the enclosing class, function or block for several providers.",
+      "whyChangedOrDeleted": "Tree inspection is pass-1 work (Rule 4.10); providers now read NodeIndex-backed site facts.",
+      "replacedByCanonicalFile": "server/src/analysis/index/CodeActionFacts.cpp",
+      "replacedByCanonicalSymbol": "FindNodeSpanAtPoint",
+      "ramOrCpuImpact": "Unchanged: one descent plus a bounded ancestor climb per request.",
+      "verifiedByTests": [
+        "CodeActionTest",
+        "RefactoringTest",
+        "CodeActionFactsTest",
+        "AdversarialRefactoringM2ChallengerTest"
+      ]
+    },
+    {
+      "id": "REF-M11-FACTS-EXTRACT-VAR",
+      "phase": "M11",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/code_action/CodeActionExtractVariable.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "FindExtractableExpression, IsExtractableExpression, IsNonExtractableStatementOrContainer, IsFunctionFieldOfCall, BuildExtractVariableAction",
+      "whatItDidAndWhyInThatFile": "Walked the tree to find the expression under the selection and the statement to insert before.",
+      "whyChangedOrDeleted": "Moved into a pass-1 fact returning byte ranges and hint kinds; the provider builds the entry from them.",
+      "replacedByCanonicalFile": "server/src/analysis/index/ExtractVariableFacts.cpp",
+      "replacedByCanonicalSymbol": "FindExtractVariableSite",
+      "ramOrCpuImpact": "Unchanged: bounded descent per request.",
+      "verifiedByTests": [
+        "CodeActionTest",
+        "RefactoringTest",
+        "CodeActionFactsTest",
+        "AdversarialRefactoringM2ChallengerTest"
+      ]
+    },
+    {
+      "id": "REF-M11-FACTS-EXTRACT-METHOD",
+      "phase": "M11",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/code_action/CodeActionExtractMethodStatements.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "CollectStatementsInRange, BuildExtractMethodEdits",
+      "whatItDidAndWhyInThatFile": "Collected the selected statements and their locals by walking the function body.",
+      "whyChangedOrDeleted": "Selection analysis moved to pass-1; edits are CodeActionTextEdit values (call, then method definition).",
+      "replacedByCanonicalFile": "server/src/analysis/index/ExtractMethodFacts.cpp",
+      "replacedByCanonicalSymbol": "FindExtractMethodSelection",
+      "ramOrCpuImpact": "Unchanged: one flat cursor walk over the selection.",
+      "verifiedByTests": [
+        "CodeActionTest",
+        "RefactoringTest",
+        "CodeActionFactsTest",
+        "AdversarialRefactoringM2ChallengerTest"
+      ]
+    },
+    {
+      "id": "REF-M11-FACTS-MUTATION",
+      "phase": "M11",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/code_action/CodeActionExtractMethodOutputs.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "CheckNodeMutations, CheckAssignmentMutation, CheckIncDecMutation, CheckCallMutation, TraverseSubtreeMutations, InsertIfIdentifier, IsLhsOfAssignment",
+      "whatItDidAndWhyInThatFile": "Recursively visited the selection to find variables written inside it.",
+      "whyChangedOrDeleted": "Replaced by a flat-cursor pass-1 collector returning mutated name ranges (Prohibition 7).",
+      "replacedByCanonicalFile": "server/src/analysis/index/ExtractMethodMutationFacts.cpp",
+      "replacedByCanonicalSymbol": "CollectMutatedNameRanges",
+      "ramOrCpuImpact": "Recursion replaced by a flat cursor walk; same O(n) visits.",
+      "verifiedByTests": [
+        "CodeActionTest",
+        "RefactoringTest",
+        "CodeActionFactsTest",
+        "AdversarialRefactoringM2ChallengerTest"
+      ]
+    },
+    {
+      "id": "REF-M11-FACTS-REPEATED-CONV",
+      "phase": "M11",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/code_action/CodeActionRepeatedConversion.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "FindRootIfStatement, BuildCodeActionEdits",
+      "whatItDidAndWhyInThatFile": "Climbed to the root of an if/else ladder and sliced the repeated conversion expressions.",
+      "whyChangedOrDeleted": "Ladder discovery is pass-1 work; the fact returns the conversion sites as byte ranges.",
+      "replacedByCanonicalFile": "server/src/analysis/index/RepeatedConversionFacts.cpp",
+      "replacedByCanonicalSymbol": "FindIfLadderConversionSites",
+      "ramOrCpuImpact": "Unchanged: one ladder walk per request.",
+      "verifiedByTests": [
+        "CodeActionTest",
+        "RefactoringTest",
+        "CodeActionFactsTest",
+        "AdversarialRefactoringM2ChallengerTest",
+        "RepeatedConversionCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-M11-FACTS-ACCESSOR",
+      "phase": "M11",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/code_action/CodeActionAccessors.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "FindAccessorPropertyInsertionPoint, IsMemberField, EmitGetterSetterActionsForField, CreateAccessorAction",
+      "whatItDidAndWhyInThatFile": "Inspected the field declaration and accessor keyword position from the raw tree.",
+      "whyChangedOrDeleted": "Moved into pass-1 accessor facts; the provider emits CodeActionEntry values.",
+      "replacedByCanonicalFile": "server/src/analysis/index/AccessorFacts.cpp",
+      "replacedByCanonicalSymbol": "FindAccessorSite",
+      "ramOrCpuImpact": "Unchanged.",
+      "verifiedByTests": [
+        "CodeActionTest",
+        "RefactoringTest",
+        "CodeActionFactsTest",
+        "AdversarialRefactoringM2ChallengerTest"
+      ]
+    },
+    {
+      "id": "REF-M11-FACTS-CLASS-MUTATION",
+      "phase": "M11",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/code_action/CodeActionClassMutation.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "CollectAstClassFields, IsSubtreeSkippable, StepUpCursor, CheckAssignmentMutatesClassState, CheckIncDecMutatesClassState, CheckMethodCallMutatesClassState, ExtractThisCallMethodName",
+      "whatItDidAndWhyInThatFile": "Walked a method body to decide whether it mutates class state before offering to add const.",
+      "whyChangedOrDeleted": "Tree walking moved to pass-1 mutation-site facts; the provider only classifies the recorded sites.",
+      "replacedByCanonicalFile": "server/src/analysis/index/ClassMutationFacts.cpp",
+      "replacedByCanonicalSymbol": "CollectMethodMutationFacts",
+      "ramOrCpuImpact": "Unchanged: one flat cursor walk over the method body.",
+      "verifiedByTests": [
+        "CodeActionTest",
+        "RefactoringTest",
+        "CodeActionFactsTest",
+        "AdversarialRefactoringM2ChallengerTest"
+      ]
+    },
+    {
+      "id": "REF-M11-FACTS-CONST",
+      "phase": "M11",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/code_action/CodeActionConstQualifier.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "FindFunctionBodyBlock, FindFunctionParametersNode, HasConstQualifierBetween, FindEnclosingMethodAndClass, BuildAddConstAction",
+      "whatItDidAndWhyInThatFile": "Located parameter lists, bodies and existing const qualifiers on the raw tree.",
+      "whyChangedOrDeleted": "Moved into pass-1 const-qualifier facts; the provider builds entries from points and ranges.",
+      "replacedByCanonicalFile": "server/src/analysis/index/ConstQualifierFacts.cpp",
+      "replacedByCanonicalSymbol": "FindIntentionalConstSite",
+      "ramOrCpuImpact": "Unchanged.",
+      "verifiedByTests": [
+        "CodeActionTest",
+        "RefactoringTest",
+        "CodeActionFactsTest",
+        "AdversarialRefactoringM2ChallengerTest"
+      ]
+    },
+    {
+      "id": "REF-M11-FACTS-CLASS-BODY",
+      "phase": "M11",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/code_action/CodeActionInterfaceImplementer.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "FindClassBodyInsertionPoint, FindClassClosingBracePoint, FindClassInterfaceInsertionPosition",
+      "whatItDidAndWhyInThatFile": "Three near-identical searches for class braces in the interface and accessor providers.",
+      "whyChangedOrDeleted": "Unified into one pass-1 class-body fact used by every provider.",
+      "replacedByCanonicalFile": "server/src/analysis/index/CodeActionFacts.cpp",
+      "replacedByCanonicalSymbol": "FindClassOpenBracePoint",
+      "ramOrCpuImpact": "Removes duplicate descents.",
+      "verifiedByTests": [
+        "CodeActionTest",
+        "RefactoringTest",
+        "CodeActionFactsTest",
+        "AdversarialRefactoringM2ChallengerTest"
+      ]
+    },
+    {
+      "id": "REF-M11-FACTS-UNUSED",
+      "phase": "M11",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/code_action/CodeActionUnusedVariables.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "BuildRemoveMultiDeclaratorItem, AppendUnusedSymbolActions, MakeIgnoreUnusedSymbolAction",
+      "whatItDidAndWhyInThatFile": "Sliced multi-declarator lists on the raw tree and built LSP actions with the ignore command.",
+      "whyChangedOrDeleted": "The removal range comes from a pass-1 fact; actions are entries with an IgnoreUnusedSymbol command.",
+      "replacedByCanonicalFile": "server/src/analysis/index/CodeActionFacts.cpp",
+      "replacedByCanonicalSymbol": "FindUnusedDeclaratorRemoval",
+      "ramOrCpuImpact": "Unchanged.",
+      "verifiedByTests": [
+        "CodeActionTest",
+        "RefactoringTest",
+        "CodeActionFactsTest",
+        "AdversarialRefactoringM2ChallengerTest"
+      ]
+    },
+    {
+      "id": "REF-M11-ENTRY-STRUCT",
+      "phase": "M11",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/code_action/CodeActionInternal.h",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "EmitFuncdefCodeAction, EmitTypoCodeActions, AddLineSuppressionFix, AddRangeSuppressionFix, AddFileSuppressionFix",
+      "whatItDidAndWhyInThatFile": "Providers built lsp::CodeAction objects directly inside the feature layer.",
+      "whyChangedOrDeleted": "Providers emit protocol-free CodeActionEntry values; only the dispatcher maps them to LSP.",
+      "replacedByCanonicalFile": "server/src/analysis/code_action/CodeActionTypes.h",
+      "replacedByCanonicalSymbol": "CodeActionEntry",
+      "ramOrCpuImpact": "Same allocations; mapping happens once at the end.",
+      "verifiedByTests": [
+        "CodeActionTest",
+        "RefactoringTest",
+        "CodeActionFactsTest",
+        "AdversarialRefactoringM2ChallengerTest"
+      ]
+    },
+    {
+      "id": "REF-M11-DISABLE-ACTION-DEDUP",
+      "phase": "M11",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/features/code_action/CodeActionCommon.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "MakeDisableDiagnosticAction, MakeQuickFixAction, QuickFixOptions, DisableDiagnosticActionOptions",
+      "whatItDidAndWhyInThatFile": "Two overloads each built disable and quick-fix LSP actions; one duplicated the JSON and hardcoded its title.",
+      "whyChangedOrDeleted": "Replaced by entry builders; the command title now goes through i18n (Prohibition 11).",
+      "replacedByCanonicalFile": "server/src/analysis/code_action/CodeActionCommon.cpp",
+      "replacedByCanonicalSymbol": "MakeDisableDiagnosticEntry",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "CodeActionTest",
+        "RefactoringTest",
+        "CodeActionFactsTest",
+        "AdversarialRefactoringM2ChallengerTest"
+      ]
+    },
+    {
+      "id": "REF-M11-ENGINE-L2",
+      "phase": "M11",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/features/code_action/CodeActionHandler.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "CodeActionAccessors.cpp, CodeActionClassMutation.cpp, CodeActionClassMutation.h, CodeActionCommon.cpp, CodeActionConstQualifier.cpp, CodeActionExtractMethod.cpp, CodeActionExtractMethodAnalysis.h, CodeActionExtractMethodOutputs.cpp, CodeActionExtractMethodSignature.cpp, CodeActionExtractMethodStatements.cpp, CodeActionExtractVariable.cpp, CodeActionIncludes.cpp, CodeActionInterfaceImplementer.cpp, CodeActionInternal.h, CodeActionQuickFixes.cpp, CodeActionRepeatedConversion.cpp, CodeActionSuppressions.cpp, CodeActionTypos.cpp, CodeActionUnusedVariables.cpp",
+      "whatItDidAndWhyInThatFile": "The 15 providers lived in Layer 3 and were called one by one from the dispatcher.",
+      "whyChangedOrDeleted": "Moved unchanged to the protocol-free Layer 2 sub-layer; the dispatcher calls one engine entry point.",
+      "replacedByCanonicalFile": "server/src/analysis/code_action/CodeActionEngine.cpp",
+      "replacedByCanonicalSymbol": "CollectCodeActionEntries",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "CodeActionTest",
+        "RefactoringTest",
+        "CodeActionFactsTest",
+        "AdversarialRefactoringM2ChallengerTest"
+      ]
+    },
+    {
+      "id": "REF-M11-REQUEST-CLEANUP",
+      "phase": "M11",
+      "action": "CLEAN_SENTINEL",
+      "sourceFile": "server/src/features/code_action/CodeActionHandler.h",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "CodeActionRequest::tree, CodeActionRequest::allowedRoots",
+      "whatItDidAndWhyInThatFile": "The request carried a raw TSTree* and owned copies of the URI, source text and include roots.",
+      "whyChangedOrDeleted": "Providers read the NodeIndex; uri and sourceCode are borrowed views; roots arrive through utils::IncludeSearchScope.",
+      "replacedByCanonicalFile": "server/src/features/code_action/CodeActionHandler.h",
+      "replacedByCanonicalSymbol": "includeScope",
+      "ramOrCpuImpact": "Removes two string copies and a vector copy per request.",
+      "verifiedByTests": [
+        "CodeActionTest",
+        "RefactoringTest",
+        "CodeActionFactsTest",
+        "AdversarialRefactoringM2ChallengerTest",
+        "AdversarialPhase3FeaturesTest",
+        "TypeConfigDecouplingAndAnonymousObjectsTest"
+      ]
     }
   ]
 }

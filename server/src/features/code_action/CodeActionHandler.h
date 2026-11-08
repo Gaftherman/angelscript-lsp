@@ -5,12 +5,12 @@
 #include "analysis/index/SymbolTable.h"
 #include "config/ServerConfig.h"
 #include "i18n/i18n.h"
+#include "utils/IncludeResolver.h"
 
 #include <lsp/messages.h>
 #include <lsp/types.h>
 #include <optional>
-#include <string>
-#include <tree_sitter/api.h>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::features
@@ -20,14 +20,13 @@ namespace angel_lsp::features
  */
 struct CodeActionRequest
 {
-    std::string uri;
-    std::string sourceCode;
-    TSTree* tree = nullptr;
+    std::string_view uri;        ///< Document URI; borrowed, must outlive the request.
+    std::string_view sourceCode; ///< Document text; borrowed, must outlive the request.
     lsp::Range range;
     lsp::CodeActionContext context;
     const analysis::SymbolTable& symbolTable;
     const analysis::ScopeIndex& scopeIndex;
-    std::vector<std::string> allowedRoots = {};
+    utils::IncludeSearchScope includeScope{}; ///< Include confinement roots used by include fixes; borrowed.
     const config::ServerConfig* config = nullptr;
     const i18n::I18n* i18n = nullptr;
     /// Pass-1 index of the document; providers read syntax facts from it instead of the raw tree.

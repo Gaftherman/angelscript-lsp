@@ -1,8 +1,8 @@
+#include "analysis/code_action/CodeActionInternal.h"
 #include "analysis/diagnostics/DiagnosticSuppression.h"
-#include "features/code_action/CodeActionInternal.h"
 #include "i18n/i18n.h"
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::code_action
 {
 
 std::string GetLineIndentation(std::string_view sourceCode, uint32_t line)
@@ -88,7 +88,7 @@ static bool CodeMatches(std::string_view code, std::string_view expectedCode)
     return !expectedCanonical.empty() && expectedCanonical == canonical;
 }
 
-bool MatchDiagnosticCode(const analysis::code_action::CodeActionDiagnosticView& diag, std::string_view expectedCode)
+bool MatchDiagnosticCode(const CodeActionDiagnosticView& diag, std::string_view expectedCode)
 {
     return CodeMatches(diag.code, expectedCode);
 }
@@ -179,18 +179,18 @@ void CollectAllReferences(const analysis::Scope* rootScope, ankerl::unordered_de
     }
 }
 
-analysis::code_action::CodeActionEntry MakeDisableDiagnosticEntry(const DisableDiagnosticEntryOptions& options)
+CodeActionEntry MakeDisableDiagnosticEntry(const DisableDiagnosticEntryOptions& options)
 {
-    analysis::code_action::CodeActionEntry entry;
+    CodeActionEntry entry;
     entry.title = !options.title.empty()
                       ? options.title
                       : i18n::FormatMessage(options.i18n, "action-disable-in-workspace-settings",
                                             "Disable in workspace settings (angelscript.{})", options.settingKey);
-    entry.kind = analysis::code_action::CodeActionEntryKind::QuickFix;
+    entry.kind = CodeActionEntryKind::QuickFix;
     entry.diagnosticIndices = std::vector<uint32_t>{options.diagnosticIndex};
 
-    analysis::code_action::CodeActionCommandEntry cmd;
-    cmd.kind = analysis::code_action::CodeActionCommandKind::DisableDiagnostic;
+    CodeActionCommandEntry cmd;
+    cmd.kind = CodeActionCommandKind::DisableDiagnostic;
     cmd.title = i18n::FormatMessage(options.i18n, "action-disable-in-settings", "Disable in settings");
     cmd.setting = options.settingKey;
     cmd.code = options.code;
@@ -199,15 +199,15 @@ analysis::code_action::CodeActionEntry MakeDisableDiagnosticEntry(const DisableD
     return entry;
 }
 
-analysis::code_action::CodeActionEntry MakeQuickFixEntry(QuickFixEntryOptions options)
+CodeActionEntry MakeQuickFixEntry(QuickFixEntryOptions options)
 {
-    analysis::code_action::CodeActionEntry entry;
+    CodeActionEntry entry;
     entry.title = std::move(options.title);
-    entry.kind = analysis::code_action::CodeActionEntryKind::QuickFix;
+    entry.kind = CodeActionEntryKind::QuickFix;
     entry.isPreferred = options.isPreferred;
     entry.diagnosticIndices = std::vector<uint32_t>{options.diagnosticIndex};
     entry.edits = std::move(options.edits);
     return entry;
 }
 
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::code_action

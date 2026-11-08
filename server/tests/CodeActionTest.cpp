@@ -50,7 +50,7 @@ struct TestEnvironment
                                                             lsp::CodeActionContext context = lsp::CodeActionContext{})
     {
         angel_lsp::test::NodeIndexFixture codeActionIndex(tree);
-        CodeActionRequest req{uri, sourceCode, tree, range, context, symbolTable, scopeIndex};
+        CodeActionRequest req{uri, sourceCode, range, context, symbolTable, scopeIndex};
         req.nodeIndex = &codeActionIndex.index;
         return GetCodeActions(req);
     }
@@ -265,8 +265,7 @@ TEST_CASE("CodeActionHandler - Inherited Interfaces Method Generation")
 TEST_CASE("CodeActionHandler - Robustness on Null Tree / Empty Range")
 {
     angel_lsp::test::NodeIndexFixture codeActionIndex(nullptr);
-    CodeActionRequest req{"file:///empty.as", "",          nullptr, lsp::Range{}, lsp::CodeActionContext{},
-                          SymbolTable{},      ScopeIndex{}};
+    CodeActionRequest req{"file:///empty.as", "", lsp::Range{}, lsp::CodeActionContext{}, SymbolTable{}, ScopeIndex{}};
     req.nodeIndex = &codeActionIndex.index;
     auto actions = GetCodeActions(req);
     CHECK(!actions.has_value());
@@ -723,7 +722,7 @@ struct MultiFileEnvironment
     std::optional<std::vector<lsp::CodeAction>> CodeActions(lsp::Range range, lsp::CodeActionContext context)
     {
         angel_lsp::test::NodeIndexFixture codeActionIndex(tree);
-        CodeActionRequest req{uri, sourceCode, tree, range, context, symbolTable, scopeIndex};
+        CodeActionRequest req{uri, sourceCode, range, context, symbolTable, scopeIndex};
         req.nodeIndex = &codeActionIndex.index;
         return GetCodeActions(req);
     }
@@ -1261,8 +1260,7 @@ TEST_CASE("CodeActionHandler - QuickFix localization in Spanish")
 
     angel_lsp::i18n::I18n spanishI18n("es");
     angel_lsp::test::NodeIndexFixture codeActionIndex(env.tree);
-    CodeActionRequest req{env.uri,         env.sourceCode, env.tree, at,      ctx,
-                          env.symbolTable, env.scopeIndex, {},       nullptr, &spanishI18n};
+    CodeActionRequest req{env.uri, env.sourceCode, at, ctx, env.symbolTable, env.scopeIndex, {}, nullptr, &spanishI18n};
     req.nodeIndex = &codeActionIndex.index;
     auto actions = GetCodeActions(req);
     REQUIRE(actions.has_value());
@@ -1280,8 +1278,7 @@ TEST_CASE("CodeActionHandler - QuickFix localization in Spanish")
 
     // English fallback verification when i18n is null
     angel_lsp::test::NodeIndexFixture codeActionIndex2(env.tree);
-    CodeActionRequest reqEn{env.uri,         env.sourceCode, env.tree, at,      ctx,
-                            env.symbolTable, env.scopeIndex, {},       nullptr, nullptr};
+    CodeActionRequest reqEn{env.uri, env.sourceCode, at, ctx, env.symbolTable, env.scopeIndex, {}, nullptr, nullptr};
     reqEn.nodeIndex = &codeActionIndex2.index;
     auto actionsEn = GetCodeActions(reqEn);
     REQUIRE(actionsEn.has_value());
@@ -1459,8 +1456,7 @@ TEST_CASE("CodeActionHandler - QuickFix ignore unused symbol in Spanish")
 
     angel_lsp::i18n::I18n spanishI18n("es");
     angel_lsp::test::NodeIndexFixture codeActionIndex(env.tree);
-    CodeActionRequest req{env.uri,         env.sourceCode, env.tree, at,      ctx,
-                          env.symbolTable, env.scopeIndex, {},       nullptr, &spanishI18n};
+    CodeActionRequest req{env.uri, env.sourceCode, at, ctx, env.symbolTable, env.scopeIndex, {}, nullptr, &spanishI18n};
     req.nodeIndex = &codeActionIndex.index;
     auto actions = GetCodeActions(req);
     REQUIRE(actions.has_value());

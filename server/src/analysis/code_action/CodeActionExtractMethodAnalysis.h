@@ -1,10 +1,10 @@
 #pragma once
 
+#include "analysis/code_action/CodeActionInternal.h"
 #include "analysis/code_action/CodeActionTypes.h"
 #include "analysis/index/ExtractMethodFacts.h"
-#include "features/code_action/CodeActionInternal.h"
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::code_action
 {
 
 /**
@@ -61,7 +61,7 @@ struct MethodOutputContext
  * @param[in] query Incoming code action query context.
  * @return Extracted statement metadata if selection is valid, std::nullopt otherwise.
  */
-std::optional<ExtractMethodStatements> FindSelectedStatements(const analysis::code_action::CodeActionQuery& query);
+std::optional<ExtractMethodStatements> FindSelectedStatements(const CodeActionQuery& query);
 
 std::vector<VarInfo> CollectMethodInputs(const ExtractMethodStatements& stmts, const analysis::Scope* fnScope);
 
@@ -80,7 +80,6 @@ std::vector<VarInfo> CollectMethodOutputs(const ExtractMethodStatements& stmts, 
  * @return Extracted method signature and call-site plan.
  */
 ExtractedMethodPlan DeduceExtractedMethodSignature(const ExtractedMethodVariables& vars,
-                                                   const ExtractMethodStatements& stmts,
-                                                   const analysis::code_action::CodeActionQuery& query);
+                                                   const ExtractMethodStatements& stmts, const CodeActionQuery& query);
 
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::code_action

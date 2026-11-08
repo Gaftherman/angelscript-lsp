@@ -66,7 +66,7 @@ struct Phase3TestEnvironment
                                                             lsp::CodeActionContext context = lsp::CodeActionContext{})
     {
         angel_lsp::test::NodeIndexFixture codeActionIndex(tree);
-        CodeActionRequest req{uri, sourceCode, tree, range, context, symbolTable, scopeIndex};
+        CodeActionRequest req{uri, sourceCode, range, context, symbolTable, scopeIndex};
         req.nodeIndex = &codeActionIndex.index;
         return GetCodeActions(req);
     }

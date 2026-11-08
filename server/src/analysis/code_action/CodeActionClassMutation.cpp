@@ -3,9 +3,9 @@
  * @brief Analysis of method bodies for mutations against class state.
  */
 
-#include "features/code_action/CodeActionClassMutation.h"
+#include "analysis/code_action/CodeActionClassMutation.h"
 
-#include "features/code_action/CodeActionInternal.h"
+#include "analysis/code_action/CodeActionInternal.h"
 #include "utils/Utils.h"
 
 #include <ankerl/unordered_dense.h>
@@ -13,7 +13,7 @@
 #include <string>
 #include <string_view>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::code_action
 {
 
 /**
@@ -148,4 +148,4 @@ bool MethodBodyMutatesClassState(const ClassMutationContext& context)
     return false;
 }
 
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::code_action

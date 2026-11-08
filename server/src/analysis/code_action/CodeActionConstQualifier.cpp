@@ -3,11 +3,11 @@
  * @brief Code action providers for adding const qualifier to methods.
  */
 
+#include "analysis/code_action/CodeActionClassMutation.h"
+#include "analysis/code_action/CodeActionInternal.h"
 #include "analysis/index/ConstQualifierFacts.h"
 #include "analysis/resolution/CodeActionResolution.h"
 #include "analysis/types/TypeSanitization.h"
-#include "features/code_action/CodeActionClassMutation.h"
-#include "features/code_action/CodeActionInternal.h"
 #include "utils/Utils.h"
 
 #include <cstdint>
@@ -17,7 +17,7 @@
 #include <utility>
 #include <vector>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::code_action
 {
 
 /**
@@ -27,9 +27,8 @@ namespace angel_lsp::features
  * @param[in] sym Target method symbol needing const qualification.
  * @return QuickFix CodeActionEntry if method declaration node is located, or std::nullopt otherwise.
  */
-static std::optional<analysis::code_action::CodeActionEntry>
-TryBuildMissingConstFixForSymbol(const analysis::code_action::CodeActionQuery& query, uint32_t diagIndex,
-                                 const analysis::Symbol& sym)
+static std::optional<CodeActionEntry> TryBuildMissingConstFixForSymbol(const CodeActionQuery& query, uint32_t diagIndex,
+                                                                       const analysis::Symbol& sym)
 {
     const auto insertPt = analysis::FindMethodParameterListEnd(*query.nodeIndex, sym.startLine, sym.startCharacter);
     if (!insertPt)
@@ -43,7 +42,7 @@ TryBuildMissingConstFixForSymbol(const analysis::code_action::CodeActionQuery& q
     return MakeQuickFixEntry(QuickFixEntryOptions{
         std::move(title),
         diagIndex,
-        {analysis::code_action::CodeActionTextEdit{
+        {CodeActionTextEdit{
             analysis::SourceRange{insertPt->line, insertPt->character, insertPt->line, insertPt->character}, " const"}},
         true});
 }
@@ -54,8 +53,8 @@ TryBuildMissingConstFixForSymbol(const analysis::code_action::CodeActionQuery& q
  * @param[in] diagIndex Index of the triggering diagnostic in query diagnostics.
  * @param[in,out] entries Output list where constructed CodeActionEntries are appended.
  */
-static void TryAddMissingConstDiagnosticFix(const analysis::code_action::CodeActionQuery& query, uint32_t diagIndex,
-                                            std::vector<analysis::code_action::CodeActionEntry>& entries)
+static void TryAddMissingConstDiagnosticFix(const CodeActionQuery& query, uint32_t diagIndex,
+                                            std::vector<CodeActionEntry>& entries)
 {
     const auto& diag = query.diagnostics[diagIndex];
     const auto site = analysis::FindConstCallSite(*query.nodeIndex, diag.range.startLine, diag.range.startCharacter);
@@ -95,14 +94,13 @@ static void TryAddMissingConstDiagnosticFix(const analysis::code_action::CodeAct
  * @param[in] query Incoming code action query context.
  * @return QuickFix CodeActionEntry with text edit inserting ' const'.
  */
-static analysis::code_action::CodeActionEntry BuildAddConstEntry(analysis::IndexedSourcePoint insertPt,
-                                                                 const analysis::code_action::CodeActionQuery& query)
+static CodeActionEntry BuildAddConstEntry(analysis::IndexedSourcePoint insertPt, const CodeActionQuery& query)
 {
-    analysis::code_action::CodeActionEntry entry;
+    CodeActionEntry entry;
     entry.title = i18n::FormatMessage(query.i18n, "action-add-const-qualifier", "Add 'const' qualifier to method");
-    entry.kind = analysis::code_action::CodeActionEntryKind::QuickFix;
-    entry.edits = std::vector<analysis::code_action::CodeActionTextEdit>{
-        analysis::code_action::CodeActionTextEdit{
+    entry.kind = CodeActionEntryKind::QuickFix;
+    entry.edits = std::vector<CodeActionTextEdit>{
+        CodeActionTextEdit{
             analysis::SourceRange{insertPt.line, insertPt.character, insertPt.line, insertPt.character},
             " const",
         },
@@ -115,8 +113,7 @@ static analysis::code_action::CodeActionEntry BuildAddConstEntry(analysis::Index
  * @param[in] query Incoming code action query context.
  * @param[in,out] entries Output list where constructed CodeActionEntries are appended.
  */
-static void TryAddIntentionalConstAction(const analysis::code_action::CodeActionQuery& query,
-                                         std::vector<analysis::code_action::CodeActionEntry>& entries)
+static void TryAddIntentionalConstAction(const CodeActionQuery& query, std::vector<CodeActionEntry>& entries)
 {
     const auto site = analysis::FindIntentionalConstSite(*query.nodeIndex, query.sourceCode, query.range.startLine,
                                                          query.range.startCharacter);
@@ -144,8 +141,8 @@ static void TryAddIntentionalConstAction(const analysis::code_action::CodeAction
  * @param[in] diagIndex Index of the triggering diagnostic in query diagnostics.
  * @param[in,out] entries Output list where constructed CodeActionEntries are appended.
  */
-static void TryAddConstHandleDiagnosticFix(const analysis::code_action::CodeActionQuery& query, uint32_t diagIndex,
-                                           std::vector<analysis::code_action::CodeActionEntry>& entries)
+static void TryAddConstHandleDiagnosticFix(const CodeActionQuery& query, uint32_t diagIndex,
+                                           std::vector<CodeActionEntry>& entries)
 {
     const auto& diag = query.diagnostics[diagIndex];
     const auto site = analysis::FindConstHandleSite(*query.nodeIndex, diag.range.startLine, diag.range.startCharacter);
@@ -166,10 +163,9 @@ static void TryAddConstHandleDiagnosticFix(const analysis::code_action::CodeActi
     entries.push_back(MakeQuickFixEntry(
         QuickFixEntryOptions{std::move(title),
                              diagIndex,
-                             {analysis::code_action::CodeActionTextEdit{
-                                 analysis::SourceRange{site->typeStart.line, site->typeStart.character,
-                                                       site->typeStart.line, site->typeStart.character},
-                                 "const "}},
+                             {CodeActionTextEdit{analysis::SourceRange{site->typeStart.line, site->typeStart.character,
+                                                                       site->typeStart.line, site->typeStart.character},
+                                                 "const "}},
                              true}));
 }
 
@@ -178,8 +174,7 @@ static void TryAddConstHandleDiagnosticFix(const analysis::code_action::CodeActi
  * @param[in] query Incoming code action query context.
  * @param[in,out] entries Destination vector for generated code action entries.
  */
-void TryAddConstQualifierActions(const analysis::code_action::CodeActionQuery& query,
-                                 std::vector<analysis::code_action::CodeActionEntry>& entries)
+void TryAddConstQualifierActions(const CodeActionQuery& query, std::vector<CodeActionEntry>& entries)
 {
     if (!query.nodeIndex || query.sourceCode.empty())
     {
@@ -200,4 +195,4 @@ void TryAddConstQualifierActions(const analysis::code_action::CodeActionQuery& q
     TryAddIntentionalConstAction(query, entries);
 }
 
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::code_action

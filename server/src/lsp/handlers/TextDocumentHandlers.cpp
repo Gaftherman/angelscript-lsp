@@ -518,10 +518,11 @@ Server::HandleRequestsTextDocument_CodeAction(lsp::requests::TextDocument_CodeAc
         diag.range = codec::Decode(*doc->text, GetPositionEncoding(), diag.range);
     }
 
+    const auto allowedRoots = IncludeAllowedRoots();
     features::CodeActionRequest car{
-        doc->uri,  *doc->text,    doc->tree,    codec::Decode(*doc->text, GetPositionEncoding(), req.range),
-        context,   m_symbolTable, m_scopeIndex, IncludeAllowedRoots(),
-        &m_config, m_i18n.get()};
+        doc->uri,      *doc->text,   codec::Decode(*doc->text, GetPositionEncoding(), req.range), context,
+        m_symbolTable, m_scopeIndex, utils::IncludeSearchScope{.allowedRoots = allowedRoots},     &m_config,
+        m_i18n.get()};
     car.nodeIndex = syntax ? &syntax->index : nullptr;
     auto actions = features::GetCodeActions(car);
     if (actions.has_value())

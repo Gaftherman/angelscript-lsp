@@ -3,7 +3,7 @@
  * @brief Quick-fix code actions suggesting corrections for typo identifiers.
  */
 
-#include "features/code_action/CodeActionInternal.h"
+#include "analysis/code_action/CodeActionInternal.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -11,7 +11,7 @@
 #include <string_view>
 #include <vector>
 
-namespace angel_lsp::features
+namespace angel_lsp::analysis::code_action
 {
 
 /**
@@ -50,8 +50,8 @@ static bool IsTypeLikeSymbol(analysis::SymbolType type)
  * @param[in] isType True if unresolved target is a type.
  * @return Vector of candidate names.
  */
-static std::vector<std::string> CollectTypoCandidates(const analysis::code_action::CodeActionQuery& query,
-                                                      uint32_t line, bool isIdentifier, bool isType)
+static std::vector<std::string> CollectTypoCandidates(const CodeActionQuery& query, uint32_t line, bool isIdentifier,
+                                                      bool isType)
 {
     std::vector<std::string> candidates;
     if (isIdentifier)
@@ -121,17 +121,17 @@ static std::vector<TypoCandidate> RankTypoSuggestions(std::string_view typed,
  * @param[out] entries Destination code action entries vector.
  */
 static void EmitTypoEntries(const TypoFixContext& ctx, const std::vector<TypoCandidate>& ranked,
-                            std::vector<analysis::code_action::CodeActionEntry>& entries)
+                            std::vector<CodeActionEntry>& entries)
 {
     const size_t offered = std::min<size_t>(ranked.size(), 3);
     const bool hasClearWinner = ranked.size() == 1 || ranked[0].distance < ranked[1].distance;
 
     for (size_t i = 0; i < offered; ++i)
     {
-        analysis::code_action::CodeActionEntry entry;
+        CodeActionEntry entry;
         entry.title = i18n::FormatMessage(ctx.query.i18n, "action-did-you-mean", "Did you mean '{}'?",
                                           std::string_view(ranked[i].name));
-        entry.kind = analysis::code_action::CodeActionEntryKind::QuickFix;
+        entry.kind = CodeActionEntryKind::QuickFix;
         entry.diagnosticIndices = std::vector<uint32_t>{ctx.diagIndex};
 
         if (i == 0 && hasClearWinner)
@@ -139,8 +139,7 @@ static void EmitTypoEntries(const TypoFixContext& ctx, const std::vector<TypoCan
             entry.isPreferred = true;
         }
 
-        entry.edits = std::vector<analysis::code_action::CodeActionTextEdit>{
-            analysis::code_action::CodeActionTextEdit{ctx.identifierRange, ranked[i].name}};
+        entry.edits = std::vector<CodeActionTextEdit>{CodeActionTextEdit{ctx.identifierRange, ranked[i].name}};
 
         entries.push_back(std::move(entry));
     }
@@ -151,8 +150,7 @@ static void EmitTypoEntries(const TypoFixContext& ctx, const std::vector<TypoCan
  * @param[in] query Incoming code action query context.
  * @param[in,out] entries Destination vector for generated code action entries.
  */
-void TryAddUndefinedIdentifierSuggestions(const analysis::code_action::CodeActionQuery& query,
-                                          std::vector<analysis::code_action::CodeActionEntry>& entries)
+void TryAddUndefinedIdentifierSuggestions(const CodeActionQuery& query, std::vector<CodeActionEntry>& entries)
 {
     if (!query.nodeIndex || query.sourceCode.empty())
     {
@@ -192,4 +190,4 @@ void TryAddUndefinedIdentifierSuggestions(const analysis::code_action::CodeActio
     }
 }
 
-} // namespace angel_lsp::features
+} // namespace angel_lsp::analysis::code_action
