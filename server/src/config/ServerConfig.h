@@ -2,7 +2,9 @@
 
 #include "config/EngineRuleConfig.h"
 #include "utils/PreprocessorRegions.h"
+#include "utils/TransparentHash.h"
 
+#include <functional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -411,22 +413,9 @@ struct TypeConfig
      * @brief Templates whose initializer list is a plain repeat of their element type.
      *        Initializer lists are validated against target types (such as array, dictionary, grid,
      */
-    std::unordered_set<std::string> arrayLikeTemplates;
+    std::unordered_set<std::string, TransparentStringHash, std::equal_to<>> arrayLikeTemplates;
 
     std::unordered_set<std::string> registeredSymbols;
-
-    /**
-     * @brief arrayLikeTemplates, with arrayTypeName included whether or not it was listed.
-     */
-    std::unordered_set<std::string> ArrayLikeTemplateNames() const
-    {
-        std::unordered_set<std::string> names = arrayLikeTemplates;
-        if (!arrayTypeName.empty())
-        {
-            names.insert(arrayTypeName);
-        }
-        return names;
-    }
 };
 
 /**

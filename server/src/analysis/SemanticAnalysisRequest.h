@@ -241,15 +241,6 @@ struct SemanticAnalysisRequest
     }
 
     /**
-     * @brief Templates whose initializer list repeats their element type.
-     * @see config::TypeConfig::arrayLikeTemplates for why this is configured and not inferred.
-     */
-    std::unordered_set<std::string> GetArrayLikeTemplateNames() const
-    {
-        return typeConfig ? typeConfig->ArrayLikeTemplateNames() : std::unordered_set<std::string>{};
-    }
-
-    /**
      * @brief Checks whether a template name matches the configured array type or an array-like template.
      * @param[in] templateName Template identifier to check.
      * @return True if templateName is an array or array-like template.
@@ -264,7 +255,7 @@ struct SemanticAnalysisRequest
         {
             return true;
         }
-        return typeConfig && typeConfig->arrayLikeTemplates.contains(std::string(templateName));
+        return typeConfig && typeConfig->arrayLikeTemplates.contains(templateName);
     }
 
     /**

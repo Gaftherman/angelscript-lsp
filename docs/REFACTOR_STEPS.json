@@ -23,17 +23,12 @@
     "server/src/features/completion",
     "server/src/features/code_action",
     "server/src/document",
-    "server/src/i18n"
+    "server/src/i18n",
+    "server/src/config"
   ],
-  "active_folder": "server/src/config",
+  "active_folder": "server/src/utils",
   "cross_module_impacts": [],
   "pending_folders": [
-    {
-      "folder_path": "server/src/config",
-      "complexity_rank": 26,
-      "selection_rationale": "Base infrastructure (4 files, 824 lines) server and engine rule configuration.",
-      "files_to_refactor": []
-    },
     {
       "folder_path": "server/src/utils",
       "complexity_rank": 27,

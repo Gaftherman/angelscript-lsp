@@ -992,11 +992,8 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             ServerConfig config = FromArgs(args.argc(), args.data());
             CHECK(config.types.arrayLikeTemplates.contains("vector"));
             CHECK(config.types.arrayLikeTemplates.contains("ring"));
-
-            // The engine's default array type is always one of them, listed or not.
-            const auto names = config.types.ArrayLikeTemplateNames();
-            CHECK(names.contains("array"));
-            CHECK(names.size() == 3);
+            CHECK(config.types.arrayTypeName == "array");
+            CHECK(config.types.arrayLikeTemplates.size() == 2);
         }
 
         SUBCASE("No array-like templates configured leaves only the default array type")
@@ -1004,10 +1001,7 @@ TEST_SUITE("ServerConfig - CLI Argument Parsing")
             ArgvHelper args{"angel_lsp"};
             ServerConfig config = FromArgs(args.argc(), args.data());
             CHECK(config.types.arrayLikeTemplates.empty());
-
-            const auto names = config.types.ArrayLikeTemplateNames();
-            REQUIRE(names.size() == 1);
-            CHECK(names.contains("array"));
+            CHECK(config.types.arrayTypeName == "array");
         }
     }
 

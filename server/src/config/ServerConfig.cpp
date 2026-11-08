@@ -1,5 +1,7 @@
 #include "config/ServerConfig.h"
 
+#include "utils/Utils.h"
+
 #include <algorithm>
 #include <cctype>
 #include <iostream>
@@ -24,18 +26,39 @@ static std::string ToLower(std::string_view str)
     return result;
 }
 
+/**
+ * @brief Matches the accepted spellings of a true flag value, ignoring ASCII case.
+ * @param[in] val Raw flag value.
+ * @return True for "true", "1", "yes" or "on".
+ */
+static bool IsTrueLiteral(std::string_view val)
+{
+    return utils::CaseInsensitiveEquals(val, "true") || val == "1" || utils::CaseInsensitiveEquals(val, "yes") ||
+           utils::CaseInsensitiveEquals(val, "on");
+}
+
+/**
+ * @brief Matches the accepted spellings of a false flag value, ignoring ASCII case.
+ * @param[in] val Raw flag value.
+ * @return True for "false", "0", "no" or "off".
+ */
+static bool IsFalseLiteral(std::string_view val)
+{
+    return utils::CaseInsensitiveEquals(val, "false") || val == "0" || utils::CaseInsensitiveEquals(val, "no") ||
+           utils::CaseInsensitiveEquals(val, "off");
+}
+
 static bool ParseBoolValue(std::string_view val, bool defaultIfEmpty = true)
 {
     if (val.empty())
     {
         return defaultIfEmpty;
     }
-    std::string lower = ToLower(val);
-    if (lower == "true" || lower == "1" || lower == "yes" || lower == "on")
+    if (IsTrueLiteral(val))
     {
         return true;
     }
-    if (lower == "false" || lower == "0" || lower == "no" || lower == "off")
+    if (IsFalseLiteral(val))
     {
         return false;
     }
@@ -44,9 +67,7 @@ static bool ParseBoolValue(std::string_view val, bool defaultIfEmpty = true)
 
 static bool IsBoolLiteral(std::string_view val)
 {
-    std::string lower = ToLower(val);
-    return lower == "true" || lower == "1" || lower == "yes" || lower == "on" || lower == "false" || lower == "0" ||
-           lower == "no" || lower == "off";
+    return IsTrueLiteral(val) || IsFalseLiteral(val);
 }
 
 bool ArgParseContext::GetBoolValue(bool defaultVal)
@@ -592,12 +613,12 @@ static int ParseHandleComparisonSeverity(ArgParseContext& ctx)
     {
         return 1;
     }
-    const std::string lower = ToLower(val);
-    if (lower == "error" || lower == "2")
+    if (utils::CaseInsensitiveEquals(val, "error") || utils::CaseInsensitiveEquals(val, "2"))
     {
         return 2;
     }
-    if (lower == "false" || lower == "0" || lower == "off")
+    if (utils::CaseInsensitiveEquals(val, "false") || utils::CaseInsensitiveEquals(val, "0") ||
+        utils::CaseInsensitiveEquals(val, "off"))
     {
         return 0;
     }

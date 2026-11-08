@@ -80,7 +80,7 @@ std::vector<Diagnostic> Diagnose(const std::string& body, const std::unordered_s
 
     angel_lsp::config::TypeConfig types;
     types.arrayTypeName = arrayTypeName;
-    types.arrayLikeTemplates = arrayLike;
+    types.arrayLikeTemplates.insert(arrayLike.begin(), arrayLike.end());
 
     TSTree* tree = parser.Parse(code);
     symbolCollector.CollectSymbols(uri, code, parser, symbolTable);

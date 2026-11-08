@@ -2420,6 +2420,78 @@
         "OverloadResolutionSvenCoopTest",
         "CodeActionTest"
       ]
+    },
+    {
+      "id": "REF-M14-TOLOWER-COMPARE",
+      "phase": "M14",
+      "action": "CLEAN_SENTINEL",
+      "sourceFile": "server/src/config/ServerConfig.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "ParseBoolValue/IsBoolLiteral/ParseHandleComparisonSeverity: std::string lower = ToLower(val)",
+      "whatItDidAndWhyInThatFile": "Lowercased each flag value into a new string only to compare it against fixed literals.",
+      "whyChangedOrDeleted": "A case-insensitive view comparison gives the same answer without the copy; the literal lists are shared by IsTrueLiteral and IsFalseLiteral.",
+      "replacedByCanonicalFile": "server/src/utils/Utils.h",
+      "replacedByCanonicalSymbol": "CaseInsensitiveEquals",
+      "ramOrCpuImpact": "One heap allocation fewer per boolean or severity flag parsed.",
+      "verifiedByTests": [
+        "ServerConfigTest",
+        "EngineRuleCheckerTest",
+        "InitializerListTest"
+      ]
+    },
+    {
+      "id": "REF-M14-JSON-KEY-STRING",
+      "phase": "M14",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/config/EngineRuleParser.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "ReadOptionalField(const nlohmann::json& j, const std::string& key, std::optional<T>& target), ReadPropertyWithFallback(const std::string& camelKey, const std::string& epKey), ParseStringArray(const std::string& key)",
+      "whatItDidAndWhyInThatFile": "Took JSON keys as owned strings although every caller passes a literal.",
+      "whyChangedOrDeleted": "nlohmann::json looks keys up with std::less<>, so a string_view key avoids materializing a std::string per lookup.",
+      "replacedByCanonicalFile": "server/src/config/EngineRuleParser.cpp",
+      "replacedByCanonicalSymbol": "ReadOptionalField",
+      "ramOrCpuImpact": "One temporary std::string fewer per JSON field read.",
+      "verifiedByTests": [
+        "ServerConfigTest",
+        "EngineRuleCheckerTest",
+        "InitializerListTest"
+      ]
+    },
+    {
+      "id": "REF-M14-CONFIG-STRING-HASH",
+      "phase": "M14",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/config/EngineRuleConfig.h",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "config::ConfigStringHash",
+      "whatItDidAndWhyInThatFile": "Provided a transparent std::string_view hash for StringVectorMap.",
+      "whyChangedOrDeleted": "It duplicated the project-wide transparent hash in utils/TransparentHash.h.",
+      "replacedByCanonicalFile": "server/src/utils/TransparentHash.h",
+      "replacedByCanonicalSymbol": "TransparentStringHash",
+      "ramOrCpuImpact": "None.",
+      "verifiedByTests": [
+        "ServerConfigTest",
+        "EngineRuleCheckerTest",
+        "InitializerListTest"
+      ]
+    },
+    {
+      "id": "REF-M14-ARRAY-LIKE-NAMES",
+      "phase": "M14",
+      "action": "CLEAN_SENTINEL",
+      "sourceFile": "server/src/config/ServerConfig.h",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "TypeConfig::ArrayLikeTemplateNames, SemanticAnalysisRequest::GetArrayLikeTemplateNames, ListValidationContext::arrayLikeTemplates, InitializerListContext::arrayLikeTemplates",
+      "whatItDidAndWhyInThatFile": "Copied the configured array-like template set plus the array type into a new set for every initializer-list check and threaded it through the validation contexts.",
+      "whyChangedOrDeleted": "SemanticAnalysisRequest::IsArrayLikeTemplate already answers the same question; the set now uses a transparent hash so the lookup needs no string copy.",
+      "replacedByCanonicalFile": "server/src/analysis/SemanticAnalysisRequest.h",
+      "replacedByCanonicalSymbol": "IsArrayLikeTemplate",
+      "ramOrCpuImpact": "No unordered_set copy per initializer-list check and no std::string per template lookup.",
+      "verifiedByTests": [
+        "ServerConfigTest",
+        "EngineRuleCheckerTest",
+        "InitializerListTest"
+      ]
     }
   ]
 }

@@ -3,17 +3,19 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <sstream>
+#include <string_view>
 
 namespace angel_lsp::config
 {
 
 /**
- * @brief Safely parses native engine properties from JSON.
- * @param[in] j JSON object containing engineProperties.
- * @param[out] props Output structure to populate.
+ * @brief Reads one optional JSON field, leaving target untouched when it is absent, null or mistyped.
+ * @param[in] j JSON object to read from.
+ * @param[in] key Field name.
+ * @param[out] target Receives the converted value.
  */
 template <typename T>
-static void ReadOptionalField(const nlohmann::json& j, const std::string& key, std::optional<T>& target)
+static void ReadOptionalField(const nlohmann::json& j, std::string_view key, std::optional<T>& target)
 {
     if (j.contains(key) && !j[key].is_null())
     {
@@ -27,8 +29,15 @@ static void ReadOptionalField(const nlohmann::json& j, const std::string& key, s
     }
 }
 
+/**
+ * @brief Reads a field by its camelCase name, falling back to the engine-property spelling.
+ * @param[in] j JSON object to read from.
+ * @param[in] camelKey Preferred field name.
+ * @param[in] epKey Fallback field name used by engine property dumps.
+ * @param[out] target Receives the converted value.
+ */
 template <typename T>
-static void ReadPropertyWithFallback(const nlohmann::json& j, const std::string& camelKey, const std::string& epKey,
+static void ReadPropertyWithFallback(const nlohmann::json& j, std::string_view camelKey, std::string_view epKey,
                                      std::optional<T>& target)
 {
     ReadOptionalField(j, camelKey, target);
@@ -178,7 +187,7 @@ static void ParseTypeSuggestions(const nlohmann::json& j, std::vector<TypeSugges
  * @param[in] key Key name to look up.
  * @param[out] target Destination vector.
  */
-static void ParseStringArray(const nlohmann::json& item, const std::string& key, std::vector<std::string>& target)
+static void ParseStringArray(const nlohmann::json& item, std::string_view key, std::vector<std::string>& target)
 {
     if (item.contains(key) && item[key].is_array())
     {

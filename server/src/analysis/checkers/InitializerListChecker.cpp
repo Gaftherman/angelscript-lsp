@@ -273,20 +273,17 @@ static std::optional<ListContainerInfo> InspectClassContainer(const Symbol& sym,
  * @param[in] type               Cleaned type string.
  * @param[in] spelling           Parsed template spelling.
  * @param[in] ctx                Diagnostic context.
- * @param[in] arrayLikeTemplates Custom array-like template names.
  * @return Resolved container dimensionality and element type.
  */
 static ListContainerInfo InspectContainer(const std::string& type, const TemplateSpelling& spelling,
-                                          const DiagnosticContext& ctx,
-                                          const std::unordered_set<std::string>& arrayLikeTemplates)
+                                          const DiagnosticContext& ctx)
 {
     if (type.ends_with("[]"))
     {
         return {true, 1, type.substr(0, type.size() - 2)};
     }
 
-    const std::string_view configuredArray = ctx.request.GetEffectiveArrayTypeName();
-    if ((!configuredArray.empty() && spelling.name == configuredArray) || arrayLikeTemplates.contains(spelling.name))
+    if (ctx.request.IsArrayLikeTemplate(spelling.name))
     {
         std::string elem = spelling.arguments.empty() ? "auto" : spelling.arguments[0];
         return {true, 1, std::move(elem)};
@@ -636,8 +633,7 @@ static void ValidateMultiDimensionalContainer(TSNode node, uint32_t dimension, c
     }
 
     const auto& gs = parser::GetGrammarSymbols();
-    const ListValidationContext nextCtx{valCtx.ctx, valCtx.elements, valCtx.arrayLikeTemplates, valCtx.cache,
-                                        valCtx.depth + 1};
+    const ListValidationContext nextCtx{valCtx.ctx, valCtx.elements, valCtx.cache, valCtx.depth + 1};
     parser::ForEachChildNode(node,
                              [&](TSNode child)
                              {
@@ -792,8 +788,7 @@ static void ValidateStructAggregateList(TSNode listNode, const std::string& type
     }
 
     const auto& gs = parser::GetGrammarSymbols();
-    const ListValidationContext nextCtx{valCtx.ctx, valCtx.elements, valCtx.arrayLikeTemplates, valCtx.cache,
-                                        valCtx.depth + 1};
+    const ListValidationContext nextCtx{valCtx.ctx, valCtx.elements, valCtx.cache, valCtx.depth + 1};
     size_t fieldIdx = 0;
     parser::ForEachChildNode(
         listNode,
@@ -975,7 +970,7 @@ void InitializerListValidator::ValidateList(TSNode listNode, const std::string& 
     }
 
     // Sequence & multi-dimensional container types
-    const ListContainerInfo containerInfo = InspectContainer(type, spelling, valCtx.ctx, valCtx.arrayLikeTemplates);
+    const ListContainerInfo containerInfo = InspectContainer(type, spelling, valCtx.ctx);
     if (containerInfo.isContainer)
     {
         ValidateMultiDimensionalContainer(listNode, containerInfo.dimensions, containerInfo.elementType, valCtx);
@@ -1018,7 +1013,7 @@ static void ProcessTypedInitializerList(TSNode node, const InitializerListContex
     if (!ts_node_is_null(typeNode) && !ts_node_is_null(valueNode))
     {
         const ElementContext elements = ElementsAt(valueNode, initCtx.request);
-        const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.arrayLikeTemplates, initCtx.structCache, 0};
+        const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.structCache, 0};
         InitializerListValidator::ValidateList(valueNode, parser::GetNodeText(typeNode, initCtx.request.sourceCode),
                                                valCtx);
     }
@@ -1047,8 +1042,7 @@ static void ProcessAssignmentExpression(TSNode node, const InitializerListContex
             ResolveExpressionType(target, ExpressionTypeContext(elements.scopeRoot, initCtx.ctx));
         if (!targetType.empty())
         {
-            const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.arrayLikeTemplates, initCtx.structCache,
-                                               0};
+            const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.structCache, 0};
             InitializerListValidator::ValidateList(value, targetType, valCtx);
         }
     }
@@ -1081,7 +1075,7 @@ static void ProcessReturnStatement(TSNode node, const InitializerListContext& in
     if (!returnType.empty())
     {
         const ElementContext elements = ElementsAt(value, initCtx.request);
-        const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.arrayLikeTemplates, initCtx.structCache, 0};
+        const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.structCache, 0};
         InitializerListValidator::ValidateList(value, returnType, valCtx);
     }
 }
@@ -1118,8 +1112,7 @@ static void ProcessVariableDeclaration(TSNode node, const InitializerListContext
             if (!ts_node_is_null(valueNode) && ts_node_symbol(valueNode) == gs.symInitializerList)
             {
                 const ElementContext elements = ElementsAt(valueNode, initCtx.request);
-                const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.arrayLikeTemplates,
-                                                   initCtx.structCache, 0};
+                const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.structCache, 0};
                 InitializerListValidator::ValidateList(valueNode, declaredType, valCtx);
             }
         });
@@ -1206,8 +1199,7 @@ void CheckInitializerListAgainstType(TSNode listNode, const std::string& targetT
                                      DiagnosticContext& ctx)
 {
     StructLayoutCache cache;
-    const std::unordered_set<std::string> arrayTemplates = ctx.request.GetArrayLikeTemplateNames();
-    const ListValidationContext valCtx{ctx, elements, arrayTemplates, cache, 0};
+    const ListValidationContext valCtx{ctx, elements, cache, 0};
     InitializerListValidator::ValidateList(listNode, targetType, valCtx);
 }
 
@@ -1215,16 +1207,14 @@ void ValidateInitializerList(TSNode listNode, const std::string& expectedType, D
 {
     ElementContext elements{ctx.request.sourceCode, ctx.request.scopeRoot.get()};
     StructLayoutCache cache;
-    const std::unordered_set<std::string> arrayTemplates = ctx.request.GetArrayLikeTemplateNames();
-    const ListValidationContext valCtx{ctx, elements, arrayTemplates, cache, 0};
+    const ListValidationContext valCtx{ctx, elements, cache, 0};
     InitializerListValidator::ValidateList(listNode, expectedType, valCtx);
 }
 
 void CheckInitializerLists(const AstCheckContext& request, DiagnosticContext& ctx)
 {
-    const std::unordered_set<std::string> arrayLikeTemplates = ctx.request.GetArrayLikeTemplateNames();
     StructLayoutCache structCache;
-    const InitializerListContext initCtx{request, ctx, arrayLikeTemplates, structCache};
+    const InitializerListContext initCtx{request, ctx, structCache};
 
     if (request.nodeIndex)
     {

@@ -1,5 +1,8 @@
 #pragma once
 
+#include "utils/TransparentHash.h"
+
+#include <functional>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -132,19 +135,8 @@ struct StringReflectionCallee
     std::vector<size_t> argIndices;   ///< Argument positions containing string symbol names.
 };
 
-/**
- * @brief Transparent string hash for unordered_map lookups using string_view without heap allocations.
- */
-struct ConfigStringHash
-{
-    using is_transparent = void;
-    [[nodiscard]] size_t operator()(std::string_view sv) const noexcept
-    {
-        return std::hash<std::string_view>{}(sv);
-    }
-};
-
-using StringVectorMap = std::unordered_map<std::string, std::vector<std::string>, ConfigStringHash, std::equal_to<>>;
+using StringVectorMap =
+    std::unordered_map<std::string, std::vector<std::string>, TransparentStringHash, std::equal_to<>>;
 
 /**
  * @brief Configuration for detecting unused symbols and exempting engine callbacks.

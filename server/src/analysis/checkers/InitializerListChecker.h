@@ -8,7 +8,6 @@
 #include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
-#include <unordered_set>
 #include <vector>
 
 namespace angel_lsp::analysis
@@ -150,7 +149,6 @@ struct ListValidationContext
 {
     DiagnosticContext& ctx;
     const ElementContext& elements;
-    const std::unordered_set<std::string>& arrayLikeTemplates;
     StructLayoutCache& cache;
     int depth = 0;
 };
@@ -162,7 +160,6 @@ struct InitializerListContext
 {
     const AstCheckContext& request;
     DiagnosticContext& ctx;
-    const std::unordered_set<std::string>& arrayLikeTemplates;
     StructLayoutCache& structCache;
 };
 
