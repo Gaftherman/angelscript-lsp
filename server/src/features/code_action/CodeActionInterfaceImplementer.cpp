@@ -11,6 +11,12 @@
 #include "features/code_action/CodeActionInternal.h"
 #include "parser/Primitives.h"
 
+#include <cstdint>
+#include <span>
+#include <string>
+#include <string_view>
+#include <vector>
+
 namespace angel_lsp::features
 {
 
@@ -88,54 +94,62 @@ static std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis:
 }
 
 /**
- * @brief Collects diagnostics matching missing interface implementation for a class symbol.
- * @param[in] contextDiagnostics LSP diagnostics in request context.
+ * @brief Collects diagnostic indices matching missing interface implementations for a class symbol.
+ * @param[in] diagnostics Diagnostic views from the code action query.
  * @param[in] clsSym Class symbol to filter diagnostics by line range.
- * @return Vector of matching diagnostics.
+ * @return Vector of matching diagnostic indices.
  */
-static std::vector<lsp::Diagnostic>
-CollectMatchingInterfaceDiagnostics(const std::vector<lsp::Diagnostic>& contextDiagnostics,
-                                    const analysis::Symbol& clsSym)
+static std::vector<uint32_t>
+CollectMatchingInterfaceDiagnosticIndices(std::span<const analysis::code_action::CodeActionDiagnosticView> diagnostics,
+                                          const analysis::Symbol& clsSym)
 {
-    std::vector<lsp::Diagnostic> matching;
-    for (const auto& diag : contextDiagnostics)
+    std::vector<uint32_t> matching;
+    for (uint32_t i = 0; i < static_cast<uint32_t>(diagnostics.size()); ++i)
     {
-        if (MatchDiagnosticCode(diag, "as-err-interface-impl-missing") && diag.range.start.line <= clsSym.endLine &&
-            diag.range.end.line >= clsSym.startLine)
+        const auto& diag = diagnostics[i];
+        if (MatchDiagnosticCode(diag, "as-err-interface-impl-missing") && diag.range.startLine <= clsSym.endLine &&
+            diag.range.endLine >= clsSym.startLine)
         {
-            matching.push_back(diag);
+            matching.push_back(i);
         }
     }
     return matching;
 }
 
-void TryAddImplementInterfaceFixes(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
+/**
+ * @brief Generates quick-fix entries for implementing missing interface methods in classes.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddImplementInterfaceFixes(const analysis::code_action::CodeActionQuery& query,
+                                   std::vector<analysis::code_action::CodeActionEntry>& entries)
 {
-    if (!request.nodeIndex)
+    if (!query.nodeIndex)
     {
         return;
     }
 
-    const std::string_view strType = (request.config && !request.config->types.stringTypeName.empty())
-                                         ? std::string_view(request.config->types.stringTypeName)
-                                         : request.symbolTable.GetStringType();
+    const std::string_view strType = (query.config && !query.config->types.stringTypeName.empty())
+                                         ? std::string_view(query.config->types.stringTypeName)
+                                         : query.symbolTable.GetStringType();
 
-    request.symbolTable.ForEachSymbolInFile(
-        request.uri,
-        [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symbols)
+    query.symbolTable.ForEachSymbolInFile(
+        query.uri,
+        [&query, &entries, strType]([[maybe_unused]] const std::string& qualifiedName,
+                                    const std::vector<analysis::Symbol>& symbols)
         {
             for (const auto& clsSym : symbols)
             {
-                if (clsSym.type != analysis::SymbolType::Class || clsSym.fileUri != request.uri)
+                if (clsSym.type != analysis::SymbolType::Class || clsSym.fileUri != query.uri)
                 {
                     continue;
                 }
-                if (request.range.start.line > clsSym.endLine || request.range.end.line < clsSym.startLine)
+                if (query.range.startLine > clsSym.endLine || query.range.endLine < clsSym.startLine)
                 {
                     continue;
                 }
 
-                const auto missing = analysis::FindMissingInterfaceMethods(clsSym, request.symbolTable);
+                const auto missing = analysis::FindMissingInterfaceMethods(clsSym, query.symbolTable);
                 ankerl::unordered_dense::map<std::string, std::vector<analysis::Symbol>> byInterface;
                 ankerl::unordered_dense::set<std::string> blocked;
                 for (const auto& entry : missing)
@@ -157,33 +171,34 @@ void TryAddImplementInterfaceFixes(const CodeActionRequest& request, std::vector
                     {
                         continue;
                     }
-                    lsp::Position insertPos{clsSym.endLine, clsSym.endCharacter};
-                    if (const auto brace = analysis::FindClassOpenBracePoint(*request.nodeIndex, clsSym.startLine,
+                    uint32_t insertLine = clsSym.endLine;
+                    uint32_t insertCharacter = clsSym.endCharacter;
+                    if (const auto brace = analysis::FindClassOpenBracePoint(*query.nodeIndex, clsSym.startLine,
                                                                              clsSym.startCharacter))
                     {
-                        insertPos = lsp::Position{brace->line, brace->character};
+                        insertLine = brace->line;
+                        insertCharacter = brace->character;
                     }
 
-                    lsp::CodeAction action;
-                    action.title = i18n::FormatMessage(request.i18n, "action-implement-interface",
-                                                       "Implement missing interface methods for '{}'",
-                                                       std::string_view(cleanIface));
-                    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-                    action.isPreferred = true;
+                    analysis::code_action::CodeActionEntry codeAction;
+                    codeAction.title = i18n::FormatMessage(query.i18n, "action-implement-interface",
+                                                           "Implement missing interface methods for '{}'",
+                                                           std::string_view(cleanIface));
+                    codeAction.kind = analysis::code_action::CodeActionEntryKind::QuickFix;
+                    codeAction.isPreferred = true;
 
-                    auto matchingDiags = CollectMatchingInterfaceDiagnostics(request.context.diagnostics, clsSym);
+                    auto matchingDiags = CollectMatchingInterfaceDiagnosticIndices(query.diagnostics, clsSym);
                     if (!matchingDiags.empty())
                     {
-                        action.diagnostics = std::move(matchingDiags);
+                        codeAction.diagnosticIndices = std::move(matchingDiags);
                     }
 
-                    lsp::WorkspaceEdit wsEdit;
-                    wsEdit.changes = lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>>{
-                        {lsp::DocumentUri::parse(request.uri),
-                         {lsp::TextEdit{lsp::Range{insertPos, insertPos}, std::move(stubs)}}}};
-                    action.edit = std::move(wsEdit);
+                    codeAction.edits = std::vector<analysis::code_action::CodeActionTextEdit>{
+                        analysis::code_action::CodeActionTextEdit{
+                            analysis::SourceRange{insertLine, insertCharacter, insertLine, insertCharacter},
+                            std::move(stubs)}};
 
-                    actions.push_back(std::move(action));
+                    entries.push_back(std::move(codeAction));
                 }
             }
         });

@@ -63,28 +63,34 @@ const analysis::Scope* FindScopeByLineOrRoot(const analysis::Scope* root, uint32
     return found ? found : root;
 }
 
-bool MatchDiagnosticCode(const lsp::Diagnostic& diag, std::string_view expectedCode)
+/**
+ * @brief Compares diagnostic code strings directly and canonically.
+ * @param[in] code Diagnostic code string to check.
+ * @param[in] expectedCode Target error or warning code.
+ * @return True if code matches expectedCode directly or via canonical aliases.
+ */
+static bool CodeMatches(std::string_view code, std::string_view expectedCode)
 {
-    if (!diag.code.has_value())
+    if (code.empty())
     {
         return false;
     }
-    if (std::holds_alternative<lsp::String>(diag.code.value()))
+    if (code == expectedCode)
     {
-        const auto& codeStr = std::get<lsp::String>(diag.code.value());
-        if (codeStr == expectedCode)
-        {
-            return true;
-        }
-        std::string_view canonical = analysis::GetCanonicalDiagnosticCode(codeStr);
-        if (!canonical.empty() && canonical == expectedCode)
-        {
-            return true;
-        }
-        std::string_view expectedCanonical = analysis::GetCanonicalDiagnosticCode(expectedCode);
-        return !expectedCanonical.empty() && expectedCanonical == canonical;
+        return true;
     }
-    return false;
+    std::string_view canonical = analysis::GetCanonicalDiagnosticCode(code);
+    if (!canonical.empty() && canonical == expectedCode)
+    {
+        return true;
+    }
+    std::string_view expectedCanonical = analysis::GetCanonicalDiagnosticCode(expectedCode);
+    return !expectedCanonical.empty() && expectedCanonical == canonical;
+}
+
+bool MatchDiagnosticCode(const analysis::code_action::CodeActionDiagnosticView& diag, std::string_view expectedCode)
+{
+    return CodeMatches(diag.code, expectedCode);
 }
 
 size_t BoundedEditDistance(std::string_view a, std::string_view b, size_t limit)
@@ -173,96 +179,35 @@ void CollectAllReferences(const analysis::Scope* rootScope, ankerl::unordered_de
     }
 }
 
-/**
- * @brief Constructs an LSP CodeAction that offers to disable a diagnostic in workspace settings.
- * @param[in] options Bundled configuration options including diagnostic, setting key, code, and i18n.
- * @return Fully configured QuickFix CodeAction with client execution command.
- */
-lsp::CodeAction MakeDisableDiagnosticAction(const DisableDiagnosticActionOptions& options)
+analysis::code_action::CodeActionEntry MakeDisableDiagnosticEntry(const DisableDiagnosticEntryOptions& options)
 {
-    std::string title = i18n::FormatMessage(options.i18n, "action-disable-in-workspace-settings",
+    analysis::code_action::CodeActionEntry entry;
+    entry.title = !options.title.empty()
+                      ? options.title
+                      : i18n::FormatMessage(options.i18n, "action-disable-in-workspace-settings",
                                             "Disable in workspace settings (angelscript.{})", options.settingKey);
-    std::string cmdTitle = i18n::FormatMessage(options.i18n, "action-disable-in-settings", "Disable in settings");
+    entry.kind = analysis::code_action::CodeActionEntryKind::QuickFix;
+    entry.diagnosticIndices = std::vector<uint32_t>{options.diagnosticIndex};
 
-    lsp::CodeAction action;
-    action.title = std::move(title);
-    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-    action.diagnostics = std::vector<lsp::Diagnostic>{options.diag};
+    analysis::code_action::CodeActionCommandEntry cmd;
+    cmd.kind = analysis::code_action::CodeActionCommandKind::DisableDiagnostic;
+    cmd.title = i18n::FormatMessage(options.i18n, "action-disable-in-settings", "Disable in settings");
+    cmd.setting = options.settingKey;
+    cmd.code = options.code;
+    entry.command = std::move(cmd);
 
-    lsp::Command cmd;
-    cmd.title = std::move(cmdTitle);
-    cmd.command = "angelscript.disableDiagnostic";
-    lsp::json::Array cmdArgs;
-    lsp::json::Object argObj;
-    argObj["settingKey"] = lsp::json::Value("angelscript." + options.settingKey);
-    argObj["setting"] = lsp::json::Value(std::string(options.settingKey));
-    argObj["value"] = lsp::json::Value(false);
-    argObj["code"] = lsp::json::Value(std::string(options.code));
-    cmdArgs.push_back(std::move(argObj));
-    cmd.arguments = std::move(cmdArgs);
-
-    action.command = std::move(cmd);
-    return action;
+    return entry;
 }
 
-/**
- * @brief Constructs an LSP CodeAction to disable a diagnostic setting using explicit arguments.
- * @param[in] diag Associated LSP diagnostic triggering the action.
- * @param[in] title Localized human-readable action title.
- * @param[in] settingKey Configuration key within the angelscript.* settings tree.
- * @param[in] code Unique diagnostic error code identifier.
- * @return Fully configured QuickFix CodeAction.
- */
-lsp::CodeAction MakeDisableDiagnosticAction(const lsp::Diagnostic& diag, std::string title, std::string settingKey,
-                                            std::string code)
+analysis::code_action::CodeActionEntry MakeQuickFixEntry(QuickFixEntryOptions options)
 {
-    lsp::CodeAction action;
-    action.title = std::move(title);
-    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-    action.diagnostics = std::vector<lsp::Diagnostic>{diag};
-
-    lsp::Command cmd;
-    cmd.title = "Disable in settings";
-    cmd.command = "angelscript.disableDiagnostic";
-    lsp::json::Array cmdArgs;
-    lsp::json::Object argObj;
-    argObj["settingKey"] = lsp::json::Value("angelscript." + settingKey);
-    argObj["setting"] = lsp::json::Value(std::move(settingKey));
-    argObj["value"] = lsp::json::Value(false);
-    argObj["code"] = lsp::json::Value(std::move(code));
-    cmdArgs.push_back(std::move(argObj));
-    cmd.arguments = std::move(cmdArgs);
-
-    action.command = std::move(cmd);
-    return action;
-}
-
-lsp::CodeAction MakeQuickFixAction(QuickFixOptions options)
-{
-    lsp::CodeAction action;
-    action.title = std::move(options.title);
-    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-    action.isPreferred = options.isPreferred;
-    action.diagnostics = std::vector<lsp::Diagnostic>{options.diag};
-
-    lsp::WorkspaceEdit wsEdit;
-    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-    changes[lsp::DocumentUri::parse(std::string(options.uri))] = std::move(options.edits);
-    wsEdit.changes = std::move(changes);
-    action.edit = std::move(wsEdit);
-    return action;
-}
-
-lsp::CodeAction MakeQuickFixAction(std::string title, const lsp::Diagnostic& diag, std::string_view uri,
-                                   std::vector<lsp::TextEdit> edits)
-{
-    return MakeQuickFixAction(QuickFixOptions{
-        .title = std::move(title),
-        .diag = diag,
-        .uri = uri,
-        .edits = std::move(edits),
-        .isPreferred = false,
-    });
+    analysis::code_action::CodeActionEntry entry;
+    entry.title = std::move(options.title);
+    entry.kind = analysis::code_action::CodeActionEntryKind::QuickFix;
+    entry.isPreferred = options.isPreferred;
+    entry.diagnosticIndices = std::vector<uint32_t>{options.diagnosticIndex};
+    entry.edits = std::move(options.edits);
+    return entry;
 }
 
 } // namespace angel_lsp::features

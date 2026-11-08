@@ -2,9 +2,11 @@
 #include "analysis/types/TypeSanitization.h"
 #include "features/code_action/CodeActionInternal.h"
 #include "i18n/i18n.h"
+#include "utils/AccessorNames.h"
 #include "utils/Utils.h"
 
 #include <cctype>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -37,29 +39,25 @@ static std::string CleanPropertyName(std::string_view fieldName)
 }
 
 /**
- * @brief Creates a CodeAction inserting an accessor text edit into the class body.
- * @param[in] uri Document URI.
+ * @brief Creates a CodeActionEntry inserting an accessor text edit into the class body.
  * @param[in] title Action title.
  * @param[in] text Method code to insert.
  * @param[in] insertPt Class body insertion point coordinates.
- * @return Constructed CodeAction.
+ * @return Constructed CodeActionEntry.
  */
-static lsp::CodeAction CreateAccessorAction(const std::string& uri, const std::string& title, const std::string& text,
-                                            analysis::IndexedSourcePoint insertPt)
+static analysis::code_action::CodeActionEntry CreateAccessorEntry(std::string title, const std::string& text,
+                                                                  analysis::IndexedSourcePoint insertPt)
 {
-    lsp::CodeAction action;
-    action.title = title;
-    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::RefactorRewrite);
-    lsp::TextEdit edit;
-    edit.range = lsp::Range{{insertPt.line, insertPt.character}, {insertPt.line, insertPt.character}};
-    edit.newText = "\n" + text;
-
-    lsp::WorkspaceEdit wsEdit;
-    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-    changes[lsp::DocumentUri::parse(uri)] = {std::move(edit)};
-    wsEdit.changes = std::move(changes);
-    action.edit = std::move(wsEdit);
-    return action;
+    analysis::code_action::CodeActionEntry entry;
+    entry.title = std::move(title);
+    entry.kind = analysis::code_action::CodeActionEntryKind::RefactorRewrite;
+    entry.edits = std::vector<analysis::code_action::CodeActionTextEdit>{
+        analysis::code_action::CodeActionTextEdit{
+            analysis::SourceRange{insertPt.line, insertPt.character, insertPt.line, insertPt.character},
+            "\n" + text,
+        },
+    };
+    return entry;
 }
 
 /**
@@ -72,8 +70,8 @@ static lsp::CodeAction CreateAccessorAction(const std::string& uri, const std::s
 static std::pair<bool, bool> CheckFieldAccessors(const analysis::SymbolTable& table, const std::string& className,
                                                  const std::string& propName)
 {
-    const std::string getterName = "get_" + propName;
-    const std::string setterName = "set_" + propName;
+    const std::string getterName = std::string(utils::k_getterPrefix) + propName;
+    const std::string setterName = std::string(utils::k_setterPrefix) + propName;
     if (const auto ruleIdx = table.GetRuleIndex())
     {
         const auto& members = ruleIdx->Members(className);
@@ -84,13 +82,14 @@ static std::pair<bool, bool> CheckFieldAccessors(const analysis::SymbolTable& ta
 }
 
 /**
- * @brief Emits Getter, Setter, or combined Getter/Setter actions for a class field.
- * @param[in] request Code action request.
+ * @brief Emits Getter, Setter, or combined Getter/Setter entries for a class field.
+ * @param[in] query Incoming code action query context.
  * @param[in] ctx Getter and setter context.
- * @param[out] actions Destination code actions vector.
+ * @param[in,out] entries Destination code action entries vector.
  */
-static void EmitGetterSetterActionsForField(const CodeActionRequest& request, const GetterSetterContext& ctx,
-                                            std::vector<lsp::CodeAction>& actions)
+static void EmitGetterSetterEntriesForField(const analysis::code_action::CodeActionQuery& query,
+                                            const GetterSetterContext& ctx,
+                                            std::vector<analysis::code_action::CodeActionEntry>& entries)
 {
     const auto& [fName, fType] = ctx.field;
     std::string propName = CleanPropertyName(fName);
@@ -99,7 +98,7 @@ static void EmitGetterSetterActionsForField(const CodeActionRequest& request, co
         return;
     }
 
-    auto [hasGetter, hasSetter] = CheckFieldAccessors(request.symbolTable, ctx.className, propName);
+    auto [hasGetter, hasSetter] = CheckFieldAccessors(query.symbolTable, ctx.className, propName);
     if (hasGetter && hasSetter)
     {
         return;
@@ -109,49 +108,52 @@ static void EmitGetterSetterActionsForField(const CodeActionRequest& request, co
     bool isPassByValue = analysis::IsPrimitiveTypeName(cleanType) || analysis::IsHandleTypeView(cleanType);
     std::string setterParamType = isPassByValue ? cleanType : ("const " + cleanType + " &in");
 
-    std::string getterCode =
-        "    " + cleanType + " get_" + propName + "() const\n    {\n        return " + fName + ";\n    }\n";
-    std::string setterCode =
-        "    void set_" + propName + "(" + setterParamType + " value)\n    {\n        " + fName + " = value;\n    }\n";
+    std::string getterCode = "    " + cleanType + " " + std::string(utils::k_getterPrefix) + propName +
+                             "() const\n    {\n        return " + fName + ";\n    }\n";
+    std::string setterCode = "    void " + std::string(utils::k_setterPrefix) + propName + "(" + setterParamType +
+                             " value)\n    {\n        " + fName + " = value;\n    }\n";
 
     if (!hasGetter)
     {
-        actions.push_back(CreateAccessorAction(
-            request.uri, i18n::FormatMessage(request.i18n, "action-generate-getter", "Generate Getter"), getterCode,
-            ctx.insertPt));
+        entries.push_back(CreateAccessorEntry(
+            i18n::FormatMessage(query.i18n, "action-generate-getter", "Generate Getter"), getterCode, ctx.insertPt));
     }
     if (!hasSetter)
     {
-        actions.push_back(CreateAccessorAction(
-            request.uri, i18n::FormatMessage(request.i18n, "action-generate-setter", "Generate Setter"), setterCode,
-            ctx.insertPt));
+        entries.push_back(CreateAccessorEntry(
+            i18n::FormatMessage(query.i18n, "action-generate-setter", "Generate Setter"), setterCode, ctx.insertPt));
     }
     if (!hasGetter && !hasSetter)
     {
-        actions.push_back(CreateAccessorAction(
-            request.uri,
-            i18n::FormatMessage(request.i18n, "action-generate-getter-setter", "Generate Getter and Setter"),
+        entries.push_back(CreateAccessorEntry(
+            i18n::FormatMessage(query.i18n, "action-generate-getter-setter", "Generate Getter and Setter"),
             getterCode + "\n" + setterCode, ctx.insertPt));
     }
 }
 
-void TryAddGetterSetterActions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
+/**
+ * @brief Generates refactoring entries to create getter and setter methods for class fields.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddGetterSetterActions(const analysis::code_action::CodeActionQuery& query,
+                               std::vector<analysis::code_action::CodeActionEntry>& entries)
 {
-    if (!request.nodeIndex || request.sourceCode.empty())
+    if (!query.nodeIndex || query.sourceCode.empty())
     {
         return;
     }
 
-    const auto site = analysis::FindAccessorSite(*request.nodeIndex, request.sourceCode, request.range.start.line,
-                                                 request.range.start.character);
+    const auto site = analysis::FindAccessorSite(*query.nodeIndex, query.sourceCode, query.range.startLine,
+                                                 query.range.startCharacter);
     if (!site)
     {
         return;
     }
 
     const std::string className(
-        utils::SliceSource(request.sourceCode, site->className.startByte, site->className.endByte));
-    std::string fieldType(utils::SliceSource(request.sourceCode, site->fieldType.startByte, site->fieldType.endByte));
+        utils::SliceSource(query.sourceCode, site->className.startByte, site->className.endByte));
+    std::string fieldType(utils::SliceSource(query.sourceCode, site->fieldType.startByte, site->fieldType.endByte));
     if (fieldType.empty())
     {
         fieldType = "int";
@@ -160,55 +162,52 @@ void TryAddGetterSetterActions(const CodeActionRequest& request, std::vector<lsp
     for (const auto& r : site->fieldNames)
     {
         std::pair<std::string, std::string> field{
-            std::string(utils::SliceSource(request.sourceCode, r.startByte, r.endByte)), fieldType};
-        EmitGetterSetterActionsForField(request, GetterSetterContext{className, field, site->insertPoint}, actions);
+            std::string(utils::SliceSource(query.sourceCode, r.startByte, r.endByte)), fieldType};
+        EmitGetterSetterEntriesForField(query, GetterSetterContext{className, field, site->insertPoint}, entries);
     }
 }
 
-void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
+/**
+ * @brief Generates quick-fix entries adding the property keyword to accessor methods.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddAccessorPropertyKeywordFix(const analysis::code_action::CodeActionQuery& query,
+                                      std::vector<analysis::code_action::CodeActionEntry>& entries)
 {
-    if (!request.nodeIndex || request.sourceCode.empty())
+    if (!query.nodeIndex || query.sourceCode.empty())
     {
         return;
     }
 
-    for (const auto& diag : request.context.diagnostics)
+    for (uint32_t i = 0; i < static_cast<uint32_t>(query.diagnostics.size()); ++i)
     {
+        const auto& diag = query.diagnostics[i];
         if (!MatchDiagnosticCode(diag, "as-hint-accessor-portability"))
         {
             continue;
         }
 
-        const auto insertAt = analysis::FindPropertyKeywordInsertionPoint(*request.nodeIndex, diag.range.start.line,
-                                                                          diag.range.start.character);
+        const auto insertAt = analysis::FindPropertyKeywordInsertionPoint(*query.nodeIndex, diag.range.startLine,
+                                                                          diag.range.startCharacter);
         if (!insertAt)
         {
             continue;
         }
 
-        lsp::TextEdit edit;
-        edit.range.start.line = insertAt->line;
-        edit.range.start.character = insertAt->character;
-        edit.range.end.line = insertAt->line;
-        edit.range.end.character = insertAt->character;
-        edit.newText = " property";
+        std::string title =
+            i18n::FormatMessage(query.i18n, "action-add-property-keyword", "Add the 'property' keyword");
 
-        lsp::CodeAction action;
-        action.title = i18n::FormatMessage(request.i18n, "action-add-property-keyword", "Add the 'property' keyword");
-        action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-        action.isPreferred = true;
-        action.diagnostics = std::vector<lsp::Diagnostic>{diag};
+        entries.push_back(MakeQuickFixEntry(QuickFixEntryOptions{
+            std::move(title),
+            i,
+            {analysis::code_action::CodeActionTextEdit{
+                analysis::SourceRange{insertAt->line, insertAt->character, insertAt->line, insertAt->character},
+                " property"}},
+            true}));
 
-        lsp::WorkspaceEdit wsEdit;
-        lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-        changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
-        wsEdit.changes = std::move(changes);
-        action.edit = std::move(wsEdit);
-
-        actions.push_back(std::move(action));
-
-        actions.push_back(MakeDisableDiagnosticAction(
-            {diag, "diagnostics.reportAccessorPortability", "as-hint-accessor-portability", request.i18n}));
+        entries.push_back(MakeDisableDiagnosticEntry(DisableDiagnosticEntryOptions{
+            i, "diagnostics.reportAccessorPortability", "as-hint-accessor-portability", query.i18n}));
     }
 }
 

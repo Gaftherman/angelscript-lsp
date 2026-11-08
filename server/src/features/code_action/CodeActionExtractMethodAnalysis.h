@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/code_action/CodeActionTypes.h"
 #include "analysis/index/ExtractMethodFacts.h"
 #include "features/code_action/CodeActionInternal.h"
 
@@ -55,7 +56,12 @@ struct MethodOutputContext
     const analysis::Scope* stmtScope;
 };
 
-std::optional<ExtractMethodStatements> FindSelectedStatements(const CodeActionRequest& request);
+/**
+ * @brief Identifies candidate statements within the selected query range.
+ * @param[in] query Incoming code action query context.
+ * @return Extracted statement metadata if selection is valid, std::nullopt otherwise.
+ */
+std::optional<ExtractMethodStatements> FindSelectedStatements(const analysis::code_action::CodeActionQuery& query);
 
 std::vector<VarInfo> CollectMethodInputs(const ExtractMethodStatements& stmts, const analysis::Scope* fnScope);
 
@@ -66,8 +72,15 @@ std::vector<VarInfo> CollectMethodOutputs(const ExtractMethodStatements& stmts, 
                                           const ankerl::unordered_dense::set<std::string>& mutatedVars,
                                           const analysis::Scope* stmtScope);
 
+/**
+ * @brief Deduces method signature and call-site plan for extracted statements.
+ * @param[in] vars Discovered input and output variables.
+ * @param[in] stmts Extracted statement metadata.
+ * @param[in] query Incoming code action query context.
+ * @return Extracted method signature and call-site plan.
+ */
 ExtractedMethodPlan DeduceExtractedMethodSignature(const ExtractedMethodVariables& vars,
                                                    const ExtractMethodStatements& stmts,
-                                                   const CodeActionRequest& request);
+                                                   const analysis::code_action::CodeActionQuery& query);
 
 } // namespace angel_lsp::features

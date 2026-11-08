@@ -6,118 +6,125 @@
 #include "analysis/diagnostics/DiagnosticSuppression.h"
 #include "features/code_action/CodeActionInternal.h"
 
+#include <cstdint>
+#include <string>
+#include <string_view>
 #include <unordered_set>
 
 namespace angel_lsp::features
 {
 
 /**
- * @brief Creates a code action offering a line-level diagnostic suppression comment.
- * @param[in] request Incoming code action request context.
- * @param[in] diag Target diagnostic to suppress.
+ * @brief Creates a code action entry offering a line-level diagnostic suppression comment.
+ * @param[in] query Incoming code action query context.
+ * @param[in] diagIndex Target diagnostic index to suppress.
  * @param[in] aliasOrCode Diagnostic code or human-readable alias.
- * @param[in,out] actions Code action accumulator vector.
+ * @return Constructed line suppression CodeActionEntry.
  */
-static void AddLineSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag,
-                                  std::string_view aliasOrCode, std::vector<lsp::CodeAction>& actions)
+static analysis::code_action::CodeActionEntry
+MakeLineSuppressionEntry(const analysis::code_action::CodeActionQuery& query, uint32_t diagIndex,
+                         std::string_view aliasOrCode)
 {
-    const uint32_t line = diag.range.start.line;
-    const std::string_view lineStr = utils::GetLine(request.sourceCode, line);
+    const auto& diag = query.diagnostics[diagIndex];
+    const uint32_t line = diag.range.startLine;
+    const std::string_view lineStr = utils::GetLine(query.sourceCode, line);
+    const uint32_t col = static_cast<uint32_t>(lineStr.size());
 
-    lsp::TextEdit edit;
-    edit.range.start = lsp::Position{line, static_cast<uint32_t>(lineStr.size())};
-    edit.range.end = lsp::Position{line, static_cast<uint32_t>(lineStr.size())};
-    edit.newText = " // disable-line " + std::string(aliasOrCode);
+    analysis::code_action::CodeActionTextEdit edit{analysis::SourceRange{line, col, line, col},
+                                                   " // disable-line " + std::string(aliasOrCode)};
 
-    actions.push_back(MakeQuickFixAction(
-        i18n::FormatMessage(request.i18n, "action-suppress-line", "Disable {} for this line", aliasOrCode), diag,
-        request.uri, {std::move(edit)}));
+    std::string title =
+        i18n::FormatMessage(query.i18n, "action-suppress-line", "Disable {} for this line", aliasOrCode);
+
+    return MakeQuickFixEntry(QuickFixEntryOptions{std::move(title), diagIndex, {std::move(edit)}, false});
 }
 
 /**
- * @brief Creates a code action offering a range-level diagnostic suppression block.
- * @param[in] request Incoming code action request context.
- * @param[in] diag Target diagnostic to suppress.
+ * @brief Creates a code action entry offering a range-level diagnostic suppression block.
+ * @param[in] query Incoming code action query context.
+ * @param[in] diagIndex Target diagnostic index to suppress.
  * @param[in] aliasOrCode Diagnostic code or human-readable alias.
- * @param[in,out] actions Code action accumulator vector.
+ * @return Constructed range suppression CodeActionEntry.
  */
-static void AddRangeSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag,
-                                   std::string_view aliasOrCode, std::vector<lsp::CodeAction>& actions)
+static analysis::code_action::CodeActionEntry
+MakeRangeSuppressionEntry(const analysis::code_action::CodeActionQuery& query, uint32_t diagIndex,
+                          std::string_view aliasOrCode)
 {
-    const uint32_t startLine = diag.range.start.line;
-    const uint32_t endLine = diag.range.end.line;
-    const std::string startIndent = GetLineIndentation(request.sourceCode, startLine);
-    const std::string endIndent = GetLineIndentation(request.sourceCode, endLine);
-    const std::string_view endLineStr = utils::GetLine(request.sourceCode, endLine);
+    const auto& diag = query.diagnostics[diagIndex];
+    const uint32_t startLine = diag.range.startLine;
+    const uint32_t endLine = diag.range.endLine;
+    const std::string startIndent = GetLineIndentation(query.sourceCode, startLine);
+    const std::string endIndent = GetLineIndentation(query.sourceCode, endLine);
+    const std::string_view endLineStr = utils::GetLine(query.sourceCode, endLine);
+    const uint32_t endCol = static_cast<uint32_t>(endLineStr.size());
 
-    lsp::TextEdit startEdit;
-    startEdit.range.start = lsp::Position{startLine, 0};
-    startEdit.range.end = lsp::Position{startLine, 0};
-    startEdit.newText = startIndent + "// disable " + std::string(aliasOrCode) + "\n";
+    analysis::code_action::CodeActionTextEdit startEdit{analysis::SourceRange{startLine, 0, startLine, 0},
+                                                        startIndent + "// disable " + std::string(aliasOrCode) + "\n"};
 
-    lsp::TextEdit endEdit;
-    endEdit.range.start = lsp::Position{endLine, static_cast<uint32_t>(endLineStr.size())};
-    endEdit.range.end = lsp::Position{endLine, static_cast<uint32_t>(endLineStr.size())};
-    endEdit.newText = "\n" + endIndent + "// enable " + std::string(aliasOrCode);
+    analysis::code_action::CodeActionTextEdit endEdit{analysis::SourceRange{endLine, endCol, endLine, endCol},
+                                                      "\n" + endIndent + "// enable " + std::string(aliasOrCode)};
 
-    actions.push_back(MakeQuickFixAction(i18n::FormatMessage(request.i18n, "action-suppress-range",
-                                                             "Disable {} with // disable ... // enable", aliasOrCode),
-                                         diag, request.uri, {std::move(startEdit), std::move(endEdit)}));
+    std::string title = i18n::FormatMessage(query.i18n, "action-suppress-range",
+                                            "Disable {} with // disable ... // enable", aliasOrCode);
+
+    return MakeQuickFixEntry(
+        QuickFixEntryOptions{std::move(title), diagIndex, {std::move(startEdit), std::move(endEdit)}, false});
 }
 
 /**
- * @brief Creates a code action offering a file-level diagnostic suppression header comment.
- * @param[in] request Incoming code action request context.
- * @param[in] diag Target diagnostic to suppress.
+ * @brief Creates a code action entry offering a file-level diagnostic suppression header comment.
+ * @param[in] query Incoming code action query context.
+ * @param[in] diagIndex Target diagnostic index to suppress.
  * @param[in] aliasOrCode Diagnostic code or human-readable alias.
- * @param[in,out] actions Code action accumulator vector.
+ * @return Constructed file suppression CodeActionEntry.
  */
-static void AddFileSuppressionFix(const CodeActionRequest& request, const lsp::Diagnostic& diag,
-                                  std::string_view aliasOrCode, std::vector<lsp::CodeAction>& actions)
+static analysis::code_action::CodeActionEntry
+MakeFileSuppressionEntry(const analysis::code_action::CodeActionQuery& query, uint32_t diagIndex,
+                         std::string_view aliasOrCode)
 {
-    lsp::TextEdit edit;
-    edit.range.start = lsp::Position{0, 0};
-    edit.range.end = lsp::Position{0, 0};
-    edit.newText = "// disable " + std::string(aliasOrCode) + "\n";
 
-    actions.push_back(MakeQuickFixAction(
-        i18n::FormatMessage(request.i18n, "action-suppress-file", "Disable {} for entire file", aliasOrCode), diag,
-        request.uri, {std::move(edit)}));
+    analysis::code_action::CodeActionTextEdit edit{analysis::SourceRange{0, 0, 0, 0},
+                                                   "// disable " + std::string(aliasOrCode) + "\n"};
+
+    std::string title =
+        i18n::FormatMessage(query.i18n, "action-suppress-file", "Disable {} for entire file", aliasOrCode);
+
+    return MakeQuickFixEntry(QuickFixEntryOptions{std::move(title), diagIndex, {std::move(edit)}, false});
 }
 
-void TryAddDiagnosticSuppressionFixes(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
+/**
+ * @brief Generates quick-fix entries to suppress diagnostics via comments.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddDiagnosticSuppressionFixes(const analysis::code_action::CodeActionQuery& query,
+                                      std::vector<analysis::code_action::CodeActionEntry>& entries)
 {
-    if (request.sourceCode.empty() || request.context.diagnostics.empty())
+    if (query.sourceCode.empty() || query.diagnostics.empty())
     {
         return;
     }
 
-    std::unordered_set<std::string> seenCodes;
+    std::unordered_set<std::string_view> seenCodes;
     std::unordered_set<std::string_view> seenGroups;
-    for (const auto& diag : request.context.diagnostics)
+    for (uint32_t i = 0; i < static_cast<uint32_t>(query.diagnostics.size()); ++i)
     {
-        if (!diag.code.has_value() || !std::holds_alternative<lsp::String>(diag.code.value()))
+        const auto rawCode = query.diagnostics[i].code;
+        if (rawCode.empty() || !seenCodes.insert(rawCode).second)
         {
             continue;
         }
 
-        const auto& rawCode = std::get<lsp::String>(diag.code.value());
-        if (rawCode.empty() || seenCodes.contains(rawCode))
-        {
-            continue;
-        }
-        seenCodes.insert(rawCode);
+        const std::string_view alias = analysis::GetDiagnosticAlias(rawCode);
+        const std::string_view displayCode = alias.empty() ? rawCode : alias;
 
-        std::string_view alias = analysis::GetDiagnosticAlias(rawCode);
-        std::string_view displayCode = alias.empty() ? std::string_view(rawCode) : alias;
-
-        AddLineSuppressionFix(request, diag, displayCode, actions);
-        AddRangeSuppressionFix(request, diag, displayCode, actions);
-        AddFileSuppressionFix(request, diag, displayCode, actions);
+        entries.push_back(MakeLineSuppressionEntry(query, i, displayCode));
+        entries.push_back(MakeRangeSuppressionEntry(query, i, displayCode));
+        entries.push_back(MakeFileSuppressionEntry(query, i, displayCode));
         const auto group = analysis::GetDiagnosticGroup(rawCode);
         if (!group.empty() && seenGroups.insert(group).second)
         {
-            AddFileSuppressionFix(request, diag, group, actions);
+            entries.push_back(MakeFileSuppressionEntry(query, i, group));
         }
     }
 }

@@ -42,8 +42,15 @@ static void BuildMethodParamsAndArgs(const std::vector<VarInfo>& inputParams, co
     }
 }
 
+/**
+ * @brief Deduces method return type and call-site invocation text.
+ * @param[in] vars Discovered input and output variables.
+ * @param[in] stmts Extracted statement metadata.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] plan Extracted method plan populated with return type and call site.
+ */
 static void DeduceReturnAndCallSite(const ExtractedMethodVariables& vars, const ExtractMethodStatements& stmts,
-                                    const CodeActionRequest& request, ExtractedMethodPlan& plan)
+                                    const analysis::code_action::CodeActionQuery& query, ExtractedMethodPlan& plan)
 {
     const std::string methodName = "NewMethod";
     plan.returnType = "void";
@@ -71,7 +78,7 @@ static void DeduceReturnAndCallSite(const ExtractedMethodVariables& vars, const 
         if (stmts.selection.endsWithReturn)
         {
             const std::string_view retType =
-                utils::SliceSource(request.sourceCode, stmts.selection.functionReturnType.startByte,
+                utils::SliceSource(query.sourceCode, stmts.selection.functionReturnType.startByte,
                                    stmts.selection.functionReturnType.endByte);
             if (!retType.empty())
             {
@@ -109,14 +116,21 @@ static void DeduceReturnAndCallSite(const ExtractedMethodVariables& vars, const 
     }
 }
 
+/**
+ * @brief Deduces method signature and call-site plan for extracted statements.
+ * @param[in] vars Discovered input and output variables.
+ * @param[in] stmts Extracted statement metadata.
+ * @param[in] query Incoming code action query context.
+ * @return Extracted method signature and call-site plan.
+ */
 ExtractedMethodPlan DeduceExtractedMethodSignature(const ExtractedMethodVariables& vars,
                                                    const ExtractMethodStatements& stmts,
-                                                   const CodeActionRequest& request)
+                                                   const analysis::code_action::CodeActionQuery& query)
 {
     ExtractedMethodPlan plan;
     plan.extractedBody = stmts.selectedCode;
     BuildMethodParamsAndArgs(vars.inputParams, vars.outputVars, plan.paramsStr, plan.argsStr);
-    DeduceReturnAndCallSite(vars, stmts, request, plan);
+    DeduceReturnAndCallSite(vars, stmts, query, plan);
     return plan;
 }
 

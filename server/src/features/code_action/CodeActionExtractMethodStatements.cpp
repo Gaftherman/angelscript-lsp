@@ -65,23 +65,25 @@ static bool IsValidMethodInputRef(const analysis::LocalReference& ref, const ana
     return true;
 }
 
-std::optional<ExtractMethodStatements> FindSelectedStatements(const CodeActionRequest& request)
+/**
+ * @brief Identifies candidate statements within the selected query range.
+ * @param[in] query Incoming code action query context.
+ * @return Extracted statement metadata if selection is valid, std::nullopt otherwise.
+ */
+std::optional<ExtractMethodStatements> FindSelectedStatements(const analysis::code_action::CodeActionQuery& query)
 {
-    if (!request.nodeIndex)
+    if (!query.nodeIndex)
     {
         return std::nullopt;
     }
-    auto selection = analysis::FindExtractMethodSelection(
-        *request.nodeIndex, request.sourceCode,
-        analysis::SourceRange{request.range.start.line, request.range.start.character, request.range.end.line,
-                              request.range.end.character});
+    auto selection = analysis::FindExtractMethodSelection(*query.nodeIndex, query.sourceCode, query.range);
     if (!selection)
     {
         return std::nullopt;
     }
     ExtractMethodStatements result;
     result.selection = std::move(*selection);
-    result.selectedCode = std::string(utils::SliceSource(request.sourceCode, result.selection.statements.startByte,
+    result.selectedCode = std::string(utils::SliceSource(query.sourceCode, result.selection.statements.startByte,
                                                          result.selection.statements.endByte));
     return result;
 }

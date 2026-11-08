@@ -5,10 +5,12 @@
 
 #include "analysis/resolution/TargetResolution.h"
 #include "features/code_action/CodeActionInternal.h"
-#include "features/common/FeatureSharedUtils.h"
 #include "utils/Utils.h"
 
-#include <variant>
+#include <cstdint>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace angel_lsp::features
 {
@@ -102,9 +104,10 @@ static void CollectUnusedVariables(const analysis::Scope* rootScope,
  * @param[in] sourceCode Source text.
  * @return TextEdit deleting the line range.
  */
-static lsp::TextEdit BuildRemoveSingleDeclaratorLine(const analysis::LocalDefinition* def, std::string_view sourceCode)
+static analysis::code_action::CodeActionTextEdit BuildRemoveSingleDeclaratorLine(const analysis::LocalDefinition* def,
+                                                                                 std::string_view sourceCode)
 {
-    lsp::TextEdit edit;
+    analysis::code_action::CodeActionTextEdit edit;
     uint32_t lineCount = 1;
     for (char c : sourceCode)
     {
@@ -115,16 +118,14 @@ static lsp::TextEdit BuildRemoveSingleDeclaratorLine(const analysis::LocalDefini
     }
     if (def->endLine + 1 < lineCount)
     {
-        edit.range.start = lsp::Position{def->startLine, 0};
-        edit.range.end = lsp::Position{def->endLine + 1, 0};
+        edit.range = analysis::SourceRange{def->startLine, 0, def->endLine + 1, 0};
     }
     else
     {
-        edit.range.start = lsp::Position{def->startLine, 0};
         size_t lastNewline = sourceCode.rfind('\n');
         size_t lastLineLen =
             (lastNewline != std::string::npos) ? (sourceCode.size() - (lastNewline + 1)) : sourceCode.size();
-        edit.range.end = lsp::Position{def->endLine, static_cast<uint32_t>(lastLineLen)};
+        edit.range = analysis::SourceRange{def->startLine, 0, def->endLine, static_cast<uint32_t>(lastLineLen)};
     }
     edit.newText = "";
     return edit;
@@ -137,15 +138,15 @@ static lsp::TextEdit BuildRemoveSingleDeclaratorLine(const analysis::LocalDefini
  * @param[in] def Target local definition.
  * @return TextEdit deleting the unused variable.
  */
-static lsp::TextEdit BuildRemoveUnusedVariableEdit(const analysis::NodeIndex& index, std::string_view sourceCode,
-                                                   const analysis::LocalDefinition* def)
+static analysis::code_action::CodeActionTextEdit BuildRemoveUnusedVariableEdit(const analysis::NodeIndex& index,
+                                                                               std::string_view sourceCode,
+                                                                               const analysis::LocalDefinition* def)
 {
     const auto removal = analysis::FindUnusedDeclaratorRemoval(index, def->startLine, def->startCharacter);
     if (!removal.inDeclaration)
     {
-        lsp::TextEdit edit;
-        edit.range.start = lsp::Position{def->startLine, 0};
-        edit.range.end = lsp::Position{def->endLine + 1, 0};
+        analysis::code_action::CodeActionTextEdit edit;
+        edit.range = analysis::SourceRange{def->startLine, 0, def->endLine + 1, 0};
         edit.newText = "";
         return edit;
     }
@@ -153,18 +154,25 @@ static lsp::TextEdit BuildRemoveUnusedVariableEdit(const analysis::NodeIndex& in
     {
         return BuildRemoveSingleDeclaratorLine(def, sourceCode);
     }
-    lsp::TextEdit edit;
-    edit.range = common::ToLspRange(removal.multiRemovalRange);
+    analysis::code_action::CodeActionTextEdit edit;
+    edit.range = removal.multiRemovalRange;
     edit.newText = "";
     return edit;
 }
 
-static std::string ExtractSymbolNameFromDiag(const lsp::Diagnostic& diag, const analysis::NodeIndex* index,
-                                             std::string_view sourceCode)
+/**
+ * @brief Extracts the symbol name associated with an unused symbol diagnostic.
+ * @param[in] diag Triggering diagnostic view.
+ * @param[in] index Syntax node index, if available.
+ * @param[in] sourceCode Source text of the document.
+ * @return Extracted symbol name, or empty string if not resolved.
+ */
+static std::string ExtractSymbolNameFromDiag(const analysis::code_action::CodeActionDiagnosticView& diag,
+                                             const analysis::NodeIndex* index, std::string_view sourceCode)
 {
     if (index && !sourceCode.empty())
     {
-        const auto span = analysis::FindNodeSpanAtPoint(*index, diag.range.start.line, diag.range.start.character);
+        const auto span = analysis::FindNodeSpanAtPoint(*index, diag.range.startLine, diag.range.startCharacter);
         if (span)
         {
             const std::string_view text = utils::SliceSource(sourceCode, span->bytes.startByte, span->bytes.endByte);
@@ -174,15 +182,7 @@ static std::string ExtractSymbolNameFromDiag(const lsp::Diagnostic& diag, const 
             }
         }
     }
-    std::string_view msgStr;
-    if (const auto* s = std::get_if<lsp::String>(&diag.message))
-    {
-        msgStr = *s;
-    }
-    else if (const auto* m = std::get_if<lsp::MarkupContent>(&diag.message))
-    {
-        msgStr = m->value;
-    }
+    const std::string_view msgStr = diag.message;
     auto firstQuote = msgStr.find('\'');
     if (firstQuote != std::string_view::npos)
     {
@@ -196,98 +196,105 @@ static std::string ExtractSymbolNameFromDiag(const lsp::Diagnostic& diag, const 
 }
 
 /**
- * @brief Constructs a QuickFix CodeAction to ignore an unused symbol via workspace config.
- * @param[in] diag LSP Diagnostic reporting the unused symbol.
+ * @brief Constructs a QuickFix entry to ignore an unused symbol via workspace config.
+ * @param[in] diagIndex Triggering diagnostic index.
  * @param[in] symbolName Identifier name of the unused symbol.
  * @param[in] i18n Internationalization provider for localized action titles.
- * @return Configured CodeAction ready for client presentation.
+ * @return Configured CodeActionEntry ready for presentation.
  */
-static lsp::CodeAction MakeIgnoreUnusedSymbolAction(const lsp::Diagnostic& diag, std::string_view symbolName,
-                                                    const i18n::I18n* i18n)
+static analysis::code_action::CodeActionEntry
+MakeIgnoreUnusedSymbolEntry(uint32_t diagIndex, std::string_view symbolName, const i18n::I18n* i18n)
 {
     std::string title = i18n::FormatMessage(i18n, "action-ignore-unused-symbol",
                                             "Ignore unused symbol '{}' (mark as entry point / callback)", symbolName);
     std::string cmdTitle = i18n::FormatMessage(i18n, "action-ignore-unused-symbol-cmd", "Ignore unused symbol");
 
-    lsp::CodeAction action;
-    action.title = std::move(title);
-    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-    action.isPreferred = true;
-    action.diagnostics = std::vector<lsp::Diagnostic>{diag};
+    analysis::code_action::CodeActionEntry entry;
+    entry.title = std::move(title);
+    entry.kind = analysis::code_action::CodeActionEntryKind::QuickFix;
+    entry.isPreferred = true;
+    entry.diagnosticIndices = std::vector<uint32_t>{diagIndex};
 
-    lsp::Command cmd;
+    analysis::code_action::CodeActionCommandEntry cmd;
+    cmd.kind = analysis::code_action::CodeActionCommandKind::IgnoreUnusedSymbol;
     cmd.title = std::move(cmdTitle);
-    cmd.command = "angelscript.ignoreUnusedSymbol";
-    lsp::json::Array cmdArgs;
-    lsp::json::Object argObj;
-    argObj["symbolName"] = lsp::json::Value(std::string(symbolName));
-    cmdArgs.push_back(std::move(argObj));
-    cmd.arguments = std::move(cmdArgs);
+    cmd.symbolName = std::string(symbolName);
+    entry.command = std::move(cmd);
 
-    action.command = std::move(cmd);
-    return action;
+    return entry;
 }
 
-static void AppendUnusedSymbolActions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
+/**
+ * @brief Appends quick-fix entries for unused symbol diagnostics.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination entries vector.
+ */
+static void AppendUnusedSymbolEntries(const analysis::code_action::CodeActionQuery& query,
+                                      std::vector<analysis::code_action::CodeActionEntry>& entries)
 {
-    for (const auto& diag : request.context.diagnostics)
+    for (uint32_t i = 0; i < static_cast<uint32_t>(query.diagnostics.size()); ++i)
     {
+        const auto& diag = query.diagnostics[i];
         if (MatchDiagnosticCode(diag, diagnostics::codes::UnusedFunction))
         {
-            std::string symName = ExtractSymbolNameFromDiag(diag, request.nodeIndex, request.sourceCode);
+            std::string symName = ExtractSymbolNameFromDiag(diag, query.nodeIndex, query.sourceCode);
             if (!symName.empty())
             {
-                actions.push_back(MakeIgnoreUnusedSymbolAction(diag, symName, request.i18n));
+                entries.push_back(MakeIgnoreUnusedSymbolEntry(i, symName, query.i18n));
             }
-            actions.push_back(
-                MakeDisableDiagnosticAction({diag, "diagnostics.reportUnusedFunctions",
-                                             std::string(diagnostics::codes::UnusedFunction), request.i18n}));
+            entries.push_back(MakeDisableDiagnosticEntry(DisableDiagnosticEntryOptions{
+                i, "diagnostics.reportUnusedFunctions", std::string(diagnostics::codes::UnusedFunction), query.i18n}));
         }
         else if (MatchDiagnosticCode(diag, diagnostics::codes::UnusedMethod))
         {
-            std::string symName = ExtractSymbolNameFromDiag(diag, request.nodeIndex, request.sourceCode);
+            std::string symName = ExtractSymbolNameFromDiag(diag, query.nodeIndex, query.sourceCode);
             if (!symName.empty())
             {
-                actions.push_back(MakeIgnoreUnusedSymbolAction(diag, symName, request.i18n));
+                entries.push_back(MakeIgnoreUnusedSymbolEntry(i, symName, query.i18n));
             }
-            actions.push_back(
-                MakeDisableDiagnosticAction({diag, "diagnostics.reportUnusedMembers",
-                                             std::string(diagnostics::codes::UnusedMethod), request.i18n}));
+            entries.push_back(MakeDisableDiagnosticEntry(DisableDiagnosticEntryOptions{
+                i, "diagnostics.reportUnusedMembers", std::string(diagnostics::codes::UnusedMethod), query.i18n}));
         }
         else if (MatchDiagnosticCode(diag, diagnostics::codes::UnusedField))
         {
-            actions.push_back(MakeDisableDiagnosticAction(
-                {diag, "diagnostics.reportUnusedMembers", std::string(diagnostics::codes::UnusedField), request.i18n}));
+            entries.push_back(MakeDisableDiagnosticEntry(DisableDiagnosticEntryOptions{
+                i, "diagnostics.reportUnusedMembers", std::string(diagnostics::codes::UnusedField), query.i18n}));
         }
         else if (MatchDiagnosticCode(diag, diagnostics::codes::UnusedGlobalVariable))
         {
-            std::string symName = ExtractSymbolNameFromDiag(diag, request.nodeIndex, request.sourceCode);
+            std::string symName = ExtractSymbolNameFromDiag(diag, query.nodeIndex, query.sourceCode);
             if (!symName.empty())
             {
-                actions.push_back(MakeIgnoreUnusedSymbolAction(diag, symName, request.i18n));
+                entries.push_back(MakeIgnoreUnusedSymbolEntry(i, symName, query.i18n));
             }
-            actions.push_back(
-                MakeDisableDiagnosticAction({diag, "diagnostics.reportUnusedGlobalVariables",
-                                             std::string(diagnostics::codes::UnusedGlobalVariable), request.i18n}));
+            entries.push_back(MakeDisableDiagnosticEntry(
+                DisableDiagnosticEntryOptions{i, "diagnostics.reportUnusedGlobalVariables",
+                                              std::string(diagnostics::codes::UnusedGlobalVariable), query.i18n}));
         }
         else if (MatchDiagnosticCode(diag, diagnostics::codes::UnusedClass))
         {
-            std::string symName = ExtractSymbolNameFromDiag(diag, request.nodeIndex, request.sourceCode);
+            std::string symName = ExtractSymbolNameFromDiag(diag, query.nodeIndex, query.sourceCode);
             if (!symName.empty())
             {
-                actions.push_back(MakeIgnoreUnusedSymbolAction(diag, symName, request.i18n));
+                entries.push_back(MakeIgnoreUnusedSymbolEntry(i, symName, query.i18n));
             }
-            actions.push_back(MakeDisableDiagnosticAction(
-                {diag, "diagnostics.reportUnusedClasses", std::string(diagnostics::codes::UnusedClass), request.i18n}));
+            entries.push_back(MakeDisableDiagnosticEntry(DisableDiagnosticEntryOptions{
+                i, "diagnostics.reportUnusedClasses", std::string(diagnostics::codes::UnusedClass), query.i18n}));
         }
     }
 }
 
-void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
+/**
+ * @brief Generates quick-fix entries to remove unused variables and suppress unused symbol diagnostics.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddRemoveUnusedVariableFixes(const analysis::code_action::CodeActionQuery& query,
+                                     std::vector<analysis::code_action::CodeActionEntry>& entries)
 {
-    AppendUnusedSymbolActions(request, actions);
+    AppendUnusedSymbolEntries(query, entries);
 
-    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+    auto rootScope = query.scopeIndex.GetRoot(query.uri);
     if (!rootScope)
     {
         return;
@@ -299,19 +306,19 @@ void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, std::vect
     std::vector<const analysis::LocalDefinition*> unusedVars;
     CollectUnusedVariables(rootScope.get(), usedDefs, unusedVars);
 
-    if (!request.nodeIndex)
+    if (!query.nodeIndex)
     {
         return;
     }
 
     for (const auto* def : unusedVars)
     {
-        bool matchesRange = (request.range.start.line <= def->endLine && request.range.end.line >= def->startLine);
+        bool matchesRange = (query.range.startLine <= def->endLine && query.range.endLine >= def->startLine);
         bool matchesDiag = false;
 
-        for (const auto& diag : request.context.diagnostics)
+        for (const auto& diag : query.diagnostics)
         {
-            if (diag.range.start.line <= def->endLine && diag.range.end.line >= def->startLine)
+            if (diag.range.startLine <= def->endLine && diag.range.endLine >= def->startLine)
             {
                 matchesDiag = true;
                 break;
@@ -323,33 +330,30 @@ void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, std::vect
             continue;
         }
 
-        lsp::TextEdit edit = BuildRemoveUnusedVariableEdit(*request.nodeIndex, request.sourceCode, def);
-        lsp::CodeAction action;
-        action.title = i18n::FormatMessage(request.i18n, "action-remove-unused-variable", "Remove unused variable '{}'",
-                                           std::string_view(def->name));
-        action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-        action.isPreferred = true;
+        analysis::code_action::CodeActionTextEdit edit =
+            BuildRemoveUnusedVariableEdit(*query.nodeIndex, query.sourceCode, def);
+        analysis::code_action::CodeActionEntry entry;
+        entry.title = i18n::FormatMessage(query.i18n, "action-remove-unused-variable", "Remove unused variable '{}'",
+                                          std::string_view(def->name));
+        entry.kind = analysis::code_action::CodeActionEntryKind::QuickFix;
+        entry.isPreferred = true;
+        entry.edits = std::vector<analysis::code_action::CodeActionTextEdit>{std::move(edit)};
 
-        lsp::WorkspaceEdit wsEdit;
-        lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-        changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
-        wsEdit.changes = std::move(changes);
-        action.edit = std::move(wsEdit);
-
-        std::vector<lsp::Diagnostic> matchingDiags;
-        for (const auto& diag : request.context.diagnostics)
+        std::vector<uint32_t> matchingDiagIndices;
+        for (uint32_t i = 0; i < static_cast<uint32_t>(query.diagnostics.size()); ++i)
         {
-            if (diag.range.start.line <= def->endLine && diag.range.end.line >= def->startLine)
+            const auto& diag = query.diagnostics[i];
+            if (diag.range.startLine <= def->endLine && diag.range.endLine >= def->startLine)
             {
-                matchingDiags.push_back(diag);
+                matchingDiagIndices.push_back(i);
             }
         }
-        if (!matchingDiags.empty())
+        if (!matchingDiagIndices.empty())
         {
-            action.diagnostics = std::move(matchingDiags);
+            entry.diagnosticIndices = std::move(matchingDiagIndices);
         }
 
-        actions.push_back(std::move(action));
+        entries.push_back(std::move(entry));
     }
 }
 

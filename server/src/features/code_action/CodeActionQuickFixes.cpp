@@ -5,8 +5,13 @@
 
 #include "analysis/documentation/SignatureFormatter.h"
 #include "features/code_action/CodeActionInternal.h"
-#include "features/common/FeatureSharedUtils.h"
 #include "i18n/i18n.h"
+
+#include <cstdint>
+#include <string>
+#include <string_view>
+#include <variant>
+#include <vector>
 
 namespace angel_lsp::features
 {
@@ -67,113 +72,113 @@ static std::string FormatFuncdefDeclarationText(const analysis::FunctionSignatur
 }
 
 /**
- * @brief Emits a quick fix that prepends a funcdef declaration and renames the type reference.
- * @param[in] request Code action request.
- * @param[in] diag Triggering diagnostic.
+ * @brief Emits a quick-fix entry that prepends a funcdef declaration and renames the type reference.
+ * @param[in] query Incoming code action query context.
+ * @param[in] diagIndex Triggering diagnostic index.
  * @param[in] item Funcdef fix metadata item.
- * @param[out] actions Destination actions vector.
+ * @param[in,out] entries Destination entries vector.
  */
-static void EmitFuncdefCodeAction(const CodeActionRequest& request, const lsp::Diagnostic& diag,
-                                  const FuncdefFixItem& item, std::vector<lsp::CodeAction>& actions)
+static void EmitFuncdefEntry(const analysis::code_action::CodeActionQuery& query, uint32_t diagIndex,
+                             const FuncdefFixItem& item, std::vector<analysis::code_action::CodeActionEntry>& entries)
 {
-    std::vector<lsp::TextEdit> edits;
-    lsp::TextEdit insertion;
-    insertion.range.start.line = 0;
-    insertion.range.start.character = 0;
-    insertion.range.end.line = 0;
-    insertion.range.end.character = 0;
-    insertion.newText = item.declaration;
-    edits.push_back(std::move(insertion));
+    std::vector<analysis::code_action::CodeActionTextEdit> edits;
+    edits.push_back(analysis::code_action::CodeActionTextEdit{
+        analysis::SourceRange{0, 0, 0, 0},
+        item.declaration,
+    });
+    edits.push_back(analysis::code_action::CodeActionTextEdit{
+        item.typeRange,
+        item.funcdefName,
+    });
 
-    lsp::TextEdit rename;
-    rename.range = common::ToLspRange(item.typeRange);
-    rename.newText = item.funcdefName;
-    edits.push_back(std::move(rename));
+    std::string title = i18n::FormatMessage(query.i18n, "action-declare-funcdef", "Declare funcdef '{}' for '{}'",
+                                            std::string_view(item.funcdefName), std::string_view(item.functionName));
 
-    actions.push_back(MakeQuickFixAction(QuickFixOptions{
-        .title = i18n::FormatMessage(request.i18n, "action-declare-funcdef", "Declare funcdef '{}' for '{}'",
-                                     std::string_view(item.funcdefName), std::string_view(item.functionName)),
-        .diag = diag,
-        .uri = request.uri,
-        .edits = std::move(edits),
-        .isPreferred = true,
+    entries.push_back(MakeQuickFixEntry(QuickFixEntryOptions{
+        std::move(title),
+        diagIndex,
+        std::move(edits),
+        true,
     }));
 }
 
 /**
- * @brief Attempts to construct a QuickFix CodeAction to remove illegal handle '@' modifiers from primitive types.
- * @param[in] request Code action request bundle containing AST root, source text, and diagnostics.
- * @param[in,out] actions Output vector where constructed quick fix actions are appended.
+ * @brief Generates quick-fix entries to remove illegal handle modifiers from primitive types.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
  */
-void TryAddHandleOnPrimitiveFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
+void TryAddHandleOnPrimitiveFix(const analysis::code_action::CodeActionQuery& query,
+                                std::vector<analysis::code_action::CodeActionEntry>& entries)
 {
-    if (!request.nodeIndex || request.sourceCode.empty())
+    if (!query.nodeIndex || query.sourceCode.empty())
     {
         return;
     }
 
-    for (const auto& diag : request.context.diagnostics)
+    for (uint32_t i = 0; i < static_cast<uint32_t>(query.diagnostics.size()); ++i)
     {
+        const auto& diag = query.diagnostics[i];
         if (!MatchDiagnosticCode(diag, diagnostics::codes::HandleOnPrimitive))
         {
             continue;
         }
 
-        const std::string_view line = angel_lsp::utils::GetLine(request.sourceCode, diag.range.start.line);
-        const size_t at = line.find_first_of('@', diag.range.start.character);
-        if (at == std::string_view::npos || at >= diag.range.end.character)
+        const std::string_view line = angel_lsp::utils::GetLine(query.sourceCode, diag.range.startLine);
+        const size_t at = line.find_first_of('@', diag.range.startCharacter);
+        if (at == std::string_view::npos || at >= diag.range.endCharacter)
         {
             continue;
         }
 
-        lsp::TextEdit edit;
-        edit.range.start.line = diag.range.start.line;
-        edit.range.start.character = static_cast<uint32_t>(at);
-        edit.range.end.line = diag.range.start.line;
-        edit.range.end.character = static_cast<uint32_t>(at + 1);
-        edit.newText = "";
+        analysis::code_action::CodeActionTextEdit edit{
+            analysis::SourceRange{diag.range.startLine, static_cast<uint32_t>(at), diag.range.startLine,
+                                  static_cast<uint32_t>(at + 1)},
+            ""};
 
-        actions.push_back(MakeQuickFixAction(QuickFixOptions{
-            .title = i18n::FormatMessage(request.i18n, "action-remove-primitive-handle",
-                                         "Remove '@' - a primitive has no handle type"),
-            .diag = diag,
-            .uri = request.uri,
-            .edits = {std::move(edit)},
-            .isPreferred = true,
-        }));
+        std::string title = i18n::FormatMessage(query.i18n, "action-remove-primitive-handle",
+                                                "Remove '@' - a primitive has no handle type");
+
+        entries.push_back(MakeQuickFixEntry(QuickFixEntryOptions{std::move(title), i, {std::move(edit)}, true}));
     }
 }
 
-void TryAddGenerateFuncdefFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
+/**
+ * @brief Generates quick-fix entries to declare missing funcdef signatures.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddGenerateFuncdefFix(const analysis::code_action::CodeActionQuery& query,
+                              std::vector<analysis::code_action::CodeActionEntry>& entries)
 {
-    if (!request.nodeIndex || request.sourceCode.empty())
+    if (!query.nodeIndex || query.sourceCode.empty())
     {
         return;
     }
 
-    for (const auto& diag : request.context.diagnostics)
+    for (uint32_t i = 0; i < static_cast<uint32_t>(query.diagnostics.size()); ++i)
     {
+        const auto& diag = query.diagnostics[i];
         if (!MatchDiagnosticCode(diag, "as-hint-funcdef-missing"))
         {
             continue;
         }
 
         const auto typeSpan =
-            analysis::FindNodeSpanAtPoint(*request.nodeIndex, diag.range.start.line, diag.range.start.character);
+            analysis::FindNodeSpanAtPoint(*query.nodeIndex, diag.range.startLine, diag.range.startCharacter);
         if (!typeSpan)
         {
             continue;
         }
 
         const std::string_view functionNameView =
-            utils::SliceSource(request.sourceCode, typeSpan->bytes.startByte, typeSpan->bytes.endByte);
+            utils::SliceSource(query.sourceCode, typeSpan->bytes.startByte, typeSpan->bytes.endByte);
         if (functionNameView.empty())
         {
             continue;
         }
 
         const std::string functionName(functionNameView);
-        const analysis::Symbol* target = FindUniqueGlobalFunction(request.symbolTable, functionName);
+        const analysis::Symbol* target = FindUniqueGlobalFunction(query.symbolTable, functionName);
         if (!target)
         {
             continue;
@@ -182,64 +187,67 @@ void TryAddGenerateFuncdefFix(const CodeActionRequest& request, std::vector<lsp:
         const auto& signature = target->GetFunction();
         const std::string funcdefName = functionName + "Func";
         std::string declaration = FormatFuncdefDeclarationText(signature, funcdefName);
-        EmitFuncdefCodeAction(
-            request, diag, FuncdefFixItem{typeSpan->range, functionName, funcdefName, std::move(declaration)}, actions);
+        EmitFuncdefEntry(query, i, FuncdefFixItem{typeSpan->range, functionName, funcdefName, std::move(declaration)},
+                         entries);
     }
 }
 
-void TryAddBoolConversionFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
+/**
+ * @brief Generates quick-fix entries for explicit bool conversion calls and diagnostic suppression.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddBoolConversionFix(const analysis::code_action::CodeActionQuery& query,
+                             std::vector<analysis::code_action::CodeActionEntry>& entries)
 {
-    if (!request.nodeIndex || request.sourceCode.empty())
+    if (!query.nodeIndex || query.sourceCode.empty())
     {
         return;
     }
 
-    for (const auto& diag : request.context.diagnostics)
+    for (uint32_t i = 0; i < static_cast<uint32_t>(query.diagnostics.size()); ++i)
     {
+        const auto& diag = query.diagnostics[i];
         if (!MatchDiagnosticCode(diag, "as-hint-bool-conversion"))
         {
             continue;
         }
 
-        if (!std::holds_alternative<lsp::String>(diag.message))
+        if (!diag.messageIsPlainText)
         {
             continue;
         }
-        const std::string& message = std::get<lsp::String>(diag.message);
+        const std::string_view message = diag.message;
 
         const size_t firstQuote = message.find('\'');
         const size_t firstClose =
-            firstQuote == std::string::npos ? std::string::npos : message.find('\'', firstQuote + 1);
+            firstQuote == std::string_view::npos ? std::string_view::npos : message.find('\'', firstQuote + 1);
         const size_t secondQuote =
-            firstClose == std::string::npos ? std::string::npos : message.find('\'', firstClose + 1);
+            firstClose == std::string_view::npos ? std::string_view::npos : message.find('\'', firstClose + 1);
         const size_t secondClose =
-            secondQuote == std::string::npos ? std::string::npos : message.find('\'', secondQuote + 1);
-        if (secondClose == std::string::npos)
+            secondQuote == std::string_view::npos ? std::string_view::npos : message.find('\'', secondQuote + 1);
+        if (secondClose == std::string_view::npos)
         {
             continue;
         }
 
-        const std::string oper = message.substr(secondQuote + 1, secondClose - secondQuote - 1);
+        const std::string_view oper = message.substr(secondQuote + 1, secondClose - secondQuote - 1);
         if (oper != "opImplConv" && oper != "opConv")
         {
             continue;
         }
 
-        lsp::TextEdit edit;
-        edit.range.start = diag.range.end;
-        edit.range.end = diag.range.end;
-        edit.newText = "." + oper + "()";
+        analysis::code_action::CodeActionTextEdit edit{
+            analysis::SourceRange{diag.range.endLine, diag.range.endCharacter, diag.range.endLine,
+                                  diag.range.endCharacter},
+            "." + std::string(oper) + "()"};
 
-        actions.push_back(MakeQuickFixAction(QuickFixOptions{
-            .title = i18n::FormatMessage(request.i18n, "action-call-explicitly", "Call {}() explicitly", oper),
-            .diag = diag,
-            .uri = request.uri,
-            .edits = {std::move(edit)},
-            .isPreferred = true,
-        }));
+        std::string title = i18n::FormatMessage(query.i18n, "action-call-explicitly", "Call {}() explicitly", oper);
 
-        actions.push_back(MakeDisableDiagnosticAction(
-            {diag, "diagnostics.reportBoolConversion", "as-hint-bool-conversion", request.i18n}));
+        entries.push_back(MakeQuickFixEntry(QuickFixEntryOptions{std::move(title), i, {std::move(edit)}, true}));
+
+        entries.push_back(MakeDisableDiagnosticEntry(DisableDiagnosticEntryOptions{
+            i, "diagnostics.reportBoolConversion", "as-hint-bool-conversion", query.i18n}));
     }
 }
 

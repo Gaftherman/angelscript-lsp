@@ -1,9 +1,15 @@
+/**
+ * @file CodeActionRepeatedConversion.cpp
+ * @brief Quick-fix code action to cache repeated conversions in if-else ladders.
+ */
+
 #include "analysis/index/RepeatedConversionFacts.h"
 #include "features/code_action/CodeActionInternal.h"
-#include "features/common/FeatureSharedUtils.h"
 #include "parser/Keywords.h"
 
 #include <cctype>
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -11,28 +17,40 @@
 namespace angel_lsp::features
 {
 
-static std::optional<ExtractedDiagInfo> ParseDiagnosticMessage(const lsp::Diagnostic& diag)
+/**
+ * @brief Extracts expression and type names from a repeated-conversion diagnostic message.
+ * @param[in] diag Diagnostic view to inspect.
+ * @return Extracted diagnostic information or std::nullopt if unmatched or malformed.
+ */
+static std::optional<ExtractedDiagInfo>
+ParseDiagnosticMessage(const analysis::code_action::CodeActionDiagnosticView& diag)
 {
-    if (!MatchDiagnosticCode(diag, "as-hint-repeated-conversion") || !std::holds_alternative<lsp::String>(diag.message))
+    if (!MatchDiagnosticCode(diag, "as-hint-repeated-conversion") || !diag.messageIsPlainText)
     {
         return std::nullopt;
     }
-    const std::string& msg = std::get<lsp::String>(diag.message);
+    const std::string_view msg = diag.message;
     const size_t q1 = msg.find('\'');
-    const size_t q2 = (q1 == std::string::npos) ? std::string::npos : msg.find('\'', q1 + 1);
-    const size_t q3 = (q2 == std::string::npos) ? std::string::npos : msg.find('\'', q2 + 1);
-    const size_t q4 = (q3 == std::string::npos) ? std::string::npos : msg.find('\'', q3 + 1);
-    const size_t q5 = (q4 == std::string::npos) ? std::string::npos : msg.find('\'', q4 + 1);
-    const size_t q6 = (q5 == std::string::npos) ? std::string::npos : msg.find('\'', q5 + 1);
-    if (q6 == std::string::npos)
+    const size_t q2 = (q1 == std::string_view::npos) ? std::string_view::npos : msg.find('\'', q1 + 1);
+    const size_t q3 = (q2 == std::string_view::npos) ? std::string_view::npos : msg.find('\'', q2 + 1);
+    const size_t q4 = (q3 == std::string_view::npos) ? std::string_view::npos : msg.find('\'', q3 + 1);
+    const size_t q5 = (q4 == std::string_view::npos) ? std::string_view::npos : msg.find('\'', q4 + 1);
+    const size_t q6 = (q5 == std::string_view::npos) ? std::string_view::npos : msg.find('\'', q5 + 1);
+    if (q6 == std::string_view::npos)
     {
         return std::nullopt;
     }
 
-    return ExtractedDiagInfo{msg.substr(q1 + 1, q2 - q1 - 1), msg.substr(q3 + 1, q4 - q3 - 1),
-                             msg.substr(q5 + 1, q6 - q5 - 1)};
+    return ExtractedDiagInfo{std::string(msg.substr(q1 + 1, q2 - q1 - 1)), std::string(msg.substr(q3 + 1, q4 - q3 - 1)),
+                             std::string(msg.substr(q5 + 1, q6 - q5 - 1))};
 }
 
+/**
+ * @brief Derives a suitable local variable name from an expression and target type.
+ * @param[in] exprText Source expression text.
+ * @param[in] toType Target conversion type name.
+ * @return Derived variable name identifier.
+ */
 static std::string DeriveVariableName(std::string_view exprText, std::string_view toType)
 {
     const size_t lastDot = exprText.rfind('.');
@@ -54,51 +72,55 @@ static std::string DeriveVariableName(std::string_view exprText, std::string_vie
     return candidate;
 }
 
-static void BuildCodeActionEdits(const analysis::IfLadderConversionSites& sites, const ExtractedDiagInfo& info,
-                                 const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
+/**
+ * @brief Constructs and appends a quick-fix entry caching the repeated conversion.
+ * @param[in] sites Conversion occurrences and root statement position.
+ * @param[in] info Extracted diagnostic parameters.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+static void BuildConversionEntry(const analysis::IfLadderConversionSites& sites, const ExtractedDiagInfo& info,
+                                 const analysis::code_action::CodeActionQuery& query,
+                                 std::vector<analysis::code_action::CodeActionEntry>& entries)
 {
     const std::string varName = DeriveVariableName(info.exprText, info.toType);
     const uint32_t stmtRow = sites.rootIfLine;
-    const std::string indent = GetLineIndentation(request.sourceCode, stmtRow);
+    const std::string indent = GetLineIndentation(query.sourceCode, stmtRow);
 
-    lsp::TextEdit declEdit;
-    declEdit.range = lsp::Range{{stmtRow, 0}, {stmtRow, 0}};
-    declEdit.newText = indent + info.toType + " " + varName + " = " + info.exprText + ";\n";
-
-    std::vector<lsp::TextEdit> edits;
-    edits.push_back(std::move(declEdit));
+    std::vector<analysis::code_action::CodeActionTextEdit> textEdits;
+    textEdits.push_back(analysis::code_action::CodeActionTextEdit{analysis::SourceRange{stmtRow, 0, stmtRow, 0},
+                                                                  indent + info.toType + " " + varName + " = " +
+                                                                      info.exprText + ";\n"});
     for (const auto& occ : sites.occurrences)
     {
-        lsp::TextEdit repl;
-        repl.range = common::ToLspRange(occ);
-        repl.newText = varName;
-        edits.push_back(std::move(repl));
+        textEdits.push_back(analysis::code_action::CodeActionTextEdit{occ, varName});
     }
 
-    lsp::CodeAction action;
-    action.title =
-        i18n::FormatMessage(request.i18n, "action-init-local-variable", "Initialize local '{}' variable for '{}'",
+    analysis::code_action::CodeActionEntry entry;
+    entry.title =
+        i18n::FormatMessage(query.i18n, "action-init-local-variable", "Initialize local '{}' variable for '{}'",
                             std::string_view(info.toType), std::string_view(info.exprText));
-    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-    action.isPreferred = true;
+    entry.kind = analysis::code_action::CodeActionEntryKind::QuickFix;
+    entry.isPreferred = true;
+    entry.edits = std::move(textEdits);
 
-    lsp::WorkspaceEdit wsEdit;
-    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-    changes[lsp::DocumentUri::parse(request.uri)] = std::move(edits);
-    wsEdit.changes = std::move(changes);
-    action.edit = std::move(wsEdit);
-
-    actions.push_back(std::move(action));
+    entries.push_back(std::move(entry));
 }
 
-void TryAddRepeatedConversionFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
+/**
+ * @brief Generates quick-fix entries to cache repeated conversions in an if-ladder.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddRepeatedConversionFix(const analysis::code_action::CodeActionQuery& query,
+                                 std::vector<analysis::code_action::CodeActionEntry>& entries)
 {
-    if (!request.nodeIndex || request.sourceCode.empty())
+    if (!query.nodeIndex || query.sourceCode.empty())
     {
         return;
     }
 
-    for (const auto& diag : request.context.diagnostics)
+    for (const auto& diag : query.diagnostics)
     {
         const auto info = ParseDiagnosticMessage(diag);
         if (!info)
@@ -106,18 +128,16 @@ void TryAddRepeatedConversionFix(const CodeActionRequest& request, std::vector<l
             continue;
         }
 
-        const auto sites = analysis::FindIfLadderConversionSites(
-            *request.nodeIndex, request.sourceCode,
-            analysis::SourceRange{diag.range.start.line, diag.range.start.character, diag.range.end.line,
-                                  diag.range.end.character},
-            info->exprText);
+        const auto sites =
+            analysis::FindIfLadderConversionSites(*query.nodeIndex, query.sourceCode, diag.range, info->exprText);
         if (!sites)
         {
             continue;
         }
 
-        BuildCodeActionEdits(*sites, *info, request, actions);
+        BuildConversionEntry(*sites, *info, query, entries);
         break;
     }
 }
+
 } // namespace angel_lsp::features

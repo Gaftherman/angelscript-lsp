@@ -192,7 +192,7 @@ FindExtractMethodSelection(const NodeIndex& index, std::string_view sourceCode, 
     const auto& gs = parser::GetGrammarSymbols();
     site.endsWithReturn = ts_node_symbol(lastStmt) == gs.symReturnStatement;
 
-    const TSNode retTypeNode = parser::GetChildByField(fnNode, gs.fieldType);
+    const TSNode retTypeNode = parser::GetChildByField(fnNode, gs.fieldReturnType);
     if (!ts_node_is_null(retTypeNode))
     {
         site.functionReturnType = IndexedByteRange{ts_node_start_byte(retTypeNode), ts_node_end_byte(retTypeNode)};

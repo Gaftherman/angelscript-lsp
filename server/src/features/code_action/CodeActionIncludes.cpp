@@ -1,5 +1,12 @@
 #include "features/code_action/CodeActionInternal.h"
 
+#include <algorithm>
+#include <cstdint>
+#include <filesystem>
+#include <string>
+#include <string_view>
+#include <vector>
+
 namespace angel_lsp::features
 {
 
@@ -98,16 +105,16 @@ static std::vector<TypoCandidate> RankIncludeCandidates(const std::string& inclu
 }
 
 /**
- * @brief Emits quick-fix code actions for unresolved include suggestions.
+ * @brief Emits quick-fix code action entries for unresolved include suggestions.
  * @param[in] ctx Include fix context.
  * @param[in] ranked Ranked include candidates.
- * @param[out] actions Destination actions vector.
+ * @param[out] entries Destination code action entries vector.
  */
 static void EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vector<TypoCandidate>& ranked,
-                                   std::vector<lsp::CodeAction>& actions)
+                                   std::vector<analysis::code_action::CodeActionEntry>& entries)
 {
     const std::string_view line =
-        angel_lsp::utils::GetLine(ctx.request.sourceCode, static_cast<uint32_t>(ctx.directive.line));
+        angel_lsp::utils::GetLine(ctx.query.sourceCode, static_cast<uint32_t>(ctx.directive.line));
     const char open = ctx.directive.isAngled ? '<' : '"';
     const char close = ctx.directive.isAngled ? '>' : '"';
     const size_t openPos = line.find(open);
@@ -126,30 +133,22 @@ static void EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vect
 
     for (size_t i = 0; i < offered; ++i)
     {
-        lsp::CodeAction action;
-        action.title = i18n::FormatMessage(ctx.request.i18n, "action-did-you-mean", "Did you mean '{}'?",
-                                           std::string_view(ranked[i].name));
-        action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::QuickFix);
-        action.diagnostics = std::vector<lsp::Diagnostic>{ctx.diag};
+        analysis::code_action::CodeActionEntry entry;
+        entry.title = i18n::FormatMessage(ctx.query.i18n, "action-did-you-mean", "Did you mean '{}'?",
+                                          std::string_view(ranked[i].name));
+        entry.kind = analysis::code_action::CodeActionEntryKind::QuickFix;
+        entry.diagnosticIndices = std::vector<uint32_t>{ctx.diagIndex};
         if (i == 0 && hasClearWinner)
         {
-            action.isPreferred = true;
+            entry.isPreferred = true;
         }
 
-        lsp::TextEdit edit;
-        edit.range.start.line = static_cast<uint32_t>(ctx.directive.line);
-        edit.range.start.character = static_cast<uint32_t>(openPos + 1);
-        edit.range.end.line = static_cast<uint32_t>(ctx.directive.line);
-        edit.range.end.character = static_cast<uint32_t>(closePos);
-        edit.newText = ranked[i].name;
+        entry.edits = std::vector<analysis::code_action::CodeActionTextEdit>{analysis::code_action::CodeActionTextEdit{
+            analysis::SourceRange{static_cast<uint32_t>(ctx.directive.line), static_cast<uint32_t>(openPos + 1),
+                                  static_cast<uint32_t>(ctx.directive.line), static_cast<uint32_t>(closePos)},
+            ranked[i].name}};
 
-        lsp::WorkspaceEdit wsEdit;
-        lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-        changes[lsp::DocumentUri::parse(ctx.request.uri)] = {std::move(edit)};
-        wsEdit.changes = std::move(changes);
-        action.edit = std::move(wsEdit);
-
-        actions.push_back(std::move(action));
+        entries.push_back(std::move(entry));
     }
 }
 
@@ -162,8 +161,8 @@ static void EmitIncludeSuggestions(const IncludeFixContext& ctx, const std::vect
 static bool IsIncludeDirectiveReferenced(const angel_lsp::utils::IncludeDirective& inc,
                                          const IncludeRefCheckContext& ctx)
 {
-    std::string resolved =
-        utils::IncludeResolver::ResolveIncludePath(inc.rawPath, ctx.currentUri, {}, ctx.allowedRoots);
+    std::string resolved = utils::IncludeResolver::ResolveIncludePath(utils::IncludeResolveRequest{
+        .includePath = inc.rawPath, .currentFilePath = ctx.currentUri, .allowedRoots = ctx.allowedRoots});
     std::vector<std::string> symbolsInFile;
     ctx.table.ForEachSymbol(
         [&]([[maybe_unused]] const std::string& qualifiedName, const std::vector<analysis::Symbol>& symList)
@@ -217,69 +216,82 @@ static std::string FormatSortedIncludesBlock(const std::vector<std::string>& ang
     return newHeaderBlock;
 }
 
-void TryAddUnresolvedIncludeSuggestions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
+/**
+ * @brief Generates quick-fix entries suggesting corrections for unresolved include directives.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddUnresolvedIncludeSuggestions(const analysis::code_action::CodeActionQuery& query,
+                                        std::vector<analysis::code_action::CodeActionEntry>& entries)
 {
-    if (request.sourceCode.empty())
+    if (query.sourceCode.empty())
     {
         return;
     }
-    const bool anyUnresolvedInclude =
-        std::any_of(request.context.diagnostics.begin(), request.context.diagnostics.end(),
-                    [](const lsp::Diagnostic& diag) { return MatchDiagnosticCode(diag, "as-warn-include-not-found"); });
+    const bool anyUnresolvedInclude = std::any_of(query.diagnostics.begin(), query.diagnostics.end(),
+                                                  [](const analysis::code_action::CodeActionDiagnosticView& diag)
+                                                  { return MatchDiagnosticCode(diag, "as-warn-include-not-found"); });
     if (!anyUnresolvedInclude)
     {
         return;
     }
-    const std::string includerPath = angel_lsp::utils::UriToPath(request.uri);
+    const std::string includerPath = angel_lsp::utils::UriToPath(std::string(query.uri));
     if (includerPath.empty())
     {
         return;
     }
 
-    auto indexedUris = CollectIndexedFileUris(request.symbolTable);
-    const auto directives = angel_lsp::utils::IncludeResolver::ExtractIncludes(request.sourceCode);
+    auto indexedUris = CollectIndexedFileUris(query.symbolTable);
+    const auto directives = angel_lsp::utils::IncludeResolver::ExtractIncludes(query.sourceCode);
 
-    for (const auto& diag : request.context.diagnostics)
+    for (uint32_t i = 0; i < static_cast<uint32_t>(query.diagnostics.size()); ++i)
     {
+        const auto& diag = query.diagnostics[i];
         if (!MatchDiagnosticCode(diag, "as-warn-include-not-found"))
         {
             continue;
         }
         const auto directive = std::find_if(directives.begin(), directives.end(),
                                             [&diag](const angel_lsp::utils::IncludeDirective& candidate)
-                                            { return candidate.line == diag.range.start.line; });
+                                            { return candidate.line == diag.range.startLine; });
         if (directive == directives.end() || directive->rawPath.empty())
         {
             continue;
         }
 
-        auto ranked = RankIncludeCandidates(includerPath, directive->rawPath, indexedUris, request.uri);
+        auto ranked = RankIncludeCandidates(includerPath, directive->rawPath, indexedUris, std::string(query.uri));
         if (!ranked.empty())
         {
-            EmitIncludeSuggestions(IncludeFixContext{request, diag, *directive}, ranked, actions);
+            EmitIncludeSuggestions(IncludeFixContext{query, i, *directive}, ranked, entries);
         }
     }
 }
 
-void TryAddSortAndCleanIncludesAction(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
+/**
+ * @brief Generates a source action to sort and remove unreferenced include directives.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddSortAndCleanIncludesAction(const analysis::code_action::CodeActionQuery& query,
+                                      std::vector<analysis::code_action::CodeActionEntry>& entries)
 {
-    auto includes = utils::IncludeResolver::ExtractIncludes(request.sourceCode);
+    auto includes = utils::IncludeResolver::ExtractIncludes(query.sourceCode);
     if (includes.empty())
     {
         return;
     }
 
-    size_t firstLine = includes.front().line;
-    size_t lastLine = includes.back().line;
+    const size_t firstLine = includes.front().line;
+    const size_t lastLine = includes.back().line;
 
     ankerl::unordered_dense::set<std::string> docReferences;
-    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+    auto rootScope = query.scopeIndex.GetRoot(query.uri);
     CollectAllReferences(rootScope.get(), docReferences);
 
     std::vector<std::string> angledIncludes;
     std::vector<std::string> quotedIncludes;
     ankerl::unordered_dense::set<std::string> seen;
-    const IncludeRefCheckContext refCtx{request.uri, request.symbolTable, docReferences, request.allowedRoots};
+    const IncludeRefCheckContext refCtx{std::string(query.uri), query.symbolTable, docReferences, query.allowedRoots};
 
     for (const auto& inc : includes)
     {
@@ -307,23 +319,15 @@ void TryAddSortAndCleanIncludesAction(const CodeActionRequest& request, std::vec
     std::sort(angledIncludes.begin(), angledIncludes.end());
     std::sort(quotedIncludes.begin(), quotedIncludes.end());
 
-    lsp::TextEdit edit;
-    edit.range.start = lsp::Position{static_cast<uint32_t>(firstLine), 0};
-    edit.range.end = lsp::Position{static_cast<uint32_t>(lastLine + 1), 0};
-    edit.newText = FormatSortedIncludesBlock(angledIncludes, quotedIncludes);
+    analysis::code_action::CodeActionEntry entry;
+    entry.title =
+        i18n::FormatMessage(query.i18n, "action-sort-and-clean-includes", "Sort and Clean #include Directives");
+    entry.kind = analysis::code_action::CodeActionEntryKind::SourceOrganizeImports;
+    entry.edits = std::vector<analysis::code_action::CodeActionTextEdit>{analysis::code_action::CodeActionTextEdit{
+        analysis::SourceRange{static_cast<uint32_t>(firstLine), 0, static_cast<uint32_t>(lastLine + 1), 0},
+        FormatSortedIncludesBlock(angledIncludes, quotedIncludes)}};
 
-    lsp::CodeAction action;
-    action.title =
-        i18n::FormatMessage(request.i18n, "action-sort-and-clean-includes", "Sort and Clean #include Directives");
-    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::SourceOrganizeImports);
-
-    lsp::WorkspaceEdit wsEdit;
-    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-    changes[lsp::DocumentUri::parse(request.uri)] = {std::move(edit)};
-    wsEdit.changes = std::move(changes);
-    action.edit = std::move(wsEdit);
-
-    actions.push_back(std::move(action));
+    entries.push_back(std::move(entry));
 }
 
 } // namespace angel_lsp::features

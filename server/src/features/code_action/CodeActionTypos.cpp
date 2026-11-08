@@ -1,5 +1,15 @@
+/**
+ * @file CodeActionTypos.cpp
+ * @brief Quick-fix code actions suggesting corrections for typo identifiers.
+ */
+
 #include "features/code_action/CodeActionInternal.h"
-#include "features/common/FeatureSharedUtils.h"
+
+#include <algorithm>
+#include <cstdint>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace angel_lsp::features
 {
@@ -34,25 +44,25 @@ static bool IsTypeLikeSymbol(analysis::SymbolType type)
 
 /**
  * @brief Collects candidate names for typo suggestions from local scopes and symbols.
- * @param[in] request Code action request.
+ * @param[in] query Incoming code action query context.
  * @param[in] line Cursor line.
  * @param[in] isIdentifier True if unresolved target is an identifier.
  * @param[in] isType True if unresolved target is a type.
  * @return Vector of candidate names.
  */
-static std::vector<std::string> CollectTypoCandidates(const CodeActionRequest& request, uint32_t line,
-                                                      bool isIdentifier, bool isType)
+static std::vector<std::string> CollectTypoCandidates(const analysis::code_action::CodeActionQuery& query,
+                                                      uint32_t line, bool isIdentifier, bool isType)
 {
     std::vector<std::string> candidates;
     if (isIdentifier)
     {
-        auto rootScope = request.scopeIndex.GetRoot(request.uri);
+        auto rootScope = query.scopeIndex.GetRoot(query.uri);
         if (rootScope)
         {
             CollectVisibleLocalNames(FindScopeByLineOrRoot(rootScope.get(), line), candidates);
         }
     }
-    request.symbolTable.ForEachSymbol(
+    query.symbolTable.ForEachSymbol(
         [&candidates, isType](const std::string& name, const std::vector<analysis::Symbol>& symbols)
         {
             if (isType && std::none_of(symbols.begin(), symbols.end(),
@@ -105,53 +115,53 @@ static std::vector<TypoCandidate> RankTypoSuggestions(std::string_view typed,
 }
 
 /**
- * @brief Emits quick-fix code actions for typo suggestions.
+ * @brief Emits quick-fix code action entries for typo suggestions.
  * @param[in] ctx Typo fix context.
  * @param[in] ranked Ranked suggestions list.
- * @param[out] actions Destination actions vector.
+ * @param[out] entries Destination code action entries vector.
  */
-static void EmitTypoCodeActions(const TypoFixContext& ctx, const std::vector<TypoCandidate>& ranked,
-                                std::vector<lsp::CodeAction>& actions)
+static void EmitTypoEntries(const TypoFixContext& ctx, const std::vector<TypoCandidate>& ranked,
+                            std::vector<analysis::code_action::CodeActionEntry>& entries)
 {
     const size_t offered = std::min<size_t>(ranked.size(), 3);
     const bool hasClearWinner = ranked.size() == 1 || ranked[0].distance < ranked[1].distance;
 
     for (size_t i = 0; i < offered; ++i)
     {
-        lsp::CodeAction action;
-        action.title = i18n::FormatMessage(ctx.request.i18n, "action-did-you-mean", "Did you mean '{}'?",
-                                           std::string_view(ranked[i].name));
-        action.kind = lsp::CodeActionKind::QuickFix;
-        action.diagnostics = std::vector<lsp::Diagnostic>{ctx.diag};
+        analysis::code_action::CodeActionEntry entry;
+        entry.title = i18n::FormatMessage(ctx.query.i18n, "action-did-you-mean", "Did you mean '{}'?",
+                                          std::string_view(ranked[i].name));
+        entry.kind = analysis::code_action::CodeActionEntryKind::QuickFix;
+        entry.diagnosticIndices = std::vector<uint32_t>{ctx.diagIndex};
 
         if (i == 0 && hasClearWinner)
         {
-            action.isPreferred = true;
+            entry.isPreferred = true;
         }
 
-        lsp::TextEdit edit;
-        edit.range = common::ToLspRange(ctx.identifierRange);
-        edit.newText = ranked[i].name;
+        entry.edits = std::vector<analysis::code_action::CodeActionTextEdit>{
+            analysis::code_action::CodeActionTextEdit{ctx.identifierRange, ranked[i].name}};
 
-        lsp::WorkspaceEdit wsEdit;
-        lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-        changes[lsp::DocumentUri::parse(ctx.request.uri)] = {std::move(edit)};
-        wsEdit.changes = std::move(changes);
-        action.edit = std::move(wsEdit);
-
-        actions.push_back(std::move(action));
+        entries.push_back(std::move(entry));
     }
 }
 
-void TryAddUndefinedIdentifierSuggestions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
+/**
+ * @brief Generates quick-fix entries suggesting corrections for undefined identifiers and unknown types.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddUndefinedIdentifierSuggestions(const analysis::code_action::CodeActionQuery& query,
+                                          std::vector<analysis::code_action::CodeActionEntry>& entries)
 {
-    if (!request.nodeIndex || request.sourceCode.empty())
+    if (!query.nodeIndex || query.sourceCode.empty())
     {
         return;
     }
 
-    for (const auto& diag : request.context.diagnostics)
+    for (uint32_t i = 0; i < static_cast<uint32_t>(query.diagnostics.size()); ++i)
     {
+        const auto& diag = query.diagnostics[i];
         const bool isIdentifier = MatchDiagnosticCode(diag, diagnostics::codes::UndefinedIdentifier);
         const bool isType = MatchDiagnosticCode(diag, diagnostics::codes::UnknownType);
         if (!isIdentifier && !isType)
@@ -160,24 +170,24 @@ void TryAddUndefinedIdentifierSuggestions(const CodeActionRequest& request, std:
         }
 
         const auto identifier =
-            analysis::FindNodeSpanAtPoint(*request.nodeIndex, diag.range.start.line, diag.range.start.character);
+            analysis::FindNodeSpanAtPoint(*query.nodeIndex, diag.range.startLine, diag.range.startCharacter);
         if (!identifier)
         {
             continue;
         }
 
         const std::string_view typed =
-            utils::SliceSource(request.sourceCode, identifier->bytes.startByte, identifier->bytes.endByte);
+            utils::SliceSource(query.sourceCode, identifier->bytes.startByte, identifier->bytes.endByte);
         if (typed.empty())
         {
             continue;
         }
 
-        auto candidates = CollectTypoCandidates(request, diag.range.start.line, isIdentifier, isType);
+        auto candidates = CollectTypoCandidates(query, diag.range.startLine, isIdentifier, isType);
         auto ranked = RankTypoSuggestions(typed, candidates);
         if (!ranked.empty())
         {
-            EmitTypoCodeActions(TypoFixContext{request, diag, identifier->range}, ranked, actions);
+            EmitTypoEntries(TypoFixContext{query, i, identifier->range}, ranked, entries);
         }
     }
 }

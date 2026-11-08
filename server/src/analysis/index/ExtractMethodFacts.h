@@ -32,7 +32,7 @@ struct IndexedExtractMethodSelection
     SourceRange statementsRange;
     /// True when the last selected statement is a return statement.
     bool endsWithReturn = false;
-    /// Type field of the function declaration, empty when absent.
+    /// return_type field of the function declaration, empty when absent.
     IndexedByteRange functionReturnType;
     /// Identifiers mutated inside the selected statements in traversal order.
     std::vector<IndexedByteRange> mutatedNames;

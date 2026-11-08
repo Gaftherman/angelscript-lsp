@@ -6,8 +6,8 @@
 #include "analysis/index/ExtractVariableFacts.h"
 #include "analysis/resolution/CodeActionResolution.h"
 #include "features/code_action/CodeActionInternal.h"
-#include "features/common/FeatureSharedUtils.h"
 #include "parser/Keywords.h"
+#include "utils/AccessorNames.h"
 #include "utils/Utils.h"
 
 #include <cctype>
@@ -36,9 +36,9 @@ static std::string SuggestNameFromCall(std::string_view fnNameText)
     {
         return ToLowerFirst(fnNameText.substr(3));
     }
-    if (fnNameText.starts_with("get_") && fnNameText.size() > 4)
+    if (fnNameText.starts_with(utils::k_getterPrefix) && fnNameText.size() > utils::k_getterPrefix.size())
     {
-        return ToLowerFirst(fnNameText.substr(4));
+        return ToLowerFirst(fnNameText.substr(utils::k_getterPrefix.size()));
     }
     if (fnNameText.starts_with("Find") && fnNameText.size() > 4)
     {
@@ -120,9 +120,10 @@ static bool IsNameInScope(const analysis::Scope* scope, std::string_view name)
 }
 
 static std::string SuggestVariableName(const analysis::IndexedExtractVariableSite& site, std::string_view varType,
-                                       const CodeActionRequest& request, const analysis::Scope* scope)
+                                       const analysis::code_action::CodeActionQuery& query,
+                                       const analysis::Scope* scope)
 {
-    std::string candidate = SuggestCandidateName(site, varType, request.sourceCode, &request.symbolTable);
+    std::string candidate = SuggestCandidateName(site, varType, query.sourceCode, &query.symbolTable);
     if (!scope)
     {
         return candidate;
@@ -137,19 +138,20 @@ static std::string SuggestVariableName(const analysis::IndexedExtractVariableSit
 }
 
 /**
- * @brief Constructs an Extract Variable refactoring code action.
- * @param[in] request Code action request context.
- * @param[in] site Extract variable candidate site facts.
- * @return Code action if construction succeeds, std::nullopt otherwise.
+ * @brief Constructs an Extract Variable refactoring code action entry.
+ * @param query Code action query context.
+ * @param site Extract variable candidate site facts.
+ * @return Code action entry if construction succeeds, std::nullopt otherwise.
  */
-static std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActionRequest& request,
-                                                                 const analysis::IndexedExtractVariableSite& site)
+static std::optional<analysis::code_action::CodeActionEntry>
+BuildExtractVariableEntry(const analysis::code_action::CodeActionQuery& query,
+                          const analysis::IndexedExtractVariableSite& site)
 {
-    auto rootScope = request.scopeIndex.GetRoot(request.uri);
+    auto rootScope = query.scopeIndex.GetRoot(query.uri);
     const analysis::Scope* scope = FindScopeByLineOrRoot(rootScope.get(), site.expressionRange.startLine);
 
     std::string varType = analysis::ResolveExpressionTypeAt(
-        site.expression, {scope, request.symbolTable, request.sourceCode, request.uri, request.nodeIndex});
+        site.expression, {scope, query.symbolTable, query.sourceCode, query.uri, query.nodeIndex});
     if (analysis::CleanBaseTypeView(varType) == "void")
     {
         return std::nullopt;
@@ -159,62 +161,61 @@ static std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActio
         varType = "auto";
     }
 
-    std::string varName = SuggestVariableName(site, varType, request, scope);
+    std::string varName = SuggestVariableName(site, varType, query, scope);
     const std::string_view exprText =
-        utils::SliceSource(request.sourceCode, site.expression.startByte, site.expression.endByte);
+        utils::SliceSource(query.sourceCode, site.expression.startByte, site.expression.endByte);
     if (exprText.empty())
     {
         return std::nullopt;
     }
 
     uint32_t stmtRow = site.statementLine;
-    std::string indent = GetLineIndentation(request.sourceCode, stmtRow);
+    std::string indent = GetLineIndentation(query.sourceCode, stmtRow);
 
-    lsp::TextEdit declEdit;
+    analysis::code_action::CodeActionTextEdit declEdit;
     if (site.statementSharesBlockLine)
     {
-        declEdit.range = lsp::Range{{stmtRow, site.statementColumn}, {stmtRow, site.statementColumn}};
+        declEdit.range = analysis::SourceRange{stmtRow, site.statementColumn, stmtRow, site.statementColumn};
         declEdit.newText = varType + " " + varName + " = " + std::string(exprText) + "; ";
     }
     else
     {
-        declEdit.range = lsp::Range{{stmtRow, 0}, {stmtRow, 0}};
+        declEdit.range = analysis::SourceRange{stmtRow, 0, stmtRow, 0};
         declEdit.newText = indent + varType + " " + varName + " = " + std::string(exprText) + ";\n";
     }
 
-    lsp::TextEdit replEdit;
-    replEdit.range = common::ToLspRange(site.expressionRange);
+    analysis::code_action::CodeActionTextEdit replEdit;
+    replEdit.range = site.expressionRange;
     replEdit.newText = varName;
 
-    lsp::CodeAction action;
-    action.title = i18n::FormatMessage(request.i18n, "action-extract-variable", "Extract Variable");
-    action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::RefactorExtract);
+    analysis::code_action::CodeActionEntry entry;
+    entry.title = i18n::FormatMessage(query.i18n, "action-extract-variable", "Extract Variable");
+    entry.kind = analysis::code_action::CodeActionEntryKind::RefactorExtract;
+    entry.edits = std::vector<analysis::code_action::CodeActionTextEdit>{std::move(declEdit), std::move(replEdit)};
 
-    lsp::WorkspaceEdit wsEdit;
-    lsp::Map<lsp::DocumentUri, std::vector<lsp::TextEdit>> changes;
-    changes[lsp::DocumentUri::parse(request.uri)] = {std::move(declEdit), std::move(replEdit)};
-    wsEdit.changes = std::move(changes);
-    action.edit = std::move(wsEdit);
-
-    return action;
+    return entry;
 }
 
-void TryAddExtractVariableAction(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
+/**
+ * @brief Generates a refactoring entry to extract an expression into a local variable.
+ * @param query Incoming code action query context.
+ * @param entries Destination vector for generated code action entries.
+ */
+void TryAddExtractVariableAction(const analysis::code_action::CodeActionQuery& query,
+                                 std::vector<analysis::code_action::CodeActionEntry>& entries)
 {
-    if (!request.nodeIndex || request.sourceCode.empty())
+    if (!query.nodeIndex || query.sourceCode.empty())
     {
         return;
     }
-    const auto site = analysis::FindExtractVariableSite(
-        *request.nodeIndex, analysis::SourceRange{request.range.start.line, request.range.start.character,
-                                                  request.range.end.line, request.range.end.character});
+    const auto site = analysis::FindExtractVariableSite(*query.nodeIndex, query.range);
     if (!site)
     {
         return;
     }
-    if (auto action = BuildExtractVariableAction(request, *site))
+    if (auto entry = BuildExtractVariableEntry(query, *site))
     {
-        actions.push_back(std::move(*action));
+        entries.push_back(std::move(*entry));
     }
 }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/code_action/CodeActionTypes.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/CodeActionFacts.h"
 #include "analysis/index/ScopeTree.h"
@@ -16,6 +17,7 @@
 #include <cctype>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -49,12 +51,12 @@ const analysis::Scope* FindScopeByLine(const analysis::Scope* root, uint32_t lin
 const analysis::Scope* FindScopeByLineOrRoot(const analysis::Scope* root, uint32_t line);
 
 /**
- * @brief Checks if a diagnostic matches an expected error/warning code string.
- * @param[in] diag Diagnostic object.
+ * @brief Checks if a diagnostic view matches an expected error/warning code string.
+ * @param[in] diag Diagnostic view object.
  * @param[in] expectedCode Code string to match.
  * @return True if diagnostic code matches.
  */
-bool MatchDiagnosticCode(const lsp::Diagnostic& diag, std::string_view expectedCode);
+bool MatchDiagnosticCode(const analysis::code_action::CodeActionDiagnosticView& diag, std::string_view expectedCode);
 
 /**
  * @brief Bounded Levenshtein edit distance between two strings.
@@ -106,94 +108,162 @@ struct ExtractedDiagInfo
 };
 
 /**
- * @brief Options bundle for creating a diagnostic disabling quick-fix action.
+ * @brief Options bundle for creating a diagnostic disabling quick-fix entry.
  */
-struct DisableDiagnosticActionOptions
+struct DisableDiagnosticEntryOptions
 {
-    const lsp::Diagnostic& diag;
+    uint32_t diagnosticIndex = 0;
     std::string settingKey;
     std::string code;
     const i18n::I18n* i18n = nullptr;
+    std::string title;
 };
 
 /**
- * @brief Constructs a QuickFix action that disables a configurable diagnostic in workspace settings.
- * @param[in] options Options bundle containing diagnostic, settingKey, code, and optional i18n.
- * @return Constructed CodeAction with command payload.
+ * @brief Constructs a QuickFix entry that disables a configurable diagnostic in workspace settings.
+ * @param[in] options Options bundle containing diagnostic index, settingKey, code, and optional title/i18n.
+ * @return Constructed CodeActionEntry with command entry payload.
  */
-lsp::CodeAction MakeDisableDiagnosticAction(const DisableDiagnosticActionOptions& options);
+analysis::code_action::CodeActionEntry MakeDisableDiagnosticEntry(const DisableDiagnosticEntryOptions& options);
 
 /**
- * @brief Constructs a QuickFix action that disables a configurable diagnostic in workspace settings.
- * @param[in] diag Diagnostic to link.
- * @param[in] title Human-readable action title.
- * @param[in] settingKey Client setting path under 'angelscript.'.
- * @param[in] code Diagnostic code identifier.
- * @return Constructed CodeAction with command payload.
+ * @brief Options bundle for creating a text edit quick-fix code action entry.
  */
-lsp::CodeAction MakeDisableDiagnosticAction(const lsp::Diagnostic& diag, std::string title, std::string settingKey,
-                                            std::string code);
-
-/**
- * @brief Options bundle for creating a text edit quick-fix code action.
- */
-struct QuickFixOptions
+struct QuickFixEntryOptions
 {
     std::string title;
-    const lsp::Diagnostic& diag;
-    std::string_view uri;
-    std::vector<lsp::TextEdit> edits;
+    uint32_t diagnosticIndex = 0;
+    std::vector<analysis::code_action::CodeActionTextEdit> edits;
     bool isPreferred = false;
 };
 
 /**
- * @brief Constructs a QuickFix action with the provided workspace edits.
+ * @brief Constructs an analysis CodeActionEntry with the provided text edits.
  * @param[in] options Quick fix configuration bundle.
- * @return Constructed CodeAction.
+ * @return Constructed CodeActionEntry.
  */
-lsp::CodeAction MakeQuickFixAction(QuickFixOptions options);
-
-/**
- * @brief Constructs a QuickFix action with the provided text edits.
- * @param[in] title Human-readable action title.
- * @param[in] diag Triggering diagnostic.
- * @param[in] uri Target document URI.
- * @param[in] edits Vector of text edits to apply.
- * @return Constructed CodeAction.
- */
-lsp::CodeAction MakeQuickFixAction(std::string title, const lsp::Diagnostic& diag, std::string_view uri,
-                                   std::vector<lsp::TextEdit> edits);
+analysis::code_action::CodeActionEntry MakeQuickFixEntry(QuickFixEntryOptions options);
 
 // Feature Provider Function Declarations
-void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
+/**
+ * @brief Generates quick-fix entries to remove unused variables and suppress unused symbol diagnostics.
+ * @param query Incoming code action query context.
+ * @param entries Destination vector for generated code action entries.
+ */
+void TryAddRemoveUnusedVariableFixes(const analysis::code_action::CodeActionQuery& query,
+                                     std::vector<analysis::code_action::CodeActionEntry>& entries);
 
-void TryAddImplementInterfaceFixes(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
+/**
+ * @brief Generates quick-fix entries for implementing missing interface methods in classes.
+ * @param query Incoming code action query context.
+ * @param entries Destination vector for generated code action entries.
+ */
+void TryAddImplementInterfaceFixes(const analysis::code_action::CodeActionQuery& query,
+                                   std::vector<analysis::code_action::CodeActionEntry>& entries);
 
-void TryAddExtractVariableAction(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
+/**
+ * @brief Generates a refactoring entry to extract an expression into a local variable.
+ * @param query Incoming code action query context.
+ * @param entries Destination vector for generated code action entries.
+ */
+void TryAddExtractVariableAction(const analysis::code_action::CodeActionQuery& query,
+                                 std::vector<analysis::code_action::CodeActionEntry>& entries);
 
-void TryAddExtractMethodAction(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
+/**
+ * @brief Generates a refactoring entry to extract statements into a method.
+ * @param query Incoming code action query context.
+ * @param entries Destination vector for generated code action entries.
+ */
+void TryAddExtractMethodAction(const analysis::code_action::CodeActionQuery& query,
+                               std::vector<analysis::code_action::CodeActionEntry>& entries);
 
-void TryAddGetterSetterActions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
+/**
+ * @brief Generates refactoring entries to create getter and setter methods for class fields.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddGetterSetterActions(const analysis::code_action::CodeActionQuery& query,
+                               std::vector<analysis::code_action::CodeActionEntry>& entries);
 
-void TryAddConstQualifierActions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
+/**
+ * @brief Generates quick-fix entries adding const qualifiers to methods and variables.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddConstQualifierActions(const analysis::code_action::CodeActionQuery& query,
+                                 std::vector<analysis::code_action::CodeActionEntry>& entries);
 
-void TryAddUndefinedIdentifierSuggestions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
+/**
+ * @brief Generates quick-fix entries suggesting corrections for undefined identifiers and unknown types.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddUndefinedIdentifierSuggestions(const analysis::code_action::CodeActionQuery& query,
+                                          std::vector<analysis::code_action::CodeActionEntry>& entries);
 
-void TryAddHandleOnPrimitiveFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
+/**
+ * @brief Generates quick-fix entries to remove illegal handle modifiers from primitive types.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddHandleOnPrimitiveFix(const analysis::code_action::CodeActionQuery& query,
+                                std::vector<analysis::code_action::CodeActionEntry>& entries);
 
-void TryAddUnresolvedIncludeSuggestions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
+/**
+ * @brief Generates quick-fix entries suggesting corrections for unresolved include directives.
+ * @param query Incoming code action query context.
+ * @param entries Destination vector for generated code action entries.
+ */
+void TryAddUnresolvedIncludeSuggestions(const analysis::code_action::CodeActionQuery& query,
+                                        std::vector<analysis::code_action::CodeActionEntry>& entries);
 
-void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
+/**
+ * @brief Generates quick-fix entries adding the property keyword to accessor methods.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddAccessorPropertyKeywordFix(const analysis::code_action::CodeActionQuery& query,
+                                      std::vector<analysis::code_action::CodeActionEntry>& entries);
 
-void TryAddBoolConversionFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
+/**
+ * @brief Generates quick-fix entries for explicit bool conversion calls and diagnostic suppression.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddBoolConversionFix(const analysis::code_action::CodeActionQuery& query,
+                             std::vector<analysis::code_action::CodeActionEntry>& entries);
 
-void TryAddRepeatedConversionFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
+/**
+ * @brief Generates quick-fix entries to cache repeated conversions in an if-ladder.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddRepeatedConversionFix(const analysis::code_action::CodeActionQuery& query,
+                                 std::vector<analysis::code_action::CodeActionEntry>& entries);
 
-void TryAddGenerateFuncdefFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
+/**
+ * @brief Generates quick-fix entries to declare missing funcdef signatures.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddGenerateFuncdefFix(const analysis::code_action::CodeActionQuery& query,
+                              std::vector<analysis::code_action::CodeActionEntry>& entries);
 
-void TryAddSortAndCleanIncludesAction(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
+/**
+ * @brief Generates a source action to sort and remove unreferenced include directives.
+ * @param query Incoming code action query context.
+ * @param entries Destination vector for generated code action entries.
+ */
+void TryAddSortAndCleanIncludesAction(const analysis::code_action::CodeActionQuery& query,
+                                      std::vector<analysis::code_action::CodeActionEntry>& entries);
 
-void TryAddDiagnosticSuppressionFixes(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
+/**
+ * @brief Generates quick-fix entries to suppress diagnostics via comments.
+ * @param[in] query Incoming code action query context.
+ * @param[in,out] entries Destination vector for generated code action entries.
+ */
+void TryAddDiagnosticSuppressionFixes(const analysis::code_action::CodeActionQuery& query,
+                                      std::vector<analysis::code_action::CodeActionEntry>& entries);
 
 /**
  * @brief Carries accessor generation parameters including property name, type descriptor, and enclosing class scope.
@@ -210,9 +280,9 @@ struct GetterSetterContext
  */
 struct IncludeFixContext
 {
-    const CodeActionRequest& request;
-    const lsp::Diagnostic& diag;
-    const angel_lsp::utils::IncludeDirective& directive;
+    const analysis::code_action::CodeActionQuery& query; ///< Incoming code action query context.
+    uint32_t diagIndex = 0;                              ///< Index of triggering diagnostic in query diagnostics.
+    const angel_lsp::utils::IncludeDirective& directive; ///< Target include directive being resolved.
 };
 
 /**
@@ -223,7 +293,7 @@ struct IncludeRefCheckContext
     std::string currentUri;
     const analysis::SymbolTable& table;
     const ankerl::unordered_dense::set<std::string>& docReferences;
-    const std::vector<std::string>& allowedRoots;
+    std::span<const std::string> allowedRoots;
 };
 
 /**
@@ -242,9 +312,9 @@ struct FuncdefFixItem
  */
 struct TypoFixContext
 {
-    const CodeActionRequest& request;
-    const lsp::Diagnostic& diag;
-    analysis::SourceRange identifierRange;
+    const analysis::code_action::CodeActionQuery& query; ///< Incoming code action query context.
+    uint32_t diagIndex = 0;                              ///< Index of triggering diagnostic in query diagnostics.
+    analysis::SourceRange identifierRange;               ///< Source range of unresolved identifier token.
 };
 
 /**
