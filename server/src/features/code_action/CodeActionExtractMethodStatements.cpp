@@ -4,91 +4,10 @@
  */
 
 #include "features/code_action/CodeActionExtractMethodAnalysis.h"
-#include "parser/ASTUtils.h"
+#include "utils/Utils.h"
 
 namespace angel_lsp::features
 {
-
-/**
- * @brief Finds the enclosing function node for a selection range.
- * @param[in] rootNode AST root node.
- * @param[in] range Selection range.
- * @return Function declaration node or null node.
- */
-static TSNode FindEnclosingFunctionNode(TSNode rootNode, const lsp::Range& range)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    TSPoint startPt{static_cast<uint32_t>(range.start.line), static_cast<uint32_t>(range.start.character)};
-    TSPoint endPt{static_cast<uint32_t>(range.end.line), static_cast<uint32_t>(range.end.character)};
-    TSNode selNode = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
-    return parser::FindAncestorWithSymbol(selNode, gs.symFuncDeclaration);
-}
-
-/**
- * @brief Finds the statement block body of a function node.
- * @param[in] fnNode Function declaration node.
- * @return Statement block node or null node.
- */
-static TSNode FindFunctionBodyBlock(TSNode fnNode)
-{
-    TSNode bodyNode = parser::GetChildByField(fnNode, parser::GetGrammarSymbols().fieldBody);
-    if (!ts_node_is_null(bodyNode))
-    {
-        return bodyNode;
-    }
-    TSTreeCursor cursor = ts_tree_cursor_new(fnNode);
-    if (ts_tree_cursor_goto_first_child(&cursor))
-    {
-        do
-        {
-            TSNode ch = ts_tree_cursor_current_node(&cursor);
-            if (ts_node_symbol(ch) == parser::GetGrammarSymbols().symStatementBlock)
-            {
-                bodyNode = ch;
-                break;
-            }
-        } while (ts_tree_cursor_goto_next_sibling(&cursor));
-    }
-    ts_tree_cursor_delete(&cursor);
-    return bodyNode;
-}
-
-/**
- * @brief Collects statements within a block that intersect the selection range.
- * @param[in] bodyNode Statement block node.
- * @param[in] range Selection range.
- * @return Vector of intersecting statement nodes.
- */
-static std::vector<TSNode> CollectStatementsInRange(TSNode bodyNode, const lsp::Range& range)
-{
-    std::vector<TSNode> selectedStmts;
-    TSTreeCursor cursor = ts_tree_cursor_new(bodyNode);
-    if (ts_tree_cursor_goto_first_child(&cursor))
-    {
-        do
-        {
-            TSNode ch = ts_tree_cursor_current_node(&cursor);
-            if (!ts_node_is_named(ch))
-            {
-                continue;
-            }
-            const TSSymbol t = ts_node_symbol(ch);
-            const auto& gs = parser::GetGrammarSymbols();
-            if (t == gs.tokOpenBrace || t == gs.tokCloseBrace)
-            {
-                continue;
-            }
-            TSPoint cStart = ts_node_start_point(ch);
-            TSPoint cEnd = ts_node_end_point(ch);
-            if (cStart.row <= range.end.line && cEnd.row >= range.start.line)
-            {
-                selectedStmts.push_back(ch);
-            }
-        } while (ts_tree_cursor_goto_next_sibling(&cursor));
-    }
-    ts_tree_cursor_delete(&cursor);
-    return selectedStmts;
-}
 
 /**
  * @brief Checks if a local definition is declared inside the statement range.
@@ -98,10 +17,12 @@ static std::vector<TSNode> CollectStatementsInRange(TSNode bodyNode, const lsp::
  */
 static bool IsDeclaredInsideRange(const analysis::LocalDefinition* def, const ExtractMethodStatements& stmts)
 {
-    bool afterStart = def->startLine > stmts.firstStart.row ||
-                      (def->startLine == stmts.firstStart.row && def->startCharacter >= stmts.firstStart.column);
-    bool beforeEnd = def->endLine < stmts.lastEnd.row ||
-                     (def->endLine == stmts.lastEnd.row && def->endCharacter <= stmts.lastEnd.column);
+    bool afterStart = def->startLine > stmts.selection.statementsRange.startLine ||
+                      (def->startLine == stmts.selection.statementsRange.startLine &&
+                       def->startCharacter >= stmts.selection.statementsRange.startCharacter);
+    bool beforeEnd = def->endLine < stmts.selection.statementsRange.endLine ||
+                     (def->endLine == stmts.selection.statementsRange.endLine &&
+                      def->endCharacter <= stmts.selection.statementsRange.endCharacter);
     return afterStart && beforeEnd;
 }
 
@@ -116,7 +37,8 @@ static bool IsDeclaredInsideRange(const analysis::LocalDefinition* def, const Ex
 static bool IsValidMethodInputRef(const analysis::LocalReference& ref, const analysis::Scope* sc,
                                   const ExtractMethodStatements& stmts, VarInfo& outInfo)
 {
-    if (ref.isMemberAccess || ref.startLine < stmts.firstStart.row || ref.endLine > stmts.lastEnd.row)
+    if (ref.isMemberAccess || ref.startLine < stmts.selection.statementsRange.startLine ||
+        ref.endLine > stmts.selection.statementsRange.endLine)
     {
         return false;
     }
@@ -125,7 +47,7 @@ static bool IsValidMethodInputRef(const analysis::LocalReference& ref, const ana
     {
         return false;
     }
-    if (!ts_node_is_null(stmts.classNode) && def->kind == analysis::LocalDefinitionKind::Field)
+    if (stmts.selection.inClass && def->kind == analysis::LocalDefinitionKind::Field)
     {
         return false;
     }
@@ -143,74 +65,24 @@ static bool IsValidMethodInputRef(const analysis::LocalReference& ref, const ana
     return true;
 }
 
-/**
- * @brief Finds the enclosing class declaration node for a function node.
- * @param[in] fnNode Function declaration node.
- * @return Class declaration node or null node.
- */
-static TSNode FindEnclosingClassNode(TSNode fnNode)
+std::optional<ExtractMethodStatements> FindSelectedStatements(const CodeActionRequest& request)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    return parser::FindAncestorWithSymbol(fnNode, gs.symClassDeclaration);
-}
-
-static TSNode FindInnermostStatementBlock(TSNode rootNode, const lsp::Range& range, TSNode fnNode)
-{
-    TSPoint startPt{static_cast<uint32_t>(range.start.line), static_cast<uint32_t>(range.start.character)};
-    TSPoint endPt{static_cast<uint32_t>(range.end.line), static_cast<uint32_t>(range.end.character)};
-    TSNode node = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode result{};
-    parser::ForEachAncestor(node,
-                            [&](TSNode cur) -> bool
-                            {
-                                if (ts_node_eq(cur, fnNode))
-                                {
-                                    return false;
-                                }
-                                if (ts_node_symbol(cur) == gs.symStatementBlock)
-                                {
-                                    result = cur;
-                                    return false;
-                                }
-                                return true;
-                            });
-    return !ts_node_is_null(result) ? result : FindFunctionBodyBlock(fnNode);
-}
-
-std::optional<ExtractMethodStatements> FindSelectedStatements(TSNode rootNode, const CodeActionRequest& request)
-{
-    if (request.range.start.line == request.range.end.line &&
-        request.range.start.character == request.range.end.character)
+    if (!request.nodeIndex)
     {
         return std::nullopt;
     }
-    TSNode fnNode = FindEnclosingFunctionNode(rootNode, request.range);
-    if (ts_node_is_null(fnNode))
+    auto selection = analysis::FindExtractMethodSelection(
+        *request.nodeIndex, request.sourceCode,
+        analysis::SourceRange{request.range.start.line, request.range.start.character, request.range.end.line,
+                              request.range.end.character});
+    if (!selection)
     {
         return std::nullopt;
     }
-    TSNode bodyNode = FindInnermostStatementBlock(rootNode, request.range, fnNode);
-    if (ts_node_is_null(bodyNode))
-    {
-        return std::nullopt;
-    }
-
-    std::vector<TSNode> selectedStmts = CollectStatementsInRange(bodyNode, request.range);
-    if (selectedStmts.empty())
-    {
-        return std::nullopt;
-    }
-
     ExtractMethodStatements result;
-    result.fnNode = fnNode;
-    result.classNode = FindEnclosingClassNode(fnNode);
-    result.selectedStmts = std::move(selectedStmts);
-    result.startByte = ts_node_start_byte(result.selectedStmts.front());
-    result.endByte = ts_node_end_byte(result.selectedStmts.back());
-    result.firstStart = ts_node_start_point(result.selectedStmts.front());
-    result.lastEnd = ts_node_end_point(result.selectedStmts.back());
-    result.selectedCode = std::string(request.sourceCode.substr(result.startByte, result.endByte - result.startByte));
+    result.selection = std::move(*selection);
+    result.selectedCode = std::string(utils::SliceSource(request.sourceCode, result.selection.statements.startByte,
+                                                         result.selection.statements.endByte));
     return result;
 }
 

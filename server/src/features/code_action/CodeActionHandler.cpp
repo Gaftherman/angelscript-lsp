@@ -15,26 +15,20 @@ std::optional<std::vector<lsp::CodeAction>> GetCodeActions(const CodeActionReque
         return std::nullopt;
     }
 
-    TSNode rootNode = ts_tree_root_node(request.tree);
-    if (ts_node_is_null(rootNode))
-    {
-        return std::nullopt;
-    }
-
     std::vector<lsp::CodeAction> actions;
-    TryAddRemoveUnusedVariableFixes(request, rootNode, actions);
-    TryAddImplementInterfaceFixes(request, rootNode, actions);
-    TryAddExtractVariableAction(request, rootNode, actions);
-    TryAddExtractMethodAction(request, rootNode, actions);
-    TryAddGetterSetterActions(request, rootNode, actions);
-    TryAddConstQualifierActions(request, rootNode, actions);
-    TryAddUndefinedIdentifierSuggestions(request, rootNode, actions);
-    TryAddHandleOnPrimitiveFix(request, rootNode, actions);
+    TryAddRemoveUnusedVariableFixes(request, actions);
+    TryAddImplementInterfaceFixes(request, actions);
+    TryAddExtractVariableAction(request, actions);
+    TryAddExtractMethodAction(request, actions);
+    TryAddGetterSetterActions(request, actions);
+    TryAddConstQualifierActions(request, actions);
+    TryAddUndefinedIdentifierSuggestions(request, actions);
+    TryAddHandleOnPrimitiveFix(request, actions);
     TryAddUnresolvedIncludeSuggestions(request, actions);
-    TryAddAccessorPropertyKeywordFix(request, rootNode, actions);
-    TryAddBoolConversionFix(request, rootNode, actions);
-    TryAddRepeatedConversionFix(request, rootNode, actions);
-    TryAddGenerateFuncdefFix(request, rootNode, actions);
+    TryAddAccessorPropertyKeywordFix(request, actions);
+    TryAddBoolConversionFix(request, actions);
+    TryAddRepeatedConversionFix(request, actions);
+    TryAddGenerateFuncdefFix(request, actions);
     TryAddSortAndCleanIncludesAction(request, actions);
     TryAddDiagnosticSuppressionFixes(request, actions);
 

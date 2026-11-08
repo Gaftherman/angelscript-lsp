@@ -5,7 +5,8 @@
 
 #include "analysis/resolution/TargetResolution.h"
 #include "features/code_action/CodeActionInternal.h"
-#include "parser/ASTUtils.h"
+#include "features/common/FeatureSharedUtils.h"
+#include "utils/Utils.h"
 
 #include <variant>
 
@@ -130,60 +131,17 @@ static lsp::TextEdit BuildRemoveSingleDeclaratorLine(const analysis::LocalDefini
 }
 
 /**
- * @brief Constructs a TextEdit to delete one declarator from a comma-separated list.
- * @param[in] declarators List of all declarators in declaration.
- * @param[in] declarator Target declarator node.
- * @return TextEdit deleting the declarator.
- */
-static lsp::TextEdit BuildRemoveMultiDeclaratorItem(const std::vector<TSNode>& declarators, TSNode declarator)
-{
-    lsp::TextEdit edit;
-    size_t targetIdx = 0;
-    for (size_t k = 0; k < declarators.size(); ++k)
-    {
-        if (ts_node_start_byte(declarators[k]) == ts_node_start_byte(declarator))
-        {
-            targetIdx = k;
-            break;
-        }
-    }
-
-    if (targetIdx == 0 && declarators.size() > 1)
-    {
-        TSPoint startPt = ts_node_start_point(declarators[0]);
-        TSPoint endPt = ts_node_start_point(declarators[1]);
-        edit.range.start = lsp::Position{startPt.row, startPt.column};
-        edit.range.end = lsp::Position{endPt.row, endPt.column};
-    }
-    else
-    {
-        TSPoint startPt = ts_node_end_point(declarators[targetIdx - 1]);
-        TSPoint endPt = ts_node_end_point(declarators[targetIdx]);
-        edit.range.start = lsp::Position{startPt.row, startPt.column};
-        edit.range.end = lsp::Position{endPt.row, endPt.column};
-    }
-    edit.newText = "";
-    return edit;
-}
-
-/**
  * @brief Constructs a TextEdit to delete an unused variable declaration or declarator.
- * @param[in] rootNode Root AST node.
+ * @param[in] index Node index of the current syntax revision.
  * @param[in] sourceCode Source text.
  * @param[in] def Target local definition.
  * @return TextEdit deleting the unused variable.
  */
-static lsp::TextEdit BuildRemoveUnusedVariableEdit(TSNode rootNode, std::string_view sourceCode,
+static lsp::TextEdit BuildRemoveUnusedVariableEdit(const analysis::NodeIndex& index, std::string_view sourceCode,
                                                    const analysis::LocalDefinition* def)
 {
-    TSPoint pt = {def->startLine, def->startCharacter};
-    TSNode leaf = ts_node_descendant_for_point_range(rootNode, pt, pt);
-
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode declarator = parser::FindAncestorWithSymbol(leaf, gs.symVariableDeclarator);
-    TSNode decl = parser::FindAncestorWithSymbol(declarator, gs.symVariableDeclaration);
-
-    if (ts_node_is_null(decl))
+    const auto removal = analysis::FindUnusedDeclaratorRemoval(index, def->startLine, def->startCharacter);
+    if (!removal.inDeclaration)
     {
         lsp::TextEdit edit;
         edit.range.start = lsp::Position{def->startLine, 0};
@@ -191,41 +149,28 @@ static lsp::TextEdit BuildRemoveUnusedVariableEdit(TSNode rootNode, std::string_
         edit.newText = "";
         return edit;
     }
-
-    std::vector<TSNode> declarators;
-    TSTreeCursor cursor = ts_tree_cursor_new(decl);
-    if (ts_tree_cursor_goto_first_child(&cursor))
-    {
-        do
-        {
-            TSNode child = ts_tree_cursor_current_node(&cursor);
-            if (!ts_node_is_null(child) && ts_node_symbol(child) == parser::GetGrammarSymbols().symVariableDeclarator)
-            {
-                declarators.push_back(child);
-            }
-        } while (ts_tree_cursor_goto_next_sibling(&cursor));
-    }
-    ts_tree_cursor_delete(&cursor);
-
-    if (declarators.size() <= 1)
+    if (removal.declaratorCount <= 1)
     {
         return BuildRemoveSingleDeclaratorLine(def, sourceCode);
     }
-    return BuildRemoveMultiDeclaratorItem(declarators, declarator);
+    lsp::TextEdit edit;
+    edit.range = common::ToLspRange(removal.multiRemovalRange);
+    edit.newText = "";
+    return edit;
 }
 
-static std::string ExtractSymbolNameFromDiag(const lsp::Diagnostic& diag, TSNode rootNode, std::string_view sourceCode)
+static std::string ExtractSymbolNameFromDiag(const lsp::Diagnostic& diag, const analysis::NodeIndex* index,
+                                             std::string_view sourceCode)
 {
-    if (!ts_node_is_null(rootNode) && !sourceCode.empty())
+    if (index && !sourceCode.empty())
     {
-        TSPoint pt = {diag.range.start.line, diag.range.start.character};
-        TSNode node = ts_node_descendant_for_point_range(rootNode, pt, pt);
-        if (!ts_node_is_null(node))
+        const auto span = analysis::FindNodeSpanAtPoint(*index, diag.range.start.line, diag.range.start.character);
+        if (span)
         {
-            std::string text = parser::GetNodeText(node, sourceCode);
+            const std::string_view text = utils::SliceSource(sourceCode, span->bytes.startByte, span->bytes.endByte);
             if (analysis::IsValidIdentifier(text))
             {
-                return text;
+                return std::string(text);
             }
         }
     }
@@ -283,14 +228,13 @@ static lsp::CodeAction MakeIgnoreUnusedSymbolAction(const lsp::Diagnostic& diag,
     return action;
 }
 
-static void AppendUnusedSymbolActions(const CodeActionRequest& request, TSNode rootNode,
-                                      std::vector<lsp::CodeAction>& actions)
+static void AppendUnusedSymbolActions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
 {
     for (const auto& diag : request.context.diagnostics)
     {
         if (MatchDiagnosticCode(diag, diagnostics::codes::UnusedFunction))
         {
-            std::string symName = ExtractSymbolNameFromDiag(diag, rootNode, request.sourceCode);
+            std::string symName = ExtractSymbolNameFromDiag(diag, request.nodeIndex, request.sourceCode);
             if (!symName.empty())
             {
                 actions.push_back(MakeIgnoreUnusedSymbolAction(diag, symName, request.i18n));
@@ -301,7 +245,7 @@ static void AppendUnusedSymbolActions(const CodeActionRequest& request, TSNode r
         }
         else if (MatchDiagnosticCode(diag, diagnostics::codes::UnusedMethod))
         {
-            std::string symName = ExtractSymbolNameFromDiag(diag, rootNode, request.sourceCode);
+            std::string symName = ExtractSymbolNameFromDiag(diag, request.nodeIndex, request.sourceCode);
             if (!symName.empty())
             {
                 actions.push_back(MakeIgnoreUnusedSymbolAction(diag, symName, request.i18n));
@@ -317,7 +261,7 @@ static void AppendUnusedSymbolActions(const CodeActionRequest& request, TSNode r
         }
         else if (MatchDiagnosticCode(diag, diagnostics::codes::UnusedGlobalVariable))
         {
-            std::string symName = ExtractSymbolNameFromDiag(diag, rootNode, request.sourceCode);
+            std::string symName = ExtractSymbolNameFromDiag(diag, request.nodeIndex, request.sourceCode);
             if (!symName.empty())
             {
                 actions.push_back(MakeIgnoreUnusedSymbolAction(diag, symName, request.i18n));
@@ -328,7 +272,7 @@ static void AppendUnusedSymbolActions(const CodeActionRequest& request, TSNode r
         }
         else if (MatchDiagnosticCode(diag, diagnostics::codes::UnusedClass))
         {
-            std::string symName = ExtractSymbolNameFromDiag(diag, rootNode, request.sourceCode);
+            std::string symName = ExtractSymbolNameFromDiag(diag, request.nodeIndex, request.sourceCode);
             if (!symName.empty())
             {
                 actions.push_back(MakeIgnoreUnusedSymbolAction(diag, symName, request.i18n));
@@ -339,10 +283,9 @@ static void AppendUnusedSymbolActions(const CodeActionRequest& request, TSNode r
     }
 }
 
-void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, TSNode rootNode,
-                                     std::vector<lsp::CodeAction>& actions)
+void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
 {
-    AppendUnusedSymbolActions(request, rootNode, actions);
+    AppendUnusedSymbolActions(request, actions);
 
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
     if (!rootScope)
@@ -355,6 +298,11 @@ void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, TSNode ro
 
     std::vector<const analysis::LocalDefinition*> unusedVars;
     CollectUnusedVariables(rootScope.get(), usedDefs, unusedVars);
+
+    if (!request.nodeIndex)
+    {
+        return;
+    }
 
     for (const auto* def : unusedVars)
     {
@@ -375,7 +323,7 @@ void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, TSNode ro
             continue;
         }
 
-        lsp::TextEdit edit = BuildRemoveUnusedVariableEdit(rootNode, request.sourceCode, def);
+        lsp::TextEdit edit = BuildRemoveUnusedVariableEdit(*request.nodeIndex, request.sourceCode, def);
         lsp::CodeAction action;
         action.title = i18n::FormatMessage(request.i18n, "action-remove-unused-variable", "Remove unused variable '{}'",
                                            std::string_view(def->name));

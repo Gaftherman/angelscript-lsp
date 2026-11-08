@@ -3,100 +3,11 @@
  * @brief Analysis for identifying mutated and output variables in extracted method selection.
  */
 
-#include "analysis/types/TypeSanitization.h"
 #include "features/code_action/CodeActionExtractMethodAnalysis.h"
+#include "utils/Utils.h"
 
 namespace angel_lsp::features
 {
-
-static void InsertIfIdentifier(TSNode node, std::string_view sourceCode,
-                               ankerl::unordered_dense::set<std::string>& mutatedVars)
-{
-    if (ts_node_is_null(node))
-    {
-        return;
-    }
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol t = ts_node_symbol(node);
-    if (t == gs.symIdentifier || t == gs.symScopedIdentifier)
-    {
-        if (std::string varName = parser::GetNodeText(node, sourceCode); !varName.empty())
-        {
-            mutatedVars.insert(std::move(varName));
-        }
-    }
-}
-
-static void CheckAssignmentMutation(TSNode curr, std::string_view sourceCode,
-                                    ankerl::unordered_dense::set<std::string>& mutatedVars)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode left = parser::GetChildByField(curr, gs.fieldLeft);
-    InsertIfIdentifier(left, sourceCode, mutatedVars);
-}
-
-static void CheckIncDecMutation(TSNode curr, std::string_view sourceCode,
-                                ankerl::unordered_dense::set<std::string>& mutatedVars)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode opNode = parser::GetChildByField(curr, gs.fieldOperator);
-    const TSSymbol opSym = ts_node_symbol(opNode);
-    if (opSym == gs.tokPlusPlus || opSym == gs.tokDashDash)
-    {
-        TSNode arg = parser::GetChildByField(curr, gs.fieldOperand);
-        InsertIfIdentifier(arg, sourceCode, mutatedVars);
-    }
-}
-
-/**
- * @brief Identifies arguments passed to a call expression that may be mutated by reference.
- * @param[in] curr Call expression AST node being evaluated.
- * @param[in] sourceCode Document source text buffer.
- * @param[in,out] mutatedVars Output set accumulating identifiers mutated by the call.
- */
-static void CheckCallMutation(TSNode curr, std::string_view sourceCode,
-                              ankerl::unordered_dense::set<std::string>& mutatedVars)
-{
-    TSNode argsNode = parser::GetChildByField(curr, parser::GetGrammarSymbols().fieldArguments);
-    if (ts_node_is_null(argsNode))
-    {
-        return;
-    }
-    uint32_t argCnt = ts_node_named_child_count(argsNode);
-    for (uint32_t i = 0; i < argCnt; ++i)
-    {
-        TSNode arg = ts_node_named_child(argsNode, i);
-        std::string_view argText = parser::NodeText(arg, sourceCode);
-        if (analysis::IsOutOrInOutArgumentView(argText))
-        {
-            TSNode idNode = parser::GetChildByField(arg, parser::GetGrammarSymbols().fieldName);
-            if (ts_node_is_null(idNode) && ts_node_named_child_count(arg) > 0)
-            {
-                idNode = ts_node_named_child(arg, ts_node_named_child_count(arg) - 1);
-            }
-            InsertIfIdentifier(idNode, sourceCode, mutatedVars);
-        }
-    }
-}
-
-static void CheckNodeMutations(TSNode curr, std::string_view sourceCode,
-                               ankerl::unordered_dense::set<std::string>& mutatedVars)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol type = ts_node_symbol(curr);
-    if (type == gs.symAssignmentExpression)
-    {
-        CheckAssignmentMutation(curr, sourceCode, mutatedVars);
-    }
-    else if (type == gs.symPostfixExpression || type == gs.symUnaryExpression)
-    {
-        CheckIncDecMutation(curr, sourceCode, mutatedVars);
-    }
-    else if (type == gs.symCallExpression)
-    {
-        CheckCallMutation(curr, sourceCode, mutatedVars);
-    }
-}
 
 static bool IsVariableReferencedAfter(const analysis::Scope* fnScope, const std::string& name, uint32_t line,
                                       uint32_t col = 0)
@@ -190,7 +101,7 @@ static bool IsValidMutatedOutput(const MethodOutputContext& ctx, const analysis:
     {
         return false;
     }
-    if (!ts_node_is_null(ctx.stmts.classNode) && def->kind == analysis::LocalDefinitionKind::Field)
+    if (ctx.stmts.selection.inClass && def->kind == analysis::LocalDefinitionKind::Field)
     {
         return false;
     }
@@ -198,12 +109,13 @@ static bool IsValidMutatedOutput(const MethodOutputContext& ctx, const analysis:
     {
         return false;
     }
-    bool declaredBefore =
-        (def->endLine < ctx.stmts.firstStart.row ||
-         (def->endLine == ctx.stmts.firstStart.row && def->endCharacter <= ctx.stmts.firstStart.column) ||
-         def->kind == analysis::LocalDefinitionKind::Parameter);
+    bool declaredBefore = (def->endLine < ctx.stmts.selection.statementsRange.startLine ||
+                           (def->endLine == ctx.stmts.selection.statementsRange.startLine &&
+                            def->endCharacter <= ctx.stmts.selection.statementsRange.startCharacter) ||
+                           def->kind == analysis::LocalDefinitionKind::Parameter);
     return declaredBefore &&
-           IsVariableReferencedAfter(ctx.fnScope, def->name, ctx.stmts.lastEnd.row, ctx.stmts.lastEnd.column);
+           IsVariableReferencedAfter(ctx.fnScope, def->name, ctx.stmts.selection.statementsRange.endLine,
+                                     ctx.stmts.selection.statementsRange.endCharacter);
 }
 
 static void CollectMutatedOutputs(const MethodOutputContext& ctx,
@@ -243,9 +155,10 @@ static void CollectInternalDefinitionsUsedAfter(const ExtractMethodStatements& s
         }
         for (const auto& def : sc->definitions)
         {
-            if (def.startLine >= stmts.firstStart.row && def.endLine <= stmts.lastEnd.row)
+            if (def.startLine >= stmts.selection.statementsRange.startLine &&
+                def.endLine <= stmts.selection.statementsRange.endLine)
             {
-                if (IsVariableReferencedAfter(fnScope, def.name, stmts.lastEnd.row + 1, 0) &&
+                if (IsVariableReferencedAfter(fnScope, def.name, stmts.selection.statementsRange.endLine + 1, 0) &&
                     !seenOutputs.contains(def.name))
                 {
                     seenOutputs.insert(def.name);
@@ -261,59 +174,13 @@ static void CollectInternalDefinitionsUsedAfter(const ExtractMethodStatements& s
     }
 }
 
-/**
- * @brief Traverses a statement subtree iteratively to detect variables that undergo mutation.
- * @param[in] root Root AST node of the statement subtree to inspect.
- * @param[in] sourceCode Document source text buffer.
- * @param[in,out] mutatedVars Output set accumulating names of variables mutated within the subtree.
- */
-static void TraverseSubtreeMutations(TSNode root, std::string_view sourceCode,
-                                     ankerl::unordered_dense::set<std::string>& mutatedVars)
-{
-    if (ts_node_is_null(root))
-    {
-        return;
-    }
-    TSTreeCursor cursor = ts_tree_cursor_new(root);
-    bool visiting = true;
-    while (visiting)
-    {
-        const TSNode current = ts_tree_cursor_current_node(&cursor);
-        CheckNodeMutations(current, sourceCode, mutatedVars);
-
-        if (ts_tree_cursor_goto_first_child(&cursor))
-        {
-            continue;
-        }
-        if (ts_tree_cursor_goto_next_sibling(&cursor))
-        {
-            continue;
-        }
-
-        bool backtracked = false;
-        while (ts_tree_cursor_goto_parent(&cursor))
-        {
-            if (ts_tree_cursor_goto_next_sibling(&cursor))
-            {
-                backtracked = true;
-                break;
-            }
-        }
-        if (!backtracked)
-        {
-            visiting = false;
-        }
-    }
-    ts_tree_cursor_delete(&cursor);
-}
-
-ankerl::unordered_dense::set<std::string> CollectMutatedVariables(const std::vector<TSNode>& stmts,
+ankerl::unordered_dense::set<std::string> CollectMutatedVariables(const ExtractMethodStatements& stmts,
                                                                   std::string_view sourceCode)
 {
     ankerl::unordered_dense::set<std::string> mutatedVars;
-    for (const auto& stmt : stmts)
+    for (const auto& r : stmts.selection.mutatedNames)
     {
-        TraverseSubtreeMutations(stmt, sourceCode, mutatedVars);
+        mutatedVars.insert(std::string(utils::SliceSource(sourceCode, r.startByte, r.endByte)));
     }
     return mutatedVars;
 }

@@ -1,5 +1,7 @@
 #include "helpers/UnifiedFeatureAuditHarness.h"
 
+#include "helpers/TestUtils.h"
+
 #include <algorithm>
 #include <doctest/doctest.h>
 
@@ -56,9 +58,11 @@ std::optional<std::vector<lsp::CodeAction>> UnifiedFeatureAuditHarness::RequestC
         context.diagnostics.push_back(std::move(ld));
     }
 
+    angel_lsp::test::NodeIndexFixture codeActionIndex(itTree->second.get());
     features::CodeActionRequest req{
         uri,       m_documents[uri], itTree->second.get(), range, std::move(context), *m_symbolTable, *m_scopeIndex, {},
         &m_config, &m_i18n};
+    req.nodeIndex = &codeActionIndex.index;
     return features::GetCodeActions(req);
 }
 

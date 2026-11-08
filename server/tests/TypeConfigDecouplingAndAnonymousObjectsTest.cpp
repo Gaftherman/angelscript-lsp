@@ -149,6 +149,7 @@ TEST_SUITE("TypeConfig_Decoupling")
             scopeIndex.SetScopeTree(docUri, std::move(rootScope));
         }
 
+        angel_lsp::test::NodeIndexFixture codeActionIndex(tree);
         CodeActionRequest req{.uri = docUri,
                               .sourceCode = script,
                               .tree = tree,
@@ -158,6 +159,7 @@ TEST_SUITE("TypeConfig_Decoupling")
                               .scopeIndex = scopeIndex,
                               .allowedRoots = {},
                               .config = &cfg};
+        req.nodeIndex = &codeActionIndex.index;
 
         auto actions = GetCodeActions(req);
         REQUIRE(actions.has_value());

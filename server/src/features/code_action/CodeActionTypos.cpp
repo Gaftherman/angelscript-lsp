@@ -1,4 +1,5 @@
 #include "features/code_action/CodeActionInternal.h"
+#include "features/common/FeatureSharedUtils.h"
 
 namespace angel_lsp::features
 {
@@ -34,12 +35,12 @@ static bool IsTypeLikeSymbol(analysis::SymbolType type)
 /**
  * @brief Collects candidate names for typo suggestions from local scopes and symbols.
  * @param[in] request Code action request.
- * @param[in] point Cursor position.
+ * @param[in] line Cursor line.
  * @param[in] isIdentifier True if unresolved target is an identifier.
  * @param[in] isType True if unresolved target is a type.
  * @return Vector of candidate names.
  */
-static std::vector<std::string> CollectTypoCandidates(const CodeActionRequest& request, TSPoint point,
+static std::vector<std::string> CollectTypoCandidates(const CodeActionRequest& request, uint32_t line,
                                                       bool isIdentifier, bool isType)
 {
     std::vector<std::string> candidates;
@@ -48,7 +49,7 @@ static std::vector<std::string> CollectTypoCandidates(const CodeActionRequest& r
         auto rootScope = request.scopeIndex.GetRoot(request.uri);
         if (rootScope)
         {
-            CollectVisibleLocalNames(FindScopeByLineOrRoot(rootScope.get(), point.row), candidates);
+            CollectVisibleLocalNames(FindScopeByLineOrRoot(rootScope.get(), line), candidates);
         }
     }
     request.symbolTable.ForEachSymbol(
@@ -70,7 +71,7 @@ static std::vector<std::string> CollectTypoCandidates(const CodeActionRequest& r
  * @param[in] candidates Available candidate names.
  * @return Sorted vector of suggestions within distance limit.
  */
-static std::vector<TypoCandidate> RankTypoSuggestions(const std::string& typed,
+static std::vector<TypoCandidate> RankTypoSuggestions(std::string_view typed,
                                                       const std::vector<std::string>& candidates)
 {
     const std::string typedFolded = FoldCase(typed);
@@ -129,10 +130,7 @@ static void EmitTypoCodeActions(const TypoFixContext& ctx, const std::vector<Typ
         }
 
         lsp::TextEdit edit;
-        edit.range.start.line = ts_node_start_point(ctx.identifier).row;
-        edit.range.start.character = ts_node_start_point(ctx.identifier).column;
-        edit.range.end.line = ts_node_end_point(ctx.identifier).row;
-        edit.range.end.character = ts_node_end_point(ctx.identifier).column;
+        edit.range = common::ToLspRange(ctx.identifierRange);
         edit.newText = ranked[i].name;
 
         lsp::WorkspaceEdit wsEdit;
@@ -145,10 +143,9 @@ static void EmitTypoCodeActions(const TypoFixContext& ctx, const std::vector<Typ
     }
 }
 
-void TryAddUndefinedIdentifierSuggestions(const CodeActionRequest& request, TSNode rootNode,
-                                          std::vector<lsp::CodeAction>& actions)
+void TryAddUndefinedIdentifierSuggestions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
 {
-    if (ts_node_is_null(rootNode) || request.sourceCode.empty())
+    if (!request.nodeIndex || request.sourceCode.empty())
     {
         return;
     }
@@ -162,24 +159,25 @@ void TryAddUndefinedIdentifierSuggestions(const CodeActionRequest& request, TSNo
             continue;
         }
 
-        const TSPoint point = {diag.range.start.line, diag.range.start.character};
-        TSNode identifier = ts_node_descendant_for_point_range(rootNode, point, point);
-        if (ts_node_is_null(identifier))
+        const auto identifier =
+            analysis::FindNodeSpanAtPoint(*request.nodeIndex, diag.range.start.line, diag.range.start.character);
+        if (!identifier)
         {
             continue;
         }
 
-        const std::string typed = parser::GetNodeText(identifier, request.sourceCode);
+        const std::string_view typed =
+            utils::SliceSource(request.sourceCode, identifier->bytes.startByte, identifier->bytes.endByte);
         if (typed.empty())
         {
             continue;
         }
 
-        auto candidates = CollectTypoCandidates(request, point, isIdentifier, isType);
+        auto candidates = CollectTypoCandidates(request, diag.range.start.line, isIdentifier, isType);
         auto ranked = RankTypoSuggestions(typed, candidates);
         if (!ranked.empty())
         {
-            EmitTypoCodeActions(TypoFixContext{request, diag, identifier}, ranked, actions);
+            EmitTypoCodeActions(TypoFixContext{request, diag, identifier->range}, ranked, actions);
         }
     }
 }

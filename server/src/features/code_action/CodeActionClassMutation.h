@@ -1,22 +1,29 @@
 #pragma once
 
+#include "analysis/index/ClassMutationFacts.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 
 namespace angel_lsp::features
 {
 
+/**
+ * @brief Context for evaluating whether a method body mutates class state.
+ */
 struct ClassMutationContext
 {
-    TSNode bodyNode;
-    TSNode classNode;
+    /// Pre-indexed mutation facts and candidate sites for the method body.
+    const analysis::IndexedMethodMutationFacts& facts;
+    /// Document source text.
     std::string_view sourceCode;
+    /// Workspace symbol table.
     const analysis::SymbolTable& table;
+    /// Enclosing class name.
     std::string className;
+    /// Enclosing lexical scope.
     const analysis::Scope* scope = nullptr;
 };
 

@@ -1,7 +1,14 @@
+#include "analysis/index/AccessorFacts.h"
 #include "analysis/types/TypeSanitization.h"
 #include "features/code_action/CodeActionInternal.h"
 #include "i18n/i18n.h"
-#include "parser/ASTUtils.h"
+#include "utils/Utils.h"
+
+#include <cctype>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace angel_lsp::features
 {
@@ -30,124 +37,21 @@ static std::string CleanPropertyName(std::string_view fieldName)
 }
 
 /**
- * @brief Finds enclosing class declaration node and its class body node.
- * @param[in] leaf AST leaf at cursor position.
- * @param[in] sourceCode Source text.
- * @param[out] className Extracted class name.
- * @param[out] classBody Extracted class body node.
- * @return True if class declaration and body were located.
- */
-static bool FindEnclosingClassAndBody(TSNode leaf, std::string_view sourceCode, std::string& className,
-                                      TSNode& classBody)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode classNode = parser::FindAncestorWithSymbol(leaf, gs.symClassDeclaration);
-    if (ts_node_is_null(classNode))
-    {
-        return false;
-    }
-    classBody = parser::GetChildByField(classNode, gs.fieldBody);
-    if (ts_node_is_null(classBody))
-    {
-        TSTreeCursor cursor = ts_tree_cursor_new(classNode);
-        if (ts_tree_cursor_goto_first_child(&cursor))
-        {
-            do
-            {
-                TSNode ch = ts_tree_cursor_current_node(&cursor);
-                if (ts_node_symbol(ch) == gs.symClassBody)
-                {
-                    classBody = ch;
-                    break;
-                }
-            } while (ts_tree_cursor_goto_next_sibling(&cursor));
-        }
-        ts_tree_cursor_delete(&cursor);
-    }
-    if (ts_node_is_null(classBody))
-    {
-        return false;
-    }
-    TSNode nameNode = parser::GetChildByField(classNode, gs.fieldName);
-    className = parser::GetNodeText(nameNode, sourceCode);
-    return true;
-}
-
-/**
- * @brief Collects candidate member fields for accessor generation.
- * @param[in] leaf AST node under cursor.
- * @param[in] classBody Class body AST node.
- * @param[in] request Code action request.
- * @param[in] className Name of enclosing class.
- * @return Vector of {fieldName, fieldType} pairs.
- */
-static std::vector<std::pair<std::string, std::string>> CollectFieldsFromVarDecl(TSNode varDecl,
-                                                                                 std::string_view sourceCode)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    std::vector<std::pair<std::string, std::string>> fields;
-    TSNode typeNode = parser::GetChildByField(varDecl, gs.fieldVarType);
-    if (ts_node_is_null(typeNode))
-    {
-        typeNode = parser::GetChildByField(varDecl, gs.fieldType);
-    }
-    std::string fieldType = parser::GetNodeText(typeNode, sourceCode);
-    if (fieldType.empty())
-    {
-        fieldType = "int";
-    }
-
-    TSTreeCursor cursor = ts_tree_cursor_new(varDecl);
-    if (ts_tree_cursor_goto_first_child(&cursor))
-    {
-        do
-        {
-            TSNode ch = ts_tree_cursor_current_node(&cursor);
-            if (ts_node_symbol(ch) == gs.symVariableDeclarator)
-            {
-                TSNode vNameNode = parser::GetChildByField(ch, gs.fieldName);
-                std::string fName = parser::GetNodeText(vNameNode, sourceCode);
-                if (!fName.empty())
-                {
-                    fields.push_back({fName, fieldType});
-                }
-            }
-        } while (ts_tree_cursor_goto_next_sibling(&cursor));
-    }
-    ts_tree_cursor_delete(&cursor);
-    return fields;
-}
-
-static std::vector<std::pair<std::string, std::string>> CollectFieldsForGetterSetter(TSNode leaf, TSNode classBody,
-                                                                                     const CodeActionRequest& request)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode varDecl = parser::FindAncestorWithSymbol(leaf, gs.symVariableDeclaration);
-    if (!ts_node_is_null(varDecl) && ts_node_start_byte(varDecl) >= ts_node_start_byte(classBody) &&
-        ts_node_end_byte(varDecl) <= ts_node_end_byte(classBody))
-    {
-        return CollectFieldsFromVarDecl(varDecl, request.sourceCode);
-    }
-
-    return {};
-}
-
-/**
  * @brief Creates a CodeAction inserting an accessor text edit into the class body.
  * @param[in] uri Document URI.
  * @param[in] title Action title.
  * @param[in] text Method code to insert.
- * @param[in] insertPt Class body insertion point.
+ * @param[in] insertPt Class body insertion point coordinates.
  * @return Constructed CodeAction.
  */
 static lsp::CodeAction CreateAccessorAction(const std::string& uri, const std::string& title, const std::string& text,
-                                            TSPoint insertPt)
+                                            analysis::IndexedSourcePoint insertPt)
 {
     lsp::CodeAction action;
     action.title = title;
     action.kind = lsp::CodeActionKindEnum(lsp::CodeActionKind::RefactorRewrite);
     lsp::TextEdit edit;
-    edit.range = lsp::Range{{insertPt.row, insertPt.column}, {insertPt.row, insertPt.column}};
+    edit.range = lsp::Range{{insertPt.line, insertPt.character}, {insertPt.line, insertPt.character}};
     edit.newText = "\n" + text;
 
     lsp::WorkspaceEdit wsEdit;
@@ -231,72 +135,39 @@ static void EmitGetterSetterActionsForField(const CodeActionRequest& request, co
     }
 }
 
-/**
- * @brief Finds the insertion point for the 'property' keyword, placing it after 'const' if present.
- * @param[in] funcNode The func_declaration AST node.
- * @param[in] parametersNode The parameter list AST node.
- * @param[in] sourceCode Source text of the document.
- * @return Insertion point coordinates.
- */
-static TSPoint FindAccessorPropertyInsertionPoint(TSNode funcNode, TSNode parametersNode)
+void TryAddGetterSetterActions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
 {
-    TSPoint insertAt = ts_node_end_point(parametersNode);
-    const uint32_t paramsEndByte = ts_node_end_byte(parametersNode);
-    const auto& gs = parser::GetGrammarSymbols();
-    TSTreeCursor cursor = ts_tree_cursor_new(funcNode);
-    if (ts_tree_cursor_goto_first_child(&cursor))
+    if (!request.nodeIndex || request.sourceCode.empty())
     {
-        do
-        {
-            TSNode child = ts_tree_cursor_current_node(&cursor);
-            if (!ts_node_is_null(child) && ts_node_start_byte(child) >= paramsEndByte)
-            {
-                if (ts_node_symbol(child) == gs.tokConst)
-                {
-                    insertAt = ts_node_end_point(child);
-                    break;
-                }
-            }
-        } while (ts_tree_cursor_goto_next_sibling(&cursor));
+        return;
     }
-    ts_tree_cursor_delete(&cursor);
-    return insertAt;
-}
 
-void TryAddGetterSetterActions(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions)
-{
-    if (ts_node_is_null(rootNode) || request.sourceCode.empty())
+    const auto site = analysis::FindAccessorSite(*request.nodeIndex, request.sourceCode, request.range.start.line,
+                                                 request.range.start.character);
+    if (!site)
     {
         return;
     }
-    TSPoint pt = {request.range.start.line, request.range.start.character};
-    TSNode leaf = ts_node_descendant_for_point_range(rootNode, pt, pt);
-    if (ts_node_is_null(leaf))
+
+    const std::string className(
+        utils::SliceSource(request.sourceCode, site->className.startByte, site->className.endByte));
+    std::string fieldType(utils::SliceSource(request.sourceCode, site->fieldType.startByte, site->fieldType.endByte));
+    if (fieldType.empty())
     {
-        return;
+        fieldType = "int";
     }
-    std::string className;
-    TSNode classBody;
-    if (!FindEnclosingClassAndBody(leaf, request.sourceCode, className, classBody))
+
+    for (const auto& r : site->fieldNames)
     {
-        return;
-    }
-    auto fields = CollectFieldsForGetterSetter(leaf, classBody, request);
-    if (fields.empty())
-    {
-        return;
-    }
-    TSPoint insertPt = FindClassClosingBracePoint(classBody);
-    for (const auto& field : fields)
-    {
-        EmitGetterSetterActionsForField(request, GetterSetterContext{className, field, insertPt}, actions);
+        std::pair<std::string, std::string> field{
+            std::string(utils::SliceSource(request.sourceCode, r.startByte, r.endByte)), fieldType};
+        EmitGetterSetterActionsForField(request, GetterSetterContext{className, field, site->insertPoint}, actions);
     }
 }
 
-void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode rootNode,
-                                      std::vector<lsp::CodeAction>& actions)
+void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
 {
-    if (ts_node_is_null(rootNode) || request.sourceCode.empty())
+    if (!request.nodeIndex || request.sourceCode.empty())
     {
         return;
     }
@@ -308,27 +179,18 @@ void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode r
             continue;
         }
 
-        const auto& gs = parser::GetGrammarSymbols();
-        const TSPoint point = {diag.range.start.line, diag.range.start.character};
-        TSNode node = parser::FindEnclosingNodeAtPoint(rootNode, point, gs.symFuncDeclaration);
-        if (ts_node_is_null(node))
+        const auto insertAt = analysis::FindPropertyKeywordInsertionPoint(*request.nodeIndex, diag.range.start.line,
+                                                                          diag.range.start.character);
+        if (!insertAt)
         {
             continue;
         }
-
-        const TSNode parameters = parser::GetChildByField(node, gs.fieldParameters);
-        if (ts_node_is_null(parameters))
-        {
-            continue;
-        }
-
-        const TSPoint insertAt = FindAccessorPropertyInsertionPoint(node, parameters);
 
         lsp::TextEdit edit;
-        edit.range.start.line = insertAt.row;
-        edit.range.start.character = insertAt.column;
-        edit.range.end.line = insertAt.row;
-        edit.range.end.character = insertAt.column;
+        edit.range.start.line = insertAt->line;
+        edit.range.start.character = insertAt->character;
+        edit.range.end.line = insertAt->line;
+        edit.range.end.character = insertAt->character;
         edit.newText = " property";
 
         lsp::CodeAction action;

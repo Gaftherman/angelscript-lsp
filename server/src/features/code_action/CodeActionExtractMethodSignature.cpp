@@ -4,6 +4,7 @@
  */
 
 #include "features/code_action/CodeActionExtractMethodAnalysis.h"
+#include "utils/Utils.h"
 
 namespace angel_lsp::features
 {
@@ -67,14 +68,14 @@ static void DeduceReturnAndCallSite(const ExtractedMethodVariables& vars, const 
     }
     else if (vars.outputVars.empty())
     {
-        TSNode lastNode = stmts.selectedStmts.back();
-        const auto& gs = parser::GetGrammarSymbols();
-        if (ts_node_symbol(lastNode) == gs.symReturnStatement)
+        if (stmts.selection.endsWithReturn)
         {
-            TSNode retTypeNode = parser::GetChildByField(stmts.fnNode, gs.fieldType);
-            if (!ts_node_is_null(retTypeNode))
+            const std::string_view retType =
+                utils::SliceSource(request.sourceCode, stmts.selection.functionReturnType.startByte,
+                                   stmts.selection.functionReturnType.endByte);
+            if (!retType.empty())
             {
-                plan.returnType = parser::GetNodeText(retTypeNode, request.sourceCode);
+                plan.returnType = std::string(retType);
             }
         }
         plan.callSiteText = methodName + "(" + plan.argsStr + ");";

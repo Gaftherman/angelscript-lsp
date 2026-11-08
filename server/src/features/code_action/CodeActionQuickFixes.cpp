@@ -5,6 +5,7 @@
 
 #include "analysis/documentation/SignatureFormatter.h"
 #include "features/code_action/CodeActionInternal.h"
+#include "features/common/FeatureSharedUtils.h"
 #include "i18n/i18n.h"
 
 namespace angel_lsp::features
@@ -85,10 +86,7 @@ static void EmitFuncdefCodeAction(const CodeActionRequest& request, const lsp::D
     edits.push_back(std::move(insertion));
 
     lsp::TextEdit rename;
-    rename.range.start.line = ts_node_start_point(item.typeNode).row;
-    rename.range.start.character = ts_node_start_point(item.typeNode).column;
-    rename.range.end.line = ts_node_end_point(item.typeNode).row;
-    rename.range.end.character = ts_node_end_point(item.typeNode).column;
+    rename.range = common::ToLspRange(item.typeRange);
     rename.newText = item.funcdefName;
     edits.push_back(std::move(rename));
 
@@ -105,13 +103,11 @@ static void EmitFuncdefCodeAction(const CodeActionRequest& request, const lsp::D
 /**
  * @brief Attempts to construct a QuickFix CodeAction to remove illegal handle '@' modifiers from primitive types.
  * @param[in] request Code action request bundle containing AST root, source text, and diagnostics.
- * @param[in] rootNode Root AST node of the document.
  * @param[in,out] actions Output vector where constructed quick fix actions are appended.
  */
-void TryAddHandleOnPrimitiveFix(const CodeActionRequest& request, TSNode rootNode,
-                                std::vector<lsp::CodeAction>& actions)
+void TryAddHandleOnPrimitiveFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
 {
-    if (ts_node_is_null(rootNode) || request.sourceCode.empty())
+    if (!request.nodeIndex || request.sourceCode.empty())
     {
         return;
     }
@@ -148,9 +144,9 @@ void TryAddHandleOnPrimitiveFix(const CodeActionRequest& request, TSNode rootNod
     }
 }
 
-void TryAddGenerateFuncdefFix(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions)
+void TryAddGenerateFuncdefFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
 {
-    if (ts_node_is_null(rootNode) || request.sourceCode.empty())
+    if (!request.nodeIndex || request.sourceCode.empty())
     {
         return;
     }
@@ -162,19 +158,21 @@ void TryAddGenerateFuncdefFix(const CodeActionRequest& request, TSNode rootNode,
             continue;
         }
 
-        const TSPoint point = {diag.range.start.line, diag.range.start.character};
-        TSNode typeNode = ts_node_descendant_for_point_range(rootNode, point, point);
-        if (ts_node_is_null(typeNode))
+        const auto typeSpan =
+            analysis::FindNodeSpanAtPoint(*request.nodeIndex, diag.range.start.line, diag.range.start.character);
+        if (!typeSpan)
         {
             continue;
         }
 
-        const std::string functionName = parser::GetNodeText(typeNode, request.sourceCode);
-        if (functionName.empty())
+        const std::string_view functionNameView =
+            utils::SliceSource(request.sourceCode, typeSpan->bytes.startByte, typeSpan->bytes.endByte);
+        if (functionNameView.empty())
         {
             continue;
         }
 
+        const std::string functionName(functionNameView);
         const analysis::Symbol* target = FindUniqueGlobalFunction(request.symbolTable, functionName);
         if (!target)
         {
@@ -184,14 +182,14 @@ void TryAddGenerateFuncdefFix(const CodeActionRequest& request, TSNode rootNode,
         const auto& signature = target->GetFunction();
         const std::string funcdefName = functionName + "Func";
         std::string declaration = FormatFuncdefDeclarationText(signature, funcdefName);
-        EmitFuncdefCodeAction(request, diag,
-                              FuncdefFixItem{typeNode, functionName, funcdefName, std::move(declaration)}, actions);
+        EmitFuncdefCodeAction(
+            request, diag, FuncdefFixItem{typeSpan->range, functionName, funcdefName, std::move(declaration)}, actions);
     }
 }
 
-void TryAddBoolConversionFix(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions)
+void TryAddBoolConversionFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
 {
-    if (ts_node_is_null(rootNode) || request.sourceCode.empty())
+    if (!request.nodeIndex || request.sourceCode.empty())
     {
         return;
     }

@@ -1,11 +1,11 @@
 #pragma once
 
 #include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/CodeActionFacts.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "features/code_action/CodeActionHandler.h"
-#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/IncludeResolver.h"
 #include "utils/PositionEncoding.h"
@@ -87,13 +87,6 @@ std::string FoldCase(std::string_view text);
 void CollectAllReferences(const analysis::Scope* rootScope, ankerl::unordered_dense::set<std::string>& refs);
 
 /**
- * @brief Finds the insertion point preceding the closing brace of a class body.
- * @param[in] classBody Class body AST node.
- * @return AST point preceding class closing brace.
- */
-TSPoint FindClassClosingBracePoint(TSNode classBody);
-
-/**
  * @brief Candidate name with an associated edit distance for typo and include suggestions.
  */
 struct TypoCandidate
@@ -172,41 +165,31 @@ lsp::CodeAction MakeQuickFixAction(std::string title, const lsp::Diagnostic& dia
                                    std::vector<lsp::TextEdit> edits);
 
 // Feature Provider Function Declarations
-void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, TSNode rootNode,
-                                     std::vector<lsp::CodeAction>& actions);
+void TryAddRemoveUnusedVariableFixes(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
 
-void TryAddImplementInterfaceFixes(const CodeActionRequest& request, TSNode rootNode,
-                                   std::vector<lsp::CodeAction>& actions);
+void TryAddImplementInterfaceFixes(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
 
-void TryAddExtractVariableAction(const CodeActionRequest& request, TSNode rootNode,
-                                 std::vector<lsp::CodeAction>& actions);
+void TryAddExtractVariableAction(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
 
-void TryAddExtractMethodAction(const CodeActionRequest& request, TSNode rootNode,
-                               std::vector<lsp::CodeAction>& actions);
+void TryAddExtractMethodAction(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
 
-void TryAddGetterSetterActions(const CodeActionRequest& request, TSNode rootNode,
-                               std::vector<lsp::CodeAction>& actions);
+void TryAddGetterSetterActions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
 
-void TryAddConstQualifierActions(const CodeActionRequest& request, TSNode rootNode,
-                                 std::vector<lsp::CodeAction>& actions);
+void TryAddConstQualifierActions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
 
-void TryAddUndefinedIdentifierSuggestions(const CodeActionRequest& request, TSNode rootNode,
-                                          std::vector<lsp::CodeAction>& actions);
+void TryAddUndefinedIdentifierSuggestions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
 
-void TryAddHandleOnPrimitiveFix(const CodeActionRequest& request, TSNode rootNode,
-                                std::vector<lsp::CodeAction>& actions);
+void TryAddHandleOnPrimitiveFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
 
 void TryAddUnresolvedIncludeSuggestions(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
 
-void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, TSNode rootNode,
-                                      std::vector<lsp::CodeAction>& actions);
+void TryAddAccessorPropertyKeywordFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
 
-void TryAddBoolConversionFix(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions);
+void TryAddBoolConversionFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
 
-void TryAddRepeatedConversionFix(const CodeActionRequest& request, TSNode rootNode,
-                                 std::vector<lsp::CodeAction>& actions);
+void TryAddRepeatedConversionFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
 
-void TryAddGenerateFuncdefFix(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions);
+void TryAddGenerateFuncdefFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
 
 void TryAddSortAndCleanIncludesAction(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions);
 
@@ -219,7 +202,7 @@ struct GetterSetterContext
 {
     std::string className;
     const std::pair<std::string, std::string>& field;
-    TSPoint insertPt;
+    analysis::IndexedSourcePoint insertPt;
 };
 
 /**
@@ -248,7 +231,7 @@ struct IncludeRefCheckContext
  */
 struct FuncdefFixItem
 {
-    TSNode typeNode;
+    analysis::SourceRange typeRange;
     std::string functionName;
     std::string funcdefName;
     std::string declaration;
@@ -261,7 +244,7 @@ struct TypoFixContext
 {
     const CodeActionRequest& request;
     const lsp::Diagnostic& diag;
-    TSNode identifier;
+    analysis::SourceRange identifierRange;
 };
 
 /**

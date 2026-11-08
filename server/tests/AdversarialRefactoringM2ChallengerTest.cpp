@@ -3,6 +3,7 @@
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SymbolTable.h"
 #include "features/code_action/CodeActionHandler.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
@@ -54,7 +55,9 @@ struct AdversarialM2Env
     std::optional<std::vector<lsp::CodeAction>> CodeActions(lsp::Range range = lsp::Range{{0, 0}, {0, 0}},
                                                             lsp::CodeActionContext context = lsp::CodeActionContext{})
     {
+        angel_lsp::test::NodeIndexFixture codeActionIndex(tree);
         CodeActionRequest req{uri, sourceCode, tree, range, context, symbolTable, scopeIndex};
+        req.nodeIndex = &codeActionIndex.index;
         return GetCodeActions(req);
     }
 
@@ -156,7 +159,9 @@ TEST_CASE("Adversarial M2 - Null Tree or Empty Code Request Safety")
 
     // Null tree
     std::string code = "void main() {}";
+    angel_lsp::test::NodeIndexFixture codeActionIndex(nullptr);
     CodeActionRequest nullTreeReq{"file:///test.as", code, nullptr, range, context, table, scopeIndex};
+    nullTreeReq.nodeIndex = &codeActionIndex.index;
     auto nullTreeRes = GetCodeActions(nullTreeReq);
     CHECK_FALSE(nullTreeRes.has_value());
 
@@ -164,7 +169,9 @@ TEST_CASE("Adversarial M2 - Null Tree or Empty Code Request Safety")
     AngelScriptParser parser;
     std::string emptyCode = "";
     TSTree* emptyTree = parser.Parse(emptyCode);
+    angel_lsp::test::NodeIndexFixture codeActionIndex2(emptyTree);
     CodeActionRequest emptyCodeReq{"file:///test.as", emptyCode, emptyTree, range, context, table, scopeIndex};
+    emptyCodeReq.nodeIndex = &codeActionIndex2.index;
     auto emptyCodeRes = GetCodeActions(emptyCodeReq);
     CHECK_FALSE(emptyCodeRes.has_value());
     if (emptyTree)

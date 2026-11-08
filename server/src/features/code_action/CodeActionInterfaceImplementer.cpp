@@ -4,11 +4,11 @@
  */
 
 #include "analysis/documentation/SignatureFormatter.h"
+#include "analysis/index/CodeActionFacts.h"
 #include "analysis/resolution/InterfaceImplementation.h"
 #include "analysis/types/TypeSanitization.h"
 #include "config/ServerConfig.h"
 #include "features/code_action/CodeActionInternal.h"
-#include "parser/ASTUtils.h"
 #include "parser/Primitives.h"
 
 namespace angel_lsp::features
@@ -88,64 +88,6 @@ static std::string FormatMissingInterfaceMethodStubs(const std::vector<analysis:
 }
 
 /**
- * @brief Locates the insertion position right after the opening brace of a class declaration.
- * @param[in] rootNode Root AST node.
- * @param[in] clsSym Class symbol.
- * @return LSP position for method stub insertion.
- */
-static lsp::Position FindClassInterfaceInsertionPosition(TSNode rootNode, const analysis::Symbol& clsSym)
-{
-    lsp::Position insertPos{clsSym.endLine, clsSym.endCharacter};
-    TSPoint cPt = {clsSym.startLine, clsSym.startCharacter};
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode cNode =
-        parser::FindAncestorWithSymbol(ts_node_descendant_for_point_range(rootNode, cPt, cPt), gs.symClassDeclaration);
-    if (ts_node_is_null(cNode))
-    {
-        return insertPos;
-    }
-
-    TSNode bodyNode = parser::GetChildByField(cNode, parser::GetGrammarSymbols().fieldBody);
-    if (ts_node_is_null(bodyNode))
-    {
-        TSTreeCursor declCursor = ts_tree_cursor_new(cNode);
-        if (ts_tree_cursor_goto_first_child(&declCursor))
-        {
-            do
-            {
-                TSNode ch = ts_tree_cursor_current_node(&declCursor);
-                if (ts_node_symbol(ch) == parser::GetGrammarSymbols().symClassBody)
-                {
-                    bodyNode = ch;
-                    break;
-                }
-            } while (ts_tree_cursor_goto_next_sibling(&declCursor));
-        }
-        ts_tree_cursor_delete(&declCursor);
-    }
-
-    if (!ts_node_is_null(bodyNode))
-    {
-        TSTreeCursor cursor = ts_tree_cursor_new(bodyNode);
-        if (ts_tree_cursor_goto_first_child(&cursor))
-        {
-            do
-            {
-                TSNode bChild = ts_tree_cursor_current_node(&cursor);
-                if (ts_node_symbol(bChild) == parser::GetGrammarSymbols().tokOpenBrace)
-                {
-                    TSPoint pt = ts_node_end_point(bChild);
-                    insertPos = lsp::Position{pt.row, pt.column};
-                    break;
-                }
-            } while (ts_tree_cursor_goto_next_sibling(&cursor));
-        }
-        ts_tree_cursor_delete(&cursor);
-    }
-    return insertPos;
-}
-
-/**
  * @brief Collects diagnostics matching missing interface implementation for a class symbol.
  * @param[in] contextDiagnostics LSP diagnostics in request context.
  * @param[in] clsSym Class symbol to filter diagnostics by line range.
@@ -167,9 +109,13 @@ CollectMatchingInterfaceDiagnostics(const std::vector<lsp::Diagnostic>& contextD
     return matching;
 }
 
-void TryAddImplementInterfaceFixes(const CodeActionRequest& request, TSNode rootNode,
-                                   std::vector<lsp::CodeAction>& actions)
+void TryAddImplementInterfaceFixes(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
 {
+    if (!request.nodeIndex)
+    {
+        return;
+    }
+
     const std::string_view strType = (request.config && !request.config->types.stringTypeName.empty())
                                          ? std::string_view(request.config->types.stringTypeName)
                                          : request.symbolTable.GetStringType();
@@ -211,7 +157,12 @@ void TryAddImplementInterfaceFixes(const CodeActionRequest& request, TSNode root
                     {
                         continue;
                     }
-                    lsp::Position insertPos = FindClassInterfaceInsertionPosition(rootNode, clsSym);
+                    lsp::Position insertPos{clsSym.endLine, clsSym.endCharacter};
+                    if (const auto brace = analysis::FindClassOpenBracePoint(*request.nodeIndex, clsSym.startLine,
+                                                                             clsSym.startCharacter))
+                    {
+                        insertPos = lsp::Position{brace->line, brace->character};
+                    }
 
                     lsp::CodeAction action;
                     action.title = i18n::FormatMessage(request.i18n, "action-implement-interface",

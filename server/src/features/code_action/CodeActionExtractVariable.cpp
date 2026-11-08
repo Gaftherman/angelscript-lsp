@@ -3,174 +3,21 @@
  * @brief Refactoring provider for Extract Variable code action.
  */
 
+#include "analysis/index/ExtractVariableFacts.h"
+#include "analysis/resolution/CodeActionResolution.h"
 #include "features/code_action/CodeActionInternal.h"
-#include "parser/ASTUtils.h"
+#include "features/common/FeatureSharedUtils.h"
 #include "parser/Keywords.h"
+#include "utils/Utils.h"
+
+#include <cctype>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace angel_lsp::features
 {
-
-/**
- * @brief Checks whether an AST node is an extractable expression.
- * @param[in] node AST node.
- * @return True if candidate node can be extracted into a variable or method.
- */
-static bool IsExtractableExpression(TSNode node)
-{
-    if (ts_node_is_null(node))
-    {
-        return false;
-    }
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(node);
-    static const auto kSymbols = [&gs]()
-    {
-        return std::array<TSSymbol, 16>{gs.symBinaryExpression,
-                                        gs.symUnaryExpression,
-                                        gs.symPostfixExpression,
-                                        gs.symCallExpression,
-                                        gs.symMemberExpression,
-                                        gs.symTernaryExpression,
-                                        gs.symCastExpression,
-                                        gs.symFunctionalCastExpression,
-                                        gs.symConstructCallExpression,
-                                        gs.symIndexExpression,
-                                        gs.symParenthesizedExpression,
-                                        gs.symScopedIdentifier,
-                                        gs.symIdentifier,
-                                        gs.symNumberLiteral,
-                                        gs.symStringLiteral,
-                                        gs.symBooleanLiteral};
-    }();
-    return std::find(kSymbols.begin(), kSymbols.end(), sym) != kSymbols.end();
-}
-
-/**
- * @brief Checks whether an AST node is the left-hand side of an assignment.
- * @param[in] node Candidate expression AST node.
- * @return True if node is on the LHS of an assignment.
- */
-static bool IsLhsOfAssignment(TSNode node)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode assign = parser::FindAncestorWithSymbol(node, gs.symAssignmentExpression);
-    if (ts_node_is_null(assign))
-    {
-        return false;
-    }
-    TSNode left = parser::GetChildByField(assign, gs.fieldLeft);
-    return !ts_node_is_null(left) && ts_node_start_byte(node) >= ts_node_start_byte(left) &&
-           ts_node_end_byte(node) <= ts_node_end_byte(left);
-}
-
-/**
- * @brief Checks if a node is the member field of a member_expression or part of a scoped_identifier.
- * @param[in] node Candidate node.
- * @param[in] parent Parent node.
- * @return True if node is a member component without standalone evaluation semantics.
- */
-static bool IsMemberField(TSNode node, TSNode parent)
-{
-    if (ts_node_is_null(parent))
-    {
-        return false;
-    }
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol pType = ts_node_symbol(parent);
-    if (pType == gs.symMemberExpression)
-    {
-        TSNode memberNode = parser::GetChildByField(parent, gs.fieldMember);
-        return ts_node_eq(memberNode, node) ||
-               (!ts_node_is_null(memberNode) && ts_node_start_byte(memberNode) == ts_node_start_byte(node));
-    }
-    return pType == gs.symScopedIdentifier;
-}
-
-/**
- * @brief Checks if a node is the function callee of a call_expression.
- * @param[in] node Candidate node.
- * @param[in] parent Parent node.
- * @return True if node is the callee of a call.
- */
-static bool IsFunctionFieldOfCall(TSNode node, TSNode parent)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    if (ts_node_is_null(parent) || ts_node_symbol(parent) != gs.symCallExpression)
-    {
-        return false;
-    }
-    TSNode funcNode = parser::GetChildByField(parent, gs.fieldFunction);
-    return ts_node_eq(funcNode, node) ||
-           (!ts_node_is_null(funcNode) && ts_node_start_byte(funcNode) == ts_node_start_byte(node));
-}
-
-static bool IsNonExtractableStatementOrContainer(TSSymbol nodeSym, const parser::GrammarSymbols& gs) noexcept
-{
-    const std::array<TSSymbol, 13> kExcluded = {
-        gs.symStatementBlock,      gs.symClassBody,           gs.symParameter,       gs.symPrimitiveType,
-        gs.symExpressionStatement, gs.symReturnStatement,     gs.symIfStatement,     gs.symWhileStatement,
-        gs.symForStatement,        gs.symVariableDeclaration, gs.symFuncDeclaration, gs.symClassDeclaration,
-        gs.symInterfaceDeclaration};
-    return std::find(kExcluded.begin(), kExcluded.end(), nodeSym) != kExcluded.end();
-}
-
-/**
- * @brief Locates the target extractable expression within the requested selection range.
- * @param[in] rootNode Root of AST.
- * @param[in] range Selected text range.
- * @return Valid extractable node or null node if none matches.
- */
-static TSNode FindExtractableExpression(TSNode rootNode, const lsp::Range& range)
-{
-    TSPoint startPt = {range.start.line, range.start.character};
-    TSPoint endPt = {range.end.line, range.end.character};
-    TSNode startNode = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
-    TSNode targetNode{};
-    parser::ForEachAncestor(startNode,
-                            [&](TSNode cur) -> bool
-                            {
-                                if (IsExtractableExpression(cur))
-                                {
-                                    targetNode = cur;
-                                    return false;
-                                }
-                                return true;
-                            });
-    if (ts_node_is_null(targetNode))
-    {
-        return TSNode{};
-    }
-
-    TSNode parent = parser::GetParent(targetNode);
-    if (IsMemberField(targetNode, parent))
-    {
-        targetNode = parent;
-        parent = parser::GetParent(targetNode);
-    }
-    if (IsFunctionFieldOfCall(targetNode, parent))
-    {
-        targetNode = parent;
-    }
-
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol nodeSym = ts_node_symbol(targetNode);
-    if (IsNonExtractableStatementOrContainer(nodeSym, gs) || IsLhsOfAssignment(targetNode))
-    {
-        return TSNode{};
-    }
-    return targetNode;
-}
-
-/**
- * @brief Finds the innermost block-level statement enclosing the target node.
- * @param[in] node AST node.
- * @return Enclosing statement AST node.
- */
-static TSNode FindEnclosingBlockStatement(TSNode node)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    return parser::FindDirectChildOfAncestor(node, gs.symStatementBlock);
-}
 
 static std::string ToLowerFirst(std::string_view str)
 {
@@ -183,24 +30,8 @@ static std::string ToLowerFirst(std::string_view str)
     return result;
 }
 
-static std::string SuggestNameFromCall(TSNode targetNode, std::string_view sourceCode)
+static std::string SuggestNameFromCall(std::string_view fnNameText)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode funcNode = parser::GetChildByField(targetNode, gs.fieldFunction);
-    if (ts_node_is_null(funcNode))
-    {
-        return "";
-    }
-    std::string fnNameText;
-    if (ts_node_symbol(funcNode) == gs.symMemberExpression)
-    {
-        TSNode nameNode = parser::GetChildByField(funcNode, gs.fieldMember);
-        fnNameText = parser::GetNodeText(nameNode, sourceCode);
-    }
-    else
-    {
-        fnNameText = parser::GetNodeText(funcNode, sourceCode);
-    }
     if (fnNameText.starts_with("Get") && fnNameText.size() > 3)
     {
         return ToLowerFirst(fnNameText.substr(3));
@@ -220,48 +51,41 @@ static std::string SuggestNameFromCall(TSNode targetNode, std::string_view sourc
     return "";
 }
 
-static std::string SuggestNameFromMemberOrConstruct(TSNode targetNode, std::string_view sourceCode)
+static std::string SuggestNameFromMemberOrConstruct(analysis::ExtractNameHintKind kind, std::string_view hintText)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol type = ts_node_symbol(targetNode);
-    if (type == gs.symMemberExpression)
+    if (kind == analysis::ExtractNameHintKind::Member)
     {
-        TSNode nameNode = parser::GetChildByField(targetNode, gs.fieldMember);
-        std::string memText = parser::GetNodeText(nameNode, sourceCode);
-        if (memText.starts_with("m_") && memText.size() > 2)
+        if (hintText.starts_with("m_") && hintText.size() > 2)
         {
-            return ToLowerFirst(memText.substr(2));
+            return ToLowerFirst(hintText.substr(2));
         }
-        if (!memText.empty())
+        if (!hintText.empty())
         {
-            return ToLowerFirst(memText);
+            return ToLowerFirst(hintText);
         }
     }
-    if (type == gs.symConstructCallExpression)
+    if (kind == analysis::ExtractNameHintKind::ConstructType)
     {
-        TSNode typeNode = parser::GetChildByField(targetNode, gs.fieldType);
-        std::string tText = parser::GetNodeText(typeNode, sourceCode);
-        if (!tText.empty())
+        if (!hintText.empty())
         {
-            return ToLowerFirst(tText);
+            return ToLowerFirst(hintText);
         }
     }
     return "";
 }
 
-static std::string SuggestCandidateName(TSNode targetNode, std::string_view varType, std::string_view sourceCode,
-                                        const analysis::SymbolTable* symbolTable)
+static std::string SuggestCandidateName(const analysis::IndexedExtractVariableSite& site, std::string_view varType,
+                                        std::string_view sourceCode, const analysis::SymbolTable* symbolTable)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol type = ts_node_symbol(targetNode);
-    if (type == gs.symCallExpression)
+    const std::string_view hintText = utils::SliceSource(sourceCode, site.hintName.startByte, site.hintName.endByte);
+    if (site.hintKind == analysis::ExtractNameHintKind::CallCallee)
     {
-        if (std::string callName = SuggestNameFromCall(targetNode, sourceCode); !callName.empty())
+        if (std::string callName = SuggestNameFromCall(hintText); !callName.empty())
         {
             return callName;
         }
     }
-    if (std::string memName = SuggestNameFromMemberOrConstruct(targetNode, sourceCode); !memName.empty())
+    if (std::string memName = SuggestNameFromMemberOrConstruct(site.hintKind, hintText); !memName.empty())
     {
         return memName;
     }
@@ -295,10 +119,10 @@ static bool IsNameInScope(const analysis::Scope* scope, std::string_view name)
     return false;
 }
 
-static std::string SuggestVariableName(TSNode targetNode, std::string_view varType, std::string_view sourceCode,
-                                       const analysis::Scope* scope, const analysis::SymbolTable* symbolTable)
+static std::string SuggestVariableName(const analysis::IndexedExtractVariableSite& site, std::string_view varType,
+                                       const CodeActionRequest& request, const analysis::Scope* scope)
 {
-    std::string candidate = SuggestCandidateName(targetNode, varType, sourceCode, symbolTable);
+    std::string candidate = SuggestCandidateName(site, varType, request.sourceCode, &request.symbolTable);
     if (!scope)
     {
         return candidate;
@@ -315,20 +139,17 @@ static std::string SuggestVariableName(TSNode targetNode, std::string_view varTy
 /**
  * @brief Constructs an Extract Variable refactoring code action.
  * @param[in] request Code action request context.
- * @param[in] targetNode Target expression node.
- * @param[in] stmtNode Statement node above which declaration is inserted.
+ * @param[in] site Extract variable candidate site facts.
  * @return Code action if construction succeeds, std::nullopt otherwise.
  */
-static std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActionRequest& request, TSNode targetNode,
-                                                                 TSNode stmtNode)
+static std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActionRequest& request,
+                                                                 const analysis::IndexedExtractVariableSite& site)
 {
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
-    TSPoint exprStart = ts_node_start_point(targetNode);
-    TSPoint exprEnd = ts_node_end_point(targetNode);
-    const analysis::Scope* scope = FindScopeByLineOrRoot(rootScope.get(), exprStart.row);
+    const analysis::Scope* scope = FindScopeByLineOrRoot(rootScope.get(), site.expressionRange.startLine);
 
-    std::string varType =
-        analysis::ResolveExpressionType(targetNode, {scope, request.symbolTable, request.sourceCode, request.uri});
+    std::string varType = analysis::ResolveExpressionTypeAt(
+        site.expression, {scope, request.symbolTable, request.sourceCode, request.uri, request.nodeIndex});
     if (analysis::CleanBaseTypeView(varType) == "void")
     {
         return std::nullopt;
@@ -338,33 +159,31 @@ static std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActio
         varType = "auto";
     }
 
-    std::string varName = SuggestVariableName(targetNode, varType, request.sourceCode, scope, &request.symbolTable);
-    std::string exprText = parser::GetNodeText(targetNode, request.sourceCode);
+    std::string varName = SuggestVariableName(site, varType, request, scope);
+    const std::string_view exprText =
+        utils::SliceSource(request.sourceCode, site.expression.startByte, site.expression.endByte);
     if (exprText.empty())
     {
         return std::nullopt;
     }
 
-    uint32_t stmtRow = ts_node_start_point(stmtNode).row;
+    uint32_t stmtRow = site.statementLine;
     std::string indent = GetLineIndentation(request.sourceCode, stmtRow);
 
     lsp::TextEdit declEdit;
-    TSNode parentBlock = parser::GetParent(stmtNode);
-    TSPoint stmtStart = ts_node_start_point(stmtNode);
-    if (!ts_node_is_null(parentBlock) && ts_node_symbol(parentBlock) == parser::GetGrammarSymbols().symStatementBlock &&
-        ts_node_start_point(parentBlock).row == stmtStart.row)
+    if (site.statementSharesBlockLine)
     {
-        declEdit.range = lsp::Range{{stmtStart.row, stmtStart.column}, {stmtStart.row, stmtStart.column}};
-        declEdit.newText = varType + " " + varName + " = " + exprText + "; ";
+        declEdit.range = lsp::Range{{stmtRow, site.statementColumn}, {stmtRow, site.statementColumn}};
+        declEdit.newText = varType + " " + varName + " = " + std::string(exprText) + "; ";
     }
     else
     {
         declEdit.range = lsp::Range{{stmtRow, 0}, {stmtRow, 0}};
-        declEdit.newText = indent + varType + " " + varName + " = " + exprText + ";\n";
+        declEdit.newText = indent + varType + " " + varName + " = " + std::string(exprText) + ";\n";
     }
 
     lsp::TextEdit replEdit;
-    replEdit.range = lsp::Range{{exprStart.row, exprStart.column}, {exprEnd.row, exprEnd.column}};
+    replEdit.range = common::ToLspRange(site.expressionRange);
     replEdit.newText = varName;
 
     lsp::CodeAction action;
@@ -380,24 +199,20 @@ static std::optional<lsp::CodeAction> BuildExtractVariableAction(const CodeActio
     return action;
 }
 
-void TryAddExtractVariableAction(const CodeActionRequest& request, TSNode rootNode,
-                                 std::vector<lsp::CodeAction>& actions)
+void TryAddExtractVariableAction(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
 {
-    if (ts_node_is_null(rootNode) || request.sourceCode.empty())
+    if (!request.nodeIndex || request.sourceCode.empty())
     {
         return;
     }
-    TSNode targetNode = FindExtractableExpression(rootNode, request.range);
-    if (ts_node_is_null(targetNode))
+    const auto site = analysis::FindExtractVariableSite(
+        *request.nodeIndex, analysis::SourceRange{request.range.start.line, request.range.start.character,
+                                                  request.range.end.line, request.range.end.character});
+    if (!site)
     {
         return;
     }
-    TSNode stmtNode = FindEnclosingBlockStatement(targetNode);
-    if (ts_node_is_null(stmtNode))
-    {
-        return;
-    }
-    if (auto action = BuildExtractVariableAction(request, targetNode, stmtNode))
+    if (auto action = BuildExtractVariableAction(request, *site))
     {
         actions.push_back(std::move(*action));
     }

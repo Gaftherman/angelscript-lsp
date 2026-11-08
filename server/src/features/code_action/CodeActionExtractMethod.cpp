@@ -1,36 +1,8 @@
 #include "features/code_action/CodeActionExtractMethodAnalysis.h"
+#include "features/common/FeatureSharedUtils.h"
 
 namespace angel_lsp::features
 {
-
-/**
- * @brief Finds the insertion point for adding a method definition inside a class.
- * @param[in] classNode Class declaration node.
- * @return Insertion point.
- */
-static TSPoint FindClassBodyInsertionPoint(TSNode classNode)
-{
-    TSNode classBody = parser::GetChildByField(classNode, parser::GetGrammarSymbols().fieldBody);
-    if (ts_node_is_null(classBody))
-    {
-        TSTreeCursor cursor = ts_tree_cursor_new(classNode);
-        if (ts_tree_cursor_goto_first_child(&cursor))
-        {
-            do
-            {
-                TSNode ch = ts_tree_cursor_current_node(&cursor);
-                if (ts_node_symbol(ch) == parser::GetGrammarSymbols().symClassBody)
-                {
-                    classBody = ch;
-                    break;
-                }
-            } while (ts_tree_cursor_goto_next_sibling(&cursor));
-        }
-        ts_tree_cursor_delete(&cursor);
-    }
-
-    return FindClassClosingBracePoint(classBody);
-}
 
 /**
  * @brief Constructs the workspace edits for the new extracted method and invocation site.
@@ -45,26 +17,25 @@ static lsp::WorkspaceEdit BuildExtractMethodEdits(const CodeActionRequest& reque
     const std::string methodName = "NewMethod";
     lsp::TextEdit methodDefEdit;
 
-    if (!ts_node_is_null(stmts.classNode))
+    if (stmts.selection.inClass)
     {
-        TSPoint insertPt = FindClassBodyInsertionPoint(stmts.classNode);
         std::string methodCode = "\n    " + plan.returnType + " " + methodName + "(" + plan.paramsStr +
                                  ")\n    {\n        " + plan.extractedBody + "\n    }\n";
-        methodDefEdit.range = lsp::Range{{insertPt.row, insertPt.column}, {insertPt.row, insertPt.column}};
+        methodDefEdit.range = lsp::Range{{stmts.selection.classInsertLine, stmts.selection.classInsertColumn},
+                                         {stmts.selection.classInsertLine, stmts.selection.classInsertColumn}};
         methodDefEdit.newText = methodCode;
     }
     else
     {
-        TSPoint fnEnd = ts_node_end_point(stmts.fnNode);
         std::string methodCode = "\n\n" + plan.returnType + " " + methodName + "(" + plan.paramsStr + ")\n{\n    " +
                                  plan.extractedBody + "\n}\n";
-        methodDefEdit.range = lsp::Range{{fnEnd.row + 1, 0}, {fnEnd.row + 1, 0}};
+        methodDefEdit.range =
+            lsp::Range{{stmts.selection.functionEndLine + 1, 0}, {stmts.selection.functionEndLine + 1, 0}};
         methodDefEdit.newText = methodCode;
     }
 
     lsp::TextEdit callEdit;
-    callEdit.range =
-        lsp::Range{{stmts.firstStart.row, stmts.firstStart.column}, {stmts.lastEnd.row, stmts.lastEnd.column}};
+    callEdit.range = common::ToLspRange(stmts.selection.statementsRange);
     callEdit.newText = plan.callSiteText;
 
     lsp::WorkspaceEdit wsEdit;
@@ -74,23 +45,24 @@ static lsp::WorkspaceEdit BuildExtractMethodEdits(const CodeActionRequest& reque
     return wsEdit;
 }
 
-void TryAddExtractMethodAction(const CodeActionRequest& request, TSNode rootNode, std::vector<lsp::CodeAction>& actions)
+void TryAddExtractMethodAction(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
 {
-    auto stmts = FindSelectedStatements(rootNode, request);
+    auto stmts = FindSelectedStatements(request);
     if (!stmts)
     {
         return;
     }
 
     auto rootScope = request.scopeIndex.GetRoot(request.uri);
-    const analysis::Scope* fnScope = FindScopeByLineOrRoot(rootScope.get(), ts_node_start_point(stmts->fnNode).row);
-    const analysis::Scope* stmtScope = FindScopeByLineOrRoot(rootScope.get(), stmts->firstStart.row);
+    const analysis::Scope* fnScope = FindScopeByLineOrRoot(rootScope.get(), stmts->selection.functionStartLine);
+    const analysis::Scope* stmtScope =
+        FindScopeByLineOrRoot(rootScope.get(), stmts->selection.statementsRange.startLine);
 
     ExtractedMethodVariables vars;
     if (fnScope)
     {
         vars.inputParams = CollectMethodInputs(*stmts, fnScope);
-        auto mutated = CollectMutatedVariables(stmts->selectedStmts, request.sourceCode);
+        auto mutated = CollectMutatedVariables(*stmts, request.sourceCode);
         vars.outputVars = CollectMethodOutputs(*stmts, fnScope, mutated, stmtScope);
     }
 

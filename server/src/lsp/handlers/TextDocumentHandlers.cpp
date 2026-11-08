@@ -508,6 +508,9 @@ Server::HandleRequestsTextDocument_CodeAction(lsp::requests::TextDocument_CodeAc
     {
         return lsp::Null{};
     }
+    const auto syntax =
+        doc->tree ? ResolveProtocolSyntax(doc->uri, doc->docHandle->ParsedSource(), doc->docHandle.get()).syntax
+                  : nullptr;
 
     lsp::CodeActionContext context = req.context;
     for (auto& diag : context.diagnostics)
@@ -519,6 +522,7 @@ Server::HandleRequestsTextDocument_CodeAction(lsp::requests::TextDocument_CodeAc
         doc->uri,  *doc->text,    doc->tree,    codec::Decode(*doc->text, GetPositionEncoding(), req.range),
         context,   m_symbolTable, m_scopeIndex, IncludeAllowedRoots(),
         &m_config, m_i18n.get()};
+    car.nodeIndex = syntax ? &syntax->index : nullptr;
     auto actions = features::GetCodeActions(car);
     if (actions.has_value())
     {

@@ -1,7 +1,6 @@
 #include "analysis/diagnostics/DiagnosticSuppression.h"
 #include "features/code_action/CodeActionInternal.h"
 #include "i18n/i18n.h"
-#include "parser/ASTUtils.h"
 
 namespace angel_lsp::features
 {
@@ -172,30 +171,6 @@ void CollectAllReferences(const analysis::Scope* rootScope, ankerl::unordered_de
             worklist.push_back(child.get());
         }
     }
-}
-
-TSPoint FindClassClosingBracePoint(TSNode classBody)
-{
-    if (ts_node_is_null(classBody))
-    {
-        return TSPoint{0, 0};
-    }
-    TSPoint closingPt = ts_node_end_point(classBody);
-    TSTreeCursor cursor = ts_tree_cursor_new(classBody);
-    if (ts_tree_cursor_goto_first_child(&cursor))
-    {
-        do
-        {
-            TSNode ch = ts_tree_cursor_current_node(&cursor);
-            if (ts_node_end_byte(ch) == ts_node_end_byte(classBody))
-            {
-                closingPt = ts_node_start_point(ch);
-                break;
-            }
-        } while (ts_tree_cursor_goto_next_sibling(&cursor));
-    }
-    ts_tree_cursor_delete(&cursor);
-    return closingPt;
 }
 
 /**

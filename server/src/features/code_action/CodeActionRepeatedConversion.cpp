@@ -1,10 +1,7 @@
-#include "analysis/checkers/BinaryOperatorHelpers.h"
-#include "analysis/checkers/RepeatedConversionChecker.h"
+#include "analysis/index/RepeatedConversionFacts.h"
 #include "features/code_action/CodeActionInternal.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
+#include "features/common/FeatureSharedUtils.h"
 #include "parser/Keywords.h"
-#include "parser/QueryRegistry.h"
 
 #include <cctype>
 #include <string>
@@ -57,67 +54,23 @@ static std::string DeriveVariableName(std::string_view exprText, std::string_vie
     return candidate;
 }
 
-static TSNode FindRootIfStatement(TSNode node)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    return parser::FindOutermostAncestorWithSymbol(node, gs.symIfStatement);
-}
-
-/// Reads the binary operands under the selected ladder's conditions on demand.
-static std::vector<TSNode> FindOccurrencesInIfLadder(TSNode rootIf, std::string_view exprText,
-                                                     std::string_view sourceCode)
-{
-    std::vector<TSNode> results;
-    const TSQuery* query = parser::QueryRegistry::GetBinaryExpressionQuery();
-    TSQueryCursor* cursor = parser::QueryRegistry::GetThreadLocalCursor();
-    if (exprText.empty() || !query || !cursor)
-    {
-        return results;
-    }
-
-    for (TSNode condition : analysis::CollectIfLadderConditions(rootIf, nullptr))
-    {
-        ts_query_cursor_exec(cursor, query, condition);
-        TSQueryMatch match;
-        while (ts_query_cursor_next_match(cursor, &match))
-        {
-            for (uint16_t i = 0; i < match.capture_count; ++i)
-            {
-                const auto operands = analysis::ReadBinaryOperands(match.captures[i].node, nullptr);
-                for (const TSNode operand : {operands.left, operands.right})
-                {
-                    if (!ts_node_is_null(operand) && parser::GetNodeTextView(operand, sourceCode) == exprText)
-                    {
-                        results.push_back(operand);
-                    }
-                }
-            }
-        }
-    }
-    return results;
-}
-
-static void BuildCodeActionEdits(TSNode rootIf, const ExtractedDiagInfo& info, const CodeActionRequest& request,
-                                 std::vector<lsp::CodeAction>& actions)
+static void BuildCodeActionEdits(const analysis::IfLadderConversionSites& sites, const ExtractedDiagInfo& info,
+                                 const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
 {
     const std::string varName = DeriveVariableName(info.exprText, info.toType);
-    const uint32_t stmtRow = ts_node_start_point(rootIf).row;
+    const uint32_t stmtRow = sites.rootIfLine;
     const std::string indent = GetLineIndentation(request.sourceCode, stmtRow);
 
     lsp::TextEdit declEdit;
     declEdit.range = lsp::Range{{stmtRow, 0}, {stmtRow, 0}};
     declEdit.newText = indent + info.toType + " " + varName + " = " + info.exprText + ";\n";
 
-    const auto occNodes = FindOccurrencesInIfLadder(rootIf, info.exprText, request.sourceCode);
-
     std::vector<lsp::TextEdit> edits;
     edits.push_back(std::move(declEdit));
-    for (TSNode occ : occNodes)
+    for (const auto& occ : sites.occurrences)
     {
-        const TSPoint s = ts_node_start_point(occ);
-        const TSPoint e = ts_node_end_point(occ);
         lsp::TextEdit repl;
-        repl.range = lsp::Range{{s.row, s.column}, {e.row, e.column}};
+        repl.range = common::ToLspRange(occ);
         repl.newText = varName;
         edits.push_back(std::move(repl));
     }
@@ -138,10 +91,9 @@ static void BuildCodeActionEdits(TSNode rootIf, const ExtractedDiagInfo& info, c
     actions.push_back(std::move(action));
 }
 
-void TryAddRepeatedConversionFix(const CodeActionRequest& request, TSNode rootNode,
-                                 std::vector<lsp::CodeAction>& actions)
+void TryAddRepeatedConversionFix(const CodeActionRequest& request, std::vector<lsp::CodeAction>& actions)
 {
-    if (ts_node_is_null(rootNode) || request.sourceCode.empty())
+    if (!request.nodeIndex || request.sourceCode.empty())
     {
         return;
     }
@@ -154,16 +106,17 @@ void TryAddRepeatedConversionFix(const CodeActionRequest& request, TSNode rootNo
             continue;
         }
 
-        const TSPoint startPt = {diag.range.start.line, diag.range.start.character};
-        const TSPoint endPt = {diag.range.end.line, diag.range.end.character};
-        TSNode targetNode = ts_node_descendant_for_point_range(rootNode, startPt, endPt);
-        TSNode rootIf = FindRootIfStatement(targetNode);
-        if (ts_node_is_null(rootIf))
+        const auto sites = analysis::FindIfLadderConversionSites(
+            *request.nodeIndex, request.sourceCode,
+            analysis::SourceRange{diag.range.start.line, diag.range.start.character, diag.range.end.line,
+                                  diag.range.end.character},
+            info->exprText);
+        if (!sites)
         {
             continue;
         }
 
-        BuildCodeActionEdits(rootIf, *info, request, actions);
+        BuildCodeActionEdits(*sites, *info, request, actions);
         break;
     }
 }

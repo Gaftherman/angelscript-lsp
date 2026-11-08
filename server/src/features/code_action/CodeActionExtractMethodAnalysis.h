@@ -1,19 +1,19 @@
 #pragma once
 
+#include "analysis/index/ExtractMethodFacts.h"
 #include "features/code_action/CodeActionInternal.h"
 
 namespace angel_lsp::features
 {
 
+/**
+ * @brief Extracted statement metadata and source text for extract method refactoring.
+ */
 struct ExtractMethodStatements
 {
-    TSNode fnNode{};
-    TSNode classNode{};
-    std::vector<TSNode> selectedStmts{};
-    uint32_t startByte = 0;
-    uint32_t endByte = 0;
-    TSPoint firstStart{};
-    TSPoint lastEnd{};
+    /// Extracted syntactic selection metadata.
+    analysis::IndexedExtractMethodSelection selection{};
+    /// Extracted statement block source text.
     std::string selectedCode{};
 };
 
@@ -55,11 +55,11 @@ struct MethodOutputContext
     const analysis::Scope* stmtScope;
 };
 
-std::optional<ExtractMethodStatements> FindSelectedStatements(TSNode rootNode, const CodeActionRequest& request);
+std::optional<ExtractMethodStatements> FindSelectedStatements(const CodeActionRequest& request);
 
 std::vector<VarInfo> CollectMethodInputs(const ExtractMethodStatements& stmts, const analysis::Scope* fnScope);
 
-ankerl::unordered_dense::set<std::string> CollectMutatedVariables(const std::vector<TSNode>& stmts,
+ankerl::unordered_dense::set<std::string> CollectMutatedVariables(const ExtractMethodStatements& stmts,
                                                                   std::string_view sourceCode);
 
 std::vector<VarInfo> CollectMethodOutputs(const ExtractMethodStatements& stmts, const analysis::Scope* fnScope,

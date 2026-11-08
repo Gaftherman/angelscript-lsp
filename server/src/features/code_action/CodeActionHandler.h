@@ -1,5 +1,6 @@
 #pragma once
 
+#include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 #include "config/ServerConfig.h"
@@ -29,6 +30,8 @@ struct CodeActionRequest
     std::vector<std::string> allowedRoots = {};
     const config::ServerConfig* config = nullptr;
     const i18n::I18n* i18n = nullptr;
+    /// Pass-1 index of the document; providers read syntax facts from it instead of the raw tree.
+    const analysis::NodeIndex* nodeIndex = nullptr;
 };
 
 /**

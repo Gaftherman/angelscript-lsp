@@ -7,6 +7,7 @@
 #include "features/code_action/CodeActionHandler.h"
 #include "features/formatting/FormattingHandler.h"
 #include "features/inlay_hint/InlayHintHandler.h"
+#include "helpers/TestUtils.h"
 #include "parser/AngelScriptParser.h"
 
 #include <algorithm>
@@ -64,7 +65,9 @@ struct Phase3TestEnvironment
     std::optional<std::vector<lsp::CodeAction>> CodeActions(lsp::Range range = lsp::Range{{0, 0}, {0, 0}},
                                                             lsp::CodeActionContext context = lsp::CodeActionContext{})
     {
+        angel_lsp::test::NodeIndexFixture codeActionIndex(tree);
         CodeActionRequest req{uri, sourceCode, tree, range, context, symbolTable, scopeIndex};
+        req.nodeIndex = &codeActionIndex.index;
         return GetCodeActions(req);
     }
 };

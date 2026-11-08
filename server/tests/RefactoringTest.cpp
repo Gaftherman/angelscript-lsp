@@ -51,7 +51,9 @@ struct RefactorTestEnvironment
     std::optional<std::vector<lsp::CodeAction>> CodeActions(lsp::Range range = lsp::Range{{0, 0}, {0, 0}},
                                                             lsp::CodeActionContext context = lsp::CodeActionContext{})
     {
+        angel_lsp::test::NodeIndexFixture codeActionIndex(tree);
         CodeActionRequest req{uri, sourceCode, tree, range, context, symbolTable, scopeIndex};
+        req.nodeIndex = &codeActionIndex.index;
         return GetCodeActions(req);
     }
 };
