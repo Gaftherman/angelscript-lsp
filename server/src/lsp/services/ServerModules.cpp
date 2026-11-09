@@ -1,4 +1,4 @@
-#include "analysis/rules/RuleIndex.h"
+#include "analysis/index/RuleIndex.h"
 #include "features/document_link/DocumentLinkHandler.h"
 #include "lsp/Server.h"
 #include "utils/IncludeResolver.h"

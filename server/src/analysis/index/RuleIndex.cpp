@@ -1,4 +1,4 @@
-#include "analysis/rules/RuleIndex.h"
+#include "analysis/index/RuleIndex.h"
 
 #include "analysis/resolution/SemanticHelpers.h"
 #include "utils/ScopedNameUtils.h"
@@ -20,16 +20,6 @@ const ContainerMembers& RuleIndex::Members(std::string_view containerName) const
 }
 
 /**
- * @brief Retrieves member symbols for a given container name (std::string overload).
- * @param[in] containerName Name or qualified path of the container.
- * @return Reference to ContainerMembers, or an empty member set if not found.
- */
-const ContainerMembers& RuleIndex::Members(const std::string& containerName) const
-{
-    return Members(std::string_view(containerName));
-}
-
-/**
  * @brief Retrieves member symbols for a given class name.
  * @param[in] className Name or qualified path of the class.
  * @return Reference to ContainerMembers, or an empty member set if not found.
@@ -42,16 +32,6 @@ const ContainerMembers& RuleIndex::ClassMembers(std::string_view className) cons
 }
 
 /**
- * @brief Retrieves member symbols for a given class name (std::string overload).
- * @param[in] className Name or qualified path of the class.
- * @return Reference to ContainerMembers, or an empty member set if not found.
- */
-const ContainerMembers& RuleIndex::ClassMembers(const std::string& className) const
-{
-    return ClassMembers(std::string_view(className));
-}
-
-/**
  * @brief Retrieves member symbols for a given namespace name.
  * @param[in] nsName Name or qualified path of the namespace.
  * @return Reference to ContainerMembers, or an empty member set if not found.
@@ -61,16 +41,6 @@ const ContainerMembers& RuleIndex::NamespaceMembers(std::string_view nsName) con
     static const ContainerMembers empty;
     const auto it = byNamespace.find(nsName);
     return it == byNamespace.end() ? empty : it->second;
-}
-
-/**
- * @brief Retrieves member symbols for a given namespace name (std::string overload).
- * @param[in] nsName Name or qualified path of the namespace.
- * @return Reference to ContainerMembers, or an empty member set if not found.
- */
-const ContainerMembers& RuleIndex::NamespaceMembers(const std::string& nsName) const
-{
-    return NamespaceMembers(std::string_view(nsName));
 }
 
 void RuleIndexPartial::Merge(RuleIndexPartial&& other)
@@ -890,21 +860,20 @@ static void RemoveContainers(RuleIndex& index, const RuleIndexPartial& partial)
  * @param[in] symbols Sequence of symbols to index.
  * @return Populated RuleIndexPartial.
  */
-template <typename SymbolRange>
-RuleIndexPartial BuildPartialImpl(const std::string& fileUri, const SymbolRange& symbols)
+template <typename SymbolRange> RuleIndexPartial BuildPartialImpl(std::string_view fileUri, const SymbolRange& symbols)
 {
     RuleIndexPartial partial;
-    partial.fileUri = fileUri;
+    partial.fileUri = std::string(fileUri);
     PopulatePartial(partial, symbols);
     return partial;
 }
 
-RuleIndexPartial RuleIndex::BuildPartial(const std::string& fileUri, const std::vector<Symbol>& symbols)
+RuleIndexPartial RuleIndex::BuildPartial(std::string_view fileUri, const std::vector<Symbol>& symbols)
 {
     return BuildPartialImpl(fileUri, symbols);
 }
 
-RuleIndexPartial RuleIndex::BuildPartial(const std::string& fileUri, const std::vector<const Symbol*>& symbols)
+RuleIndexPartial RuleIndex::BuildPartial(std::string_view fileUri, const std::vector<const Symbol*>& symbols)
 {
     return BuildPartialImpl(fileUri, symbols);
 }

@@ -150,33 +150,24 @@ struct RuleIndex
 
     /**
      * @brief Members of one container, or an empty set of them when it declares none.
+     * @param[in] containerName Name or qualified path of the container.
+     * @return Reference to ContainerMembers, or an empty member set if not found.
      */
     const ContainerMembers& Members(std::string_view containerName) const;
-    const ContainerMembers& Members(const std::string& containerName) const;
-    const ContainerMembers& Members(const char* containerName) const
-    {
-        return Members(std::string_view(containerName));
-    }
 
     /**
      * @brief Members declared within a class or interface container.
+     * @param[in] className Name or qualified path of the class.
+     * @return Reference to ContainerMembers, or an empty member set if not found.
      */
     const ContainerMembers& ClassMembers(std::string_view className) const;
-    const ContainerMembers& ClassMembers(const std::string& className) const;
-    const ContainerMembers& ClassMembers(const char* className) const
-    {
-        return ClassMembers(std::string_view(className));
-    }
 
     /**
      * @brief Members declared within a namespace container.
+     * @param[in] nsName Name or qualified path of the namespace.
+     * @return Reference to ContainerMembers, or an empty member set if not found.
      */
     const ContainerMembers& NamespaceMembers(std::string_view nsName) const;
-    const ContainerMembers& NamespaceMembers(const std::string& nsName) const;
-    const ContainerMembers& NamespaceMembers(const char* nsName) const
-    {
-        return NamespaceMembers(std::string_view(nsName));
-    }
 
     /**
      * @brief Applies the contributions of a partial index to this index.
@@ -190,9 +181,19 @@ struct RuleIndex
 
     /**
      * @brief Extracts a partial index from the given symbols belonging to fileUri.
+     * @param[in] fileUri URI of the document that owns the symbols.
+     * @param[in] symbols Sequence of symbols to index into a partial index.
+     * @return Extracted RuleIndexPartial containing index contributions.
      */
-    static RuleIndexPartial BuildPartial(const std::string& fileUri, const std::vector<Symbol>& symbols);
-    static RuleIndexPartial BuildPartial(const std::string& fileUri, const std::vector<const Symbol*>& symbols);
+    static RuleIndexPartial BuildPartial(std::string_view fileUri, const std::vector<Symbol>& symbols);
+
+    /**
+     * @brief Extracts a partial index from the given symbols belonging to fileUri.
+     * @param[in] fileUri URI of the document that owns the symbols.
+     * @param[in] symbols Sequence of symbol pointers to index into a partial index.
+     * @return Extracted RuleIndexPartial containing index contributions.
+     */
+    static RuleIndexPartial BuildPartial(std::string_view fileUri, const std::vector<const Symbol*>& symbols);
 
     /**
      * @brief Walks the table once and returns the index it yields.

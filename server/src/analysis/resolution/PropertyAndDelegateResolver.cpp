@@ -1,10 +1,10 @@
 #include "analysis/resolution/PropertyAndDelegateResolver.h"
 
+#include "analysis/index/RuleIndex.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "analysis/rules/RuleIndex.h"
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"

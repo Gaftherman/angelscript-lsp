@@ -1,10 +1,10 @@
 #pragma once
 
+#include "analysis/index/RuleIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SemanticTokenFacts.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
-#include "analysis/rules/RuleIndex.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 
 #include <ankerl/unordered_dense.h>

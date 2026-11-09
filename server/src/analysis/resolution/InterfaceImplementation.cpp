@@ -1,9 +1,9 @@
 #include "analysis/resolution/InterfaceImplementation.h"
 
+#include "analysis/index/RuleIndex.h"
 #include "analysis/resolution/ClassHierarchyResolver.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/TemplateTypeResolver.h"
-#include "analysis/rules/RuleIndex.h"
 #include "analysis/types/TypeSanitization.h"
 #include "utils/ScopedNameUtils.h"
 

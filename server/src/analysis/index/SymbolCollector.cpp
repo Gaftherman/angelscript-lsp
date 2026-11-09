@@ -207,9 +207,11 @@ SymbolCollector::SymbolCollector(angel_lsp::utils::LspLogger* logger)
 }
 
 /**
- * @brief Maps an indexed declaration kind to the member function that collects it.
- * @param[in] kind Declaration kind recorded by the node index.
- * @return Handler for the kind, or nullptr for kinds collected elsewhere.
+ * @brief Resolves the dedicated member function pointer for processing and extracting symbols for a specific indexed
+ * declaration kind.
+ * @param[in] kind First-pass indexed declaration category to inspect.
+ * @return Pointer to the member processing function for the declaration kind, including ProcessCallReference for call
+ * sites, or nullptr for kinds that have no dedicated handler.
  */
 SymbolCollector::ProcessFn SymbolCollector::DeclarationHandler(IndexedDeclarationKind kind)
 {
@@ -880,9 +882,11 @@ void SymbolCollector::ProcessVariable(TSNode varDeclNode, SymbolCollectContext& 
 }
 
 /**
- * @brief Finds the statement block of a function, falling back to a child scan when the body field is absent.
- * @param[in] funcNode Function declaration node.
- * @return Body node, or a null node for declarations without a body.
+ * @brief Locates the compound statement block representing a function's implementation body, falling back to a direct
+ * child cursor search if the grammar body field is unlinked.
+ * @param[in] funcNode Tree-Sitter AST node of the candidate function or method declaration.
+ * @return The statement block AST node representing the function body, or a null TSNode if the function has no
+ * implementation (such as an abstract method or prototype).
  */
 TSNode SymbolCollector::FindFunctionBody(TSNode funcNode) const
 {
@@ -1016,10 +1020,14 @@ bool SymbolCollector::TryProcessEmptyParenVariable(TSNode funcNode, const Symbol
 }
 
 /**
- * @brief Records a function or method symbol with its signature, modifiers and body range.
- * @param[in] funcNode Function declaration node.
- * @param[in,out] sCtx Collection state receiving the symbol.
- * @param[in] ctx Enclosing container and namespace.
+ * @brief Extracts a function, method, or imported declaration into a function symbol with complete signature,
+ * parameter, and modifier metadata, or redirects empty-paren variable declarations.
+ * @param[in] funcNode Tree-Sitter AST node representing the function, method, or imported function declaration.
+ * @param[in,out] sCtx Symbol collection state providing document source, index context, and receiving the extracted
+ * symbol.
+ * @param[in] ctx Lexical context specifying enclosing namespace or container path and kind.
+ * @note Appends the constructed Symbol to sCtx.collectedSymbols, or delegates to variable symbol collection if an
+ * empty-parenthesis variable declaration is detected.
  */
 void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
@@ -1271,10 +1279,13 @@ void SymbolCollector::ProcessTypedef(TSNode node, SymbolCollectContext& sCtx, co
 }
 
 /**
- * @brief Records a funcdef type symbol with its return type and parameters.
- * @param[in] node Funcdef declaration node.
- * @param[in,out] sCtx Collection state receiving the symbol.
- * @param[in] ctx Enclosing container and namespace.
+ * @brief Extracts a funcdef declaration into a function-pointer typedef symbol with parsed return type metadata,
+ * signature modifiers, and parameter declarations.
+ * @param[in] node Tree-Sitter AST node representing the funcdef declaration.
+ * @param[in,out] sCtx Symbol collection state providing document source, index context, and receiving the extracted
+ * symbol.
+ * @param[in] ctx Lexical context specifying enclosing namespace or container path and kind.
+ * @note Appends the constructed Symbol of type SymbolType::Funcdef to sCtx.collectedSymbols.
  */
 void SymbolCollector::ProcessFuncdef(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {

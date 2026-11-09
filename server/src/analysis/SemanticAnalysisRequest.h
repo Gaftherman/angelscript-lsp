@@ -2,9 +2,9 @@
 
 #include "analysis/diagnostics/Diagnostics.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/index/RuleIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
-#include "analysis/rules/RuleIndex.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/VirtualMixinContext.h"
 #include "config/ServerConfig.h"

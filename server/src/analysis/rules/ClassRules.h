@@ -2,9 +2,9 @@
 
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/index/RuleIndex.h"
 #include "analysis/index/Symbol.h"
 #include "analysis/index/SymbolTable.h"
-#include "analysis/rules/RuleIndex.h"
 #include "analysis/types/VirtualMixinContext.h"
 #include "document/Document.h"
 #include "parser/AngelScriptParser.h"

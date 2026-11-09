@@ -7,9 +7,14 @@ namespace angel_lsp::analysis::formatting
 {
 
 /**
- * @brief Emits a `//` comment token running to the end of the line.
- * @param[in,out] state Scanner cursor; advanced past the comment on success.
- * @return True when a line comment started at the cursor.
+ * @brief Scans and emits a single-line comment beginning with `//` up to the terminating newline or end of input during
+ * source code formatting tokenization.
+ * @param[in,out] state Active lexer scanning state whose cursor index must point at the candidate comment delimiter; on
+ * success, advances past the comment content.
+ * @return True if a double-slash line comment was recognized and consumed; false if the delimiter is absent, leaving
+ * the scan state unmodified.
+ * @note On success, advances the state cursor and column, resets state.newlines to zero, and appends a
+ * TokenType::LineComment token whose text view borrows from state.src.
  */
 bool TryConsumeLineComment(ScanState& state)
 {
@@ -32,9 +37,14 @@ bool TryConsumeLineComment(ScanState& state)
 }
 
 /**
- * @brief Emits a block comment token, tracking line breaks inside it.
- * @param[in,out] state Scanner cursor; advanced past the closing delimiter, or to the end of an unterminated comment.
- * @return True when a block comment started at the cursor.
+ * @brief Scans and emits a C-style block comment starting with the slash-star sequence through its closing delimiter or
+ * the end of input, tracking line counts and column offsets for layout formatting.
+ * @param[in,out] state Active lexer scanning state whose cursor index must point at the opening slash-star delimiter;
+ * on success, advances past the closing delimiter or to the end of input.
+ * @return True if an opening slash-star delimiter was found and the comment consumed; false if the opening delimiter is
+ * absent, leaving the scan state unmodified.
+ * @note On success, advances the state cursor, updates line and column coordinates, resets state.newlines to zero, and
+ * appends a TokenType::BlockComment token referencing state.src.
  */
 bool TryConsumeBlockComment(ScanState& state)
 {
@@ -104,9 +114,14 @@ bool TryConsumePreprocessor(ScanState& state)
 }
 
 /**
- * @brief Emits a triple-quoted heredoc string token, which may span lines.
- * @param[in,out] state Scanner cursor; advanced past the closing quotes, or to the end of an unterminated literal.
- * @return True when a heredoc literal started at the cursor.
+ * @brief Scans and emits an AngelScript multiline raw string literal delimited by triple quotes (`"""`), advancing
+ * through the closing sequence or end of file while tracking line breaks.
+ * @param[in,out] state Active lexer scanning state whose cursor index must point at the opening triple quote; on
+ * success, advances past the closing quotes or to the end of input.
+ * @return True if a triple-quoted raw string literal was detected and consumed; false if the opening quotes are absent,
+ * leaving the scan state unmodified.
+ * @note On success, advances the state cursor, updates line and column coordinates, resets state.newlines to zero, and
+ * appends a TokenType::StringLiteral token referencing state.src.
  */
 bool TryConsumeRawString(ScanState& state)
 {

@@ -17,10 +17,12 @@ namespace angel_lsp::analysis
 {
 
 /**
- * @brief Checks that a member was declared in the same kind of container as the symbol that owns it.
- * @param[in] containerType Symbol type of the candidate owner.
- * @param[in] memberContainerKind Container kind recorded on the member.
- * @return True when both describe a class, an interface or a namespace; false for any other owner type.
+ * @brief Determines whether a candidate parent symbol's type corresponds to the declaring container kind recorded on a
+ * candidate member symbol during scope disambiguation.
+ * @param[in] containerType Symbol type of the candidate enclosing parent symbol.
+ * @param[in] memberContainerKind Container kind classification recorded on the resolved member symbol.
+ * @return True if the candidate parent's symbol type corresponds to the member's container kind (Class, Interface, or
+ * Namespace); false for non-container types or mismatched pairings.
  */
 static bool ContainerKindMatches(SymbolType containerType, ContainerKind memberContainerKind) noexcept
 {

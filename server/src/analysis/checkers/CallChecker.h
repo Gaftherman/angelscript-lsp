@@ -2,9 +2,9 @@
 
 #include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/RuleIndex.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "analysis/rules/RuleIndex.h"
 #include "analysis/types/TypeSanitization.h"
 
 #include <string_view>

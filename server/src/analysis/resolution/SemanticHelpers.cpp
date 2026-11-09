@@ -2,11 +2,11 @@
 
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/index/RuleIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
-#include "analysis/rules/RuleIndex.h"
 #include "analysis/types/TypeSanitization.h"
 #include "config/EngineRuleConfig.h"
 #include "parser/ASTUtils.h"

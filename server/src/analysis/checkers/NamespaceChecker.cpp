@@ -1,8 +1,8 @@
 #include "analysis/checkers/NamespaceChecker.h"
 
 #include "analysis/index/NodeIndex.h"
+#include "analysis/index/RuleIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "analysis/rules/RuleIndex.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/ScopedNameUtils.h"

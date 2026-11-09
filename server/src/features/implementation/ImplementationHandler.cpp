@@ -1,7 +1,7 @@
 #include "features/implementation/ImplementationHandler.h"
 
+#include "analysis/index/RuleIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "analysis/rules/RuleIndex.h"
 #include "features/common/FeatureSharedUtils.h"
 #include "utils/LspLogger.h"
 

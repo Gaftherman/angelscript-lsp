@@ -1,8 +1,8 @@
 #include "features/type_hierarchy/TypeHierarchyHandler.h"
 
+#include "analysis/index/RuleIndex.h"
 #include "analysis/resolution/DefinitionResolution.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "analysis/rules/RuleIndex.h"
 #include "features/common/FeatureSharedUtils.h"
 #include "utils/Constants.h"
 #include "utils/ScopedNameUtils.h"

@@ -133,9 +133,11 @@ TSPoint FindClassClosingBracePoint(TSNode classBody)
 }
 
 /**
- * @brief Finds the member list of a class declaration, falling back to a child scan when the body field is absent.
- * @param[in] classNode Class declaration node.
- * @return Class body node, or a null node for a class without a body.
+ * @brief Locates the member body node of a class declaration by resolving the grammar's body field, falling back to an
+ * iterative child scan for a class_body node when the field is unlinked or absent.
+ * @param[in] classNode Tree-Sitter AST node representing the candidate class declaration to inspect.
+ * @return The resolved class body AST node containing member declarations, or a null TSNode if no body is present or
+ * the declaration is unpopulated.
  */
 TSNode FindClassBodyNode(TSNode classNode)
 {

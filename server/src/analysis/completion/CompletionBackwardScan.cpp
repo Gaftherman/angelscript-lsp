@@ -105,10 +105,12 @@ size_t SkipInlineWhitespaceBackward(const std::string& text, size_t pos)
 }
 
 /**
- * @brief Walks back over identifier characters ending at a position.
- * @param[in] text Line text being scanned.
- * @param[in] end Exclusive end of the identifier.
- * @return Start offset of the identifier; equals end when no identifier precedes it.
+ * @brief Scans backward from a given offset to locate the starting byte position of an alphanumeric or underscore
+ * identifier token.
+ * @param[in] text Source text buffer to inspect backwards.
+ * @param[in] end Exclusive byte offset where backward scanning begins (must be less than or equal to text.size()).
+ * @return Starting byte offset of the identifier within text, or end if the preceding character is not an alphanumeric
+ * or underscore.
  */
 size_t ExtractIdentifierBackward(const std::string& text, size_t end)
 {
@@ -139,9 +141,13 @@ std::optional<size_t> FindAccessDotCol(const std::string& prefix)
 }
 
 /**
- * @brief Returns the partial identifier the user is typing at the end of the line prefix.
- * @param[in] linePrefix Line text up to the cursor.
- * @return Trailing identifier characters; empty when the cursor follows punctuation or whitespace.
+ * @brief Extracts the trailing uncommitted identifier segment from a source line prefix to serve as a filtering query
+ * for completion candidates.
+ * @param[in] linePrefix Source text on the current line ending at the completion cursor position.
+ * @return Substring view of trailing alphanumeric and underscore characters, or an empty view if the cursor immediately
+ * follows whitespace or punctuation.
+ * @note The returned string_view borrows the underlying buffer of linePrefix and remains valid only for that buffer's
+ * lifetime.
  */
 std::string_view ExtractQueryPrefix(std::string_view linePrefix)
 {

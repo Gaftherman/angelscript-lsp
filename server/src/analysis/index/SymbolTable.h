@@ -1,7 +1,7 @@
 #pragma once
 
+#include "analysis/index/RuleIndex.h"
 #include "analysis/index/Symbol.h"
-#include "analysis/rules/RuleIndex.h"
 #include "utils/Constants.h"
 #include "utils/LspLogger.h"
 #include "utils/TransparentHash.h"

@@ -1,8 +1,8 @@
 #include "SymbolTable.h"
 
 #include "analysis/documentation/SignatureFormatter.h"
+#include "analysis/index/RuleIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "analysis/rules/RuleIndex.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"

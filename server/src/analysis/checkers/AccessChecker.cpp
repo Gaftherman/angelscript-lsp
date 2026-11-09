@@ -2,9 +2,9 @@
 
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/index/RuleIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "analysis/rules/RuleIndex.h"
 #include "config/EngineRuleConfig.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"

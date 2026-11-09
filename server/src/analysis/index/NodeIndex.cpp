@@ -208,8 +208,11 @@ NodeIndex::FlowFacts& NodeIndex::MutableFlowFacts()
 }
 
 /**
- * @brief Returns the control-flow findings captured during the first pass.
- * @return Findings in document order; empty when flow facts were not built for this index.
+ * @brief Retrieves the sequence of structural control-flow findings—such as unreachable statements, unbracketed
+ * switch-case variables, and misplaced default labels—recorded during the first-pass AST index.
+ * @return Read-only span of indexed flow findings in source order, or an empty span if flow facts were not constructed.
+ * @note The returned span elements reference the internal storage of this index's flow facts and remain valid only for
+ * the lifetime of those facts.
  */
 std::span<const IndexedFlowFinding> NodeIndex::FlowFindings() const noexcept
 {
