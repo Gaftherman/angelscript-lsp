@@ -2829,6 +2829,23 @@
       "verifiedByTests": [
         "EngineConfigConverterTest"
       ]
+    },
+    {
+      "id": "REF-M19-MEDIATOR-TRIM",
+      "phase": "M19",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/mediator/SemanticMediator.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "ScopeForNode(TSNode) plus ScopeAt, EnclosingClass, EnclosingNamespace, EnclosingContainers, UsingNamespaces, ResolveExpressionType, ResolveReceiverType, SubstituteTemplateType, LookupSymbolInScope, LookupClassMember, GetClassHierarchy, FindPropertyAccessors, ExtractCallContext, PropertyAccessorPair, ClassHierarchyInfo",
+      "whatItDidAndWhyInThatFile": "Wrapped resolution services behind the facade with TSNode and owned-string signatures; none of the wrappers had a caller, and ScopeForNode only converted a node to its start point.",
+      "whyChangedOrDeleted": "Dead wrappers removed with their caches and tree-sitter include; the two checkers pass the start point to ScopeAtPoint, so the mediator holds no AST or owned-string state.",
+      "replacedByCanonicalFile": "server/src/analysis/mediator/SemanticMediator.h",
+      "replacedByCanonicalSymbol": "ScopeAtPoint",
+      "ramOrCpuImpact": "Drops the per-analysis hierarchy and using-namespace caches that were never filled.",
+      "verifiedByTests": [
+        "AccessCheckerTest",
+        "ConstCheckerTest"
+      ]
     }
   ]
 }

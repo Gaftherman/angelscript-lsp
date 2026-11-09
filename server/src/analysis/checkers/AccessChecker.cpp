@@ -826,27 +826,27 @@ static void CheckMemberAccessIndexed(const AstCheckContext& request, DiagnosticC
     }
 
     const std::array<TSSymbol, 3> kSymbols = {gs.symMemberExpression, gs.symScopedIdentifier, gs.symIdentifier};
-    request.nodeIndex->ForEachNodeOrdered(
-        std::span<const TSSymbol>(kSymbols.data(), kSymbols.size()),
-        [&](TSNode node)
-        {
-            if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
-            {
-                return;
-            }
-            if (ts_node_symbol(node) == gs.symMemberExpression)
-            {
-                const Scope* scope = request.mediator
-                                         ? request.mediator->ScopeForNode(node)
-                                         : FindInnermostScope(request.scopeRoot, ts_node_start_point(node).row,
-                                                              ts_node_start_point(node).column);
-                CheckMemberExpression(node, request, scope, ctx);
-            }
-            else
-            {
-                CheckIdentifierNode(node, request, ctx);
-            }
-        });
+    request.nodeIndex->ForEachNodeOrdered(std::span<const TSSymbol>(kSymbols.data(), kSymbols.size()),
+                                          [&](TSNode node)
+                                          {
+                                              if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
+                                              {
+                                                  return;
+                                              }
+                                              if (ts_node_symbol(node) == gs.symMemberExpression)
+                                              {
+                                                  const TSPoint pt = ts_node_start_point(node);
+                                                  const Scope* scope =
+                                                      request.mediator
+                                                          ? request.mediator->ScopeAtPoint(pt.row, pt.column)
+                                                          : FindInnermostScope(request.scopeRoot, pt.row, pt.column);
+                                                  CheckMemberExpression(node, request, scope, ctx);
+                                              }
+                                              else
+                                              {
+                                                  CheckIdentifierNode(node, request, ctx);
+                                              }
+                                          });
 }
 
 /**

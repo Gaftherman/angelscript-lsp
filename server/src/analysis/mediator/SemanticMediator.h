@@ -3,76 +3,18 @@
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
-#include "analysis/resolution/CallableAndLambdaResolver.h"
-#include "analysis/resolution/ClassHierarchyResolver.h"
-#include "analysis/resolution/ExpressionTypeResolver.h"
-#include "analysis/resolution/PropertyAndDelegateResolver.h"
-#include "analysis/resolution/ScopeSymbolLookup.h"
-#include "analysis/resolution/TemplateTypeResolver.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "config/EngineRuleConfig.h"
-#include "utils/AccessorNames.h"
 
-#include <memory>
-#include <optional>
-#include <span>
-#include <string>
+#include <cstdint>
 #include <string_view>
-#include <tree_sitter/api.h>
-#include <vector>
 
 namespace angel_lsp::analysis
 {
 
 /**
- * @brief Matched getter and setter accessor symbols for a class property.
- */
-struct PropertyAccessorPair
-{
-    std::vector<Symbol> accessors;
-
-    [[nodiscard]] bool HasGetter() const noexcept
-    {
-        for (const auto& sym : accessors)
-        {
-            if (utils::IsGetterName(sym.name))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    [[nodiscard]] bool HasSetter() const noexcept
-    {
-        for (const auto& sym : accessors)
-        {
-            if (utils::IsSetterName(sym.name))
-            {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    [[nodiscard]] bool IsEmpty() const noexcept
-    {
-        return accessors.empty();
-    }
-};
-
-/**
- * @brief Memoized inheritance hierarchy and base class metadata.
- */
-struct ClassHierarchyInfo
-{
-    std::string className;
-    std::vector<std::string> hierarchy;
-    std::string baseClass;
-};
-
-/**
  * @brief Central mediator coordinating AST index, scopes, symbols, and resolution passes.
+ * @note Holds non-owning views only; every bound structure must outlive the mediator.
  */
 class SemanticMediator
 {
@@ -97,55 +39,75 @@ class SemanticMediator
     SemanticMediator(SemanticMediator&&) noexcept = default;
     SemanticMediator& operator=(SemanticMediator&&) noexcept = default;
 
-    // --- Context & Container Queries (O(1)) ---
-    [[nodiscard]] const Scope* ScopeAt(uint32_t byte) const noexcept;
+    /**
+     * @brief Finds the innermost lexical scope enclosing a zero-based source position.
+     * @param[in] line Zero-based line of the position.
+     * @param[in] col Zero-based byte column of the position.
+     * @return Innermost enclosing scope, or nullptr when no scope tree is bound.
+     */
     [[nodiscard]] const Scope* ScopeAtPoint(uint32_t line, uint32_t col) const noexcept;
-    [[nodiscard]] const Scope* ScopeForNode(TSNode node) const noexcept;
-    [[nodiscard]] std::string_view EnclosingClass(uint32_t byte) const noexcept;
-    [[nodiscard]] std::string_view EnclosingNamespace(uint32_t byte) const noexcept;
-    [[nodiscard]] std::vector<ContainerInfo> EnclosingContainers(uint32_t byte) const;
-    [[nodiscard]] std::span<const std::string> UsingNamespaces() const;
 
-    // --- Type & Expression Queries ---
-    [[nodiscard]] std::string ResolveExpressionType(TSNode exprNode, const Scope* scope = nullptr) const;
-    [[nodiscard]] std::string ResolveReceiverType(TSNode memberOrMethodNode, const Scope* scope = nullptr) const;
-    [[nodiscard]] std::string SubstituteTemplateType(std::string_view rawType, std::string_view receiverType) const;
-
-    // --- Symbol, Member & Hierarchy Queries ---
-    [[nodiscard]] const Symbol* LookupSymbolInScope(std::string_view name, uint32_t byte) const;
-    [[nodiscard]] MemberLookupResult LookupClassMember(std::string_view className, std::string_view memberName,
-                                                       bool accessorRequired = false) const;
-    [[nodiscard]] const ClassHierarchyInfo& GetClassHierarchy(std::string_view className) const;
-    [[nodiscard]] PropertyAccessorPair FindPropertyAccessors(std::string_view className, std::string_view propName,
-                                                             bool keywordRequired = false) const;
-
-    // --- Call & Overload Queries ---
-    [[nodiscard]] CallResolutionContext ExtractCallContext(TSNode callNode, const Scope* scope = nullptr) const;
-
-    // --- Direct Accessors ---
+    /**
+     * @brief Returns the symbol table every query resolves against.
+     * @return Bound symbol table.
+     */
     [[nodiscard]] const SymbolTable& GetSymbolTable() const noexcept
     {
         return m_symbolTable;
     }
+
+    /**
+     * @brief Returns the root of the document scope tree.
+     * @return Scope tree root, or nullptr when the document has none.
+     */
     [[nodiscard]] const Scope* GetScopeRoot() const noexcept
     {
         return m_scopeRoot;
     }
+
+    /**
+     * @brief Returns the first-pass node index of the document.
+     * @return Node index, or nullptr when analysis runs without one.
+     */
     [[nodiscard]] const NodeIndex* GetNodeIndex() const noexcept
     {
         return m_nodeIndex;
     }
+
+    /**
+     * @brief Returns the analysed document text.
+     * @return View of the source buffer owned by the caller.
+     */
     [[nodiscard]] std::string_view GetSourceCode() const noexcept
     {
         return m_sourceCode;
     }
+
+    /**
+     * @brief Returns the URI of the analysed document.
+     * @return View of the URI owned by the caller; empty when none was supplied.
+     */
     [[nodiscard]] std::string_view GetFileUri() const noexcept
     {
         return m_fileUri;
     }
+
+    /**
+     * @brief Returns the expression type memoization cache shared by the checkers.
+     * @return Cache, or nullptr when memoization is disabled.
+     */
     [[nodiscard]] ExpressionTypeCache* GetCache() const noexcept
     {
         return m_cache;
+    }
+
+    /**
+     * @brief Returns the engine rule configuration active for this analysis.
+     * @return Rule configuration, or nullptr when no engine rules apply.
+     */
+    [[nodiscard]] const config::EngineRuleConfig* GetEngineRules() const noexcept
+    {
+        return m_engineRules;
     }
 
   private:
@@ -156,17 +118,6 @@ class SemanticMediator
     std::string_view m_fileUri;
     ExpressionTypeCache* m_cache = nullptr;
     const config::EngineRuleConfig* m_engineRules = nullptr;
-
-    mutable std::vector<std::string> m_usingNamespaces;
-    mutable bool m_usingNamespacesLoaded = false;
-    mutable ankerl::unordered_dense::map<std::string, ClassHierarchyInfo> m_hierarchyCache;
-
-    /**
-     * @brief Resolves declaration accessibility across polymorphic symbol signature variants.
-     * @param[in] sym Candidate symbol descriptor.
-     * @return Declared access modifier, defaulting to Public.
-     */
-    [[nodiscard]] static AccessModifier ExtractSymbolAccess(const Symbol& sym) noexcept;
 };
 
 } // namespace angel_lsp::analysis

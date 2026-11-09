@@ -28,9 +28,10 @@
     "server/src/utils",
     "server/src/analysis/diagnostics",
     "server/src/analysis/documentation",
-    "server/src/analysis/types"
+    "server/src/analysis/types",
+    "server/src/analysis/mediator"
   ],
-  "active_folder": "server/src/analysis/mediator",
+  "active_folder": "server/src/parser",
   "cross_module_impacts": [
     {
       "source_folder": "server/src/utils",
@@ -49,12 +50,6 @@
     }
   ],
   "pending_folders": [
-    {
-      "folder_path": "server/src/analysis/mediator",
-      "complexity_rank": 31,
-      "selection_rationale": "Analysis coordinator facade (2 files, 152 lines) SemanticMediator coordinating pass components.",
-      "files_to_refactor": []
-    },
     {
       "folder_path": "server/src/parser",
       "complexity_rank": 32,

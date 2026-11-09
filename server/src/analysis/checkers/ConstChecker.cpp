@@ -670,7 +670,7 @@ static void CheckConstCorrectnessIndexed(const AstCheckContext& request, Diagnos
                                               const TSPoint pt = ts_node_start_point(node);
                                               const Scope* scope =
                                                   request.mediator
-                                                      ? request.mediator->ScopeForNode(node)
+                                                      ? request.mediator->ScopeAtPoint(pt.row, pt.column)
                                                       : FindInnermostScope(request.scopeRoot, pt.row, pt.column);
                                               if (ts_node_symbol(node) == gs.symAssignmentExpression)
                                               {
