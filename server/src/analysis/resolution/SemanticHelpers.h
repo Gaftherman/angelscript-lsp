@@ -95,7 +95,7 @@ std::string CleanExpressionType(std::string_view typeName);
  * @param name Symbol name to check.
  * @return True if name is a reserved keyword.
  */
-bool IsReservedKeyword(const std::string& name);
+bool IsReservedKeyword(std::string_view name);
 
 /**
  * @brief Checks whether the given word is any AngelScript keyword (reserved or contextual).

@@ -746,8 +746,9 @@ void Server::SyncModuleIndexSymbols()
     GetModuleIndex().SetExportedSymbols(std::move(exported));
 }
 
-void Server::CollectSharedSymbolsElsewhere(const ModuleView& owning,
-                                           ankerl::unordered_dense::set<std::string>& outShared) const
+void Server::CollectSharedSymbolsElsewhere(
+    const ModuleView& owning,
+    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>& outShared) const
 {
     const auto ruleIndex = m_symbolTable.GetRuleIndex();
     if (!ruleIndex)

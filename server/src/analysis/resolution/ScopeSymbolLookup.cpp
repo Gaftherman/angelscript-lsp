@@ -94,6 +94,11 @@ bool IsReachableInContainerScope(std::string_view clean, std::string_view contai
 
 std::string EnclosingNamespaceForSymbol(const Symbol& sym, const SymbolTable& table)
 {
+    return std::string(EnclosingNamespaceView(sym, table));
+}
+
+std::string_view EnclosingNamespaceView(const Symbol& sym, const SymbolTable& table)
+{
     if (sym.containerKind == ContainerKind::Namespace)
     {
         return sym.containerName;
@@ -115,7 +120,7 @@ std::string EnclosingNamespaceForSymbol(const Symbol& sym, const SymbolTable& ta
             }
         }
     }
-    return "";
+    return {};
 }
 
 bool IsTemplateParameterOfContainer(std::string_view typeName, const Symbol& sym, const SymbolTable& table)

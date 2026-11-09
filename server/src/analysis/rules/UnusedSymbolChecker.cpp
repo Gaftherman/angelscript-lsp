@@ -10,751 +10,22 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
 #include "utils/ScopedNameUtils.h"
+#include "utils/StringPool.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
-#include <cctype>
-#include <regex>
-#include <string>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::analysis::rules
 {
 
-static inline uint64_t PackLoc(uint32_t line, uint32_t col) noexcept
-{
-    return (static_cast<uint64_t>(line) << 32) | static_cast<uint64_t>(col);
-}
-
-static void CollectDefLocations(const Scope* rootScope, ankerl::unordered_dense::set<uint64_t>& defLocs)
-{
-    if (!rootScope)
-        return;
-    std::vector<const Scope*> worklist{rootScope};
-    while (!worklist.empty())
-    {
-        const Scope* scope = worklist.back();
-        worklist.pop_back();
-
-        for (const auto& def : scope->definitions)
-            defLocs.insert(PackLoc(def.startLine, def.startCharacter));
-        for (const auto& child : scope->children)
-        {
-            if (child)
-                worklist.push_back(child.get());
-        }
-    }
-}
-
-static void CollectDocReferences(const Scope* rootScope, const DocRefCollectContext& docCtx,
-                                 ankerl::unordered_dense::set<std::string>& refNames)
-{
-    if (!rootScope)
-        return;
-    std::vector<const Scope*> worklist{rootScope};
-    while (!worklist.empty())
-    {
-        const Scope* scope = worklist.back();
-        worklist.pop_back();
-
-        for (const auto& ref : scope->references)
-        {
-            if (docCtx.defLocs.contains(PackLoc(ref.startLine, ref.startCharacter)))
-                continue;
-            if (!docCtx.delegateProps.empty() && ref.isMemberAccess && ref.receiverEndByte > ref.receiverStartByte &&
-                !docCtx.sourceCode.empty() && ref.receiverEndByte <= docCtx.sourceCode.size())
-            {
-                std::string_view recv =
-                    docCtx.sourceCode.substr(ref.receiverStartByte, ref.receiverEndByte - ref.receiverStartByte);
-                if (std::find(docCtx.delegateProps.begin(), docCtx.delegateProps.end(), recv) !=
-                    docCtx.delegateProps.end())
-                {
-                    continue;
-                }
-            }
-            refNames.insert(ref.name);
-        }
-        for (const auto& child : scope->children)
-        {
-            if (child)
-                worklist.push_back(child.get());
-        }
-    }
-}
-
 /**
- * @brief Collect used locals.
- * @param[in] rootScope Lexical scope for symbol lookup.
- * @param[in] usedLocals Source location or position.
+ * @brief Resolves effective unused symbol rules by combining engine rules with diagnostic flags.
+ * @param[in] request Semantic analysis request containing diagnostic settings and engine rules.
+ * @return Effective unused symbol rules for analysis.
  */
-static void CollectUsedLocals(const Scope* rootScope, ankerl::unordered_dense::set<const LocalDefinition*>& usedLocals)
-{
-    if (!rootScope)
-        return;
-    std::vector<const Scope*> worklist{rootScope};
-    while (!worklist.empty())
-    {
-        const Scope* scope = worklist.back();
-        worklist.pop_back();
-
-        for (const auto& ref : scope->references)
-        {
-            if (ref.isMemberAccess || ref.isNamedArgument)
-                continue;
-            const LocalDefinition* def = ResolveInScope(scope, ref.name);
-            if (def && (ref.startLine != def->startLine || ref.startCharacter != def->startCharacter))
-                usedLocals.insert(def);
-        }
-        for (const auto& child : scope->children)
-        {
-            if (child)
-                worklist.push_back(child.get());
-        }
-    }
-}
-
-static void CollectCrossFileReferences(const SemanticAnalysisRequest& req,
-                                       ankerl::unordered_dense::set<std::string>& refNames)
-{
-    if (!req.scopeIndex || req.moduleFileUris.empty())
-        return;
-    for (const auto& uri : req.moduleFileUris)
-    {
-        if (uri != req.fileUri)
-        {
-            if (const auto root = req.scopeIndex->GetRoot(uri))
-            {
-                ankerl::unordered_dense::set<uint64_t> defs;
-                CollectDefLocations(root.get(), defs);
-                CollectDocReferences(root.get(), DocRefCollectContext{defs, "", {}}, refNames);
-            }
-        }
-    }
-}
-
-/**
- * @brief Matches a callee function expression against a configured reflection callee rule.
- * @param[in] funcText Callee text (e.g. member access or scoped name).
- * @param[in] c Configured reflection callee descriptor.
- * @return True if callee matches the configured receiver and method name.
- */
-static bool MatchCallee(std::string_view funcText, const config::StringReflectionCallee& c)
-{
-    std::string_view receiver;
-    std::string_view method = funcText;
-    const auto dotPos = funcText.find('.');
-
-    if (dotPos != std::string_view::npos)
-    {
-        receiver = funcText.substr(0, dotPos);
-        method = funcText.substr(dotPos + 1);
-    }
-    else if (utils::ContainsScopeSeparator(funcText))
-    {
-        std::tie(receiver, method) = utils::SplitScopedName(funcText);
-    }
-
-    if (!c.callee.empty() && receiver != c.callee)
-        return false;
-
-    return std::any_of(c.methods.begin(), c.methods.end(), [&](const std::string& m) { return m == method; });
-}
-
-static bool MatchesRegexSafe(const std::string& candidate, const std::string& pattern)
-{
-    if (pattern.empty() || candidate.empty())
-    {
-        return false;
-    }
-    thread_local ankerl::unordered_dense::map<std::string, std::optional<std::regex>> regexCache;
-    auto it = regexCache.find(pattern);
-    if (it == regexCache.end())
-    {
-        try
-        {
-            it = regexCache.emplace(pattern, std::regex(pattern)).first;
-        }
-        catch (const std::regex_error&)
-        {
-            it = regexCache.emplace(pattern, std::nullopt).first;
-        }
-    }
-    if (!it->second.has_value())
-    {
-        return false;
-    }
-    return std::regex_match(candidate, *it->second);
-}
-
-/**
- * @brief Registers a symbol name and its qualified variations as reflected.
- * @param[in] str Reflected symbol name string.
- * @param[in] req Semantic analysis request for symbol table lookup.
- * @param[in,out] outReflections Accumulator set for reflected symbol names.
- */
-static void RegisterReflectedSymbol(const std::string& str, const SemanticAnalysisRequest& req,
-                                    ankerl::unordered_dense::set<std::string>& outReflections)
-{
-    if (str.empty())
-        return;
-
-    outReflections.insert(str);
-
-    if (const auto sym = req.symbolTable.FindFirstSymbol(str))
-    {
-        outReflections.insert(sym->name);
-        outReflections.insert(sym->qualifiedName);
-        return;
-    }
-
-    if (!utils::ContainsScopeSeparator(str))
-    {
-        auto types = req.symbolTable.FindTypeSymbolsByShortName(str);
-        for (const auto& t : types)
-        {
-            outReflections.insert(t.name);
-            outReflections.insert(t.qualifiedName);
-        }
-    }
-}
-
-/**
- * @brief Traverses lexical scopes recursively to collect symbol names referenced in string literals.
- * @param[in] root Root lexical scope from which to collect string literal references.
- * @param[in,out] result Output set accumulating symbol names found in string literal references.
- */
-static void CollectScopeStringLiteralRefs(const Scope* root, ankerl::unordered_dense::set<std::string>& result)
-{
-    if (!root)
-    {
-        return;
-    }
-    std::vector<const Scope*> stack{root};
-    while (!stack.empty())
-    {
-        const Scope* s = stack.back();
-        stack.pop_back();
-        if (s->stringLiteralCallRefs)
-            for (const auto& strRef : *s->stringLiteralCallRefs)
-            {
-                result.insert(strRef.name);
-            }
-        for (const auto& child : s->children)
-        {
-            if (child)
-            {
-                stack.push_back(child.get());
-            }
-        }
-    }
-}
-
-/**
- * @brief Collects symbols referenced via string literals and reflection calls across the module.
- * @param[in] req Semantic analysis request containing scopes, rules, and node index.
- * @return Set of symbol names identified as referenced through reflection.
- */
-static ankerl::unordered_dense::set<std::string> CollectStringReflection(const SemanticAnalysisRequest& req)
-{
-    ankerl::unordered_dense::set<std::string> result;
-    if (req.scopeRoot)
-    {
-        CollectScopeStringLiteralRefs(req.scopeRoot.get(), result);
-    }
-    if (req.scopeIndex && !req.moduleFileUris.empty())
-    {
-        for (const auto& uri : req.moduleFileUris)
-        {
-            if (uri != req.fileUri && !utils::IsPredefinedFile(uri, req.predefinedFileExtension))
-            {
-                if (const auto root = req.scopeIndex->GetRoot(uri))
-                {
-                    CollectScopeStringLiteralRefs(root.get(), result);
-                }
-            }
-        }
-    }
-
-    const std::vector<config::StringReflectionCallee>* callees =
-        req.engineRules ? &req.engineRules->unusedRules.stringReflectionCallees : nullptr;
-
-    if (callees && !callees->empty() && req.nodeIndex)
-    {
-        for (const auto& call : BuildReflectionCallFacts(*req.nodeIndex, req.sourceCode))
-        {
-            for (const auto& c : *callees)
-            {
-                if (MatchCallee(call.calleeText, c))
-                {
-                    for (size_t idx : c.argIndices)
-                    {
-                        if (idx < call.argStringValues.size())
-                        {
-                            RegisterReflectedSymbol(call.argStringValues[idx], req, result);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return result;
-}
-
-/**
- * @brief Normalizes a parameter type string by removing whitespace, leading const, and reference decorations.
- * @param[in] type Target type string view to normalize.
- * @return Normalized base parameter type name string.
- */
-static std::string NormalizeParamType(std::string_view type)
-{
-    const std::string_view unconst = StripLeadingConst(type);
-    const std::string_view stripped = StripTrailingDecorationsView(unconst);
-    std::string res;
-    res.reserve(stripped.size());
-    for (char c : stripped)
-    {
-        if (!std::isspace(static_cast<unsigned char>(c)))
-        {
-            res.push_back(c);
-        }
-    }
-    return res;
-}
-
-bool MatchesEngineCallbackSignature(const Symbol& sym, const std::vector<std::vector<std::string>>& signatures)
-{
-    if (sym.type != SymbolType::Function || signatures.empty() ||
-        !std::holds_alternative<FunctionSignature>(sym.signature))
-    {
-        return false;
-    }
-    const auto& fn = sym.GetFunction();
-    for (const auto& sig : signatures)
-    {
-        if (fn.parameters.size() != sig.size())
-            continue;
-        bool match = true;
-        for (size_t i = 0; i < sig.size(); ++i)
-        {
-            if (NormalizeParamType(fn.parameters[i].typeName) != NormalizeParamType(sig[i]))
-            {
-                match = false;
-                break;
-            }
-        }
-        if (match)
-            return true;
-    }
-    return false;
-}
-
-bool IsEngineEntity(const std::string& className, const SymbolTable& symbolTable,
-                    const config::UnusedSymbolRules& rules)
-{
-    const auto& ignored = rules.ignoredBaseClasses;
-    if (ignored.empty())
-        return false;
-    if (std::find(ignored.begin(), ignored.end(), className) != ignored.end())
-        return true;
-    std::vector<std::string> hierarchy = GetInheritedTypeHierarchy(className, symbolTable);
-    if (const auto ruleIndex = symbolTable.GetRuleIndex())
-    {
-        auto it = ruleIndex->hostClassesByMixin.find(className);
-        if (it != ruleIndex->hostClassesByMixin.end())
-        {
-            for (const auto& host : it->second)
-            {
-                std::string hostKey = host.qualifiedName.empty() ? host.name : host.qualifiedName;
-                auto hostHier = GetInheritedTypeHierarchy(hostKey, symbolTable);
-                hierarchy.insert(hierarchy.end(), hostHier.begin(), hostHier.end());
-            }
-        }
-    }
-    return std::any_of(hierarchy.begin(), hierarchy.end(), [&ignored](const std::string& b)
-                       { return std::find(ignored.begin(), ignored.end(), b) != ignored.end(); });
-}
-
-static bool CheckBaseClassLifecycleMethods(std::string_view className, std::string_view methodName,
-                                           const config::UnusedSymbolRules& unusedRules)
-{
-    auto it = unusedRules.baseClassLifecycleMethods.find(className);
-    if (it == unusedRules.baseClassLifecycleMethods.end() && utils::ContainsScopeSeparator(className))
-    {
-        it = unusedRules.baseClassLifecycleMethods.find(LastScopeSegment(className));
-    }
-    return it != unusedRules.baseClassLifecycleMethods.end() &&
-           std::find(it->second.begin(), it->second.end(), methodName) != it->second.end();
-}
-
-bool IsLifecycleOrOverride(const Symbol& sym, const SymbolTable& symbolTable,
-                           const config::UnusedSymbolRules& unusedRules)
-{
-    if (sym.containerName.empty())
-        return false;
-
-    LinkedBaseOptions options;
-    options.delegateProps = unusedRules.baseClassDelegateProperties;
-    options.proxyMap = &unusedRules.baseClassProxyMap;
-
-    auto overridden = FindOverriddenBaseMethodSymbols(sym.containerName, sym.name, symbolTable, options);
-    if (!overridden.empty())
-    {
-        return true;
-    }
-
-    std::vector<std::string> hierarchy = GetInheritedTypeHierarchy(std::string(sym.containerName), symbolTable);
-    ExpandMixinHostHierarchies(sym.containerName, symbolTable, hierarchy);
-
-    const bool hasIgnoredBases = !unusedRules.ignoredBaseClasses.empty();
-    bool isEntity = !hasIgnoredBases;
-    const bool hasBaseMethods = !unusedRules.baseClassLifecycleMethods.empty();
-    const bool hasOptions = options.HasActiveOptions();
-
-    for (const auto& ancestor : hierarchy)
-    {
-        if (hasIgnoredBases && !isEntity)
-        {
-            if (std::find(unusedRules.ignoredBaseClasses.begin(), unusedRules.ignoredBaseClasses.end(), ancestor) !=
-                unusedRules.ignoredBaseClasses.end())
-            {
-                isEntity = true;
-            }
-        }
-        if (hasBaseMethods && CheckBaseClassLifecycleMethods(ancestor, sym.name, unusedRules))
-        {
-            return true;
-        }
-        if (hasOptions && hasBaseMethods)
-        {
-            auto linkedBases = ResolveLinkedBaseClasses(ancestor, symbolTable, options);
-            for (const auto& lb : linkedBases)
-            {
-                if (CheckBaseClassLifecycleMethods(lb, sym.name, unusedRules))
-                {
-                    return true;
-                }
-            }
-        }
-    }
-
-    if (isEntity)
-    {
-        const auto& methods = unusedRules.lifecycleMethods;
-        if (std::find(methods.begin(), methods.end(), sym.name) != methods.end())
-        {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-bool IsEngineManagedFunction(const Symbol& sym, const SymbolTable& symbolTable,
-                             const config::UnusedSymbolRules& unusedRules)
-{
-    if (sym.type != SymbolType::Function)
-        return false;
-
-    if (sym.containerName.empty() || sym.containerKind == ContainerKind::Namespace)
-    {
-        if (std::find(unusedRules.ignoredGlobalFunctions.begin(), unusedRules.ignoredGlobalFunctions.end(), sym.name) !=
-                unusedRules.ignoredGlobalFunctions.end() ||
-            (!sym.qualifiedName.empty() &&
-             std::find(unusedRules.ignoredGlobalFunctions.begin(), unusedRules.ignoredGlobalFunctions.end(),
-                       sym.qualifiedName) != unusedRules.ignoredGlobalFunctions.end()))
-        {
-            return true;
-        }
-        if (MatchesEngineCallbackSignature(sym, unusedRules.engineCallbackSignatures))
-        {
-            return true;
-        }
-        return MatchesRegexSafe(sym.name, unusedRules.ignoredGlobalFunctionRegex) ||
-               (!sym.qualifiedName.empty() &&
-                MatchesRegexSafe(sym.qualifiedName, unusedRules.ignoredGlobalFunctionRegex));
-    }
-
-    return IsLifecycleOrOverride(sym, symbolTable, unusedRules);
-}
-
-static bool IsIgnoredByDiagnosticsConfig(const Symbol& sym, const SemanticAnalysisRequest& request)
-{
-    if (!request.diagnostics)
-    {
-        return false;
-    }
-    const auto& diag = *request.diagnostics;
-    if (diag.ignoredUnusedFunctions.contains(sym.name) ||
-        (!sym.qualifiedName.empty() && diag.ignoredUnusedFunctions.contains(sym.qualifiedName)))
-    {
-        return true;
-    }
-    for (const auto& pattern : diag.ignoredUnusedFunctionPatterns)
-    {
-        if (MatchesRegexSafe(sym.name, pattern) ||
-            (!sym.qualifiedName.empty() && MatchesRegexSafe(sym.qualifiedName, pattern)))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool IsIgnoredFunction(const Symbol& sym, const SemanticAnalysisRequest& request,
-                              const config::UnusedSymbolRules& rules)
-{
-    if (IsIgnoredByDiagnosticsConfig(sym, request))
-    {
-        return true;
-    }
-    return IsEngineManagedFunction(sym, request.symbolTable, rules);
-}
-
-static void CheckScopeDefinitions(const Scope* scope, bool isFunc, const UnusedCheckContext& uCtx,
-                                  DiagnosticContext& ctx)
-{
-    for (const auto& def : scope->definitions)
-    {
-        if (uCtx.rules.checkLocals && isFunc && def.kind == LocalDefinitionKind::Variable &&
-            !uCtx.usedLocals.contains(&def))
-        {
-            ctx.EmitAtRange({def.startLine, def.startCharacter, def.endLine, def.endCharacter},
-                            diagnostics::codes::UnusedVariable, def.name, DiagnosticSeverity::Warning);
-        }
-        else if (uCtx.rules.checkMembers && def.kind == LocalDefinitionKind::Field &&
-                 !uCtx.refNames.contains(def.name) && !uCtx.reflections.contains(def.name))
-        {
-            ctx.EmitAtRange({def.startLine, def.startCharacter, def.endLine, def.endCharacter},
-                            diagnostics::codes::UnusedField, def.name, DiagnosticSeverity::Warning);
-        }
-    }
-}
-
-static void CheckLocalsAndFields(const Scope* rootScope, const UnusedCheckContext& uCtx, DiagnosticContext& ctx)
-{
-    if (!rootScope)
-        return;
-
-    std::vector<const Scope*> worklist{rootScope};
-    while (!worklist.empty())
-    {
-        const Scope* scope = worklist.back();
-        worklist.pop_back();
-
-        bool isFunc = false;
-        for (const Scope* cur = scope; cur != nullptr && !isFunc; cur = cur->parent)
-            isFunc = cur->isFunctionScope;
-
-        CheckScopeDefinitions(scope, isFunc, uCtx, ctx);
-
-        for (const auto& child : scope->children)
-        {
-            if (child)
-                worklist.push_back(child.get());
-        }
-    }
-}
-
-static bool IsExemptGlobalType(const VariableSignature& var, const std::vector<std::string>& exemptTypes)
-{
-    if (exemptTypes.empty())
-    {
-        return false;
-    }
-    const std::string_view cleanType = CleanBaseTypeView(var.typeName);
-    for (const auto& exempt : exemptTypes)
-    {
-        if (cleanType == exempt || var.baseTypeName == exempt)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
- * @brief Checks if a symbol represents a candidate global variable for unused checking.
- * @param[in] sym Symbol under test.
- * @param[in] ignoreCallInit True to ignore variables initialized with a call.
- * @param[in] exemptTypes Collection of type names exempted from unused checking.
- * @param[in] req Analysis request containing diagnostic settings.
- * @return True if symbol is a candidate global variable, false otherwise.
- */
-[[nodiscard]] static bool IsCandidateGlobalVariable(const Symbol& sym, bool ignoreCallInit,
-                                                    const std::vector<std::string>& exemptTypes,
-                                                    const SemanticAnalysisRequest& req)
-{
-    if (sym.type != SymbolType::Variable || !sym.containerName.empty() ||
-        !std::holds_alternative<VariableSignature>(sym.signature))
-    {
-        return false;
-    }
-    const auto& var = sym.GetVariable();
-    if (var.isEnumConstant || (ignoreCallInit && var.hasCallInitializer))
-    {
-        return false;
-    }
-    return !IsExemptGlobalType(var, exemptTypes) && !IsIgnoredByDiagnosticsConfig(sym, req);
-}
-
-/**
- * @brief Checks if a symbol is unreferenced across document references and reflection calls.
- * @param[in] name Short symbol name.
- * @param[in] qualifiedName Qualified symbol name.
- * @param[in] uCtx Context holding reference and reflection sets.
- * @return True if symbol is unreferenced, false otherwise.
- */
-[[nodiscard]] static bool IsSymbolUnreferenced(const std::string& name, const std::string& qualifiedName,
-                                               const UnusedCheckContext& uCtx)
-{
-    return !uCtx.refNames.contains(name) && !uCtx.reflections.contains(name) &&
-           !uCtx.reflections.contains(qualifiedName);
-}
-
-static void CheckUnusedGlobals(const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx,
-                               DiagnosticContext& ctx)
-{
-    if (!uCtx.rules.checkGlobals)
-        return;
-
-    const bool ignoreCallInit = uCtx.rules.ignoreUnusedGlobalsWithCallInitializer ||
-                                (req.diagnostics && req.diagnostics->ignoreUnusedGlobalsWithCallInitializer);
-
-    req.symbolTable.ForEachSymbolInFile(
-        req.fileUri,
-        [&]([[maybe_unused]] const std::string& qName, const std::vector<Symbol>& syms)
-        {
-            for (const auto& sym : syms)
-            {
-                if (!IsCandidateGlobalVariable(sym, ignoreCallInit, uCtx.rules.unusedGlobalExemptTypes, req))
-                {
-                    continue;
-                }
-                if (IsSymbolUnreferenced(sym.name, sym.qualifiedName, uCtx))
-                {
-                    ctx.Emit(sym, diagnostics::codes::UnusedGlobalVariable, sym.name, DiagnosticSeverity::Warning);
-                }
-            }
-        });
-}
-
-static bool IsPropertyAccessorUsed(std::string_view name, const ankerl::unordered_dense::set<std::string>& refNames)
-{
-    if (name.size() <= 4 || (!name.starts_with("get_") && !name.starts_with("set_")))
-        return false;
-    return refNames.contains(std::string(name.substr(4)));
-}
-
-static bool IsExemptMethodName(std::string_view name, std::string_view containerName) noexcept
-{
-    return name == containerName || name.starts_with('~') || name.starts_with("op") || name.starts_with("get_") ||
-           name.starts_with("set_");
-}
-
-static bool IsClassInherited(std::string_view className, const UnusedCheckContext& uCtx)
-{
-    return uCtx.inheritedOrMixedInClasses.contains(className);
-}
-
-static bool IsMethodOverriddenInDerived(const Symbol& sym, const UnusedCheckContext& uCtx)
-{
-    if (sym.containerName.empty())
-        return false;
-    auto it = uCtx.derivedClassesByBase.find(sym.containerName);
-    if (it == uCtx.derivedClassesByBase.end())
-        return false;
-    for (const auto& derived : it->second)
-    {
-        if (uCtx.ruleIndex.Members(derived).methodNames.contains(sym.name))
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-static bool ShouldSkipFunction(const Symbol& sym, const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx)
-{
-    if (sym.isSynthesized)
-        return true;
-    if (std::holds_alternative<FunctionSignature>(sym.signature) && sym.GetFunction().modifiers.isAbstract)
-        return true;
-    if (!sym.containerName.empty())
-    {
-        if (const auto contSym = req.symbolTable.FindFirstSymbol(sym.containerName))
-        {
-            if (contSym->type == SymbolType::Interface)
-                return true;
-        }
-    }
-    if (IsIgnoredFunction(sym, req, uCtx.rules) || uCtx.reflections.contains(sym.name) ||
-        uCtx.reflections.contains(sym.qualifiedName))
-        return true;
-    if (IsExemptMethodName(sym.name, sym.containerName) || IsPropertyAccessorUsed(sym.name, uCtx.refNames))
-        return true;
-    if (IsLifecycleOrOverride(sym, req.symbolTable, uCtx.rules) || IsMethodOverriddenInDerived(sym, uCtx))
-        return true;
-    return false;
-}
-
-static void CheckUnusedFunctions(const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx,
-                                 DiagnosticContext& ctx)
-{
-    if (!uCtx.rules.checkFunctions && !uCtx.rules.checkMembers)
-        return;
-
-    req.symbolTable.ForEachSymbolInFile(
-        req.fileUri,
-        [&]([[maybe_unused]] const std::string& qName, const std::vector<Symbol>& syms)
-        {
-            for (const auto& sym : syms)
-            {
-                if (sym.type != SymbolType::Function || ShouldSkipFunction(sym, req, uCtx) ||
-                    uCtx.refNames.contains(sym.name))
-                    continue;
-
-                if (sym.containerName.empty() || sym.containerKind == ContainerKind::Namespace)
-                {
-                    if (uCtx.rules.checkFunctions)
-                    {
-                        ctx.Emit(sym, diagnostics::codes::UnusedFunction, sym.name, DiagnosticSeverity::Warning);
-                    }
-                }
-                else
-                {
-                    if (uCtx.rules.checkFunctions || uCtx.rules.checkMembers)
-                    {
-                        ctx.Emit(sym, diagnostics::codes::UnusedMethod, sym.name, DiagnosticSeverity::Warning);
-                    }
-                }
-            }
-        });
-}
-
-static void CheckUnusedClasses(const SemanticAnalysisRequest& req, const UnusedCheckContext& uCtx,
-                               DiagnosticContext& ctx)
-{
-    if (!uCtx.rules.checkClasses)
-        return;
-
-    req.symbolTable.ForEachSymbolInFile(
-        req.fileUri,
-        [&]([[maybe_unused]] const std::string& qName, const std::vector<Symbol>& syms)
-        {
-            for (const auto& sym : syms)
-            {
-                if (sym.type == SymbolType::Class && !IsEngineEntity(sym.name, req.symbolTable, uCtx.rules) &&
-                    !IsIgnoredByDiagnosticsConfig(sym, req) && !uCtx.reflections.contains(sym.name) &&
-                    !uCtx.reflections.contains(sym.qualifiedName) && !uCtx.refNames.contains(sym.name) &&
-                    !IsClassInherited(sym.name, uCtx))
-                {
-                    ctx.Emit(sym, diagnostics::codes::UnusedClass, sym.name, DiagnosticSeverity::Warning);
-                }
-            }
-        });
-}
-
 static config::UnusedSymbolRules ResolveEffectiveRules(const SemanticAnalysisRequest& request)
 {
     config::UnusedSymbolRules rules =
@@ -790,59 +61,72 @@ static config::UnusedSymbolRules ResolveEffectiveRules(const SemanticAnalysisReq
     return rules;
 }
 
+/**
+ * @brief Populates sets and maps of inherited and derived class names from the rule index.
+ * @param[in] ruleIndex Pre-indexed class inheritance and mixin relations.
+ * @param[out] inheritedOrMixedInClasses Set receiving names of base classes and mixins.
+ * @param[out] derivedClassesByBase Map receiving derived class names grouped by base name.
+ */
 static void BuildInheritedAndDerivedMaps(
-    const RuleIndex& ruleIndex,
-    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>& inheritedOrMixedInClasses,
-    ankerl::unordered_dense::map<std::string, std::vector<std::string>, TransparentStringHash, std::equal_to<>>&
-        derivedClassesByBase)
+    const RuleIndex& ruleIndex, NameViewSet& inheritedOrMixedInClasses,
+    ankerl::unordered_dense::map<std::string_view, std::vector<std::string_view>>& derivedClassesByBase)
 {
     for (const auto& [base, derivedList] : ruleIndex.derivedByBase)
     {
-        inheritedOrMixedInClasses.insert(base);
-        auto& targets = derivedClassesByBase[base];
+        const std::string_view baseView = base;
+        inheritedOrMixedInClasses.insert(baseView);
+        auto& targets = derivedClassesByBase[baseView];
         for (const auto& d : derivedList)
         {
-            targets.push_back(d.qualifiedName.empty() ? d.name : d.qualifiedName);
+            targets.push_back(d.qualifiedName.empty() ? std::string_view{d.name} : std::string_view{d.qualifiedName});
             if (!d.name.empty() && d.name != d.qualifiedName)
             {
-                targets.push_back(d.name);
+                targets.push_back(std::string_view{d.name});
             }
         }
     }
     for (const auto& [mixin, hostList] : ruleIndex.hostClassesByMixin)
     {
-        inheritedOrMixedInClasses.insert(mixin);
-        auto& targets = derivedClassesByBase[mixin];
+        const std::string_view mixinView = mixin;
+        inheritedOrMixedInClasses.insert(mixinView);
+        auto& targets = derivedClassesByBase[mixinView];
         for (const auto& h : hostList)
         {
-            targets.push_back(h.qualifiedName.empty() ? h.name : h.qualifiedName);
+            targets.push_back(h.qualifiedName.empty() ? std::string_view{h.name} : std::string_view{h.qualifiedName});
             if (!h.name.empty() && h.name != h.qualifiedName)
             {
-                targets.push_back(h.name);
+                targets.push_back(std::string_view{h.name});
             }
         }
     }
 }
 
+/**
+ * @brief Checks for unused local variables, member variables, global variables, functions, and classes.
+ * @param[in] request Semantic analysis request containing AST, symbol table, and engine rules.
+ * @param[in,out] ctx Diagnostic context accumulating emitted warnings.
+ */
 void CheckUnusedSymbols(const SemanticAnalysisRequest& request, DiagnosticContext& ctx)
 {
     if (!request.scopeRoot || utils::IsPredefinedFile(request.fileUri, request.predefinedFileExtension))
+    {
         return;
+    }
 
     config::UnusedSymbolRules rules = ResolveEffectiveRules(request);
+    utils::StringPool pool;
 
     ankerl::unordered_dense::set<uint64_t> defLocs;
     CollectDefLocations(request.scopeRoot.get(), defLocs);
 
     const bool checkAnyCrossFile = rules.checkGlobals || rules.checkFunctions || rules.checkClasses;
 
-    ankerl::unordered_dense::set<std::string> refNames;
-    CollectDocReferences(request.scopeRoot.get(),
-                         DocRefCollectContext{defLocs, request.sourceCode, rules.baseClassDelegateProperties},
-                         refNames);
+    NameViewSet refNames;
+    CollectDocReferences(request.scopeRoot.get(), DocRefCollectContext{defLocs, request.sourceCode, &rules}, refNames,
+                         pool);
     if (checkAnyCrossFile)
     {
-        CollectCrossFileReferences(request, refNames);
+        CollectCrossFileReferences(request, refNames, pool);
     }
 
     ankerl::unordered_dense::set<const LocalDefinition*> usedLocals;
@@ -850,13 +134,11 @@ void CheckUnusedSymbols(const SemanticAnalysisRequest& request, DiagnosticContex
 
     const auto& ruleIndex = request.GetRuleIndex();
 
-    ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> inheritedOrMixedInClasses;
-    ankerl::unordered_dense::map<std::string, std::vector<std::string>, TransparentStringHash, std::equal_to<>>
-        derivedClassesByBase;
+    NameViewSet inheritedOrMixedInClasses;
+    ankerl::unordered_dense::map<std::string_view, std::vector<std::string_view>> derivedClassesByBase;
     BuildInheritedAndDerivedMaps(ruleIndex, inheritedOrMixedInClasses, derivedClassesByBase);
 
-    const auto reflections =
-        checkAnyCrossFile ? CollectStringReflection(request) : ankerl::unordered_dense::set<std::string>{};
+    const NameViewSet reflections = checkAnyCrossFile ? CollectStringReflection(request, pool) : NameViewSet{};
     const UnusedCheckContext uCtx{
         refNames, usedLocals, reflections, rules, inheritedOrMixedInClasses, derivedClassesByBase, ruleIndex};
 

@@ -54,7 +54,7 @@ std::string GetTrimmedNodeText(TSNode node, std::string_view sourceCode)
     return text;
 }
 
-bool IsReservedKeyword(const std::string& name)
+bool IsReservedKeyword(std::string_view name)
 {
     // The list this used to hold was measured against the compiler word by word and came back
     // exactly right - 53, no additions, no removals. It moved to parser/Keywords.h so the

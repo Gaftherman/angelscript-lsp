@@ -3,7 +3,8 @@
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/NodeIndex.h"
 
-#include <tree_sitter/api.h>
+#include <string_view>
+#include <vector>
 
 namespace angel_lsp::analysis::rules
 {
@@ -42,7 +43,34 @@ struct FunctionContext
     bool isMixin = false;     ///< Declared inside a mixin class.
     bool isConstructor = false;
     bool isDestructor = false;
-    std::string ownerName;         ///< Container's last segment, i.e. the bare class name.
+    std::string_view ownerName;    ///< Views the container name storage of the symbol.
     bool containerIsKnown = false; ///< False means nothing may be concluded from the container.
 };
+FunctionContext BuildFunctionContext(const Symbol& sym, const DiagnosticContext& ctx);
+
+/**
+ * @brief True when the type cannot be passed as &inout without unsafe references.
+ */
+bool IsDisallowedInOutType(const ParameterInformation& param, const SymbolTable& table);
+
+void CheckBody(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
+               const DiagnosticContext& ctx);
+
+void CheckReturnType(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
+                     const DiagnosticContext& ctx);
+
+void CheckModifiers(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
+                    const DiagnosticContext& ctx);
+
+void CheckAttributes(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
+                     const DiagnosticContext& ctx);
+
+void CheckConstructorDestructor(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
+                                const DiagnosticContext& ctx);
+
+void CheckOverride(const Symbol& sym, const FunctionSignature& sig, const FunctionContext& fctx,
+                   const DiagnosticContext& ctx);
+
+void CheckExternal(const Symbol& sym, const FunctionSignature& sig, const DiagnosticContext& ctx);
+
 } // namespace angel_lsp::analysis::rules

@@ -333,8 +333,9 @@ class Server
     [[nodiscard]] ankerl::unordered_dense::set<std::string> CollectWantedClosurePaths() const;
     [[nodiscard]] std::vector<std::string>
     CollectStaleClosureUris(const ankerl::unordered_dense::set<std::string>& wantedPaths) const;
-    void CollectSharedSymbolsElsewhere(const ModuleView& owning,
-                                       ankerl::unordered_dense::set<std::string>& outShared) const;
+    void CollectSharedSymbolsElsewhere(
+        const ModuleView& owning,
+        ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>>& outShared) const;
     [[nodiscard]] std::optional<analysis::SemanticAnalysisRequest::ModuleContext>
     ModuleContextFor(const std::string& uriStr) const;
     void RestartWorkspaceScan();

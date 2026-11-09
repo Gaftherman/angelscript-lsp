@@ -54,4 +54,28 @@ void CheckLocalNames(const Scope* scope, DiagnosticContext& ctx);
  */
 void CheckLocalTypes(const Scope* scope, DiagnosticContext& ctx);
 
+/**
+ * @brief True when the symbol's container is a class or interface rather than global/namespace.
+ * @param[in] sym Target variable symbol.
+ * @param[in] table Symbol table for container lookup.
+ * @return True if enclosed within a class or interface.
+ */
+bool IsClassOrInterfaceMember(const Symbol& sym, const SymbolTable& table);
+
+/**
+ * @brief True when the symbol's container is a mixin class.
+ */
+bool IsMixinMember(const Symbol& sym, const SymbolTable& table);
+
+/**
+ * @brief Rules about the arguments a template type is instantiated with.
+ *        Only one argument is invalid for every template, and it is invalid whatever the host
+ */
+void CheckTemplateArguments(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx);
+
+/**
+ * @brief Rules about what the declared type may be.
+ */
+void CheckDeclaredType(const Symbol& sym, const VariableSignature& sig, const DiagnosticContext& ctx);
+
 } // namespace angel_lsp::analysis::rules

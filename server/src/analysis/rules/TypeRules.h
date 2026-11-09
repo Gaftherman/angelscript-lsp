@@ -2,7 +2,7 @@
 
 #include "analysis/diagnostics/DiagnosticContext.h"
 
-#include <string>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::analysis::rules
@@ -33,4 +33,14 @@ void ValidateInterfaceMembers(const Symbol& sym, const DiagnosticContext& ctx);
  * @param symbols Every symbol registered under one qualified name.
  */
 void ValidateDuplicates(const std::vector<Symbol>& symbols, const DiagnosticContext& ctx);
+/**
+ * @brief True when the name collides with a keyword or a built-in type name.
+ */
+bool IsUnusableName(std::string_view name, const DiagnosticContext& ctx);
+
+/**
+ * @brief Formats a symbol type into the noun the compiler uses in as-err-name-conflict.
+ */
+std::string_view KindWord(SymbolType type);
+
 } // namespace angel_lsp::analysis::rules

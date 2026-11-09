@@ -6,10 +6,12 @@
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/RuleSyntaxFacts.h"
 #include "parser/BraceBalance.h"
+#include "spdlog/fmt/fmt.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/Utils.h"
 
-#include <string>
+#include <iterator>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::analysis::rules
@@ -20,16 +22,17 @@ static void CheckModuleContext(const SemanticAnalysisRequest& request, Diagnosti
     if (request.moduleContext.has_value() && !request.moduleContext->name.empty() &&
         !request.moduleContext->alsoClaimedBy.empty())
     {
-        std::string others;
+        fmt::memory_buffer others;
         for (const auto& name : request.moduleContext->alsoClaimedBy)
         {
-            if (!others.empty())
+            if (others.size() != 0)
             {
-                others += ", ";
+                fmt::format_to(std::back_inserter(others), ", ");
             }
-            others += "'" + name + "'";
+            fmt::format_to(std::back_inserter(others), "'{}'", name);
         }
-        ctx.EmitAtRange({0, 0, 0, 0}, "as-hint-file-in-several-modules", {request.moduleContext->name, others},
+        ctx.EmitAtRange({0, 0, 0, 0}, "as-hint-file-in-several-modules",
+                        {request.moduleContext->name, std::string_view(others.data(), others.size())},
                         DiagnosticSeverity::Hint);
     }
 }

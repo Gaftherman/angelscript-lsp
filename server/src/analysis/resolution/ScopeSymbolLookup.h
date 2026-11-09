@@ -36,7 +36,22 @@ struct MemberLookupResult
     std::string declaringClass;
 };
 
+/**
+ * @brief Names the namespace a symbol lives in, looking through its enclosing class or interface.
+ * @param[in] sym Symbol whose enclosing namespace is wanted.
+ * @param[in] table Symbol table used to find the declaring class of a member.
+ * @return Namespace of sym, or of its declaring class when sym is a member; empty at global scope.
+ */
 std::string EnclosingNamespaceForSymbol(const Symbol& sym, const SymbolTable& table);
+
+/**
+ * @brief Zero-copy variant of EnclosingNamespaceForSymbol.
+ * @param[in] sym Symbol whose enclosing namespace is wanted.
+ * @param[in] table Symbol table used to find the declaring class of a member.
+ * @return Namespace of sym or of its declaring class; empty at global scope.
+ * @note The view borrows string storage owned by sym or table, so it is valid while both stay unchanged.
+ */
+std::string_view EnclosingNamespaceView(const Symbol& sym, const SymbolTable& table);
 bool IsTemplateParameterOfContainer(std::string_view typeName, const Symbol& sym, const SymbolTable& table);
 bool IsKnownType(std::string_view baseName, const DiagnosticContext& ctx, std::string_view containerScope = {});
 [[nodiscard]] bool ResolvesToEnum(std::string_view typeName, const SymbolTable& table);

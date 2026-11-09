@@ -51,7 +51,7 @@ struct SemanticAnalysisRequest
          * @brief Names declared `shared` by modules OTHER than this one.
          *        What an `external shared` declaration is allowed to refer to. Built by the server,
          */
-        ankerl::unordered_dense::set<std::string> sharedElsewhere;
+        ankerl::unordered_dense::set<std::string, TransparentStringHash, std::equal_to<>> sharedElsewhere;
 
         /**
          * @brief Every configured module name, for the `import ... from "name"` hint.
