@@ -154,12 +154,12 @@ static void AppendScopedType(TSNode typeNode, std::string_view sourceCode, const
     }
 
     std::string_view scopeText =
-        utils::StripGlobalPrefix(utils::StripTrailingScopeSeparator(parser::GetNodeTextView(firstChild, sourceCode)));
+        utils::StripGlobalPrefix(utils::StripTrailingScopeSeparator(parser::NodeText(firstChild, sourceCode)));
     while (scopeText.ends_with(':'))
     {
         scopeText.remove_suffix(1);
     }
-    const std::string_view memberText = parser::GetNodeTextView(secondChild, sourceCode);
+    const std::string_view memberText = parser::NodeText(secondChild, sourceCode);
     if (scopeText.empty() || memberText.empty())
     {
         return;

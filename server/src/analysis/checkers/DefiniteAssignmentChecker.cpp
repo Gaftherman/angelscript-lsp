@@ -160,9 +160,8 @@ class DefiniteAssignmentVisitor
                 return {};
             }
         }
-        return operand && operand->symbol == gs.symIdentifier
-                   ? parser::GetNodeTextView(Syntax(operand), m_request.sourceCode)
-                   : std::string_view{};
+        return operand && operand->symbol == gs.symIdentifier ? parser::NodeText(Syntax(operand), m_request.sourceCode)
+                                                              : std::string_view{};
     }
 
     void CheckIdentifierRead(const Operand* operand, const DefiniteAssignmentState& state)
@@ -234,7 +233,7 @@ class DefiniteAssignmentVisitor
                 std::string objType = ResolveExpressionType(
                     objNode, ExpressionTypeContext(callScope ? callScope : m_request.scopeRoot, m_ctx));
                 std::string cleanObj = CleanBaseType(objType);
-                std::string_view memName = parser::GetNodeTextView(memNode, m_request.sourceCode);
+                std::string_view memName = parser::NodeText(memNode, m_request.sourceCode);
                 auto hierarchy = GetInheritedTypeHierarchy(cleanObj, m_ctx.request.symbolTable);
                 for (const auto& typeName : hierarchy)
                 {
@@ -254,7 +253,7 @@ class DefiniteAssignmentVisitor
         }
         else
         {
-            std::string funcName(parser::GetNodeTextView(Syntax(callee), m_request.sourceCode));
+            std::string funcName(parser::NodeText(Syntax(callee), m_request.sourceCode));
             auto inScope =
                 FindSymbolsInScope(funcName, Syntax(call), m_request.sourceCode, m_ctx.request.symbolTable, &m_index);
             for (const auto& sym : inScope)
@@ -445,7 +444,7 @@ class DefiniteAssignmentVisitor
             return;
         }
 
-        std::string_view varName = parser::GetNodeTextView(Syntax(name), m_request.sourceCode);
+        std::string_view varName = parser::NodeText(Syntax(name), m_request.sourceCode);
         const Operand* init = FindField(node, gs.fieldValue);
         if (!init)
         {
@@ -555,8 +554,8 @@ class DefiniteAssignmentVisitor
     void MergeLoopBody(AssignmentWorkFrame& frame, TSNode condition, bool isFor)
     {
         frame.state.assignedVars = MergeBranchStates(frame.state.assignedVars, frame.branch.assignedVars);
-        const std::string_view raw = parser::GetNodeTextView(condition, m_request.sourceCode);
-        const std::string_view value = isFor ? parser::Trim(raw) : raw;
+        const std::string_view raw = parser::NodeText(condition, m_request.sourceCode);
+        const std::string_view value = isFor ? utils::TrimView(raw) : raw;
         if ((value == "true" || (isFor && (value.empty() || value == ";"))) && !frame.branch.hasReturned &&
             !frame.branch.isTerminated)
         {

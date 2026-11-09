@@ -37,7 +37,7 @@ static void TryRecordOccurrence(TSNode operand, const ConversionTypePair& types,
     }
     if (TypeHasOpImplConvTo(types.from, types.to, ctx.request.symbolTable))
     {
-        out.push_back({operand, parser::GetNodeText(operand, ctx.request.sourceCode), types.from, types.to});
+        out.push_back({operand, std::string(parser::NodeText(operand, ctx.request.sourceCode)), types.from, types.to});
     }
 }
 

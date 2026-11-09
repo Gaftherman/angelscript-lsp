@@ -68,7 +68,7 @@ static std::string ReadUnwrappedIdentifier(TSNode unwrapped, std::string_view so
     }
     if (sym == gs.symScopedIdentifier)
     {
-        std::string text = parser::NodeText(unwrapped, sourceCode);
+        std::string text(parser::NodeText(unwrapped, sourceCode));
         if (!utils::ContainsScopeSeparator(text))
         {
             return text;

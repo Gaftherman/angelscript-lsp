@@ -156,7 +156,7 @@ static std::string ExtractStringValue(TSNode exprNode, const SemanticAnalysisReq
         const TSSymbol sym = ts_node_symbol(node);
         if (sym == gs.symStringLiteral)
         {
-            std::string_view text = parser::GetNodeTextView(node, req.sourceCode);
+            std::string_view text = parser::NodeText(node, req.sourceCode);
             result += parser::UnquoteStringView(text);
         }
         else if (sym == gs.symBinaryExpression)
@@ -258,7 +258,7 @@ static void MatchConfiguredReflectionCallees(TSNode callNode, const SemanticAnal
     if (ts_node_is_null(funcNode))
         return;
 
-    std::string_view funcText = parser::GetNodeTextView(funcNode, req.sourceCode);
+    std::string_view funcText = parser::NodeText(funcNode, req.sourceCode);
     std::optional<std::vector<analysis::CallArgumentInfo>> callArgs;
 
     for (const auto& c : callees)

@@ -25,14 +25,14 @@ static uint32_t AppendScopedName(std::string_view name, std::string_view parent,
 uint32_t NamingContext::NextContainer(TSNode node, std::string_view sourceCode, uint32_t current)
 {
     const std::string_view name =
-        parser::GetNodeTextView(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName), sourceCode);
+        parser::NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName), sourceCode);
     return AppendScopedName(name, containers[current], containers, current);
 }
 
 uint32_t NamingContext::NextCaller(TSNode node, std::string_view sourceCode, uint32_t containerIdx, uint32_t current)
 {
     const std::string_view name =
-        parser::GetNodeTextView(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName), sourceCode);
+        parser::NodeText(parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName), sourceCode);
     return AppendScopedName(name, containers[containerIdx], callers, current);
 }
 
@@ -106,7 +106,7 @@ static void RecordCallSite(TSNode node, std::string_view sourceCode, const std::
     {
         return;
     }
-    std::string callee = parser::NodeText(nameNode, sourceCode);
+    std::string callee(parser::NodeText(nameNode, sourceCode));
     if (!callee.empty())
     {
         out.push_back(CallSite{caller, std::move(callee), ToSourceRange(nameNode)});

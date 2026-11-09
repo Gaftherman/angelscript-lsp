@@ -216,7 +216,7 @@ void CheckBinaryOperatorCompatibility(const BinaryExpressionOperands& operands, 
     {
         return;
     }
-    const std::string_view op = GetNodeTextView(opNode, ctx.request.sourceCode);
+    const std::string_view op = parser::OperatorSpelling(opNode);
 
     const ExpressionTypeContext exprCtx(scope, ctx);
     if (const auto dt = IsBareDataType(left, exprCtx))

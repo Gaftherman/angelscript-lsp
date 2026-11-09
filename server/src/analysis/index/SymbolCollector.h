@@ -347,9 +347,6 @@ class SymbolCollector
 
     // AST/Text Extraction Helpers
 
-    std::string GetNodeText(TSNode node, std::string_view sourceCode) const;
-    std::string_view GetNodeView(TSNode node, std::string_view sourceCode) const;
-
     SymbolModifiers ExtractModifiers(TSNode node, std::string_view sourceCode) const;
     void ProcessModifierChild(TSNode child, std::string_view sourceCode, SymbolModifiers& modifiers) const;
     void ApplyModifierString(std::string_view text, SymbolModifiers& modifiers, bool isFuncAttr) const;

@@ -2846,6 +2846,59 @@
         "AccessCheckerTest",
         "ConstCheckerTest"
       ]
+    },
+    {
+      "id": "REF-M20-NODETEXT-COLLAPSE",
+      "phase": "M20",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/parser/ASTUtils.h",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "NodeTextResult, NodeTextString, GetNodeText, GetNodeTextView (ASTUtils.h); analysis::NodeText (SemanticHelpers); AngelScriptParser::GetNodeText; SymbolCollector::GetNodeText, SymbolCollector::GetNodeView; LocalScopeCollector::GetNodeText; test-local GetNodeText (TestUtils.h)",
+      "whatItDidAndWhyInThatFile": "Nine copies of the same bounds-checked byte slice; NodeTextResult converted implicitly to std::string, so allocations were invisible at call sites.",
+      "whyChangedOrDeleted": "One accessor returning std::string_view; call sites that store the text copy it explicitly with std::string(...). Operator spelling comes from the grammar through OperatorSpelling instead of slicing the source.",
+      "replacedByCanonicalFile": "server/src/parser/ASTUtils.h",
+      "replacedByCanonicalSymbol": "NodeText",
+      "ramOrCpuImpact": "Read-only uses (comparisons, lookups) no longer allocate; every remaining copy is spelled out at its call site.",
+      "verifiedByTests": [
+        "NodeIndexTest",
+        "AccessCheckerTest",
+        "ConstCheckerTest",
+        "BinaryOperatorCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-M20-ASTUTILS-DEDUP",
+      "phase": "M20",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/parser/ASTUtils.h",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "FindFirstChildOfSymbol, FindFirstChildOfType, Trim, IsGlobalScopedNode, AstNodeSpan; DoxygenSyntax IsNamed; TraversalBudget SetRoot, Reset, RecordVisit(TSNode); BudgetExceededException(const std::string&)",
+      "whatItDidAndWhyInThatFile": "Duplicate child search (one variant compared node-type strings), a second whitespace trimmer, and members with no callers.",
+      "whyChangedOrDeleted": "Callers use FindChildWithSymbol with precompiled GrammarSymbols and utils::TrimView; dead members removed.",
+      "replacedByCanonicalFile": "server/src/parser/ASTUtils.h",
+      "replacedByCanonicalSymbol": "FindChildWithSymbol",
+      "ramOrCpuImpact": "Child lookups compare TSSymbol ids instead of type strings.",
+      "verifiedByTests": [
+        "ConstCheckerTest",
+        "HoverTest",
+        "IterationBudgetHarnessTest"
+      ]
+    },
+    {
+      "id": "REF-M20-ASTUTILS-SPLIT",
+      "phase": "M20",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/parser/ASTUtils.h",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "BraceBalance, SkipComment, SkipHeredocLiteral, SkipLiteral, ComputeBraceBalance; CountNamedNodes, BudgetExceededException, TraversalBudget (namespace angel_lsp::analysis)",
+      "whatItDidAndWhyInThatFile": "A text lexer and the traversal budget lived in the AST navigation header; the budget classes were declared in the analysis namespace from a parser header.",
+      "whyChangedOrDeleted": "Moved to parser/BraceBalance.h and parser/TraversalBudget.h (namespace angel_lsp::parser); ASTUtils.h keeps navigation and text-slice helpers only.",
+      "replacedByCanonicalFile": "server/src/parser/TraversalBudget.h",
+      "replacedByCanonicalSymbol": "TraversalBudget",
+      "ramOrCpuImpact": "None at runtime; ASTUtils.h shrinks from 1090 to about 555 lines.",
+      "verifiedByTests": [
+        "IterationBudgetHarnessTest"
+      ]
     }
   ]
 }

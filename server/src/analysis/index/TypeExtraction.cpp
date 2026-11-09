@@ -56,7 +56,7 @@ static bool ReadTypeLeaf(TSNode node, std::string_view sourceCode, const NodeInd
     const TSSymbol symbol = ts_node_symbol(node);
     if (symbol == gs.symPrimitiveType)
     {
-        result.baseTypeName = parser::GetNodeText(node, sourceCode);
+        result.baseTypeName = std::string(parser::NodeText(node, sourceCode));
         SyntaxOperands(node, index)
             .ForEachChild(
                 [&](TSNode token)
@@ -68,7 +68,7 @@ static bool ReadTypeLeaf(TSNode node, std::string_view sourceCode, const NodeInd
     }
     if (symbol == gs.symIdentifier)
     {
-        result.baseTypeName = parser::GetNodeText(node, sourceCode);
+        result.baseTypeName = std::string(parser::NodeText(node, sourceCode));
         return true;
     }
     return false;
@@ -182,14 +182,14 @@ class TypeReadWorklist
         auto& frame = m_frames.back();
         if (symbol == gs.symScope)
         {
-            frame.scopePrefix = parser::GetNodeText(child, m_sourceCode);
+            frame.scopePrefix = std::string(parser::NodeText(child, m_sourceCode));
         }
         else if (symbol == gs.symDatatype)
         {
             const TSNode inner = SyntaxOperands(child, m_index).FirstNamed();
             if (ts_node_is_null(inner))
             {
-                FinishDatatype(frame, parser::GetNodeText(child, m_sourceCode), frame.result.kind);
+                FinishDatatype(frame, std::string(parser::NodeText(child, m_sourceCode)), frame.result.kind);
             }
             else
             {

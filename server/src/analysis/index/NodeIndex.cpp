@@ -4,6 +4,7 @@
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/ScopedNameUtils.h"
+#include "utils/Utils.h"
 
 #include <algorithm>
 #include <array>
@@ -24,7 +25,7 @@ NodeIndex::NodeIndex(TSNode root, const NodeIndexOptions& options)
     Build(root, options);
 }
 
-NodeIndex::NodeIndex(TSNode root, const TSLanguage* lang, TraversalBudget* budget, NodeIndexContents contents)
+NodeIndex::NodeIndex(TSNode root, const TSLanguage* lang, parser::TraversalBudget* budget, NodeIndexContents contents)
 {
     Build(root, lang, budget, contents);
 }
@@ -115,11 +116,11 @@ size_t NodeIndex::IndexBucketNode(TSNode node, TSSymbol symbol, IndexedDeclarati
     return slot;
 }
 
-size_t NodeIndex::IndexNode(TSNode node, TraversalBudget* budget, uint32_t parentSpanIdx, bool full)
+size_t NodeIndex::IndexNode(TSNode node, parser::TraversalBudget* budget, uint32_t parentSpanIdx, bool full)
 {
     if (budget)
     {
-        budget->RecordVisit(node);
+        budget->RecordVisit();
     }
 
     ++m_nodeCount;
@@ -206,6 +207,10 @@ NodeIndex::FlowFacts& NodeIndex::MutableFlowFacts()
     return *m_flowFacts;
 }
 
+/**
+ * @brief Returns the control-flow findings captured during the first pass.
+ * @return Findings in document order; empty when flow facts were not built for this index.
+ */
 std::span<const IndexedFlowFinding> NodeIndex::FlowFindings() const noexcept
 {
     return m_flowFacts ? std::span<const IndexedFlowFinding>(m_flowFacts->findings)
@@ -1001,7 +1006,7 @@ void NodeIndex::RecordFoldableAndDirectiveSpan(TSNode node, std::string_view sou
  * @param[in] full Full indexing mode flag.
  * @param[in] source Document source text buffer.
  */
-void NodeIndex::TraverseTree(TSNode root, TraversalBudget* budget, bool full, std::string_view source)
+void NodeIndex::TraverseTree(TSNode root, parser::TraversalBudget* budget, bool full, std::string_view source)
 {
     TSTreeCursor cursor = ts_tree_cursor_new(root);
     std::vector<uint32_t> activeContainers;
@@ -1067,7 +1072,7 @@ void NodeIndex::Build(TSNode root, std::string_view source)
     Build(root, NodeIndexOptions{.source = source});
 }
 
-void NodeIndex::Build(TSNode root, const TSLanguage* lang, TraversalBudget* budget, NodeIndexContents contents)
+void NodeIndex::Build(TSNode root, const TSLanguage* lang, parser::TraversalBudget* budget, NodeIndexContents contents)
 {
     Build(root, NodeIndexOptions{.lang = lang, .budget = budget, .contents = contents});
 }
@@ -1531,7 +1536,7 @@ static void AppendUsingName(std::vector<std::string>& names, std::string_view so
 {
     if (start < end && end <= sourceCode.size())
     {
-        const auto text = parser::Trim(sourceCode.substr(start, end - start));
+        const auto text = utils::TrimView(sourceCode.substr(start, end - start));
         if (!text.empty())
         {
             names.emplace_back(text);

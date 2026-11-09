@@ -222,7 +222,8 @@ static void CheckSchedulerEnumDiscriminant(const SchedulerCallRequest& req, size
                     ctx.request.i18n, "engine-rule-scheduler-enum-discriminant",
                     "Passing discriminant to enum type '{}' in scheduled call; explicitly construct or typecast first "
                     "(e.g. {}({})).",
-                    param.baseTypeName, param.baseTypeName, parser::GetNodeText(argNode, ctx.request.sourceCode));
+                    param.baseTypeName, param.baseTypeName,
+                    std::string(parser::NodeText(argNode, ctx.request.sourceCode)));
                 const TSPoint start = ts_node_start_point(argNode);
                 const TSPoint end = ts_node_end_point(argNode);
                 ctx.EmitAtRange(SourceRange{start.row, start.column, end.row, end.column},
@@ -326,7 +327,7 @@ static std::string_view ExtractReceiverText(TSNode callNode, std::string_view so
     TSNode objectNode = parser::GetChildByField(callee, parser::GetGrammarSymbols().fieldObject);
     if (!ts_node_is_null(objectNode))
     {
-        return parser::GetNodeTextView(objectNode, sourceCode);
+        return parser::NodeText(objectNode, sourceCode);
     }
     return {};
 }
@@ -495,7 +496,7 @@ static void CheckDialectVariableDeclarationNode(TSNode node, DiagnosticContext& 
         return;
     }
 
-    const std::string declared = CleanBaseType(parser::GetNodeText(typeNode, ctx.request.sourceCode));
+    const std::string declared = CleanBaseType(std::string(parser::NodeText(typeNode, ctx.request.sourceCode)));
     if (!IsPrimitiveTypeName(declared) || declared == "auto" || declared == "void")
     {
         return;
@@ -531,7 +532,7 @@ static bool IsIntegerLiteral(TSNode candidate, std::string_view sourceCode)
     {
         return false;
     }
-    const std::string text = parser::GetNodeText(candidate, sourceCode);
+    const std::string text(parser::NodeText(candidate, sourceCode));
     return text.find_first_of(".eEfF") == std::string::npos;
 }
 
@@ -601,7 +602,7 @@ static void CheckDialectNamedArguments(const NodeIndex& nodeIndex, DiagnosticCon
 
                 const TSPoint start = ts_node_start_point(argument);
                 const TSPoint end = ts_node_end_point(argument);
-                const std::string name = parser::GetNodeText(target, ctx.request.sourceCode);
+                const std::string name(parser::NodeText(target, ctx.request.sourceCode));
 
                 ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-named-argument-syntax", name,
                                 ctx.request.NamedArgumentSyntaxMode() == 1 ? DiagnosticSeverity::Warning

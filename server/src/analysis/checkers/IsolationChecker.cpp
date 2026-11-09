@@ -353,7 +353,7 @@ class IsolationVisitor
         }
 
         TSNode nameNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldName);
-        std::string funcName = parser::GetNodeText(nameNode, request.sourceCode);
+        std::string funcName(parser::NodeText(nameNode, request.sourceCode));
         if (!funcName.empty())
         {
             auto syms = currentClassName.empty()
@@ -376,7 +376,7 @@ class IsolationVisitor
 
     void CheckSharedDatatype(TSNode node)
     {
-        std::string typeName = CleanSharedTypeName(parser::GetNodeText(node, request.sourceCode));
+        std::string typeName = CleanSharedTypeName(std::string(parser::NodeText(node, request.sourceCode)));
         if (IsCoreOrRegisteredType(typeName, ctx.request))
         {
             return;
@@ -432,7 +432,7 @@ class IsolationVisitor
             return;
         }
 
-        std::string calleeName = TrimWhitespace(parser::GetNodeText(funcNode, request.sourceCode));
+        std::string calleeName = TrimWhitespace(std::string(parser::NodeText(funcNode, request.sourceCode)));
         if (calleeName.empty() || IsAllowedCallee(calleeName))
         {
             return;
@@ -513,7 +513,7 @@ class IsolationVisitor
             return;
         }
 
-        std::string varName = TrimWhitespace(parser::GetNodeText(node, request.sourceCode));
+        std::string varName = TrimWhitespace(std::string(parser::NodeText(node, request.sourceCode)));
         if (varName.empty() || IsAllowedVariable(varName, node))
         {
             return;
@@ -577,7 +577,7 @@ class IsolationVisitor
             if (nodeSym == gs.symClassDeclaration)
             {
                 TSNode nameNode = parser::GetChildByField(node, gs.fieldName);
-                std::string className = parser::GetNodeText(nameNode, request.sourceCode);
+                std::string className(parser::NodeText(nameNode, request.sourceCode));
                 bool classShared = IsClassShared(node, className);
                 PushChildren(node, className, classShared, classShared, worklist);
                 continue;

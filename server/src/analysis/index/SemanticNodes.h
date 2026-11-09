@@ -267,7 +267,7 @@ class CallExpressionView : public AstNodeView
             const TSFieldId fieldId = ts_tree_cursor_current_field_id(&cursor);
             if (fieldId == gs.fieldArgName)
             {
-                argName = parser::GetNodeTextView(child, m_source);
+                argName = parser::NodeText(child, m_source);
             }
             else
             {

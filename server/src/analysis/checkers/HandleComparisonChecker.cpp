@@ -126,7 +126,7 @@ void CheckHandleComparison(const BinaryExpressionOperands& operands, const Scope
     };
     const ComparisonDispatchContext dispatch{
         .opNode = opNode,
-        .op = GetNodeTextView(opNode, ctx.request.sourceCode),
+        .op = parser::OperatorSpelling(opNode),
         .opInfo = opInfo,
     };
     DispatchComparisonCheck(dispatch, operandsState, ctx);

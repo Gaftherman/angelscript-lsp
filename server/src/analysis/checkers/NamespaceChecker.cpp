@@ -6,6 +6,7 @@
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/ScopedNameUtils.h"
+#include "utils/Utils.h"
 
 #include <cctype>
 #include <string>
@@ -39,7 +40,7 @@ static void CheckScopedIdentifier(TSNode node, std::string_view sourceCode, cons
     {
         return;
     }
-    std::string prefix = parser::GetNodeText(firstChild, sourceCode);
+    std::string prefix(parser::NodeText(firstChild, sourceCode));
     while (!prefix.empty() && isspace(static_cast<unsigned char>(prefix.front())))
     {
         prefix.erase(prefix.begin());
@@ -68,7 +69,7 @@ static std::string_view ExtractCalleeName(TSNode node, std::string_view sourceCo
     {
         return {};
     }
-    return parser::Trim(parser::GetNodeTextView(funcNode, sourceCode));
+    return utils::TrimView(parser::NodeText(funcNode, sourceCode));
 }
 
 static bool CheckNamespaceOrClassMembers(std::string_view name, const rules::ContainerMembers& members, bool reqKeyword)
@@ -281,7 +282,7 @@ static void CheckCallExpression(TSNode node, const NamespaceCheckRequest& reques
  */
 static void CheckImportBody(TSNode node, std::string_view sourceCode, DiagnosticContext& ctx)
 {
-    std::string nodeText = parser::GetNodeText(node, sourceCode);
+    std::string nodeText(parser::NodeText(node, sourceCode));
     size_t importPos = nodeText.find("import ");
     if (importPos == std::string::npos)
     {

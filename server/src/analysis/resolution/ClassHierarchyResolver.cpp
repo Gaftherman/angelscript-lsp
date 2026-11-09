@@ -913,13 +913,13 @@ TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::
     }
 
     TSNode found{};
-    TSNode baseList = parser::FindFirstChildOfType(hostNode, "base_class_list");
+    TSNode baseList = parser::FindChildWithSymbol(hostNode, parser::GetGrammarSymbols().symBaseClassList);
     if (!ts_node_is_null(baseList))
     {
         parser::ForEachNamedChildNodeUntil(baseList,
                                            [&](TSNode baseChild)
                                            {
-                                               const std::string bText = parser::GetNodeText(baseChild, sourceCode);
+                                               const std::string bText(parser::NodeText(baseChild, sourceCode));
                                                if (CleanBaseTypeView(bText) == mixinName || bText == mixinShortName ||
                                                    utils::EndsWithScopedMember(bText, mixinShortName))
                                                {
@@ -940,7 +940,7 @@ TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::
         parser::ForEachChildNodeUntil(bodyNode,
                                       [&](TSNode mNode)
                                       {
-                                          const std::string mText = parser::GetNodeText(mNode, sourceCode);
+                                          const std::string mText(parser::NodeText(mNode, sourceCode));
                                           if (!mixinShortName.empty() &&
                                               mText.find(mixinShortName) != std::string::npos)
                                           {
@@ -1049,7 +1049,7 @@ bool IsBaseConstructorCall(TSNode node, std::string_view sourceCode)
 
     const TSNode className = parser::GetChildByField(owner, parser::GetGrammarSymbols().fieldName);
     if (ts_node_is_null(className) ||
-        parser::GetNodeText(className, sourceCode) != parser::GetNodeText(functionName, sourceCode))
+        parser::NodeText(className, sourceCode) != parser::NodeText(functionName, sourceCode))
     {
         return false;
     }

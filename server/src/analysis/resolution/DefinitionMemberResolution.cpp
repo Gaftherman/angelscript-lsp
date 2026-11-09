@@ -16,6 +16,12 @@
 namespace angel_lsp::analysis
 {
 
+/**
+ * @brief Checks that a member was declared in the same kind of container as the symbol that owns it.
+ * @param[in] containerType Symbol type of the candidate owner.
+ * @param[in] memberContainerKind Container kind recorded on the member.
+ * @return True when both describe a class, an interface or a namespace; false for any other owner type.
+ */
 static bool ContainerKindMatches(SymbolType containerType, ContainerKind memberContainerKind) noexcept
 {
     switch (containerType)

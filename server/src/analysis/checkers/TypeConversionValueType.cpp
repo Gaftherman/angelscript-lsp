@@ -49,7 +49,7 @@ static std::string EnclosingClassName(TSNode node, std::string_view sourceCode, 
 
 ExpressionType ResolveIdentifierValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
-    const std::string name = parser::NodeText(node, ctx.request.sourceCode);
+    const std::string name(parser::NodeText(node, ctx.request.sourceCode));
     if (name == "this")
     {
         const std::string className = EnclosingClassName(node, ctx.request.sourceCode, ctx.request.nodeIndex);
@@ -146,8 +146,8 @@ ExpressionType ResolveLiteralValueType(TSNode node, const DiagnosticContext& ctx
 ExpressionType ResolveUnaryValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
     const SyntaxOperands syntax(node, ctx.request.nodeIndex);
-    const std::string op =
-        parser::NodeText(syntax.Field(parser::GetGrammarSymbols().fieldOperator), ctx.request.sourceCode);
+    const std::string op(
+        parser::NodeText(syntax.Field(parser::GetGrammarSymbols().fieldOperator), ctx.request.sourceCode));
     if (op == "!" || op == "not")
     {
         return ExpressionType{"bool", true, false};
@@ -178,9 +178,9 @@ ExpressionType ResolveUnaryValueType(TSNode node, const Scope* scope, const Diag
 
 ExpressionType ResolveCastValueType(TSNode node, const DiagnosticContext& ctx)
 {
-    const std::string rawText =
+    const std::string rawText(
         parser::NodeText(SyntaxOperands(node, ctx.request.nodeIndex).Field(parser::GetGrammarSymbols().fieldType),
-                         ctx.request.sourceCode);
+                         ctx.request.sourceCode));
     const auto qualifiers = ExtractTypeQualifiersView(rawText);
     const std::string typeText = CleanBaseType(rawText);
     return typeText.empty() ? ExpressionType{} : ExpressionType{typeText, true, false, qualifiers.isConst};

@@ -93,7 +93,7 @@ static bool HasMatchingFuncdefCandidate(const std::vector<Symbol>& candidates, c
 static void CheckNamedFunctionFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSig, TSNode actualVal,
                                                 DiagnosticContext& ctx)
 {
-    const std::string funcName = TrimString(parser::NodeText(actualVal, ctx.request.sourceCode));
+    const std::string funcName = TrimString(std::string(parser::NodeText(actualVal, ctx.request.sourceCode)));
     if (funcName.empty() || funcName == "null")
     {
         return;

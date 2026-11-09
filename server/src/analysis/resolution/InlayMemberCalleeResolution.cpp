@@ -55,8 +55,8 @@ std::vector<Symbol> CollectMemberCalleeCandidates(TSNode funcNode, const Express
         return candidateSymbols;
     }
 
-    std::string objText = parser::GetNodeText(objNode, ctx.sourceCode);
-    std::string memText = parser::GetNodeText(memNode, ctx.sourceCode);
+    std::string objText(parser::NodeText(objNode, ctx.sourceCode));
+    std::string memText(parser::NodeText(memNode, ctx.sourceCode));
     const Scope* rootScope = ctx.scope;
     while (rootScope && rootScope->parent)
     {

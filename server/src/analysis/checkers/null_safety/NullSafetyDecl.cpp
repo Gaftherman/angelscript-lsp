@@ -141,7 +141,7 @@ void CheckVarDeclaration(TSNode stmt, FlowState& state, NullCheckContext& ctx)
             {
                 return true;
             }
-            const std::string name = parser::NodeText(declarator.Field(gs.fieldName), ctx.sourceCode);
+            const std::string name(parser::NodeText(declarator.Field(gs.fieldName), ctx.sourceCode));
             TSNode val = declarator.Field(gs.fieldValue);
             if (ts_node_is_null(val))
             {

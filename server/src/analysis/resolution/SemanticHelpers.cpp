@@ -40,24 +40,9 @@ std::string CleanExpressionType(std::string_view typeName)
     return std::string(typeName);
 }
 
-std::string_view GetNodeTextView(TSNode node, std::string_view sourceCode) noexcept
-{
-    if (ts_node_is_null(node) || sourceCode.empty())
-    {
-        return {};
-    }
-    const uint32_t start = ts_node_start_byte(node);
-    const uint32_t end = ts_node_end_byte(node);
-    if (start < sourceCode.size() && end <= sourceCode.size() && start <= end)
-    {
-        return sourceCode.substr(start, end - start);
-    }
-    return {};
-}
-
 std::string GetTrimmedNodeText(TSNode node, std::string_view sourceCode)
 {
-    std::string text = parser::GetNodeText(node, sourceCode);
+    std::string text(parser::NodeText(node, sourceCode));
     while (!text.empty() && isspace(static_cast<unsigned char>(text.front())))
     {
         text.erase(text.begin());

@@ -26,7 +26,7 @@ static void CollectMemberCandidates(TSNode funcNode, const CallCandidateContext&
     }
     std::string objType = ResolveExpressionType(objNode, ExpressionTypeContext(cctx.scope, cctx.ctx));
     std::string cleanObj = CleanBaseType(objType);
-    std::string memName = parser::NodeText(memNode, cctx.request.sourceCode);
+    std::string memName(parser::NodeText(memNode, cctx.request.sourceCode));
     if (cleanObj.empty() || memName.empty())
     {
         return;
@@ -48,7 +48,7 @@ static void CollectMemberCandidates(TSNode funcNode, const CallCandidateContext&
 
 static void CollectScopedCandidates(TSNode funcNode, const CallCandidateContext& cctx, std::vector<Symbol>& candidates)
 {
-    std::string qName = parser::NodeText(funcNode, cctx.request.sourceCode);
+    std::string qName(parser::NodeText(funcNode, cctx.request.sourceCode));
     if (auto found = cctx.ctx.request.symbolTable.FindSymbolsPtr(qName))
     {
         for (const auto& sym : *found)
@@ -64,7 +64,7 @@ static void CollectScopedCandidates(TSNode funcNode, const CallCandidateContext&
 static void CollectIdentifierCandidates(TSNode funcNode, const CallCandidateContext& cctx,
                                         std::vector<Symbol>& candidates)
 {
-    std::string name = parser::NodeText(funcNode, cctx.request.sourceCode);
+    std::string name(parser::NodeText(funcNode, cctx.request.sourceCode));
     for (const auto& sym : FindSymbolsInScope(name, funcNode, cctx.request.sourceCode, cctx.ctx.request.symbolTable,
                                               cctx.request.nodeIndex))
     {
@@ -217,7 +217,7 @@ static bool IsAssignableMember(TSNode node, const Scope* scope, const Diagnostic
     {
         return true;
     }
-    std::string memName = parser::NodeText(memNode, ctx.request.sourceCode);
+    std::string memName(parser::NodeText(memNode, ctx.request.sourceCode));
     if (memName.empty())
     {
         return true;

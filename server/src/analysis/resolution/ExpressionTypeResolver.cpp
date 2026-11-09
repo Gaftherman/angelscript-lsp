@@ -98,7 +98,7 @@ static std::string ResolveLiteralExpr(TSSymbol nodeSym, TSNode exprNode, std::st
     }
     if (nodeSym == gs.symNumberLiteral)
     {
-        return ResolveNumberLiteral(parser::GetNodeText(exprNode, sourceCode));
+        return ResolveNumberLiteral(std::string(parser::NodeText(exprNode, sourceCode)));
     }
     return "";
 }
@@ -220,7 +220,7 @@ static std::string ResolveGlobalScopedExpr(TSNode exprNode, std::string_view roo
 
 static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
 {
-    const auto text = parser::GetNodeTextView(exprNode, ctx.sourceCode);
+    const auto text = parser::NodeText(exprNode, ctx.sourceCode);
     if (utils::HasLeadingGlobalPrefix(text))
     {
         return ResolveGlobalScopedExpr(exprNode, utils::StripGlobalPrefix(text), ctx);
@@ -243,7 +243,7 @@ static std::string ResolveScopedIdentifierExpr(TSNode exprNode, const Expression
 
     if (qualified)
     {
-        const std::string whole = parser::GetNodeText(exprNode, ctx.sourceCode);
+        const std::string whole(parser::NodeText(exprNode, ctx.sourceCode));
         auto wholeSyms = ctx.symbolTable.FindSymbols(whole);
         if (wholeSyms.empty())
         {
@@ -435,7 +435,7 @@ static std::string ResolveIdentifierDelegateProperty(std::string_view name, TSNo
  */
 static std::string ResolveIdentifierExpr(TSNode exprNode, const ExpressionTypeContext& ctx)
 {
-    std::string name = parser::GetNodeText(exprNode, ctx.sourceCode);
+    std::string name(parser::NodeText(exprNode, ctx.sourceCode));
     if (name == "this")
     {
         return ResolveThisExpr(exprNode, ctx);
@@ -964,7 +964,7 @@ static std::string ResolveBinaryExpr(TSNode exprNode, const ExpressionTypeContex
         }
 
         const TSSymbol opSym = ts_node_symbol(opNode);
-        const std::string_view op = GetNodeTextView(opNode, ctx.sourceCode);
+        const std::string_view op = parser::OperatorSpelling(opNode);
         currentType = EvaluateBinaryResultType(op, opSym, currentType, rightType, ctx);
         if (currentType.empty())
         {
@@ -1827,11 +1827,11 @@ static std::string ResolveConstructCallExpr(const SyntaxOperands& syntax, std::s
     {
         return "";
     }
-    std::string written = parser::GetNodeText(typeNode, sourceCode);
+    std::string written(parser::NodeText(typeNode, sourceCode));
     const TSNode templates = syntax.FirstNamed(gs.symTemplateTypeList);
     if (!ts_node_is_null(templates))
     {
-        written += parser::GetNodeText(templates, sourceCode);
+        written += std::string(parser::NodeText(templates, sourceCode));
     }
     return CleanExpressionType(written);
 }
@@ -1846,7 +1846,8 @@ static std::optional<std::string> ResolveCastOrConstructExpr(TSSymbol sym, TSNod
     if (sym == gs.symCastExpression || sym == gs.symFunctionalCastExpression)
     {
         const TSNode typeNode = SyntaxOperands(exprNode, ctx.nodeIndex).Field(gs.fieldType);
-        return ts_node_is_null(typeNode) ? "" : CleanExpressionType(parser::GetNodeText(typeNode, ctx.sourceCode));
+        return ts_node_is_null(typeNode) ? ""
+                                         : CleanExpressionType(std::string(parser::NodeText(typeNode, ctx.sourceCode)));
     }
     if (sym == gs.symConstructCallExpression)
     {
@@ -1959,7 +1960,7 @@ static std::string ResolveScopedOrBareIndexedProperty(TSNode objNode, const Expr
     TSSymbol objSym = ts_node_symbol(objNode);
     if (objSym == gs.symScopedIdentifier)
     {
-        std::string_view text = GetNodeTextView(objNode, ctx.sourceCode);
+        std::string_view text = parser::NodeText(objNode, ctx.sourceCode);
         const auto [scopeName, name] = utils::SplitScopedName(text);
         if (!scopeName.empty())
         {
@@ -1970,7 +1971,7 @@ static std::string ResolveScopedOrBareIndexedProperty(TSNode objNode, const Expr
         return "";
     }
 
-    std::string_view name = GetNodeTextView(objNode, ctx.sourceCode);
+    std::string_view name = parser::NodeText(objNode, ctx.sourceCode);
     if (name.empty())
     {
         return "";
@@ -2098,7 +2099,7 @@ static std::optional<std::string> ResolvePrimaryExpr(TSSymbol sym, TSNode exprNo
         TSNode typeNode = SyntaxOperands(exprNode, ctx.nodeIndex).Field(gs.fieldType);
         if (!ts_node_is_null(typeNode))
         {
-            return parser::GetNodeText(typeNode, ctx.sourceCode);
+            return std::string(parser::NodeText(typeNode, ctx.sourceCode));
         }
     }
     if (sym == gs.symThisExpression)
@@ -2538,7 +2539,7 @@ static std::string ResolveMemberOrContainerReceiver(TSNode objNode, std::string_
 static std::string ResolveReceiverTypeUncached(TSNode objNode, std::string_view sourceCode,
                                                const SymbolTable& symbolTable, const ReceiverTypeContext& ctx)
 {
-    std::string objText = parser::GetNodeText(objNode, sourceCode);
+    std::string objText(parser::NodeText(objNode, sourceCode));
     if (objText.empty())
     {
         return "";

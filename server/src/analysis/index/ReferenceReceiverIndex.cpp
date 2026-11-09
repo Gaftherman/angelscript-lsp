@@ -37,13 +37,13 @@ static bool CaptureStep(TSNode& node, IndexedReceiverExpression& step, std::stri
     const TSSymbol symbol = ts_node_symbol(node);
     if (symbol == grammar.symMemberExpression)
     {
-        step.name = parser::GetNodeTextView(parser::GetChildByField(node, grammar.fieldMember), source);
+        step.name = parser::NodeText(parser::GetChildByField(node, grammar.fieldMember), source);
         node = parser::GetChildByField(node, grammar.fieldObject);
     }
     else if (symbol == grammar.symIdentifier || symbol == grammar.symScopedIdentifier ||
              symbol == grammar.symThisExpression)
     {
-        step.name = parser::GetNodeTextView(node, source);
+        step.name = parser::NodeText(node, source);
         node = {};
     }
     return !step.name.empty();
@@ -109,7 +109,7 @@ static void IndexReferenceQualifier(TSNode parent, std::string_view source, uint
                                  }
                                  if (symbol != grammar.symComment)
                                  {
-                                     prefix.append(parser::GetNodeTextView(child, source));
+                                     prefix.append(parser::NodeText(child, source));
                                  }
                              });
 }

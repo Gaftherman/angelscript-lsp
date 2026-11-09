@@ -110,7 +110,7 @@ std::optional<std::string> EvaluateConstantStringExpr(uint32_t nodeStartByte, ui
         const TSSymbol type = ts_node_symbol(current);
         if (type == gs.symStringLiteral)
         {
-            std::string text = parser::GetNodeText(current, ctx.sourceCode);
+            std::string text(parser::NodeText(current, ctx.sourceCode));
             result += parser::UnquoteStringView(text);
         }
         else if (type == gs.symBinaryExpression)
@@ -131,7 +131,7 @@ std::optional<std::string> EvaluateConstantStringExpr(uint32_t nodeStartByte, ui
         }
         else if (type == gs.symIdentifier || type == gs.symScopedIdentifier)
         {
-            std::string name = parser::GetNodeText(current, ctx.sourceCode);
+            std::string name(parser::NodeText(current, ctx.sourceCode));
             auto val = ResolveIdentifierDefaultValue(name, ts_node_start_byte(current), ts_node_end_byte(current), ctx);
             if (!val.has_value())
             {
@@ -218,7 +218,7 @@ std::string DeduceAutoDeclaratorType(IndexedByteRange declaratorRange, IndexedBy
     TSNode nameNode = parser::GetChildByField(declarator, parser::GetGrammarSymbols().fieldName);
     if (!ts_node_is_null(nameNode) && ctx.scope)
     {
-        std::string varName = parser::GetNodeText(nameNode, ctx.sourceCode);
+        std::string varName(parser::NodeText(nameNode, ctx.sourceCode));
         if (const auto* def = analysis::ResolveInScopeAt(ctx.scope, varName, ts_node_start_byte(nameNode)))
         {
             std::string deduced = DeduceLocalDefinitionHoverType(*def, hoverNode, ctx);

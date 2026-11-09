@@ -40,17 +40,4 @@ TSTree* AngelScriptParser::Parse(std::string_view sourceCode, TSTree* oldTree)
     return tree;
 }
 
-std::string_view AngelScriptParser::GetNodeText(TSNode node, std::string_view sourceCode)
-{
-    if (ts_node_is_null(node))
-        return std::string_view();
-
-    uint32_t start_byte = ts_node_start_byte(node);
-    uint32_t end_byte = ts_node_end_byte(node);
-
-    if (start_byte >= end_byte || end_byte > sourceCode.size())
-        return std::string_view();
-
-    return std::string_view(sourceCode.data() + start_byte, end_byte - start_byte);
-}
 } // namespace angel_lsp::parser

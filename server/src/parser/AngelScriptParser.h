@@ -25,13 +25,6 @@ class AngelScriptParser
      */
     TSTree* Parse(std::string_view sourceCode, TSTree* oldTree = nullptr);
 
-    /**
-     * @brief Extracts the substring corresponding to an AST node.
-     * @param[in] node AST node.
-     * @param[in] sourceCode Source text.
-     * @return String view slice of the node text.
-     */
-    static std::string_view GetNodeText(TSNode node, std::string_view sourceCode);
     TSParser* GetRawParser() const
     {
         return m_parser;

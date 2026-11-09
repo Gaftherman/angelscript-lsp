@@ -311,7 +311,7 @@ std::vector<std::string> CollectUsingNamespaces(TSNode root, std::string_view so
         for (uint16_t i = 0; i < match.capture_count; ++i)
         {
             TSNode nameNode = match.captures[i].node;
-            std::string uName = parser::GetNodeText(nameNode, sourceCode);
+            std::string uName(parser::NodeText(nameNode, sourceCode));
             while (!uName.empty() && isspace(static_cast<unsigned char>(uName.front())))
                 uName.erase(uName.begin());
             while (!uName.empty() && isspace(static_cast<unsigned char>(uName.back())))
@@ -670,7 +670,7 @@ static void CollectUsingsFromAncestor(TSNode p, std::string_view sourceCode, std
                 TSNode nameNode = parser::GetChildByField(ch, gs.fieldName);
                 if (!ts_node_is_null(nameNode))
                 {
-                    std::string uName = parser::GetNodeText(nameNode, sourceCode);
+                    std::string uName(parser::NodeText(nameNode, sourceCode));
                     while (!uName.empty() && isspace(static_cast<unsigned char>(uName.front())))
                         uName.erase(uName.begin());
                     while (!uName.empty() && isspace(static_cast<unsigned char>(uName.back())))
@@ -877,7 +877,7 @@ static std::string ExtractTrimmedIdentifier(TSNode node, std::string_view source
     {
         return {};
     }
-    std::string name = parser::GetNodeText(node, sourceCode);
+    std::string name(parser::NodeText(node, sourceCode));
     while (!name.empty() && isspace(static_cast<unsigned char>(name.front())))
     {
         name.erase(name.begin());

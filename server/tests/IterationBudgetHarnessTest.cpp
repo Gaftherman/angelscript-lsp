@@ -7,6 +7,7 @@
 #include "helpers/TestUtils.h"
 #include "parser/ASTUtils.h"
 #include "parser/AngelScriptParser.h"
+#include "parser/TraversalBudget.h"
 
 #include <doctest/doctest.h>
 #include <random>

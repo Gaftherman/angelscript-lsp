@@ -631,7 +631,7 @@ static bool TryResolveEnumMemberDeclaration(TSNode memberNode, const std::string
     {
         return false;
     }
-    std::string enumName = parser::GetNodeText(nameNode, sourceCode);
+    std::string enumName(parser::NodeText(nameNode, sourceCode));
     std::string prefix;
     auto containers = analysis::GetEnclosingContainers(enumDecl, sourceCode);
     for (const auto& c : containers)
@@ -843,7 +843,7 @@ static TSNode FindArgumentListNode(TSNode callNode)
     {
         return argsChild;
     }
-    return parser::FindFirstChildOfType(callNode, "argument_list");
+    return parser::FindChildWithSymbol(callNode, parser::GetGrammarSymbols().symArgumentList);
 }
 
 /**

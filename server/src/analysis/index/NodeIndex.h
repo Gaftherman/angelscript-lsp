@@ -3,6 +3,7 @@
 #include "analysis/index/SymbolTable.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
+#include "parser/TraversalBudget.h"
 
 #include <ankerl/unordered_dense.h>
 #include <cstdint>
@@ -187,7 +188,7 @@ struct IndexedIncludeDirective
 struct NodeIndexOptions
 {
     const TSLanguage* lang = nullptr;
-    TraversalBudget* budget = nullptr;
+    parser::TraversalBudget* budget = nullptr;
     NodeIndexContents contents = NodeIndexContents::Full;
     std::string_view source{};
 };
@@ -222,7 +223,7 @@ class NodeIndex
      * @param budget Optional traversal budget to track and enforce node visits.
      * @param contents Node index contents mode.
      */
-    explicit NodeIndex(TSNode root, const TSLanguage* lang, TraversalBudget* budget,
+    explicit NodeIndex(TSNode root, const TSLanguage* lang, parser::TraversalBudget* budget,
                        NodeIndexContents contents = NodeIndexContents::Full);
 
     ~NodeIndex() = default;
@@ -252,7 +253,7 @@ class NodeIndex
      * @param budget Optional traversal budget to track and enforce node visits.
      * @param contents Content mode for indexing.
      */
-    void Build(TSNode root, const TSLanguage* lang, TraversalBudget* budget,
+    void Build(TSNode root, const TSLanguage* lang, parser::TraversalBudget* budget,
                NodeIndexContents contents = NodeIndexContents::Full);
 
     /// Visits declaration and validation candidates in cursor order using the stored symbol slots.
@@ -753,13 +754,13 @@ class NodeIndex
     };
 
     void PopulatePredefinedSymbols(const TSLanguage* lang);
-    size_t IndexNode(TSNode node, TraversalBudget* budget, uint32_t parentSpanIdx, bool full);
+    size_t IndexNode(TSNode node, parser::TraversalBudget* budget, uint32_t parentSpanIdx, bool full);
     size_t IndexBucketNode(TSNode node, TSSymbol symbol, IndexedDeclarationKind kind);
     void RecordContainerSpan(TSNode node, TSSymbol sym, uint32_t parentSpanIdx = UINT32_MAX);
     void RecordSelectionSpan(TSNode node, std::vector<uint32_t>& activeSelectionSpans);
     void RecordFoldableAndDirectiveSpan(TSNode node, std::string_view source);
     void ExtractIncludeDirective(TSNode node, std::string_view source);
-    void TraverseTree(TSNode root, TraversalBudget* budget, bool full, std::string_view source = {});
+    void TraverseTree(TSNode root, parser::TraversalBudget* budget, bool full, std::string_view source = {});
     void PostProcessErrorRanges();
     void PostProcessCommentRanges();
     [[nodiscard]] bool IsInsideBaseClassList(uint32_t startByte, uint32_t endByte) const noexcept;

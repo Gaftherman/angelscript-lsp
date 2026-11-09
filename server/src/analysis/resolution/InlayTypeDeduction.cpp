@@ -74,7 +74,7 @@ static std::string DeduceLiteralType(TSNode exprNode, std::string_view sourceCod
 {
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol sym = ts_node_symbol(exprNode);
-    const std::string_view nodeTxt = TrimNodeText(parser::GetNodeText(exprNode, sourceCode));
+    const std::string_view nodeTxt = TrimNodeText(std::string(parser::NodeText(exprNode, sourceCode)));
     if (sym == gs.symNumberLiteral)
     {
         return DeduceNumericLiteralType(nodeTxt);
@@ -99,7 +99,7 @@ std::string DeduceCastOrConstructType(TSNode exprNode, std::string_view sourceCo
         TSNode typeNode = parser::GetChildByField(exprNode, gs.fieldType);
         if (!ts_node_is_null(typeNode))
         {
-            return parser::GetNodeText(typeNode, sourceCode);
+            return std::string(parser::NodeText(typeNode, sourceCode));
         }
     }
     else if (type == gs.symConstructCallExpression)
@@ -107,13 +107,13 @@ std::string DeduceCastOrConstructType(TSNode exprNode, std::string_view sourceCo
         TSNode typeNode = parser::GetChildByField(exprNode, gs.fieldType);
         if (!ts_node_is_null(typeNode))
         {
-            std::string cType = parser::GetNodeText(typeNode, sourceCode);
+            std::string cType(parser::NodeText(typeNode, sourceCode));
             parser::ForEachChildNodeUntil(exprNode,
                                           [&](TSNode child)
                                           {
                                               if (ts_node_symbol(child) == gs.symTemplateTypeList)
                                               {
-                                                  cType += parser::GetNodeText(child, sourceCode);
+                                                  cType += std::string(parser::NodeText(child, sourceCode));
                                                   return false;
                                               }
                                               return true;
@@ -133,7 +133,7 @@ std::string DeduceCastOrConstructType(TSNode exprNode, std::string_view sourceCo
  */
 static std::string DeduceIdentifierType(TSNode exprNode, const ExpressionTypeContext& ctx, const Scope* scope)
 {
-    std::string name = parser::GetNodeText(exprNode, ctx.sourceCode);
+    std::string name(parser::NodeText(exprNode, ctx.sourceCode));
     if (scope)
     {
         const LocalDefinition* def = ResolveInScope(scope, name);

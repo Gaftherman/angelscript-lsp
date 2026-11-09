@@ -52,7 +52,7 @@ static void CheckMemberDereference(TSNode obj, FlowState& state, NullCheckContex
         const auto typeInfo = ExtractTypeInfoFromAST(typeNode, ctx.sourceCode, &ctx.index);
         if (typeInfo.isHandle)
         {
-            std::string typeText = parser::NodeText(typeNode, ctx.sourceCode);
+            std::string typeText(parser::NodeText(typeNode, ctx.sourceCode));
             ctx.diagCtx.EmitAtRange(ToSourceRange(obj), diagnostics::codes::PossibleNullDereference, typeText,
                                     DiagnosticSeverity::Warning);
         }

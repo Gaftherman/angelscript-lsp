@@ -94,7 +94,7 @@ static bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const Diagn
         return false;
     }
 
-    const std::string name = parser::NodeText(current, ctx.request.sourceCode);
+    const std::string name(parser::NodeText(current, ctx.request.sourceCode));
     if (scope)
     {
         if (const LocalDefinition* def = ResolveInScopeAt(scope, LastScopeSegment(name), ts_node_start_byte(current)))

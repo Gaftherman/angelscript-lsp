@@ -25,7 +25,7 @@ static bool IsMatchingLocalDefinition(const Scope* scope, std::string_view name,
 static bool IsCyclicAutoDependency(TSNode valueNode, TSNode nameNode, const Scope* scope,
                                    const TypeConversionCheckRequest& request)
 {
-    const auto varName = parser::GetNodeTextView(nameNode, request.sourceCode);
+    const auto varName = parser::NodeText(nameNode, request.sourceCode);
     if (varName.empty())
     {
         return false;
@@ -57,7 +57,7 @@ void ProcessAutoDeclarator(const SyntaxOperands& declarator, const TypeConversio
                            DiagnosticContext& ctx)
 {
     TSNode nameNode = declarator.Field(parser::GetGrammarSymbols().fieldName);
-    const std::string varName = parser::NodeText(nameNode, request.sourceCode);
+    const std::string varName(parser::NodeText(nameNode, request.sourceCode));
     TSNode valueNode = declarator.DeclaratorValue(request.sourceCode);
 
     if (ts_node_is_null(valueNode))

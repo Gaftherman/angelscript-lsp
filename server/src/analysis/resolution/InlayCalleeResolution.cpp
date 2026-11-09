@@ -69,7 +69,8 @@ static std::vector<Symbol> CollectClassConstructorCandidates(const std::vector<S
 static std::vector<Symbol> CollectFreeCalleeCandidates(TSNode funcNode, TSNode callNode,
                                                        const ExpressionTypeContext& ctx)
 {
-    std::string calleeName = std::string(utils::StripGlobalPrefix(parser::GetNodeText(funcNode, ctx.sourceCode)));
+    std::string calleeName =
+        std::string(utils::StripGlobalPrefix(std::string(parser::NodeText(funcNode, ctx.sourceCode))));
     auto candidateSymbols = FindSymbolsInScope(calleeName, callNode, ctx.sourceCode, ctx.symbolTable);
 
     CollectEnclosingClassCallees(calleeName, callNode, ctx, candidateSymbols);
@@ -198,7 +199,7 @@ std::optional<ResolvedCallee> ResolveCallSiteCallee(const IndexedCallSite& site,
             TSNode typeNode = parser::GetChildByField(callNode, parser::GetGrammarSymbols().fieldType);
             if (!ts_node_is_null(typeNode))
             {
-                typeText = parser::GetNodeTextView(typeNode, ctx.sourceCode);
+                typeText = parser::NodeText(typeNode, ctx.sourceCode);
             }
         }
         if (typeText.empty())

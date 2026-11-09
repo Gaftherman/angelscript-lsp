@@ -316,7 +316,7 @@ static void MaybeEmitAccessorHint(TSNode memberNode, const MemberLookupResult& m
         const TSPoint hintStart = ts_node_start_point(memberNode);
         const TSPoint hintEnd = ts_node_end_point(memberNode);
         ctx.EmitAtRange({hintStart.row, hintStart.column, hintEnd.row, hintEnd.column}, "as-hint-accessor-disabled",
-                        {objectType, parser::NodeTextString(memberNode, ctx.request.sourceCode)},
+                        {objectType, std::string(parser::NodeText(memberNode, ctx.request.sourceCode))},
                         DiagnosticSeverity::Hint);
     }
 }
@@ -417,14 +417,14 @@ static void ValidateMemberPrivacy(TSNode node, const MemberLookupResult& member,
     bool insideMixin = false;
     const std::string_view accessingClass =
         EnclosingClass(node, ctx.request.sourceCode, insideMixin, ctx.request.nodeIndex);
-    const bool isThisAccess = parser::GetNodeTextView(objectNode, ctx.request.sourceCode) == "this";
+    const bool isThisAccess = parser::NodeText(objectNode, ctx.request.sourceCode) == "this";
     if (insideMixin && (isThisAccess || IsSameType(accessingClass, member.declaringClass)))
     {
         return;
     }
     if (!IsMemberAccessAllowed(member, accessingClass, objectType, ctx))
     {
-        const std::string memberName = parser::NodeText(memberNode, ctx.request.sourceCode);
+        const std::string memberName(parser::NodeText(memberNode, ctx.request.sourceCode));
         EmitPrivacyViolation(memberNode, member, memberName, ctx);
     }
 }
@@ -446,7 +446,7 @@ static void CheckMemberExpression(TSNode node, const AstCheckContext& request, c
         return;
     }
 
-    const std::string memberName = parser::NodeText(memberNode, request.sourceCode);
+    const std::string memberName(parser::NodeText(memberNode, request.sourceCode));
     if (memberName.empty())
     {
         return;
@@ -546,7 +546,7 @@ static bool ShouldSkipIdentifierNode(TSNode node, TSNode parent)
  */
 static std::string_view ExtractCleanIdentifier(TSNode node, std::string_view sourceCode)
 {
-    std::string_view idText = parser::GetNodeTextView(node, sourceCode);
+    std::string_view idText = parser::NodeText(node, sourceCode);
     while (!idText.empty() && isspace(static_cast<unsigned char>(idText.front())))
     {
         idText.remove_prefix(1);
@@ -633,7 +633,7 @@ static std::string_view EnclosingClassOfLambda(TSNode node, std::string_view sou
         TSNode nameNode = parser::GetChildByField(classNode, parser::GetGrammarSymbols().fieldName);
         if (!ts_node_is_null(nameNode))
         {
-            return parser::GetNodeTextView(nameNode, sourceCode);
+            return parser::NodeText(nameNode, sourceCode);
         }
     }
     return {};

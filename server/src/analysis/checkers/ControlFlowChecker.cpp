@@ -248,7 +248,7 @@ static void CheckCaseConstantness(TSNode value, std::string_view sourceCode, Dia
     const TSSymbol sym = ts_node_symbol(value);
     if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier)
     {
-        const std::string_view idText = utils::TrimView(parser::GetNodeTextView(value, sourceCode));
+        const std::string_view idText = utils::TrimView(parser::NodeText(value, sourceCode));
 
         bool reported = false;
         auto syms =
@@ -298,7 +298,7 @@ static void CheckSwitchLabels(std::span<const TSNode> labels, std::string_view s
         }
 
         CheckCaseConstantness(value, sourceCode, ctx);
-        const auto text = utils::TrimView(parser::GetNodeTextView(value, sourceCode));
+        const auto text = utils::TrimView(parser::NodeText(value, sourceCode));
         if (!text.empty() && !seenValues.insert(ComputeCaseKey(text, ctx.request.GetRuleIndex())).second)
         {
             ctx.EmitAtNodeRange(ToOptionalSourceRange(value), "as-err-duplicate-case-value", text);
@@ -413,7 +413,7 @@ class ControlFlowVisitor
         std::string reportedName;
         if (!ts_node_is_null(returnType))
         {
-            requiredReturn = parser::Trim(parser::NodeText(returnType, m_sourceCode));
+            requiredReturn = utils::TrimView(parser::NodeText(returnType, m_sourceCode));
             reportedName = std::string(parser::NodeText(name, m_sourceCode));
         }
         else if (NodeSymbol(node) == parser::GetGrammarSymbols().symLambdaExpression)

@@ -120,13 +120,13 @@ std::vector<Symbol> ResolveNamedArgCalleeCandidates(IndexedByteRange callRange, 
             std::string receiverTypeName =
                 ResolveReceiverTypeName(IndexedByteRange{ts_node_start_byte(objectNode), ts_node_end_byte(objectNode)},
                                         ctx, virtualHostClass, config);
-            std::string memberName = parser::GetNodeText(memberNode, ctx.sourceCode);
+            std::string memberName(parser::NodeText(memberNode, ctx.sourceCode));
             return CollectReceiverMemberSymbols(receiverTypeName, memberName, ctx.symbolTable);
         }
     }
     else
     {
-        std::string funcName = parser::GetNodeText(funcNode, ctx.sourceCode);
+        std::string funcName(parser::NodeText(funcNode, ctx.sourceCode));
         if (const auto found = ctx.symbolTable.FindSymbolsPtr(funcName))
         {
             return *found;

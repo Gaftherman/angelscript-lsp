@@ -151,7 +151,7 @@ static void CheckRefTypeBoolConversion(TSNode condNode, const Scope* scope, Diag
     bool isHandleTarget = false;
     if (scope)
     {
-        const std::string name = parser::NodeText(current, ctx.request.sourceCode);
+        const std::string name(parser::NodeText(current, ctx.request.sourceCode));
         const LocalDefinition* def = ResolveInScopeAt(scope, name, ts_node_start_byte(current));
         if (def)
         {

@@ -29,9 +29,10 @@
     "server/src/analysis/diagnostics",
     "server/src/analysis/documentation",
     "server/src/analysis/types",
-    "server/src/analysis/mediator"
+    "server/src/analysis/mediator",
+    "server/src/parser"
   ],
-  "active_folder": "server/src/parser",
+  "active_folder": "server/src/analysis/rules",
   "cross_module_impacts": [
     {
       "source_folder": "server/src/utils",
@@ -50,12 +51,6 @@
     }
   ],
   "pending_folders": [
-    {
-      "folder_path": "server/src/parser",
-      "complexity_rank": 32,
-      "selection_rationale": "First-pass grammar and AST bindings (9 files + queries, 2279 lines).",
-      "files_to_refactor": []
-    },
     {
       "folder_path": "server/src/analysis/rules",
       "complexity_rank": 34,

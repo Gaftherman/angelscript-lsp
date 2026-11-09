@@ -489,7 +489,7 @@ static bool IsObjectNodeConst(TSNode objectNode, const CallValidationContext& va
         return false;
     }
 
-    const std::string name = parser::NodeText(objectNode, valCtx.request.sourceCode);
+    const std::string name(parser::NodeText(objectNode, valCtx.request.sourceCode));
     if (valCtx.scope)
     {
         if (const auto* def = ResolveInScopeAt(valCtx.scope, name, ts_node_start_byte(objectNode)))
@@ -1147,7 +1147,7 @@ static bool ResolveEnclosingClassCallee(std::string_view written, const CallVali
 static CalleeResolution ResolveIdentifierCallee(const CallValidationContext& valCtx)
 {
     CalleeResolution res;
-    const std::string written = parser::NodeText(valCtx.callee, valCtx.request.sourceCode);
+    const std::string written(parser::NodeText(valCtx.callee, valCtx.request.sourceCode));
     if (written.empty())
     {
         res.shouldCheck = false;
@@ -1280,7 +1280,7 @@ static bool CheckArgIsLValue(TSNode argNode, std::string_view sourceCode, const 
 {
     const auto& gs = parser::GetGrammarSymbols();
     TSSymbol aSym = ts_node_symbol(argNode);
-    std::string aText = parser::NodeText(argNode, sourceCode);
+    std::string aText(parser::NodeText(argNode, sourceCode));
     TrimString(aText);
 
     if (aSym == gs.symUnaryExpression && aText.starts_with("@"))
@@ -1679,7 +1679,7 @@ static void ValidateOutArguments(const Symbol& candidate, const std::vector<TSNo
             continue;
         }
 
-        std::string_view aText = parser::GetNodeTextView(argNodes[i], valCtx.request.sourceCode);
+        std::string_view aText = parser::NodeText(argNodes[i], valCtx.request.sourceCode);
         TrimTypeWhitespace(aText);
         if (aText == "void" && param.isOutRef)
         {
@@ -1799,7 +1799,7 @@ static void RecordBoundCall(const Symbol& declaration, const CallValidationConte
         return;
     }
     const TSNode name = GetBoundCallName(valCtx.callee);
-    if (ts_node_is_null(name) || parser::GetNodeTextView(name, valCtx.request.sourceCode) != declaration.name)
+    if (ts_node_is_null(name) || parser::NodeText(name, valCtx.request.sourceCode) != declaration.name)
     {
         return;
     }
@@ -1972,8 +1972,8 @@ static bool IsDelegateConstructionPattern(TSNode argumentList, std::string_view 
     {
         return false;
     }
-    const std::string_view objText = GetNodeTextView(objNode, sourceCode);
-    const std::string_view memberText = GetNodeTextView(memberNode, sourceCode);
+    const std::string_view objText = parser::NodeText(objNode, sourceCode);
+    const std::string_view memberText = parser::NodeText(memberNode, sourceCode);
     return objText == "this" && memberText == calleeName;
 }
 
@@ -2490,7 +2490,7 @@ static void CheckVariableDirectInitialization(TSNode varDeclNode, const AstCheck
         return;
     }
 
-    const std::string rawTypeStr = parser::NodeText(varTypeNode, request.sourceCode);
+    const std::string rawTypeStr(parser::NodeText(varTypeNode, request.sourceCode));
     const std::string declaredType = CleanExpressionType(rawTypeStr);
     if (declaredType.empty() || declaredType == "auto" || rawTypeStr.find('[') != std::string::npos)
     {

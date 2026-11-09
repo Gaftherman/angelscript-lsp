@@ -41,7 +41,7 @@ static std::vector<TSNode> FindOccurrencesInIfLadder(TSNode rootIf, std::string_
                 const auto operands = analysis::ReadBinaryOperands(match.captures[i].node, nullptr);
                 for (const TSNode operand : {operands.left, operands.right})
                 {
-                    if (!ts_node_is_null(operand) && parser::GetNodeTextView(operand, sourceCode) == exprText)
+                    if (!ts_node_is_null(operand) && parser::NodeText(operand, sourceCode) == exprText)
                     {
                         results.push_back(operand);
                     }

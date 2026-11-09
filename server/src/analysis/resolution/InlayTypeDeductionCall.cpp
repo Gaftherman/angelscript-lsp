@@ -23,7 +23,7 @@ namespace angel_lsp::analysis
 static std::string ResolveMemberCallReceiverType(TSNode objNode, TSNode exprNode, const ExpressionTypeContext& ctx,
                                                  const Scope* rootScope)
 {
-    std::string objText = parser::GetNodeText(objNode, ctx.sourceCode);
+    std::string objText(parser::NodeText(objNode, ctx.sourceCode));
     if (objText == "this")
     {
         auto containers = GetEnclosingContainers(exprNode, ctx.sourceCode);
@@ -73,7 +73,7 @@ static std::string DeduceMemberCallReturnType(TSNode funcNode, TSNode exprNode, 
     {
         return "";
     }
-    std::string memText = parser::GetNodeText(memNode, ctx.sourceCode);
+    std::string memText(parser::NodeText(memNode, ctx.sourceCode));
     auto hierarchy = GetInheritedTypeHierarchy(receiverType, ctx.symbolTable);
     if (hierarchy.empty())
     {
@@ -103,7 +103,7 @@ static std::string DeduceMemberCallReturnType(TSNode funcNode, TSNode exprNode, 
  */
 static std::string DeduceFreeCallReturnType(TSNode funcNode, TSNode exprNode, const ExpressionTypeContext& ctx)
 {
-    std::string fName = parser::GetNodeText(funcNode, ctx.sourceCode);
+    std::string fName(parser::NodeText(funcNode, ctx.sourceCode));
     auto candidates = FindSymbolsInScope(fName, exprNode, ctx.sourceCode, ctx.symbolTable);
     if (candidates.empty())
     {
@@ -157,8 +157,8 @@ std::string DeduceMemberExpressionType(TSNode exprNode, const ExpressionTypeCont
     {
         return "";
     }
-    std::string objText = parser::GetNodeText(objNode, ctx.sourceCode);
-    std::string memText = parser::GetNodeText(memNode, ctx.sourceCode);
+    std::string objText(parser::NodeText(objNode, ctx.sourceCode));
+    std::string memText(parser::NodeText(memNode, ctx.sourceCode));
     std::string receiverType;
     if (rootScope)
     {

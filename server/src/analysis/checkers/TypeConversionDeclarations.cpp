@@ -35,7 +35,7 @@ DeclaredType ReadDeclaredType(TSNode typeNode, const DiagnosticContext& ctx)
         return result;
     }
 
-    const std::string raw = parser::NodeText(typeNode, ctx.request.sourceCode);
+    const std::string raw(parser::NodeText(typeNode, ctx.request.sourceCode));
     if (raw.empty())
     {
         return result;
@@ -63,7 +63,7 @@ DeclaredType ReadDeclaredType(TSNode typeNode, const DiagnosticContext& ctx)
 static void CheckUnknownInitializerSource(TSNode valueNode, const DeclaredType& declared, const Scope* scope,
                                           DiagnosticContext& ctx)
 {
-    const std::string identName = TrimString(parser::NodeText(valueNode, ctx.request.sourceCode));
+    const std::string identName = TrimString(std::string(parser::NodeText(valueNode, ctx.request.sourceCode)));
     if (identName.empty())
     {
         return;
@@ -218,7 +218,7 @@ void CheckDeclaratorConstruction(TSNode child, const DeclaredType& declared, con
 void ProcessDeclaredVariableDeclarators(TSNode node, TSNode typeNode, const TypeConversionCheckRequest& request,
                                         DiagnosticContext& ctx)
 {
-    const std::string fullType = parser::NodeText(typeNode, request.sourceCode);
+    const std::string fullType(parser::NodeText(typeNode, request.sourceCode));
     const std::string baseType = CleanBaseType(fullType);
     auto funcdefSym = FindFuncdef(baseType, ctx.request.symbolTable);
 

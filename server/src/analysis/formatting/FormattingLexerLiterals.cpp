@@ -6,6 +6,11 @@
 namespace angel_lsp::analysis::formatting
 {
 
+/**
+ * @brief Emits a `//` comment token running to the end of the line.
+ * @param[in,out] state Scanner cursor; advanced past the comment on success.
+ * @return True when a line comment started at the cursor.
+ */
 bool TryConsumeLineComment(ScanState& state)
 {
     char c = state.src[state.i];
@@ -26,6 +31,11 @@ bool TryConsumeLineComment(ScanState& state)
     return false;
 }
 
+/**
+ * @brief Emits a block comment token, tracking line breaks inside it.
+ * @param[in,out] state Scanner cursor; advanced past the closing delimiter, or to the end of an unterminated comment.
+ * @return True when a block comment started at the cursor.
+ */
 bool TryConsumeBlockComment(ScanState& state)
 {
     char c = state.src[state.i];
@@ -93,6 +103,11 @@ bool TryConsumePreprocessor(ScanState& state)
     return false;
 }
 
+/**
+ * @brief Emits a triple-quoted heredoc string token, which may span lines.
+ * @param[in,out] state Scanner cursor; advanced past the closing quotes, or to the end of an unterminated literal.
+ * @return True when a heredoc literal started at the cursor.
+ */
 bool TryConsumeRawString(ScanState& state)
 {
     char c = state.src[state.i];

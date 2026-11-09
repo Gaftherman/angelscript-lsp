@@ -67,13 +67,13 @@ void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, 
     if (IsFunctionReference(consequence, ExpressionTypeContext(scope, ctx)))
     {
         ctx.EmitAtNodeRange(ToOptionalSourceRange(consequence), "as-err-no-implicit-conversion",
-                            {TrimString(parser::NodeText(consequence, request.sourceCode)), clean2});
+                            {TrimString(std::string(parser::NodeText(consequence, request.sourceCode))), clean2});
         return;
     }
     if (IsFunctionReference(alternative, ExpressionTypeContext(scope, ctx)))
     {
         ctx.EmitAtNodeRange(ToOptionalSourceRange(alternative), "as-err-no-implicit-conversion",
-                            {TrimString(parser::NodeText(alternative, request.sourceCode)), clean1});
+                            {TrimString(std::string(parser::NodeText(alternative, request.sourceCode))), clean1});
         return;
     }
 
@@ -109,7 +109,7 @@ void ProcessExpressionStatementNode(TSNode node, const TypeConversionCheckReques
         return;
     }
 
-    const std::string text = TrimString(parser::NodeText(expr, request.sourceCode));
+    const std::string text = TrimString(std::string(parser::NodeText(expr, request.sourceCode)));
     if (!text.empty())
     {
         if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(text))

@@ -237,7 +237,7 @@ static const VariableSignature* FindClassMemberVariable(const std::string& class
 static bool IsIdentifierMemberOfThis(TSNode target, const EnclosingMethodInfo& encInfo,
                                      const ExpressionTypeContext& ctx, std::string& outMemberName)
 {
-    const std::string text = parser::NodeText(target, ctx.sourceCode);
+    const std::string text(parser::NodeText(target, ctx.sourceCode));
     const auto [prefix, baseName] = utils::SplitScopedName(text);
     if (!prefix.empty() && prefix != encInfo.className)
     {
@@ -380,7 +380,7 @@ static Constness ResolveLeafConstness(TSNode node, const ExpressionTypeContext& 
 
     if (nodeSym == gs.symScopedIdentifier)
     {
-        const std::string whole = parser::NodeText(node, ctx.sourceCode);
+        const std::string whole(parser::NodeText(node, ctx.sourceCode));
         const Constness qualified = ResolveNameConstness(whole, node, ctx);
         if (qualified != Constness::Unknown)
         {
@@ -507,7 +507,7 @@ static Constness ResolveHandleConstness(TSNode node, const ExpressionTypeContext
     const TSSymbol nodeSym = ts_node_symbol(node);
     if (nodeSym == gs.symIdentifier || nodeSym == gs.symScopedIdentifier)
     {
-        const std::string name = parser::NodeText(node, ctx.sourceCode);
+        const std::string name(parser::NodeText(node, ctx.sourceCode));
         if (ctx.scope)
         {
             if (const LocalDefinition* def =
@@ -585,7 +585,7 @@ static void CheckAssignment(TSNode node, const AstCheckContext& request, const S
         if (ResolveHandleConstness(actualTarget, constCtx) == Constness::Const)
         {
             ctx.EmitAtNodeRange(ToOptionalSourceRange(target), "as-err-const-assignment",
-                                parser::NodeTextString(target, request.sourceCode));
+                                std::string(parser::NodeText(target, request.sourceCode)));
         }
         return;
     }
@@ -596,7 +596,7 @@ static void CheckAssignment(TSNode node, const AstCheckContext& request, const S
     }
 
     ctx.EmitAtNodeRange(ToOptionalSourceRange(target), "as-err-const-assignment",
-                        parser::NodeTextString(target, request.sourceCode));
+                        std::string(parser::NodeText(target, request.sourceCode)));
 }
 
 /**
@@ -635,7 +635,7 @@ static void CheckMethodCall(TSNode node, const AstCheckContext& request, const S
         return;
     }
 
-    const std::string methodName = parser::NodeText(memberNode, request.sourceCode);
+    const std::string methodName(parser::NodeText(memberNode, request.sourceCode));
     const MemberLookupResult method = FindMethod(objectType, methodName, table, ctx.request.exprCache);
     if (!method.found || method.hasConstOverload || method.returnsSelfReference)
     {

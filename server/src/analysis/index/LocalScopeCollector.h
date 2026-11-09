@@ -149,11 +149,6 @@ class LocalScopeCollector
     void CollectRawCaptures(TSNode rootNode, std::vector<RawCapture>& captures) const;
 
     /**
-     * @brief Returns the source text spanned by node, or an empty string for a null/degenerate node.
-     */
-    std::string GetNodeText(TSNode node, const std::string& sourceCode) const;
-
-    /**
      * @brief Reads declared type and initializer information for variable-like definitions.
      * @param capture Raw capture containing node, parent, and grandparent AST nodes.
      * @param sourceCode Source text of the document.

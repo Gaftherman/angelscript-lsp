@@ -5,6 +5,7 @@
 #include "analysis/diagnostics/DiagnosticSuppression.h"
 #include "analysis/index/NodeIndex.h"
 #include "parser/ASTUtils.h"
+#include "parser/BraceBalance.h"
 #include "parser/GrammarSymbols.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/Utils.h"

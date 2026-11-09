@@ -81,14 +81,6 @@ enum class InitializerItemKind
                                     [type](const Symbol& owner) { return owner.type == type; });
 }
 
-/**
- * @brief Extracts a non-allocating string_view corresponding to an AST node's byte range.
- * @param[in] node Tree-Sitter AST node.
- * @param[in] sourceCode Document source text buffer.
- * @return Non-owning string_view of the node's slice, or empty view if node is null.
- */
-[[nodiscard]] std::string_view GetNodeTextView(TSNode node, std::string_view sourceCode) noexcept;
-
 [[nodiscard]] std::string GetTrimmedNodeText(TSNode node, std::string_view sourceCode);
 
 /**

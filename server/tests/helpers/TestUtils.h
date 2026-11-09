@@ -13,6 +13,7 @@
 #include "features/completion/CompletionHandler.h"
 #include "features/semantic_tokens/SemanticTokensHandler.h"
 #include "i18n/i18n.h"
+#include "parser/ASTUtils.h"
 #include "parser/AngelScriptParser.h"
 #include "utils/PreprocessorRegions.h"
 
@@ -221,21 +222,6 @@ inline std::string FormatParamType(const analysis::ParameterInformation& p)
         s += ref;
     }
     return s;
-}
-
-inline std::string GetNodeText(TSNode node, std::string_view sourceCode)
-{
-    if (ts_node_is_null(node))
-    {
-        return "";
-    }
-    uint32_t start = ts_node_start_byte(node);
-    uint32_t end = ts_node_end_byte(node);
-    if (start < sourceCode.size() && end <= sourceCode.size() && start <= end)
-    {
-        return std::string(sourceCode.substr(start, end - start));
-    }
-    return "";
 }
 
 /**
@@ -694,7 +680,7 @@ class TestDocument
             {
                 const analysis::Scope* scope =
                     m_scopeRoot ? FindScopeByLineOrRoot(m_scopeRoot.get(), pos.line, pos.character) : nullptr;
-                std::string nodeText = GetNodeText(node, m_sourceCode);
+                std::string nodeText(parser::NodeText(node, m_sourceCode));
                 while (!nodeText.empty() && isspace(static_cast<unsigned char>(nodeText.front())))
                     nodeText.erase(nodeText.begin());
                 while (!nodeText.empty() && isspace(static_cast<unsigned char>(nodeText.back())))
@@ -777,7 +763,7 @@ class TestDocument
                 TSNode right = ts_node_child_by_field_name(binaryNode, "right", 5);
                 if (!ts_node_is_null(left) && !ts_node_is_null(right))
                 {
-                    std::string op = GetNodeText(opNode, m_sourceCode);
+                    std::string op(parser::NodeText(opNode, m_sourceCode));
                     auto scopeRoot = const_cast<analysis::LocalScopeCollector&>(m_scopeCollector)
                                          .CollectScopes(m_sourceCode, const_cast<parser::AngelScriptParser&>(m_parser));
                     const analysis::Scope* scope = FindScopeByLineOrRoot(scopeRoot.get(), pos.line, pos.character);
@@ -894,10 +880,10 @@ class TestDocument
                 TSNode right = ts_node_child_by_field_name(assignNode, "right", 5);
                 if (!ts_node_is_null(left) && !ts_node_is_null(right))
                 {
-                    std::string leftText = GetNodeText(left, m_sourceCode);
+                    std::string leftText(parser::NodeText(left, m_sourceCode));
                     while (!leftText.empty() && isspace(static_cast<unsigned char>(leftText.front())))
                         leftText.erase(leftText.begin());
-                    std::string op = GetNodeText(opNode, m_sourceCode);
+                    std::string op(parser::NodeText(opNode, m_sourceCode));
                     if (!leftText.empty() && leftText.front() != '@' && op == "=")
                     {
                         auto scopeRoot =
@@ -958,7 +944,7 @@ class TestDocument
             return std::nullopt;
         }
 
-        std::string calleeText = GetNodeText(funcNode, m_sourceCode);
+        std::string calleeText(parser::NodeText(funcNode, m_sourceCode));
         while (!calleeText.empty() && isspace(static_cast<unsigned char>(calleeText.front())))
             calleeText.erase(calleeText.begin());
         while (!calleeText.empty() && isspace(static_cast<unsigned char>(calleeText.back())))
@@ -997,7 +983,7 @@ class TestDocument
                 std::string objType =
                     analysis::ResolveExpressionType(objNode, {scope, m_symbolTable, m_sourceCode, m_uri});
                 std::string cleanObj = analysis::CleanBaseType(objType);
-                std::string memName = GetNodeText(memNode, m_sourceCode);
+                std::string memName(parser::NodeText(memNode, m_sourceCode));
                 while (!memName.empty() && isspace(static_cast<unsigned char>(memName.front())))
                     memName.erase(memName.begin());
                 while (!memName.empty() && isspace(static_cast<unsigned char>(memName.back())))
@@ -1140,7 +1126,7 @@ class TestDocument
         {
             if (std::string_view(ts_node_type(p)) == "scoped_identifier")
             {
-                std::string text = GetNodeText(p, m_sourceCode);
+                std::string text(parser::NodeText(p, m_sourceCode));
                 while (!text.empty() && isspace(static_cast<unsigned char>(text.front())))
                     text.erase(text.begin());
                 while (!text.empty() && isspace(static_cast<unsigned char>(text.back())))
@@ -1154,7 +1140,7 @@ class TestDocument
             p = ts_node_parent(p);
         }
 
-        std::string nodeText = GetNodeText(node, m_sourceCode);
+        std::string nodeText(parser::NodeText(node, m_sourceCode));
         while (!nodeText.empty() && isspace(static_cast<unsigned char>(nodeText.front())))
             nodeText.erase(nodeText.begin());
         while (!nodeText.empty() && isspace(static_cast<unsigned char>(nodeText.back())))
@@ -1206,7 +1192,7 @@ class TestDocument
                 }
                 if (!ts_node_is_null(funcNode))
                 {
-                    name = GetNodeText(funcNode, m_sourceCode);
+                    name = std::string(parser::NodeText(funcNode, m_sourceCode));
                     break;
                 }
             }
@@ -1215,7 +1201,7 @@ class TestDocument
 
         if (name.empty())
         {
-            name = GetNodeText(node, m_sourceCode);
+            name = std::string(parser::NodeText(node, m_sourceCode));
         }
 
         while (!name.empty() && isspace(static_cast<unsigned char>(name.front())))

@@ -222,7 +222,7 @@ void CheckConstructorDelegation(TSNode funcNode, const NodeIndex& index, Diagnos
     {
         return;
     }
-    const std::string className = parser::NodeText(classNameNode, ctx.request.sourceCode);
+    const std::string className(parser::NodeText(classNameNode, ctx.request.sourceCode));
 
     const SyntaxOperands function(funcNode, &index);
     const TSNode funcNameNode = function.Field(gs.fieldName);

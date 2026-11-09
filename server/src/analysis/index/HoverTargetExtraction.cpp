@@ -132,7 +132,7 @@ static void PopulateStructuralRanges(TSNode targetNode, TSNode parent, std::stri
             {
                 typeNode = parser::GetChildByField(autoDecl, gs.fieldType);
             }
-            if (!ts_node_is_null(typeNode) && analysis::IsHandleTypeView(parser::GetNodeTextView(typeNode, sourceCode)))
+            if (!ts_node_is_null(typeNode) && analysis::IsHandleTypeView(parser::NodeText(typeNode, sourceCode)))
             {
                 site.isAutoHandle = 1;
             }

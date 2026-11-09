@@ -7,6 +7,7 @@
 #include "analysis/resolution/SemanticHelpers.h"
 #include "document/Document.h"
 #include "parser/ASTUtils.h"
+#include "parser/BraceBalance.h"
 #include "parser/SyntaxTree.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/LspLogger.h"
@@ -144,7 +145,7 @@ static void TryRecoverClassFromErrorNode(TSNode node, RecoverClassContext& ctx)
         return;
     }
 
-    std::string className = parser::GetNodeText(header.nameNode, ctx.sourceCode);
+    std::string className(parser::NodeText(header.nameNode, ctx.sourceCode));
     if (className.empty())
     {
         return;
@@ -205,6 +206,11 @@ SymbolCollector::SymbolCollector(angel_lsp::utils::LspLogger* logger)
 {
 }
 
+/**
+ * @brief Maps an indexed declaration kind to the member function that collects it.
+ * @param[in] kind Declaration kind recorded by the node index.
+ * @return Handler for the kind, or nullptr for kinds collected elsewhere.
+ */
 SymbolCollector::ProcessFn SymbolCollector::DeclarationHandler(IndexedDeclarationKind kind)
 {
     switch (kind)
@@ -309,7 +315,7 @@ void SymbolCollector::PushClassContainer(TSNode node, const SymbolCollectContext
         return;
     }
     TSNode nameNode = GetChildByFieldName(node, "name");
-    std::string className = parser::GetNodeText(nameNode, sCtx.request.sourceCode);
+    std::string className(parser::NodeText(nameNode, sCtx.request.sourceCode));
     const size_t angle = className.find('<');
     if (angle != std::string_view::npos)
     {
@@ -344,7 +350,7 @@ void SymbolCollector::PushInterfaceContainer(TSNode node, const SymbolCollectCon
         return;
     }
     TSNode nameNode = GetChildByFieldName(node, "name");
-    std::string ifaceName = parser::GetNodeText(nameNode, sCtx.request.sourceCode);
+    std::string ifaceName(parser::NodeText(nameNode, sCtx.request.sourceCode));
     if (ifaceName.empty())
     {
         return;
@@ -374,7 +380,7 @@ void SymbolCollector::PushNamespaceContainer(TSNode node, const SymbolCollectCon
         return;
     }
     TSNode nameNode = GetChildByFieldName(node, "name");
-    std::string nsName = parser::GetNodeText(nameNode, sCtx.request.sourceCode);
+    std::string nsName(parser::NodeText(nameNode, sCtx.request.sourceCode));
     if (nsName.empty())
     {
         return;
@@ -404,7 +410,7 @@ void SymbolCollector::PushFunctionContainer(TSNode node, const SymbolCollectCont
     TSNode bodyNode = GetChildByFieldName(node, "body");
     if (ts_node_is_null(bodyNode))
     {
-        std::string_view text = GetNodeTextView(node, sCtx.request.sourceCode);
+        std::string_view text = parser::NodeText(node, sCtx.request.sourceCode);
         if (text.find('{') == std::string_view::npos)
         {
             return;
@@ -737,7 +743,7 @@ void SymbolCollector::ProcessVirtualPropertyVariable(TSNode varDeclNode, SymbolC
 {
     TSNode typeNode = GetChildByFieldName(varDeclNode, "prop_type");
     TSNode nameNode = GetChildByFieldName(varDeclNode, "name");
-    std::string typeStr = parser::GetNodeText(typeNode, sCtx.request.sourceCode);
+    std::string typeStr(parser::NodeText(typeNode, sCtx.request.sourceCode));
     TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode, &sCtx.index);
     SymbolModifiers modifiers = ExtractModifiers(varDeclNode, sCtx.request.sourceCode);
     modifiers.isHandle = typeInfo.isHandle || modifiers.isHandle;
@@ -754,7 +760,7 @@ void SymbolCollector::ProcessVirtualPropertyVariable(TSNode varDeclNode, SymbolC
     varSig.isArray = typeInfo.isArray;
     varSig.hasPrimitiveHandle = typeInfo.hasPrimitiveHandle;
     varSig.arrayDepth = typeInfo.arrayDepth;
-    varSig.defaultValue = parser::GetNodeText(varDeclNode, sCtx.request.sourceCode);
+    varSig.defaultValue = std::string(parser::NodeText(varDeclNode, sCtx.request.sourceCode));
     varSig.modifiers = modifiers;
     varSig.isVirtualProperty = true;
 
@@ -784,7 +790,7 @@ void SymbolCollector::CollectDeclaratorSymbol(TSNode declaratorNode, const Varia
     varSig.isArray = header.typeInfo.isArray;
     varSig.hasPrimitiveHandle = header.typeInfo.hasPrimitiveHandle;
     varSig.arrayDepth = header.typeInfo.arrayDepth;
-    varSig.defaultValue = parser::GetNodeText(valueNode, sCtx.request.sourceCode);
+    varSig.defaultValue = std::string(parser::NodeText(valueNode, sCtx.request.sourceCode));
     varSig.hasNullInitializer = IsNullInitializer(valueNode);
     varSig.hasSemicolon = header.hasSemicolon;
     varSig.modifiers = header.modifiers;
@@ -826,7 +832,7 @@ void SymbolCollector::ProcessRegularVariable(TSNode varDeclNode, SymbolCollectCo
                                              const CollectionContext& ctx)
 {
     TSNode typeNode = GetChildByFieldName(varDeclNode, "var_type");
-    std::string typeStr = parser::GetNodeText(typeNode, sCtx.request.sourceCode);
+    std::string typeStr(parser::NodeText(typeNode, sCtx.request.sourceCode));
     TypeExtractionResult typeInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode, &sCtx.index);
     if (IsReservedKeyword(typeInfo.baseTypeName) && !IsPrimitiveTypeName(typeInfo.baseTypeName) &&
         typeInfo.baseTypeName != "auto")
@@ -837,7 +843,7 @@ void SymbolCollector::ProcessRegularVariable(TSNode varDeclNode, SymbolCollectCo
     modifiers.isHandle = typeInfo.isHandle || modifiers.isHandle;
     modifiers.isReturnReference = typeInfo.isReference || modifiers.isReturnReference;
 
-    std::string_view rawVarText = TrimView(GetNodeView(varDeclNode, sCtx.request.sourceCode));
+    std::string_view rawVarText = TrimView(parser::NodeText(varDeclNode, sCtx.request.sourceCode));
     bool hasSemicolon = (!rawVarText.empty() && rawVarText.back() == ';');
 
     VariableHeaderInfo header{varDeclNode, std::move(typeStr), std::move(typeInfo), ToSourceRange(typeNode),
@@ -873,6 +879,11 @@ void SymbolCollector::ProcessVariable(TSNode varDeclNode, SymbolCollectContext& 
     }
 }
 
+/**
+ * @brief Finds the statement block of a function, falling back to a child scan when the body field is absent.
+ * @param[in] funcNode Function declaration node.
+ * @return Body node, or a null node for declarations without a body.
+ */
 TSNode SymbolCollector::FindFunctionBody(TSNode funcNode) const
 {
     TSNode bodyNode = GetChildByFieldId(funcNode, m_gs.fieldBody);
@@ -907,7 +918,7 @@ std::string SymbolCollector::ExtractOriginModule(TSNode funcNode, std::string_vi
     TSNode srcNode = GetChildByFieldId(funcNode, m_gs.fieldSource);
     if (!ts_node_is_null(srcNode))
     {
-        std::string_view modStr = GetNodeTextView(srcNode, sourceCode);
+        std::string_view modStr = parser::NodeText(srcNode, sourceCode);
         return std::string(parser::UnquoteStringView(modStr));
     }
     return "";
@@ -925,7 +936,7 @@ void SymbolCollector::ProcessEmptyParenVariable(TSNode funcNode, SymbolCollectCo
     Symbol sym = CreateSymbol(SymbolType::Variable, funcNode, nameNode, loc);
 
     VariableSignature varSig;
-    varSig.typeName = parser::GetNodeText(typeNode, sCtx.request.sourceCode);
+    varSig.typeName = std::string(parser::NodeText(typeNode, sCtx.request.sourceCode));
     varSig.baseTypeName = retInfo.baseTypeName;
     varSig.templateName = retInfo.templateName;
     varSig.typeRange = ToSourceRange(typeNode);
@@ -948,7 +959,7 @@ void SymbolCollector::ProcessEmptyParenVariable(TSNode funcNode, SymbolCollectCo
     if (!ts_node_is_null(typeNode))
     {
         CallReferenceSignature callSig;
-        callSig.calleeName = parser::GetNodeText(typeNode, sCtx.request.sourceCode);
+        callSig.calleeName = std::string(parser::NodeText(typeNode, sCtx.request.sourceCode));
         Symbol callSym = CreateSymbol(SymbolType::CallReference, typeNode, typeNode, loc);
         callSym.signature = std::move(callSig);
         sCtx.collectedSymbols.push_back(std::move(callSym));
@@ -989,14 +1000,14 @@ bool SymbolCollector::TryProcessEmptyParenVariable(TSNode funcNode, const Symbol
         return false;
     }
     TSNode nameNode = GetChildByFieldId(funcNode, m_gs.fieldName);
-    const std::string nameText = parser::GetNodeText(nameNode, sCtx.request.sourceCode);
+    const std::string nameText(parser::NodeText(nameNode, sCtx.request.sourceCode));
     if (nameText == ctx.containerPath || nameText.starts_with('~'))
     {
         return false;
     }
     TSNode typeNode = GetChildByFieldId(funcNode, m_gs.fieldReturnType);
     TypeExtractionResult retInfo = ExtractTypeInfoFromAST(typeNode, sCtx.request.sourceCode, &sCtx.index);
-    if (IsDisqualifyingReturnType(retInfo, parser::GetNodeText(typeNode, sCtx.request.sourceCode)))
+    if (IsDisqualifyingReturnType(retInfo, std::string(parser::NodeText(typeNode, sCtx.request.sourceCode))))
     {
         return false;
     }
@@ -1004,6 +1015,12 @@ bool SymbolCollector::TryProcessEmptyParenVariable(TSNode funcNode, const Symbol
     return true;
 }
 
+/**
+ * @brief Records a function or method symbol with its signature, modifiers and body range.
+ * @param[in] funcNode Function declaration node.
+ * @param[in,out] sCtx Collection state receiving the symbol.
+ * @param[in] ctx Enclosing container and namespace.
+ */
 void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
     TSNode nameNode = GetChildByFieldId(funcNode, m_gs.fieldName);
@@ -1031,7 +1048,7 @@ void SymbolCollector::ProcessFunction(TSNode funcNode, SymbolCollectContext& sCt
     Symbol sym = CreateSymbol(SymbolType::Function, funcNode, nameNode, loc);
 
     FunctionSignature funcSig;
-    funcSig.returnType = parser::GetNodeText(typeNode, sCtx.request.sourceCode);
+    funcSig.returnType = std::string(parser::NodeText(typeNode, sCtx.request.sourceCode));
     funcSig.returnBaseTypeName = retInfo.baseTypeName;
     funcSig.returnTemplateName = retInfo.templateName;
     funcSig.returnTypeKind = retInfo.kind;
@@ -1080,7 +1097,7 @@ static bool ClassHasExplicitConstructor(TSNode bodyNode, std::string_view classN
             if (ts_node_symbol(child) == symFuncDeclaration)
             {
                 TSNode nameNode = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldName);
-                if (parser::GetNodeText(nameNode, sourceCode) == className)
+                if (parser::NodeText(nameNode, sourceCode) == className)
                 {
                     found = true;
                     break;
@@ -1150,7 +1167,7 @@ void SymbolCollector::ProcessClass(TSNode classNode, SymbolCollectContext& sCtx,
                 TSNode child = ts_tree_cursor_current_node(&cursor);
                 if (ts_node_is_named(child))
                 {
-                    std::string paramName = parser::GetNodeText(child, sCtx.request.sourceCode);
+                    std::string paramName(parser::NodeText(child, sCtx.request.sourceCode));
                     if (!paramName.empty())
                     {
                         classSig.isTemplate = true;
@@ -1246,13 +1263,19 @@ void SymbolCollector::ProcessTypedef(TSNode node, SymbolCollectContext& sCtx, co
         typedefSig.baseTypeEndCharacter = endPoint.column;
     }
 
-    std::string_view rawNodeText = TrimView(GetNodeView(node, sCtx.request.sourceCode));
+    std::string_view rawNodeText = TrimView(parser::NodeText(node, sCtx.request.sourceCode));
     typedefSig.hasSemicolon = (!rawNodeText.empty() && rawNodeText.back() == ';');
 
     sym.signature = typedefSig;
     sCtx.collectedSymbols.push_back(std::move(sym));
 }
 
+/**
+ * @brief Records a funcdef type symbol with its return type and parameters.
+ * @param[in] node Funcdef declaration node.
+ * @param[in,out] sCtx Collection state receiving the symbol.
+ * @param[in] ctx Enclosing container and namespace.
+ */
 void SymbolCollector::ProcessFuncdef(TSNode node, SymbolCollectContext& sCtx, const CollectionContext& ctx)
 {
     TSNode nameNode = GetChildByFieldName(node, "name");
@@ -1269,7 +1292,7 @@ void SymbolCollector::ProcessFuncdef(TSNode node, SymbolCollectContext& sCtx, co
     Symbol sym = CreateSymbol(SymbolType::Funcdef, node, nameNode, loc);
 
     FuncdefSignature funcdefSig;
-    funcdefSig.returnType = parser::GetNodeText(typeNode, sCtx.request.sourceCode);
+    funcdefSig.returnType = std::string(parser::NodeText(typeNode, sCtx.request.sourceCode));
     funcdefSig.returnBaseTypeName = retInfo.baseTypeName;
     funcdefSig.returnTemplateName = retInfo.templateName;
     funcdefSig.returnTypeKind = retInfo.kind;
@@ -1324,8 +1347,8 @@ void SymbolCollector::CollectEnumMembers(TSNode node, std::string_view sourceCod
                 TSNode memberValue = parser::GetChildByField(child, m_gs.fieldValue);
 
                 EnumMemberInformation member;
-                member.name = parser::GetNodeText(memberName, sourceCode);
-                member.value = parser::GetNodeText(memberValue, sourceCode);
+                member.name = std::string(parser::NodeText(memberName, sourceCode));
+                member.value = std::string(parser::NodeText(memberValue, sourceCode));
                 if (!ts_node_is_null(memberValue))
                 {
                     member.valueNodeType = std::string(parser::GetNodeType(memberValue));
@@ -1350,7 +1373,7 @@ BuildEnumMemberNodeMap(TSNode node, TSSymbol symEnumMember, TSFieldId fieldName,
             if (ts_node_is_named(child) && ts_node_symbol(child) == symEnumMember)
             {
                 TSNode mNameNode = ts_node_child_by_field_id(child, fieldName);
-                std::string mName = parser::GetNodeText(mNameNode, sourceCode);
+                std::string mName(parser::NodeText(mNameNode, sourceCode));
                 if (!mName.empty())
                 {
                     map[mName] = MemberNodes{child, mNameNode};
@@ -1417,7 +1440,7 @@ void SymbolCollector::PublishEnumMembers(TSNode node, const EnumSignature& enumS
                                          const CollectionContext& ctx)
 {
     TSNode nameNode = parser::GetChildByField(node, m_gs.fieldName);
-    std::string enumName = parser::GetNodeText(nameNode, sCtx.request.sourceCode);
+    std::string enumName(parser::NodeText(nameNode, sCtx.request.sourceCode));
     const auto memberNodeMap =
         BuildEnumMemberNodeMap(node, m_gs.symEnumMember, m_gs.fieldName, sCtx.request.sourceCode);
 
@@ -1507,7 +1530,7 @@ void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, c
     Symbol sym = CreateNamedContainerSymbol(SymbolType::Property, node, sCtx, ctx);
 
     VariableSignature varSig;
-    varSig.typeName = parser::GetNodeText(typeNode, sCtx.request.sourceCode);
+    varSig.typeName = std::string(parser::NodeText(typeNode, sCtx.request.sourceCode));
     varSig.baseTypeName = typeInfo.baseTypeName;
     varSig.templateName = typeInfo.templateName;
     varSig.typeRange = ToSourceRange(typeNode);
@@ -1516,7 +1539,7 @@ void SymbolCollector::ProcessProperty(TSNode node, SymbolCollectContext& sCtx, c
     varSig.hasPrimitiveHandle = typeInfo.hasPrimitiveHandle;
     varSig.arrayDepth = typeInfo.arrayDepth;
     varSig.modifiers = ExtractModifiers(node, sCtx.request.sourceCode);
-    varSig.defaultValue = parser::GetNodeText(node, sCtx.request.sourceCode);
+    varSig.defaultValue = std::string(parser::NodeText(node, sCtx.request.sourceCode));
     varSig.isVirtualProperty = true;
 
     ParseAccessorNodes(node, varSig);
@@ -1569,7 +1592,7 @@ void SymbolCollector::ProcessCallReference(TSNode callNode, SymbolCollectContext
 
         callSig.isMethodCall = true;
         callSig.objectExpression =
-            parser::GetNodeText(GetChildByFieldName(functionNode, "object"), sCtx.request.sourceCode);
+            std::string(parser::NodeText(GetChildByFieldName(functionNode, "object"), sCtx.request.sourceCode));
         nameNode = memberNode;
     }
     else if (functionNodeSym != m_gs.symScopedIdentifier)
@@ -1577,7 +1600,7 @@ void SymbolCollector::ProcessCallReference(TSNode callNode, SymbolCollectContext
         return;
     }
 
-    callSig.calleeName = parser::GetNodeText(nameNode, sCtx.request.sourceCode);
+    callSig.calleeName = std::string(parser::NodeText(nameNode, sCtx.request.sourceCode));
     if (callSig.calleeName.empty())
         return;
 
@@ -1597,7 +1620,7 @@ void SymbolCollector::ProcessCallReference(TSNode callNode, SymbolCollectContext
 void SymbolCollector::CheckUsingDeclarationCapture(TSNode usingNode, SymbolCollectContext& sCtx) const
 {
     TSNode nameNode = GetChildByFieldName(usingNode, "name");
-    std::string nameText = parser::GetNodeText(nameNode, sCtx.request.sourceCode);
+    std::string nameText(parser::NodeText(nameNode, sCtx.request.sourceCode));
     if (nameText.empty() || !IsReservedKeyword(nameText))
         return;
 
@@ -1644,7 +1667,7 @@ void SymbolCollector::CheckDuplicateModifierGroup(TSNode declNode, SymbolCollect
                 do
                 {
                     TSNode modTokNode = ts_tree_cursor_current_node(&modCursor);
-                    std::string modText(parser::GetNodeText(modTokNode, sCtx.request.sourceCode));
+                    std::string modText(std::string(parser::NodeText(modTokNode, sCtx.request.sourceCode)));
                     if (seenModifiers.contains(modText))
                     {
                         TSPoint startPt = ts_node_start_point(modTokNode);
@@ -2368,7 +2391,7 @@ bool SymbolCollector::TryFormatArgumentListSyntaxError(TSNode node, const Symbol
         return false;
     }
 
-    std::string_view nextView = parser::GetNodeTextView(nextSibling, sCtx.request.sourceCode);
+    std::string_view nextView = parser::NodeText(nextSibling, sCtx.request.sourceCode);
     while (!nextView.empty() && (nextView.front() == ' ' || nextView.front() == '\t'))
     {
         nextView.remove_prefix(1);
@@ -2455,7 +2478,7 @@ bool SymbolCollector::TryFormatMissingSemicolonError(TSNode node, const SymbolCo
         return false;
     }
 
-    std::string_view token = ExtractMissingSemicolonToken(parser::GetNodeTextView(node, sCtx.request.sourceCode));
+    std::string_view token = ExtractMissingSemicolonToken(parser::NodeText(node, sCtx.request.sourceCode));
     if (token.empty())
     {
         return false;
@@ -2481,7 +2504,7 @@ void SymbolCollector::EmitParseErrorDiagnostic(TSNode node, SymbolCollectContext
     diag.source = "AngelScript";
     diag.fileUri = sCtx.request.fileUri;
 
-    std::string_view rawErrText = GetNodeView(node, sCtx.request.sourceCode);
+    std::string_view rawErrText = parser::NodeText(node, sCtx.request.sourceCode);
     std::string logMsg;
 
     if (ts_node_is_missing(node))
@@ -2559,25 +2582,6 @@ std::string SymbolCollector::FormatSyntaxErrorMessage(std::string_view rawErrTex
 
 // AST/Text Extraction Helpers
 
-std::string SymbolCollector::GetNodeText(TSNode node, std::string_view sourceCode) const
-{
-    return parser::GetNodeText(node, sourceCode);
-}
-
-std::string_view SymbolCollector::GetNodeView(TSNode node, std::string_view sourceCode) const
-{
-    if (ts_node_is_null(node))
-        return {};
-
-    uint32_t start = ts_node_start_byte(node);
-    uint32_t end = ts_node_end_byte(node);
-
-    if (start >= end || end > sourceCode.size())
-        return {};
-
-    return std::string_view(sourceCode.data() + start, end - start);
-}
-
 bool SymbolCollector::ApplyAccessOrStorageString(std::string_view text, SymbolModifiers& modifiers) const
 {
     if (text == "private")
@@ -2628,7 +2632,7 @@ void SymbolCollector::ApplyModifierString(std::string_view text, SymbolModifiers
 
 void SymbolCollector::ProcessModifierChild(TSNode child, std::string_view sourceCode, SymbolModifiers& modifiers) const
 {
-    std::string_view childText = TrimView(GetNodeView(child, sourceCode));
+    std::string_view childText = TrimView(parser::NodeText(child, sourceCode));
     bool isDeclMod = (ts_node_symbol(child) == m_gs.symDeclarationModifier ||
                       ts_node_symbol(child) == m_gs.symSharedExternalModifier);
     bool isFuncAttr = (ts_node_symbol(child) == m_gs.symFuncAttributes);
@@ -2643,7 +2647,7 @@ void SymbolCollector::ProcessModifierChild(TSNode child, std::string_view source
             do
             {
                 TSNode grandChild = ts_tree_cursor_current_node(&cursor);
-                std::string_view gcText = TrimView(GetNodeView(grandChild, sourceCode));
+                std::string_view gcText = TrimView(parser::NodeText(grandChild, sourceCode));
                 ApplyModifierString(gcText, modifiers, isFuncAttr);
 
                 TSSymbol tokSym = ts_node_symbol(grandChild);
@@ -2749,7 +2753,7 @@ void SymbolCollector::ExtractParamTypeRefAndConst(TSNode pTypeNode, std::string_
             TSNode typeChild = ts_tree_cursor_current_node(&cursor);
             if (!ts_node_is_named(typeChild))
             {
-                std::string_view tok = GetNodeView(typeChild, sourceCode);
+                std::string_view tok = parser::NodeText(typeChild, sourceCode);
                 if (tok == "const")
                     paramInfo.isConst = true;
                 else if (tok == "&")
@@ -2769,7 +2773,7 @@ void SymbolCollector::ExtractParamModifierTokens(TSNode paramNode, std::string_v
     TSNode dirNode = GetChildByFieldId(paramNode, m_gs.fieldDirection);
     if (!ts_node_is_null(dirNode))
     {
-        std::string_view dirTok = GetNodeView(dirNode, sourceCode);
+        std::string_view dirTok = parser::NodeText(dirNode, sourceCode);
         paramInfo.isReference = true;
         if (dirTok == "inout")
         {
@@ -2791,7 +2795,7 @@ void SymbolCollector::ExtractParamModifierTokens(TSNode paramNode, std::string_v
         do
         {
             TSNode child = ts_tree_cursor_current_node(&cursor);
-            std::string_view tok = GetNodeView(child, sourceCode);
+            std::string_view tok = parser::NodeText(child, sourceCode);
             if (tok == "&")
             {
                 paramInfo.isReference = true;
@@ -2872,16 +2876,16 @@ ParameterInformation SymbolCollector::ExtractParameterInfo(TSNode paramNode, con
     TypeExtractionResult pInfo = ExtractTypeInfoFromAST(pTypeNode, sourceCode, &ctx.index);
 
     ParameterInformation paramInfo;
-    paramInfo.name = parser::GetNodeText(pNameNode, sourceCode);
-    paramInfo.typeName = parser::GetNodeText(pTypeNode, sourceCode);
-    const std::string_view paramText = GetNodeTextView(paramNode, sourceCode);
+    paramInfo.name = std::string(parser::NodeText(pNameNode, sourceCode));
+    paramInfo.typeName = std::string(parser::NodeText(pTypeNode, sourceCode));
+    const std::string_view paramText = parser::NodeText(paramNode, sourceCode);
     paramInfo.baseTypeName = pInfo.baseTypeName;
     paramInfo.templateName = pInfo.templateName;
     paramInfo.typeKind = pInfo.kind;
     paramInfo.isArray = pInfo.isArray;
     paramInfo.hasPrimitiveHandle = pInfo.hasPrimitiveHandle;
     paramInfo.arrayDepth = pInfo.arrayDepth;
-    paramInfo.defaultValue = parser::GetNodeText(pDefaultNode, sourceCode);
+    paramInfo.defaultValue = std::string(parser::NodeText(pDefaultNode, sourceCode));
     if (paramInfo.defaultValue.empty())
     {
         paramInfo.defaultValue = ExtractFallbackDefaultValue(paramText);
@@ -2966,7 +2970,7 @@ Symbol SymbolCollector::CreateSymbol(SymbolType type, TSNode node, TSNode nameNo
 
     Symbol sym;
     sym.type = type;
-    sym.name = parser::GetNodeText(nameNode, loc.sourceCode);
+    sym.name = std::string(parser::NodeText(nameNode, loc.sourceCode));
     sym.containerName = loc.containerPath;
     sym.containerKind = loc.containerKind;
     appendQualifiedName(sym.qualifiedName, loc.containerPath, sym.name);
@@ -2989,7 +2993,7 @@ Symbol SymbolCollector::CreateSymbol(SymbolType type, TSNode node, TSNode nameNo
             std::vector<std::string> metaBlocks;
             while (!ts_node_is_null(prev) && ts_node_symbol(prev) == m_gs.symMetadata)
             {
-                metaBlocks.push_back(parser::GetNodeText(prev, loc.sourceCode));
+                metaBlocks.push_back(std::string(parser::NodeText(prev, loc.sourceCode)));
                 prev = ts_node_prev_named_sibling(prev);
             }
             if (!metaBlocks.empty())
@@ -3023,7 +3027,7 @@ std::vector<std::string> SymbolCollector::ExtractBases(TSNode classNode, std::st
                         TSNode baseChild = ts_tree_cursor_current_node(&baseCursor);
                         if (ts_node_is_named(baseChild))
                         {
-                            std::string text = parser::GetNodeText(baseChild, sourceCode);
+                            std::string text(parser::NodeText(baseChild, sourceCode));
                             if (!text.empty())
                                 bases.push_back(std::move(text));
                         }

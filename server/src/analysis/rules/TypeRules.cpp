@@ -30,7 +30,7 @@ static TSNode FindEnumDeclarationNode(const NodeIndex& nodeIndex, const Symbol& 
             return node;
         }
         const TSNode nameNode = parser::GetChildByField(node, gs.fieldName);
-        if (!ts_node_is_null(nameNode) && parser::GetNodeTextView(nameNode, sourceCode) == sym.name)
+        if (!ts_node_is_null(nameNode) && parser::NodeText(nameNode, sourceCode) == sym.name)
         {
             return node;
         }

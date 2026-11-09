@@ -37,7 +37,7 @@ static void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Sco
         if (IsFunctionReference(expr, ExpressionTypeContext(scope, ctx)))
         {
             ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-no-implicit-conversion",
-                                {TrimString(parser::NodeText(expr, ctx.request.sourceCode)), expected});
+                                {TrimString(std::string(parser::NodeText(expr, ctx.request.sourceCode))), expected});
             return;
         }
 
@@ -69,7 +69,7 @@ static void CheckReturnReference(TSNode expr, TSNode funcNode, const Scope* scop
         return;
     }
 
-    std::string exprText = parser::NodeText(expr, ctx.request.sourceCode);
+    std::string exprText(parser::NodeText(expr, ctx.request.sourceCode));
     while (!exprText.empty() && isspace(static_cast<unsigned char>(exprText.front())))
     {
         exprText.erase(exprText.begin());
@@ -123,7 +123,7 @@ static void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, co
         CheckReturnReference(expr, funcNode, scope, ctx);
     }
 
-    const std::string rawRetText = parser::NodeText(retTypeNode, ctx.request.sourceCode);
+    const std::string rawRetText(parser::NodeText(retTypeNode, ctx.request.sourceCode));
     const std::string expected = CleanBaseType(rawRetText);
     if (expected == "void")
     {
@@ -141,7 +141,7 @@ static void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, co
         if (IsFunctionReference(expr, ExpressionTypeContext(scope, ctx)))
         {
             ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-no-implicit-conversion",
-                                {TrimString(parser::NodeText(expr, ctx.request.sourceCode)), expected});
+                                {TrimString(std::string(parser::NodeText(expr, ctx.request.sourceCode))), expected});
             return;
         }
 

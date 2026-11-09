@@ -104,6 +104,12 @@ size_t SkipInlineWhitespaceBackward(const std::string& text, size_t pos)
     return pos;
 }
 
+/**
+ * @brief Walks back over identifier characters ending at a position.
+ * @param[in] text Line text being scanned.
+ * @param[in] end Exclusive end of the identifier.
+ * @return Start offset of the identifier; equals end when no identifier precedes it.
+ */
 size_t ExtractIdentifierBackward(const std::string& text, size_t end)
 {
     size_t s = end;
@@ -132,6 +138,11 @@ std::optional<size_t> FindAccessDotCol(const std::string& prefix)
     return i - 1;
 }
 
+/**
+ * @brief Returns the partial identifier the user is typing at the end of the line prefix.
+ * @param[in] linePrefix Line text up to the cursor.
+ * @return Trailing identifier characters; empty when the cursor follows punctuation or whitespace.
+ */
 std::string_view ExtractQueryPrefix(std::string_view linePrefix)
 {
     size_t i = linePrefix.size();

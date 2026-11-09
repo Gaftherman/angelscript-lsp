@@ -111,7 +111,7 @@ static std::string EnclosingReturnType(TSNode returnNode, std::string_view sourc
         {
             returnType = parser::GetChildByField(enclosing, gs.fieldType);
         }
-        return ts_node_is_null(returnType) ? std::string() : parser::GetNodeText(returnType, sourceCode);
+        return ts_node_is_null(returnType) ? std::string() : std::string(parser::NodeText(returnType, sourceCode));
     }
     return "";
 }
@@ -1018,8 +1018,8 @@ static void ProcessTypedInitializerList(TSNode node, const InitializerListContex
     {
         const ElementContext elements = ElementsAt(valueNode, initCtx.request);
         const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.structCache, 0};
-        InitializerListValidator::ValidateList(valueNode, parser::GetNodeText(typeNode, initCtx.request.sourceCode),
-                                               valCtx);
+        InitializerListValidator::ValidateList(
+            valueNode, std::string(parser::NodeText(typeNode, initCtx.request.sourceCode)), valCtx);
     }
 }
 
@@ -1102,7 +1102,7 @@ static void ProcessVariableDeclaration(TSNode node, const InitializerListContext
     }
 
     const auto& gs = parser::GetGrammarSymbols();
-    const std::string declaredType = parser::GetNodeText(typeNode, initCtx.request.sourceCode);
+    const std::string declaredType(parser::NodeText(typeNode, initCtx.request.sourceCode));
     parser::ForEachChildNode(
         node,
         [&](TSNode declarator)

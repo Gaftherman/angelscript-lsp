@@ -86,7 +86,7 @@ static TSNode ReadParameterType(const SyntaxOperands& parameter)
 
 static std::string ReadParameterName(const SyntaxOperands& parameter, const NullCheckContext& ctx)
 {
-    std::string name = parser::NodeText(parameter.Field(parser::GetGrammarSymbols().fieldName), ctx.sourceCode);
+    std::string name(parser::NodeText(parameter.Field(parser::GetGrammarSymbols().fieldName), ctx.sourceCode));
     if (name.empty())
     {
         parameter.ForEachNamed(

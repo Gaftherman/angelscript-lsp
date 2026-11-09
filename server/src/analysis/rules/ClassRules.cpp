@@ -941,13 +941,13 @@ static void CheckThisMember(TSNode cur, std::string_view mixinSource, MixinCheck
         return;
     }
 
-    std::string objName = parser::GetNodeText(objNode, mixinSource);
+    std::string objName(parser::NodeText(objNode, mixinSource));
     if (objName != "this")
     {
         return;
     }
 
-    std::string propName = parser::GetNodeText(propNode, mixinSource);
+    std::string propName(parser::NodeText(propNode, mixinSource));
     if (!propName.empty() && !mctx.hostMembers.contains(propName) && !mctx.mixinSelfMembers.contains(propName) &&
         !mctx.hostMembers.contains("get_" + propName) && !mctx.mixinSelfMembers.contains("get_" + propName) &&
         !mctx.hostMembers.contains("set_" + propName) && !mctx.mixinSelfMembers.contains("set_" + propName) &&
@@ -1261,7 +1261,7 @@ static void CheckCallMember(TSNode cur, std::string_view mixinSource, FunctionCh
         return;
     }
 
-    std::string_view fnName = parser::GetNodeTextView(fnNode, mixinSource);
+    std::string_view fnName = parser::NodeText(fnNode, mixinSource);
     if (!utils::ContainsScopeSeparator(fnName) && !fnName.empty() && !IsValidMixinIdentifier(fnName, state, ctx))
     {
         std::string fnNameStr(fnName);
@@ -1284,7 +1284,7 @@ static void CheckIdentifierMember(TSNode cur, std::string_view mixinSource, Func
         return;
     }
 
-    std::string_view name = parser::GetNodeTextView(cur, mixinSource);
+    std::string_view name = parser::NodeText(cur, mixinSource);
     if (!IsValidMixinIdentifier(name, state, ctx))
     {
         std::string nameStr(name);
@@ -1312,7 +1312,7 @@ static void CollectLocalNames(TSNode memNode, std::string_view mixinSource, cons
                                           TSNode pName = parser::GetChildByField(paramChild, gs.fieldName);
                                           if (!ts_node_is_null(pName))
                                           {
-                                              localNames.insert(parser::GetNodeTextView(pName, mixinSource));
+                                              localNames.insert(parser::NodeText(pName, mixinSource));
                                           }
                                       });
     }
@@ -1343,7 +1343,7 @@ static void CollectLocalNames(TSNode memNode, std::string_view mixinSource, cons
                 TSNode vdName = parser::GetChildByField(*it, gs.fieldName);
                 if (!ts_node_is_null(vdName))
                 {
-                    localNames.insert(parser::GetNodeTextView(vdName, mixinSource));
+                    localNames.insert(parser::NodeText(vdName, mixinSource));
                 }
             }
         }

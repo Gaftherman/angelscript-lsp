@@ -200,7 +200,7 @@ TSNode FindDatatypeScopeNode(TSNode datatypeNode)
     {
         return TSNode{};
     }
-    TSNode scope = parser::FindFirstChildOfSymbol(typeNode, gs.symScope);
+    TSNode scope = parser::FindChildWithSymbol(typeNode, gs.symScope);
     if (ts_node_is_null(scope) || ts_node_start_byte(scope) >= ts_node_end_byte(scope))
     {
         return TSNode{};

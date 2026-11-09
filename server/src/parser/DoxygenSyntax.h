@@ -162,19 +162,6 @@ class DoxygenNodeView
     }
 
     /**
-     * @brief Indicates whether the node was a named grammar rule.
-     * @return True if the underlying node was named, false if anonymous or null.
-     */
-    [[nodiscard]] bool IsNamed() const noexcept
-    {
-        if (IsNull())
-        {
-            return false;
-        }
-        return m_facts->nodes[m_index].named;
-    }
-
-    /**
      * @brief Returns the inclusive start byte offset of the node in the source text.
      * @return 0-based start byte index, or 0 if null.
      */

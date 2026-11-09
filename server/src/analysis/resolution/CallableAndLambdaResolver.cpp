@@ -71,7 +71,7 @@ void ProcessCallArgumentChild(TSNode child, TSFieldId fieldId, std::string_view 
         current.nameNode = child;
         if (!sourceCode.empty())
         {
-            current.name = parser::GetNodeText(child, sourceCode);
+            current.name = std::string(parser::NodeText(child, sourceCode));
         }
         return;
     }
@@ -488,7 +488,7 @@ void ApplyLambdaParamChild(TSNode child, TSFieldId fieldId, std::string_view sou
     {
         current.typeNode = child;
         current.hasWrittenType = true;
-        std::string_view text = parser::GetNodeTextView(child, sourceCode);
+        std::string_view text = parser::NodeText(child, sourceCode);
         current.isConst = IsConstTypeView(text);
         current.isHandle = IsHandleTypeView(text);
         current.typeName = CleanBaseType(text);
@@ -507,7 +507,7 @@ void ApplyLambdaParamChild(TSNode child, TSFieldId fieldId, std::string_view sou
     else if (fieldId == gs.fieldName || sym == gs.symIdentifier)
     {
         current.nameNode = child;
-        current.name = parser::GetNodeText(child, sourceCode);
+        current.name = std::string(parser::NodeText(child, sourceCode));
     }
 }
 
@@ -724,7 +724,7 @@ static std::optional<Symbol> FindDeclaratorFuncdefTarget(TSNode parent, const Sy
         }
         if (!ts_node_is_null(typeNode))
         {
-            return FindFuncdefSymbol(CleanBaseType(parser::GetNodeText(typeNode, sourceCode)), table);
+            return FindFuncdefSymbol(CleanBaseType(std::string(parser::NodeText(typeNode, sourceCode))), table);
         }
     }
     return std::nullopt;
@@ -807,7 +807,7 @@ static std::optional<Symbol> FindAssignmentFuncdefTarget(TSNode parent, const Sy
     {
         return std::nullopt;
     }
-    std::string varName = CleanBaseType(parser::GetNodeText(leftNode, sourceCode));
+    std::string varName = CleanBaseType(std::string(parser::NodeText(leftNode, sourceCode)));
     const size_t dot = varName.rfind('.');
     if (dot != std::string::npos)
     {
@@ -935,7 +935,7 @@ std::optional<Symbol> FuncdefTargetOfLambda(TSNode lambdaNode, const SymbolTable
         return std::nullopt;
     }
 
-    const std::string calleeName = CleanBaseType(parser::GetNodeText(callee, sourceCode));
+    const std::string calleeName = CleanBaseType(std::string(parser::NodeText(callee, sourceCode)));
     if (*position == 0 && ts_node_named_child_count(parent) == 1)
     {
         if (auto asConversion = FindFuncdefSymbol(calleeName, table))
@@ -1109,7 +1109,7 @@ static bool IsMemberMethodSymbol(TSNode node, const ExpressionTypeContext& ctx)
     {
         return false;
     }
-    const std::string memName = parser::NodeText(memNode, ctx.sourceCode);
+    const std::string memName(parser::NodeText(memNode, ctx.sourceCode));
     const std::string objType = ResolveExpressionType(objNode, ctx);
     const std::string cleanObj = CleanBaseType(objType);
     if (cleanObj.empty() || memName.empty())
@@ -1197,7 +1197,7 @@ static bool HasGlobalFunctionSymbol(std::string_view name, const SymbolTable& sy
 static bool IsIdentifierFunctionSymbol(TSNode node, const Scope* scope, const SymbolTable& symbolTable,
                                        std::string_view sourceCode)
 {
-    std::string name = parser::GetNodeText(node, sourceCode);
+    std::string name(parser::NodeText(node, sourceCode));
     if (name.empty())
     {
         return false;

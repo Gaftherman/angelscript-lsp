@@ -21,7 +21,7 @@ static TSNode FindFunctionBodyBlock(TSNode fnNode)
     {
         return bodyNode;
     }
-    return parser::FindFirstChildOfType(fnNode, "statement_block");
+    return parser::FindChildWithSymbol(fnNode, parser::GetGrammarSymbols().symStatementBlock);
 }
 
 /**
@@ -36,7 +36,7 @@ static TSNode FindFunctionParametersNode(TSNode fnNode)
     {
         return paramList;
     }
-    return parser::FindFirstChildOfType(fnNode, "parameter_list");
+    return parser::FindChildWithSymbol(fnNode, parser::GetGrammarSymbols().symParameterList);
 }
 
 /**

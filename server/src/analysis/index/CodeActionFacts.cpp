@@ -132,6 +132,11 @@ TSPoint FindClassClosingBracePoint(TSNode classBody)
     return closingPt;
 }
 
+/**
+ * @brief Finds the member list of a class declaration, falling back to a child scan when the body field is absent.
+ * @param[in] classNode Class declaration node.
+ * @return Class body node, or a null node for a class without a body.
+ */
 TSNode FindClassBodyNode(TSNode classNode)
 {
     TSNode bodyNode = parser::GetChildByField(classNode, parser::GetGrammarSymbols().fieldBody);

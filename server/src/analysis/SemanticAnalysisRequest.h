@@ -10,6 +10,7 @@
 #include "config/ServerConfig.h"
 #include "i18n/i18n.h"
 #include "parser/ASTUtils.h"
+#include "parser/TraversalBudget.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/StopFlag.h"
 #include "utils/TransparentHash.h"
@@ -100,7 +101,7 @@ struct SemanticAnalysisRequest
     /**
      * @brief Optional traversal budget to enforce bounded AST node visits across checkers.
      */
-    TraversalBudget* traversalBudget = nullptr;
+    parser::TraversalBudget* traversalBudget = nullptr;
 
     /**
      * @brief Optional cancellation flag to abort long-running semantic passes early.
