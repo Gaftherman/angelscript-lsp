@@ -3067,6 +3067,22 @@
       "verifiedByTests": [
         "TypeConversionCheckerTest"
       ]
+    },
+    {
+      "id": "REF-M24D-ASSIGNMENT-PROPERTY-FACTS",
+      "phase": "M24D",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/TypeConversionAssignments.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "ProcessAssignmentNode; CheckFuncdefAssignment; InspectPropertyAccess; CheckAssignmentPropertyAccess",
+      "whatItDidAndWhyInThatFile": "Assignment, funcdef-value and property-accessor checks read operands, the assignment operator, the unary handle operator and the property receiver through TSNode fields in the second-pass checkers folder.",
+      "whyChangedOrDeleted": "The pass-1 builders capture both operands, the operator, the handle-unwrapped spans, the funcdef value with its lambda parameters and the property access spelling once per syntax revision; the checkers consume AssignmentSiteFacts, FuncdefValueFact and PropertyAccessFact through byte-range resolution overloads.",
+      "replacedByCanonicalFile": "server/src/analysis/index/AssignmentSiteFacts.h",
+      "replacedByCanonicalSymbol": "BuildAssignmentSiteFacts",
+      "ramOrCpuImpact": "One O(N) extraction per revision and O(log N) exact-span lookups; no parent climbing or node re-reads in the second pass.",
+      "verifiedByTests": [
+        "TypeConversionCheckerTest"
+      ]
     }
   ]
 }

@@ -30,7 +30,7 @@ std::string PropertyNameFromAccessor(const Symbol& sym, bool keywordRequired)
     return std::string(utils::AccessorPropertyName(sym.name));
 }
 
-std::vector<Symbol> FindPropertyAccessors(const std::string& typeName, const std::string& propertyName,
+std::vector<Symbol> FindPropertyAccessors(std::string_view typeName, std::string_view propertyName,
                                           const SymbolTable& symbolTable, bool keywordRequired)
 {
     std::vector<Symbol> accessors;
@@ -41,7 +41,8 @@ std::vector<Symbol> FindPropertyAccessors(const std::string& typeName, const std
     ExpandMixinHostHierarchies(typeName, symbolTable, hierarchy);
     for (const std::string_view prefix : {std::string_view("get_"), std::string_view("set_")})
     {
-        const std::string accessorName = std::string(prefix) + propertyName;
+        std::string accessorName(prefix);
+        accessorName += propertyName;
         for (const auto& owner : hierarchy)
         {
             bool foundForOwner = false;

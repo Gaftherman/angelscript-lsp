@@ -2,6 +2,7 @@
 
 #include "analysis/checkers/BinaryOperatorHelpers.h"
 #include "analysis/checkers/TypeConversionChecker.h"
+#include "analysis/index/AssignmentSiteFacts.h"
 #include "analysis/index/SyntaxOperands.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
@@ -215,21 +216,31 @@ bool IsConvertible(std::string_view from, std::string_view to, const DiagnosticC
 ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx);
 
 /**
- * @brief Inspects property access metadata on a syntax node.
- * @param[in] exprNode Expression node accessing property.
+ * @brief Resolves the ExpressionType of the expression that spans the given byte range.
+ * @param[in] bytes Byte span of the expression.
+ * @param[in] scope Lexical scope at the expression position.
+ * @param[in] ctx Diagnostic context.
+ * @return Resolved ExpressionType, or a default value when the span names no node.
+ */
+ExpressionType ResolveValueType(IndexedByteRange bytes, const Scope* scope, const DiagnosticContext& ctx);
+
+/**
+ * @brief Inspects the accessor metadata of an indexed expression that may name a virtual property.
+ * @param[in] access Indexed expression spelling and spans.
  * @param[in] scope Enclosing lexical scope.
  * @param[in] ctx Diagnostic context.
- * @return PropertyAccessInfo structure.
+ * @return PropertyAccessInfo structure; no flag is set for an expression that names no property.
  */
-PropertyAccessInfo InspectPropertyAccess(TSNode exprNode, const Scope* scope, const DiagnosticContext& ctx);
+PropertyAccessInfo InspectPropertyAccess(const PropertyAccessFact& access, const Scope* scope,
+                                         const DiagnosticContext& ctx);
 
 /**
  * @brief Validates property access mutations on assignment LHS.
- * @param[in] node Assignment syntax node.
+ * @param[in] site Indexed assignment with its left property access.
  * @param[in] scope Enclosing lexical scope.
  * @param[in,out] ctx Diagnostic context.
  */
-void CheckAssignmentPropertyAccess(TSNode node, const Scope* scope, DiagnosticContext& ctx);
+void CheckAssignmentPropertyAccess(const AssignmentSiteFact& site, const Scope* scope, DiagnosticContext& ctx);
 
 /**
  * @brief Emits an ExpressionIsDataType diagnostic unless suppressed due to syntax errors.
@@ -331,6 +342,16 @@ void CheckFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSi
                             DiagnosticContext& ctx);
 
 /**
+ * @brief Validates an indexed funcdef value against a target funcdef signature.
+ * @param[in] target Diagnostic anchor range.
+ * @param[in] funcdefSig Expected funcdef signature.
+ * @param[in] value Indexed assigned value; an absent value ends the check.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void CheckFuncdefAssignment(SourceRange target, const FuncdefSignature& funcdefSig, const FuncdefValueFact& value,
+                            DiagnosticContext& ctx);
+
+/**
  * @brief Resolves the lexical scope enclosing a syntax tree node.
  * @param[in] node AST node to resolve scope for.
  * @param[in] request Analysis request carrying scope root.
@@ -407,11 +428,12 @@ void ProcessAutoDeclarationSite(const AutoDeclarationSiteFact& site, const TypeC
 
 /**
  * @brief Validates assignment expression semantics and type compatibility.
- * @param[in] node Assignment expression syntax node.
+ * @param[in] site Indexed assignment with its operands.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic context.
  */
-void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
+void ProcessAssignmentSite(const AssignmentSiteFact& site, const TypeConversionCheckRequest& request,
+                           DiagnosticContext& ctx);
 
 /**
  * @brief Validates binary expression operators and operand type compatibility.

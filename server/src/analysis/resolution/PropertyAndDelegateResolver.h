@@ -30,7 +30,7 @@ struct DelegatePropertyReceiverContext
 };
 
 std::string PropertyNameFromAccessor(const Symbol& sym, bool keywordRequired);
-std::vector<Symbol> FindPropertyAccessors(const std::string& typeName, const std::string& propertyName,
+std::vector<Symbol> FindPropertyAccessors(std::string_view typeName, std::string_view propertyName,
                                           const SymbolTable& symbolTable, bool keywordRequired);
 std::vector<Symbol> FindGlobalPropertyAccessors(std::string_view propertyName, const SymbolTable& symbolTable,
                                                 bool keywordRequired = false);

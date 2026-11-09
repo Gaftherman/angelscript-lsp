@@ -1,20 +1,25 @@
 #include "analysis/checkers/TypeConversionCommon.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 #include "utils/ScopedNameUtils.h"
 
-#include <string>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::analysis
 {
 
-static bool CheckVirtualPropertySymbol(const std::string& typeName, const std::string& propName,
-                                       const SymbolTable& table, PropertyAccessInfo& info)
+/**
+ * @brief Looks for a declared virtual property named like info.propName on one type.
+ * @param[in] typeName Qualified name of the type searched.
+ * @param[in] table Symbol table searched for members.
+ * @param[in,out] info Receives the accessor flags when a virtual property matches; its propName names the property.
+ * @return True when a virtual property was found.
+ */
+static bool CheckVirtualPropertySymbol(std::string_view typeName, const SymbolTable& table, PropertyAccessInfo& info)
 {
-    if (auto propSyms = table.FindMemberSymbolPtr(typeName, propName))
+    if (auto propSyms = table.FindMemberSymbolPtr(typeName, info.propName))
     {
         for (const auto& s : *propSyms)
         {
@@ -40,12 +45,17 @@ static bool CheckVirtualPropertySymbol(const std::string& typeName, const std::s
     return false;
 }
 
-static void CheckAccessorMethods(const std::string& typeName, const std::string& propName, const SymbolTable& table,
-                                 PropertyAccessInfo& info)
+/**
+ * @brief Looks for get_ and set_ methods named like info.propName on one type.
+ * @param[in] typeName Qualified name of the type searched.
+ * @param[in] table Symbol table searched for members.
+ * @param[in,out] info Receives the accessor flags; its propName names the property.
+ */
+static void CheckAccessorMethods(std::string_view typeName, const SymbolTable& table, PropertyAccessInfo& info)
 {
     if (!info.hasGet)
     {
-        if (auto getSyms = table.FindMemberSymbolPtr(typeName, "get_" + propName); getSyms && !getSyms->empty())
+        if (auto getSyms = table.FindMemberSymbolPtr(typeName, "get_" + info.propName); getSyms && !getSyms->empty())
         {
             info.isProperty = true;
             info.hasGet = true;
@@ -60,7 +70,7 @@ static void CheckAccessorMethods(const std::string& typeName, const std::string&
     }
     if (!info.hasSet)
     {
-        if (auto setSyms = table.FindMemberSymbolPtr(typeName, "set_" + propName); setSyms && !setSyms->empty())
+        if (auto setSyms = table.FindMemberSymbolPtr(typeName, "set_" + info.propName); setSyms && !setSyms->empty())
         {
             info.isProperty = true;
             info.hasSet = true;
@@ -75,6 +85,11 @@ static void CheckAccessorMethods(const std::string& typeName, const std::string&
     }
 }
 
+/**
+ * @brief Folds accessor functions into the property flags.
+ * @param[in] accessors Functions found for one property name.
+ * @param[in,out] info Receives isProperty, hasGet, hasSet and isIndexed.
+ */
 static void PopulateAccessorInfo(const std::vector<Symbol>& accessors, PropertyAccessInfo& info)
 {
     for (const auto& sym : accessors)
@@ -103,115 +118,101 @@ static void PopulateAccessorInfo(const std::vector<Symbol>& accessors, PropertyA
     }
 }
 
-static PropertyAccessInfo InspectBareOrScopedProperty(TSNode exprNode, const Scope* scope, const DiagnosticContext& ctx)
+/**
+ * @brief Inspects an identifier or scoped identifier that may name a virtual property.
+ * @param[in] access Indexed name fact.
+ * @param[in] scope Enclosing lexical scope; a local of the same name hides the property.
+ * @param[in] ctx Diagnostic context.
+ * @return Accessor flags; none are set for a local or an unknown name.
+ */
+static PropertyAccessInfo InspectBareOrScopedProperty(const PropertyAccessFact& access, const Scope* scope,
+                                                      const DiagnosticContext& ctx)
 {
     PropertyAccessInfo info;
-    std::string text = std::string(TrimString(parser::NodeText(exprNode, ctx.request.sourceCode)));
-    const auto [scopeNameView, propNameView] = utils::SplitScopedName(text);
-    if (!scopeNameView.empty())
+    const auto [scopeName, propName] = utils::SplitScopedName(access.text);
+    if (!scopeName.empty())
     {
-        std::string scopeName = std::string(TrimString(scopeNameView));
-        info.propName = std::string(TrimString(propNameView));
-        auto accessors = FindPropertyAccessors(scopeName, info.propName, ctx.request.symbolTable, false);
+        info.propName = TrimString(propName);
+        auto accessors = FindPropertyAccessors(TrimString(scopeName), info.propName, ctx.request.symbolTable, false);
         PopulateAccessorInfo(accessors, info);
         return info;
     }
 
-    if (scope != nullptr)
-    {
-        if (const auto* def = ResolveInScopeAt(scope, text, ts_node_start_byte(exprNode)))
-        {
-            return info;
-        }
-    }
-
-    info.propName = text;
-    auto accessors = FindGlobalPropertyAccessors(info.propName, ctx.request.symbolTable, false);
-    PopulateAccessorInfo(accessors, info);
-    if (info.isProperty)
+    if (scope != nullptr && ResolveInScopeAt(scope, access.text, access.bytes.startByte))
     {
         return info;
     }
 
-    for (const auto& cont : GetEnclosingContainers(exprNode, ctx.request.sourceCode, ctx.request.nodeIndex))
+    info.propName = access.text;
+    auto accessors = FindGlobalPropertyAccessors(info.propName, ctx.request.symbolTable, false);
+    PopulateAccessorInfo(accessors, info);
+    if (info.isProperty || ctx.request.nodeIndex == nullptr)
     {
-        const std::string cName = cont.qualifiedName.empty() ? cont.name : cont.qualifiedName;
+        return info;
+    }
+
+    const auto containers = ctx.request.nodeIndex->CollectLookupContainers(access.bytes.startByte, access.bytes.endByte,
+                                                                           access.nodeSymbol, ctx.request.sourceCode);
+    for (const auto& cont : containers)
+    {
+        const auto& cName = cont.qualifiedName.empty() ? cont.name : cont.qualifiedName;
         auto contAcc = FindPropertyAccessors(cName, info.propName, ctx.request.symbolTable, false);
         PopulateAccessorInfo(contAcc, info);
-        if (info.isProperty)
+        if (!info.isProperty)
         {
-            if (info.hasGet && !info.hasSet)
+            continue;
+        }
+        if (info.hasGet && !info.hasSet)
+        {
+            for (const auto& ancestor :
+                 GetInheritedTypeHierarchy(cName, ctx.request.symbolTable, ctx.request.exprCache))
             {
-                for (const auto& ancestor :
-                     GetInheritedTypeHierarchy(cName, ctx.request.symbolTable, ctx.request.exprCache))
+                auto ancestorAcc = FindPropertyAccessors(ancestor, info.propName, ctx.request.symbolTable, false);
+                for (const auto& sym : ancestorAcc)
                 {
-                    auto ancestorAcc = FindPropertyAccessors(ancestor, info.propName, ctx.request.symbolTable, false);
-                    for (const auto& sym : ancestorAcc)
+                    if (sym.name.starts_with("set_"))
                     {
-                        if (sym.name.starts_with("set_"))
-                        {
-                            info.hasSet = true;
-                            break;
-                        }
-                    }
-                    if (info.hasSet)
-                    {
+                        info.hasSet = true;
                         break;
                     }
                 }
+                if (info.hasSet)
+                {
+                    break;
+                }
             }
-            return info;
         }
+        return info;
     }
     return info;
 }
 
-PropertyAccessInfo InspectPropertyAccess(TSNode exprNode, const Scope* scope, const DiagnosticContext& ctx)
+PropertyAccessInfo InspectPropertyAccess(const PropertyAccessFact& access, const Scope* scope,
+                                         const DiagnosticContext& ctx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(exprNode);
-    if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier)
+    if (access.kind == PropertyAccessKind::Name)
     {
-        return InspectBareOrScopedProperty(exprNode, scope, ctx);
+        return InspectBareOrScopedProperty(access, scope, ctx);
     }
 
     PropertyAccessInfo info;
-    if (sym != gs.symMemberExpression)
+    if (access.kind != PropertyAccessKind::Member)
     {
         return info;
     }
 
-    const auto& grammar = parser::GetGrammarSymbols();
-    const SyntaxOperands syntax(exprNode, ctx.request.nodeIndex);
-    TSNode objNode = syntax.Field(grammar.fieldObject);
-    TSNode memNode = syntax.Field(grammar.fieldMember);
-    if (ts_node_is_null(objNode))
-    {
-        objNode = syntax.FirstNamed();
-        const TSNode fallbackMember = syntax.NamedAt(1);
-        if (!ts_node_is_null(fallbackMember))
-        {
-            memNode = fallbackMember;
-        }
-    }
-    if (ts_node_is_null(objNode) || ts_node_is_null(memNode))
-    {
-        return info;
-    }
-
-    info.propName = parser::NodeText(memNode, ctx.request.sourceCode);
-    info.receiverType = ResolveExpressionType(objNode, ExpressionTypeContext(scope, ctx));
-    const std::string cleanObj = CleanBaseType(info.receiverType);
+    info.propName = access.text;
+    info.receiverType = ResolveExpressionType(access.receiver, ExpressionTypeContext(scope, ctx));
+    const auto cleanObj = CleanBaseType(info.receiverType);
     if (cleanObj.empty())
     {
         return info;
     }
 
-    const auto hierarchy = GetInheritedTypeHierarchy(cleanObj, ctx.request.symbolTable);
-    for (const auto& typeName : hierarchy)
+    for (const auto& typeName : GetInheritedTypeHierarchy(cleanObj, ctx.request.symbolTable))
     {
-        CheckVirtualPropertySymbol(typeName, info.propName, ctx.request.symbolTable, info);
-        CheckAccessorMethods(typeName, info.propName, ctx.request.symbolTable, info);
+        CheckVirtualPropertySymbol(typeName, ctx.request.symbolTable, info);
+        CheckAccessorMethods(typeName, ctx.request.symbolTable, info);
         if (info.isProperty && info.hasGet && info.hasSet)
         {
             return info;
@@ -220,51 +221,38 @@ PropertyAccessInfo InspectPropertyAccess(TSNode exprNode, const Scope* scope, co
     return info;
 }
 
-void CheckAssignmentPropertyAccess(TSNode node, const Scope* scope, DiagnosticContext& ctx)
+void CheckAssignmentPropertyAccess(const AssignmentSiteFact& site, const Scope* scope, DiagnosticContext& ctx)
 {
-    const SyntaxOperands syntax(node, ctx.request.nodeIndex);
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode left = syntax.Field(gs.fieldLeft);
-    if (ts_node_is_null(left))
+    const PropertyAccessInfo pInfo = InspectPropertyAccess(site.leftProperty, scope, ctx);
+    if (!pInfo.isProperty)
     {
         return;
     }
-    TSNode opNode = syntax.Field(gs.fieldOperator);
-    const TSSymbol opSym = ts_node_symbol(opNode);
 
-    const TSSymbol leftSym = ts_node_symbol(left);
-    if (leftSym == gs.symIndexExpression)
+    if (site.leftIsIndex)
     {
-        TSNode arrayNode = SyntaxOperands(left, ctx.request.nodeIndex).FieldOrNamed(gs.fieldObject);
-        PropertyAccessInfo pInfo = InspectPropertyAccess(arrayNode, scope, ctx);
-        if (pInfo.isProperty && pInfo.isIndexed)
+        if (!pInfo.isIndexed)
         {
-            if (opSym != gs.tokAssign)
-            {
-                ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-compound-assign-on-indexed-prop",
-                                    pInfo.propName);
-            }
-            if (!pInfo.hasSet && pInfo.hasGet)
-            {
-                ctx.EmitAtNodeRange(ToOptionalSourceRange(left), "as-err-read-only-property", pInfo.propName);
-            }
+            return;
         }
+        if (!site.opIsAssign)
+        {
+            ctx.EmitAtRange(site.range, "as-err-compound-assign-on-indexed-prop", pInfo.propName);
+        }
+        if (!pInfo.hasSet && pInfo.hasGet)
+        {
+            ctx.EmitAtRange(site.left.range, "as-err-read-only-property", pInfo.propName);
+        }
+        return;
     }
-    else
+
+    if (!pInfo.hasSet && pInfo.hasGet)
     {
-        PropertyAccessInfo pInfo = InspectPropertyAccess(left, scope, ctx);
-        if (pInfo.isProperty)
-        {
-            if (!pInfo.hasSet && pInfo.hasGet)
-            {
-                ctx.EmitAtNodeRange(ToOptionalSourceRange(left), "as-err-read-only-property", pInfo.propName);
-            }
-            else if (opSym != gs.tokAssign && !IsHandleTypeView(pInfo.receiverType))
-            {
-                ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-compound-assign-on-value-prop",
-                                    pInfo.propName);
-            }
-        }
+        ctx.EmitAtRange(site.left.range, "as-err-read-only-property", pInfo.propName);
+    }
+    else if (!site.opIsAssign && !IsHandleTypeView(pInfo.receiverType))
+    {
+        ctx.EmitAtRange(site.range, "as-err-compound-assign-on-value-prop", pInfo.propName);
     }
 }
 

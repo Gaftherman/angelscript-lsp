@@ -70,16 +70,6 @@ struct LambdaParamASTInfo
     bool isReference : 1 = false;
 };
 
-struct LambdaParameter
-{
-    std::string typeName;
-    ParameterModifier modifier = ParameterModifier::None;
-    bool hasWrittenType : 1 = false;
-    bool isConst : 1 = false;
-    bool isHandle : 1 = false;
-    bool isReference : 1 = false;
-};
-
 struct FuncdefAgreement
 {
     std::optional<Symbol> agreed;

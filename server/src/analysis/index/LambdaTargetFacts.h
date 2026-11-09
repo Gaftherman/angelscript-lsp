@@ -1,11 +1,27 @@
 #pragma once
 
+#include "analysis/index/Symbol.h"
+
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
+
+/**
+ * @brief Parameter of a lambda expression as written in its parameter list.
+ */
+struct LambdaParameter
+{
+    std::string typeName;
+    ParameterModifier modifier = ParameterModifier::None;
+    bool hasWrittenType : 1 = false;
+    bool isConst : 1 = false;
+    bool isHandle : 1 = false;
+    bool isReference : 1 = false;
+};
 
 /**
  * @brief Syntactic position a lambda expression occupies, which decides how its funcdef target is found.

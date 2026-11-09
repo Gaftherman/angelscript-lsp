@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/AssignmentSiteFacts.h"
 #include "analysis/index/BinaryExpressionFacts.h"
 #include "analysis/index/ConversionSiteFacts.h"
 #include "analysis/index/ReturnSiteFacts.h"
@@ -47,6 +48,9 @@ struct TypeConversionCheckRequest
 
     /// Valued return statements; built once when left null.
     const ReturnSiteFacts* returnSites = nullptr;
+
+    /// Assignment expressions with both operands; built once when left null.
+    const AssignmentSiteFacts* assignmentSites = nullptr;
 };
 
 /**

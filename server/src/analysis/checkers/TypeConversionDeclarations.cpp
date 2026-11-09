@@ -284,4 +284,23 @@ void ProcessVariableDeclarationNode(TSNode node, const TypeConversionCheckReques
     }
 }
 
+/**
+ * @brief Validates a funcdef value given as syntax nodes by reading it into a fact first.
+ * @param[in] targetNode Diagnostic anchor node; a node without a range ends the check.
+ * @param[in] funcdefSig Expected funcdef signature.
+ * @param[in] valueNode Assigned value node.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void CheckFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSig, TSNode valueNode,
+                            DiagnosticContext& ctx)
+{
+    const auto range = ToOptionalSourceRange(targetNode);
+    if (!range)
+    {
+        return;
+    }
+    CheckFuncdefAssignment(*range, funcdefSig,
+                           ReadFuncdefValue(valueNode, *ctx.request.nodeIndex, ctx.request.sourceCode), ctx);
+}
+
 } // namespace angel_lsp::analysis

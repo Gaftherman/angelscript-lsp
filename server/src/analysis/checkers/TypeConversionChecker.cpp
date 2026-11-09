@@ -115,7 +115,10 @@ static void ProcessExpressionNode(TSSymbol sym, TSNode node, const TypeConversio
     const auto& gs = parser::GetGrammarSymbols();
     if (sym == gs.symAssignmentExpression)
     {
-        ProcessAssignmentNode(node, request, ctx);
+        if (const auto* site = request.assignmentSites->Find(SpanOf(node)))
+        {
+            ProcessAssignmentSite(*site, request, ctx);
+        }
     }
     else if (sym == gs.symBinaryExpression)
     {
@@ -197,10 +200,16 @@ void CheckTypeConversions(const TypeConversionCheckRequest& request, DiagnosticC
     {
         localReturns.emplace(BuildReturnSiteFacts(request.nodeIndex, request.sourceCode));
     }
+    std::optional<AssignmentSiteFacts> localAssignments;
+    if (!request.assignmentSites)
+    {
+        localAssignments.emplace(BuildAssignmentSiteFacts(request.nodeIndex, request.sourceCode));
+    }
     TypeConversionCheckRequest withFacts = request;
     withFacts.binaryFacts = request.binaryFacts ? request.binaryFacts : &*localFacts;
     withFacts.conversionSites = request.conversionSites ? request.conversionSites : &*localSites;
     withFacts.returnSites = request.returnSites ? request.returnSites : &*localReturns;
+    withFacts.assignmentSites = request.assignmentSites ? request.assignmentSites : &*localAssignments;
 
     if (ctx.logger && ctx.logger->IsDebugEnabled())
     {

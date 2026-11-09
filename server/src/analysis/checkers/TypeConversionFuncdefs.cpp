@@ -1,9 +1,6 @@
 #include "analysis/checkers/TypeConversionCommon.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 
-#include <string>
 #include <vector>
 
 namespace angel_lsp::analysis
@@ -41,43 +38,6 @@ static bool MatchesFuncdefSignature(const FunctionSignature& fn, const FuncdefSi
     return true;
 }
 
-static TSNode UnwrapAddressOfOperator(TSNode valueNode, const DiagnosticContext& ctx)
-{
-    const SyntaxOperands syntax(valueNode, ctx.request.nodeIndex);
-    const auto& gs = parser::GetGrammarSymbols();
-    if (ts_node_symbol(valueNode) == gs.symUnaryExpression)
-    {
-        TSNode op = syntax.Field(gs.fieldOperator);
-        if (!ts_node_is_null(op) &&
-            (ts_node_symbol(op) == gs.tokAt || parser::NodeText(op, ctx.request.sourceCode) == "@"))
-        {
-            TSNode operand = syntax.Field(gs.fieldOperand);
-            if (!ts_node_is_null(operand))
-            {
-                return operand;
-            }
-        }
-    }
-    return valueNode;
-}
-
-static bool CheckLambdaFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSig, TSNode actualVal,
-                                         DiagnosticContext& ctx)
-{
-    if (ts_node_symbol(actualVal) != parser::GetGrammarSymbols().symLambdaExpression)
-    {
-        return false;
-    }
-    TSNode listNode =
-        SyntaxOperands(actualVal, ctx.request.nodeIndex).Field(parser::GetGrammarSymbols().fieldParameters);
-    if (!ts_node_is_null(listNode) && LambdaContradictsFuncdef(ReadLambdaParameters(listNode, ctx.request.sourceCode),
-                                                               funcdefSig, ctx.request.symbolTable))
-    {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(targetNode), "as-err-signature-mismatch-func-handle");
-    }
-    return true;
-}
-
 static bool HasMatchingFuncdefCandidate(const std::vector<Symbol>& candidates, const FuncdefSignature& funcdefSig)
 {
     for (const auto& cand : candidates)
@@ -90,16 +50,44 @@ static bool HasMatchingFuncdefCandidate(const std::vector<Symbol>& candidates, c
     return false;
 }
 
-static void CheckNamedFunctionFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSig, TSNode actualVal,
-                                                DiagnosticContext& ctx)
+/**
+ * @brief Checks a lambda value against the parameter list of the target funcdef.
+ * @param[in] target Diagnostic anchor range.
+ * @param[in] funcdefSig Expected funcdef signature.
+ * @param[in] value Indexed assigned value.
+ * @param[in,out] ctx Diagnostic context.
+ * @return True when the value is a lambda, which ends the funcdef check whether or not it conflicts.
+ */
+static bool CheckLambdaFuncdefAssignment(SourceRange target, const FuncdefSignature& funcdefSig,
+                                         const FuncdefValueFact& value, DiagnosticContext& ctx)
 {
-    const std::string funcName = std::string(TrimString(parser::NodeText(actualVal, ctx.request.sourceCode)));
-    if (funcName.empty() || funcName == "null")
+    if (!value.isLambda)
+    {
+        return false;
+    }
+    if (value.hasParameterList && LambdaContradictsFuncdef(value.lambdaParameters, funcdefSig, ctx.request.symbolTable))
+    {
+        ctx.EmitAtRange(target, "as-err-signature-mismatch-func-handle");
+    }
+    return true;
+}
+
+/**
+ * @brief Checks a named function value against the target funcdef signature.
+ * @param[in] target Diagnostic anchor range.
+ * @param[in] funcdefSig Expected funcdef signature.
+ * @param[in] value Indexed assigned value naming a function.
+ * @param[in,out] ctx Diagnostic context.
+ */
+static void CheckNamedFunctionFuncdefAssignment(SourceRange target, const FuncdefSignature& funcdefSig,
+                                                const FuncdefValueFact& value, DiagnosticContext& ctx)
+{
+    if (value.text.empty() || value.text == "null")
     {
         return;
     }
 
-    const std::vector<Symbol> candidates = CollectFunctionCandidates(funcName, ctx.request.symbolTable);
+    const std::vector<Symbol> candidates = CollectFunctionCandidates(value.text, ctx.request.symbolTable);
     if (candidates.empty())
     {
         return;
@@ -107,25 +95,22 @@ static void CheckNamedFunctionFuncdefAssignment(TSNode targetNode, const Funcdef
 
     if (!HasMatchingFuncdefCandidate(candidates, funcdefSig))
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(targetNode), "as-err-signature-mismatch-func-handle");
+        ctx.EmitAtRange(target, "as-err-signature-mismatch-func-handle");
     }
 }
 
-void CheckFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSig, TSNode valueNode,
+void CheckFuncdefAssignment(SourceRange target, const FuncdefSignature& funcdefSig, const FuncdefValueFact& value,
                             DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(valueNode))
+    if (!value.present)
     {
         return;
     }
-
-    TSNode actualVal = UnwrapAddressOfOperator(valueNode, ctx);
-    if (CheckLambdaFuncdefAssignment(targetNode, funcdefSig, actualVal, ctx))
+    if (CheckLambdaFuncdefAssignment(target, funcdefSig, value, ctx))
     {
         return;
     }
-
-    CheckNamedFunctionFuncdefAssignment(targetNode, funcdefSig, actualVal, ctx);
+    CheckNamedFunctionFuncdefAssignment(target, funcdefSig, value, ctx);
 }
 
 } // namespace angel_lsp::analysis

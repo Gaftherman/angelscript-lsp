@@ -1,5 +1,6 @@
 #include "analysis/checkers/TypeConversionCommon.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/resolution/InlayResolutionInternal.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"
@@ -258,6 +259,16 @@ ExpressionType TypeConversionEvaluator::ResolveValueType(TSNode node, const Scop
 ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
 {
     return TypeConversionEvaluator::ResolveValueType(node, scope, ctx);
+}
+
+ExpressionType ResolveValueType(IndexedByteRange bytes, const Scope* scope, const DiagnosticContext& ctx)
+{
+    const TSNode node = RecoverNodeAt(ExpressionTypeContext(scope, ctx), bytes.startByte, bytes.endByte);
+    if (ts_node_is_null(node))
+    {
+        return {};
+    }
+    return ResolveValueType(node, scope, ctx);
 }
 
 } // namespace angel_lsp::analysis

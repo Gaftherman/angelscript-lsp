@@ -1,57 +1,46 @@
 #include "analysis/checkers/TypeConversionCommon.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 #include "parser/Primitives.h"
 
-#include <string>
 #include <string_view>
 
 namespace angel_lsp::analysis
 {
 
-static TSNode UnwrapHandleOperand(TSNode expr, bool& isHandleAssignment, const NodeIndex* index)
+/**
+ * @brief Rejects assigning a const handle target to a non-const one when both sides are `@` expressions.
+ * @param[in] site Indexed assignment.
+ * @param[in] types Cleaned source and target types of the assignment.
+ * @param[in] scope Lexical scope the assignment lives in.
+ * @param[in,out] ctx Diagnostic context.
+ */
+static void CheckHandleConstAssignment(const AssignmentSiteFact& site, const ConversionTypePair& types,
+                                       const Scope* scope, DiagnosticContext& ctx)
 {
-    const SyntaxOperands syntax(expr, index);
-    const auto& gs = parser::GetGrammarSymbols();
-    if (syntax.HasUnaryOperator(gs.tokAt))
-    {
-        isHandleAssignment = true;
-        const TSNode operand = syntax.Field(gs.fieldOperand);
-        if (!ts_node_is_null(operand))
-        {
-            return operand;
-        }
-    }
-    return expr;
-}
-
-static void CheckHandleConstAssignment(AssignmentOperands operands, const ConversionTypePair& types, const Scope* scope,
-                                       DiagnosticContext& ctx)
-{
-    bool isHandleAssignment = false;
-    TSNode actualLeft = UnwrapHandleOperand(operands.left, isHandleAssignment, ctx.request.nodeIndex);
-    TSNode actualRight = UnwrapHandleOperand(operands.right, isHandleAssignment, ctx.request.nodeIndex);
-
-    if (!isHandleAssignment)
+    if (!site.leftIsHandle && !site.rightIsHandle)
     {
         return;
     }
 
-    ExpressionType leftVal = ResolveValueType(actualLeft, scope, ctx);
-    ExpressionType rightVal = ResolveValueType(actualRight, scope, ctx);
-    const bool rightConstTarget = rightVal.isConst;
-    const bool leftConstTarget = leftVal.isConst;
-    if (rightConstTarget && !leftConstTarget && !types.from.empty() && !types.to.empty())
+    const ExpressionType leftVal = ResolveValueType(site.leftValue, scope, ctx);
+    const ExpressionType rightVal = ResolveValueType(site.rightValue, scope, ctx);
+    if (rightVal.isConst && !leftVal.isConst && !types.from.empty() && !types.to.empty())
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(operands.right), "as-err-no-implicit-conversion",
-                            {"const " + types.from + "@", types.to + "@"});
+        ctx.EmitAtRange(site.right.range, "as-err-no-implicit-conversion",
+                        {"const " + types.from + "@", types.to + "@"});
     }
 }
 
-static void CheckAssignmentOperatorConversion(TSNode node, TSNode right, const ConversionTypePair& types,
+/**
+ * @brief Reports a deleted opAssign and a missing implicit conversion on the assigned type.
+ * @param[in] site Indexed assignment.
+ * @param[in] types Cleaned source and target types of the assignment.
+ * @param[in,out] ctx Diagnostic context.
+ */
+static void CheckAssignmentOperatorConversion(const AssignmentSiteFact& site, const ConversionTypePair& types,
                                               DiagnosticContext& ctx)
 {
     if (types.to.empty())
@@ -67,8 +56,7 @@ static void CheckAssignmentOperatorConversion(TSNode node, TSNode right, const C
             if (sym.type == SymbolType::Function && std::holds_alternative<FunctionSignature>(sym.signature) &&
                 sym.GetFunction().modifiers.isDelete)
             {
-                ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-deleted-method-called",
-                                    {types.to, "opAssign"});
+                ctx.EmitAtRange(site.range, "as-err-deleted-method-called", {types.to, "opAssign"});
                 break;
             }
         }
@@ -76,20 +64,21 @@ static void CheckAssignmentOperatorConversion(TSNode node, TSNode right, const C
 
     if (!types.from.empty() && types.to != types.from)
     {
-        const TSNode assignOp =
-            SyntaxOperands(node, ctx.request.nodeIndex).Field(parser::GetGrammarSymbols().fieldOperator);
-        const std::string_view overload =
-            ts_node_is_null(assignOp) ? std::string_view()
-                                      : AssignmentOverloadName(parser::NodeText(assignOp, ctx.request.sourceCode));
-
+        const std::string_view overload = site.op.empty() ? std::string_view() : AssignmentOverloadName(site.op);
         const bool operatorHandlesIt = DeclaresOperatorMethod(types.to, overload, ctx.request.symbolTable);
         if (!operatorHandlesIt && !IsConvertible(types.from, types.to, ctx))
         {
-            ctx.EmitAtNodeRange(ToOptionalSourceRange(right), "as-err-no-implicit-conversion", {types.from, types.to});
+            ctx.EmitAtRange(site.right.range, "as-err-no-implicit-conversion", {types.from, types.to});
         }
     }
 }
 
+/**
+ * @brief Reports whether a type accepts a handle through opAssign or opHndlAssign.
+ * @param[in] clean Type name without decorations.
+ * @param[in] table Symbol table searched for members.
+ * @return True when a handle-taking assignment operator exists.
+ */
 static bool HasHandleOpAssign(std::string_view clean, const SymbolTable& table)
 {
     if (auto opSyms = table.FindMemberSymbolPtr(clean, "opAssign"))
@@ -110,6 +99,12 @@ static bool HasHandleOpAssign(std::string_view clean, const SymbolTable& table)
     return table.FindMemberSymbolPtr(clean, "opHndlAssign") != nullptr;
 }
 
+/**
+ * @brief Reports whether a type has an implicit single-handle constructor.
+ * @param[in] clean Type name without decorations.
+ * @param[in] table Symbol table searched for members.
+ * @return True when a non-explicit constructor takes one handle parameter.
+ */
 static bool HasHandleConvertingCtor(std::string_view clean, const SymbolTable& table)
 {
     if (auto ctorSyms = table.FindMemberSymbolPtr(clean, clean))
@@ -130,6 +125,12 @@ static bool HasHandleConvertingCtor(std::string_view clean, const SymbolTable& t
     return false;
 }
 
+/**
+ * @brief Reports whether a null literal can be assigned to a value of the type.
+ * @param[in] typeName Type name, possibly decorated.
+ * @param[in] table Symbol table searched for members.
+ * @return True for a non-primitive type with a handle-taking assignment operator or converting constructor.
+ */
 static bool TypeAcceptsNullHandle(std::string_view typeName, const SymbolTable& table)
 {
     const std::string_view clean = CleanBaseTypeView(typeName);
@@ -140,20 +141,22 @@ static bool TypeAcceptsNullHandle(std::string_view typeName, const SymbolTable& 
     return HasHandleOpAssign(clean, table) || HasHandleConvertingCtor(clean, table);
 }
 
-static bool CheckNullAssignmentToNonHandle(const SyntaxOperands& assignment, AssignmentOperands operands,
-                                           const std::string& rawLeftType, DiagnosticContext& ctx)
+/**
+ * @brief Checks `= null` against the type of the assigned left side.
+ * @param[in] site Indexed assignment.
+ * @param[in] rawLeftType Resolved left type, uncleaned.
+ * @param[in,out] ctx Diagnostic context.
+ * @return True when the right side is a null assignment, which ends the remaining assignment checks.
+ */
+static bool CheckNullAssignmentToNonHandle(const AssignmentSiteFact& site, std::string_view rawLeftType,
+                                           DiagnosticContext& ctx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSNode unwrappedRight = UnwrapIndexedParentheses(operands.right, ctx.request.nodeIndex);
-    if (ts_node_symbol(unwrappedRight) != gs.symNullLiteral)
+    if (!site.rightIsNull)
     {
         return false;
     }
 
-    const TSNode assignOp = assignment.Field(gs.fieldOperator);
-    const std::string_view opText = ts_node_is_null(assignOp)
-                                        ? std::string_view("=")
-                                        : std::string_view(parser::NodeText(assignOp, ctx.request.sourceCode));
+    const std::string_view opText = site.op.empty() ? std::string_view("=") : site.op;
     if (opText != "=")
     {
         return false;
@@ -169,22 +172,27 @@ static bool CheckNullAssignmentToNonHandle(const SyntaxOperands& assignment, Ass
         return true;
     }
 
-    if (IsHandleTypeView(rawLeftType) &&
-        SyntaxOperands(operands.left, ctx.request.nodeIndex).HasUnaryOperator(gs.tokAt))
+    if (IsHandleTypeView(rawLeftType) && site.leftIsHandle)
     {
         return true;
     }
 
     if (!TypeAcceptsNullHandle(rawLeftType, ctx.request.symbolTable))
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(operands.right), "as-err-null-non-handle", rawLeftType);
+        ctx.EmitAtRange(site.right.range, "as-err-null-non-handle", rawLeftType);
     }
     return true;
 }
 
-static bool CheckRightSideNamespaceOnly(TSNode right, DiagnosticContext& ctx)
+/**
+ * @brief Reports a right side that spells only a namespace name.
+ * @param[in] right Right operand of the assignment.
+ * @param[in,out] ctx Diagnostic context.
+ * @return True when every symbol of that name is a namespace, which ends the remaining checks.
+ */
+static bool CheckRightSideNamespaceOnly(const BinaryOperandFact& right, DiagnosticContext& ctx)
 {
-    const std::string rightIdent = std::string(TrimString(parser::NodeText(right, ctx.request.sourceCode)));
+    const std::string_view rightIdent = TrimString(right.text);
     if (rightIdent.empty())
     {
         return false;
@@ -198,69 +206,61 @@ static bool CheckRightSideNamespaceOnly(TSNode right, DiagnosticContext& ctx)
                 return false;
             }
         }
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(right), "as-err-undefined-identifier", rightIdent);
+        ctx.EmitAtRange(right.range, "as-err-undefined-identifier", rightIdent);
         return true;
     }
     return false;
 }
 
-void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+void ProcessAssignmentSite(const AssignmentSiteFact& site, const TypeConversionCheckRequest& request,
+                           DiagnosticContext& ctx)
 {
-    const SyntaxOperands syntax(node, ctx.request.nodeIndex);
-    TSNode left = syntax.Field(parser::GetGrammarSymbols().fieldLeft);
-    TSNode right = syntax.Field(parser::GetGrammarSymbols().fieldRight);
-    if (ts_node_is_null(left) || ts_node_is_null(right))
+    const Scope* scope = ResolveNodeScope(site.range, request);
+    if (const auto dt = IsBareDataType(site.left.bytes, ExpressionTypeContext(scope, ctx)))
+    {
+        EmitExpressionIsDataType(ToConversionExpression(site.left), ctx, *dt);
+        return;
+    }
+    if (const auto dt = IsBareDataType(site.right.bytes, ExpressionTypeContext(scope, ctx)))
+    {
+        EmitExpressionIsDataType(ToConversionExpression(site.right), ctx, *dt);
+        return;
+    }
+
+    if (CheckRightSideNamespaceOnly(site.right, ctx))
     {
         return;
     }
 
-    const Scope* scope = ResolveNodeScope(node, request);
-    if (const auto dt = IsBareDataType(left, ExpressionTypeContext(scope, ctx)))
-    {
-        EmitExpressionIsDataType(left, ctx, *dt);
-        return;
-    }
-    if (const auto dt = IsBareDataType(right, ExpressionTypeContext(scope, ctx)))
-    {
-        EmitExpressionIsDataType(right, ctx, *dt);
-        return;
-    }
+    CheckAssignmentPropertyAccess(site, scope, ctx);
 
-    if (CheckRightSideNamespaceOnly(right, ctx))
+    const auto leftType = ResolveExpressionType(site.left.bytes, ExpressionTypeContext(scope, ctx));
+    if (CheckNullAssignmentToNonHandle(site, leftType, ctx))
     {
         return;
     }
 
-    CheckAssignmentPropertyAccess(node, scope, ctx);
-
-    const std::string leftType = ResolveExpressionType(left, ExpressionTypeContext(scope, ctx));
-    if (CheckNullAssignmentToNonHandle(syntax, {left, right}, leftType, ctx))
-    {
-        return;
-    }
-
-    const std::string rightType = ResolveExpressionType(right, ExpressionTypeContext(scope, ctx));
+    const auto rightType = ResolveExpressionType(site.right.bytes, ExpressionTypeContext(scope, ctx));
     if (ExpressionTypeCache::IsPoisonType(leftType) || ExpressionTypeCache::IsPoisonType(rightType))
     {
         return;
     }
     const ConversionTypePair types{CleanBaseType(rightType), CleanBaseType(leftType)};
 
-    CheckFloatTruncation(right, types, scope, ctx);
+    CheckFloatTruncation(site.right, types, scope, ctx);
 
     auto leftFuncdef = FindFuncdef(types.to, ctx.request.symbolTable);
     if (leftFuncdef)
     {
-        CheckFuncdefAssignment(node, leftFuncdef->GetFuncdef(), right, ctx);
+        CheckFuncdefAssignment(site.range, leftFuncdef->GetFuncdef(), site.rightFuncdef, ctx);
     }
-    else if (types.from.empty() && IsFunctionReference(right, ExpressionTypeContext(scope, ctx)))
+    else if (types.from.empty() && IsFunctionReference(site.right.bytes, ExpressionTypeContext(scope, ctx)))
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(right), "as-err-no-implicit-conversion",
-                            {std::string(TrimString(parser::NodeText(right, ctx.request.sourceCode))), types.to});
+        ctx.EmitAtRange(site.right.range, "as-err-no-implicit-conversion", {TrimString(site.right.text), types.to});
     }
 
-    CheckHandleConstAssignment({left, right}, types, scope, ctx);
-    CheckAssignmentOperatorConversion(node, right, types, ctx);
+    CheckHandleConstAssignment(site, types, scope, ctx);
+    CheckAssignmentOperatorConversion(site, types, ctx);
 }
 
 } // namespace angel_lsp::analysis

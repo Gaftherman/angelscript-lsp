@@ -13,6 +13,19 @@
 namespace angel_lsp::analysis
 {
 
+/**
+ * @brief Inspects the accessor metadata of an expression node that may name a virtual property.
+ * @param[in] exprNode Expression node accessing a property.
+ * @param[in] scope Enclosing lexical scope.
+ * @param[in] ctx Diagnostic context.
+ * @return PropertyAccessInfo structure; no flag is set for an expression that names no property.
+ */
+static PropertyAccessInfo InspectNodePropertyAccess(TSNode exprNode, const Scope* scope, const DiagnosticContext& ctx)
+{
+    return InspectPropertyAccess(ReadPropertyAccess(exprNode, ctx.request.nodeIndex, ctx.request.sourceCode), scope,
+                                 ctx);
+}
+
 void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     const BinaryExpressionFact* fact =
@@ -118,7 +131,7 @@ void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& re
         if (ts_node_symbol(unwrapped) == gs.symIndexExpression)
         {
             TSNode arrayNode = SyntaxOperands(unwrapped, ctx.request.nodeIndex).FieldOrNamed(gs.fieldObject);
-            PropertyAccessInfo pInfo = InspectPropertyAccess(arrayNode, scope, ctx);
+            PropertyAccessInfo pInfo = InspectNodePropertyAccess(arrayNode, scope, ctx);
             if (pInfo.isProperty && pInfo.isIndexed)
             {
                 ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-inc-dec-on-virtual-prop", pInfo.propName);
@@ -127,7 +140,7 @@ void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& re
         }
         else
         {
-            PropertyAccessInfo pInfo = InspectPropertyAccess(unwrapped, scope, ctx);
+            PropertyAccessInfo pInfo = InspectNodePropertyAccess(unwrapped, scope, ctx);
             if (pInfo.isProperty)
             {
                 ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-inc-dec-on-virtual-prop", pInfo.propName);
@@ -156,7 +169,7 @@ void ProcessMemberExpressionNode(TSNode node, const TypeConversionCheckRequest& 
     if (!fact || !IsWriteOrMutationOperand(*fact))
     {
         const Scope* scope = ResolveNodeScope(node, request);
-        PropertyAccessInfo pInfo = InspectPropertyAccess(node, scope, ctx);
+        PropertyAccessInfo pInfo = InspectNodePropertyAccess(node, scope, ctx);
         if (pInfo.isProperty && !pInfo.hasGet && pInfo.hasSet)
         {
             ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-write-only-property", pInfo.propName);
@@ -172,7 +185,7 @@ void ProcessIndexExpressionNode(TSNode node, const TypeConversionCheckRequest& r
         const Scope* scope = ResolveNodeScope(node, request);
         TSNode arrayNode =
             SyntaxOperands(node, ctx.request.nodeIndex).FieldOrNamed(parser::GetGrammarSymbols().fieldObject);
-        PropertyAccessInfo pInfo = InspectPropertyAccess(arrayNode, scope, ctx);
+        PropertyAccessInfo pInfo = InspectNodePropertyAccess(arrayNode, scope, ctx);
         if (pInfo.isProperty && pInfo.isIndexed && !pInfo.hasGet && pInfo.hasSet)
         {
             ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-write-only-property", pInfo.propName);
