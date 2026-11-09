@@ -2,6 +2,7 @@
 
 #include "analysis/checkers/InitializerListChecker.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/EngineDialectFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SemanticNodes.h"
@@ -2086,8 +2087,10 @@ static void CheckCall(TSNode node, const AstCheckContext& request, const Scope* 
 
     CheckMalformedTernaryArgs(args.argNodes, args.argTypes, matchingArity, valCtx);
     CheckCallOverloads(matchingArity, args, calleeRes, valCtx);
+    const auto site = BuildSchedulerCallSite(node, args.argNodes, request.sourceCode);
+    const std::vector<std::string_view> argTypeViews(args.argTypes.begin(), args.argTypes.end());
     rules::CheckEngineSchedulerCall(
-        rules::SchedulerCallRequest{node, calleeRes.reportedName, args.argNodes, args.argTypes, matchingArity}, ctx);
+        rules::SchedulerCallRequest{site, calleeRes.reportedName, argTypeViews, matchingArity}, ctx);
 }
 
 /**

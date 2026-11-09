@@ -1,22 +1,20 @@
 #pragma once
 
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/EngineDialectFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 
+#include <span>
 #include <string_view>
-#include <tree_sitter/api.h>
-
-namespace angel_lsp::analysis
-{
-}
+#include <vector>
 
 namespace angel_lsp::analysis::rules
 {
 
 /**
- * @brief Fast single-pass engine dialect check using NodeIndex.
+ * @brief Fast single-pass engine dialect check using pre-extracted facts.
  * @param[in] nodeIndex Prebuilt node index.
  * @param[in,out] ctx Diagnostic context.
  */
@@ -50,10 +48,13 @@ void CheckEngineLocalTypeSuggestions(const LocalDefinition& def, DiagnosticConte
  */
 struct SchedulerCallRequest
 {
-    TSNode callNode;
-    std::string_view methodName;
-    const std::vector<TSNode>& argNodes;
-    const std::vector<std::string>& argTypes;
+    /// AST-free source span, receiver text, and argument coordinates for the call site.
+    SchedulerCallSite site{};
+    /// Callee method or function identifier name.
+    std::string_view methodName{};
+    /// Type names for each passed argument.
+    std::span<const std::string_view> argTypes{};
+    /// Candidate symbol overloads matching the invocation.
     const std::vector<const Symbol*>& candidates;
 };
 
