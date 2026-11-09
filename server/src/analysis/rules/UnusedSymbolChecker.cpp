@@ -3,14 +3,12 @@
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/index/ReflectionCallFacts.h"
 #include "analysis/index/RuleIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
-#include "parser/GrammarSymbols.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
 
@@ -135,47 +133,12 @@ static void CollectCrossFileReferences(const SemanticAnalysisRequest& req,
     }
 }
 
-static std::string ExtractStringValue(TSNode exprNode, const SemanticAnalysisRequest& req)
-{
-    if (ts_node_is_null(exprNode))
-    {
-        return {};
-    }
-
-    const auto& gs = parser::GetGrammarSymbols();
-    std::string result;
-    std::vector<TSNode> stack{exprNode};
-    while (!stack.empty())
-    {
-        TSNode node = stack.back();
-        stack.pop_back();
-        if (ts_node_is_null(node))
-        {
-            continue;
-        }
-        const TSSymbol sym = ts_node_symbol(node);
-        if (sym == gs.symStringLiteral)
-        {
-            std::string_view text = parser::NodeText(node, req.sourceCode);
-            result += parser::UnquoteStringView(text);
-        }
-        else if (sym == gs.symBinaryExpression)
-        {
-            TSNode left = parser::GetChildByField(node, gs.fieldLeft);
-            TSNode right = parser::GetChildByField(node, gs.fieldRight);
-            if (!ts_node_is_null(right))
-            {
-                stack.push_back(right);
-            }
-            if (!ts_node_is_null(left))
-            {
-                stack.push_back(left);
-            }
-        }
-    }
-    return result;
-}
-
+/**
+ * @brief Matches a callee function expression against a configured reflection callee rule.
+ * @param[in] funcText Callee text (e.g. member access or scoped name).
+ * @param[in] c Configured reflection callee descriptor.
+ * @return True if callee matches the configured receiver and method name.
+ */
 static bool MatchCallee(std::string_view funcText, const config::StringReflectionCallee& c)
 {
     std::string_view receiver;
@@ -224,6 +187,12 @@ static bool MatchesRegexSafe(const std::string& candidate, const std::string& pa
     return std::regex_match(candidate, *it->second);
 }
 
+/**
+ * @brief Registers a symbol name and its qualified variations as reflected.
+ * @param[in] str Reflected symbol name string.
+ * @param[in] req Semantic analysis request for symbol table lookup.
+ * @param[in,out] outReflections Accumulator set for reflected symbol names.
+ */
 static void RegisterReflectedSymbol(const std::string& str, const SemanticAnalysisRequest& req,
                                     ankerl::unordered_dense::set<std::string>& outReflections)
 {
@@ -246,35 +215,6 @@ static void RegisterReflectedSymbol(const std::string& str, const SemanticAnalys
         {
             outReflections.insert(t.name);
             outReflections.insert(t.qualifiedName);
-        }
-    }
-}
-
-static void MatchConfiguredReflectionCallees(TSNode callNode, const SemanticAnalysisRequest& req,
-                                             const std::vector<config::StringReflectionCallee>& callees,
-                                             ankerl::unordered_dense::set<std::string>& result)
-{
-    TSNode funcNode = parser::GetChildByField(callNode, parser::GetGrammarSymbols().fieldFunction);
-    if (ts_node_is_null(funcNode))
-        return;
-
-    std::string_view funcText = parser::NodeText(funcNode, req.sourceCode);
-    std::optional<std::vector<analysis::CallArgumentInfo>> callArgs;
-
-    for (const auto& c : callees)
-    {
-        if (!MatchCallee(funcText, c))
-            continue;
-
-        if (!callArgs.has_value())
-        {
-            callArgs = ExtractCallArguments(callNode, req.sourceCode);
-        }
-
-        for (size_t idx : c.argIndices)
-        {
-            if (idx < callArgs->size())
-                RegisterReflectedSymbol(ExtractStringValue((*callArgs)[idx].exprNode, req), req, result);
         }
     }
 }
@@ -310,6 +250,11 @@ static void CollectScopeStringLiteralRefs(const Scope* root, ankerl::unordered_d
     }
 }
 
+/**
+ * @brief Collects symbols referenced via string literals and reflection calls across the module.
+ * @param[in] req Semantic analysis request containing scopes, rules, and node index.
+ * @return Set of symbol names identified as referenced through reflection.
+ */
 static ankerl::unordered_dense::set<std::string> CollectStringReflection(const SemanticAnalysisRequest& req)
 {
     ankerl::unordered_dense::set<std::string> result;
@@ -336,10 +281,21 @@ static ankerl::unordered_dense::set<std::string> CollectStringReflection(const S
 
     if (callees && !callees->empty() && req.nodeIndex)
     {
-        const auto& syms = parser::GetGrammarSymbols();
-        for (TSNode callNode : req.nodeIndex->Nodes(syms.symCallExpression))
+        for (const auto& call : BuildReflectionCallFacts(*req.nodeIndex, req.sourceCode))
         {
-            MatchConfiguredReflectionCallees(callNode, req, *callees, result);
+            for (const auto& c : *callees)
+            {
+                if (MatchCallee(call.calleeText, c))
+                {
+                    for (size_t idx : c.argIndices)
+                    {
+                        if (idx < call.argStringValues.size())
+                        {
+                            RegisterReflectedSymbol(call.argStringValues[idx], req, result);
+                        }
+                    }
+                }
+            }
         }
     }
     return result;

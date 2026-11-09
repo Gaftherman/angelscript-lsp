@@ -4,13 +4,13 @@
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/diagnostics/DiagnosticSuppression.h"
 #include "analysis/index/NodeIndex.h"
-#include "parser/ASTUtils.h"
+#include "analysis/index/RuleSyntaxFacts.h"
 #include "parser/BraceBalance.h"
-#include "parser/GrammarSymbols.h"
 #include "utils/PreprocessorRegions.h"
 #include "utils/Utils.h"
 
-#include <tree_sitter/api.h>
+#include <string>
+#include <vector>
 
 namespace angel_lsp::analysis::rules
 {
@@ -71,21 +71,30 @@ void CheckDirectivesAndModules(const SemanticAnalysisRequest& request, Diagnosti
     }
 }
 
+/**
+ * @brief Checks whether metadata syntax is used when metadata support is disabled.
+ * @param[in] request Semantic analysis request containing configuration options.
+ * @param[in] indexPtr NodeIndex of the document; may be null.
+ * @param[in,out] ctx Diagnostic context.
+ */
 void CheckMetadataSupport(const SemanticAnalysisRequest& request, const NodeIndex* indexPtr, DiagnosticContext& ctx)
 {
     if (!request.enableMetadata && indexPtr)
     {
-        const auto metaNodes = indexPtr->Nodes(parser::GetGrammarSymbols().symMetadata);
-        for (TSNode metaNode : metaNodes)
+        for (const auto& span : BuildRuleSyntaxFacts(*indexPtr).metadata)
         {
-            const TSPoint start = ts_node_start_point(metaNode);
-            const TSPoint end = ts_node_end_point(metaNode);
-            ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::MetadataDisabled,
-                            DiagnosticSeverity::Warning);
+            ctx.EmitAtRange({span.startRow, span.startColumn, span.endRow, span.endColumn},
+                            diagnostics::codes::MetadataDisabled, DiagnosticSeverity::Warning);
         }
     }
 }
 
+/**
+ * @brief Filters diagnostics by excluded line ranges, inline comments, and syntax recovery.
+ * @param[in,out] diagnostics Vector of emitted diagnostics to filter in-place.
+ * @param[in] request Semantic analysis request.
+ * @param[in] indexPtr NodeIndex of the document.
+ */
 void FilterSuppressedDiagnostics(std::vector<Diagnostic>& diagnostics, const SemanticAnalysisRequest& request,
                                  const NodeIndex* indexPtr)
 {
@@ -105,7 +114,7 @@ void FilterSuppressedDiagnostics(std::vector<Diagnostic>& diagnostics, const Sem
         }
     }
 
-    if (request.tree && ts_node_has_error(ts_tree_root_node(request.tree)) && !request.sourceCode.empty())
+    if (TreeHasSyntaxError(request.tree) && !request.sourceCode.empty())
     {
         const auto braceBalance = parser::ComputeBraceBalance(request.sourceCode);
         if (braceBalance.HasMissingOpenBrace() && braceBalance.firstUnmatchedCloseLine >= 0)

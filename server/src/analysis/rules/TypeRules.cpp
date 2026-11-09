@@ -1,10 +1,9 @@
 #include "analysis/rules/TypeRules.h"
 
 #include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/EnumDeclarationFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
@@ -17,25 +16,26 @@
 namespace angel_lsp::analysis::rules
 {
 /**
- * @brief Searches for the enum_declaration AST node matching the symbol's start point or name.
+ * @brief Searches for the indexed enum declaration matching the symbol's start point or name.
+ * @param[in] facts Extracted collection of indexed enum declarations.
+ * @param[in] sym Target enum symbol to match.
+ * @return Pointer to the matching IndexedEnumDeclaration if found; otherwise nullptr.
  */
-static TSNode FindEnumDeclarationNode(const NodeIndex& nodeIndex, const Symbol& sym, std::string_view sourceCode)
+static const IndexedEnumDeclaration* FindEnumDeclaration(const std::vector<IndexedEnumDeclaration>& facts,
+                                                         const Symbol& sym)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    for (TSNode node : nodeIndex.Nodes(gs.symEnumDeclaration))
+    for (const auto& decl : facts)
     {
-        const TSPoint pt = ts_node_start_point(node);
-        if (pt.row == sym.startLine && pt.column == sym.startCharacter)
+        if (decl.start.line == sym.startLine && decl.start.character == sym.startCharacter)
         {
-            return node;
+            return &decl;
         }
-        const TSNode nameNode = parser::GetChildByField(node, gs.fieldName);
-        if (!ts_node_is_null(nameNode) && parser::NodeText(nameNode, sourceCode) == sym.name)
+        if (decl.name == sym.name)
         {
-            return node;
+            return &decl;
         }
     }
-    return TSNode{};
+    return nullptr;
 }
 
 /**
@@ -328,44 +328,29 @@ static void CheckEnumMemberInitializers(const Symbol& sym, const EnumSignature& 
     }
 }
 
-static void CheckDuplicateEnumMembers(TSNode enumNode, const Symbol& sym, const DiagnosticContext& ctx)
+/**
+ * @brief Checks and emits diagnostics for duplicate member names in an enum declaration.
+ * @param[in] decl Indexed enum declaration containing member elements.
+ * @param[in] sym Enum symbol associated with this declaration.
+ * @param[in] ctx Diagnostic collection and analysis context.
+ */
+static void CheckDuplicateEnumMembers(const IndexedEnumDeclaration& decl, const Symbol& sym,
+                                      const DiagnosticContext& ctx)
 {
-    ankerl::unordered_dense::set<std::string> seenMemberNames;
-    TSTreeCursor cursor = ts_tree_cursor_new(enumNode);
-    if (!ts_tree_cursor_goto_first_child(&cursor))
+    ankerl::unordered_dense::set<std::string_view> seenMemberNames;
+    for (const auto& member : decl.members)
     {
-        ts_tree_cursor_delete(&cursor);
-        return;
-    }
-
-    do
-    {
-        const TSNode child = ts_tree_cursor_current_node(&cursor);
-        if (ts_node_symbol(child) != parser::GetGrammarSymbols().symEnumMember)
+        if (member.name.empty())
         {
             continue;
         }
-        const TSNode memberNameNode = parser::GetChildByField(child, parser::GetGrammarSymbols().fieldName);
-        if (ts_node_is_null(memberNameNode))
+        if (!seenMemberNames.insert(member.name).second)
         {
-            continue;
-        }
-        const std::string memberName(parser::NodeText(memberNameNode, ctx.request.sourceCode));
-        if (memberName.empty())
-        {
-            continue;
-        }
-        if (!seenMemberNames.insert(memberName).second)
-        {
-            const TSPoint start = ts_node_start_point(memberNameNode);
-            const TSPoint end = ts_node_end_point(memberNameNode);
             ctx.LogRule("ValidateEnum", diagnostics::codes::DuplicateEnumMember, sym);
-            ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::DuplicateEnumMember,
-                            memberName);
+            ctx.EmitAtRange({member.span.startRow, member.span.startColumn, member.span.endRow, member.span.endColumn},
+                            diagnostics::codes::DuplicateEnumMember, member.name);
         }
-    } while (ts_tree_cursor_goto_next_sibling(&cursor));
-
-    ts_tree_cursor_delete(&cursor);
+    }
 }
 
 static void CheckDuplicateEnumFallback(const Symbol& sym, const EnumSignature& sig, const DiagnosticContext& ctx)
@@ -385,6 +370,11 @@ static void CheckDuplicateEnumFallback(const Symbol& sym, const EnumSignature& s
     }
 }
 
+/**
+ * @brief Validates an enum declaration: name, body, member initializers, and duplicates.
+ * @param[in] sym Enum symbol to validate.
+ * @param[in] ctx Diagnostic collection and analysis context.
+ */
 void ValidateEnum(const Symbol& sym, const DiagnosticContext& ctx)
 {
     if (sym.type != SymbolType::Enum || IsFromPredefinedStub(sym, ctx))
@@ -406,10 +396,11 @@ void ValidateEnum(const Symbol& sym, const DiagnosticContext& ctx)
     const auto* nodeIndex = ctx.request.GetNodeIndex();
     if (nodeIndex && !ctx.request.sourceCode.empty())
     {
-        const TSNode enumNode = FindEnumDeclarationNode(*nodeIndex, sym, ctx.request.sourceCode);
-        if (!ts_node_is_null(enumNode))
+        const std::vector<IndexedEnumDeclaration> facts = BuildEnumDeclarationFacts(*nodeIndex, ctx.request.sourceCode);
+        const auto* decl = FindEnumDeclaration(facts, sym);
+        if (decl != nullptr)
         {
-            CheckDuplicateEnumMembers(enumNode, sym, ctx);
+            CheckDuplicateEnumMembers(*decl, sym, ctx);
         }
     }
     else

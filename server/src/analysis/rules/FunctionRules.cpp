@@ -2,11 +2,10 @@
 
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/index/RuleSyntaxFacts.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 #include "parser/Primitives.h"
 #include "utils/Utils.h"
 
@@ -767,22 +766,17 @@ void ValidateFunction(const Symbol& sym, const DiagnosticContext& ctx)
     }
 }
 
+/**
+ * @brief Reports an anonymous function (lambda expression) using pre-indexed AST facts.
+ * @param[in] nodeIndex Pre-indexed syntax tree nodes.
+ * @param[in] ctx Diagnostic context.
+ */
 void ValidateStandaloneLambda(const analysis::NodeIndex& nodeIndex, const DiagnosticContext& ctx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    for (const TSNode& node : nodeIndex.Nodes(gs.symExpressionStatement))
+    for (const auto& span : BuildRuleSyntaxFacts(nodeIndex).standaloneLambdas)
     {
-        if (ts_node_named_child_count(node) == 1)
-        {
-            const TSNode child = ts_node_named_child(node, 0);
-            if (ts_node_symbol(child) == gs.symLambdaExpression)
-            {
-                const TSPoint start = ts_node_start_point(child);
-                const TSPoint end = ts_node_end_point(child);
-                ctx.EmitAtRange({start.row, start.column, end.row, end.column},
-                                diagnostics::codes::StandaloneAnonymousFunction, DiagnosticSeverity::Error);
-            }
-        }
+        ctx.EmitAtRange({span.startRow, span.startColumn, span.endRow, span.endColumn},
+                        diagnostics::codes::StandaloneAnonymousFunction, DiagnosticSeverity::Error);
     }
 }
 } // namespace angel_lsp::analysis::rules

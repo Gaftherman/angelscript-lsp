@@ -1,8 +1,8 @@
 #include "analysis/rules/VariableRules.h"
 
+#include "analysis/index/ScopeTree.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/rules/EngineRuleChecker.h"
-#include "parser/ASTUtils.h"
 #include "spdlog/fmt/fmt.h"
 #include "utils/ScopedNameUtils.h"
 #include "utils/Utils.h"
@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <ankerl/unordered_dense.h>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::analysis::rules
@@ -527,26 +528,24 @@ static bool CheckIllegalHandleOnPrimitive(const LocalDefinition& def, const std:
     return false;
 }
 
-static std::string ResolveEnclosingNamespaceForDefinition(const LocalDefinition& def, const DiagnosticContext& ctx)
+/**
+ * @brief Resolves the enclosing namespace for a local definition using the scope tree.
+ * @param[in] def Local definition to resolve the enclosing namespace for.
+ * @param[in] ctx Diagnostic context containing the scope tree root.
+ * @return Enclosing namespace name, or an empty view if not inside a namespace or scope is missing.
+ */
+static std::string_view ResolveEnclosingNamespaceForDefinition(const LocalDefinition& def, const DiagnosticContext& ctx)
 {
-    if (!ctx.request.tree || ctx.request.sourceCode.empty())
+    if (!ctx.request.scopeRoot)
     {
-        return "";
+        return {};
     }
-    const TSNode node = ts_node_descendant_for_point_range(
-        ts_tree_root_node(ctx.request.tree), {def.startLine, def.startCharacter}, {def.endLine, def.endCharacter});
-    if (ts_node_is_null(node))
+    const Scope* scope = FindInnermostScope(ctx.request.scopeRoot.get(), def.startLine, def.startCharacter);
+    if (!scope)
     {
-        return "";
+        return {};
     }
-    for (const auto& container : GetEnclosingContainers(node, ctx.request.sourceCode, ctx.request.nodeIndex))
-    {
-        if (container.kind == ContainerKind::Namespace)
-        {
-            return container.qualifiedName;
-        }
-    }
-    return "";
+    return scope->GetEnclosingNamespace();
 }
 
 static void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& ctx)
@@ -576,7 +575,7 @@ static void ValidateVariableType(const LocalDefinition& def, DiagnosticContext& 
         return;
     }
 
-    const std::string enclosingNs = ResolveEnclosingNamespaceForDefinition(def, ctx);
+    const std::string_view enclosingNs = ResolveEnclosingNamespaceForDefinition(def, ctx);
     const TemplateTypeInfo tmplInfo = ParseTemplateType(def.typeName);
     if (!tmplInfo.templateArgs.empty())
     {
