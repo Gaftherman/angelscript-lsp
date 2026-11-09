@@ -205,7 +205,7 @@ bool IsContainerParameter(const ParameterInformation& param, const SymbolTable* 
  * @param[in] b Second type name.
  * @return True if identical type or matching last scope segment.
  */
-bool IsSameType(const std::string& a, const std::string& b);
+bool IsSameType(std::string_view a, std::string_view b);
 
 /**
  * @brief Compares two comma-separated template argument lists for semantic type equality.

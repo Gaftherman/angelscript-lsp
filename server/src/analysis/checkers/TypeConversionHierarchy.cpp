@@ -12,7 +12,7 @@
 namespace angel_lsp::analysis
 {
 
-void ForEachMethod(const std::string& typeName, const std::string& memberName, const SymbolTable& table,
+void ForEachMethod(std::string_view typeName, std::string_view memberName, const SymbolTable& table,
                    const std::function<bool(const Symbol&)>& visitor)
 {
     bool stopped = false;
@@ -36,13 +36,13 @@ void ForEachMethod(const std::string& typeName, const std::string& memberName, c
     }
 }
 
-void ForEachConstructor(const std::string& typeName, const SymbolTable& table,
+void ForEachConstructor(std::string_view typeName, const SymbolTable& table,
                         const std::function<bool(const Symbol&)>& visitor)
 {
     const size_t open = typeName.find('<');
-    const std::string unparameterized = (open == std::string::npos) ? typeName : typeName.substr(0, open);
+    const auto unparameterized = (open == std::string_view::npos) ? typeName : typeName.substr(0, open);
 
-    const std::string bare{LastScopeSegment(unparameterized)};
+    const auto bare = LastScopeSegment(unparameterized);
     bool sawAny = false;
     bool stopped = false;
 
@@ -70,7 +70,8 @@ void ForEachConstructor(const std::string& typeName, const SymbolTable& table,
         {
             if (cSym.type == SymbolType::Class)
             {
-                const std::string_view qCls = cSym.qualifiedName.empty() ? cSym.name : cSym.qualifiedName;
+                const auto qCls =
+                    cSym.qualifiedName.empty() ? std::string_view{cSym.name} : std::string_view{cSym.qualifiedName};
                 ForEachMemberSymbolNamed(qCls, bare, table, visit);
                 if (stopped || sawAny)
                 {
@@ -89,11 +90,6 @@ bool AcceptsSingleArgument(const std::vector<ParameterInformation>& parameters)
     }
     return std::all_of(parameters.begin() + 1, parameters.end(),
                        [](const ParameterInformation& param) { return !param.defaultValue.empty(); });
-}
-
-std::string SingleArgumentType(const std::vector<ParameterInformation>& parameters)
-{
-    return parameters.empty() ? "" : CanonicalizeType(parameters[0].typeName);
 }
 
 std::string_view AssignmentOverloadName(std::string_view op)
@@ -127,7 +123,7 @@ std::string_view AssignmentOverloadName(std::string_view op)
     return {};
 }
 
-bool DeclaresOperatorMethod(const std::string& typeName, std::string_view methodName, const SymbolTable& table)
+bool DeclaresOperatorMethod(std::string_view typeName, std::string_view methodName, const SymbolTable& table)
 {
     if (typeName.empty() || methodName.empty())
     {
@@ -136,7 +132,7 @@ bool DeclaresOperatorMethod(const std::string& typeName, std::string_view method
     return table.FindMemberSymbolPtr(typeName, methodName) != nullptr;
 }
 
-bool IsScalarCastTarget(const std::string& typeName, const SymbolTable& table)
+bool IsScalarCastTarget(std::string_view typeName, const SymbolTable& table)
 {
     if (parser::primitives::IsPrimitive(typeName))
     {
@@ -148,7 +144,7 @@ bool IsScalarCastTarget(const std::string& typeName, const SymbolTable& table)
                                   [](const Symbol& sym) { return sym.type == SymbolType::Enum; });
 }
 
-bool DeclaresAnyCastOperator(const std::string& typeName, const SymbolTable& table)
+bool DeclaresAnyCastOperator(std::string_view typeName, const SymbolTable& table)
 {
     bool found = false;
     const auto mark = [&found](const Symbol&)
@@ -165,23 +161,24 @@ bool DeclaresAnyCastOperator(const std::string& typeName, const SymbolTable& tab
     return found;
 }
 
-bool DeclaresConversionTo(const std::string& fromType, const std::string& toType, const SymbolTable& table,
+bool DeclaresConversionTo(std::string_view fromType, std::string_view toType, const SymbolTable& table,
                           bool implicitOnly)
 {
     bool found = false;
     TemplateBinding binding;
-    if (fromType.find('<') != std::string::npos)
+    if (fromType.find('<') != std::string_view::npos)
     {
         binding = BindTemplateArguments(fromType, table);
     }
     const auto matches = [&](const Symbol& sym)
     {
-        std::string ret = sym.GetFunction().returnType;
+        auto ret = sym.GetFunction().returnType;
         if (binding.usable)
         {
             ret = SubstituteTemplateParameters(ret, binding);
         }
-        if (IsSameType(CleanBaseType(ret), toType))
+        const auto cleanRet = CleanBaseType(ret);
+        if (IsSameType(cleanRet, toType))
         {
             found = true;
             return true;
@@ -217,8 +214,8 @@ bool DeclaresConversionTo(const std::string& fromType, const std::string& toType
 
 bool IsDerivedFrom(const std::string& derived, const std::string& base, const SymbolTable& table)
 {
-    const std::string cleanDerived = CleanBaseType(derived);
-    const std::string cleanBase = CleanBaseType(base);
+    const auto cleanDerived = CleanBaseType(derived);
+    const auto cleanBase = CleanBaseType(base);
     for (const auto& ancestor : GetInheritedTypeHierarchy(cleanDerived, table))
     {
         if (IsSameType(ancestor, cleanBase))
@@ -229,10 +226,10 @@ bool IsDerivedFrom(const std::string& derived, const std::string& base, const Sy
     return false;
 }
 
-bool AreHierarchyRelated(const std::string& a, const std::string& b, const SymbolTable& table)
+bool AreHierarchyRelated(std::string_view a, std::string_view b, const SymbolTable& table)
 {
-    const std::string cleanA = CleanBaseType(a);
-    const std::string cleanB = CleanBaseType(b);
+    const auto cleanA = CleanBaseType(a);
+    const auto cleanB = CleanBaseType(b);
     for (const auto& base : GetInheritedTypeHierarchy(cleanA, table))
     {
         if (IsSameType(base, cleanB))
@@ -250,12 +247,12 @@ bool AreHierarchyRelated(const std::string& a, const std::string& b, const Symbo
     return false;
 }
 
-bool IsStringType(const std::string& typeName, const DiagnosticContext& ctx)
+bool IsStringType(std::string_view typeName, const DiagnosticContext& ctx)
 {
     return typeName == ctx.request.GetEffectiveStringTypeName();
 }
 
-bool IsBuiltInValueType(const std::string& typeName, const DiagnosticContext& ctx)
+bool IsBuiltInValueType(std::string_view typeName, const DiagnosticContext& ctx)
 {
     return IsPrimitiveTypeName(typeName) || IsStringType(typeName, ctx);
 }

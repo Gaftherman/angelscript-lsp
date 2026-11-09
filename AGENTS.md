@@ -22,7 +22,7 @@ Layer isolation is strict and enforced by `server/scripts/check-layer-includes.p
 
 #### Layer 2: Analysis (`server/src/analysis/`)
 - **Sub-Layer 2.1 (Index):** `analysis/index/` - AST indexing and lexical structure (`NodeIndex`, `SymbolTable`, `SymbolCollector`, `ScopeTree`, `LocalScopeCollector`, `DeclarationRecovery`, `CallGraph`, `SemanticNodes`, `TypeExtraction`, `RuleIndex`, `ReflectionCallFacts`, `EnumDeclarationFacts`, `RuleSyntaxFacts`, `ClassRuleFacts`, `EngineDialectFacts`, `NullFlowFacts`, `BinaryExpressionFacts`, `BinaryExpressionSyntax`).
-- **Sub-Layer 2.2 (Types):** `analysis/types/` - Type representation and engine profiles (`TypeSanitization`, `ExpressionTypeCache`, `EngineProfiles`, `EngineConfigConverter`, `VirtualMixinContext`).
+- **Sub-Layer 2.2 (Types):** `analysis/types/` - Type representation and engine profiles (`TypeSanitization`, `ExpressionTypeCache`, `EngineProfiles`, `EngineConfigConverter`, `VirtualMixinContext`, `TypeConversionValues`).
 - **Sub-Layer 2.3 (Diagnostics):** `analysis/diagnostics/` - Diagnostic error codes and context (`Diagnostics`, `DiagnosticCodes`, `DiagnosticContext`, `DiagnosticSuppression`).
 - **Sub-Layer 2.4 (Documentation):** `analysis/documentation/` - Doc comment parsing and markdown formatting (`DocComment`, `DoxygenMarkdown`, `SignatureFormatter`).
 - **Sub-Layer 2.5 (Resolution):** `analysis/resolution/` - Semantic target and overload resolution (`SemanticHelpers`, `TargetResolution`, `OverloadResolver`, `AmbiguityDetector`, `ConversionRankingEngine`, `OverloadTypeConversions`, `OperandRangeResolution`).

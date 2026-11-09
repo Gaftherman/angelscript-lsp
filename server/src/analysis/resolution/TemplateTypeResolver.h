@@ -25,7 +25,7 @@ struct TemplateBinding
 TemplateTypeInfo ParseTemplateType(std::string_view typeName);
 bool AreIncompatibleTemplateTypes(std::string_view from, std::string_view to);
 std::string SubstituteTypeParam(std::string_view typeStr, std::string_view paramName, std::string_view concreteType);
-TemplateBinding BindTemplateArguments(const std::string& writtenType, const SymbolTable& table);
+TemplateBinding BindTemplateArguments(std::string_view writtenType, const SymbolTable& table);
 std::string SubstituteTemplateParameters(std::string_view typeStr, const TemplateBinding& binding);
 std::string QualifyTypeInContainer(std::string_view typeStr, std::string_view containerScope, const SymbolTable& table);
 std::string ResolveIndexedType(std::string_view typeName, size_t indexCount, const SymbolTable& symbolTable,

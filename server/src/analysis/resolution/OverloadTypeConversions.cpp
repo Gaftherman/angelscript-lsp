@@ -548,7 +548,7 @@ bool IsContainerParameter(const ParameterInformation& param, const SymbolTable* 
     return ParameterAcceptsInitializerList(param, symbolTable, arrayTypeName);
 }
 
-bool IsSameType(const std::string& a, const std::string& b)
+bool IsSameType(std::string_view a, std::string_view b)
 {
     if (a.empty() || b.empty())
     {

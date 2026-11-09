@@ -41,7 +41,7 @@ static bool IsConstructibleFrom(const std::string& sourceBase, const std::string
                                return false;
                            }
 
-                           std::string parameterType = SingleArgumentType(parameters);
+                           auto parameterType = SingleArgumentType(parameters);
                            for (size_t i = 0; i < binding.parameters.size(); ++i)
                            {
                                parameterType =

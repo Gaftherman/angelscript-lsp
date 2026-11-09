@@ -3019,6 +3019,22 @@
         "BinaryExpressionFactsTest",
         "TypeConversionCheckerTest"
       ]
+    },
+    {
+      "id": "REF-M24-TYPE-CONVERSION-STRING-VIEW",
+      "phase": "M24",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/TypeConversionCore.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "edgeKey = from + \"->\" + to; TypeConversionChecker::canConvertImplicitly; TypeConversionChecker::evaluateUserConversions; SingleArgumentType; FindVisibleClassQualifiedName",
+      "whatItDidAndWhyInThatFile": "Conversion symbol queries took const std::string& and built edge keys by concatenation in the second-pass checkers folder.",
+      "whyChangedOrDeleted": "Queries take std::string_view; the owned edge key, cycle-guard functions and canonical argument type moved to the types owner folder, and the bool conversion operator lookup returns a view instead of a pointer to a static string.",
+      "replacedByCanonicalFile": "server/src/analysis/types/TypeConversionValues.h",
+      "replacedByCanonicalSymbol": "MakeConversionEdgeKey",
+      "ramOrCpuImpact": "No temporary std::string per symbol query; one owned key per visited conversion edge.",
+      "verifiedByTests": [
+        "TypeConversionCheckerTest"
+      ]
     }
   ]
 }

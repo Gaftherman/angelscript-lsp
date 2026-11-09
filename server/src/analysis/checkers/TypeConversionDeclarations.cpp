@@ -63,7 +63,7 @@ DeclaredType ReadDeclaredType(TSNode typeNode, const DiagnosticContext& ctx)
 static void CheckUnknownInitializerSource(TSNode valueNode, const DeclaredType& declared, const Scope* scope,
                                           DiagnosticContext& ctx)
 {
-    const std::string identName = TrimString(std::string(parser::NodeText(valueNode, ctx.request.sourceCode)));
+    const std::string identName = std::string(TrimString(parser::NodeText(valueNode, ctx.request.sourceCode)));
     if (identName.empty())
     {
         return;

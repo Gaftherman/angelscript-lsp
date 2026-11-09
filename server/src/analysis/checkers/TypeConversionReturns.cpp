@@ -37,7 +37,7 @@ static void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Sco
         if (IsFunctionReference(expr, ExpressionTypeContext(scope, ctx)))
         {
             ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-no-implicit-conversion",
-                                {TrimString(std::string(parser::NodeText(expr, ctx.request.sourceCode))), expected});
+                                {std::string(TrimString(parser::NodeText(expr, ctx.request.sourceCode))), expected});
             return;
         }
 
@@ -141,7 +141,7 @@ static void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, co
         if (IsFunctionReference(expr, ExpressionTypeContext(scope, ctx)))
         {
             ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-no-implicit-conversion",
-                                {TrimString(std::string(parser::NodeText(expr, ctx.request.sourceCode))), expected});
+                                {std::string(TrimString(parser::NodeText(expr, ctx.request.sourceCode))), expected});
             return;
         }
 

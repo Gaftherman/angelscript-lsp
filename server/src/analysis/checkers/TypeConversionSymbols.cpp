@@ -44,17 +44,16 @@ void ForEachMemberSymbolNamed(std::string_view scope, std::string_view member, c
     }
 }
 
-std::string TrimString(std::string str)
+std::string_view TrimString(std::string_view str)
 {
-    std::string_view view = str;
-    TrimTypeWhitespace(view);
-    return std::string(view);
+    TrimTypeWhitespace(str);
+    return str;
 }
 
-std::vector<Symbol> CollectFunctionCandidates(const std::string& funcName, const SymbolTable& table)
+std::vector<Symbol> CollectFunctionCandidates(std::string_view funcName, const SymbolTable& table)
 {
     std::vector<Symbol> candidates;
-    auto addCandidates = [&](const std::string& name)
+    auto addCandidates = [&](std::string_view name)
     {
         if (auto found = table.FindSymbolsPtr(name))
         {
@@ -71,12 +70,12 @@ std::vector<Symbol> CollectFunctionCandidates(const std::string& funcName, const
     addCandidates(funcName);
     if (candidates.empty())
     {
-        addCandidates(std::string(LastScopeSegment(funcName)));
+        addCandidates(LastScopeSegment(funcName));
     }
     return candidates;
 }
 
-std::optional<Symbol> FindFuncdef(const std::string& name, const SymbolTable& table)
+std::optional<Symbol> FindFuncdef(std::string_view name, const SymbolTable& table)
 {
     std::optional<Symbol> result;
     ForEachSymbolNamed(name, table,
@@ -105,7 +104,7 @@ std::optional<Symbol> FindFuncdef(const std::string& name, const SymbolTable& ta
     return result;
 }
 
-TypeDeclarationInfo FindTypeDeclaration(const std::string& typeName, const SymbolTable& table)
+TypeDeclarationInfo FindTypeDeclaration(std::string_view typeName, const SymbolTable& table)
 {
     TypeDeclarationInfo info;
     if (typeName.empty())
@@ -173,7 +172,7 @@ bool ResolvesToEnum(const std::string& typeName, const SymbolTable& table)
     return found;
 }
 
-bool ResolvesToNonClassDeclaration(const std::string& typeName, const SymbolTable& table)
+bool ResolvesToNonClassDeclaration(std::string_view typeName, const SymbolTable& table)
 {
     bool found = false;
     const std::string_view bare = LastScopeSegment(typeName);
@@ -200,8 +199,7 @@ bool ResolvesToNonClassDeclaration(const std::string& typeName, const SymbolTabl
     return found;
 }
 
-static bool ClassDeclaresMethodReturningBool(const std::string& cls, const std::string& method,
-                                             const SymbolTable& table)
+static bool ClassDeclaresMethodReturningBool(std::string_view cls, std::string_view method, const SymbolTable& table)
 {
     if (auto ptr = table.FindMemberSymbolPtr(cls, method))
     {
@@ -219,15 +217,41 @@ static bool ClassDeclaresMethodReturningBool(const std::string& cls, const std::
     return false;
 }
 
-static std::string FindVisibleClassQualifiedName(const std::string& typeName, const SymbolTable& table)
+/**
+ * @brief Finds which boolean conversion operator a class declares.
+ * @param[in] cls Qualified class name whose members are searched.
+ * @param[in] table Symbol table to query.
+ * @return `opImplConv` when it returns bool, else `opConv` when it does, else an empty view.
+ */
+static std::string_view ConversionOperatorOfClass(std::string_view cls, const SymbolTable& table)
 {
+    constexpr std::string_view implicitName = "opImplConv";
+    constexpr std::string_view explicitName = "opConv";
+    if (ClassDeclaresMethodReturningBool(cls, implicitName, table))
+    {
+        return implicitName;
+    }
+    if (ClassDeclaresMethodReturningBool(cls, explicitName, table))
+    {
+        return explicitName;
+    }
+    return {};
+}
+
+std::string_view BoolConversionOperator(std::string_view typeName, const SymbolTable& table)
+{
+    if (typeName.empty())
+    {
+        return {};
+    }
+
     if (auto ptr = table.FindSymbolsPtr(typeName))
     {
         for (const auto& sym : *ptr)
         {
             if (sym.type == SymbolType::Class)
             {
-                return typeName;
+                return ConversionOperatorOfClass(typeName, table);
             }
         }
     }
@@ -236,40 +260,13 @@ static std::string FindVisibleClassQualifiedName(const std::string& typeName, co
     {
         if (sym.type == SymbolType::Class)
         {
-            return sym.qualifiedName.empty() ? sym.name : sym.qualifiedName;
+            return ConversionOperatorOfClass(sym.qualifiedName.empty() ? sym.name : sym.qualifiedName, table);
         }
     }
     return {};
 }
 
-const std::string* BoolConversionOperator(const std::string& typeName, const SymbolTable& table)
-{
-    if (typeName.empty())
-    {
-        return nullptr;
-    }
-
-    static const std::string implicitName = "opImplConv";
-    static const std::string explicitName = "opConv";
-
-    const std::string matchedCls = FindVisibleClassQualifiedName(typeName, table);
-    if (matchedCls.empty())
-    {
-        return nullptr;
-    }
-
-    if (ClassDeclaresMethodReturningBool(matchedCls, implicitName, table))
-    {
-        return &implicitName;
-    }
-    if (ClassDeclaresMethodReturningBool(matchedCls, explicitName, table))
-    {
-        return &explicitName;
-    }
-    return nullptr;
-}
-
-bool IsTruthyCondition(const std::string& typeName, const SymbolTable& table)
+bool IsTruthyCondition(std::string_view typeName, const SymbolTable& table)
 {
     if (typeName.empty())
     {
@@ -281,13 +278,13 @@ bool IsTruthyCondition(const std::string& typeName, const SymbolTable& table)
         return true;
     }
 
-    const std::string clean = CleanBaseType(typeName);
+    const auto clean = CleanBaseType(typeName);
     if (clean == "bool")
     {
         return true;
     }
 
-    return BoolConversionOperator(clean, table) != nullptr;
+    return !BoolConversionOperator(clean, table).empty();
 }
 
 } // namespace angel_lsp::analysis

@@ -10,7 +10,7 @@
 namespace angel_lsp::analysis
 {
 
-bool CanTriviallyConvert(const std::string& from, const std::string& to, const DiagnosticContext& ctx)
+bool CanTriviallyConvert(std::string_view from, std::string_view to, const DiagnosticContext& ctx)
 {
     if (IsPoisonOrEmptyType(from, to) || IsSameType(from, to))
     {
@@ -40,7 +40,7 @@ bool CanTriviallyConvert(const std::string& from, const std::string& to, const D
     return CanonicalizeType(from) == CanonicalizeType(to);
 }
 
-bool CanConvertBuiltins(const std::string& from, const std::string& to, const DiagnosticContext& ctx)
+bool CanConvertBuiltins(std::string_view from, std::string_view to, const DiagnosticContext& ctx)
 {
     if (from == to)
     {
@@ -65,7 +65,7 @@ bool CanConvertBuiltins(const std::string& from, const std::string& to, const Di
     return false;
 }
 
-bool CanConvertEnumTarget(const std::string& from, const std::string& to, const SymbolTable& table,
+bool CanConvertEnumTarget(std::string_view from, std::string_view to, const SymbolTable& table,
                           const DiagnosticContext& ctx)
 {
     const bool fromBuiltIn = IsBuiltInValueType(from, ctx);
@@ -82,8 +82,7 @@ bool CanConvertEnumTarget(const std::string& from, const std::string& to, const 
     return false;
 }
 
-bool CanConvertClasses(const std::string& from, const std::string& to, const DiagnosticContext& ctx,
-                       ConversionState& state)
+bool CanConvertClasses(std::string_view from, std::string_view to, const DiagnosticContext& ctx, ConversionState& state)
 {
     const SymbolTable& table = ctx.request.symbolTable;
     if (state.depth >= TypeConversionChecker::MAX_CONVERSION_DEPTH)
@@ -98,7 +97,7 @@ bool CanConvertClasses(const std::string& from, const std::string& to, const Dia
     }
 
     TemplateBinding binding;
-    if (to.find('<') != std::string::npos)
+    if (to.find('<') != std::string_view::npos)
     {
         binding = BindTemplateArguments(to, table);
     }
@@ -114,7 +113,7 @@ bool CanConvertClasses(const std::string& from, const std::string& to, const Dia
         if (AcceptsSingleArgument(parameters))
         {
             ConversionState nextState{state.depth + 1, state.visitedEdges};
-            std::string paramType = SingleArgumentType(parameters);
+            auto paramType = SingleArgumentType(parameters);
             if (binding.usable)
             {
                 paramType = SubstituteTemplateParameters(paramType, binding);
@@ -136,7 +135,7 @@ bool CanConvertClasses(const std::string& from, const std::string& to, const Dia
     return convertible;
 }
 
-bool IsUnresolvedOrExternalType(const std::string& typeName, bool isBuiltIn, const SymbolTable& table)
+bool IsUnresolvedOrExternalType(std::string_view typeName, bool isBuiltIn, const SymbolTable& table)
 {
     if (!isBuiltIn && !FindTypeDeclaration(typeName, table).found && !ResolvesToEnum(typeName, table))
     {
@@ -145,25 +144,26 @@ bool IsUnresolvedOrExternalType(const std::string& typeName, bool isBuiltIn, con
     return ResolvesToNonClassDeclaration(typeName, table);
 }
 
-bool CanConvertUserTypes(const ConversionTypePair& types, const DiagnosticContext& ctx, ConversionState& state)
+bool CanConvertUserTypes(std::string_view from, std::string_view to, const DiagnosticContext& ctx,
+                         ConversionState& state)
 {
-    const bool fromBuiltIn = IsBuiltInValueType(types.from, ctx);
-    const bool toBuiltIn = IsBuiltInValueType(types.to, ctx);
+    const bool fromBuiltIn = IsBuiltInValueType(from, ctx);
+    const bool toBuiltIn = IsBuiltInValueType(to, ctx);
     const SymbolTable& table = ctx.request.symbolTable;
 
-    if (!fromBuiltIn && !toBuiltIn && IsDerivedFrom(types.from, types.to, table))
+    if (!fromBuiltIn && !toBuiltIn && IsDerivedFrom(from, to, table))
     {
         return true;
     }
-    if (!fromBuiltIn && DeclaresConversionTo(types.from, types.to, table, true))
+    if (!fromBuiltIn && DeclaresConversionTo(from, to, table, true))
     {
         return true;
     }
-    return CanConvertClasses(types.from, types.to, ctx, state);
+    return CanConvertClasses(from, to, ctx, state);
 }
 
-bool TypeConversionEvaluator::IsConvertible(const std::string& from, const std::string& to,
-                                            const DiagnosticContext& ctx, ConversionState& state)
+bool TypeConversionEvaluator::IsConvertible(std::string_view from, std::string_view to, const DiagnosticContext& ctx,
+                                            ConversionState& state)
 {
     if (IsPoisonOrEmptyType(from, to))
     {
@@ -180,7 +180,7 @@ bool TypeConversionEvaluator::IsConvertible(const std::string& from, const std::
         return true;
     }
 
-    std::string edgeKey = from + "->" + to;
+    auto edgeKey = MakeConversionEdgeKey(from, to);
     if (!state.visitedEdges.insert(edgeKey).second)
     {
         return false;
@@ -217,7 +217,7 @@ bool TypeConversionEvaluator::IsConvertible(const std::string& from, const std::
         return true;
     }
 
-    if (CanConvertUserTypes({from, to}, ctx, state))
+    if (CanConvertUserTypes(from, to, ctx, state))
     {
         return true;
     }
@@ -230,58 +230,16 @@ bool TypeConversionEvaluator::IsConvertible(const std::string& from, const std::
     return false;
 }
 
-bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx, size_t depth)
+bool IsConvertible(std::string_view from, std::string_view to, const DiagnosticContext& ctx, size_t depth)
 {
     ConversionState state;
     state.depth = depth;
     return TypeConversionEvaluator::IsConvertible(from, to, ctx, state);
 }
 
-bool CanConvertImplicitly(const std::string& fromType, const std::string& toType, const DiagnosticContext& ctx)
+bool CanConvertImplicitly(std::string_view fromType, std::string_view toType, const DiagnosticContext& ctx)
 {
     return IsConvertible(CleanBaseType(fromType), CleanBaseType(toType), ctx);
 }
-
-namespace TypeConversionChecker
-{
-bool evaluateUserConversions(const TypeInfo& source, const TypeInfo& target, size_t depth,
-                             ankerl::unordered_dense::set<std::string>& visitedEdges)
-{
-    if (depth >= MAX_CONVERSION_DEPTH)
-    {
-        return false;
-    }
-    if (source == target)
-    {
-        return true;
-    }
-    const std::string edgeKey = source.name + "->" + target.name;
-    return visitedEdges.contains(edgeKey);
-}
-
-bool canConvertImplicitly(const TypeInfo& source, const TypeInfo& target, size_t depth,
-                          ankerl::unordered_dense::set<std::string>& visitedEdges)
-{
-    if (depth >= MAX_CONVERSION_DEPTH)
-    {
-        return false;
-    }
-
-    if (source == target)
-    {
-        return true;
-    }
-
-    std::string edgeKey = source.name + "->" + target.name;
-    if (!visitedEdges.insert(edgeKey).second)
-    {
-        return false;
-    }
-
-    bool convertible = evaluateUserConversions(source, target, depth + 1, visitedEdges);
-    visitedEdges.erase(edgeKey);
-    return convertible;
-}
-} // namespace TypeConversionChecker
 
 } // namespace angel_lsp::analysis

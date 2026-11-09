@@ -121,7 +121,7 @@ std::string QualifyTypeInContainer(std::string_view typeStr, std::string_view co
     return result;
 }
 
-TemplateBinding BindTemplateArguments(const std::string& writtenType, const SymbolTable& table)
+TemplateBinding BindTemplateArguments(std::string_view writtenType, const SymbolTable& table)
 {
     TemplateBinding binding;
     const auto decomp = DecomposeTemplateType(writtenType);

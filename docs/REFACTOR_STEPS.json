@@ -74,14 +74,8 @@
     {
       "folder_path": "server/src/analysis/checkers",
       "complexity_rank": 36,
-      "selection_rationale": "Semantic checkers (19 files, 1635 lines) access, operator, call, type conversion checkers. Split into milestones: M23 operator family on BinaryExpressionFacts, M24 TypeConversion units, M25 Access/Const/LValue/Isolation, M26 CallChecker and InitializerListChecker, M27 ControlFlow/DefiniteAssignment/Namespace/UndefinedIdentifier.",
-      "files_to_refactor": [
-        "BinaryOperatorHelpers.cpp",
-        "BinaryOperatorChecker.cpp",
-        "ComparisonOperatorChecker.cpp",
-        "HandleComparisonChecker.cpp",
-        "RepeatedConversionChecker.cpp"
-      ]
+      "selection_rationale": "Semantic checkers (19 files, 1635 lines) access, operator, call, type conversion checkers. Split into milestones: M23 operator family on BinaryExpressionFacts, M24 TypeConversion symbol queries onto string_view (Core, Hierarchy, Symbols; M24b-d AST units), M25 Access/Const/LValue/Isolation, M26 CallChecker and InitializerListChecker, M27 ControlFlow/DefiniteAssignment/Namespace/UndefinedIdentifier.",
+      "files_to_refactor": ["TypeConversionCore.cpp", "TypeConversionHierarchy.cpp", "TypeConversionSymbols.cpp"]
     },
     {
       "folder_path": "server/src/analysis/resolution",

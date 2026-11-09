@@ -39,10 +39,10 @@ void ForEachMemberSymbolNamed(std::string_view scope, std::string_view member, c
 
 /**
  * @brief Trims leading and trailing whitespace from a string.
- * @param[in] str Input string.
- * @return Trimmed string copy.
+ * @param[in] str Input string; the result views the same storage.
+ * @return View of the input without surrounding whitespace.
  */
-std::string TrimString(std::string str);
+std::string_view TrimString(std::string_view str);
 
 /**
  * @brief Collects candidate symbols of type Function matching a name.
@@ -50,7 +50,7 @@ std::string TrimString(std::string str);
  * @param[in] table Workspace symbol table.
  * @return Vector of function symbols matching the name.
  */
-std::vector<Symbol> CollectFunctionCandidates(const std::string& funcName, const SymbolTable& table);
+std::vector<Symbol> CollectFunctionCandidates(std::string_view funcName, const SymbolTable& table);
 
 /**
  * @brief Finds a funcdef symbol matching the given name in the symbol table.
@@ -58,7 +58,7 @@ std::vector<Symbol> CollectFunctionCandidates(const std::string& funcName, const
  * @param[in] table Symbol table.
  * @return Optional Symbol if found.
  */
-std::optional<Symbol> FindFuncdef(const std::string& name, const SymbolTable& table);
+std::optional<Symbol> FindFuncdef(std::string_view name, const SymbolTable& table);
 
 /**
  * @brief Looks up what a type name denotes.
@@ -66,7 +66,7 @@ std::optional<Symbol> FindFuncdef(const std::string& name, const SymbolTable& ta
  * @param[in] table Symbol table to query.
  * @return TypeDeclarationInfo indicating kind and template status.
  */
-TypeDeclarationInfo FindTypeDeclaration(const std::string& typeName, const SymbolTable& table);
+TypeDeclarationInfo FindTypeDeclaration(std::string_view typeName, const SymbolTable& table);
 
 /**
  * @brief True when a name resolves to an enum declared somewhere the analyzer can see.
@@ -82,7 +82,7 @@ bool ResolvesToEnum(const std::string& typeName, const SymbolTable& table);
  * @param[in] table Symbol table to query.
  * @return True if name resolves to a non-class declaration; false otherwise.
  */
-bool ResolvesToNonClassDeclaration(const std::string& typeName, const SymbolTable& table);
+bool ResolvesToNonClassDeclaration(std::string_view typeName, const SymbolTable& table);
 
 /**
  * @brief Visits every overload of a named method visible on a type, base types included.
@@ -91,7 +91,7 @@ bool ResolvesToNonClassDeclaration(const std::string& typeName, const SymbolTabl
  * @param[in] table Symbol table to query.
  * @param[in] visitor Callback returning true to stop traversal.
  */
-void ForEachMethod(const std::string& typeName, const std::string& memberName, const SymbolTable& table,
+void ForEachMethod(std::string_view typeName, std::string_view memberName, const SymbolTable& table,
                    const std::function<bool(const Symbol&)>& visitor);
 
 /**
@@ -100,7 +100,7 @@ void ForEachMethod(const std::string& typeName, const std::string& memberName, c
  * @param[in] table Symbol table to query.
  * @param[in] visitor Callback returning true to stop traversal.
  */
-void ForEachConstructor(const std::string& typeName, const SymbolTable& table,
+void ForEachConstructor(std::string_view typeName, const SymbolTable& table,
                         const std::function<bool(const Symbol&)>& visitor);
 
 /**
@@ -109,13 +109,6 @@ void ForEachConstructor(const std::string& typeName, const SymbolTable& table,
  * @return True if function accepts a single argument; false otherwise.
  */
 bool AcceptsSingleArgument(const std::vector<ParameterInformation>& parameters);
-
-/**
- * @brief The declared type of the single argument such an overload converts from.
- * @param[in] parameters Function parameters vector.
- * @return Canonicalized type name of the first argument.
- */
-std::string SingleArgumentType(const std::vector<ParameterInformation>& parameters);
 
 /**
  * @brief The overload an assignment operator calls, or empty for one that has none.
@@ -131,7 +124,7 @@ std::string_view AssignmentOverloadName(std::string_view op);
  * @param[in] table Symbol table to query.
  * @return True if operator method is declared; false otherwise.
  */
-bool DeclaresOperatorMethod(const std::string& typeName, std::string_view methodName, const SymbolTable& table);
+bool DeclaresOperatorMethod(std::string_view typeName, std::string_view methodName, const SymbolTable& table);
 
 /**
  * @brief True for a type no cast<> may name: a primitive, or an enum.
@@ -139,7 +132,7 @@ bool DeclaresOperatorMethod(const std::string& typeName, std::string_view method
  * @param[in] table Symbol table to query.
  * @return True if type is a scalar cast target; false otherwise.
  */
-bool IsScalarCastTarget(const std::string& typeName, const SymbolTable& table);
+bool IsScalarCastTarget(std::string_view typeName, const SymbolTable& table);
 
 /**
  * @brief True when a type declares any cast operator overload.
@@ -147,7 +140,7 @@ bool IsScalarCastTarget(const std::string& typeName, const SymbolTable& table);
  * @param[in] table Symbol table to query.
  * @return True if opCast or opImplCast is declared; false otherwise.
  */
-bool DeclaresAnyCastOperator(const std::string& typeName, const SymbolTable& table);
+bool DeclaresAnyCastOperator(std::string_view typeName, const SymbolTable& table);
 
 /**
  * @brief True when a type declares a conversion operator producing the target type.
@@ -157,7 +150,7 @@ bool DeclaresAnyCastOperator(const std::string& typeName, const SymbolTable& tab
  * @param[in] implicitOnly When true, checks only opImplConv and opImplCast.
  * @return True if conversion operator exists; false otherwise.
  */
-bool DeclaresConversionTo(const std::string& fromType, const std::string& toType, const SymbolTable& table,
+bool DeclaresConversionTo(std::string_view fromType, std::string_view toType, const SymbolTable& table,
                           bool implicitOnly);
 
 /**
@@ -176,7 +169,7 @@ bool IsDerivedFrom(const std::string& derived, const std::string& base, const Sy
  * @param[in] table Symbol table to query.
  * @return True if types are related in hierarchy; false otherwise.
  */
-bool AreHierarchyRelated(const std::string& a, const std::string& b, const SymbolTable& table);
+bool AreHierarchyRelated(std::string_view a, std::string_view b, const SymbolTable& table);
 
 /**
  * @brief The workspace's string type, which defaults to string when unconfigured.
@@ -184,7 +177,7 @@ bool AreHierarchyRelated(const std::string& a, const std::string& b, const Symbo
  * @param[in] ctx Diagnostic context carrying config.
  * @return True if type represents the string type; false otherwise.
  */
-bool IsStringType(const std::string& typeName, const DiagnosticContext& ctx);
+bool IsStringType(std::string_view typeName, const DiagnosticContext& ctx);
 
 /**
  * @brief Checks whether a type is a known primitive or string value type.
@@ -192,7 +185,7 @@ bool IsStringType(const std::string& typeName, const DiagnosticContext& ctx);
  * @param[in] ctx Diagnostic context carrying config.
  * @return True if builtin value type; false otherwise.
  */
-bool IsBuiltInValueType(const std::string& typeName, const DiagnosticContext& ctx);
+bool IsBuiltInValueType(std::string_view typeName, const DiagnosticContext& ctx);
 
 /**
  * @brief Checks if either type is empty or an error poison sentinel.
@@ -210,7 +203,7 @@ bool IsPoisonOrEmptyType(std::string_view from, std::string_view to);
  * @param[in] depth Current recursion depth guard.
  * @return True whenever a route exists; false otherwise.
  */
-bool IsConvertible(const std::string& from, const std::string& to, const DiagnosticContext& ctx, size_t depth = 0);
+bool IsConvertible(std::string_view from, std::string_view to, const DiagnosticContext& ctx, size_t depth = 0);
 
 /**
  * @brief Resolves the ExpressionType resulting from an explicit cast AST node.
@@ -330,9 +323,9 @@ const Scope* ResolveNodeScope(TSNode node, const TypeConversionCheckRequest& req
  * @brief Finds the boolean conversion operator (opImplConv or opConv) for a class.
  * @param[in] typeName Target type name.
  * @param[in] table Symbol table to query.
- * @return Pointer to operator name string, or nullptr if none.
+ * @return Name of the boolean conversion operator, or an empty view when the type has none.
  */
-const std::string* BoolConversionOperator(const std::string& typeName, const SymbolTable& table);
+std::string_view BoolConversionOperator(std::string_view typeName, const SymbolTable& table);
 
 /**
  * @brief Validates condition semantics for control flow statements.

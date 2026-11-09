@@ -184,7 +184,7 @@ static bool CheckNullAssignmentToNonHandle(const SyntaxOperands& assignment, Ass
 
 static bool CheckRightSideNamespaceOnly(TSNode right, DiagnosticContext& ctx)
 {
-    const std::string rightIdent = TrimString(std::string(parser::NodeText(right, ctx.request.sourceCode)));
+    const std::string rightIdent = std::string(TrimString(parser::NodeText(right, ctx.request.sourceCode)));
     if (rightIdent.empty())
     {
         return false;
@@ -256,7 +256,7 @@ void ProcessAssignmentNode(TSNode node, const TypeConversionCheckRequest& reques
     else if (types.from.empty() && IsFunctionReference(right, ExpressionTypeContext(scope, ctx)))
     {
         ctx.EmitAtNodeRange(ToOptionalSourceRange(right), "as-err-no-implicit-conversion",
-                            {TrimString(std::string(parser::NodeText(right, ctx.request.sourceCode))), types.to});
+                            {std::string(TrimString(parser::NodeText(right, ctx.request.sourceCode))), types.to});
     }
 
     CheckHandleConstAssignment({left, right}, types, scope, ctx);

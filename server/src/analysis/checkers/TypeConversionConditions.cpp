@@ -111,12 +111,13 @@ static void ValidateConditionOperand(TSNode operand, const std::string& operandT
         return;
     }
 
-    if (const std::string* conversion = BoolConversionOperator(operandType, ctx.request.symbolTable))
+    if (const std::string_view conversion = BoolConversionOperator(operandType, ctx.request.symbolTable);
+        !conversion.empty())
     {
         const TSPoint start = ts_node_start_point(operand);
         const TSPoint end = ts_node_end_point(operand);
         ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-hint-bool-conversion",
-                        {operandType, *conversion}, DiagnosticSeverity::Hint);
+                        {operandType, conversion}, DiagnosticSeverity::Hint);
     }
 }
 

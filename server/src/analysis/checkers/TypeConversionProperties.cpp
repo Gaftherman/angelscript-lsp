@@ -106,12 +106,12 @@ static void PopulateAccessorInfo(const std::vector<Symbol>& accessors, PropertyA
 static PropertyAccessInfo InspectBareOrScopedProperty(TSNode exprNode, const Scope* scope, const DiagnosticContext& ctx)
 {
     PropertyAccessInfo info;
-    std::string text = TrimString(std::string(parser::NodeText(exprNode, ctx.request.sourceCode)));
+    std::string text = std::string(TrimString(parser::NodeText(exprNode, ctx.request.sourceCode)));
     const auto [scopeNameView, propNameView] = utils::SplitScopedName(text);
     if (!scopeNameView.empty())
     {
-        std::string scopeName = TrimString(std::string(scopeNameView));
-        info.propName = TrimString(std::string(propNameView));
+        std::string scopeName = std::string(TrimString(scopeNameView));
+        info.propName = std::string(TrimString(propNameView));
         auto accessors = FindPropertyAccessors(scopeName, info.propName, ctx.request.symbolTable, false);
         PopulateAccessorInfo(accessors, info);
         return info;
