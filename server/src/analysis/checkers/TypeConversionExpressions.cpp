@@ -15,30 +15,29 @@ namespace angel_lsp::analysis
 
 void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    const auto operands = ReadBinaryOperands(node, &request.nodeIndex);
-    if (!operands.Complete())
+    const BinaryExpressionFact* fact =
+        request.binaryFacts->Find(IndexedByteRange{ts_node_start_byte(node), ts_node_end_byte(node)});
+    if (!fact)
     {
         return;
     }
-    const auto& gs = parser::GetGrammarSymbols();
-    const auto op = ts_node_symbol(operands.op);
     const Scope* scope = ResolveNodeScope(node, request);
 
-    if (op == gs.tokIs || op == gs.tokBangIs)
+    if (fact->opClass == BinaryOperatorClass::Identity)
     {
-        CheckHandleComparison(operands, scope, ctx);
+        CheckHandleComparison(*fact, scope, ctx);
         return;
     }
 
-    if (IsComparisonOpSym(op, gs))
+    if (fact->opClass == BinaryOperatorClass::Equality || fact->opClass == BinaryOperatorClass::Relational)
     {
-        CheckSignedUnsignedComparison(operands, scope, ctx);
-        CheckHandleComparison(operands, scope, ctx);
-        CheckComparisonOperatorCompatibility(operands, scope, ctx);
+        CheckSignedUnsignedComparison(*fact, scope, ctx);
+        CheckHandleComparison(*fact, scope, ctx);
+        CheckComparisonOperatorCompatibility(*fact, scope, ctx);
         return;
     }
 
-    CheckBinaryOperatorCompatibility(operands, scope, ctx);
+    CheckBinaryOperatorCompatibility(*fact, scope, ctx);
 }
 
 static TSNode FindUnaryOperand(TSNode node, const NodeIndex* index)

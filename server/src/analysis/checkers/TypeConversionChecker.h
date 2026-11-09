@@ -1,6 +1,7 @@
 #pragma once
 
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/BinaryExpressionFacts.h"
 
 #include <ankerl/unordered_dense.h>
 #include <string>
@@ -35,6 +36,9 @@ struct TypeConversionCheckRequest
      *        `auto` inference writes the deduced type back into the LocalDefinition so that everything
      */
     Scope* mutableScopeRoot = nullptr;
+
+    /// Binary expression and if-ladder facts; CheckTypeConversions builds them once when left null.
+    const BinaryExpressionFacts* binaryFacts = nullptr;
 };
 
 /**

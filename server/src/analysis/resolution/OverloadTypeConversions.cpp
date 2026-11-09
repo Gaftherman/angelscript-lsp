@@ -275,7 +275,7 @@ bool HasUserConversion(const std::string& fromType, const std::string& toType, c
 
 constexpr int k_maxTypedefDepth = 8;
 
-std::string UnwrapTypedef(const std::string& typeName, const SymbolTable& symbolTable, int depth)
+std::string UnwrapTypedef(std::string_view typeName, const SymbolTable& symbolTable, int depth)
 {
     std::string current = NormalizeType(typeName, symbolTable.GetDefaultArrayType());
     const auto syms = symbolTable.FindSymbolsPtr(current);

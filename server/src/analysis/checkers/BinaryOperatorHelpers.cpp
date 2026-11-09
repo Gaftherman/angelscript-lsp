@@ -1,23 +1,32 @@
 #include "analysis/checkers/BinaryOperatorHelpers.h"
 
-#include "analysis/index/SyntaxOperands.h"
-#include "analysis/index/TypeExtraction.h"
-#include "analysis/resolution/SemanticHelpers.h"
+#include "analysis/resolution/ClassHierarchyResolver.h"
+#include "analysis/resolution/OperandRangeResolution.h"
+#include "analysis/resolution/ScopeSymbolLookup.h"
 #include "analysis/types/ExpressionTypeCache.h"
+#include "analysis/types/OperandTypePair.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 #include "parser/Keywords.h"
 #include "parser/Primitives.h"
 
 #include <algorithm>
+#include <optional>
+#include <string_view>
 
 namespace angel_lsp::analysis
 {
-bool IsParameterCompatible(const ParameterInformation& param, const std::string& argType, const SymbolTable& table)
+
+/**
+ * @brief Tests whether a parameter accepts an argument of the given type.
+ * @param[in] param Declared parameter.
+ * @param[in] argType Actual argument type name.
+ * @param[in] table Symbol table used to resolve conversions.
+ * @return True when the argument can bind to the parameter.
+ */
+bool IsParameterCompatible(const ParameterInformation& param, std::string_view argType, const SymbolTable& table)
 {
-    const std::string cleanParam = CleanBaseType(param.typeName);
-    if (cleanParam == "?" || cleanParam == "?&" || param.typeName.find('?') != std::string::npos)
+    const auto cleanParam = CleanBaseType(param.typeName);
+    if (cleanParam == "?" || cleanParam == "?&" || param.typeName.find('?') != std::string_view::npos)
     {
         return true;
     }
@@ -33,7 +42,15 @@ bool IsParameterCompatible(const ParameterInformation& param, const std::string&
     return std::find(hierarchy.begin(), hierarchy.end(), cleanParam) != hierarchy.end();
 }
 
-bool TypeHasOperator(const std::string& typeName, const std::string& opName, const std::string& argType,
+/**
+ * @brief Tests whether a type declares or inherits an operator accepting the argument type.
+ * @param[in] typeName Type that owns the operator.
+ * @param[in] opName Operator method name such as opAdd.
+ * @param[in] argType Argument type passed to the operator.
+ * @param[in] table Symbol table to search.
+ * @return True when a compatible overload exists.
+ */
+bool TypeHasOperator(std::string_view typeName, std::string_view opName, std::string_view argType,
                      const SymbolTable& table)
 {
     if (typeName.empty() || parser::primitives::IsPrimitive(typeName))
@@ -59,7 +76,14 @@ bool TypeHasOperator(const std::string& typeName, const std::string& opName, con
     return false;
 }
 
-bool TypeHasOpImplConvTo(const std::string& typeName, const std::string& targetType, const SymbolTable& table)
+/**
+ * @brief Tests whether a type converts implicitly to a target through opImplConv or opConv.
+ * @param[in] typeName Source type.
+ * @param[in] targetType Destination type.
+ * @param[in] table Symbol table to search.
+ * @return True when a conversion operator to the target exists.
+ */
+bool TypeHasOpImplConvTo(std::string_view typeName, std::string_view targetType, const SymbolTable& table)
 {
     if (typeName.empty() || parser::primitives::IsPrimitive(typeName))
     {
@@ -83,9 +107,16 @@ bool TypeHasOpImplConvTo(const std::string& typeName, const std::string& targetT
     return false;
 }
 
+/**
+ * @brief Tests whether a type name is declared or built in.
+ * @param[in] type Type spelling.
+ * @param[in] table Symbol table to search.
+ * @param[in] stringTypeName Configured string type name.
+ * @return True when the type is known.
+ */
 bool IsKnownType(std::string_view type, const SymbolTable& table, std::string_view stringTypeName)
 {
-    if (type == "null" || parser::primitives::IsPrimitive(type) || type == stringTypeName ||
+    if (type == parser::keywords::Null || parser::primitives::IsPrimitive(type) || type == stringTypeName ||
         ResolvesToEnum(type, table))
     {
         return true;
@@ -108,37 +139,43 @@ bool IsKnownType(std::string_view type, const SymbolTable& table, std::string_vi
     return symbols && !symbols->empty();
 }
 
-BinaryExpressionOperands ReadBinaryOperands(TSNode node, const NodeIndex* index)
+/**
+ * @brief Tests whether an operand is the null literal or resolved to null.
+ * @param[in] operand Operand facts.
+ * @param[in] type Resolved operand type spelling.
+ * @return True when the operand is null.
+ */
+bool IsNullOperand(const BinaryOperandFact& operand, std::string_view type)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    const SyntaxOperands syntax(node, index);
-    return {syntax.Field(gs.fieldOperator), syntax.Field(gs.fieldLeft), syntax.Field(gs.fieldRight)};
-}
-
-bool IsNullOperand(TSNode node, std::string_view type, const NodeIndex* index)
-{
-    return type == parser::keywords::Null || IsNullInitializer(node, index);
+    return type == parser::keywords::Null || operand.isNullLiteral;
 }
 
 /**
  * @brief Strips leading const, trailing decorations, and type whitespace to obtain a bare base type.
  * @param[in] type Raw type name string view.
- * @return Sanitized base type name string.
+ * @return Sanitized base type name string view.
  */
-static std::string StripModifiers(std::string_view type)
+static std::string_view StripModifiers(std::string_view type)
 {
     type = StripLeadingConst(type);
     type = StripTrailingDecorationsView(type);
     TrimTypeWhitespace(type);
-    return std::string(type);
+    return type;
 }
 
-std::optional<BinaryOperandTypes> ResolveCleanBinaryOperandTypes(TSNode left, TSNode right, const Scope* scope,
-                                                                 const DiagnosticContext& ctx)
+/**
+ * @brief Resolves both operand types of a binary expression and strips their modifiers.
+ * @param[in] fact Binary expression facts.
+ * @param[in] scope Lexical scope enclosing the expression.
+ * @param[in] ctx Diagnostic context.
+ * @return Clean operand types, or nullopt when either is unresolved or poisoned.
+ */
+std::optional<OperandTypePair> ResolveCleanBinaryOperandTypes(const BinaryExpressionFact& fact, const Scope* scope,
+                                                              const DiagnosticContext& ctx)
 {
     const ExpressionTypeContext exprCtx(scope, ctx);
-    const std::string rawLeft = ResolveExpressionType(left, exprCtx);
-    const std::string rawRight = ResolveExpressionType(right, exprCtx);
+    const auto rawLeft = ResolveExpressionType(fact.left.bytes, exprCtx);
+    const auto rawRight = ResolveExpressionType(fact.right.bytes, exprCtx);
     if (rawLeft.empty() || rawRight.empty())
     {
         return std::nullopt;
@@ -147,12 +184,13 @@ std::optional<BinaryOperandTypes> ResolveCleanBinaryOperandTypes(TSNode left, TS
     {
         return std::nullopt;
     }
-    std::string cleanLeft = IsNullOperand(left, rawLeft, ctx.request.nodeIndex) ? "null" : StripModifiers(rawLeft);
-    std::string cleanRight = IsNullOperand(right, rawRight, ctx.request.nodeIndex) ? "null" : StripModifiers(rawRight);
+    const auto cleanLeft = IsNullOperand(fact.left, rawLeft) ? parser::keywords::Null : StripModifiers(rawLeft);
+    const auto cleanRight = IsNullOperand(fact.right, rawRight) ? parser::keywords::Null : StripModifiers(rawRight);
     if (cleanLeft.empty() || cleanRight.empty())
     {
         return std::nullopt;
     }
-    return BinaryOperandTypes{std::move(cleanLeft), std::move(cleanRight)};
+    return MakeOperandTypePair(cleanLeft, cleanRight);
 }
+
 } // namespace angel_lsp::analysis

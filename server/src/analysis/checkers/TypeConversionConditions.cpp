@@ -209,7 +209,11 @@ void ProcessConditionNode(TSNode node, const TypeConversionCheckRequest& request
         const auto* fact = request.nodeIndex.FindOperandSyntax(node);
         if (!fact || fact->parentSymbol != gs.symIfStatement)
         {
-            CheckRepeatedConversions(node, scope, ctx);
+            const IndexedByteRange rootSpan{ts_node_start_byte(node), ts_node_end_byte(node)};
+            if (const IfLadderFact* ladder = request.binaryFacts->FindLadder(rootSpan))
+            {
+                CheckRepeatedConversions(*ladder, *request.binaryFacts, scope, ctx);
+            }
         }
     }
 }

@@ -2,13 +2,12 @@
 
 #include "analysis/checkers/BinaryOperatorHelpers.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
-#include "analysis/index/SyntaxOperands.h"
-#include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
+#include "analysis/resolution/OperandRangeResolution.h"
+#include "analysis/types/OperandTypePair.h"
+#include "analysis/types/TypeSanitization.h"
 
-#include <algorithm>
-#include <string>
+#include <cstddef>
+#include <cstdint>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
@@ -16,93 +15,37 @@
 namespace angel_lsp::analysis
 {
 
-static bool IsExtractableCandidate(TSNode node)
+static void TryRecordOccurrence(const BinaryOperandFact& operand, const OperandTypePair& types,
+                                const DiagnosticContext& ctx, std::vector<ConversionOccurrence>& out)
 {
-    if (ts_node_is_null(node))
-    {
-        return false;
-    }
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(node);
-    return sym == gs.symMemberExpression || sym == gs.symIdentifier || sym == gs.symCallExpression ||
-           sym == gs.symIndexExpression || sym == gs.symScopedIdentifier;
-}
-
-static void TryRecordOccurrence(TSNode operand, const ConversionTypePair& types, const DiagnosticContext& ctx,
-                                std::vector<ConversionOccurrence>& out)
-{
-    if (!IsExtractableCandidate(operand))
+    if (!operand.isExtractableCandidate)
     {
         return;
     }
-    if (TypeHasOpImplConvTo(types.from, types.to, ctx.request.symbolTable))
+    if (TypeHasOpImplConvTo(types.left, types.right, ctx.request.symbolTable))
     {
-        out.push_back({operand, std::string(parser::NodeText(operand, ctx.request.sourceCode)), types.from, types.to});
+        out.push_back({operand.range, operand.text, types});
     }
 }
 
-static void InspectComparisonNode(TSNode binNode, const Scope* scope, DiagnosticContext& ctx,
+static void InspectComparisonNode(const BinaryExpressionFact& fact, const Scope* scope, DiagnosticContext& ctx,
                                   std::vector<ConversionOccurrence>& out)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    const auto operands = ReadBinaryOperands(binNode, ctx.request.nodeIndex);
-    if (!operands.Complete())
-    {
-        return;
-    }
-    const auto& [opNode, left, right] = operands;
-    const TSSymbol opSym = ts_node_symbol(opNode);
-    if (opSym != gs.tokEqEq && opSym != gs.tokBangEq)
+    if (fact.opClass != BinaryOperatorClass::Equality)
     {
         return;
     }
 
     const ExpressionTypeContext exprCtx(scope, ctx);
-    const std::string cleanLeft = CleanBaseType(ResolveExpressionType(left, exprCtx));
-    const std::string cleanRight = CleanBaseType(ResolveExpressionType(right, exprCtx));
+    const auto cleanLeft = CleanBaseType(ResolveExpressionType(fact.left.bytes, exprCtx));
+    const auto cleanRight = CleanBaseType(ResolveExpressionType(fact.right.bytes, exprCtx));
     if (cleanLeft.empty() || cleanRight.empty() || cleanLeft == cleanRight)
     {
         return;
     }
 
-    TryRecordOccurrence(left, {cleanLeft, cleanRight}, ctx, out);
-    TryRecordOccurrence(right, {cleanRight, cleanLeft}, ctx, out);
-}
-
-/// Visits only indexed binary candidates contained in the condition's byte interval.
-static void CollectConditionConversions(TSNode condition, const Scope* scope, DiagnosticContext& ctx,
-                                        std::vector<ConversionOccurrence>& out)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const auto candidates = ctx.request.nodeIndex->Nodes(gs.symBinaryExpression);
-    const auto start = ts_node_start_byte(condition);
-    const auto end = ts_node_end_byte(condition);
-    const auto first = std::ranges::lower_bound(candidates, start, {}, ts_node_start_byte);
-    const auto last = std::ranges::lower_bound(first, candidates.end(), end, {}, ts_node_start_byte);
-    for (auto it = first; it != last; ++it)
-    {
-        if (ts_node_end_byte(*it) <= end)
-        {
-            InspectComparisonNode(*it, scope, ctx, out);
-        }
-    }
-}
-
-std::vector<TSNode> CollectIfLadderConditions(TSNode rootIf, const NodeIndex* index)
-{
-    std::vector<TSNode> conditions;
-    const auto& gs = parser::GetGrammarSymbols();
-    for (TSNode current = rootIf; !ts_node_is_null(current) && ts_node_symbol(current) == gs.symIfStatement;)
-    {
-        const SyntaxOperands syntax(current, index);
-        const TSNode condition = syntax.FieldOrNamed(gs.fieldCondition, 0);
-        if (!ts_node_is_null(condition))
-        {
-            conditions.push_back(condition);
-        }
-        current = syntax.Field(gs.fieldAlternative);
-    }
-    return conditions;
+    TryRecordOccurrence(fact.left, MakeOperandTypePair(cleanLeft, cleanRight), ctx, out);
+    TryRecordOccurrence(fact.right, MakeOperandTypePair(cleanRight, cleanLeft), ctx, out);
 }
 
 static void EmitRepeatedHints(const std::vector<ConversionOccurrence>& occurrences, DiagnosticContext& ctx)
@@ -112,7 +55,7 @@ static void EmitRepeatedHints(const std::vector<ConversionOccurrence>& occurrenc
         return;
     }
 
-    std::unordered_map<std::string, size_t> counts;
+    std::unordered_map<std::string_view, size_t> counts;
     for (const auto& occ : occurrences)
     {
         ++counts[occ.exprText];
@@ -122,26 +65,36 @@ static void EmitRepeatedHints(const std::vector<ConversionOccurrence>& occurrenc
     {
         if (counts[occ.exprText] >= 2)
         {
-            const TSPoint start = ts_node_start_point(occ.node);
-            const TSPoint end = ts_node_end_point(occ.node);
-            ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::RepeatedConversion,
-                            {occ.exprText, occ.fromType, occ.toType}, DiagnosticSeverity::Hint);
+            ctx.EmitAtRange(occ.range, diagnostics::codes::RepeatedConversion,
+                            {occ.exprText, occ.types.left, occ.types.right}, DiagnosticSeverity::Hint);
         }
     }
 }
 
-void CheckRepeatedConversions(TSNode rootIfNode, const Scope* scope, DiagnosticContext& ctx)
+/**
+ * @brief Checks for repeated implicit conversions in conditional statement ladders.
+ * @param[in] ladder Root if statement and its else-if conditions.
+ * @param[in] facts Binary expression facts that hold the comparisons inside the conditions.
+ * @param[in] scope Lexical scope of the conditional statement.
+ * @param[in,out] ctx Diagnostic collection context.
+ */
+void CheckRepeatedConversions(const IfLadderFact& ladder, const BinaryExpressionFacts& facts, const Scope* scope,
+                              DiagnosticContext& ctx)
 {
-    if (!ctx.request.nodeIndex)
-    {
-        return;
-    }
-
     std::vector<ConversionOccurrence> occurrences;
-    for (TSNode condition : CollectIfLadderConditions(rootIfNode, ctx.request.nodeIndex))
+    const auto conditionEnd = ladder.conditionBegin + ladder.conditionCount;
+    for (uint32_t i = ladder.conditionBegin; i < conditionEnd && i < facts.ladderConditions.size(); ++i)
     {
-        CollectConditionConversions(condition, scope, ctx, occurrences);
+        const auto& span = facts.ladderConditions[i];
+        for (const auto* fact : facts.FindWithin(span))
+        {
+            if (fact)
+            {
+                InspectComparisonNode(*fact, scope, ctx, occurrences);
+            }
+        }
     }
     EmitRepeatedHints(occurrences, ctx);
 }
+
 } // namespace angel_lsp::analysis

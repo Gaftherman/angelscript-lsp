@@ -248,12 +248,11 @@ void EmitExpressionIsDataType(TSNode node, const DiagnosticContext& ctx, std::st
 
 /**
  * @brief Validates signedness compatibility in binary comparison expressions.
- * @param[in] operands Binary comparison operands.
+ * @param[in] fact Binary comparison facts.
  * @param[in] scope Enclosing lexical scope.
  * @param[in,out] ctx Diagnostic context.
  */
-void CheckSignedUnsignedComparison(const BinaryExpressionOperands& operands, const Scope* scope,
-                                   DiagnosticContext& ctx);
+void CheckSignedUnsignedComparison(const BinaryExpressionFact& fact, const Scope* scope, DiagnosticContext& ctx);
 
 /**
  * @brief Emits a warning when a float value implicitly converts to an integer.

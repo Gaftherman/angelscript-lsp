@@ -103,7 +103,7 @@ bool HasUserConversion(const std::string& fromType, const std::string& toType, c
  * @param[in] depth Current recursion depth.
  * @return Canonical unwrapped type name.
  */
-std::string UnwrapTypedef(const std::string& typeName, const SymbolTable& symbolTable, int depth = 0);
+std::string UnwrapTypedef(std::string_view typeName, const SymbolTable& symbolTable, int depth = 0);
 
 /**
  * @brief Checks if a type name corresponds to an integer primitive.

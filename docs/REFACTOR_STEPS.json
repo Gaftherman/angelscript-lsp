@@ -31,9 +31,10 @@
     "server/src/analysis/types",
     "server/src/analysis/mediator",
     "server/src/parser",
-    "server/src/analysis/rules"
+    "server/src/analysis/rules",
+    "server/src/analysis/checkers/null_safety"
   ],
-  "active_folder": "server/src/analysis/checkers/null_safety",
+  "active_folder": "server/src/analysis/checkers",
   "cross_module_impacts": [
     {
       "source_folder": "server/src/utils",
@@ -48,7 +49,7 @@
     {
       "source_folder": "server/src/analysis/types",
       "target_folder": "server/src/analysis/checkers",
-      "impact": "TypeExtraction moved to analysis/index; BinaryOperatorHelpers, DefiniteAssignmentChecker, HandleComparisonChecker still pass TSNode to ExtractTypeInfoFromAST/IsNullInitializer. Once they read indexed type facts, drop those calls from the checkers."
+      "impact": "TypeExtraction moved to analysis/index; DefiniteAssignmentChecker still passes TSNode to ExtractTypeInfoFromAST/IsNullInitializer. Once they read indexed type facts, drop those calls from the checkers."
     }
   ],
   "pending_folders": [
@@ -73,8 +74,14 @@
     {
       "folder_path": "server/src/analysis/checkers",
       "complexity_rank": 36,
-      "selection_rationale": "Semantic checkers (19 files, 1635 lines) access, operator, call, type conversion checkers.",
-      "files_to_refactor": []
+      "selection_rationale": "Semantic checkers (19 files, 1635 lines) access, operator, call, type conversion checkers. Split into milestones: M23 operator family on BinaryExpressionFacts, M24 TypeConversion units, M25 Access/Const/LValue/Isolation, M26 CallChecker and InitializerListChecker, M27 ControlFlow/DefiniteAssignment/Namespace/UndefinedIdentifier.",
+      "files_to_refactor": [
+        "BinaryOperatorHelpers.cpp",
+        "BinaryOperatorChecker.cpp",
+        "ComparisonOperatorChecker.cpp",
+        "HandleComparisonChecker.cpp",
+        "RepeatedConversionChecker.cpp"
+      ]
     },
     {
       "folder_path": "server/src/analysis/resolution",

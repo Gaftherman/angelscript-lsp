@@ -2,14 +2,13 @@
 
 #include "analysis/checkers/BinaryOperatorHelpers.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
+#include "analysis/types/OperandTypePair.h"
 #include "parser/Keywords.h"
 #include "parser/Primitives.h"
 
-#include <string>
 #include <string_view>
 #include <utility>
 
@@ -49,30 +48,42 @@ static std::pair<std::string_view, std::string_view> GetOpMethods(std::string_vi
     return {"", ""};
 }
 
-static bool IsIntegerOrEnum(const std::string& type, const SymbolTable& table)
+/**
+ * @brief Tests whether a type is an integer primitive or resolves to an enum.
+ * @param[in] type Resolved operand type spelling.
+ * @param[in] table Symbol table used to resolve enum names.
+ * @return True for integer primitives and enum types.
+ */
+static bool IsIntegerOrEnum(std::string_view type, const SymbolTable& table)
 {
-    const std::string unwrapped = UnwrapTypedef(type, table);
+    const auto unwrapped = UnwrapTypedef(type, table);
     return parser::primitives::IsInteger(unwrapped) || ResolvesToEnum(unwrapped, table);
 }
 
-static bool IsNumericOrEnum(const std::string& type, const SymbolTable& table)
+/**
+ * @brief Tests whether a type is a numeric primitive or resolves to an enum.
+ * @param[in] type Resolved operand type spelling.
+ * @param[in] table Symbol table used to resolve enum names.
+ * @return True for numeric primitives and enum types.
+ */
+static bool IsNumericOrEnum(std::string_view type, const SymbolTable& table)
 {
-    const std::string unwrapped = UnwrapTypedef(type, table);
+    const auto unwrapped = UnwrapTypedef(type, table);
     return parser::primitives::IsNumeric(unwrapped) || ResolvesToEnum(unwrapped, table);
 }
 
-static bool AreBitwiseOperandsCompatible(std::string_view op, const BinaryOperandTypes& types, const SymbolTable& table)
+static bool AreBitwiseOperandsCompatible(std::string_view op, const OperandTypePair& types, const SymbolTable& table)
 {
     if (IsIntegerOrEnum(types.left, table) && IsIntegerOrEnum(types.right, table))
     {
         return true;
     }
     auto [opName, revOpName] = GetOpMethods(op);
-    if (!opName.empty() && TypeHasOperator(types.left, std::string(opName), types.right, table))
+    if (!opName.empty() && TypeHasOperator(types.left, opName, types.right, table))
     {
         return true;
     }
-    if (!revOpName.empty() && TypeHasOperator(types.right, std::string(revOpName), types.left, table))
+    if (!revOpName.empty() && TypeHasOperator(types.right, revOpName, types.left, table))
     {
         return true;
     }
@@ -87,7 +98,7 @@ static bool AreBitwiseOperandsCompatible(std::string_view op, const BinaryOperan
     return false;
 }
 
-static bool AreModuloOperandsCompatible(const BinaryOperandTypes& types, const SymbolTable& table)
+static bool AreModuloOperandsCompatible(const OperandTypePair& types, const SymbolTable& table)
 {
     if (IsIntegerOrEnum(types.left, table) && IsIntegerOrEnum(types.right, table))
     {
@@ -101,7 +112,7 @@ static bool AreModuloOperandsCompatible(const BinaryOperandTypes& types, const S
     return false;
 }
 
-static bool IsStringConcatenationCompatible(const BinaryOperandTypes& types, const SymbolTable& table,
+static bool IsStringConcatenationCompatible(const OperandTypePair& types, const SymbolTable& table,
                                             std::string_view stringTypeName)
 {
     const bool leftStr = (types.left == stringTypeName);
@@ -110,12 +121,11 @@ static bool IsStringConcatenationCompatible(const BinaryOperandTypes& types, con
     {
         return false;
     }
-    const std::string& other = leftStr ? types.right : types.left;
+    const std::string_view other = leftStr ? std::string_view(types.right) : std::string_view(types.left);
     return other == stringTypeName || parser::primitives::IsPrimitive(other) || ResolvesToEnum(other, table);
 }
 
-static bool HasClassNumericOpImplConv(const std::string& classType, const std::string& otherType,
-                                      const SymbolTable& table)
+static bool HasClassNumericOpImplConv(std::string_view classType, std::string_view otherType, const SymbolTable& table)
 {
     if (TypeHasOpImplConvTo(classType, otherType, table))
     {
@@ -129,15 +139,14 @@ static bool HasClassNumericOpImplConv(const std::string& classType, const std::s
            TypeHasOpImplConvTo(classType, "float", table);
 }
 
-static bool HasOverloadedArithmeticOperator(std::string_view op, const BinaryOperandTypes& types,
-                                            const SymbolTable& table)
+static bool HasOverloadedArithmeticOperator(std::string_view op, const OperandTypePair& types, const SymbolTable& table)
 {
     auto [opName, revOpName] = GetOpMethods(op);
-    if (!opName.empty() && TypeHasOperator(types.left, std::string(opName), types.right, table))
+    if (!opName.empty() && TypeHasOperator(types.left, opName, types.right, table))
     {
         return true;
     }
-    if (!revOpName.empty() && TypeHasOperator(types.right, std::string(revOpName), types.left, table))
+    if (!revOpName.empty() && TypeHasOperator(types.right, revOpName, types.left, table))
     {
         return true;
     }
@@ -154,8 +163,8 @@ static bool HasOverloadedArithmeticOperator(std::string_view op, const BinaryOpe
     return TypeHasOpImplConvTo(types.left, types.right, table) || TypeHasOpImplConvTo(types.right, types.left, table);
 }
 
-static bool AreArithmeticOperandsCompatible(std::string_view op, const BinaryOperandTypes& types,
-                                            const SymbolTable& table, std::string_view stringTypeName)
+static bool AreArithmeticOperandsCompatible(std::string_view op, const OperandTypePair& types, const SymbolTable& table,
+                                            std::string_view stringTypeName)
 {
     if (op == "%")
     {
@@ -172,7 +181,7 @@ static bool AreArithmeticOperandsCompatible(std::string_view op, const BinaryOpe
     return HasOverloadedArithmeticOperator(op, types, table);
 }
 
-static bool AreBinaryOperandsCompatible(std::string_view op, const BinaryOperandTypes& types, const SymbolTable& table,
+static bool AreBinaryOperandsCompatible(std::string_view op, const OperandTypePair& types, const SymbolTable& table,
                                         std::string_view stringTypeName)
 {
     if (types.left == "void" || types.right == "void")
@@ -183,8 +192,9 @@ static bool AreBinaryOperandsCompatible(std::string_view op, const BinaryOperand
     {
         return true;
     }
-    if (types.left == "auto" || types.right == "auto" || types.left.find('?') != std::string::npos ||
-        types.right.find('?') != std::string::npos)
+    if (types.left == "auto" || types.right == "auto" ||
+        std::string_view(types.left).find('?') != std::string_view::npos ||
+        std::string_view(types.right).find('?') != std::string_view::npos)
     {
         return true;
     }
@@ -201,61 +211,47 @@ static bool AreBinaryOperandsCompatible(std::string_view op, const BinaryOperand
 
 /**
  * @brief Check binary operator compatibility.
- * @param[in] node AST node under evaluation.
+ * @param[in] fact Binary expression facts with operator and both operands.
  * @param[in] scope Enclosing lexical scope.
  * @param[in,out] ctx Diagnostic collection and analysis context.
  */
-void CheckBinaryOperatorCompatibility(const BinaryExpressionOperands& operands, const Scope* scope,
-                                      DiagnosticContext& ctx)
+void CheckBinaryOperatorCompatibility(const BinaryExpressionFact& fact, const Scope* scope, DiagnosticContext& ctx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    const auto& [opNode, left, right] = operands;
-
-    const TSSymbol opSym = ts_node_symbol(opNode);
-    if (!IsBitwiseOpSym(opSym, gs) && !IsArithmeticOpSym(opSym, gs))
+    const bool isBitwise = fact.opClass == BinaryOperatorClass::Bitwise || IsBitwiseOp(fact.op);
+    const bool isArithmetic = fact.opClass == BinaryOperatorClass::Arithmetic || IsArithmeticOp(fact.op);
+    if (!isBitwise && !isArithmetic)
     {
         return;
     }
-    const std::string_view op = parser::OperatorSpelling(opNode);
 
     const ExpressionTypeContext exprCtx(scope, ctx);
-    if (const auto dt = IsBareDataType(left, exprCtx))
+    if (const auto dt = IsBareDataType(fact.left.bytes, exprCtx))
     {
-        const TSPoint start = ts_node_start_point(left);
-        const TSPoint end = ts_node_end_point(left);
-        ctx.EmitAtRange(SourceRange{start.row, start.column, end.row, end.column},
-                        diagnostics::codes::ExpressionIsDataType, *dt);
+        ctx.EmitAtRange(fact.left.range, diagnostics::codes::ExpressionIsDataType, *dt);
         return;
     }
-    if (const auto dt = IsBareDataType(right, exprCtx))
+    if (const auto dt = IsBareDataType(fact.right.bytes, exprCtx))
     {
-        const TSPoint start = ts_node_start_point(right);
-        const TSPoint end = ts_node_end_point(right);
-        ctx.EmitAtRange(SourceRange{start.row, start.column, end.row, end.column},
-                        diagnostics::codes::ExpressionIsDataType, *dt);
+        ctx.EmitAtRange(fact.right.range, diagnostics::codes::ExpressionIsDataType, *dt);
         return;
     }
-    if (IsFunctionReference(left, exprCtx) || IsFunctionReference(right, exprCtx))
+    if (IsFunctionReference(fact.left.bytes, exprCtx) || IsFunctionReference(fact.right.bytes, exprCtx))
     {
-        const TSPoint start = ts_node_start_point(opNode);
-        const TSPoint end = ts_node_end_point(opNode);
-        ctx.EmitAtRange(SourceRange{start.row, start.column, end.row, end.column},
-                        diagnostics::codes::NoMatchingOperator, {std::string_view(op), "function", "value"});
+        ctx.EmitAtRange(fact.operatorRange, diagnostics::codes::NoMatchingOperator, {fact.op, "function", "value"});
         return;
     }
 
-    const auto types = ResolveCleanBinaryOperandTypes(left, right, scope, ctx);
+    const auto types = ResolveCleanBinaryOperandTypes(fact, scope, ctx);
     if (!types)
     {
         return;
     }
 
-    if (!AreBinaryOperandsCompatible(op, *types, ctx.request.symbolTable, ctx.request.GetEffectiveStringTypeName()))
+    if (!AreBinaryOperandsCompatible(fact.op, *types, ctx.request.symbolTable,
+                                     ctx.request.GetEffectiveStringTypeName()))
     {
-        const TSPoint start = ts_node_start_point(opNode);
-        const TSPoint end = ts_node_end_point(opNode);
-        ctx.EmitAtRange(SourceRange{start.row, start.column, end.row, end.column},
-                        diagnostics::codes::NoMatchingOperator, {std::string_view(op), types->left, types->right});
+        ctx.EmitAtRange(fact.operatorRange, diagnostics::codes::NoMatchingOperator,
+                        {fact.op, types->left, types->right});
     }
 }
 } // namespace angel_lsp::analysis

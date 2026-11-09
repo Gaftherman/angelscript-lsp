@@ -1,7 +1,6 @@
 #include "analysis/index/RepeatedConversionFacts.h"
 
-#include "analysis/checkers/BinaryOperatorHelpers.h"
-#include "analysis/checkers/RepeatedConversionChecker.h"
+#include "analysis/index/BinaryExpressionSyntax.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarSymbols.h"
 #include "parser/QueryRegistry.h"

@@ -1,20 +1,20 @@
 #pragma once
 
-#include "analysis/checkers/BinaryOperatorHelpers.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/BinaryExpressionFacts.h"
 #include "analysis/index/ScopeTree.h"
 
-#include <tree_sitter/api.h>
+#include <string_view>
 
 namespace angel_lsp::analysis
 {
 /**
  * @brief Validates handle equality and relational operations in binary expressions.
- * @param[in] operands Complete operator, left and right handles for the expression.
+ * @param[in] fact Binary expression facts with operator and both operands.
  * @param[in] scope Lexical scope enclosing the expression.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void CheckHandleComparison(const BinaryExpressionOperands& operands, const Scope* scope, DiagnosticContext& ctx);
+void CheckHandleComparison(const BinaryExpressionFact& fact, const Scope* scope, DiagnosticContext& ctx);
 
 /**
  * @brief Category of comparison expression evaluated during semantic analysis.
@@ -36,11 +36,11 @@ struct ComparisonOperatorInfo
 };
 
 /**
- * @brief Carries AST node, operand types, and symbol table state during handle comparison rule evaluation.
+ * @brief Carries operator range, spelling and classification during handle comparison rule evaluation.
  */
 struct ComparisonDispatchContext
 {
-    TSNode opNode;
+    SourceRange opRange;
     std::string_view op;
     ComparisonOperatorInfo opInfo;
 };
@@ -52,7 +52,7 @@ struct RelationalCheckOperands
 {
     bool hasNull = false;
     bool bothHandles = false;
-    std::string leftType;
+    std::string_view leftType; ///< Resolved left operand type; owned by the caller for the duration of the check.
 };
 
 /**
@@ -64,6 +64,6 @@ struct ComparisonOperandsState
     bool isRightNull = false;
     bool isLeftHandle = false;
     bool isRightHandle = false;
-    std::string leftType;
+    std::string_view leftType; ///< Resolved left operand type; owned by the caller for the duration of the check.
 };
 } // namespace angel_lsp::analysis

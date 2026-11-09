@@ -1,6 +1,7 @@
 #include "analysis/checkers/TypeConversionChecker.h"
 
 #include "analysis/checkers/TypeConversionCommon.h"
+#include "analysis/index/BinaryExpressionFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
@@ -145,12 +146,25 @@ static void ProcessNode(TSNode node, const TypeConversionCheckRequest& request, 
     }
 }
 
+/**
+ * @brief Evaluates indexed conversion sites and reports unsupported conversions.
+ * @param[in] request Tree, source text and scope tree of the document under analysis.
+ * @param[in,out] ctx Diagnostic sink and evaluation context.
+ */
 void CheckTypeConversions(const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
     if (ts_node_is_null(request.nodeIndex.Root()) || request.sourceCode.empty())
     {
         return;
     }
+
+    std::optional<BinaryExpressionFacts> localFacts;
+    if (!request.binaryFacts)
+    {
+        localFacts.emplace(BuildBinaryExpressionFacts(request.nodeIndex, request.sourceCode));
+    }
+    TypeConversionCheckRequest withFacts = request;
+    withFacts.binaryFacts = request.binaryFacts ? request.binaryFacts : &*localFacts;
 
     if (ctx.logger && ctx.logger->IsDebugEnabled())
     {
@@ -159,8 +173,8 @@ void CheckTypeConversions(const TypeConversionCheckRequest& request, DiagnosticC
     }
 
     const auto& gs = parser::GetGrammarSymbols();
-    request.nodeIndex.ForEachNodeOrdered(gs.conversionTargetSymbols,
-                                         [&](TSNode node) { ProcessNode(node, request, ctx); });
+    withFacts.nodeIndex.ForEachNodeOrdered(gs.conversionTargetSymbols,
+                                           [&](TSNode node) { ProcessNode(node, withFacts, ctx); });
 
     if (ctx.logger && ctx.logger->IsTraceEnabled())
     {

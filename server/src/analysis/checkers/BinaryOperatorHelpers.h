@@ -1,48 +1,22 @@
 #pragma once
 
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/BinaryExpressionFacts.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
-#include "parser/GrammarSymbols.h"
+#include "analysis/types/OperandTypePair.h"
 #include "parser/Keywords.h"
 
 #include <optional>
-#include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
-/// Transient handles for the three indexed children of a binary expression.
-struct BinaryExpressionOperands
-{
-    TSNode op;
-    TSNode left;
-    TSNode right;
-
-    /// Reports whether the operator and both operands were present in the parsed revision.
-    [[nodiscard]] bool Complete() const noexcept
-    {
-        return !ts_node_is_null(op) && !ts_node_is_null(left) && !ts_node_is_null(right);
-    }
-};
-
-/// Reads the binary operator and operands from the revision's direct child links.
-[[nodiscard]] BinaryExpressionOperands ReadBinaryOperands(TSNode node, const NodeIndex* index);
 
 /**
- * @brief Cleaned operand types for binary operations.
- */
-struct BinaryOperandTypes
-{
-    std::string left;
-    std::string right;
-};
-
-/**
- * @brief Checks if an operator string represents a comparison operator (==, !=, <, <=, >, >=).
- * @param[in] op Operator token text.
- * @return True if operator is a comparison operator.
+ * @brief Tests whether an operator spelling is an equality or relational comparison.
+ * @param[in] op Operator spelling.
+ * @return True for `==`, `!=`, `<`, `<=`, `>` and `>=`.
  */
 [[nodiscard]] constexpr bool IsComparisonOp(std::string_view op) noexcept
 {
@@ -52,9 +26,9 @@ struct BinaryOperandTypes
 }
 
 /**
- * @brief Checks if an operator string represents a relational comparison operator (<, <=, >, >=).
- * @param[in] op Operator token text.
- * @return True if operator is a relational operator.
+ * @brief Tests whether an operator spelling is a relational comparison.
+ * @param[in] op Operator spelling.
+ * @return True for `<`, `<=`, `>` and `>=`.
  */
 [[nodiscard]] constexpr bool IsRelationalOp(std::string_view op) noexcept
 {
@@ -63,9 +37,9 @@ struct BinaryOperandTypes
 }
 
 /**
- * @brief Checks if an operator string represents a bitwise operator (|, &, ^, <<, >>, >>>).
- * @param[in] op Operator token text.
- * @return True if operator is a bitwise operator.
+ * @brief Tests whether an operator spelling is a bitwise or shift operator.
+ * @param[in] op Operator spelling.
+ * @return True for `|`, `&`, `^`, `<<`, `>>` and `>>>`.
  */
 [[nodiscard]] constexpr bool IsBitwiseOp(std::string_view op) noexcept
 {
@@ -75,9 +49,9 @@ struct BinaryOperandTypes
 }
 
 /**
- * @brief Checks if an operator string represents an arithmetic operator (+, -, *, /, %, **).
- * @param[in] op Operator token text.
- * @return True if operator is an arithmetic operator.
+ * @brief Tests whether an operator spelling is an arithmetic operator.
+ * @param[in] op Operator spelling.
+ * @return True for `+`, `-`, `*`, `/`, `%` and `**`.
  */
 [[nodiscard]] constexpr bool IsArithmeticOp(std::string_view op) noexcept
 {
@@ -87,106 +61,59 @@ struct BinaryOperandTypes
 }
 
 /**
- * @brief Checks if a grammar symbol represents a comparison operator.
- * @param[in] sym Tree-Sitter grammar symbol.
- * @param[in] gs Pre-resolved grammar symbols.
- * @return True if symbol is a comparison operator.
- */
-[[nodiscard]] inline bool IsComparisonOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
-{
-    return sym == gs.tokEqEq || sym == gs.tokBangEq || sym == gs.tokLt || sym == gs.tokLtEq || sym == gs.tokGt ||
-           sym == gs.tokGtEq;
-}
-
-/**
- * @brief Checks if a grammar symbol represents a relational comparison operator.
- * @param[in] sym Tree-Sitter grammar symbol.
- * @param[in] gs Pre-resolved grammar symbols.
- * @return True if symbol is a relational operator.
- */
-[[nodiscard]] inline bool IsRelationalOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
-{
-    return sym == gs.tokLt || sym == gs.tokLtEq || sym == gs.tokGt || sym == gs.tokGtEq;
-}
-
-/**
- * @brief Checks if a grammar symbol represents a bitwise operator.
- * @param[in] sym Tree-Sitter grammar symbol.
- * @param[in] gs Pre-resolved grammar symbols.
- * @return True if symbol is a bitwise operator.
- */
-[[nodiscard]] inline bool IsBitwiseOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
-{
-    return sym == gs.tokPipe || sym == gs.tokAmp || sym == gs.tokCaret || sym == gs.tokLtLt || sym == gs.tokGtGt ||
-           sym == gs.tokGtGtGt;
-}
-
-/**
- * @brief Checks if a grammar symbol represents an arithmetic operator.
- * @param[in] sym Tree-Sitter grammar symbol.
- * @param[in] gs Pre-resolved grammar symbols.
- * @return True if symbol is an arithmetic operator.
- */
-[[nodiscard]] inline bool IsArithmeticOpSym(TSSymbol sym, const parser::GrammarSymbols& gs) noexcept
-{
-    return sym == gs.tokPlus || sym == gs.tokDash || sym == gs.tokStar || sym == gs.tokSlash || sym == gs.tokPercent ||
-           sym == gs.tokStarStar;
-}
-
-/**
- * @brief Checks if a parameter definition is compatible with an argument type.
- * @param[in] param Formal parameter information.
+ * @brief Tests whether a parameter accepts an argument of the given type.
+ * @param[in] param Declared parameter.
  * @param[in] argType Actual argument type name.
- * @param[in] table Workspace symbol table.
- * @return True if parameter is compatible with argument.
+ * @param[in] table Symbol table used to resolve conversions.
+ * @return True when the argument can bind to the parameter.
  */
-bool IsParameterCompatible(const ParameterInformation& param, const std::string& argType, const SymbolTable& table);
+bool IsParameterCompatible(const ParameterInformation& param, std::string_view argType, const SymbolTable& table);
 
 /**
- * @brief Checks if a type defines an operator overload matching the given argument type.
- * @param[in] typeName Host type name.
- * @param[in] opName Operator method name (e.g. "opOr", "opCmp").
+ * @brief Tests whether a type declares or inherits an operator accepting the argument type.
+ * @param[in] typeName Type that owns the operator.
+ * @param[in] opName Operator method name such as `opAdd`.
  * @param[in] argType Argument type passed to the operator.
- * @param[in] table Workspace symbol table.
- * @return True if matching operator overload exists in hierarchy.
+ * @param[in] table Symbol table to search.
+ * @return True when a compatible overload exists.
  */
-bool TypeHasOperator(const std::string& typeName, const std::string& opName, const std::string& argType,
+bool TypeHasOperator(std::string_view typeName, std::string_view opName, std::string_view argType,
                      const SymbolTable& table);
 
 /**
- * @brief Checks if a type defines an opImplConv to the target type.
- * @param[in] typeName Source type name.
- * @param[in] targetType Target type name.
- * @param[in] table Workspace symbol table.
- * @return True if implicit conversion operator exists.
+ * @brief Tests whether a type converts implicitly to a target through opImplConv or opConv.
+ * @param[in] typeName Source type.
+ * @param[in] targetType Destination type.
+ * @param[in] table Symbol table to search.
+ * @return True when a conversion operator to the target exists.
  */
-bool TypeHasOpImplConvTo(const std::string& typeName, const std::string& targetType, const SymbolTable& table);
+bool TypeHasOpImplConvTo(std::string_view typeName, std::string_view targetType, const SymbolTable& table);
 
 /**
- * @brief Checks if a type is known to the symbol table or is a primitive/enum.
- * @param[in] type Type name to query.
- * @param[in] table Workspace symbol table.
- * @param[in] stringTypeName Effective string type name.
- * @return True if type is recognized.
+ * @brief Tests whether a type name is declared or built in.
+ * @param[in] type Type spelling.
+ * @param[in] table Symbol table to search.
+ * @param[in] stringTypeName Configured string type name.
+ * @return True when the type is known.
  */
 bool IsKnownType(std::string_view type, const SymbolTable& table, std::string_view stringTypeName);
 
 /**
- * @brief Checks if a node or its type represents null.
- * @param[in] node AST expression node.
- * @param[in] type Resolved expression type name.
- * @return True if operand represents null.
+ * @brief Tests whether an operand is the null literal or resolved to null.
+ * @param[in] operand Operand facts.
+ * @param[in] type Resolved operand type spelling.
+ * @return True when the operand is null.
  */
-bool IsNullOperand(TSNode node, std::string_view type, const NodeIndex* index);
+bool IsNullOperand(const BinaryOperandFact& operand, std::string_view type);
 
 /**
- * @brief Resolves cleaned left and right operand types for a binary expression.
- * @param[in] left Left operand AST node.
- * @param[in] right Right operand AST node.
- * @param[in] scope Lexical scope of the expression.
- * @param[in] ctx Diagnostic collection context.
- * @return Cleaned operand types, or std::nullopt if unresolvable/null.
+ * @brief Resolves both operand types of a binary expression and strips their modifiers.
+ * @param[in] fact Binary expression facts.
+ * @param[in] scope Lexical scope enclosing the expression.
+ * @param[in] ctx Diagnostic context.
+ * @return Clean operand types, or nullopt when either is unresolved or poisoned.
  */
-std::optional<BinaryOperandTypes> ResolveCleanBinaryOperandTypes(TSNode left, TSNode right, const Scope* scope,
-                                                                 const DiagnosticContext& ctx);
+std::optional<OperandTypePair> ResolveCleanBinaryOperandTypes(const BinaryExpressionFact& fact, const Scope* scope,
+                                                              const DiagnosticContext& ctx);
+
 } // namespace angel_lsp::analysis

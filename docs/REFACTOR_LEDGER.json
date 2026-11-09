@@ -314,7 +314,7 @@
       "originalSymbolOrCode": "CollectConditionConversions GetIfCondition GetIfAlternative CollectLadderIfNodes FindOccurrencesInIfLadder IsHandleAddressOperand IsFunctionReference IsBareDataType IsNullInitializer",
       "whatItDidAndWhyInThatFile": "Queried each condition subtree for binary expressions while operator checks independently retrieved the operator and operands.",
       "whyChangedOrDeleted": "Use the ordered binary bucket for diagnostics and pass the captured operands through the operator dispatch. Retain a targeted query at the editor Quick Fix entry point.",
-      "replacedByCanonicalFile": "server/src/analysis/checkers/BinaryOperatorHelpers.cpp",
+      "replacedByCanonicalFile": "server/src/analysis/index/BinaryExpressionSyntax.cpp",
       "replacedByCanonicalSymbol": "ReadBinaryOperands",
       "ramOrCpuImpact": "One set of direct links is read per dispatched binary operator. Condition diagnostics search the binary bucket by byte bounds and inspect only the candidates in that slice.",
       "verifiedByTests": [
@@ -3001,6 +3001,23 @@
       "verifiedByTests": [
         "NullSafetyCheckerTest",
         "NullFlowFactsTest"
+      ]
+    },
+    {
+      "id": "REF-M23-BINARY-EXPRESSION-FACTS",
+      "phase": "M23",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/BinaryOperatorHelpers.h",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "IsComparisonOpSym; IsRelationalOpSym; IsBitwiseOpSym; IsArithmeticOpSym; BinaryOperandTypes; IsExtractableCandidate; CollectConditionConversions; IsNumericLiteralExpression; ClassifyComparisonOperatorSym",
+      "whatItDidAndWhyInThatFile": "Operator checkers classified TSSymbol operator tokens and read TSNode operands to resolve types, emit ranges and detect null, this and handle operands.",
+      "whyChangedOrDeleted": "BinaryExpressionFacts captures operator class, spelling, ranges and operand flags per binary expression and the if ladders in the first pass; checkers read facts and resolve types by byte range.",
+      "replacedByCanonicalFile": "server/src/analysis/index/BinaryExpressionFacts.h",
+      "replacedByCanonicalSymbol": "BinaryExpressionFacts",
+      "ramOrCpuImpact": "One extraction per document; the repeated-conversion check binary-searches facts instead of scanning bucket nodes per condition.",
+      "verifiedByTests": [
+        "BinaryExpressionFactsTest",
+        "TypeConversionCheckerTest"
       ]
     }
   ]

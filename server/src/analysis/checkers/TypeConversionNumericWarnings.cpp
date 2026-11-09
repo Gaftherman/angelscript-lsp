@@ -1,6 +1,8 @@
 #include "analysis/checkers/TypeConversionCommon.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/BinaryExpressionSyntax.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
@@ -34,29 +36,31 @@ static bool IsSignedNumericPrimitive(std::string_view typeName) noexcept
            typeName == "int64" || typeName == "float" || typeName == "double";
 }
 
-static bool IsNumericLiteralExpression(TSNode node, const NodeIndex* index)
+static bool IsConstantIdentifier(std::string_view identifier, uint32_t byte, const Scope* scope,
+                                 const DiagnosticContext& ctx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode current = node;
-    while (!ts_node_is_null(current))
+    const std::string name(identifier);
+    if (scope)
     {
-        const TSSymbol sym = ts_node_symbol(current);
-        if (sym == gs.symNumberLiteral || sym == gs.symStringLiteral || sym == gs.symBooleanLiteral ||
-            sym == gs.symNullLiteral)
+        if (const LocalDefinition* def = ResolveInScopeAt(scope, LastScopeSegment(name), byte))
         {
-            return true;
-        }
-        if (sym != gs.symParenthesizedExpression && sym != gs.symUnaryExpression)
-        {
-            return false;
-        }
-        current = SyntaxOperands(current, index).FirstNamed();
-        if (ts_node_is_null(current))
-        {
-            return false;
+            return def->isConst || IsConstTypeView(def->typeName);
         }
     }
-    return false;
+
+    bool folded = false;
+    ForEachSymbolNamed(name, ctx.request.symbolTable,
+                       [&folded](const Symbol& symVal)
+                       {
+                           if (symVal.type != SymbolType::Variable && symVal.type != SymbolType::Property)
+                           {
+                               return false;
+                           }
+                           folded =
+                               symVal.GetVariable().modifiers.isConst || IsConstTypeView(symVal.GetVariable().typeName);
+                           return true;
+                       });
+    return folded;
 }
 
 static bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
@@ -94,35 +98,25 @@ static bool IsFoldedConstantOperand(TSNode node, const Scope* scope, const Diagn
         return false;
     }
 
-    const std::string name(parser::NodeText(current, ctx.request.sourceCode));
-    if (scope)
-    {
-        if (const LocalDefinition* def = ResolveInScopeAt(scope, LastScopeSegment(name), ts_node_start_byte(current)))
-        {
-            return def->isConst || IsConstTypeView(def->typeName);
-        }
-    }
-
-    bool folded = false;
-    ForEachSymbolNamed(name, ctx.request.symbolTable,
-                       [&folded](const Symbol& symVal)
-                       {
-                           if (symVal.type != SymbolType::Variable && symVal.type != SymbolType::Property)
-                           {
-                               return false;
-                           }
-                           folded =
-                               symVal.GetVariable().modifiers.isConst || IsConstTypeView(symVal.GetVariable().typeName);
-                           return true;
-                       });
-    return folded;
+    return IsConstantIdentifier(parser::NodeText(current, ctx.request.sourceCode), ts_node_start_byte(current), scope,
+                                ctx);
 }
 
-void CheckSignedUnsignedComparison(const BinaryExpressionOperands& operands, const Scope* scope, DiagnosticContext& ctx)
+static bool IsFoldedConstantOperand(const BinaryOperandFact& operand, const Scope* scope, const DiagnosticContext& ctx)
 {
-    const auto& [opNode, left, right] = operands;
-    const std::string leftType = CleanBaseType(ResolveExpressionType(left, ExpressionTypeContext(scope, ctx)));
-    const std::string rightType = CleanBaseType(ResolveExpressionType(right, ExpressionTypeContext(scope, ctx)));
+    if (operand.isNumericLiteral)
+    {
+        return true;
+    }
+    return !operand.foldedName.empty() && IsConstantIdentifier(operand.foldedName, operand.foldedByte, scope, ctx);
+}
+
+void CheckSignedUnsignedComparison(const BinaryExpressionFact& fact, const Scope* scope, DiagnosticContext& ctx)
+{
+    const std::string leftType =
+        CleanBaseType(ResolveExpressionType(fact.left.bytes, ExpressionTypeContext(scope, ctx)));
+    const std::string rightType =
+        CleanBaseType(ResolveExpressionType(fact.right.bytes, ExpressionTypeContext(scope, ctx)));
 
     const bool mismatched = (IsUnsignedIntegerPrimitive(leftType) && IsSignedNumericPrimitive(rightType)) ||
                             (IsUnsignedIntegerPrimitive(rightType) && IsSignedNumericPrimitive(leftType));
@@ -131,13 +125,13 @@ void CheckSignedUnsignedComparison(const BinaryExpressionOperands& operands, con
         return;
     }
 
-    if (IsFoldedConstantOperand(left, scope, ctx) || IsFoldedConstantOperand(right, scope, ctx))
+    if (IsFoldedConstantOperand(fact.left, scope, ctx) || IsFoldedConstantOperand(fact.right, scope, ctx))
     {
         return;
     }
 
-    ctx.EmitAtNodeRange(ToOptionalSourceRange(opNode), "as-warn-signed-unsigned-mismatch", {leftType, rightType},
-                        DiagnosticSeverity::Warning);
+    ctx.EmitAtRange(fact.operatorRange, "as-warn-signed-unsigned-mismatch", {leftType, rightType},
+                    DiagnosticSeverity::Warning);
 }
 
 void CheckFloatTruncation(TSNode valueNode, const ConversionTypePair& types, const Scope* scope, DiagnosticContext& ctx)
