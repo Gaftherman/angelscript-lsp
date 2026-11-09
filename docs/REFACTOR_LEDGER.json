@@ -3051,6 +3051,22 @@
       "verifiedByTests": [
         "TypeConversionCheckerTest"
       ]
+    },
+    {
+      "id": "REF-M24C-RETURN-SITE-FACTS",
+      "phase": "M24C",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/TypeConversionReturns.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "ProcessReturnStatementNode; CheckLambdaReturnStatement; CheckFuncDeclarationReturnStatement; CheckReturnReference",
+      "whatItDidAndWhyInThatFile": "Return statement checks resolved the owning function or lambda and its funcdef target by climbing TSNode parents and reading node points in the second-pass checkers folder.",
+      "whyChangedOrDeleted": "The pass-1 builders capture the returned operand, the owner kind, the declared return type and the lambda target context once per syntax revision; the checker consumes ReturnSiteFacts and LambdaTargetFact through byte-range resolution overloads.",
+      "replacedByCanonicalFile": "server/src/analysis/index/ReturnSiteFacts.h",
+      "replacedByCanonicalSymbol": "BuildReturnSiteFacts",
+      "ramOrCpuImpact": "One O(N) extraction per revision and O(log N) exact-span lookups; the lambda funcdef target no longer climbs parents in resolution.",
+      "verifiedByTests": [
+        "TypeConversionCheckerTest"
+      ]
     }
   ]
 }

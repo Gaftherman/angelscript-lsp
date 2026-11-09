@@ -107,4 +107,13 @@ struct BinaryExpressionFacts
  */
 [[nodiscard]] BinaryExpressionFacts BuildBinaryExpressionFacts(const NodeIndex& index, std::string_view source);
 
+/**
+ * @brief Captures the spans, spelling and constant-folding data of one expression operand.
+ * @param[in] node Expression node; a null node yields a zero-span fact.
+ * @param[in] index Precomputed node index of the document.
+ * @param[in] source Document text; the fact's views point into it.
+ * @return Operand fact for the node.
+ */
+[[nodiscard]] BinaryOperandFact BuildBinaryOperandFact(TSNode node, const NodeIndex& index, std::string_view source);
+
 } // namespace angel_lsp::analysis

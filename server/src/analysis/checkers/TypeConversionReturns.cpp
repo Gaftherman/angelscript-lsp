@@ -1,94 +1,99 @@
 #include "analysis/checkers/TypeConversionCommon.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 
-#include <cctype>
-#include <string>
 #include <string_view>
 
 namespace angel_lsp::analysis
 {
 
-static void CheckLambdaReturnStatement(TSNode expr, TSNode lambdaNode, const Scope* scope, DiagnosticContext& ctx)
+/**
+ * @brief Checks a returned value against the type its owner declares.
+ * @param[in] site Indexed return statement.
+ * @param[in] expected Cleaned declared return type; empty ends the check.
+ * @param[in] skipPoison Whether a poisoned value type ends the check before the conversion rules run.
+ * @param[in] scope Lexical scope the return statement lives in.
+ * @param[in,out] ctx Diagnostic context.
+ */
+static void CheckReturnedValue(const ReturnSiteFact& site, std::string_view expected, bool skipPoison,
+                               const Scope* scope, DiagnosticContext& ctx)
 {
-    const auto target = FuncdefTargetOfLambda(lambdaNode, ctx.request.symbolTable, ctx.request.sourceCode);
+    const BinaryOperandFact& value = site.value;
+    if (expected == "void")
+    {
+        ctx.EmitAtRange(value.range, "as-err-void-return-value");
+        return;
+    }
+    if (expected.empty())
+    {
+        return;
+    }
+
+    if (const auto dataTypeName = IsBareDataType(value.bytes, ExpressionTypeContext(scope, ctx)))
+    {
+        EmitExpressionIsDataType(ConversionExpressionFact{value.bytes, value.range, value.text}, ctx, *dataTypeName);
+        return;
+    }
+    if (IsFunctionReference(value.bytes, ExpressionTypeContext(scope, ctx)))
+    {
+        ctx.EmitAtRange(value.range, "as-err-no-implicit-conversion", {TrimString(value.text), expected});
+        return;
+    }
+
+    const auto rawActual = ResolveExpressionType(value.bytes, ExpressionTypeContext(scope, ctx));
+    if (skipPoison && ExpressionTypeCache::IsPoisonType(rawActual))
+    {
+        return;
+    }
+    const auto actual = CleanBaseType(rawActual);
+    CheckFloatTruncation(value, {actual, CleanBaseType(expected)}, scope, ctx);
+    if (!actual.empty() && actual != expected && !IsConvertible(actual, expected, ctx))
+    {
+        ctx.EmitAtRange(value.range, "as-err-no-implicit-conversion", {actual, expected});
+    }
+}
+
+/**
+ * @brief Checks a return inside a lambda against the return type of the funcdef it converts to.
+ * @param[in] site Indexed return statement owned by a lambda.
+ * @param[in] scope Lexical scope the return statement lives in.
+ * @param[in,out] ctx Diagnostic context.
+ */
+static void CheckLambdaReturnStatement(const ReturnSiteFact& site, const Scope* scope, DiagnosticContext& ctx)
+{
+    const auto target = FuncdefTargetOfLambda(site.lambdaTarget, ctx.request.symbolTable);
     if (!target)
     {
         return;
     }
-
-    const std::string expected = CleanBaseType(target->GetFuncdef().returnType);
-    if (expected == "void")
-    {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-void-return-value");
-        return;
-    }
-
-    if (!expected.empty())
-    {
-        if (const auto dataTypeName = IsBareDataType(expr, ExpressionTypeContext(scope, ctx)))
-        {
-            EmitExpressionIsDataType(expr, ctx, *dataTypeName);
-            return;
-        }
-        if (IsFunctionReference(expr, ExpressionTypeContext(scope, ctx)))
-        {
-            ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-no-implicit-conversion",
-                                {std::string(TrimString(parser::NodeText(expr, ctx.request.sourceCode))), expected});
-            return;
-        }
-
-        const std::string actual = CleanBaseType(ResolveExpressionType(expr, ExpressionTypeContext(scope, ctx)));
-        CheckFloatTruncation(expr, {actual, expected}, scope, ctx);
-        if (!actual.empty() && actual != expected && !IsConvertible(actual, expected, ctx))
-        {
-            ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-no-implicit-conversion", {actual, expected});
-        }
-    }
+    CheckReturnedValue(site, CleanBaseType(target->GetFuncdef().returnType), false, scope, ctx);
 }
 
-static bool IsFunctionReturnRef(TSNode funcNode, TSNode retTypeNode, const DiagnosticContext& ctx)
-{
-    const std::string_view rawRetText = parser::NodeText(retTypeNode, ctx.request.sourceCode);
-    if (IsReferenceTypeView(rawRetText))
-    {
-        return true;
-    }
-    const auto* index = ctx.request.nodeIndex;
-    const auto* fact = index ? index->FindOperandSyntax(funcNode) : nullptr;
-    return fact && fact->hasReturnReferenceToken;
-}
-
-static void CheckReturnReference(TSNode expr, TSNode funcNode, const Scope* scope, DiagnosticContext& ctx)
+/**
+ * @brief Rejects returning a parameter or local variable of the owning function by reference.
+ * @param[in] site Indexed return statement owned by a function that returns by reference.
+ * @param[in] scope Lexical scope the return statement lives in; nullptr ends the check.
+ * @param[in,out] ctx Diagnostic context.
+ */
+static void CheckReturnReference(const ReturnSiteFact& site, const Scope* scope, DiagnosticContext& ctx)
 {
     if (!scope)
     {
         return;
     }
 
-    std::string exprText(parser::NodeText(expr, ctx.request.sourceCode));
-    while (!exprText.empty() && isspace(static_cast<unsigned char>(exprText.front())))
-    {
-        exprText.erase(exprText.begin());
-    }
-    while (!exprText.empty() && isspace(static_cast<unsigned char>(exprText.back())))
-    {
-        exprText.pop_back();
-    }
-
-    const LocalDefinition* def = ResolveInScopeAt(scope, exprText, ts_node_start_byte(expr));
+    const std::string_view exprText = TrimString(site.value.text);
+    const LocalDefinition* def = ResolveInScopeAt(scope, exprText, site.value.bytes.startByte);
     if (!def)
     {
         return;
     }
 
-    const TSPoint funcStart = ts_node_start_point(funcNode);
-    const TSPoint funcEnd = ts_node_end_point(funcNode);
-    const bool isInsideFunction = (def->startLine > funcStart.row && def->startLine < funcEnd.row) ||
-                                  (def->startLine == funcStart.row && def->startCharacter >= funcStart.column);
+    const SourceRange& owner = site.ownerRange;
+    const bool isInsideFunction = (def->startLine > owner.startLine && def->startLine < owner.endLine) ||
+                                  (def->startLine == owner.startLine && def->startCharacter >= owner.startCharacter);
     if (!isInsideFunction)
     {
         return;
@@ -96,90 +101,39 @@ static void CheckReturnReference(TSNode expr, TSNode funcNode, const Scope* scop
 
     if (def->kind == LocalDefinitionKind::Parameter)
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-cannot-return-param-ref", exprText);
+        ctx.EmitAtRange(site.value.range, "as-err-cannot-return-param-ref", exprText);
     }
     else if (def->kind == LocalDefinitionKind::Variable)
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-cannot-return-local-ref", exprText);
+        ctx.EmitAtRange(site.value.range, "as-err-cannot-return-local-ref", exprText);
     }
 }
 
-static void CheckFuncDeclarationReturnStatement(TSNode expr, TSNode funcNode, const Scope* scope,
-                                                DiagnosticContext& ctx)
+/**
+ * @brief Checks a return inside a function against its written return type.
+ * @param[in] site Indexed return statement owned by a function with a written return type.
+ * @param[in] scope Lexical scope the return statement lives in.
+ * @param[in,out] ctx Diagnostic context.
+ */
+static void CheckFuncDeclarationReturnStatement(const ReturnSiteFact& site, const Scope* scope, DiagnosticContext& ctx)
 {
-    const SyntaxOperands syntax(funcNode, ctx.request.nodeIndex);
-    TSNode retTypeNode = syntax.Field(parser::GetGrammarSymbols().fieldReturnType);
-    if (ts_node_is_null(retTypeNode))
+    if (site.returnsReference)
     {
-        retTypeNode = syntax.Field(parser::GetGrammarSymbols().fieldType);
+        CheckReturnReference(site, scope, ctx);
     }
-    if (ts_node_is_null(retTypeNode))
-    {
-        return;
-    }
-
-    if (IsFunctionReturnRef(funcNode, retTypeNode, ctx))
-    {
-        CheckReturnReference(expr, funcNode, scope, ctx);
-    }
-
-    const std::string rawRetText(parser::NodeText(retTypeNode, ctx.request.sourceCode));
-    const std::string expected = CleanBaseType(rawRetText);
-    if (expected == "void")
-    {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-void-return-value");
-        return;
-    }
-
-    if (!expected.empty())
-    {
-        if (const auto dataTypeName = IsBareDataType(expr, ExpressionTypeContext(scope, ctx)))
-        {
-            EmitExpressionIsDataType(expr, ctx, *dataTypeName);
-            return;
-        }
-        if (IsFunctionReference(expr, ExpressionTypeContext(scope, ctx)))
-        {
-            ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-no-implicit-conversion",
-                                {std::string(TrimString(parser::NodeText(expr, ctx.request.sourceCode))), expected});
-            return;
-        }
-
-        const std::string rawActual = ResolveExpressionType(expr, ExpressionTypeContext(scope, ctx));
-        if (ExpressionTypeCache::IsPoisonType(rawActual))
-        {
-            return;
-        }
-        const std::string actual = CleanBaseType(rawActual);
-        CheckFloatTruncation(expr, {actual, expected}, scope, ctx);
-        if (!actual.empty() && actual != expected && !IsConvertible(actual, expected, ctx))
-        {
-            ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-no-implicit-conversion", {actual, expected});
-        }
-    }
+    CheckReturnedValue(site, CleanBaseType(site.returnType), true, scope, ctx);
 }
 
-void ProcessReturnStatementNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+void ProcessReturnSite(const ReturnSiteFact& site, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    TSNode expr = SyntaxOperands(node, ctx.request.nodeIndex).FieldOrNamed(parser::GetGrammarSymbols().fieldValue);
-    if (ts_node_is_null(expr))
+    const Scope* scope = ResolveNodeScope(site.statementRange, request);
+    if (site.owner == ReturnOwnerKind::Lambda)
     {
-        return;
+        CheckLambdaReturnStatement(site, scope, ctx);
     }
-    const Scope* scope = ResolveNodeScope(node, request);
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSNode parent = request.nodeIndex.EnclosingDeclaration(node);
-    if (!ts_node_is_null(parent))
+    else if (site.owner == ReturnOwnerKind::Function)
     {
-        const TSSymbol pSym = ts_node_symbol(parent);
-        if (pSym == gs.symLambdaExpression)
-        {
-            CheckLambdaReturnStatement(expr, parent, scope, ctx);
-        }
-        else if (pSym == gs.symFuncDeclaration)
-        {
-            CheckFuncDeclarationReturnStatement(expr, parent, scope, ctx);
-        }
+        CheckFuncDeclarationReturnStatement(site, scope, ctx);
     }
 }
 

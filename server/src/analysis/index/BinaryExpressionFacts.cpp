@@ -64,7 +64,7 @@ static std::pair<std::string_view, uint32_t> ExtractFoldedIdentifier(TSNode node
     return {};
 }
 
-static BinaryOperandFact BuildOperandFact(TSNode node, const NodeIndex& index, std::string_view source)
+BinaryOperandFact BuildBinaryOperandFact(TSNode node, const NodeIndex& index, std::string_view source)
 {
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol sym = ts_node_is_null(node) ? 0 : ts_node_symbol(node);
@@ -175,8 +175,8 @@ BinaryExpressionFacts BuildBinaryExpressionFacts(const NodeIndex& index, std::st
                                  .operatorRange = {opStart.row, opStart.column, opEnd.row, opEnd.column},
                                  .op = parser::OperatorSpelling(operands.op),
                                  .opClass = ClassifyBinaryOperator(ts_node_symbol(operands.op), gs),
-                                 .left = BuildOperandFact(operands.left, index, source),
-                                 .right = BuildOperandFact(operands.right, index, source)});
+                                 .left = BuildBinaryOperandFact(operands.left, index, source),
+                                 .right = BuildBinaryOperandFact(operands.right, index, source)});
     }
 
     std::ranges::sort(facts.expressions,

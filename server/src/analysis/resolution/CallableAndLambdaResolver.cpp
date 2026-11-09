@@ -1,5 +1,6 @@
 #include "analysis/resolution/CallableAndLambdaResolver.h"
 
+#include "analysis/index/LambdaTargetFacts.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SyntaxOperands.h"
 #include "analysis/resolution/ExpressionTypeResolver.h"
@@ -709,51 +710,6 @@ bool IsHandleType(std::string_view typeName, const SymbolTable& symbolTable) noe
 }
 
 /**
- * @brief Finds the target funcdef symbol for a variable declarator.
- */
-static std::optional<Symbol> FindDeclaratorFuncdefTarget(TSNode parent, const SymbolTable& table,
-                                                         std::string_view sourceCode)
-{
-    TSNode declaration = parser::GetParent(parent);
-    if (!ts_node_is_null(declaration))
-    {
-        TSNode typeNode = parser::GetChildByField(declaration, parser::GetGrammarSymbols().fieldVarType);
-        if (ts_node_is_null(typeNode))
-        {
-            typeNode = parser::GetChildByField(declaration, parser::GetGrammarSymbols().fieldType);
-        }
-        if (!ts_node_is_null(typeNode))
-        {
-            return FindFuncdefSymbol(CleanBaseType(std::string(parser::NodeText(typeNode, sourceCode))), table);
-        }
-    }
-    return std::nullopt;
-}
-
-/**
- * @brief Locates the index of targetChild within parent's named children.
- */
-static std::optional<uint32_t> FindChildPosition(TSNode parent, TSNode targetChild)
-{
-    for (uint32_t i = 0; i < ts_node_named_child_count(parent); ++i)
-    {
-        if (ts_node_eq(ts_node_named_child(parent, i), targetChild))
-        {
-            return i;
-        }
-    }
-    return std::nullopt;
-}
-
-/**
- * @brief Extracts the callee syntax node from a call expression node.
- */
-static TSNode ExtractCallCalleeNode(TSNode call)
-{
-    return parser::GetCallCallee(call);
-}
-
-/**
  * @brief Matches candidate function parameters at position against funcdef symbols.
  */
 static bool MatchCandidateFuncdef(const SymbolTable& table, std::string_view name, uint32_t position,
@@ -797,17 +753,14 @@ static bool MatchCandidateFuncdef(const SymbolTable& table, std::string_view nam
 }
 
 /**
- * @brief Finds the target funcdef symbol for an assignment expression.
+ * @brief Finds the target funcdef symbol for the assigned expression of an assignment.
+ * @param[in] leftText Source spelling of the assignment left side.
+ * @param[in] table Symbol table searched for the assigned variable.
+ * @return Funcdef symbol of the variable type, or std::nullopt when none matches.
  */
-static std::optional<Symbol> FindAssignmentFuncdefTarget(TSNode parent, const SymbolTable& table,
-                                                         std::string_view sourceCode)
+static std::optional<Symbol> FindAssignmentFuncdefTarget(std::string_view leftText, const SymbolTable& table)
 {
-    TSNode leftNode = parser::GetChildByField(parent, parser::GetGrammarSymbols().fieldLeft);
-    if (ts_node_is_null(leftNode))
-    {
-        return std::nullopt;
-    }
-    std::string varName = CleanBaseType(std::string(parser::NodeText(leftNode, sourceCode)));
+    std::string varName = CleanBaseType(std::string(leftText));
     const size_t dot = varName.rfind('.');
     if (dot != std::string::npos)
     {
@@ -889,54 +842,22 @@ static std::optional<Symbol> FindCallArgumentFuncdef(const SymbolTable& table, s
     return std::nullopt;
 }
 
-std::optional<Symbol> FuncdefTargetOfLambda(TSNode lambdaNode, const SymbolTable& table, std::string_view sourceCode)
+std::optional<Symbol> FuncdefTargetOfLambda(const LambdaTargetFact& target, const SymbolTable& table)
 {
-    if (!IsLambdaExpression(lambdaNode))
+    switch (target.kind)
     {
+    case LambdaTargetKind::DeclaratorType:
+        return FindFuncdefSymbol(CleanBaseType(std::string(target.text)), table);
+    case LambdaTargetKind::AssignmentLeft:
+        return FindAssignmentFuncdefTarget(target.text, table);
+    case LambdaTargetKind::CallArgument:
+        break;
+    case LambdaTargetKind::None:
         return std::nullopt;
     }
 
-    TSNode parent = parser::GetParent(lambdaNode);
-    if (ts_node_is_null(parent))
-    {
-        return std::nullopt;
-    }
-
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol parentSym = ts_node_symbol(parent);
-    if (parentSym == gs.symVariableDeclarator)
-    {
-        return FindDeclaratorFuncdefTarget(parent, table, sourceCode);
-    }
-    if (parentSym == gs.symAssignmentExpression)
-    {
-        return FindAssignmentFuncdefTarget(parent, table, sourceCode);
-    }
-    if (parentSym != gs.symArgumentList)
-    {
-        return std::nullopt;
-    }
-
-    auto position = FindChildPosition(parent, lambdaNode);
-    if (!position)
-    {
-        return std::nullopt;
-    }
-
-    TSNode call = parser::GetParent(parent);
-    if (ts_node_is_null(call))
-    {
-        return std::nullopt;
-    }
-
-    TSNode callee = ExtractCallCalleeNode(call);
-    if (ts_node_is_null(callee))
-    {
-        return std::nullopt;
-    }
-
-    const std::string calleeName = CleanBaseType(std::string(parser::NodeText(callee, sourceCode)));
-    if (*position == 0 && ts_node_named_child_count(parent) == 1)
+    const std::string calleeName = CleanBaseType(std::string(target.text));
+    if (target.soleArgument)
     {
         if (auto asConversion = FindFuncdefSymbol(calleeName, table))
         {
@@ -944,7 +865,16 @@ std::optional<Symbol> FuncdefTargetOfLambda(TSNode lambdaNode, const SymbolTable
         }
     }
 
-    return FindCallArgumentFuncdef(table, calleeName, *position);
+    return FindCallArgumentFuncdef(table, calleeName, target.position);
+}
+
+std::optional<Symbol> FuncdefTargetOfLambda(TSNode lambdaNode, const SymbolTable& table, std::string_view sourceCode)
+{
+    if (!IsLambdaExpression(lambdaNode))
+    {
+        return std::nullopt;
+    }
+    return FuncdefTargetOfLambda(ReadLambdaTarget(lambdaNode, sourceCode), table);
 }
 
 static uint32_t FindLambdaParamIndex(TSNode paramsNode, std::string_view paramName, std::string_view sourceCode)

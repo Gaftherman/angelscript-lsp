@@ -95,7 +95,10 @@ static bool ProcessStatementNode(TSSymbol sym, TSNode node, const TypeConversion
     }
     if (sym == gs.symReturnStatement)
     {
-        ProcessReturnStatementNode(node, request, ctx);
+        if (const auto* site = request.returnSites->Find(SpanOf(node)))
+        {
+            ProcessReturnSite(*site, request, ctx);
+        }
         return true;
     }
     if (sym == gs.symFuncDeclaration)
@@ -189,9 +192,15 @@ void CheckTypeConversions(const TypeConversionCheckRequest& request, DiagnosticC
     {
         localSites.emplace(BuildConversionSiteFacts(request.nodeIndex, request.sourceCode));
     }
+    std::optional<ReturnSiteFacts> localReturns;
+    if (!request.returnSites)
+    {
+        localReturns.emplace(BuildReturnSiteFacts(request.nodeIndex, request.sourceCode));
+    }
     TypeConversionCheckRequest withFacts = request;
     withFacts.binaryFacts = request.binaryFacts ? request.binaryFacts : &*localFacts;
     withFacts.conversionSites = request.conversionSites ? request.conversionSites : &*localSites;
+    withFacts.returnSites = request.returnSites ? request.returnSites : &*localReturns;
 
     if (ctx.logger && ctx.logger->IsDebugEnabled())
     {

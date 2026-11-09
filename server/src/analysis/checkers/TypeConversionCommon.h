@@ -267,6 +267,16 @@ void CheckFloatTruncation(TSNode valueNode, const ConversionTypePair& types, con
                           DiagnosticContext& ctx);
 
 /**
+ * @brief Emits a warning when an indexed float operand implicitly converts to an integer.
+ * @param[in] value Indexed operand being converted.
+ * @param[in] types Source and destination types.
+ * @param[in] scope Enclosing lexical scope.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void CheckFloatTruncation(const BinaryOperandFact& value, const ConversionTypePair& types, const Scope* scope,
+                          DiagnosticContext& ctx);
+
+/**
  * @brief Reads a 'type' node into the shape the conversion rules can act on.
  * @param[in] typeNode AST type node.
  * @param[in] ctx Diagnostic context.
@@ -444,12 +454,12 @@ void ProcessIndexExpressionNode(TSNode node, const TypeConversionCheckRequest& r
 void ProcessCastNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
 
 /**
- * @brief Validates return statements across enclosing function or lambda bodies.
- * @param[in] node Return statement syntax node.
+ * @brief Validates a return statement against the declared return type of its function or lambda target.
+ * @param[in] site Indexed return statement with its owner data.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic context.
  */
-void ProcessReturnStatementNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
+void ProcessReturnSite(const ReturnSiteFact& site, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
 
 /**
  * @brief Validates call and explicit construct call expressions.

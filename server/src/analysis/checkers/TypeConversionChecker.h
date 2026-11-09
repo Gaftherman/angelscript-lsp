@@ -3,6 +3,7 @@
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/BinaryExpressionFacts.h"
 #include "analysis/index/ConversionSiteFacts.h"
+#include "analysis/index/ReturnSiteFacts.h"
 #include "analysis/types/TypeConversionValues.h"
 
 #include <string_view>
@@ -43,6 +44,9 @@ struct TypeConversionCheckRequest
 
     /// Condition, ternary, expression-statement, foreach and `auto` sites; built once when left null.
     const ConversionSiteFacts* conversionSites = nullptr;
+
+    /// Valued return statements; built once when left null.
+    const ReturnSiteFacts* returnSites = nullptr;
 };
 
 /**

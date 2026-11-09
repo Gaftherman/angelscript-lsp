@@ -156,6 +156,13 @@ void CheckSignedUnsignedComparison(const BinaryExpressionFact& fact, const Scope
                     DiagnosticSeverity::Warning);
 }
 
+/**
+ * @brief Warns when a float expression node implicitly converts to an integer type.
+ * @param[in] valueNode Converted expression; a null node ends the check.
+ * @param[in] types Source and destination types.
+ * @param[in] scope Enclosing lexical scope used to fold constant identifiers.
+ * @param[in,out] ctx Diagnostic context.
+ */
 void CheckFloatTruncation(TSNode valueNode, const ConversionTypePair& types, const Scope* scope, DiagnosticContext& ctx)
 {
     if (ts_node_is_null(valueNode))
@@ -172,6 +179,27 @@ void CheckFloatTruncation(TSNode valueNode, const ConversionTypePair& types, con
     }
     ctx.EmitAtNodeRange(ToOptionalSourceRange(valueNode), "as-warn-float-truncation", {types.from, types.to},
                         DiagnosticSeverity::Warning);
+}
+
+/**
+ * @brief Warns when an indexed float operand implicitly converts to an integer type.
+ * @param[in] value Converted operand with its constant-folding data.
+ * @param[in] types Source and destination types.
+ * @param[in] scope Enclosing lexical scope used to fold constant identifiers.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void CheckFloatTruncation(const BinaryOperandFact& value, const ConversionTypePair& types, const Scope* scope,
+                          DiagnosticContext& ctx)
+{
+    if (!IsFloatingPointPrimitive(types.from) || !IsIntegerPrimitive(types.to))
+    {
+        return;
+    }
+    if (IsFoldedConstantOperand(value, scope, ctx))
+    {
+        return;
+    }
+    ctx.EmitAtRange(value.range, "as-warn-float-truncation", {types.from, types.to}, DiagnosticSeverity::Warning);
 }
 
 } // namespace angel_lsp::analysis
