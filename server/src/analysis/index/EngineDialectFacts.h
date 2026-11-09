@@ -108,6 +108,13 @@ struct SchedulerCallSite
 };
 
 /**
+ * @brief Measures a Tree-Sitter node into an AST-free span carrying both byte bounds and row/column points.
+ * @param[in] node AST node to measure; may be null.
+ * @return Span of the node, or a default (all-zero) span when the node is null.
+ */
+[[nodiscard]] IndexedSourceSpan MakeIndexedSourceSpan(TSNode node) noexcept;
+
+/**
  * @brief Extracts the receiver object text view from a call expression AST node.
  * @param[in] callNode AST node representing the call expression.
  * @param[in] sourceCode Document source text buffer.

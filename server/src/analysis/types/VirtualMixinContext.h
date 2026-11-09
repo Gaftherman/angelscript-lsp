@@ -1,10 +1,8 @@
 #pragma once
 
-#include "analysis/index/NodeIndex.h"
+#include "analysis/index/MixinSourceIndex.h"
 #include "analysis/index/SymbolTable.h"
 #include "document/Document.h"
-#include "parser/AngelScriptParser.h"
-#include "parser/SyntaxTree.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <ankerl/unordered_dense.h>
@@ -15,19 +13,6 @@
 
 namespace angel_lsp::analysis
 {
-
-/**
- * @brief Cache entry for parsed mixin source and AST tree.
- */
-struct MixinFileCacheEntry
-{
-    std::string source;
-    std::unique_ptr<parser::AngelScriptParser> parser;
-    parser::TreePtr tree;
-    std::unique_ptr<NodeIndex> nodeIndex;
-};
-
-using MixinFileCache = ankerl::unordered_dense::map<std::string, MixinFileCacheEntry>;
 
 namespace rules
 {

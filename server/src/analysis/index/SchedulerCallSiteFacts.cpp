@@ -12,28 +12,6 @@
 namespace angel_lsp::analysis
 {
 
-/**
- * @brief Constructs an indexed source span from a Tree-Sitter AST node.
- * @param[in] node AST node to measure.
- * @return Source coordinates and byte bounds of the node, or empty span if null.
- */
-static IndexedSourceSpan MakeSourceSpan(TSNode node) noexcept
-{
-    if (ts_node_is_null(node))
-    {
-        return IndexedSourceSpan{};
-    }
-    const TSPoint start = ts_node_start_point(node);
-    const TSPoint end = ts_node_end_point(node);
-    return IndexedSourceSpan{
-        IndexedByteRange{ts_node_start_byte(node), ts_node_end_byte(node)},
-        start.row,
-        start.column,
-        end.row,
-        end.column,
-    };
-}
-
 std::string_view ExtractReceiverText(TSNode callNode, std::string_view sourceCode) noexcept
 {
     if (ts_node_is_null(callNode))
@@ -59,13 +37,13 @@ SchedulerCallSite BuildSchedulerCallSite(TSNode callNode, std::span<const TSNode
     SchedulerCallSite site;
     if (!ts_node_is_null(callNode))
     {
-        site.call = MakeSourceSpan(callNode);
+        site.call = MakeIndexedSourceSpan(callNode);
         site.receiverText = ExtractReceiverText(callNode, source);
     }
     site.args.reserve(argNodes.size());
     for (const TSNode arg : argNodes)
     {
-        site.args.push_back(MakeSourceSpan(arg));
+        site.args.push_back(MakeIndexedSourceSpan(arg));
     }
     return site;
 }

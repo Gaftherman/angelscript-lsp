@@ -125,6 +125,4 @@ std::string InferHostClassFromEnclosingMixin(TSNode node, std::string_view sourc
  */
 std::string InferHostClassFromEnclosingMixin(IndexedByteRange targetRange, const NodeIndex& index,
                                              std::string_view sourceCode, const SymbolTable& symbolTable);
-TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::string_view mixinShortName,
-                              std::string_view sourceCode);
 } // namespace angel_lsp::analysis

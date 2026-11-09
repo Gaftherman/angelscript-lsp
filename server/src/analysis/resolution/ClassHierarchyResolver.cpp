@@ -904,55 +904,6 @@ std::string InferHostClassFromEnclosingMixin(IndexedByteRange targetRange, const
     return FindHostClassInContainers(GetEnclosingContainers(node, sourceCode, &index), symbolTable, nullptr);
 }
 
-TSNode FindMixinInclusionNode(TSNode hostNode, std::string_view mixinName, std::string_view mixinShortName,
-                              std::string_view sourceCode)
-{
-    if (ts_node_is_null(hostNode))
-    {
-        return {};
-    }
-
-    TSNode found{};
-    TSNode baseList = parser::FindChildWithSymbol(hostNode, parser::GetGrammarSymbols().symBaseClassList);
-    if (!ts_node_is_null(baseList))
-    {
-        parser::ForEachNamedChildNodeUntil(baseList,
-                                           [&](TSNode baseChild)
-                                           {
-                                               const std::string bText(parser::NodeText(baseChild, sourceCode));
-                                               if (CleanBaseTypeView(bText) == mixinName || bText == mixinShortName ||
-                                                   utils::EndsWithScopedMember(bText, mixinShortName))
-                                               {
-                                                   found = baseChild;
-                                                   return false;
-                                               }
-                                               return true;
-                                           });
-        if (!ts_node_is_null(found))
-        {
-            return found;
-        }
-    }
-
-    TSNode bodyNode = parser::GetChildByField(hostNode, parser::GetGrammarSymbols().fieldBody);
-    if (!ts_node_is_null(bodyNode))
-    {
-        parser::ForEachChildNodeUntil(bodyNode,
-                                      [&](TSNode mNode)
-                                      {
-                                          const std::string mText(parser::NodeText(mNode, sourceCode));
-                                          if (!mixinShortName.empty() &&
-                                              mText.find(mixinShortName) != std::string::npos)
-                                          {
-                                              found = mNode;
-                                              return false;
-                                          }
-                                          return true;
-                                      });
-    }
-    return found;
-}
-
 bool IsDestructorSymbol(const Symbol& sym)
 {
     if (sym.type != SymbolType::Function)

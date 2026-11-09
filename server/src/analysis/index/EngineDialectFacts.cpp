@@ -14,21 +14,16 @@
 namespace angel_lsp::analysis
 {
 
-/**
- * @brief Constructs an indexed source span from a Tree-Sitter AST node.
- * @param[in] node AST node to measure.
- * @return Source coordinates and byte bounds of the node, or empty span if null.
- */
-static IndexedSourceSpan MakeSourceSpan(TSNode node) noexcept
+IndexedSourceSpan MakeIndexedSourceSpan(TSNode node) noexcept
 {
     if (ts_node_is_null(node))
     {
         return IndexedSourceSpan{};
     }
-    const TSPoint s = ts_node_start_point(node);
-    const TSPoint e = ts_node_end_point(node);
-    return IndexedSourceSpan{IndexedByteRange{ts_node_start_byte(node), ts_node_end_byte(node)}, s.row, s.column, e.row,
-                             e.column};
+    const TSPoint start = ts_node_start_point(node);
+    const TSPoint end = ts_node_end_point(node);
+    return IndexedSourceSpan{IndexedByteRange{ts_node_start_byte(node), ts_node_end_byte(node)}, start.row,
+                             start.column, end.row, end.column};
 }
 
 /**
@@ -120,7 +115,8 @@ static void ProcessVariableDeclaration(TSNode node, const parser::GrammarSymbols
             const uint32_t from = ts_node_start_byte(value);
             if (from < source.size() && source[from] == '\'')
             {
-                facts.charLiteralDeclarators.push_back(IndexedCharLiteralDeclarator{typeRange, MakeSourceSpan(value)});
+                facts.charLiteralDeclarators.push_back(
+                    IndexedCharLiteralDeclarator{typeRange, MakeIndexedSourceSpan(value)});
             }
         } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
@@ -160,7 +156,7 @@ static void ProcessArgumentList(TSNode node, const parser::GrammarSymbols& gs, E
                 continue;
             }
             facts.namedArguments.push_back(
-                IndexedNamedArgument{MakeSourceSpan(argument), MakeSourceSpan(target),
+                IndexedNamedArgument{MakeIndexedSourceSpan(argument), MakeIndexedSourceSpan(target),
                                      IndexedByteRange{ts_node_start_byte(target), ts_node_end_byte(target)}});
         } while (ts_tree_cursor_goto_next_sibling(&cursor));
     }
@@ -193,7 +189,7 @@ static void ProcessAssignmentExpression(TSNode node, const parser::GrammarSymbol
         }
     }
     facts.assignmentExpressions.push_back(
-        IndexedAssignmentExpression{MakeSourceSpan(node), MakeSourceSpan(target), targetIdRange});
+        IndexedAssignmentExpression{MakeIndexedSourceSpan(node), MakeIndexedSourceSpan(target), targetIdRange});
 }
 
 /**
@@ -232,7 +228,7 @@ EngineDialectFacts BuildEngineDialectFacts(const NodeIndex& index, std::string_v
                                  const TSSymbol sym = ts_node_symbol(node);
                                  if (sym == gs.symForeachStatement)
                                  {
-                                     facts.foreachStatements.push_back(MakeSourceSpan(node));
+                                     facts.foreachStatements.push_back(MakeIndexedSourceSpan(node));
                                  }
                                  else if (sym == gs.symInitializerList)
                                  {
@@ -251,7 +247,7 @@ EngineDialectFacts BuildEngineDialectFacts(const NodeIndex& index, std::string_v
                                          const TSNode r = parser::GetChildByField(node, gs.fieldRight);
                                          if (IsIntegerLiteral(l, source) && IsIntegerLiteral(r, source))
                                          {
-                                             facts.integerDivisions.push_back(MakeSourceSpan(node));
+                                             facts.integerDivisions.push_back(MakeIndexedSourceSpan(node));
                                          }
                                      }
                                  }
