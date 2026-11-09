@@ -5,7 +5,6 @@
 #include "analysis/index/ScopeTree.h"
 
 #include <string_view>
-#include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
@@ -16,7 +15,7 @@ namespace angel_lsp::analysis
  * @param[in,out] ctx Diagnostic context and source code view.
  * @param[out] assertions Facts for the whole expression when requested.
  */
-void CheckNullExpression(TSNode expr, FlowState& state, NullCheckContext& ctx,
+void CheckNullExpression(NullFlowNodeId expr, FlowState& state, NullCheckContext& ctx,
                          NullConditionAssertions* assertions = nullptr);
 
 /**
@@ -36,8 +35,8 @@ enum class ExprActionKind : uint8_t
 struct ExprStackFrame
 {
     ExprActionKind kind;
-    TSNode node{};
-    TSNode right{};
+    NullFlowNodeId node = NoNullFlowNode;
+    NullFlowNodeId right = NoNullFlowNode;
     decltype(FlowState::vars) savedVars{};
 };
 } // namespace angel_lsp::analysis

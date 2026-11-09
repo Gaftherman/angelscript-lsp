@@ -2899,6 +2899,109 @@
       "verifiedByTests": [
         "IterationBudgetHarnessTest"
       ]
+    },
+    {
+      "id": "REF-M21-RULEINDEX-RELOCATE",
+      "phase": "M21",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/rules/RuleIndex.h",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "RuleIndex, BuildRuleIndex (analysis/rules)",
+      "whatItDidAndWhyInThatFile": "The per-document class and enum index lived in the rules sub-layer although it is first-pass data consumed by several layers.",
+      "whyChangedOrDeleted": "Moved to analysis/index so the rules sub-layer only consumes it.",
+      "replacedByCanonicalFile": "server/src/analysis/index/RuleIndex.h",
+      "replacedByCanonicalSymbol": "RuleIndex",
+      "ramOrCpuImpact": "None at runtime; the index is built once per document as before.",
+      "verifiedByTests": [
+        "RuleIndexEquivalenceTest"
+      ]
+    },
+    {
+      "id": "REF-M21-ENGINE-DIALECT-FACTS",
+      "phase": "M21",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/rules/EngineRuleChecker.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "ResolveSeverity; MatchesTypeName; re; ExtractArrayElement; ReportStorageViolation; EvaluateStorageRule; CheckSchedulerArgSafety; CheckSchedulerEnumDiscriminant; CheckSingleSchedulerArg; FormatTypeSuggestionMessage; CheckEngineStorageRules; CheckEngineTypeSuggestions; CheckEngineLocalTypeSuggestions; ExtractReceiverText; RuleMatchesReceiver; CheckEngineSchedulerCall; FindEnumDeclarationNode; ExtractStringValue; MatchesRegexSafe; MatchConfiguredReflectionCallees; NormalizeParamType; CheckDialectForeach; CheckDialectEmptyListElements; CheckCharLiteralDeclarator; CheckDialectVariableDeclarationNode; CheckDialectCharacterLiterals; IsIntegerLiteral; CheckDialectIntegerDivisionNode; CheckDialectIntegerDivision; CheckDialectNamedArguments; CheckDialectAssignmentExpressionNode; CheckDialectValueAssignForRef; CheckDialectMultilineStrings; CheckEngineDialectRules",
+      "whatItDidAndWhyInThatFile": "EngineRuleChecker walked the AST with TSNode in every engine and dialect rule and repeated receiver, storage and scheduler matching.",
+      "whyChangedOrDeleted": "Syntax is extracted once into EngineDialectFacts in the first pass; the rule units read the facts and the rule file is split by concern.",
+      "replacedByCanonicalFile": "server/src/analysis/index/EngineDialectFacts.h",
+      "replacedByCanonicalSymbol": "EngineDialectFacts",
+      "ramOrCpuImpact": "One indexed extraction per document replaces several tree walks per rule.",
+      "verifiedByTests": [
+        "EngineDialectFactsTest",
+        "EngineRuleCheckerTest"
+      ]
+    },
+    {
+      "id": "REF-M21-CLASS-RULE-FACTS",
+      "phase": "M21",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/rules/ClassRules.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "FindMixinInclusionNode; bText; mText; ScopeQualifier; FindBaseListNode; GetBaseRange; ReadMixinSource; file; FindMixinAstNode; objName; propName; IsNamedChildMatch; IsScopedIdentifierIgnored; IsDeclarationOrFieldChild; ShouldIgnoreMixinIdentifier; CollectLocalNames; CheckFuncBodyStatements; CheckMixinBody; IsSymbolTableClass; MixinFileCacheEntry",
+      "whatItDidAndWhyInThatFile": "Class and mixin rules searched base lists, mixin inclusions and mixin bodies through TSNode and re-read mixin files.",
+      "whyChangedOrDeleted": "ClassRuleFacts captures base lists, mixin inclusions and body statements in the first pass; ClassRules reads those facts.",
+      "replacedByCanonicalFile": "server/src/analysis/index/ClassRuleFacts.h",
+      "replacedByCanonicalSymbol": "MixinBodyFacts",
+      "ramOrCpuImpact": "Mixin source is read through the indexed facts instead of a per-check file cache.",
+      "verifiedByTests": [
+        "ClassRuleFactsTest",
+        "ClassRulesTest",
+        "VirtualMixinDocumentTest"
+      ]
+    },
+    {
+      "id": "REF-M21-RULES-FACTS",
+      "phase": "M21",
+      "action": "EXTRACT_UTILITY",
+      "sourceFile": "server/src/analysis/rules/DirectiveRules.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "FindEnumDeclarationNode; ExtractStringValue; MatchesRegexSafe; MatchConfiguredReflectionCallees; direct TSNode reads in TypeRules, VariableRules, FunctionRules and DirectiveRules",
+      "whatItDidAndWhyInThatFile": "Enum, reflection call and standalone lambda checks queried the syntax tree from the rules sub-layer.",
+      "whyChangedOrDeleted": "EnumDeclarationFacts, ReflectionCallFacts and RuleSyntaxFacts provide those facts from the first pass.",
+      "replacedByCanonicalFile": "server/src/analysis/index/RuleSyntaxFacts.h",
+      "replacedByCanonicalSymbol": "RuleSyntaxFacts",
+      "ramOrCpuImpact": "Rules iterate pre-extracted vectors instead of walking the tree.",
+      "verifiedByTests": [
+        "TypeRulesTest",
+        "FunctionRulesTest",
+        "VariableRulesTest"
+      ]
+    },
+    {
+      "id": "REF-M21-RULES-STRINGVIEW",
+      "phase": "M21",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/rules/UnusedSymbolChecker.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "NormalizeParamType; MixinFileCacheEntry; std::string name sets and std::string parameters across analysis/rules",
+      "whatItDidAndWhyInThatFile": "Unused symbol and rule checks copied names into std::string sets and rebuilt normalised parameter text.",
+      "whyChangedOrDeleted": "Name sets hold string_view over request-owned storage through utils::StringPool, regex matching uses utils::MatchesCachedRegex, and parameter types compare without allocating.",
+      "replacedByCanonicalFile": "server/src/utils/StringPool.h",
+      "replacedByCanonicalSymbol": "StringPool",
+      "ramOrCpuImpact": "Removes per-name heap copies in the unused symbol pass and the regex recompilation per call.",
+      "verifiedByTests": [
+        "UnusedSymbolCheckerTest",
+        "StringPoolRegexTest"
+      ]
+    },
+    {
+      "id": "REF-M22-NULL-FLOW-FACTS",
+      "phase": "M22",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/null_safety/NullSafetyChecker.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "FindFunctionBody; FindParameterListNode; ReadParameterType; ReadParameterName; CollectRegularParameters; CollectIndexedParameters",
+      "whatItDidAndWhyInThatFile": "Null safety flow analysis read TSNode operands through SyntaxOperands in the second pass.",
+      "whyChangedOrDeleted": "NullFlowFacts extracts callables, statements, expressions and handle parameters into an AST-free arena in the first pass.",
+      "replacedByCanonicalFile": "server/src/analysis/index/NullFlowFacts.h",
+      "replacedByCanonicalSymbol": "NullFlowFacts",
+      "ramOrCpuImpact": "One extraction per document; flow analysis works on arena ids and string_view names.",
+      "verifiedByTests": [
+        "NullSafetyCheckerTest",
+        "NullFlowFactsTest"
+      ]
     }
   ]
 }

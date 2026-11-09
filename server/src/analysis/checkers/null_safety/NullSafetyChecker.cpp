@@ -4,11 +4,7 @@
 #include "analysis/checkers/null_safety/NullSafetyDecl.h"
 #include "analysis/checkers/null_safety/NullSafetyExpr.h"
 #include "analysis/checkers/null_safety/NullSafetyParam.h"
-#include "analysis/diagnostics/DiagnosticCodes.h"
-#include "analysis/index/NodeIndex.h"
-#include "analysis/index/SyntaxOperands.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
+#include "analysis/index/NullFlowFacts.h"
 #include "utils/Utils.h"
 
 #include <utility>
@@ -47,9 +43,9 @@ class NullStatementWorklist
     {
     }
 
-    void Run(TSNode statement, FlowState& state)
+    void Run(NullFlowNodeId statement, FlowState& state)
     {
-        m_pending.push_back({NullStatementAction::Statement, statement});
+        m_pending.push_back({NullStatementAction::Statement, statement, NoNullFlowNode});
         while (!m_pending.empty())
         {
             const NullStatementWork work = m_pending.back();
@@ -76,41 +72,36 @@ class NullStatementWorklist
     }
 
   private:
-    void PushNextChild(SyntaxNodeId id)
+    void PushNextChild(NullFlowNodeId id)
     {
-        const auto* child = m_ctx.index.SyntaxNode(id);
-        while (child && !child->named)
-        {
-            child = m_ctx.index.SyntaxNode(child->next);
-        }
+        const auto* child = m_ctx.facts.Find(id);
         if (child)
         {
-            m_pending.push_back({NullStatementAction::Children, {}, child->next});
-            m_pending.push_back({NullStatementAction::Statement, m_ctx.index.SyntaxHandle(*child)});
+            m_pending.push_back({NullStatementAction::Children, NoNullFlowNode, child->next});
+            m_pending.push_back({NullStatementAction::Statement, id, NoNullFlowNode});
         }
     }
 
-    void BeginBranch(const SyntaxOperands& syntax, FlowState& state)
+    void BeginBranch(const NullFlowNode& node, FlowState& state)
     {
-        const auto& gs = parser::GetGrammarSymbols();
-        const TSNode condition = syntax.FieldOrNamed(gs.fieldCondition, 0);
+        const NullFlowNodeId condition = node.first;
         NullConditionAssertions assertions;
         CheckNullExpression(condition, state, m_ctx, &assertions);
         auto& branch = m_branches.emplace_back();
         branch.elseState = state;
         ApplyAssertions(branch.elseState, assertions.negative);
         ApplyAssertions(state, assertions.positive);
-        m_pending.push_back({NullStatementAction::Else, syntax.Field(gs.fieldAlternative)});
-        m_pending.push_back({NullStatementAction::Statement, syntax.FieldOrNamed(gs.fieldConsequence, 1)});
+        m_pending.push_back({NullStatementAction::Else, node.third, NoNullFlowNode});
+        m_pending.push_back({NullStatementAction::Statement, node.second, NoNullFlowNode});
     }
 
-    void StartElse(TSNode alternative, FlowState& state)
+    void StartElse(NullFlowNodeId alternative, FlowState& state)
     {
         auto& branch = m_branches.back();
         branch.thenState = std::move(state);
         state = std::move(branch.elseState);
-        m_pending.push_back({NullStatementAction::Join});
-        m_pending.push_back({NullStatementAction::Statement, alternative});
+        m_pending.push_back({NullStatementAction::Join, NoNullFlowNode, NoNullFlowNode});
+        m_pending.push_back({NullStatementAction::Statement, alternative, NoNullFlowNode});
     }
 
     void Join(FlowState& state)
@@ -123,29 +114,30 @@ class NullStatementWorklist
         m_branches.pop_back();
     }
 
-    void CheckStatement(TSNode statement, FlowState& state)
+    void CheckStatement(NullFlowNodeId id, FlowState& state)
     {
-        if (state.isTerminated || ts_node_is_null(statement))
+        if (state.isTerminated || id == NoNullFlowNode)
         {
             return;
         }
-        const auto& gs = parser::GetGrammarSymbols();
-        const auto symbol = ts_node_symbol(statement);
-        if (symbol == gs.symStatementBlock)
+        const auto* node = m_ctx.facts.Find(id);
+        if (!node)
         {
-            if (const auto* block = m_ctx.index.FindOperandSyntax(statement))
-            {
-                PushNextChild(block->first);
-            }
+            return;
         }
-        else if (symbol == gs.symVariableDeclaration)
+        switch (node->kind)
         {
-            CheckVarDeclaration(statement, state, m_ctx);
-        }
-        else if (symbol == gs.symExpressionStatement)
+        case NullFlowNodeKind::Block:
+            PushNextChild(node->first);
+            break;
+        case NullFlowNodeKind::VariableDeclaration:
+            CheckVarDeclaration(id, state, m_ctx);
+            break;
+        case NullFlowNodeKind::ExpressionStatement:
         {
-            const TSNode expr = SyntaxOperands(statement, &m_ctx.index).FirstNamed();
-            if (!ts_node_is_null(expr) && ts_node_symbol(expr) == gs.symAssignmentExpression)
+            const NullFlowNodeId expr = node->first;
+            const auto* exprNode = m_ctx.facts.Find(expr);
+            if (exprNode && exprNode->kind == NullFlowNodeKind::Assignment)
             {
                 CheckAssignmentStmt(expr, state, m_ctx);
             }
@@ -153,15 +145,17 @@ class NullStatementWorklist
             {
                 CheckNullExpression(expr, state, m_ctx);
             }
+            break;
         }
-        else if (symbol == gs.symIfStatement)
-        {
-            BeginBranch(SyntaxOperands(statement, &m_ctx.index), state);
-        }
-        else if (symbol == gs.symReturnStatement)
-        {
-            CheckNullExpression(SyntaxOperands(statement, &m_ctx.index).Field(gs.fieldValue), state, m_ctx);
+        case NullFlowNodeKind::IfStatement:
+            BeginBranch(*node, state);
+            break;
+        case NullFlowNodeKind::ReturnStatement:
+            CheckNullExpression(node->first, state, m_ctx);
             state.isTerminated = true;
+            break;
+        default:
+            break;
         }
     }
 
@@ -170,22 +164,21 @@ class NullStatementWorklist
     std::vector<NullBranchState> m_branches;
 };
 
-static void AnalyzeFunction(TSNode funcNode, NullCheckContext& ctx)
+static void AnalyzeFunction(const NullFlowCallable& callable, NullCheckContext& ctx)
 {
-    TSNode body = FindFunctionBody(funcNode, ctx.index);
-    if (ts_node_is_null(body))
-    {
-        return;
-    }
-
     FlowState state;
-    CollectParameters(funcNode, body, ctx, state);
-    NullStatementWorklist(ctx).Run(body, state);
+    CollectParameters(callable, ctx, state);
+    NullStatementWorklist(ctx).Run(callable.body, state);
 }
 
+/**
+ * @brief Analyzes dataflow in functions and lambdas to detect dereferences of null or unchecked handles.
+ * @param[in] request Document AST root, source text, and scope tree.
+ * @param[in,out] ctx Diagnostic sink for emitting warnings.
+ */
 void CheckNullSafety(const AstCheckContext& request, DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(request.rootNode) || request.sourceCode.empty() || !request.nodeIndex)
+    if (request.sourceCode.empty() || !request.nodeIndex)
     {
         return;
     }
@@ -194,15 +187,11 @@ void CheckNullSafety(const AstCheckContext& request, DiagnosticContext& ctx)
         return;
     }
 
-    NullCheckContext checkCtx{request.sourceCode, ctx, request.scopeRoot, *request.nodeIndex};
-    const auto& gs = parser::GetGrammarSymbols();
-    for (TSNode funcNode : request.nodeIndex->Nodes(gs.symFuncDeclaration))
+    const NullFlowFacts facts = BuildNullFlowFacts(*request.nodeIndex, request.sourceCode);
+    NullCheckContext checkCtx{request.sourceCode, ctx, request.scopeRoot, facts};
+    for (const auto& callable : facts.callables)
     {
-        AnalyzeFunction(funcNode, checkCtx);
-    }
-    for (TSNode lambdaNode : request.nodeIndex->Nodes(gs.symLambdaExpression))
-    {
-        AnalyzeFunction(lambdaNode, checkCtx);
+        AnalyzeFunction(callable, checkCtx);
     }
 }
 

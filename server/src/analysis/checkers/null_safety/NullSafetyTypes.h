@@ -2,13 +2,11 @@
 
 #include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
-#include "analysis/index/NodeIndex.h"
+#include "analysis/index/NullFlowFacts.h"
 #include "analysis/index/ScopeTree.h"
 
 #include <ankerl/unordered_dense.h>
-#include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <vector>
 
 namespace angel_lsp::analysis
@@ -31,7 +29,7 @@ struct NullCheckContext
     std::string_view sourceCode;
     DiagnosticContext& diagCtx;
     const Scope* scopeRoot;
-    const NodeIndex& index;
+    const NullFlowFacts& facts;
 };
 
 /**
@@ -39,8 +37,8 @@ struct NullCheckContext
  */
 struct FlowState
 {
-    ankerl::unordered_dense::map<std::string, Nullability> vars;
-    ankerl::unordered_dense::set<std::string> warnedVars;
+    ankerl::unordered_dense::map<std::string_view, Nullability> vars;
+    ankerl::unordered_dense::set<std::string_view> warnedVars;
     bool isTerminated = false;
 };
 
@@ -49,7 +47,7 @@ struct FlowState
  */
 struct NullAssertion
 {
-    std::string varName;
+    std::string_view varName;
     Nullability state = Nullability::Nullable;
 };
 
@@ -79,8 +77,8 @@ enum class NullStatementAction : uint8_t
 struct NullStatementWork
 {
     NullStatementAction action;
-    TSNode node{};
-    SyntaxNodeId child = NoSyntaxNode;
+    NullFlowNodeId node = NoNullFlowNode;
+    NullFlowNodeId child = NoNullFlowNode;
 };
 
 /// Separate states retained while evaluating the arms of an if statement.

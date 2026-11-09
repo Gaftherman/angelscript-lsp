@@ -2,8 +2,6 @@
 
 #include "analysis/checkers/null_safety/NullSafetyTypes.h"
 
-#include <tree_sitter/api.h>
-#include <utility>
 #include <vector>
 
 namespace angel_lsp::analysis
@@ -16,10 +14,10 @@ struct NullConditionAssertions
 };
 
 /// Follows captured expression links to find the value used for null tracking.
-TSNode UnwrapNullExpression(TSNode expr, const NodeIndex& index);
+NullFlowNodeId UnwrapNullExpression(NullFlowNodeId expr, const NullFlowFacts& facts);
 
 /// Extracts a simple identifier using the captured expression operands.
-std::string GetIdentifierName(TSNode node, const NullCheckContext& ctx);
+std::string_view GetIdentifierName(NullFlowNodeId node, const NullCheckContext& ctx);
 
 /// Worklist actions for null checking.
 enum class NullConditionAction : uint8_t
@@ -34,7 +32,7 @@ enum class NullConditionAction : uint8_t
 struct NullConditionWork
 {
     NullConditionAction action;
-    TSNode node{};
+    NullFlowNodeId node = NoNullFlowNode;
 };
 
 /**
@@ -54,26 +52,24 @@ class NullConditionWorklist
      * @param[in] condition Condition whose facts are needed for short-circuit evaluation.
      * @return Facts valid until the next call to Take or Remember.
      */
-    const NullConditionAssertions& Remember(TSNode condition);
+    const NullConditionAssertions& Remember(NullFlowNodeId condition);
 
     /**
      * @brief Computes facts, consuming any already evaluated descendant summaries.
      * @param[in] condition Condition whose positive and negative facts are needed.
      * @return Assertions for both outcomes.
      */
-    NullConditionAssertions Take(TSNode condition);
+    NullConditionAssertions Take(NullFlowNodeId condition);
 
   private:
-    using NodeKey = std::pair<const void*, uint32_t>;
-
     void Merge(bool isAnd);
-    void EvaluateBinary(TSNode node);
-    void Evaluate(TSNode condition);
+    void EvaluateBinary(const NullFlowNode& node);
+    void Evaluate(NullFlowNodeId condition);
 
     const NullCheckContext& m_ctx;
     std::vector<NullConditionWork> m_pending;
     std::vector<NullConditionAssertions> m_values;
-    ankerl::unordered_dense::map<NodeKey, NullConditionAssertions> m_summaries;
+    ankerl::unordered_dense::map<NullFlowNodeId, NullConditionAssertions> m_summaries;
 };
 
 } // namespace angel_lsp::analysis
