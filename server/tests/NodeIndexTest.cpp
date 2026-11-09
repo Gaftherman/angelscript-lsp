@@ -2,8 +2,8 @@
 
 #include "analysis/index/SymbolCollector.h"
 #include "analysis/index/SyntaxOperands.h"
+#include "analysis/index/TypeExtraction.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
-#include "analysis/types/TypeExtraction.h"
 #include "helpers/TestUtils.h"
 #include "parser/GrammarNames.h"
 

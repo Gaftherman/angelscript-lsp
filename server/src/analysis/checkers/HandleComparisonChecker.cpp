@@ -2,8 +2,8 @@
 
 #include "analysis/checkers/BinaryOperatorHelpers.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
+#include "analysis/index/TypeExtraction.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "analysis/types/TypeExtraction.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "parser/Keywords.h"

@@ -1,8 +1,8 @@
 #include "analysis/index/LocalScopeCollector.h"
 
 #include "analysis/index/ReferenceReceiverIndex.h"
+#include "analysis/index/TypeExtraction.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "analysis/types/TypeExtraction.h"
 #include "analysis/types/TypeSanitization.h"
 #include "document/Document.h"
 #include "parser/ASTUtils.h"

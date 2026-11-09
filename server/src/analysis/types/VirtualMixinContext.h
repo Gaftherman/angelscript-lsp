@@ -93,18 +93,6 @@ struct VirtualMixinContext
 }
 
 /**
- * @brief Resolves the declaring document URI for mixin scopes, falling back to document URI.
- * @param[in] ctx Virtual mixin context.
- * @param[in] fallbackUri Original document URI.
- * @return Declaring file URI or fallbackUri.
- */
-[[nodiscard]] inline const std::string& ResolvePhysicalUri(const VirtualMixinContext& ctx,
-                                                           const std::string& fallbackUri) noexcept
-{
-    return (ctx.isVirtual && ctx.mixinSymbol.has_value()) ? ctx.mixinSymbol->fileUri : fallbackUri;
-}
-
-/**
  * @brief Resolves the declaring document URI for mixin scopes, falling back to document URI view.
  * @param[in] ctx Virtual mixin context.
  * @param[in] fallbackUri Original document URI view.

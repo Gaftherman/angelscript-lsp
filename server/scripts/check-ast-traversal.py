@@ -56,7 +56,7 @@ INDEXED_CHECKERS = (
     SERVER_SRC / "analysis" / "checkers" / "null_safety" / "NullSafetyDecl.cpp",
     SERVER_SRC / "analysis" / "checkers" / "null_safety" / "NullSafetyExpr.cpp",
     SERVER_SRC / "analysis" / "checkers" / "null_safety" / "NullSafetyParam.cpp",
-    SERVER_SRC / "analysis" / "types" / "TypeExtraction.cpp",
+    SERVER_SRC / "analysis" / "index" / "TypeExtraction.cpp",
 )
 
 DIRECT_AST_NAVIGATION = re.compile(
@@ -447,6 +447,8 @@ def check_no_modifier_string_literals():
     allowed_files = {
         SERVER_SRC / "analysis" / "documentation" / "SignatureFormatter.cpp",
         SERVER_SRC / "analysis" / "types" / "EngineConfigConverter.cpp",
+        SERVER_SRC / "analysis" / "types" / "EngineConfigParse.cpp",
+        SERVER_SRC / "analysis" / "types" / "EngineConfigFormat.cpp",
     }
     for file_path in (SERVER_SRC / "analysis").rglob("*.[ch]*"):
         if not file_path.is_file() or file_path in allowed_files:
@@ -625,8 +627,8 @@ def check_no_analysis_ast_utils():
     return []
 
 MANUAL_QUALIFIER_ALLOWED_FILES = {
-    SERVER_SRC / "analysis" / "types" / "TypeExtraction.cpp",
-    SERVER_SRC / "analysis" / "types" / "TypeExtraction.h",
+    SERVER_SRC / "analysis" / "index" / "TypeExtraction.cpp",
+    SERVER_SRC / "analysis" / "index" / "TypeExtraction.h",
     SERVER_SRC / "analysis" / "types" / "TypeSanitization.cpp",
     SERVER_SRC / "analysis" / "types" / "TypeSanitization.h",
 }

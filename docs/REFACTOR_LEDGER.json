@@ -433,7 +433,7 @@
       "originalSymbolOrCode": "TryExtractPrimitiveOrIdentifier ProcessDatatypeChild ProcessTemplateTypeListChild ProcessAnonymousModifier CollectParametersFromAST",
       "whatItDidAndWhyInThatFile": "Walked type subtrees again and recursively built owned type results. Null diagnostics also walked parameter lists, even with a full revision index.",
       "whyChangedOrDeleted": "Capture named type operands, modifier tokens and lambda parameter separators in the first pass. Fold type facts with an iterative worklist and retain the ordered immediate argument names used by symbol signatures.",
-      "replacedByCanonicalFile": "server/src/analysis/types/TypeExtraction.cpp",
+      "replacedByCanonicalFile": "server/src/analysis/index/TypeExtraction.cpp",
       "replacedByCanonicalSymbol": "TypeReadWorklist",
       "ramOrCpuImpact": "The type result has flat argument storage. Indexed callers avoid reading type and parameter child links from the tree. The declaration-only and interactive paths retain a direct-operand fallback. On bts_rc with Win32 Release, 20 alternating runs per version against a8291c64 yielded workspace p50/p95 of 1969.25/1992.95 ms before and 1971.67/1995.14 ms after. Open was 19.03/19.82 and 19.06/20.87 ms, edit 532.01/541.29 and 531.52/537.44 ms, references 1.28/1.48 and 1.29/1.51 ms, CodeLens after references 4.68/5.38 and 4.75/5.21 ms, and peak working set 122.88/123.68 and 123.07/123.43 MiB. Each run verified the complete reports for 129 closed files and the open and edited target, with only the two expected W109 removals.",
       "verifiedByTests": [
@@ -2743,6 +2743,91 @@
         "DoxygenMarkdownTest",
         "DoxygenSyntaxTest",
         "DocCommentTest"
+      ]
+    },
+    {
+      "id": "REF-M18-TYPE-EXTRACTION-PASS1",
+      "phase": "M18",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/types/TypeExtraction.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "ExtractTypeInfoFromAST, IsNullInitializer, TypeExtractionSymbols, TypeReadWorklist",
+      "whatItDidAndWhyInThatFile": "Read type metadata directly from tree-sitter type nodes while living in the second-pass types folder.",
+      "whyChangedOrDeleted": "Rule 4.10: the code walks TSNode and includes parser/ASTUtils.h, so it belongs to the first pass; moved unchanged to analysis/index/ next to its collectors.",
+      "replacedByCanonicalFile": "server/src/analysis/index/TypeExtraction.h",
+      "replacedByCanonicalSymbol": "ExtractTypeInfoFromAST",
+      "ramOrCpuImpact": "None: identical code.",
+      "verifiedByTests": [
+        "NodeIndexTest",
+        "SymbolCollectorTest"
+      ]
+    },
+    {
+      "id": "REF-M18-TYPES-VIEWS",
+      "phase": "M18",
+      "action": "CLEAN_SENTINEL",
+      "sourceFile": "server/src/analysis/types/EngineConfigConverter.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "const std::string& name/indent in FindOrCreateScope/Class/Enum/Interface and FormatEnums/Classes/ScopeEntities; std::stringstream copy of the whole config; GetProfileStubText returning std::string; ResolvePhysicalUri(const std::string&) overload; FinishDatatype(const std::string&)",
+      "whatItDidAndWhyInThatFile": "Took or returned owned strings where the data is only read, and copied the full engine config into a string stream to split lines.",
+      "whyChangedOrDeleted": "Views suffice for read-only inputs and for a static profile literal; the config is split on newlines directly. The Format helpers share AppendIndentedLines/AppendBlockOpen instead of repeated concatenations.",
+      "replacedByCanonicalFile": "server/src/analysis/types/EngineProfiles.h",
+      "replacedByCanonicalSymbol": "GetProfileStubText",
+      "ramOrCpuImpact": "No full-config copy per conversion; no profile stub copy unless the caller needs an owned buffer.",
+      "verifiedByTests": [
+        "EngineConfigConverterTest",
+        "PredefinedStubManagerTest",
+        "VirtualMixinDocumentTest"
+      ]
+    },
+    {
+      "id": "REF-M18-PROFILE-LOWER",
+      "phase": "M18",
+      "action": "CLEAN_SENTINEL",
+      "sourceFile": "server/src/analysis/types/EngineProfiles.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "static ToLowerString(std::string_view)",
+      "whatItDidAndWhyInThatFile": "Built a lowercase copy of profile names and workspace samples before comparing them with lowercase keywords.",
+      "whyChangedOrDeleted": "utils/Utils.h already provides allocation-free case-insensitive equality and containment.",
+      "replacedByCanonicalFile": "server/src/utils/Utils.h",
+      "replacedByCanonicalSymbol": "CaseInsensitiveEquals",
+      "ramOrCpuImpact": "One allocation fewer per profile lookup and per workspace sample.",
+      "verifiedByTests": [
+        "PredefinedStubManagerTest",
+        "EnginePropertiesAuditTest"
+      ]
+    },
+    {
+      "id": "REF-M18-PROFILE-STUBS-SPLIT",
+      "phase": "M18",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/types/EngineProfiles.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "928-line EngineProfiles.cpp",
+      "whatItDidAndWhyInThatFile": "Mixed five built-in AngelScript stub literals with the profile lookup logic.",
+      "whyChangedOrDeleted": "The literals and RawProfileStub moved unchanged to EngineProfileStubs.cpp, declared in an internal header under angel_lsp::analysis::profiles.",
+      "replacedByCanonicalFile": "server/src/analysis/types/EngineProfilesInternal.h",
+      "replacedByCanonicalSymbol": "RawProfileStub",
+      "ramOrCpuImpact": "None: identical literals.",
+      "verifiedByTests": [
+        "PredefinedStubManagerTest",
+        "PredefinedStubAuditTest"
+      ]
+    },
+    {
+      "id": "REF-M18-ENGINE-CONFIG-SPLIT",
+      "phase": "M18",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/types/EngineConfigConverter.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "442-line EngineConfigConverter.cpp",
+      "whatItDidAndWhyInThatFile": "Held dump tokenizing, directive parsing, stub formatting and the public entry points in one unit.",
+      "whyChangedOrDeleted": "Split by pure moves into EngineConfigParse, EngineConfigFormat and EngineConfigConverter; the six helpers shared across units are declared once in an internal header under angel_lsp::analysis::engine_config.",
+      "replacedByCanonicalFile": "server/src/analysis/types/EngineConfigInternal.h",
+      "replacedByCanonicalSymbol": "ProcessDeclarationDirective",
+      "ramOrCpuImpact": "None: identical function bodies.",
+      "verifiedByTests": [
+        "EngineConfigConverterTest"
       ]
     }
   ]

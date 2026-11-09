@@ -1,4 +1,4 @@
-#include "analysis/types/TypeExtraction.h"
+#include "analysis/index/TypeExtraction.h"
 
 #include "analysis/index/SyntaxOperands.h"
 #include "parser/ASTUtils.h"
@@ -207,9 +207,9 @@ class TypeReadWorklist
         }
     }
 
-    static void FinishDatatype(TypeReadFrame& frame, const std::string& name, TypeKind kind)
+    static void FinishDatatype(TypeReadFrame& frame, std::string_view name, TypeKind kind)
     {
-        frame.datatypeText = frame.scopePrefix + name;
+        frame.datatypeText = frame.scopePrefix + std::string(name);
         frame.result.baseTypeName = frame.datatypeText;
         frame.result.kind = kind;
     }

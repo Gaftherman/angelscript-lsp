@@ -46,7 +46,7 @@ std::vector<Diagnostic> AnalyzeScriptWithSvenProfile(const std::string& code,
     }
     else
     {
-        const std::string svenStub = GetProfileStubText(EngineProfileKind::SvenCoop);
+        const std::string svenStub(GetProfileStubText(EngineProfileKind::SvenCoop));
         collector.CollectSymbols(GetProfileSyntheticUri(EngineProfileKind::SvenCoop), svenStub, parser, table);
     }
     collector.CollectSymbols(fileUri, code, parser, table);

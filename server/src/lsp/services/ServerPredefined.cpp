@@ -108,7 +108,7 @@ void Server::UnloadStaleBuiltinEngineProfiles(const std::vector<angel_lsp::analy
 void Server::LoadEngineProfileStub(angel_lsp::analysis::EngineProfileKind pKind,
                                    angel_lsp::parser::AngelScriptParser& parser)
 {
-    const std::string stubSource = angel_lsp::analysis::GetProfileStubText(pKind);
+    const std::string stubSource(angel_lsp::analysis::GetProfileStubText(pKind));
     if (stubSource.empty())
     {
         return;

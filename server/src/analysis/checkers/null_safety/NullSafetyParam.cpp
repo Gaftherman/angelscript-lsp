@@ -2,8 +2,8 @@
 
 #include "analysis/checkers/null_safety/NullSafetyCondition.h"
 #include "analysis/index/SyntaxOperands.h"
+#include "analysis/index/TypeExtraction.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "analysis/types/TypeExtraction.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 

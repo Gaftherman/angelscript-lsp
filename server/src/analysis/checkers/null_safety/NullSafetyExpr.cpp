@@ -4,7 +4,7 @@
 #include "analysis/checkers/null_safety/NullSafetyCondition.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
 #include "analysis/index/SyntaxOperands.h"
-#include "analysis/types/TypeExtraction.h"
+#include "analysis/index/TypeExtraction.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 

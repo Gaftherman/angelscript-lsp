@@ -288,12 +288,11 @@ TEST_CASE("Parity - No errors on scripts the real AngelScript compiler accepts" 
 
     const bool useBuiltinProfile = !overrideDir.empty() && explicitStubPath.empty();
 
-    // Owned, not a view. GetProfileStubText answers by value - it rewrites the profile's inline
-    // list factories - so a view of it dangles the moment the ternary's temporary dies, which this
-    // test found as a SIGSEGV within one run of making that change.
+    // Owned, not a view. The stub is copied because the parser input must be owned.
     const std::string standardStub =
-        useBuiltinProfile ? angel_lsp::analysis::GetProfileStubText(angel_lsp::analysis::EngineProfileKind::Standard)
-                          : std::string();
+        useBuiltinProfile
+            ? std::string(angel_lsp::analysis::GetProfileStubText(angel_lsp::analysis::EngineProfileKind::Standard))
+            : std::string();
 
     size_t agreeAccept = 0;
     size_t agreeReject = 0;

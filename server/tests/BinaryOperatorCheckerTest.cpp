@@ -32,7 +32,7 @@ std::vector<Diagnostic> AnalyzeScriptWithStandardProfile(const std::string& code
     static i18n::I18n i18n;
 
     // Load standard built-in profile (defines string, ref, array, etc.)
-    const std::string stdStub = GetProfileStubText(EngineProfileKind::Standard);
+    const std::string stdStub(GetProfileStubText(EngineProfileKind::Standard));
     collector.CollectSymbols(GetProfileSyntheticUri(EngineProfileKind::Standard), stdStub, parser, table);
 
     // Collect user script symbols

@@ -52,9 +52,9 @@ std::vector<std::string_view> GetAvailableEngineProfiles();
 /**
  * @brief Retrieves the embedded AngelScript predefined stub source code for a profile.
  * @param kind The engine profile kind.
- * @return Source code content string view of the predefined declarations.
+ * @return A view of a static literal valid for the whole program.
  */
-std::string GetProfileStubText(EngineProfileKind kind);
+std::string_view GetProfileStubText(EngineProfileKind kind);
 
 /**
  * @brief Scheme and path every built-in profile's synthetic document URI starts with.

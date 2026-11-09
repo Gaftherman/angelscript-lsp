@@ -27,9 +27,10 @@
     "server/src/config",
     "server/src/utils",
     "server/src/analysis/diagnostics",
-    "server/src/analysis/documentation"
+    "server/src/analysis/documentation",
+    "server/src/analysis/types"
   ],
-  "active_folder": "server/src/analysis/types",
+  "active_folder": "server/src/analysis/mediator",
   "cross_module_impacts": [
     {
       "source_folder": "server/src/utils",
@@ -40,15 +41,14 @@
       "source_folder": "server/src/analysis/diagnostics",
       "target_folder": "server/src/analysis/checkers",
       "impact": "Checkers still hold TSNode and call DiagnosticContext::EmitAtNodeRange(ToOptionalSourceRange(node), ...); once they read indexed ranges, delete EmitAtNodeRange and ToOptionalSourceRange (analysis/index/Symbol.h)."
+    },
+    {
+      "source_folder": "server/src/analysis/types",
+      "target_folder": "server/src/analysis/checkers",
+      "impact": "TypeExtraction moved to analysis/index; BinaryOperatorHelpers, DefiniteAssignmentChecker, HandleComparisonChecker and null_safety/NullSafety{Condition,Decl,Expr,Param} still pass TSNode to ExtractTypeInfoFromAST/IsNullInitializer. Once they read indexed type facts, drop those calls from the checkers."
     }
   ],
   "pending_folders": [
-    {
-      "folder_path": "server/src/analysis/types",
-      "complexity_rank": 30,
-      "selection_rationale": "Semantic support (7 files, 782 lines) type representations, sanitization, and engine profiles.",
-      "files_to_refactor": []
-    },
     {
       "folder_path": "server/src/analysis/mediator",
       "complexity_rank": 31,

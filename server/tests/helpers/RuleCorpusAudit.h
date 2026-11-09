@@ -103,13 +103,13 @@ RunCorpusAudit(const std::function<bool(const std::string&)>& interesting, size_
         // measures a configuration nobody runs.
         if (profile != angel_lsp::analysis::EngineProfileKind::None)
         {
-            const std::string stub = angel_lsp::analysis::GetProfileStubText(profile);
+            const std::string stub(angel_lsp::analysis::GetProfileStubText(profile));
             if (!stub.empty())
             {
                 angel_lsp::parser::AngelScriptParser stubParser;
                 angel_lsp::analysis::SymbolCollector stubCollector(nullptr);
-                stubCollector.CollectSymbols(angel_lsp::analysis::GetProfileSyntheticUri(profile), std::string(stub),
-                                             stubParser, sharedTable);
+                stubCollector.CollectSymbols(angel_lsp::analysis::GetProfileSyntheticUri(profile), stub, stubParser,
+                                             sharedTable);
             }
         }
 

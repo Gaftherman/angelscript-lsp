@@ -3,7 +3,7 @@
 #include "analysis/diagnostics/Diagnostics.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/SymbolTable.h"
-#include "analysis/types/TypeExtraction.h"
+#include "analysis/index/TypeExtraction.h"
 #include "config/ServerConfig.h"
 #include "i18n/i18n.h"
 #include "parser/AngelScriptParser.h"

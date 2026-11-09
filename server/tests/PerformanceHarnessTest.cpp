@@ -247,8 +247,8 @@ TEST_CASE("Performance - PERF-02 Checkers Latency and Stub Invariant on Weapon S
     angel_lsp::analysis::SymbolTable table;
     angel_lsp::parser::AngelScriptParser stubParser;
     angel_lsp::analysis::SymbolCollector stubCollector(nullptr);
-    const std::string svenStub =
-        angel_lsp::analysis::GetProfileStubText(angel_lsp::analysis::EngineProfileKind::SvenCoop);
+    const std::string svenStub(
+        angel_lsp::analysis::GetProfileStubText(angel_lsp::analysis::EngineProfileKind::SvenCoop));
     stubCollector.CollectSymbols("predefined:///svencoop.as.predefined", svenStub, stubParser, table);
 
     const std::string weaponUri = "file:///weapon_ins2coach.as";

@@ -1,9 +1,9 @@
 #include "analysis/checkers/DefiniteAssignmentChecker.h"
 
 #include "analysis/index/NodeIndex.h"
+#include "analysis/index/TypeExtraction.h"
 #include "analysis/resolution/OverloadResolver.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "analysis/types/TypeExtraction.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/Utils.h"

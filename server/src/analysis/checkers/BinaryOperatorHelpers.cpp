@@ -1,9 +1,9 @@
 #include "analysis/checkers/BinaryOperatorHelpers.h"
 
 #include "analysis/index/SyntaxOperands.h"
+#include "analysis/index/TypeExtraction.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/ExpressionTypeCache.h"
-#include "analysis/types/TypeExtraction.h"
 #include "analysis/types/TypeSanitization.h"
 #include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
