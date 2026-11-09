@@ -24,6 +24,28 @@ void EmitExpressionIsDataType(TSNode node, const DiagnosticContext& ctx, std::st
     ctx.EmitAtNodeRange(ToOptionalSourceRange(node), diagnostics::codes::ExpressionIsDataType, dataTypeName);
 }
 
+void EmitExpressionIsDataType(const ConversionExpressionFact& expression, const DiagnosticContext& ctx,
+                              std::string_view dataTypeName)
+{
+    const auto* index = ctx.request.nodeIndex;
+    if (index && (index->HasSyntaxErrors() || index->IsInsideConditionalStatement(expression.bytes.startByte)))
+    {
+        return;
+    }
+    ctx.EmitAtRange(expression.range, diagnostics::codes::ExpressionIsDataType, dataTypeName);
+}
+
+const Scope* ResolveNodeScope(TSNode node, const TypeConversionCheckRequest& request)
+{
+    const TSPoint start = ts_node_start_point(node);
+    return FindInnermostScope(request.scopeRoot, start.row, start.column);
+}
+
+const Scope* ResolveNodeScope(const SourceRange& at, const TypeConversionCheckRequest& request)
+{
+    return FindInnermostScope(request.scopeRoot, at.startLine, at.startCharacter);
+}
+
 static bool IsUnsignedIntegerPrimitive(std::string_view typeName) noexcept
 {
     return typeName == "uint" || typeName == "uint8" || typeName == "uint16" || typeName == "uint32" ||

@@ -3035,6 +3035,22 @@
       "verifiedByTests": [
         "TypeConversionCheckerTest"
       ]
+    },
+    {
+      "id": "REF-M24B-CONVERSION-SITE-FACTS",
+      "phase": "M24B",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/TypeConversionConditions.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "CollectBooleanOperands; ExtractConditionNode; ProcessConditionNode; ProcessTernaryNode; ProcessExpressionStatementNode; ProcessForeachNode; ProcessAutoVariableDeclarators",
+      "whatItDidAndWhyInThatFile": "Condition, ternary, expression-statement, foreach and auto declaration checks walked TSNode children and read node points in the second-pass checkers folder.",
+      "whyChangedOrDeleted": "The pass-1 builder captures spans, spellings, boolean operand leaves and foreach variables once per syntax revision; the checkers consume ConversionSiteFacts through byte-range resolution overloads and SourceRange emits.",
+      "replacedByCanonicalFile": "server/src/analysis/index/ConversionSiteFacts.h",
+      "replacedByCanonicalSymbol": "BuildConversionSiteFacts",
+      "ramOrCpuImpact": "One O(N) extraction per revision and O(log N) exact-span lookups; no per-site child walks or owned text copies.",
+      "verifiedByTests": [
+        "TypeConversionCheckerTest"
+      ]
     }
   ]
 }

@@ -1,14 +1,13 @@
 #include "analysis/checkers/TypeConversionCommon.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
-#include "analysis/index/NodeIndex.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 #include "parser/Primitives.h"
 #include "utils/ScopedNameUtils.h"
 
 #include <string>
 #include <string_view>
+#include <variant>
 
 namespace angel_lsp::analysis
 {
@@ -18,7 +17,7 @@ static bool IsIncompleteOrIgnoredBranchType(std::string_view type)
     return type.empty() || type == "auto";
 }
 
-static bool AreTernaryBranchesIncompatible(const std::string& clean1, const std::string& clean2, DiagnosticContext& ctx)
+static bool AreTernaryBranchesIncompatible(std::string_view clean1, std::string_view clean2, DiagnosticContext& ctx)
 {
     if ((clean1 == "null" && IsHandleTypeView(clean2)) || (clean2 == "null" && IsHandleTypeView(clean1)))
     {
@@ -36,44 +35,37 @@ static bool AreTernaryBranchesIncompatible(const std::string& clean1, const std:
     return !IsConvertible(clean1, clean2, ctx) && !IsConvertible(clean2, clean1, ctx);
 }
 
-void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+void ProcessTernarySite(const TernarySiteFact& site, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    const SyntaxOperands syntax(node, ctx.request.nodeIndex);
-    TSNode consequence = syntax.Field(parser::GetGrammarSymbols().fieldConsequence);
-    TSNode alternative = syntax.Field(parser::GetGrammarSymbols().fieldAlternative);
-    if (ts_node_is_null(consequence) || ts_node_is_null(alternative))
-    {
-        return;
-    }
+    const ConversionExpressionFact& consequence = site.consequence;
+    const ConversionExpressionFact& alternative = site.alternative;
 
-    const Scope* scope = ResolveNodeScope(node, request);
-    if (const auto dt1 = IsBareDataType(consequence, ExpressionTypeContext(scope, ctx)))
+    const Scope* scope = ResolveNodeScope(site.range, request);
+    if (const auto dt1 = IsBareDataType(consequence.bytes, ExpressionTypeContext(scope, ctx)))
     {
         EmitExpressionIsDataType(consequence, ctx, *dt1);
         return;
     }
-    if (const auto dt2 = IsBareDataType(alternative, ExpressionTypeContext(scope, ctx)))
+    if (const auto dt2 = IsBareDataType(alternative.bytes, ExpressionTypeContext(scope, ctx)))
     {
         EmitExpressionIsDataType(alternative, ctx, *dt2);
         return;
     }
 
-    const std::string t1 = ResolveExpressionType(consequence, ExpressionTypeContext(scope, ctx));
-    const std::string t2 = ResolveExpressionType(alternative, ExpressionTypeContext(scope, ctx));
+    const auto t1 = ResolveExpressionType(consequence.bytes, ExpressionTypeContext(scope, ctx));
+    const auto t2 = ResolveExpressionType(alternative.bytes, ExpressionTypeContext(scope, ctx));
 
-    const std::string clean1 = CanonicalizeType(CleanExpressionType(t1));
-    const std::string clean2 = CanonicalizeType(CleanExpressionType(t2));
+    const auto clean1 = CanonicalizeType(CleanExpressionType(t1));
+    const auto clean2 = CanonicalizeType(CleanExpressionType(t2));
 
-    if (IsFunctionReference(consequence, ExpressionTypeContext(scope, ctx)))
+    if (IsFunctionReference(consequence.bytes, ExpressionTypeContext(scope, ctx)))
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(consequence), "as-err-no-implicit-conversion",
-                            {std::string(TrimString(parser::NodeText(consequence, request.sourceCode))), clean2});
+        ctx.EmitAtRange(consequence.range, "as-err-no-implicit-conversion", {TrimString(consequence.text), clean2});
         return;
     }
-    if (IsFunctionReference(alternative, ExpressionTypeContext(scope, ctx)))
+    if (IsFunctionReference(alternative.bytes, ExpressionTypeContext(scope, ctx)))
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(alternative), "as-err-no-implicit-conversion",
-                            {std::string(TrimString(parser::NodeText(alternative, request.sourceCode))), clean1});
+        ctx.EmitAtRange(alternative.range, "as-err-no-implicit-conversion", {TrimString(alternative.text), clean1});
         return;
     }
 
@@ -84,32 +76,29 @@ void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, 
 
     if (AreTernaryBranchesIncompatible(clean1, clean2, ctx))
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(alternative), "as-err-no-implicit-conversion", {clean2, clean1});
+        ctx.EmitAtRange(alternative.range, "as-err-no-implicit-conversion", {clean2, clean1});
     }
 }
 
-void ProcessExpressionStatementNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+void ProcessExpressionStatementSite(const ExpressionStatementSiteFact& site, const TypeConversionCheckRequest& request,
+                                    DiagnosticContext& ctx)
 {
-    TSNode expr = SyntaxOperands(node, ctx.request.nodeIndex).FirstNamed();
-    if (ts_node_is_null(expr))
-    {
-        return;
-    }
+    const ConversionExpressionFact& expr = site.expression;
 
-    const Scope* scope = ResolveNodeScope(node, request);
-    if (const auto dataTypeName = IsBareDataType(expr, ExpressionTypeContext(scope, ctx)))
+    const Scope* scope = ResolveNodeScope(site.statementRange, request);
+    if (const auto dataTypeName = IsBareDataType(expr.bytes, ExpressionTypeContext(scope, ctx)))
     {
         EmitExpressionIsDataType(expr, ctx, *dataTypeName);
         return;
     }
 
-    if (IsFunctionReference(expr, ExpressionTypeContext(scope, ctx)))
+    if (IsFunctionReference(expr.bytes, ExpressionTypeContext(scope, ctx)))
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), diagnostics::codes::IllegalOperation);
+        ctx.EmitAtRange(expr.range, diagnostics::codes::IllegalOperation);
         return;
     }
 
-    const std::string text = std::string(TrimString(parser::NodeText(expr, request.sourceCode)));
+    const std::string_view text = TrimString(expr.text);
     if (!text.empty())
     {
         if (auto syms = ctx.request.symbolTable.FindSymbolsPtr(text))
@@ -125,28 +114,34 @@ void ProcessExpressionStatementNode(TSNode node, const TypeConversionCheckReques
             }
             if (onlyNs)
             {
-                ctx.EmitAtNodeRange(ToOptionalSourceRange(expr), "as-err-undefined-identifier", text);
+                ctx.EmitAtRange(expr.range, "as-err-undefined-identifier", text);
             }
         }
     }
 }
 
-static std::string ForeachValueType(const std::string& containerType, uint32_t variableIndex,
-                                    const DiagnosticContext& ctx)
+/**
+ * @brief Resolves the type a foreach variable receives from the container's `opForValueN` method.
+ * @param[in] containerType Resolved type of the iterated expression.
+ * @param[in] variableIndex Ordinal of the loop variable, which selects the method suffix.
+ * @param[in] ctx Diagnostic context carrying the symbol table.
+ * @return Cleaned value type, or an empty string when no inherited `opForValueN` returns a value.
+ */
+static auto ForeachValueType(std::string_view containerType, uint32_t variableIndex, const DiagnosticContext& ctx)
 {
-    const std::string cleaned = CleanExpressionType(containerType);
+    auto cleaned = CleanExpressionType(containerType);
     if (cleaned.empty())
     {
-        return {};
+        return cleaned;
     }
 
-    const size_t open = cleaned.find('<');
-    const std::string bare{LastScopeSegment((open == std::string::npos) ? cleaned : cleaned.substr(0, open))};
+    const std::string_view cleanedView{cleaned};
+    const auto bare = LastScopeSegment(cleanedView.substr(0, cleanedView.find('<')));
 
     const TemplateBinding binding = BindTemplateArguments(cleaned, ctx.request.symbolTable);
-    const std::string method = "opForValue" + std::to_string(variableIndex);
+    const auto method = "opForValue" + std::to_string(variableIndex);
 
-    for (const std::string& candidate : GetInheritedTypeHierarchy(bare, ctx.request.symbolTable))
+    for (const auto& candidate : GetInheritedTypeHierarchy(bare, ctx.request.symbolTable))
     {
         const auto overloads = ctx.request.symbolTable.FindMemberSymbolPtr(candidate, method);
         if (!overloads)
@@ -160,7 +155,7 @@ static std::string ForeachValueType(const std::string& containerType, uint32_t v
                 continue;
             }
 
-            std::string returnType = std::get<FunctionSignature>(overload.signature).returnType;
+            auto returnType = std::get<FunctionSignature>(overload.signature).returnType;
             if (returnType.empty() || returnType == "void")
             {
                 continue;
@@ -176,65 +171,56 @@ static std::string ForeachValueType(const std::string& containerType, uint32_t v
         }
     }
 
-    return {};
+    cleaned.clear();
+    return cleaned;
 }
 
-static void InferForeachVariables(TSNode node, const std::string& containerType,
+/**
+ * @brief Writes the inferred value type back into each `auto` foreach variable.
+ * @param[in] site Foreach site whose variable slice is visited.
+ * @param[in] containerType Resolved type of the iterated expression.
+ * @param[in] request Analysis request carrying the scope tree and variable facts.
+ * @param[in,out] ctx Diagnostic context.
+ */
+static void InferForeachVariables(const ForeachSiteFact& site, std::string_view containerType,
                                   const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    uint32_t variableIndex = 0;
-    SyntaxOperands(node, ctx.request.nodeIndex)
-        .ForEachNamedOperands(
-            [&](const SyntaxOperands& child)
-            {
-                if (child.Symbol() != parser::GetGrammarSymbols().symForeachVariable)
-                {
-                    return true;
-                }
+    for (uint32_t i = 0; i < site.variableCount; ++i)
+    {
+        const ForeachVariableFact& variable = request.conversionSites->foreachVariables[site.variableBegin + i];
+        const auto valueType = ForeachValueType(containerType, variable.ordinal, ctx);
+        if (variable.name.empty() || valueType.empty())
+        {
+            continue;
+        }
 
-                TSNode nameNode = child.Field(parser::GetGrammarSymbols().fieldName);
-                const std::string valueType = ForeachValueType(containerType, variableIndex, ctx);
-                ++variableIndex;
+        const SourceRange& at = variable.nameRange;
+        const Scope* bodyScope = FindEnclosingScope(request.scopeRoot, at.startLine, at.startCharacter);
+        const LocalDefinition* def = ResolveInScope(
+            bodyScope ? bodyScope : FindInnermostScope(request.scopeRoot, at.startLine, at.startCharacter),
+            variable.name);
 
-                if (ts_node_is_null(nameNode) || valueType.empty())
-                {
-                    return true;
-                }
-
-                const TSPoint namePoint = ts_node_start_point(nameNode);
-                const Scope* bodyScope = FindEnclosingScope(request.scopeRoot, namePoint.row, namePoint.column);
-                const LocalDefinition* def = ResolveInScope(
-                    bodyScope ? bodyScope : FindInnermostScope(request.scopeRoot, namePoint.row, namePoint.column),
-                    parser::NodeText(nameNode, request.sourceCode));
-
-                if (def && CleanBaseType(def->typeName) == "auto")
-                {
-                    const_cast<LocalDefinition*>(def)->typeName = valueType;
-                }
-                return true;
-            });
+        if (def && CleanBaseType(def->typeName) == "auto")
+        {
+            const_cast<LocalDefinition*>(def)->typeName = valueType;
+        }
+    }
 }
 
-void ProcessForeachNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+void ProcessForeachSite(const ForeachSiteFact& site, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    TSNode collection = SyntaxOperands(node, ctx.request.nodeIndex).Field(parser::GetGrammarSymbols().fieldCollection);
-    if (ts_node_is_null(collection))
-    {
-        return;
-    }
+    const Scope* scope = ResolveNodeScope(site.statementRange, request);
+    const auto containerType = ResolveExpressionType(site.collection.bytes, ExpressionTypeContext(scope, ctx));
 
-    const Scope* scope = ResolveNodeScope(node, request);
-    const std::string containerType = ResolveExpressionType(collection, ExpressionTypeContext(scope, ctx));
-
-    const std::string containerBase = CleanExpressionType(containerType);
+    const auto containerBase = CleanExpressionType(containerType);
     if (IsCorePrimitive(containerBase) && containerBase != "auto" && containerBase != "void")
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(collection), "as-err-invalid-foreach-container", containerBase);
+        ctx.EmitAtRange(site.collection.range, "as-err-invalid-foreach-container", containerBase);
     }
 
     if (!containerType.empty() && request.mutableScopeRoot)
     {
-        InferForeachVariables(node, containerType, request, ctx);
+        InferForeachVariables(site, containerType, request, ctx);
     }
 }
 

@@ -272,7 +272,11 @@ void ProcessVariableDeclarationNode(TSNode node, const TypeConversionCheckReques
     const std::string rawType = CleanBaseType(parser::NodeText(typeNode, request.sourceCode));
     if (rawType == "auto")
     {
-        ProcessAutoVariableDeclarators(node, request, ctx);
+        const IndexedByteRange span{ts_node_start_byte(node), ts_node_end_byte(node)};
+        if (const AutoDeclarationSiteFact* site = request.conversionSites->FindAutoDeclaration(span))
+        {
+            ProcessAutoDeclarationSite(*site, request, ctx);
+        }
     }
     else
     {

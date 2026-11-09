@@ -2,6 +2,7 @@
 
 #include "analysis/diagnostics/DiagnosticContext.h"
 #include "analysis/index/BinaryExpressionFacts.h"
+#include "analysis/index/ConversionSiteFacts.h"
 #include "analysis/types/TypeConversionValues.h"
 
 #include <string_view>
@@ -39,6 +40,9 @@ struct TypeConversionCheckRequest
 
     /// Binary expression and if-ladder facts; CheckTypeConversions builds them once when left null.
     const BinaryExpressionFacts* binaryFacts = nullptr;
+
+    /// Condition, ternary, expression-statement, foreach and `auto` sites; built once when left null.
+    const ConversionSiteFacts* conversionSites = nullptr;
 };
 
 /**

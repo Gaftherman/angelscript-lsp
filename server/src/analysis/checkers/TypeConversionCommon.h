@@ -240,6 +240,15 @@ void CheckAssignmentPropertyAccess(TSNode node, const Scope* scope, DiagnosticCo
 void EmitExpressionIsDataType(TSNode node, const DiagnosticContext& ctx, std::string_view dataTypeName);
 
 /**
+ * @brief Emits an ExpressionIsDataType diagnostic for an indexed expression unless suppressed due to syntax errors.
+ * @param[in] expression Indexed expression fact.
+ * @param[in] ctx Diagnostic context.
+ * @param[in] dataTypeName Name of the data type used as an expression.
+ */
+void EmitExpressionIsDataType(const ConversionExpressionFact& expression, const DiagnosticContext& ctx,
+                              std::string_view dataTypeName);
+
+/**
  * @brief Validates signedness compatibility in binary comparison expressions.
  * @param[in] fact Binary comparison facts.
  * @param[in] scope Enclosing lexical scope.
@@ -320,6 +329,14 @@ void CheckFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSi
 const Scope* ResolveNodeScope(TSNode node, const TypeConversionCheckRequest& request);
 
 /**
+ * @brief Resolves the lexical scope enclosing an indexed source position.
+ * @param[in] at Span whose start selects the scope.
+ * @param[in] request Analysis request carrying scope root.
+ * @return Enclosing scope pointer, or nullptr if none found.
+ */
+const Scope* ResolveNodeScope(const SourceRange& at, const TypeConversionCheckRequest& request);
+
+/**
  * @brief Finds the boolean conversion operator (opImplConv or opConv) for a class.
  * @param[in] typeName Target type name.
  * @param[in] table Symbol table to query.
@@ -328,36 +345,38 @@ const Scope* ResolveNodeScope(TSNode node, const TypeConversionCheckRequest& req
 std::string_view BoolConversionOperator(std::string_view typeName, const SymbolTable& table);
 
 /**
- * @brief Validates condition semantics for control flow statements.
- * @param[in] node Control flow syntax node.
+ * @brief Validates condition semantics for control flow statements and ternary expressions.
+ * @param[in] site Indexed condition site.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic context.
  */
-void ProcessConditionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
+void ProcessConditionSite(const ConditionSiteFact& site, const TypeConversionCheckRequest& request,
+                          DiagnosticContext& ctx);
 
 /**
  * @brief Validates ternary expression branches for type compatibility.
- * @param[in] node Ternary expression syntax node.
+ * @param[in] site Indexed ternary site.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic context.
  */
-void ProcessTernaryNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
+void ProcessTernarySite(const TernarySiteFact& site, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
 
 /**
  * @brief Validates expression statements that bare data type names.
- * @param[in] node Expression statement syntax node.
+ * @param[in] site Indexed expression statement site.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic context.
  */
-void ProcessExpressionStatementNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
+void ProcessExpressionStatementSite(const ExpressionStatementSiteFact& site, const TypeConversionCheckRequest& request,
+                                    DiagnosticContext& ctx);
 
 /**
- * @brief Validates container iteration in foreach statements.
- * @param[in] node Foreach statement node.
+ * @brief Validates container iteration in foreach statements and infers loop variable types.
+ * @param[in] site Indexed foreach site.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic context.
  */
-void ProcessForeachNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
+void ProcessForeachSite(const ForeachSiteFact& site, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
 
 /**
  * @brief Validates variable declaration nodes across auto and explicit types.
@@ -369,11 +388,12 @@ void ProcessVariableDeclarationNode(TSNode node, const TypeConversionCheckReques
 
 /**
  * @brief Validates auto-inferred variable declarations.
- * @param[in] node Variable declaration syntax node.
+ * @param[in] site Indexed `auto` declaration site.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic context.
  */
-void ProcessAutoVariableDeclarators(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
+void ProcessAutoDeclarationSite(const AutoDeclarationSiteFact& site, const TypeConversionCheckRequest& request,
+                                DiagnosticContext& ctx);
 
 /**
  * @brief Validates assignment expression semantics and type compatibility.

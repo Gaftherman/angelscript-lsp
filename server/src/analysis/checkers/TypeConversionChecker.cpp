@@ -2,6 +2,7 @@
 
 #include "analysis/checkers/TypeConversionCommon.h"
 #include "analysis/index/BinaryExpressionFacts.h"
+#include "analysis/index/ConversionSiteFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
@@ -57,18 +58,34 @@ void ProcessCallOrConstructNode(TSNode node, const TypeConversionCheckRequest& r
     }
 }
 
+/**
+ * @brief Reads the byte span of a node, which keys the indexed site lookups.
+ * @param[in] node Syntax node dispatched by the driver.
+ * @return Start and end byte of the node.
+ */
+static IndexedByteRange SpanOf(TSNode node)
+{
+    return IndexedByteRange{ts_node_start_byte(node), ts_node_end_byte(node)};
+}
+
 static bool ProcessStatementNode(TSSymbol sym, TSNode node, const TypeConversionCheckRequest& request,
                                  DiagnosticContext& ctx)
 {
     const auto& gs = parser::GetGrammarSymbols();
     if (sym == gs.symExpressionStatement)
     {
-        ProcessExpressionStatementNode(node, request, ctx);
+        if (const auto* site = request.conversionSites->FindExpressionStatement(SpanOf(node)))
+        {
+            ProcessExpressionStatementSite(*site, request, ctx);
+        }
         return true;
     }
     if (sym == gs.symForeachStatement)
     {
-        ProcessForeachNode(node, request, ctx);
+        if (const auto* site = request.conversionSites->FindForeach(SpanOf(node)))
+        {
+            ProcessForeachSite(*site, request, ctx);
+        }
         return true;
     }
     if (sym == gs.symVariableDeclaration)
@@ -128,15 +145,19 @@ static void ProcessNode(TSNode node, const TypeConversionCheckRequest& request, 
     const auto& gs = parser::GetGrammarSymbols();
     const TSSymbol sym = ts_node_symbol(node);
     if (sym == gs.symIfStatement || sym == gs.symWhileStatement || sym == gs.symDoWhileStatement ||
-        sym == gs.symForStatement)
+        sym == gs.symForStatement || sym == gs.symTernaryExpression)
     {
-        ProcessConditionNode(node, request, ctx);
-        return;
-    }
-    if (sym == gs.symTernaryExpression)
-    {
-        ProcessConditionNode(node, request, ctx);
-        ProcessTernaryNode(node, request, ctx);
+        if (const auto* site = request.conversionSites->FindCondition(SpanOf(node)))
+        {
+            ProcessConditionSite(*site, request, ctx);
+        }
+        if (sym == gs.symTernaryExpression)
+        {
+            if (const auto* ternary = request.conversionSites->FindTernary(SpanOf(node)))
+            {
+                ProcessTernarySite(*ternary, request, ctx);
+            }
+        }
         return;
     }
 
@@ -163,8 +184,14 @@ void CheckTypeConversions(const TypeConversionCheckRequest& request, DiagnosticC
     {
         localFacts.emplace(BuildBinaryExpressionFacts(request.nodeIndex, request.sourceCode));
     }
+    std::optional<ConversionSiteFacts> localSites;
+    if (!request.conversionSites)
+    {
+        localSites.emplace(BuildConversionSiteFacts(request.nodeIndex, request.sourceCode));
+    }
     TypeConversionCheckRequest withFacts = request;
     withFacts.binaryFacts = request.binaryFacts ? request.binaryFacts : &*localFacts;
+    withFacts.conversionSites = request.conversionSites ? request.conversionSites : &*localSites;
 
     if (ctx.logger && ctx.logger->IsDebugEnabled())
     {

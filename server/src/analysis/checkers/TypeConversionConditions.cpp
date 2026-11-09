@@ -1,107 +1,28 @@
 #include "analysis/checkers/RepeatedConversionChecker.h"
 #include "analysis/checkers/TypeConversionCommon.h"
-#include "analysis/index/NodeIndex.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 
-#include <string>
-#include <vector>
+#include <string_view>
+#include <variant>
 
 namespace angel_lsp::analysis
 {
 
-static bool IsLogicalBinaryOperator(TSSymbol sym, const parser::GrammarSymbols& gs)
-{
-    return sym == gs.tokAmpAmp || sym == gs.tokAnd || sym == gs.tokPipePipe || sym == gs.tokOr ||
-           sym == gs.tokCaretCaret || sym == gs.tokXor;
-}
-
-static bool IsLogicalUnaryOperator(TSSymbol sym, const parser::GrammarSymbols& gs)
-{
-    return sym == gs.tokBang || sym == gs.tokNot;
-}
-
-static void CollectBooleanOperands(TSNode rootExpr, const NodeIndex* index, std::vector<TSNode>& operands)
-{
-    if (ts_node_is_null(rootExpr))
-    {
-        return;
-    }
-
-    std::vector<TSNode> worklist{rootExpr};
-    const auto& gs = parser::GetGrammarSymbols();
-
-    while (!worklist.empty())
-    {
-        TSNode expr = worklist.back();
-        worklist.pop_back();
-
-        if (ts_node_is_null(expr))
-        {
-            continue;
-        }
-
-        const TSSymbol sym = ts_node_symbol(expr);
-
-        const SyntaxOperands exprOperands(expr, index);
-        if (sym == gs.symBinaryExpression)
-        {
-            const TSNode op = exprOperands.Field(gs.fieldOperator);
-            const TSSymbol opSym = ts_node_is_null(op) ? 0 : ts_node_symbol(op);
-            if (IsLogicalBinaryOperator(opSym, gs))
-            {
-                worklist.push_back(exprOperands.Field(gs.fieldRight));
-                worklist.push_back(exprOperands.Field(gs.fieldLeft));
-                continue;
-            }
-        }
-        else if (sym == gs.symUnaryExpression)
-        {
-            const TSNode op = exprOperands.Field(gs.fieldOperator);
-            const TSSymbol opSym = ts_node_is_null(op) ? 0 : ts_node_symbol(op);
-            if (IsLogicalUnaryOperator(opSym, gs))
-            {
-                worklist.push_back(exprOperands.Field(gs.fieldOperand));
-                continue;
-            }
-        }
-
-        operands.push_back(expr);
-    }
-}
-
-const Scope* ResolveNodeScope(TSNode node, const TypeConversionCheckRequest& request)
-{
-    const TSPoint start = ts_node_start_point(node);
-    return FindInnermostScope(request.scopeRoot, start.row, start.column);
-}
-
-static TSNode ExtractConditionNode(TSNode node, TSSymbol sym, const NodeIndex* index)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const SyntaxOperands syntax(node, index);
-    TSNode condition = syntax.Field(gs.fieldCondition);
-    if (!ts_node_is_null(condition) && ts_node_symbol(condition) == gs.symExpressionStatement)
-    {
-        condition = SyntaxOperands(condition, index).FirstNamed();
-    }
-    if (ts_node_is_null(condition))
-    {
-        condition = syntax.NamedAt(sym == gs.symDoWhileStatement ? 1 : 0);
-    }
-    return condition;
-}
-
-static void ValidateConditionOperand(TSNode operand, const std::string& operandType, DiagnosticContext& ctx)
+/**
+ * @brief Reports a condition operand that is not boolean, or hints at its implicit bool conversion.
+ * @param[in] operand Indexed leaf operand of the condition.
+ * @param[in] operandType Cleaned base type of the operand.
+ * @param[in,out] ctx Diagnostic context.
+ */
+static void ValidateConditionOperand(const ConversionExpressionFact& operand, std::string_view operandType,
+                                     DiagnosticContext& ctx)
 {
     const bool isKnown = IsKnownType(operandType, ctx);
 
     if (isKnown && !IsTruthyCondition(operandType, ctx.request.symbolTable))
     {
-        const TSPoint start = ts_node_start_point(operand);
-        const TSPoint end = ts_node_end_point(operand);
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-condition-not-boolean", operandType);
+        ctx.EmitAtRange(operand.range, "as-err-condition-not-boolean", operandType);
         return;
     }
 
@@ -114,22 +35,24 @@ static void ValidateConditionOperand(TSNode operand, const std::string& operandT
     if (const std::string_view conversion = BoolConversionOperator(operandType, ctx.request.symbolTable);
         !conversion.empty())
     {
-        const TSPoint start = ts_node_start_point(operand);
-        const TSPoint end = ts_node_end_point(operand);
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-hint-bool-conversion",
-                        {operandType, conversion}, DiagnosticSeverity::Hint);
+        ctx.EmitAtRange(operand.range, "as-hint-bool-conversion", {operandType, conversion}, DiagnosticSeverity::Hint);
     }
 }
 
-static void CheckBooleanOperands(TSNode condition, const Scope* scope, DiagnosticContext& ctx)
+/**
+ * @brief Validates every leaf operand of a condition against the boolean conversion rules.
+ * @param[in] facts Document conversion sites owning the operand slice.
+ * @param[in] site Condition site whose operand slice is visited.
+ * @param[in] scope Lexical scope the condition is evaluated in.
+ * @param[in,out] ctx Diagnostic context.
+ */
+static void CheckBooleanOperands(const ConversionSiteFacts& facts, const ConditionSiteFact& site, const Scope* scope,
+                                 DiagnosticContext& ctx)
 {
-    std::vector<TSNode> operands;
-    CollectBooleanOperands(condition, ctx.request.nodeIndex, operands);
-
-    for (const TSNode& operand : operands)
+    for (uint32_t i = 0; i < site.operandCount; ++i)
     {
-        const std::string operandType =
-            CleanBaseType(ResolveExpressionType(operand, ExpressionTypeContext(scope, ctx)));
+        const ConversionExpressionFact& operand = facts.booleanOperands[site.operandBegin + i];
+        const auto operandType = CleanBaseType(ResolveExpressionType(operand.bytes, ExpressionTypeContext(scope, ctx)));
 
         if (operandType.empty() || operandType == "auto" || operandType == "void")
         {
@@ -140,11 +63,16 @@ static void CheckBooleanOperands(TSNode condition, const Scope* scope, Diagnosti
     }
 }
 
-static void CheckRefTypeBoolConversion(TSNode condNode, const Scope* scope, DiagnosticContext& ctx)
+/**
+ * @brief Rejects a handle condition whose class converts to bool through `opImplConv`.
+ * @param[in] unwrapped Condition with parentheses removed; absent facts end the check.
+ * @param[in] scope Lexical scope the condition is evaluated in.
+ * @param[in,out] ctx Diagnostic context.
+ */
+static void CheckRefTypeBoolConversion(const ConversionExpressionFact& unwrapped, const Scope* scope,
+                                       DiagnosticContext& ctx)
 {
-    const TSNode current = UnwrapIndexedParentheses(condNode, ctx.request.nodeIndex);
-
-    if (ts_node_is_null(current))
+    if (!unwrapped.Present())
     {
         return;
     }
@@ -152,21 +80,20 @@ static void CheckRefTypeBoolConversion(TSNode condNode, const Scope* scope, Diag
     bool isHandleTarget = false;
     if (scope)
     {
-        const std::string name(parser::NodeText(current, ctx.request.sourceCode));
-        const LocalDefinition* def = ResolveInScopeAt(scope, name, ts_node_start_byte(current));
+        const LocalDefinition* def = ResolveInScopeAt(scope, unwrapped.text, unwrapped.bytes.startByte);
         if (def)
         {
             isHandleTarget = def->isHandleType || IsHandleTypeView(def->typeName);
         }
     }
 
-    const std::string condType = ResolveExpressionType(current, ExpressionTypeContext(scope, ctx));
+    const auto condType = ResolveExpressionType(unwrapped.bytes, ExpressionTypeContext(scope, ctx));
     if (!isHandleTarget && !IsHandleTypeView(condType))
     {
         return;
     }
 
-    const std::string baseClass = CleanBaseType(condType);
+    const auto baseClass = CleanBaseType(condType);
     auto opSyms = ctx.request.symbolTable.FindMemberSymbolPtr(baseClass, "opImplConv");
     if (!opSyms)
     {
@@ -179,42 +106,29 @@ static void CheckRefTypeBoolConversion(TSNode condNode, const Scope* scope, Diag
         {
             if (CleanBaseType(sym.GetFunction().returnType) == "bool")
             {
-                ctx.EmitAtNodeRange(ToOptionalSourceRange(current), "as-err-ref-type-bool-conv-disallowed",
-                                    {baseClass, "bool"});
+                ctx.EmitAtRange(unwrapped.range, "as-err-ref-type-bool-conv-disallowed", {baseClass, "bool"});
                 break;
             }
         }
     }
 }
 
-void ProcessConditionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+void ProcessConditionSite(const ConditionSiteFact& site, const TypeConversionCheckRequest& request,
+                          DiagnosticContext& ctx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(node);
-    TSNode condition = ExtractConditionNode(node, sym, ctx.request.nodeIndex);
-    if (ts_node_is_null(condition))
+    const Scope* scope = ResolveNodeScope(site.statementRange, request);
+    CheckBooleanOperands(*request.conversionSites, site, scope, ctx);
+
+    if (!site.isTernary)
     {
-        return;
+        CheckRefTypeBoolConversion(site.unwrapped, scope, ctx);
     }
 
-    const Scope* scope = ResolveNodeScope(node, request);
-    CheckBooleanOperands(condition, scope, ctx);
-
-    if (sym != gs.symTernaryExpression)
+    if (site.isRootIf)
     {
-        CheckRefTypeBoolConversion(condition, scope, ctx);
-    }
-
-    if (sym == gs.symIfStatement)
-    {
-        const auto* fact = request.nodeIndex.FindOperandSyntax(node);
-        if (!fact || fact->parentSymbol != gs.symIfStatement)
+        if (const IfLadderFact* ladder = request.binaryFacts->FindLadder(site.bytes))
         {
-            const IndexedByteRange rootSpan{ts_node_start_byte(node), ts_node_end_byte(node)};
-            if (const IfLadderFact* ladder = request.binaryFacts->FindLadder(rootSpan))
-            {
-                CheckRepeatedConversions(*ladder, *request.binaryFacts, scope, ctx);
-            }
+            CheckRepeatedConversions(*ladder, *request.binaryFacts, scope, ctx);
         }
     }
 }
