@@ -1,23 +1,22 @@
 #include "analysis/checkers/TypeConversionCommon.h"
 #include "analysis/index/NodeIndex.h"
-#include "analysis/resolution/InlayResolutionInternal.h"
+#include "analysis/index/ValueExpressionFacts.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 #include "utils/ScopedNameUtils.h"
 
-#include <string>
 #include <string_view>
-#include <vector>
 
 namespace angel_lsp::analysis
 {
 
 /**
  * @brief Classifies a numeric literal as integral or floating point.
+ * @param[in] text Literal spelling.
+ * @return "float" when the spelling is decimal and carries a point, exponent or suffix; "int" otherwise.
  */
-static std::string ClassifyNumberLiteral(std::string_view text)
+static std::string_view ClassifyNumberLiteral(std::string_view text)
 {
     const bool isHex = text.size() > 1 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X');
     if (!isHex)
@@ -34,41 +33,54 @@ static std::string ClassifyNumberLiteral(std::string_view text)
 }
 
 /**
- * @brief Finds the class a 'this' expression refers to at a given node.
+ * @brief Resolves the type of `this` from the class or interface that encloses the expression.
+ * @param[in] value Identifier fact of the `this` expression.
+ * @param[in] ctx Diagnostic context.
+ * @return The enclosing class type, or an unknown type outside any class.
  */
-static std::string EnclosingClassName(TSNode node, std::string_view sourceCode, const NodeIndex* nodeIndex)
+static ExpressionType ResolveThisValueType(const ValueExpressionFact& value, const DiagnosticContext& ctx)
 {
-    for (const auto& container : GetEnclosingContainers(node, sourceCode, nodeIndex))
+    if (!ctx.request.nodeIndex)
+    {
+        return {};
+    }
+    const auto containers = ctx.request.nodeIndex->CollectLookupContainers(value.bytes.startByte, value.bytes.endByte,
+                                                                           value.nodeSymbol, ctx.request.sourceCode);
+    for (const auto& container : containers)
     {
         if (container.kind == ContainerKind::Class || container.kind == ContainerKind::Interface)
         {
-            return container.name;
+            return ExpressionType{container.name, true, false};
         }
     }
-    return "";
+    return {};
 }
 
-ExpressionType ResolveIdentifierValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
+/**
+ * @brief Resolves a variable or property name through the local scope, then the symbol table.
+ * @param[in] value Identifier fact.
+ * @param[in] scope Lexical scope at the expression position.
+ * @param[in] ctx Diagnostic context.
+ * @return The declared type, or an unknown type when no typed variable matches.
+ */
+static ExpressionType ResolveIdentifierValueType(const ValueExpressionFact& value, const Scope* scope,
+                                                 const DiagnosticContext& ctx)
 {
-    const std::string name(parser::NodeText(node, ctx.request.sourceCode));
-    if (name == "this")
+    if (value.text == "this")
     {
-        const std::string className = EnclosingClassName(node, ctx.request.sourceCode, ctx.request.nodeIndex);
-        return className.empty() ? ExpressionType{} : ExpressionType{className, true, false};
+        return ResolveThisValueType(value, ctx);
     }
-
     if (scope)
     {
-        if (const LocalDefinition* def = ResolveInScopeAt(scope, name, ts_node_start_byte(node));
+        if (const LocalDefinition* def = ResolveInScopeAt(scope, value.text, value.bytes.startByte);
             def && !def->typeName.empty())
         {
             const bool isConst = def->isConst || IsConstTypeView(def->typeName);
             return ExpressionType{CleanBaseType(def->typeName), true, false, isConst};
         }
     }
-
     ExpressionType result;
-    ForEachSymbolNamed(name, ctx.request.symbolTable,
+    ForEachSymbolNamed(value.text, ctx.request.symbolTable,
                        [&result](const Symbol& sym)
                        {
                            if (sym.type != SymbolType::Variable && sym.type != SymbolType::Property)
@@ -87,29 +99,23 @@ ExpressionType ResolveIdentifierValueType(TSNode node, const Scope* scope, const
     return result;
 }
 
-ExpressionType ResolveCallValueType(TSNode node, const DiagnosticContext& ctx)
+/**
+ * @brief Resolves the result type of a call or construct call from its callee spelling.
+ * @param[in] value Call fact whose text is the callee.
+ * @param[in] ctx Diagnostic context.
+ * @return The constructed type or the return type of the first matching function.
+ */
+static ExpressionType ResolveCallValueType(const ValueExpressionFact& value, const DiagnosticContext& ctx)
 {
-    TSNode callee = SyntaxOperands(node, ctx.request.nodeIndex).Callee();
-    if (ts_node_is_null(callee))
-    {
-        return ExpressionType{};
-    }
-
-    const std::string calleeName = CleanBaseType(parser::NodeText(callee, ctx.request.sourceCode));
+    const auto calleeName = CleanBaseType(value.text);
     if (calleeName.empty())
     {
-        return ExpressionType{};
+        return {};
     }
-
-    if (FindTypeDeclaration(calleeName, ctx.request.symbolTable).found)
+    if (FindTypeDeclaration(calleeName, ctx.request.symbolTable).found || IsBuiltInValueType(calleeName, ctx))
     {
         return ExpressionType{calleeName, true, false, false};
     }
-    if (IsBuiltInValueType(calleeName, ctx))
-    {
-        return ExpressionType{calleeName, true, false, false};
-    }
-
     ExpressionType result;
     ForEachSymbolNamed(LastScopeSegment(calleeName), ctx.request.symbolTable,
                        [&result](const Symbol& sym)
@@ -125,150 +131,125 @@ ExpressionType ResolveCallValueType(TSNode node, const DiagnosticContext& ctx)
     return result;
 }
 
-ExpressionType ResolveLiteralValueType(TSNode node, const DiagnosticContext& ctx)
+/**
+ * @brief Resolves the type of an expression whose leaf is a literal.
+ * @param[in] value Literal fact.
+ * @param[in] ctx Diagnostic context supplying the effective string type name.
+ * @return The exact literal type; unknown for any other leaf.
+ */
+static ExpressionType ResolveLiteralValueType(const ValueExpressionFact& value, const DiagnosticContext& ctx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(node);
-    if (sym == gs.symNumberLiteral)
+    ExpressionType result;
+    result.known = true;
+    result.isLiteral = true;
+    switch (value.kind)
     {
-        return ExpressionType{ClassifyNumberLiteral(parser::NodeText(node, ctx.request.sourceCode)), true, true};
+    case ValueExpressionKind::Number:
+        result.baseName = ClassifyNumberLiteral(value.text);
+        break;
+    case ValueExpressionKind::String:
+        result.baseName = ctx.request.GetEffectiveStringTypeName();
+        break;
+    case ValueExpressionKind::Boolean:
+        result.baseName = "bool";
+        break;
+    default:
+        return {};
     }
-    if (sym == gs.symStringLiteral)
-    {
-        return ExpressionType{std::string(ctx.request.GetEffectiveStringTypeName()), true, true};
-    }
-    if (sym == gs.symBooleanLiteral)
-    {
-        return ExpressionType{"bool", true, true};
-    }
-    return ExpressionType{};
+    return result;
 }
 
-ExpressionType ResolveUnaryValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
+/**
+ * @brief Resolves the type of an explicit cast from its written target type.
+ * @param[in] value Cast fact whose text is the target type.
+ * @return The cleaned target type with its constness, or unknown when the type is empty.
+ */
+static ExpressionType ResolveCastValueType(const ValueExpressionFact& value)
 {
-    const SyntaxOperands syntax(node, ctx.request.nodeIndex);
-    const std::string op(
-        parser::NodeText(syntax.Field(parser::GetGrammarSymbols().fieldOperator), ctx.request.sourceCode));
-    if (op == "!" || op == "not")
-    {
-        return ExpressionType{"bool", true, false};
-    }
-    auto val =
-        TypeConversionEvaluator::ResolveValueType(syntax.Field(parser::GetGrammarSymbols().fieldOperand), scope, ctx);
-    if (op == "-")
-    {
-        if (val.baseName == "uint" || val.baseName == "uint32")
-        {
-            val.baseName = "int";
-        }
-        else if (val.baseName == "uint8")
-        {
-            val.baseName = "int8";
-        }
-        else if (val.baseName == "uint16")
-        {
-            val.baseName = "int16";
-        }
-        else if (val.baseName == "uint64")
-        {
-            val.baseName = "int64";
-        }
-    }
-    return val;
-}
-
-ExpressionType ResolveCastValueType(TSNode node, const DiagnosticContext& ctx)
-{
-    const std::string rawText(
-        parser::NodeText(SyntaxOperands(node, ctx.request.nodeIndex).Field(parser::GetGrammarSymbols().fieldType),
-                         ctx.request.sourceCode));
-    const auto qualifiers = ExtractTypeQualifiersView(rawText);
-    const std::string typeText = CleanBaseType(rawText);
+    const auto qualifiers = ExtractTypeQualifiersView(value.text);
+    const auto typeText = CleanBaseType(value.text);
     return typeText.empty() ? ExpressionType{} : ExpressionType{typeText, true, false, qualifiers.isConst};
 }
 
-ExpressionType ResolveCompoundValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
+/**
+ * @brief Resolves the type of a member expression through byte-range expression resolution.
+ * @param[in] value Member fact.
+ * @param[in] scope Lexical scope at the expression position.
+ * @param[in] ctx Diagnostic context.
+ * @return The resolved member type, or unknown when it cannot be resolved.
+ */
+static ExpressionType ResolveMemberValueType(const ValueExpressionFact& value, const Scope* scope,
+                                             const DiagnosticContext& ctx)
 {
-    node = UnwrapIndexedParentheses(node, ctx.request.nodeIndex);
-    if (ts_node_is_null(node))
-    {
-        return ExpressionType{};
-    }
-
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(node);
-    if (sym == gs.symUnaryExpression)
-    {
-        return ResolveUnaryValueType(node, scope, ctx);
-    }
-
-    if (sym == gs.symIdentifier || sym == gs.symScopedIdentifier)
-    {
-        return ResolveIdentifierValueType(node, scope, ctx);
-    }
-
-    if (sym == gs.symCallExpression || sym == gs.symConstructCallExpression)
-    {
-        return ResolveCallValueType(node, ctx);
-    }
-
-    if (sym == gs.symCastExpression || sym == gs.symFunctionalCastExpression)
-    {
-        return ResolveCastValueType(node, ctx);
-    }
-
-    if (sym == gs.symMemberExpression)
-    {
-        const std::string resolved = ResolveExpressionType(node, ExpressionTypeContext(scope, ctx));
-        const auto qualifiers = ExtractTypeQualifiersView(resolved);
-        return resolved.empty() ? ExpressionType{}
-                                : ExpressionType{CleanBaseType(resolved), true, false, qualifiers.isConst};
-    }
-
-    return ExpressionType{};
+    const auto resolved = ResolveExpressionType(value.bytes, ExpressionTypeContext(scope, ctx));
+    const auto qualifiers = ExtractTypeQualifiersView(resolved);
+    return resolved.empty() ? ExpressionType{}
+                            : ExpressionType{CleanBaseType(resolved), true, false, qualifiers.isConst};
 }
 
-ExpressionType TypeConversionEvaluator::ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
+/**
+ * @brief Swaps an unsigned base type for the signed type of the same width.
+ * @param[in,out] type Type to rewrite; other base names are left untouched.
+ */
+static void NegateUnsignedType(ExpressionType& type)
 {
-    node = UnwrapIndexedParentheses(node, ctx.request.nodeIndex);
-    if (ts_node_is_null(node))
+    if (type.baseName == "uint" || type.baseName == "uint32")
     {
-        return ExpressionType{};
+        type.baseName = "int";
     }
-    if (ts_node_is_error(node) || ts_node_is_missing(node) ||
-        (ctx.request.nodeIndex && ctx.request.nodeIndex->NodeHasSyntaxError(node)))
+    else if (type.baseName == "uint8")
     {
-        return ExpressionType{std::string(ExpressionTypeCache::k_poisonType), false, false};
+        type.baseName = "int8";
     }
-
-    const auto& gs = parser::GetGrammarSymbols();
-
-    const TSSymbol sym = ts_node_symbol(node);
-    if (sym == gs.symNumberLiteral || sym == gs.symStringLiteral || sym == gs.symBooleanLiteral)
+    else if (type.baseName == "uint16")
     {
-        return ResolveLiteralValueType(node, ctx);
+        type.baseName = "int16";
     }
-    if (sym == gs.symNullLiteral)
+    else if (type.baseName == "uint64")
     {
-        return ExpressionType{};
+        type.baseName = "int64";
     }
-
-    return ResolveCompoundValueType(node, scope, ctx);
 }
 
-ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
+ExpressionType ResolveValueType(const ValueExpressionFact& value, const Scope* scope, const DiagnosticContext& ctx)
 {
-    return TypeConversionEvaluator::ResolveValueType(node, scope, ctx);
-}
-
-ExpressionType ResolveValueType(IndexedByteRange bytes, const Scope* scope, const DiagnosticContext& ctx)
-{
-    const TSNode node = RecoverNodeAt(ExpressionTypeContext(scope, ctx), bytes.startByte, bytes.endByte);
-    if (ts_node_is_null(node))
+    if (value.logicalNot)
     {
-        return {};
+        return ExpressionType{"bool", true, false};
     }
-    return ResolveValueType(node, scope, ctx);
+
+    ExpressionType result;
+    switch (value.kind)
+    {
+    case ValueExpressionKind::Poison:
+        result.baseName = ExpressionTypeCache::k_poisonType;
+        break;
+    case ValueExpressionKind::Number:
+    case ValueExpressionKind::String:
+    case ValueExpressionKind::Boolean:
+        result = ResolveLiteralValueType(value, ctx);
+        break;
+    case ValueExpressionKind::Identifier:
+        result = ResolveIdentifierValueType(value, scope, ctx);
+        break;
+    case ValueExpressionKind::Call:
+        result = ResolveCallValueType(value, ctx);
+        break;
+    case ValueExpressionKind::Cast:
+        result = ResolveCastValueType(value);
+        break;
+    case ValueExpressionKind::Member:
+        result = ResolveMemberValueType(value, scope, ctx);
+        break;
+    case ValueExpressionKind::None:
+    case ValueExpressionKind::Null:
+        break;
+    }
+    if (value.negated)
+    {
+        NegateUnsignedType(result);
+    }
+    return result;
 }
 
 } // namespace angel_lsp::analysis

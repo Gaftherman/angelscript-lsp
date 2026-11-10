@@ -102,14 +102,5 @@ struct TypeConversionEvaluator
      */
     static bool IsConvertible(std::string_view from, std::string_view to, const DiagnosticContext& ctx,
                               ConversionState& state);
-
-    /**
-     * @brief Resolves the expression type and constness denotation for an AST value node.
-     * @param[in] node AST expression node to resolve.
-     * @param[in] scope Lexical scope.
-     * @param[in] ctx Diagnostic sink and evaluation context.
-     * @return Resolved ExpressionType.
-     */
-    static ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx);
 };
 } // namespace angel_lsp::analysis

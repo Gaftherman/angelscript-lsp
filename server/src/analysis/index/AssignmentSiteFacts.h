@@ -5,6 +5,7 @@
 #include "analysis/index/LambdaTargetFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/PropertyAccessFacts.h"
+#include "analysis/index/ValueExpressionFacts.h"
 
 #include <string_view>
 #include <vector>
@@ -37,8 +38,8 @@ struct AssignmentSiteFact
     bool opIsAssign = false;         ///< The operator is the plain `=` token.
     bool leftIsHandle = false;       ///< The left operand carries a unary `@`.
     bool rightIsHandle = false;      ///< The right operand carries a unary `@`.
-    IndexedByteRange leftValue;      ///< Left operand without its unary `@`.
-    IndexedByteRange rightValue;     ///< Right operand without its unary `@`.
+    ValueExpressionFact leftValue;   ///< Left operand without its unary `@`, read as a value expression.
+    ValueExpressionFact rightValue;  ///< Right operand without its unary `@`, read as a value expression.
     bool rightIsNull = false;        ///< The right operand is the null literal once parentheses are removed.
     FuncdefValueFact rightFuncdef;   ///< Right operand read as a funcdef value.
     PropertyAccessFact leftProperty; ///< Left operand, or its indexed object, read as a property access.

@@ -4,6 +4,7 @@
 #include "analysis/checkers/TypeConversionChecker.h"
 #include "analysis/index/AssignmentSiteFacts.h"
 #include "analysis/index/SyntaxOperands.h"
+#include "analysis/index/ValueExpressionFacts.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "parser/GrammarNames.h"
@@ -216,13 +217,13 @@ bool IsConvertible(std::string_view from, std::string_view to, const DiagnosticC
 ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx);
 
 /**
- * @brief Resolves the ExpressionType of the expression that spans the given byte range.
- * @param[in] bytes Byte span of the expression.
+ * @brief Resolves the ExpressionType of a value expression captured in pass 1.
+ * @param[in] value Leaf kind, spelling and unary operators of the expression.
  * @param[in] scope Lexical scope at the expression position.
  * @param[in] ctx Diagnostic context.
- * @return Resolved ExpressionType, or a default value when the span names no node.
+ * @return Resolved ExpressionType; a poison type for expressions with syntax errors, unknown when unresolved.
  */
-ExpressionType ResolveValueType(IndexedByteRange bytes, const Scope* scope, const DiagnosticContext& ctx);
+ExpressionType ResolveValueType(const ValueExpressionFact& value, const Scope* scope, const DiagnosticContext& ctx);
 
 /**
  * @brief Inspects the accessor metadata of an indexed expression that may name a virtual property.

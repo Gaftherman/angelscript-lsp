@@ -128,8 +128,8 @@ static AssignmentSiteFact ReadAssignment(TSNode node, TSNode left, TSNode right,
     }
     fact.opIsAssign = ts_node_symbol(op) == gs.tokAssign;
 
-    fact.leftValue = BytesOf(UnwrapHandleOperand(left, index, fact.leftIsHandle));
-    fact.rightValue = BytesOf(UnwrapHandleOperand(right, index, fact.rightIsHandle));
+    fact.leftValue = ReadValueExpression(UnwrapHandleOperand(left, index, fact.leftIsHandle), &index, source);
+    fact.rightValue = ReadValueExpression(UnwrapHandleOperand(right, index, fact.rightIsHandle), &index, source);
     fact.rightIsNull = ts_node_symbol(UnwrapIndexedParentheses(right, &index)) == gs.symNullLiteral;
     fact.rightFuncdef = ReadFuncdefValue(right, index, source);
 

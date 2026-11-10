@@ -3083,6 +3083,22 @@
       "verifiedByTests": [
         "TypeConversionCheckerTest"
       ]
+    },
+    {
+      "id": "REF-M24D2-VALUE-EXPRESSION-FACTS",
+      "phase": "M24D2",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/TypeConversionValueType.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "TypeConversionEvaluator::ResolveValueType; ResolveUnaryValueType; ResolveCompoundValueType; EnclosingClassName",
+      "whatItDidAndWhyInThatFile": "The value-type evaluator recursed over TSNode operands of unary expressions and read literal, callee, cast type and enclosing-class data from syntax nodes in the second-pass checkers folder.",
+      "whyChangedOrDeleted": "ReadValueExpression folds parentheses and unary operators into flags and records the leaf kind, span and spelling once; the checker evaluates that fact without recursion, and the assignment facts carry it for both operands.",
+      "replacedByCanonicalFile": "server/src/analysis/index/ValueExpressionFacts.h",
+      "replacedByCanonicalSymbol": "ReadValueExpression",
+      "ramOrCpuImpact": "Iterative unary chain walk per expression; no recursion on the C++ stack and no root descent for assignment operands.",
+      "verifiedByTests": [
+        "TypeConversionCheckerTest"
+      ]
     }
   ]
 }
