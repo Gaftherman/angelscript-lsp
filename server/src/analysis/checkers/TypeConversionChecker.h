@@ -5,11 +5,11 @@
 #include "analysis/index/BinaryExpressionFacts.h"
 #include "analysis/index/ConversionSiteFacts.h"
 #include "analysis/index/DeclarationSiteFacts.h"
+#include "analysis/index/ExpressionSiteFacts.h"
 #include "analysis/index/ReturnSiteFacts.h"
 #include "analysis/types/TypeConversionValues.h"
 
 #include <string_view>
-#include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
@@ -55,6 +55,9 @@ struct TypeConversionCheckRequest
 
     /// Variable declarations, calls, construct calls and constructor delegations; built once when left null.
     const DeclarationSiteFacts* declarationSites = nullptr;
+
+    /// Expression sites (binary, unary, postfix, member, index, cast); built once when left null.
+    const ExpressionSiteFacts* expressionSites = nullptr;
 };
 
 /**
@@ -81,15 +84,6 @@ bool CanConvertImplicitly(std::string_view fromType, std::string_view toType, co
  * @return True if the type can evaluate as a condition; false otherwise.
  */
 bool IsTruthyCondition(std::string_view typeName, const SymbolTable& table);
-
-/**
- * @brief Left and right operand types and value categories in an assignment expression.
- */
-struct AssignmentOperands
-{
-    TSNode left;
-    TSNode right;
-};
 
 /**
  * @brief Analysis engine for recursive expression value evaluation and type convertibility queries.

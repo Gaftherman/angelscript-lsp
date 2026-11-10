@@ -146,32 +146,6 @@ TypeDeclarationInfo FindTypeDeclaration(std::string_view typeName, const SymbolT
     return info;
 }
 
-bool ResolvesToEnum(const std::string& typeName, const SymbolTable& table)
-{
-    bool found = false;
-    const std::string_view bare = LastScopeSegment(typeName);
-
-    for (const auto candidate : {std::string_view(typeName), bare})
-    {
-        ForEachSymbolNamed(candidate, table,
-                           [&found](const Symbol& sym)
-                           {
-                               if (sym.type == SymbolType::Enum)
-                               {
-                                   found = true;
-                                   return true;
-                               }
-                               return false;
-                           });
-
-        if (found || bare == typeName)
-        {
-            break;
-        }
-    }
-    return found;
-}
-
 bool ResolvesToNonClassDeclaration(std::string_view typeName, const SymbolTable& table)
 {
     bool found = false;

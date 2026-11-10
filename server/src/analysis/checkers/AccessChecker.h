@@ -2,16 +2,27 @@
 
 #include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/MemberAccessFacts.h"
+
+#include <string_view>
 
 namespace angel_lsp::analysis
 {
 
 /**
  * @brief Walks the document and reports member accesses the declaring class does not permit.
- * @param request Tree, source text and scope tree of the document under analysis.
- * @param ctx Diagnostic sink; also carries the SymbolTable every lookup goes through.
+ * @param[in] request Tree, source text and scope tree of the document under analysis.
+ * @param[in,out] ctx Diagnostic sink; also carries the SymbolTable every lookup goes through.
  */
 void CheckMemberAccess(const AstCheckContext& request, DiagnosticContext& ctx);
+
+/**
+ * @brief Validates member accesses against pre-extracted AST-free member access facts.
+ * @param[in] facts Pre-extracted member access, identifier, and closure facts of the document.
+ * @param[in] request Ast check context providing lexical scopes and mediator.
+ * @param[in,out] ctx Diagnostic collection context.
+ */
+void CheckMemberAccess(const MemberAccessFacts& facts, const AstCheckContext& request, DiagnosticContext& ctx);
 
 /**
  * @brief AST checker for class and interface member access visibility.

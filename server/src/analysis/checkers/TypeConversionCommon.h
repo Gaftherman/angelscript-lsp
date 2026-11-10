@@ -4,6 +4,7 @@
 #include "analysis/checkers/TypeConversionChecker.h"
 #include "analysis/index/AssignmentSiteFacts.h"
 #include "analysis/index/DeclarationSiteFacts.h"
+#include "analysis/index/ExpressionSiteFacts.h"
 #include "analysis/index/SyntaxOperands.h"
 #include "analysis/index/ValueExpressionFacts.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
@@ -70,14 +71,6 @@ std::optional<Symbol> FindFuncdef(std::string_view name, const SymbolTable& tabl
  * @return TypeDeclarationInfo indicating kind and template status.
  */
 TypeDeclarationInfo FindTypeDeclaration(std::string_view typeName, const SymbolTable& table);
-
-/**
- * @brief True when a name resolves to an enum declared somewhere the analyzer can see.
- * @param[in] typeName Name of the candidate enum type.
- * @param[in] table Symbol table to query.
- * @return True if name resolves to an enum; false otherwise.
- */
-bool ResolvesToEnum(const std::string& typeName, const SymbolTable& table);
 
 /**
  * @brief True when a name resolves to an enum, typedef, funcdef or namespace.
@@ -438,12 +431,29 @@ void ProcessAssignmentSite(const AssignmentSiteFact& site, const TypeConversionC
 void ProcessBinaryNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
 
 /**
+ * @brief Validates binary expression operators and operand type compatibility for an indexed site.
+ * @param[in] site Binary expression site fact.
+ * @param[in] request Analysis request details.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void ProcessBinarySite(const BinarySiteFact& site, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
+
+/**
  * @brief Validates unary and postfix increment/decrement operations.
  * @param[in] node Unary or postfix expression syntax node.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic context.
  */
 void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
+
+/**
+ * @brief Validates unary and postfix increment/decrement operations for an indexed site.
+ * @param[in] site Unary or postfix expression site fact.
+ * @param[in] request Analysis request details.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void ProcessUnaryOrPostfixSite(const UnaryPostfixSiteFact& site, const TypeConversionCheckRequest& request,
+                               DiagnosticContext& ctx);
 
 /**
  * @brief Validates member expressions against write-only properties.
@@ -454,6 +464,15 @@ void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& re
 void ProcessMemberExpressionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
 
 /**
+ * @brief Validates member expressions against write-only properties for an indexed site.
+ * @param[in] site Member expression site fact.
+ * @param[in] request Analysis request details.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void ProcessMemberExpressionSite(const MemberExpressionSiteFact& site, const TypeConversionCheckRequest& request,
+                                 DiagnosticContext& ctx);
+
+/**
  * @brief Validates index expressions against write-only indexed properties.
  * @param[in] node Index expression syntax node.
  * @param[in] request Analysis request details.
@@ -462,12 +481,30 @@ void ProcessMemberExpressionNode(TSNode node, const TypeConversionCheckRequest& 
 void ProcessIndexExpressionNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
 
 /**
+ * @brief Validates index expressions against write-only indexed properties for an indexed site.
+ * @param[in] site Index expression site fact.
+ * @param[in] request Analysis request details.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void ProcessIndexExpressionSite(const IndexExpressionSiteFact& site, const TypeConversionCheckRequest& request,
+                                DiagnosticContext& ctx);
+
+/**
  * @brief Validates explicit cast expression safety.
  * @param[in] node Cast expression syntax node.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic context.
  */
 void ProcessCastNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
+
+/**
+ * @brief Validates explicit cast expression safety for an indexed site.
+ * @param[in] site Cast expression site fact.
+ * @param[in] request Analysis request details.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void ProcessCastSite(const CastExpressionSiteFact& site, const TypeConversionCheckRequest& request,
+                     DiagnosticContext& ctx);
 
 /**
  * @brief Validates a return statement against the declared return type of its function or lambda target.

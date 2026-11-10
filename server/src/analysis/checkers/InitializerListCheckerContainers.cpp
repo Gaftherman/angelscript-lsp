@@ -1,26 +1,26 @@
 #include "analysis/checkers/InitializerListCheckerCommon.h"
 #include "analysis/index/RuleIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarSymbols.h"
 
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
 
 namespace angel_lsp::analysis
 {
+
 /**
  * @brief Inspects container member functions for multi-index operators and list constructors.
  * @param[in] containerKey Class key in rule index.
  * @param[in] className    Short name of the container class.
  * @param[in] ctx          Diagnostic context.
- * @param[out] out          Inspection state sink.
+ * @param[out] out         Inspection state sink.
  */
-static void InspectContainerMembers(const std::string& containerKey, const std::string& className,
+static void InspectContainerMembers(std::string_view containerKey, std::string_view className,
                                     const DiagnosticContext& ctx, ContainerMemberInspection& out)
 {
     const auto& members = ctx.request.GetRuleIndex().Members(containerKey);
@@ -71,7 +71,7 @@ static std::optional<ListContainerInfo> InspectClassContainer(const Symbol& sym,
         InspectContainerMembers(containerKey, sym.name, ctx, inspection);
     }
 
-    auto resolveElem = [&](const std::string& fallback)
+    auto resolveElem = [&](std::string_view fallback) -> std::string
     {
         std::string elem = !spelling.arguments.empty() ? spelling.arguments[0] : StripDecorations(fallback);
         return elem.empty() ? "auto" : elem;
@@ -88,20 +88,12 @@ static std::optional<ListContainerInfo> InspectClassContainer(const Symbol& sym,
     return std::nullopt;
 }
 
-/**
- * @brief Inspects whether a type represents a sequence or multi-dimensional container.
- *        Identifies containers via:
- * @param[in] type               Cleaned type string.
- * @param[in] spelling           Parsed template spelling.
- * @param[in] ctx                Diagnostic context.
- * @return Resolved container dimensionality and element type.
- */
-ListContainerInfo InspectContainer(const std::string& type, const TemplateSpelling& spelling,
+ListContainerInfo InspectContainer(std::string_view type, const TemplateSpelling& spelling,
                                    const DiagnosticContext& ctx)
 {
     if (type.ends_with("[]"))
     {
-        return {true, 1, type.substr(0, type.size() - 2)};
+        return {true, 1, std::string(type.substr(0, type.size() - 2))};
     }
 
     if (ctx.request.IsArrayLikeTemplate(spelling.name))
@@ -129,54 +121,36 @@ ListContainerInfo InspectContainer(const std::string& type, const TemplateSpelli
     return {false, 1, ""};
 }
 
-/**
- * @brief Validates elements of a sequence or multi-dimensional container recursively.
- * @param[in] node      Initializer list node.
- * @param[in] dimension Remaining container dimensions.
- * @param[in] elemType  Expected element type.
- * @param[in] valCtx    Validation context.
- */
-void ValidateMultiDimensionalContainer(TSNode node, uint32_t dimension, const std::string& elemType,
+void ValidateMultiDimensionalContainer(const InitializerListFact& list, uint32_t dimension, std::string_view elemType,
                                        const ListValidationContext& valCtx)
 {
-    if (ts_node_is_null(node))
+    const ListValidationContext nextCtx{valCtx.ctx, valCtx.elements, valCtx.cache, valCtx.facts, valCtx.depth + 1};
+    for (const auto& elem : valCtx.facts.Elements(list))
     {
-        return;
+        if (dimension > 1)
+        {
+            if (elem.kind != InitializerListElementKind::NestedList || elem.nestedListIndex == NoInitializerList)
+            {
+                valCtx.ctx.EmitAtRange(elem.range, "as-err-initializer-list-expected", "");
+            }
+            else
+            {
+                ValidateMultiDimensionalContainer(valCtx.facts.lists[elem.nestedListIndex], dimension - 1, elemType,
+                                                  nextCtx);
+            }
+        }
+        else
+        {
+            if (elem.kind == InitializerListElementKind::NestedList && elem.nestedListIndex != NoInitializerList)
+            {
+                InitializerListValidator::ValidateList(valCtx.facts.lists[elem.nestedListIndex], elemType, nextCtx);
+            }
+            else
+            {
+                CheckElementValue(elem, elemType, valCtx.ctx, valCtx.elements);
+            }
+        }
     }
-
-    const auto& gs = parser::GetGrammarSymbols();
-    const ListValidationContext nextCtx{valCtx.ctx, valCtx.elements, valCtx.cache, valCtx.depth + 1};
-    parser::ForEachChildNode(node,
-                             [&](TSNode child)
-                             {
-                                 if (!ts_node_is_named(child) || ts_node_symbol(child) == gs.symComment)
-                                 {
-                                     return;
-                                 }
-                                 const TSSymbol sym = ts_node_symbol(child);
-                                 if (dimension > 1)
-                                 {
-                                     if (sym != gs.symInitializerList)
-                                     {
-                                         valCtx.ctx.EmitAtNodeRange(ToOptionalSourceRange(child),
-                                                                    "as-err-initializer-list-expected", "");
-                                     }
-                                     else
-                                     {
-                                         ValidateMultiDimensionalContainer(child, dimension - 1, elemType, nextCtx);
-                                     }
-                                 }
-                                 else
-                                 {
-                                     if (sym == gs.symInitializerList)
-                                     {
-                                         InitializerListValidator::ValidateList(child, elemType, nextCtx);
-                                     }
-                                     else
-                                     {
-                                         CheckElementValue(child, elemType, valCtx.ctx, valCtx.elements);
-                                     }
-                                 }
-                             });
 }
+
 } // namespace angel_lsp::analysis

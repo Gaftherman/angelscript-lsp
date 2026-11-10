@@ -4,10 +4,10 @@
 #include "analysis/index/BinaryExpressionFacts.h"
 #include "analysis/index/ConversionSiteFacts.h"
 #include "analysis/index/DeclarationSiteFacts.h"
+#include "analysis/index/ExpressionSiteFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
 #include "parser/GrammarNames.h"
 #include "utils/LspLogger.h"
 
@@ -184,7 +184,7 @@ static void ProcessNode(TSNode node, const TypeConversionCheckRequest& request, 
  */
 void CheckTypeConversions(const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(request.nodeIndex.Root()) || request.sourceCode.empty())
+    if (request.nodeIndex.Empty() || request.sourceCode.empty())
     {
         return;
     }
@@ -214,12 +214,18 @@ void CheckTypeConversions(const TypeConversionCheckRequest& request, DiagnosticC
     {
         localDeclarations.emplace(BuildDeclarationSiteFacts(request.nodeIndex, request.sourceCode));
     }
+    std::optional<ExpressionSiteFacts> localExpressions;
+    if (!request.expressionSites)
+    {
+        localExpressions.emplace(BuildExpressionSiteFacts(request.nodeIndex, request.sourceCode));
+    }
     TypeConversionCheckRequest withFacts = request;
     withFacts.binaryFacts = request.binaryFacts ? request.binaryFacts : &*localFacts;
     withFacts.conversionSites = request.conversionSites ? request.conversionSites : &*localSites;
     withFacts.returnSites = request.returnSites ? request.returnSites : &*localReturns;
     withFacts.assignmentSites = request.assignmentSites ? request.assignmentSites : &*localAssignments;
     withFacts.declarationSites = request.declarationSites ? request.declarationSites : &*localDeclarations;
+    withFacts.expressionSites = request.expressionSites ? request.expressionSites : &*localExpressions;
 
     if (ctx.logger && ctx.logger->IsDebugEnabled())
     {

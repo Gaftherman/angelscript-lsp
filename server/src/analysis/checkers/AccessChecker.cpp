@@ -1,69 +1,64 @@
 #include "analysis/checkers/AccessChecker.h"
 
 #include "analysis/checkers/AccessCheckerCommon.h"
+#include "analysis/index/MemberAccessFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
-#include "parser/GrammarNames.h"
 #include "utils/StopFlag.h"
 #include "utils/Utils.h"
 
-#include <array>
-#include <span>
+#include <cstddef>
 
 namespace angel_lsp::analysis
 {
 
-static void CheckMemberAccessIndexed(const AstCheckContext& request, DiagnosticContext& ctx)
+void CheckMemberAccess(const MemberAccessFacts& facts, const AstCheckContext& request, DiagnosticContext& ctx)
 {
     if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
     {
         return;
     }
 
-    const auto& gs = parser::GetGrammarSymbols();
-    for (TSNode thisNode : request.nodeIndex->Nodes(gs.symThisExpression))
+    size_t memIdx = 0;
+    size_t idIdx = 0;
+    const size_t memCount = facts.memberExpressions.size();
+    const size_t idCount = facts.identifiers.size();
+
+    while (memIdx < memCount || idIdx < idCount)
     {
         if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
         {
             return;
         }
-        const TSPoint start = ts_node_start_point(thisNode);
-        CheckClosureDisallowedAccess(thisNode, FindInnermostScope(request.scopeRoot, start.row, start.column), "this",
-                                     ctx);
-    }
 
-    const std::array<TSSymbol, 3> kSymbols = {gs.symMemberExpression, gs.symScopedIdentifier, gs.symIdentifier};
-    request.nodeIndex->ForEachNodeOrdered(std::span<const TSSymbol>(kSymbols.data(), kSymbols.size()),
-                                          [&](TSNode node)
-                                          {
-                                              if (ctx.request.stopFlag && ctx.request.stopFlag->stop_requested())
-                                              {
-                                                  return;
-                                              }
-                                              if (ts_node_symbol(node) == gs.symMemberExpression)
-                                              {
-                                                  const TSPoint pt = ts_node_start_point(node);
-                                                  const Scope* scope =
-                                                      request.mediator
-                                                          ? request.mediator->ScopeAtPoint(pt.row, pt.column)
-                                                          : FindInnermostScope(request.scopeRoot, pt.row, pt.column);
-                                                  CheckMemberExpression(node, request, scope, ctx);
-                                              }
-                                              else
-                                              {
-                                                  CheckIdentifierNode(node, request, ctx);
-                                              }
-                                          });
+        const bool takeMember =
+            (idIdx >= idCount) || (memIdx < memCount && facts.memberExpressions[memIdx].bytes.startByte <=
+                                                            facts.identifiers[idIdx].bytes.startByte);
+
+        if (takeMember)
+        {
+            const auto& fact = facts.memberExpressions[memIdx++];
+            const Scope* scope =
+                request.mediator
+                    ? request.mediator->ScopeAtPoint(fact.range.startLine, fact.range.startCharacter)
+                    : FindInnermostScope(request.scopeRoot, fact.range.startLine, fact.range.startCharacter);
+            CheckMemberExpression(fact, scope, ctx);
+        }
+        else
+        {
+            const auto& fact = facts.identifiers[idIdx++];
+            const Scope* scope =
+                request.mediator
+                    ? request.mediator->ScopeAtPoint(fact.range.startLine, fact.range.startCharacter)
+                    : FindInnermostScope(request.scopeRoot, fact.range.startLine, fact.range.startCharacter);
+            CheckIdentifierFact(fact, scope, ctx);
+        }
+    }
 }
 
-/**
- * @brief Check member access.
- * @param[in] request Contextual request bundle containing AST root, source text, and parameters.
- * @param[in,out] ctx Diagnostic collection and analysis context.
- */
 void CheckMemberAccess(const AstCheckContext& request, DiagnosticContext& ctx)
 {
-    if (ts_node_is_null(request.rootNode) || request.sourceCode.empty())
+    if (request.sourceCode.empty() || !request.nodeIndex)
     {
         return;
     }
@@ -73,16 +68,8 @@ void CheckMemberAccess(const AstCheckContext& request, DiagnosticContext& ctx)
         return;
     }
 
-    if (request.nodeIndex)
-    {
-        CheckMemberAccessIndexed(request, ctx);
-        return;
-    }
-
-    NodeIndex localIndex(request.rootNode);
-    AstCheckContext indexedRequest = request;
-    indexedRequest.nodeIndex = &localIndex;
-    CheckMemberAccessIndexed(indexedRequest, ctx);
+    const MemberAccessFacts facts = BuildMemberAccessFacts(*request.nodeIndex, request.sourceCode);
+    CheckMemberAccess(facts, request, ctx);
 }
 
 } // namespace angel_lsp::analysis

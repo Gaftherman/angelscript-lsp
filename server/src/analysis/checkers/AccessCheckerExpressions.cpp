@@ -1,10 +1,8 @@
 #include "analysis/checkers/AccessCheckerCommon.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
-#include "analysis/index/NodeIndex.h"
+#include "analysis/index/MemberAccessFacts.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
-#include "parser/Keywords.h"
 
 #include <string>
 #include <string_view>
@@ -18,60 +16,36 @@ static bool DerivesFrom(std::string_view derived, std::string_view base, const S
     return IsDerivedFrom(derived, base, table);
 }
 
-/** @brief Innermost class body enclosing a node, or empty when the node sits outside one. */
-std::string_view EnclosingClass(TSNode node, std::string_view sourceCode, bool& insideMixin, const NodeIndex* nodeIndex)
-{
-    insideMixin = false;
-    if (ts_node_is_null(node) || !nodeIndex)
-    {
-        return {};
-    }
-
-    const uint32_t byteOffset = ts_node_start_byte(node);
-    const auto* span = nodeIndex->FindInnermostClassSpan(byteOffset);
-    if (span)
-    {
-        insideMixin = span->isMixin;
-        if (span->nameStartByte < span->nameEndByte && span->nameEndByte <= sourceCode.size())
-        {
-            return sourceCode.substr(span->nameStartByte, span->nameEndByte - span->nameStartByte);
-        }
-    }
-    return {};
-}
-
 /**
  * @brief Resolves the owning type of a member access object expression.
  *
- * @param[in] objectNode AST node of the object expression.
+ * @param[in] objectBytes Byte span of the object expression.
  * @param[in] scope Current lexical scope.
  * @param[in] ctx Diagnostic context.
  * @return Normalized owner type name.
  */
-static std::string ResolveObjectOwnerType(TSNode objectNode, const Scope* scope, const DiagnosticContext& ctx)
+static std::string ResolveObjectOwnerType(IndexedByteRange objectBytes, const Scope* scope,
+                                          const DiagnosticContext& ctx)
 {
     const std::string_view arrayContainer = ctx.request.GetEffectiveArrayTypeName();
-    return MemberOwnerType(ResolveExpressionType(objectNode, ExpressionTypeContext(scope, ctx)), arrayContainer);
+    return MemberOwnerType(ResolveExpressionType(objectBytes, ExpressionTypeContext(scope, ctx)), arrayContainer);
 }
 
 /**
  * @brief Emits a hint diagnostic if access was made via a disabled accessor.
  *
- * @param[in] memberNode AST node of the member being accessed.
+ * @param[in] fact Member expression fact.
  * @param[in] member Member resolution outcome.
  * @param[in] objectType Object type name.
  * @param[in,out] ctx Diagnostic context.
  */
-static void MaybeEmitAccessorHint(TSNode memberNode, const MemberLookupResult& member, const std::string& objectType,
-                                  DiagnosticContext& ctx)
+static void MaybeEmitAccessorHint(const MemberExpressionFact& fact, const MemberLookupResult& member,
+                                  std::string_view objectType, DiagnosticContext& ctx)
 {
     if (member.viaAccessor && !ctx.request.ScriptAccessorsAreProperties() && ctx.request.diagnostics &&
         ctx.request.diagnostics->reportAccessorDisabled)
     {
-        const TSPoint hintStart = ts_node_start_point(memberNode);
-        const TSPoint hintEnd = ts_node_end_point(memberNode);
-        ctx.EmitAtRange({hintStart.row, hintStart.column, hintEnd.row, hintEnd.column}, "as-hint-accessor-disabled",
-                        {objectType, std::string(parser::NodeText(memberNode, ctx.request.sourceCode))},
+        ctx.EmitAtRange(fact.memberRange, "as-hint-accessor-disabled", {objectType, fact.memberName},
                         DiagnosticSeverity::Hint);
     }
 }
@@ -100,85 +74,70 @@ static bool IsMemberAccessAllowed(const MemberLookupResult& member, std::string_
 /**
  * @brief Emits a private or protected access violation diagnostic for a member access.
  *
- * @param[in] memberNode AST node of the member being accessed.
+ * @param[in] memberRange Source range of the member being accessed.
  * @param[in] member Member resolution outcome.
  * @param[in] memberName Name of the member being accessed.
  * @param[in,out] ctx Diagnostic context.
  */
-static void EmitPrivacyViolation(TSNode memberNode, const MemberLookupResult& member, std::string_view memberName,
+static void EmitPrivacyViolation(SourceRange memberRange, const MemberLookupResult& member, std::string_view memberName,
                                  DiagnosticContext& ctx)
 {
-    const TSPoint start = ts_node_start_point(memberNode);
-    const TSPoint end = ts_node_end_point(memberNode);
     const bool declaredPrivate = member.access == AccessModifier::Private;
-    ctx.EmitAtRange({start.row, start.column, end.row, end.column},
+    ctx.EmitAtRange(memberRange,
                     declaredPrivate ? diagnostics::codes::PrivateMemberAccess
                                     : diagnostics::codes::ProtectedMemberAccess,
                     memberName, member.declaringClass);
 }
 
-static void ValidateMemberPrivacy(TSNode node, const MemberLookupResult& member, const std::string& objectType,
-                                  DiagnosticContext& ctx)
+/**
+ * @brief Validates accessibility permissions for an accessed member symbol.
+ *
+ * @param[in] fact Member expression fact.
+ * @param[in] member Member resolution outcome.
+ * @param[in] objectType Object type name.
+ * @param[in,out] ctx Diagnostic context.
+ */
+static void ValidateMemberPrivacy(const MemberExpressionFact& fact, const MemberLookupResult& member,
+                                  std::string_view objectType, DiagnosticContext& ctx)
 {
     if (!member.decided)
     {
         return;
     }
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode objectNode = parser::GetChildByField(node, gs.fieldObject);
-    TSNode memberNode = parser::GetChildByField(node, gs.fieldMember);
-    bool insideMixin = false;
-    const std::string_view accessingClass =
-        EnclosingClass(node, ctx.request.sourceCode, insideMixin, ctx.request.nodeIndex);
-    const bool isThisAccess = parser::NodeText(objectNode, ctx.request.sourceCode) == "this";
-    if (insideMixin && (isThisAccess || IsSameAccessType(accessingClass, member.declaringClass)))
+    const std::string_view accessingClass = fact.enclosingClassName;
+    if (fact.insideMixin && (fact.isThisAccess || IsSameAccessType(accessingClass, member.declaringClass)))
     {
         return;
     }
     if (!IsMemberAccessAllowed(member, accessingClass, objectType, ctx))
     {
-        const std::string memberName(parser::NodeText(memberNode, ctx.request.sourceCode));
-        EmitPrivacyViolation(memberNode, member, memberName, ctx);
+        EmitPrivacyViolation(fact.memberRange, member, fact.memberName, ctx);
     }
 }
 
-void CheckMemberExpression(TSNode node, const AstCheckContext& request, const Scope* scope, DiagnosticContext& ctx)
+void CheckMemberExpression(const MemberExpressionFact& fact, const Scope* scope, DiagnosticContext& ctx)
 {
-    TSNode objectNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldObject);
-    TSNode memberNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldMember);
-    if (ts_node_is_null(objectNode) || ts_node_is_null(memberNode))
-    {
-        return;
-    }
-
     const SymbolTable& table = ctx.request.symbolTable;
-    const std::string objectType = ResolveObjectOwnerType(objectNode, scope, ctx);
+    const std::string objectType = ResolveObjectOwnerType(fact.objectBytes, scope, ctx);
     if (objectType.empty() || objectType == "auto")
     {
         return;
     }
 
-    const std::string memberName(parser::NodeText(memberNode, request.sourceCode));
-    if (memberName.empty())
+    if (fact.memberName.empty())
     {
         return;
     }
 
-    if (parser::keywords::IsReserved(memberName))
+    if (IsReservedKeyword(fact.memberName))
     {
-        const TSPoint start = ts_node_start_point(memberNode);
-        const TSPoint end = ts_node_end_point(memberNode);
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::ReservedKeywordName,
-                        memberName);
+        ctx.EmitAtRange(fact.memberRange, diagnostics::codes::ReservedKeywordName, fact.memberName);
         return;
     }
 
     if ((IsCorePrimitive(objectType) && objectType != "auto") || objectType == "void")
     {
-        const TSPoint start = ts_node_start_point(memberNode);
-        const TSPoint end = ts_node_end_point(memberNode);
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::MemberNotFound, objectType,
-                        memberName);
+        ctx.EmitAtRange(fact.memberRange, diagnostics::codes::MemberNotFound, objectType, fact.memberName);
         return;
     }
 
@@ -187,18 +146,15 @@ void CheckMemberExpression(TSNode node, const AstCheckContext& request, const Sc
         return;
     }
 
-    const MemberLookupResult member = FindMemberWithProxies(objectType, memberName, table, ctx);
+    const MemberLookupResult member = FindMemberWithProxies(objectType, fact.memberName, table, ctx);
     if (!member.found)
     {
-        const TSPoint start = ts_node_start_point(memberNode);
-        const TSPoint end = ts_node_end_point(memberNode);
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::MemberNotFound, objectType,
-                        memberName);
+        ctx.EmitAtRange(fact.memberRange, diagnostics::codes::MemberNotFound, objectType, fact.memberName);
         return;
     }
 
-    MaybeEmitAccessorHint(memberNode, member, objectType, ctx);
-    ValidateMemberPrivacy(node, member, objectType, ctx);
+    MaybeEmitAccessorHint(fact, member, objectType, ctx);
+    ValidateMemberPrivacy(fact, member, objectType, ctx);
 }
 
 } // namespace angel_lsp::analysis

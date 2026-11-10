@@ -1,12 +1,9 @@
 #include "analysis/checkers/AccessCheckerCommon.h"
 #include "analysis/diagnostics/DiagnosticCodes.h"
-#include "analysis/index/NodeIndex.h"
+#include "analysis/index/MemberAccessFacts.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 
-#include <string>
 #include <string_view>
 
 namespace angel_lsp::analysis
@@ -66,43 +63,7 @@ static bool IsOuterLocalOrParameter(const Scope* enclosingClosure, std::string_v
     return false;
 }
 
-/**
- * @brief Finds the innermost class enclosing the closure containing node, if any.
- *
- * @param[in] node AST node inside the closure.
- * @param[in] sourceCode Document source text.
- * @param[in] nodeIndex Optional pre-indexed node index.
- * @return Name of the outer class enclosing the lambda, or empty if none.
- */
-static std::string_view EnclosingClassOfLambda(TSNode node, std::string_view sourceCode, const NodeIndex* nodeIndex)
-{
-    if (ts_node_is_null(node) || !nodeIndex)
-    {
-        return {};
-    }
-
-    TSNode classNode = nodeIndex->FindEnclosingClassOrMixin(ts_node_start_byte(node));
-    if (!ts_node_is_null(classNode))
-    {
-        TSNode nameNode = parser::GetChildByField(classNode, parser::GetGrammarSymbols().fieldName);
-        if (!ts_node_is_null(nameNode))
-        {
-            return parser::NodeText(nameNode, sourceCode);
-        }
-    }
-    return {};
-}
-
-/**
- * @brief Checks whether an identifier attempts forbidden outer variable capture in a closure.
- *
- * @param[in] node AST identifier node.
- * @param[in] scope Current lexical scope.
- * @param[in] idText Identifier name.
- * @param[in,out] ctx Diagnostic context.
- * @return True if an error diagnostic was emitted, false otherwise.
- */
-bool CheckClosureDisallowedAccess(TSNode node, const Scope* scope, std::string_view idText, DiagnosticContext& ctx)
+bool CheckClosureDisallowedAccess(const MemberAccessIdentifierFact& fact, const Scope* scope, DiagnosticContext& ctx)
 {
     const Scope* enclosingClosure = FindEnclosingClosure(scope);
     if (!enclosingClosure)
@@ -110,39 +71,30 @@ bool CheckClosureDisallowedAccess(TSNode node, const Scope* scope, std::string_v
         return false;
     }
 
-    if (idText == "this" || idText == "super")
+    if (fact.isThisOrSuper)
     {
-        const TSPoint start = ts_node_start_point(node);
-        const TSPoint end = ts_node_end_point(node);
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::LambdaThisDisallowed);
+        ctx.EmitAtRange(fact.range, diagnostics::codes::LambdaThisDisallowed);
         return true;
     }
 
-    if (IsDeclaredInClosure(scope, enclosingClosure, idText))
+    if (IsDeclaredInClosure(scope, enclosingClosure, fact.name))
     {
         return false;
     }
 
-    if (IsOuterLocalOrParameter(enclosingClosure, idText))
+    if (IsOuterLocalOrParameter(enclosingClosure, fact.name))
     {
-        const TSPoint start = ts_node_start_point(node);
-        const TSPoint end = ts_node_end_point(node);
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::LambdaClosureDisallowed,
-                        idText);
+        ctx.EmitAtRange(fact.range, diagnostics::codes::LambdaClosureDisallowed, fact.name);
         return true;
     }
 
-    const std::string_view outerClass = EnclosingClassOfLambda(node, ctx.request.sourceCode, ctx.request.nodeIndex);
+    const std::string_view outerClass = fact.enclosingClassOfLambda;
     if (!outerClass.empty())
     {
-        const MemberLookupResult member =
-            FindMember(std::string(outerClass), std::string(idText), ctx.request.symbolTable, false);
+        const MemberLookupResult member = FindMember(outerClass, fact.name, ctx.request.symbolTable, false);
         if (member.found)
         {
-            const TSPoint start = ts_node_start_point(node);
-            const TSPoint end = ts_node_end_point(node);
-            ctx.EmitAtRange({start.row, start.column, end.row, end.column}, diagnostics::codes::LambdaMemberAccess,
-                            idText);
+            ctx.EmitAtRange(fact.range, diagnostics::codes::LambdaMemberAccess, fact.name);
             return true;
         }
     }

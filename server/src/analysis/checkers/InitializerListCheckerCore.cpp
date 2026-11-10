@@ -1,38 +1,42 @@
 #include "analysis/checkers/InitializerListCheckerCommon.h"
 #include "analysis/checkers/TypeConversionChecker.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarSymbols.h"
 
 #include <cctype>
 #include <cstdint>
 #include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 #include <vector>
 
 namespace angel_lsp::analysis
 {
-static std::string Trimmed(std::string text)
+
+/**
+ * @brief Strips leading and trailing whitespace characters from a string view.
+ * @param[in] text Input string view.
+ * @return Trimmed string view.
+ */
+static std::string_view TrimmedView(std::string_view text) noexcept
 {
     while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())))
-        text.erase(text.begin());
+    {
+        text.remove_prefix(1);
+    }
     while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back())))
-        text.pop_back();
+    {
+        text.remove_suffix(1);
+    }
     return text;
 }
 
-/**
- * @brief Strips the decorations that do not change which values a type accepts.
- *        `const`, `&` and `@` all leave the underlying type - and therefore its list pattern -
- */
 std::string StripDecorations(std::string_view raw)
 {
     std::string_view sv = raw;
     for (;;)
     {
-        std::string_view prev = sv;
+        const std::string_view prev = sv;
         sv = StripLeadingConst(sv);
         sv = StripTrailingDecorationsView(sv);
         if (sv == prev)
@@ -43,32 +47,35 @@ std::string StripDecorations(std::string_view raw)
 
     std::string compact;
     compact.reserve(sv.size());
-    for (char c : sv)
+    for (const char c : sv)
     {
         if (!std::isspace(static_cast<unsigned char>(c)))
+        {
             compact += c;
+        }
     }
     return compact;
 }
 
-TemplateSpelling ReadTemplateSpelling(const std::string& type)
+TemplateSpelling ReadTemplateSpelling(std::string_view type)
 {
     TemplateSpelling spelling;
 
     const size_t open = type.find('<');
-    if (open == std::string::npos || !type.ends_with('>'))
+    if (open == std::string_view::npos || !type.ends_with('>'))
     {
-        spelling.name = type;
+        spelling.name = std::string(type);
         return spelling;
     }
 
-    spelling.name = type.substr(0, open);
+    spelling.name = std::string(type.substr(0, open));
 
-    const std::string inner = type.substr(open + 1, type.size() - open - 2);
+    const std::string_view inner = type.substr(open + 1, type.size() - open - 2);
     int depth = 0;
-    std::string current;
-    for (char c : inner)
+    size_t start = 0;
+    for (size_t i = 0; i < inner.size(); ++i)
     {
+        const char c = inner[i];
         if (c == '<')
         {
             ++depth;
@@ -79,25 +86,22 @@ TemplateSpelling ReadTemplateSpelling(const std::string& type)
         }
         else if (c == ',' && depth == 0)
         {
-            spelling.arguments.push_back(Trimmed(current));
-            current.clear();
-            continue;
+            const std::string_view arg = TrimmedView(inner.substr(start, i - start));
+            spelling.arguments.emplace_back(arg);
+            start = i + 1;
         }
-        current += c;
     }
-    if (!current.empty())
+    if (start < inner.size())
     {
-        spelling.arguments.push_back(Trimmed(current));
+        const std::string_view arg = TrimmedView(inner.substr(start));
+        if (!arg.empty())
+        {
+            spelling.arguments.emplace_back(arg);
+        }
     }
     return spelling;
 }
 
-/**
- * @brief Builds a list of candidate container keys for a symbol name lookup.
- * @param[in] sym          Target symbol.
- * @param[in] fallbackName Fallback type name.
- * @return Ordered list of unique candidate container keys.
- */
 std::vector<std::string> CandidateContainerKeys(const Symbol& sym, std::string_view fallbackName)
 {
     std::vector<std::string> containers;
@@ -116,36 +120,7 @@ std::vector<std::string> CandidateContainerKeys(const Symbol& sym, std::string_v
     return containers;
 }
 
-/**
- * @brief How many values a list writes, counting the ones that were left out.
- */
-uint32_t ListValueCount(TSNode listNode)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    uint32_t separators = 0;
-    uint32_t written = 0;
-    parser::ForEachChildNode(listNode,
-                             [&](TSNode child)
-                             {
-                                 const TSSymbol sym = ts_node_symbol(child);
-                                 if (sym == gs.tokComma)
-                                 {
-                                     ++separators;
-                                 }
-                                 else if (ts_node_is_named(child) && sym != gs.symComment)
-                                 {
-                                     ++written;
-                                 }
-                             });
-
-    if (separators > 0)
-    {
-        return separators + 1;
-    }
-    return written > 0 ? 1 : 0;
-}
-
-void CheckElementValue(TSNode element, const std::string& wanted, DiagnosticContext& ctx,
+void CheckElementValue(const InitializerListElementFact& element, std::string_view wanted, DiagnosticContext& ctx,
                        const ElementContext& elements)
 {
     if (wanted.empty() || wanted == "?")
@@ -153,7 +128,7 @@ void CheckElementValue(TSNode element, const std::string& wanted, DiagnosticCont
         return;
     }
 
-    const std::string actual = ResolveExpressionType(element, ExpressionTypeContext(elements.scopeRoot, ctx));
+    const std::string actual = ResolveExpressionType(element.bytes, ExpressionTypeContext(elements.scopeRoot, ctx));
     if (actual.empty())
     {
         return;
@@ -161,10 +136,9 @@ void CheckElementValue(TSNode element, const std::string& wanted, DiagnosticCont
 
     if (!CanConvertImplicitly(actual, wanted, ctx))
     {
-        const TSPoint start = ts_node_start_point(element);
-        const TSPoint end = ts_node_end_point(element);
-        ctx.EmitAtRange({start.row, start.column, end.row, end.column}, "as-err-no-implicit-conversion",
-                        StripDecorations(actual), StripDecorations(wanted));
+        ctx.EmitAtRange(element.range, "as-err-no-implicit-conversion", StripDecorations(actual),
+                        StripDecorations(wanted));
     }
 }
+
 } // namespace angel_lsp::analysis

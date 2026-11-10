@@ -1,22 +1,22 @@
 #include "analysis/checkers/InitializerListCheckerCommon.h"
 #include "analysis/index/RuleIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarSymbols.h"
 
 #include <algorithm>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
 namespace angel_lsp::analysis
 {
+
 /**
  * @brief Inspects a member symbol and records it if it represents an aggregate field or list constructor.
  * @param[in] s        Member symbol.
  * @param[in] classSym Containing class symbol.
- * @param[in,out] info     Aggregate struct info sink.
+ * @param[in,out] info Aggregate struct info sink.
  */
 static void InspectStructMemberSymbol(const Symbol& s, const Symbol& classSym, AggregateStructInfo& info)
 {
@@ -27,7 +27,8 @@ static void InspectStructMemberSymbol(const Symbol& s, const Symbol& classSym, A
             const auto& varSig = s.GetVariable();
             if (!varSig.isVirtualProperty)
             {
-                std::string fType = varSig.baseTypeName.empty() ? varSig.typeName : varSig.baseTypeName;
+                const std::string_view fType = varSig.baseTypeName.empty() ? std::string_view(varSig.typeName)
+                                                                           : std::string_view(varSig.baseTypeName);
                 info.fields.push_back({s.name, StripDecorations(fType), s.startLine, s.startCharacter});
             }
         }
@@ -46,9 +47,9 @@ static void InspectStructMemberSymbol(const Symbol& s, const Symbol& classSym, A
  * @param[in] container Container name key in rule index.
  * @param[in] classSym  Containing class symbol.
  * @param[in] ctx       Diagnostic context.
- * @param[in,out] info      Aggregate struct info sink.
+ * @param[in,out] info  Aggregate struct info sink.
  */
-static void CollectStructContainerMembers(const std::string& container, const Symbol& classSym,
+static void CollectStructContainerMembers(std::string_view container, const Symbol& classSym,
                                           const DiagnosticContext& ctx, AggregateStructInfo& info)
 {
     const auto& members = ctx.request.GetRuleIndex().Members(container);
@@ -94,7 +95,7 @@ static void FinalizeStructFields(std::vector<StructFieldInfo>& fields)
  * @param[in] sym      Class symbol to inspect.
  * @param[in] spelling Parsed template spelling.
  * @param[in] ctx      Diagnostic context.
- * @param[in,out] info     Aggregate struct info sink.
+ * @param[in,out] info Aggregate struct info sink.
  */
 static void InspectClassAggregate(const Symbol& sym, const TemplateSpelling& spelling, const DiagnosticContext& ctx,
                                   AggregateStructInfo& info)
@@ -118,13 +119,6 @@ static void InspectClassAggregate(const Symbol& sym, const TemplateSpelling& spe
     }
 }
 
-/**
- * @brief Dynamically extracts member properties in declaration order for an aggregate struct/class.
- * @param[in] spelling Parsed template spelling of the struct.
- * @param[in] ctx      Diagnostic context.
- * @param[in,out] cache    Layout cache across inspections.
- * @return Aggregate struct field layout and list initialization support.
- */
 AggregateStructInfo InspectAggregateStruct(const TemplateSpelling& spelling, const DiagnosticContext& ctx,
                                            StructLayoutCache& cache)
 {
@@ -171,60 +165,47 @@ AggregateStructInfo InspectAggregateStruct(const TemplateSpelling& spelling, con
     return info;
 }
 
-/**
- * @brief Validates an initializer list against an aggregate struct or class layout.
- * @param[in] listNode   Initializer list node.
- * @param[in] type       Decorated or unadorned type name.
- * @param[in] structInfo Struct layout information.
- * @param[in] valCtx     Validation context.
- */
-void ValidateStructAggregateList(TSNode listNode, const std::string& type, const AggregateStructInfo& structInfo,
-                                 const ListValidationContext& valCtx)
+void ValidateStructAggregateList(const InitializerListFact& list, std::string_view type,
+                                 const AggregateStructInfo& structInfo, const ListValidationContext& valCtx)
 {
     if (!structInfo.hasListSupport)
     {
-        valCtx.ctx.EmitAtNodeRange(ToOptionalSourceRange(listNode), "as-err-initializer-list-not-supported", type);
+        valCtx.ctx.EmitAtRange(list.range, "as-err-initializer-list-not-supported", type);
         return;
     }
 
-    const uint32_t written = ListValueCount(listNode);
+    const uint32_t written = list.valueCount;
     const auto expected = static_cast<uint32_t>(structInfo.fields.size());
     if (written < expected)
     {
-        valCtx.ctx.EmitAtNodeRange(ToOptionalSourceRange(listNode), "as-err-initializer-list-too-few", "");
+        valCtx.ctx.EmitAtRange(list.range, "as-err-initializer-list-too-few", "");
         return;
     }
     if (written > expected)
     {
-        valCtx.ctx.EmitAtNodeRange(ToOptionalSourceRange(listNode), "as-err-initializer-list-too-many", "");
+        valCtx.ctx.EmitAtRange(list.range, "as-err-initializer-list-too-many", "");
         return;
     }
 
-    const auto& gs = parser::GetGrammarSymbols();
-    const ListValidationContext nextCtx{valCtx.ctx, valCtx.elements, valCtx.cache, valCtx.depth + 1};
+    const ListValidationContext nextCtx{valCtx.ctx, valCtx.elements, valCtx.cache, valCtx.facts, valCtx.depth + 1};
     size_t fieldIdx = 0;
-    parser::ForEachChildNode(
-        listNode,
-        [&](TSNode elem)
+    for (const auto& elem : valCtx.facts.Elements(list))
+    {
+        if (fieldIdx >= structInfo.fields.size())
         {
-            if (!ts_node_is_named(elem) || ts_node_symbol(elem) == gs.symComment)
-            {
-                return;
-            }
-            if (fieldIdx >= structInfo.fields.size())
-            {
-                return;
-            }
-            const TSSymbol sym = ts_node_symbol(elem);
-            if (sym == gs.symInitializerList)
-            {
-                InitializerListValidator::ValidateList(elem, structInfo.fields[fieldIdx].type, nextCtx);
-            }
-            else
-            {
-                CheckElementValue(elem, structInfo.fields[fieldIdx].type, valCtx.ctx, valCtx.elements);
-            }
-            ++fieldIdx;
-        });
+            return;
+        }
+        if (elem.kind == InitializerListElementKind::NestedList && elem.nestedListIndex != NoInitializerList)
+        {
+            InitializerListValidator::ValidateList(valCtx.facts.lists[elem.nestedListIndex],
+                                                   structInfo.fields[fieldIdx].type, nextCtx);
+        }
+        else
+        {
+            CheckElementValue(elem, structInfo.fields[fieldIdx].type, valCtx.ctx, valCtx.elements);
+        }
+        ++fieldIdx;
+    }
 }
+
 } // namespace angel_lsp::analysis

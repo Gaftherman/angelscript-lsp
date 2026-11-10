@@ -1,7 +1,7 @@
 #include "analysis/checkers/TypeConversionCommon.h"
+#include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/Primitives.h"
 
 #include <string>
 #include <string_view>
@@ -197,7 +197,7 @@ bool TypeConversionEvaluator::IsConvertible(std::string_view from, std::string_v
         return CanConvertBuiltins(from, to, ctx);
     }
 
-    if (ResolvesToEnum(from, table) && parser::primitives::IsNumeric(CanonicalizeType(to)))
+    if (ResolvesToEnum(from, table) && IsNumericPrimitive(CanonicalizeType(to)))
     {
         return true;
     }

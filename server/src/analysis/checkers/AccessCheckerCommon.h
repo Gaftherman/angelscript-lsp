@@ -2,14 +2,13 @@
 
 #include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/MemberAccessFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/index/ScopeTree.h"
 #include "analysis/index/SymbolTable.h"
 #include "analysis/resolution/ScopeSymbolLookup.h"
 
-#include <string>
 #include <string_view>
-#include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
@@ -30,7 +29,7 @@ bool IsSameAccessType(std::string_view a, std::string_view b);
  * @param[in] accessorKeywordRequired Whether property access requires the 'property' keyword.
  * @return Result descriptor containing access modifier, declaring class, and resolution state.
  */
-MemberLookupResult FindMember(const std::string& typeName, const std::string& memberName, const SymbolTable& table,
+MemberLookupResult FindMember(std::string_view typeName, std::string_view memberName, const SymbolTable& table,
                               bool accessorKeywordRequired);
 
 /**
@@ -41,45 +40,32 @@ MemberLookupResult FindMember(const std::string& typeName, const std::string& me
  * @param[in] ctx Diagnostic context containing optional engine rules.
  * @return MemberLookupResult structure indicating whether the member was found.
  */
-MemberLookupResult FindMemberWithProxies(const std::string& objectType, const std::string& memberName,
+MemberLookupResult FindMemberWithProxies(std::string_view objectType, std::string_view memberName,
                                          const SymbolTable& table, const DiagnosticContext& ctx);
 
 /**
- * @brief Identifies the innermost class body enclosing an AST node.
- * @param[in] node AST node to locate within a class body.
- * @param[in] sourceCode Document source text.
- * @param[out] insideMixin True if the enclosing class is a mixin class.
- * @param[in] nodeIndex Pre-indexed node index for span lookup.
- * @return View of the enclosing class name, or empty if node sits outside a class.
- */
-std::string_view EnclosingClass(TSNode node, std::string_view sourceCode, bool& insideMixin,
-                                const NodeIndex* nodeIndex);
-
-/**
  * @brief Checks whether an identifier attempts forbidden outer variable or member capture in a closure.
- * @param[in] node AST identifier node.
+ * @param[in] fact Pre-extracted member access identifier fact.
  * @param[in] scope Current lexical scope.
- * @param[in] idText Identifier name.
  * @param[in,out] ctx Diagnostic collection context.
  * @return True if an error diagnostic was emitted; false otherwise.
  */
-bool CheckClosureDisallowedAccess(TSNode node, const Scope* scope, std::string_view idText, DiagnosticContext& ctx);
+bool CheckClosureDisallowedAccess(const MemberAccessIdentifierFact& fact, const Scope* scope, DiagnosticContext& ctx);
 
 /**
  * @brief Validates member expression syntax, privacy rules, and accessor availability.
- * @param[in] node AST member expression node.
- * @param[in] request Ast check context with document source and node index.
+ * @param[in] fact Pre-extracted member expression fact.
  * @param[in] scope Current lexical scope enclosing the expression.
  * @param[in,out] ctx Diagnostic context sink.
  */
-void CheckMemberExpression(TSNode node, const AstCheckContext& request, const Scope* scope, DiagnosticContext& ctx);
+void CheckMemberExpression(const MemberExpressionFact& fact, const Scope* scope, DiagnosticContext& ctx);
 
 /**
- * @brief Validates an identifier node for implicit member access and lambda capture violations.
- * @param[in] node AST identifier node.
- * @param[in] request Ast check context with document source and scope root.
+ * @brief Validates an identifier fact for implicit member access and lambda capture violations.
+ * @param[in] fact Pre-extracted member access identifier fact.
+ * @param[in] scope Current lexical scope enclosing the identifier.
  * @param[in,out] ctx Diagnostic collection context.
  */
-void CheckIdentifierNode(TSNode node, const AstCheckContext& request, DiagnosticContext& ctx);
+void CheckIdentifierFact(const MemberAccessIdentifierFact& fact, const Scope* scope, DiagnosticContext& ctx);
 
 } // namespace angel_lsp::analysis

@@ -1,30 +1,31 @@
 #include "analysis/checkers/InitializerListCheckerCommon.h"
 #include "analysis/index/RuleIndex.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarSymbols.h"
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
 namespace angel_lsp::analysis
 {
+
 /**
  * @brief Inspects a function symbol for associative dictionary signatures (`set`, `get`, `exists`).
- * @param[in] m     Candidate function symbol.
+ * @param[in] param Candidate parameter information.
  * @param[in,out] state Dictionary type state sink.
  */
 static void UpdateDictValType(const ParameterInformation& param, DictTypeState& state)
 {
-    const std::string& paramVal = param.baseTypeName.empty() ? param.typeName : param.baseTypeName;
+    const std::string_view paramVal =
+        param.baseTypeName.empty() ? std::string_view(param.typeName) : std::string_view(param.baseTypeName);
     if (paramVal == "?" || param.typeName.find('?') != std::string::npos)
     {
         state.valType = "?";
     }
     else if (state.valType.empty())
     {
-        state.valType = paramVal;
+        state.valType = std::string(paramVal);
     }
     else if (state.valType != paramVal)
     {
@@ -62,9 +63,9 @@ static void InspectDictFunctionSignature(const Symbol& m, DictTypeState& state)
  * @param[in] containerKey Container key in rule index.
  * @param[in] argCount     Template argument count.
  * @param[in] ctx          Diagnostic context.
- * @param[in,out] state        Dictionary type state sink.
+ * @param[in,out] state    Dictionary type state sink.
  */
-static void InspectClassDictMembers(const std::string& containerKey, size_t argCount, const DiagnosticContext& ctx,
+static void InspectClassDictMembers(std::string_view containerKey, size_t argCount, const DiagnosticContext& ctx,
                                     DictTypeState& state)
 {
     const auto& members = ctx.request.GetRuleIndex().Members(containerKey);
@@ -95,7 +96,7 @@ static void InspectClassDictMembers(const std::string& containerKey, size_t argC
  * @param[in] sym      Candidate class symbol.
  * @param[in] spelling Parsed template spelling.
  * @param[in] ctx      Diagnostic context.
- * @param[in,out] state    Dictionary type state sink.
+ * @param[in,out] state Dictionary type state sink.
  */
 static void InspectClassDict(const Symbol& sym, const TemplateSpelling& spelling, const DiagnosticContext& ctx,
                              DictTypeState& state)
@@ -111,12 +112,6 @@ static void InspectClassDict(const Symbol& sym, const TemplateSpelling& spelling
     }
 }
 
-/**
- * @brief Inspects whether a type represents an associative container and resolves its key and value types.
- * @param[in] spelling Parsed template spelling of the container.
- * @param[in] ctx      Diagnostic context.
- * @return Resolved dictionary info.
- */
 DictInfo InspectDictionary(const TemplateSpelling& spelling, const DiagnosticContext& ctx)
 {
     if (spelling.name.empty())
@@ -162,95 +157,64 @@ DictInfo InspectDictionary(const TemplateSpelling& spelling, const DiagnosticCon
 
 /**
  * @brief Validates a single dictionary key-value pair in an initializer list.
- * @param[in] child    Pair initializer list node.
+ * @param[in] pair     Pair initializer list fact.
  * @param[in] dictInfo Dictionary key and value type information.
  * @param[in] valCtx   Validation context.
  */
-static void ValidateDictionaryPair(TSNode child, const DictInfo& dictInfo, const ListValidationContext& valCtx)
+static void ValidateDictionaryPair(const InitializerListFact& pair, const DictInfo& dictInfo,
+                                   const ListValidationContext& valCtx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode keyNode{};
-    TSNode valNode{};
-    uint32_t pairCount = 0;
-
-    parser::ForEachChildNode(child,
-                             [&](TSNode elem)
-                             {
-                                 if (!ts_node_is_named(elem) || ts_node_symbol(elem) == gs.symComment)
-                                 {
-                                     return;
-                                 }
-                                 if (pairCount == 0)
-                                 {
-                                     keyNode = elem;
-                                 }
-                                 else if (pairCount == 1)
-                                 {
-                                     valNode = elem;
-                                 }
-                                 ++pairCount;
-                             });
-
-    if (!ts_node_is_null(keyNode))
+    const auto elements = valCtx.facts.Elements(pair);
+    if (!elements.empty())
     {
-        if (ts_node_symbol(keyNode) == gs.symInitializerList)
+        const auto& key = elements[0];
+        if (key.kind == InitializerListElementKind::NestedList)
         {
-            valCtx.ctx.EmitAtNodeRange(ToOptionalSourceRange(keyNode), "as-err-initializer-list-not-supported",
-                                       dictInfo.keyType);
+            valCtx.ctx.EmitAtRange(key.range, "as-err-initializer-list-not-supported", dictInfo.keyType);
         }
         else
         {
-            CheckElementValue(keyNode, dictInfo.keyType, valCtx.ctx, valCtx.elements);
+            CheckElementValue(key, dictInfo.keyType, valCtx.ctx, valCtx.elements);
         }
     }
-    if (!ts_node_is_null(valNode))
+    if (elements.size() > 1)
     {
-        if (ts_node_symbol(valNode) == gs.symInitializerList)
+        const auto& val = elements[1];
+        if (val.kind == InitializerListElementKind::NestedList)
         {
-            valCtx.ctx.EmitAtNodeRange(ToOptionalSourceRange(valNode), "as-err-initializer-list-not-supported",
-                                       dictInfo.valType);
+            valCtx.ctx.EmitAtRange(val.range, "as-err-initializer-list-not-supported", dictInfo.valType);
         }
         else
         {
-            CheckElementValue(valNode, dictInfo.valType, valCtx.ctx, valCtx.elements);
+            CheckElementValue(val, dictInfo.valType, valCtx.ctx, valCtx.elements);
         }
     }
 }
 
-/**
- * @brief Validates an initializer list against expected dictionary key-value semantics.
- * @param[in] listNode Initializer list node.
- * @param[in] dictInfo Dictionary key and value type information.
- * @param[in] valCtx   Validation context.
- */
-void ValidateDictionaryList(TSNode listNode, const DictInfo& dictInfo, const ListValidationContext& valCtx)
+void ValidateDictionaryList(const InitializerListFact& list, const DictInfo& dictInfo,
+                            const ListValidationContext& valCtx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    parser::ForEachChildNode(
-        listNode,
-        [&](TSNode child)
+    for (const auto& elem : valCtx.facts.Elements(list))
+    {
+        if (elem.kind != InitializerListElementKind::NestedList || elem.nestedListIndex == NoInitializerList)
         {
-            if (!ts_node_is_named(child) || ts_node_symbol(child) == gs.symComment)
-            {
-                return;
-            }
-            if (ts_node_symbol(child) != gs.symInitializerList)
-            {
-                valCtx.ctx.EmitAtNodeRange(ToOptionalSourceRange(child), "as-err-initializer-list-expected", "");
-                return;
-            }
+            valCtx.ctx.EmitAtRange(elem.range, "as-err-initializer-list-expected", "");
+            continue;
+        }
 
-            const uint32_t valuesCount = ListValueCount(child);
-            if (valuesCount < 2)
-            {
-                valCtx.ctx.EmitAtNodeRange(ToOptionalSourceRange(child), "as-err-initializer-list-too-few", "");
-            }
-            else if (valuesCount > 2)
-            {
-                valCtx.ctx.EmitAtNodeRange(ToOptionalSourceRange(child), "as-err-initializer-list-too-many", "");
-            }
+        const InitializerListFact& pairFact = valCtx.facts.lists[elem.nestedListIndex];
+        const uint32_t valuesCount = pairFact.valueCount;
+        if (valuesCount < 2)
+        {
+            valCtx.ctx.EmitAtRange(pairFact.range, "as-err-initializer-list-too-few", "");
+        }
+        else if (valuesCount > 2)
+        {
+            valCtx.ctx.EmitAtRange(pairFact.range, "as-err-initializer-list-too-many", "");
+        }
 
-            ValidateDictionaryPair(child, dictInfo, valCtx);
-        });
+        ValidateDictionaryPair(pairFact, dictInfo, valCtx);
+    }
 }
+
 } // namespace angel_lsp::analysis

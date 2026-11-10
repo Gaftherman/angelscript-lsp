@@ -54,7 +54,7 @@ static bool AccessorStandsForProperty(const Symbol& sym, bool keywordRequired)
  * @param[out] viaAccessor Set to true if match was via getter/setter accessor.
  * @return Vector of matched symbols.
  */
-static std::vector<Symbol> CollectDirectCandidates(const std::string& owner, const std::string& memberName,
+static std::vector<Symbol> CollectDirectCandidates(std::string_view owner, std::string_view memberName,
                                                    const MemberLookupContext& ctx, bool& viaAccessor)
 {
     std::vector<Symbol> candidates;
@@ -82,9 +82,11 @@ static std::vector<Symbol> CollectDirectCandidates(const std::string& owner, con
         }
     }
 
-    for (const auto& accessorPrefix : {"get_", "set_"})
+    for (const auto* accessorPrefix : {"get_", "set_"})
     {
-        auto accSyms = ctx.table.FindMemberSymbolPtr(owner, std::string(accessorPrefix) + memberName);
+        std::string accName(accessorPrefix);
+        accName.append(memberName);
+        auto accSyms = ctx.table.FindMemberSymbolPtr(owner, accName);
         if (!accSyms)
         {
             continue;
@@ -117,7 +119,7 @@ static std::vector<Symbol> CollectDirectCandidates(const std::string& owner, con
  * @param[out] viaAccessor Set to true if match was via getter/setter accessor.
  * @return Vector of matched symbols.
  */
-static std::vector<Symbol> CollectContainerCandidates(const std::string& owner, const std::string& memberName,
+static std::vector<Symbol> CollectContainerCandidates(std::string_view owner, std::string_view memberName,
                                                       const MemberLookupContext& ctx, bool& viaAccessor)
 {
     std::vector<Symbol> candidates;
@@ -136,9 +138,11 @@ static std::vector<Symbol> CollectContainerCandidates(const std::string& owner, 
         return candidates;
     }
 
-    for (const auto& accessorPrefix : {"get_", "set_"})
+    for (const auto* accessorPrefix : {"get_", "set_"})
     {
-        if (auto syms = ctx.table.FindSymbolsPtr(accessorPrefix + memberName))
+        std::string accName(accessorPrefix);
+        accName.append(memberName);
+        if (auto syms = ctx.table.FindSymbolsPtr(accName))
         {
             for (const auto& sym : *syms)
             {
@@ -163,7 +167,7 @@ static std::vector<Symbol> CollectContainerCandidates(const std::string& owner, 
  * @param[out] viaAccessor Set to true if match was via getter/setter accessor.
  * @return Vector of candidate symbols.
  */
-static std::vector<Symbol> CollectOwnerCandidates(const std::string& owner, const std::string& memberName,
+static std::vector<Symbol> CollectOwnerCandidates(std::string_view owner, std::string_view memberName,
                                                   const MemberLookupContext& ctx, bool& viaAccessor)
 {
     auto candidates = CollectDirectCandidates(owner, memberName, ctx, viaAccessor);
@@ -183,7 +187,7 @@ static std::vector<Symbol> CollectOwnerCandidates(const std::string& owner, cons
  * @param[in,out] result Member access state to update.
  * @return True if resolution concluded (public access reached).
  */
-static bool ApplyCandidatesAccess(const std::vector<Symbol>& candidates, const std::string& owner,
+static bool ApplyCandidatesAccess(const std::vector<Symbol>& candidates, std::string_view owner,
                                   const MemberLookupContext& ctx, MemberLookupResult& result)
 {
     for (const auto& sym : candidates)
@@ -200,7 +204,7 @@ static bool ApplyCandidatesAccess(const std::vector<Symbol>& candidates, const s
         {
             result.decided = false;
             result.access = AccessModifier::Public;
-            result.declaringClass = IsMixinClass(owner, ctx.table) ? ctx.typeName : owner;
+            result.declaringClass = IsMixinClass(owner, ctx.table) ? ctx.typeName : std::string(owner);
             return true;
         }
 
@@ -208,13 +212,13 @@ static bool ApplyCandidatesAccess(const std::vector<Symbol>& candidates, const s
         {
             result.decided = true;
             result.access = access;
-            result.declaringClass = IsMixinClass(owner, ctx.table) ? ctx.typeName : owner;
+            result.declaringClass = IsMixinClass(owner, ctx.table) ? ctx.typeName : std::string(owner);
         }
     }
     return false;
 }
 
-MemberLookupResult FindMember(const std::string& typeName, const std::string& memberName, const SymbolTable& table,
+MemberLookupResult FindMember(std::string_view typeName, std::string_view memberName, const SymbolTable& table,
                               bool accessorKeywordRequired)
 {
     MemberLookupResult result;
@@ -224,15 +228,19 @@ MemberLookupResult FindMember(const std::string& typeName, const std::string& me
     }
 
     const auto ruleIndex = table.GetRuleIndex();
-    const MemberLookupContext ctx{typeName, table, accessorKeywordRequired};
+    const MemberLookupContext ctx{std::string(typeName), table, accessorKeywordRequired};
     for (const auto& owner : GetInheritedTypeHierarchy(typeName, table))
     {
         if (ruleIndex)
         {
             const auto& members = ruleIndex->Members(owner);
+            std::string getAcc("get_");
+            getAcc.append(memberName);
+            std::string setAcc("set_");
+            setAcc.append(memberName);
             const bool hasPotential = members.allMemberNames.contains(memberName) ||
-                                      members.allMemberNames.contains("get_" + memberName) ||
-                                      members.allMemberNames.contains("set_" + memberName);
+                                      members.allMemberNames.contains(getAcc) ||
+                                      members.allMemberNames.contains(setAcc);
             if (!hasPotential)
             {
                 continue;
@@ -248,7 +256,7 @@ MemberLookupResult FindMember(const std::string& typeName, const std::string& me
     return result;
 }
 
-MemberLookupResult FindMemberWithProxies(const std::string& objectType, const std::string& memberName,
+MemberLookupResult FindMemberWithProxies(std::string_view objectType, std::string_view memberName,
                                          const SymbolTable& table, const DiagnosticContext& ctx)
 {
     MemberLookupResult member = FindMember(objectType, memberName, table, ctx.request.RequiresAccessorKeyword());
@@ -266,7 +274,7 @@ MemberLookupResult FindMemberWithProxies(const std::string& objectType, const st
     auto hier = GetInheritedTypeHierarchy(objectType, table);
     for (const auto& owner : hier)
     {
-        auto it = proxyMap.find(owner);
+        auto it = proxyMap.find(std::string(owner));
         if (it != proxyMap.end())
         {
             for (const auto& proxy : it->second)

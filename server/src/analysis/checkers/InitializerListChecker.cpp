@@ -1,272 +1,181 @@
 #include "analysis/checkers/InitializerListChecker.h"
 
-#include "analysis/index/NodeIndex.h"
-#include "analysis/resolution/SemanticHelpers.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarSymbols.h"
+#include "analysis/checkers/InitializerListCheckerCommon.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 
-#include <array>
 #include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
 
 namespace angel_lsp::analysis
 {
-/**
- * @brief The declared return type of the function a `return` sits in, or "" when unknown.
- */
-static std::string EnclosingReturnType(TSNode returnNode, std::string_view sourceCode)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const std::array<TSSymbol, 2> targets = {gs.symLambdaExpression, gs.symFuncDeclaration};
-    TSNode enclosing = parser::FindAncestorWithAnySymbol(parser::GetParent(returnNode), targets);
-    if (!ts_node_is_null(enclosing) && ts_node_symbol(enclosing) == gs.symFuncDeclaration)
-    {
-        TSNode returnType = parser::GetChildByField(enclosing, gs.fieldReturnType);
-        if (ts_node_is_null(returnType))
-        {
-            returnType = parser::GetChildByField(enclosing, gs.fieldType);
-        }
-        return ts_node_is_null(returnType) ? std::string() : std::string(parser::NodeText(returnType, sourceCode));
-    }
-    return "";
-}
 
 /**
- * @brief Computes the element context at the position of an initializer list node.
- * @param[in] node    Target AST node.
- * @param[in] request Analysis request.
+ * @brief Computes the element context at the position of an initializer list fact.
+ * @param[in] fact       Initializer list fact.
+ * @param[in] sourceCode Document source text.
+ * @param[in] scopeRoot  Root of the lexical scope tree, or nullptr.
  * @return ElementContext with enclosing scope.
  */
-static ElementContext ElementsAt(TSNode node, const AstCheckContext& request)
+static ElementContext ElementsAt(const InitializerListFact& fact, std::string_view sourceCode, const Scope* scopeRoot)
 {
-    const TSPoint start = ts_node_start_point(node);
-    return ElementContext{request.sourceCode,
-                          request.scopeRoot ? FindEnclosingScope(request.scopeRoot, start.row, start.column) : nullptr};
+    return ElementContext{sourceCode,
+                          scopeRoot ? FindEnclosingScope(scopeRoot, fact.range.startLine, fact.range.startCharacter)
+                                    : nullptr};
 }
 
 /**
  * @brief Validates typed initializer lists (`Type = { ... }`).
- * @param[in] node    Typed initializer list AST node.
- * @param[in] initCtx Initializer traversal context.
+ * @param[in] fact   Initializer list fact.
+ * @param[in] valCtx Active list validation context.
  */
-static void ProcessTypedInitializerList(TSNode node, const InitializerListContext& initCtx)
+static void ProcessTypedInitializerList(const InitializerListFact& fact, const ListValidationContext& valCtx)
 {
-    TSNode typeNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldType);
-    TSNode valueNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldValue);
-    if (!ts_node_is_null(typeNode) && !ts_node_is_null(valueNode))
+    if (!fact.owner.targetType.empty())
     {
-        const ElementContext elements = ElementsAt(valueNode, initCtx.request);
-        const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.structCache, 0};
-        InitializerListValidator::ValidateList(
-            valueNode, std::string(parser::NodeText(typeNode, initCtx.request.sourceCode)), valCtx);
+        InitializerListValidator::ValidateList(fact, fact.owner.targetType, valCtx);
     }
 }
 
 /**
  * @brief Validates assignment expressions with initializer list right-hand sides (`a = { ... }`).
- * @param[in] node    Assignment expression AST node.
- * @param[in] initCtx Initializer traversal context.
+ * @param[in] fact   Initializer list fact.
+ * @param[in] valCtx Active list validation context.
  */
-static void ProcessAssignmentExpression(TSNode node, const InitializerListContext& initCtx)
+static void ProcessAssignmentExpression(const InitializerListFact& fact, const ListValidationContext& valCtx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode value = parser::GetChildByField(node, gs.fieldRight);
-    if (ts_node_is_null(value) || ts_node_symbol(value) != gs.symInitializerList)
+    if (fact.owner.targetBytes.Empty())
     {
         return;
     }
-
-    TSNode opNode = parser::GetChildByField(node, gs.fieldOperator);
-    TSNode target = parser::GetChildByField(node, gs.fieldLeft);
-    if (!ts_node_is_null(opNode) && !ts_node_is_null(target) && ts_node_symbol(opNode) == gs.tokAssign)
+    const std::string targetType =
+        ResolveExpressionType(fact.owner.targetBytes, ExpressionTypeContext(valCtx.elements.scopeRoot, valCtx.ctx));
+    if (!targetType.empty())
     {
-        const ElementContext elements = ElementsAt(value, initCtx.request);
-        const std::string targetType =
-            ResolveExpressionType(target, ExpressionTypeContext(elements.scopeRoot, initCtx.ctx));
-        if (!targetType.empty())
-        {
-            const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.structCache, 0};
-            InitializerListValidator::ValidateList(value, targetType, valCtx);
-        }
+        InitializerListValidator::ValidateList(fact, targetType, valCtx);
     }
 }
 
 /**
  * @brief Validates return statements returning initializer lists (`return { ... };`).
- * @param[in] node    Return statement AST node.
- * @param[in] initCtx Initializer traversal context.
+ * @param[in] fact   Initializer list fact.
+ * @param[in] valCtx Active list validation context.
  */
-static void ProcessReturnStatement(TSNode node, const InitializerListContext& initCtx)
+static void ProcessReturnStatement(const InitializerListFact& fact, const ListValidationContext& valCtx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    TSNode value{};
-    parser::ForEachChildNode(node,
-                             [&](TSNode child)
-                             {
-                                 if (ts_node_is_null(value) && ts_node_is_named(child) &&
-                                     ts_node_symbol(child) != gs.symComment)
-                                 {
-                                     value = child;
-                                 }
-                             });
-    if (ts_node_is_null(value) || ts_node_symbol(value) != gs.symInitializerList)
+    if (!fact.owner.targetType.empty())
     {
-        return;
-    }
-
-    const std::string returnType = EnclosingReturnType(node, initCtx.request.sourceCode);
-    if (!returnType.empty())
-    {
-        const ElementContext elements = ElementsAt(value, initCtx.request);
-        const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.structCache, 0};
-        InitializerListValidator::ValidateList(value, returnType, valCtx);
+        InitializerListValidator::ValidateList(fact, fact.owner.targetType, valCtx);
     }
 }
 
 /**
  * @brief Validates variable declarations with initializer list initializers (`Type a = { ... };`).
- * @param[in] node    Variable declaration AST node.
- * @param[in] initCtx Initializer traversal context.
+ * @param[in] fact   Initializer list fact.
+ * @param[in] valCtx Active list validation context.
  */
-static void ProcessVariableDeclaration(TSNode node, const InitializerListContext& initCtx)
+static void ProcessVariableDeclaration(const InitializerListFact& fact, const ListValidationContext& valCtx)
 {
-    TSNode typeNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldVarType);
-    if (ts_node_is_null(typeNode))
+    if (!fact.owner.targetType.empty())
     {
-        typeNode = parser::GetChildByField(node, parser::GetGrammarSymbols().fieldType);
-    }
-    if (ts_node_is_null(typeNode))
-    {
-        return;
-    }
-
-    const auto& gs = parser::GetGrammarSymbols();
-    const std::string declaredType(parser::NodeText(typeNode, initCtx.request.sourceCode));
-    parser::ForEachChildNode(
-        node,
-        [&](TSNode declarator)
-        {
-            if (!ts_node_is_named(declarator) || ts_node_symbol(declarator) != gs.symVariableDeclarator)
-            {
-                return;
-            }
-
-            TSNode valueNode = parser::GetChildByField(declarator, parser::GetGrammarSymbols().fieldValue);
-            if (!ts_node_is_null(valueNode) && ts_node_symbol(valueNode) == gs.symInitializerList)
-            {
-                const ElementContext elements = ElementsAt(valueNode, initCtx.request);
-                const ListValidationContext valCtx{initCtx.ctx, elements, initCtx.structCache, 0};
-                InitializerListValidator::ValidateList(valueNode, declaredType, valCtx);
-            }
-        });
-}
-
-/**
- * @brief Dispatches an AST node to the corresponding initializer list processor.
- * @param[in] node    AST node to process.
- * @param[in] initCtx Initializer traversal context.
- */
-static void DispatchInitListNode(TSNode node, const InitializerListContext& initCtx)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSSymbol sym = ts_node_symbol(node);
-    if (sym == gs.symTypedInitializerList)
-    {
-        ProcessTypedInitializerList(node, initCtx);
-    }
-    else if (sym == gs.symAssignmentExpression)
-    {
-        ProcessAssignmentExpression(node, initCtx);
-    }
-    else if (sym == gs.symReturnStatement)
-    {
-        ProcessReturnStatement(node, initCtx);
-    }
-    else if (sym == gs.symVariableDeclaration)
-    {
-        ProcessVariableDeclaration(node, initCtx);
+        InitializerListValidator::ValidateList(fact, fact.owner.targetType, valCtx);
     }
 }
 
 /**
- * @brief Walks initializer list nodes using the fast NodeIndex cursor merge.
- * @param[in] initCtx Initializer traversal context.
+ * @brief Dispatches a top-level initializer list fact to its owning context processor.
+ * @param[in] fact   Initializer list fact.
+ * @param[in] valCtx Active list validation context.
  */
-static void DispatchIndexedInitializerLists(const InitializerListContext& initCtx)
+static void DispatchInitListFact(const InitializerListFact& fact, const ListValidationContext& valCtx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    initCtx.request.nodeIndex->ForEachNodeOrdered(std::array{gs.symTypedInitializerList, gs.symAssignmentExpression,
-                                                             gs.symReturnStatement, gs.symVariableDeclaration},
-                                                  [&](TSNode node) { DispatchInitListNode(node, initCtx); });
-}
-
-/**
- * @brief Falls back to flat worklist traversal when NodeIndex is unavailable.
- * @param[in] initCtx Initializer traversal context.
- */
-static void DispatchTreeWalkInitializerLists(const InitializerListContext& initCtx)
-{
-    if (ts_node_is_null(initCtx.request.rootNode))
+    switch (fact.owner.kind)
     {
-        return;
-    }
-    TSTreeCursor cursor = ts_tree_cursor_new(initCtx.request.rootNode);
-    bool visitedChildren = false;
-    while (true)
-    {
-        TSNode node = ts_tree_cursor_current_node(&cursor);
-        if (!visitedChildren)
-        {
-            DispatchInitListNode(node, initCtx);
-            if (ts_tree_cursor_goto_first_child(&cursor))
-            {
-                continue;
-            }
-        }
-        if (ts_tree_cursor_goto_next_sibling(&cursor))
-        {
-            visitedChildren = false;
-            continue;
-        }
-        if (ts_tree_cursor_goto_parent(&cursor))
-        {
-            visitedChildren = true;
-            continue;
-        }
+    case InitializerListOwnerKind::TypedList:
+        ProcessTypedInitializerList(fact, valCtx);
+        break;
+    case InitializerListOwnerKind::Assignment:
+        ProcessAssignmentExpression(fact, valCtx);
+        break;
+    case InitializerListOwnerKind::ReturnStatement:
+        ProcessReturnStatement(fact, valCtx);
+        break;
+    case InitializerListOwnerKind::VariableDeclaration:
+        ProcessVariableDeclaration(fact, valCtx);
+        break;
+    case InitializerListOwnerKind::None:
+    case InitializerListOwnerKind::CallArgument:
+    case InitializerListOwnerKind::ParentList:
         break;
     }
-    ts_tree_cursor_delete(&cursor);
+}
+
+void CheckInitializerListAgainstType(const InitializerListTargetRequest& request, DiagnosticContext& ctx)
+{
+    StructLayoutCache cache;
+    const ListValidationContext valCtx{ctx, request.elements, cache, request.facts, 0};
+    InitializerListValidator::ValidateList(request.list, request.targetType, valCtx);
+}
+
+void CheckInitializerListAgainstType(const InitializerListFact& list, const InitializerListFacts& facts,
+                                     std::string_view targetType, DiagnosticContext& ctx)
+{
+    const ElementContext elements{ctx.request.sourceCode, ctx.request.scopeRoot.get()};
+    CheckInitializerListAgainstType(InitializerListTargetRequest{list, facts, targetType, elements}, ctx);
 }
 
 void CheckInitializerListAgainstType(TSNode listNode, const std::string& targetType, const ElementContext& elements,
                                      DiagnosticContext& ctx)
 {
-    StructLayoutCache cache;
-    const ListValidationContext valCtx{ctx, elements, cache, 0};
-    InitializerListValidator::ValidateList(listNode, targetType, valCtx);
+    if (ts_node_is_null(listNode) || !ctx.request.nodeIndex)
+    {
+        return;
+    }
+    const InitializerListFacts facts = BuildInitializerListFacts(*ctx.request.nodeIndex, elements.sourceCode);
+    const IndexedByteRange span{ts_node_start_byte(listNode), ts_node_end_byte(listNode)};
+    const auto* fact = facts.Find(span);
+    if (!fact)
+    {
+        return;
+    }
+    CheckInitializerListAgainstType(InitializerListTargetRequest{*fact, facts, targetType, elements}, ctx);
 }
 
-void ValidateInitializerList(TSNode listNode, const std::string& expectedType, DiagnosticContext& ctx)
+void ValidateInitializerList(const InitializerListFact& list, const InitializerListFacts& facts,
+                             std::string_view expectedType, DiagnosticContext& ctx)
 {
-    ElementContext elements{ctx.request.sourceCode, ctx.request.scopeRoot.get()};
+    const ElementContext elements{ctx.request.sourceCode, ctx.request.scopeRoot.get()};
     StructLayoutCache cache;
-    const ListValidationContext valCtx{ctx, elements, cache, 0};
-    InitializerListValidator::ValidateList(listNode, expectedType, valCtx);
+    const ListValidationContext valCtx{ctx, elements, cache, facts, 0};
+    InitializerListValidator::ValidateList(list, expectedType, valCtx);
+}
+
+
+
+void CheckInitializerLists(const InitializerListFacts& facts, std::string_view sourceCode, const Scope* scopeRoot,
+                           DiagnosticContext& ctx)
+{
+    StructLayoutCache structCache;
+    for (const auto& fact : facts.lists)
+    {
+        if (fact.parentListIndex != NoInitializerList)
+        {
+            continue;
+        }
+        const ElementContext elements = ElementsAt(fact, sourceCode, scopeRoot);
+        const ListValidationContext valCtx{ctx, elements, structCache, facts, 0};
+        DispatchInitListFact(fact, valCtx);
+    }
 }
 
 void CheckInitializerLists(const AstCheckContext& request, DiagnosticContext& ctx)
 {
-    StructLayoutCache structCache;
-    const InitializerListContext initCtx{request, ctx, structCache};
-
-    if (request.nodeIndex)
+    if (!request.nodeIndex || request.sourceCode.empty())
     {
-        DispatchIndexedInitializerLists(initCtx);
+        return;
     }
-    else
-    {
-        DispatchTreeWalkInitializerLists(initCtx);
-    }
+    const InitializerListFacts facts = BuildInitializerListFacts(*request.nodeIndex, request.sourceCode);
+    CheckInitializerLists(facts, request.sourceCode, request.scopeRoot, ctx);
 }
+
 } // namespace angel_lsp::analysis

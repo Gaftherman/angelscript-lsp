@@ -2,9 +2,11 @@
 
 #include "analysis/checkers/AstCheckContext.h"
 #include "analysis/diagnostics/DiagnosticContext.h"
+#include "analysis/index/InitializerListFacts.h"
 #include "analysis/index/ScopeTree.h"
 
 #include <ankerl/unordered_dense.h>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <tree_sitter/api.h>
@@ -14,12 +16,21 @@ namespace angel_lsp::analysis
 {
 
 /**
-
  * @brief Reports initializer lists applied to a type that cannot be built from one.
- * @param request Tree and source text of the document under analysis.
- * @param ctx Diagnostic sink; also carries the TypeConfig naming the array template.
+ * @param[in] request Tree and source text of the document under analysis.
+ * @param[in,out] ctx Diagnostic sink; also carries the TypeConfig naming the array template.
  */
 void CheckInitializerLists(const AstCheckContext& request, DiagnosticContext& ctx);
+
+/**
+ * @brief Evaluates pre-extracted initializer list facts and reports invalid lists.
+ * @param[in] facts Precomputed initializer list facts for the document revision.
+ * @param[in] sourceCode Source text of the document under analysis.
+ * @param[in] scopeRoot Root of the lexical scope tree, or nullptr.
+ * @param[in,out] ctx Diagnostic context accumulating emitted findings.
+ */
+void CheckInitializerLists(const InitializerListFacts& facts, std::string_view sourceCode, const Scope* scopeRoot,
+                           DiagnosticContext& ctx);
 
 /**
  * @brief AST checker for initializer list nesting and element type compatibility.
@@ -53,8 +64,35 @@ struct ElementContext
 };
 
 /**
- * @brief Checks one list against a target type the caller already knows.
- *        A list written as a call argument is compiled against the parameter it lands on, and which
+ * @brief Request parameters for checking an initializer list against a known target type.
+ */
+struct InitializerListTargetRequest
+{
+    const InitializerListFact& list;
+    const InitializerListFacts& facts;
+    std::string_view targetType;
+    ElementContext elements{};
+};
+
+/**
+ * @brief Checks one initializer list fact against a target type using a structured request.
+ * @param[in] request Target type, element scope, and initializer list facts.
+ * @param[in,out] ctx Diagnostic sink.
+ */
+void CheckInitializerListAgainstType(const InitializerListTargetRequest& request, DiagnosticContext& ctx);
+
+/**
+ * @brief Checks one initializer list fact against a target type using default element scope.
+ * @param[in] list Initializer list fact to check.
+ * @param[in] facts Enclosing facts of the document.
+ * @param[in] targetType Target type name.
+ * @param[in,out] ctx Diagnostic sink.
+ */
+void CheckInitializerListAgainstType(const InitializerListFact& list, const InitializerListFacts& facts,
+                                     std::string_view targetType, DiagnosticContext& ctx);
+
+/**
+ * @brief Checks one list against a target type the caller already knows (legacy TSNode overload).
  * @param[in] listNode   The `initializer_list` node.
  * @param[in] targetType The type it initializes, as written; decorations are stripped here.
  * @param[in] elements   Element source and scope context.
@@ -64,12 +102,16 @@ void CheckInitializerListAgainstType(TSNode listNode, const std::string& targetT
                                      DiagnosticContext& ctx);
 
 /**
- * @brief Validates an initializer list recursively against an expected target type.
- * @param listNode The `initializer_list` AST node.
- * @param expectedType The expected target type name.
- * @param ctx Diagnostic context.
+ * @brief Validates an initializer list fact recursively against an expected target type.
+ * @param[in] list Initializer list fact.
+ * @param[in] facts Enclosing document facts.
+ * @param[in] expectedType The expected target type name.
+ * @param[in,out] ctx Diagnostic context.
  */
-void ValidateInitializerList(TSNode listNode, const std::string& expectedType, DiagnosticContext& ctx);
+void ValidateInitializerList(const InitializerListFact& list, const InitializerListFacts& facts,
+                             std::string_view expectedType, DiagnosticContext& ctx);
+
+
 
 /**
  * @brief Canonical and instantiated type name spellings for template type arguments.
@@ -143,24 +185,15 @@ struct AggregateStructInfo
 using StructLayoutCache = ankerl::unordered_dense::map<std::string, AggregateStructInfo>;
 
 /**
- * @brief Encapsulates initializer list AST node, expected target type, and active diagnostic sinks.
+ * @brief Encapsulates initializer list fact context, expected target type, and active diagnostic sinks.
  */
 struct ListValidationContext
 {
     DiagnosticContext& ctx;
     const ElementContext& elements;
     StructLayoutCache& cache;
+    const InitializerListFacts& facts;
     int depth = 0;
-};
-
-/**
- * @brief Context for inspecting and validating nested initializer list expressions.
- */
-struct InitializerListContext
-{
-    const AstCheckContext& request;
-    DiagnosticContext& ctx;
-    StructLayoutCache& structCache;
 };
 
 /**
@@ -169,11 +202,13 @@ struct InitializerListContext
 struct InitializerListValidator
 {
     /**
-     * @brief Validates an initializer list node against target composite, container, or struct type.
-     * @param[in] listNode Initializer list AST node.
-     * @param[in] targetType Target type name.
+     * @brief Validates an initializer list fact against target composite, container, or struct type.
+     * @param[in] list Initializer list fact.
+     * @param[in] targetType Target type name view.
      * @param[in] valCtx Active list validation context.
      */
-    static void ValidateList(TSNode listNode, const std::string& targetType, const ListValidationContext& valCtx);
+    static void ValidateList(const InitializerListFact& list, std::string_view targetType,
+                             const ListValidationContext& valCtx);
 };
+
 } // namespace angel_lsp::analysis
