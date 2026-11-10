@@ -150,6 +150,11 @@ void ProcessUnaryOrPostfixNode(TSNode node, const TypeConversionCheckRequest& re
     }
 }
 
+/**
+ * @brief Checks whether an operand is written or mutated by its parent expression.
+ * @param[in] fact Indexed operand syntax record.
+ * @return True for the left side of an assignment and the operand of a unary or postfix expression.
+ */
 static bool IsWriteOrMutationOperand(const IndexedSyntaxNode& fact)
 {
     const auto& gs = parser::GetGrammarSymbols();

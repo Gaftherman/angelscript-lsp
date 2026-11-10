@@ -628,6 +628,13 @@ class NodeIndex
         return IncludeDirectives();
     }
 
+    /**
+     * @brief Finds the innermost callable declaration (function or lambda expression) enclosing byteOffset.
+     * @param[in] byteOffset Document byte offset to test.
+     * @return Innermost enclosing function or lambda TSNode or null node if none found.
+     */
+    [[nodiscard]] TSNode FindEnclosingCallable(uint32_t byteOffset) const noexcept;
+
   private:
     struct IndexedSwitch
     {
@@ -774,13 +781,6 @@ class NodeIndex
      * @return Innermost enclosing TSNode or null node if not enclosed.
      */
     [[nodiscard]] TSNode FindEnclosingNodeAny(uint32_t byteOffset, std::span<const TSSymbol> targetSyms) const noexcept;
-
-    /**
-     * @brief Finds the innermost callable declaration (function or lambda expression) enclosing byteOffset.
-     * @param[in] byteOffset Document byte offset to test.
-     * @return Innermost enclosing function or lambda TSNode or null node if none found.
-     */
-    [[nodiscard]] TSNode FindEnclosingCallable(uint32_t byteOffset) const noexcept;
 
     TSNode m_root{};
     const TSLanguage* m_language = nullptr;

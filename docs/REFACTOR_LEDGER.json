@@ -160,7 +160,7 @@
       "originalSymbolOrCode": "GetSimpleIdentifierName CheckAssignmentExpressionReads ExtractRawArgNodes CheckCallArguments CheckCallExpressionReads",
       "whatItDidAndWhyInThatFile": "Recursively inspected syntax child nodes to find reads, evaluate assignments and process argument effects.",
       "whyChangedOrDeleted": "Share the same local node records for statement structure and expression operands. Execute read, assignment and call continuations in language evaluation order.",
-      "replacedByCanonicalFile": "server/src/analysis/checkers/DefiniteAssignmentChecker.cpp",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/DefiniteAssignmentCheckerExpressions.cpp",
       "replacedByCanonicalSymbol": "EvaluateReadTask",
       "ramOrCpuImpact": "The read stack grows on the heap with expression nesting. A single node record replaces separate statement and operand records, and its links replace repeat Tree-sitter child lookups.",
       "verifiedByTests": [
@@ -485,7 +485,7 @@
       "originalSymbolOrCode": "NodeText std::string locationKey = name + \":\" + std::to_string(start.row)",
       "whatItDidAndWhyInThatFile": "Created transient std::string heap allocations when checking identifier names and formatting composite string keys for duplicate diagnostics tracking.",
       "whyChangedOrDeleted": "Use GetNodeTextView returning std::string_view directly into source text and pack row/column into uint64_t location keys without heap allocations.",
-      "replacedByCanonicalFile": "server/src/analysis/checkers/DefiniteAssignmentChecker.cpp",
+      "replacedByCanonicalFile": "server/src/analysis/checkers/DefiniteAssignmentCheckerExpressions.cpp",
       "replacedByCanonicalSymbol": "SimpleIdentifierName",
       "ramOrCpuImpact": "Eliminates all dynamic string allocations in DefiniteAssignmentVisitor hot path during function body dataflow analysis.",
       "verifiedByTests": [
