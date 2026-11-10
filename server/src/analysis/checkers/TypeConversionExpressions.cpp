@@ -263,4 +263,16 @@ void ProcessCastNode(TSNode node, const TypeConversionCheckRequest& request, Dia
     CheckCast(node, scope, ctx);
 }
 
+/**
+ * @brief Resolves the value type of an expression given as a syntax node by reading it into a fact first.
+ * @param[in] node Expression node to resolve; a null node yields an unknown type.
+ * @param[in] scope Lexical scope at the expression position.
+ * @param[in] ctx Diagnostic context.
+ * @return Resolved ExpressionType.
+ */
+ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
+{
+    return ResolveValueType(ReadValueExpression(node, ctx.request.nodeIndex, ctx.request.sourceCode), scope, ctx);
+}
+
 } // namespace angel_lsp::analysis

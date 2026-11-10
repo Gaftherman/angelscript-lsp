@@ -4,6 +4,7 @@
 #include "analysis/index/AssignmentSiteFacts.h"
 #include "analysis/index/BinaryExpressionFacts.h"
 #include "analysis/index/ConversionSiteFacts.h"
+#include "analysis/index/DeclarationSiteFacts.h"
 #include "analysis/index/ReturnSiteFacts.h"
 #include "analysis/types/TypeConversionValues.h"
 
@@ -51,6 +52,9 @@ struct TypeConversionCheckRequest
 
     /// Assignment expressions with both operands; built once when left null.
     const AssignmentSiteFacts* assignmentSites = nullptr;
+
+    /// Variable declarations, calls, construct calls and constructor delegations; built once when left null.
+    const DeclarationSiteFacts* declarationSites = nullptr;
 };
 
 /**

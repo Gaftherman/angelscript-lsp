@@ -1,18 +1,22 @@
 #include "analysis/checkers/TypeConversionCommon.h"
 #include "analysis/index/NodeIndex.h"
+#include "analysis/resolution/OperandRangeResolution.h"
 #include "analysis/types/ExpressionTypeCache.h"
 #include "analysis/types/TypeSanitization.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
 
 #include <algorithm>
-#include <string>
-#include <vector>
+#include <string_view>
 
 namespace angel_lsp::analysis
 {
 
-static bool IsDeclaredTypeUsable(const std::string& baseName, const DiagnosticContext& ctx)
+/**
+ * @brief Checks whether a declared type denotes a usable non-template class, enum or built-in value type.
+ * @param[in] baseName Cleaned type name to inspect.
+ * @param[in] ctx Diagnostic context carrying symbol table and configuration.
+ * @return True when the type can be instantiated or checked for conversions; false otherwise.
+ */
+static bool IsDeclaredTypeUsable(std::string_view baseName, const DiagnosticContext& ctx)
 {
     if (IsBuiltInValueType(baseName, ctx) || ResolvesToEnum(baseName, ctx.request.symbolTable))
     {
@@ -27,15 +31,15 @@ static bool IsDeclaredTypeUsable(const std::string& baseName, const DiagnosticCo
     return !ResolvesToNonClassDeclaration(baseName, ctx.request.symbolTable);
 }
 
-DeclaredType ReadDeclaredType(TSNode typeNode, const DiagnosticContext& ctx)
+/**
+ * @brief Reads a written type spelling into the shape the conversion rules can act on.
+ * @param[in] raw Type spelling as written, including qualifiers and decorations.
+ * @param[in] ctx Diagnostic context.
+ * @return DeclaredType structure.
+ */
+DeclaredType ReadDeclaredType(std::string_view raw, const DiagnosticContext& ctx)
 {
     DeclaredType result;
-    if (ts_node_is_null(typeNode))
-    {
-        return result;
-    }
-
-    const std::string raw(parser::NodeText(typeNode, ctx.request.sourceCode));
     if (raw.empty())
     {
         return result;
@@ -49,7 +53,7 @@ DeclaredType ReadDeclaredType(TSNode typeNode, const DiagnosticContext& ctx)
         return result;
     }
 
-    if (raw.find('<') != std::string::npos || raw.find('[') != std::string::npos)
+    if (raw.find('<') != std::string_view::npos || raw.find('[') != std::string_view::npos)
     {
         result.usable = true;
         result.isTemplateOrArray = true;
@@ -60,10 +64,17 @@ DeclaredType ReadDeclaredType(TSNode typeNode, const DiagnosticContext& ctx)
     return result;
 }
 
-static void CheckUnknownInitializerSource(TSNode valueNode, const DeclaredType& declared, const Scope* scope,
-                                          DiagnosticContext& ctx)
+/**
+ * @brief Reports diagnostics when the initializer expression resolves to an unknown symbol or type.
+ * @param[in] declarator Declarator fact holding the initializer operand.
+ * @param[in] declared Declared type details of the variable.
+ * @param[in] scope Enclosing lexical scope.
+ * @param[in,out] ctx Diagnostic context.
+ */
+static void CheckUnknownInitializerSource(const VariableDeclaratorFact& declarator, const DeclaredType& declared,
+                                          const Scope* scope, DiagnosticContext& ctx)
 {
-    const std::string identName = std::string(TrimString(parser::NodeText(valueNode, ctx.request.sourceCode)));
+    const std::string_view identName = TrimString(declarator.valueOperand.text);
     if (identName.empty())
     {
         return;
@@ -89,25 +100,31 @@ static void CheckUnknownInitializerSource(TSNode valueNode, const DeclaredType& 
                        });
     if (isTypeOrTemplate)
     {
-        EmitExpressionIsDataType(valueNode, ctx, identName);
+        EmitExpressionIsDataType(ToConversionExpression(declarator.valueOperand), ctx, identName);
         return;
     }
     if (isNamespace)
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(valueNode), "as-err-undefined-identifier", identName);
+        ctx.EmitAtRange(declarator.valueOperand.range, "as-err-undefined-identifier", identName);
         return;
     }
 
     if (!FindFuncdef(declared.baseName, ctx.request.symbolTable) &&
-        IsFunctionReference(valueNode, ExpressionTypeContext(scope, ctx)))
+        IsFunctionReference(declarator.valueOperand.bytes, ExpressionTypeContext(scope, ctx)))
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(valueNode), "as-err-no-implicit-conversion",
-                            {identName, declared.baseName});
+        ctx.EmitAtRange(declarator.valueOperand.range, "as-err-no-implicit-conversion", {identName, declared.baseName});
     }
 }
 
-static void CheckHandleInitializer(TSNode valueNode, const ExpressionType& source, const DeclaredType& declared,
-                                   DiagnosticContext& ctx)
+/**
+ * @brief Reports diagnostics when initializing a handle variable from an incompatible source.
+ * @param[in] declarator Declarator fact holding the initializer operand.
+ * @param[in] source Resolved type of the initializer expression.
+ * @param[in] declared Declared type details of the target variable.
+ * @param[in,out] ctx Diagnostic context.
+ */
+static void CheckHandleInitializer(const VariableDeclaratorFact& declarator, const ExpressionType& source,
+                                   const DeclaredType& declared, DiagnosticContext& ctx)
 {
     if (source.baseName == "null")
     {
@@ -115,18 +132,16 @@ static void CheckHandleInitializer(TSNode valueNode, const ExpressionType& sourc
     }
     if (source.isLiteral)
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(valueNode), "as-err-no-implicit-conversion",
-                            {source.baseName, declared.baseName});
+        ctx.EmitAtRange(declarator.valueOperand.range, "as-err-no-implicit-conversion",
+                        {source.baseName, declared.baseName});
         return;
     }
-
     if (source.isConst && !declared.qualifiers.isConst)
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(valueNode), "as-err-no-implicit-conversion",
-                            {"const " + source.baseName + "@", declared.baseName + "@"});
+        ctx.EmitAtRange(declarator.valueOperand.range, "as-err-no-implicit-conversion",
+                        {"const " + source.baseName + "@", declared.baseName + "@"});
         return;
     }
-
     if (IsSameType(source.baseName, declared.baseName))
     {
         return;
@@ -138,181 +153,160 @@ static void CheckHandleInitializer(TSNode valueNode, const ExpressionType& sourc
         const auto hierarchy = GetInheritedTypeHierarchy(declared.baseName, ctx.request.symbolTable);
         if (std::find(hierarchy.begin(), hierarchy.end(), source.baseName) != hierarchy.end())
         {
-            ctx.EmitAtNodeRange(ToOptionalSourceRange(valueNode), "as-err-no-implicit-conversion",
-                                {source.baseName + "@", declared.baseName + "@"});
+            ctx.EmitAtRange(declarator.valueOperand.range, "as-err-no-implicit-conversion",
+                            {source.baseName + "@", declared.baseName + "@"});
         }
     }
 }
 
-void CheckInitializer(TSNode declaratorNode, const DeclaredType& declared, const Scope* scope, DiagnosticContext& ctx)
+/**
+ * @brief Validates variable initializer compatibility against the declared variable type.
+ * @param[in] declarator Declarator fact holding the initializer value and operand.
+ * @param[in] declared Declared type details of the variable.
+ * @param[in] scope Enclosing lexical scope.
+ * @param[in,out] ctx Diagnostic context.
+ */
+static void CheckInitializer(const VariableDeclaratorFact& declarator, const DeclaredType& declared, const Scope* scope,
+                             DiagnosticContext& ctx)
 {
-    TSNode valueNode =
-        SyntaxOperands(declaratorNode, ctx.request.nodeIndex).Field(parser::GetGrammarSymbols().fieldValue);
-    if (ts_node_is_null(valueNode) || ts_node_symbol(valueNode) == parser::GetGrammarSymbols().symInitializerList)
+    if (!declarator.hasValue || declarator.valueIsInitializerList)
     {
         return;
     }
 
-    if (const auto dataTypeName = IsBareDataType(valueNode, ExpressionTypeContext(scope, ctx)))
+    if (const auto dataTypeName = IsBareDataType(declarator.valueOperand.bytes, ExpressionTypeContext(scope, ctx)))
     {
-        EmitExpressionIsDataType(valueNode, ctx, *dataTypeName);
+        EmitExpressionIsDataType(ToConversionExpression(declarator.valueOperand), ctx, *dataTypeName);
         return;
     }
 
-    const ExpressionType source = ResolveValueType(valueNode, scope, ctx);
+    const ExpressionType source = ResolveValueType(declarator.value, scope, ctx);
     if (ExpressionTypeCache::IsPoisonType(source.baseName))
     {
         return;
     }
     if (!source.known || source.baseName.empty())
     {
-        CheckUnknownInitializerSource(valueNode, declared, scope, ctx);
+        CheckUnknownInitializerSource(declarator, declared, scope, ctx);
         return;
     }
 
     if (!declared.qualifiers.isHandle)
     {
-        CheckFloatTruncation(valueNode, {source.baseName, declared.baseName}, scope, ctx);
+        CheckFloatTruncation(declarator.valueOperand, {source.baseName, declared.baseName}, scope, ctx);
     }
     else
     {
-        CheckHandleInitializer(valueNode, source, declared, ctx);
+        CheckHandleInitializer(declarator, source, declared, ctx);
         return;
     }
 
     if (!IsConvertible(source.baseName, declared.baseName, ctx))
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(valueNode), "as-err-no-implicit-conversion",
-                            {source.baseName, declared.baseName});
+        ctx.EmitAtRange(declarator.valueOperand.range, "as-err-no-implicit-conversion",
+                        {source.baseName, declared.baseName});
     }
 }
 
-void CheckDeclaratorConstruction(TSNode child, const DeclaredType& declared, const Scope* scope, DiagnosticContext& ctx)
+/**
+ * @brief Validates non-handle declarator construction semantics.
+ * @param[in] declarator Variable declarator fact.
+ * @param[in] declared Declared type details.
+ * @param[in] scope Enclosing lexical scope.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void CheckDeclaratorConstruction(const VariableDeclaratorFact& declarator, const DeclaredType& declared,
+                                 const Scope* scope, DiagnosticContext& ctx)
 {
-    const SyntaxOperands syntax(child, ctx.request.nodeIndex);
     if (declared.isTemplateOrArray)
     {
         return;
     }
 
-    const NonInstantiableKind nonInst = ClassifyNonInstantiable(declared.baseName, ctx.request.symbolTable);
-    if (nonInst == NonInstantiableKind::Abstract)
+    if (ClassifyNonInstantiable(declared.baseName, ctx.request.symbolTable) == NonInstantiableKind::Abstract)
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(child), "as-err-abstract-instantiated",
-                            {declared.baseName, declared.baseName});
+        ctx.EmitAtRange(declarator.range, "as-err-abstract-instantiated", {declared.baseName, declared.baseName});
         return;
     }
 
-    TSNode argsNode = syntax.Field(parser::GetGrammarSymbols().fieldArguments);
-    TSNode valNode = syntax.Field(parser::GetGrammarSymbols().fieldValue);
-    if (ts_node_is_null(argsNode) && ts_node_is_null(valNode))
+    if (!declarator.hasArguments && !declarator.hasValue)
     {
-        CheckDefaultConstructor(child, declared.baseName, ctx);
+        CheckDefaultConstructor(declarator.nameRange, declared.baseName, ctx);
     }
-    else if (!ts_node_is_null(argsNode))
+    else if (declarator.hasArguments)
     {
-        CheckConstruction(argsNode, declared.baseName, scope, ctx);
-    }
-}
-
-void ProcessDeclaredVariableDeclarators(TSNode node, TSNode typeNode, const TypeConversionCheckRequest& request,
-                                        DiagnosticContext& ctx)
-{
-    const std::string fullType(parser::NodeText(typeNode, request.sourceCode));
-    const std::string baseType = CleanBaseType(fullType);
-    auto funcdefSym = FindFuncdef(baseType, ctx.request.symbolTable);
-
-    const auto& gs = parser::GetGrammarSymbols();
-    const SyntaxOperands syntax(node, ctx.request.nodeIndex);
-    if (funcdefSym)
-    {
-        syntax.ForEachNamed(
-            [&](TSNode child)
-            {
-                if (ts_node_symbol(child) == gs.symVariableDeclarator)
-                {
-                    TSNode valNode = SyntaxOperands(child, ctx.request.nodeIndex).Field(gs.fieldValue);
-                    CheckFuncdefAssignment(child, funcdefSym->GetFuncdef(), valNode, ctx);
-                }
-                return true;
-            });
-    }
-
-    const DeclaredType declared = ReadDeclaredType(typeNode, ctx);
-    if (declared.usable && !IsMixinClass(declared.baseName, ctx.request.symbolTable))
-    {
-        const Scope* scope = ResolveNodeScope(node, request);
-        syntax.ForEachNamed(
-            [&](TSNode child)
-            {
-                if (ts_node_symbol(child) != gs.symVariableDeclarator)
-                {
-                    return true;
-                }
-
-                CheckInitializer(child, declared, scope, ctx);
-                if (!declared.qualifiers.isHandle)
-                {
-                    CheckDeclaratorConstruction(child, declared, scope, ctx);
-                }
-                return true;
-            });
-    }
-}
-
-void ProcessVariableDeclarationNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
-{
-    const SyntaxOperands syntax(node, ctx.request.nodeIndex);
-    TSNode typeNode = syntax.Field(parser::GetGrammarSymbols().fieldVarType);
-    if (ts_node_is_null(typeNode))
-    {
-        typeNode = syntax.Field(parser::GetGrammarSymbols().fieldType);
-    }
-
-    const std::string rawType = CleanBaseType(parser::NodeText(typeNode, request.sourceCode));
-    if (rawType == "auto")
-    {
-        const IndexedByteRange span{ts_node_start_byte(node), ts_node_end_byte(node)};
-        if (const AutoDeclarationSiteFact* site = request.conversionSites->FindAutoDeclaration(span))
-        {
-            ProcessAutoDeclarationSite(*site, request, ctx);
-        }
-    }
-    else
-    {
-        ProcessDeclaredVariableDeclarators(node, typeNode, request, ctx);
+        CheckConstruction(declarator.argument, declared.baseName, scope, ctx);
     }
 }
 
 /**
- * @brief Resolves the value type of an expression given as a syntax node by reading it into a fact first.
- * @param[in] node Expression node to resolve; a null node yields an unknown type.
- * @param[in] scope Lexical scope at the expression position.
- * @param[in] ctx Diagnostic context.
- * @return Resolved ExpressionType.
- */
-ExpressionType ResolveValueType(TSNode node, const Scope* scope, const DiagnosticContext& ctx)
-{
-    return ResolveValueType(ReadValueExpression(node, ctx.request.nodeIndex, ctx.request.sourceCode), scope, ctx);
-}
-
-/**
- * @brief Validates a funcdef value given as syntax nodes by reading it into a fact first.
- * @param[in] targetNode Diagnostic anchor node; a node without a range ends the check.
- * @param[in] funcdefSig Expected funcdef signature.
- * @param[in] valueNode Assigned value node.
+ * @brief Validates each declarator in a declared-type variable declaration statement.
+ * @param[in] site Variable declaration site fact.
+ * @param[in] request Analysis request carrying declaration facts and scope root.
  * @param[in,out] ctx Diagnostic context.
  */
-void CheckFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSig, TSNode valueNode,
-                            DiagnosticContext& ctx)
+static void ProcessDeclaredVariableDeclarators(const VariableDeclarationSiteFact& site,
+                                               const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
 {
-    const auto range = ToOptionalSourceRange(targetNode);
-    if (!range)
+    if (!request.declarationSites)
     {
         return;
     }
-    CheckFuncdefAssignment(*range, funcdefSig,
-                           ReadFuncdefValue(valueNode, *ctx.request.nodeIndex, ctx.request.sourceCode), ctx);
+
+    const auto funcdef = FindFuncdef(CleanBaseType(site.typeText), ctx.request.symbolTable);
+    const auto& declarators = request.declarationSites->declarators;
+    const uint32_t begin = site.declaratorBegin;
+    const uint32_t end = site.declaratorBegin + site.declaratorCount;
+    const uint32_t sliceEnd = std::min<uint32_t>(end, static_cast<uint32_t>(declarators.size()));
+
+    if (funcdef)
+    {
+        for (uint32_t i = begin; i < sliceEnd; ++i)
+        {
+            const auto& declarator = declarators[i];
+            CheckFuncdefAssignment(declarator.range, funcdef->GetFuncdef(), declarator.funcdefValue, ctx);
+        }
+    }
+
+    const DeclaredType declared = ReadDeclaredType(site.typeText, ctx);
+    if (!declared.usable || IsMixinClass(declared.baseName, ctx.request.symbolTable))
+    {
+        return;
+    }
+
+    const Scope* scope = ResolveNodeScope(site.range, request);
+    for (uint32_t i = begin; i < sliceEnd; ++i)
+    {
+        const auto& declarator = declarators[i];
+        CheckInitializer(declarator, declared, scope, ctx);
+        if (!declared.qualifiers.isHandle)
+        {
+            CheckDeclaratorConstruction(declarator, declared, scope, ctx);
+        }
+    }
+}
+
+/**
+ * @brief Validates a variable declaration across auto and explicit types.
+ * @param[in] site Variable declaration fact.
+ * @param[in] request Analysis request details.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void ProcessVariableDeclarationSite(const VariableDeclarationSiteFact& site, const TypeConversionCheckRequest& request,
+                                    DiagnosticContext& ctx)
+{
+    if (CleanBaseType(site.typeText) == "auto")
+    {
+        if (request.conversionSites)
+        {
+            if (const auto* autoSite = request.conversionSites->FindAutoDeclaration(site.bytes))
+            {
+                ProcessAutoDeclarationSite(*autoSite, request, ctx);
+            }
+        }
+        return;
+    }
+    ProcessDeclaredVariableDeclarators(site, request, ctx);
 }
 
 } // namespace angel_lsp::analysis

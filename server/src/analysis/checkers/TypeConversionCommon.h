@@ -3,6 +3,7 @@
 #include "analysis/checkers/BinaryOperatorHelpers.h"
 #include "analysis/checkers/TypeConversionChecker.h"
 #include "analysis/index/AssignmentSiteFacts.h"
+#include "analysis/index/DeclarationSiteFacts.h"
 #include "analysis/index/SyntaxOperands.h"
 #include "analysis/index/ValueExpressionFacts.h"
 #include "analysis/resolution/OverloadTypeConversions.h"
@@ -289,58 +290,49 @@ void CheckFloatTruncation(const BinaryOperandFact& value, const ConversionTypePa
                           DiagnosticContext& ctx);
 
 /**
- * @brief Reads a 'type' node into the shape the conversion rules can act on.
- * @param[in] typeNode AST type node.
+ * @brief Reads a written type spelling into the shape the conversion rules can act on.
+ * @param[in] raw Type spelling as written, including qualifiers and decorations.
  * @param[in] ctx Diagnostic context.
  * @return DeclaredType structure.
  */
-DeclaredType ReadDeclaredType(TSNode typeNode, const DiagnosticContext& ctx);
+DeclaredType ReadDeclaredType(std::string_view raw, const DiagnosticContext& ctx);
 
 /**
  * @brief Validates non-handle declarator construction semantics.
- * @param[in] child Variable declarator syntax node.
+ * @param[in] declarator Variable declarator fact.
  * @param[in] declared Declared type details.
  * @param[in] scope Enclosing lexical scope.
  * @param[in,out] ctx Diagnostic context.
  */
-void CheckDeclaratorConstruction(TSNode child, const DeclaredType& declared, const Scope* scope,
-                                 DiagnosticContext& ctx);
+void CheckDeclaratorConstruction(const VariableDeclaratorFact& declarator, const DeclaredType& declared,
+                                 const Scope* scope, DiagnosticContext& ctx);
 
 /**
  * @brief Rule for a one-argument construction: T(expr) or T v(expr);.
- * @param[in] argumentListNode Argument list AST node.
+ * @param[in] argument Sole construction argument; an absent argument ends the check.
  * @param[in] targetType Target destination type name.
  * @param[in] scope Enclosing lexical scope.
  * @param[in,out] ctx Diagnostic context.
  */
-void CheckConstruction(TSNode argumentListNode, const std::string& targetType, const Scope* scope,
+void CheckConstruction(const ConstructionArgumentFact& argument, std::string_view targetType, const Scope* scope,
                        DiagnosticContext& ctx);
 
 /**
  * @brief Checks that a non-handle variable declaration provides a valid default constructor.
- * @param[in] declaratorNode Declarator syntax node.
+ * @param[in] target Range the diagnostic is anchored to.
  * @param[in] typeName Target type name.
  * @param[in,out] ctx Diagnostic context.
  */
-void CheckDefaultConstructor(TSNode declaratorNode, const std::string& typeName, DiagnosticContext& ctx);
+void CheckDefaultConstructor(const SourceRange& target, std::string_view typeName, DiagnosticContext& ctx);
 
 /**
- * @brief Checks for disallowed constructor delegation statements inside constructor bodies.
- * @param[in] funcNode Function declaration AST node.
- * @param[in] index Syntax index.
+ * @brief Reports every statement of a constructor body that delegates to the class itself.
+ * @param[in] site Delegating constructor site; its slice selects the offending statements.
+ * @param[in] facts Declaration facts that own the slice.
  * @param[in,out] ctx Diagnostic context.
  */
-void CheckConstructorDelegation(TSNode funcNode, const NodeIndex& index, DiagnosticContext& ctx);
-
-/**
- * @brief Validates funcdef assignment compatibility against a target funcdef signature.
- * @param[in] targetNode Diagnostic anchor node.
- * @param[in] funcdefSig Expected funcdef signature.
- * @param[in] valueNode Assigned value node.
- * @param[in,out] ctx Diagnostic context.
- */
-void CheckFuncdefAssignment(TSNode targetNode, const FuncdefSignature& funcdefSig, TSNode valueNode,
-                            DiagnosticContext& ctx);
+void CheckConstructorDelegation(const ConstructorDelegationSiteFact& site, const DeclarationSiteFacts& facts,
+                                DiagnosticContext& ctx);
 
 /**
  * @brief Validates an indexed funcdef value against a target funcdef signature.
@@ -411,12 +403,13 @@ void ProcessExpressionStatementSite(const ExpressionStatementSiteFact& site, con
 void ProcessForeachSite(const ForeachSiteFact& site, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
 
 /**
- * @brief Validates variable declaration nodes across auto and explicit types.
- * @param[in] node Variable declaration syntax node.
+ * @brief Validates a variable declaration across auto and explicit types.
+ * @param[in] site Variable declaration fact.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic context.
  */
-void ProcessVariableDeclarationNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
+void ProcessVariableDeclarationSite(const VariableDeclarationSiteFact& site, const TypeConversionCheckRequest& request,
+                                    DiagnosticContext& ctx);
 
 /**
  * @brief Validates auto-inferred variable declarations.
@@ -485,11 +478,12 @@ void ProcessCastNode(TSNode node, const TypeConversionCheckRequest& request, Dia
 void ProcessReturnSite(const ReturnSiteFact& site, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
 
 /**
- * @brief Validates call and explicit construct call expressions.
- * @param[in] node Call expression syntax node.
+ * @brief Validates a call or explicit construct call.
+ * @param[in] site Call or construct call fact.
  * @param[in] request Analysis request details.
  * @param[in,out] ctx Diagnostic context.
  */
-void ProcessCallOrConstructNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx);
+void ProcessCallConstructSite(const CallConstructSiteFact& site, const TypeConversionCheckRequest& request,
+                              DiagnosticContext& ctx);
 
 } // namespace angel_lsp::analysis

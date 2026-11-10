@@ -3,6 +3,7 @@
 #include "analysis/checkers/TypeConversionCommon.h"
 #include "analysis/index/BinaryExpressionFacts.h"
 #include "analysis/index/ConversionSiteFacts.h"
+#include "analysis/index/DeclarationSiteFacts.h"
 #include "analysis/index/NodeIndex.h"
 #include "analysis/resolution/SemanticHelpers.h"
 #include "analysis/types/TypeSanitization.h"
@@ -17,19 +18,13 @@
 namespace angel_lsp::analysis
 {
 
-void ProcessCallOrConstructNode(TSNode node, const TypeConversionCheckRequest& request, DiagnosticContext& ctx)
+void ProcessCallConstructSite(const CallConstructSiteFact& site, const TypeConversionCheckRequest& request,
+                              DiagnosticContext& ctx)
 {
-    const SyntaxOperands syntax(node, ctx.request.nodeIndex);
-    TSNode callee = syntax.Callee();
-    const std::string calleeName = CleanBaseType(parser::NodeText(callee, request.sourceCode));
-
-    TSNode argsNode = syntax.Field(parser::GetGrammarSymbols().fieldArguments);
-    const TSNode soleArgument = SyntaxOperands(argsNode, ctx.request.nodeIndex).OnlyNamed();
-    const bool soleArgumentIsLambda = (!ts_node_is_null(soleArgument) &&
-                                       ts_node_symbol(soleArgument) == parser::GetGrammarSymbols().symLambdaExpression);
+    const auto calleeName = CleanBaseType(site.calleeText);
 
     std::optional<Symbol> calleeFuncdef;
-    if (soleArgumentIsLambda)
+    if (site.soleArgumentIsLambda)
     {
         calleeFuncdef = FindFuncdef(calleeName, ctx.request.symbolTable);
     }
@@ -37,23 +32,23 @@ void ProcessCallOrConstructNode(TSNode node, const TypeConversionCheckRequest& r
     const NonInstantiableKind calleeNonInst = ClassifyNonInstantiable(calleeName, ctx.request.symbolTable);
     if (calleeNonInst == NonInstantiableKind::Abstract)
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-abstract-instantiated", {calleeName, calleeName});
+        ctx.EmitAtNodeRange(site.range, "as-err-abstract-instantiated", {calleeName, calleeName});
     }
     else if (calleeNonInst == NonInstantiableKind::Mixin)
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(node), "as-err-mixin-not-a-type", calleeName);
+        ctx.EmitAtNodeRange(site.range, "as-err-mixin-not-a-type", calleeName);
     }
     else if (calleeFuncdef)
     {
-        CheckFuncdefAssignment(node, calleeFuncdef->GetFuncdef(), soleArgument, ctx);
+        CheckFuncdefAssignment(site.range, calleeFuncdef->GetFuncdef(), site.soleArgumentFuncdef, ctx);
     }
     else
     {
-        const DeclaredType target = ReadDeclaredType(callee, ctx);
+        const DeclaredType target = ReadDeclaredType(site.calleeText, ctx);
         if (target.usable && !target.qualifiers.isHandle && IsSameType(calleeName, target.baseName))
         {
-            const Scope* scope = ResolveNodeScope(node, request);
-            CheckConstruction(argsNode, target.baseName, scope, ctx);
+            const Scope* scope = ResolveNodeScope(site.range, request);
+            CheckConstruction(site.argument, target.baseName, scope, ctx);
         }
     }
 }
@@ -90,7 +85,10 @@ static bool ProcessStatementNode(TSSymbol sym, TSNode node, const TypeConversion
     }
     if (sym == gs.symVariableDeclaration)
     {
-        ProcessVariableDeclarationNode(node, request, ctx);
+        if (const auto* site = request.declarationSites->FindVariableDeclaration(SpanOf(node)))
+        {
+            ProcessVariableDeclarationSite(*site, request, ctx);
+        }
         return true;
     }
     if (sym == gs.symReturnStatement)
@@ -103,7 +101,10 @@ static bool ProcessStatementNode(TSSymbol sym, TSNode node, const TypeConversion
     }
     if (sym == gs.symFuncDeclaration)
     {
-        CheckConstructorDelegation(node, request.nodeIndex, ctx);
+        if (const auto* site = request.declarationSites->FindConstructorDelegation(SpanOf(node)))
+        {
+            CheckConstructorDelegation(*site, *request.declarationSites, ctx);
+        }
         return true;
     }
     return false;
@@ -142,7 +143,10 @@ static void ProcessExpressionNode(TSSymbol sym, TSNode node, const TypeConversio
     }
     else if (sym == gs.symCallExpression || sym == gs.symConstructCallExpression)
     {
-        ProcessCallOrConstructNode(node, request, ctx);
+        if (const auto* site = request.declarationSites->FindCallConstruct(SpanOf(node)))
+        {
+            ProcessCallConstructSite(*site, request, ctx);
+        }
     }
 }
 
@@ -205,11 +209,17 @@ void CheckTypeConversions(const TypeConversionCheckRequest& request, DiagnosticC
     {
         localAssignments.emplace(BuildAssignmentSiteFacts(request.nodeIndex, request.sourceCode));
     }
+    std::optional<DeclarationSiteFacts> localDeclarations;
+    if (!request.declarationSites)
+    {
+        localDeclarations.emplace(BuildDeclarationSiteFacts(request.nodeIndex, request.sourceCode));
+    }
     TypeConversionCheckRequest withFacts = request;
     withFacts.binaryFacts = request.binaryFacts ? request.binaryFacts : &*localFacts;
     withFacts.conversionSites = request.conversionSites ? request.conversionSites : &*localSites;
     withFacts.returnSites = request.returnSites ? request.returnSites : &*localReturns;
     withFacts.assignmentSites = request.assignmentSites ? request.assignmentSites : &*localAssignments;
+    withFacts.declarationSites = request.declarationSites ? request.declarationSites : &*localDeclarations;
 
     if (ctx.logger && ctx.logger->IsDebugEnabled())
     {

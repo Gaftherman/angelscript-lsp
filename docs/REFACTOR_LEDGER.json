@@ -3099,6 +3099,22 @@
       "verifiedByTests": [
         "TypeConversionCheckerTest"
       ]
+    },
+    {
+      "id": "REF-M24E-DECLARATION-SITE-FACTS",
+      "phase": "M24E",
+      "action": "UNIFY_FUNCTIONS",
+      "sourceFile": "server/src/analysis/checkers/TypeConversionDeclarations.cpp",
+      "deletedLineRange": "whole-function",
+      "originalSymbolOrCode": "ProcessVariableDeclarationNode; ProcessDeclaredVariableDeclarators; CheckInitializer; CheckDeclaratorConstruction; CheckConstruction; CheckDefaultConstructor; CheckConstructorDelegation; ProcessCallOrConstructNode",
+      "whatItDidAndWhyInThatFile": "Variable declaration, declarator, construction argument, call-site and constructor delegation checks read the declared type, declarators, argument list and constructor body through TSNode fields in the second-pass checkers folder.",
+      "whyChangedOrDeleted": "The pass-1 builder captures declarations with their declarators, the sole construction argument, call and construct call sites and the delegating constructor statements once per syntax revision; the checkers consume DeclarationSiteFacts through the value-expression and byte-range overloads.",
+      "replacedByCanonicalFile": "server/src/analysis/index/DeclarationSiteFacts.h",
+      "replacedByCanonicalSymbol": "BuildDeclarationSiteFacts",
+      "ramOrCpuImpact": "One O(N) extraction per revision and O(log N) exact-span lookups; no field reads, parent climbing or body re-walks in the second pass.",
+      "verifiedByTests": [
+        "TypeConversionCheckerTest"
+      ]
     }
   ]
 }

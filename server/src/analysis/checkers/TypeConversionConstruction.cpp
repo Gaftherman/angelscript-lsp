@@ -1,18 +1,24 @@
 #include "analysis/checkers/TypeConversionCommon.h"
-#include "analysis/index/NodeIndex.h"
-#include "parser/ASTUtils.h"
-#include "parser/GrammarNames.h"
-#include "parser/Primitives.h"
+#include "analysis/index/DeclarationSiteFacts.h"
+#include "analysis/resolution/ScopeSymbolLookup.h"
 #include "utils/Utils.h"
 
 #include <algorithm>
-#include <string>
+#include <string_view>
 #include <vector>
 
 namespace angel_lsp::analysis
 {
 
-static bool CheckEnumConstruction(TSNode argument, const std::string& sourceBase, const std::string& targetType,
+/**
+ * @brief Validates explicit construction from a source type to an enum target type.
+ * @param[in] anchor Source range anchoring diagnostics when conversion is invalid.
+ * @param[in] sourceBase Base name of the source expression type.
+ * @param[in] targetType Target enum type name.
+ * @param[in,out] ctx Diagnostic context for error emission.
+ * @return True if targetType is an enum (handled), false otherwise.
+ */
+static bool CheckEnumConstruction(const SourceRange& anchor, std::string_view sourceBase, std::string_view targetType,
                                   DiagnosticContext& ctx)
 {
     const SymbolTable& table = ctx.request.symbolTable;
@@ -22,12 +28,20 @@ static bool CheckEnumConstruction(TSNode argument, const std::string& sourceBase
     }
     if (!IsNumericPrimitive(sourceBase) && !ResolvesToEnum(sourceBase, table))
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(argument), "as-err-no-explicit-conversion", {sourceBase, targetType});
+        ctx.EmitAtNodeRange(anchor, "as-err-no-explicit-conversion", {sourceBase, targetType});
     }
     return true;
 }
 
-static bool IsConstructibleFrom(const std::string& sourceBase, const std::string& targetType,
+/**
+ * @brief Checks if a target type declares a constructor accepting a convertible source type.
+ * @param[in] sourceBase Base name of the source expression type.
+ * @param[in] targetType Target type name.
+ * @param[in] binding Template parameter substitutions for the target type.
+ * @param[in] ctx Diagnostic context.
+ * @return True if a matching constructor overload exists, false otherwise.
+ */
+static bool IsConstructibleFrom(std::string_view sourceBase, std::string_view targetType,
                                 const TemplateBinding& binding, const DiagnosticContext& ctx)
 {
     const SymbolTable& table = ctx.request.symbolTable;
@@ -58,7 +72,14 @@ static bool IsConstructibleFrom(const std::string& sourceBase, const std::string
     return constructible;
 }
 
-static bool IsTargetTypeIgnoredForConstruction(const std::string& targetType, const SymbolTable& table,
+/**
+ * @brief Checks if a target type is ignored for explicit construction checking.
+ * @param[in] targetType Target type name.
+ * @param[in] table Symbol table.
+ * @param[in] ctx Diagnostic context.
+ * @return True if targetType is a built-in value type or unresolvable non-enum.
+ */
+static bool IsTargetTypeIgnoredForConstruction(std::string_view targetType, const SymbolTable& table,
                                                const DiagnosticContext& ctx)
 {
     if (IsBuiltInValueType(targetType, ctx))
@@ -68,22 +89,35 @@ static bool IsTargetTypeIgnoredForConstruction(const std::string& targetType, co
     return !FindTypeDeclaration(targetType, table).found && !ResolvesToEnum(targetType, table);
 }
 
-static bool IsSourceCompatibleWithTarget(const std::string& sourceBaseName, const std::string& targetType,
+/**
+ * @brief Checks if the source type is compatible with target type via hierarchy or conversion operators.
+ * @param[in] sourceBaseName Base name of the source expression type.
+ * @param[in] targetType Target type name.
+ * @param[in] table Symbol table.
+ * @return True if hierarchy-related or declares conversion to target.
+ */
+static bool IsSourceCompatibleWithTarget(std::string_view sourceBaseName, std::string_view targetType,
                                          const SymbolTable& table)
 {
     return AreHierarchyRelated(sourceBaseName, targetType, table) ||
            DeclaresConversionTo(sourceBaseName, targetType, table, false);
 }
 
-void CheckConstruction(TSNode argumentListNode, const std::string& targetType, const Scope* scope,
+/**
+ * @brief Rule for a one-argument construction: T(expr) or T v(expr);.
+ * @param[in] argument Sole construction argument fact.
+ * @param[in] targetType Destination type name.
+ * @param[in] scope Enclosing lexical scope.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void CheckConstruction(const ConstructionArgumentFact& argument, std::string_view targetType, const Scope* scope,
                        DiagnosticContext& ctx)
 {
-    const TSNode argument = SyntaxOperands(argumentListNode, ctx.request.nodeIndex).OnlyNamed();
-    if (ts_node_is_null(argument))
+    if (!argument.present)
     {
         return;
     }
-    const ExpressionType source = ResolveValueType(argument, scope, ctx);
+    const auto source = ResolveValueType(argument.value, scope, ctx);
     if (!source.known || source.baseName.empty() || IsSameType(source.baseName, targetType))
     {
         return;
@@ -102,18 +136,22 @@ void CheckConstruction(TSNode argumentListNode, const std::string& targetType, c
         return;
     }
 
-    if (CheckEnumConstruction(argument, source.baseName, targetType, ctx))
+    if (CheckEnumConstruction(argument.operand.range, source.baseName, targetType, ctx))
     {
         return;
     }
 
     if (!IsConstructibleFrom(source.baseName, targetType, binding, ctx))
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(argument), "as-err-no-explicit-conversion",
-                            {source.baseName, targetType});
+        ctx.EmitAtNodeRange(argument.operand.range, "as-err-no-explicit-conversion", {source.baseName, targetType});
     }
 }
 
+/**
+ * @brief Inspects constructor overloads to determine if a zero-argument or default constructor is available.
+ * @param[in] constructors Collection of constructor symbols declared on a type.
+ * @return ZeroArgConstructorStatus indicating whether a default constructor exists and if it is deleted.
+ */
 static ZeroArgConstructorStatus InspectZeroArgConstructor(const std::vector<Symbol>& constructors)
 {
     ZeroArgConstructorStatus status;
@@ -136,7 +174,13 @@ static ZeroArgConstructorStatus InspectZeroArgConstructor(const std::vector<Symb
     return status;
 }
 
-void CheckDefaultConstructor(TSNode declaratorNode, const std::string& typeName, DiagnosticContext& ctx)
+/**
+ * @brief Checks that a non-handle variable declaration provides a valid default constructor.
+ * @param[in] target Range the diagnostic is anchored to.
+ * @param[in] typeName Target type name.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void CheckDefaultConstructor(const SourceRange& target, std::string_view typeName, DiagnosticContext& ctx)
 {
     if (utils::IsPredefinedFile(ctx.request.fileUri, ctx.request.predefinedFileExtension))
     {
@@ -170,79 +214,30 @@ void CheckDefaultConstructor(TSNode declaratorNode, const std::string& typeName,
 
     const auto [hasZeroArg, isDeleted] = InspectZeroArgConstructor(constructors);
 
-    TSNode nameNode =
-        SyntaxOperands(declaratorNode, ctx.request.nodeIndex).Field(parser::GetGrammarSymbols().fieldName);
-    TSNode targetNode = ts_node_is_null(nameNode) ? declaratorNode : nameNode;
-
     if (isDeleted)
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(targetNode), "as-err-deleted-method-called", {typeName, typeName});
+        ctx.EmitAtNodeRange(target, "as-err-deleted-method-called", {typeName, typeName});
     }
     else if (!hasZeroArg && !ctx.request.AlwaysImplementsDefaultConstruct())
     {
-        ctx.EmitAtNodeRange(ToOptionalSourceRange(targetNode), "as-err-no-default-constructor", {typeName});
+        ctx.EmitAtNodeRange(target, "as-err-no-default-constructor", {typeName});
     }
 }
 
-static void CheckConstructorDelegationStatement(TSNode stmt, const std::string& className, DiagnosticContext& ctx)
+/**
+ * @brief Reports every statement of a constructor body that delegates to the class itself.
+ * @param[in] site Delegating constructor site whose slice selects the offending statements.
+ * @param[in] facts Declaration facts that own the slice.
+ * @param[in,out] ctx Diagnostic context.
+ */
+void CheckConstructorDelegation(const ConstructorDelegationSiteFact& site, const DeclarationSiteFacts& facts,
+                                DiagnosticContext& ctx)
 {
-    const auto& gs = parser::GetGrammarSymbols();
-    if (ts_node_symbol(stmt) != gs.symExpressionStatement)
+    const auto end = std::min(static_cast<size_t>(site.callBegin) + site.callCount, facts.delegationCalls.size());
+    for (size_t i = site.callBegin; i < end; ++i)
     {
-        return;
+        ctx.EmitAtNodeRange(facts.delegationCalls[i], "as-err-constructor-delegation-disallowed");
     }
-
-    const SyntaxOperands exprOperands = SyntaxOperands(stmt, ctx.request.nodeIndex).FirstNamedOperands();
-    if (exprOperands.IsNull())
-    {
-        return;
-    }
-    const TSSymbol exprSym = exprOperands.Symbol();
-    if (exprSym == gs.symCallExpression || exprSym == gs.symConstructCallExpression)
-    {
-        TSNode callee = exprOperands.Callee();
-        if (!ts_node_is_null(callee) && parser::NodeText(callee, ctx.request.sourceCode) == className)
-        {
-            ctx.EmitAtNodeRange(ToOptionalSourceRange(exprOperands.Node()), "as-err-constructor-delegation-disallowed");
-        }
-    }
-}
-
-void CheckConstructorDelegation(TSNode funcNode, const NodeIndex& index, DiagnosticContext& ctx)
-{
-    const auto& gs = parser::GetGrammarSymbols();
-    const TSNode parent = index.EnclosingDeclaration(funcNode);
-    if (ts_node_is_null(parent))
-    {
-        return;
-    }
-
-    TSNode classNameNode = SyntaxOperands(parent, &index).Field(gs.fieldName);
-    if (ts_node_is_null(classNameNode))
-    {
-        return;
-    }
-    const std::string className(parser::NodeText(classNameNode, ctx.request.sourceCode));
-
-    const SyntaxOperands function(funcNode, &index);
-    const TSNode funcNameNode = function.Field(gs.fieldName);
-    if (ts_node_is_null(funcNameNode) || parser::NodeText(funcNameNode, ctx.request.sourceCode) != className)
-    {
-        return;
-    }
-
-    const SyntaxOperands body = function.FieldOperands(gs.fieldBody);
-    if (body.IsNull())
-    {
-        return;
-    }
-
-    body.ForEachNamed(
-        [&](TSNode statement)
-        {
-            CheckConstructorDelegationStatement(statement, className, ctx);
-            return true;
-        });
 }
 
 } // namespace angel_lsp::analysis
